@@ -1,4 +1,5 @@
-import { getPrivacyRevocationGeneration } from '../privacy/privacy-cache';
+import { getCredentialGeneration } from '../privacy/privacy-cache';
+import { getSprayWall } from '../spray/spray-wall-registry';
 import { onlineManager } from '@tanstack/react-query';
 import type { Variables } from 'graphql-request';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -58,6 +59,7 @@ import {
   SEARCH_CLIMBS,
   SEARCH_CLIMBS_COUNT,
   GET_CLIMB,
+  GET_SPRAY_CLIMB,
   GET_SETTER_STATS,
   type SearchClimbsQueryVariables,
   type SearchClimbsQueryResponse,
@@ -205,9 +207,10 @@ async function readViewerId(): Promise<string | null> {
  * read to the server, or to the offline fallback. An unstamped database holds no
  * user rows to leak, so it serves. Deletes nothing.
  */
-async function isLocalDataOwnerCurrent(db: SQLiteDatabase): Promise<boolean> {
+async function isLocalDataOwnerCurrent(db: SQLiteDatabase, requireOwned = false): Promise<boolean> {
   try {
-    return (await assertLocalUserDataOwner(db, await readViewerId())) !== 'mismatch';
+    const ownership = await assertLocalUserDataOwner(db, await readViewerId());
+    return requireOwned ? ownership === 'ok' : ownership !== 'mismatch';
   } catch {
     return false;
   }
@@ -307,25 +310,26 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryRespo
   networkVariables: withLostHoldRule,
 });
 
-registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
-  document: GET_CLIMB,
-  surface: 'climb_detail',
-  boardNameOf: (variables) => variables.boardName,
-  // Detail has no filters — local whenever the exact scope is downloaded.
-  canServeLocal: (db, variables) => isBoardDownloadedLocally(db, scopeOf(variables)),
-  resolveLocal: async (db, variables) => ({
-    climb: await getClimbLocal(db, {
-      boardName: variables.boardName,
-      layoutId: variables.layoutId,
-      angle: variables.angle,
-      climbUuid: variables.climbUuid,
-      viewerId: await readViewerId(),
+for (const document of [GET_CLIMB, GET_SPRAY_CLIMB])
+  registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
+    document,
+    surface: 'climb_detail',
+    boardNameOf: (variables) => variables.boardName,
+    // Detail has no filters — local whenever the exact scope is downloaded.
+    canServeLocal: (db, variables) => isBoardDownloadedLocally(db, scopeOf(variables)),
+    resolveLocal: async (db, variables) => ({
+      climb: await getClimbLocal(db, {
+        boardName: variables.boardName,
+        layoutId: variables.layoutId,
+        angle: variables.angle,
+        climbUuid: variables.climbUuid,
+        viewerId: await readViewerId(),
+      }),
     }),
-  }),
-  offlineFallback: () => ({ climb: null }),
-  isLocalMiss: (response) => response.climb === null,
-  enrichNetworkResponse: fillDetailRevisionNumbers,
-});
+    offlineFallback: () => ({ climb: null }),
+    isLocalMiss: (response) => response.climb === null,
+    enrichNetworkResponse: fillDetailRevisionNumbers,
+  });
 
 // Setter stats: who set on this board configuration (#5407). No filter-support
 // gate like search has — every predicate SetterStatsInput carries is expressible
@@ -385,12 +389,11 @@ registerOfflineOperation<LocalHoldHeatmapVariables, LocalHoldHeatmapResponse>({
 });
 
 // Boardsesh grade reads. These carry only boardName (+ climbUuid + angle), no
-// layout/size, so they gate on the board TYPE being downloaded and then read
-// board_climb_grades by the exact key. A single-row null is a local miss (the
-// row may just not have synced, or the climb is from a non-downloaded scope of
-// the same board type) → retried over the network while online. The by-angle
-// list treats an empty result as a real answer (a MoonBoard / Woods / no-grade climb),
-// exactly like an empty search — no needless network retry.
+// layout/size. The single grade gates on the board TYPE being downloaded and
+// reads board_climb_grades by the exact key; a null row is a local miss (the
+// row may not have synced, or the climb is from a non-downloaded scope) →
+// retried over the network while online. The by-angle list gates on the
+// climb's own layout instead (see below).
 registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
   document: BOARDSESH_GRADE,
   surface: 'grade',
@@ -403,30 +406,23 @@ registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
   isLocalMiss: (response) => response.boardseshGrade === null,
 });
 
-// Deliberately NO `isLocalMiss` here, unlike the BOARDSESH_GRADE op above — this is
-// a collapsed-vs-expanded divergence, not an oversight. The single-angle op treats a
-// null row as a miss and retries over the network (see its isLocalMiss above); this
-// by-angle op treats an empty list as a real answer and never retries. Two reasons:
-//   1. An empty by-angle list is frequently CORRECT (MoonBoard / too-few-ascents
-//      climbs are never graded), so retrying it would be a needless network round
-//      trip on every chart open for those climbs — the same reasoning search results
-//      use (see the class doc above `OfflineOperation.isLocalMiss`).
-//   2. Neither grade op carries layout/size, only boardName — so there's no way to
-//      tell "genuinely ungraded" apart from "this exact climb scope never synced to
-//      this device" (e.g. viewed cross-scope via party queue / deep link / similar
-//      climbs). Adding isLocalMiss here would retry on every miss including the
-//      common ungraded case, which is the exact overhead skipping it is meant to
-//      avoid.
-// Net effect: for a climb whose grades never synced to THIS device, the collapsed
-// single-grade view (BOARDSESH_GRADE) falls back to the network and shows a grade,
-// while the expanded by-angle chart (this op) shows empty until the board's next
-// background sync catches the row up. This is accepted, not a bug — see
-// offline-request.test.ts's "does not retry an empty local list" case.
+// Deliberately NO `isLocalMiss` here, unlike the BOARDSESH_GRADE op above. An
+// empty by-angle list is often CORRECT (too-few-ascents climbs are never
+// graded), so retrying it would cost a network round trip on every chart
+// open for those climbs. Instead the gate is the climb's own downloaded layout
+// (grade rows sync per scope, like stats): past it, empty means empty. A uuid
+// with no local board_climbs row, or a delisted one with no grade rows of its
+// own (a merged-away alias, which the dedups keep and unlist), or a climb from
+// a scope that was never downloaded, fails the gate and goes to the server,
+// which resolves aliases. A delisted climb that has its own rows keeps
+// serving them. With no signal such a uuid still reads as empty, because
+// board_climb_aliases is not on the phone.
 registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAnglesResponse>({
   document: BOARDSESH_GRADES_FOR_ANGLES,
   surface: 'grade',
   boardNameOf: ({ boardName }) => boardName,
-  canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),
+  canServeLocal: (db, { boardName, climbUuid }) =>
+    isClimbLayoutDownloadedLocally(db, boardName, climbUuid, 'board_climb_grades'),
   resolveLocal: async (db, { boardName, climbUuid }) => ({
     boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, {
       boardName,
@@ -450,7 +446,8 @@ registerOfflineOperation<ClimbStatsHistoryVariables, ClimbStatsHistoryResponse>(
   document: CLIMB_STATS_HISTORY,
   surface: 'grade',
   boardNameOf: ({ boardName }) => boardName,
-  canServeLocal: (db, { boardName, climbUuid }) => isClimbLayoutDownloadedLocally(db, boardName, climbUuid),
+  canServeLocal: (db, { boardName, climbUuid }) =>
+    isClimbLayoutDownloadedLocally(db, boardName, climbUuid, 'board_climb_stats'),
   resolveLocal: async (db, { boardName, climbUuid }) => ({
     climbStatsHistory: await getClimbStatsHistoryLocal(db, { boardName, climbUuid, viewerId: await readViewerId() }),
   }),
@@ -538,10 +535,20 @@ export async function offlineAwareRequest<TResponse>(
   variables?: Variables,
   options?: { signal?: AbortSignal },
 ): Promise<TResponse> {
+  const suppliedVariables = variables as Record<string, unknown> | undefined;
+  if (document === GET_CLIMB && suppliedVariables?.boardName === 'spray') {
+    const layoutId = typeof suppliedVariables.layoutId === 'number' ? suppliedVariables.layoutId : null;
+    document = GET_SPRAY_CLIMB;
+    variables = {
+      ...variables,
+      sprayWallUuid:
+        suppliedVariables.sprayWallUuid ?? (layoutId === null ? undefined : getSprayWall(layoutId)?.wallUuid),
+    };
+  }
   const operation = OFFLINE_OPERATIONS.get(document);
   const signal = options?.signal;
-  const privacyGeneration = getPrivacyRevocationGeneration();
-  const localAllowed = () => getPrivacyRevocationGeneration() === privacyGeneration;
+  const credentialGeneration = getCredentialGeneration();
+  const localAllowed = () => getCredentialGeneration() === credentialGeneration;
   const assertNotCancelled = () => {
     if (signal?.aborted) throw createAbortError('Request cancelled');
   };
@@ -576,7 +583,7 @@ export async function offlineAwareRequest<TResponse>(
       if (
         localDb &&
         variables !== undefined &&
-        (await isLocalDataOwnerCurrent(localDb)) &&
+        (await isLocalDataOwnerCurrent(localDb, operation.boardNameOf(variables as never) === 'spray')) &&
         (await operation.canServeLocal(localDb, variables as never))
       ) {
         assertNotCancelled();
@@ -649,7 +656,7 @@ export async function offlineAwareRequest<TResponse>(
       const db = localDb ?? getDatabaseHandle();
       if (
         db &&
-        (await isLocalDataOwnerCurrent(db)) &&
+        (await isLocalDataOwnerCurrent(db, operation.boardNameOf(variables as never) === 'spray')) &&
         (localServiceable || (await operation.canServeLocal(db, variables as never)))
       ) {
         const rescued = (await operation.resolveLocal(db, variables as never)) as TResponse | null;

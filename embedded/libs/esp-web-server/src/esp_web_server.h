@@ -7,10 +7,18 @@
 #include <wifi_utils.h>
 
 #include <Update.h>
-
 #include <config_manager.h>
 
 #define WEB_SERVER_PORT 80
+
+#ifdef ENABLE_GYM_FIXTURE
+#ifndef GYM_FIXTURE_DEFAULT_GYM
+#define GYM_FIXTURE_DEFAULT_GYM "boardsesh-qa"
+#endif
+#ifndef GYM_FIXTURE_DEFAULT_ENDPOINT
+#define GYM_FIXTURE_DEFAULT_ENDPOINT "wss://ws.boardsesh.com/graphql"
+#endif
+#endif
 
 typedef void (*WebServerRouteHandler)(WebServer& server);
 typedef void (*WebServerStatusProvider)(JsonDocument& doc);

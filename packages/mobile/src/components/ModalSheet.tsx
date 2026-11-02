@@ -20,7 +20,15 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Platform,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
+  type ViewInstance,
+} from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -51,6 +59,10 @@ import {
 } from '../providers/sheet-presentation-provider';
 
 type ModalSheetProps = {
+  /** A child mounted inside a native sheet keeps its parent open on web too. */
+  stacked?: boolean;
+  /** Actual native parent; valid only with an in-content child Host. */
+  parentSheetId?: string;
   children: ReactNode;
   /** Controlled open state. Leave undefined for purely imperative consumers that
    * drive the sheet through the forwarded ref. */
@@ -108,6 +120,8 @@ type ModalSheetProps = {
 export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(function ModalSheet(
   {
     children,
+    stacked = false,
+    parentSheetId,
     visible,
     snapPoints: customSnapPoints,
     enableDynamicSizing = false,
@@ -148,6 +162,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   const managed = useManagedSheet({
     open: visible,
     group: presenterGroup,
+    parentId: parentSheetId,
     sheetRef,
     onClose,
     onDisplaced,
@@ -288,8 +303,8 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     </View>
   );
 
-  const headerRef = useRef<View>(null);
-  const footerRef = useRef<View>(null);
+  const headerRef = useRef<ViewInstance>(null);
+  const footerRef = useRef<ViewInstance>(null);
   useEffect(() => {
     if (onHeaderLayout) headerRef.current?.measure((_left, _top, _measuredWidth, height) => onHeaderLayout(height));
   }, [onHeaderLayout]);
@@ -330,6 +345,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   return (
     <BottomSheetModal
       ref={sheetRef}
+      {...(Platform.OS === 'web' && stacked ? { stackBehavior: 'push' as const } : {})}
       // Native `@expo/ui` ignores this prop entirely (its `BottomSheetModal`
       // mounts closed regardless and is only ever opened via the imperative
       // `snapToIndex` `useManagedSheet` drives). The Expo-web shim is NOT so

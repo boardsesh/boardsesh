@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
  * `view-seo-fragment.test.tsx` and `page-metadata.test.tsx`.
  */
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => 'en-US' }));
 
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(() => {
@@ -31,9 +32,12 @@ vi.mock('@/app/lib/data/queries', () => ({
     frames: 'p1r12',
   })),
   getClimbStatsForAllAngles: vi.fn(async () => []),
-  getLayouts: vi.fn(() => []),
-  getSizes: vi.fn(() => []),
-  getSets: vi.fn(() => []),
+  getLayouts: vi.fn(() => [{ id: 8, name: 'Original' }]),
+  getSizes: vi.fn(() => [{ id: 10, name: '12 x 12', description: '' }]),
+  getSets: vi.fn(() => [
+    { id: 1, name: 'Bolt Ons' },
+    { id: 2, name: 'Screw Ons' },
+  ]),
 }));
 
 vi.mock('@/app/lib/data/front-door-data.server', () => ({
@@ -42,14 +46,14 @@ vi.mock('@/app/lib/data/front-door-data.server', () => ({
 }));
 
 vi.mock('@/app/lib/url-utils.server', () => ({
-  parseRouteParams: vi.fn(async () => ({
+  parseRouteParams: vi.fn(async (params: { climb_uuid: string }) => ({
     parsedParams: {
       board_name: 'kilter',
       layout_id: 8,
       size_id: 10,
       set_ids: [1, 2],
       angle: 40,
-      climb_uuid: 'alias-climb',
+      climb_uuid: params.climb_uuid,
     },
     isNumericFormat: false,
   })),
@@ -110,7 +114,9 @@ describe('an alias URL on the config-tuple tree', () => {
   });
 
   it('reads angle stats, similar climbs and beta for the canonical climb, not the husk uuid', async () => {
-    await ClimbViewPage(props);
+    await expect(ClimbViewPage(props)).rejects.toThrow('NEXT_REDIRECT');
+    expect(vi.mocked(getFrontDoorSimilarClimbs)).not.toHaveBeenCalled();
+    await ClimbViewPage({ params: Promise.resolve({ ...(await props.params), climb_uuid: 'canonical-climb' }) });
 
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', 'canonical-climb');
     expect(vi.mocked(getFrontDoorSimilarClimbs)).toHaveBeenCalledWith(
@@ -131,5 +137,12 @@ describe('an alias URL on the config-tuple tree', () => {
     );
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', 'canonical-climb');
+    const { buildCanonicalClimbViewUrl } = await import('@/app/lib/url-utils');
+    expect(vi.mocked(buildCanonicalClimbViewUrl)).toHaveBeenCalledWith(
+      expect.anything(),
+      40,
+      'canonical-climb',
+      'Test Climb',
+    );
   });
 });

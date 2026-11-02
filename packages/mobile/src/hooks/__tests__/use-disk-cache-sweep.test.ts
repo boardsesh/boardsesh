@@ -19,7 +19,7 @@ const interactions = vi.hoisted(() => {
   const pending: (() => void)[] = [];
   return {
     pending,
-    runAfterInteractions: vi.fn((callback: () => void) => {
+    scheduleIdleTask: vi.fn((callback: () => void) => {
       pending.push(callback);
       return { cancel: vi.fn() };
     }),
@@ -28,7 +28,7 @@ const interactions = vi.hoisted(() => {
     },
   };
 });
-vi.mock('react-native', () => ({ InteractionManager: interactions }));
+vi.mock('../../lib/schedule-idle-task', () => ({ scheduleIdleTask: interactions.scheduleIdleTask }));
 
 const isBackgrounded = vi.hoisted(() => ({ value: false }));
 vi.mock('../../lib/app-visibility', () => ({ useIsAppBackgrounded: () => isBackgrounded.value }));
@@ -50,7 +50,7 @@ beforeEach(() => {
   sweepBoardArtCache.mockClear();
   sweepSnapshotLeftovers.mockClear();
   interactions.pending.length = 0;
-  interactions.runAfterInteractions.mockClear();
+  interactions.scheduleIdleTask.mockClear();
   isBackgrounded.value = false;
   writeThresholdListener.current = null;
 });
@@ -69,9 +69,8 @@ describe('useDiskCacheSweep', () => {
     expect(sweepSnapshotLeftovers).toHaveBeenCalledTimes(1);
   });
 
-  // `runAfterInteractions` can be starved indefinitely by a leaked handle, which
-  // would otherwise mean the sweep simply never runs on a busy launch.
-  it('still sweeps via the fallback timer when the interaction queue never drains', () => {
+  // A busy JS thread can delay idle work; the launch fallback stays bounded.
+  it('still sweeps via the fallback timer when the idle queue never drains', () => {
     renderHook(() => useDiskCacheSweep());
     act(() => {
       vi.advanceTimersByTime(2_500);

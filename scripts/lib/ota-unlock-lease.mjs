@@ -8,7 +8,7 @@ const RULES = {
   '.github/workflows/mobile-ota-production.yml': {
     jobKey: 'publish',
     jobNames: ['publish'],
-    branches: ['main', 'release/next'],
+    branches: ['main'],
     stepName: 'Await trusted main unlock before direct production publish',
   },
   '.github/workflows/mobile-ota-promote-staged.yml': {

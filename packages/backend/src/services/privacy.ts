@@ -16,7 +16,7 @@ export {
   resourceLocationCondition,
   sessionBoardLocationCondition,
 } from '@boardsesh/db/queries';
-import { and, eq, inArray, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, not, notExists, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as schema from '@boardsesh/db/schema';
 import {
@@ -89,9 +89,13 @@ export async function getPrivacySettings(userId: string): Promise<PrivacySetting
     enabled: privacyControlsEnabled(),
   };
 }
-export async function isApprovedFollower(viewerId: ViewerId, subjectId: string): Promise<boolean> {
+export async function isApprovedFollower(
+  viewerId: ViewerId,
+  subjectId: string,
+  executor: Pick<typeof db, 'select'> = db,
+): Promise<boolean> {
   if (!viewerId) return false;
-  const [follow] = await db
+  const [follow] = await executor
     .select({ id: schema.userFollows.id })
     .from(schema.userFollows)
     .where(and(eq(schema.userFollows.followerId, viewerId), eq(schema.userFollows.followingId, subjectId)))
@@ -302,9 +306,13 @@ export async function getResourcePrivacy(
     hasOverride: !!override,
   };
 }
-async function resourceViewer(resource: ResourcePrivacyState, viewerId: ViewerId) {
+async function resourceViewer(
+  resource: ResourcePrivacyState,
+  viewerId: ViewerId,
+  executor: Pick<typeof db, 'select'> = db,
+) {
   const [grant] = viewerId
-    ? await db
+    ? await executor
         .select()
         .from(schema.resourceGrants)
         .where(
@@ -318,7 +326,7 @@ async function resourceViewer(resource: ResourcePrivacyState, viewerId: ViewerId
     : [];
   const [legacyParticipant] =
     viewerId && resource.kind === 'session' && !resource.hasOverride
-      ? await db
+      ? await executor
           .select({ userId: schema.boardSessionParticipants.userId })
           .from(schema.boardSessionParticipants)
           .where(
@@ -331,7 +339,7 @@ async function resourceViewer(resource: ResourcePrivacyState, viewerId: ViewerId
       : [];
   return {
     isOwner: !!viewerId && resource.ownerId === viewerId,
-    isApprovedFollower: !!resource.ownerId && (await isApprovedFollower(viewerId, resource.ownerId)),
+    isApprovedFollower: !!resource.ownerId && (await isApprovedFollower(viewerId, resource.ownerId, executor)),
     hasApprovedGrant: grant?.status === 'approved' || (!!legacyParticipant && grant?.status !== 'revoked'),
     hasRevokedGrant: grant?.status === 'revoked',
     inheritFollowers: resource.inheritFollowers,
@@ -355,10 +363,11 @@ export async function resourceAccess(
   kind: PrivacyResourceKind,
   resourceId: string,
   viewerId: ViewerId,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<{ withLink: boolean; withoutLink: boolean }> {
-  const resource = await getResourcePrivacy(kind, resourceId);
+  const resource = await getResourcePrivacy(kind, resourceId, executor);
   if (!resource) return { withLink: false, withoutLink: false };
-  const viewer = await resourceViewer(resource, viewerId);
+  const viewer = await resourceViewer(resource, viewerId, executor);
   return {
     withLink: canReadResource(resource.audience, viewer),
     withoutLink: canReadResource(resource.audience === 'unlisted' ? 'invite_only' : resource.audience, viewer),
@@ -369,16 +378,18 @@ export async function canAccessResource(
   kind: PrivacyResourceKind,
   resourceId: string,
   viewerId: ViewerId,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<boolean> {
-  return (await resourceAccess(kind, resourceId, viewerId)).withLink;
+  return (await resourceAccess(kind, resourceId, viewerId, executor)).withLink;
 }
 /** The `withoutLink` reading of {@link resourceAccess}: listings, logs, numeric ids, spray slugs. */
 export async function canAccessResourceWithoutLink(
   kind: PrivacyResourceKind,
   resourceId: string,
   viewerId: ViewerId,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<boolean> {
-  return (await resourceAccess(kind, resourceId, viewerId)).withoutLink;
+  return (await resourceAccess(kind, resourceId, viewerId, executor)).withoutLink;
 }
 /**
  * Access to a board through whatever key the caller holds. Only the board's own
@@ -386,6 +397,11 @@ export async function canAccessResourceWithoutLink(
  * reading. Everything else gets `withoutLink`: a numeric `user_boards.id`
  * (enumerable), a slug or uuid carried across another owner's merge, or a uuid
  * of some other board, which unlocks nothing here.
+ *
+ * A climber in a live session on the board also reads it, whatever key they
+ * hold (`isLiveSessionMemberOnHomeWall`): these are the reads of the wall you
+ * are standing at, its page, presence and connect lookups. Listings never come
+ * through here.
  */
 export async function canAccessBoard(
   boardUuid: string,
@@ -393,7 +409,91 @@ export async function canAccessBoard(
   presentedBoardUuid: string | null | undefined,
 ): Promise<boolean> {
   const access = await resourceAccess('board', boardUuid, viewerId);
-  return presentedBoardUuid === boardUuid ? access.withLink : access.withoutLink;
+  if (presentedBoardUuid === boardUuid ? access.withLink : access.withoutLink) return true;
+  return isLiveSessionMemberOnHomeWall(boardUuid, viewerId);
+}
+
+/**
+ * Joining a session counts as holding its wall's link, for that session (#7013).
+ *
+ * True when the wall's OWNER hosts a session that has not ended and is on this
+ * board right now (`board_sessions.board_id`), and the viewer is in that
+ * session's live roster. Without it, a crew
+ * member on a private or unlisted home wall is handed the wall's geometry
+ * instead of the wall, mints a private board of their own, logs to an empty
+ * history, and meets "Different saved board" at the wall's own controller.
+ *
+ * Deliberately narrow:
+ * - Home walls only (`gym_id IS NULL`). A wall at a gym keeps the gym's gates,
+ *   and spray walls keep their own wall rules.
+ * - Only a session the owner started (`created_by_user_id = owner_id`). A
+ *   grantee or follower who starts or moves a session onto the wall must not
+ *   hand it to whoever joins that session.
+ * - Only while the viewer is in the session's live roster, so a member who
+ *   left, or a stale row in a permanent session, holds nothing.
+ *   `board_session_participants.joined_at` is not used as a freshness bound:
+ *   it is never bumped on rejoin, and bumping it would shrink the co-member
+ *   tick window (`sessionCoMemberTickCondition`) that reads it.
+ * - This overrides the wall's own audience for that crew, an Only-me wall
+ *   included: the owner chose to climb on it with them.
+ * - A grant the owner revoked from this viewer still withholds it.
+ * - Never part of `resourceAccessCondition`: listings, search, feeds and
+ *   nearby sessions keep every gate. Only the single-board reads that call
+ *   this (`canAccessBoard`, session path projection and binding) see it.
+ *
+ * Driven from the viewer's participant rows (indexed on `user_id`), then the
+ * session and board by primary key. `inSessionId` narrows it to one session,
+ * for writes that must not let a member carry the wall into a session of their
+ * own (`resolveSessionBoardId`).
+ */
+export async function isLiveSessionMemberOnHomeWall(
+  boardUuid: string,
+  viewerId: ViewerId,
+  inSessionId?: string,
+): Promise<boolean> {
+  if (!viewerId) return false;
+  const rows = await db
+    .select({ sessionId: schema.boardSessions.id })
+    .from(schema.boardSessionParticipants)
+    .innerJoin(schema.boardSessions, eq(schema.boardSessions.id, schema.boardSessionParticipants.sessionId))
+    .innerJoin(schema.userBoards, eq(schema.userBoards.id, schema.boardSessions.boardId))
+    .where(
+      and(
+        eq(schema.boardSessionParticipants.userId, viewerId),
+        inSessionId === undefined ? undefined : eq(schema.boardSessionParticipants.sessionId, inSessionId),
+        ne(schema.boardSessions.status, 'ended'),
+        isNull(schema.boardSessions.endedAt),
+        eq(schema.boardSessions.createdByUserId, schema.userBoards.ownerId),
+        eq(schema.userBoards.uuid, boardUuid),
+        isNull(schema.userBoards.deletedAt),
+        isNull(schema.userBoards.gymId),
+        ne(schema.userBoards.boardType, 'spray'),
+        notExists(
+          db
+            .select({ userId: schema.resourceGrants.userId })
+            .from(schema.resourceGrants)
+            .where(
+              and(
+                eq(schema.resourceGrants.kind, 'board'),
+                eq(schema.resourceGrants.resourceId, boardUuid),
+                eq(schema.resourceGrants.userId, viewerId),
+                eq(schema.resourceGrants.status, 'revoked'),
+              ),
+            ),
+        ),
+      ),
+    )
+    // Newest first, so a long-lived row cannot crowd the live session out of the cap.
+    .orderBy(desc(schema.boardSessions.lastActivity))
+    .limit(5);
+  if (rows.length === 0) return false;
+  // Lazy: the room manager imports this module.
+  const { roomManager } = await import('./room-manager');
+  for (const { sessionId } of rows) {
+    const roster = await roomManager.getSessionUsers(sessionId);
+    if (roster.some((member) => member.userId === viewerId)) return true;
+  }
+  return false;
 }
 export async function requireResourceAccess(
   kind: PrivacyResourceKind,

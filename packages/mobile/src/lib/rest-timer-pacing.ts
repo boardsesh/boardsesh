@@ -76,10 +76,36 @@ export type RestTimerStagePacing = {
 
 /** The crew's shared clock config, as the session wire carries it (#5382). */
 export type CrewRestConfig = RestPacingSettings & {
+  /**
+   * The clock moves the wall once more, then waits: the server's FIRE that
+   * takes the beat also turns `autoAdvance` off (#5382, #5380). A 4x4 set rest
+   * carries it, so a crew moves on once per set even when the phone counting
+   * the reps sleeps. Held only while true and `autoAdvance` is on (off, no
+   * FIRE applies, so it means nothing); absent is false.
+   */
+  autoAdvanceOnce?: true;
   advanceOn: RestAdvanceRule;
   source: 'settings' | 'stage';
   setByParticipantId: string | null;
 };
+
+/** The fields an ARM or CONFIGURE carries. `autoAdvanceOnce` is there only while true. */
+export type CrewConfigFields = Pick<
+  CrewRestConfig,
+  'mode' | 'targetSeconds' | 'autoAdvance' | 'autoAdvanceOnce' | 'advanceOn' | 'source'
+>;
+
+/** A local move spends a once-only clock's advance, as the server's FIRE does. */
+export function spendAdvanceOnce(config: CrewConfigFields): CrewConfigFields {
+  if (config.autoAdvanceOnce !== true) return config;
+  return {
+    mode: config.mode,
+    targetSeconds: config.targetSeconds,
+    autoAdvance: false,
+    advanceOn: config.advanceOn,
+    source: config.source,
+  };
+}
 
 export type EffectiveRestPacing = RestPacingSettings & {
   advanceOn: RestAdvanceRule;
@@ -103,6 +129,18 @@ export type EffectiveRestPacingInput = {
  */
 export function stageHasRepsLeft(stage: RestTimerStagePacing | null): boolean {
   return stage?.reps !== undefined && stage.reps.logged < stage.reps.perSet;
+}
+
+/**
+ * A 4x4 set on the wall with every rep logged: its set rest moves the wall
+ * once, and the next set's reps must not. A crew clock counts no reps, so the
+ * set rest reaches it as a once-only advance (`CrewRestConfig.autoAdvanceOnce`):
+ * the server spends it on the FIRE that moves the wall, and the clock then
+ * waits for the next set's pacing from the phone that built the workout. Any
+ * other stage, or none, advances as often as its rule allows.
+ */
+export function stageAdvancesOnce(stage: RestTimerStagePacing | null): boolean {
+  return stage?.reps !== undefined && !stageHasRepsLeft(stage);
 }
 
 /**

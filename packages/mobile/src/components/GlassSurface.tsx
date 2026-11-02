@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
    * `flexBasis` deliberately stays `auto` — this is NOT `flex: 1`. With
    * `flexBasis: 0` an auto-height surface would measure its only in-flow child at
    * zero, size itself to zero, and then have no free space to grow back into, so
-   * the whole surface would collapse (the reaction menu card is exactly that
+   * the whole surface would collapse (any auto-height card is exactly that
    * shape). `auto` starts from the content size, which is what an auto-height
    * surface wants, and still leaves free space for `flexGrow` to take when the
    * surface does have a definite height.

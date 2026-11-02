@@ -5,7 +5,7 @@
 // one hook here (`useOpensOutsideAppHint`) only reads a translation.
 
 import { useTranslation } from 'react-i18next';
-import type { MoreButtonRow, MoreOption } from './MoreForm.types';
+import type { MoreButtonRow, MoreOption, MoreToggleRow } from './MoreForm.types';
 
 /**
  * Exhaustiveness guard for the `MoreRow` discriminated union. Each platform's
@@ -15,6 +15,19 @@ import type { MoreButtonRow, MoreOption } from './MoreForm.types';
  */
 export function assertNeverRow(row: never): never {
   throw new Error(`Unhandled MoreRow kind: ${JSON.stringify(row)}`);
+}
+
+/**
+ * The line under a toggle row's label: its disabled reason while greyed out,
+ * else its subtitle. Every renderer of a row that sets a reason reads this
+ * (iOS, MoreFormRN, web), so the reason replaces the description everywhere.
+ */
+export function toggleRowSubtitle(row: Pick<MoreToggleRow, 'subtitle' | 'disabled' | 'disabledReason'>): {
+  text: string | undefined;
+  isReason: boolean;
+} {
+  if (row.disabled && row.disabledReason) return { text: row.disabledReason, isReason: true };
+  return { text: row.subtitle, isReason: false };
 }
 
 /**

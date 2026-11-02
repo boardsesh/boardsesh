@@ -13,14 +13,22 @@ vi.mock('../../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
-import { TabRouter } from 'expo-router/build/react-navigation/routers/TabRouter';
-import { StackRouter } from 'expo-router/build/react-navigation/routers/StackRouter';
-import { findDivergentState, getPayloadFromStateRoute } from 'expo-router/build/global-state/stateUtils';
+import { TabRouter, type TabNavigationState } from 'expo-router/build/react-navigation/routers/TabRouter';
+import { StackRouter, type StackNavigationState } from 'expo-router/build/react-navigation/routers/StackRouter';
+import type { RouteNode } from 'expo-router/build/Route';
+import { createInitialState } from 'expo-router/build/react-navigation/core/createInitialState';
+import { isActionHandled } from 'expo-router/build/react-navigation/routers/utils';
+import type { NavigationState, ParamListBase } from 'expo-router/build/react-navigation/routers/types';
+import { ROOT_CHAIN, getChainFromRouteKey } from 'expo-router/build/react-navigation/routers/stateKeys';
+import { resolveNavigationDestination } from 'expo-router/build/global-state/resolveNavigationDestination';
+import { indexNavigationTree, reduceNavigationTree } from 'expo-router/build/global-state/reduceNavigationTree';
+import type { RouterRegistryEntry } from 'expo-router/build/global-state/routerRegistry';
 
 const platform = vi.hoisted(() => ({ OS: 'android' }));
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
+const rowHandlers = vi.hoisted(() => new Map<string, () => void>());
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn(), navigate: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const confirmSignOutMock = vi.hoisted(() => vi.fn(async (_signal?: AbortSignal) => {}));
@@ -44,6 +52,10 @@ const navigationMocks = vi.hoisted(() => {
       subscribe(accountListeners, eventName, listener),
   };
   return {
+    container: {
+      isReady: vi.fn(() => true),
+      getRootState: vi.fn<() => unknown>(),
+    },
     indexListeners,
     accountListeners,
     focus,
@@ -75,6 +87,10 @@ const profileState = vi.hoisted(() => ({ isTester: false }));
 // The moderation kill switch and the sign-in state, mutable per test.
 const drawerState = vi.hoisted(() => ({ climbModerationEnabled: true, isAuthenticated: true }));
 const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
+// The Account support row: the store rules and the Show support asks switch are
+// one answer from lib/support-asks.ts, covered by its own suite.
+const supportState = vi.hoisted(() => ({ allowed: false }));
+const supportAnalytics = vi.hoisted(() => ({ trackSupportLinkTapped: vi.fn() }));
 
 // The launch hold is covered by its own suite; here the screen renders as is.
 vi.mock('../../launch-update/hold-until-launch-ready', () => ({
@@ -125,6 +141,7 @@ vi.mock('expo-router', () => ({
   router: routerMock,
   useSegments: () => segmentsMock.current,
   useNavigation: () => navigationMocks.index,
+  useNavigationContainerRef: () => navigationMocks.container,
 }));
 
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -149,6 +166,7 @@ vi.mock('react-i18next', () => ({
           'userDrawer.rateBoardsesh': 'Rate Boardsesh',
           'userDrawer.reportBug': 'Report a bug',
           'userDrawer.whatsNew': "What's New",
+          'mobile.supportAsks.accountRow': 'Support Boardsesh',
           'userDrawer.qa.pick': 'Test a PR preview',
           'userDrawer.qa.finishTesting': 'Finish testing #{{prNumber}}',
           'userDrawer.qa.testPlan': 'Test plan #{{prNumber}}',
@@ -185,6 +203,9 @@ vi.mock('../../../lib/changelog-seen', () => changelogSeen);
 vi.mock('../../../lib/offline-nudges/spotlight-unseen', () => ({
   hasUnseenOfflineSpotlight: async () => false,
 }));
+// SecureStore-backed; the 2.7 preview-first spotlight lights the pill until it has shown once.
+const previewFirstSpotlight = vi.hoisted(() => ({ hasUnseenPreviewFirstSpotlight: vi.fn(async () => false) }));
+vi.mock('../../../lib/preview-first-spotlight', () => previewFirstSpotlight);
 // Pulls PostHog into the graph; the pill only asks it whether the spotlight
 // could render at all.
 vi.mock('../../../providers/feature-flags-provider', () => ({
@@ -218,7 +239,7 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
 // `runningQaPrNumberToOffer` itself is NOT mocked — the join between the running
 // branch and the persisted verdict marker is the thing under test here. Only its
 // two device reads are.
-vi.mock('expo-updates', () => ({ updateId: 'bundle-a' }));
+vi.mock('expo-updates', () => ({ updateId: 'bundle-a', runtimeVersion: 'test-runtime' }));
 vi.mock('../../../settings', () => ({
   getSetting: (key: string) => (key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null),
 }));
@@ -227,6 +248,14 @@ vi.mock('../../../settings', () => ({
 vi.mock('../../../settings/hooks', () => ({
   useSetting: (key: string) => [key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null, vi.fn()],
 }));
+vi.mock('../../../lib/support-asks', () => ({ useSupportAsksAllowed: () => supportState.allowed }));
+// donation-links probes the Storefront native module at import; only its URL
+// builder runs here.
+vi.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
+vi.mock('../../../lib/graphql/hooks/use-is-admin', () => ({
+  useIsAdmin: () => ({ isAdmin: false, isLoading: false }),
+}));
+vi.mock('../../../lib/analytics-support-link', () => supportAnalytics);
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: drawerState.isAuthenticated, signOut: signOutMock }),
 }));
@@ -275,8 +304,16 @@ vi.mock('../../ListRow', () => ({
     onPress?: () => void;
     title: string;
     trailing?: ReactNode;
-  }) =>
-    createElement('button', { 'data-row-title': title, onClick: onPress, type: 'button' }, leading, title, trailing),
+  }) => {
+    if (onPress) rowHandlers.set(title, onPress);
+    return createElement(
+      'button',
+      { 'data-row-title': title, onClick: onPress, type: 'button' },
+      leading,
+      title,
+      trailing,
+    );
+  },
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -325,11 +362,18 @@ function Harness({ showScreen }: { showScreen: boolean }) {
 }
 
 beforeEach(() => {
+  navigationMocks.container.isReady.mockReset().mockReturnValue(true);
+  navigationMocks.container.getRootState.mockReset().mockReturnValue({
+    key: 'app',
+    index: 0,
+    routes: [{ name: '(tabs)' }],
+  });
   navigationMocks.focus.current = true;
   navigationMocks.indexListeners.clear();
   navigationMocks.accountListeners.clear();
   platform.OS = 'android';
-  browser.openBrowserAsync.mockClear();
+  browser.openBrowserAsync.mockReset().mockResolvedValue(undefined);
+  rowHandlers.clear();
   routerMock.push.mockReset();
   routerMock.dismissTo.mockReset();
   routerMock.navigate.mockReset();
@@ -347,6 +391,8 @@ beforeEach(() => {
   profileState.isTester = false;
   drawerState.climbModerationEnabled = true;
   drawerState.isAuthenticated = true;
+  supportState.allowed = false;
+  supportAnalytics.trackSupportLinkTapped.mockClear();
   reanimated.closeCallbacks.length = 0;
   segmentsMock.current = [];
   changelogSeen.getLastSeenChangelogDate.mockResolvedValue('2026-01-01T00:00:00.000Z');
@@ -372,98 +418,190 @@ function flushDrawerClose() {
   });
 }
 
-// Use the installed routers, rather than treating a call to any navigation
-// method as success. Expo's navigate/dismissTo emit NAVIGATE/POP_TO respectively;
-// stateUtils selects the same deepest divergent navigator as getNavigateAction.
-function playlistNavigationState(initialTab: 'profile' | 'discover') {
+// Exercise Expo's installed destination resolver, tree reducer, and routers.
+// Complete states carry deterministic keys and routeKeySeq, as SDK 58 requires.
+function playlistNavigationState(initialTab: 'profile' | 'discover', queueMenu = false) {
   const discoverRouter = StackRouter({ initialRouteName: 'index' });
-  const discoverConfig = { routeNames: ['index', 'all'], routeParamList: {}, routeGetIdList: {} };
-  let discoverState = discoverRouter.getInitialState(discoverConfig);
+  const discoverConfig = { routeNames: ['index', 'all'], routeGetIdList: {} };
   const tabRouter = TabRouter({ initialRouteName: initialTab });
-  const tabConfig = { routeNames: ['discover', 'profile'], routeParamList: {}, routeGetIdList: {} };
-  let tabState = tabRouter.getInitialState(tabConfig);
-  tabState = {
-    ...tabState,
-    routes: tabState.routes.map((route) => (route.name === 'discover' ? { ...route, state: discoverState } : route)),
-  };
+  const tabConfig = { routeNames: ['discover', 'profile'], routeGetIdList: {} };
   const rootRouter = StackRouter({ initialRouteName: '(tabs)' });
-  const rootConfig = {
-    routeNames: ['(tabs)', 'account', 'user-drawer'],
-    routeParamList: {},
-    routeGetIdList: {},
+  const rootConfig = { routeNames: ['(tabs)', 'account', 'user-drawer', 'about'], routeGetIdList: {} };
+  const accountRouter = StackRouter({ initialRouteName: 'index' });
+  const accountConfig = { routeNames: ['index', 'settings'], routeGetIdList: {} };
+  const pendingMenuIntents: Array<() => void> = [];
+
+  let rootState: NavigationState = {
+    ...createInitialState({ ...rootConfig, initialRouteName: '(tabs)', parentChain: ROOT_CHAIN }),
+    type: 'stack',
   };
-  let rootState = rootRouter.getInitialState(rootConfig);
+  let tabState: TabNavigationState<ParamListBase> = {
+    ...createInitialState({
+      ...tabConfig,
+      initialRouteName: 'discover',
+      parentChain: getChainFromRouteKey(rootState.routes[0].key),
+    }),
+    type: 'tab',
+  };
+  const discoverState: StackNavigationState<ParamListBase> = {
+    ...createInitialState({
+      ...discoverConfig,
+      initialRouteName: 'index',
+      parentChain: getChainFromRouteKey(tabState.routes[0].key),
+    }),
+    type: 'stack',
+  };
+  tabState = { ...tabState, routes: [{ ...tabState.routes[0], state: discoverState }] };
+  if (initialTab === 'profile') {
+    const result = tabRouter.getStateForAction(tabState, { type: 'NAVIGATE', payload: { name: 'profile' } }, tabConfig);
+    expect(isActionHandled(result)).toBe(true);
+    if (isActionHandled(result)) tabState = result.state;
+  }
   rootState = { ...rootState, routes: [{ ...rootState.routes[0], state: tabState }] };
-  const syncTabs = () => {
-    rootState = {
-      ...rootState,
-      routes: rootState.routes.map((route) => (route.name === '(tabs)' ? { ...route, state: tabState } : route)),
-    };
-  };
-  routerMock.push.mockImplementation((name: string) => {
-    const next = rootRouter.getStateForAction(
-      rootState,
-      { type: 'PUSH', payload: { name: name.slice(1) } },
+
+  const node = (route: string, children: RouteNode[] = []): RouteNode => ({
+    type: children.length > 0 ? 'layout' : 'route',
+    route,
+    contextKey: `${route || 'root'}/${children.length > 0 ? '_layout' : 'index'}.tsx`,
+    dynamic: null,
+    children,
+    loadRoute: () => ({}),
+  });
+  const discoverNode = node('discover', [node('index'), node('all')]);
+  const tabsNode = node('(tabs)', [discoverNode, node('profile')]);
+  const accountNode = node('account', [node('index'), node('settings')]);
+  const rootNode = node('', [tabsNode, accountNode, node('user-drawer'), node('about')]);
+  const registry = new Map<string, RouterRegistryEntry>([
+    [
+      rootState.key,
+      {
+        routeNode: rootNode,
+        reduce: (state, action) =>
+          rootRouter.getStateForAction(
+            state as StackNavigationState<ParamListBase>,
+            action as Parameters<typeof rootRouter.getStateForAction>[1],
+            rootConfig,
+          ),
+        shouldActionChangeFocus: rootRouter.shouldActionChangeFocus,
+        getStateForRouteFocus: (state, key) =>
+          rootRouter.getStateForRouteFocus(state as StackNavigationState<ParamListBase>, key),
+      },
+    ],
+    [
+      tabState.key,
+      {
+        routeNode: tabsNode,
+        reduce: (state, action) =>
+          tabRouter.getStateForAction(
+            state as TabNavigationState<ParamListBase>,
+            action as Parameters<typeof tabRouter.getStateForAction>[1],
+            tabConfig,
+          ),
+        shouldActionChangeFocus: tabRouter.shouldActionChangeFocus,
+        getStateForRouteFocus: (state, key) =>
+          tabRouter.getStateForRouteFocus(state as TabNavigationState<ParamListBase>, key),
+      },
+    ],
+    [
+      discoverState.key,
+      {
+        routeNode: discoverNode,
+        reduce: (state, action) =>
+          discoverRouter.getStateForAction(
+            state as StackNavigationState<ParamListBase>,
+            action as Parameters<typeof discoverRouter.getStateForAction>[1],
+            discoverConfig,
+          ),
+        shouldActionChangeFocus: discoverRouter.shouldActionChangeFocus,
+        getStateForRouteFocus: (state, key) =>
+          discoverRouter.getStateForRouteFocus(state as StackNavigationState<ParamListBase>, key),
+      },
+    ],
+  ]);
+  routerMock.back.mockImplementation(() => {
+    const result = rootRouter.getStateForAction(
+      rootState as StackNavigationState<ParamListBase>,
+      { type: 'POP', payload: { count: 1 } },
       rootConfig,
     );
-    if (next) rootState = rootRouter.getRehydratedState(next, rootConfig);
+    if (isActionHandled(result)) rootState = result.state;
   });
-  routerMock.back.mockImplementation(() => {
-    const next = rootRouter.getStateForAction(rootState, { type: 'POP', payload: { count: 1 } }, rootConfig);
-    if (next) rootState = rootRouter.getRehydratedState(next, rootConfig);
-  });
-  const dispatch = (type: 'NAVIGATE' | 'POP_TO', href: string) => {
-    expect(href).toBe('/(tabs)/discover/all');
-    const destination = {
-      routes: [{ name: '(tabs)', state: { routes: [{ name: 'discover', state: { routes: [{ name: 'all' }] } }] } }],
-    };
-    const { navigationState, actionStateRoute } = findDivergentState(destination, rootState);
-    const payload = getPayloadFromStateRoute(actionStateRoute ?? {});
-    const action = {
-      type,
-      target: navigationState.key,
-      payload: { name: String(payload.screen), params: payload.params as object },
-    };
-    if (navigationState.key === tabState.key) {
-      const next =
-        type === 'NAVIGATE'
-          ? tabRouter.getStateForAction(tabState, { ...action, type: 'NAVIGATE' }, tabConfig)
-          : tabRouter.getStateForAction(
-              tabState,
-              // @ts-expect-error Deliberately replay the stack-only action that Expo sent to the tab router (#6508).
-              { ...action, type: 'POP_TO' },
-              tabConfig,
-            );
-      // POP_TO is unhandled by native TabRouter: the original bug stayed on Profile.
-      if (!next) return;
-      tabState = tabRouter.getRehydratedState(next, tabConfig);
-      const nestedScreen = (payload.params as { screen?: string }).screen;
-      const nextDiscover = discoverRouter.getStateForAction(
-        discoverState,
-        { type: 'NAVIGATE', payload: { name: nestedScreen ?? 'index' } },
-        discoverConfig,
-      );
-      if (nextDiscover) discoverState = discoverRouter.getRehydratedState(nextDiscover, discoverConfig);
-    } else if (navigationState.key === discoverState.key) {
-      const next = discoverRouter.getStateForAction(discoverState, action, discoverConfig);
-      if (next) discoverState = discoverRouter.getRehydratedState(next, discoverConfig);
-    }
-    tabState = {
-      ...tabState,
-      routes: tabState.routes.map((route) => (route.name === 'discover' ? { ...route, state: discoverState } : route)),
-    };
-    syncTabs();
+  const dispatch = (type: 'PUSH' | 'NAVIGATE' | 'POP_TO', href: string) => {
+    const targetRoutes =
+      href === '/(tabs)/discover/all'
+        ? [{ name: '(tabs)', state: { routes: [{ name: 'discover', state: { routes: [{ name: 'all' }] } }] } }]
+        : href.startsWith('/account')
+          ? [{ name: 'account', state: { routes: [{ name: href === '/account/settings' ? 'settings' : 'index' }] } }]
+          : [{ name: href.slice(1) }];
+    const action = resolveNavigationDestination({
+      targetState: { routes: targetRoutes },
+      navigationState: rootState,
+      routeNode: rootNode,
+      registry,
+      action: { type, payload: {} },
+    });
+    const tree = indexNavigationTree(rootState);
+    const origin = tree.nodes.get(action.target ?? rootState.key);
+    expect(origin).toBeDefined();
+    if (!origin) return;
+    const result = reduceNavigationTree(action, registry, { tree, origin });
+    if (result.handled) rootState = result.nextState;
   };
-  routerMock.navigate.mockImplementation((href: string) => dispatch('NAVIGATE', href));
+  const currentTabs = () => rootState.routes.find((route) => route.name === '(tabs)')!.state as NavigationState;
+  const currentDiscover = () =>
+    currentTabs().routes.find((route) => route.name === 'discover')!.state as NavigationState;
+  const handleDestination = (type: 'PUSH' | 'NAVIGATE', href: string) => {
+    if (queueMenu && (href === '/account' || href === '/user-drawer')) {
+      pendingMenuIntents.push(() => dispatch(type, href));
+    } else {
+      dispatch(type, href);
+    }
+  };
+  routerMock.push.mockImplementation((href: string | { pathname: string }) => {
+    if (typeof href === 'string') handleDestination('PUSH', href);
+  });
+  routerMock.navigate.mockImplementation((href: string) => handleDestination('NAVIGATE', href));
   routerMock.dismissTo.mockImplementation((href: string) => dispatch('POP_TO', href));
+  // Expo wraps the app Stack in __root on device. Read the live state for every
+  // tap instead of updating useSegments/React between queued navigation intents.
+  navigationMocks.container.getRootState.mockImplementation(() => ({
+    key: 'expo-root',
+    index: 0,
+    routes: [{ name: '__root', state: rootState }],
+  }));
   return {
     root: () => rootState,
-    tab: () => tabState.routes[tabState.index].name,
-    screen: () => discoverState.routes[discoverState.index].name,
+    tab: () => currentTabs().routes[currentTabs().index].name,
+    screen: () => currentDiscover().routes[currentDiscover().index].name,
+    flushNextMenuIntent: () => pendingMenuIntents.shift()?.(),
+    mountAccount: () => {
+      const accountState = rootState.routes.find((route) => route.name === 'account')?.state;
+      expect(accountState?.key).toBeDefined();
+      if (!accountState?.key) return;
+      registry.set(accountState.key, {
+        routeNode: accountNode,
+        reduce: (state, action) =>
+          accountRouter.getStateForAction(
+            state as StackNavigationState<ParamListBase>,
+            action as Parameters<typeof accountRouter.getStateForAction>[1],
+            accountConfig,
+          ),
+        shouldActionChangeFocus: accountRouter.shouldActionChangeFocus,
+        getStateForRouteFocus: (state, key) =>
+          accountRouter.getStateForRouteFocus(state as StackNavigationState<ParamListBase>, key),
+      });
+    },
   };
 }
 
 describe('My playlists switches to the existing Discover tab', () => {
+  it('keeps Profile selected when the stack-only dismissTo action reaches the tab router', () => {
+    const navigation = playlistNavigationState('profile');
+    routerMock.dismissTo('/(tabs)/discover/all');
+    expect(navigation.tab()).toBe('profile');
+    expect(navigation.screen()).toBe('index');
+  });
+
   it.each(['ios', 'android', 'web'])(
     'opens playlists after the %s menu unmounts, including repeated visits',
     (platformName) => {
@@ -477,19 +615,21 @@ describe('My playlists switches to the existing Discover tab', () => {
         </UserDrawerProvider>
       );
       const { rerender } = render(<MenuHarness showScreen={false} />);
+      const playlistNavigations = () =>
+        routerMock.navigate.mock.calls.filter(([href]) => href === '/(tabs)/discover/all').length;
 
       for (let visit = 0; visit < 2; visit += 1) {
         fireEvent.click(screen.getByText('Open drawer'));
         expect(navigation.root().routes).toHaveLength(2);
         rerender(<MenuHarness showScreen />);
         fireEvent.click(screen.getByText('My playlists'));
-        expect(routerMock.navigate).toHaveBeenCalledTimes(visit);
+        expect(playlistNavigations()).toBe(visit);
         if (platformName !== 'ios') {
           expect(navigation.root().routes).toHaveLength(2);
           flushDrawerClose();
         }
         expect(navigation.root().routes).toHaveLength(1);
-        expect(routerMock.navigate).toHaveBeenCalledTimes(visit);
+        expect(playlistNavigations()).toBe(visit);
         rerender(<MenuHarness showScreen={false} />);
 
         expect(navigation.tab()).toBe('discover');
@@ -512,12 +652,136 @@ describe('My playlists switches to the existing Discover tab', () => {
 });
 
 describe('UserDrawerProvider opens the drawer route', () => {
-  it('openUserDrawer pushes the user-drawer route', () => {
+  it('openUserDrawer navigates to the user-drawer route', () => {
     render(<Harness showScreen={false} />);
 
     fireEvent.click(screen.getByText('Open drawer'));
 
-    expect(routerMock.push).toHaveBeenCalledWith('/user-drawer');
+    expect(routerMock.navigate).toHaveBeenCalledWith('/user-drawer');
+  });
+});
+
+describe('UserDrawerProvider repeated avatar taps (#7124)', () => {
+  it.each([false, true])('keeps one Account and index when its navigator is mounted: %s', (accountMounted) => {
+    platform.OS = 'ios';
+    const navigation = playlistNavigationState('profile', true);
+    const tabsKey = navigation.root().routes[0].key;
+    render(<Harness showScreen={false} />);
+
+    // Neither tap has rendered navigation state yet, just as two events can
+    // reach Expo's routing queue before its first intent commits.
+    fireEvent.click(screen.getByText('Open drawer'));
+    fireEvent.click(screen.getByText('Open drawer'));
+    expect(navigation.root().routes).toHaveLength(1);
+    navigation.flushNextMenuIntent();
+    if (accountMounted) navigation.mountAccount();
+    const accountKey = navigation.root().routes[1].key;
+    const accountIndexKey = navigation.root().routes[1].state?.routes[0].key;
+    navigation.flushNextMenuIntent();
+
+    expect(navigation.root().routes.map((route) => route.name)).toEqual(['(tabs)', 'account']);
+    const account = navigation.root().routes[1];
+    expect(account.key).toBe(accountKey);
+    expect(account.state?.routes.map((route) => route.name)).toEqual(['index']);
+    expect(account.state?.routes[0].key).toBe(accountIndexKey);
+
+    // One close returns to the same tab; the next visit is not locked out.
+    routerMock.back();
+    expect(navigation.root().routes.map((route) => route.key)).toEqual([tabsKey]);
+    expect(navigation.tab()).toBe('profile');
+    fireEvent.click(screen.getByText('Open drawer'));
+    navigation.flushNextMenuIntent();
+    expect(navigation.root().routes.map((route) => route.name)).toEqual(['(tabs)', 'account']);
+  });
+
+  it.each([false, true])('preserves Account Settings when Account is covered: %s', (covered) => {
+    platform.OS = 'ios';
+    const navigation = playlistNavigationState('profile');
+    render(<Harness showScreen={false} />);
+    fireEvent.click(screen.getByText('Open drawer'));
+    navigation.mountAccount();
+    routerMock.push('/account/settings');
+    if (covered) routerMock.push('/about');
+    const existingRoot = navigation.root();
+    const account = existingRoot.routes.find((route) => route.name === 'account');
+    expect(account?.state?.routes.map((route) => route.name)).toEqual(['index', 'settings']);
+    routerMock.navigate.mockClear();
+
+    fireEvent.click(screen.getByText('Open drawer'));
+
+    expect(navigation.root()).toBe(existingRoot);
+    expect(routerMock.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each(['android', 'web'])('reuses one %s drawer and permits another visit after dismissal', (platformName) => {
+    platform.OS = platformName;
+    const navigation = playlistNavigationState('discover', true);
+    render(<Harness showScreen={false} />);
+    fireEvent.click(screen.getByText('Open drawer'));
+    fireEvent.click(screen.getByText('Open drawer'));
+    navigation.flushNextMenuIntent();
+    const drawerKey = navigation.root().routes[1].key;
+    navigation.flushNextMenuIntent();
+    expect(navigation.root().routes.map((route) => route.name)).toEqual(['(tabs)', 'user-drawer']);
+    expect(navigation.root().routes[1].key).toBe(drawerKey);
+    routerMock.navigate.mockClear();
+    fireEvent.click(screen.getByText('Open drawer'));
+    expect(routerMock.navigate).not.toHaveBeenCalled();
+
+    routerMock.back();
+    fireEvent.click(screen.getByText('Open drawer'));
+    navigation.flushNextMenuIntent();
+    expect(navigation.root().routes.map((route) => route.name)).toEqual(['(tabs)', 'user-drawer']);
+  });
+
+  it.each(['unready', 'missing-stack'])('permits a retry after navigation is %s', (boundary) => {
+    platform.OS = 'ios';
+    if (boundary === 'unready') navigationMocks.container.isReady.mockReturnValue(false);
+    else
+      navigationMocks.container.getRootState.mockReturnValue({
+        key: 'expo-root',
+        index: 0,
+        routes: [{ name: '__root' }],
+      });
+    render(<Harness showScreen={false} />);
+    fireEvent.click(screen.getByText('Open drawer'));
+    expect(routerMock.navigate).not.toHaveBeenCalled();
+
+    navigationMocks.container.isReady.mockReturnValue(true);
+    navigationMocks.container.getRootState.mockReturnValue({ key: 'app', index: 0, routes: [{ name: '(tabs)' }] });
+    fireEvent.click(screen.getByText('Open drawer'));
+    expect(routerMock.navigate).toHaveBeenCalledExactlyOnceWith('/account');
+  });
+
+  it.each(['throw', 'no-op'])('does not lock the avatar after a navigation %s', (outcome) => {
+    platform.OS = 'ios';
+    const { result } = renderHook(useUserDrawer, {
+      wrapper: ({ children }: { children: ReactNode }) => <UserDrawerProvider>{children}</UserDrawerProvider>,
+    });
+    if (outcome === 'throw') {
+      routerMock.navigate.mockImplementationOnce(() => {
+        throw new Error('navigation unavailable');
+      });
+      expect(result.current.openUserDrawer).toThrow('navigation unavailable');
+    } else {
+      result.current.openUserDrawer();
+    }
+
+    result.current.openUserDrawer();
+    expect(routerMock.navigate).toHaveBeenCalledTimes(2);
+    expect(routerMock.navigate).toHaveBeenLastCalledWith('/account');
+  });
+
+  it('does not treat a preloaded Account beyond the active index as open', () => {
+    platform.OS = 'ios';
+    navigationMocks.container.getRootState.mockReturnValue({
+      key: 'app',
+      index: 0,
+      routes: [{ name: '(tabs)' }, { name: 'account' }],
+    });
+    render(<Harness showScreen={false} />);
+    fireEvent.click(screen.getByText('Open drawer'));
+    expect(routerMock.navigate).toHaveBeenCalledExactlyOnceWith('/account');
   });
 });
 
@@ -586,6 +850,13 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     expect(await screen.findByText('New')).toBeTruthy();
   });
 
+  it('shows the "New" pill while the preview-first spotlight has never shown', async () => {
+    previewFirstSpotlight.hasUnseenPreviewFirstSpotlight.mockResolvedValueOnce(true);
+    render(<Harness showScreen />);
+
+    expect(await screen.findByText('New')).toBeTruthy();
+  });
+
   // One Change board row now, not a "Change board" / "My boards" pair (#4623): /boards
   // both switches board and manages them, so this is the only board entry left.
   it('Change board closes the drawer, then pushes the /boards modal route with the returnTo', () => {
@@ -604,13 +875,16 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     // captured THEN (before /user-drawer is pushed and useSegments would resolve
     // to ['user-drawer']), so a later Change board tap returns to discover.
     segmentsMock.current = ['(tabs)', 'discover'];
+    playlistNavigationState('discover');
     const { rerender } = render(<Harness showScreen={false} />);
 
     fireEvent.click(screen.getByText('Open drawer'));
-    expect(routerMock.push).toHaveBeenCalledWith('/user-drawer');
-    routerMock.push.mockClear();
+    expect(routerMock.navigate).toHaveBeenCalledWith('/user-drawer');
 
+    segmentsMock.current = ['user-drawer'];
     rerender(<Harness showScreen />);
+    // A late avatar event cannot replace Discover with the menu's segments.
+    fireEvent.click(screen.getByText('Open drawer'));
     fireEvent.click(screen.getByText('Change board'));
     flushDrawerClose();
     rerender(<Harness showScreen={false} />);
@@ -724,6 +998,112 @@ describe('user-drawer library rows', () => {
     const titles = rowTitles(container);
     expect(titles).not.toContain('Notifications');
     expect(titles).not.toContain('All playlists');
+  });
+});
+
+describe('user-drawer Support Boardsesh row', () => {
+  function rowTitles(container: HTMLElement): (string | null)[] {
+    return Array.from(container.querySelectorAll('[data-row-title]')).map((row) => row.getAttribute('data-row-title'));
+  }
+
+  it('is absent wherever support asks are not allowed (Android, non-US iPhones, the switch off)', () => {
+    const { container } = render(<Harness showScreen />);
+    expect(rowTitles(container)).not.toContain('Support Boardsesh');
+  });
+
+  it('is the first row, above Change board, where support asks are allowed', () => {
+    supportState.allowed = true;
+    const { container } = render(<Harness showScreen />);
+    expect(rowTitles(container).slice(0, 2)).toEqual(['Support Boardsesh', 'Change board']);
+  });
+
+  it.each(['ios', 'android', 'web'])('opens support after the %s drawer unmounts', (platformName) => {
+    platform.OS = platformName;
+    supportState.allowed = true;
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledWith('account');
+    expect(browser.openBrowserAsync).not.toHaveBeenCalled();
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+    expect(browser.openBrowserAsync).toHaveBeenCalledWith('https://www.boardsesh.com/support?src=app-account');
+  });
+
+  it('opens support above iOS Account without dismissing its native sheet', () => {
+    platform.OS = 'ios';
+    supportState.allowed = true;
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+
+    expect(browser.openBrowserAsync).toHaveBeenCalledExactlyOnceWith(
+      'https://www.boardsesh.com/support?src=app-account',
+    );
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(reanimated.closeCallbacks).toHaveLength(0);
+    expect(screen.getByText('Support Boardsesh')).toBeTruthy();
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledExactlyOnceWith('account');
+  });
+
+  it.each(['closed', 'failed'])('allows support retry after the iOS browser is %s', async (outcome) => {
+    platform.OS = 'ios';
+    supportState.allowed = true;
+    let finishBrowser = () => {};
+    browser.openBrowserAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          finishBrowser = () => (outcome === 'closed' ? resolve() : reject(new Error('Browser unavailable')));
+        }),
+    );
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+    expect(browser.openBrowserAsync).toHaveBeenCalledTimes(1);
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishBrowser());
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+
+    expect(browser.openBrowserAsync).toHaveBeenCalledTimes(2);
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledTimes(2);
+    expect(routerMock.back).not.toHaveBeenCalled();
+  });
+
+  it.each(['unmounted', 'closing', 'unfocused'])('ignores support presses from %s iOS Account', (boundary) => {
+    platform.OS = 'ios';
+    supportState.allowed = true;
+    const { unmount } = render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    const pressSupport = rowHandlers.get('Support Boardsesh');
+    expect(pressSupport).toBeDefined();
+
+    if (boundary === 'unmounted') unmount();
+    else if (boundary === 'unfocused') navigationMocks.focus.current = false;
+    else
+      act(() =>
+        navigationMocks.accountListeners
+          .get('transitionStart')
+          ?.forEach((listener) => listener({ data: { closing: true } })),
+      );
+    act(() => pressSupport?.());
+
+    expect(browser.openBrowserAsync).not.toHaveBeenCalled();
+    expect(supportAnalytics.trackSupportLinkTapped).not.toHaveBeenCalled();
+    expect(routerMock.back).not.toHaveBeenCalled();
   });
 });
 
@@ -1008,7 +1388,7 @@ describe('native Account navigation', () => {
     platform.OS = 'ios';
     render(<Harness showScreen={false} />);
     fireEvent.click(screen.getByText('Open drawer'));
-    expect(routerMock.push).toHaveBeenCalledWith('/account');
+    expect(routerMock.navigate).toHaveBeenCalledWith('/account');
   });
   it('pushes Settings and Edit profile inside Account without dismissing the sheet', () => {
     platform.OS = 'ios';

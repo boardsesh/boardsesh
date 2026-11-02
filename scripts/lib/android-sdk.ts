@@ -14,7 +14,7 @@
  * Java invocation. The emulator and adb are native binaries and need no JDK.
  */
 
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { commandExists, runCapture, runInherit } from './exec';
@@ -25,21 +25,34 @@ export const CACHE_ROOT = join(homedir(), '.cache', 'boardsesh');
 export const DEFAULT_SDK_HOME = join(CACHE_ROOT, 'android-sdk');
 export const JDK21_HOME = join(CACHE_ROOT, 'jdk-21');
 
-// Pinned Android command-line tools (linux). Bump deliberately; the build number
-// only gates sdkmanager itself, not which platform/image packages it can fetch.
-const CMDLINE_TOOLS_VERSION = '11076708';
-const CMDLINE_TOOLS_URL = `https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip`;
+// Tools 23 understand the API 37.0 package in Google's repository v3 schema.
+const CMDLINE_TOOLS_VERSION = '16111833';
+const CMDLINE_TOOLS_MAJOR_VERSION = 23;
+/** Pin the same SDK tools on both supported build hosts; never reuse a Linux zip on macOS. */
+export function cmdlineToolsDownload(platform: NodeJS.Platform = process.platform): {
+  url: string;
+  archiveName: string;
+} {
+  const host = platform === 'darwin' ? 'mac' : platform === 'linux' ? 'linux' : null;
+  if (!host) throw new Error('Android SDK bootstrap supports macOS and Linux hosts');
+  return {
+    url: `https://dl.google.com/android/repository/commandlinetools-${host}-${CMDLINE_TOOLS_VERSION}_latest.zip`,
+    archiveName: `cmdline-tools-${host === 'linux' ? '' : `${host}-`}${CMDLINE_TOOLS_VERSION}.zip`,
+  };
+}
 
 // Latest Temurin 21 GA for linux/x64. Redirects to the actual tarball.
 const ADOPTIUM_JDK21_URL = 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse';
 
-// API level for the platform + system image. Matches CI (android-36).
+// Keep the emulator image independent from the SDK used to compile Expo modules.
 export const ANDROID_API_LEVEL = 36;
+export const ANDROID_COMPILE_SDK = 37;
+export const ANDROID_COMPILE_PLATFORM = `${ANDROID_COMPILE_SDK}.0`;
 export const SYSTEM_IMAGE = `system-images;android-${ANDROID_API_LEVEL};google_apis;x86_64`;
-export const BUILD_TOOLS_VERSION = `${ANDROID_API_LEVEL}.0.0`;
+export const BUILD_TOOLS_VERSION = `${ANDROID_COMPILE_SDK}.0.0`;
 
 // Core packages to boot an emulator and install/run an APK (no Java build needed).
-const SDK_PACKAGES_CORE = ['platform-tools', 'emulator', `platforms;android-${ANDROID_API_LEVEL}`, SYSTEM_IMAGE];
+const SDK_PACKAGES_CORE = ['platform-tools', 'emulator', `platforms;android-${ANDROID_COMPILE_PLATFORM}`, SYSTEM_IMAGE];
 // Extra packages the local Gradle fallback build needs.
 const SDK_PACKAGES_BUILD = [`build-tools;${BUILD_TOOLS_VERSION}`];
 // Subset of the core list a Gradle build alone needs: platform-tools + the
@@ -173,16 +186,25 @@ export function androidEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proces
   return env;
 }
 
+function hasCurrentCmdlineTools(home: string): boolean {
+  if (!existsSync(sdkmanagerPath(home))) return false;
+  const propertiesPath = join(home, 'cmdline-tools', 'latest', 'source.properties');
+  if (!existsSync(propertiesPath)) return false;
+  const revision = /^Pkg\.Revision\s*=\s*(\d+)/m.exec(readFileSync(propertiesPath, 'utf8'));
+  return revision !== null && Number(revision[1]) >= CMDLINE_TOOLS_MAJOR_VERSION;
+}
+
 function ensureCmdlineTools(home: string): void {
-  if (existsSync(sdkmanagerPath(home))) return;
+  if (hasCurrentCmdlineTools(home)) return;
   if (!commandExists('unzip')) {
     throw new Error('`unzip` is required to install the Android command-line tools but is not on PATH.');
   }
   console.log(`${LOG} Installing Android command-line tools (${CMDLINE_TOOLS_VERSION})...`);
   mkdirSync(home, { recursive: true });
-  const zip = join(CACHE_ROOT, `cmdline-tools-${CMDLINE_TOOLS_VERSION}.zip`);
+  const downloadSource = cmdlineToolsDownload();
+  const zip = join(CACHE_ROOT, downloadSource.archiveName);
   if (!existsSync(zip)) {
-    const download = runCapture('curl', ['-fLs', '-o', zip, CMDLINE_TOOLS_URL]);
+    const download = runCapture('curl', ['-fLs', '-o', zip, downloadSource.url]);
     if (download.status !== 0)
       throw new Error(`Failed to download cmdline-tools: ${download.stderr || download.status}`);
   }
@@ -227,7 +249,7 @@ export function ensureAndroidSdk(options: EnsureSdkOptions = {}): AndroidToolcha
     ...(options.buildOnly ? SDK_PACKAGES_BUILD_ONLY_CORE : SDK_PACKAGES_CORE),
     ...(options.includeBuildTools ? SDK_PACKAGES_BUILD : []),
   ];
-  const needCmdlineTools = !existsSync(sdkmanagerPath(home));
+  const needCmdlineTools = !hasCurrentCmdlineTools(home);
   const missing = wanted.filter((pkg) => !existsSync(packageInstallPath(home, pkg)));
 
   // sdkmanager/avdmanager are Java tools — provision JDK 21 only when we must run

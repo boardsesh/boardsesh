@@ -116,6 +116,34 @@ describe('sync-scheduler', () => {
     );
   });
 
+  it('retains the scope capability resolver on scheduled startup and reconnect cycles', async () => {
+    const fakeTriggers = createFakeTriggers();
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const getSprayWallUuid = vi.fn(async () => 'verified-wall-capability');
+    const stop = startSyncScheduler(
+      mockDb,
+      createMockQueryClient(),
+      mockGraphqlFetch,
+      () => ['spray:7:7'],
+      drainQueue,
+      fakeTriggers.triggers,
+      { getSprayWallUuid },
+    );
+    await flush();
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ enabledBoards: ['spray:7:7'], getSprayWallUuid }),
+    );
+    fakeTriggers.fireConnectivity(false);
+    fakeTriggers.fireConnectivity(true);
+    await flush();
+    expect(mockPullSync).toHaveBeenCalledTimes(2);
+    expect(mockPullSync.mock.calls[1]?.[3]).toEqual(expect.objectContaining({ getSprayWallUuid }));
+    stop();
+  });
+
   it('binds scheduled snapshot supplementation to the authenticated viewer', async () => {
     const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
     triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, {

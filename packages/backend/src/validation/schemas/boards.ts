@@ -203,7 +203,7 @@ export const SerialNumberLookupSchema = z.object({
  */
 export const RecordBoardSerialInputSchema = z.object({
   serialNumber: z.string().trim().min(1).max(64).transform(normalizeSerial),
-  boardName: z.enum(AURORA_BOARDS),
+  boardName: z.enum([...AURORA_BOARDS, 'moonboard']),
   layoutId: z.number().int().nonnegative(),
   sizeId: z.number().int().nonnegative(),
   // Comma-separated positive integers only — no whitespace, no empties.

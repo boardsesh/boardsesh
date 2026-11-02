@@ -431,9 +431,45 @@ describe('spray-only refresh for retired_by_reset', () => {
   }
 
   it('raises the revision for spray scopes only', () => {
-    expect(refreshRevisionFor('board_climbs', 'spray')).toBe(2);
+    expect(refreshRevisionFor('board_climbs', 'spray')).toBe(3);
     expect(refreshRevisionFor('board_climbs', 'kilter')).toBe(1);
     expect(refreshRevisionFor('board_climbs', undefined)).toBe(1);
+  });
+
+  it('backfills newly shared drafts on cellular while retaining the catalogue refresh gate', async () => {
+    await seedLegacy();
+    await setCheckpoint(db, `checkpoint:board_climbs:${SPRAY_SCOPE}`, HEAD);
+    await markScopeDownloadComplete(db, SPRAY_SCOPE);
+    await writeSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE, {
+      ...HEAD,
+      revision: 2,
+      complete: true,
+      mode: 'download',
+    });
+    const wallFetch = sprayFetch([{ ...sprayClimb('newly-shared', false), is_draft: true, is_listed: false }]);
+    const catalogueFetch = source();
+    const mixedFetch = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> =>
+      variables?.boardType === 'spray'
+        ? (wallFetch(query, variables) as Promise<T>)
+        : (catalogueFetch(query, variables) as Promise<T>);
+    await pullSync(db, queryClient, mixedFetch, {
+      enabledBoards: [SPRAY_SCOPE, SCOPE],
+      isOnUnmeteredNetwork: () => false,
+    });
+    expect(await db.getFirstAsync("SELECT is_draft FROM board_climbs WHERE uuid = 'newly-shared'")).toEqual({
+      is_draft: 1,
+    });
+    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 3, complete: true });
+    expect(await getSchemaRefreshState(db, 'board_climb_stats', SPRAY_SCOPE)).toMatchObject({
+      revision: 1,
+      complete: true,
+    });
+    expect(await getSchemaRefreshState(db, 'board_climb_grades', SPRAY_SCOPE)).toMatchObject({
+      revision: 1,
+      complete: true,
+    });
+    expect(await hiddenFlag()).toBeNull();
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toBeNull();
   });
 
   it('replays a spray scope completed at revision 1 and fills the retired flag', async () => {
@@ -466,7 +502,7 @@ describe('spray-only refresh for retired_by_reset', () => {
         )
       )?.retired_by_reset,
     ).toBe(1);
-    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 2, complete: true });
+    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 3, complete: true });
   });
 
   // #6161: an OTA preview pointed at a prod backend without migration 0255. The
@@ -510,7 +546,7 @@ describe('spray-only refresh for retired_by_reset', () => {
       enabledBoards: [SPRAY_SCOPE],
       isOnUnmeteredNetwork: () => true,
     });
-    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 2, complete: true });
+    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 3, complete: true });
   });
 
   it('does not replay a catalogue scope already complete at revision 1', async () => {

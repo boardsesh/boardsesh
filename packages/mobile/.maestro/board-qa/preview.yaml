@@ -1,0 +1,6 @@
+appId: ${APP_ID}
+name: Open a private preview without committing it
+---
+- runFlow: open-climb.yaml
+# The host compares fixture counters and board presence before and after this
+# flow. Navigation alone is not evidence that a private preview stayed private.

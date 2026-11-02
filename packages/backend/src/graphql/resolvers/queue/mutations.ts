@@ -16,6 +16,7 @@ import { roomManager, VersionConflictError } from '../../../services/room-manage
 import { pubsub } from '../../../pubsub/index';
 import { mirrorSessionClimb } from '../../../services/queue-mirror';
 import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
+import { resolveQueueMoverParticipantId } from '../../../services/queue-mover';
 import {
   requireSessionWithReconnectGrace,
   applyRateLimit,
@@ -232,6 +233,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
     // Validate input
     validateInput(QueueItemIdSchema, uuid, 'uuid');
@@ -256,6 +258,7 @@ export const queueMutations = {
           normalised.currentClimbQueueItem,
           currentState.version,
           normalised.historyCount,
+          currentChangedBy,
         );
         return { write: updated, state: normalised, orphanNormalised: normalised.normalised };
       },
@@ -282,14 +285,23 @@ export const queueMutations = {
   },
 
   /**
-   * Reorder a queue item by moving it from oldIndex to newIndex
+   * Reorder a queue item: move the climb named by `uuid` to `newIndex`.
+   *
+   * The server finds the climb by `uuid` and ignores a stale `oldIndex` (#6792).
+   * A peer's add or remove that lands first shifts positions, so the phone's
+   * index can point at another climb or past the end of the queue. `newIndex`
+   * past the end is clamped to the tail. When the indexes matched, the
+   * published `QueueReordered` carries them and every phone applies it. When
+   * they were stale, the sender's optimistic order was built on a queue the
+   * server no longer has, and a `QueueReordered` echo fails its
+   * uuid-at-oldIndex check, so a stale reorder publishes a `FullSync` instead.
    *
    * F3: the line moves by `lineAfterDelta` at every percent. Inside
    * `QUEUE_NOW_SLOT_PERCENT`, with nothing current, an Up next entry dragged
    * above the line is clamped to the head of Up next (`reorderAcrossLine`): a
    * shipped phone sees one flat Up next list there, so this keeps its intent
    * instead of filing the climb under History. A clamped reorder, or one that
-   * normalised a stored orphan, publishes a `FullSync`.
+   * normalised a stored orphan, publishes a `FullSync` too.
    */
   reorderQueueItem: async (
     _: unknown,
@@ -307,32 +319,39 @@ export const queueMutations = {
 
     const nowSlotRules = isNowSlotSession(sessionId);
 
-    const { write, state, clamped, orphanNormalised } = await withQueueVersionRetry(
-      'reorderQueueItem',
-      sessionId,
-      async (currentState) => {
-        // `QueueIndexSchema` already rejected negatives above, so an in-range
-        // upper bound is all that's left to check — and once it holds, the
+    const { write, state, clamped, orphanNormalised, resolvedOldIndex, resolvedNewIndex, queueLength } =
+      await withQueueVersionRetry('reorderQueueItem', sessionId, async (currentState) => {
+        // Resolve the climb by uuid inside the retry callback, so a version
+        // conflict looks it up again in the fresh state. Once it is found the
         // reorder always writes. There is deliberately no "compute, maybe skip"
         // branch here: pre-seeding the result locals from `currentState` would
         // let a skipped write publish the pre-write sequence.
-        if (oldIndex >= currentState.queue.length || newIndex >= currentState.queue.length) {
-          throw new Error(`Invalid index: queue has ${currentState.queue.length} items`);
+        const movedFromIndex = currentState.queue.findIndex((item) => item.uuid === uuid);
+        if (movedFromIndex < 0) {
+          throw new Error(`Queue item ${uuid} is not in the queue`);
         }
+        // `QueueIndexSchema` already rejected negatives above. Under the now-slot
+        // rules `reorderAcrossLine` may still clamp to the line; that case
+        // publishes a FullSync, so the index below is only published unclamped.
+        const movedToIndex = Math.min(newIndex, currentState.queue.length - 1);
 
         let queue: ClimbQueueItem[];
         let historyCount: number;
         let clamped = false;
-        const acrossLine = nowSlotRules ? reorderAcrossLine(currentState, oldIndex, newIndex) : null;
+        const acrossLine = nowSlotRules ? reorderAcrossLine(currentState, movedFromIndex, movedToIndex) : null;
         if (acrossLine) {
           queue = acrossLine.queue;
           historyCount = acrossLine.historyCount;
           clamped = acrossLine.clamped;
         } else {
           queue = [...currentState.queue];
-          const [movedItem] = queue.splice(oldIndex, 1);
-          queue.splice(newIndex, 0, movedItem);
-          historyCount = lineAfterDelta(currentState, { kind: 'reorder', oldIndex, newIndex });
+          const [movedItem] = queue.splice(movedFromIndex, 1);
+          queue.splice(movedToIndex, 0, movedItem);
+          historyCount = lineAfterDelta(currentState, {
+            kind: 'reorder',
+            oldIndex: movedFromIndex,
+            newIndex: movedToIndex,
+          });
         }
 
         const normalised = normaliseOrphanCurrent({
@@ -348,11 +367,35 @@ export const queueMutations = {
           { currentClimbQueueItem: normalised.currentClimbQueueItem },
           normalised.historyCount,
         );
-        return { write: updated, state: normalised, clamped, orphanNormalised: normalised.normalised };
-      },
-    );
+        return {
+          write: updated,
+          state: normalised,
+          clamped,
+          orphanNormalised: normalised.normalised,
+          resolvedOldIndex: movedFromIndex,
+          resolvedNewIndex: movedToIndex,
+          queueLength: currentState.queue.length,
+        };
+      });
 
-    if (clamped || orphanNormalised) {
+    // Logged once per mutation, after the retry loop, from the attempt that wrote.
+    const staleIndex = resolvedOldIndex !== oldIndex || resolvedNewIndex !== newIndex;
+    if (staleIndex) {
+      logger.info('[reorderQueueItem] stale client index', {
+        sessionId,
+        uuid,
+        oldIndex,
+        resolvedOldIndex,
+        newIndex,
+        resolvedNewIndex,
+        queueLength,
+      });
+    }
+
+    // A stale index means the sender's view differs from the server's. Its own
+    // optimistic move cannot be corrected by a QueueReordered (the echo fails
+    // the uuid-at-oldIndex check on its shifted queue), so send the whole state.
+    if (clamped || orphanNormalised || staleIndex) {
       publishFullSync(pubsub, sessionId, write, state.queue, state.currentClimbQueueItem);
     } else {
       pubsub.publishQueueEvent(sessionId, {
@@ -363,8 +406,8 @@ export const queueMutations = {
         // v2 hash is what actually moves — this is the drift the watchdog now sees.
         stateHashOrdered: write.stateHashOrdered,
         uuid,
-        oldIndex,
-        newIndex,
+        oldIndex: resolvedOldIndex,
+        newIndex: resolvedNewIndex,
       });
     }
 
@@ -372,6 +415,7 @@ export const queueMutations = {
       nowSlotRules,
       clamped,
       orphanNormalised,
+      staleIndex,
     });
     return true;
   },
@@ -399,6 +443,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
     // Validate input
     if (item !== null) {
@@ -438,6 +483,7 @@ export const queueMutations = {
       ctx.connectionId || null,
       correlationId || null,
       placement ?? null,
+      currentChangedBy,
     );
 
     logMutationMetrics('setCurrentClimb', performance.now() - startTime, sessionId, {
@@ -480,6 +526,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
     // Validate input
     validateInput(QueueItemIdSchema, uuid, 'uuid');
@@ -510,6 +557,7 @@ export const queueMutations = {
           normalised.currentClimbQueueItem,
           currentState.version,
           normalised.historyCount,
+          currentChangedBy,
         );
         return { write: updated, queue: normalised.queue, currentClimb: normalised.currentClimbQueueItem };
       },
@@ -544,6 +592,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SET_QUEUE, RATE_LIMIT_SET_QUEUE_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
     // F3 (docs/current-climb-outside-queue.md, sections 2, 3 and 5): a
     // client-sent line goes through `QueueIndexSchema` first, then
@@ -697,6 +746,7 @@ export const queueMutations = {
             composed.currentClimbQueueItem,
             currentState.version,
             composed.historyCount,
+            currentChangedBy,
           );
           if (outcome.survivors.length > 0) {
             logger.info(
@@ -732,6 +782,7 @@ export const queueMutations = {
             composed.currentClimbQueueItem,
             currentState.version,
             composed.historyCount,
+            currentChangedBy,
           );
           return { write, composed };
         });
@@ -753,6 +804,7 @@ export const queueMutations = {
         composed.currentClimbQueueItem,
         undefined,
         composed.historyCount,
+        currentChangedBy,
       );
       finalState = composed;
     }

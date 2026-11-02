@@ -24,7 +24,7 @@ export function mapBoardPresenceEnvelopeToAction(event: BoardPresenceEvent): Boa
     case 'BoardClimbCleared':
       return {
         type: 'APPLY_CLIMB_CLEARED',
-        payload: { clearedAt: event.clearedAt, seq: event.seq },
+        payload: { clearedAt: event.clearedAt, seq: event.seq, climbUuid: event.climbUuid ?? null },
       };
     case 'BoardStatsUpdated':
       return {

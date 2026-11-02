@@ -106,7 +106,9 @@ type StoredSnapshot = {
 const queueSnapshotStore = vi.hoisted(() => ({
   getStoredQueueSnapshot: vi.fn(async (): Promise<StoredSnapshot | null> => null),
   getQueueSnapshotGeneration: () => 0,
-  setStoredQueueSnapshot: vi.fn(async () => {}),
+  setStoredQueueSnapshot: vi.fn(
+    async (_snapshot: Omit<StoredSnapshot, 'savedAt'>, _owner?: unknown, _generation?: number) => {},
+  ),
   clearStoredQueueSnapshot: vi.fn(async () => {}),
 }));
 
@@ -127,7 +129,13 @@ vi.mock('react-native', () => ({
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-correlation-id' }));
 vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
-  execute: graph.execute,
+  // Keep capability reads separate from the JOIN mock and its sequencing assertions.
+  execute: (...args: Parameters<typeof import('@boardsesh/graphql-client').execute>) => {
+    if (args[1].query.includes('query QueueCapabilitiesProbe')) {
+      return Promise.resolve({ queueState: { fields: [] }, currentClimbChanged: { fields: [] } });
+    }
+    return graph.execute(...args);
+  },
 }));
 vi.mock('@boardsesh/queue-react', () => ({
   useQueueMutations: (deps: CapturedMutationDeps) => {
@@ -180,6 +188,8 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
 }));
 
 import { QueueProvider, usePlaylistSuggestionSource, useQueue, useQueueSessionId } from '../queue-provider';
+import { track } from '../../lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -199,6 +209,8 @@ type Snapshot = {
   startSession: ReturnType<typeof useQueue>['startSession'];
   joinSession: ReturnType<typeof useQueue>['joinSession'];
   lastCurrentChange: ReturnType<typeof useQueue>['lastCurrentChange'];
+  mirrorCurrentClimb: ReturnType<typeof useQueue>['mirrorCurrentClimb'];
+  getQueueSnapshot: ReturnType<typeof useQueue>['getQueueSnapshot'];
 };
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
@@ -224,6 +236,8 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       startSession: queue.startSession,
       joinSession: queue.joinSession,
       lastCurrentChange: queue.lastCurrentChange,
+      mirrorCurrentClimb: queue.mirrorCurrentClimb,
+      getQueueSnapshot: queue.getQueueSnapshot,
     });
   }, [
     queue.state,
@@ -243,6 +257,8 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.startSession,
     queue.joinSession,
     queue.lastCurrentChange,
+    queue.mirrorCurrentClimb,
+    queue.getQueueSnapshot,
     onSnapshot,
   ]);
   return null;
@@ -362,6 +378,80 @@ describe('QueueProvider local solo queue', () => {
     });
     http.request.mockReset();
     http.request.mockResolvedValue({ createSession: { id: 'session-new' } });
+  });
+
+  it('saves solo flips per occurrence before navigation, including explicit false', async () => {
+    const original = makeQueueItem('first-occurrence', 'same-climb');
+    const repeat = makeQueueItem('second-occurrence', 'same-climb');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([original, repeat], original));
+    const snapshots: Snapshot[] = [];
+    const rendered = renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(original.uuid));
+    const controls = snapshots.at(-1)!;
+    act(() => {
+      void controls.mirrorCurrentClimb(true, original.uuid);
+      expect(controls.getQueueSnapshot().currentClimbQueueItem?.climb.mirrored).toBe(true);
+      controls.setCurrentClimb(repeat);
+    });
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(repeat.uuid));
+    expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === original.uuid)?.climb.mirrored).toBe(true);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).not.toBe(true);
+    let rejected: boolean | undefined;
+    await act(async () => {
+      rejected = await controls.mirrorCurrentClimb(false, original.uuid);
+    });
+    expect(rejected).toBe(false);
+    act(() =>
+      snapshots.at(-1)?.setCurrentClimb(snapshots.at(-1)!.state.queue.find((item) => item.uuid === original.uuid)!),
+    );
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(true);
+    await act(async () => {
+      await controls.mirrorCurrentClimb(false, original.uuid);
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(false);
+    await waitFor(() =>
+      expect(queueSnapshotStore.setStoredQueueSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queue: expect.arrayContaining([
+            expect.objectContaining({ uuid: original.uuid, climb: expect.objectContaining({ mirrored: false }) }),
+          ]),
+        }),
+        null,
+        expect.any(Number),
+      ),
+    );
+    expect(queueMutations.mirrorCurrentClimb).not.toHaveBeenCalled();
+    const saved = queueSnapshotStore.setStoredQueueSnapshot.mock.calls.at(-1)?.[0];
+    if (!saved) throw new Error('Solo queue was not persisted');
+    rendered.unmount();
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({ ...saved, savedAt: new Date().toISOString() });
+    const restored: Snapshot[] = [];
+    renderProvider((snapshot) => restored.push(snapshot));
+    await waitFor(() => expect(restored.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(original.uuid));
+    expect(restored.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(false);
+    expect(restored.at(-1)?.state.queue.find((item) => item.uuid === repeat.uuid)?.climb.mirrored).not.toBe(true);
+  });
+
+  it('keeps a current-only solo flip when now-slot navigation files it into history', async () => {
+    const current = makeQueueItem('current-only', 'current-climb');
+    const next = makeQueueItem('next-slot', 'next-climb');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([], current));
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(current.uuid));
+    act(() => snapshots.at(-1)?.dispatch({ type: 'SET_NOW_SLOT_MODE', payload: true }));
+    expect(snapshots.at(-1)?.state.nowSlotMode).toBe(true);
+    const controls = snapshots.at(-1)!;
+    act(() => {
+      void controls.mirrorCurrentClimb(true, current.uuid);
+      controls.dispatch({
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: next, shouldAddToQueue: true, placement: 'NOW' },
+      });
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(next.uuid);
+    const historical = snapshots.at(-1)?.state.queue.find((item) => item.uuid === current.uuid);
+    expect(historical?.climb.mirrored).toBe(true);
   });
 
   it('hydrates the stored solo queue snapshot when no session restores', async () => {
@@ -1104,6 +1194,30 @@ describe('QueueProvider local solo queue', () => {
     expect(queueMutations.addQueueItem.mock.calls.map(([item]) => item.uuid)).toEqual(['clear-first']);
   });
 
+  // The queue sheet clears from two controls: the edit mode's Clear and the
+  // header's ⋯ → Clear queue. Both run the same clear; only the event says which.
+  it.each([
+    { options: undefined, source: 'edit' },
+    { options: { source: 'edit' as const }, source: 'edit' },
+    { options: { source: 'menu' as const }, source: 'menu' },
+  ])('tags Queue Cleared with source $source and clears the same way', async ({ options, source }) => {
+    const itemA = makeQueueItem('tag-a');
+    const itemB = makeQueueItem('tag-b');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA, itemB], itemA));
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.state.queue).toHaveLength(2));
+
+    vi.mocked(track).mockClear();
+    act(() => snapshots.at(-1)?.clearQueue(options));
+
+    const cleared = vi.mocked(track).mock.calls.filter(([event]) => event === SHARED_EVENTS.QueueCleared);
+    expect(cleared).toEqual([[SHARED_EVENTS.QueueCleared, expect.objectContaining({ totalCount: 2, source })]]);
+    // The reducer's clear takes the current climb with it, from either control.
+    expect(snapshots.at(-1)?.state.queue).toEqual([]);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem).toBeNull();
+  });
+
   it('serializes replacement behind an active send and cancels the unsent tail', async () => {
     const snapshots: Snapshot[] = [];
     await renderRestoredSession(snapshots);
@@ -1791,15 +1905,17 @@ describe('QueueProvider local solo queue', () => {
       ]);
     });
 
-    // #6776 review: a move carries indexes, and the backend's reorderQueueItem
-    // splices by index after only a range check. While a whole-list Play next
+    // #6776 review: a move carries indexes. The backend's reorderQueueItem finds
+    // the climb by uuid but places it at the newIndex it is sent, and answers a
+    // stale index with a FullSync (#6792). While a whole-list Play next
     // drains, this phone already shows every climb and the server does not, so
     // the move must wait on the same lane and read its indexes against the
     // queue the server holds when it goes.
     describe('moves and removals while a list drains', () => {
       // The backend's queue rules, so each test can assert the crew ends where
       // this phone does: an add clamps a missing or out-of-range position to an
-      // append, a reorder rejects an out-of-range index, a remove filters.
+      // append, a reorder finds the climb by uuid and clamps newIndex to the
+      // tail, a remove filters.
       function installServerModel(seed: ClimbQueueItem[]) {
         const server = { queue: [...seed] };
         let releaseFirstSend: () => void = () => {};
@@ -1815,12 +1931,11 @@ describe('QueueProvider local solo queue', () => {
           }
         });
         queueMutations.reorderQueueItem.mockImplementation(
-          async (_uuid: string, oldIndex: number, newIndex: number) => {
-            if (oldIndex >= server.queue.length || newIndex >= server.queue.length) {
-              throw new Error(`Invalid index: queue has ${server.queue.length} items`);
-            }
-            const [moved] = server.queue.splice(oldIndex, 1);
-            server.queue.splice(newIndex, 0, moved);
+          async (uuid: string, _oldIndex: number, newIndex: number) => {
+            const movedFromIndex = server.queue.findIndex((entry) => entry.uuid === uuid);
+            if (movedFromIndex < 0) throw new Error(`Queue item ${uuid} is not in the queue`);
+            const [moved] = server.queue.splice(movedFromIndex, 1);
+            server.queue.splice(Math.min(newIndex, server.queue.length), 0, moved);
           },
         );
         queueMutations.removeQueueItem.mockImplementation(async (uuid: string) => {
@@ -1863,7 +1978,7 @@ describe('QueueProvider local solo queue', () => {
           expect(outcome).toBe('moved');
         });
         expect(localUuids(snapshots)).toEqual(['item-y', 'list-1', 'list-2', 'list-3', 'item-x']);
-        // The server holds three climbs here; oldIndex 4 would be refused.
+        // The server holds three climbs here; oldIndex 4 would be stale.
         expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
 
         await act(async () => {

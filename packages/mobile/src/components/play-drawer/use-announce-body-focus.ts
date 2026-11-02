@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
-import { AccessibilityInfo, findNodeHandle, type View } from 'react-native';
+import { AccessibilityInfo, findNodeHandle, type ViewInstance } from 'react-native';
 
 /**
  * Lands the screen reader on the sentence the climber just asked for, rather
@@ -15,7 +15,7 @@ import { AccessibilityInfo, findNodeHandle, type View } from 'react-native';
  * `enabled` is false for the notice variant, which asked for nothing and so
  * never yanks focus off whatever the climber was already reading.
  */
-export function useAnnounceBodyFocus(bodyRef: RefObject<View | null>, enabled: boolean): void {
+export function useAnnounceBodyFocus(bodyRef: RefObject<ViewInstance | null>, enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return;
     const nodeHandle = findNodeHandle(bodyRef.current);

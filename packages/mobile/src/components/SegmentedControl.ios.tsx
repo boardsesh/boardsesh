@@ -66,7 +66,13 @@ export function SegmentedControl<K extends string = string>({
     // with `overflow: 'hidden'` (the profile chrome's rounded glass track) clipped
     // the bottom of the selected pill. A fixed frame sizes the control
     // deterministically across every container.
-    <Host style={styles.host}>
+    //
+    // ignoreSafeArea="all": the Host is its own UIHostingController, and SwiftUI
+    // insets its content for any keyboard or container safe area that overlaps the
+    // frame, which squeezes the Picker (#5773, same shape as #5663 on Button). The
+    // RN layout (the sheets' KeyboardAvoidingView) owns keyboard avoidance, and
+    // 'all' also covers a control that mounts while scrolled off-screen.
+    <Host ignoreSafeArea="all" style={styles.host}>
       <Picker
         selection={selectedKey}
         onSelectionChange={(value) => {

@@ -28,6 +28,7 @@ import {
   CATALOG_SNAPSHOT_REDACTED_VALUE,
   catalogSnapshotBaseTables,
   catalogSnapshotDeferredTables,
+  SPRAY_CATALOGUE_SEQUENCE_ADVANCE_SQL,
 } from '@boardsesh/db/catalog-snapshot';
 import { uploadToS3, deleteFromS3, listS3Objects } from '../storage/s3';
 import { db } from '../db/client';
@@ -82,6 +83,49 @@ async function seedMinimalCatalog(): Promise<void> {
   await db.execute(sql`
     INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username, angle, is_listed, created_by_user_id)
     VALUES ('kilter', 'climb-1', 'https://instagram.test/p/abc', 'someone', 40, true, NULL)
+  `);
+}
+
+// One climber's spray wall, the way createSprayWall writes it: the wall's name
+// on its layout and size, and one marked hold. Plus one hold role and one grade,
+// standing in for migration 0227's shared spray rows that resetCatalogTables
+// deletes, so those two tables have a spray row to keep out of the artifact too.
+const SPRAY_WALL_ID = 7;
+const SPRAY_HOLD_ID = 42;
+const SPRAY_WALL_NAME = 'Private garage wall';
+
+async function seedSprayWall(): Promise<void> {
+  await db.execute(
+    sql`INSERT INTO board_products (board_type, id, name, is_listed) VALUES ('spray', 1, 'Spray wall', false)`,
+  );
+  await db.execute(sql`INSERT INTO board_sets (board_type, id, name) VALUES ('spray', 1, 'Holds')`);
+  await db.execute(sql`
+    INSERT INTO board_placement_roles (board_type, id, product_id, position, name, full_name, led_color, screen_color)
+    VALUES ('spray', 1, 1, 1, 'start', 'Starting Hold', '00FF00', '00DD00')
+  `);
+  await db.execute(sql`
+    INSERT INTO board_difficulty_grades (board_type, difficulty, boulder_name, route_name, is_listed)
+    VALUES ('spray', 10, '4a/V0', '5b/5.9', true)
+  `);
+  await db.execute(sql`
+    INSERT INTO board_layouts (board_type, id, product_id, name, is_mirrored, is_listed)
+    VALUES ('spray', ${SPRAY_WALL_ID}, 1, ${SPRAY_WALL_NAME}, false, false)
+  `);
+  await db.execute(sql`
+    INSERT INTO board_product_sizes (board_type, id, product_id, name, is_listed)
+    VALUES ('spray', ${SPRAY_WALL_ID}, 1, ${SPRAY_WALL_NAME}, false)
+  `);
+  await db.execute(sql`
+    INSERT INTO board_product_sizes_layouts_sets (board_type, id, product_size_id, layout_id, set_id, is_listed)
+    VALUES ('spray', ${SPRAY_WALL_ID}, ${SPRAY_WALL_ID}, ${SPRAY_WALL_ID}, 1, false)
+  `);
+  await db.execute(sql`
+    INSERT INTO board_holes (board_type, id, product_id, name, x, y)
+    VALUES ('spray', ${SPRAY_HOLD_ID}, 1, 'hold', 120, 340)
+  `);
+  await db.execute(sql`
+    INSERT INTO board_placements (board_type, id, layout_id, hole_id, set_id)
+    VALUES ('spray', ${SPRAY_HOLD_ID}, ${SPRAY_WALL_ID}, ${SPRAY_HOLD_ID}, 1)
   `);
 }
 
@@ -146,6 +190,83 @@ describe('board catalogue export', () => {
       }
     } finally {
       rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it('publishes no spray-wall catalogue row from any table', async () => {
+    await seedMinimalCatalog();
+    await seedSprayWall();
+    // A spray alias and beta link, so the deferred tables have a row to drop too.
+    await db.execute(sql`INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_draft, is_listed)
+      VALUES ('spray-climb', 'spray', ${SPRAY_WALL_ID}, 'Garage problem', false, true)`);
+    await db.execute(sql`INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      VALUES ('spray', 'spray-climb', 'spray-climb', 'backfill')`);
+    await db.execute(sql`INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username)
+      VALUES ('spray', 'spray-climb', 'https://instagram.test/p/garage', 'setter')`);
+
+    const workDir = mkdtempSync(join(tmpdir(), 'catalog-spray-'));
+    const filePath = join(workDir, 'catalog.db');
+    try {
+      const tables = await buildCatalogArtifact({ sqlClient: createPool(), filePath, builtAt: BUILT_AT });
+      const artifact = new DatabaseSync(filePath, { readOnly: true });
+      try {
+        const sprayRowCounts = Object.fromEntries(
+          CATALOG_SNAPSHOT_TABLES.map((table) => {
+            const counted = artifact
+              .prepare(`SELECT count(*) AS n FROM ${table.name} WHERE board_type = 'spray'`)
+              .get() as { n: number };
+            return [table.name, counted.n];
+          }),
+        );
+        expect(sprayRowCounts).toEqual(Object.fromEntries(CATALOG_SNAPSHOT_TABLES.map((table) => [table.name, 0])));
+        // The Kilter catalogue still ships.
+        expect(tables.board_products.rowCount).toBe(1);
+        expect(tables.board_layouts.rowCount).toBe(2);
+        expect(tables.board_climb_aliases.rowCount).toBe(1);
+        expect(tables.board_beta_links.rowCount).toBe(1);
+      } finally {
+        artifact.close();
+      }
+      expect(readFileSync(filePath, 'latin1')).not.toContain(SPRAY_WALL_NAME);
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it('moves the spray id sequences past existing spray rows, never backwards', async () => {
+    const readNextIds = async () => {
+      const result = await db.execute(
+        sql`SELECT nextval('spray_wall_catalog_id_seq') AS wall_id, nextval('spray_hold_catalog_id_seq') AS hold_id`,
+      );
+      const [nextIds] = Array.from(result as Iterable<{ wall_id: string | number; hold_id: string | number }>);
+      return { wallId: Number(nextIds.wall_id), holdId: Number(nextIds.hold_id) };
+    };
+    const runAdvance = async () => {
+      for (const statement of SPRAY_CATALOGUE_SEQUENCE_ADVANCE_SQL) {
+        await db.execute(sql.raw(statement));
+      }
+    };
+    const rewindSequences = async () => {
+      await db.execute(sql`SELECT setval('spray_wall_catalog_id_seq', 1, false)`);
+      await db.execute(sql`SELECT setval('spray_hold_catalog_id_seq', 1, false)`);
+    };
+
+    await rewindSequences();
+    try {
+      // No spray rows: both sequences stay where they are.
+      await runAdvance();
+      expect(await readNextIds()).toEqual({ wallId: 1, holdId: 1 });
+
+      await seedSprayWall();
+      await runAdvance();
+      expect(await readNextIds()).toEqual({ wallId: SPRAY_WALL_ID + 1, holdId: SPRAY_HOLD_ID + 1 });
+
+      // Already past the rows: running it again does not wind the sequence back.
+      await db.execute(sql`SELECT setval('spray_wall_catalog_id_seq', 500)`);
+      await runAdvance();
+      expect((await readNextIds()).wallId).toBe(501);
+    } finally {
+      await rewindSequences();
     }
   });
 

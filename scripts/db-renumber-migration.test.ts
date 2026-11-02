@@ -231,16 +231,18 @@ function sliceWorkflowJob(workflowSource: string, jobName: string): string {
 }
 
 const FORCE_PUSH_STEP_NAME = 'Force-push the renumbered branch';
-const EXPECTED_FORCE_PUSH_CONDITION =
-  "steps.renumber.outputs.status == 'renumbered' && steps.recheck.outputs.ok == 'true'";
+const RECHECK_STEP_NAME = 'Re-check the PR immediately before pushing';
+const BUNDLE_STEP_NAME = 'Bundle the renumbered branch';
+const EXPECTED_FORCE_PUSH_CONDITION = "steps.recheck.outputs.ok == 'true'";
 const EXPECTED_PROOF_STEP_CONDITION = "steps.renumber.outputs.status == 'renumbered'";
+const EXPECTED_PUSH_JOB_CONDITION =
+  "needs.gate.outputs.run == 'true' && needs.renumber.result == 'success' && needs.renumber.outputs.renumber_status == 'renumbered'";
 const EXPECTED_COMMENT_JOB_CONDITION =
   "always() && needs.gate.result == 'success' && needs.gate.outputs.run == 'true' && needs.renumber.outputs.renumber_status != 'no-op'";
 const PROOF_STEP_NAMES = [
   'Validate the resulting migration folder',
   'Verify the migrations apply',
   'Verify re-applying is a no-op',
-  'Re-check the PR immediately before pushing',
 ] as const;
 
 function sliceWorkflowStep(jobSource: string, stepName: string): string {
@@ -282,39 +284,64 @@ function normalizedWorkflowConditions(workflowSource: string, indentation: numbe
   return conditions;
 }
 
-function renumberPushContractViolations(renumberJobSource: string): string[] {
-  const violations: string[] = [];
-  const pushStepMarker = `\n      - name: ${FORCE_PUSH_STEP_NAME}\n`;
-  const pushStepStart = renumberJobSource.indexOf(pushStepMarker);
-  const pushStep = sliceWorkflowStep(renumberJobSource, FORCE_PUSH_STEP_NAME);
-  const pushConditions = normalizedWorkflowConditions(pushStep, 8);
+const CONTINUE_ON_ERROR = /^\s*(?:continue-on-error|'continue-on-error'|"continue-on-error")\s*:/m;
 
-  if (pushStepStart === -1 || pushStep.length === 0) {
-    violations.push('force-push step is missing');
-  } else if (pushConditions.length !== 1 || pushConditions[0] !== EXPECTED_FORCE_PUSH_CONDITION) {
-    violations.push('force-push condition changed');
-  }
+/** The PR-code job proves the result, then bundles it, and never holds a secret. */
+function renumberJobContractViolations(renumberJobSource: string): string[] {
+  const violations: string[] = [];
+  const bundleStepStart = renumberJobSource.indexOf(`\n      - name: ${BUNDLE_STEP_NAME}\n`);
+  if (bundleStepStart === -1) violations.push('bundle step is missing');
 
   for (const proofStepName of PROOF_STEP_NAMES) {
-    const proofStepMarker = `\n      - name: ${proofStepName}\n`;
-    const proofStepStart = renumberJobSource.indexOf(proofStepMarker);
+    const proofStepStart = renumberJobSource.indexOf(`\n      - name: ${proofStepName}\n`);
     const proofStep = sliceWorkflowStep(renumberJobSource, proofStepName);
     if (proofStepStart === -1 || proofStep.length === 0) {
       violations.push(`${proofStepName} is missing`);
       continue;
     }
-    if (pushStepStart !== -1 && proofStepStart >= pushStepStart) {
-      violations.push(`${proofStepName} does not precede force-push`);
+    if (bundleStepStart !== -1 && proofStepStart >= bundleStepStart) {
+      violations.push(`${proofStepName} does not precede the bundle`);
     }
     const proofConditions = normalizedWorkflowConditions(proofStep, 8);
     if (proofConditions.length !== 1 || proofConditions[0] !== EXPECTED_PROOF_STEP_CONDITION) {
       violations.push(`${proofStepName} condition changed`);
     }
-    if (/^\s*(?:continue-on-error|'continue-on-error'|"continue-on-error")\s*:/m.test(proofStep)) {
-      violations.push(`${proofStepName} permits continue-on-error`);
-    }
+    if (CONTINUE_ON_ERROR.test(proofStep)) violations.push(`${proofStepName} permits continue-on-error`);
   }
+  if (CONTINUE_ON_ERROR.test(renumberJobSource)) violations.push('renumber job permits continue-on-error');
+  if (/secrets\.|create-github-app-token|GH_APP_TOKEN|git push/.test(renumberJobSource)) {
+    violations.push('renumber job can reach a secret or push');
+  }
+  return violations;
+}
 
+/** The fresh push job runs only after a fully green renumber and re-checks first. */
+function pushJobContractViolations(pushJobSource: string): string[] {
+  const violations: string[] = [];
+  const jobConditions = normalizedWorkflowConditions(pushJobSource, 4);
+  if (jobConditions.length !== 1 || jobConditions[0] !== EXPECTED_PUSH_JOB_CONDITION) {
+    violations.push('push job condition changed');
+  }
+  const pushStepStart = pushJobSource.indexOf(`\n      - name: ${FORCE_PUSH_STEP_NAME}\n`);
+  const pushStep = sliceWorkflowStep(pushJobSource, FORCE_PUSH_STEP_NAME);
+  const pushConditions = normalizedWorkflowConditions(pushStep, 8);
+  if (pushStepStart === -1 || pushStep.length === 0) {
+    violations.push('force-push step is missing');
+  } else if (pushConditions.length !== 1 || pushConditions[0] !== EXPECTED_FORCE_PUSH_CONDITION) {
+    violations.push('force-push condition changed');
+  }
+  const recheckStart = pushJobSource.indexOf(`\n      - name: ${RECHECK_STEP_NAME}\n`);
+  if (recheckStart === -1) violations.push(`${RECHECK_STEP_NAME} is missing`);
+  else if (pushStepStart !== -1 && recheckStart >= pushStepStart) {
+    violations.push(`${RECHECK_STEP_NAME} does not precede force-push`);
+  }
+  if (CONTINUE_ON_ERROR.test(pushJobSource)) violations.push('push job permits continue-on-error');
+  // Nothing PR-controlled may execute on the runner that holds the App token.
+  if (
+    /vp install|vp exec|vp run|node --import|setup-vp|ref: \$\{\{ needs\.gate\.outputs\.branch \}\}/.test(pushJobSource)
+  ) {
+    violations.push('push job executes PR-controlled code');
+  }
   return violations;
 }
 
@@ -327,37 +354,105 @@ function commentJobContractViolations(commentJobSource: string): string[] {
 
 // Intentionally source-based and test-load-bearing: workflow job-boundary or
 // formatting changes fail closed so the privileged path gets deliberate review.
-describe('workflow comment trust boundary', () => {
+describe('workflow trust boundaries', () => {
   const workflowSource = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), '../.github/workflows/db-migration-renumber.yml'),
     'utf8',
   );
   const renumberJobStart = workflowSource.indexOf('\n  renumber:\n');
   const commentJobStart = workflowSource.indexOf('\n  comment:\n');
+  const gateJob = sliceWorkflowJob(workflowSource, 'gate');
+  const handoffJob = sliceWorkflowJob(workflowSource, 'handoff');
   const renumberJob = sliceWorkflowJob(workflowSource, 'renumber');
+  const pushJob = sliceWorkflowJob(workflowSource, 'push');
   const commentJob = sliceWorkflowJob(workflowSource, 'comment');
+  const sandboxCleanupJob = sliceWorkflowJob(workflowSource, 'sandbox-cleanup');
 
   it('keeps PR-controlled work out of the pull-request-write job', () => {
     expect(renumberJobStart).toBeGreaterThan(-1);
     expect(commentJobStart).toBeGreaterThan(renumberJobStart);
     expect(workflowSource.slice(0, renumberJobStart)).toContain('pull-requests: read');
     expect(renumberJob).not.toContain('renderRenumberWorkflowComment');
-    expect(commentJob).toContain('needs: [gate, renumber]');
+    expect(commentJob).toContain('needs: [gate, renumber, push]');
     expect(commentJob).toContain('pull-requests: write');
     expect(commentJobContractViolations(commentJob)).toEqual([]);
   });
 
-  it('keeps force-push behind every proof step and the implicit success guard', () => {
-    expect(renumberPushContractViolations(renumberJob)).toEqual([]);
+  it('runs PR code only on the PR sandbox branch, and hands off from anywhere else', () => {
+    expect(gateJob).toContain('const sandboxPrefix = `refs/heads/ci-sandbox/db-renumber/pr-${raw}/`;');
+    expect(gateJob).toContain("core.setOutput('run', vetted && onSandbox ? 'true' : 'false');");
+    expect(gateJob).toContain("core.setOutput('handoff', vetted && !onSandbox ? 'true' : 'false');");
+    expect(normalizedWorkflowConditions(renumberJob, 4)).toEqual(["needs.gate.outputs.run == 'true'"]);
+    expect(normalizedWorkflowConditions(handoffJob, 4)).toEqual(["needs.gate.outputs.handoff == 'true'"]);
+    expect(handoffJob).toContain("workflowKey: 'db-renumber'");
+    expect(handoffJob).toContain("workflowFile: 'db-migration-renumber.yml'");
+    expect(handoffJob).not.toContain('needs.gate.outputs.branch');
+    expect(sandboxCleanupJob).toContain("startsWith(github.ref, 'refs/heads/ci-sandbox/db-renumber/')");
+    expect(sandboxCleanupJob).toContain('deleteOwnSandbox');
+  });
+
+  it('proves the renumber before bundling it, with no secret in reach', () => {
+    expect(renumberJobContractViolations(renumberJob)).toEqual([]);
+  });
+
+  it('pushes from a fresh runner only after a green renumber and a passing re-check', () => {
+    expect(pushJobContractViolations(pushJob)).toEqual([]);
+    expect(pushJob).toContain('needs: [gate, renumber]');
+    expect(pushJob).toContain('test "$(git rev-parse refs/renumber/result)" = "$RESULT_SHA"');
+    expect(pushJob).toContain('git push --force-with-lease="$BRANCH:$HEAD_SHA"');
+  });
+
+  it('refuses a result that changes files the PR never touched, before minting the token', () => {
+    const treeCheck = pushJob.indexOf('\n      - name: Refuse changes beyond the renumber\n');
+    expect(treeCheck).toBeGreaterThan(-1);
+    expect(treeCheck).toBeLessThan(pushJob.indexOf('\n      - name: Mint the push token\n'));
+    expect(pushJob).toContain('git merge-tree --write-tree --no-messages "$base" "$HEAD_SHA"');
+    expect(pushJob).toContain(`{ grep -v '^packages/db/drizzle/' "$RUNNER_TEMP/changed" || [ $? -eq 1 ]; }`);
+    // Only grep's "no lines" status is tolerated; a failing git diff must stop the push.
+    expect(sliceWorkflowStep(pushJob, 'Refuse changes beyond the renumber')).not.toContain('|| true');
+  });
+
+  it('pins every action on the token-bearing push runner to a commit SHA', () => {
+    const uses = [...pushJob.matchAll(/uses: (\S+)/g)].map(([, action]) => action);
+    expect(uses.length).toBeGreaterThan(3);
+    for (const action of uses) expect(action).toMatch(/@[0-9a-f]{40}$/);
+  });
+
+  it('accepts only a positive PR number', () => {
+    expect(gateJob).toContain('if (!/^[1-9][0-9]*$/.test(raw)) {');
   });
 
   it('rejects a status-function escape in the force-push condition', () => {
-    const escapedConditionJob = renumberJob.replace(
-      `if: ${EXPECTED_FORCE_PUSH_CONDITION}`,
-      `if: ${EXPECTED_FORCE_PUSH_CONDITION} || !success()`,
+    const escapedConditionJob = pushJob.replace(
+      `if: ${EXPECTED_FORCE_PUSH_CONDITION}\n        env:`,
+      `if: ${EXPECTED_FORCE_PUSH_CONDITION} || !success()\n        env:`,
     );
-    expect(escapedConditionJob).not.toBe(renumberJob);
-    expect(renumberPushContractViolations(escapedConditionJob)).toContain('force-push condition changed');
+    expect(escapedConditionJob).not.toBe(pushJob);
+    expect(pushJobContractViolations(escapedConditionJob)).toContain('force-push condition changed');
+  });
+
+  it('rejects an always() escape in the push job condition', () => {
+    const escapedJob = pushJob.replace('    if: >-\n', '    if: >-\n      always() ||\n');
+    expect(escapedJob).not.toBe(pushJob);
+    expect(pushJobContractViolations(escapedJob)).toContain('push job condition changed');
+  });
+
+  it('rejects PR code on the token-bearing push runner', () => {
+    const tainted = pushJob.replace(
+      '      - name: Mint the push token\n',
+      '      - run: vp install --frozen-lockfile\n      - name: Mint the push token\n',
+    );
+    expect(tainted).not.toBe(pushJob);
+    expect(pushJobContractViolations(tainted)).toContain('push job executes PR-controlled code');
+  });
+
+  it('rejects a secret in the PR-code job', () => {
+    const tainted = renumberJob.replace(
+      '      - name: Install dependencies\n',
+      '      - name: Mint\n        uses: actions/create-github-app-token@v1\n      - name: Install dependencies\n',
+    );
+    expect(tainted).not.toBe(renumberJob);
+    expect(renumberJobContractViolations(tainted)).toContain('renumber job can reach a secret or push');
   });
 
   it('rejects continue-on-error on every proof step', () => {
@@ -369,7 +464,7 @@ describe('workflow comment trust boundary', () => {
           `${proofStepMarker}        ${continueOnErrorKey}: true\n`,
         );
         expect(continueOnErrorJob, `${proofStepName} mutation should apply`).not.toBe(renumberJob);
-        expect(renumberPushContractViolations(continueOnErrorJob)).toContain(
+        expect(renumberJobContractViolations(continueOnErrorJob)).toContain(
           `${proofStepName} permits continue-on-error`,
         );
       }
@@ -382,7 +477,7 @@ describe('workflow comment trust boundary', () => {
       const falseConditionStep = proofStep.replace(`if: ${EXPECTED_PROOF_STEP_CONDITION}`, 'if: false');
       expect(falseConditionStep, `${proofStepName} mutation should apply`).not.toBe(proofStep);
       const falseConditionJob = renumberJob.replace(proofStep, falseConditionStep);
-      expect(renumberPushContractViolations(falseConditionJob)).toContain(`${proofStepName} condition changed`);
+      expect(renumberJobContractViolations(falseConditionJob)).toContain(`${proofStepName} condition changed`);
     }
   });
 
@@ -402,6 +497,9 @@ describe('workflow comment trust boundary', () => {
     expect(commentJob).toContain('persist-credentials: false');
     expect(commentJob).toContain('`${process.env.GITHUB_WORKSPACE}/scripts/lib/db-renumber-comment.cjs`');
     expect(commentJob).not.toContain('.renumber-tooling');
+    for (const output of ['recheck_outcome', 'recheck_ok', 'recheck_reason', 'push_outcome']) {
+      expect(commentJob).toContain(`needs.push.outputs.${output}`);
+    }
   });
 
   it('takes the sticky marker from the shared module rather than redefining it', () => {

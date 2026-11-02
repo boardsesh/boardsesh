@@ -33,7 +33,15 @@ import type { SwitchRowProps } from './SwitchRow.types';
 const ROW_MIN_HEIGHT = 48;
 const ROW_MIN_HEIGHT_WITH_SUBTITLE = 64;
 
-export function SwitchRow({ label, description, value, onValueChange, disabled = false }: SwitchRowProps) {
+export function SwitchRow({
+  label,
+  accessibilityLabel: spokenLabel,
+  description,
+  value,
+  onValueChange,
+  disabled = false,
+}: SwitchRowProps) {
+  const name = spokenLabel ?? label;
   const { brandColors, colorScheme } = useTheme();
   const handleToggle = makeToggleHandler(onValueChange, disabled);
   // On-track colour: the brand control tint (HIG Color: one accent for every
@@ -56,7 +64,7 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
           // SwiftUI greys the control and blocks interaction natively.
           disabledModifier(disabled),
           // Keep one accessible native switch even though its label is a stack.
-          accessibilityLabel(description ? `${label}, ${description}` : label),
+          accessibilityLabel(description ? `${name}, ${description}` : name),
         ]}
       >
         <VStack

@@ -12,7 +12,6 @@ version = '1.0.0'
 
 android {
   namespace 'expo.modules.memorytrim'
-  compileSdk 36
 
   defaultConfig {
     minSdk 24

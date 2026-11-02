@@ -22,6 +22,7 @@ import {
   useRef,
   useState,
   type Ref,
+  type ComponentProps,
 } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
@@ -49,6 +50,7 @@ import type {
 } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { GymWallSwitcher } from './GymWallSwitcher';
+import { SwitchBoardFooter } from './SwitchBoardFooter';
 import { SprayWallActions } from '../board-discovery/SprayWallActions';
 import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
@@ -58,12 +60,13 @@ import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRo
 import { PressableAvatar } from '../PressableAvatar';
 import { BoardDriverAvatar } from './BoardDriverAvatar';
 import { BoardLiveSessionsBlock } from '../live-sessions/BoardLiveSessionsBlock';
+import { WallDisplayEntry } from './WallDisplayEntry';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
-import type { BoardConfig } from '../../providers/drawer-host-provider';
+import type { BoardConfig, ClimbActionsTarget } from '../../providers/drawer-host-provider';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
@@ -83,6 +86,12 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 
 const ACTION_CLIMB_CACHE_LIMIT = 50;
+const MENU_METADATA_HISTORY_LIMIT = 8;
+const MENU_METADATA_CONCURRENCY = 3;
+const MENU_VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 25, minimumViewTime: 100 };
+type HistoryViewabilityChange = Parameters<
+  NonNullable<ComponentProps<typeof FlatList<BoardPresenceClimb>>['onViewableItemsChanged']>
+>[0];
 
 // Like ShowcaseAnchorView, the capture-only hook is chosen once per JS bundle.
 // Ordinary builds add neither an active-board subscriber nor a capture host.
@@ -229,7 +238,7 @@ export type NowOnTheWallPanelProps = {
   /** Swipe action: open the add-to-playlist sheet for this climb. */
   onOpenPlaylist?: (action: BoardSheetClimbAction) => void;
   /** Long press action: open the existing climb actions sheet. */
-  onOpenActions?: (action: BoardSheetClimbAction) => void;
+  onOpenActions?: (action: BoardSheetClimbAction) => ClimbActionsTarget | null | undefined;
 };
 
 function NowOnTheWallPanelComponent(
@@ -380,6 +389,11 @@ function NowOnTheWallPanelComponent(
   }, [loadOlder]);
 
   const actionClimbCacheRef = useRef(new Map<string, Climb>());
+  const [menuClimbCache, setMenuClimbCache] = useState<ReadonlyMap<string, Climb>>(() => new Map());
+  const [visibleMenuSelection, setVisibleMenuSelection] = useState<{
+    boardSignature: string;
+    historyKeys: string[];
+  } | null>(null);
   const actionClimbRequestRef = useRef(new Map<string, Promise<Climb | null>>());
   const pendingActionKeysRef = useRef(new Set<string>());
   const actionGenerationRef = useRef(0);
@@ -467,6 +481,7 @@ function NowOnTheWallPanelComponent(
               return null;
             }
             setActionClimbCacheEntry(actionClimbCacheRef.current, cacheKey, response.climb);
+            setMenuClimbCache(new Map(actionClimbCacheRef.current));
             return response.climb;
           })
           .catch((error: unknown): null => {
@@ -489,6 +504,58 @@ function NowOnTheWallPanelComponent(
     },
     [],
   );
+
+  const handleMenuViewableItemsChanged = useCallback(({ viewableItems }: HistoryViewabilityChange) => {
+    const historyKeys = viewableItems
+      .filter((entry) => entry.isViewable)
+      .slice(0, MENU_METADATA_HISTORY_LIMIT)
+      .map((entry) => boardHistoryEntryKey(entry.item));
+    const boardSignature = boardConfigSignatureRef.current;
+    setVisibleMenuSelection((previous) =>
+      previous?.boardSignature === boardSignature &&
+      previous.historyKeys.length === historyKeys.length &&
+      previous.historyKeys.every((historyKey, index) => historyKey === historyKeys[index])
+        ? previous
+        : { boardSignature, historyKeys },
+    );
+  }, []);
+  const menuMetadataClimbs = useMemo(() => {
+    const historyByKey = new Map(combinedHistory.map((climb) => [boardHistoryEntryKey(climb), climb]));
+    const historyClimbs =
+      visibleMenuSelection?.boardSignature === boardConfigSignature
+        ? visibleMenuSelection.historyKeys.flatMap((historyKey) => {
+            const climb = historyByKey.get(historyKey);
+            return climb ? [climb] : [];
+          })
+        : combinedHistory.slice(0, MENU_METADATA_HISTORY_LIMIT);
+    return currentClimb ? [currentClimb, ...historyClimbs] : historyClimbs;
+  }, [boardConfigSignature, combinedHistory, currentClimb, visibleMenuSelection]);
+  useEffect(() => {
+    if (!onOpenActions) return;
+    let cancelled = false;
+    const metadataGeneration = actionGenerationRef.current;
+    const missing = menuMetadataClimbs.flatMap((climb) => {
+      const context = getActionContext(climb);
+      return context && !actionClimbCacheRef.current.has(context.cacheKey) ? [{ climb, context }] : [];
+    });
+    // At most the hero and eight visible/initial history rows, three requests
+    // at a time. No history pagination, render-time requests or automatic retry:
+    // a row whose load failed keeps its snapshot menu, and a selection on it
+    // fetches the climb on demand.
+    void (async () => {
+      for (let offset = 0; offset < missing.length; offset += MENU_METADATA_CONCURRENCY) {
+        if (cancelled || metadataGeneration !== actionGenerationRef.current) return;
+        await Promise.all(
+          missing
+            .slice(offset, offset + MENU_METADATA_CONCURRENCY)
+            .map(({ climb, context }) => resolveAction(climb, context)),
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getActionContext, menuMetadataClimbs, onOpenActions, resolveAction]);
 
   const runInteractiveAction = useCallback(
     (presenceClimb: BoardPresenceClimb, callback: (action: BoardSheetClimbAction) => void, closeOnSuccess = false) => {
@@ -602,12 +669,56 @@ function NowOnTheWallPanelComponent(
     [onOpenPlaylist, runInteractiveAction],
   );
 
-  const handleInteractiveOpenActions = useCallback(
-    (presenceClimb: BoardPresenceClimb) => {
-      if (!onOpenActions) return;
-      runInteractiveAction(presenceClimb, onOpenActions);
+  // The full climb a row's menu can read, once the panel has loaded it. Rows get
+  // it as a prop, so a load re-renders only the row it belongs to.
+  const loadedMenuClimb = useCallback(
+    (presenceClimb: BoardPresenceClimb): Climb | undefined => {
+      const actionContext = getActionContext(presenceClimb);
+      return actionContext ? menuClimbCache.get(actionContext.cacheKey) : undefined;
     },
-    [onOpenActions, runInteractiveAction],
+    [getActionContext, menuClimbCache],
+  );
+
+  const handleInteractiveOpenActions = useCallback(
+    (presenceClimb: BoardPresenceClimb, loadedClimb?: Climb) => {
+      if (!onOpenActions) return null;
+      const actionContext = getActionContext(presenceClimb);
+      if (!actionContext) return null;
+      // Who set the climb (Edit, Delete, Report) needs the full climb, which the
+      // panel loads for the hero and the visible rows. Until it lands, or when
+      // that load failed, the menu reads the wall's own snapshot of the climb,
+      // so a hold always has a menu. Either way a selection fetches the full
+      // climb first and runs only a row its menu offers too (ClimbMenusProvider).
+      const target = onOpenActions({
+        climb: loadedClimb ?? boardPresenceClimbToClimb(presenceClimb),
+        boardConfig: actionContext.actionBoardConfig,
+        queueItemUuid: presenceClimb.queueItemUuid ?? null,
+      });
+      if (!target) return null;
+      // The board is stamped when the row builds its menu, during render; the
+      // generation only once an action is picked. The panel bumps the generation
+      // on mount, after the first render's menus exist, so stamping it here
+      // would leave those menus doing nothing. A board switch rebuilds every
+      // row's menu (boardConfigSignature is a dep).
+      const actionBoardSignature = boardConfigSignature;
+      return {
+        ...target,
+        resolveClimb: async () => {
+          if (actionBoardSignature !== boardConfigSignatureRef.current) return null;
+          const actionGeneration = actionGenerationRef.current;
+          const action = await resolveAction(presenceClimb, actionContext);
+          if (
+            actionGeneration !== actionGenerationRef.current ||
+            actionBoardSignature !== boardConfigSignatureRef.current
+          ) {
+            return null;
+          }
+          if (!action) notifyActionFailed();
+          return action?.climb ?? null;
+        },
+      };
+    },
+    [boardConfigSignature, getActionContext, notifyActionFailed, onOpenActions, resolveAction],
   );
 
   const handleClose = useCallback(() => {
@@ -664,6 +775,7 @@ function NowOnTheWallPanelComponent(
             onPlayNext={handleInteractivePlayNext}
             onOpenPlaylist={handleInteractiveOpenPlaylist}
             onOpenActions={handleInteractiveOpenActions}
+            menuClimb={loadedMenuClimb(item)}
           />
         );
       }
@@ -690,6 +802,7 @@ function NowOnTheWallPanelComponent(
       handleInteractivePlayNext,
       handleInteractiveOpenPlaylist,
       handleInteractiveOpenActions,
+      loadedMenuClimb,
       isActionLoading,
       onClimbPress,
     ],
@@ -707,6 +820,8 @@ function NowOnTheWallPanelComponent(
         )
       : false;
 
+  const heroMenuClimb = currentClimb ? loadedMenuClimb(currentClimb) : undefined;
+
   const listHeader = useMemo(() => {
     // Per-climb grades under the "Show Boardsesh grades" toggle. resolveGrade with
     // an empty difficulty yields the default colour + empty label, so these are
@@ -715,7 +830,7 @@ function NowOnTheWallPanelComponent(
     const heroGrade = resolveGrade({ difficulty: currentClimb?.grade ?? '' }, wallBoardName);
     const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' }, wallBoardName);
     return (
-      <View>
+      <View testID={activeBoard ? `board-panel-${activeBoard.uuid}` : undefined}>
         {/* First in the header, above the hero: the disclosure opens directly
             under the title that opened it. */}
         {canSwitchGymWall && gymWallsExpanded && onSelectGymWall ? (
@@ -730,7 +845,7 @@ function NowOnTheWallPanelComponent(
           />
         ) : null}
         {/* Showcase anchors (screenshot mode): the board sheet only, never the
-            iPad kiosk column or the Wall tab, so one panel reports each name. */}
+            iPad kiosk column or the Wall display, so one panel reports each name. */}
         <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'} testID={cppWallHeroTestID}>
           {canUseInteractiveRows && rowBoard && currentClimb ? (
             <InteractiveHeroRow
@@ -748,6 +863,7 @@ function NowOnTheWallPanelComponent(
               onPlayNext={handleInteractivePlayNext}
               onOpenPlaylist={handleInteractiveOpenPlaylist}
               onOpenActions={handleInteractiveOpenActions}
+              menuClimb={heroMenuClimb}
             />
           ) : (
             <NowOnTheWallHero
@@ -762,6 +878,9 @@ function NowOnTheWallPanelComponent(
             />
           )}
         </ShowcaseAnchorView>
+        {/* Sheet only, and only on a tablet (the entry decides): the full-screen
+            Wall display for a tablet mounted at the board. */}
+        {variant === 'sheet' ? <WallDisplayEntry onBeforeNavigate={leaveSheet} /> : null}
         {/* Sheet only: the column variant is also the wall-mounted iPad kiosk,
             where a passer-by's "Join" or "Start" would act on the kiosk's
             account. */}
@@ -785,14 +904,14 @@ function NowOnTheWallPanelComponent(
             <View style={styles.statTiles}>
               <StatTile
                 value={String(stats.climbsSentCount)}
-                label={t('mobile.boardPresence.statSent')}
+                label={t('mobile.boardPresence.statSent', { count: stats.climbsSentCount })}
                 surfaceColor={systemColors.secondaryBackground}
                 labelColor={systemColors.secondaryLabel}
                 valueColor={systemColors.label}
               />
               <StatTile
                 value={String(stats.distinctClimbersCount)}
-                label={t('mobile.boardPresence.statClimbers')}
+                label={t('mobile.boardPresence.statClimbers', { count: stats.distinctClimbersCount })}
                 surfaceColor={systemColors.secondaryBackground}
                 labelColor={systemColors.secondaryLabel}
                 valueColor={systemColors.label}
@@ -851,6 +970,7 @@ function NowOnTheWallPanelComponent(
     handleInteractivePlayNext,
     handleInteractiveOpenPlaylist,
     handleInteractiveOpenActions,
+    heroMenuClimb,
     heroActionLoading,
     onClimbPress,
     variant,
@@ -982,9 +1102,9 @@ function NowOnTheWallPanelComponent(
           data={combinedHistory}
           keyExtractor={boardHistoryEntryKey}
           renderItem={renderHistoryItem}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={listEmpty}
-          ListFooterComponent={listFooter}
+          ListHeaderComponent={listHeader ?? undefined}
+          ListEmptyComponent={listEmpty ?? undefined}
+          ListFooterComponent={listFooter ?? undefined}
           // `loadOlder` already no-ops once `hasMore` is false, but skipping the
           // prop entirely once there's nothing left avoids FlatList re-evaluating
           // the end-reached threshold on every scroll frame for no reason. The
@@ -993,6 +1113,8 @@ function NowOnTheWallPanelComponent(
           onEndReached={hasMore ? handleEndReached : undefined}
           onEndReachedThreshold={0.6}
           onScrollBeginDrag={handleScrollBeginDrag}
+          onViewableItemsChanged={handleMenuViewableItemsChanged}
+          viewabilityConfig={MENU_VIEWABILITY_CONFIG}
           contentContainerStyle={listContentContainerStyle}
           refreshControl={refreshControl}
         />
@@ -1001,12 +1123,14 @@ function NowOnTheWallPanelComponent(
           data={combinedHistory}
           keyExtractor={boardHistoryEntryKey}
           renderItem={renderHistoryItem}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={listEmpty}
-          ListFooterComponent={listFooter}
+          ListHeaderComponent={listHeader ?? undefined}
+          ListEmptyComponent={listEmpty ?? undefined}
+          ListFooterComponent={listFooter ?? undefined}
           onEndReached={hasMore ? handleEndReached : undefined}
           onEndReachedThreshold={0.6}
           onScrollBeginDrag={handleScrollBeginDrag}
+          onViewableItemsChanged={handleMenuViewableItemsChanged}
+          viewabilityConfig={MENU_VIEWABILITY_CONFIG}
           // Fill the bounded height between the header and the switch-board footer
           // (the inline column and the full-screen tab both render in a flex parent).
           style={styles.fillList}
@@ -1016,36 +1140,7 @@ function NowOnTheWallPanelComponent(
       )}
 
       {variant === 'column' ? (
-        <PressableSurface
-          onPress={handleSwitchBoard}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
-          style={[
-            styles.footer,
-            {
-              borderTopColor: systemColors.separator,
-              paddingBottom: footerBottomPadding,
-              backgroundColor: systemColors.secondaryBackground,
-            },
-          ]}
-        >
-          <View style={[styles.footerIcon, { backgroundColor: systemColors.secondaryBackground }]}>
-            <Icon name="transfer" size={20} color={systemColors.label} />
-          </View>
-          <View style={styles.footerText}>
-            <Text variant="body" color={systemColors.label}>
-              {/* Stays "Switch board": the gym's own boards live behind the header
-                title now, so this is the way out to every board anywhere. */}
-              {t('mobile.boardPresence.switchBoard')}
-            </Text>
-            {boardLabel ? (
-              <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-                {boardLabel}
-              </Text>
-            ) : null}
-          </View>
-          <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
-        </PressableSurface>
+        <SwitchBoardFooter boardLabel={boardLabel} onPress={handleSwitchBoard} bottomPadding={footerBottomPadding} />
       ) : null}
     </>
   );
@@ -1068,7 +1163,9 @@ type InteractiveRowActionProps = {
   onPress?: (climb: BoardPresenceClimb) => void;
   onPlayNext?: (climb: BoardPresenceClimb) => void;
   onOpenPlaylist?: (climb: BoardPresenceClimb) => void;
-  onOpenActions?: (climb: BoardPresenceClimb) => void;
+  onOpenActions?: (climb: BoardPresenceClimb, loadedClimb?: Climb) => ClimbActionsTarget | null | undefined;
+  /** The full climb, once loaded: its menu then knows who set it. */
+  menuClimb?: Climb;
 };
 
 type HeroContentProps = Omit<HeroProps, 'climb' | 'surfaceColor'> & {
@@ -1108,7 +1205,13 @@ function NowOnTheWallHeroContent({
       <AccessoryClimbThumbnail climb={renderClimb} boardConfig={boardConfig} size={thumbnailSize} />
       <View style={styles.heroBody}>
         <View style={styles.heroNameRow}>
-          <Text variant="headline" color={labelColor} numberOfLines={1} style={styles.heroName}>
+          <Text
+            testID={`board-current-${climb.climbUuid}-${climb.sentByUserId ?? 'anonymous'}`}
+            variant="headline"
+            color={labelColor}
+            numberOfLines={1}
+            style={styles.heroName}
+          >
             {climb.name ?? ''}
           </Text>
           {formattedGrade ? (
@@ -1170,6 +1273,7 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
   onPlayNext,
   onOpenPlaylist,
   onOpenActions,
+  menuClimb,
 }: InteractiveHeroRowProps) {
   const rowClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
   const climbBoardConfig = useMemo(
@@ -1191,8 +1295,8 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
     onOpenPlaylist?.(climb);
   }, [climb, onOpenPlaylist]);
   const handleOpenActions = useCallback(() => {
-    onOpenActions?.(climb);
-  }, [climb, onOpenActions]);
+    return onOpenActions?.(climb, menuClimb);
+  }, [climb, menuClimb, onOpenActions]);
   const renderContent = useCallback(
     ({ climb: renderClimb }: ClimbListRowRenderContentArgs) => (
       <NowOnTheWallHeroContent
@@ -1314,7 +1418,13 @@ function HistoryRowContent({
     <>
       <AccessoryClimbThumbnail climb={renderClimb} boardConfig={boardConfig} />
       <View style={styles.historyBody}>
-        <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.historyName}>
+        <Text
+          testID={`board-history-${climb.climbUuid}-${climb.seq}`}
+          variant="subheadline"
+          color={labelColor}
+          numberOfLines={1}
+          style={styles.historyName}
+        >
           {climb.name ?? ''}
         </Text>
         {sourceLine ? (
@@ -1380,6 +1490,7 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
   onPlayNext,
   onOpenPlaylist,
   onOpenActions,
+  menuClimb,
 }: InteractiveHistoryRowProps) {
   const rowClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
   const climbBoardConfig = useMemo(
@@ -1400,8 +1511,8 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
     onOpenPlaylist?.(climb);
   }, [climb, onOpenPlaylist]);
   const handleOpenActions = useCallback(() => {
-    onOpenActions?.(climb);
-  }, [climb, onOpenActions]);
+    return onOpenActions?.(climb, menuClimb);
+  }, [climb, menuClimb, onOpenActions]);
   const renderContent = useCallback(
     ({ climb: renderClimb }: ClimbListRowRenderContentArgs) => (
       <HistoryRowContent
@@ -1723,24 +1834,5 @@ const styles = StyleSheet.create({
   historyFooter: {
     paddingVertical: spacing[5],
     alignItems: 'center',
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  footerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  footerText: {
-    flex: 1,
-    gap: 2,
   },
 });

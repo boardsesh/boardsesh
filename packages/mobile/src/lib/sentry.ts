@@ -97,6 +97,36 @@ export function applyChunkLoadFingerprint<T extends FingerprintableEvent>(
   return event;
 }
 
+type NormalizableEvent = {
+  extra?: Record<string, unknown> | undefined;
+  exception?: { values?: Array<{ value?: string | undefined }> };
+};
+
+/**
+ * `captureToSentry` normalizes an opaque close/error event before sending, but a
+ * rejection that reaches the SDK through its global onunhandledrejection hook skips
+ * that path and arrives as `Event captured as promise rejection`. Apply the same
+ * normalization in `beforeSend`: when the original exception is not an `Error`, put
+ * the close code/reason into `extra` and replace the exception message. It edits the event in place and is
+ * ungated so it is unit-testable. Raw close events that used to group under the SDK's
+ * `Event captured as promise rejection` title will regroup under the new message.
+ */
+export function applyCapturedValueNormalization<T extends NormalizableEvent>(event: T, originalException?: unknown): T {
+  if (originalException instanceof Error) return event;
+  // Only close-event shapes (a numeric code or a socket target). Any other object
+  // with a `type` key keeps the SDK's own grouping.
+  if (typeof originalException !== 'object' || originalException === null) return event;
+  if (typeof (originalException as { code?: unknown }).code !== 'number' && !('target' in originalException)) {
+    return event;
+  }
+  const { error, extra } = normalizeCapturedValueForSentry(originalException);
+  if (!extra) return event;
+  event.extra = { ...event.extra, ...extra };
+  const firstValue = event.exception?.values?.[0];
+  if (firstValue) firstValue.value = error.message;
+  return event;
+}
+
 if (isSentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
@@ -118,7 +148,10 @@ if (isSentryEnabled) {
       if (isExpoUiSheetNoHandlerRejection(event, hint?.originalException)) return null;
       delete event.user;
       if (event.contexts?.device) delete event.contexts.device.id;
-      return applyChunkLoadFingerprint(event, hint?.originalException);
+      return applyChunkLoadFingerprint(
+        applyCapturedValueNormalization(event, hint?.originalException),
+        hint?.originalException,
+      );
     },
     beforeSendTransaction(event) {
       delete event.user;

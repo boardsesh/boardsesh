@@ -45,6 +45,7 @@ import { useProfile, useSetterStats } from '../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
+import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { iconMap } from '../../../src/components/icon-map';
 import { selectByVariant } from '../../../src/theme/variants';
 import { spacing } from '../../../src/theme/tokens';
@@ -163,6 +164,9 @@ export default function DiscoverLibrary() {
   // Measured top-chrome height so the scroll content clears the floating islands
   // (seeded to the safe-area top + a row, like the Climbs list).
   const [chromeHeight, setChromeHeight] = useState(() => (nativeRootHeader ? 0 : insets.top + 56));
+  // Tells the Material app bar when the shelves have scrolled under it. `list`
+  // stays undefined, and the ScrollView listener-free, until a bar attaches.
+  const scrollEdge = useScrollEdgeBackdrop();
 
   const {
     data: smartCounts,
@@ -662,8 +666,14 @@ export default function DiscoverLibrary() {
           }}
           scrollIndicatorInsets={{ top: chromeHeight }}
           keyboardShouldPersistTaps="handled"
+          // Every frame, so the app bar tints while rows pass under it (the browser
+          // build otherwise reports little more than the start and end of a scroll).
+          scrollEventThrottle={16}
+          {...scrollEdge.list?.listProps}
         >
-          {nativeRootHeader ? null : (
+          {/* The floating glass header has no title slot, so the page carries one.
+              UIKit's native header and the Material app bar both name the tab. */}
+          {nativeRootHeader || isMaterial ? null : (
             <Text variant="largeTitle" style={styles.screenTitle}>
               {t('bottomTabBar.discover')}
             </Text>
@@ -851,6 +861,7 @@ export default function DiscoverLibrary() {
         onCreate={handleCreatePress}
         onOpenBoardSwitcher={() => router.push({ pathname: '/boards', params: { returnTo: '/(tabs)/discover' } })}
         onHeightChange={setChromeHeight}
+        scrollEdge={scrollEdge.backdrop}
       />
 
       {/* Material's primary create affordance is an M3 FAB — the canonical place for

@@ -54,6 +54,8 @@ export const gyms = pgTable(
     latitude: doublePrecision('latitude'),
     longitude: doublePrecision('longitude'),
     isPublic: boolean('is_public').default(true).notNull(),
+    // Link-accessible gyms can opt out of directory, map and feed discovery.
+    isListed: boolean('is_listed').default(true).notNull(),
     description: text('description'),
     // Opening hours as one free-text line the gym writes itself ("Mon–Fri 7–22,
     // Sat–Sun 9–20"), deliberately unstructured: a structured per-day model would

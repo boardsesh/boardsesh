@@ -60,9 +60,12 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
               >
                 {row.description}
               </Text>
-              {/* Native iOS segmented control; brand-tinted selected fill. The tag
-                  on each option maps SwiftUI's selection to the choice key. */}
+              {/* Native iOS segmented control (a menu past three choices, the
+                  idiomatic iOS Settings picker); brand-tinted. The tag on each
+                  option maps SwiftUI's selection to the choice key. */}
               <Picker
+                // i18n-ignore-next-line — tester-only screen
+                label={row.control === 'menu' ? 'Override' : undefined}
                 selection={row.choice}
                 onSelectionChange={(value) => {
                   // @expo/ui types the selection as the untyped Picker tag; narrow
@@ -72,7 +75,11 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
                 }}
                 // Name the segmented group for VoiceOver (the visible label sits
                 // above; this gives the control itself an accessible name).
-                modifiers={[pickerStyle('segmented'), tint(accent), accessibilityLabel(row.label)]}
+                modifiers={[
+                  pickerStyle(row.control === 'menu' ? 'menu' : 'segmented'),
+                  tint(accent),
+                  accessibilityLabel(row.label),
+                ]}
               >
                 {row.options.map((option) => (
                   <Text key={option.key} modifiers={[tag(option.key)]}>

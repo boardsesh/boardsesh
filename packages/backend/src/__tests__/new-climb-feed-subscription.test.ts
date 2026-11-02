@@ -31,9 +31,8 @@ import { newClimbFeedSubscription } from '../graphql/resolvers/social/new-climb-
 // sent it. Moderation `hide` is a separate rule and still applies: a climb the
 // community hid never announces itself, including one hidden after the
 // publisher announced it. Withdrawn climbs (draft, unlisted) stay out too.
-// The account behind the climb keeps its identity: a subscriber who may not
-// see a private account's activity gets the climb under its setter name, with
-// no avatar.
+// Who set a published climb is public with it (#6418): every subscriber gets
+// the account's name and avatar as published, a private account's included.
 // ---------------------------------------------------------------------------
 
 const describeWithDatabase = process.env.SKIP_TEST_INFRA === '1' ? describe.skip : describe;
@@ -159,15 +158,6 @@ describeWithDatabase('newClimbCreated push (real DB)', () => {
   it.each([
     ['a stranger', ctxFor(STRANGER)],
     ['an anonymous caller', anonymous],
-  ])("sends %s a private account's climb under its setter name, with no avatar", async (_label, ctx) => {
-    expect(await firstAnnouncedClimb(ctx, [PUBLISHED])).toMatchObject({
-      uuid: PUBLISHED,
-      setterDisplayName: SETTER_NAME,
-      setterAvatarUrl: null,
-    });
-  });
-
-  it.each([
     ['an approved follower', ctxFor(FOLLOWER)],
     ['the account itself', ctxFor(PRIVATE_AUTHOR)],
   ])('names the private account to %s', async (_label, ctx) => {

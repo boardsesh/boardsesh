@@ -16,6 +16,9 @@ import FlashOnOutlined from '@mui/icons-material/FlashOnOutlined';
 import CheckCircleOutlineOutlined from '@mui/icons-material/CheckCircleOutlineOutlined';
 import ErrorOutlineOutlined from '@mui/icons-material/ErrorOutlineOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
+import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
+import { workoutHeadlineText } from '@boardsesh/workout-summary';
+import type { SessionWorkoutHeadlineResult } from '@boardsesh/graphql/operations/session-workouts';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import type { SessionFeedItem } from '@boardsesh/shared-schema';
 import { CssBarChart } from '@/app/components/charts/css-bar-chart';
@@ -30,7 +33,25 @@ import { generateSessionName } from '@/app/lib/session-utils';
 
 type SessionFeedCardProps = {
   session: SessionFeedItem;
+  /** "Workout · 4x4 at V4 · 3 blocks" when the session followed a workout (#6903). */
+  workoutHeadline?: SessionWorkoutHeadlineResult | null;
 };
+
+function WorkoutHeadlineLine({ headline }: { headline: SessionWorkoutHeadlineResult }) {
+  const { t } = useTranslation('session');
+  const { formatGrade } = useGradeFormat();
+  const mainTargetGrade = headline.mainTargetGrade
+    ? (formatGrade(headline.mainTargetGrade) ?? headline.mainTargetGrade)
+    : null;
+  return (
+    <Box data-testid="session-feed-workout" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+      <FitnessCenterOutlined sx={{ fontSize: 14 }} color="action" />
+      <Typography variant="caption" color="text.secondary" noWrap>
+        {workoutHeadlineText({ ...headline, mainTargetGrade }, t)}
+      </Typography>
+    </Box>
+  );
+}
 
 function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes}min`;
@@ -57,7 +78,7 @@ function formatRelativeTime(isoString: string): string {
   return new Date(isoString).toLocaleDateString();
 }
 
-export default function SessionFeedCard({ session }: SessionFeedCardProps) {
+export default function SessionFeedCard({ session, workoutHeadline = null }: SessionFeedCardProps) {
   const { t } = useTranslation('feed');
   const { formatGrade, loaded: gradeFormatLoaded } = useGradeFormat();
 
@@ -185,6 +206,8 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
           href={`/session/${sessionId}`}
           sx={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
         >
+          {workoutHeadline && <WorkoutHeadlineLine headline={workoutHeadline} />}
+
           {/* Goal */}
           {goal && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>

@@ -15,7 +15,7 @@
  *   vp run mobile:android-shots -- screenshot --story <id> --theme light    # shoot a dev story (docs/mobile-stories.md)
  *   vp run mobile:android-shots -- navigate --to discover                  # deep-link only
  *   vp run mobile:android-shots -- --flow app-store                        # run the Maestro flow
- *   vp run mobile:android-shots -- shutdown                                # stop emulator + Metro
+ *   vp run mobile:android-shots -- shutdown                                # stop emulator + Metro + readiness server
  *
  * Screenshots land in .boardsesh/android-screenshots/NN-<label>.png (absolute paths
  * printed). Auto-login (prod test account) is on by default via EXPO_PUBLIC_SCREENSHOT_MODE;
@@ -52,7 +52,16 @@ import { adbPath, androidEnv, ensureAndroidSdk, resolveAndroidHome } from './lib
 import { bootEmulator, resolveRunningEmulator, shutdownEmulator } from './lib/android-emulator';
 import { ANDROID_DEV_PACKAGE, ANDROID_SCHEME } from './lib/android-app';
 import { ensureAndroidApk } from './mobile-android-apk';
-import { METRO_PORT, metroLogOffset, metroLogPathForPort, shotsMetroWatch, stopMetro } from './lib/metro-dev-server';
+import {
+  METRO_PORT,
+  SCREENSHOT_READY_PORT,
+  listeningPids,
+  portInUse,
+  metroLogOffset,
+  metroLogPathForPort,
+  shotsMetroWatch,
+  stopMetro,
+} from './lib/metro-dev-server';
 import {
   STORY_THEMES,
   STORY_VARIANTS,
@@ -75,6 +84,7 @@ import {
 import {
   DEFAULT_USER_EMAIL,
   DEFAULT_USER_PASSWORD,
+  androidShotsReversePorts,
   type ScreenshotOptions,
   applyCleanAndroidStatusBar,
   buildScreenshotEnv,
@@ -447,11 +457,23 @@ function runNavigateSubcommand(options: ShotsOptions): number {
   return 0;
 }
 
-function killMetro(): void {
-  const result = runCapture('lsof', ['-nP', `-iTCP:${METRO_PORT}`, '-sTCP:LISTEN', '-t']);
-  const pids = result.stdout.split(/\s+/).filter(Boolean);
-  for (const pid of pids) runCapture('kill', [pid]);
-  if (pids.length > 0) console.log(`${LOG} Stopped Metro on port ${METRO_PORT}.`);
+/** Wire the dev-client's reverse ports (Metro, readiness, plus the local backend and web). */
+export function connectShotsDevClient(adbBinary: string, serial: string, backend: 'prod' | 'local'): void {
+  connectDevClient(adbBinary, serial, androidShotsReversePorts(backend));
+}
+
+/** Metro and the detached readiness server both outlive the orchestrator. */
+export const ANDROID_SHOTS_SHUTDOWN_PORTS: readonly number[] = [METRO_PORT, SCREENSHOT_READY_PORT];
+
+function stopListeners(ports: readonly number[]): void {
+  for (const port of ports) {
+    const pids = listeningPids(port);
+    for (const pid of pids) runCapture('kill', [String(pid)]);
+    if (pids.length > 0) console.log(`${LOG} Stopped listener on port ${port}.`);
+    if (portInUse(port)) {
+      console.warn(`${LOG} Port ${port} is still in use (no lsof/ss pid found, or another user's process).`);
+    }
+  }
 }
 
 function runShutdownSubcommand(): number {
@@ -464,7 +486,7 @@ function runShutdownSubcommand(): number {
   } else {
     console.log(`${LOG} No running emulator.`);
   }
-  killMetro();
+  stopListeners(ANDROID_SHOTS_SHUTDOWN_PORTS);
   return 0;
 }
 
@@ -543,7 +565,7 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   let succeeded = false;
   try {
     session = startMetroForDevClient(metroEnv, { watch, logPath: metroLogPath });
-    connectDevClient(adbBinary, serial);
+    connectShotsDevClient(adbBinary, serial, options.backend);
 
     if (options.screenshotMode) {
       if (launchDevClientToHome(adbBinary, serial, { logPrefix: LOG, metroLogPath })) {

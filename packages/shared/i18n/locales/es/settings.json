@@ -426,6 +426,9 @@
     "cancel": "Cancelar",
     "mobileConnectAnyway": "Conectar igualmente",
     "mobileConnectAnywayWarning": "Nuestros registros muestran que este controlador pertenece a otra configuración de plafón. Conectar igualmente podría iluminar las vías de forma incorrecta.",
+    "mobileDifferentBoardTitle": "Otro plafón guardado",
+    "mobileDifferentBoardNamedWarning": "Este controlador está vinculado a {{name}}, otro plafón guardado. Si te conectas igualmente, tus bloques aparecerán en la actividad de tu plafón actual.",
+    "mobileDifferentBoardWarning": "Este controlador está vinculado a otro plafón guardado. Si te conectas igualmente, tus bloques aparecerán en la actividad de tu plafón actual.",
     "mobileSwitchSetup": "Cambiar de plafón",
     "mobileUseRecordedSetup": "Usar la configuración registrada"
   },
@@ -443,6 +446,7 @@
     "searchingForBoard": "Buscando tu {{board}}…",
     "searchingForSavedBoard": "Buscando tu plafón…",
     "searchAnyBoard": "Buscar cualquier plafón",
+    "selectedBoardNotFound": "No se encontró el plafón seleccionado",
     "writing": "Iluminando el plafón…",
     "selectBoard": "Seleccionar plafón",
     "devicesFound_one": "{{count}} plafón encontrado",
@@ -462,36 +466,39 @@
     "cancel": "Cancelar",
     "connectBoard": "Conectar plafón",
     "relightBoard": "Reiluminar plafón",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Desconecta del plafón cuando no se ha mostrado ningún bloque durante el tiempo elegido.",
-      "enabledLabel": "Desconexión automática",
-      "enabledDescription": "Permite que otros escaladores se conecten cuando termine el temporizador.",
-      "timeoutLabel": "Desconectar después de",
-      "toggleTitle": "Desconexión automática",
-      "toggleSubtitle": "Desconectar después de {{timeout}} de inactividad",
-      "timeoutOptions": {
-        "10": "10 segundos",
-        "15": "15 segundos",
-        "30": "30 segundos",
-        "45": "45 segundos",
-        "60": "1 minuto",
-        "120": "2 minutos",
-        "300": "5 minutos",
-        "600": "10 minutos"
-      }
-    },
     "lighting": {
       "title": "Iluminación del plafón",
-      "description": "Elige qué enciende el plafón conectado automáticamente.",
-      "onSwipeLabel": "Iluminar el plafón al deslizar",
-      "onSwipeDescription": "Solo cuando ya hay un bloque en el muro. Una vista previa nunca enciende el plafón al deslizar.",
-      "onTapLabel": "Iluminar el plafón al tocar un bloque",
-      "onTapDescription": "Tocar un bloque en cualquier lista lo pone en el muro. Si lo desactivas, se abre una vista previa.",
+      "keep": {
+        "label": "Dejar el mando tras",
+        "off": "Enseguida",
+        "options": {
+          "30": "30 segundos",
+          "45": "45 segundos",
+          "60": "1 minuto",
+          "120": "2 minutos",
+          "300": "5 minutos"
+        },
+        "untilStopped": "Hasta que pare",
+        "inSessionLabel": "También en una sesión",
+        "inSessionAccessibilityLabel": "Poner en el plafón y Siempre al mando del plafón también se aplican en una sesión",
+        "inSessionDescription": "Cuando tu teléfono tiene el plafón de tu crew. Si lo desactivas, los bloques que elijas en una sesión se quedan en vista previa.",
+        "inSessionOffReason": "Cambia Dejar el mando tras a algo distinto de Enseguida para usar esto.",
+        "alwaysDriveReason": "Siempre al mando del plafón está activado, así que esto no se aplica.",
+        "footer": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende, y cada uno reinicia el reloj. Cuando se acaba el tiempo, el siguiente bloque que elijas se abre como vista previa.",
+        "footerUntilStopped": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende, hasta que toques Estás al mando del plafón.",
+        "footerOff": "Poner en el plafón enciende el bloque que tienes abierto. El siguiente bloque que elijas se abre como vista previa."
+      },
+      "drivingEnds": {
+        "label": "Desconectar el Bluetooth al dejar el mando",
+        "description": "Cuando se acaba tu turno al mando, tu teléfono suelta el plafón para que el siguiente escalador pueda conectarse: al pararlo tú o apagar todas las luces, al acabarse el tiempo, o cuando alguien de tu crew pone un bloque mientras tu mando tiene límite de tiempo. Poner en el plafón vuelve a conectar."
+      },
+      "drivingHelp": "Cómo funciona el mando del plafón",
+      "alwaysDriveLabel": "Siempre al mando del plafón",
+      "alwaysDriveDescription": "Cada bloque que elijas se enciende mientras este teléfono tenga el plafón. En una sesión necesita También en una sesión.",
+      "alwaysDriveFooter": "Toca Estás al mando del plafón para parar. Los bloques que elijas se abren en vista previa hasta que te desconectes o pulses Poner en el plafón.",
       "playlistTapLoadsQueueLabel": "Al tocar una playlist, cargarla en mi cola",
-      "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter sustituye tu cola por esa lista. Si Iluminar el plafón al tocar un bloque está desactivado, usa Reproducir para cargarla."
+      "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter carga esa lista. Si estás al mando del plafón, la lista sustituye tu cola y el bloque que tocaste se enciende. Si no, la lista desde el bloque que tocaste pasa a A continuación y ese bloque se abre en vista previa, mientras el plafón conserva su bloque hasta que pulses Poner en el plafón. En una sesión, la lista nunca entra en la cola compartida."
     },
-    "turnOff": "Apagar el plafón",
     "holdForControls": "Mantén pulsado para los controles",
     "boardControls": "Controles del plafón",
     "sendFailedTitle": "No se pudo iluminar el plafón",
@@ -513,19 +520,23 @@
     "releaseWall": "Liberar el muro",
     "barControl": {
       "connectedLabel": "Plafón conectado, tienes el control",
-      "connectedHint": "Abre los controles del plafón",
+      "youHaveBoard": "Tienes el plafón",
+      "youHaveBoardWithClimb": "Tienes el plafón: {{name}}, {{grade}}",
+      "connectedHint": "Desconecta el plafón",
       "peerLabel": "En el muro de {{name}}",
       "peerLabelAnonymous": "En el muro",
       "peerHint": "Abre la vía en el muro",
       "disconnectedLabel": "Plafón desconectado",
       "disconnectedHint": "Conéctate al plafón",
       "wallHeldLabel": "Tienes el muro",
+      "wallHeldWithClimb": "Tienes el muro: {{name}}, {{grade}}",
       "wallHeldHint": "Libera el muro",
       "wallOpenLabel": "El muro está libre",
-      "wallOpenHint": "Toma el muro"
+      "wallOpenHint": "Toma el muro",
+      "drivingValue": "Estás al mando del plafón"
     },
     "relayToWall": "Poner tu bloque en el plafón",
-    "peerDrivingBoard": "Otra persona está controlando el plafón"
+    "peerDrivingBoard": "Otra persona tiene el plafón"
   },
   "integrations": {
     "title": "Aplicaciones conectadas",

@@ -27,6 +27,9 @@ vi.mock('../ClimbListItemContent', () => ({
 
 vi.mock('../climb-list-row-styles', () => ({
   climbListRowStyles: { contentRow: { gap: 12 }, separator: { height: 1 } },
+  climbRowSeparatorInsetStyle: (hasThumbnail: boolean, thumbnailWidth: number) => ({
+    marginLeft: hasThumbnail ? 16 + thumbnailWidth + 12 : 16,
+  }),
 }));
 
 vi.mock('../../providers/theme-provider', () => ({

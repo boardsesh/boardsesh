@@ -3,6 +3,13 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 import { sqlText } from '@boardsesh/db/test-utils';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
+
+/** A fragment as Postgres receives it, column and table names included. */
+function renderedSql(fragment: unknown): string {
+  return new PgDialect().sqlToQuery(fragment as SQL).sql;
+}
 
 const {
   mockDb,
@@ -279,18 +286,27 @@ describe('smartPlaylist resolver', () => {
 
     for (const calls of [pageProjectsCalls, countProjectsCalls]) {
       // The user's ticks, grouped on BOTH columns: a sent Kilter climb must not
-      // stand in for a Tension climb that shares its uuid.
+      // stand in for a Tension climb that shares its uuid. The climb is the
+      // tick's canonical one, read through its catalog alias row (#6809).
       expect(calls.from[0][0]).toBe(dbSchema.boardseshTicks);
-      expect(calls.groupBy[0]).toEqual([dbSchema.boardseshTicks.climbUuid, dbSchema.boardseshTicks.boardType]);
+      expect(calls.leftJoin).toHaveLength(1);
+      expect(calls.leftJoin[0][0]).toBe(dbSchema.boardClimbAliases);
+      expect(calls.groupBy[0]).toHaveLength(2);
+      expect(renderedSql(calls.groupBy[0][0])).toBe(
+        'COALESCE("board_climb_aliases"."canonical_uuid", "boardsesh_ticks"."climb_uuid")',
+      );
+      expect(calls.groupBy[0][1]).toBe(dbSchema.boardseshTicks.boardType);
       // No flash or send among the group's ticks.
       expect(calls.having).toHaveLength(1);
       expect(sqlText(calls.having[0][0])).toMatch(/NOT bool_or\(\s*IN \('flash', 'send'\)\)/);
       expect(calls.as[0]).toEqual(['projects']);
-      // The climb row is not joined, only probed for the hydrator's readable
-      // rule (it exists, and a draft is the viewer's own), so the page and the
-      // count skip a tick the hydrator would drop (#6661).
-      expect(calls.leftJoin).toHaveLength(0);
-      expect(sqlText(calls.where[0][0])).toContain('privacy_reference_climb.is_draft IS NOT TRUE');
+      // The climb row is not joined, only probed by the tick privacy rule (a
+      // listed or own climb behind the canonical uuid), so the page and the
+      // count skip a tick the hydrator would drop (#6661). That rule is
+      // stricter than the hydrator's readable rule, so no second probe runs.
+      const where = renderedSql(calls.where[0][0]);
+      expect(where).toContain('"privacy_tick_climb"');
+      expect(where).not.toContain('privacy_reference_climb');
     }
     expect(pageCalls.leftJoin).toHaveLength(0);
     expect(pageCalls.limit[0]).toEqual([20]);
@@ -696,8 +712,19 @@ describe('mySmartPlaylistCounts resolver', () => {
       /SELECT DISTINCT climb_uuid, board_type\s+FROM base\s+WHERE status IN \('flash', 'send'\)/,
     );
     expect(rendered).toMatch(/sent\.climb_uuid = base\.climb_uuid\s+AND sent\.board_type = base\.board_type/);
-    // The logbook cards never read board_climbs.
-    expect(rendered).not.toMatch(/JOIN/);
+    // The cards read the list header's membership (#6808): the canonical climb
+    // through its alias row, the tick privacy rule (which needs a listed or
+    // own climb row) and the spray-wall rules; the hearts the readable rule.
+    const withNames = renderedSql(countsSqlArg());
+    expect(withNames).toContain(
+      'WITH base AS (select COALESCE("board_climb_aliases"."canonical_uuid", "boardsesh_ticks"."climb_uuid") as "climb_uuid"',
+    );
+    expect(withNames).toMatch(/left join "board_climb_aliases"/);
+    expect(withNames).toContain('"privacy_tick_climb"');
+    expect(withNames).toMatch(
+      /"user_favorites"\."user_id" = \$\d+ and EXISTS \(SELECT 1 FROM board_climbs privacy_reference_climb/,
+    );
+    expect(withNames).toContain('spray_walls');
   });
 
   it('appends RECOMMENDED_* counts when a board resolves', async () => {

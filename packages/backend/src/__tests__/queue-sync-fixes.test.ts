@@ -530,6 +530,173 @@ describe('reorderQueueItem - Return type handling', () => {
   });
 });
 
+describe('reorderQueueItem - moves the climb named by uuid when the index is stale (#6792)', () => {
+  let mockRedis: MockRedis;
+  let publishSpy: ReturnType<typeof vi.spyOn>;
+  let infoSpy: ReturnType<typeof vi.spyOn>;
+  const previousPercent = process.env.QUEUE_NOW_SLOT_PERCENT;
+
+  beforeEach(async () => {
+    mockRedis = createMockRedis();
+    roomManager.reset();
+    await roomManager.initialize(mockRedis);
+    publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
+    infoSpy = vi.spyOn(logger, 'info').mockImplementation((() => logger) as unknown as typeof logger.info);
+    delete process.env.QUEUE_NOW_SLOT_PERCENT;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (previousPercent === undefined) delete process.env.QUEUE_NOW_SLOT_PERCENT;
+    else process.env.QUEUE_NOW_SLOT_PERCENT = previousPercent;
+  });
+
+  const ctxFor = (sessionId: string) => ({
+    connectionId: 'client-1',
+    sessionId,
+    rateLimitTokens: 1000,
+    rateLimitLastReset: Date.now(),
+  });
+  const uuidsOf = (queue: ClimbQueueItem[]) => queue.map((item) => item.uuid);
+  const staleIndexLogs = () =>
+    infoSpy.mock.calls.filter((call: unknown[]) => call[0] === '[reorderQueueItem] stale client index');
+  // A stale reorder must reach the sender as a FullSync of the stored order: a
+  // QueueReordered echo fails the uuid-at-oldIndex check on its shifted queue.
+  async function expectFullSyncOfStoredQueue(sessionId: string) {
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    const [publishedSessionId, event] = publishSpy.mock.calls[0] as [
+      string,
+      { __typename: string; sequence: number; state: { queue: ClimbQueueItem[] } },
+    ];
+    expect(publishedSessionId).toBe(sessionId);
+    expect(event.__typename).toBe('FullSync');
+    expect(event.sequence).toBe(stored.sequence);
+    expect(uuidsOf(event.state.queue)).toEqual(uuidsOf(stored.queue));
+  }
+
+  async function roomWith(queue: ClimbQueueItem[], current: ClimbQueueItem | null = null) {
+    const sessionId = uuidv4();
+    await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+    await roomManager.updateQueueState(sessionId, queue, current, undefined, 0);
+    publishSpy.mockClear();
+    infoSpy.mockClear();
+    return sessionId;
+  }
+
+  it('moves the named climb, not whatever sits at a stale in-range oldIndex', async () => {
+    const [climbA, climbB, climbC] = [createTestClimb(), createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([climbA, climbB, climbC]);
+
+    // The phone thinks C is at 0 (a peer's removes landed first on its view).
+    await queueMutations.reorderQueueItem({}, { uuid: climbC.uuid, oldIndex: 0, newIndex: 1 }, ctxFor(sessionId));
+
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(stored.queue)).toEqual([climbA.uuid, climbC.uuid, climbB.uuid]);
+    await expectFullSyncOfStoredQueue(sessionId);
+    expect(staleIndexLogs()).toHaveLength(1);
+    expect(staleIndexLogs()[0][1]).toMatchObject({ uuid: climbC.uuid, oldIndex: 0, resolvedOldIndex: 2 });
+  });
+
+  it('finds the climb when the stale oldIndex is past the end of the queue', async () => {
+    const [climbA, climbB] = [createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([climbA, climbB]);
+
+    await queueMutations.reorderQueueItem({}, { uuid: climbB.uuid, oldIndex: 3, newIndex: 0 }, ctxFor(sessionId));
+
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(stored.queue)).toEqual([climbB.uuid, climbA.uuid]);
+    await expectFullSyncOfStoredQueue(sessionId);
+  });
+
+  it('clamps a newIndex past the end to the tail and resyncs the sender', async () => {
+    const [climbA, climbB] = [createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([climbA, climbB]);
+
+    await queueMutations.reorderQueueItem({}, { uuid: climbA.uuid, oldIndex: 0, newIndex: 5 }, ctxFor(sessionId));
+
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(stored.queue)).toEqual([climbB.uuid, climbA.uuid]);
+    await expectFullSyncOfStoredQueue(sessionId);
+  });
+
+  it('resyncs the sender when a peer remove made its drag a no-op on the server', async () => {
+    // Server [X,Y,Z]; a peer removes X; the sender, still on [X,Y,Z], drags Z
+    // from 2 to 1. On the server Z is already at 1, so nothing moves. The
+    // sender then applies the remove and holds [Z,Y]: a QueueReordered (Z,1,1)
+    // would fail its uuid-at-oldIndex check and leave it on [Z,Y].
+    const [climbX, climbY, climbZ] = [createTestClimb(), createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([climbY, climbZ]);
+
+    await queueMutations.reorderQueueItem({}, { uuid: climbZ.uuid, oldIndex: 2, newIndex: 1 }, ctxFor(sessionId));
+
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(stored.queue)).toEqual([climbY.uuid, climbZ.uuid]);
+    expect(uuidsOf(stored.queue)).not.toContain(climbX.uuid);
+    await expectFullSyncOfStoredQueue(sessionId);
+  });
+
+  it('rejects a uuid that is not in the queue without writing or publishing', async () => {
+    const [climbA, climbB] = [createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([climbA, climbB]);
+    const before = await roomManager.getQueueState(sessionId);
+
+    await expect(
+      queueMutations.reorderQueueItem({}, { uuid: uuidv4(), oldIndex: 0, newIndex: 1 }, ctxFor(sessionId)),
+    ).rejects.toThrow('is not in the queue');
+
+    const after = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(after.queue)).toEqual([climbA.uuid, climbB.uuid]);
+    expect(after.version).toBe(before.version);
+    expect(publishSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not log a stale index when the client indexes match the server', async () => {
+    const [climbA, climbB] = [createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([climbA, climbB]);
+
+    await queueMutations.reorderQueueItem({}, { uuid: climbA.uuid, oldIndex: 0, newIndex: 1 }, ctxFor(sessionId));
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      sessionId,
+      expect.objectContaining({ __typename: 'QueueReordered', uuid: climbA.uuid, oldIndex: 0, newIndex: 1 }),
+    );
+    expect(staleIndexLogs()).toHaveLength(0);
+  });
+
+  it('resolves a stale index under the now-slot rules too', async () => {
+    process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+    const [climbA, climbB, climbC] = [createTestClimb(), createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([climbA, climbB, climbC], climbA);
+
+    await queueMutations.reorderQueueItem({}, { uuid: climbC.uuid, oldIndex: 1, newIndex: 1 }, ctxFor(sessionId));
+
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(stored.queue)).toEqual([climbA.uuid, climbC.uuid, climbB.uuid]);
+    await expectFullSyncOfStoredQueue(sessionId);
+  });
+
+  it('holds a stale drag above the line at the head of Up next with nothing current', async () => {
+    process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+    const [historyClimb, climbA, climbB] = [createTestClimb(), createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([historyClimb, climbA, climbB]);
+    // One History entry, nothing current: the line sits at 1.
+    await roomManager.updateQueueState(sessionId, [historyClimb, climbA, climbB], null, undefined, 1);
+    publishSpy.mockClear();
+
+    // The phone thinks B is at 1 and drags it to 0, above the line. The server
+    // finds B at 2 and clamps the move to the head of Up next.
+    await queueMutations.reorderQueueItem({}, { uuid: climbB.uuid, oldIndex: 1, newIndex: 0 }, ctxFor(sessionId));
+
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(stored.queue)).toEqual([historyClimb.uuid, climbB.uuid, climbA.uuid]);
+    expect(stored.historyCount).toBe(1);
+    await expectFullSyncOfStoredQueue(sessionId);
+    expect(staleIndexLogs()).toHaveLength(1);
+    expect(staleIndexLogs()[0][1]).toMatchObject({ uuid: climbB.uuid, oldIndex: 1, resolvedOldIndex: 2 });
+  });
+});
+
 describe('order-sensitive dual-hash (stateHashOrdered)', () => {
   let mockRedis: MockRedis;
   let publishSpy: ReturnType<typeof vi.spyOn>;

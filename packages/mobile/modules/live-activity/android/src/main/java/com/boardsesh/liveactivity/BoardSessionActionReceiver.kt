@@ -10,8 +10,31 @@ import android.content.Intent
  * events (the same { action, currentIndex, correlationId } shape the iOS widget's
  * Darwin-notification → JS bridge uses, so live-activity-bridge.tsx handles both
  * platforms with no branching); the lightbulb becomes a `boardControl` event.
+ *
+ * Previous / Next light the wall through JS (its auto-sender writes the new
+ * climb as the event lands), so the press starts or renews Put on board's
+ * timed drive (2.7, Stop driving after) there too, at the wall's lit confirm
+ * (`armNotificationPressDrive` in lock-screen-lighting.ts), and JS sends it
+ * back through `updateLightingWindow`. Nothing is written here: a press the
+ * party server turns down, or whose write fails, never shows a drive. (iOS
+ * differs: its intent lights the wall itself, so it records the drive after
+ * its own write succeeds.)
  */
 class BoardSessionActionReceiver : BroadcastReceiver() {
+    companion object {
+        /** The `boardControl` action for a lightbulb tap. */
+        internal fun bulbAction(intent: Intent): String {
+            val connectedByMe =
+                intent.getStringExtra(BoardSessionService.EXTRA_BOARD_CONNECTION) ==
+                    BoardSessionService.CONNECTION_CONNECTED_BY_ME
+            return when {
+                !connectedByMe -> "reconnect"
+                intent.getBooleanExtra(BoardSessionService.EXTRA_STOPS_DRIVE, false) -> "stopDriving"
+                else -> "reassert"
+            }
+        }
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         val correlationId = intent.getStringExtra(BoardSessionService.EXTRA_CORRELATION_ID) ?: ""
         when (intent.action) {
@@ -21,27 +44,28 @@ class BoardSessionActionReceiver : BroadcastReceiver() {
                 if (sessionId.isBlank() || queueItemUuid.isBlank() || !intent.hasExtra(BoardSessionService.EXTRA_MIRRORED)) return
                 SessionPresenceModule.dispatchMirror(sessionId, queueItemUuid, intent.getBooleanExtra(BoardSessionService.EXTRA_MIRRORED, false))
             }
-            BoardSessionService.ACTION_NAV_PREVIOUS ->
+            BoardSessionService.ACTION_NAV_PREVIOUS -> {
                 SessionPresenceModule.dispatchQueueNavigate(
                     "previous",
                     intent.getIntExtra(BoardSessionService.EXTRA_CURRENT_INDEX, 0),
                     correlationId,
                 )
-            BoardSessionService.ACTION_NAV_NEXT ->
+            }
+            BoardSessionService.ACTION_NAV_NEXT -> {
                 SessionPresenceModule.dispatchQueueNavigate(
                     "next",
                     intent.getIntExtra(BoardSessionService.EXTRA_CURRENT_INDEX, 0),
                     correlationId,
                 )
+            }
             // Lightbulb tap: the action depends on who held the board when the
             // notification was last built (carried on the PendingIntent extra).
-            // connectedByMe → re-light the current climb; otherwise reconnect
-            // (taking the board back from a peer / reconnecting after a drop).
+            // connectedByMe → stop driving when the bulb was drawn as Stop
+            // driving (JS checks the drive is still on), else re-light the
+            // current climb; otherwise reconnect (taking the board back from a
+            // peer / reconnecting after a drop).
             BoardSessionService.ACTION_BULB -> {
-                val connectedByMe =
-                    intent.getStringExtra(BoardSessionService.EXTRA_BOARD_CONNECTION) ==
-                        BoardSessionService.CONNECTION_CONNECTED_BY_ME
-                SessionPresenceModule.dispatchBoardControl(if (connectedByMe) "reassert" else "reconnect", correlationId)
+                SessionPresenceModule.dispatchBoardControl(bulbAction(intent), correlationId)
             }
         }
     }

@@ -23,7 +23,7 @@ import {
   type KeyboardEvent,
   type KeyboardMetrics,
   type LayoutChangeEvent,
-  type View,
+  type ViewInstance,
 } from 'react-native';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 
@@ -153,7 +153,7 @@ export function useSheetKeyboardInset({ enabled, onKeyboardShow }: SheetKeyboard
   const [keyboard, setKeyboard] = useState<SheetKeyboardFrame | null>(null);
   const [columnBottomInHost, setColumnBottomInHost] = useState<number | null>(null);
   const [hostHeight, setHostHeight] = useState<number | null>(null);
-  const columnRef = useRef<View>(null);
+  const columnRef = useRef<ViewInstance>(null);
   const windowHeightRef = useRef(windowHeight);
   windowHeightRef.current = windowHeight;
   const onKeyboardShowRef = useRef(onKeyboardShow);
@@ -199,7 +199,9 @@ export function useSheetKeyboardInset({ enabled, onKeyboardShow }: SheetKeyboard
       return undefined;
     }
     // Opened with the keyboard already up: start from where it is.
-    const opening = Keyboard.isVisible() ? readKeyboard(Keyboard.metrics(), windowHeightRef.current) : KEYBOARD_DOWN;
+    const opening = Keyboard.isVisible()
+      ? readKeyboard(Keyboard.metrics() ?? undefined, windowHeightRef.current)
+      : KEYBOARD_DOWN;
     // "Up" is tracked apart from the frame: a frame that cannot be padded by
     // (cross-fade's `screenY` 0) is still a keyboard on screen.
     let shown = opening.shown;

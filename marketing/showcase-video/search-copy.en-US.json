@@ -1,6 +1,7 @@
 {
   "boards": "Every board.\nOne *app.*",
-  "spray": "Your spray\nwall, *too.*",
+  "yourBoards": "Your boards.\nOne *app.*",
+  "spray": "Your Spraywall,\n*too.*",
   "crew": "Your crew.\nOne *queue.*",
   "island": "Next climb.\nOutside the *app.*",
   "kilter": "Works with\n*Kilter.*",

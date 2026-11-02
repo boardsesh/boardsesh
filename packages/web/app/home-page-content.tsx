@@ -52,6 +52,14 @@ type HomePageContentProps = {
   gymSearch?: React.ReactNode;
   featureStrip?: React.ReactNode;
   supportBlock?: React.ReactNode;
+  /**
+   * The monthly support banner. `page.tsx` passes it only inside its window
+   * (`support-banner-window.ts`, days 1 to 7 of each month) and once a monthly
+   * Payment Link exists, so otherwise the slot is empty and
+   * nothing about it is in the HTML. It is fixed to the viewport, so where it
+   * sits here only sets its place in the reading order.
+   */
+  supportBanner?: React.ReactNode;
 };
 
 // Shared rounded-full brand CTA styling for the hero buttons — the Velvet violet
@@ -83,6 +91,7 @@ export default function HomePageContent({
   gymSearch,
   featureStrip,
   supportBlock,
+  supportBanner,
 }: HomePageContentProps) {
   const { t, i18n } = useTranslation('marketing');
   // The video's text is burned in English, so only the English page shows it;
@@ -134,6 +143,8 @@ export default function HomePageContent({
           flexDirection: 'column',
         }}
       >
+        {supportBanner}
+
         {/* Hero: Install-the-app CTA */}
         <Box className={styles.hero}>
           <Box className={styles.heroCopy}>

@@ -2,6 +2,8 @@ import type { SprayWallImportProgress } from '../spray-detection';
 import type { PrivacyLocationAudience, PrivacyResourceAudience } from '../generated/types';
 
 // Board entity types
+export type ObservedBoardSerialInput = { boardType: string; observedSerialNumber: string };
+export type ObservedBoardSerialMatch = ObservedBoardSerialInput & { candidates: UserBoard[] };
 
 export type UserBoard = {
   uuid: string;
@@ -45,6 +47,7 @@ export type UserBoard = {
   boardId?: number | null;
   gymUuid?: string | null;
   gymName?: string | null;
+  gymIsListed?: boolean | null;
   distanceMeters?: number | null;
   serialNumber?: string | null;
   timerName?: string | null;

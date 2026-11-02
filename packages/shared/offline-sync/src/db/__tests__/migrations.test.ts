@@ -70,6 +70,40 @@ async function rollBackAlterColumnsAbove(
 }
 
 describe('runMigrations', () => {
+  it('adds indexed outbox dependencies without changing older queued writes or artifact compatibility', async () => {
+    const database = createTestDatabase();
+    try {
+      for (const migration of MIGRATIONS.filter((entry) => entry.version <= 13)) {
+        for (const statement of migration.statements) await database.execAsync(statement);
+      }
+      await database.execAsync(`CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL);
+        INSERT INTO schema_version VALUES (1, 13);
+        INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key)
+        VALUES ('boardsesh_ticks', 'create', '{"climbUuid":"existing"}', 'queued-before-update');`);
+      await runMigrations(database);
+      expect(
+        await database.getFirstAsync(
+          'SELECT idempotency_key, payload, entity_key, depends_on_key FROM pending_mutations',
+        ),
+      ).toEqual({
+        idempotency_key: 'queued-before-update',
+        payload: '{"climbUuid":"existing"}',
+        entity_key: null,
+        depends_on_key: null,
+      });
+      const indexes = await database.getAllAsync<{ name: string }>('PRAGMA index_list(pending_mutations)');
+      expect(indexes.map((index) => index.name)).toEqual(
+        expect.arrayContaining(['idx_pending_mutations_entity', 'idx_pending_mutations_dependency']),
+      );
+      expect(ARTIFACT_SCHEMA_VERSION).toBe(12);
+      expect(LATEST_SCHEMA_VERSION).toBeGreaterThan(13);
+      await runMigrations(database);
+      expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM pending_mutations')).toEqual({ count: 1 });
+    } finally {
+      database.close();
+    }
+  });
+
   it.each([0, 4])('matches every sync column and primary key after upgrading schema v%i', async (version) => {
     const database = createTestDatabase();
     try {

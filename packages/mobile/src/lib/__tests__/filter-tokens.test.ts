@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Grade } from '@boardsesh/shared-schema';
 import type { ClimbBoardFilterState } from '@boardsesh/climb-filters';
-import { getActiveFilterTokens, type FilterToken } from '../filter-tokens';
+import { buildNameFilterToken, getActiveFilterTokens, type FilterToken } from '../filter-tokens';
 import { buildGradeRailStops } from '../grade-stops';
 import { DEFAULT_FILTERS, type ClimbFilters } from '../climb-filter-types';
 
@@ -17,6 +17,7 @@ const mockFormatGradeById = (id: number | null | undefined) => (id == null ? nul
 const text = (value: unknown) => (typeof value === 'string' || typeof value === 'number' ? String(value) : '');
 
 const mockT = ((key: string, options?: Record<string, unknown>) => {
+  if (key === 'mobile.filter.nameToken') return `“${text(options?.name)}”`;
   if (key === 'mobile.search.gradeRange') return `${text(options?.min)}–${text(options?.max)}`;
   if (key === 'mobile.search.gradeMin') return `${text(options?.grade)}+`;
   if (key === 'mobile.search.gradeMax') return `≤${text(options?.grade)}`;
@@ -324,5 +325,22 @@ describe('getActiveFilterTokens with a list’s own defaults', () => {
   it('still names a both-types pick on the Climbs list', () => {
     const { tokens } = build({ ...DEFAULT_FILTERS, routes: true });
     expect(tokens.find((token) => token.key === 'climbType')?.label).toBe('Boulders & routes');
+  });
+});
+
+// No list has a search field: the name is typed in the Filters sheet and shows as
+// the token row's first token.
+describe('buildNameFilterToken', () => {
+  it('names a trimmed search and clears it', () => {
+    const clear = vi.fn();
+    const token = buildNameFilterToken('  crimp ', mockT, clear);
+    expect(token).toMatchObject({ key: 'name', label: '“crimp”' });
+    token?.clear();
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it('builds nothing for an empty or blank name', () => {
+    expect(buildNameFilterToken('', mockT, vi.fn())).toBeNull();
+    expect(buildNameFilterToken('   ', mockT, vi.fn())).toBeNull();
   });
 });

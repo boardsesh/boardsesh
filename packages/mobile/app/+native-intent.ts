@@ -1,6 +1,7 @@
 import { deferConsentDestination } from '../src/lib/consent-navigation';
 import { getShareExtensionKey } from 'expo-share-intent';
 import { isLegacyPreviewLink } from '../src/lib/legacy-preview-link';
+import { isLegacyWallTabLink, WALL_DISPLAY_HREF } from '../src/lib/routing/wall-display-link';
 
 // Expo Router's redirect hook for OS-level deep links. The iOS Share Extension
 // (expo-share-intent) opens the app via a synthetic `com.boardsesh.app://...
@@ -29,6 +30,12 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   if (isLegacyPreviewLink(path)) {
     if (deferConsentDestination('/changelog')) return initial ? '/' : '';
     return '/changelog';
+  }
+  // The iPad "On the Wall" tab became the full-screen Wall display; its old
+  // `com.boardsesh.app://wall` link opens the new route.
+  if (isLegacyWallTabLink(path)) {
+    if (deferConsentDestination(WALL_DISPLAY_HREF)) return initial ? '/' : '';
+    return WALL_DISPLAY_HREF;
   }
   try {
     if (path.includes(`dataUrl=${getShareExtensionKey()}`)) {

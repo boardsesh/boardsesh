@@ -4,12 +4,13 @@ Scripts for measuring what a climber sees and waits for on a real phone: thumbna
 
 The method, the meaning of every number, the traps, and the Android plan are in [`docs/mobile-visible-performance.md`](../../docs/mobile-visible-performance.md). Read that first.
 
-These are local tools. Nothing here runs in CI or ships in the app. Python 3, standard library only; `scenario_film.py` also needs ImageMagick.
+The capture and analysis tools run locally; compact injector fixtures run in the `scripts` test project. Injected sources are for measurement builds only. Python 3, standard library only; `scenario_film.py` also needs ImageMagick.
 
 | File | What it is |
 | --- | --- |
 | `probe/perf-probe.ts.template` | The module the probe build adds to the app: events, the stall monitor, marker files |
-| `probe/apply_probes.py` | Adds the probes to a checkout. `--settle-consent` |
+| `probe/apply_probes.py` | Stages standard probes after validating every anchor. `--settle-consent` |
+| `probe/apply_opening_probes.py` | Adds opening-readiness probes after the standard stage |
 | `probe/apply_launch_markers.py` | Adds launch attribution on top |
 | `probe/apply_swipe_probes.py` | Adds the play drawer's swipe and pull-down probes, and the five-climb-queue marker |
 | `probe/apply_schema_hold.py` | Keeps a probe build from migrating the phone's offline database |
@@ -46,3 +47,22 @@ python3 scripts/mobile-probe-kit/scenario_play_swipe.py baseline-swipe-1        
 ```
 
 Runs are written to `.boardsesh/probe-runs/<name>/`, which git ignores. Set `BOARDSESH_PROBE_RUNS` to put them elsewhere.
+
+## Supported injector revisions
+
+The standard and opening injectors support the `8b842c4950` baseline, the
+`635753d563` PlayCore candidate, and current source families pinned at
+`329e73f824` and `cb0f82386b`. Current offline requests may return null locally
+and pass an abort signal to the network. Current activation uses one privacy or
+credential-generation rejection guard; the historical candidate retains three
+loaded-snapshot guards. See the [source-family table](../../docs/mobile-visible-performance.md#opening-a-climb-after-deep-scrolling).
+
+Both scripts finish validating replacements before writing. Missing, duplicated,
+mixed, or already-instrumented anchors fail without additional writes. Apply only
+to isolated clean checkouts and retain the source revision and script hashes.
+
+Run the focused CI fixtures with:
+
+```sh
+vp test run --project scripts scripts/mobile-probe-kit/probe/__tests__/injectors.test.ts --reporter=agent
+```

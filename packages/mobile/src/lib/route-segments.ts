@@ -15,6 +15,9 @@ const PLAYER_ROUTE = 'play';
 // backing (docs/mobile-sheets-vs-routes.md rule 2), so where it IS over the live
 // tabs the tab bar never leaves while it is up.
 const ONBOARDING_ROUTE = 'onboarding';
+// The full-screen Wall display for an iPad mounted at the board. Another
+// transparentModal over the live tabs, like the player.
+const WALL_DISPLAY_ROUTE = 'wall-display';
 
 /** True when the focused route lives inside the bottom-tab navigator. */
 export function isTabsRoute(segments: Segments): boolean {
@@ -24,14 +27,16 @@ export function isTabsRoute(segments: Segments): boolean {
 /**
  * True when the native bottom tab CHROME (the tab bar) is present and STABLE — on any
  * route inside the tabs (including pushed sub-routes, which keep the tab bar), OR under
- * the player route (`/play`) or the walkthrough (`/onboarding`).
+ * the player route (`/play`), the walkthrough (`/onboarding`) or the Wall display
+ * (`/wall-display`, with its settings and profile pages).
  *
- * Both are `transparentModal`s (app/_layout.tsx): the tabs screen stays LIVE behind
+ * All three are `transparentModal`s (app/_layout.tsx): the tabs screen stays LIVE behind
  * them, so UIKit never snapshots the presenting view controller. That lets the tab-bar
  * metrics stay put across their open/close instead of churning. The walkthrough joined
  * the player when it stopped being a `fullScreenModal` (#5654): unmounting the
  * accessory under a transparent cover would detach it while the bar is still up, which
  * is the #5055 failure below.
+ * The Wall display joined for the same reason: it opens straight over the live tabs.
  *
  * The walkthrough's clause is now deliberately WIDER than the truth. Since Settings
  * became a root destination, its replay rows push `/onboarding` over `/settings` —
@@ -61,6 +66,7 @@ export function isTabsChromeRoute(segments: Segments): boolean {
     segments[0] === TABS_GROUP ||
     segments[0] === PLAYER_ROUTE ||
     segments[0] === ONBOARDING_ROUTE ||
+    segments[0] === WALL_DISPLAY_ROUTE ||
     segments[0] === 'privacy-consent'
   );
 }
@@ -87,6 +93,15 @@ export function isTopLevelTabRoute(segments: Segments): boolean {
  */
 export function isPlayerRoute(segments: Segments): boolean {
   return segments[0] === PLAYER_ROUTE;
+}
+
+/**
+ * True when the full-screen Wall display (`/wall-display`) or a page pushed inside
+ * it is focused. It covers the tab bar, the sidebar and the bottom accessory, so
+ * the shell behind it skips its own wall surfaces and player pane.
+ */
+export function isWallDisplayRoute(segments: Segments): boolean {
+  return segments[0] === WALL_DISPLAY_ROUTE;
 }
 
 /**
@@ -119,7 +134,8 @@ export function isAccessorySurfaceRoute(segments: Segments): boolean {
  *
  * So the host mounts exactly when the bar is up, and unmounts only when the whole tab
  * view controller leaves (root pushes/modals) — where the accessory co-detaches with the
- * bar, which is the case `d12aa606a` device-verified as safe.
+ * bar, which is the case `d12aa606a` device-verified as safe. Climbs has been an
+ * ordinary tab since #6827, not the docked search item; the rule stands for the bar.
  *
  * NOT interchangeable with `isAccessorySurfaceRoute`: that one is narrower and keeps the
  * bar hidden on sub-routes for the JS bar. Narrowing THIS one back to it reintroduces
@@ -138,6 +154,27 @@ export function isAccessoryHostRoute(segments: Segments): boolean {
   return isTabsChromeRoute(segments);
 }
 
+// The Session tab's route name (it predates the tab's current label).
+const SESSION_TAB = 'record';
+
+/**
+ * True on the Session tab's own page, where the root rest-timer pill is hidden
+ * while the timer is IDLE (armed, waiting for the first climb). That page shows
+ * the timer's settings inline, so an idle pill only stacked a fourth layer over
+ * it between Start and the MiniPlayer. Once a rest is counting the pill comes
+ * back: outside a workout block nothing inline shows the running time. Pushed
+ * Session pages (summary, settings, a climber's profile) always keep the pill,
+ * like every other screen. Hiding it is presentation only: the timer keeps
+ * running and the Live Activity is driven by the timer store, not by the pill.
+ *
+ * The bottom-chrome metrics combine this with the timer's idle state into
+ * `restTimerPillHiddenOnRoute`, which both the pill host and the reserve read,
+ * so a hidden pill never leaves its 54pt reserve behind.
+ */
+export function isRestTimerPillHiddenRoute(segments: Segments): boolean {
+  return isTopLevelTabRoute(segments) && segments[1] === SESSION_TAB;
+}
+
 /**
  * Tab sub-routes whose bottom controls sit where the accessory platter draws: the
  * full-screen hold-type and zone filter boards, in the two stacks that push them
@@ -152,14 +189,16 @@ const ACCESSORY_HIDDEN_TAB_ROUTES: Readonly<Record<string, ReadonlySet<string>>>
 
 /**
  * True where the native accessory platter must be HIDDEN while its host stays
- * mounted. Hiding goes through react-native-screens' `bottomAccessoryHidden` prop,
- * not an unmount: the React host and its content stay alive, and the patched
+ * mounted: the filter boards above. (The Wall display needs no entry: it is a root
+ * modal that covers the platter.) Hiding goes through react-native-screens'
+ * `bottomAccessoryHidden` prop, not an unmount: the React host and its content stay alive, and the patched
  * `applyBottomAccessoryVisibility` schedules the tab-bar relayout on that edge too
  * (patches/react-native-screens@4.26.2.patch), which is the #5055 fix. This is a
  * narrow exception to `isAccessoryHostRoute`, never a replacement for it.
  */
 export function isAccessoryHiddenRoute(segments: Segments): boolean {
-  const hiddenRoutes = ACCESSORY_HIDDEN_TAB_ROUTES[tabsActiveSegment(segments) ?? ''];
+  const activeTab = tabsActiveSegment(segments);
+  const hiddenRoutes = ACCESSORY_HIDDEN_TAB_ROUTES[activeTab ?? ''];
   return !!hiddenRoutes && hiddenRoutes.has(segments[2] ?? '');
 }
 
@@ -171,4 +210,27 @@ export function isAccessoryHiddenRoute(segments: Segments): boolean {
  */
 export function tabsActiveSegment(segments: Segments): string | null {
   return isTabsRoute(segments) ? (segments[1] ?? null) : null;
+}
+
+/**
+ * The last tab the climber was on: the focused tab on a tab route, otherwise
+ * `previousTab` unchanged. Root routes (the player, and the pages the player
+ * pushes over itself, like a crew member's profile or the moderation page) sit
+ * on top of the live tabs, so the tab beneath them is still the one they were
+ * opened from. `null` until the first tab route.
+ */
+export function rememberBoardArtTab(segments: Segments, previousTab: string | null): string | null {
+  return tabsActiveSegment(segments) ?? previousTab;
+}
+
+/**
+ * The tab whose board art is on screen, given the remembered tab
+ * (`rememberBoardArtTab`). That is the focused tab, except under the player
+ * (`/play`): the player is a `transparentModal` over the live tabs, and its
+ * open and close animations show the tab beneath it, so that tab still counts
+ * as on screen (issue #7081). Any other root route answers `null`, so no tab
+ * counts while it is up.
+ */
+export function boardArtFocusedTab(segments: Segments, rememberedTab: string | null): string | null {
+  return isPlayerRoute(segments) ? rememberedTab : tabsActiveSegment(segments);
 }

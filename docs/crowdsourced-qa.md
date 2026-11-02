@@ -87,6 +87,15 @@ migrated phone, see `docs/offline-sync-plan.md` → "Older JS on a newer databas
 `## Release Notes` extraction (`scripts/lib/changelog-transform.ts`), the CI gate, and the backend
 all read PR bodies through it, so a body that passes CI renders the same plan in the app.
 
+The verdict sheet handles one action at a time. Choosing **Leave preview** owns the action before
+the sheet starts dismissing; sending a verdict owns its screenshot uploads and submission, then
+hands ownership to the return after full dismissal. The managed dismissal wait also completes if
+the tester already closed the sheet during upload or submission; an aborted dismissal releases the
+action without starting a return. Leave and Send stay unavailable while those phases own the action.
+A failed upload, submission or return allows a retry; a return completed without restarting also
+releases the controls. An accepted restart keeps both actions blocked until
+the app reloads. Verdict-sent and failed-return messages describe those separate outcomes.
+
 ## The backend
 
 Two GraphQL operations, both open to any signed-in user (`requireAuthenticated`) — the mobile branch

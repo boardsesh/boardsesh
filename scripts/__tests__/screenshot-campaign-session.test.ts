@@ -137,7 +137,39 @@ describe('campaign native session replay', () => {
           queueUpdates: {
             __typename: 'FullSync',
             sequence: 1,
-            state: { sequence: 1, stateHash: 'recorded', queue: [item], currentClimbQueueItem: item },
+            // Recorded before the RN subscription selected historyCount: null, which the
+            // native reducer reads the way it reads a pre-F3 server.
+            state: {
+              sequence: 1,
+              stateHash: 'recorded',
+              historyCount: null,
+              queue: [item],
+              currentClimbQueueItem: item,
+            },
+          },
+        },
+      },
+    });
+    const withLine = fixture(
+      'QueueUpdates',
+      'subscription QueueUpdates { queueUpdates { __typename } }',
+      { sessionId: 'crew' },
+      {
+        data: {
+          queueUpdates: {
+            ...response.data.queueUpdates,
+            state: { ...response.data.queueUpdates.state, historyCount: 1, currentClimbQueueItem: null },
+          },
+        },
+      },
+    );
+    expect(replayCampaignSessionResponse(NATIVE_CAMPAIGN_QUEUE_QUERY, { sessionId: 'crew' }, withLine)).toEqual({
+      response: {
+        data: {
+          queueUpdates: {
+            __typename: 'FullSync',
+            sequence: 1,
+            state: { sequence: 1, stateHash: 'recorded', historyCount: 1, queue: [item], currentClimbQueueItem: null },
           },
         },
       },

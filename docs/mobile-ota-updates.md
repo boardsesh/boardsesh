@@ -114,7 +114,7 @@ What the retry has to respect:
 - **One PR moves the image, the CLI and the promote script.** On that push, Railway Config rolls the
   server while production-deploy stages the OTA. `scripts/mobile-ota-server-ready.mjs` makes the
   staging publish and the promote step wait for the Railway Config run on the same commit, and
-  fail if it did not succeed. Every other push returns from it at once.
+  fail if it did not succeed. Other pushes return at once; Railway Config only runs for pushes to main.
 - **Assets are content-addressed from 3.2.0.** Uploads land at `{appId}/cas/<sha256>` and each update
   maps its files there (`updates.asset_mapping`). Updates published before the upgrade keep being
   served from their old folders. The first boot runs the Postgres migrations for this (`blobs`,
@@ -234,7 +234,7 @@ install, since the device couldn't verify the manifest came from us.
    [What a launch runs](#what-a-launch-runs)).
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by the exact-pinned, patched
-   `@expo/fingerprint@0.20.13` installation behind Expo's `expo/fingerprint` export. An
+   `@expo/fingerprint@0.21.6` installation behind Expo's `expo/fingerprint` export. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
    fingerprint (the OTA lands) while **any native change yields a new fingerprint** — the OTA is
    intrinsically incompatible with old binaries and isn't delivered (they keep their embedded
@@ -245,6 +245,68 @@ install, since the device couldn't verify the manifest came from us.
    `android.versionCode`, so two marketing versions can share one fingerprint (see
    [Version-only releases](#version-only-releases)). Resolve the current value with
    `vp exec expo-updates runtimeversion:resolve --platform ios|android` (from `packages/mobile/`).
+
+## Expo SDK 58 native upgrade
+
+The release train uses Expo 58.0.19, React Native 0.88.0 and React 19.3.0.
+Build iOS with Xcode 27. Expo prebuild generates the scene delegate and scene
+manifest required by iOS 27; generated native projects must be regenerated after
+this upgrade. Existing Expo app-delegate subscribers receive scene lifecycle events.
+
+React Native 0.88 registers `requestIdleCallback` in its timer setup, so optional
+work uses that native scheduler after the first frame. Gesture Handler 3 still
+supports its builder API and ref-based relations. Existing editor and drawer
+graphs keep that compatibility path; rows interacting with the new Swipeable
+use the hook API so a gesture relation never crosses between the two APIs.
+
+`expo-share-intent` 9 updates Expo compatibility without changing the share API
+([upstream migration](https://github.com/achorein/expo-share-intent/pull/241/files)).
+Existing cold/warm link handling, shared-beta routing and App Group deduplication
+stay covered by their integration tests. On a new native build, share a beta link
+from another app with Boardsesh both closed and already open; each opens the beta form.
+
+Web remains on React 19.2. Next, MUI's styled engine and react-i18next import
+React declarations without declaring their types peer, so pnpm otherwise gives
+them the hoisted mobile 19.3 declarations. The precise optional peer extensions
+in `pnpm-workspace.yaml` bind each package to its consuming app's React types.
+Next's ReactDOM declarations use the same explicit peer binding so their own
+React peer cannot fall back to the mobile version.
+`scripts/__tests__/react-types-resolution.test.ts` checks the installed module
+paths; keep that check when updating or removing these extensions.
+MUI's internal declarations also import React explicitly through the web-only
+patch in `packages/web/patches`: their fallback ref type must not use the mobile
+ambient React namespace. The compiler regression exercises both declaration
+variants against that mixed context before and after the import.
+
+`with-react-native-source-builds` forces React Native source builds on iOS so the
+scheduler lifetime fix in `patches/react-native@0.88.0.patch` actually compiles.
+React Native 0.88 removed the runtime flag used by our previous workaround for
+#5293 without retaining its delegate invalidation. The compile gate checks the
+source patch and rejects archives linked against prebuilt React. Expect a slower
+first native build; subsequent builds can reuse the shared local Xcode cache.
+Remove this source-build requirement only after an upstream React Native release
+preserves the scheduler delegate lifetime guard, the behavioral C++ tests pass
+against that release, and both Release native builds pass without our patch.
+
+The fingerprint explicitly uses the `strict` preset. SDK 58's new `balanced`
+default hashes package versions; we continue hashing native source and config
+plugins, including our patched dependencies. This upgrade creates a new native
+runtime: SDK 58 JavaScript must only reach matching SDK 58 binaries. Build new
+store and development binaries before publishing updates to that runtime.
+
+The SQLite patch retains operation draining before close and runtime-scoped
+cleanup. SDK 58 executes native database methods concurrently, so connection
+lifecycle locks protect operations from close, cache locks precede connection
+locks, and backups acquire both connection locks in a stable order. Native
+statement finalization fixes are now supplied upstream.
+
+Duo-specific navigation rails, horizontal safe areas, resize layouts and device
+QA remain in [#5383](https://github.com/boardsesh/boardsesh/issues/5383). The iOS 27
+scene migration does not establish Duo layout support.
+
+Upgrade references: [Expo SDK 58](https://expo.dev/changelog/sdk-58),
+[scene lifecycle](https://expo.fyi/ios-scene-lifecycle), and
+[Router migration](https://docs.expo.dev/router/migrate/sdk-57-to-58/).
 
 ## What a launch runs
 
@@ -393,7 +455,7 @@ crash-reported unhandled rejection.
 
 Rule: any imperative native call that could be OTA-ahead of the native binary must be guarded (a
 `.catch` / capability probe / `requireOptionalNativeModule` null-check) so it degrades to a no-op
-instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fui@57.0.11.patch`.
+instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo__ui@58.0.23.patch`.
 
 ### Invariant: an OTA can't claim a manifest flag the binary lacks
 
@@ -432,36 +494,41 @@ The promoter uses each archived export's `metadata.json` for asset media types,
 matching the pinned `eoas` uploader even though Metro names the files by content
 hash without extensions.
 
-Pushes to `release/next` still run `.github/workflows/mobile-ota-production.yml`
-directly. `main` serves the store fleet; `release/next` (the release train,
-see `docs/mobile-store-release.md`) serves the testers running the train's
-TestFlight / Play-internal binary, so they get JS as fast as everyone else —
-including after a sync. `release-train-sync.yml` keeps the train level with `main`.
+`main` is the single source for store and tester bundles. `mobile-ota-production.yml`
+accepts main-only calls from the production-deploy pipeline and explicit main dispatches;
+it has no direct push trigger. A native change moves main onto a new fingerprint,
+so older installed binaries retain their last compatible update until users install
+replacement binaries. Publishing never substitutes an older fingerprint to cross that boundary.
+When main is on a validated, publicly unreleased native version, its OTAs publish
+to that runtime immediately after the production backend and schema are ready.
+They use the same archived exports, captured production baselines and serialized
+production publisher; they do not wait for store review, the daily stable schedule,
+or a percentage rollout. Both live public store marketing versions must be lower,
+neither public fleet may use either platform's candidate runtime, and no same or
+higher release anchor may exist. Every historical public release anchor also
+protects its runtime: reverting to a previously public fingerprint cannot use this
+immediate route, because older installed binaries still accept that fingerprint.
+The exact source and archived marketing version
+and runtime pair must match main's latest validated native stamp. Later JS commits
+on that same native line remain eligible; an unstamped native change does not.
+Public-store status and protected native history are read again inside the
+production lock immediately before publication. Missing, malformed or stale
+evidence blocks this route. Existing public runtimes keep the daily stable policy
+and wait until **both** stores offer the candidate runtimes. Early updates and
+native post-upload republishes retain their existing guarded paths. Public store
+submission remains manual, and older runtimes retain their last compatible OTA.
 
-**The train's publish is guarded by live store runtimes.** A train is active
-when the marketing versions on `release/next` and `main` differ. Every active-train
-push starts publication without a soak delay. Xprem serves the newest update
-*for a given runtimeVersion*, so a train platform whose fingerprint is already
-offered by a public store is withheld. The guard reads the public store state
-through trusted main tooling and resolves exact immutable build tags to full
-fingerprints. It does not infer production from `main`, which may already have
-merged a new native release awaiting store review. Approved-but-unpublished and
-tester builds do not count as public releases. Missing, stale or ambiguous
-evidence blocks the publish. Native build tags whose source commits already
-belong to `main` also reserve their runtimes for public release; the train cannot
-publish onto those while approval is pending, even if `main` has since advanced
-to a newer runtime. Main and train tips are checked again before publication
-attempts, so a delayed retry cannot reuse authorization after either branch moves.
-A superseded train push publishes nothing.
-Train cuts, publications and failures report to the deployments Discord channel.
-Because
-runtimeVersion is a fingerprint, this is safe to run on every push: a native change publishes an
-OTA whose fingerprint no current binary has yet, so it only lands once the matching store build
-ships. If the server is not wired (no `EXPO_UPDATES_URL` variable or committed cert), main
-staging fails; direct release-train/manual publishes retain the old green no-op.
-The matching native builds (`ios-testflight-rn` / `android-apk-rn`) run
-on the same push but are **fingerprint-gated** — they only build when the fingerprint is new (see
-[Native-build gating](#native-build-gating-ota-only-when-the-fingerprint-is-unchanged) below).
+Native changes are stamped on main through `mobile-native-release.yml`. They rebuild
+main's open marketing version until a store accepts it (its `release/*` anchor closes
+it); only then does the next native change open one shared patch. The stamped commit
+starts both tester builds. JS-only pushes keep their version and use the
+staged OTA pipeline, with immediate delivery on an eligible unreleased native line.
+Public App Store and Play production submission
+requires an explicit manual workflow action; a merge never submits a public release.
+See [Native releases and build gating](#native-releases-and-build-gating).
+
+If the server is not wired (no `EXPO_UPDATES_URL` variable or committed cert), main
+staging fails; direct manual publishes retain the existing green no-op behavior.
 Matching fingerprints are necessary but not sufficient: an OTA published while a native build is
 still running loses to that build's embedded bundle, so each native build republishes when it
 finishes — see [Publish ordering](#publish-ordering-a-binary-can-outrank-a-newer-ota) below. A
@@ -577,6 +644,132 @@ roll back a platform that already published. A single eoas invocation can still 
 before its server-row write fails; making that internal PUT/database operation atomic requires an
 upstream expo-open-ota change.
 
+### Metro transform cache
+
+Before this cache, every OTA export started cold. The iOS export alone logged `Bundled 141682ms`
+for 6,545 modules, about 142 s of a 3 min 15 s publish step, and Android paid the same again.
+The `publish` job of `mobile-ota-production.yml` now starts its two exports from a warm Metro
+transform store left by an earlier successful publish, and leaves one for the next. `ci.yml`'s
+`mobile-bundle` job measured 178 s cold against 90 s warm for the same exports. Expect each publish
+step to lose roughly half its bundle time once warm; the first warm staging run is the measurement
+to check.
+
+- **Where it lives.** `@expo/metro-config` hard-codes the store to `os.tmpdir()/metro-cache`, so
+  both publish steps set `TMPDIR` to `$RUNNER_TEMP/metro-ota`. It sits outside the workspace
+  because `metro.config.js` watches the whole monorepo. `TMPDIR` is set on the steps, never at the
+  workflow level, which `scripts/mobile-ci-env-parity.test.ts` keeps byte-identical to the native
+  builds. eoas 3.2.6 runs `expo export` without `--clear`, so the store is reused.
+- **Why the key hashes `EXPO_PUBLIC_*`.** `babel-preset-expo`'s `inline-env-vars` plugin writes
+  every `process.env.EXPO_PUBLIC_*` value into the transformed code. Metro's own cache key hashes
+  the babel config files and never these values. Without them in our key, changing the backend URL,
+  Sentry DSN or PostHog key would reuse transforms built with the old value and ship it to every
+  user. The key step hashes all `EXPO_PUBLIC_*` variables (sorted, NUL-separated) plus the written
+  `packages/mobile/.env`, on top of the lockfile, workspace, Metro config, babel config,
+  `app.config.ts` and `patches/**`. The publish steps must not set an `EXPO_PUBLIC_*` of their own,
+  because the key step would not see it.
+- **Key and artifact name.** The key is `metro-ota-<os>-<inputs hash>-<inlined env hash>-`. The
+  store travels as the artifact `metro-ota-store-<first 40 hex of sha256(key)>`, so a dependency
+  bump or any `EXPO_PUBLIC_*` change starts cold.
+- **Who makes it.** Only `publish` runs on `main` (the staging call from `production-deploy.yml`,
+  or a dispatch), once at least one platform
+  exported from a verified store. The store is sealed, packed with GNU tar (no `-P`, owner 0) and
+  uploaded with 7-day retention. The step summary records its size.
+- **Who uses it.** `scripts/ci/metro-cache-select.ts` lists recent successful runs of the trusted
+  workflows through the Actions API, newest first, and asks each for an artifact with this exact
+  name, before a byte is downloaded. `publish` downloads the chosen artifact by its id (never by
+  name) with `run-id` into a fresh directory, checks its unpacked size and every tar member,
+  unpacks it and verifies the seal.
+- **Never blocks a publish.** Every cache step is `continue-on-error`, and the publish steps don't
+  depend on any of them. Bundle bytes are unchanged: Metro keys each entry on the file's content
+  hash, and the staged receipt hashes the exported bundle itself.
+
+#### Selection rules
+
+The selector starts from runs, not artifacts (`scripts/ci/metro-cache-select.ts`, unit-tested in
+`scripts/ci/metro-cache-select.test.ts`). Artifacts are only ever listed per run, so a same-named
+artifact uploaded by any other run is never even seen and can't crowd out the real ones. An
+artifact is used only when all of these hold:
+
+1. The run that produced it completed with conclusion `success`, from this repository (not a fork),
+   triggered by `push` or `workflow_dispatch`, and is not the current run.
+2. Its name is exactly this run's `metro-ota-store-<hash>`, it has not expired, it is not empty,
+   its `size_in_bytes` is within the 1 GiB budget, and its `workflow_run` is that run.
+3. That run's workflow file and branch are one of: `.github/workflows/mobile-ota-production.yml`
+   on `main`, or `.github/workflows/production-deploy.yml` on `main`. Main's
+   staging publish runs as a `workflow_call` inside `production-deploy.yml`, and the Actions API
+   reports the caller's path for it. Accepting that path is what lets main's most frequent publish
+   both use and leave a store. Every job in `production-deploy.yml` is trusted main code, and the
+   seal still applies to what it produces.
+4. The artifact's branch matches its run's branch.
+
+The newest qualifying run with a usable artifact wins. At most 40 runs are asked, one API call
+each, because most `production-deploy.yml` runs stage no OTA. A run still in progress never
+qualifies, so a deploy's store becomes usable once that deploy has finished green. The download
+names the vetted artifact id, so an artifact replaced after the check (which gets a new id) fails
+the download and the export runs cold.
+
+#### Threat model: why it works this way
+
+- **No `actions/cache`.** GitHub lets any workflow run whose ref is `main` write main-scope cache
+  entries. Two of ours used to run code we did not review under that ref: `mobile-ota-preview.yml`
+  on an `/ota-preview` comment or a refresh dispatch, and `db-migration-renumber.yml`. Both now hand
+  that work to a run on a throwaway `ci-sandbox/<workflow>/pr-<n>/<run id>` branch
+  (`scripts/lib/ci-sandbox.cjs`), and `scripts/__tests__/untrusted-code-workflow-guard.test.ts`
+  fails any default-branch workflow that executes a computed checkout without a reviewed reason.
+  Even so, our cache key is computable from public files, so any main-scope run that guard missed
+  could plant an entry that `restore-keys` would hand to the production export. Worse,
+  `@actions/cache` extracts with `tar -xf … -P -C $GITHUB_WORKSPACE`, and `-P` turns off GNU tar's
+  refusal of absolute and `..` names, so a planted entry could rewrite any file the runner user can
+  reach (repo scripts, `node_modules`, a binary in `~/.local/bin`) during the restore, before any
+  check ran.
+- **Nothing from the same run.** Jobs in one run share an artifact namespace, so the publish
+  job never consumes a Metro store produced alongside it. No job other than `publish` handles the
+  store, and it only ever comes from an earlier, finished run that passed the selection rules.
+- **Every byte is still checked.** download-artifact rejects path traversal inside the zip. The
+  unpack step refuses a tar over the budget, then one whose members' sizes add up to more than the
+  budget (a sparse member is a few bytes in the tar and any size on disk). It lists the tar first
+  and refuses it unless every member is a regular file or directory
+  named `metro-cache/`, `metro-cache/<2 hex>/`, `metro-cache/<2 hex>/<hex>.mp` or
+  `metro-cache/.metro-ota-seal`. Only then does it extract, without `-P` and with `--no-same-owner
+  --no-same-permissions --no-overwrite-dir`.
+- **The HMAC seal stays mandatory** (`scripts/ci/metro-cache-seal.sh`), so even an artifact from a
+  trusted run is useless without the key:
+  1. **Secret.** `METRO_CACHE_HMAC_KEY` is a secret on the `Production` environment only, which
+     `publish` already runs under. A maintainer sets it once with
+     `gh secret set METRO_CACHE_HMAC_KEY --env Production` (any long random value, for example
+     `openssl rand -hex 32`). Rotating it makes the next run cold.
+  2. **Seal, before upload.** The manifest is every file in the store, as sorted relative paths with
+     each file's sha256 (`LC_ALL=C`). Its HMAC-SHA256 covers a version tag, the cache key and the
+     manifest, and is written to `.metro-ota-seal`. Node computes it with the key read from its
+     environment, so the key never reaches a command line or a log. The key is in the MAC so that
+     a genuine store sealed under old `EXPO_PUBLIC_*` values cannot be renamed into the current
+     key. Before sealing, the `.tmp<pid>_` files an unfinished Metro write leaves behind are
+     deleted.
+  3. **Verify, after unpacking and before either export.** The store must have exactly the layout
+     Metro's binary FileStore writes: two-hex-digit shard directories at depth 1 holding `<hex>.mp`
+     files, plus the seal. The MAC is recomputed from the files on disk (the stored manifest is
+     never read). Any mismatch, a missing or malformed seal, a wrong key, a different key prefix or
+     anything outside the layout empties the store, with a `::warning::` and a step summary line.
+     After a pass the store is made writable, so a read-only shard can't make Metro's `set()`
+     throw mid-export.
+  4. **The exports only read a store the check passed.** `TMPDIR` points at the store only when
+     the verify step wrote `store_ready=true`. Otherwise the exports use a fresh dir under
+     `$RUNNER_TEMP` that is never uploaded.
+  5. **No key, no cache.** With the secret unset, nothing is looked up, downloaded, sealed or
+     uploaded, and the step summary says the exports ran cold. The job never fails over it.
+
+#### Size budget
+
+The budget is 1 GiB (`METRO_CACHE_MAX_BYTES`, default 1073741824). The selector compares it with
+the artifact's `size_in_bytes` (compressed) before downloading. The unpack step compares it with
+the tar and with the sum of its members' sizes before writing anything. The verify and seal steps
+compare it with the store on disk. The zip itself is expanded inside download-artifact, so how big
+that can get rests on the artifact coming from a vetted run. For scale, `ci.yml`'s `metro-native` entry holds the same two production
+exports and is 85.6 MiB compressed (`gh cache list --key metro-native`, October 2026). The store
+only grows because each run carries every earlier transform forward until the key changes. Past the
+budget, the verify step drops it and that run starts fresh, and the seal step refuses to upload an
+oversized store.
+
 ### OTA source maps and Sentry
 
 Production and approved-release backport workflows publish and upload in this order: iOS OTA → iOS
@@ -608,7 +801,7 @@ exact same commit/tree, platform, and build environment that produced the live O
 platform's publish to regenerate `dist`, and immediately run `mobile:upload-sourcemaps` before any
 other `eoas publish`. A newer tree or different environment can produce a different Debug ID and
 cannot repair the already-published artifact. When the failed run retained no exact export
-artifacts, recover the current train by publishing a fresh OTA from the latest train tree with
+artifacts, recover the current main runtime by publishing a fresh OTA from main with
 the fixed uploader and require successful uploads for both platforms. That gives the fresh
 update readable crash frames; repairing a historical update still requires its exact bundle/map
 artifacts and matching Debug IDs.
@@ -620,10 +813,10 @@ further publishing on that branch, so a forgotten one turns the next auto-publis
 
 ### A parked run holds the whole lane
 
-`mobile-ota-production.yml` runs under `concurrency: mobile-ota-production` with
+`mobile-ota-production.yml` runs `publish` under `concurrency: mobile-ota-production` with
 `cancel-in-progress: false` and `queue: max`, and every job a direct run executes
-(`live-store-runtimes / resolve`, `publish`, `notify-train-deployment`) declares
-`environment: Production`. A job parked in `waiting` at that gate holds the lane
+(`publish`) declares `environment: Production`. Since the group moved onto `publish`, the jobs around it cannot
+hold the lane at all. A job parked in `waiting` at that gate holds the lane
 for up to 30 days, and `timeout-minutes` does not help because a parked job's
 clock never starts. On 2026-10-24 run 40105607795 finished `publish`, then parked
 `notify-train-deployment` for 27 hours; 40 runs queued behind it, the daily stable
@@ -631,16 +824,18 @@ OTA `tick` and production-deploy's `promote-mobile-ota` waited on the same group
 and nothing alerted.
 
 `production-deploy-watchdog.yml` now covers this lane too (its
-`mobile-ota-production` matrix job, every 15 minutes, all branches). It cancels a
+`mobile-ota-production` matrix job, every 15 minutes, main only). It cancels a
 run only when a listed job is `waiting` at a gate, nothing is `in_progress`, and
 no job has started or completed for 45 minutes. It never cancels an executing
 publish, however old the run: a publish killed part-way can leave one platform
-published and the other not. It never re-dispatches, since `queue: max` keeps
-every pending run. A cancelled run's unfinished jobs are not retried, so the
-Discord report says for each stopped run whether `publish` had already succeeded.
-If it had not, dispatch the workflow again for that branch unless a later run
-there publishes the same platforms (`gh workflow run mobile-ota-production.yml
---ref <branch>`, adding `-f platform=…` for a per-platform republish). If it
+published and the other not. It does not re-dispatch the run it cancels, since
+`queue: max` keeps every pending run, except the work nothing queued would
+redo: a cancelled main native republish. That gets one
+dispatch, or the exact command in Discord when the retry is spent or
+`OTA_LANE_REDISPATCH` is `off`. For any other stopped run whose `publish` had
+not succeeded, dispatch the workflow again from main unless a later run
+publishes the same platforms (`gh workflow run mobile-ota-production.yml
+--ref main`, adding `-f platform=…` for a per-platform republish). If it
 cannot read a held run's job list it goes red and names the run rather than
 reporting all clear: open that run and check it by hand. The full rules, and the
 lane-sharing workflows it does not watch, are in
@@ -849,7 +1044,7 @@ All of them take `--branch` (default `production`), `--platform ios|android|all`
 in the environment.
 
 - `status` without `--runtime-version` walks **every** runtime version of the branch. A rollout
-  belongs to one branch, one runtime version and one platform, and a release-train merge-back can
+  belongs to one branch, one runtime version and one platform, and a native runtime change can
   leave one behind on a runtime version nothing publishes to any more.
 - `set`, `finish` and `revert` read the rollout first and send the update id they found as
   `expectedUpdateId`, so the server refuses the write if the rollout was replaced in between.
@@ -1007,8 +1202,10 @@ unlock blocks the publish. Staging exports do not unlock or replace production.
 **Only current public runtimes soak.** Preparation and every controller tick
 read the newest live iOS and Android store builds and verify both candidate
 fingerprints. If either differs, a new candidate waits without production
-writes. After a train merges into `main`, staging and early updates continue
-while the stores review the new binaries; production soaks resume once both
+writes. After a native change lands on main, staging and early updates continue
+while the stores review the new binaries. Eligible unreleased native lines receive
+immediate staged production OTAs through the production-deploy pipeline described
+above; this controller continues to hold those candidates. Production soaks resume once both
 public stores offer the matching runtimes. There are no automatic backports.
 An urgent fix for the older fleet uses the existing explicit backport workflow.
 A public runtime change during a canary stops its progression and reconciles
@@ -1046,10 +1243,11 @@ repository variable does not satisfy or bypass the controller's native and navig
 Relevant `main` pushes always publish to staging, wait for deployment and backend-schema readiness,
 then promote those exact exported bytes to `pr-beta`. This supplies early-update store QA before cutover.
 Before `OTA_STABLE_RELEASE_ENABLED=true`, successful deployments additionally keep the existing
-per-merge production promotion. Once enabled, production receives the daily qualified canary instead.
+per-merge production promotion. Once enabled, publicly released runtimes receive the daily qualified
+canary. A validated unreleased native line receives immediate per-merge production promotion after
+the same deployment and readiness checks, subject to the public-runtime admission checks above.
 The activation switch controls automatic production cadence, not explicit manual commands, staging or beta publication. Native builds,
-release trains, manual hotfixes and backports retain
-their existing publish routes, with the trusted unlock before a production write.
+manual hotfixes and backports retain their existing publish routes, with the trusted unlock before a production write.
 
 Staging captures production and beta baselines before either export. Runtime resolution uses the
 normal native build environment; a separate dependency-free, main-only admin job captures the
@@ -1335,8 +1533,7 @@ attempt, head, numeric job, known unlock wait step, branch and runtimes. The wai
 job from a complete attempt listing before dispatching. The main-only receiver checks the caller
 is still in its wait step immediately before each protected revert, and requires 30 seconds of
 remaining lifetime after those API reads for the existing write timeout. Leases expire with the
-caller’s 20-minute wait budget. Production callers retain `main` and `release/next`; staged and
-backport callers are `main` only. Manual unlocks require both request and lease to be empty.
+caller’s 20-minute wait budget. Production, staged, and backport callers are `main` only. Manual unlocks require both request and lease to be empty.
 
 Older automatic requests without a lease fail closed, including already queued or in-flight
 publishers that dispatch the new receiver. Already-dispatched unlock jobs retain their pinned
@@ -1397,8 +1594,8 @@ iOS 2.5.0 runtime (`b71bdb600c5a`) and main (`b1058ef575fa`). No mobile native
 feature caused that drift.
 
 Main pins both datasets to the approved versions in `pnpm-workspace.yaml`, while
-keeping Next.js 16.3.5. Advance these dependencies on `release/next` alongside a
-new native build. Do not exclude their files from fingerprinting or override the
+keeping Next.js 16.3.5. Advance these dependencies on `main`; the native-release
+coordinator bumps the patch and starts replacement tester builds. Do not exclude their files from fingerprinting or override the
 runtime hash to force an OTA through. Compare actual fingerprint sources when a
 web dependency update unexpectedly changes mobile compatibility; a matching PR
 and main hash alone does not prove that either matches the App Store binary.
@@ -1472,6 +1669,30 @@ would move `runtimeVersion` and force a native build for install-graph noise.
   `packages/mobile/patches`, while this repo's `patchedDependencies` live in the root
   `pnpm-workspace.yaml`; without the explicit source, editing native iOS/Android patch code at an
   unchanged package version would look OTA-compatible.
+- Two more `extraSources` hash files that `app.config.ts` or a config plugin reads by path, because
+  the fingerprint hashes the resolved config, not the files behind a path. `locales`
+  (`iosInfoPlistLocales`) holds the iOS permission strings. `targets` (`iosAppleTargets`) holds
+  everything `@bacons/apple-targets` compiles into the BoardseshWidgets Live Activity extension:
+  its Swift, `Info.plist` and `Localizable.strings`. Before #7215 only the target's
+  `expo-target.config.js` was hashed, so a widget-only Swift edit resolved the same
+  `runtimeVersion`. PR CI skipped the iOS build, Main Native Release cut no binary, and the OTA
+  check said "Ships over-the-air" for code no OTA can deliver. Both sources are hashed for both
+  platforms, so a widget-only change also moves Android's `runtimeVersion` and costs an Android
+  build and an Android OTA cut-off. `fingerprint.config.js` cannot scope a source to one platform:
+  `@expo/fingerprint` loads it once with no platform, and neither `extraSources` nor
+  `fileHookTransform` carries one.
+- Dir sources hash every file on disk, tracked or not; `@expo/fingerprint` does not read
+  `.gitignore`. `ignorePaths` in `fingerprint.config.js` adds editor and patch leftovers (`*.swp`,
+  `*.swo`, `*~`, `*.orig`, `*.rej`) to the library's default ignores, so an open vim buffer under
+  `targets/`, `plugins/`, `modules/` or `locales/` no longer moves a local resolve. The loader
+  appends these to the defaults rather than replacing them. CI always resolves from clean
+  checkouts. Any other untracked file in a hashed dir still moves a local resolve, so publish by
+  hand only from a clean tree.
+- The widget's entitlements come from the `entitlements` object in its `expo-target.config.js`.
+  `@bacons/apple-targets` writes them to `ios/.targets/BoardseshWidgets/` at prebuild. A
+  `generated.entitlements` file in `targets/BoardseshWidgets/` is ignored while that object
+  exists, and prebuild warns about it in red. #7215 deleted the leftover copy; don't add it back,
+  because it would still be hashed.
 
 Long pnpm store entries are truncated and end in a 32-hex digest. The digest is part of the peer tail
 and is removed with it. `virtualStoreDirMaxLength` is pinned to 120 in `pnpm-workspace.yaml`; pnpm's
@@ -1481,7 +1702,7 @@ leaves the path untouched, over-triggering a build rather than hiding a native c
 
 Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes the isolated-store wrapper
 for a genuine nested dependency. The exact-pinned patch
-`patches/@expo__fingerprint@0.20.13.patch` collapses
+`patches/@expo__fingerprint@0.21.6.patch` collapses
 `node_modules/.<store>/<entry>/node_modules/` wrappers when matching ignores and building
 file/directory hash ids. Its dot-prefixed store match cannot collide with a real npm package name,
 and pnpm's hoisted-compat directory does not have the required `<entry>/node_modules/` shape.
@@ -1510,23 +1731,29 @@ it can't silently drop out of one channel (which would revert that channel to th
 
 ## Native releases and build gating
 
-Only `release/next` automatically builds TestFlight and Play-internal binaries on
-push, when the native fingerprint is new or the marketing version has no
-`build-<platform>-v<version>-*` tag yet. JS-only pushes skip native builds;
-`main` builds only by manual dispatch (hotfix rebuilds). Native PRs into either
-branch are informational in the OTA compatibility check and require no waiver
-label. Screenshot and store-draft automation follow `release/next` builds only.
-Build numbers, upload concurrency and fingerprint tags remain global per platform.
-See `docs/mobile-store-release.md` for the release checklist and draft safeguards.
+Native PRs target `main`. `mobile-native-release.yml` compares both canonical
+platform fingerprints with the latest validated release stamp, or the protected
+`release/native-baseline` bootstrap tag. A changed pair creates one bot stamp and
+starts both TestFlight and Play tester builds from that exact commit. While main's
+marketing version is open (no release anchor at it, no higher reservation) the stamp
+adopts it with new build numbers; once a store accepts it, the stamp opens the next
+unused patch. Several native merges waiting for the job share one current
+snapshot/version. JS-only changes do not bump or build. The full rule is in
+[the store release runbook](mobile-store-release.md#1-main-opens-native-versions).
 
-`main` owns production OTA delivery to the store fleet. The train also publishes
-OTAs, but only when it carries its own native change (its fingerprint differs from
-main's and from the merge-base's); this prevents
-the train's JS taking over main's runtime. A native change makes older installed
-binaries incompatible with later bundles. Users need the replacement store
-binary before they receive those OTAs. Prepare the version and localized release
-notes before the final native change and move the replacement through QA and review.
-Keep backend changes compatible with currently installed builds until adoption.
+The coordinator does not wait for binaries while holding its lock. It reconciles
+the newest stamped release on main pushes, native completions, hourly, and manual
+dispatch. Build recovery uses the pinned `source_sha` without opening another
+version. Workflow SHA and binary source SHA remain distinct. Per-platform upload
+locks, store build numbers, and fingerprint/build tags remain global.
+Screenshot and store-draft follow-ups use exact successful upload provenance.
+See `docs/mobile-store-release.md` for baseline setup, stamp validation, and recovery.
+
+A native change makes older installed binaries incompatible with later bundles.
+Those installations keep their existing compatible update and need the replacement
+store binary before they receive new ordinary OTAs. Keep backend changes compatible
+with currently installed builds until adoption. Public store submission is manual;
+a main merge and automatic tester delivery never submit the live app for review.
 
 **SDK 57 package refresh (October 2026).** Expo is exact-pinned to `57.0.27`,
 with the remaining Expo packages exact-pinned to that release's supported version
@@ -1538,7 +1765,7 @@ regression test guards that behavior and Swift initializer ordering. Keep
 `expo-modules-core` in `buildFromSource` so the image and SQLite patches still
 compile through its dependency cascade, and keep Observe's `expo-updates-interface`
 override at `57.0.1`. This refresh requires matching new iOS and Android native builds before users
-can receive OTAs with the new fingerprints. Both release branches now build those
+can receive OTAs with the new fingerprints. The main native-release coordinator builds those
 replacements automatically; no native-on-main waiver is required.
 
 ### GraphQL schema changes: installed builds keep querying old fields
@@ -1548,10 +1775,9 @@ production, keeps sending the queries it shipped with. Two rules follow (#5370):
 
 - **Backend first.** Deploy a new field before the OTA that queries it. An OTA that lands first
   fails those requests until the backend catches up.
-  The same holds on the train: tester builds and train OTAs query the production backend, which
-  deploys from `main`. A PR into `release/next` fails CI (`train-schema-on-main`) when a mobile
-  query is rejected by `main`'s schema, so land the server half on `main` first and merge `main`
-  into the train (#6111).
+  Tester builds query that same production backend. Android tester upload and iOS external
+  distribution check live backend schema readiness before making a binary available. A failed
+  or delayed backend deployment must not expose a client that requires its new schema.
 - **Never remove what installed builds still query.** Mark the field `@deprecated` and remove it
   only after those builds are gone: the store release that stopped querying it has been out for a
   full adoption cycle, and PostHog's `OTA Update Status` event, grouped by `runtimeVersion` (see
@@ -1569,25 +1795,25 @@ its own Sentry issue; the `ota_channel` tag shows which bundle sent it. Before t
 them landed in catch-all issues on the GraphQL client frame (BOARDSESH-CJ / BOARDSESH-7H), which
 still collect unrelated request failures and must not be resolved as "the schema issue".
 
-The native builds (`ios-testflight-rn`, ~60 min on macOS;
-`android-apk-rn`, on Linux) only run when the fingerprint changes. A JS/TS-only
-change keeps the same fingerprint, so a fresh store build is wasted. Each native
-workflow gates itself on the fingerprint:
+The native builds (`ios-testflight-rn`, about 60 minutes on macOS;
+`android-apk-rn`, on Linux) start automatically only for a validated patch stamp.
+A raw native merge first goes through the coordinator, and a JS-only change
+keeps the same fingerprint pair and version. Each platform then gates its upload:
 
-1. A cheap Linux **`gate` job** resolves the platform fingerprint with `vp exec expo-updates
-runtimeversion:resolve` using the same **workflow-level** env the build uses (iOS without
-   `GOOGLE_MAPS_API_KEY`, Android with it). The shared env sits at the workflow level so the gate
-   and build can't drift, and the gate writes the same `.env` the build does — the `.env` is itself
-   hashed into the fingerprint, so an absent or different one would resolve a different hash.
-2. If a git tag `fingerprint-<platform>-<hash>` already exists, a binary with that fingerprint has
-   already uploaded → the native build **skips**. Otherwise it **runs**.
-3. On a successful build + store upload, the build job pushes `fingerprint-<platform>-<hash>` — the
-   gate value the binary embeds (see the pin below), not a re-resolved one.
+1. A cheap Linux gate resolves the pinned source's fingerprint with `vp exec expo-updates
+   runtimeversion:resolve` using the canonical build environment: iOS without
+   `GOOGLE_MAPS_API_KEY`, Android with it. The same `.env` bytes are hashed by the gate and build.
+2. An exact successful build tag for the stamped source, marketing version, and fingerprint
+   suppresses a duplicate build. A previously uploaded sibling fingerprint alone does not skip
+   its build of the new shared marketing version. Play may defer while another review is pending.
+3. A successful upload records an immutable build tag/receipt and the full fingerprint tag.
+   Recovery keeps that stamped source and version. An ambiguous store acceptance must be
+   reconciled before retrying the upload.
 
 **Why a wrong skip is impossible.** The native build embeds the gate's exact value in the binary via
 `EXPO_UPDATES_FINGERPRINT_OVERRIDE` (the macOS runner no longer re-resolves its own, divergent hash)
 and tags it. So the tag, the binary's runtimeVersion, and the gate's skip-key are one value by
-construction — the gate can never skip a fingerprint the binary lacks. This replaces the older "tag
+construction. The duplicate-build check additionally binds the exact source and marketing version. This replaces the older "tag
 the build-OS value and always-build on cross-OS divergence" scheme, which wasted iOS builds and —
 worse — let the Linux OTA publish strand JS under a runtimeVersion the macOS binary never had.
 Android builds on Linux like its gate, so it was never divergent; it pins the same way for a uniform
@@ -1624,10 +1850,13 @@ Two places produce a trustworthy hash:
 So: record the iOS pair at merge time from `ota-check`, record the Android pair as "minted on merge",
 and fill both in from `git tag -l 'fingerprint-*' --sort=-creatordate` once the store builds land.
 
+Historical fingerprint changes (branch names below describe where those commits originally landed):
+
 | Merged | What moved it | iOS | Android |
 | --- | --- | --- | --- |
 | 2026-09-15, #5435 (SW-02) | `onnxruntime-react-native` 1.24.3 autolinked on Android via `packages/mobile/react-native.config.js`, `cameraPermission` on the `expo-image-picker` plugin, Android `CAMERA`, version 2.5.0 → 2.6.0 | main `b71bdb600c5a3e954d75c9ca673f056c62247ea9` (shipped tag) → PR `f0a4650d0746…` (`ota-check`; full hash lands as `fingerprint-ios-*` when `ios-testflight-rn` uploads) | main shipped tag `154bc941c504727afc914057aed2edff2c096576`; `ota-check` sees `fbc79fa47dc8…` → `4f14a7ee6bac…` WITHOUT the maps key, so neither is the binary's value — the real one lands as `fingerprint-android-*` when `android-apk-rn` uploads |
 | 2026-10-04, #6006 | `fingerprint.config.js` gained `sourceSkips: ['ExpoConfigVersions', 'PackageJsonAndroidAndIosScriptsIfNotContainRun']` (bitmask 513), so `version`, `ios.buildNumber` and `android.versionCode` are no longer hashed. The config file is itself a hashed source, so this edit moved both fingerprints once. Landed on `release/next` | see the `fingerprint-ios-*` tags for #6006 | see the `fingerprint-android-*` tags for #6006 |
+| 2026-11, fixes #7215 | `fingerprint.config.js` gained the `iosAppleTargets` dir source, so every file under `packages/mobile/targets/` (widget Swift, `Info.plist`, strings) is hashed on both platforms, and `ignorePaths` for editor and patch leftovers. The unused `targets/BoardseshWidgets/generated.entitlements` was deleted in the same change (prebuild output unchanged). Adding the source and editing the hashed config moved both fingerprints once | see `ota-check` on the PR, then the `fingerprint-ios-*` tags | minted on merge; see the `fingerprint-android-*` tags |
 
 ### Version-only releases
 
@@ -1641,26 +1870,18 @@ Expo config. The second name is `@expo/fingerprint`'s own default, restated beca
 
 Two marketing versions can now share one fingerprint. What follows from that:
 
-1. A push to `release/next` that only bumps `version` resolves an existing
-   `fingerprint-<platform>-<hash>` tag, but the new version has no
-   `build-<platform>-v<version>-*` tag, so both native gates still build. No manual dispatch is
-   needed: `release-train-sync.yml` bumps the train's version once the current one is released
-   (merged back to `main` or Apple-approved), and that push ships the tester builds. The iOS gate
-   fails fast if the version already has a `release/ios-v<version>-*` anchor. The Android build is
-   deferred while a Play review is pending, and the sync's hourly run dispatches it again.
-
-   `mobile-store-draft.yml` then runs from the two completions.
-2. After a version-only build the post-build OTA republish is skipped. The train guard in
-   `mobile-ota-production.yml` does not publish while the train carries no native change of its own,
-   so that binary runs its embedded bundle until main's next production publish.
-3. A version-only release gets no "App update" marker in the in-app changelog (markers come from
-   `fingerprint-*` tags) and no automatic screenshot run (that needs a fingerprint tag at the
-   triggering commit). Dispatch the screenshot workflows by hand.
-4. A backport (`mobile-ota-backport.yml`) to one version reaches every installed version that shares
-   that fingerprint, because they request the same runtimeVersion. Backport only once `main` has
-   moved off that fingerprint.
-5. A version-only PR into `main` passes the OTA compatibility check, since the fingerprint does not
-   move.
+1. A native change opens a shared patch on main even when only one platform's fingerprint
+   changed. The new marketing version needs a tester build for each platform, so both build.
+   A deliberate version-only release can use the manual platform workflows from main.
+2. Post-build OTA republishes remain enabled and verify `expect_fingerprint` before publishing.
+   They skip if main has moved to a different native runtime; existing binaries keep their
+   embedded bundle and compatible updates.
+3. Version-only releases create no new fingerprint marker in the in-app changelog. Screenshot
+   and draft follow-ups use the exact uploaded build receipt/tag, so an unchanged sibling
+   fingerprint does not prevent preparation for the new marketing version.
+4. A backport (`mobile-ota-backport.yml`) reaches every installed version sharing its anchor's
+   fingerprint. Backport only once main has moved off that fingerprint.
+5. Version-only changes remain OTA-compatible because the marketing version is not hashed.
 
 A version bump that rides along with a real native change works as before: the native change moves
 the fingerprint and starts the build that carries the version. Every in-app reader of the app
@@ -1713,7 +1934,12 @@ Two details that make it hold:
 - The shared `mobile-ota-production` lane uses `queue: max`. `cancel-in-progress: false` protects
   only the *running* run — GitHub still cancels a *pending* one when a new run queues, and the
   republishes are per-platform, so a superseded pending run would strand that platform. The cost is
-  that pushes during a long publish queue instead of coalescing.
+  that manual republishes queue during a long publish rather than coalescing.
+- The lane is declared on the `publish` job, not the workflow, so the jobs around it
+  (staging runtime resolution and baseline capture) can never hold it. On 2026-10-24 a workflow-level
+  lane let a notify job that never got a runner block every OTA for 27 hours.
+  `production-deploy-watchdog.yml` cancels a parked lane holder and dispatches a stranded republish
+  again once — see [The OTA lane](production-deploy.md#the-ota-lane).
 
 After a successful republish the workflow probes the manifest endpoint the way the app does and
 fails unless the served update is for that fingerprint and was created after the run started. "The
@@ -1721,10 +1947,10 @@ publish step exited 0" is a proxy; the 2026-09-01 stranding had a green publish 
 
 #### The root fix: `commitTime` is the commit's date
 
-The rail above routes around the defect; `patches/expo-updates@57.0.25.patch` removes it (#5021).
+The rail above routes around the defect; `patches/expo-updates@58.0.18.patch` removes it (#5021).
 The patched `resolveEmbeddedCommitTime` in `utils/build/createManifestForBuildAsync.js` embeds
 **HEAD's committer date** instead of the moment the build bundled, so ordering follows commit order
-— the semantics everyone already assumed. It cost one native build train, because `patches/**` is a
+— the semantics everyone already assumed. It required replacement native builds, because `patches/**` is a
 fingerprint input.
 
 Three details:
@@ -1761,12 +1987,12 @@ but exposes only `GOOGLE_MAPS_API_KEY` to checked-out code, because that key is 
 native Android fingerprint input; iOS explicitly removes it. Both the pinned
 `main` and build-checkout fingerprints must match each other and the immutable
 12-character fingerprint in the selected `build-<platform>-...` tag. Immediately
-before drafting, it rechecks that `main` and the selected tags have not moved.
+before drafting, it rechecks the exact selected tags and verifies the source remains in main history.
 
-**Fail-safe.** If the gate can't resolve the fingerprint, it builds. A manual
-`workflow_dispatch` from `release/next` — or from `main`, which is the hotfix
-rebuild after a merge-back — can force a build. Automatic store uploads run only
-from `release/next`, and never from an arbitrary feature branch.
+**Fail-safe.** The coordinator stops if native fingerprints or release provenance cannot be
+verified. An explicit `workflow_dispatch` from main can force a hotfix rebuild. Recovery
+can pin an existing stamped `source_sha` and leave `force_native` off. Arbitrary feature
+branches never receive production signing credentials.
 
 **Manual overrides.**
 
@@ -1774,7 +2000,7 @@ from `release/next`, and never from an arbitrary feature branch.
   `mobile-ota-backport.yml` with the accepted release anchor and the JS-only fix
   commits. The workflow rejects a cherry-pick that moves the anchor fingerprint.
 - **Force a rebuild of a fingerprint that already has a tag.** Dispatch the
-  platform workflow from `release/next` (or from `main` after a merge-back).
+  platform workflow from `main`.
   Manual dispatch bypasses the fingerprint gate. The protected fingerprint tag
   stays at the first build that established it, while the successful rebuild gets
   a fresh build-number tag. Do not delete or move the fingerprint tag.
@@ -1811,9 +2037,7 @@ for both `packages/shared-schema/src/schema.ts` and its `schema/` directory
 against the staged commit. A 503, missing release SHA, unavailable Git history,
 or different schema fails closed. It does not poll or wait on a runner.
 The same one-shot check guards direct main dispatches, including native-build
-republishes; `release/next` retains its separate fingerprint guard.
-A PR into `release/next` is also checked against `main`'s committed schema in CI, because train
-builds talk to the production backend (`train-schema-on-main`, #6111).
+republishes. Native tester availability is guarded by the same live schema check.
 
 The staged bundle is visible only to someone who chooses Staging in the picker.
 That person may encounter a feature waiting for the backend change; the production
@@ -1856,10 +2080,9 @@ fingerprints made the churn safe. That was wrong at the time and broke productio
 was part of the fingerprint, so bumping it on `main` moved off the fingerprint of the binary
 **already in the field**, and "accepted" is not "adopted" — almost every install is still on the
 previous store binary until it updates, so those installs stopped receiving OTAs. The version is no
-longer hashed, so a bump alone would not strand anyone. The marketing-version bump now lives on the
-train, in `release-train-sync.yml`, not here and never on `main`. That cannot strand `main`'s
-OTAs, because the version is outside the fingerprint and `main` no longer builds native on push.
-The bump push is what starts the tester builds (see [Version-only releases](#version-only-releases)).
+longer hashed, so a bump alone does not strand anyone. The main native-release coordinator
+now opens the patch when the native fingerprint pair changes; that stamped push starts both
+tester builds. The anchoring workflow never changes the version.
 The workflow name (`Mobile Release Anchor`) and file name are kept; this workflow still only anchors.
 
 **iOS anchoring is strict:** it uses App Store Connect's exact approved build number, and if no
@@ -1874,7 +2097,8 @@ the latest Android build.
 ### Backport runbook
 
 1. Land the JS-only fix on `main` as normal (get its commit SHA). It also ships to current-`main`
-   installs via the usual production OTA.
+   installs via the usual production OTA. The workflow refuses any SHA that is not already on
+   `main`, so an unmerged fix cannot be backported.
 2. Run the **Mobile OTA Backport** workflow (`mobile-ota-backport.yml`, `workflow_dispatch`) with the
    approved `version` (e.g. `2.1.0`), the `platform` (`all`/`ios`/`android`), and the fix commit
    SHA(s). Leave `dry_run` on for the first pass.
@@ -2016,15 +2240,13 @@ produced it — the per-update comparison neither PostHog nor Sentry can express
   fingerprint. Only binaries built after it shipped report at all — an older store build stays
   silent however long it runs.
 
-The `expo-observe` and `expo-app-metrics` entries in `expo.autolinking.buildFromSource`
-bypass their bundled Maven dependencies on the missing `expo-updates-interface` 57.0.2
-artifact, using the autolinked 57.0.1 project instead. Remove each source-build entry only
-when every Maven artifact referenced by that module is available and both native builds
-pass. Observe also references `expo-eas-client` 57.0.4, whose Android Gradle config sets
-`canBePublished false`; publishing the interface artifact alone does not resolve that
-dependency. Recheck the upstream POMs and publication settings before removing either
-entry. The interface pin's separate removal condition remains in `pnpm-workspace.yaml`
-(#5867).
+The `expo-observe` and `expo-app-metrics` source-build entries originated in
+SDK 57's missing `expo-updates-interface` 57.0.2 Maven artifact and unpublished
+`expo-eas-client` dependency (#5867). SDK 58 now pins the native interface to
+58.0.1. Keep these source-build entries through the upgrade's native validation;
+the old missing-artifact diagnosis does not establish that an SDK 58 artifact
+is missing. Before removing an entry, recheck that module's current upstream
+POMs and publication settings, then pass both iOS and Android native builds.
 
 Where the rows land, and what they cost to keep: `docs/railway.md`.
 
@@ -2245,7 +2467,7 @@ corrected commit) on `main` so the next publish moves the fleet forward again.
 ### Crash-screen recovery button ("Check for a fix")
 
 When a bad OTA crashes the app hard enough to reach the root `ErrorBoundary`
-(`packages/mobile/app/_layout.tsx`), the built-in "Try again" only re-renders the same broken
+(`packages/mobile/app/_layout.tsx`, screen in `src/components/CrashScreen.tsx`), the built-in "Try again" only re-renders the same broken
 in-memory bundle. The **"Check for a fix"** button next to it runs `checkForUpdateAsync →
 fetchUpdateAsync → reloadAsync` in one tap, so it applies **both** a newer fixed bundle **and** a
 published rollback-to-embedded directive (and any update already downloaded in the background). That
@@ -2286,6 +2508,12 @@ Staging or beta moving during QA cannot change the candidate under test.
 ```bash
 gh workflow run mobile-ota-boot-check.yml -f ref=<40-character commit> -f branch=pr-staging
 ```
+
+A dispatch on `main` or a `release/*` branch builds only what that branch made: the commit must be
+an ancestor of the run's commit, the `mobile-ota-stage` artifact must come from a run on the same
+branch, and `receipt_json` is refused, since a hand-written receipt can name any commit or source
+artifact. To boot-check a PR preview with a
+hand-written receipt, dispatch on a branch (`--ref <branch>`).
 
 ### What a run does
 
@@ -2694,6 +2922,13 @@ be requested.
 
 ## Changelog ownership (the in-app "What's New")
 
+A checked "No release note needed" checkbox or the `skip-changelog` label excludes the whole PR,
+even if its Release Notes section explains an internal change. An unchecked template checkbox does
+not hide real release notes. Each regeneration applies this rule to historical entries too, so
+previously leaked internal notes disappear on the next successful changelog regeneration during a
+production OTA. Leave the generated JSON and `CHANGELOG.md` to that workflow rather than editing them
+in a fix PR.
+
 `packages/mobile/src/data/changelog.generated.json` is owned **solely** by the OTA pipeline. On
 every OTA, `mobile-ota-production.yml` regenerates the file from merged-PR `## Release Notes`
 sections and publishes it **uncommitted** — `expo export` reads the working tree, so the fresh
@@ -2715,8 +2950,7 @@ push can't re-trigger the OTA:
 - **A manual `workflow_dispatch` on `main`:** the "Push changelog to main" step, after every
   requested platform succeeds.
 
-A `release/next` train OTA never pushes. A partial or total publish failure leaves the regenerated
-files unpushed; the next run regenerates the same source-of-truth files.
+A partial or total publish failure leaves the regenerated files unpushed; the next run regenerates the same source-of-truth files.
 
 **Why it is not committed before the publish.** It used to be, because `eoas publish` aborts on a
 dirty tree. But eoas reads an update's `message` **and** its `commitHash` from `HEAD`
@@ -3182,38 +3416,37 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   running binary's exact runtimeVersion/platform.
 - **Reset before every new revision.** A JS-only commit can conflict on one base or fail one upload.
   Clearing the previous revision first prevents an omitted runtime from keeping old code surfable.
-  Native changes, base advances, and train activation/removal also reset.
+  Native changes and base advances also reset. Historical dual-base records reset once during migration.
   The gate scans the PR diff for
-  fingerprint paths (`packages/mobile/app.config.ts`, `fingerprint.config.js`, `plugins/`, `modules/`,
+  fingerprint paths (`packages/mobile/app.config.ts`, `fingerprint.config.js`, `eas.json`,
+  `assets/icon.png`, `assets/splash-icon.png`, `assets/adaptive-icon.png`, `plugins/`, `modules/`,
   `locales/`, `targets/`, `ios/`, `android/`, `packages/mobile/package.json`, `patches/`, the root
-  manifest and lockfile — every extra source `packages/mobile/fingerprint.config.js` declares) and emits
-  a native-change signal. Every run also compares the pinned main/train SHAs and the PR's base
+  manifest and lockfile — every repo-local source
+  `vp exec expo-updates fingerprint:generate --platform <p> --debug` lists) and emits
+  a native-change signal. Every run also compares the pinned main SHA and the PR's base
   ref/SHA against the latest per-PR deployment's versioned `otaPreviewBases` payload. That deployment
   must have completed successfully, and its SHA must match the current PR head. Only a retry of
   that same revision with identical bases can skip the reset. New revisions, changed bases, missing
   or malformed metadata, and incomplete or failed attempts reset conservatively. The first run after
   this metadata is introduced also resets. Full SHA comparison means a JS-only base advance can
   reset too. History API failures stop publication rather than assume the branch is safe to reuse.
-  The `notify` job posts before the branch goes away; both bases usually take 20–30 minutes to build.
+  The `notify` job posts before the branch goes away; the two platform exports can take 20–30 minutes.
   Re-running the workflow by hand only starts that wait over.
   Because a skipped job would otherwise skip its dependents, `publish` guards with `!cancelled()`
   and blocks only on `needs.reset.result == 'failure'`.
 - **Skipped runtimes do not retain older revisions.** A new revision whose candidates all conflict
   or fail compatibility leaves no older preview available. Partial successes serve only the current
   revision. A same-revision retry can retain its already published variants with the same bases.
-- **One PR entry, two native runtimes.** Every preview prepares against pinned
-  latest `origin/main`. When `release/next` has a different marketing version,
-  it also prepares against that pinned latest base. Only the PR's commits are
-  replayed in temporary checkouts; no contributor branch is rewritten. A
-  conflict skips that target, and a native fingerprint delta skips that platform.
-  Both variants publish to `pr-<number>`, so the installed app automatically sees
-  its compatible runtime. If both targets resolve the same platform/runtime,
-  the PR's actual base wins and only one variant publishes.
+- **One PR entry, one pinned main baseline.** Every preview replays only the PR's delta
+  onto pinned latest `origin/main`. No contributor branch is rewritten. A conflict stops that
+  candidate, and a native fingerprint delta skips that platform. Both compatible platforms
+  publish to `pr-<number>` and the installed app sees its matching runtime. New deployment
+  payloads use `otaPreviewBases` version 2 with main and source-PR base identity only.
 - **Publication proof includes the replayed source.** Preview receipt v2 records
   the original head, target base, generated commit/tree, runtime, update UUID and
   bundle hash. Retained source bundles let native boot checks test that exact
   generated candidate. GitHub deployment identity still points to the original
-  PR head. Native boot checks select the actual PR-base candidate per platform;
+  PR head. Native boot checks select the pinned main candidate per platform;
   all published variants retain their source and verified manifest receipts.
   Retained v1 receipts remain readable. The receipt resolver allows 60 minutes
   for two sequential preview exports.
@@ -3276,21 +3509,82 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   that platform is **skipped** — `vp run check:mobile-ota-compat` (the same engine as
   `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The env is held
   byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
-- **Base pushes refresh previews.** Changes to `main` or `release/next`, including
-  marketing-version activation changes, dispatch fresh previews for open
-  same-repository mobile PRs. Replays use the newest pinned bases and recheck
-  that the PR is still open at the same head before publication. Fork heads
-  retain the existing explicit maintainer authorization; a base push never
-  silently authorizes new fork code. The sticky comment reports each target
-  and platform independently, including conflicts and native changes.
-  PRs whose base absorbed their last mobile change are also dispatched when their deployment
-  history contains a preview, including older heads and legacy deployments. The normal gate then
-  selects cleanup. Unrelated web-only PRs without preview history are skipped.
-  Refresh dispatches one run per matching PR. Per-PR lanes coalesce pending
-  refreshes. Because every gate compares durable deployment context, a PR push that replaces a
-  queued refresh still detects changed bases and resets stale variants. There is no global preview
-  runner cap. An active train can
-  double the export work, so account for open PR count when sizing runners.
+- **When an open preview is republished.** A push to `main` republishes an open
+  same-repository PR's preview only when the existing preview would stop matching what testers
+  have installed. Any other base commit waits for the PR's next push, which pins the newest bases.
+  Until 2026-10-25 every base push re-dispatched every open mobile PR: that day 103 base pushes
+  produced 597 refresh runs (against 99 PR-push runs); the successful ones alone took about 88
+  runner-hours (5,260 minutes), and 166 were cancelled by the next push. A PR author's own
+  preview queued for 15 minutes or more behind them.
+  `mobile-ota-preview-refresh.yml` now runs `scripts/mobile-ota-preview-refresh.ts`, which
+  dispatches a PR when one of these is true:
+  1. The PR has no `pr-preview` deployment for task `ota-preview-pr-<number>`, its payload has no
+     valid `otaPreviewBases` (the same check the gate's pin step runs), its latest status is
+     `failure` or `error`, or it has sat in `in_progress`, `queued`, `pending` or no status for
+     over 6 hours (the publish job times out at 330 minutes). Two caps keep this from firing on
+     every base push, and rule 2 or 3 overrides both:
+     - When the latest two deployments both ended in `failure` at the PR's current head, the PR
+       is skipped ("failed twice at this head; next PR push retries") until that failure is
+       12 hours old, then retried once. A failure caused by the base or an outage (the OTA
+       server, a broken `main`, a replay conflict) thus heals within 12 hours without a push.
+     - A record the publisher's `reset` job marked `error` ("Reset, republish pending") is left
+       alone for 2 hours while its publish runs, and after that retried at most once per
+       12 hours. Each retry's reset re-marks it, so a reset that keeps failing (for example bad
+       admin credentials) costs one run per PR per 12 hours. This applies to a marked record
+       whose payload is unreadable too. A PR with no deployment at all is always dispatched.
+  2. The deployment uses a historical version-1 dual-base context. It is refreshed to the
+     version-2 main-only context, retaining the reset hold while publication is in flight.
+  3. A main runtime input changed between the deployment's pinned SHA and the current head.
+  4. The PR no longer changes mobile files (its base absorbed them) and a preview deployment for it
+     is not yet `inactive`. The gate then selects cleanup, and cleanup marks every deployment
+     inactive, so this happens once.
+
+  The inputs are the gate's native-fingerprint paths (root `package.json`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml`, `patches/`, and under `packages/mobile/`: `app.config.ts`, `package.json`,
+  `fingerprint.config.js`, `eas.json`, `assets/icon.png`, `assets/splash-icon.png`,
+  `assets/adaptive-icon.png`, `plugins/`, `modules/`, `locales/`, `targets/`, `ios/`, `android/`),
+  plus `packages/mobile/react-native.config.js`, `main`'s copy of `mobile-ota-preview.yml`, whose
+  env is part of the resolved app config, and `scripts/lib/eoas.ts`, because a candidate whose eoas
+  pin differs from `main`'s is skipped as `server-upgrade`. `ios/` counts for iOS only;
+  `android/` and `assets/adaptive-icon.png` count for Android only; everything else, including
+  `targets/` (the whole dir is hashed on both platforms, #7215), counts for both. The test
+  pins this list against the `fingerprint:generate --debug` sources; re-capture them after adding
+  an icon, a plugin input or a native target. The planner compares git object ids, read for every SHA in one
+  GraphQL query, so equal ids mean equal bytes. `app.config.ts` is compared with its marketing
+  version line removed, because `ExpoConfigVersions` keeps the version out of the fingerprint.
+  This works because a preview variant only publishes when the replayed PR resolves the same
+  runtimeVersion as its pinned base. The runtime a preview serves is therefore the base's runtime
+  at the recorded SHA, and identical native inputs cannot resolve to a different one. The
+  comparison is stricter than the fingerprint: a lockfile change for a web dependency refreshes
+  too (about one a day on `main` in October 2026). Rules 1 and 4 also repair missing
+  preview records and remove revisions whose mobile changes have already landed.
+  Why not read the runtime itself: `fingerprint-<platform>-<hash>` tags exist only for
+  commits that shipped a binary, and publication receipts are artifacts that
+  finish after the refresh starts, and `expo-updates runtimeversion:resolve` would need a checkout
+  and `vp install` of every recorded base SHA inside the refresh.
+  Rule 1 relies on the record telling the truth after a reset. The publisher's `reset` job deletes
+  `pr-<number>` before `publish` creates the new deployment, so a run that dies in between would
+  leave the old `success` describing a branch that no longer exists. `reset` therefore first sets
+  that deployment to `error` ("Reset, republish pending"), which rule 1 re-dispatches; if it cannot,
+  it stops before the delete.
+  Each PR gets one line in the run summary (`PR #123: unchanged runtime, skipped`). The `plan` job
+  checks out the workflow's own commit (`github.workflow_sha`, sparse `scripts/`, no credentials),
+  installs nothing, and holds only read scopes. The `dispatch` job holds `actions: write`, runs no
+  checked-out code, and queues the default-branch publisher. If the current bases cannot be read,
+  the run fails instead of dispatching every PR. A PR whose own state cannot be read is dispatched.
+  Forks, the final historical branch import, and PRs into branches other than main are never dispatched. Fork
+  heads keep the explicit maintainer authorization; a base push never authorizes fork code.
+  Dispatched runs re-pin the newest bases, recheck that the PR is still open at the same head, and
+  reset the branch because the bases changed. Per-PR lanes coalesce pending refreshes, and a PR
+  push that replaces a queued refresh still detects changed bases through the gate. There is no
+  global preview runner cap.
+  A failed refresh on a push to main posts to the Discord deploy channel from a
+  `notify` job. So does a
+  green run that dispatched more than 10 PRs for a missing, unreadable, failed or stuck record
+  (`conservative` in the plan output), which means previews are not landing at all. The
+  webhook is a `Production` environment secret, so `notify` declares that environment and holds no
+  token scope. The refresh lane's concurrency group sits on `plan`, not the workflow, so a `notify`
+  parked at the environment gate cannot hold it.
   To inspect availability from a laptop, use the fingerprint a native build baked:
   `vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>` (take `<hash>` from that
   build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`; a locally resolved one is macOS-flavoured and will not
@@ -3311,7 +3605,14 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     `author_association: COLLABORATOR` label is not enough. Those events run the **default-branch
     (main)** copy of the workflow, so the permission gate is not PR-editable. An accepted comment
     dispatches a trusted default-branch run into the per-PR lifecycle lane; rejected comments never
-    enter that lane or evict pending reconciliation. To make that path discoverable,
+    enter that lane or evict pending reconciliation.
+  - **No PR code runs on `main`.** A run on `main` (comment, refresh, or manual dispatch) shares what
+    it writes with every branch and PR, so its gate never publishes. It answers `handoff`: the
+    `handoff` job creates `ci-sandbox/ota-preview/pr-<n>/<run id>` at the same trusted commit and
+    dispatches this workflow there, in the same lifecycle lane. That run re-resolves the PR, checks
+    out its head and publishes; `sandbox-cleanup` deletes the branch when it ends. Each handoff
+    first deletes older sandboxes for the same PR, which catches one replaced while still pending.
+    To re-run a preview, dispatch again rather than re-running a sandbox run, whose branch is gone. To make that path discoverable,
     `mobile-ota-preview-prompt.yml` reacts directly to trusted `pull_request_target`
     metadata, verifies the PR is a fork, and reads its current file list. It removes an older fork
     preview before posting a sticky "a maintainer can `/ota-preview`" comment; on close or removal of
@@ -3373,8 +3674,8 @@ repo-level secret for the Android fingerprint).
 ### R2 reader publication for the frozen 2.6 cohort
 
 The manual `R2 Frozen Reader Publication` workflow targets only deployed production source
-`6cab8437bb7875e3a84ea228365c344428a6ca3c`. The current release train has newer native
-inputs, so its normal publisher cannot update this older cohort. No approved 2.6
+`6cab8437bb7875e3a84ea228365c344428a6ca3c`. Newer main native snapshots have different
+inputs, so their normal publisher cannot update this older cohort. No approved 2.6
 backport anchor exists; this workflow validates the actual deployed production source instead
 of creating a release tag or overriding its fingerprint.
 

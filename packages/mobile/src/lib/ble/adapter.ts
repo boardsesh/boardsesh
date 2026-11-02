@@ -1,3 +1,4 @@
+import { AppState, Platform } from 'react-native';
 import { type Device, type Characteristic, type BleError } from 'react-native-ble-plx';
 import {
   UART_SERVICE_UUID,
@@ -11,12 +12,13 @@ import {
   parseSerialNumber,
   isRetryableAndroidConnectError,
 } from '@boardsesh/ble-protocol';
-import { bleManager } from './ble-manager';
+import { getBleManager } from './ble-manager';
 import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from './scan-options';
 import { upsertDiscoveredDevice } from './scan-device-cache';
+import { setBackgroundSafeTimeout } from './background-safe-timeout';
 import type {
   BleAdapterOptions,
   BluetoothAdapter,
@@ -82,6 +84,24 @@ async function settleBeforeDeadline<T>(
 
 function connectionTimeoutError(): Error {
   return new Error('Connection timed out — board may be powered off');
+}
+
+/**
+ * Whether the inter-chunk pacing timer will actually fire right now.
+ *
+ * On Android, React Native's JavaTimerManager stops firing JS timers once the
+ * activity pauses (`onHostPause`) unless a headless JS task is running, while
+ * the JS thread itself keeps running. So a send started from the session
+ * notification with the app in the background wrote chunk 1 and then sat in
+ * `setTimeout` until the app came back, by which point the board had thrown
+ * the partial packet away (#7025). With the app in the background, skip the
+ * pause between chunks: each ble-plx write already resolves only after the
+ * native GATT write completes, so the chunks still go out one at a time.
+ * Foreground sends keep the delay unchanged. iOS never pauses JS timers this
+ * way, and its store build writes natively anyway.
+ */
+function canPaceChunksWithJsTimer(): boolean {
+  return Platform.OS !== 'android' || AppState.currentState === 'active';
 }
 
 /**
@@ -154,10 +174,18 @@ export class RNBleAdapter implements BluetoothAdapter {
     const deadlineMs = performance.now() + CONNECTION_TIMEOUT_MS;
     const attemptConnect = () => {
       this.lastConnectAttemptCount += 1;
-      return settleBeforeDeadline(() => bleManager.connectToDevice(selectedDeviceId), deadlineMs);
+      // ble-plx runs this timeout on a native (RxJava) timer, which keeps
+      // running while Android has paused JS timers (#7038). The JS deadline
+      // stays: it is the iOS path's deadline and carries the copy we classify.
+      return settleBeforeDeadline(
+        () => getBleManager().connectToDevice(selectedDeviceId, { timeout: CONNECTION_TIMEOUT_MS }),
+        deadlineMs,
+      );
     };
     const cancelWithoutWaiting = () => {
-      void bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
+      void getBleManager()
+        .cancelDeviceConnection(selectedDeviceId)
+        .catch(() => {});
     };
 
     const firstAttempt = await attemptConnect();
@@ -177,7 +205,10 @@ export class RNBleAdapter implements BluetoothAdapter {
     // Close the failed native GATT handle before retrying. A rejection generally
     // means it was already closed, so it must not block the retry. A hanging
     // cleanup is bounded by the original connect deadline.
-    const cleanup = await settleBeforeDeadline(() => bleManager.cancelDeviceConnection(selectedDeviceId), deadlineMs);
+    const cleanup = await settleBeforeDeadline(
+      () => getBleManager().cancelDeviceConnection(selectedDeviceId),
+      deadlineMs,
+    );
     if (cleanup.kind === 'deadline') throw firstError;
 
     // Checked after cleanup, which can eat into the budget. With this much left
@@ -210,7 +241,10 @@ export class RNBleAdapter implements BluetoothAdapter {
   }
 
   // The scan/select flow mirrors NativeIosBleAdapter.requestAndConnect. Kept in lockstep
-  // by hand; if you change one, change the other. With a saved board (#5658) it
+  // by hand; if you change one, change the other. The background guards (#7038:
+  // no grace window for a background connect, the native-clock scan timeout, the native
+  // connect timeout) are Android's alone: iOS keeps firing JS timers, and its
+  // background reconnect runs in Swift. With a saved board (#5658) it
   // is a three-state machine:
   //   searching: the picker opens at the tap in its "searching" state, and the
   //              scan auto-selects the saved board if it advertises.
@@ -245,6 +279,10 @@ export class RNBleAdapter implements BluetoothAdapter {
     });
 
     const hasTarget = Boolean(targetSerial || targetDeviceId);
+    // Decided once, at the tap (#7038): a connect started in the background (the
+    // session notification's bulb) never shows a list, so it auto-selects for
+    // the whole scan even if the climber opens the app part-way through.
+    const backgroundConnect = AppState.currentState !== 'active';
     // True only while we're still matching the saved board (`searching`). Flips
     // false the moment we auto-select (`found`) or the search ends (`list`), and
     // never flips back.
@@ -274,7 +312,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     // startDeviceScan failure still runs the finally — otherwise the scan could
     // be left running and the timers (if any) uncleared.
     let pickerFallbackId: ReturnType<typeof setTimeout> | undefined;
-    let scanTimeoutId: ReturnType<typeof setTimeout> | undefined;
+    let cancelScanTimeout: (() => void) | undefined;
     let selectedDeviceId: string;
     try {
       // Scan UNFILTERED and filter results in JS (isLikelyBoardDevice below).
@@ -299,9 +337,9 @@ export class RNBleAdapter implements BluetoothAdapter {
       // actively in the foreground and merges ADV + SCAN_RSP before filtering, so
       // the native iOS path keeps its service filter on purpose.
       // High-power scan options (LowLatency on Android) — see scan-options.ts.
-      void bleManager.startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (scanError, scannedDevice) => {
+      void getBleManager().startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (scanError, scannedDevice) => {
         if (scanError) {
-          void bleManager.stopDeviceScan();
+          void getBleManager().stopDeviceScan();
           // Surface the failure immediately so the user sees feedback instead
           // of waiting out the 30s scan window (the picker, if open, closes too).
           rejectSelection(new Error(`BLE scan failed: ${scanError.message}`));
@@ -354,11 +392,17 @@ export class RNBleAdapter implements BluetoothAdapter {
 
       // Grace window: if the saved board hasn't matched by now, stop auto-selecting
       // and let the picker show the list. The scan keeps running, so the list
-      // live-updates.
-      pickerFallbackId = hasTarget ? setTimeout(endTargetSearch, SERIAL_RECONNECT_GRACE_MS) : undefined;
+      // live-updates. Never for a background connect (#7038): its list is never
+      // shown, so ending auto-select would leave a board that turns up later in
+      // a list nobody can see.
+      pickerFallbackId =
+        hasTarget && !backgroundConnect ? setTimeout(endTargetSearch, SERIAL_RECONNECT_GRACE_MS) : undefined;
 
-      scanTimeoutId = setTimeout(() => {
-        void bleManager.stopDeviceScan();
+      // On the native clock as well as the JS one: Android stops firing JS timers
+      // while the activity is paused, and a background connect would otherwise
+      // scan until the app came back (#7038).
+      cancelScanTimeout = setBackgroundSafeTimeout(() => {
+        void getBleManager().stopDeviceScan();
         // Belt-and-suspenders: end a search still running even if the grace
         // window never fired, so the picker is showing the list.
         endTargetSearch();
@@ -366,7 +410,9 @@ export class RNBleAdapter implements BluetoothAdapter {
         // so it drops the spinner. With boards listed the climber can still pick
         // one. With none it shows its empty state (tips, Scan again, the location
         // hints and the no-lights offer), which a reject here used to replace with
-        // a dead-end alert (#5654). The climber leaves it by cancelling.
+        // a dead-end alert (#5654). The climber leaves it by cancelling. A picker
+        // nobody ever saw (a background connect) ends the connect instead, with
+        // "board not found": the picker owns that, not this timer (#7038).
         scanStoppedListener?.();
       }, SCAN_TIMEOUT_MS);
 
@@ -375,8 +421,8 @@ export class RNBleAdapter implements BluetoothAdapter {
       // A late advert after a cancel or a pick must not auto-select.
       autoSelecting = false;
       if (pickerFallbackId) clearTimeout(pickerFallbackId);
-      if (scanTimeoutId) clearTimeout(scanTimeoutId);
-      void bleManager.stopDeviceScan();
+      cancelScanTimeout?.();
+      void getBleManager().stopDeviceScan();
     }
 
     let selectedDeviceName: string | undefined;
@@ -445,14 +491,16 @@ export class RNBleAdapter implements BluetoothAdapter {
       writeCharacteristic = discoveredWriteCharacteristic;
     } catch (error) {
       // A failed cancellation must not replace the original setup error.
-      await bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
+      await getBleManager()
+        .cancelDeviceConnection(selectedDeviceId)
+        .catch(() => {});
       throw error;
     }
 
     this.connectedDevice = deviceWithServices;
     this.writeCharacteristic = writeCharacteristic;
 
-    this.disconnectSubscription = bleManager.onDeviceDisconnected(selectedDeviceId, (error, _device) => {
+    this.disconnectSubscription = getBleManager().onDeviceDisconnected(selectedDeviceId, (error, _device) => {
       this.connectedDevice = null;
       this.writeCharacteristic = null;
       this.disconnectSubscription?.remove();
@@ -480,7 +528,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       this.connectedDevice = null;
       this.writeCharacteristic = null;
       try {
-        await bleManager.cancelDeviceConnection(deviceId);
+        await getBleManager().cancelDeviceConnection(deviceId);
       } catch {
         // Device may already be disconnected
       }
@@ -535,7 +583,7 @@ export class RNBleAdapter implements BluetoothAdapter {
         throw new DOMException('Write aborted', 'AbortError');
       }
 
-      if (chunkIndex > 0) {
+      if (chunkIndex > 0 && canPaceChunksWithJsTimer()) {
         await delay(INTER_CHUNK_DELAY_MS);
         if (signal?.aborted) {
           throw new DOMException('Write aborted', 'AbortError');

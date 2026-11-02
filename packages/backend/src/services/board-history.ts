@@ -1,3 +1,4 @@
+import { getGradeColor } from '@boardsesh/board-constants';
 import { and, desc, eq, gte, lt, or } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { boardClimbEvents, users, userProfiles } from '@boardsesh/db/schema';
@@ -56,6 +57,7 @@ export function historyRowToClimb(row: HistoryRow): BoardPresenceClimb {
     climbUuid: row.climbUuid,
     name: row.name,
     grade: row.grade,
+    gradeColor: getGradeColor(row.grade) ?? null,
     frames: row.frames,
     angle: row.angle,
     setter: row.setter,

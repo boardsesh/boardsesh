@@ -10,6 +10,9 @@ import { useQueue } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../../components/ble/use-board-connection-state';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { useLiveActivity } from './use-live-activity';
+import { LiveActivityRestTimerSync } from './live-activity-rest-timer';
+import { LiveActivityLightingSync } from './live-activity-lighting';
+import { getDriveMode, isDriveWindowDue, stopDrivingForLink } from '../../components/play-drawer/drive-mode-store';
 import {
   addWidgetMirrorListener,
   getPendingWidgetMirror,
@@ -20,6 +23,15 @@ import {
   addBoardControlListener,
   isAndroidSessionPresence,
 } from './live-activity-plugin';
+
+/**
+ * A notification Stop driving tap still has a drive to stop: one live now,
+ * its end read off the wall clock, since Android pauses JS timers (#7038).
+ */
+function isDriveStillOn(now = Date.now()): boolean {
+  const drive = getDriveMode();
+  return drive?.phase === 'live' && !isDriveWindowDue(drive, now);
+}
 
 type LiveActivityBridgeProps = {
   boardName: string;
@@ -44,7 +56,24 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // Live Activity lightbulb + Previous/Next visibility: controls show only while
   // THIS device holds the BLE link (connectedByMe); once a peer takes the wall
   // the bulb goes out and the controls hide, leaving just the current climb.
-  const { bluetooth, boardConnection, holderDisplayName } = useBoardConnectionState();
+  const { bluetooth, boardConnection, holderDisplayName, pending: boardConnectPending } = useBoardConnectionState();
+  // Android notification bulb (#7087). With no remembered board a background
+  // reconnect could only end in the board list, on an activity nobody can see,
+  // so the bulb opens the app instead. While a connect runs the bulb reads
+  // "Connecting…", so a repeat tap visibly isn't lost (connect() ignores it).
+  // Pinned to false on iOS, where ActivityKit draws its own bulb: a flip there
+  // would only spend Live Activity updates.
+  const bulbOpensApp =
+    isAndroidSessionPresence &&
+    !bluetooth?.reconnectSerialForCurrentBoard &&
+    !bluetooth?.reconnectDeviceIdForCurrentBoard;
+  const boardConnecting = isAndroidSessionPresence && boardConnectPending;
+  // iOS card footer: it offers "Tap to reconnect" only while native still
+  // pairs a board, and reads that pairing only when it redraws. When the app
+  // forgets the board it kept (a hang-up's 10 minutes ran out, the route moved
+  // to another board, a sign-out), this changes, so the card redraws to "Open
+  // Boardsesh to connect" instead of offering a tap that can only fail.
+  const nativePairingRevision = isAndroidSessionPresence ? 0 : (bluetooth?.nativeBoardForgets ?? 0);
   // The climber's saved board look for the iOS server-rendered thumbnail. The
   // REQUESTED mode, not the device-probed effective one: the server always
   // renders aura. Pre-hydration the store snapshot resolves to the default
@@ -111,12 +140,15 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       unmirrorLabel: t('mobile.session.notification.unmirror'),
       relightLabel: t('mobile.session.notification.relight'),
       reconnectLabel: t('mobile.session.notification.reconnect'),
+      connectingLabel: t('mobile.session.notification.connecting'),
       onWallTemplate: t('mobile.session.notification.onWall'),
+      lightDrivingLabel: t('mobile.session.notification.drivingTheWall'),
+      stopDrivingLabel: t('mobile.session.notification.stopDriving'),
     }),
     [t],
   );
 
-  useLiveActivity({
+  const { activityStartCount } = useLiveActivity({
     queueSequence: state.serverSequence,
     queue: state.queue,
     currentClimbQueueItem: state.currentClimbQueueItem,
@@ -147,6 +179,9 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     isPartySession: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? false : sessionId !== null,
     boardConnection,
     holderDisplayName,
+    bulbOpensApp,
+    boardConnecting,
+    nativePairingRevision,
     renderMode,
     androidNotification,
     androidThumbnailOverlayPath: overlayUri,
@@ -198,7 +233,12 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   //    peer (Aurora is last-connection-wins). The BLE auto-sender then re-lights
   //    the current climb on connect.
   //  - reassert (bulb was lit): re-push the current climb to the wall.
-  // Mirrors the iOS ReconnectBoardIntent / take-control. A ref keeps the listener
+  //  - stopDriving (bulb was lit while this phone drove): stop driving, as the
+  //    frosted button does (`stopped`; Disconnect Bluetooth when driving ends
+  //    then decides about the board). The notification was drawn a while ago,
+  //    so the drive is read again here, its end off the wall clock (#7038):
+  //    one already over just re-lights.
+  // Mirrors the iOS ReconnectBoardIntent / StopDrivingIntent / take-control. A ref keeps the listener
   // subscribed once while reading the latest bluetooth context (its identity
   // changes when a board is (de)selected).
   const bluetoothRef = useRef(bluetooth);
@@ -222,7 +262,9 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
         bluetoothCtx.armUndoWallChangeToast();
         // By serial (Aurora) or device id (MoonBoard); neither → adapter picker.
         void bluetoothCtx.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
-      } else if (event.action === 'reassert') {
+      } else if (event.action === 'stopDriving' && isDriveStillOn()) {
+        stopDrivingForLink();
+      } else if (event.action === 'reassert' || event.action === 'stopDriving') {
         // A re-push of the current climb — no climb change to undo, so no toast.
         bluetoothCtx.reassertWall();
       }
@@ -287,5 +329,12 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       .catch((error: unknown) => console.warn('[LiveActivity] Mirror replay failed:', error));
   }, [state.queue]);
 
-  return null;
+  // The rest timer and the drive (timed or open-ended) ride their own leaves: their
+  // store events re-render those, not this.
+  return (
+    <>
+      <LiveActivityRestTimerSync sessionId={sessionId} activityStartCount={activityStartCount} />
+      <LiveActivityLightingSync sessionId={sessionId} activityStartCount={activityStartCount} />
+    </>
+  );
 }

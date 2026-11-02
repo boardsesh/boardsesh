@@ -10,7 +10,7 @@ import type { TickClimbIdentity } from '@boardsesh/board-config';
 // bar (`footer`), and clamps its single column to the active detent via the
 // same `useSheetColumnStyle` this file used to wire by hand (#3330).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, View, type LayoutChangeEvent } from 'react-native';
+import { Platform, View, type LayoutChangeEvent, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
@@ -19,13 +19,17 @@ import { track } from '../lib/analytics';
 import { ModalSheet } from './ModalSheet';
 import { useCreateTickSnapPoints } from './use-create-tick-snap-points';
 import { TickActionBar, TickNoteField, TickSheetHeader, CREATE_TICK_SNAP_POINTS } from './tick';
-import type { ManagedSheetHandle } from '../providers/sheet-presentation-provider';
+import type { ManagedSheetHandle, PresenterGroup } from '../providers/sheet-presentation-provider';
 import { QuickTickBar } from './play-drawer/QuickTickBar';
 import { useQuickTickForm, type QuickTickDismissSnapshot } from './play-drawer/use-quick-tick-form';
 
 const SAVE_ICON = 'tick.outline' as const;
 
 type LogAscentSheetProps = {
+  /** Only set when this host is physically inside another native sheet. */
+  presenterGroup?: PresenterGroup;
+  parentSheetId?: string;
+  stacked?: boolean;
   climb?: TickClimbIdentity;
   visible: boolean;
   /** Request an animated close (close button, pan-down, tick complete). The
@@ -62,11 +66,17 @@ export function LogAscentSheet(props: LogAscentSheetProps) {
       visible={props.visible}
       onClose={props.onClose}
       onFullyDismissed={props.onFullyDismissed}
+      presenterGroup={props.presenterGroup}
+      parentSheetId={props.parentSheetId}
+      stacked={props.stacked}
     />
   );
 }
 
 function LogAscentSheetContent({
+  presenterGroup,
+  parentSheetId,
+  stacked,
   climb,
   visible,
   onClose,
@@ -93,7 +103,7 @@ function LogAscentSheetContent({
     compactNote,
   );
 
-  const formFieldsRef = useRef<View>(null);
+  const formFieldsRef = useRef<ViewInstance>(null);
   // Include every field, including the audience picker, rather than just the
   // first two rows. Re-measure unchanged intrinsic geometry after cache resets
   // without remounting controls or the pinned note.
@@ -194,6 +204,9 @@ function LogAscentSheetContent({
 
   return (
     <ModalSheet
+      presenterGroup={presenterGroup}
+      parentSheetId={parentSheetId}
+      stacked={stacked}
       ref={sheetRef}
       visible={visible}
       onClose={handleClose}

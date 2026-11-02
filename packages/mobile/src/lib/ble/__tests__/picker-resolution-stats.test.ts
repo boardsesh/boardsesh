@@ -59,6 +59,10 @@ describe('summarizePickerResolution', () => {
       mismatchedSelectedType: 1,
       unknownType: 1,
       noneMatchedSelectedType: false,
+      // Opened for no particular board: nothing to group.
+      targetMatchedDevices: null,
+      targetUnknownDevices: null,
+      targetOtherDevices: null,
     });
   });
 
@@ -79,6 +83,10 @@ describe('summarizePickerResolution', () => {
       mismatchedSelectedType: 0,
       unknownType: 2,
       noneMatchedSelectedType: false,
+      // Opened for no particular board: nothing to group.
+      targetMatchedDevices: null,
+      targetUnknownDevices: null,
+      targetOtherDevices: null,
     });
   });
 
@@ -112,7 +120,60 @@ describe('summarizePickerResolution', () => {
       unknownType: 0,
       // No devices → nothing to match, so not flagged.
       noneMatchedSelectedType: false,
+      // Opened for no particular board: nothing to group.
+      targetMatchedDevices: null,
+      targetUnknownDevices: null,
+      targetOtherDevices: null,
     });
+  });
+});
+
+describe('summarizePickerResolution for a picker opened for a known board', () => {
+  const target = { boardUuid: 'qa-kilter', boardName: 'kilter' };
+
+  function savedTargetEntry(): ResolvedBoardEntry {
+    return {
+      kind: 'saved',
+      board: { uuid: 'qa-kilter', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' } as UserBoard,
+    };
+  }
+
+  it('counts the intended board, unidentified boxes and boards elsewhere', () => {
+    const devices = [
+      device('d1', 'Kilter Board#SN-1@3'), // resolves to the target
+      device('d2', 'Kilter Board'), // bare-name box: unknown
+      device('d3', 'Kilter Board#SN-3@3'), // unrecorded serial: unknown
+      device('d4', 'Tension Board#SN-4@2'), // another board type: other
+    ];
+    const stats = summarizePickerResolution(devices, new Map([['SN-1', savedTargetEntry()]]), KILTER_CONFIG, target);
+    expect(stats).toMatchObject({ targetMatchedDevices: 1, targetUnknownDevices: 2, targetOtherDevices: 1 });
+  });
+
+  // The sheet lists a box remembered by id in the target group; the event
+  // keeps counting by serial, so `targetMatchedDevices` still means "resolved".
+  it('counts a box remembered by id where its serial puts it, not as matched', () => {
+    const devices = [device('d1', 'Kilter Board#SN-1@3'), device('d2', 'Kilter Board')];
+    const stats = summarizePickerResolution(devices, new Map([['SN-1', savedTargetEntry()]]), KILTER_CONFIG, {
+      ...target,
+      rememberedDeviceId: 'd2',
+    });
+    expect(stats).toMatchObject({ targetMatchedDevices: 1, targetUnknownDevices: 1, targetOtherDevices: 0 });
+  });
+
+  it('counts zeros, not nulls, for an empty scan of a known board', () => {
+    expect(summarizePickerResolution([], new Map(), KILTER_CONFIG, target)).toMatchObject({
+      targetMatchedDevices: 0,
+      targetUnknownDevices: 0,
+      targetOtherDevices: 0,
+    });
+  });
+
+  it('leaves the groups null for a target with no board UUID, which the picker does not filter', () => {
+    const stats = summarizePickerResolution([device('d1', 'Kilter Board')], new Map(), KILTER_CONFIG, {
+      boardUuid: '',
+      boardName: 'kilter',
+    });
+    expect(stats).toMatchObject({ targetMatchedDevices: null, targetUnknownDevices: null, targetOtherDevices: null });
   });
 });
 

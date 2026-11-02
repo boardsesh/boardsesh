@@ -20,6 +20,7 @@ vi.mock('@sentry/react-native', () => ({
 import * as Sentry from '@sentry/react-native';
 import {
   applyBleDiagnosticsToScope,
+  applyCapturedValueNormalization,
   applyChunkLoadFingerprint,
   applyErrorContextToScope,
   applyLiveActivityIntentDiagnosticToScope,
@@ -490,5 +491,29 @@ describe('applyChunkLoadFingerprint (#5611)', () => {
     const event = { exception: { values: [{ type: 'TypeError', value: 'boom' }] }, fingerprint: ['custom'] };
     expect(applyChunkLoadFingerprint(event).fingerprint).toEqual(['custom']);
     expect(applyChunkLoadFingerprint({ exception: { values: [{ type: 'Error' }] } }).fingerprint).toBeUndefined();
+  });
+});
+
+describe('applyCapturedValueNormalization', () => {
+  it('surfaces the close code of a raw close event rejected through onunhandledrejection', () => {
+    const event = { exception: { values: [{ value: 'Event `Event` (type=close) captured as promise rejection' }] } };
+    const closeEvent = { type: 'close', code: 1000, reason: 'Server shutting down', wasClean: true };
+    const result = applyCapturedValueNormalization(event, closeEvent) as typeof event & {
+      extra?: Record<string, unknown>;
+    };
+    expect(result.extra).toMatchObject({ code: 1000, reason: 'Server shutting down', wasClean: true });
+    expect(result.exception.values[0].value).toBe('WebSocket close (code 1000)');
+  });
+
+  it('leaves a non-close object with a type key untouched', () => {
+    const event = { exception: { values: [{ value: 'orig' }] } };
+    const result = applyCapturedValueNormalization(event, { type: 'click' });
+    expect(result).toEqual({ exception: { values: [{ value: 'orig' }] } });
+  });
+
+  it('leaves an event whose original exception is a real Error untouched', () => {
+    const event = { exception: { values: [{ value: 'boom' }] } };
+    const result = applyCapturedValueNormalization(event, new Error('boom'));
+    expect(result).toEqual({ exception: { values: [{ value: 'boom' }] } });
   });
 });

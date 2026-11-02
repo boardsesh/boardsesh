@@ -717,17 +717,84 @@ The table above is **build-time** configuration: GitHub reads it, and the
 set on the Railway `web` service itself is **runtime** configuration — read per
 request, changeable without a rebuild.
 
-| Name                 | Kind   | Purpose                                                                            |
-| -------------------- | ------ | ---------------------------------------------------------------------------------- |
-| `STRIPE_DONATE_URL`  | var    | Stripe Payment Link behind the one-time donation rail on `/support`. Unset hides the rail. |
+| Name                        | Kind | Purpose                                                                                     |
+| --------------------------- | ---- | ------------------------------------------------------------------------------------------- |
+| `SUPPORT_MONTHLY_LINKS_AUD` | var  | Monthly Stripe Payment Links in AUD on `/support`, as a JSON list (below).                  |
+| `SUPPORT_MONTHLY_LINKS_USD` | var  | The same list in USD.                                                                       |
+| `STRIPE_DONATE_URL`         | var  | One-off Stripe Payment Link in AUD on `/support`. Unset hides it.                           |
+| `STRIPE_DONATE_URL_USD`     | var  | One-off Stripe Payment Link in USD on `/support`. Unset hides it.                           |
+| `STRIPE_BILLING_PORTAL_URL` | var  | Stripe customer-portal login link, shown to monthly supporters as "Change or stop it".      |
 
-`STRIPE_DONATE_URL` has no `NEXT_PUBLIC_` prefix on purpose. A prefixed name is
+None of these has a `NEXT_PUBLIC_` prefix, on purpose. A prefixed name is
 inlined at build time, and neither `Dockerfile.web` nor `production-deploy.yml`
-passes one as a build arg — so a `NEXT_PUBLIC_STRIPE_DONATE_URL` could never be
-set in production at all. `/support` reads it from a server component, so the
-unprefixed name resolves from the service environment on every request. It must
-be an `https://` URL; anything else is treated as unset and the rail stays
-hidden rather than linking somewhere unintended.
+passes one as a build arg, so a `NEXT_PUBLIC_STRIPE_DONATE_URL` could never be
+set in production at all. `/support` reads them from a server component, so the
+unprefixed names resolve from the service environment on every request, and a
+change takes effect without a redeploy of the image.
+
+#### The `/support` link contract
+
+Amounts and prices live in Stripe and in the labels typed into these vars.
+They never go in the repo, the i18n catalogs, an issue or an analytics event.
+
+- **Monthly lists.** `SUPPORT_MONTHLY_LINKS_AUD` and `SUPPORT_MONTHLY_LINKS_USD`
+  each hold a JSON array of 1 to 6 `{ "label": "...", "url": "..." }` objects,
+  in the order the buttons show. A label is the amount only, 1 to 40
+  characters, written in the currency it charges (`<currency symbol><amount>`,
+  with no "/month" or "monthly"). The page wraps it in the localized
+  `support.chooser.perMonth` template, so `/es`, `/fr` and `/de` add their own
+  per-month wording. Shape:
+  `[{"label":"<amount>","url":"https://buy.stripe.com/<id>"}]`.
+- **Hosts.** Every Payment Link must be `https://buy.stripe.com/...` or
+  `https://donate.stripe.com/...`, with no port or credentials. The portal
+  link must be `https://billing.stripe.com/...`.
+- **Fail closed.** A value that is not JSON, has the wrong shape, or carries
+  one URL that fails the host check is treated as unset. A monthly list is all
+  or nothing: one bad entry hides the whole list rather than linking somewhere
+  unintended.
+- **Fallback.** With neither monthly var set, `/support` renders the page it
+  had before monthly links: GitHub Sponsors up top and the one-off card.
+  Setting either monthly var switches the page to monthly first, with "Give
+  once" beside it and GitHub Sponsors as the third option.
+- **Currency.** The page offers every currency that has a link. It opens on
+  USD for a visitor Cloudflare places in the US and on AUD for everyone else,
+  with a visible switch. The country comes only from `CF-IPCountry` on a
+  request whose last `X-Forwarded-For` hop is a Cloudflare address
+  (`@boardsesh/consent/edge-country`, the same ranges the backend trusts; see
+  [Cloudflare](./cloudflare.md#observe-country-header)). A request that did
+  not come through Cloudflare reads as "not the US". `?currency=aud` or
+  `?currency=usd` overrides the default, for a post aimed at one audience.
+  Because the default differs per visitor, `/support` must never join the www
+  HTML edge-cache rule.
+- **Attribution.** Every Payment Link gets `client_reference_id=<src>` and
+  `utm_source=<src>`, where `src` is the page's own `?src=` lowercased and cut
+  to `[a-z0-9-]`, at most 40 characters, and `web-support` when empty. The
+  app uses `app-<surface>`, the homepage banner `web-home-banner`.
+- **Thank-you state.** Set each Payment Link's after-payment redirect to
+  `https://www.boardsesh.com/support?thanks=1` (keep any `src`), and the page
+  opens with a short thank-you card.
+- **Names.** If a Payment Link asks for a name to credit, make that field
+  optional. The page tells givers a name given at checkout may be shown
+  publicly, and that leaving it blank gives anonymously.
+
+#### The homepage support banner
+
+`/` (and only `/`) shows a closable banner asking visitors to go monthly on
+days 1 to 7 of every month, in UTC: from 00:00 on the 1st up to but not
+including 00:00 on the 8th. UTC keeps the server and the browser in agreement
+without knowing where the visitor is; in Sydney it runs from 10 or 11 am on the
+1st. It also waits for a monthly Payment Link: with neither
+`SUPPORT_MONTHLY_LINKS_AUD` nor `SUPPORT_MONTHLY_LINKS_USD` set, the server
+renders nothing for it. Outside the window the server renders nothing and the
+browser checks its own clock again. It is a strip fixed to the bottom of the
+viewport, so it never moves the hero.
+
+It shows on every visit in the window until closed. A close hides it for the
+rest of that month (`supportBanner:closedMonth` in IndexedDB,
+`boardsesh-user-preferences`, holding `YYYY-MM`); it comes back on the 1st.
+Reaching the thank-you state on `/support?thanks=1` hides it for good in that
+browser (`supportBanner:supporter`). The window lives in
+`packages/web/app/components/home/support-banner-window.ts`.
 
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
 Production environment, not a personal or team API token. The rollback helper
@@ -749,6 +816,11 @@ exactly one run queued behind the group and replaces it with each newer push, so
 `detect-changes` baselines off the last **successful** deploy. The surviving run
 therefore absorbs every push that was dropped while it waited; nothing is
 skipped.
+
+With a usable baseline, changes confined to direct `scripts/__tests__/*.test.ts` suites do not
+select a production deploy target. Tests outside that directory keep their explicit exclusions.
+The exclusion applies per file: runtime changes in the same commit still deploy, and changes to
+the production workflow or its detector still select every target.
 
 ## The failure mode: a run that holds the group without running
 
@@ -790,6 +862,10 @@ holds the group with at least one parked job, no job `in_progress`, and no job
 progress for 45 minutes. Progress means actual job start/completion timestamps;
 queued-job timestamps and run `updated_at` changes caused by cancellation do not
 reset the timer. Incomplete job lists cannot authorize an idle cancellation.
+A job `pending` on another concurrency group does not count as parked: in this
+workflow that is `promote-mobile-ota` waiting on the OTA publish lane, which the
+`mobile-ota-production` lane watches, and counting it cancelled a deploy that
+had waited 45 minutes behind a long publish.
 
 The hold starts when the run's first job is created, not at `run_started_at`.
 For a run that queued behind the group, `run_started_at` is the trigger time:
@@ -881,12 +957,14 @@ calls, dry run) and differs in five rules:
   that workflow; what it cannot bound is a parked job, whose clock never starts.
   The re-check before each cancel stage uses the lane's own rules, so a
   publish that starts while the watchdog is cancelling is never force-cancelled.
-- **No redispatch.** The lane is `queue: max`, so every pending run keeps its
-  place and starts once the group frees. The stopped run's own unfinished jobs
-  are not retried, so the Discord report says for each stopped run whether
-  `publish` had already succeeded (the October case: only the Discord post was
-  lost) or not. If not, dispatch the workflow again for that branch unless a
-  later run there publishes the same platforms. It cannot read this off the
+- **No redispatch of the stopped run as such.** The lane is `queue: max`, so
+  every pending run keeps its place and starts once the group frees. The stopped
+  run's own unfinished jobs are not retried, so the Discord report says for each
+  stopped run whether `publish` had already succeeded (the October case: only
+  the Discord post was lost) or not. The two cases nothing queued would redo are
+  re-dispatched once each (see [Recovering stranded work](#recovering-stranded-work));
+  for any other run, dispatch the workflow again for that branch unless a later
+  run there publishes the same platforms. It cannot read this off the
   parked-job list: a job is created only once its `needs` finish, so a run
   parked at `live-store-runtimes / resolve` lists no `publish` job at all. The
   report also names the run's branch and title, which tells a train push from a
@@ -904,6 +982,43 @@ calls, dry run) and differs in five rules:
   so a holding run whose job list cannot be read fails the matrix job and is
   named in the job summary. It is not cancelled: without its jobs the watchdog
   cannot tell a parked run from a publishing one.
+
+#### Recovering stranded work
+
+On every tick, after any cancels, the lane checks the last 24 hours for work
+that nothing queued would publish, and dispatches it once:
+
+- **A native build's republish** (`Republish <platform> after native build
+  (<fingerprint>)`), on the same branch with the same platform and fingerprint.
+  This covers a republish that was cancelled and one that failed in its
+  "Refuse stale public store evidence" step (it waited past the two-hour
+  evidence limit for the lane). Not when its publish job had already succeeded,
+  when a newer run with the same name exists, or when an earlier same-named run
+  was itself cancelled or failed (so this one was already the retry).
+- **The `release/next` tip**, when its own latest run was cancelled or failed
+  in that same stale-evidence step, and nothing else for that commit succeeded
+  or is still running. Older train pushes skip their publish as superseded once
+  the tip moves, so nothing else would publish it, and "Re-run failed jobs"
+  would reuse the same stale evidence. The dispatch skips the push-only
+  superseded check and still checks the tip. Not when the tip already had a
+  dispatched run.
+
+When a retry is spent or something cannot be read, Discord gets the exact
+`gh workflow run` command instead and the job goes red. Decisions about runs the
+current tick did not stop only notify when they dispatch, or, for a
+stale-evidence failure, on the ticks within 30 minutes of it, so a spent retry
+does not ping the channel every 15 minutes. A cancel that lands after the tick
+that sent it stopped waiting, or one an operator made, is picked up by the next
+tick. To cancel a republish or the tip's run for good, cancel the watchdog's
+retry too.
+
+**Off switch.** During an incident, stop the lane from dispatching anything:
+`gh variable set OTA_LANE_REDISPATCH --body off`. It still cancels parked runs,
+and posts each re-dispatch it would have made as the exact `gh workflow run`
+command, on the ticks within 30 minutes of the run stopping; that alone does
+not turn the job red. Re-enable with `gh variable set OTA_LANE_REDISPATCH
+--body on`, or delete the variable. Any value other than `off` leaves
+dispatching on.
 
 Not covered: the other workflows that take the `mobile-ota-production` group
 (`mobile-ota-backport.yml`, `mobile-ota-promote-staged.yml`,
@@ -930,3 +1045,6 @@ Decision rules and their tests: `scripts/production-deploy-watchdog.mjs`,
    target rather than diffing against a baseline.
 5. `Production Deploy Watchdog` → **Run workflow** with **dry run** ticked
    reports what it would cancel without touching anything.
+6. If the OTA lane watchdog's re-dispatches are making an incident worse,
+   switch them off: `gh variable set OTA_LANE_REDISPATCH --body off`. Re-enable
+   with `--body on`, or `gh variable delete OTA_LANE_REDISPATCH`.

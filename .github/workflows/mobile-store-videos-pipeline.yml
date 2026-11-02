@@ -1,0 +1,518 @@
+name: Mobile Store Videos Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      variants:
+        description: 'all, or a comma list of page variants. Each one renders in all four locales.'
+        required: false
+        type: string
+        default: all
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: store-videos-v${{ inputs.version }}
+  # A newer automatic draft supersedes the older pipeline. Manual subset runs queue instead, so recording
+  # kilter after default never cancels default; GitHub keeps one waiting run per group (a third replaces it).
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+env:
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_USE_RN_FETCH: '1'
+  SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+  MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    outputs:
+      variants: ${{ steps.plan.outputs.variants }}
+      variants_csv: ${{ steps.plan.outputs.variants_csv }}
+      crew: ${{ steps.plan.outputs.crew }}
+      live_activity: ${{ steps.plan.outputs.live_activity }}
+      exports: ${{ steps.plan.outputs.exports }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Require both recording accounts and video storage
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+          SHOWCASE_SECONDARY_EMAIL: ${{ secrets.SHOWCASE_SECONDARY_EMAIL }}
+          SHOWCASE_SECONDARY_PASSWORD: ${{ secrets.SHOWCASE_SECONDARY_PASSWORD }}
+          STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
+          STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
+          STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          for name in SCREENSHOT_USER_EMAIL SCREENSHOT_USER_PASSWORD SHOWCASE_SECONDARY_EMAIL SHOWCASE_SECONDARY_PASSWORD STORE_CREATIVES_R2_AWS_ENDPOINT_URL STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY; do
+            [ -n "${!name:-}" ] || { echo "::error::Missing $name; configure recording accounts and video storage before dispatch."; exit 1; }
+          done
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          # No shared cache here: this job holds Production secrets, and a restored
+          # cache is writable by any branch (workflow-cache-restore.test.ts).
+          cache: false
+      - run: vp install --frozen-lockfile
+      - name: Resolve the selected variants and require their reviewed physical sources
+        id: plan
+        env:
+          VARIANTS: ${{ inputs.variants }}
+        # Only selected cuts that end on the Live Activity need retained footage, read from the source's storyboards.
+        # A source commit from before subset support has no `plan`: it can only record every page, and needs
+        # both physical takes exactly as it always did.
+        run: |
+          set -euo pipefail
+          if grep -q "command === 'plan'" scripts/store-videos-gate.ts; then
+            vp exec tsx scripts/store-videos-gate.ts plan "$VARIANTS"
+            exit 0
+          fi
+          if [ "${VARIANTS:-all}" != all ]; then
+            echo "::error::Recording source predates variant subsets; dispatch variants=all or record from a newer main."
+            exit 1
+          fi
+          node -e 'const fs=require("node:fs"); const manifest=JSON.parse(fs.readFileSync("app-stores/apple/live-activity-captures/manifest.json","utf8")); for(const target of ["kilter","tension"]) { const source=manifest.footage?.[target]; if(!source || source.boardFamily!==target || !/^[a-f0-9]{64}$/.test(source.sha256) || source.key!==`sources/live-activity/${source.sha256}.zip`) throw new Error(`Missing reviewed retained ${target} footage; import one physical take before recording.`); }'
+          {
+            echo 'variants=["default","kilter","tension","moonboard","spray"]'
+            echo 'variants_csv=default,kilter,tension,moonboard,spray'
+            echo 'crew=["default","kilter","tension"]'
+            echo 'live_activity=["default","kilter","tension"]'
+            echo 'exports=20'
+          } >> "$GITHUB_OUTPUT"
+
+  app:
+    needs: preflight
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      cache-key: ${{ steps.appkey.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ inputs.source_sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Compute screenshot app cache key
+        id: appkey
+        env:
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/targets/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', '.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts', '.boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh') }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH"
+      - uses: actions/cache/restore@v4
+        id: app-cache
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+          lookup-only: true
+      - if: steps.app-cache.outputs.cache-hit != 'true'
+        run: vp install --frozen-lockfile
+      - name: Build dev-client on cache miss
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
+      - name: Verify simulator app identity
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        env:
+          APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app
+
+      - uses: actions/cache/save@v4
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+      - name: Retain native build measurements
+        if: always() && steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-app-metrics
+          path: metrics/
+          retention-days: 7
+
+  record:
+    needs: [preflight, app]
+    runs-on: macos-26
+    # Measured English MoonBoard recording: 38.45 min x 4 locales + setup exceeds 120 min.
+    timeout-minutes: 180
+    environment: Production
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        kind: ${{ fromJSON(needs.preflight.outputs.variants) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ inputs.source_sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
+      - uses: ./.boardsesh/cache-tooling/.github/actions/ios-store-video-tools
+        with:
+          app-cache-key: ${{ needs.app.outputs.cache-key }}
+      - name: Record ordinary app takes in all four locales
+        env:
+          KIND: ${{ matrix.kind }}
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          only="$(vp exec tsx scripts/store-videos-gate.ts takes "$KIND")"
+          vp exec tsx scripts/store-video-measure.ts "record-$KIND" "metrics/record-$KIND.json" -- vp run video:record -- --kind "$KIND" --only "$only" --locales all --app-path packages/mobile/.app-cache/Boardsesh.app
+      - name: Hand off original simulator frames for one day
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-frames-${{ matrix.kind }}
+          path: .boardsesh/showcase-video/work/boards/${{ matrix.kind }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Retain record measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-record-metrics-${{ matrix.kind }}
+          path: |
+            metrics/
+            .boardsesh/showcase-video/work/logs/
+          include-hidden-files: true
+          retention-days: 7
+
+  crew:
+    # Finish ordinary recordings first. Each crew kind and locale is serial so
+    # the shared recording account participates in only one live session.
+    needs: [preflight, app, record]
+    if: needs.preflight.outputs.crew != '[]'
+    runs-on: macos-26
+    timeout-minutes: 240
+    environment: Production
+    concurrency:
+      group: store-videos-crew
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ inputs.source_sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
+      - uses: ./.boardsesh/cache-tooling/.github/actions/ios-store-video-tools
+        with:
+          app-cache-key: ${{ needs.app.outputs.cache-key }}
+      - name: Record the selected crew stories serially
+        env:
+          CREW_KINDS: ${{ needs.preflight.outputs.crew }}
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+          SHOWCASE_SECONDARY_EMAIL: ${{ secrets.SHOWCASE_SECONDARY_EMAIL }}
+          SHOWCASE_SECONDARY_PASSWORD: ${{ secrets.SHOWCASE_SECONDARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for kind in $(jq -r '.[]' <<< "$CREW_KINDS"); do
+            vp exec tsx scripts/store-video-measure.ts "crew-$kind" "metrics/crew-$kind.json" -- vp run video:record -- --kind "$kind" --only crew --locales all --app-path packages/mobile/.app-cache/Boardsesh.app
+          done
+      - name: Hand off crew frames for one day
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-frames-crew
+          path: .boardsesh/showcase-video/work/boards
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Retain crew measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-crew-metrics
+          path: |
+            metrics/
+            .boardsesh/showcase-video/work/logs/
+          include-hidden-files: true
+          retention-days: 7
+
+  render:
+    needs: [preflight, record, crew]
+    # A selection without crew stories skips the crew job; that must not skip rendering.
+    if: ${{ !cancelled() && needs.record.result == 'success' && (needs.crew.result == 'success' || needs.crew.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: ${{ fromJSON(needs.preflight.outputs.variants) }}
+        locale: [en-US, es, fr, de]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Install Chromium and ffmpeg
+        working-directory: packages/web
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          vp exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: store-video-frames-${{ matrix.kind }}
+          path: .boardsesh/showcase-video/work/boards/${{ matrix.kind }}
+      - uses: actions/download-artifact@v4
+        if: contains(fromJSON(needs.preflight.outputs.crew), matrix.kind)
+        with:
+          name: store-video-frames-crew
+          path: .boardsesh/showcase-video/work/boards
+      - name: Hydrate the retained ending in its actual source language
+        if: contains(fromJSON(needs.preflight.outputs.live_activity), matrix.kind)
+        env:
+          KIND: ${{ matrix.kind }}
+          LOCALE: ${{ matrix.locale }}
+        run: |
+          set -euo pipefail
+          target="$KIND"
+          if [ "$target" = default ]; then target=kilter; fi
+          vp exec tsx scripts/import-live-activity-footage.ts hydrate --target "$target" --kind "$KIND" --locale "$LOCALE"
+      - name: Render and validate the Apple search video
+        env:
+          KIND: ${{ matrix.kind }}
+          LOCALE: ${{ matrix.locale }}
+        run: vp exec tsx scripts/store-video-measure.ts "render-$KIND-$LOCALE" "metrics/render-$KIND-$LOCALE.json" -- vp run video:render -- --target store-search --variant "$KIND" --locale "$LOCALE"
+      - name: Retain only final video, poster and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-${{ matrix.kind }}-${{ matrix.locale }}
+          path: .boardsesh/app-store-creatives/${{ matrix.kind }}/${{ matrix.locale }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain render measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-render-metrics-${{ matrix.kind }}-${{ matrix.locale }}
+          path: metrics/
+          retention-days: 7
+
+  publish:
+    needs: [preflight, render]
+    # A skipped crew job would otherwise skip every later job through the implicit success() check.
+    if: ${{ !cancelled() && needs.render.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: Production
+    steps:
+      - name: Checkout current main to preserve header entries
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - name: Recheck the open release immediately before publishing
+        id: final-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/final-video-gate"
+          GITHUB_OUTPUT="$result" node --experimental-strip-types scripts/store-videos-gate.ts gate --pinned-sha "$EXPECTED_SOURCE_SHA" --pinned-version "$EXPECTED_VERSION"
+          cat "$result" >> "$GITHUB_OUTPUT"
+          source_sha="$(sed -n 's/^source_sha=//p' "$result")"
+          version="$(sed -n 's/^version=//p' "$result")"
+          if [ "$source_sha" != "$EXPECTED_SOURCE_SHA" ] || [ "$version" != "$EXPECTED_VERSION" ]; then
+            echo 'open=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::The release moved while videos rendered; skipping superseded candidates.'
+          fi
+      - if: steps.final-gate.outputs.open == 'true'
+        run: vp install --frozen-lockfile
+      - uses: ruby/setup-ruby@v1
+        if: steps.final-gate.outputs.open == 'true'
+        with:
+          ruby-version: '3.4'
+      - name: Collect the selected rendered exports
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VARIANTS: ${{ needs.preflight.outputs.variants }}
+          EXPECTED_EXPORTS: ${{ needs.preflight.outputs.exports }}
+        run: |
+          set -euo pipefail
+          collected=0
+          for kind in $(jq -r '.[]' <<< "$VARIANTS"); do
+            for locale in en-US es fr de; do
+              gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "store-video-$kind-$locale" --dir ".boardsesh/app-store-creatives/$kind/$locale"
+              collected=$((collected + 1))
+            done
+          done
+          [ "$collected" -gt 0 ] && [ "$collected" -eq "$EXPECTED_EXPORTS" ] || { echo "::error::Collected $collected exports, expected $EXPECTED_EXPORTS."; exit 1; }
+      - name: Read current Apple placement specifications
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: vp exec tsx scripts/store-videos-gate.ts refdata "$RUNNER_TEMP/store-creative-refdata.json"
+      - name: Finalize search entries while retaining reviewed headers
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          VARIANTS: ${{ needs.preflight.outputs.variants_csv }}
+        run: vp exec ruby fastlane/prepare_creative_manifest.rb --placement search --variant "$VARIANTS" --refdata "$RUNNER_TEMP/store-creative-refdata.json"
+      - name: Upload immutable review candidates
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
+          STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
+          STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+          VARIANTS: ${{ needs.preflight.outputs.variants_csv }}
+        run: vp exec tsx scripts/store-creatives-r2.ts upload-candidates --placement search --variant "$VARIANTS"
+      - name: Mint the review PR token
+        if: steps.final-gate.outputs.open == 'true'
+        id: bot
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Refresh the release's review PR with public posters and video links
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          VIDEO_VERSION: ${{ inputs.version }}
+          VIDEO_SOURCE_SHA: ${{ inputs.source_sha }}
+          VIDEO_VARIANTS: ${{ needs.preflight.outputs.variants_csv }}
+          # Read-only HEAD checks that carried candidates have not expired.
+          STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
+          STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
+          STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+        run: vp exec tsx scripts/store-videos-publish.ts "$VIDEO_VERSION" "$VIDEO_SOURCE_SHA" "$VIDEO_VARIANTS"
+
+  timings:
+    if: always()
+    needs: [preflight, app, record, crew, render, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Collect per-step minutes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > steps.json
+          jq -r '["| Job | Step | Minutes | Result |", "| --- | --- | ---: | --- |"], (.[] .jobs[] | .name as $job | .steps[] | select(.started_at != null and .completed_at != null) | ["| \($job) | \(.name) | \((((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) / 60 * 100 | round) / 100) | \(.conclusion) |"] ) | .[]' steps.json | tee timings.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-video-step-timings
+          path: |
+            timings.md
+            steps.json
+          retention-days: 14

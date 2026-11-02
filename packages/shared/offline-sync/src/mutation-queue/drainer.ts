@@ -1,7 +1,7 @@
 import type { OfflineDatabase, QueryInvalidator } from '../database';
 import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
-import { peekPending, markCompleted, recordFailure, markDeadLetter } from './queue';
+import { peekPending, markCompleted, recordFailure, markDeadLetter, type PendingMutation } from './queue';
 import {
   isGraphQLEmptyResponseError,
   isRetryable,
@@ -291,6 +291,8 @@ export type MutationDeliveryEvent = {
   tableName: string;
   operation: string;
   idempotencyKey: string;
+  /** Shared entity identity when several queued writes refer to one climb. */
+  entityKey?: string;
   status: 'acknowledged' | 'dead_letter';
 };
 
@@ -412,6 +414,8 @@ export type DrainOptions = {
    * idempotency key is the entity UUID for tick creates.
    */
   onMutationStatus?: (event: MutationDeliveryEvent) => void;
+  /** Reconcile canonical climb data before releasing its queued dependents. */
+  beforeMutationAcknowledged?: (mutation: PendingMutation, graphqlFetch: GraphQLFetch) => Promise<void>;
   /** Platform-owned telemetry for a throwing delivery callback. */
   onMutationStatusError?: (failure: MutationStatusListenerFailure) => void;
   /**
@@ -593,6 +597,11 @@ export async function drainMutationQueue(
             networkStop = true; // reuse the "end cycle now" path
             break;
           }
+          await options.beforeMutationAcknowledged?.(mutation, graphqlFetch);
+          if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) {
+            networkStop = true;
+            break;
+          }
           // The send has landed; this DELETE is the only thing standing between
           // the server's acceptance and the row being cleared. Losing the
           // single-writer lock here (a snapshot import, a VACUUM, a concurrent
@@ -612,6 +621,7 @@ export async function drainMutationQueue(
             tableName: mutation.table_name,
             operation: mutation.operation,
             idempotencyKey: mutation.idempotency_key,
+            ...(mutation.entity_key != null ? { entityKey: mutation.entity_key } : {}),
             status: 'acknowledged',
           });
         } catch (error: unknown) {
@@ -721,6 +731,7 @@ export async function drainMutationQueue(
               tableName: mutation.table_name,
               operation: mutation.operation,
               idempotencyKey: mutation.idempotency_key,
+              ...(mutation.entity_key != null ? { entityKey: mutation.entity_key } : {}),
               status: 'acknowledged',
             });
             continue;
@@ -739,6 +750,7 @@ export async function drainMutationQueue(
                 tableName: mutation.table_name,
                 operation: mutation.operation,
                 idempotencyKey: mutation.idempotency_key,
+                ...(mutation.entity_key != null ? { entityKey: mutation.entity_key } : {}),
                 status,
               });
               notifyDeadLetter(options, {
@@ -770,6 +782,7 @@ export async function drainMutationQueue(
               tableName: mutation.table_name,
               operation: mutation.operation,
               idempotencyKey: mutation.idempotency_key,
+              ...(mutation.entity_key != null ? { entityKey: mutation.entity_key } : {}),
               status: 'dead_letter',
             });
             notifyDeadLetter(options, {

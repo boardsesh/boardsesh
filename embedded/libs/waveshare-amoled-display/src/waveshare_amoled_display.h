@@ -3,7 +3,9 @@
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
+
 #include <JPEGDEC.h>
+#include <atomic>
 #include <display_base.h>
 
 // Pin map from the current Waveshare ESP32-S3-Touch-AMOLED-2.16 docs/BSP.
@@ -11,9 +13,9 @@
 #define AMOLED_LCD_SDIO1 5
 #define AMOLED_LCD_SDIO2 6
 #define AMOLED_LCD_SDIO3 7
-#define AMOLED_LCD_SCLK  38
+#define AMOLED_LCD_SCLK 38
 #define AMOLED_LCD_RESET 39
-#define AMOLED_LCD_CS    12
+#define AMOLED_LCD_CS 12
 #define AMOLED_LCD_WIDTH 480
 #define AMOLED_LCD_HEIGHT 480
 
@@ -45,6 +47,15 @@ class WaveshareAmoledDisplay : public DisplayBase {
     void refresh() override;
     void refreshInfoOnly() override;
     void showBlePreview(const char* boardType, int angle, bool fullRefresh);
+    void showGymPreview(const char* name, const char* boardType, int angle, const char* serialNumber, int boardIndex,
+                        int boardCount, bool payloadSeen, int ledCount, const char* syncStatus);
+
+    // Status callbacks can run on the BLE task; rendering stays on the main loop.
+    void setWiFiStatus(bool connected);
+    void setBackendStatus(bool connected);
+    void setBleStatus(bool enabled, bool connected);
+    void service();
+    bool writeScreenshot(Print& output);
 
 #ifdef ENABLE_BOARD_IMAGE
     struct LedCmd {
@@ -53,10 +64,11 @@ class WaveshareAmoledDisplay : public DisplayBase {
         uint8_t g;
         uint8_t b;
     };
-    static const int MAX_LED_COMMANDS = 512;
+    static const int MAX_LED_COMMANDS = 1024;
 
     void setBoardConfig(const BoardConfig* config);
     void setLedCommands(const LedCmd* commands, int count);
+    void setExactPositionMapping(bool exact) { _exactPositionMapping = exact; }
     int getLastJpegBlockCount() const { return _lastJpegBlockCount; }
     int getLastJpegDecodeResult() const { return _lastJpegDecodeResult; }
     int getLastMatchedHoldCount() const { return _lastMatchedHoldCount; }
@@ -72,8 +84,17 @@ class WaveshareAmoledDisplay : public DisplayBase {
 
   private:
     Arduino_DataBus* _bus;
-    Arduino_CO5300* _gfx;
+    Arduino_CO5300* _panel;
+    Arduino_Canvas* _gfx;
     bool _ready;
+    bool _blePreviewVisible;
+    bool _fixturePreview = false;
+    String _fixtureFooter;
+    String _fixtureHint;
+    std::atomic<uint8_t> _pendingWiFiStatus;
+    std::atomic<uint8_t> _pendingBackendStatus;
+    std::atomic<uint8_t> _pendingBleStatus;
+    std::atomic<bool> _statusDirty;
 
 #ifdef ENABLE_BOARD_IMAGE
     bool _hasBoardImage;
@@ -88,6 +109,7 @@ class WaveshareAmoledDisplay : public DisplayBase {
     int _lastJpegBlockCount;
     int _lastJpegDecodeResult;
     int _lastMatchedHoldCount;
+    bool _exactPositionMapping = false;
 #endif
 
     void drawStatusBar();

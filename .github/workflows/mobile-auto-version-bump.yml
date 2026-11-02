@@ -7,15 +7,9 @@ name: Mobile Release Anchor
 # must resolve to reach that release. See docs/mobile-ota-updates.md and
 # scripts/mobile-cut-release-tags.ts.
 #
-# This workflow only anchors; it never writes to app.config or pushes to main.
-# The marketing-version bump lives on the release train, in release-train-sync.yml.
-# Main is never bumped by a bot. The train's version is, and that never strands
-# main's OTAs: `version` is outside the fingerprint (packages/mobile/fingerprint.config.js
-# skips `version`, `ios.buildNumber` and `android.versionCode`), and main no longer
-# builds native on push. An earlier revision bumped the patch on main when App Store
-# Connect reported a version accepted. At that time `version` was hashed, so the bump
-# moved main off the fingerprint of the binary already in the field and stranded
-# every install's OTA.
+# This workflow only anchors accepted binaries; it never bumps a version.
+# Main Native Release owns the patch bump when native fingerprints change.
+# Version/build-number fields remain outside the native fingerprint.
 
 on:
   schedule:
@@ -56,8 +50,7 @@ jobs:
 
       # main is only the tooling checkout. The anchor itself is commit-addressed:
       # it resolves each accepted binary's build-<platform>-* tag and cuts the
-      # release anchor at THAT commit — which now lives on release/next, since that
-      # is where the native builds run. Nothing here diffs against the checked-out
+      # release anchor at THAT commit — which is the stamped source in main history. Nothing here diffs against the checked-out
       # branch, so it stays correct wherever the build came from.
       - name: Checkout main for the anchoring tooling
         uses: actions/checkout@v4
@@ -72,7 +65,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       # mobile-cut-release-tags.ts imports an extensionless local module, so use
       # the installed tsx loader instead of Node's dependency-free type stripping.

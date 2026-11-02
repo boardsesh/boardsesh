@@ -165,8 +165,8 @@ export const GET_SPRAY_WALL_WITH_VERSIONS = gql`
 `;
 
 export const GET_SPRAY_WALL_BY_LAYOUT = gql`
-  query GetSprayWallByLayout($layoutId: Int!) {
-    sprayWallByLayout(layoutId: $layoutId) {
+  query GetSprayWallByLayout($layoutId: Int!, $sprayWallUuid: String) {
+    sprayWallByLayout(layoutId: $layoutId, sprayWallUuid: $sprayWallUuid) {
       ${SPRAY_WALL_FIELDS}
     }
   }

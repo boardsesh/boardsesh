@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { Link } from 'expo-router';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -8,6 +8,7 @@ import { PlayDrawer } from '../src/components/play-drawer';
 import { QueueSheet, type QueueSheetHandle } from '../src/components/play-drawer/QueueSheet';
 import { DevicePickerSheetHost } from '../src/components/ble/DevicePickerSheetHost';
 import { useQueueSheetHandlers } from '../src/components/play-drawer/use-queue-sheet-handlers';
+import { useLogAscentSheetHost } from '../src/components/tick/use-log-ascent-sheet-host';
 import type { QueueItemRowBoard } from '../src/components/QueueItemRow';
 import {
   useDrawerHost,
@@ -23,6 +24,15 @@ import { usePlaySwipeDismiss } from '../src/components/play-drawer/use-play-swip
 import type { Climb } from '@boardsesh/shared-schema';
 import { dismissManagedSheetAndWait, type DismissAndWaitResult } from '../src/providers/sheet-presentation-provider';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
+import { useReportRoutePlayerBusy } from '../src/components/play-drawer/route-player-handoff';
+import { useBlePickerHost } from '../src/providers/ble-picker-host';
+import { resolvePlayerArrangement } from '../src/components/play-drawer/play-drawer-layout';
+import { PlayerSidePanel, type PlayerSidePanelHandle } from '../src/components/play-drawer/PlayerSidePanel';
+import type { PlayerSidePanelClimb } from '../src/components/play-drawer/play-drawer-types';
+
+// The side panel's queue has no sheet to fold away and nothing to wait on.
+const keepPanelOpen = () => {};
+const panelDismissed = () => dismissManagedSheetAndWait(null);
 
 /**
  * Full-screen "now playing" player route (`presentation: 'transparentModal'`,
@@ -54,7 +64,8 @@ function PlayScreen() {
     onPlayDrawerTargetConsumed,
     playTarget,
   } = usePlayDrawerRoute();
-  const { boardConfig: storedBoardConfig, openPlayDrawer, openClimbActions, openLogAscent } = useDrawerHost();
+  const { boardConfig: storedBoardConfig, openPlayDrawer, getClimbActions } = useDrawerHost();
+  const { openLogAscent, sheet: logAscentSheet } = useLogAscentSheetHost();
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const { systemColors, colorScheme } = useTheme();
@@ -62,10 +73,27 @@ function PlayScreen() {
     playTarget?.nonce,
   );
 
+  // Landscape iPad: the board on the left, Up next / Logbook / Beta on the right.
+  // The native iPad's only (the Music layout); Android tablets and the browser
+  // build keep the stacked player.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isNativeIpad = Platform.OS === 'ios' && Platform.isPad;
+  const sideBySide =
+    resolvePlayerArrangement({ width: windowWidth, height: windowHeight, isTablet: isNativeIpad }) === 'sideBySide';
+  // The panel owns its segment (it opens on Up next, like Music's queue beside
+  // the artwork); the queue button reaches it through this handle.
+  const sidePanelRef = useRef<PlayerSidePanelHandle>(null);
+
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const [mountQueue, setMountQueue] = useState(false);
   const pendingQueuePresentation = useRef(false);
+  // Up from present until the dismiss settles. With the Bluetooth picker this
+  // route hosts, it tells the phone split (iPhone Duo opened into landscape) to
+  // wait before closing this route for its pane (route-player-handoff).
+  const [queueSheetUp, setQueueSheetUp] = useState(false);
+  const handleQueueDismissed = useCallback(() => setQueueSheetUp(false), []);
   const presentQueue = useCallback(() => {
+    setQueueSheetUp(true);
     if (queueSheetRef.current) queueSheetRef.current.present();
     else {
       pendingQueuePresentation.current = true;
@@ -77,7 +105,19 @@ function PlayScreen() {
     pendingQueuePresentation.current = false;
     queueSheetRef.current.present();
   }, [mountQueue]);
+  // With Up next already beside the board, the queue button picks that segment
+  // instead of stacking a second copy of the queue over the player.
+  const openQueue = useCallback(() => {
+    if (sideBySide) sidePanelRef.current?.showUpNext();
+    else presentQueue();
+  }, [sideBySide, presentQueue]);
   const requestCloseQueue = useCallback(() => queueSheetRef.current?.dismiss(), []);
+  // Rotating into landscape with the queue sheet up would show the queue twice,
+  // the sheet over the panel's Up next. Let an open Tick finish before the
+  // panel takes over, preserving its fields and keyboard through rotation.
+  useEffect(() => {
+    queueSheetRef.current?.dismissWhenUncovered(sideBySide);
+  }, [sideBySide]);
   const dismissQueueAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
@@ -86,15 +126,15 @@ function PlayScreen() {
     () => dismissAndWait(waitForPlayerDismiss),
     [dismissAndWait, waitForPlayerDismiss],
   );
-  // A reaction menu opened from this route's QueueSheet (a row long-press)
-  // receives the route-owned transition waiter: the root FullWindowOverlay can't
+  // A climb menu opened from this route's QueueSheet (a row long-press)
+  // carries the route-owned transition waiter: the root command host can't
   // safely discover the native-stack navigation object itself. The player's own
   // ⋯ is a native menu inside PlayDrawer and needs none of this.
   const openPlayerClimbActions = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => {
-      openClimbActions(climb, boardConfigOverride, { ...options, dismissPlayerAndWait });
+      return getClimbActions(climb, boardConfigOverride, { ...options, dismissPlayerAndWait });
     },
-    [openClimbActions, dismissPlayerAndWait],
+    [getClimbActions, dismissPlayerAndWait],
   );
 
   // Drop the board override + open target when the route unmounts (any dismiss:
@@ -146,13 +186,42 @@ function PlayScreen() {
   const { handleClimbPress, handleOpenActions, handleSuggestionPress, handleTickHistory } = useQueueSheetHandlers({
     setCurrentClimb,
     openPlayDrawer,
-    openClimbActions: openPlayerClimbActions,
+    getClimbActions: openPlayerClimbActions,
     openLogAscent,
     storedBoardConfig,
     sessionId,
     requestCloseQueueSheet: requestCloseQueue,
     dismissQueueSheetAndWait: dismissQueueAndWait,
   });
+  const {
+    handleClimbPress: handlePanelClimbPress,
+    handleOpenActions: handlePanelOpenActions,
+    handleSuggestionPress: handlePanelSuggestionPress,
+    handleTickHistory: handlePanelTickHistory,
+  } = useQueueSheetHandlers({
+    setCurrentClimb,
+    openPlayDrawer,
+    getClimbActions: openPlayerClimbActions,
+    openLogAscent,
+    storedBoardConfig,
+    sessionId,
+    requestCloseQueueSheet: keepPanelOpen,
+    dismissQueueSheetAndWait: panelDismissed,
+  });
+  const renderSidePanel = useCallback(
+    (displayed: PlayerSidePanelClimb | null) => (
+      <PlayerSidePanel
+        ref={sidePanelRef}
+        displayed={displayed}
+        queueBoard={queueBoard}
+        onClimbPress={handlePanelClimbPress}
+        onOpenActions={handlePanelOpenActions}
+        onSuggestionPress={handlePanelSuggestionPress}
+        onTickHistory={handlePanelTickHistory}
+      />
+    ),
+    [queueBoard, handlePanelClimbPress, handlePanelOpenActions, handlePanelSuggestionPress, handlePanelTickHistory],
+  );
 
   return (
     <Link.AppleZoomTarget>
@@ -178,19 +247,22 @@ function PlayScreen() {
               boardConfig={activeBoardConfig}
               onAngleChange={onAngleChange}
               isAngleAdjustable={isAngleAdjustable}
-              onOpenQueue={presentQueue}
+              onOpenQueue={openQueue}
               boardMismatch={boardMismatch}
               reachableBoardKeys={reachableBoardKeys}
               mismatchBoardLabel={mismatchBoardLabel}
               onSwitchBoard={onSwitchBoard}
               dismissPlayerAndWait={dismissPlayerAndWait}
               openTarget={playTarget}
+              fitBoardToHeight={sideBySide}
+              renderSidePanel={sideBySide ? renderSidePanel : undefined}
             />
             {mountQueue && queueBoard ? (
               <QueueSheet
                 ref={queueSheetRef}
                 board={queueBoard}
                 onClose={requestCloseQueue}
+                onDismissed={handleQueueDismissed}
                 onClimbPress={handleClimbPress}
                 onOpenActions={handleOpenActions}
                 onSuggestionPress={handleSuggestionPress}
@@ -199,13 +271,26 @@ function PlayScreen() {
             ) : null}
           </>
         ) : null}
+        {logAscentSheet}
         {/* Host the BLE device picker from inside this route so a connect from the
           player's lightbulb (when disconnected) presents OVER the player. Claims
           the picker, suppressing the app-root instance while mounted. */}
         <DevicePickerSheetHost registerExternal />
+        <RouteSheetsBusyReporter queueSheetUp={queueSheetUp} />
       </Animated.View>
     </Link.AppleZoomTarget>
   );
+}
+
+/**
+ * Reports this route busy while its queue sheet or its Bluetooth device picker
+ * is up. A component of its own so the picker's updates while it scans re-render
+ * only this, never the player.
+ */
+function RouteSheetsBusyReporter({ queueSheetUp }: { queueSheetUp: boolean }) {
+  const { pickerState } = useBlePickerHost();
+  useReportRoutePlayerBusy('route', queueSheetUp || pickerState != null);
+  return null;
 }
 
 const styles = StyleSheet.create({

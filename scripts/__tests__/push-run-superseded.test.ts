@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { decideSuperseded, tipFromLsRemote, triggerPathspecs } from '../push-run-superseded';
 
-const REF = 'refs/heads/release/next';
+const REF = 'refs/heads/main';
 const SHA = 'a'.repeat(40);
 const TIP = 'b'.repeat(40);
 
@@ -53,10 +53,13 @@ describe('superseded push runs', () => {
     expect(() => triggerPathspecs('on:\n  push:\n    paths-ignore: [docs/**]\n')).toThrow('paths-ignore');
   });
 
-  it('compares every file for an unfiltered push, including every train OTA push', () => {
+  it('compares every file for an unfiltered push, while production OTA has no direct push', () => {
     expect(triggerPathspecs('on:\n  push:\n    branches: [main]\n')).toEqual([]);
     expect(triggerPathspecs('on:\n  push:\n')).toEqual([]);
-    expect(triggerPathspecs(readFileSync('.github/workflows/mobile-ota-production.yml', 'utf8'))).toEqual([]);
+    expect(triggerPathspecs(readFileSync('.github/workflows/production-deploy.yml', 'utf8'))).toEqual([]);
+    expect(() => triggerPathspecs(readFileSync('.github/workflows/mobile-ota-production.yml', 'utf8'))).toThrow(
+      'no on.push trigger',
+    );
   });
 
   it.each(['ios-testflight-rn.yml', 'android-apk-rn.yml'])('understands the push paths of %s', (name) => {

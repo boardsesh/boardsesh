@@ -11,6 +11,16 @@ const base = {
   angle: 40,
 };
 
+describe('shared spray draft scope', () => {
+  it('accepts wall drafts only on spray walls and keeps the own scope compatible', () => {
+    expect(
+      ClimbSearchInputSchema.safeParse({ ...base, boardName: 'spray', onlyDrafts: true, draftScope: 'WALL' }).success,
+    ).toBe(true);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, onlyDrafts: true, draftScope: 'WALL' }).success).toBe(false);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, onlyDrafts: true, draftScope: 'OWN' }).success).toBe(true);
+  });
+});
+
 describe('ClimbSearchInputSchema page bound', () => {
   it('accepts pages up to MAX_SEARCH_PAGE', () => {
     expect(ClimbSearchInputSchema.safeParse({ ...base, page: 0 }).success).toBe(true);

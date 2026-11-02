@@ -60,8 +60,8 @@ type RailRestOffsetArgs = {
  * snaps DOWN to a chip start so it cannot rest mid-chip.
  *
  * Returns `null` when there is nothing to compute from — no focus chip, an
- * unmeasured focus chip, or a rail that has not been laid out yet — so the
- * caller can leave the scroll position alone instead of jumping it to 0.
+ * unmeasured focus chip, or a rail or content that has not been laid out yet —
+ * so the caller can leave the scroll position alone instead of jumping it to 0.
  */
 export function railRestOffset({
   layouts,
@@ -71,7 +71,9 @@ export function railRestOffset({
   leadIn,
   snapToChipStart = false,
 }: RailRestOffsetArgs): number | null {
-  if (focusId == null || railWidth <= 0) return null;
+  // A content width of 0 is "not measured yet", not "nothing overflows":
+  // resting at 0 on it would park the rail on the first chip (#7062).
+  if (focusId == null || railWidth <= 0 || contentWidth <= 0) return null;
   const focusLayout = layouts[focusId];
   if (!focusLayout) return null;
 

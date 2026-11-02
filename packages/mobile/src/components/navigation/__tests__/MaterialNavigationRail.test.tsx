@@ -81,7 +81,11 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
 import { MaterialNavigationRail } from '../MaterialNavigationRail';
 
-const SEGMENTS = ['home', 'climbs', 'record', 'wall', 'discover', 'profile'];
+// Rail order: Climbs is the last primary row, as it is the rightmost phone tab;
+// Profile stays pinned at the bottom.
+// The Wall display is no destination: it opens from the board sheet and the
+// Climbs menu.
+const SEGMENTS = ['home', 'record', 'discover', 'climbs', 'profile'];
 
 describe('MaterialNavigationRail', () => {
   beforeEach(() => {
@@ -89,11 +93,15 @@ describe('MaterialNavigationRail', () => {
     cfg.navigate.mockClear();
   });
 
-  it('renders all six destinations (five primary + pinned profile)', () => {
+  it('renders all five destinations (four primary + pinned profile) in rail order', () => {
     const { container } = render(<MaterialNavigationRail />);
     for (const segment of SEGMENTS) {
       expect(container.querySelector(`[data-testid="tablet-rail-${segment}"]`)).not.toBeNull();
     }
+    const renderedOrder = Array.from(container.querySelectorAll('[data-testid^="tablet-rail-"]')).map((row) =>
+      row.getAttribute('data-testid')?.replace('tablet-rail-', ''),
+    );
+    expect(renderedOrder.filter((segment) => segment && SEGMENTS.includes(segment))).toEqual(SEGMENTS);
   });
 
   it('marks only the focused destination selected', () => {
@@ -114,8 +122,8 @@ describe('MaterialNavigationRail', () => {
 
   it('navigates to a destination href on press', () => {
     const { container } = render(<MaterialNavigationRail />);
-    fireEvent.click(container.querySelector('[data-testid="tablet-rail-wall"]')!);
-    expect(cfg.navigate).toHaveBeenCalledWith('/wall');
+    fireEvent.click(container.querySelector('[data-testid="tablet-rail-discover"]')!);
+    expect(cfg.navigate).toHaveBeenCalledWith('/discover');
   });
 
   it('shows the focused (filled) glyph for the active destination and outline for the rest', () => {

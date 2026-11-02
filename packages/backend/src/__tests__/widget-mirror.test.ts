@@ -1,7 +1,18 @@
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), guard: vi.fn(), limit: vi.fn(), mirror: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  auth: vi.fn(),
+  guard: vi.fn(),
+  limit: vi.fn(),
+  mirror: vi.fn(),
+  boardBySlug: vi.fn(),
+  boundBoard: vi.fn(),
+}));
+vi.mock('../db/client', () => ({
+  db: { select: () => ({ from: () => ({ where: () => ({ limit: mocks.boundBoard }) }) }) },
+}));
+vi.mock('../graphql/resolvers/shared/board-lookup', () => ({ resolveBoardBySlug: mocks.boardBySlug }));
 vi.mock('../handlers/widget-auth', () => ({ authenticateWidget: mocks.auth }));
 vi.mock('../handlers/widget-session-guard', () => ({ verifyWidgetSession: mocks.guard }));
 vi.mock('../handlers/widget-rate-limit', () => ({
@@ -59,6 +70,29 @@ describe('widget mirror endpoint', () => {
     mocks.guard.mockResolvedValueOnce({ ok: true, session: { boardPath: 'tension/11/1/1/40' } });
     expect((await request(body)).status).toBe(409);
     expect(mocks.mirror).not.toHaveBeenCalled();
+  });
+  it('mirrors on a named wall by looking its layout up, and refuses one that does not mirror', async () => {
+    // A gym wall, or a home wall whose session carries its name (#7013).
+    mocks.guard.mockResolvedValue({ ok: true, session: { boardPath: '/b/marcos-garage/40' } });
+    mocks.boardBySlug.mockResolvedValueOnce({ boardType: 'tension', layoutId: 1 });
+    expect((await request(body)).status).toBe(200);
+    expect(mocks.boardBySlug).toHaveBeenCalledWith('marcos-garage');
+    expect(mocks.mirror).toHaveBeenCalledWith('session', true, 'slot');
+
+    mocks.mirror.mockClear();
+    mocks.boardBySlug.mockResolvedValueOnce({ boardType: 'tension', layoutId: 11 });
+    expect((await request(body)).status).toBe(409);
+    mocks.boardBySlug.mockResolvedValueOnce(null);
+    expect((await request(body)).status).toBe(409);
+    expect(mocks.mirror).not.toHaveBeenCalled();
+  });
+  it("reads a named session's own bound board before the slug, which can be reused", async () => {
+    // The slug now belongs to somebody else's Kilter; the session is on a Tension.
+    mocks.guard.mockResolvedValue({ ok: true, session: { boardPath: '/b/reused-slug/40', boardId: 42 } });
+    mocks.boundBoard.mockResolvedValueOnce([{ boardType: 'tension', layoutId: 1 }]);
+    mocks.boardBySlug.mockResolvedValue({ boardType: 'kilter', layoutId: 1 });
+    expect((await request(body)).status).toBe(200);
+    expect(mocks.boardBySlug).not.toHaveBeenCalled();
   });
   it('rejects malformed or rate-limited requests', async () => {
     expect((await request({ ...body, mirrored: 'true' })).status).toBe(400);

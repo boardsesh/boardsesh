@@ -673,9 +673,15 @@ remains routable regardless of its picker feature flag; Grasshopper includes its
 real -5° setting without widening negative-angle support on other boards.
 
 **Genuine alias uuids are excluded — self-aliases are not.**
-`board_climb_aliases` maps duplicate uuids onto a canonical one, and an alias URL
-self-canonicalises to itself, so submitting both forms is duplicate content by
-construction. But the table is mostly **self**-aliases: every synced Kilter climb
+`board_climb_aliases` maps duplicate uuids onto a canonical one. Both climb route
+trees use the UUID returned by `getClimb` for canonical metadata and permanently
+redirect a different requested alias UUID (#5819). The `/b` redirect retains the
+requested board slug and angle; both trees' redirects preserve the locale, while
+metadata still consolidates onto the default-locale configuration URL. Woods size
+corrections keep their temporary redirect and include the resolved UUID in the
+same hop. Stats, similar climbs and beta already read that resolved UUID. The
+sitemap submits destinations, excluding genuine aliases without changing its
+query or shards. The table is mostly **self**-aliases: every synced Kilter climb
 has a row mapping its uuid to itself, written by migration
 `0160_backfill_kilter_self_aliases` and by catalog-sync's identity path, because
 deletion reconciliation resolves upstream removals through this table. In

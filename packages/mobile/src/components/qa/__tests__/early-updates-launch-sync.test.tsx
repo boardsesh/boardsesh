@@ -1,5 +1,17 @@
 // @vitest-environment jsdom
 // Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../../lib/schedule-idle-task', () => ({
+  scheduleIdleTask: (run: () => void) => {
+    const task = { run, cancelled: false };
+    interactions.pending.push(task);
+    return {
+      cancel: () => {
+        task.cancelled = true;
+      },
+    };
+  },
+}));
+
 vi.mock('../../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 //
 // The component is wiring only: when it adopts the running pin, when it starts
@@ -10,19 +22,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 
 const interactions = vi.hoisted(() => ({ pending: [] as { run: () => void; cancelled: boolean }[] }));
-vi.mock('react-native', () => ({
-  InteractionManager: {
-    runAfterInteractions: (run: () => void) => {
-      const task = { run, cancelled: false };
-      interactions.pending.push(task);
-      return {
-        cancel: () => {
-          task.cancelled = true;
-        },
-      };
-    },
-  },
-}));
 
 const syncEarlyUpdates = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/qa/early-updates', () => ({ syncEarlyUpdates }));
@@ -64,7 +63,7 @@ beforeEach(() => {
 });
 
 describe('EarlyUpdatesLaunchSync', () => {
-  it('never syncs during render or mount: only after the first interactions', () => {
+  it('never syncs during render or mount: only after the first idle period', () => {
     render(<EarlyUpdatesLaunchSync />);
     expect(syncEarlyUpdates).not.toHaveBeenCalled();
 

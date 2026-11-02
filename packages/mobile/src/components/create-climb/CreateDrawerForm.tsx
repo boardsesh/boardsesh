@@ -118,7 +118,11 @@ export function CreateDrawerForm({
         />
         <SwitchRow
           label={t('mobile.create.settings.draftLabel')}
-          description={t('mobile.create.settings.draftDescription')}
+          description={
+            boardName === 'spray'
+              ? t('mobile.create.settings.wallDraftDescription')
+              : t('mobile.create.settings.draftDescription')
+          }
           value={isDraft}
           onValueChange={onChangeIsDraft}
         />

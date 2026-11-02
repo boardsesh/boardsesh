@@ -82,14 +82,15 @@ export default function LogbookSettersScreen() {
   }, [navigation, t]);
 
   // Only removing the picker hands its picks back, never a push on top of it.
-  useEffect(
-    () =>
-      navigation.addListener('beforeRemove', () => {
-        if (appliedRef.current) return;
-        emitLogbookSetterSelection({ handoffId, setterUsernames: selectedSettersRef.current, apply: false });
-      }),
-    [navigation, handoffId],
-  );
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('removed', () => {
+      if (appliedRef.current) return;
+      emitLogbookSetterSelection({ handoffId, setterUsernames: selectedSettersRef.current, apply: false });
+    });
+    // `removed` arrives after unmount. Its callback only publishes to the
+    // handoff store; a mounted guard would discard the picks.
+    return () => queueMicrotask(unsubscribe);
+  }, [navigation, handoffId]);
 
   // The ref moves with each pick, so two taps before a render build on each other.
   const commitSelection = useCallback((next: string[]) => {

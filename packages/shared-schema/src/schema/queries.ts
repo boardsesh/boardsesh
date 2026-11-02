@@ -129,7 +129,15 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     Get a single climb by its UUID.
     """
-    climb(boardName: String!, layoutId: Int!, sizeId: Int!, setIds: String!, angle: Int!, climbUuid: ID!): Climb
+    climb(
+      boardName: String!
+      layoutId: Int!
+      sizeId: Int!
+      setIds: String!
+      angle: Int!
+      climbUuid: ID!
+      sprayWallUuid: String
+    ): Climb
 
     """
     Setter usernames with climb counts for the given board, optionally filtered by username substring.
@@ -380,6 +388,8 @@ export const queriesTypeDefs = /* GraphQL */ `
 
     # Get current user's registered controllers
     myControllers: [ControllerInfo!]!
+    "Read a gym's device configuration using a registered gym owner/admin's controller API key."
+    controllerGymManifest(gymRef: String!): ControllerGymManifest!
 
     # ============================================
     # Social / Follow Queries
@@ -650,6 +660,8 @@ export const queriesTypeDefs = /* GraphQL */ `
     backward compatibility with already-shipped clients.
     """
     boardsBySerialNumbers(serialNumbers: [String!]!, boardType: String): [UserBoard!]!
+    "Correlate radio-observed serials with readable candidates without exposing stored owner-only serial fields."
+    observedBoardSerialMatches(input: [ObservedBoardSerialInput!]!): [ObservedBoardSerialMatch!]!
 
     """
     Recorded board configurations for the current user keyed by controller serial.
@@ -668,6 +680,11 @@ export const queriesTypeDefs = /* GraphQL */ `
     Search public boards.
     """
     searchBoards(input: SearchBoardsInput!): UserBoardConnection!
+
+    "Search all active registered boards, including private boards. Global admins only."
+    adminBoards(input: AdminBoardsInput!): AdminBoardConnection!
+    "Stored editable metadata for one active board. Global admins only."
+    adminBoard(boardUuid: ID!): AdminBoard
 
     "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
     boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
@@ -851,7 +868,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     The spray wall occupying a catalogue layout id, for a client holding only a
     board config. Same visibility rules as \`sprayWall\`.
     """
-    sprayWallByLayout(layoutId: Int!): SprayWall
+    sprayWallByLayout(layoutId: Int!, sprayWallUuid: String): SprayWall
 
     """
     Everything needed to render a wall at one version: the photo, the homography
@@ -1148,6 +1165,7 @@ export const queriesTypeDefs = /* GraphQL */ `
       boardType: String!
       layoutId: Int
       sizeId: Int
+      sprayWallUuid: String
       cursor: SyncCursorInput
       limit: Int! = 500
       audience: SyncAudience = ALL
@@ -1162,6 +1180,7 @@ export const queriesTypeDefs = /* GraphQL */ `
       boardType: String!
       layoutId: Int
       sizeId: Int
+      sprayWallUuid: String
       cursor: SyncCursorInput
       limit: Int! = 500
       audience: SyncAudience = ALL
@@ -1176,6 +1195,7 @@ export const queriesTypeDefs = /* GraphQL */ `
       boardType: String!
       layoutId: Int
       sizeId: Int
+      sprayWallUuid: String
       cursor: SyncCursorInput
       limit: Int! = 500
       audience: SyncAudience = ALL
@@ -1201,6 +1221,7 @@ export const queriesTypeDefs = /* GraphQL */ `
       boardType: String!
       layoutId: Int
       sizeId: Int
+      sprayWallUuid: String
       cursor: SyncCursorInput
       limit: Int! = 500
     ): SyncResult!

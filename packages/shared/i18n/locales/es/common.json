@@ -741,7 +741,8 @@
         "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical.",
         "tabs": {
           "sections": "Debajo del bloque",
-          "buttons": "Botones"
+          "buttons": "Botones",
+          "miniPlayer": "Mini reproductor"
         }
       },
       "sectionLayout": {
@@ -785,6 +786,12 @@
         "underName": "Bajo el nombre",
         "yourClimbing": "Tu escalada",
         "actions": "Acciones",
+        "layout": {
+          "title": "Columnas",
+          "one": "Una columna",
+          "two": "Dos columnas",
+          "footer": "Las dos columnas aparecen cuando la lista tiene sitio, como en un iPad en horizontal."
+        },
         "gradesTitle": "Grados",
         "previewFooter": "Ejemplo. Los encadenes, guardados y etiquetas aparecen en los bloques que los tienen.",
         "gradeFooter": "Elige el grado principal en Ajustes → Bloques y grados.",
@@ -817,7 +824,7 @@
       },
       "playerButtons": {
         "title": "Botones",
-        "description": "Elige los botones alrededor de Registrar, su orden y dónde van.",
+        "description": "Elige hasta cuatro botones alrededor de Registrar, su orden y dónde van.",
         "position": {
           "label": "Posición",
           "below": "Debajo del plafón",
@@ -825,7 +832,7 @@
           "footer": "Registrar y Luz del plafón siempre mantienen su sitio."
         },
         "previousNext": "Anterior y siguiente",
-        "previousNextDescription": "Deslizar el plafón sigue cambiando de bloque.",
+        "previousNextDescription": "Muestra flechas junto a Registrar en lugar de dos botones de acción. Deslizar el plafón sigue cambiando de bloque.",
         "buttons": {
           "mirror": "Espejo",
           "favorite": "Favorito",
@@ -841,14 +848,31 @@
           "log": "Registrar",
           "boardLight": "Luz del plafón"
         },
-        "footer": "El primero entre Cola y Espejo se queda con el botón grande. Un botón oculto sigue en el menú ⋯. Sin botones pequeños, el plafón ocupa su fila.",
+        "footer": "Sin flechas, aparecen hasta cuatro botones activos alrededor de Registrar. Si hay más disponibles para este plafón, aparecen el primero y los tres últimos. Con flechas, solo aparecen el primero y el último. El resto, y los que ocultes, están en el menú ⋯.",
         "settingsFooter": "Para cambiar el orden, abre el menú ⋯ de un bloque y elige Opciones de vista.",
-        "previewLabel": "Vista previa, {{position}}: {{buttons}}"
+        "previewLabel": "Vista previa, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Control del plafón",
+          "wallButton": "Botón del muro",
+          "lightbulb": "Bombilla",
+          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. Lee la etiqueta del botón del muro: Estás al mando del plafón significa que cada bloque que elijas se enciende; tócala para dejar el mando. Tu móvil sigue conectado salvo que Desconectar el Bluetooth al dejar el mando esté activado. Si el mando tiene límite de tiempo, un reloj junto a la etiqueta y el esmerilado que se encoge muestran cuándo termina. La bombilla queda arriba a la derecha."
+        }
       },
       "climbView": {
         "title": "Vista del bloque",
         "valueDefault": "Predeterminada",
         "valueCustom": "Personalizada"
+      },
+      "quickFilters": {
+        "title": "Filtros rápidos",
+        "valueDefault": "Predeterminados",
+        "valueCustom": "Personalizados",
+        "climbsTitle": "Bloques",
+        "climbsFooter": "Aparecen sobre la lista de Bloques, en este orden. Un filtro que actives se añade al final.",
+        "playlistsTitle": "Listas",
+        "playlistsFooter": "Aparecen sobre cada playlist, playlist inteligente y página de un setter, en este orden.",
+        "restoreDefaults": "Restablecer valores predeterminados",
+        "footer": "Los cambios se aplican al momento y solo en este teléfono. Todos los filtros siguen en Filtros."
       },
       "timers": {
         "restTitle": "Descanso",
@@ -862,7 +886,7 @@
         "modeOnTheMinuteHint": "Ventanas fijas desde que lo activas. Registrar intentos o encadenes nunca reinicia el reloj.",
         "autoAdvance": "Pasar al siguiente bloque",
         "autoAdvanceHint": "Lo enciende en el plafón por ti, solo con Boardsesh abierto.",
-        "autoAdvanceBlocked": "Solo quien controla el plafón puede mover la cola.",
+        "autoAdvanceBlocked": "Solo quien tiene el plafón puede mover la cola.",
         "autoAdvanceNeedsLength": "Elige una duración de descanso para mover la cola automáticamente.",
         "cuesTitle": "Avisos",
         "cuesFooter": "Desactivados, sigues recibiendo una vibración de aviso antes de que el plafón avance solo.",
@@ -882,6 +906,24 @@
         "rogueConnecting": "Conectando…",
         "rogueUnreachable": "No se encuentra. Comprueba que esté encendido y cerca.",
         "rogueSaveFailed": "No se pudo guardar el temporizador. Inténtalo de nuevo."
+      },
+      "miniPlayer": {
+        "title": "Mini reproductor",
+        "description": "La barra sobre las pestañas guarda el último bloque que abriste. Tócala para volver a abrirlo; Luz del plafón lo pone en el plafón.",
+        "buttons": {
+          "next": "Bloque siguiente",
+          "previous": "Bloque anterior",
+          "wallDisplay": "Pantalla de muro"
+        },
+        "fixedNote": "Luz del plafón siempre está, junto a Registrar. Registrar va siempre al final, bajo tu pulgar.",
+        "footer": "En iPhone la barra tiene sitio para uno de estos junto a Luz del plafón y Registrar: el primero que esté activado.",
+        "open": "Abierta",
+        "collapsed": "Reducida",
+        "previewLabel": "Vista previa, barra {{shape}}: {{buttons}}",
+        "footerWide": "En una pantalla ancha la barra muestra tantos de estos como le caben: ganan los primeros de la lista.",
+        "shapeOpen": "abierta",
+        "shapeCollapsed": "reducida",
+        "more": "Más"
       }
     },
     "sendRecovery": {
@@ -983,8 +1025,21 @@
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
-        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí.",
-        "climbsTab": "Para volver a tus bloques, toca la lupa de la barra de pestañas."
+        "accessory": "La barra de abajo guarda el último bloque que abriste, hasta que tu cola pase a otro. Tócala para volver a abrirlo; su bombilla lo pone en el plafón y ✓ lo registra. El bloque del plafón sigue arriba en Bloques.",
+        "previewFirst": {
+          "title": "Un toque abre una vista previa. Poner en el plafón enciende el bloque.",
+          "windowSeconds": "Luego quedas al mando del plafón: durante {{seconds}} segundos después de cada bloque encendido, cada bloque que elijas también se enciende.",
+          "windowMinute": "Luego quedas al mando del plafón: durante 1 minuto después de cada bloque encendido, cada bloque que elijas también se enciende.",
+          "windowMinutes": "Luego quedas al mando del plafón: durante {{minutes}} minutos después de cada bloque encendido, cada bloque que elijas también se enciende.",
+          "untilStop": "Luego quedas al mando del plafón: cada bloque que elijas se enciende hasta que pares.",
+          "frost": "El botón esmerilado significa que estás al mando del plafón: cada bloque que elijas se enciende. El mando que empieza con Poner en el plafón termina tras el tiempo de Dejar el mando tras (Ajustes › Plafón): un reloj cuenta atrás junto a la etiqueta y el esmerilado se encoge a medida que pasa. Desliza el botón a la izquierda para tener el mando sin límite (con el plafón conectado, también puedes mantenerlo pulsado y elegir Encender cada bloque). Tócalo para parar.",
+          "frostScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende. El mando que empieza con Poner en el plafón termina tras el tiempo de Dejar el mando tras, en Ajustes › Plafón. Usa la acción Encender cada bloque para tener el mando sin límite. Toca el botón para parar.",
+          "frostOpenEnded": "El botón esmerilado significa que estás al mando del plafón: cada bloque que elijas se enciende hasta que lo toques para parar. Desliza el botón a la izquierda para tomar el mando (con el plafón conectado, también puedes mantenerlo pulsado y elegir Encender cada bloque).",
+          "frostOpenEndedScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende hasta que toques el botón para parar. Usa la acción Encender cada bloque para tomar el mando.",
+          "settings": "Ajustes de iluminación",
+          "done": "Entendido",
+          "close": "Cerrar consejo"
+        }
       },
       "link": {
         "title": "Trae contigo tus encadenes de {{boardName}}",
@@ -999,7 +1054,6 @@
       "home": "Inicio",
       "boards": "Plafones",
       "climbs": "Bloques",
-      "wall": "En el muro",
       "profile": "Perfil",
       "holdFilter": "Tipos de presa",
       "zoneFilter": "Zona del muro",
@@ -1054,6 +1108,14 @@
         "finishTesting": "Terminar las pruebas de la PR #{{prNumber}}",
         "options": "Opciones de actualización",
         "earlyUpdatesHelp": "Las actualizaciones anticipadas pueden tener fallos. Los cambios se aplican al volver a abrir la app."
+      },
+      "previewFirstSpotlight": {
+        "title": "Explora bloques sin encender el plafón",
+        "tap": "Un toque abre una vista previa. Poner en el plafón enciende el bloque, y luego quedas al mando del plafón: los bloques que elijas también se encienden hasta que se acabe el tiempo que elegiste (45 segundos por defecto). Cámbialo en Dejar el mando tras, en Ajustes › Plafón.",
+        "swipe": "Desliza el botón del muro a la izquierda para quedar al mando del plafón hasta que pares. Mientras brilla con los colores del bloque, cada bloque que elijas se enciende. Tócalo para parar. Si el mando tiene límite de tiempo, sale un reloj junto a la etiqueta y el esmerilado se encoge a medida que se acaba el tiempo.",
+        "back": "La flecha de arriba a la izquierda cierra la vista previa y te lleva de vuelta a tu bloque, o al bloque del plafón. La barra de abajo guarda el último bloque que abriste.",
+        "cta": "Mira cómo funciona",
+        "dismiss": "Entendido"
       }
     },
     "launchUpdate": {
@@ -1126,6 +1188,16 @@
       "yes": "Sí",
       "no": "No",
       "unknown": "Desconocido"
+    },
+    "supportAsks": {
+      "accountRow": "Apoya Boardsesh",
+      "cardTitle": "Ayuda a construir Boardsesh",
+      "cardBody": "Boardsesh es gratis para quien escala. El apoyo mensual paga el tiempo que lleva construirlo.",
+      "giveMonthly": "Aportar cada mes",
+      "giveOnce": "Aportar una vez",
+      "hideCard": "Ocultar esta tarjeta",
+      "settingTitle": "Mostrar peticiones de apoyo",
+      "settingFooter": "Una fila «Apoya Boardsesh» en Cuenta y una tarjeta en Inicio la primera semana de cada mes."
     }
   },
   "lightControl": {
@@ -1193,6 +1265,7 @@
   },
   "undoDelete": {
     "removed": "Registro eliminado",
+    "removedMany": "{{count}} registros eliminados",
     "undo": "Deshacer",
     "cancelled": "Eliminación cancelada. Tu registro se ha conservado."
   }

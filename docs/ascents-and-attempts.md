@@ -238,6 +238,25 @@ then refresh statistics for both the old and new boards. Delayed ascent feed fan
 reads current attribution under the same user mutation lock. No historical records
 are automatically repaired.
 
+### Client logbook caches after edits and deletes
+
+`useUpdateTick` and `useDeleteTick` reconcile the addressed tick UUID into both the
+accumulated logbook and cached fetch batches before invalidating dependent reads (#6870).
+Older in-flight logbook reads are cancelled first, so they cannot restore a stale row.
+The write preserves each batch's original answer time: changing one tick does not make
+unrelated climbs in that batch newer than their own cached answers. Coverage markers,
+unrelated rows, and optimistic or queued saves stay intact; the additive merge rule remains.
+
+Edits preserve fields the mutation did not return, including the climb UUID, mirror flag,
+hold revision and social counts. A new personal star rating updates immediately. Clearing
+personal stars clears their old display too; a fresh, non-invalidated `GetTicks` answer can
+then supply the actual synced-rating fallback, but only if its raw quality agrees with the
+cached row. An invalidated older batch cannot overwrite a newer fallback.
+
+Reconciliation uses exact tick UUIDs, matching the online tick and ascent-feed readers'
+shared duplicate filter. It does not infer alias groups. The separate offline reader can
+choose a different representative UUID; reconciling that disagreement is outside this fix.
+
 ### Stats recompute on edits and deletes
 
 `updateTick` and `deleteTick` (same `mutations.ts` file) don't insert new

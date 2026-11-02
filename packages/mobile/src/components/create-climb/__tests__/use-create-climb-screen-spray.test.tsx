@@ -153,7 +153,7 @@ beforeEach(() => {
   forkSeed.frame = {};
   sprayToken.current = '';
   boardActions.saveClimb.mockReset();
-  boardActions.saveClimb.mockResolvedValue({ uuid: 'saved-1', createdAt: null, publishedAt: null, isDraft: false });
+  boardActions.saveClimb.mockResolvedValue({ uuid: 'saved-1', createdAt: null, publishedAt: null });
   boardActions.updateClimb.mockReset();
   boardActions.updateClimb.mockResolvedValue({ uuid: 'saved-1', createdAt: null, publishedAt: null, isDraft: false });
   queue.setCurrentClimb.mockReset();
@@ -421,6 +421,38 @@ describe('the autosave slot follows the wall version', () => {
 });
 
 describe('the wall owns the angle and the identity', () => {
+  it('keeps the allocated save identity through a failed save and relaunch', async () => {
+    const pendingClimbUuid = 'A'.repeat(32);
+    draftStore.loadDraft.mockResolvedValue({
+      holdsJson: '{}',
+      framesJson: '[{}]',
+      name: 'Still here',
+      description: '',
+      isDraft: true,
+      pendingClimbUuid,
+    });
+    boardActions.saveClimb.mockRejectedValueOnce(new Error('Unknown local commit outcome'));
+    const first = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+    await waitFor(() => expect(first.result.current.name).toBe('Still here'));
+    await act(async () => {
+      await first.result.current.handleSave();
+    });
+    first.unmount();
+    const reopened = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+    await waitFor(() => expect(reopened.result.current.name).toBe('Still here'));
+    await act(async () => {
+      await reopened.result.current.handleSave();
+    });
+    expect(boardActions.saveClimb.mock.calls).toHaveLength(2);
+    for (const [options] of boardActions.saveClimb.mock.calls) expect(options.uuid).toBe(pendingClimbUuid);
+    expect(draftStore.saveDraft).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ pendingClimbUuid }),
+    );
+    expect(draftStore.saveDraft.mock.invocationCallOrder[0]).toBeLessThan(
+      boardActions.saveClimb.mock.invocationCallOrder[0],
+    );
+  });
   it('publishes at the wall angle, not at the route param', async () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
 

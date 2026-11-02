@@ -19,6 +19,9 @@ struct GQLMessage {
     let type: GQLMessageType
     let id: String?
     let payload: [String: Any]?
+    /// The GraphQL error messages of an `error` message, whose payload is an
+    /// array (so `payload` is nil for it). Empty for every other type.
+    let errorMessages: [String]
 
     static func parse(_ text: String) -> GQLMessage? {
         guard let data = text.data(using: .utf8),
@@ -30,7 +33,8 @@ struct GQLMessage {
         }
         let id = json["id"] as? String
         let payload = json["payload"] as? [String: Any]
-        return GQLMessage(type: type, id: id, payload: payload)
+        let errorMessages = type == .error ? QueueGraphQLErrorRouting.errorMessages(inPayload: json["payload"]) : []
+        return GQLMessage(type: type, id: id, payload: payload, errorMessages: errorMessages)
     }
 }
 
@@ -86,6 +90,11 @@ final class SessionWebSocketManager {
     private(set) var isConnected = false
     private var subscriptionId: String = "1"
     private var lastSequence: Int = -1
+    /// False after this connection's server rejected `QueueState.historyCount`
+    /// (a backend without F3). Every new connection tries the F3 document
+    /// again, so a backend that comes back with the field is picked up on
+    /// the next reconnect.
+    private var subscriptionSelectsHistoryCount = true
 
     // MARK: - Reconnection
 
@@ -169,6 +178,7 @@ final class SessionWebSocketManager {
         // of the old one), so a sequence carried over from the previous
         // connection must not gap-check the new stream.
         self.lastSequence = -1
+        self.subscriptionSelectsHistoryCount = true
         self.subscriptionSequence = SharedConstants.sharedDefaults.map { SharedMirrorState.sequence(in: $0) } ?? -1
 
         let urlString: String
@@ -216,6 +226,12 @@ final class SessionWebSocketManager {
     private func sendSubscription() {
         guard let sessionId = sessionId else { return }
 
+        // `state.historyCount` (F3, #6666) needs a backend that serves it: a
+        // server without the field rejects this whole document. That error
+        // resubscribes once without the line (handleMutationError), so a
+        // backend from before F3, or one rolled back past it, still feeds the
+        // lock screen. Keep the copy in NATIVE_IOS_QUEUE_UPDATES
+        // (packages/shared/graphql) identical.
         let query = """
         subscription QueueUpdates($sessionId: ID!) {
           queueUpdates(sessionId: $sessionId) {
@@ -225,6 +241,7 @@ final class SessionWebSocketManager {
               state {
                 sequence
                 stateHash
+                historyCount
                 queue {
                   uuid
                   climb { uuid setter_username name frames framesCount framesPace angle ascensionist_count difficulty quality_average stars difficulty_error mirrored benchmark_difficulty }
@@ -283,7 +300,7 @@ final class SessionWebSocketManager {
             "type": GQLMessageType.subscribe.rawValue,
             "id": subscriptionId,
             "payload": [
-                "query": query,
+                "query": subscriptionSelectsHistoryCount ? query : QueueSubscriptionDocument.withoutHistoryCount(query),
                 "variables": ["sessionId": sessionId]
             ]
         ]
@@ -604,7 +621,29 @@ final class SessionWebSocketManager {
     // MARK: - Mutation Response Handling
 
     private func handleMutationError(_ msg: GQLMessage) {
-        switch QueueGraphQLErrorRouting.action(forOperationId: msg.id, subscriptionId: subscriptionId) {
+        switch QueueGraphQLErrorRouting.action(
+            forOperationId: msg.id,
+            subscriptionId: subscriptionId,
+            errorMessages: msg.errorMessages
+        ) {
+        case .resubscribeWithoutHistoryCount:
+            // The server's schema has no QueueState.historyCount. graphql-ws
+            // has already released the subscription id, so resubscribe on this
+            // socket with the pre-F3 document, which reads as index 0 when
+            // nothing is current.
+            stateQueue.async { [weak self] in
+                guard let self else { return }
+                guard self.subscriptionSelectsHistoryCount else {
+                    // The fallback document was rejected too: reconnect, as
+                    // for any other subscription error.
+                    self.webSocketTask?.cancel(with: .goingAway, reason: nil)
+                    return
+                }
+                print("[SessionWS] server has no QueueState.historyCount — resubscribing without it")
+                self.subscriptionSelectsHistoryCount = false
+                self.sendSubscription()
+            }
+
         case .reconnect:
             // joinSession failed (no session → mutations rejected) or the
             // queueUpdates subscription itself errored. For the latter, server

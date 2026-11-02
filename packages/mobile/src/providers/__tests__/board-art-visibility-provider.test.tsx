@@ -64,7 +64,42 @@ describe('BoardArtVisibilityProvider', () => {
     expect(readVisible(container)).toBe('true');
   });
 
-  it('hides iPad tab art while the player route is focused', () => {
+  // Issue #7081. The player's open and close animations show the list beneath it,
+  // so the tab under the player keeps its art on iPad too, as it does on a phone.
+  it('keeps the iPad tab beneath the player visible', () => {
+    segments.value = ['(tabs)', 'climbs'];
+    const { container, rerender } = renderWithin('climbs');
+    segments.value = ['play'];
+    rerender(createElement(BoardArtVisibilityProvider, { tab: 'climbs', children: createElement(VisibleProbe) }));
+    expect(readVisible(container)).toBe('true');
+  });
+
+  // Review of #7096: a root route pushed from the player hides the tabs while it
+  // is up, but the tab under the player is still there when the climber comes back.
+  it('keeps the iPad tab beneath the player through a root route pushed from it', () => {
+    segments.value = ['(tabs)', 'climbs'];
+    const { container, rerender } = renderWithin('climbs');
+    const visibleAfter = (nextSegments: readonly string[]) => {
+      segments.value = nextSegments;
+      rerender(createElement(BoardArtVisibilityProvider, { tab: 'climbs', children: createElement(VisibleProbe) }));
+      return readVisible(container);
+    };
+    expect(visibleAfter(['play'])).toBe('true');
+    expect(visibleAfter(['moderation'])).toBe('false');
+    expect(visibleAfter(['play'])).toBe('true');
+    expect(visibleAfter(['(tabs)', 'climbs'])).toBe('true');
+  });
+
+  it('keeps every other iPad tab hidden while the player is up', () => {
+    segments.value = ['(tabs)', 'climbs'];
+    const { container, rerender } = renderWithin('home');
+    segments.value = ['play'];
+    rerender(createElement(BoardArtVisibilityProvider, { tab: 'home', children: createElement(VisibleProbe) }));
+    expect(readVisible(container)).toBe('false');
+  });
+
+  it('hides iPad tab art when the app launches straight into the player', () => {
+    // No tab was ever focused, so none is known to be beneath the player.
     segments.value = ['play'];
     const { container } = renderWithin('climbs');
     expect(readVisible(container)).toBe('false');
@@ -84,8 +119,11 @@ describe('BoardArtVisibilityProvider', () => {
     expect(readVisible(container)).toBe('true');
   });
 
-  it('preserves phone image instances through repeated player opens and closes', () => {
-    deviceLayout.isPad = false;
+  it.each([
+    ['phone', false],
+    ['iPad', true],
+  ])('preserves %s image instances through repeated player opens and closes', (_device, isPad) => {
+    deviceLayout.isPad = isPad;
     segments.value = ['(tabs)', 'climbs'];
     const renderThumbnail = () =>
       createElement(BoardArtVisibilityProvider, {

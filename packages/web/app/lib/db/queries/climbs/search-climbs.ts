@@ -7,6 +7,7 @@ import type { ParsedBoardRouteParameters, SearchRequestPagination, BoardName, Cl
 import { sortObjectKeys } from '@/app/lib/cache-utils';
 import { resolveClimbNoMatch } from '@/app/lib/no-match-climb';
 import { withReadDeadline } from '@/app/lib/db/read-deadline';
+import { hasLiveSearchData, LIVE_SEARCH_DATA_TTL_SECONDS } from '@/app/lib/live-search-data-boards';
 
 /**
  * Cache durations for climb search queries (in seconds)
@@ -26,7 +27,7 @@ const CACHE_DURATION_FILTERED_SEARCH = 60 * 60; // 1 hour for filtered searches
  * the catalogue, so it is also the biggest single contributor to the crawl
  * surface.
  */
-const CACHE_DURATION_LIVE_DATA_FRONT_DOOR = 15 * 60;
+const CACHE_DURATION_LIVE_DATA_FRONT_DOOR = LIVE_SEARCH_DATA_TTL_SECONDS;
 
 /**
  * Module-level query function with explicit arguments so unstable_cache holds a
@@ -195,7 +196,7 @@ export async function cachedSearchClimbs(
   // seed, so caching per seed is a 0%-hit-rate entry that only bloats the
   // Next.js data cache.
   const isMoonboard = params.board_name === 'moonboard';
-  const hasLiveSearchData = isMoonboard || params.board_name === 'woods';
+  const isLiveSearchDataBoard = hasLiveSearchData(params.board_name);
   const explicitlyCacheable = options?.cacheable === true;
   const cacheable =
     (options?.cacheable ?? !userId) && searchParams.sortBy !== 'random' && (explicitlyCacheable || !isMoonboard);
@@ -218,7 +219,7 @@ export async function cachedSearchClimbs(
   // Keyed on the board, not on `explicitlyCacheable`: the front door is the only
   // cacheable MoonBoard or Woods caller today, and if a second one appears it
   // inherits the *shorter* TTL — erring toward freshness rather than away from it.
-  const revalidate = hasLiveSearchData
+  const revalidate = isLiveSearchDataBoard
     ? CACHE_DURATION_LIVE_DATA_FRONT_DOOR
     : isDefaultSearch
       ? CACHE_DURATION_DEFAULT_SEARCH

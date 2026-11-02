@@ -21,6 +21,7 @@ import { Card } from '../../../src/components/Card';
 import { Button } from '../../../src/components/Button';
 import { AppStorePrompt } from '../../../src/components/AppStorePrompt';
 import { SessionFeedCard } from '../../../src/components/you/SessionFeedCard';
+import { useSessionWorkoutHeadlines } from '../../../src/components/session/workout/use-session-workout-view';
 import { NewClimbFeedCard } from '../../../src/components/feed/NewClimbFeedCard';
 import { useCrewFeed } from '../../../src/lib/graphql/hooks/use-crew-feed';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
@@ -39,6 +40,7 @@ import { useAuth } from '../../../src/providers/auth-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
+import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { OfflineState } from '../../../src/components/OfflineState';
 import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
 import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
@@ -50,6 +52,7 @@ import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigat
 import { borderRadius, spacing } from '../../../src/theme/tokens';
 import { InviteSheet } from '../../../src/components/session-screen/InviteSheet';
 import { HomeSections } from '../../../src/components/home/HomeSections';
+import { HomeSupportCard } from '../../../src/components/home/HomeSupportCard';
 import { HomeCustomizeButton } from '../../../src/components/home/HomeCustomizeButton';
 import { HomeCustomizeSheet } from '../../../src/components/home/HomeCustomizeSheet';
 import { HomeEmptyState } from '../../../src/components/home/HomeEmptyState';
@@ -77,6 +80,7 @@ const getItemType = (item: CrewFeedItem) => item.__typename;
 const NO_FEED_ITEMS: CrewFeedItem[] = [];
 // A session card shows one climb, so it plays from a list of just that one.
 const NO_TICKS: SessionFeedTickHighlight[] = [];
+const NO_SESSION_ID_PAGES: readonly (readonly string[])[] = [];
 
 export default function HomeTab() {
   const nativeRootHeader = useNativeRootHeader();
@@ -94,6 +98,9 @@ export default function HomeTab() {
   const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
   // UIKit owns its title inset. Other variants measure the floating chrome.
   const [chromeHeight, setChromeHeight] = useState(() => (nativeRootHeader ? 0 : insets.top + TOP_ISLAND_BAND));
+  // Tells the Material app bar when the feed has scrolled under it. `list` stays
+  // undefined, and the feed listener-free, until a bar attaches.
+  const scrollEdge = useScrollEdgeBackdrop();
 
   // Which sections the climber shows, and in what order (Customize Home). Read
   // synchronously, so a hidden section never mounts and its queries never start.
@@ -233,6 +240,30 @@ export default function HomeTab() {
   // the stable `renderItem` always closes over the current vote data.
   summaryMapRef.current = summaryMap;
 
+  // Each session card's workout line (#6903): one headline request per loaded
+  // feed page. Read through a ref like the vote map, so `renderItem` stays
+  // stable; `listExtraData` below re-invokes it when a line arrives.
+  const sessionIdPages = useMemo(() => {
+    if (!feedVisible) return NO_SESSION_ID_PAGES;
+    if (mode === 'crew') {
+      return (
+        crewFeed.data?.pages.map((page) =>
+          page.crewFeed.items.flatMap((item) =>
+            item.__typename === 'CrewSessionItem' ? [item.session.sessionId] : [],
+          ),
+        ) ?? NO_SESSION_ID_PAGES
+      );
+    }
+    return (
+      sessionFeed.data?.pages.map((page) => page.sessionGroupedFeed.sessions.map((session) => session.sessionId)) ??
+      NO_SESSION_ID_PAGES
+    );
+  }, [feedVisible, mode, crewFeed.data, sessionFeed.data]);
+  const workoutHeadlines = useSessionWorkoutHeadlines(sessionIdPages);
+  const workoutHeadlinesRef = useRef(workoutHeadlines);
+  workoutHeadlinesRef.current = workoutHeadlines;
+  const listExtraData = useMemo(() => ({ summaryMap, workoutHeadlines }), [summaryMap, workoutHeadlines]);
+
   const handleOpenComments = useCallback((entityId: string, entityType: SocialEntityType) => {
     setCommentTarget({ entityId, entityType });
     commentSheetRef.current?.snapToIndex(0);
@@ -248,8 +279,8 @@ export default function HomeTab() {
   );
 
   // A session card's hardest send opens like a row of any list (issue #6665):
-  // Light the board when I tap a climb and the crew rule decide whether it
-  // goes up, and it plays from a one-climb list of its own.
+  // driving the wall (a swipe, Put on board or Always drive the wall) decides
+  // whether it goes up, and it plays from a one-climb list of its own.
   const handleOpenClimb = useTickListActivation<SessionFeedTickHighlight>({
     sourceId: 'home-session-cards',
     label: tSession('playView.track.hardestSend'),
@@ -365,7 +396,7 @@ export default function HomeTab() {
   }, []);
 
   // Read the map through `summaryMapRef` (not `summaryMap`) so this stays
-  // referentially stable across vote/page updates — `extraData={summaryMap}` is
+  // referentially stable across vote/page updates — `extraData={listExtraData}` is
   // the single signal that re-invokes it. A churning `renderItem` would force
   // FlashList to re-render regardless of `extraData` (perf playbook rule 3).
   const renderItem = useCallback(
@@ -383,6 +414,7 @@ export default function HomeTab() {
             onOpenComments={handleOpenComments}
             onPress={handleSessionPress}
             onOpenClimb={handleOpenClimb}
+            workoutHeadline={workoutHeadlinesRef.current.get(item.session.sessionId)}
           />
         )}
       </>
@@ -482,6 +514,8 @@ export default function HomeTab() {
             />
           </View>
         ) : null}
+        {/* Days 1 to 7 of each month, where store rules allow; usually nothing. */}
+        <HomeSupportCard />
         {/* Browser app on a phone only; renders nothing on native. */}
         <AppStorePrompt surface="home" />
         <HomeSections
@@ -548,7 +582,7 @@ export default function HomeTab() {
           ref={listRef}
           data={feedItems}
           getItemType={getItemType}
-          extraData={summaryMap}
+          extraData={listExtraData}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
           // UIKit owns the native title inset; other variants use the measured chrome.
@@ -558,6 +592,10 @@ export default function HomeTab() {
             paddingBottom: bottomChrome.scrollBottomPadding + spacing[5],
           }}
           scrollIndicatorInsets={{ top: chromeHeight }}
+          // Every frame, so the app bar tints while rows pass under it (the browser
+          // build otherwise reports little more than the start and end of a scroll).
+          scrollEventThrottle={16}
+          {...scrollEdge.list?.listProps}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           ListHeaderComponent={header}
@@ -653,6 +691,7 @@ export default function HomeTab() {
         searchAccessibilityLabel={t('mobile.home.searchAction')}
         scopeAccessibilityHint={t('mobile.home.scope.hint')}
         onHeightChange={setChromeHeight}
+        scrollEdge={scrollEdge.backdrop}
       />
       <CommentSheet
         sheetRef={commentSheetRef}

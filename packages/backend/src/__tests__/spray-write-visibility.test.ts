@@ -555,7 +555,8 @@ describe('saveTick against a spray climb', () => {
     await tickMutations.saveTick({}, { input: saveTickInput({ climbUuid }) }, ctxFor(OWNER));
     expect(await tickCount(climbUuid, OWNER)).toBe(1);
 
-    await climbMutations.deleteDraftClimb({}, { uuid: climbUuid, boardType: 'spray' }, ctxFor(OWNER));
+    // Historical orphan fixture: logged shared drafts can no longer be deleted through the API.
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${climbUuid}`);
 
     const rejection = await captureRejection(
       tickMutations.saveTick({}, { input: saveTickInput({ climbUuid }) }, ctxFor(OWNER)),
@@ -657,7 +658,8 @@ describe('the feed fan-out stops writing rows it cannot serve', () => {
     const publicWall = await createPublishedWall(OWNER, { isPublic: true });
     const doomedClimb = await setClimb(publicWall.wall, publicWall.holdIds, { isDraft: true });
     const doomedTick = await seedTick(OWNER, doomedClimb, 'spray');
-    await climbMutations.deleteDraftClimb({}, { uuid: doomedClimb, boardType: 'spray' }, ctxFor(OWNER));
+    // Historical orphan fixture, retained for the fail-closed read-side regression.
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${doomedClimb}`);
     const doomedCommentUuid = uuidv4();
     await db.execute(sql`
       INSERT INTO comments (uuid, entity_type, entity_id, user_id, body, created_at, updated_at)

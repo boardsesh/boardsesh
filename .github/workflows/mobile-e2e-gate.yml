@@ -30,10 +30,10 @@ name: Mobile E2E Gate
 # 40-minute test must never sit on a publish lock. The contract test pins both
 # (scripts/__tests__/mobile-e2e-gate-workflow.test.ts).
 #
-# The jobs check out the commit UNDER TEST, and `uses: ./.github/actions/…`
-# resolves inside that checkout. So the smoke flows, the orchestrator and the
-# composite actions all come from the tested commit: the gate can only judge a
-# commit that already contains it.
+# The jobs check out the commit UNDER TEST. Smoke flows and the orchestrator
+# come from that application checkout. The iOS cache/capture action and its
+# identity tools come from this immutable workflow's separate tooling checkout,
+# so historical application commits can use the reviewed cache policy.
 on:
   workflow_call:
     inputs:
@@ -127,6 +127,24 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Testing commit \`$sha\` (ref input: \"${REF_INPUT:-none, the triggering ref}\")." >> "$GITHUB_STEP_SUMMARY"
 
+      # A run on main or a release branch writes where protected builds read, so a
+      # person's dispatch there only tests the run's own commit or its history. To
+      # test any other commit, dispatch on its own branch:
+      # `gh workflow run mobile-e2e-gate.yml --ref <branch>`.
+      - name: Refuse a commit outside the run's history on a protected branch
+        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && !inputs.called
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.sha.outputs.sha }}
+          RUN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...$RUN_SHA" --jq .status)"
+          case "$status" in
+            ahead|identical) ;;
+            *) echo "::error::$SHA is not an ancestor of $GITHUB_REF_NAME's $RUN_SHA ($status). Dispatch on the commit's own branch instead."; exit 1 ;;
+          esac
+
   # ---------------------------------------------------------------------------
   # SLOT: Job A, "boot the real published bytes".
   #
@@ -198,6 +216,8 @@ jobs:
           # One orchestrator run. It retries itself once, from a reboot, and only
           # when the app died natively at launch with no replay miss.
           attempts: '1'
+          # Secret-free PR job: the shared dependency cache is safe to use.
+          restore-caches: 'true'
 
       - name: Read the smoke result
         id: result
@@ -220,7 +240,7 @@ jobs:
   # runners (docs/ci-runners.md).
   ios-smoke:
     needs: resolve
-    runs-on: macos-26
+    runs-on: xcode-27
     # Warm cache: about 20 min. A cache miss adds the ~30-min native build.
     timeout-minutes: 90
     outputs:
@@ -243,6 +263,33 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
 
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
@@ -262,11 +309,13 @@ jobs:
       #   - a dispatch on a branch reads main's entry too, and only builds when
       #     the branch itself changed a native input.
       #   - the capture workflow's entries do not help here: its automatic runs
-      #     key on release/next's native inputs, which differ from main's exactly
+      #     key on main's native inputs, which differ from main's exactly
       #     when the train carries a native change.
       - name: Compute app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        env:
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/targets/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', '.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts', '.boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh') }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH"
 
       # lookup-only: the shard action below does the actual restore.
       - name: Check for cached simulator app
@@ -285,6 +334,12 @@ jobs:
         if: steps.app-cache.outputs.cache-hit != 'true'
         run: vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
 
+      - name: Verify simulator app identity
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        env:
+          APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app
+
       - name: Save simulator app to cache
         if: steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -293,7 +348,7 @@ jobs:
           key: ${{ steps.appkey.outputs.key }}
 
       - name: Run the navigation smoke
-        uses: ./.github/actions/ios-screenshot-shard
+        uses: ./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard
         with:
           locale: en-US
           device-name: iPhone 16 Pro Max
@@ -306,6 +361,8 @@ jobs:
           # No screenshots are taken, so there is nothing to upload.
           upload-captures: 'false'
           debug-artifact-on: always
+          # Secret-free PR job: the shared dependency cache is safe to use.
+          restore-caches: 'true'
 
       - name: Read the smoke result
         id: result
@@ -369,7 +426,7 @@ jobs:
   # Its own job because of where the webhook lives: DISCORD_DEPLOY_WEBHOOK is an
   # ENVIRONMENT secret (Production and Native Release), not a repository secret,
   # so a job without `environment:` reads it as empty. Production's branch policy
-  # admits main and release/next, and the schedule only ever runs on main. The
+  # admits main and main, and the schedule only ever runs on main. The
   # environment is on this one job so no test job ever holds its other secrets,
   # and so a future required reviewer on Production can only park the post,
   # never the gate.

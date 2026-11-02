@@ -40,11 +40,13 @@ vi.mock('react-native', () => ({
   Pressable: ({
     children,
     accessibilityLabel,
+    testID,
   }: {
     children?: ReactNode;
     accessibilityLabel?: string;
+    testID?: string;
     style?: unknown;
-  }) => createElement('button', { 'aria-label': accessibilityLabel }, children),
+  }) => createElement('button', { 'aria-label': accessibilityLabel, 'data-testid': testID }, children),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -111,6 +113,8 @@ vi.mock('../../../lib/board-details', () => ({
 }));
 
 import { DeviceCard, describeSavedBoard, getPreviewImageStyle } from '../DeviceCard';
+import { upsertDiscoveredDevice } from '../../../lib/ble/scan-device-cache';
+import type { DiscoveredDevice } from '../../../lib/ble/types';
 
 function makeBoard(overrides: Partial<UserBoard> = {}): UserBoard {
   return {
@@ -159,6 +163,17 @@ function makeConfig(overrides: Partial<BoardSerialConfig> = {}): BoardSerialConf
 }
 
 describe('DeviceCard', () => {
+  it('targets the resolved saved wall even when the controller serial differs from its saved serial', () => {
+    const { getByTestId } = render(
+      <DeviceCard
+        device={{ deviceId: 'radio-device', name: 'Kilter Board#99000001@3', rssi: -45 }}
+        resolvedEntry={{ kind: 'saved', board: makeBoard({ uuid: 'qa-wall' }) }}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(getByTestId('ble-device-qa-wall')).not.toBeNull();
+  });
+
   it('uses the saved board name and preview when a serial resolves to a UserBoard', () => {
     const resolvedEntry: ResolvedBoardEntry = { kind: 'saved', board: makeBoard() };
 
@@ -263,6 +278,18 @@ describe('getPreviewImageStyle', () => {
 
     expect(container.querySelectorAll('[data-bg="#34c759"]')).toHaveLength(3);
     expect(container.querySelector('[data-bg="theme-error"]')).toBeNull();
+  });
+
+  it('draws the bars the scan last pushed, not a reading still inside the hysteresis', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'device-edge', name: 'Kilter Board#SN-7@3', rssi: -58 });
+    upsertDiscoveredDevice(devices, { deviceId: 'device-edge', name: 'Kilter Board#SN-7@3', rssi: -62 });
+    const [device] = [...devices.values()];
+
+    const { container } = render(<DeviceCard device={device} onSelect={vi.fn()} />);
+
+    expect(device.rssi).toBe(-62);
+    expect(container.querySelectorAll('[data-bg="#34c759"]')).toHaveLength(3);
   });
 
   it('keeps a square board at the full thumbnail size', () => {

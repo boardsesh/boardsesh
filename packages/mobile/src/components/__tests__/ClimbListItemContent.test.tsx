@@ -183,8 +183,6 @@ vi.mock('../Text', () => ({
 const thumbnailRender = vi.hoisted(() => vi.fn(() => null));
 vi.mock('../ClimbListThumbnail', () => ({
   ClimbListThumbnail: thumbnailRender,
-  THUMBNAIL_WIDTH: 60,
-  THUMBNAIL_HEIGHT: 80,
 }));
 
 // Icons render as a marker span so tests can assert WHICH glyph appeared,
@@ -202,6 +200,7 @@ import { favoritesStore } from '@boardsesh/climb-actions';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
 import { resetClimbRowDisplayForTests, setClimbRowField } from '../../lib/climb-row-display-preference';
+import { ClimbListThumbnailSizeContext, climbListThumbnailSize } from '../climb-list-thumbnail-metrics';
 
 const baseClimb = {
   uuid: 'c1',
@@ -502,6 +501,34 @@ describe('ClimbListItemContent favourite heart', () => {
       <ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />,
     );
     expect(heart(container)).toBeNull();
+  });
+});
+
+describe('ClimbListItemContent thumbnail cell', () => {
+  beforeEach(() => {
+    resetClimbRowDisplayForTests();
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+  });
+
+  const cellSizes = (container: HTMLElement) =>
+    [...container.querySelectorAll('[data-style]')]
+      .map((node) => JSON.parse(node.getAttribute('data-style') ?? '{}') as { width?: number; height?: number })
+      .filter((style) => style.width !== undefined && style.height !== undefined)
+      .map(({ width, height }) => ({ width, height }));
+
+  it('draws the one-column 76×96 cell outside a two-column list', () => {
+    const { container } = renderRow();
+    expect(cellSizes(container)).toContainEqual({ width: 76, height: 96 });
+  });
+
+  it('draws the 88×112 cell inside a two-column Climbs list', () => {
+    const { container } = render(
+      <ClimbListThumbnailSizeContext.Provider value={climbListThumbnailSize(2)}>
+        <ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />
+      </ClimbListThumbnailSizeContext.Provider>,
+    );
+    expect(cellSizes(container)).toContainEqual({ width: 88, height: 112 });
+    expect(cellSizes(container)).not.toContainEqual({ width: 76, height: 96 });
   });
 });
 

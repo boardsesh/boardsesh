@@ -40,7 +40,7 @@ built/downloaded once and reused; only the JS regenerates per run.
 
 6. **Share.** `SendUserFile` each printed PNG path.
 
-7. **Stop when done.** `vp run mobile:android-shots -- shutdown` (kills emulator + Metro), and
+7. **Stop when done.** `vp run mobile:android-shots -- shutdown` (kills emulator, Metro and the readiness server), and
    stop the backgrounded boot task.
 
 ## One-shot alternative (simplest, slower per shot)

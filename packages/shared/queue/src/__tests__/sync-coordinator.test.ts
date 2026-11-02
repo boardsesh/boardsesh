@@ -31,6 +31,22 @@ const makeItem = (uuid: string, opts?: Partial<ClimbQueueItem>): ClimbQueueItem 
 });
 
 describe('mapQueueEventToAction', () => {
+  it.each(['FullSync', 'CurrentClimbChanged'] as const)('keeps server attribution through %s mapping', (eventType) => {
+    const current = makeItem('a', { addedByUser: { id: 'author', username: 'Alice' } });
+    for (const currentChangedBy of ['participant-bob', undefined]) {
+      const result = mapQueueEventToAction(
+        eventType === 'FullSync'
+          ? { __typename: eventType, state: { queue: [current], currentClimbQueueItem: current, currentChangedBy } }
+          : { __typename: eventType, currentItem: current, currentChangedBy },
+      );
+      expect(result.kind).toBe('dispatch');
+      if (result.kind !== 'dispatch') throw new Error('Expected a dispatch');
+      const reduced = queueReducer(initialState({}), result.action);
+      expect(reduced.currentChangedBy).toBe(currentChangedBy ?? null);
+      expect(reduced.currentClimbQueueItem?.addedByUser?.id).toBe('author');
+    }
+  });
+
   it('maps FullSync to INITIAL_QUEUE_DATA', () => {
     const queue = [makeItem('a'), makeItem('b')];
     const event: SyncQueueEvent = {
@@ -357,6 +373,7 @@ describe('FullSync historyCount (F3)', () => {
       currentClimbQueueItem: null,
       historyCount: 3,
       currentChangedAt: null,
+      currentChangedBy: null,
     });
   });
 
@@ -379,6 +396,7 @@ describe('FullSync historyCount (F3)', () => {
       currentClimbQueueItem: null,
       historyCount: null,
       currentChangedAt: null,
+      currentChangedBy: null,
     });
   });
 });

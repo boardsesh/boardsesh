@@ -116,6 +116,10 @@ export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOf
 
   const visible =
     board != null &&
+    (board.boardType !== 'spray' ||
+      surface === 'no_catalog' ||
+      surface === 'similar_climbs' ||
+      surface === 'hold_heatmap') &&
     scopeKey !== null &&
     nudgeState !== null &&
     !dismissedThisMount &&

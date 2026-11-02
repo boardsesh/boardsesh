@@ -38,6 +38,11 @@ on:
         type: string
         required: false
         default: ''
+      called:
+        description: Marks the run as a workflow_call. Leave it at its default.
+        type: boolean
+        required: false
+        default: true
     outputs:
       sha:
         description: Full SHA proved by the explicit receipt.
@@ -152,8 +157,17 @@ jobs:
           REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.ref }}
           EVENT_NAME: ${{ github.event_name }}
           RECEIPT_JSON: ${{ inputs.receipt_json }}
+          # A person's dispatch on main or a release branch. Those runs write where
+          # protected builds read, so they only build the run's own history and
+          # artifacts that branch made. Check a PR preview on a branch: `--ref <branch>`.
+          PROTECTED_DISPATCH: ${{ github.event_name == 'workflow_dispatch' && !inputs.called && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) }}
+          RUN_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          if [ "$PROTECTED_DISPATCH" = true ] && [ -n "$RECEIPT_JSON" ]; then
+            echo "::error::A dispatch on $GITHUB_REF_NAME takes no hand-written receipt. Dispatch on a branch instead: gh workflow run mobile-ota-boot-check.yml --ref <branch> ..."
+            exit 1
+          fi
           if [ "$EVENT_NAME" = "pull_request" ]; then
             test -s receipt.json
           elif [ -n "$RECEIPT_JSON" ]; then
@@ -166,7 +180,7 @@ jobs:
             fi
             # Newest first. An empty ref takes the newest staged commit.
             artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=mobile-ota-stage&per_page=100" \
-              --jq "[.artifacts[] | select(.expired | not) | select(\"$REF\" == \"\" or .workflow_run.head_sha == \"$REF\")][0].id // empty")"
+              --jq "[.artifacts[] | select(.expired | not) | select(\"$REF\" == \"\" or .workflow_run.head_sha == \"$REF\") | select(\"$PROTECTED_DISPATCH\" != \"true\" or (.workflow_run.head_branch == \"$GITHUB_REF_NAME\" and .workflow_run.head_repository_id == .workflow_run.repository_id))][0].id // empty")"
             if [ -z "$artifact_id" ]; then
               echo "::error::No unexpired mobile-ota-stage artifact for ${REF:-any commit}. The stage receipt is kept 7 days; pass receipt_json, or stage the commit again."
               exit 1
@@ -182,6 +196,13 @@ jobs:
             exit 1
           fi
           printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'
+          if [ "$PROTECTED_DISPATCH" = true ]; then
+            in_history="$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...$RUN_SHA" --jq .status)"
+            case "$in_history" in
+              ahead|identical) ;;
+              *) echo "::error::$commit is not an ancestor of $GITHUB_REF_NAME's $RUN_SHA ($in_history). Dispatch on its own branch instead."; exit 1 ;;
+            esac
+          fi
           {
             echo "commit=$commit"
             echo "receipt=$receipt"

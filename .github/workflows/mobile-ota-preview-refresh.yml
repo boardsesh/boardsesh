@@ -1,84 +1,126 @@
 name: Refresh Mobile OTA Previews
 
-# Metadata only: base pushes refresh same-repository mobile PRs via the trusted
-# default-branch dispatcher. Forks still require a fresh maintainer authorization.
+# Metadata only: a base push re-publishes a same-repository mobile PR's preview
+# only when the push changed main native inputs, or the
+# PR's last preview record is missing, unreadable or failed. An unrelated base
+# commit leaves the preview offered to the same installed binaries; the PR's
+# next push picks it up. Rules: scripts/mobile-ota-preview-refresh.ts and
+# docs/mobile-ota-updates.md ("When an open preview is republished").
+#
+# `plan` reads PR, deployment and git-object metadata with a read-only token. It
+# checks out this workflow's own trusted commit (main, never a PR
+# head), installs nothing and runs one dependency-free script. `dispatch` holds
+# the only write scope and runs no checked-out code. Dispatched runs use the
+# default-branch publisher; forks still require a fresh maintainer authorization.
+#
+# A red run on a push posts to the Discord deploy channel from `notify`, and so does a
+# green run that dispatched more than 10 PRs for a missing, unreadable, failed or
+# stuck record: previews are then not landing at all (CONSERVATIVE_ALERT_THRESHOLD). The webhook is a
+# Production environment secret, so `notify` declares that environment, holds no
+# token scope and runs no checked-out code. Concurrency sits on `plan` rather
+# than the workflow: a `notify` parked at the environment gate must not hold the
+# refresh lane (docs/production-deploy.md, "The failure mode").
 on:
   push:
-    branches: [main, release/next]
-  create:
-  delete:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: read
-  deployments: read
-  pull-requests: read
-
-concurrency:
-  group: mobile-ota-preview-base-refresh
-  cancel-in-progress: false
 
 jobs:
-  refresh:
+  plan:
     if: >-
-      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
-      (github.event.ref_type == 'branch' && github.event.ref == 'release/next')
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    concurrency:
+      group: mobile-ota-preview-base-refresh
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      deployments: read
+      pull-requests: read
+    outputs:
+      dispatch: ${{ steps.plan.outputs.dispatch }}
+      conservative: ${{ steps.plan.outputs.conservative }}
     steps:
-      - name: Refresh open same-repository mobile PRs
+      - name: Check out trusted refresh tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Set up Node for the refresh planner
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Find previews whose base runtime changed
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types scripts/mobile-ota-preview-refresh.ts
+
+  dispatch:
+    needs: plan
+    if: needs.plan.outputs.dispatch != '' && needs.plan.outputs.dispatch != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Queue latest-base previews
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          DISPATCH: ${{ needs.plan.outputs.dispatch }}
         with:
           script: |
-            const pulls = await github.paginate(github.rest.pulls.list, { ...context.repo, state: 'open', per_page: 100 });
-            const repository = `${context.repo.owner}/${context.repo.repo}`;
-            const affectsMobilePreview = (path) =>
-              path.startsWith('packages/mobile/') || path.startsWith('packages/shared/') ||
-              path.startsWith('packages/board-constants/') || path.startsWith('packages/shared-schema/') ||
-              path.startsWith('patches/') || ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'].includes(path) ||
-              path.startsWith('scripts/mobile-ota-') || path.startsWith('scripts/lib/ota-') ||
-              path === 'scripts/mobile-publish.ts' || path === 'scripts/lib/eoas.ts' ||
-              path === 'scripts/lib/mobile-publish-retry.ts' || path === 'scripts/lib/mobile-release-policy.ts' ||
-              path.startsWith('.github/workflows/mobile-ota-');
-            // A base can absorb the last mobile diff without changing the PR head.
-            // Walk this PR's deployments across old heads/tasks, including failed
-            // attempts that may have uploaded only some variants. Metadata only.
-            const hadPreview = async (number) => {
-              let before = null;
-              const cursors = new Set();
-              for (;;) {
-                const result = await github.graphql(`query($owner: String!, $repo: String!, $number: Int!, $before: String) {
-                  repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
-                    timelineItems(last: 100, before: $before, itemTypes: [DEPLOYED_EVENT]) {
-                      nodes { ... on DeployedEvent { deployment { environment description } } }
-                      pageInfo { hasPreviousPage startCursor }
-                    }
-                  } }
-                }`, { ...context.repo, number, before });
-                const history = result.repository?.pullRequest?.timelineItems;
-                if (!history || !Array.isArray(history.nodes) || typeof history.pageInfo?.hasPreviousPage !== 'boolean')
-                  throw new Error(`Unreadable preview deployment history for PR #${number}.`);
-                if (history.nodes.some((event) => event?.deployment?.environment === 'pr-preview' &&
-                    event.deployment.description === `OTA preview pr-${number}`)) return true;
-                if (!history.pageInfo.hasPreviousPage) return false;
-                const cursor = history.pageInfo.startCursor;
-                if (typeof cursor !== 'string' || !cursor || cursors.has(cursor))
-                  throw new Error(`Invalid preview deployment history cursor for PR #${number}.`);
-                cursors.add(cursor);
-                before = cursor;
-              }
-            };
-            for (const pr of pulls) {
-              if (pr.head.repo?.full_name !== repository || !['main', 'release/next'].includes(pr.base.ref)) continue;
-              // The release train's own mergeback PR is a version/native branch,
-              // not a feature preview. It already receives immediate train OTAs.
-              if (pr.head.ref === 'release/next') continue;
-              const files = await github.paginate(github.rest.pulls.listFiles, { ...context.repo, pull_number: pr.number, per_page: 100 });
-              if (!files.some((file) => affectsMobilePreview(file.filename)) && !await hadPreview(pr.number)) continue;
+            const numbers = JSON.parse(process.env.DISPATCH || '[]');
+            if (!Array.isArray(numbers) || !numbers.every((number) => Number.isSafeInteger(number) && number > 0))
+              throw new Error('Refresh plan must be a list of PR numbers.');
+            for (const number of numbers) {
               await github.rest.actions.createWorkflowDispatch({ ...context.repo,
                 workflow_id: 'mobile-ota-preview.yml', ref: context.payload.repository.default_branch,
-                inputs: { pr: String(pr.number) },
+                inputs: { pr: String(number) },
               });
-              core.info(`Queued latest-base previews for PR #${pr.number}.`);
+              core.info(`Queued latest-base previews for PR #${number}.`);
             }
+
+  notify:
+    needs: [plan, dispatch]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      (failure() || fromJSON(needs.plan.outputs.conservative || '0') > 10) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    environment: Production
+    steps:
+      - name: Tell Discord the preview refresh needs attention
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          DISPATCH_RESULT: ${{ needs.dispatch.result }}
+          CONSERVATIVE: ${{ needs.plan.outputs.conservative }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "::warning::The preview refresh failed but DISCORD_DEPLOY_WEBHOOK is not readable here."
+            exit 0
+          fi
+          if [ "$PLAN_RESULT" = "failure" ] || [ "$DISPATCH_RESULT" = "failure" ]; then
+            content=$(printf '⚠️ **PR preview refresh failed** on `%s` at `%s` (plan: %s, dispatch: %s). Open PR previews may not follow this base until the next push.\n<%s>' \
+              "$BRANCH" "${COMMIT_SHA:0:7}" "$PLAN_RESULT" "$DISPATCH_RESULT" "$RUN_URL")
+          else
+            content=$(printf '⚠️ **PR previews are not landing**: the refresh on `%s` at `%s` re-dispatched %s PRs whose last preview record is missing, unreadable, failed or stuck. Check the latest preview runs (reset credentials, the OTA server).\n<%s>' \
+              "$BRANCH" "${COMMIT_SHA:0:7}" "$CONSERVATIVE" "$RUN_URL")
+          fi
+          jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post the Discord notification (see status above)"

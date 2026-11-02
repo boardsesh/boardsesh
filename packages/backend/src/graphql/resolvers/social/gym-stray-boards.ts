@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { rolesGrantAdmin } from '@boardsesh/community-roles';
 import {
   computeClusterSignature,
   distanceMeters,
@@ -11,12 +12,13 @@ import { executeRows } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
-import { canViewResourceLocation } from '../../../services/privacy';
+import { canViewResourceLocation, resourceAccessCondition, resourceLocationCondition } from '../../../services/privacy';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { AttachBoardToGymInputSchema, DetachBoardFromGymInputSchema, UUIDSchema } from '../../../validation/schemas';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { requireGymEditAccess } from './gyms';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
+import { getUserCommunityRoles } from './roles';
 
 // ============================================
 // Stray-board discovery for the gym Boards tab
@@ -48,6 +50,8 @@ type StrayBoardCandidate = {
   currentGymId: number | null;
   uuid: string;
   name: string;
+  boardType: string;
+  angle: number;
   currentGymUuid: string | null;
   currentGymName: string | null;
   distanceMeters: number | null;
@@ -130,15 +134,42 @@ function distanceFromGym(
  *     are surfaced regardless of visibility and rank first.
  *   - NEARBY: boards within 150 m of the gym that are unlinked or on a SYSTEM
  *     listing at the same spot. Gated to boards it's legitimate to capture —
- *     SYSTEM (synced catalog) or the viewer's own — never a third party's, and
- *     never a hide-location board. A stranger's board (public or private) is
- *     excluded: attaching it would hand the gym owner edit rights over it.
+ *     SYSTEM (synced catalog) or the viewer's own. A platform admin may also
+ *     attach an unlinked public board within their board-type scope, respecting
+ *     its resource and location privacy. Ordinary gym managers cannot capture
+ *     a third party's board: attaching it grants the gym owner edit rights.
  *
  * Exported so attachBoardToGym gates on the exact same candidate set the Boards
  * tab shows — a board this wouldn't surface can't be attached.
  */
 export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string): Promise<StrayBoardCandidate[]> {
   const twinGymIds = await collectMergedTwinGymIds(gym.id);
+  const hasGymCoords = gym.latitude != null && gym.longitude != null;
+  const viewerRoles = hasGymCoords ? await getUserCommunityRoles(viewerUserId) : [];
+  const scopedAdminBoardTypes = [
+    ...new Set(
+      viewerRoles.flatMap((role) =>
+        role.boardType !== null && rolesGrantAdmin(viewerRoles, role.boardType) ? [role.boardType] : [],
+      ),
+    ),
+  ];
+  const adminBoardScope = rolesGrantAdmin(viewerRoles)
+    ? sql`true`
+    : scopedAdminBoardTypes.length > 0
+      ? inArray(dbSchema.userBoards.boardType, scopedAdminBoardTypes)
+      : undefined;
+  // Admin status never bypasses resource or location privacy, and does not
+  // authorize moving a person's board off another gym's listing.
+  const adminCandidateCondition = adminBoardScope
+    ? and(
+        adminBoardScope,
+        isNull(dbSchema.userBoards.gymId),
+        eq(dbSchema.userBoards.isPublic, true),
+        eq(dbSchema.userBoards.isUnlisted, false),
+        resourceAccessCondition('board', dbSchema.userBoards.uuid, viewerUserId, { allowUnlistedLink: false }),
+        resourceLocationCondition(dbSchema.userBoards.uuid, viewerUserId),
+      )
+    : undefined;
 
   const twinRows =
     twinGymIds.length > 0
@@ -148,6 +179,8 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
             currentGymId: dbSchema.userBoards.gymId,
             uuid: dbSchema.userBoards.uuid,
             name: dbSchema.userBoards.name,
+            boardType: dbSchema.userBoards.boardType,
+            angle: dbSchema.userBoards.angle,
             latitude: dbSchema.userBoards.latitude,
             longitude: dbSchema.userBoards.longitude,
             currentGymUuid: dbSchema.gyms.uuid,
@@ -159,7 +192,6 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
           .limit(STRAY_BOARD_LIMIT)
       : [];
 
-  const hasGymCoords = gym.latitude != null && gym.longitude != null;
   const nearbyRows = hasGymCoords
     ? await db
         .select({
@@ -167,6 +199,8 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
           currentGymId: dbSchema.userBoards.gymId,
           uuid: dbSchema.userBoards.uuid,
           name: dbSchema.userBoards.name,
+          boardType: dbSchema.userBoards.boardType,
+          angle: dbSchema.userBoards.angle,
           latitude: dbSchema.userBoards.latitude,
           longitude: dbSchema.userBoards.longitude,
           currentGymUuid: dbSchema.gyms.uuid,
@@ -187,13 +221,13 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
               isNull(dbSchema.userBoards.gymId),
               and(eq(dbSchema.gyms.ownerId, SYSTEM_BOARD_OWNER_ID), ne(dbSchema.userBoards.gymId, gym.id)),
             )!,
-            // Ownership gate: only a SYSTEM (synced catalog) board or the viewer's
-            // own board is a legitimate stray to attach — never a third party's,
-            // public or private. Attaching a stranger's board would hand the gym
-            // owner/admin edit rights over it (rename, serialNumber/BLE, privacy
-            // flags) via requireBoardEditAccess's gym-admin branch. Being public
-            // does not make a board safe to capture.
-            or(eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID), eq(dbSchema.userBoards.ownerId, viewerUserId))!,
+            // Preserve ordinary ownership gates; the narrow admin branch above
+            // additionally permits an unlinked public board in their scope.
+            or(
+              eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
+              eq(dbSchema.userBoards.ownerId, viewerUserId),
+              adminCandidateCondition,
+            )!,
           ),
         )
         .limit(STRAY_BOARD_LIMIT * 2)
@@ -209,6 +243,8 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
       currentGymId: row.currentGymId ?? null,
       uuid: row.uuid,
       name: row.name,
+      boardType: row.boardType,
+      angle: row.angle,
       currentGymUuid: row.currentGymUuid ?? null,
       currentGymName: row.currentGymName ?? null,
       distanceMeters: twinLocationVisible[rowIndex] ? distanceFromGym(gym, row) : null,
@@ -231,6 +267,8 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
       currentGymId: row.currentGymId ?? null,
       uuid: row.uuid,
       name: row.name,
+      boardType: row.boardType,
+      angle: row.angle,
       currentGymUuid: row.currentGymUuid ?? null,
       currentGymName: row.currentGymName ?? null,
       distanceMeters: distance,
@@ -505,8 +543,21 @@ export const socialGymStrayBoardMutations = {
     const candidates = await findStrayBoardCandidates(gym, userId);
     const target = candidates.find((candidate) => candidate.uuid === validatedInput.boardUuid);
     if (!target) {
+      if (validatedInput.expectedCurrentGymUuid !== undefined) {
+        throw new GraphQLError('This board changed before it could be attached. Refresh and try again.', {
+          extensions: { code: 'CONFLICT' },
+        });
+      }
       throw new GraphQLError('This board is not a stray candidate for this gym.', {
         extensions: { code: 'BAD_USER_INPUT' },
+      });
+    }
+    if (
+      validatedInput.expectedCurrentGymUuid !== undefined &&
+      validatedInput.expectedCurrentGymUuid !== target.currentGymUuid
+    ) {
+      throw new GraphQLError('This board changed before it could be attached. Refresh and try again.', {
+        extensions: { code: 'CONFLICT' },
       });
     }
 
@@ -546,7 +597,7 @@ export const socialGymStrayBoardMutations = {
     // on a synced listing, fold that now-empty listing into this gym so it stops
     // showing up in search as a board-less twin (#4188). A failure here must not
     // turn a successful attach into a GraphQL error.
-    if (target.currentGymId != null && target.currentGymId !== gym.id) {
+    if (validatedInput.allowSourceGymMerge !== false && target.currentGymId != null && target.currentGymId !== gym.id) {
       try {
         await retireEmptiedSourceGym(target.currentGymId, gym, userId);
       } catch (error) {

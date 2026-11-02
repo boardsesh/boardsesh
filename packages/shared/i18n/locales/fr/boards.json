@@ -90,7 +90,7 @@
     "onboardingPrompt": "Suis le mur où tu grimpes : c'est ça qui active son historique.",
     "firstBoard": {
       "title": "Où grimpes-tu ?",
-      "body": "Choisis ta board pour charger ses blocs. Une fois la board connectée, touche un bloc pour l'allumer au mur.",
+      "body": "Choisis ta board pour charger ses blocs. Un toucher ouvre un bloc en aperçu ; Allumer sur la board l'allume au mur.",
       "gym": "En salle",
       "gymHint": "Choisis la board de ta salle",
       "own": "Ma propre board",
@@ -111,7 +111,8 @@
       "card": {
         "title": "Allume les blocs sur {{board}}",
         "titleNoName": "Allume les blocs sur ta board",
-        "body": "Connecte ce téléphone à la board, puis touche un bloc pour l'allumer.",
+        "body": "Connecte ce téléphone à la board, touche un bloc, puis Allumer sur la board pour l'allumer.",
+        "bodyAlwaysDrive": "Connecte ce téléphone à la board et tu la pilotes : chaque bloc que tu choisis s'allume.",
         "connect": "Connecte la board",
         "tryAgain": "Réessayer",
         "noLights": "Ce mur n'a pas de LED",
@@ -121,11 +122,15 @@
         "failed": "Pas encore de connexion à {{board}}. Réessaie quand tu veux.",
         "failedNoName": "Pas encore de connexion à ta board. Réessaie quand tu veux."
       },
-      "pill": "Allumer sur la board",
       "confirm": {
         "title": "Connecté à {{board}}",
         "titleNoName": "Connecté à ta board",
-        "body": "Touche un bloc dans la liste : il s'allume au mur.",
+        "bodyAlwaysDrive": "Toujours piloter la board est activé : chaque bloc que tu choisis s'allume jusqu'à ce que tu touches Tu pilotes la board pour arrêter.",
+        "bodyWindow": "Allumer sur la board te fait piloter la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyWindowMinute": "Allumer sur la board te fait piloter la board : pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyWindowMinutes": "Allumer sur la board te fait piloter la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyUntilStop": "Allumer sur la board te fait piloter la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter.",
+        "bodyPutOnBoard": "Touche un bloc, puis Allumer sur la board pour l'allumer au mur.",
         "gotIt": "Compris"
       }
     },
@@ -179,7 +184,7 @@
       "limitReached": "Tu as atteint le nombre maximum de boards pour un compte. Supprime une board que tu n'utilises plus pour en ajouter une autre.",
       "timer": "Minuteur d'entraînement",
       "timerNone": "Aucun minuteur associé",
-      "timerHint": "Associe un minuteur Rogue à cette board. Quand tu pilotes le mur, son chrono repart à chaque repos, ou à chaque bloc enregistré si le minuteur de repos est désactivé.",
+      "timerHint": "Associe un minuteur Rogue à cette board. Tant que ce téléphone est connecté à la board, son chrono repart à chaque repos, ou à chaque bloc enregistré si le minuteur de repos est désactivé.",
       "timerPairCta": "Associer un minuteur",
       "timerChangeCta": "Changer de minuteur",
       "timerRemoveCta": "Retirer",
@@ -214,6 +219,7 @@
       "resolving": "Chargement des boards…",
       "noResults": "Aucune board à portée",
       "unavailable": "Active le Bluetooth pour rechercher",
+      "notAsked": "Autorise le Bluetooth pour chercher les boards autour de toi.",
       "unknownSetupTitle": "On a trouvé une board {{board}}",
       "unknownSetupBody": "On ne connaît pas encore sa configuration.",
       "moonboardTitle": "Une MoonBoard à proximité",
@@ -585,7 +591,9 @@
     "helperText": {
       "unlisted": "Masqué des résultats de recherche, mais accessible par lien direct",
       "hideLocation": "Masqué des recherches de boards à proximité, sauf pour les personnes que vous suivez",
-      "hasLeds": "Désactivé : pas de kit LED. Le tour de rôle fonctionne toujours, et l'écran de la salle affiche toujours le bloc en cours."
+      "hasLeds": "Désactivé : pas de kit LED. Le tour de rôle fonctionne toujours, et l'écran de la salle affiche toujours le bloc en cours.",
+      "ownerOnlyPrivacy": "Seul le propriétaire de la board peut modifier sa visibilité et la confidentialité de sa position.",
+      "ownerOnlyCredentials": "Seul le propriétaire de la board peut consulter ou modifier les identifiants du contrôleur."
     },
     "alerts": {
       "configEditable": "Vous pouvez modifier le layout, la taille et les jeux de prises. Les blocs déjà enregistrés restent intacts."
@@ -602,7 +610,11 @@
       "duplicateBodyWithLocation": "Avec ce changement, la board devient identique à « {{name}} » à {{location}} : même layout, même taille et mêmes sets de prises.",
       "duplicateBodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
       "saveAnyway": "Enregistrer quand même",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "discardTitle": "Abandonner les modifications non enregistrées ?",
+      "discardBody": "Les modifications de la board n’ont pas été enregistrées.",
+      "discard": "Abandonner les modifications",
+      "keepEditing": "Continuer à modifier"
     },
     "serialReuse": {
       "warning": "Ce numéro de série appartient déjà à « {{name}} ». Rejoindre cette board garde les croix et les stats de tout le monde sur un seul mur.",
@@ -755,8 +767,8 @@
       "address": "Adresse",
       "contactEmail": "E-mail de contact",
       "contactPhone": "Téléphone de contact",
-      "isPublic": "Salle publique",
-      "website": "Site web"
+      "website": "Site web",
+      "visibility": "Visibilité"
     },
     "placeholders": {
       "name": "ex. Boulder World, The Climbing Factory",
@@ -780,7 +792,13 @@
     },
     "helpers": {
       "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle",
-      "hours": "Une ligne, comme tu veux l'écrire. Ta page affiche la date de ta dernière confirmation."
+      "hours": "Une ligne, comme tu veux l'écrire. Ta page affiche la date de ta dernière confirmation.",
+      "visibility": "Les salles non répertoriées sont accessibles par leur lien et n’apparaissent ni dans les recherches ni sur la carte."
+    },
+    "visibility": {
+      "public": "Public",
+      "unlisted": "Non répertorié",
+      "private": "Privé"
     }
   },
   "claimGym": {

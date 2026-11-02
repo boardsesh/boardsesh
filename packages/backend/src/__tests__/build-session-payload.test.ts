@@ -114,6 +114,7 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
         currentClimbQueueItem: null,
         historyCount: 0,
         currentChangedAt: '2026-05-18T12:05:00.000Z',
+        currentChangedBy: null,
       },
       isLeader: true, // leaderConnectionId === ctx.connectionId
       lastConnectedBoardSerial: 'SERIAL-123',
@@ -162,7 +163,12 @@ describe('buildSessionPayload — override short-circuits', () => {
 
     expect(getQueueStateMock).not.toHaveBeenCalled();
     // A prefetched state without the F3 fields (#6666) reads as null for both.
-    expect(payload.queueState).toEqual({ ...prefetched, historyCount: null, currentChangedAt: null });
+    expect(payload.queueState).toEqual({
+      ...prefetched,
+      historyCount: null,
+      currentChangedAt: null,
+      currentChangedBy: null,
+    });
   });
 
   it('skips getSessionById when inputs.sessionData is supplied (including explicit null)', async () => {

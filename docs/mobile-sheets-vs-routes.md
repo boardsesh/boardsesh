@@ -55,23 +55,49 @@ genuinely going away out from under the parent — a user pan-down / backdrop, o
 another sheet in the group — never for a close the parent itself drove, so parent state can't be
 cleared behind your back. `AddToPlaylistSheet` is the reference.
 
-**Stacking above everything:** a **custom, non-sheet** overlay (Reanimated + plain views) can
-render in a higher iOS window via react-native-screens' `FullWindowOverlay` — that's how
-`ClimbReactionMenu` (the long-press context menu) floats above whatever's underneath. This does
-**not** work for a native `@expo/ui` sheet: a SwiftUI `.sheet` presents off the **key window**
-regardless of a `FullWindowOverlay` wrapper (the scar the player learned — see rule 1), so
-wrapping a sheet in one pushes it _under_ the overlay window, not above. A native sheet mounted
-inside a modal route presents above that route instead — that's how `HoldRoleSheet` shows over
-the New climb editor. There is **no**
-`fullWindowOverlay` prop on `Sheet`; it was an inert no-op and has been removed.
+**Climb menus.** `ClimbActionsMenu` shares the core action definitions for row long-press,
+list ellipsis and player ellipsis. On the main iOS climb list, both row triggers open
+`ClimbListRowMenu`: the same opaque, rounded row above a dimmed list and a scrollable
+action menu. Public iOS context-menu APIs cannot present the preview from a tap, so
+these two triggers use one controlled `FullWindowOverlay`. The source body is replaced
+with a placeholder while lifted; the row content is mounted only once. Recycled rows,
+account changes and window-size changes retire the menu. Commands run after the overlay
+unmounts, preserving the normal sheet presenter for add-to-playlist and other actions.
+Other surfaces retain SwiftUI ContextMenu/Menu on iOS, Compose dropdowns on Android,
+and Paper on Expo web. `getClimbActions` resolves a snapshot without opening anything.
+The old `ClimbReactionMenu` overlay and its embedded sheets are removed.
 
-**Inline body instead of a nested sheet:** when a surface needs a secondary picker/form but a
-second native sheet can't stack (rule 1), extract the body as a **presentation-agnostic component**
-that mounts no sheet/overlay of its own and takes its text input by injection, then render it inline
-in both hosts. `InlinePlaylistPicker` (the "add to playlist" list + create form) is the reference:
-it renders inline in `ClimbReactionMenu`'s `FullWindowOverlay` (plain `TextInput`) and inside
-`AddToPlaylistSheet`'s `ModalSheet` (`BottomSheetTextInput`), so add-to-playlist never stacks a
-second sheet. Feedback is inline, not a toast (a toast renders behind the overlay/sheet).
+A hold menu never remounts the row it wraps when its target changes (a recycled
+cell, a crew edit): it retires only the drawn menu. Android and web close it; iOS
+re-keys the context-menu items. On iOS the row must live inside the SwiftUI Host
+for the system to lift it. On Android the row stays a plain React Native view (a
+Compose `RNHostView` row can draw blank, #6500), and the dropdown's Compose host
+mounts on the first hold, anchored to a strip along the row's bottom edge. The ⋮
+on Android and web is a plain button that opens that same menu. Only a menu opened
+inside `/play` (its target carries the route's `dismissPlayerAndWait`) sends Tick,
+Playlist, Beta and Report to the player's own sheets; every other menu presents
+from the root.
+
+Rows read the queue through `ClimbMenusProvider`'s store, one boolean each (on the
+wall, replayable slot, on the stored board), so a crew queue edit re-renders only
+the rows whose menu changed.
+Native iOS captures: [before](./images/climb-menu-before.png),
+[long press](./images/climb-menu-after.png), [ellipsis](./images/climb-menu-ellipsis.png).
+
+A row's long-press body excludes drag handles and sibling controls, preserving
+queue reorder and swipe actions. Screen readers get direct enabled commands and the
+separately focusable ellipsis when visible.
+
+**Stacking above everything:** custom non-sheet overlays may use `FullWindowOverlay`, but
+native `@expo/ui` sheets present from their own view controller. A native sheet must be
+physically mounted under the view controller it presents from: inside a modal route, or inside
+another sheet's native content. The Queue's Tick host uses the latter, with an explicit child
+presenter group and `parentId`. `HoldRoleSheet` presents inside the New climb editor's modal
+route. `Sheet` has no `fullWindowOverlay` prop.
+
+**Inline body instead of a nested sheet:** when a second native sheet cannot stack,
+extract a presentation-independent body with injected input controls. `InlinePlaylistPicker`
+is the body used by `AddToPlaylistSheet`; feedback belongs inside its sheet.
 
 **In-tree openers — a menu opening a sheet over a route.** `useClimbActions` falls back to
 **root-level** openers (`useDrawerHost().openAddBetaVideo` / `openLogAscent` / `openReportClimb` →
@@ -87,13 +113,14 @@ one can't be left off by accident and silently take the root fallback; nothing i
 stops a root opener being passed in their place, so `play-drawer-cross-board.test.tsx` opens
 each sheet through the player and checks it is the player's own. The favourite row
 goes through the bar heart's own toggle (`handleToggleFavoriteFromMenu`), so the two never
-disagree. Off the player (climb list, logbook, board sheet) the long-press `ClimbReactionMenu`
-omits the overrides and the root sheet is correct — nothing covers it. **Any new ⋯ row that opens
+disagree. Off the player, native climb menus use the root presenter or dismiss their source sheet
+through its coordinator before presenting the next surface. The moderation feed is a root `modal`
+too, so it mounts its own `AddToPlaylistSheet` and hands its card menus `openPlaylistInRoute`
+(`ClimbActionsTarget`); its Tick, Beta and Report still use the root openers. **Any new ⋯ row that opens
 a native sheet needs an in-tree opener**, or it re-hits the bug.
 
-**Every native sheet must go through the presentation coordinator.** `@expo/ui`
-sheets all present off the **same** root-window view controller, and the library
-does no serialization — overlapping a present with another sheet's dismiss
+**Every native sheet must go through the presentation coordinator.** Sibling `@expo/ui`
+sheet hosts share a presenter, and the library does no serialization — overlapping a present with another sheet's dismiss
 deadlocks UIKit and freezes the whole app (renders, but ignores every tap). The
 `ModalSheet`/`Sheet` wrappers route through `SheetPresentationProvider`
 (`src/providers/sheet-presentation-provider.tsx`) automatically. A surface with
@@ -106,11 +133,20 @@ the coordinator clears its desired-open flag and fires `onDisplaced`, which
 `useManagedSheet` delivers as the sheet's `onClose` (same contract as a user
 pan-down), so the parent clears the state that drove `open`. Never design a flow
 that expects a displaced sheet to come back by itself when the displacer closes —
-that implicit resume was the phantom-tick-sheet bug (PR #3595). One exception: the
-`FullWindowOverlay` menus (e.g. `ClimbReactionMenu`), which are custom overlays in a higher
-window, not native sheets. (`CreateDrawer` used to be a second one, a raw `BottomSheet` as the
-create-climb route's primary sheet; New climb is a modal route now, so it has no sheet to
-coordinate.)
+that implicit resume was the phantom-tick-sheet bug (PR #3595). Native climb menus are
+not sheets; each command uses the appropriate sheet presenter and dismissal waiter.
+
+**Explicit native children:** Queue history logging mounts its `LogAscentSheet` inside Queue's
+native content, gives it a separate group, and passes Queue's managed `sheetId` as `parentId`.
+`waitForPresentation()` waits for the parent's existing presentation settle without closing it.
+The coordinator permits children only while their ancestors are presented and desired open;
+closing or displacing a parent cancels pending child opens, then settles descendants before
+dismissing the parent. Removed presenters and their empty groups are pruned after native teardown.
+Changing a group name without physically nesting the host does not create a native presenter.
+On web, only the explicit child opts into modal `push`; ordinary siblings retain `replace`.
+The Queue's Tick target stays pinned through dismissal, with a new native host per opening and
+request-guarded callbacks. iPad layout-only queue folding waits until Tick finishes, preserving
+its note through rotation. The `/play` side panel uses a Tick host inside the player route.
 
 **How a dismiss "settles."** The coordinator needs to know when a dismiss animation has
 really finished before it starts the next transition. On **iOS** that's the accurate native
@@ -132,6 +168,12 @@ second timer, and it also waits when `present()` is still in flight. Concurrent 
 same sheet share the outcome. The promise resolves with `{ status: 'dismissed' }` after a normal
 settle (or the platform ceiling), and `{ status: 'aborted' }` if the sheet unregisters during the
 handoff. Stop the follow-up action on `aborted`; the owning surface has gone away.
+
+The BLE device picker keeps its session mounted with `closing: true` after both
+manual and automatic selection. `DevicePickerSheet` waits for dismissal before
+calling `handleClosed` to remove that session. Clearing the session on a device
+tap instead tears down the native presentation host and can briefly blank the
+play drawer underneath. Late close callbacks are scoped to their picker session.
 
 The same patch also guards the **Android** re-snap path: `snapToIndex` on an already-open
 multi-detent sheet fires `expand()` / `partialExpand()` fire-and-forget on the native
@@ -284,7 +326,7 @@ Settings → Climbs & grades → Climb view and the player's ⋯ → View option
 switches, listed in the climber's order. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
 as a managed `ModalSheet` mounted inside the player, above `/play`. ⋯ is a native menu
 (SwiftUI `Menu` on iOS, Compose dropdown on Android, Paper menu on web) in the top row:
-`[⌄] ━━━ [rest timer][⋯]`, in the route, the iPad pane and the web pane alike. The top
+`[⌄] ━━━ [rest timer][⋯]`, in the route and the tablet-shell pane alike. The top
 row sits outside the commit bar and the switch-board scrim, so ⋯ (and View options)
 stays in reach while browsing in commit mode and on another board's climb. On another
 board's climb every ⋯ row that writes is disabled; Share, View options and Open in
@@ -429,12 +471,13 @@ Is it a secondary surface OVER the current screen, or its own full surface?
 
 ## The four hard rules (the _why_)
 
-1. **A bottom sheet can't host other native sheets stacking above it.** `@expo/ui` sheets
-   present off the **main window's** view controller, not off the sheet. So the moment a
-   surface needs several sub-sheets to stack _above_ it (the player opens beta / queue / share
-   / angle / tick / climb-actions), it **must** be a route — a real modal view controller, off
-   which those sub-sheets present and stack naturally. This is the single reason the player is
-   a route and not a sheet. **If a sheet only needs to hand off to ONE sub-surface at a time**
+1. **Sibling sheet hosts do not form a native stack.** A surface with several independently
+   opened sub-sheets (the player's beta / queue / share / angle / tick / climb-actions) uses a
+   modal route, with its sheet hosts inside that route. A small nested flow can instead mount
+   its child Host inside the parent's native content and declare the managed parent/child
+   relationship, as Queue history Tick does. It requires native retention and dismissal QA;
+   a sibling Host with an invented presenter group remains unsafe.
+   **If a sheet only needs to hand off to ONE sub-surface at a time**
    (not stack several), it can stay a sheet and instead **suspend → push a route → re-present**:
    set its controlled `open` to `false` (a coordinator self-dismiss, so it doesn't unmount and
    its local state survives), `router.push` the sub-route, and flip `open` back to `true` on a
@@ -560,7 +603,9 @@ Done button is needed to commit the filters.
 
 **Filter sheet parts are shared.** The sheet is built from the parts in
 `src/components/filter-sheet/`: `FilterSheetSection` (headline group), `FilterLabelRow` (muted
-sub-label with an optional pin and description), `FilterChip` / `FilterChipGroup`, `FilterNameField`,
+sub-label with an optional pin and description; the iOS SwiftUI Filters form has no pins, and which
+chips show, in what order, lives in Settings › Climbs & grades › Quick filters), `FilterChip` /
+`FilterChipGroup`, `FilterNameField`,
 `FilterTappableRow` and `filterSheetStyles` for the gaps between them. A second filter sheet
 uses the same parts, so the two read and space the same. Ranges use `RangeRail`
 (`src/components/grade/RangeRail.tsx`) through `GradeRangeRail` or `AngleRangeRail`. A filter
@@ -717,11 +762,12 @@ the action guard is set before the first asynchronous boundary.
 
 `handleSwitchBoardFromDrawer` in `drawer-host-provider.tsx` does the same
 `router.dismiss()` → `router.push('/boards')` when the play drawer's board-mismatch overlay
-routes to the board picker — but copy the shape, not the code: it is **ungated**, so on an
-iPad pane (where there is no `/play` route) it pops whatever is focused instead. The gated
+routes to the board picker — but copy the shape, not the code: it is **ungated**, so in a
+pane (the JS tablet shell or the iPhone Duo's split, where there is no `/play` route) it pops
+whatever is focused instead. The gated
 version is `useCreateClimbNavigation`
 (`src/components/create-climb/use-create-climb-navigation.ts`), and both remix/edit entry
-points (`useClimbActions`, behind both the long-press reaction menu and the player's ⋯) go through
+points (`useClimbActions`, behind both the native row menu and the player's ⋯) go through
 it.
 
 Two things that are easy to get wrong:
@@ -734,9 +780,10 @@ Two things that are easy to get wrong:
   await, so dismissal completes immediately. Thread this callback down through the in-tree opener;
   a hook mounted in a sibling root provider cannot safely subscribe to the `/play` navigator.
 - **Omit the player callback when there is no player route.** The same menu opens from the
-  climbs list and BoardSheet, and on an **iPad regular-width layout the player is an inline
-  detail pane**. Those entry points must not call `router.dismiss()` or they can pop an unrelated
-  route. The callback's presence is the gate; do not infer it from root-level segments.
+  climbs list and BoardSheet, and on the **JS tablet shell at regular width (Android tablets,
+  Expo web, an iPad on Material) and the iPhone Duo's split the player is an inline pane**. Those
+  entry points must not call `router.dismiss()` or they can pop an unrelated route. The native
+  iPad has no pane: its player is the `/play` route, as on iPhone. The callback's presence is the gate; do not infer it from root-level segments.
 
 The rule of thumb: **before pushing a route, ask which navigator it lands in.** Same navigator
 is fine. A navigator _below_ the modal you're standing in needs the dismiss first.
@@ -744,6 +791,15 @@ is fine. A navigator _below_ the modal you're standing in needs the dismiss firs
 ## A latency footgun (any route)
 
 ### Player swipe dismissal
+
+The player's scroll container uses RNGH 3's `LegacyScrollView`, because its
+dismiss, carousel, pinch and zoom-pan gestures still use the builder API.
+RNGH 3's default `ScrollView` uses the hook API; relations cannot cross those
+APIs, so the native scroll cancels the dismiss gesture (#6901). Keep the scroll
+container and its related gestures on the same API when migrating them. Main's
+preview runtime still uses RNGH 2, where that same legacy handler is named
+`ScrollView`, so select `LegacyScrollView` only when the module exports it and
+otherwise keep `ScrollView`.
 
 The player keeps its native opening and chevron-close transitions. A downward
 swipe instead owns one Reanimated translation for the entire route surface,
@@ -772,10 +828,10 @@ After native removal has been requested, the departing route stops consuming
 targets. Its cleanup retires only the nonce it actually served, including that
 nonce's board override. The host retries an explicitly requested navigation once
 after unmount when a newer target is still pending. This retry preserves the
-nonce and checks privacy and credential generations; it excludes pane opens,
+nonce and checks the credential generation; it excludes pane opens,
 `navigate: false`, superseded targets, and targets another route already consumed.
 
-The iPad pane does not receive this route-owned animation. Keep the modal's
+The tablet-shell and phone-split panes do not receive this route-owned animation. Keep the modal's
 live-behind presentation and accessory-host mount rules above when changing it.
 
 ### Opening a heavy route
@@ -800,8 +856,7 @@ mode.
 navigation model, layout measurements, selection handlers, favorite actions, and sheet
 hosts live in separate modules. The sheet host stays mounted beneath the existing root
 View; visibility does not control its lifetime. Composer credential keys are distinct
-per sheet so an account change resets each draft, while privacy-only changes preserve
-drafts.
+per sheet so an account change resets each draft.
 
 ## Worked examples
 
@@ -907,11 +962,17 @@ drafts.
   `fullScreenModal` would snapshot the native tab container (rule 2).
 - **Account** (`/account`) is the native iOS avatar sheet. Settings and Edit profile
   push inside its own stack; Back returns to the account menu. Android and the
-  browser retain the side drawer. User search, connections, profiles and Settings
+  browser retain the side drawer. Its opener ignores taps while either menu is
+  already in the active root stack and uses queued `router.navigate`, so rapid
+  avatar taps reuse one route before it mounts (#7124). User search, connections, profiles and Settings
   opened directly from a tab resolve into that tab's stack, preserving the tab bar.
   My playlists closes the menu first, then uses `router.navigate` to reach Discover's
   playlist list. After the menu has popped, `dismissTo` from another tab targets the
   tab navigator with an unsupported `POP_TO` action (#6508).
+  Support opens the in-app browser while the iOS Account sheet stays mounted.
+  React unmount plus one frame does not mean native modal dismissal has finished;
+  opening the browser during that dismissal can immediately close it again. A
+  pending browser blocks repeat taps until it closes or fails, then allows retry.
 - **Native iPad pickers** use an anchored `AnchoredPopover` at regular width; compact
   windows retain the phone sheet. `AppMenu` already anchors native UIKit menus.
   The angle toolbar picker keeps its diagram and slider in the popover.
@@ -923,25 +984,35 @@ drafts.
   of their own, and are the one case where a route is _not_ a destination. Don't hang new UI off
   them — put it on the surface they hand off to.
 
-## iPad-only tab destinations (sidebar rail, never a phone tab)
+## Full-screen tablet modes (not a tab)
 
-To add a `(tabs)` destination that appears only on the iPad sidebar rail and NEVER as a phone
-bottom tab (e.g. `/wall`, the "On the Wall" tab — `app/(tabs)/wall/`):
+The iPad used to carry a sixth, iPad-only "On the Wall" tab. It overflowed the portrait top tab
+bar, and the HIG asks for five tabs or fewer, so it became the **Wall display**: a full-screen
+mode, not a destination. Follow its shape for any surface that should take over the whole screen
+on a tablet (`app/wall-display/`):
 
-- Register it as a keyed `<Tabs.Screen name="wall" options={{ href: null }} />` in the shared
-  `tabScreens` array (`app/(tabs)/_layout.tsx`). It **must** be a `(tabs)` route so it renders in
-  the iPad shell's content pane (keeping the sidebar + play/wall panes); a root route would cover
-  them.
-- `href: null` is meant to hide it from the bar — but expo-router turns it into
-  `tabBarItemStyle: { display: 'none' }` and **strips the `href` key**, so a _custom_ tab bar still
-  renders it unless it filters. `MaterialTabBar` skips
-  `StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none'`.
-- Add `<NativeTabs.Trigger name="wall" hidden />` (the `hidden` prop) so the iOS-26 glass bar
-  declares the route but shows no 6th tab (a 6th would spill into "More" and clash with the
-  `role="search"` slot).
-- Add a `SidebarDestination` in `IpadSidebar.tsx`; `tabsActiveSegment` (route-segments.ts) already
-  highlights it. Suppress any ambient duplicate of the same content (e.g. the wall column) while
-  the destination is the focused segment.
+- A **root route** registered in `app/_layout.tsx` with `presentation: 'transparentModal'` and an
+  opaque background of its own, the same as `/play`. Never `fullScreenModal` (rule 2): it covers
+  the sidebar, the tab bar and the bottom accessory while they stay live behind it.
+- Add its segment to `isTabsChromeRoute` (`src/lib/route-segments.ts`) so the accessory host
+  stays mounted under it (#5055), and keep it out of `isAccessorySurfaceRoute` so the JS queue
+  bar does not draw over it.
+- Give it its own `Stack` and register it in `scoped-navigation.ts` if it can open Settings or a
+  profile, with a mirror of `app/settings/` (guarded by `route-mirrors.test.ts`). Its stack paints
+  an opaque `contentStyle`, or the tabs show through every pushed page.
+- Host anything that presents a native sheet from inside the route: the Wall display mounts
+  `<DevicePickerSheetHost registerExternal />`, as `/play` does, or Connect would present the
+  app-root picker underneath the modal.
+- Tell the shell the mode is up from its layout (`markWallDisplayMounted`), not from the focused
+  segments: with a page pushed over it the segments name that page, and the shell would remount
+  its pane behind the kiosk. Leave it out of the bottom-chrome reserve (`insideTabs`).
+- No `BoardArtVisibilityProvider`: the route is not a tab. The tabs behind it report hidden and
+  release their board art while it is up.
+- Entry points are actions, not tabs: a row in a menu or a sheet, gated on `isTablet`, so the
+  phone keeps its UI. Any controls over the content hide after a few seconds and come back on a
+  touch (`useAutoHidingChrome`). They stay in the accessibility tree while hidden, stay up while
+  an assistive technology the app can detect runs, and a hardware keyboard gets Esc / ⌘W.
+- Redirect any link to the old tab in `app/+native-intent.ts`.
 
 ## Bumping `react-native-screens` (the bottom-accessory patch)
 
@@ -999,17 +1070,23 @@ store builds, temporarily pausing OTA delivery to older binaries until users ins
 
 ## Player zoom from the tab accessory
 
-On iPhone with the native tab accessory, tapping the current climb uses Router's native
+On iPhone and iPad with the native tab accessory, tapping the current climb uses Router's native
 `Link.AppleZoom` source and `/play`'s `Link.AppleZoomTarget`. The tap stages the
 current queue head with `openPlayDrawer(climb, { navigate: false })` before Link
 navigates. This preserves the board override and existing play-target reset rules
 without a second navigation. Keep the source mounted in the tab accessory while
 the transparent player is open so closing it can zoom back to the same climb.
 
-Reduce Motion, floating toolbar hosts, Android, web and iPad use the existing opener. iPad opens
-its persistent detail pane. The player's native interactive dismissal stays
+Reduce Motion, floating toolbar hosts, Android and web use the existing opener. The iPad zooms
+from its accessory into the full-screen player like Music's MiniPlayer; it has no pane to open
+instead. The player's native interactive dismissal stays
 disabled; its existing vertical swipe owns dismissal, so two gestures cannot
 compete. Keep the lightbulb and tick controls outside the zoom source.
+
+While VoiceOver runs, the accessory uses the existing opener too (#7082). After UIKit's zoom, the
+player's whole subtree and the zoom source itself are missing from the accessibility tree, while
+the row-style open keeps both. iOS tells React Native nothing about Voice Control, Switch Control or
+Full Keyboard Access, so those users still get the zoom and its missing tree.
 
 ## See also
 
@@ -1049,7 +1126,32 @@ second scroll view.
 a 44-point reveal threshold, and a 192-point full-swipe release threshold. A short
 swipe reveals a labelled button; a full swipe commits once and closes, including
 when Reduce Motion settles the opening animation before the JS release callback.
-Keep reaction-menu long-press and screen-reader actions available.
+Keep native climb-menu long-press and screen-reader commands available.
+
+**Wall capsule:** the Climbs header uses the player's shared connection and
+presence-freshness rules. With no live link it reads “Last on the wall” for an
+hour from the lighting timestamp, then hides; a live link keeps the current
+presentation regardless of age. Inside those rules it always shows, whatever the
+queue, the link or the layout (owner decision, 2026-11-02). The × at its trailing
+end, a left swipe, or the Hide action in VoiceOver and TalkBack hides only this
+device's header capsule, without changing the wall or queue. The choice survives
+navigation and app restarts until a different climb goes up on that board; a
+re-report of the same climb (a reconnect, another device taking the board, a mirror
+flip, an angle change) keeps it hidden. Climb, status and dismissal scope settle
+together while the player covers the native header.
+
+The current-climb capsule while you hold an LED board uses the same holds-based
+background as the play drawer's driving button, including your hold colours and
+mirror setting. It reads cached geometry without starting a board-art fetch. When
+that climb is the one on the wall it carries the same × and Hide action, but no
+swipe: its tap lets go of the board. Its × stays in a narrow title slot, since it is
+the only sighted way to hide it, and a hidden climb does not come back in this
+capsule when the presence feed drops or the lights are turned off.
+
+The native story gallery shows the live and recent-history treatments side by side:
+[Liquid Glass dark](images/wall-capsule-glass-dark.png),
+[Liquid Glass light](images/wall-capsule-glass-light.png) and
+[Material](images/wall-capsule-material-light.png).
 
 Queue removal uses the queue's scoped live-merge Undo. Logbook deletion keeps its
 confirmation, then hides the entry and offers eight seconds to Undo before sending

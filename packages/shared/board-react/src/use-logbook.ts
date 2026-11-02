@@ -222,7 +222,7 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
     // Rows before the marker, so no subscriber can read a climb as fetched
     // ahead of its rows.
     queryClient.setQueryData<LogbookEntry[]>(accumulatedKey, (existing = []) =>
-      mergeLogbookEntries(existing, batchEntries),
+      mergeLogbookEntries(existing, batchEntries, { refreshEffectiveQuality: !currentBatch.isInvalidated }),
     );
     // Mark these UUIDs as fetched (including those that returned no ticks).
     // Several consumers can fetch disjoint climb batches at once (the root

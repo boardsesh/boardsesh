@@ -1,9 +1,8 @@
 name: Mobile OTA Production (Self-Hosted)
 
-# Publishes train JS immediately when release/next has a different marketing
-# version from main. Public store builds, resolved from the stores' exact build
-# numbers and immutable tags, own their runtimes: train JS never publishes there.
-# Main's staged candidates soak only on the current public store runtimes.
+# Main stages candidates through production-deploy.yml, then promotes them only
+# after the backend is ready. Native post-upload republishes remain explicit
+# dispatches; there is no second branch publishing directly to production.
 #
 # Fingerprint identity is necessary but NOT sufficient: expo-updates launches
 # whichever update has the newest commitTime, and a binary stamps its embedded
@@ -24,11 +23,6 @@ run-name: >-
   || 'Production OTA' }}
 
 on:
-  push:
-    # release/next serves the TestFlight / Play-internal testers running the train's binary. The train's
-    # publish is guarded so it can never take over the store fleet's runtimeVersion — see the
-    # "Skip platforms whose runtimeVersion the train does not own" step below.
-    branches: [release/next]
   workflow_dispatch:
     inputs:
       message:
@@ -58,25 +52,8 @@ permissions:
   # scripts/mobile-ota-server-ready.mjs lists this commit's Railway Config runs.
   actions: read
 
-concurrency:
-  # Direct production publishes share one lane with native republishes and
-  # backports. Staging has its own lane so it can overlap production publishes
-  # and the web/backend builds; promotion later takes the production lane.
-  group: ${{ inputs.stage_for_production_deploy && 'mobile-ota-staging' || 'mobile-ota-production' }}
-  cancel-in-progress: false
-  # QUEUE, never supersede. cancel-in-progress governs only the RUNNING run —
-  # by default GitHub still cancels an existing *pending* run when a new one
-  # queues. That used to be harmless (the winner republished the latest state
-  # anyway), but the native workflows now dispatch a per-PLATFORM republish to
-  # un-strand a binary they just uploaded, and those don't cover for each other:
-  # an iOS republish running + an Android republish pending + any push to main
-  # would drop the Android one, leaving Android installs frozen on their embedded
-  # bundle until the next Android native build. The cost is real — pushes during a
-  # long publish now queue instead of coalescing, so a busy day is N sequential
-  # ~10-minute publishes rather than one. That is the right trade: never silently
-  # dropping a republish is the whole point. Must stay in lockstep with
-  # mobile-ota-backport.yml, which shares this group.
-  queue: max
+# No workflow-level concurrency: the publish lane is taken by the `publish` job
+# alone (see the note there), so a job before or after it can never hold it.
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
 # MUST stay byte-identical to ios-testflight-rn.yml / android-apk-rn.yml, for two
@@ -120,11 +97,6 @@ env:
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:
-  live-store-runtimes:
-    if: github.ref == 'refs/heads/release/next'
-    uses: ./.github/workflows/mobile-live-store-runtimes.yml
-    secrets: inherit
-
   # Resolve native inputs with Production's build environment, without admin
   # credentials. The next job only consumes validated fingerprints and built-ins.
   resolve-staging-runtimes:
@@ -146,7 +118,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - name: Install Node.js dependencies (workspace root)
         run: vp install --frozen-lockfile
       - name: Write .env for Expo build-time inlining
@@ -233,23 +205,54 @@ jobs:
           echo "early_baseline=$(jq -c . early-baseline.json)" >> "$GITHUB_OUTPUT"
 
   publish:
-    needs: [resolve-staging-runtimes, capture-staging-baselines, live-store-runtimes]
-    # Skipped staging prerequisites must not suppress direct/train/manual runs.
+    needs: [resolve-staging-runtimes, capture-staging-baselines]
+    # Skipped staging prerequisites must not suppress manual native republishes.
     if: >-
       always() && !cancelled()
-      && (github.ref != 'refs/heads/release/next' || needs.live-store-runtimes.result == 'success')
+      && github.ref == 'refs/heads/main'
       && (!inputs.stage_for_production_deploy || (needs.resolve-staging-runtimes.result == 'success' && needs.capture-staging-baselines.result == 'success'))
     outputs:
       ios_outcome: ${{ steps.publish_ios.outcome }}
       android_outcome: ${{ steps.publish_android.outcome }}
-      ios_runtime: ${{ steps.train_guard.outputs.ios_runtime_version }}
-      android_runtime: ${{ steps.train_guard.outputs.android_runtime_version }}
-      train_version: ${{ steps.train_baselines.outputs.train_version }}
     # Only this publisher needs dispatch permission. No admin login is exposed.
     permissions:
       contents: read
       actions: write
     runs-on: ubuntu-latest
+    # Direct production publishes share one lane with native republishes,
+    # backports, staged promotions and the stable tick. Staging has its own lane
+    # so it can overlap production publishes and the web/backend builds;
+    # promotion later takes the production lane.
+    #
+    # The lane sits on THIS job, not the workflow. A group held at workflow level
+    # is held by every job in the run, and on 2026-10-24 run 40105607795 published
+    # in ten minutes, then its notify job never got a runner and held the lane for
+    # 27 hours: queued publishes, native republishes and the hourly stable tick
+    # queued behind a job that was only going to post to Discord. Job timeouts
+    # never fire on a job that never starts. production-deploy-watchdog.yml's
+    # mobile-ota-production lane breaks a run parked at a gate.
+    #
+    # The staging-only jobs above (resolve-staging-runtimes,
+    # capture-staging-baselines) run outside the staging lane. That is safe:
+    # staging runs only come from production-deploy.yml's workflow_call, and
+    # that workflow is serialised by its own `production-deploy` group, so two
+    # staging runs never overlap. Both jobs only read.
+    #
+    # QUEUE, never supersede. cancel-in-progress governs only the RUNNING job —
+    # by default GitHub still cancels an existing *pending* one when a new one
+    # queues. That used to be harmless (the winner republished the latest state
+    # anyway), but the native workflows now dispatch a per-PLATFORM republish to
+    # un-strand a binary they just uploaded, and those don't cover for each other:
+    # an iOS republish running + an Android republish pending + any push to main
+    # would drop the Android one, leaving Android installs frozen on their embedded
+    # bundle until the next Android native build. Manual republishes keep their
+    # places in a long queue instead of coalescing.
+    # Never silently dropping a republish is the whole point. Must stay in
+    # lockstep with mobile-ota-backport.yml, which shares this group.
+    concurrency:
+      group: ${{ inputs.stage_for_production_deploy && 'mobile-ota-staging' || 'mobile-ota-production' }}
+      cancel-in-progress: false
+      queue: max
     # Six attempts per platform can spend 34 minutes in backoff alone, and iOS
     # and Android each get that budget sequentially — a fully throttled run is
     # ~98 minutes of publishing plus setup, changelog, source maps and the health
@@ -314,7 +317,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install Node.js dependencies (workspace root)
         run: vp install --frozen-lockfile
@@ -328,6 +331,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/mobile-ota-server-ready.mjs
 
+      # Skipped for a superseded push, which leaves `configured` empty and so
+      # skips every step gated on it.
       - name: Check OTA infra is wired
         id: gate
         env:
@@ -364,101 +369,6 @@ jobs:
           EXPO_PUBLIC_SNAPSHOT_BASE_URL=$EXPO_PUBLIC_SNAPSHOT_BASE_URL
           EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
           EOF
-
-      # Static version reads pin both branch heads without running their config.
-      # Preserve the superseded-push guard before resolving native fingerprints.
-      - name: Resolve active release train against pinned origin/main
-        id: train_baselines
-        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
-        run: |
-          set -euo pipefail
-          echo 'superseded=true' >> "$GITHUB_OUTPUT"
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            superseded="$(node --experimental-strip-types scripts/push-run-superseded.ts --workflow .github/workflows/mobile-ota-production.yml)"
-            if [ "$superseded" != false ]; then
-              echo "::notice::release/next advanced; the newer run decides what to publish."
-              exit 0
-            fi
-          fi
-          git fetch origin main release/next
-          main_sha="$(git rev-parse origin/main)"
-          train_sha="$(git rev-parse origin/release/next)"
-          if [ "$(git rev-parse HEAD)" != "$train_sha" ]; then
-            echo '::notice::The current train moved past this source commit.'
-            exit 0
-          fi
-          node --experimental-strip-types scripts/mobile-release-train-policy.ts \
-            --main-sha "$main_sha" --train-sha "$train_sha" >> "$GITHUB_OUTPUT"
-          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
-          echo "train_sha=$train_sha" >> "$GITHUB_OUTPUT"
-          echo 'superseded=false' >> "$GITHUB_OUTPUT"
-
-      # The store evidence arrives as an artifact, never a job output. GitHub drops
-      # a job output that contains any masked value, and the resolve job's
-      # multi-line Play service-account secret registers its bare `{` line as one.
-      - name: Download public store runtimes
-        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: live-store-runtimes
-          path: ${{ runner.temp }}/live-store-runtimes
-
-      - name: Read public store runtimes
-        id: live_store
-        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
-        run: |
-          set -euo pipefail
-          live_runtimes="$(jq -c . "$RUNNER_TEMP/live-store-runtimes/live-store-runtimes.json")"
-          echo "live_runtimes=$live_runtimes" >> "$GITHUB_OUTPUT"
-
-      # The live stores are the source of truth. main can already carry native
-      # code awaiting review while production still runs the previous runtime.
-      - name: Skip platforms whose runtimeVersion the train does not own
-        id: train_guard
-        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
-        env:
-          ANDROID_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-          TRAIN_SUPERSEDED: ${{ steps.train_baselines.outputs.superseded }}
-          TRAIN_ACTIVE: ${{ steps.train_baselines.outputs.train_active }}
-          TRAIN_MAIN_SHA: ${{ steps.train_baselines.outputs.main_sha }}
-          LIVE_STORE_RUNTIMES: ${{ steps.live_store.outputs.live_runtimes }}
-        run: |
-          set -euo pipefail
-          {
-            echo 'publish_ios=false'
-            echo 'publish_android=false'
-          } >> "$GITHUB_OUTPUT"
-          if [ "$TRAIN_SUPERSEDED" != false ] || [ "$TRAIN_ACTIVE" != true ]; then
-            echo '::notice::No active current release train; publishing nothing.'
-            exit 0
-          fi
-          case "$INPUT_PLATFORM" in
-            ios|android|all) ;;
-            *) echo '::error::Unknown publish platform.'; exit 1 ;;
-          esac
-          resolve_train_runtime() {
-            if [ "$1" = ios ]; then
-              (cd packages/mobile && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios | jq -r '.runtimeVersion // empty')
-            else
-              (cd packages/mobile && GOOGLE_MAPS_API_KEY="$ANDROID_MAPS_KEY" vp exec expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion // empty')
-            fi
-          }
-          for platform in ios android; do
-            if [ "$INPUT_PLATFORM" != all ] && [ "$INPUT_PLATFORM" != "$platform" ]; then continue; fi
-            runtime="$(resolve_train_runtime "$platform")"
-            if ! printf '%s' "$runtime" | grep -Eq '^[0-9a-f]{40}$'; then
-              echo "::error::No full $platform train fingerprint; publishing nothing."
-              exit 1
-            fi
-            confirmed="$(resolve_train_runtime "$platform")"
-            if [ "$runtime" != "$confirmed" ]; then
-              echo "::error::Unstable $platform train fingerprint; publishing nothing."
-              exit 1
-            fi
-            node --experimental-strip-types scripts/mobile-release-train-policy.ts \
-              --platform "$platform" --runtime "$runtime" --main-sha "$TRAIN_MAIN_SHA" >> "$GITHUB_OUTPUT"
-            echo "${platform}_runtime_version=$runtime" >> "$GITHUB_OUTPUT"
-          done
 
       # Only for a republish dispatched by a native build. That build shipped a
       # binary with a known fingerprint and wants an OTA stamped after it, but by
@@ -516,10 +426,6 @@ jobs:
         if: ${{ !inputs.stage_for_production_deploy && steps.gate.outputs.configured == 'true' && steps.expect.outputs.mismatch != 'true' }}
         env:
           ANDROID_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-          TRAIN_PUBLISH_IOS: ${{ steps.train_guard.outputs.publish_ios }}
-          TRAIN_PUBLISH_ANDROID: ${{ steps.train_guard.outputs.publish_android }}
-          TRAIN_IOS_RUNTIME: ${{ steps.train_guard.outputs.ios_runtime_version }}
-          TRAIN_ANDROID_RUNTIME: ${{ steps.train_guard.outputs.android_runtime_version }}
         run: |
           set -euo pipefail
           case "$INPUT_PLATFORM" in
@@ -528,8 +434,6 @@ jobs:
           esac
           for platform in ios android; do
             if [ "$INPUT_PLATFORM" != all ] && [ "$INPUT_PLATFORM" != "$platform" ]; then continue; fi
-            if [ "$platform" = ios ] && [ "$TRAIN_PUBLISH_IOS" = false ]; then continue; fi
-            if [ "$platform" = android ] && [ "$TRAIN_PUBLISH_ANDROID" = false ]; then continue; fi
             if [ "$platform" = ios ]; then
               runtime="$(cd packages/mobile && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios | jq -r '.runtimeVersion // empty')"
             else
@@ -537,12 +441,6 @@ jobs:
             fi
             if ! printf '%s' "$runtime" | grep -Eq '^[0-9a-f]{40}$'; then
               echo "::error::Could not resolve the full $platform runtime before unlocking."
-              exit 1
-            fi
-            expected_train_runtime="$TRAIN_IOS_RUNTIME"
-            if [ "$platform" = android ]; then expected_train_runtime="$TRAIN_ANDROID_RUNTIME"; fi
-            if [ -n "$expected_train_runtime" ] && [ "$runtime" != "$expected_train_runtime" ]; then
-              echo '::error::Train runtime changed after authorization; refusing direct publish.'
               exit 1
             fi
             echo "${platform}_runtime_version=$runtime" >> "$GITHUB_OUTPUT"
@@ -671,9 +569,184 @@ jobs:
 
       - name: Validate Sentry uploader support before publishing
         id: sentry_uploader
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && ((steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')) || (steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')))
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios' || env.INPUT_PLATFORM == 'android')
         run: |
           vp exec node --import tsx --input-type=module --eval 'import * as sourceMapTools from "./scripts/mobile-upload-sourcemaps.ts"; console.log((sourceMapTools.default ?? sourceMapTools).resolveInstalledSentryUploader("packages/mobile"));'
+
+      # Metro's transform cache for the two exports below (docs/mobile-ota-updates.md,
+      # "Metro transform cache"). Without it every publish transforms all ~6,500
+      # modules from scratch: 142 s of a ~3 min 15 s publish step, per platform.
+      # eoas 3.2.6 runs `expo export` without --clear, so a restored store is
+      # reused. @expo/metro-config hard-codes the store to os.tmpdir()/metro-cache,
+      # so the publish steps set TMPDIR (on the step only: a workflow-level var
+      # would break the env parity with the native builds) to a dir under
+      # runner.temp. It must stay outside the workspace, because metro.config.js
+      # watches the whole monorepo.
+      #
+      # The key carries a hash of every EXPO_PUBLIC_* value. babel-preset-expo
+      # writes those values into the transformed code (inline-env-vars), and
+      # Metro's own cache key never sees them, so a transform cached under an old
+      # backend URL, Sentry DSN or PostHog key would be reused and shipped to
+      # every user. The written .env is hashed too, as a second guard: eoas
+      # exports with EXPO_NO_DOTENV=1, so today only process.env is inlined.
+      # GOOGLE_MAPS_API_KEY (Android step only) is left out on purpose: it is not
+      # EXPO_PUBLIC_, and the one plugin that inlines the app config
+      # (expo-inline-manifest) runs for web bundles only.
+      #
+      # The store travels as a workflow ARTIFACT, never through actions/cache.
+      # actions/cache is writable by any main-scope run, including ones that
+      # run PR code (an /ota-preview comment on a fork PR, the migration
+      # renumber bot), and its restore extracts with `tar -P`, which can
+      # overwrite any file the runner user can reach. And the exports never
+      # consume a store produced alongside them in this run: jobs in one run
+      # share an artifact namespace.
+      #
+      # So only this job, on main, uploads a sealed
+      # `metro-ota-store-<key hash>` artifact after it published. The next run
+      # takes the newest one whose producing run passes
+      # scripts/ci/metro-cache-select.ts (right workflow file, branch, event,
+      # repository, success, size), downloads it into a fresh dir, checks every
+      # tar member, and verifies the HMAC seal (scripts/ci/metro-cache-seal.sh,
+      # keyed by METRO_CACHE_HMAC_KEY, a Production secret). The seal stays
+      # mandatory: even an artifact from a trusted run needs the key. A store
+      # that fails is deleted. The publish steps only point TMPDIR at the store
+      # when the check said so. No key: nothing downloaded, nothing uploaded.
+      #
+      # A cache failure must never block a publish: each cache step may fail
+      # without failing the job, and the publish steps don't depend on them.
+      - name: Key the Metro transform cache on the inlined build env
+        id: metro_cache
+        if: steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'
+        continue-on-error: true
+        env:
+          METRO_INPUTS_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/metro-ota/metro-cache"
+          # NUL-separated so no value can run into the next one's name.
+          inlined_env_hash="$(
+            {
+              env -0 | grep -z '^EXPO_PUBLIC_' | LC_ALL=C sort -z
+              printf '\0packages/mobile/.env\0'
+              cat packages/mobile/.env
+            } | sha256sum | cut -d' ' -f1
+          )"
+          prefix="metro-ota-${RUNNER_OS}-${METRO_INPUTS_HASH}-${inlined_env_hash}-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          # The artifact name carries the whole key, hashed to a safe length.
+          echo "store_artifact=metro-ota-store-$(printf '%s' "$prefix" | sha256sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
+
+      - name: Check for the Metro cache seal key
+        id: metro_seal_key
+        if: steps.gate.outputs.configured == 'true' && steps.metro_cache.outcome == 'success'
+        continue-on-error: true
+        env:
+          # A boolean, so this step never holds the key itself.
+          HAS_HMAC_KEY: ${{ secrets.METRO_CACHE_HMAC_KEY != '' }}
+        run: |
+          if [ "$HAS_HMAC_KEY" = true ]; then
+            echo "sealing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sealing=false" >> "$GITHUB_OUTPUT"
+            echo '::notice::METRO_CACHE_HMAC_KEY is not set in the Production environment; Metro exports build cold and nothing is cached.'
+            echo 'Metro cache: off (METRO_CACHE_HMAC_KEY unset); both exports ran cold.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Picks the newest metro-ota-store artifact for this exact key from a
+      # successful trusted run, checked through the Actions API before a byte
+      # is downloaded (see the script's header for every rule). Size is
+      # checked here too, so an oversized artifact is never fetched.
+      - name: Find the newest trusted Metro store
+        id: metro_find
+        if: steps.gate.outputs.configured == 'true' && steps.metro_seal_key.outputs.sealing == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          METRO_STORE_ARTIFACT: ${{ steps.metro_cache.outputs.store_artifact }}
+        run: vp exec tsx scripts/ci/metro-cache-select.ts
+
+      # By the exact artifact id the selector vetted, never by name, so a
+      # same-named artifact uploaded after the check can't take its place (a
+      # replaced artifact has a new id, and the download then fails: cold).
+      # merge-multiple keeps the single artifact's files directly in `path`.
+      # download-artifact rejects path traversal inside the zip; the unpack
+      # step checks sizes and every tar member, and the seal decides the rest.
+      - name: Download the Metro store
+        id: metro_download
+        if: steps.gate.outputs.configured == 'true' && steps.metro_find.outputs.run_id != '' && steps.metro_find.outputs.artifact_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.metro_find.outputs.artifact_id }}
+          run-id: ${{ steps.metro_find.outputs.run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/metro-ota-download
+
+      # Always runs, so the store starts empty whatever came before. Nothing is
+      # written until the tar passes every check: the tar itself and the sum of
+      # its members' sizes within the 1 GiB budget (the selector only saw the
+      # compressed size), only regular files and directories, only Metro's own
+      # layout under metro-cache/. The extract itself is GNU tar without -P (so
+      # it also refuses absolute and .. names) and without owner or mode trust.
+      - name: Unpack the Metro cache artifact
+        id: metro_unpack
+        if: steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/metro-ota-download/metro-cache.tar"
+          parent="$RUNNER_TEMP/metro-ota"
+          store="$parent/metro-cache"
+          rm -rf "$store"
+          mkdir -p "$parent"
+          refuse() {
+            echo "::warning::Metro cache artifact refused: $1. Building cold."
+            echo "Metro cache: artifact refused ($1); this export ran cold." >> "$GITHUB_STEP_SUMMARY"
+            mkdir -p "$store"
+            exit 0
+          }
+          if [ ! -f "$archive" ]; then
+            echo 'No Metro cache artifact; building cold.'
+            mkdir -p "$store"
+            exit 0
+          fi
+          max_bytes="${METRO_CACHE_MAX_BYTES:-1073741824}"
+          archive_bytes="$(stat -c %s "$archive")"
+          [ "$archive_bytes" -le "$max_bytes" ] || refuse "its tar is $archive_bytes bytes, over the $max_bytes-byte budget"
+          names="$(tar --list --file "$archive")" || refuse 'it is not a readable tar archive'
+          types="$(tar --list --verbose --file "$archive" | cut -c1 | LC_ALL=C sort -u | tr -d '\n')" || refuse 'it is not a readable tar archive'
+          case "$types" in
+            '' | '-' | 'd' | '-d') ;;
+            *) refuse 'it holds entries that are not regular files or directories' ;;
+          esac
+          if [ -n "$names" ] && printf '%s\n' "$names" | grep -Evxq 'metro-cache/?|metro-cache/[0-9a-f]{2}/?|metro-cache/[0-9a-f]{2}/[0-9a-f]+\.mp|metro-cache/\.metro-ota-seal'; then
+            refuse 'it names a path outside the Metro store layout'
+          fi
+          # Members' own sizes (sparse members report their expanded size), so
+          # the extract can never write more than the budget.
+          member_bytes="$(tar --list --verbose --numeric-owner --file "$archive" | awk '{ total += $3 } END { printf "%.0f", total }')" || refuse 'it is not a readable tar archive'
+          [ "$member_bytes" -le "$max_bytes" ] || refuse "it unpacks to $member_bytes bytes, over the $max_bytes-byte budget"
+          tar --extract --file "$archive" --directory "$parent" --no-same-owner --no-same-permissions --no-overwrite-dir
+          mkdir -p "$store"
+          echo "Unpacked $(printf '%s\n' "$names" | grep -c '\.mp$' || true) Metro cache entries for verification."
+
+      # Runs whenever an export will, whatever the unpack did. store_ready is
+      # the only thing that lets an export read the store: a check that crashed
+      # leaves it unset, so the exports run cold rather than on unverified files.
+      - name: Verify the Metro cache seal
+        id: metro_verify
+        if: steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'
+        continue-on-error: true
+        env:
+          METRO_CACHE_HMAC_KEY: ${{ secrets.METRO_CACHE_HMAC_KEY }}
+          METRO_CACHE_PREFIX: ${{ steps.metro_cache.outputs.prefix }}
+        run: |
+          if bash scripts/ci/metro-cache-seal.sh verify "$RUNNER_TEMP/metro-ota/metro-cache"; then
+            echo "store_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo '::warning::The Metro cache check did not finish; both exports build cold outside the cache.'
+          fi
 
       # iOS and Android are published in SEPARATE steps with platform-specific env.
       # GOOGLE_MAPS_API_KEY is set only on the Android native prebuild (iOS uses
@@ -683,20 +756,17 @@ jobs:
       # single `--platform all` publish with one env could only ever match one side.
       - name: Publish iOS OTA
         id: publish_ios
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
         continue-on-error: true
         env:
           # V3 control-plane rejects Expo tokens; eoas publish authenticates with the
           # app-scoped EOO_TOKEN. The production channel→branch mapping is a one-time
           # dashboard step, so no admin creds are needed here.
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
-          OTA_EXPECT_RUNTIME_VERSION: ${{ steps.train_guard.outputs.ios_runtime_version }}
-          OTA_EXPECT_MAIN_SHA: ${{ steps.train_baselines.outputs.main_sha }}
-          OTA_EXPECT_TRAIN_SHA: ${{ steps.train_baselines.outputs.train_sha }}
-          OTA_LIVE_STORE_RUNTIMES: ${{ steps.live_store.outputs.live_runtimes }}
-        # The publisher independently confirms a train guard's exact runtime,
-        # then freezes it through export/retries. Other publishes resolve the
-        # current commit's fingerprint directly. That matches the shipped binary — which embeds the same Linux gate
+          # Metro's store lives at $TMPDIR/metro-cache: the verified store, or a
+          # fresh one under runner.temp that is never saved. See the cache-key step.
+          TMPDIR: ${{ steps.metro_verify.outputs.store_ready == 'true' && format('{0}/metro-ota', runner.temp) || runner.temp }}
+        # The publisher resolves the current commit's fingerprint directly. That matches the shipped binary — which embeds the same Linux gate
         # fingerprint (set at build time, ios-testflight-rn.yml) — for a JS-only
         # commit, and on a native change it resolves the NEW fingerprint, so old
         # binaries (still on the old one) never receive JS that needs the new native
@@ -728,19 +798,18 @@ jobs:
 
       - name: Publish Android OTA
         id: publish_android
-        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
         continue-on-error: true
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
-          OTA_EXPECT_RUNTIME_VERSION: ${{ steps.train_guard.outputs.android_runtime_version }}
-          OTA_EXPECT_MAIN_SHA: ${{ steps.train_baselines.outputs.main_sha }}
-          OTA_EXPECT_TRAIN_SHA: ${{ steps.train_baselines.outputs.train_sha }}
-          OTA_LIVE_STORE_RUNTIMES: ${{ steps.live_store.outputs.live_runtimes }}
           # Must match the Android native prebuild (android-apk-rn.yml) so the
           # resolved android.config.googleMaps block — and the freshly-resolved
           # fingerprint — agree with the binary. (No fingerprint override: see the
           # iOS publish step; the publish resolves the current commit's fingerprint.)
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          # Metro's store lives at $TMPDIR/metro-cache: the verified store, or a
+          # fresh one under runner.temp that is never saved. See the cache-key step.
+          TMPDIR: ${{ steps.metro_verify.outputs.store_ready == 'true' && format('{0}/metro-ota', runner.temp) || runner.temp }}
         run: |
           args=(--channel "$OTA_BRANCH" --platform android)
           if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
@@ -758,6 +827,52 @@ jobs:
       - name: Archive staged Android export
         if: inputs.stage_for_production_deploy && steps.publish_android.outcome == 'success'
         run: cp -a packages/mobile/dist ota-stage/android
+
+      # Only main publishes a store. Every event that reaches it is trusted:
+      # main's staging call
+      # from production-deploy.yml, or a dispatch, which needs write access. A
+      # dispatch from any other branch can use a store but never makes one (and
+      # the selector would refuse it anyway). Published only once at least one
+      # platform exported from the verified store, never from a cancelled run,
+      # and only with a seal: the seal step refuses without the key, outside
+      # Metro's layout, or past the 1 GiB budget, and the upload follows it.
+      - name: Seal Metro's OTA transform cache
+        id: metro_seal
+        if: >-
+          !cancelled()
+          && steps.metro_cache.outcome == 'success'
+          && steps.metro_seal_key.outputs.sealing == 'true'
+          && steps.metro_verify.outputs.store_ready == 'true'
+          && github.ref == 'refs/heads/main'
+          && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+        continue-on-error: true
+        env:
+          METRO_CACHE_HMAC_KEY: ${{ secrets.METRO_CACHE_HMAC_KEY }}
+          METRO_CACHE_PREFIX: ${{ steps.metro_cache.outputs.prefix }}
+        run: bash scripts/ci/metro-cache-seal.sh seal "$RUNNER_TEMP/metro-ota/metro-cache"
+
+      - name: Pack the sealed Metro store
+        id: metro_pack
+        if: "!cancelled() && steps.gate.outputs.configured == 'true' && steps.metro_seal.outcome == 'success'"
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/metro-ota-upload"
+          tar --create --file "$RUNNER_TEMP/metro-ota-upload/metro-cache.tar" --directory "$RUNNER_TEMP/metro-ota" \
+            --format=gnu --owner=0 --group=0 --numeric-owner metro-cache
+          bytes="$(stat -c %s "$RUNNER_TEMP/metro-ota-upload/metro-cache.tar")"
+          echo "size_bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "Metro cache: published a sealed store, $bytes bytes before compression." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the sealed Metro store
+        if: "!cancelled() && steps.gate.outputs.configured == 'true' && steps.metro_pack.outcome == 'success'"
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metro_cache.outputs.store_artifact }}
+          path: ${{ runner.temp }}/metro-ota-upload/metro-cache.tar
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Record staged export fingerprints and hashes
         if: inputs.stage_for_production_deploy && steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'
@@ -807,10 +922,6 @@ jobs:
         env:
           IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
           ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
-          # Empty on a main run (the guard step is skipped there); 'false' only
-          # when the train guard deliberately withheld that platform.
-          TRAIN_PUBLISH_IOS: ${{ steps.train_guard.outputs.publish_ios }}
-          TRAIN_PUBLISH_ANDROID: ${{ steps.train_guard.outputs.publish_android }}
         run: |
           set -euo pipefail
           ios_requested=false
@@ -821,41 +932,6 @@ jobs:
             android) android_requested=true ;;
             *) echo "::error::Unknown platform '$INPUT_PLATFORM'"; exit 1 ;;
           esac
-
-          # A platform the train guard withheld was never attempted, so its
-          # `skipped` outcome is the intended result, not a failure. Without this
-          # every train push before the first native change — and every
-          # main→release/next sync — would red the run, and a change that moves
-          # only one platform's fingerprint would red a run whose other publish
-          # succeeded.
-          # A warning, not a notice: a dispatched single-platform republish that
-          # ends here published nothing at all, and the native build that asked
-          # for it is waiting on an update its binary will never receive. Green is
-          # the right result — nothing failed — but it must not look like a
-          # successful publish in the run list.
-          if [ "$TRAIN_PUBLISH_IOS" = false ]; then
-            ios_requested=false
-            echo "::warning::iOS published nothing: the train's fingerprint guard withheld it (no native change of the train's own, or a newer train commit decides). Not counted toward this run's result."
-          fi
-          if [ "$TRAIN_PUBLISH_ANDROID" = false ]; then
-            android_requested=false
-            echo "::warning::Android published nothing: the train's fingerprint guard withheld it (no native change of the train's own, or a newer train commit decides). Not counted toward this run's result."
-          fi
-
-          # Every requested platform was withheld: nothing was published, so both
-          # outputs must be FALSE and the step must stop here. `all_success=true`
-          # would be a vacuous claim that every platform shipped, and the steps
-          # that consume it act on that claim — the served-manifest verify would
-          # go looking for an update that was never published and fail the run.
-          # Falling through instead would compute all_success=true for the same
-          # reason (no requested platform left to contradict it), which is exactly
-          # what this branch exists to prevent.
-          if [ "$ios_requested" = false ] && [ "$android_requested" = false ]; then
-            echo "all_success=false" >> "$GITHUB_OUTPUT"
-            echo "any_success=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::The train owns none of the requested runtimeVersion(s) — nothing to publish from it."
-            exit 0
-          fi
 
           all_success=true
           any_success=false
@@ -1140,67 +1216,3 @@ jobs:
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
-
-  notify-train-deployment:
-    needs: [publish, live-store-runtimes]
-    if: always() && !cancelled() && github.ref == 'refs/heads/release/next'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    continue-on-error: true
-    environment: Production
-    steps:
-      # Outputs carry only publication results; webhook delivery runs main code.
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: main
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22.x'
-      - name: Record confirmed train publications and failures
-        env:
-          SOURCE_COMMIT: ${{ github.sha }}
-          TRAIN_VERSION: ${{ needs.publish.outputs.train_version }}
-          IOS_OUTCOME: ${{ needs.publish.outputs.ios_outcome }}
-          ANDROID_OUTCOME: ${{ needs.publish.outputs.android_outcome }}
-          IOS_RUNTIME: ${{ needs.publish.outputs.ios_runtime }}
-          ANDROID_RUNTIME: ${{ needs.publish.outputs.android_runtime }}
-          PUBLISH_RESULT: ${{ needs.publish.result }}
-          STORE_RESULT: ${{ needs.live-store-runtimes.result }}
-        run: |
-          set -euo pipefail
-          for platform in ios android; do
-            outcome="$IOS_OUTCOME"
-            runtime="$IOS_RUNTIME"
-            if [ "$platform" = android ]; then outcome="$ANDROID_OUTCOME"; runtime="$ANDROID_RUNTIME"; fi
-            if [ "$outcome" != success ]; then continue; fi
-            args=(record --events train-deployment-events.json --kind train-published
-              --branch production --commit "$SOURCE_COMMIT" --platform "$platform"
-              --runtime "$runtime" --percentage 100 --reason 'release/next published immediately')
-            if [ -n "$TRAIN_VERSION" ]; then args+=(--version "$TRAIN_VERSION"); fi
-            node --experimental-strip-types scripts/mobile-ota-notify.ts "${args[@]}"
-          done
-          if [ "$PUBLISH_RESULT" = failure ] || [ "$STORE_RESULT" = failure ]; then
-            node --experimental-strip-types scripts/mobile-ota-notify.ts record \
-              --events train-deployment-events.json --kind failed --branch production \
-              --commit "$SOURCE_COMMIT" --reason "Train OTA: publish=$PUBLISH_RESULT, public-store evidence=$STORE_RESULT. Successful platforms remain published."
-          fi
-      - name: Deliver train deployment events
-        env:
-          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-        run: |
-          if [ -f train-deployment-events.json ]; then
-            node --experimental-strip-types scripts/mobile-ota-notify.ts deliver --events train-deployment-events.json
-          fi
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: train-deployment-events
-          path: train-deployment-events.json
-          if-no-files-found: ignore
-          retention-days: 30
-      - name: Surface train notification failure
-        if: failure()
-        run: |
-          echo '::warning::Train Discord delivery failed; successful OTA publications remain valid.'
-          echo 'Train Discord delivery failed. Pending events remain in the retained artifact.' >> "$GITHUB_STEP_SUMMARY"

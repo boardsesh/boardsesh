@@ -230,7 +230,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         run: vp install --frozen-lockfile
@@ -317,6 +317,7 @@ jobs:
         id: buildx-fleet
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
         with:
+          cache-binary: false
           driver: remote
           endpoint: docker-container://boardsesh-buildkitd-deploy
 
@@ -324,6 +325,8 @@ jobs:
         if: runner.environment == 'github-hosted'
         id: buildx-hosted
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          cache-binary: false
 
       - name: Extract web image metadata
         id: meta
@@ -491,6 +494,7 @@ jobs:
         id: buildx-fleet
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
         with:
+          cache-binary: false
           driver: remote
           endpoint: docker-container://boardsesh-buildkitd-deploy
 
@@ -498,6 +502,8 @@ jobs:
         if: runner.environment == 'github-hosted'
         id: buildx-hosted
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          cache-binary: false
 
       - name: Extract metadata
         id: meta
@@ -571,7 +577,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         run: vp install --frozen-lockfile
@@ -655,7 +661,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         run: vp install --frozen-lockfile
@@ -737,15 +743,69 @@ jobs:
           fi
           exit 1
 
+  # Read-only admission: only a stamped, publicly unreleased native pair can
+  # bypass the daily stable schedule. Released runtimes keep their normal soak.
+  unreleased-native-ota:
+    needs: [detect-changes, stage-mobile-ota]
+    if: >-
+      needs.stage-mobile-ota.result == 'success'
+      && vars.OTA_STABLE_RELEASE_ENABLED == 'true'
+      && needs.detect-changes.outputs.critical_ota != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    permissions:
+      contents: read
+    outputs:
+      eligible: ${{ steps.admission.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mobile-ota-stage
+          path: ota-stage
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Read fresh public stores and protected native history
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet --no-tags origin '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/*:refs/tags/*'
+          node --experimental-strip-types scripts/mobile-live-store-runtimes.ts --out "$RUNNER_TEMP/live-store-runtimes.json"
+      - name: Admit only an exact unreleased native candidate
+        id: admission
+        run: >-
+          node --experimental-strip-types scripts/mobile-ota-unreleased-native.ts
+          --stage ota-stage --source-sha "$GITHUB_SHA"
+          --live-store-runtimes "$RUNNER_TEMP/live-store-runtimes.json"
+
   # No polling runner: this starts only after staging and the backend deploy
   # have both finished. The live schema is checked again before any production
   # upload, including when backend_changed was false or deployment was held.
   promote-mobile-ota:
-    needs: [detect-changes, stage-mobile-ota, build-web, build-backend, migrate, deploy-production-backend]
+    needs:
+      [
+        detect-changes,
+        stage-mobile-ota,
+        build-web,
+        build-backend,
+        migrate,
+        deploy-production-backend,
+        unreleased-native-ota,
+      ]
     if: >-
       always()
       && needs.detect-changes.result == 'success'
-      && (vars.OTA_STABLE_RELEASE_ENABLED != 'true' || needs.detect-changes.outputs.critical_ota == 'true')
+      && (vars.OTA_STABLE_RELEASE_ENABLED != 'true' || needs.detect-changes.outputs.critical_ota == 'true' || needs.unreleased-native-ota.outputs.eligible == 'true')
       && needs.detect-changes.outputs.ota_changed == 'true'
       && needs.stage-mobile-ota.result == 'success'
       && (needs.build-web.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.build-web.result == 'skipped'))
@@ -851,6 +911,23 @@ jobs:
             ota-stage/critical-receipt.json
           retention-days: 30
           if-no-files-found: error
+
+      # Store status can change while backend readiness waits. Re-admit inside
+      # the production lock immediately before writing, never from a saved flag.
+      - name: Recheck unreleased native admission before publication
+        if: needs.unreleased-native-ota.outputs.eligible == 'true'
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet --no-tags origin '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/*:refs/tags/*'
+          node --experimental-strip-types scripts/mobile-live-store-runtimes.ts --out "$RUNNER_TEMP/live-store-runtimes.json"
+          node --experimental-strip-types scripts/mobile-ota-unreleased-native.ts \
+            --stage ota-stage --source-sha "$GITHUB_SHA" \
+            --live-store-runtimes "$RUNNER_TEMP/live-store-runtimes.json" --require-eligible
 
       - name: Promote exact staged iOS and Android exports
         id: promote
@@ -958,7 +1035,7 @@ jobs:
           node --experimental-strip-types scripts/mobile-ota-promote-track.ts ota-stage --verify-empty-target
 
   verify-mobile-ota:
-    needs: [detect-changes, stage-mobile-ota, promote-mobile-ota, promote-early-mobile-ota]
+    needs: [detect-changes, stage-mobile-ota, promote-mobile-ota, promote-early-mobile-ota, unreleased-native-ota]
     if: always() && needs.detect-changes.outputs.ota_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -970,9 +1047,17 @@ jobs:
           EARLY_RESULT: ${{ needs.promote-early-mobile-ota.result }}
           DAILY_ENABLED: ${{ vars.OTA_STABLE_RELEASE_ENABLED }}
           CRITICAL_OTA: ${{ needs.detect-changes.outputs.critical_ota }}
+          NATIVE_ADMISSION_RESULT: ${{ needs.unreleased-native-ota.result }}
+          UNRELEASED_NATIVE: ${{ needs.unreleased-native-ota.outputs.eligible }}
         run: |
           expected_production=success
-          if [ "$DAILY_ENABLED" = true ] && [ "$CRITICAL_OTA" != true ]; then expected_production=skipped; fi
+          if [ "$DAILY_ENABLED" = true ] && [ "$CRITICAL_OTA" != true ]; then
+            if [ "$NATIVE_ADMISSION_RESULT" != success ]; then
+              echo "::error::Unreleased native OTA admission failed."
+              exit 1
+            fi
+            if [ "$UNRELEASED_NATIVE" != true ]; then expected_production=skipped; fi
+          fi
           if [ "$STAGE_RESULT" != success ] || [ "$EARLY_RESULT" != success ] || [ "$PROMOTE_RESULT" != "$expected_production" ]; then
             echo "::error::Main OTA not promoted (critical=$CRITICAL_OTA, stage=$STAGE_RESULT, early=$EARLY_RESULT, production=$PROMOTE_RESULT)."
             exit 1
@@ -981,7 +1066,7 @@ jobs:
   # Keeps main's committed What's New current. The native builds (TestFlight, Play
   # internal, store) embed main's copy of changelog.generated.json; an OTA carries its
   # own regenerated copy. This used to be a step in promote-mobile-ota, which skips
-  # every non-critical OTA since the daily stable release (#6267), so main's copy
+  # released-runtime non-critical OTAs under the daily stable policy, so main's copy
   # froze. It runs after verify-mobile-ota, so whichever promotion this run owed has
   # landed. No environment: OTA_PUSH_APP_PRIVATE_KEY is a repository secret, and a job
   # waiting at an environment gate holds this run's group for every later push.
@@ -1195,7 +1280,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         run: vp install --frozen-lockfile
@@ -1234,7 +1319,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         run: vp install --frozen-lockfile
@@ -1300,6 +1385,25 @@ jobs:
           fi
           echo "ok: found the production-web environment tag in the emitted bundles"
 
+      - name: Carry the previous deploys' chunks forward
+        id: carryover
+        # Pages serves only the current deployment's files, so without this a
+        # tab opened before the deploy 404s on its next lazy route (#5780). The
+        # script reads the live site (its shell and /chunk-carryover.json) and
+        # copies up to 3 days / 4000 files of older chunks into the export. It
+        # runs after the export checks above, so carried files never count
+        # toward the eager budget or the baked-env grep. Best effort: the script
+        # exits 0 on any error with a ::warning::, stops after 60 s, and this
+        # step may not fail or hold the deploy either way.
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          node scripts/lib/carry-over-expo-web-chunks.mjs "$RUNNER_TEMP/app-standalone" \
+            --live https://app.boardsesh.com \
+            --max-age-days 3 \
+            --max-files 4000 \
+            --budget-ms 60000
+
       - name: Add Cloudflare Pages host config to the export
         # _redirects (SPA fallback) + _headers (noindex/caching/no-CSP) are host
         # config, not part of the export. Copy them into the publish dir.
@@ -1339,7 +1443,10 @@ jobs:
         # check retries a short propagation loop. Verifies: root serves the HTML
         # shell, a deep route SPA-falls back to the shell, a content-hashed asset
         # is immutable-cached, index.html is NOT immutable, noindex is present,
-        # and the WASM binary serves with a wasm/octet content type.
+        # the WASM binary serves with a wasm/octet content type, and the previous
+        # deploy's entry chunk still serves after carry-over.
+        env:
+          PREVIOUS_ENTRY: ${{ steps.carryover.outputs.previous_entry }}
         run: |
           set -uo pipefail
           base=https://app.boardsesh.com
@@ -1401,18 +1508,17 @@ jobs:
           # mounts, and #root stays empty with no console error to explain it.
           # That is the exact silent failure this now catches, one step earlier
           # and with a message that says which part was wrong.
-          check_entry_chunk_is_js() {
-            local asset_path
-            asset_path=$(curl -sS --max-time 20 "$base/" \
-              | grep -oE '/_expo/static/[^"'"'"']+\.js' | head -n1)
-            [ -n "$asset_path" ] || { echo "  no /_expo asset found in index.html"; return 1; }
-
+          #
+          # check_chunk_is_js takes the chunk path, so the previous deploy's
+          # entry (carried forward, #5780) gets the same three checks.
+          check_chunk_is_js() {
+            local asset_path="$1"
             local head; head=$(curl -sSI --max-time 20 "$base$asset_path" | tr -d '\r')
             echo "$head" | grep -qiE '^content-type:.*javascript' || {
               echo "  $asset_path"
               echo "    status:       $(echo "$head" | head -n1 || echo '(none)')"
               echo "    content-type: $(echo "$head" | grep -i '^content-type:' || echo '(none)')"
-              echo "  the entry chunk index.html names is not being served as JavaScript."
+              echo "  this chunk is not being served as JavaScript."
               echo "  404 → the chunk is missing from the deployment (or has not propagated yet)."
               echo "  text/html → the SPA fallback answered it, which also means the asset-404"
               echo "    Function is not in the path; see deploy/app-subdomain/functions/_middleware.ts."
@@ -1442,6 +1548,21 @@ jobs:
               '<!doctype'*|'<!DOCTYPE'*|'<html'*)
                 echo "  $asset_path served the HTML shell, not JavaScript"; return 1 ;;
             esac
+          }
+
+          check_entry_chunk_is_js() {
+            local asset_path
+            asset_path=$(curl -sS --max-time 20 "$base/" \
+              | grep -oE '/_expo/static/[^"'"'"']+\.js' | head -n1)
+            [ -n "$asset_path" ] || { echo "  no /_expo asset found in index.html"; return 1; }
+            check_chunk_is_js "$asset_path"
+          }
+
+          # The carry-over step names the entry the live shell loaded before this
+          # deploy, and only when it put that file in the export. A failure here
+          # means a tab opened before the deploy can no longer load its routes.
+          check_previous_entry_chunk() {
+            check_chunk_is_js "$PREVIOUS_ENTRY"
           }
 
           check_manifest_link() {
@@ -1488,6 +1609,11 @@ jobs:
           retry "wasm binary → 200 wasm/octet-stream"     check_wasm
           retry "index.html is NOT immutable-cached"      check_index_not_immutable
           retry "entry chunk serves as immutable JavaScript"  check_entry_chunk_is_js
+          if [ -n "${PREVIOUS_ENTRY:-}" ]; then
+            retry "previous deploy's entry chunk still serves as JavaScript"  check_previous_entry_chunk
+          else
+            echo "skip: no previous entry was carried (first deploy, or carry-over failed open)"
+          fi
           retry "PWA manifest → JSON with start_url/scope /"  check_manifest_link
 
       - name: Install Playwright chromium
@@ -1616,6 +1742,7 @@ jobs:
       [
         detect-changes,
         stage-mobile-ota,
+        unreleased-native-ota,
         promote-mobile-ota,
         promote-early-mobile-ota,
         verify-mobile-ota,
@@ -1683,6 +1810,7 @@ jobs:
       [
         detect-changes,
         stage-mobile-ota,
+        unreleased-native-ota,
         promote-mobile-ota,
         promote-early-mobile-ota,
         verify-mobile-ota,
@@ -1802,7 +1930,7 @@ jobs:
             if [ "$CRITICAL_OTA" = true ]; then
               OTA_LINE="$OTA_LINE; critical release promoted to 100% stable"
             else
-              OTA_LINE="$OTA_LINE; production promoted (before daily cutover)"
+              OTA_LINE="$OTA_LINE; production promoted"
             fi
           fi
 

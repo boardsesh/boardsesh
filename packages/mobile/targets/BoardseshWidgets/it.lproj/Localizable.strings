@@ -1,0 +1,45 @@
+/* Lock Screen and Dynamic Island controls */
+"Prev" = "Indietro";
+"Next" = "Avanti";
+"Previous climb" = "Blocco precedente";
+"Next climb" = "Blocco successivo";
+"Mirror climb" = "Specchia il blocco";
+"Unmirror climb" = "Annulla specchiatura";
+"Tap to reconnect" = "Tocca per riconnettere";
+"Board disconnected. Tap to reconnect" = "Pannello disconnesso. Tocca per riconnettere";
+/* Disconnected card: the last tap failed, or no board is remembered */
+"Board didn't answer. Tap again" = "Il pannello non risponde. Tocca di nuovo";
+"Board didn't answer. Tap to try again" = "Il pannello non risponde. Tocca per riprovare";
+"Turn on Bluetooth, then tap" = "Attiva il Bluetooth, poi tocca";
+"Bluetooth is off. Turn it on, then tap to reconnect" = "Il Bluetooth è disattivato. Attivalo, poi tocca per riconnettere";
+"Open Boardsesh to connect" = "Apri Boardsesh per connetterti";
+"Board disconnected. Open Boardsesh to connect" = "Pannello disconnesso. Apri Boardsesh per connetterti";
+"On the wall" = "In parete";
+"%@ is on the wall" = "%@ è in parete";
+"Wall held by another climber" = "Pannello controllato da un altro climber";
+
+/* Shown when the card has had no update for 10 minutes */
+"Open Boardsesh to refresh" = "Apri Boardsesh per aggiornare";
+
+/* Climb details: "3 of 12" is the queue position */
+"%lld of %lld" = "%lld di %lld";
+"Grade %@" = "Grado %@";
+
+/* Rest timer (#6513) */
+"Rest timer" = "Timer di recupero";
+/* "Rest" is the rest period between attempts (noun); "Paused" is the stopped timer. Keep them distinct. */
+"Rest" = "Recupero";
+"Over your rest" = "Recupero superato";
+"Paused" = "In pausa";
+"Every %@" = "Ogni %@";
+"Queue's empty" = "Coda vuota";
+"Since your last climb" = "Dal tuo ultimo blocco";
+"Log a climb to start" = "Registra una salita per iniziare";
+
+/* Driving the wall (2.7): what the wall does with the next pick */
+"Wall lit" = "Pannello illuminato";
+"Picks are previews" = "I blocchi si aprono in anteprima";
+"Driving the wall" = "Guidi tu il pannello";
+"Every climb you pick lights up" = "Ogni blocco che scegli si illumina in parete";
+"Lights the climb again" = "Illumina di nuovo il blocco";
+"Stops driving" = "Termina la guida del pannello";

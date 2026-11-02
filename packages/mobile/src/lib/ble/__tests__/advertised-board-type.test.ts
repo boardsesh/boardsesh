@@ -20,11 +20,13 @@ describe('advertisedBoardTypesBySerial', () => {
     const advertisedTypes = advertisedBoardTypesBySerial([
       { name: 'Tension Board#12345@3' },
       { name: 'Kilter Board#99@3' },
+      { name: 'MoonBoard A#99000003' },
     ]);
 
     expect([...advertisedTypes]).toEqual([
       ['12345', 'tension'],
       ['99', 'kilter'],
+      ['99000003', 'moonboard'],
     ]);
   });
 

@@ -798,10 +798,23 @@ to the current account and auth generation, so another account's response cannot
 remove early-update membership. SDK startup and reset restore current connectivity
 and remembered OTA super properties after asynchronous consent initialization.
 
-Mobile signup/login conversions taken with an existing Allow can wait up to
-two minutes for account consent and SDK identity to resolve. This bounded,
-memory-only work belongs to the authentication epoch and keeps the conversion's
-original timestamp. A withdrawal, kill switch or account replacement discards
-it; later Allow never replays a conversion taken without consent.
+From 2.7.0, native signup/login conversions taken with an existing Allow can
+wait up to two minutes for account consent and SDK identity to resolve. The
+auth provider captures a memory-only handoff when sign-in succeeds, fences it
+to the committed credential generation, then binds the verified account and
+the final authentication epoch. An unanswered account can temporarily clear
+the device answer to null: the handoff preserves the earlier choice as
+evidence for waiting, never as permission to send. SDK transport and Apple
+token exchange remain blocked until current account authority resolves.
+
+The handoff preserves the same previously consented anonymous SDK identity
+and Apple attribution result, allowing the first verified account to inherit
+its campaign properties after its own Allow. It never repeats the install
+event. Expiry notifies the SDK and attribution owners even without another
+consent update, so pending data cannot remain held indefinitely. A withdrawal,
+kill switch, sign-out or credential/account replacement discards pending work
+permanently. A later Allow never replays a conversion taken without consent.
+A confirmed region default can seed a product-conversion handoff, but cannot
+authorize Apple attribution. No pending conversion is persisted or backfilled.
 
 Consent copy and equal-choice controls follow the [EDPB consent guidelines](https://www.edpb.europa.eu/sites/default/files/files/file1/edpb_guidelines_202005_consent_en.pdf). Declining does not limit the app, and withdrawal uses the same two-choice controls.

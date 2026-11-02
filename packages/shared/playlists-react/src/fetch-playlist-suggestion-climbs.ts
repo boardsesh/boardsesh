@@ -21,17 +21,19 @@ const PLAYLIST_TRACK_FIRST_LOAD_CLIMBS_AFTER_ACTIVE = 250;
 // checklist bans drain-until-`hasMore` outright. Hitting it is a bug, so the
 // mobile caller reports it to Sentry rather than telling the climber.
 //
-// 20 is chosen against the budget this guard exists to protect, not by feel:
-//   20 pages x PLAYLIST_PAGE_MAX_ATTEMPTS (2) = 40 requests worst case,
-//   against `applyRateLimit(ctx, 60, 'smartPlaylist')` — a fixed 60-per-60s
-//   bucket keyed `${userId}:smartPlaylist` and SHARED with the list screen's
-//   own infinite scroll. 40 leaves 20 requests of headroom; 30 pages would put
-//   the worst case at exactly 60, i.e. sitting on the trip point.
+// Each page can use its first request plus one transport and one rate-limit
+// retry: 20 pages x 3 = 60 requests worst case. `smartPlaylist` has a shared
+// 60-per-60s bucket, so this bound does not guarantee rate-limit headroom for a
+// long smart logbook. Only the recommendations stop after 6 pages (18 requests
+// worst case). Keep the page bound independent of retries so a legitimate long
+// playlist or logbook does not lose pages because an earlier request failed.
 // 20 x 100 climbs is still a 2,000-climb queue, far past any real session.
 export const MAX_PLAYLIST_QUEUE_REPLACE_PAGES = 20;
 
-// One retry per page. A dropped fetch on gym wifi recovers on the second try;
-// a third almost never lands and just doubles the time to the error toast.
+// One retry per error class per page. A dropped fetch on gym wifi must not
+// spend the retry for a subsequent short rate limit, or the other way around.
+// Repeating the same failure still stops after two attempts; mixed failures
+// can issue at most three requests for the page.
 export const PLAYLIST_PAGE_MAX_ATTEMPTS = 2;
 const PLAYLIST_PAGE_RETRY_DELAY_MS = 600;
 const PLAYLIST_PAGE_RETRY_JITTER_MS = 250;
@@ -167,7 +169,8 @@ function defaultAbortableSleep(ms: number, signal: AbortSignal): Promise<void> {
  *   1. abort wins over everything and is never retried;
  *   2. a short `RATE_LIMITED` is waited out and the same page re-issued; a long
  *      one is rethrown so the climber gets an answer instead of a spinner;
- *   3. a transport failure (`isRetryable`) gets one more attempt;
+ *   3. a transport failure (`isRetryable`) gets one more attempt, independently
+ *      of the page's rate-limit retry;
  *   4. anything else — a GraphQL validation error, a 4xx, the logbook resolver's
  *      `User not found` — is rethrown immediately. Retrying a deterministic
  *      server verdict buys nothing and doubles the time to the same toast.
@@ -201,9 +204,9 @@ export async function drainPlaylistPages({
   let droppedDuplicates = false;
 
   const fetchPageWithRetry = async (pageIndex: number): Promise<PlaylistSuggestionPage> => {
-    let attempt = 0;
+    let transportRetries = 0;
+    let rateLimitRetries = 0;
     for (;;) {
-      attempt += 1;
       try {
         return await fetchPage({ page: pageIndex, pageSize, signal });
       } catch (error) {
@@ -215,17 +218,19 @@ export async function drainPlaylistPages({
         // shape alone turns a cancellation the climber asked for into a red
         // toast plus a Sentry event.
         if (signal.aborted || isAbortError(error)) throw createAbortError();
-        if (attempt >= PLAYLIST_PAGE_MAX_ATTEMPTS) throw error;
-
         const retryAfterSeconds = parseRetryAfterSeconds(error);
         if (retryAfterSeconds !== null) {
           const waitMs = retryAfterSeconds * 1000;
-          if (waitMs > PLAYLIST_RATE_LIMIT_MAX_WAIT_MS) throw error;
+          if (waitMs > PLAYLIST_RATE_LIMIT_MAX_WAIT_MS || rateLimitRetries >= PLAYLIST_PAGE_MAX_ATTEMPTS - 1) {
+            throw error;
+          }
+          rateLimitRetries += 1;
           await sleep(waitMs + random() * PLAYLIST_PAGE_RETRY_JITTER_MS, signal);
           continue;
         }
 
-        if (!isRetryable(error)) throw error;
+        if (!isRetryable(error) || transportRetries >= PLAYLIST_PAGE_MAX_ATTEMPTS - 1) throw error;
+        transportRetries += 1;
         await sleep(PLAYLIST_PAGE_RETRY_DELAY_MS + random() * PLAYLIST_PAGE_RETRY_JITTER_MS, signal);
       }
     }

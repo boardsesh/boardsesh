@@ -13,7 +13,7 @@ const params = vi.hoisted(() => ({ current: {} as Record<string, string | undefi
 const navigation = vi.hoisted(() => ({
   setOptions: vi.fn(),
   goBack: vi.fn(),
-  beforeRemove: null as null | (() => void),
+  removed: null as null | (() => void),
 }));
 const picker = vi.hoisted(() => ({ props: null as SetterPickerListProps | null }));
 const header = vi.hoisted(() => ({ trailing: null as null | { label: string; onPress: () => void } }));
@@ -36,9 +36,9 @@ vi.mock('expo-router', () => ({
     setOptions: navigation.setOptions,
     goBack: navigation.goBack,
     addListener: (event: string, listener: () => void) => {
-      if (event === 'beforeRemove') navigation.beforeRemove = listener;
+      if (event === 'removed') navigation.removed = listener;
       return () => {
-        navigation.beforeRemove = null;
+        navigation.removed = null;
       };
     },
   }),
@@ -82,7 +82,7 @@ beforeEach(() => {
   };
   navigation.setOptions.mockReset();
   navigation.goBack.mockReset();
-  navigation.beforeRemove = null;
+  navigation.removed = null;
   picker.props = null;
   header.trailing = null;
   settersHook.calls = [];
@@ -147,7 +147,7 @@ describe('LogbookSettersScreen', () => {
     render(createElement(LogbookSettersScreen));
     act(() => picker.props?.onToggle('alex'));
     expect(received).toEqual([]);
-    act(() => navigation.beforeRemove?.());
+    act(() => navigation.removed?.());
     expect(received).toEqual([{ setterUsernames: ['sam', 'alex'], apply: false }]);
   });
 
@@ -157,14 +157,14 @@ describe('LogbookSettersScreen', () => {
     act(() => header.trailing?.onPress());
     act(() => header.trailing?.onPress());
     expect(navigation.goBack).toHaveBeenCalledTimes(1);
-    act(() => navigation.beforeRemove?.());
+    act(() => navigation.removed?.());
     expect(received).toEqual([{ setterUsernames: ['sam'], apply: true }]);
   });
 
   it('hands the picks to nobody when opened without a Logbook to return to', () => {
     params.current = { ...params.current, handoffId: undefined };
     render(createElement(LogbookSettersScreen));
-    act(() => navigation.beforeRemove?.());
+    act(() => navigation.removed?.());
     expect(received).toEqual([]);
   });
 

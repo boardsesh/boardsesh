@@ -1,4 +1,11 @@
 // @vitest-environment jsdom
+vi.mock('../../lib/schedule-idle-task', () => ({
+  scheduleIdleTask: (task: () => void) => {
+    task();
+    return { cancel: () => {} };
+  },
+}));
+
 vi.mock('../../components/AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -150,12 +157,6 @@ vi.mock('../../db/use-offline-schema-ready', () => ({ useOfflineSchemaReady: () 
 // gate get as far as its own decision, which is what the assertions look for.
 vi.mock('react-native', () => ({
   AppState: { currentState: 'active', addEventListener: () => ({ remove: () => {} }) },
-  InteractionManager: {
-    runAfterInteractions: (task: () => void) => {
-      task();
-      return { cancel: () => {} };
-    },
-  },
   AccessibilityInfo: { announceForAccessibility: () => {} },
   Pressable: () => null,
   View: () => null,
@@ -305,7 +306,10 @@ describe('expo-sqlite still freezes children', () => {
     // suite (and the warning in database-provider.tsx) needs a second look.
     const packageJsonPath = createRequire(import.meta.url).resolve('expo-sqlite/package.json');
     const hooksSource = readFileSync(join(dirname(packageJsonPath), 'build', 'hooks.js'), 'utf8');
-    const normalized = hooksSource.replace(/\s+/g, ' ');
+    const normalized = hooksSource
+      .replace(/\/\*#__PURE__\*\//g, '')
+      .replace(/\s*=>\s*/g, ' => ')
+      .replace(/\s+/g, ' ');
 
     expect(normalized).toContain('export const SQLiteProvider = memo(function SQLiteProvider(');
     const comparator =

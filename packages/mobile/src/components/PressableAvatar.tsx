@@ -20,6 +20,7 @@ type PressableAvatarProps = {
    * when there's no `userId`, so the meaning survives an anonymous holder.
    */
   accessibilityLabel?: string;
+  testID?: string;
 };
 
 /**
@@ -36,6 +37,7 @@ export const PressableAvatar = memo(function PressableAvatar({
   name,
   size = 40,
   accessibilityLabel,
+  testID,
 }: PressableAvatarProps) {
   const router = useRouter();
   const { t } = useTranslation('common');
@@ -47,7 +49,7 @@ export const PressableAvatar = memo(function PressableAvatar({
   }, [router, userId]);
 
   if (!userId) {
-    return <Avatar uri={uri} name={name} size={size} accessibilityLabel={accessibilityLabel} />;
+    return <Avatar testID={testID} uri={uri} name={name} size={size} accessibilityLabel={accessibilityLabel} />;
   }
 
   // Pad small avatars up to a 44pt target without enlarging the visible art.
@@ -55,6 +57,7 @@ export const PressableAvatar = memo(function PressableAvatar({
 
   return (
     <PressableSurface
+      testID={testID}
       onPress={handlePress}
       feedback="opacity"
       rippleBorderless

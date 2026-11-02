@@ -1,8 +1,10 @@
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 // Private, not the shared public OG headers: the card draws the linked
 // account's name and avatar under a version token that never changes, so a
-// public copy would keep showing them after that account went private. The
-// grade bars below are public climb data and do not need this on their own.
+// public copy would keep showing them after the account renamed itself,
+// unlinked the board login, or went private with no climb of its own under this
+// name. The grade bars below are public climb data and do not need this on
+// their own.
 import { createPrivateOgImageHeaders as createOgImageHeaders } from '@/app/lib/seo/private-og-headers';
 import React from 'react';
 import { ImageResponse } from '@vercel/og';

@@ -43,10 +43,10 @@ describe('pinned-chips-store', () => {
     expect(await loadPinnedChips()).toEqual(DEFAULT_PINNED_CHIPS);
   });
 
-  it('loads a stored set, normalized into canonical order', async () => {
+  it('loads a stored set in the order it was saved', async () => {
     (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'recent', 'grade']));
     const { loadPinnedChips } = await import('../pinned-chips-store');
-    expect(await loadPinnedChips()).toEqual(['recent', 'grade', 'rating']);
+    expect(await loadPinnedChips()).toEqual(['rating', 'recent', 'grade']);
   });
 
   it('drops unknown kinds from a stored payload', async () => {
@@ -95,11 +95,12 @@ describe('pinned-chips-store', () => {
   it('drops "shape" from storage once Tall or Wide is unpinned, so the unpinned one stays off', async () => {
     (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'shape', '!recent']));
     const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
-    expect(await loadPinnedChips()).toEqual(['tall', 'wide', 'rating']);
+    // The legacy Shape pin becomes Tall + Wide where it stood.
+    expect(await loadPinnedChips()).toEqual(['rating', 'tall', 'wide']);
     // After the split, Tall and Wide unpin independently.
     await togglePinnedChip('tall');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-    expect(JSON.parse(raw as string)).toEqual(['wide', 'rating', '!recent']);
+    expect(JSON.parse(raw as string)).toEqual(['rating', 'wide', '!recent']);
   });
 
   it('round-trips a persisted set with the "shape" alias without duplicating Tall or Wide', async () => {
@@ -126,7 +127,7 @@ describe('pinned-chips-store', () => {
     expect(await loadPinnedChips()).toEqual(DEFAULT_PINNED_CHIPS);
   });
 
-  it('togglePin removes a pinned kind and persists the canonical-ordered rest', async () => {
+  it('togglePin removes a pinned kind and persists the rest in their order', async () => {
     const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
     await loadPinnedChips();
     await togglePinnedChip('collection');
@@ -143,14 +144,38 @@ describe('pinned-chips-store', () => {
     ]);
   });
 
-  it('togglePin re-adds an unpinned kind back into canonical order', async () => {
+  it('togglePin pins an unpinned kind last', async () => {
     (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['recent', 'grade', 'rating']));
     const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
     await loadPinnedChips();
     await togglePinnedChip('collection');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-    // collection slots between grade and rating per catalog order, not at the end.
-    expect(JSON.parse(raw as string)).toEqual(['recent', 'grade', 'collection', 'rating']);
+    // At the end of the row, where the climber can move it from.
+    expect(JSON.parse(raw as string)).toEqual(['recent', 'grade', 'rating', 'collection']);
+  });
+
+  it('moves a pin and keeps the order, with the Shape alias, across a restart', async () => {
+    const storage = await getMockStorage();
+    const { loadPinnedChips, climbPinnedChipsStore, resetPinnedChipsStoreForTests } =
+      await import('../pinned-chips-store');
+    await loadPinnedChips();
+    await climbPinnedChipsStore.move('rating', -1);
+    await climbPinnedChipsStore.move('tall', -1);
+    const moved = ['recent', 'grade', 'progress', 'tall', 'collection', 'wide', 'rating', 'popularity'];
+    expect(await loadPinnedChips()).toEqual(moved);
+    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual([
+      'recent',
+      'grade',
+      'progress',
+      'tall',
+      'collection',
+      'wide',
+      'shape',
+      'rating',
+      'popularity',
+    ]);
+    resetPinnedChipsStoreForTests();
+    expect(await loadPinnedChips()).toEqual(moved);
   });
 
   it('a set before load wins over the persisted value (no clobber on race)', async () => {
@@ -216,18 +241,19 @@ describe('pinned-chips-store: the Recent pin', () => {
     expect(afterRestart).not.toContain('recent');
     expect(afterRestart).toEqual(DEFAULT_PINNED_CHIPS.filter((kind) => kind !== 'recent'));
 
+    // Pinned again, it goes last like any pin; the climber can move it back up.
     await togglePinnedChip('recent');
-    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual(['recent', ...savedBeforeRecentPin]);
+    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual([...savedBeforeRecentPin, 'recent']);
     resetPinnedChipsStoreForTests();
-    expect(await loadPinnedChips()).toEqual(DEFAULT_PINNED_CHIPS);
+    expect(await loadPinnedChips()).toEqual([...DEFAULT_PINNED_CHIPS.filter((kind) => kind !== 'recent'), 'recent']);
   });
 
   it('leaves every other pin alone when Recent is hidden', async () => {
     (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['sort', 'beta', 'grade']));
     const { loadPinnedChips, togglePinnedChip, resetPinnedChipsStoreForTests } = await import('../pinned-chips-store');
-    expect(await loadPinnedChips()).toEqual(['recent', 'grade', 'beta', 'sort']);
+    expect(await loadPinnedChips()).toEqual(['recent', 'sort', 'beta', 'grade']);
     await togglePinnedChip('recent');
     resetPinnedChipsStoreForTests();
-    expect(await loadPinnedChips()).toEqual(['grade', 'beta', 'sort']);
+    expect(await loadPinnedChips()).toEqual(['sort', 'beta', 'grade']);
   });
 });

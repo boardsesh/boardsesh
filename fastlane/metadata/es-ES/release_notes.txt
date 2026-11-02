@@ -1,29 +1,47 @@
-Spraywalls: tu Spraywall en Boardsesh
+Boardsesh ya está disponible en italiano.
 
-Añade una foto de tu Spraywall en casa o en tu rocódromo, revisa las presas detectadas y empieza a montar bloques. Ponlos en cola, guárdalos en playlists y registra tus encadenes. No hacen falta LED.
+SABE CUÁNDO ESTÁS ENCENDIENDO EL PLAFÓN
 
-Mantén el Spraywall privado o compártelo con tu crew por enlace o código QR. Resetea el Spraywall y conserva archivados sus bloques y encadenes anteriores. Descarga un Spraywall para tener su foto, presas y bloques sin cobertura. En iPad, usa Apple Pencil para marcar presas.
+Tocar un bloque lo muestra sin encenderlo. “Poner en el plafón” lo enciende y tienes el mando: tus siguientes bloques se encienden hasta que acabe el tiempo de Ajustes (al principio, 45 s). Desliza el botón a la izquierda para el mando sin fin; toca “Estás al mando del plafón” para parar.
 
-TU CREW Y TU PRÓXIMO INTENTO
+iPad y iPhone Duo: más espacio para el plafón
 
-Encuentra las sesiones en directo de tu crew en Inicio. Abre un bloque para ver los registros de la gente que sigues junto a los tuyos. Sigue a setters para ver sus bloques nuevos en el feed de tu crew.
+En iPad, tus bloques ocupan toda la pantalla y el bloque del muro queda en un minirreproductor abajo. Tócalo para abrir el reproductor. En horizontal, el plafón queda junto a la Cola, tu logbook y la beta. Fija un iPad junto a tu plafón y abre Pantalla de muro desde el minirreproductor para mostrar el bloque a pantalla completa, lo bastante grande para leerlo desde la colchoneta.
 
-Elige un descanso después de cada bloque registrado o escala con un temporizador a intervalos fijos. Activa el avance automático de la cola y mantén Boardsesh abierto entre intentos. Usa Poner a continuación para colocar un bloque justo después del que está en el muro, o añade una playlist sin vaciar la cola.
+Abre tu iPhone Duo y el plafón queda junto a tu lista. Monta un entrenamiento en un Duo abierto y ve los bloques previstos junto a tus fases.
+
+Elige dos columnas para la lista de Bloques cuando haya espacio en iPad. Elige los botones del minirreproductor en Opciones de vista, registra un encadene sin abrir el reproductor y accede a Favorito, Playlist y Compartir desde su menú en pantallas anchas.
+
+TU TEMPORIZADOR DE DESCANSO EN LA PANTALLA BLOQUEADA
+
+Tu cuenta atrás de descanso aparece en la pantalla bloqueada y en la Dynamic Island. Suena un tictac suave en los últimos segundos y un tono cuando acaba el descanso, incluso con el móvil en silencio.
+
+ENTRENAMIENTOS POR FASES
+
+Monta una sesión con fases: calentamiento, luego una pirámide, luego volumen. Añade una fase a mitad de sesión, da a cada fase sus propios filtros de bloques y mira por dónde vas de un vistazo. Los entrenamientos eligen primero bloques que aún no has encadenado, pueden saltarse los que ya has encadenado o intentado, y pueden completarse con tus bloques Encadenados o Favoritos. Marca una caída o un encadene desde el minirreproductor. El resumen de la sesión reúne tus fases, repeticiones y resultados.
+
+REPRODUCE DESDE LA LISTA QUE TOCASTE
+
+El reproductor muestra desde qué lista escalas, y al deslizar te quedas en esa lista, desde tu logbook y tus sesiones hasta perfiles y bloques similares. Las playlists se reproducen sin tocar tu cola. Desliza un bloque en cualquier lista para ponerlo a continuación o al final.
 
 MÁS OPCIONES A TU MEDIDA
 
-- Elige qué secciones aparecen debajo de un bloque, incluidos vídeos de beta, registros y bloques similares.
-- Activa Usar mis grados para explorar, ordenar y filtrar por tus propios grados.
-- Los bloques similares y el mapa de calor de presas funcionan con tu plafón descargado sin cobertura.
-- Cambia a otro plafón de tu rocódromo desde el panel del muro.
-- Exporta tu historial de escalada, playlists y bloques desde Ajustes.
+- Ordena cualquier playlist por dificultad, últimos añadidos, valoración o al azar. Favoritos, Cinco estrellas, Proyectos y las páginas de setters también se ordenan y filtran.
+- Bloques tiene su propia pestaña. Tócala otra vez para Filtros y búsqueda por nombre. En iPhone, Filtros se abre a media altura y se parece a Ajustes de iOS.
+- Elige qué secciones aparecen en Inicio y en qué orden, y si la app abre en Inicio o en Bloques.
+- Ajustes se reduce a seis páginas, con tus temporizadores en un solo sitio.
+- Registra un encadene en un ángulo distinto al del muro.
+- Recibe avisos de comentarios en tus sesiones, bloques, playlists, plafones y rocódromos.
 
 CORRECCIONES PARA TU PRÓXIMA SESIÓN
 
-- Los grados de MoonBoard usan ahora su propia escala V. También puedes importar logbooks con columnas en otro orden o nombres de bloques en lugar de identificadores.
-- En Woods, activa Otros ángulos para incluir bloques montados en ángulos distintos. El filtro de setters respeta tu elección de ángulos.
-- Los encadenes registrados con mala conexión esperan a tener cobertura y reintentan la sincronización.
-- Al deslizar entre bloques, sigues en la lista que elegiste aunque un registro nuevo la reordene.
-- Corregidos un cierre al abrir la app en iOS y las pestañas de Safari que aparecían al iniciarla.
+- Tu logbook, tus favoritos y tus playlists funcionan sin cobertura, y los plafones descargados ya no se descargan de nuevo cada semana.
+- Los escaneos de plafones encuentran MoonBoards y cajas Kilter más nuevas, primero los más cercanos. Boardsesh pide Bluetooth en tu primer escaneo, no al abrir la app.
+- Deslizar hacia abajo vuelve a cerrar el reproductor. Las presas iluminadas siguen visibles mientras navegas.
+- En rocódromos con varios plafones, la conexión sigue al plafón del bloque actual. El botón indica si está encendido, conectando o apagado, también cuando tu crew lo apaga.
+- Los bloques en espejo conservan su orientación en tu logbook y en el historial de la cola.
+- Borra varias entradas del logbook seguidas, o las de un bloque agrupadas en un mismo día.
+- Los bloques que quitas de Favoritos salen de la lista al instante.
+- Mejor soporte de VoiceOver y de texto grande.
 
 Gratis, sin anuncios, código abierto.

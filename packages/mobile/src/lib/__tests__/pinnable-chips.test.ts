@@ -61,12 +61,14 @@ describe('pinnable-chips catalog', () => {
 });
 
 describe('normalizePinnedChips', () => {
-  it('re-sorts into canonical order regardless of input order', () => {
-    expect(normalizePinnedChips(['rating', 'grade', 'popularity'])).toEqual(['grade', 'popularity', 'rating']);
+  it('keeps the saved order: the row draws pins in the order the climber set', () => {
+    expect(normalizePinnedChips(['rating', 'grade', 'popularity'])).toEqual(['rating', 'grade', 'popularity']);
+    expect(normalizePinnedChips(['sort', 'recent', 'grade'])).toEqual(['sort', 'recent', 'grade']);
   });
 
-  it('drops unknown kinds (incl. the retired "benchmarks") and de-dupes', () => {
+  it('drops unknown kinds (incl. the retired "benchmarks") and de-dupes, the first one winning', () => {
     expect(normalizePinnedChips(['grade', 'benchmarks', 'grade', 'wide'])).toEqual(['grade', 'wide']);
+    expect(normalizePinnedChips(['wide', 'grade', 'wide'])).toEqual(['wide', 'grade']);
   });
 
   it('migrates a stored "shape" pin to separate Tall + Wide pins in catalog order', () => {
@@ -83,6 +85,8 @@ describe('normalizePinnedChips', () => {
     ]);
     // A "shape" alongside an explicit tall/wide doesn't duplicate them.
     expect(normalizePinnedChips(['tall', 'shape'])).toEqual(['tall', 'wide']);
+    // Nor does it move a Tall or Wide the payload names itself.
+    expect(normalizePinnedChips(['wide', 'grade', 'tall', 'shape'])).toEqual(['wide', 'grade', 'tall']);
   });
 
   it('returns an empty array when nothing valid is left', () => {
@@ -104,11 +108,11 @@ describe('fromStoredPinnedChips', () => {
     'rating',
   ];
 
-  it('gives a list saved before Recent was pinnable the Recent pin, so nobody loses the chip', () => {
+  it('gives a list saved before Recent was pinnable the Recent pin first, where it always drew', () => {
     expect(fromStoredPinnedChips(savedDefaultsBeforeRecentPin)).toEqual([...DEFAULT_PINNED_CHIPS]);
-    expect(fromStoredPinnedChips(['rating', 'grade'])).toEqual(['recent', 'grade', 'rating']);
-    // A customised older list keeps its own pins, plus Recent.
-    expect(fromStoredPinnedChips(['sort', 'beta'])).toEqual(['recent', 'beta', 'sort']);
+    expect(fromStoredPinnedChips(['rating', 'grade'])).toEqual(['recent', 'rating', 'grade']);
+    // A customised older list keeps its own pins in its order, plus Recent.
+    expect(fromStoredPinnedChips(['sort', 'beta'])).toEqual(['recent', 'sort', 'beta']);
   });
 
   it('keeps Recent hidden when the list carries the unpinned marker', () => {
@@ -157,7 +161,18 @@ describe('toStoredPinnedChips', () => {
     expect(toStoredPinnedChips([...DEFAULT_PINNED_CHIPS])).not.toContain(RECENT_UNPINNED_MARKER);
   });
 
-  it('loads back to the same set (the alias folds into Tall + Wide, the marker keeps Recent off)', () => {
+  it('keeps the climber’s order, with the alias right after Wide', () => {
+    expect(toStoredPinnedChips(['sort', 'wide', 'grade', 'tall', 'recent'])).toEqual([
+      'sort',
+      'wide',
+      'shape',
+      'grade',
+      'tall',
+      'recent',
+    ]);
+  });
+
+  it('loads back to the same set in the same order (the alias folds into Tall + Wide, the marker keeps Recent off)', () => {
     for (const kinds of [
       [...DEFAULT_PINNED_CHIPS],
       DEFAULT_PINNED_CHIPS.filter((kind) => kind !== 'recent'),
@@ -165,6 +180,9 @@ describe('toStoredPinnedChips', () => {
       ['tall', 'wide'],
       ['grade', 'wide'],
       ['sort'],
+      ['sort', 'wide', 'grade', 'tall', 'recent'],
+      ['rating', 'tall', 'wide', 'beta'],
+      ['wide', 'tall'],
     ] as const) {
       expect(fromStoredPinnedChips(toStoredPinnedChips(kinds))).toEqual([...kinds]);
     }
@@ -191,6 +209,13 @@ describe('toStoredPinnedChips', () => {
       return olderCatalog.filter((kind) => storedKinds.has(kind));
     };
     expect(readByOlderBundle(toStoredPinnedChips(['grade', 'rating']))).toEqual(['grade', 'rating']);
+    // A reordered list reads back in the older catalog's order: every pin, no custom order.
+    expect(readByOlderBundle(toStoredPinnedChips(['sort', 'wide', 'recent', 'grade', 'tall']))).toEqual([
+      'grade',
+      'tall',
+      'wide',
+      'sort',
+    ]);
     expect(readByOlderBundle(toStoredPinnedChips([...DEFAULT_PINNED_CHIPS]))).toEqual([
       'grade',
       'progress',
@@ -200,6 +225,31 @@ describe('toStoredPinnedChips', () => {
       'popularity',
       'rating',
     ]);
+  });
+});
+
+describe('a reordered list in an older bundle', () => {
+  // The bundle before custom order (an OTA rollback, a PR preview, the store
+  // binary's embedded fallback): it filtered its catalog by the payload, folding
+  // 'shape' into Tall + Wide, then gave a list without Recent or its marker Recent.
+  const loadInPreviousBundle = (stored: readonly unknown[]): PinnableChipKind[] => {
+    const storedKinds = new Set(stored.flatMap((kind) => (kind === 'shape' ? ['tall', 'wide'] : [kind])));
+    const pins = PINNABLE_CHIP_CATALOG.filter((kind) => storedKinds.has(kind));
+    if (pins.length === 0) return pins;
+    const savedBeforeRecentPin = !stored.includes('recent') && !stored.includes(RECENT_UNPINNED_MARKER);
+    return savedBeforeRecentPin
+      ? PINNABLE_CHIP_CATALOG.filter((kind) => kind === 'recent' || pins.includes(kind))
+      : pins;
+  };
+
+  it('keeps every pin, in that bundle’s catalog order', () => {
+    expect(loadInPreviousBundle(toStoredPinnedChips(['sort', 'wide', 'grade', 'tall']))).toEqual([
+      'grade',
+      'tall',
+      'wide',
+      'sort',
+    ]);
+    expect(loadInPreviousBundle(toStoredPinnedChips(['sort', 'recent', 'beta']))).toEqual(['recent', 'beta', 'sort']);
   });
 });
 

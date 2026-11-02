@@ -1,0 +1,14 @@
+appId: ${APP_ID}
+name: Join through the normal invite confirmation
+---
+- openLink: ${SESSION_URL}
+- extendedWaitUntil:
+    visible:
+      id: session-join-confirm
+    timeout: 30000
+- tapOn:
+    id: session-join-confirm
+- extendedWaitUntil:
+    visible:
+      id: session-presence-${SESSION_ID}-2
+    timeout: 30000

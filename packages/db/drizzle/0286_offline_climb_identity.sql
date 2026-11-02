@@ -1,0 +1,1 @@
+CREATE INDEX "sync_deletions_climb_identity_idx" ON "sync_deletions" USING btree ("record_id") WHERE "sync_deletions"."table_name" = 'board_climbs';

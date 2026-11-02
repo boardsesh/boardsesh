@@ -1832,6 +1832,11 @@ their rows reference `board_climbs` — `board_climb_aliases` and `board_beta_li
 `board_beta_links` drops `created_by_user_id`, `tick_uuid` and `board_id` at export: they are
 per-user links to production rows that mean nothing in another database.
 
+No table carries a spray-wall row (`board_type = 'spray'`). A wall is a private, runtime-created
+catalogue layout whose rows hold its name and marked holds; `CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES`
+in `packages/db/src/catalog-snapshot.ts` names the board types the exporter and the loader both
+skip. The rows every wall shares are seeded by migration 0227.
+
 **This prefix has its own manifest on purpose.** It is not an entry in the fleet-facing manifest and
 it does not widen `SNAPSHOT_TABLES`. A shipped binary verifies a downloaded artifact against a
 two-table `snapshot_meta` and counts an unexpected table as an import _failure_; two of those and the

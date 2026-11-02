@@ -1,5 +1,5 @@
 /**
- * Pure layout math for the wall-mounted "On the Wall" kiosk. No react-native
+ * Pure layout math for the wall-mounted kiosk (the Wall display). No react-native
  * imports, so the whole engine unit-tests as plain functions across the board
  * catalog × device × orientation grid (mirrors `size-class.ts` and
  * `play-drawer-layout.ts`).
@@ -23,7 +23,6 @@
  */
 
 import { computeContainedBoardSize, type BoardBox } from '../../play-drawer/play-drawer-layout';
-import type { WallStateMode } from './WallStateStrip';
 
 // ── Named constants (device-relative via heroScale so a smaller iPad is never
 //    starved; the actual mins can be raised further by the caller's content
@@ -262,14 +261,4 @@ export function resolveWallKioskLayout({
     isFreeAxis,
     compact,
   };
-}
-
-/**
- * Whether the recent-sender byline has earned its query. Compact chrome sheds
- * the byline and an idle wall has no climb to attribute, so neither should spend
- * a request against the board's rate-limit budget. Lives here rather than in the
- * screen so it unit-tests as a plain function, like the rest of this module.
- */
-export function shouldFetchRecentSenders(layout: WallKioskLayout | null, mode: WallStateMode): boolean {
-  return layout !== null && !layout.compact && mode !== 'idle';
 }

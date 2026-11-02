@@ -378,7 +378,10 @@ export function toClimbSearchInput(
   // the everyday search unchanged.
   if (state.includeOtherAngles) input.crossAngleStats = true;
   // A playlist has no drafts view, so this status flag is the Climbs list's own.
-  if (statusToFlags(state.status).onlyDrafts) input.onlyDrafts = true;
+  if (statusToFlags(state.status).onlyDrafts) {
+    input.onlyDrafts = true;
+    if (board.boardName === 'spray') input.draftScope = 'WALL';
+  }
 
   return input;
 }

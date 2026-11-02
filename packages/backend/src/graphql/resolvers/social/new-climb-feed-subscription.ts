@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { boardClimbs } from '@boardsesh/db/schema';
 import { publicClimbCondition } from '@boardsesh/db/queries';
 import { type ConnectionContext, type NewClimbCreatedEvent, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
@@ -7,7 +7,6 @@ import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { isSprayBoardType, sprayLayoutIsReadable, sprayStreamGate } from '../climbs/spray-read-access';
-import { userActivityVisibilityCondition } from '../../../services/privacy';
 
 export const newClimbFeedSubscription = {
   newClimbCreated: {
@@ -60,18 +59,10 @@ export const newClimbFeedSubscription = {
         // its own rule, not a privacy one, and this push is a browse surface,
         // so a hidden climb never announces itself here. Read on the primary,
         // so a replica that has not caught up with the hide cannot let it
-        // through.
-        //
-        // Who set it does decide what this subscriber is told about the
-        // setter: the event is published once for every subscriber, with the
-        // account's name and avatar, and a subscriber who may not see a private
-        // account's activity gets the climb under its setter name instead.
+        // through. The event goes out as published, with the account's name
+        // and avatar: who set a published climb is public with it.
         const [stillAnnounced] = await db
-          .select({
-            uuid: boardClimbs.uuid,
-            setterUsername: boardClimbs.setterUsername,
-            setterIdentityVisible: sql<boolean>`${userActivityVisibilityCondition(boardClimbs.userId, ctx.userId)}`,
-          })
+          .select({ uuid: boardClimbs.uuid })
           .from(boardClimbs)
           .where(
             and(
@@ -83,14 +74,7 @@ export const newClimbFeedSubscription = {
           )
           .limit(1);
         if (!stillAnnounced) continue;
-        yield {
-          newClimbCreated: stillAnnounced.setterIdentityVisible
-            ? event
-            : {
-                ...event,
-                climb: { ...event.climb, setterDisplayName: stillAnnounced.setterUsername, setterAvatarUrl: null },
-              },
-        };
+        yield { newClimbCreated: event };
       }
     }),
   },

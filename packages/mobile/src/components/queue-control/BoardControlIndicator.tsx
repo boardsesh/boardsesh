@@ -18,6 +18,12 @@ import { PressableSurface } from '../PressableSurface';
 // off / Disconnect), gated on a real BLE link. State is read from the single
 // `useBoardConnectionState` source, so the bar can never disagree with the drawer
 // bulb; the Live Activity keeps reading the narrower BLE-only value.
+//
+// While this phone drives the wall the bulb says so, as the Live Activity's
+// bulb does (owner decision 2026-11-02, `BulbDriveCue`): Put on board's timed
+// drive rings it with an amber arc that drains to the drive's end and fills
+// again with each lit climb; an open-ended drive fills it amber. Its value
+// says "Driving the wall", with no number, so the bar never re-renders on a tick.
 
 import { useCallback } from 'react';
 import { Platform, StyleSheet, type AccessibilityActionEvent } from 'react-native';
@@ -29,8 +35,18 @@ import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { hapticMedium } from '../../lib/haptics';
 import { glassSize } from '../../theme/layout';
-import { getBoardControlIndicatorVisual } from './board-control-indicator-state';
+import {
+  drivingBulbColors,
+  getBoardConnectionLabel,
+  getBoardControlIndicatorVisual,
+} from './board-control-indicator-state';
+import { resolveWallBulbLook } from '../play-drawer/wall-control';
+import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
+import { WallWindowRing } from '../play-drawer/WallWindowRing';
+import { useDifferentiateWithoutColor } from '../../hooks/use-differentiate-without-color';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import { bulbHaloFor, resolveBulbDriveCue } from './bulb-drive-cue';
+import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 
 type BoardControlIndicatorProps = {
   /** Container (tap target) size; defaults to the 44pt control floor. */
@@ -43,21 +59,39 @@ type BoardControlIndicatorProps = {
    * press/highlight gestures.
    */
   enableLongPress?: boolean;
+  /**
+   * Draw the glyph filled in every state, like the solid controls in Apple Music's
+   * platter (the iOS 26 accessory). The outline comes back while Differentiate
+   * Without Color is on, so "off" still differs from "on" by shape.
+   */
+  solidGlyphs?: boolean;
+  /** The accessory platter's placement, when this bulb sits on the platter (analytics). */
+  placement?: AccessoryPlacement;
 };
 
 export function BoardControlIndicator({
   size = glassSize.inline,
   iconSize = 22,
   enableLongPress = false,
+  solidGlyphs = false,
+  placement,
 }: BoardControlIndicatorProps) {
   const { t } = useTranslation('settings');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const { inAppBoardConnection, localConnected, ledless, holderDisplayName, bluetooth } = useBoardConnectionState();
+  // Driving the wall (#7113): a tap on any climb lights it, so the bulb takes
+  // the wall button's live fill. The board control's own rule
+  // (`resolveWallBulbLook`), fed this phone's link and the drive.
+  // Put on board's timed drive too (2.7): it is a drive like any other, and
+  // every tap lights until it ends.
+  const lightingMode = useDriveLightingMode();
+  const drivingLive = lightingMode === 'driving' || lightingMode === 'window';
   const { open: openBoardControls } = useBleControlSheet();
+  const differentiateWithoutColor = useDifferentiateWithoutColor();
   // Shared connect/disconnect path so undo-arming and the press semantics match
   // the drawer + toolbar lightbulbs: connectedByMe → disconnect, disconnected →
   // connect. (Connect outcome telemetry is emitted inside bluetooth.connect().)
-  const { onPress: lightbulbPress } = useLightbulbControl({ surface: 'board_control_indicator' });
+  const { onPress: lightbulbPress } = useLightbulbControl({ surface: 'board_control_indicator', placement });
   const { openPlay } = useAccessoryClimbTap();
 
   const handlePress = useCallback(() => {
@@ -78,8 +112,8 @@ export function BoardControlIndicator({
     // there is no controller behind a virtual hold to write to.
     if (!localConnected) return;
     hapticMedium();
-    openBoardControls();
-  }, [localConnected, openBoardControls]);
+    openBoardControls({ surface: 'board_control_indicator', placement });
+  }, [localConnected, openBoardControls, placement]);
 
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
@@ -91,6 +125,20 @@ export function BoardControlIndicator({
   // No board bound yet → nothing to indicate or connect to.
   if (!bluetooth) return null;
 
+  const heldByMe = inAppBoardConnection === 'connectedByMe';
+  const bulbLook = resolveWallBulbLook(
+    heldByMe && !ledless ? 'lit' : null,
+    heldByMe && localConnected,
+    true,
+    drivingLive,
+  );
+  // The bar's usual bulb stands for the lit climb, so an open-ended drive is the disc.
+  const driveCue = resolveBulbDriveCue({
+    mode: lightingMode,
+    drivesTheWall: bulbLook === 'driving',
+    showsLitClimb: true,
+  });
+
   const visual = getBoardControlIndicatorVisual({
     boardConnection: inAppBoardConnection,
     connectedColor: brandColors.warning,
@@ -98,16 +146,18 @@ export function BoardControlIndicator({
     disconnectedColor: systemColors.secondaryLabel,
     ledless,
     wallHeldColor: brandColors.primary,
+    solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
+    // A timed drive is ringed instead: the amber disc would hide the arc.
+    driving: driveCue === 'disc' ? drivingBulbColors(brandColors, colorScheme) : null,
   });
 
-  const heldByMe = inAppBoardConnection === 'connectedByMe';
-  const accessibilityLabel = heldByMe
-    ? t(ledless ? 'ble.barControl.wallHeldLabel' : 'ble.barControl.connectedLabel')
-    : inAppBoardConnection === 'heldByPeer'
-      ? holderDisplayName
-        ? t('ble.barControl.peerLabel', { name: holderDisplayName })
-        : t('ble.barControl.peerLabelAnonymous')
-      : t(ledless ? 'ble.barControl.wallOpenLabel' : 'ble.barControl.disconnectedLabel');
+  const haloColor = bulbHaloFor(driveCue, visual.haloColor);
+
+  const accessibilityLabel = getBoardConnectionLabel(t, {
+    boardConnection: inAppBoardConnection,
+    ledless,
+    holderDisplayName,
+  });
 
   const accessibilityHint = heldByMe
     ? t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint')
@@ -130,6 +180,7 @@ export function BoardControlIndicator({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
+      accessibilityValue={driveCue ? { text: t('ble.barControl.drivingValue') } : undefined}
       accessibilityState={{ selected: heldByMe }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={accessibilityActions ? handleAccessibilityAction : undefined}
@@ -137,12 +188,13 @@ export function BoardControlIndicator({
       style={({ pressed }) => [
         styles.container,
         { width: size, height: size, borderRadius: size / 2 },
-        visual.haloColor ? { backgroundColor: visual.haloColor, shadowColor: visual.iconColor as string } : null,
-        visual.haloColor ? styles.connected : null,
+        haloColor ? { backgroundColor: haloColor, shadowColor: visual.iconColor as string } : null,
+        haloColor ? styles.connected : null,
         pressed ? styles.pressed : null,
       ]}
     >
       <Icon maxFontSizeMultiplier={1} name={visual.iconName} size={iconSize} color={visual.iconColor} />
+      {driveCue === 'drain' ? <WallWindowRing size={size} /> : null}
     </PressableSurface>
   );
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Client, Sink } from 'graphql-ws';
 import { subscribe } from '../subscribe';
-import { GraphQLOperationError, isRateLimitedError } from '../errors';
+import { GraphQLOperationError, GraphQLTransportClosedError, isRateLimitedError } from '../errors';
 
 type FakeClient = Client & {
   emit: (payload: Parameters<NonNullable<Sink['next']>>[0]) => void;
@@ -34,6 +34,27 @@ function makeSink(): Sink<unknown> {
 }
 
 describe('subscribe', () => {
+  it('keeps the close code of a raw close event instead of "[object Object]"', () => {
+    const client = makeFakeClient();
+    const sink = makeSink();
+    subscribe(client, { query: 'subscription Foo { ok }' }, sink);
+    client.emitError({ type: 'close', code: 1006, reason: '', wasClean: false });
+    const forwarded = (sink.error as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(forwarded).toBeInstanceOf(GraphQLTransportClosedError);
+    expect(forwarded.code).toBe(1006);
+    expect(forwarded.message).not.toContain('[object Object]');
+  });
+
+  it('types a TerminatedCloseEvent-like Error that carries a close code', () => {
+    const client = makeFakeClient();
+    const sink = makeSink();
+    subscribe(client, { query: 'subscription Foo { ok }' }, sink);
+    client.emitError(Object.assign(new Error('Socket closed with event 4499'), { code: 4499, reason: 'bye' }));
+    const forwarded = (sink.error as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(forwarded).toBeInstanceOf(GraphQLTransportClosedError);
+    expect(forwarded.code).toBe(4499);
+  });
+
   it('forwards data to sink.next', () => {
     const client = makeFakeClient();
     const sink = makeSink();
@@ -91,6 +112,7 @@ describe('subscribe', () => {
     const forwarded = (sink.error as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(forwarded).toBeInstanceOf(GraphQLOperationError);
     expect(isRateLimitedError(forwarded)).toBe(true);
+    expect(sink.error).toHaveBeenCalledTimes(1);
   });
 
   it('coerces a raw DOM error event into a proper Error', () => {

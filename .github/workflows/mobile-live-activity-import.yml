@@ -1,0 +1,43 @@
+name: Import Reviewed Live Activity Sources
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: 'Numeric ID of the same-repository draft release holding the two committed source ZIPs.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-activity-source-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: github.ref == 'refs/heads/main' && github.repository == 'boardsesh/boardsesh'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - run: vp install --frozen-lockfile
+      - name: Validate and upload the two reviewed source archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RELEASE_ID: ${{ inputs.release_id }}
+          STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
+          STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
+          STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          vp exec tsx scripts/upload-live-activity-sources.ts
+          git diff --exit-code -- app-stores/apple/live-activity-captures/

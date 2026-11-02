@@ -72,7 +72,7 @@ type Documents = {
   '\n  subscription OnNewClimbCreated($boardType: String!, $layoutId: Int!) {\n    newClimbCreated(boardType: $boardType, layoutId: $layoutId) {\n      climb {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n    }\n  }\n': typeof types.OnNewClimbCreatedDocument;
   '\n  query CheckMoonBoardClimbDuplicates($input: CheckMoonBoardClimbDuplicatesInput!) {\n    checkMoonBoardClimbDuplicates(input: $input) {\n      clientKey\n      exists\n      existingClimbUuid\n      existingClimbName\n    }\n  }\n': typeof types.CheckMoonBoardClimbDuplicatesDocument;
   '\n  query SimilarClimbs($input: SimilarClimbsInput!) {\n    similarClimbs(input: $input) {\n      uuid\n      name\n      setterUsername\n      angle\n      layoutId\n      frames\n      difficultyName\n      qualityAverage\n      ascensionistCount\n      compatibleSizeIds\n      characteristics\n      similarity\n      sharedHoldCount\n      candidateHoldCount\n      targetHoldCount\n    }\n  }\n': typeof types.SimilarClimbsDocument;
-  '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveClimbDocument;
+  '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      replayed\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveClimbDocument;
   '\n  mutation SaveMoonBoardClimb($input: SaveMoonBoardClimbInput!) {\n    saveMoonBoardClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveMoonBoardClimbDocument;
   '\n  mutation UpdateClimb($input: UpdateClimbInput!) {\n    updateClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n': typeof types.UpdateClimbDocument;
   '\n  mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {\n    deleteDraftClimb(uuid: $uuid, boardType: $boardType)\n  }\n': typeof types.DeleteDraftClimbDocument;
@@ -158,6 +158,8 @@ type Documents = {
   '\n  query MobileReleaseStatus($input: MobileReleaseStatusInput!) {\n    mobileReleaseStatus(input: $input) {\n      channel\n      branch\n      updateId\n      runtimeVersion\n      isEmbeddedLaunch\n      automaticCanary\n      canaryCheckedAt\n    }\n  }\n': typeof types.MobileReleaseStatusDocument;
   '\n  query ProposalReportReleaseContexts($proposalUuid: ID!) {\n    proposalReportReleaseContexts(proposalUuid: $proposalUuid) {\n      commentUuid\n      releaseContext {\n        channel\n        branch\n        updateId\n        runtimeVersion\n        isEmbeddedLaunch\n        automaticCanary\n        canaryCheckedAt\n      }\n    }\n  }\n': typeof types.ProposalReportReleaseContextsDocument;
   '\n  query SavedClimbDocuments($boardType: String!, $layoutId: Int!, $climbUuid: ID!, $sprayWallUuid: ID) {\n    syncClimbDocuments(\n      boardType: $boardType\n      layoutId: $layoutId\n      climbUuid: $climbUuid\n      sprayWallUuid: $sprayWallUuid\n    ) {\n      viewerId\n      climb\n      stats\n    }\n  }\n': typeof types.SavedClimbDocumentsDocument;
+  '\n  query GetSessionWorkouts($sessionId: ID!) {\n    sessionWorkouts(sessionId: $sessionId) {\n      userId\n      displayName\n      avatarUrl\n      offPlan\n      offPlanTickUuids\n      updatedAt\n      stages {\n        id\n        kind\n        isCoolDown\n        targetGrade\n        repsPerSet\n        sets\n        intervalSeconds\n        restSeconds\n        tally {\n          sent\n          attempts\n          skipped\n          climbs\n        }\n        climbs {\n          queueItemUuid\n          climbUuid\n          angle\n          isMirror\n          name\n          grade\n          boardType\n          layoutId\n          frames\n          renderBoard {\n            layoutId\n            sizeId\n            setIds\n          }\n          reps\n          tickUuids\n          skipped\n        }\n      }\n    }\n  }\n': typeof types.GetSessionWorkoutsDocument;
+  '\n  query GetSessionWorkoutHeadlines($sessionIds: [ID!]!) {\n    sessionWorkoutHeadlines(sessionIds: $sessionIds) {\n      sessionId\n      userId\n      mainKind\n      mainTargetGrade\n      secondMainKind\n      blockCount\n      extraMainBlocks\n    }\n  }\n': typeof types.GetSessionWorkoutHeadlinesDocument;
   '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n': typeof types.SessionSummaryFieldsFragmentDoc;
   '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.EndSessionDocument;
   '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n      isPublic\n    }\n  }\n': typeof types.UpdateSessionDocument;
@@ -202,6 +204,7 @@ type Documents = {
   '\n  query GetUserDataExport($boardType: String!, $period: String) {\n    userDataExport(boardType: $boardType, period: $period) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n': typeof types.GetUserDataExportDocument;
   '\n  mutation RequestUserDataExport($boardType: String!) {\n    requestUserDataExport(boardType: $boardType) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n': typeof types.RequestUserDataExportDocument;
   '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n': typeof types.GetUserDataExportDownloadDocument;
+  '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n': typeof types.JoinRedirectSessionBoardPathDocument;
 };
 const documents: Documents = {
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n':
@@ -319,7 +322,7 @@ const documents: Documents = {
     types.CheckMoonBoardClimbDuplicatesDocument,
   '\n  query SimilarClimbs($input: SimilarClimbsInput!) {\n    similarClimbs(input: $input) {\n      uuid\n      name\n      setterUsername\n      angle\n      layoutId\n      frames\n      difficultyName\n      qualityAverage\n      ascensionistCount\n      compatibleSizeIds\n      characteristics\n      similarity\n      sharedHoldCount\n      candidateHoldCount\n      targetHoldCount\n    }\n  }\n':
     types.SimilarClimbsDocument,
-  '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n':
+  '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      replayed\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n':
     types.SaveClimbDocument,
   '\n  mutation SaveMoonBoardClimb($input: SaveMoonBoardClimbInput!) {\n    saveMoonBoardClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n':
     types.SaveMoonBoardClimbDocument,
@@ -490,6 +493,10 @@ const documents: Documents = {
     types.ProposalReportReleaseContextsDocument,
   '\n  query SavedClimbDocuments($boardType: String!, $layoutId: Int!, $climbUuid: ID!, $sprayWallUuid: ID) {\n    syncClimbDocuments(\n      boardType: $boardType\n      layoutId: $layoutId\n      climbUuid: $climbUuid\n      sprayWallUuid: $sprayWallUuid\n    ) {\n      viewerId\n      climb\n      stats\n    }\n  }\n':
     types.SavedClimbDocumentsDocument,
+  '\n  query GetSessionWorkouts($sessionId: ID!) {\n    sessionWorkouts(sessionId: $sessionId) {\n      userId\n      displayName\n      avatarUrl\n      offPlan\n      offPlanTickUuids\n      updatedAt\n      stages {\n        id\n        kind\n        isCoolDown\n        targetGrade\n        repsPerSet\n        sets\n        intervalSeconds\n        restSeconds\n        tally {\n          sent\n          attempts\n          skipped\n          climbs\n        }\n        climbs {\n          queueItemUuid\n          climbUuid\n          angle\n          isMirror\n          name\n          grade\n          boardType\n          layoutId\n          frames\n          renderBoard {\n            layoutId\n            sizeId\n            setIds\n          }\n          reps\n          tickUuids\n          skipped\n        }\n      }\n    }\n  }\n':
+    types.GetSessionWorkoutsDocument,
+  '\n  query GetSessionWorkoutHeadlines($sessionIds: [ID!]!) {\n    sessionWorkoutHeadlines(sessionIds: $sessionIds) {\n      sessionId\n      userId\n      mainKind\n      mainTargetGrade\n      secondMainKind\n      blockCount\n      extraMainBlocks\n    }\n  }\n':
+    types.GetSessionWorkoutHeadlinesDocument,
   '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n':
     types.SessionSummaryFieldsFragmentDoc,
   '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n':
@@ -575,6 +582,8 @@ const documents: Documents = {
     types.RequestUserDataExportDocument,
   '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n':
     types.GetUserDataExportDownloadDocument,
+  '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n':
+    types.JoinRedirectSessionBoardPathDocument,
 };
 
 /**
@@ -943,8 +952,8 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n',
-): (typeof documents)['\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n'];
+  source: '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      replayed\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n',
+): (typeof documents)['\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      replayed\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -1459,6 +1468,18 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
+  source: '\n  query GetSessionWorkouts($sessionId: ID!) {\n    sessionWorkouts(sessionId: $sessionId) {\n      userId\n      displayName\n      avatarUrl\n      offPlan\n      offPlanTickUuids\n      updatedAt\n      stages {\n        id\n        kind\n        isCoolDown\n        targetGrade\n        repsPerSet\n        sets\n        intervalSeconds\n        restSeconds\n        tally {\n          sent\n          attempts\n          skipped\n          climbs\n        }\n        climbs {\n          queueItemUuid\n          climbUuid\n          angle\n          isMirror\n          name\n          grade\n          boardType\n          layoutId\n          frames\n          renderBoard {\n            layoutId\n            sizeId\n            setIds\n          }\n          reps\n          tickUuids\n          skipped\n        }\n      }\n    }\n  }\n',
+): (typeof documents)['\n  query GetSessionWorkouts($sessionId: ID!) {\n    sessionWorkouts(sessionId: $sessionId) {\n      userId\n      displayName\n      avatarUrl\n      offPlan\n      offPlanTickUuids\n      updatedAt\n      stages {\n        id\n        kind\n        isCoolDown\n        targetGrade\n        repsPerSet\n        sets\n        intervalSeconds\n        restSeconds\n        tally {\n          sent\n          attempts\n          skipped\n          climbs\n        }\n        climbs {\n          queueItemUuid\n          climbUuid\n          angle\n          isMirror\n          name\n          grade\n          boardType\n          layoutId\n          frames\n          renderBoard {\n            layoutId\n            sizeId\n            setIds\n          }\n          reps\n          tickUuids\n          skipped\n        }\n      }\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetSessionWorkoutHeadlines($sessionIds: [ID!]!) {\n    sessionWorkoutHeadlines(sessionIds: $sessionIds) {\n      sessionId\n      userId\n      mainKind\n      mainTargetGrade\n      secondMainKind\n      blockCount\n      extraMainBlocks\n    }\n  }\n',
+): (typeof documents)['\n  query GetSessionWorkoutHeadlines($sessionIds: [ID!]!) {\n    sessionWorkoutHeadlines(sessionIds: $sessionIds) {\n      sessionId\n      userId\n      mainKind\n      mainTargetGrade\n      secondMainKind\n      blockCount\n      extraMainBlocks\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
   source: '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n',
 ): (typeof documents)['\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n'];
 /**
@@ -1719,6 +1740,12 @@ export function graphql(
 export function graphql(
   source: '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n',
 ): (typeof documents)['\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n',
+): (typeof documents)['\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n'];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

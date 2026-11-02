@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { main } from '../testflight-build';
+import { main, validatePinnedTestflightSource } from '../testflight-build';
+import { APP_CONFIG_PATH, BOT_EMAIL, BOT_NAME } from '../lib/mobile-release-version';
+import { nativeReleaseMessage } from '../lib/native-release';
 import {
   parseTestflightBuildReceipt,
   previousNativeBuild,
@@ -81,6 +83,21 @@ describe('frozen previous native build', () => {
       },
     );
   });
+
+  it('uses eligible 2.7.0 build 8 before the restored build, excluding retired 2.7.1', () => {
+    const expiredSha = 'c'.repeat(40);
+    const tags = [
+      { name: tag('2.7.1', 1), sha: expiredSha },
+      { name: tag('2.7.0', 8), sha: previousSha },
+    ];
+    expect(
+      previousNativeBuild(tags, [sourceSha, expiredSha, previousSha], '2.7.0', '9', new Set([expiredSha])),
+    ).toEqual(tags[1]);
+    expect(
+      previousNativeBuild(tags, [sourceSha, expiredSha, previousSha], '2.7.2', '1', new Set([expiredSha])),
+    ).toEqual(tags[1]);
+    expect(previousNativeBuild(tags, [sourceSha, expiredSha, previousSha], '2.7.2', '1')).toEqual(tags[0]);
+  });
 });
 
 describe('receipt and source provenance', () => {
@@ -98,10 +115,38 @@ describe('receipt and source provenance', () => {
     expect(() => validateReceiptSource(parsed, { ...run, sha: previousSha })).toThrow('does not belong');
   });
 
+  it('keeps the workflow SHA binding when a separately validated main stamp supplied the binary source', () => {
+    const run = trustedTestflightRun(
+      { ...sourceRun(), head_branch: 'main', head_sha: previousSha, event: 'workflow_dispatch' },
+      'boardsesh/boardsesh',
+    );
+    const parsed = parseTestflightBuildReceipt({ ...receipt(), sourceRef: 'main', workflowSha: previousSha });
+    expect(() => validateReceiptSource(parsed, run)).toThrow('validated native-release stamp');
+    expect(() => validateReceiptSource(parsed, run, 'c'.repeat(40))).toThrow('validated native-release stamp');
+    expect(() => validateReceiptSource(parsed, run, sourceSha)).not.toThrow();
+    const validatedSources: string[] = [];
+    expect(() =>
+      validatePinnedTestflightSource(parsed, run, (sha) => {
+        validatedSources.push(sha);
+        return { sha };
+      }),
+    ).not.toThrow();
+    expect(validatedSources).toEqual([sourceSha]);
+    expect(() =>
+      validatePinnedTestflightSource(parsed, run, () => {
+        throw new Error('not a validated main stamp');
+      }),
+    ).toThrow('not a validated main stamp');
+    expect(() => validateReceiptSource({ ...parsed, workflowSha: sourceSha }, run, sourceSha)).toThrow(
+      'does not belong',
+    );
+  });
+
   it.each([
     { version: '2.8.0' },
     { buildNumber: '3' },
     { sourceSha: 'main' },
+    { workflowSha: 'main' },
     { sourceRef: 'feature/untrusted' },
     { sourceRunId: '../123' },
     { previousBuildSha: null },
@@ -307,6 +352,8 @@ describe('validate CLI against git tags', () => {
     commit('uploaded native build');
     const uploadedSha = git('rev-parse', 'HEAD');
     git('tag', tag('2.7.0', 2));
+    git('branch', '-M', 'main');
+    git('remote', 'add', 'origin', directory);
     const receiptPath = join(directory, 'receipt.json');
     const outputPath = join(directory, 'outputs');
     const buildReceipt = { ...receipt(), sourceSha: uploadedSha, previousBuildSha: baselineSha };
@@ -320,7 +367,7 @@ process.stdout.write(process.env.TESTFLIGHT_GH_FIXTURE);
 `,
     );
     chmodSync(join(directory, 'gh'), 0o755);
-    const execute = () =>
+    const execute = (runPatch: Record<string, unknown> = {}) =>
       execFileSync(
         process.execPath,
         [
@@ -343,11 +390,13 @@ process.stdout.write(process.env.TESTFLIGHT_GH_FIXTURE);
             GITHUB_REPOSITORY: 'boardsesh/boardsesh',
             GITHUB_OUTPUT: outputPath,
             SOURCE_RUN_ATTEMPT: '2',
-            TESTFLIGHT_GH_FIXTURE: JSON.stringify({ ...sourceRun(), head_sha: uploadedSha }),
+            NATIVE_RELEASE_ROOT: directory,
+            TESTFLIGHT_GH_FIXTURE: JSON.stringify({ ...sourceRun(), head_sha: uploadedSha, ...runPatch }),
           },
         },
       );
     return {
+      directory,
       git,
       commit,
       buildReceipt,
@@ -359,10 +408,152 @@ process.stdout.write(process.env.TESTFLIGHT_GH_FIXTURE);
     };
   }
 
+  function restorationFixture(pinned = false) {
+    const fixture = validationFixture();
+    const configPath = join(fixture.directory, APP_CONFIG_PATH);
+    mkdirSync(join(fixture.directory, 'packages/mobile'), { recursive: true });
+    const config = (version: string) => {
+      writeFileSync(configPath, `export default {\n  version: '${version}',\n};\n`);
+      fixture.git('add', APP_CONFIG_PATH);
+    };
+    config('2.6.2');
+    fixture.commit('previous public native');
+    const publicSha = fixture.git('rev-parse', 'HEAD');
+    fixture.git('tag', tag('2.6.2', 18));
+    const ios = fingerprint.padEnd(40, 'a');
+    const stamp = (version: string, android: string, supersedes?: string) => {
+      const parent = fixture.git('rev-parse', 'HEAD');
+      config(version);
+      fixture.git(
+        '-c',
+        `user.name=${BOT_NAME}`,
+        '-c',
+        `user.email=${BOT_EMAIL}`,
+        'commit',
+        '-m',
+        nativeReleaseMessage(
+          { version, sourceSha: parent, ios, android, ...(supersedes ? { supersedes } : {}) },
+          supersedes ? 'version-restoration' : 'version-bump',
+        ),
+      );
+      return fixture.git('rev-parse', 'HEAD');
+    };
+    const goodSha = stamp('2.6.3', 'd'.repeat(40));
+    fixture.git('tag', tag('2.6.3', 1));
+    config('2.7.0');
+    writeFileSync(join(fixture.directory, 'native-input'), 'new native pair');
+    fixture.git('add', 'native-input');
+    fixture.commit('open next native version with native changes');
+    const legacySha = fixture.git('rev-parse', 'HEAD');
+    fixture.git('tag', tag('2.7.0', 8));
+    const expiredSha = stamp('2.7.1', 'e'.repeat(40));
+    fixture.git('tag', tag('2.7.1', 1));
+    const restoredSha = stamp('2.7.0', 'e'.repeat(40), expiredSha);
+    Object.assign(fixture.buildReceipt, {
+      version: pinned ? '2.6.3' : '2.7.1',
+      buildNumber: '1',
+      sourceSha: pinned ? goodSha : expiredSha,
+      workflowSha: expiredSha,
+      sourceRef: 'main',
+      buildTag: pinned ? tag('2.6.3', 1) : tag('2.7.1', 1),
+      previousBuildTag: pinned ? tag('2.6.2', 18) : tag('2.7.0', 8),
+      previousBuildSha: pinned ? publicSha : legacySha,
+    });
+    writeFileSync(fixture.receiptPath, JSON.stringify(fixture.buildReceipt));
+    return {
+      ...fixture,
+      expiredSha,
+      goodSha,
+      restoredSha,
+      legacySha,
+      runPatch: { head_branch: 'main', head_sha: expiredSha },
+    };
+  }
+
   it('emits the exact uploaded version and build only after verifying both tags', () => {
     const fixture = validationFixture();
     fixture.execute();
-    expect(fixture.outputs()).toBe('version=2.7.0\nbuild_number=2\n');
+    expect(fixture.outputs()).toBe(
+      `should_distribute=true\nversion=2.7.0\nbuild_number=2\nsource_sha=${fixture.uploadedSha}\nsource_ref=release/next\n`,
+    );
+  });
+
+  it('skips the expired binary only after validating the actual main restoration lineage', () => {
+    const fixture = restorationFixture();
+    expect(fixture.execute(fixture.runPatch)).toContain('explicitly superseded');
+    expect(fixture.outputs()).toBe('should_distribute=false\n');
+  });
+
+  it('preserves a validated older pinned binary even when its workflow head is retired', () => {
+    const fixture = restorationFixture(true);
+    fixture.git('fetch', '--quiet', '--no-tags', 'origin', '+refs/heads/main:refs/remotes/origin/main');
+    fixture.execute(fixture.runPatch);
+    expect(fixture.outputs()).toBe(
+      `should_distribute=true\nversion=2.6.3\nbuild_number=1\nsource_sha=${fixture.goodSha}\nsource_ref=main\n`,
+    );
+  });
+
+  it('still rejects a moved uploaded tag before skipping a retired source', () => {
+    const fixture = restorationFixture();
+    fixture.git('tag', '--force', tag('2.7.1', 1), fixture.legacySha);
+    expect(() => fixture.execute(fixture.runPatch)).toThrow();
+    expect(fixture.outputs()).toBe('');
+  });
+
+  it('freezes notes against eligible build 8 at the restored source snapshot', () => {
+    const fixture = restorationFixture();
+    const output = join(fixture.directory, 'restored-build.json');
+    execFileSync(
+      process.execPath,
+      [
+        '--import',
+        resolve('node_modules/tsx/dist/loader.mjs'),
+        resolve('scripts/testflight-build.ts'),
+        'capture',
+        '--output',
+        output,
+      ],
+      {
+        cwd: fixture.directory,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          BOARDSESH_MOBILE_VERSION: '2.7.0',
+          IOS_BUILD_NUMBER: '9',
+          GITHUB_SHA: fixture.restoredSha,
+          GITHUB_REF_NAME: 'main',
+          GITHUB_RUN_ID: '123',
+          FINGERPRINT_IOS: fingerprint,
+        },
+      },
+    );
+    expect(JSON.parse(readFileSync(output, 'utf8'))).toMatchObject({
+      sourceSha: fixture.restoredSha,
+      previousBuildTag: tag('2.7.0', 8),
+      previousBuildSha: fixture.legacySha,
+    });
+  });
+
+  it('refuses direct distribution if the current main restoration proof is forged or cannot refresh', () => {
+    for (const failure of ['forged restoration', 'unreachable origin']) {
+      const fixture = restorationFixture();
+      if (failure === 'forged restoration') {
+        const message = fixture.git('show', '-s', '--format=%B', 'HEAD');
+        fixture.git(
+          '-c',
+          'user.name=Imposter',
+          '-c',
+          'user.email=imposter@example.com',
+          'commit',
+          '--amend',
+          '--reset-author',
+          '-m',
+          message,
+        );
+      } else fixture.git('remote', 'set-url', 'origin', join(fixture.directory, 'missing-origin'));
+      expect(() => fixture.execute(fixture.runPatch)).toThrow();
+      expect(fixture.outputs()).toBe('');
+    }
   });
 
   it.each(['moved uploaded tag', 'deleted uploaded tag', 'moved baseline tag', 'non-ancestor baseline'])(

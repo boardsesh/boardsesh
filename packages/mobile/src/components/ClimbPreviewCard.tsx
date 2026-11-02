@@ -2,7 +2,8 @@ import { memo } from 'react';
 import { View } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { ClimbListItemContent, type ClimbListItemClimb } from './ClimbListItemContent';
-import { climbListRowStyles } from './climb-list-row-styles';
+import { climbListRowStyles, climbRowSeparatorInsetStyle } from './climb-list-row-styles';
+import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
 
@@ -35,6 +36,7 @@ type ClimbPreviewCardProps = {
 function ClimbPreviewCardComponent({ climb, boardName, layoutId, sizeId, setIds, angle }: ClimbPreviewCardProps) {
   const { systemColors } = useTheme();
   const hasThumbnail = useClimbRowField('thumbnail');
+  const thumbnailSize = useClimbListThumbnailSize();
   return (
     <View style={{ backgroundColor: systemColors.background }}>
       <View style={climbListRowStyles.contentRow}>
@@ -50,7 +52,7 @@ function ClimbPreviewCardComponent({ climb, boardName, layoutId, sizeId, setIds,
       <View
         style={[
           climbListRowStyles.separator,
-          hasThumbnail ? null : climbListRowStyles.separatorWithoutThumbnail,
+          climbRowSeparatorInsetStyle(hasThumbnail, thumbnailSize.width),
           { backgroundColor: systemColors.separator },
         ]}
       />

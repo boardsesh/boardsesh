@@ -80,6 +80,8 @@ export const queueTypeDefs = /* GraphQL */ `
     historyCount: Int
     "When the room's current climb last changed to a different climb (ISO 8601). Null from a pre-F3 server."
     currentChangedAt: String
+    "Session participant who last changed the current queue item. Null when unknown."
+    currentChangedBy: ID
   }
 
   """

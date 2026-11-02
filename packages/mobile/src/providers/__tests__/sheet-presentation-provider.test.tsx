@@ -57,6 +57,414 @@ describe('SheetPresentationProvider coordinator', () => {
     expect(coordinator.isBusy('root')).toBe(false);
   });
 
+  it('waits for the existing presentation ceiling without closing or presenting the sheet again', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    const first = coordinator.waitForPresentation('a');
+    const second = coordinator.waitForPresentation('a');
+    const settled = vi.fn();
+    void first.then(settled);
+    vi.advanceTimersByTime(SETTLE_MS - 1);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    expect(a.present).toHaveBeenCalledTimes(1);
+    expect(a.dismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    await expect(Promise.all([first, second])).resolves.toEqual([{ status: 'presented' }, { status: 'presented' }]);
+    await expect(coordinator.waitForPresentation('a')).resolves.toEqual({ status: 'presented' });
+    expect(a.dismiss).not.toHaveBeenCalled();
+    expect(coordinator.isPresented('a')).toBe(true);
+  });
+
+  it('waits through a preceding native dismiss and the requested sheet’s presentation settle', async () => {
+    const a = makeSheet();
+    const b = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.register({ id: 'b', group: 'root', ...b });
+    coordinator.setDesiredOpen('a', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('b', true);
+    const result = coordinator.waitForPresentation('b');
+    const settled = vi.fn();
+    void result.then(settled);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    expect(a.dismiss).toHaveBeenCalledTimes(1);
+    expect(b.present).not.toHaveBeenCalled();
+    coordinator.notifyFullyDismissed('a');
+    expect(b.present).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(SETTLE_MS - 1);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    await expect(result).resolves.toEqual({ status: 'presented' });
+    expect(b.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('aborts presentation waiters immediately when the desired sheet closes', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    const result = coordinator.waitForPresentation('a');
+    coordinator.setDesiredOpen('a', false);
+    await expect(result).resolves.toEqual({ status: 'aborted' });
+    expect(a.dismiss).not.toHaveBeenCalled(); // the present still cannot be interrupted
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(a.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts a presentation wait when dismissAndWait cancels the parent request', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    const presentation = coordinator.waitForPresentation('a');
+    const dismissal = coordinator.dismissAndWait('a');
+    await expect(presentation).resolves.toEqual({ status: 'aborted' });
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.notifyFullyDismissed('a');
+    await expect(dismissal).resolves.toEqual({ status: 'dismissed' });
+  });
+
+  it('aborts a presentation wait when native closing starts', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    const result = coordinator.waitForPresentation('a');
+    coordinator.notifyClosed('a');
+    await expect(result).resolves.toEqual({ status: 'aborted' });
+  });
+
+  it('aborts the losing parent before its presentation settles when a sibling supersedes it', async () => {
+    const a = makeSheet();
+    const b = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.register({ id: 'b', group: 'root', ...b });
+    coordinator.setDesiredOpen('a', true);
+    const previous = coordinator.waitForPresentation('a');
+    coordinator.setDesiredOpen('b', true);
+    const next = coordinator.waitForPresentation('b');
+    await expect(previous).resolves.toEqual({ status: 'aborted' });
+    expect(a.dismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.notifyFullyDismissed('a');
+    vi.advanceTimersByTime(SETTLE_MS);
+    await expect(next).resolves.toEqual({ status: 'presented' });
+    expect(a.dismiss).toHaveBeenCalledTimes(1);
+    expect(b.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('aborts a queued presentation that a newer sibling replaces before it reaches native', async () => {
+    const sheets = { a: makeSheet(), b: makeSheet(), c: makeSheet() };
+    for (const [id, sheet] of Object.entries(sheets)) coordinator.register({ id, group: 'root', ...sheet });
+    coordinator.setDesiredOpen('a', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('b', true);
+    const previous = coordinator.waitForPresentation('b');
+    coordinator.setDesiredOpen('c', true);
+    const next = coordinator.waitForPresentation('c');
+    await expect(previous).resolves.toEqual({ status: 'aborted' });
+    coordinator.notifyFullyDismissed('a');
+    vi.advanceTimersByTime(SETTLE_MS);
+    await expect(next).resolves.toEqual({ status: 'presented' });
+    expect(sheets.b.present).not.toHaveBeenCalled();
+    expect(sheets.b.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('aborts the prior request’s waiters when the same host receives a fresh open request', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    const previous = coordinator.waitForPresentation('a');
+    coordinator.setDesiredOpen('a', true);
+    const next = coordinator.waitForPresentation('a');
+    await expect(previous).resolves.toEqual({ status: 'aborted' });
+    vi.advanceTimersByTime(SETTLE_MS);
+    await expect(next).resolves.toEqual({ status: 'presented' });
+    expect(a.present).toHaveBeenCalledTimes(1);
+    expect(a.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('aborts every presentation waiter when its host unregisters before settling', async () => {
+    const a = makeSheet();
+    const unregister = coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    const first = coordinator.waitForPresentation('a');
+    const second = coordinator.waitForPresentation('a');
+    unregister();
+    await expect(Promise.all([first, second])).resolves.toEqual([{ status: 'aborted' }, { status: 'aborted' }]);
+    expect(a.dismiss).not.toHaveBeenCalled();
+    expect(coordinator.isBusy('root')).toBe(true);
+  });
+
+  it('does not open absent or closed hosts just because a caller waits for them', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    await expect(coordinator.waitForPresentation('missing')).resolves.toEqual({ status: 'aborted' });
+    await expect(coordinator.waitForPresentation('a')).resolves.toEqual({ status: 'aborted' });
+    expect(a.present).not.toHaveBeenCalled();
+    expect(a.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('keeps presentation waits independent across presenter groups', async () => {
+    const a = makeSheet();
+    const b = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.register({ id: 'b', group: 'queue', ...b });
+    coordinator.setDesiredOpen('a', true);
+    const result = coordinator.waitForPresentation('a');
+    coordinator.setDesiredOpen('b', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    await expect(result).resolves.toEqual({ status: 'presented' });
+    expect(a.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('presents a native child only after its desired parent has fully settled', async () => {
+    const parent = makeSheet();
+    const child = makeSheet();
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.setDesiredOpen('parent', true);
+    coordinator.setDesiredOpen('child', true);
+    const childReady = coordinator.waitForPresentation('child');
+    expect(child.present).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SETTLE_MS - 1);
+    expect(child.present).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(child.present).toHaveBeenCalledTimes(1);
+    expect(coordinator.isPresented('parent')).toBe(true);
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SETTLE_MS);
+    await expect(childReady).resolves.toEqual({ status: 'presented' });
+  });
+
+  it('waits for a child present and dismiss before starting an imperative parent dismiss', async () => {
+    const parent = makeSheet();
+    const child = { ...makeSheet(), onDisplaced: vi.fn() };
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('child', true);
+    const childReady = coordinator.waitForPresentation('child');
+    const parentDismissed = coordinator.dismissAndWait('parent');
+    await expect(childReady).resolves.toEqual({ status: 'aborted' });
+    expect(child.dismiss).not.toHaveBeenCalled();
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(child.dismiss).toHaveBeenCalledTimes(1);
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(child.onDisplaced).toHaveBeenCalledTimes(1);
+    coordinator.notifyFullyDismissed('child');
+    expect(parent.dismiss).toHaveBeenCalledTimes(1);
+    coordinator.notifyFullyDismissed('parent');
+    await expect(parentDismissed).resolves.toEqual({ status: 'dismissed' });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(child.present).toHaveBeenCalledTimes(1); // a cancelled child never resumes by itself
+  });
+
+  it('dismisses a presented child before its parent is displaced by a root sibling', async () => {
+    const parent = { ...makeSheet(), onDisplaced: vi.fn() };
+    const child = { ...makeSheet(), onDisplaced: vi.fn() };
+    const replacement = makeSheet();
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.register({ id: 'replacement', group: 'root', ...replacement });
+    coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('child', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('replacement', true);
+    expect(child.dismiss).toHaveBeenCalledTimes(1);
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    expect(replacement.present).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(child.onDisplaced).toHaveBeenCalledTimes(1);
+    expect(parent.onDisplaced).not.toHaveBeenCalled();
+    coordinator.notifyFullyDismissed('child');
+    expect(parent.dismiss).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(parent.onDisplaced).toHaveBeenCalledTimes(1);
+    coordinator.notifyFullyDismissed('parent');
+    expect(replacement.present).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('replacement', false);
+    coordinator.notifyFullyDismissed('replacement');
+    expect(parent.present).toHaveBeenCalledTimes(1);
+    expect(child.present).toHaveBeenCalledTimes(1);
+    expect(child.onDisplaced).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the parent open when its child saves or closes independently', async () => {
+    const parent = makeSheet();
+    const child = { ...makeSheet(), onDisplaced: vi.fn() };
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('child', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    const saved = coordinator.dismissAndWait('child');
+    coordinator.notifyFullyDismissed('child');
+    await expect(saved).resolves.toEqual({ status: 'dismissed' });
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    expect(coordinator.isPresented('parent')).toBe(true);
+    expect(child.onDisplaced).not.toHaveBeenCalled();
+    coordinator.setDesiredOpen('child', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(child.present).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the root guarded through an unregistered parent and its child teardown', async () => {
+    const parent = makeSheet();
+    const child = { ...makeSheet(), onDisplaced: vi.fn() };
+    const replacement = makeSheet();
+    const unregisterParent = coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.register({ id: 'replacement', group: 'root', ...replacement });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('child', true);
+    const pendingChild = coordinator.waitForPresentation('child');
+    unregisterParent();
+    coordinator.setDesiredOpen('replacement', true);
+    await expect(pendingChild).resolves.toEqual({ status: 'aborted' });
+    vi.advanceTimersByTime(SETTLE_MS); // child present settles; parent native teardown ceiling also expires
+    expect(child.dismiss).toHaveBeenCalledTimes(1);
+    expect(replacement.present).not.toHaveBeenCalled();
+    expect(coordinator.isBusy('root')).toBe(true);
+    coordinator.notifyFullyDismissed('child');
+    expect(replacement.present).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(child.onDisplaced).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(parent.present).toHaveBeenCalledTimes(1);
+    expect(child.present).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not present an orphan or a child requested after an already-resolved parent wait races a close', async () => {
+    const parent = makeSheet();
+    const child = { ...makeSheet(), onDisplaced: vi.fn() };
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    const staleContinuation = coordinator.waitForPresentation('parent').then((result) => {
+      if (result.status === 'presented') coordinator.setDesiredOpen('child', true);
+    });
+    coordinator.setDesiredOpen('parent', false);
+    await staleContinuation;
+    await expect(coordinator.waitForPresentation('child')).resolves.toEqual({ status: 'aborted' });
+    expect(child.present).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(child.onDisplaced).toHaveBeenCalledTimes(1);
+    const orphan = makeSheet();
+    coordinator.register({ id: 'orphan', group: 'orphan', parentId: 'missing', ...orphan });
+    coordinator.setDesiredOpen('orphan', true);
+    vi.advanceTimersByTime(SETTLE_MS * 2);
+    expect(orphan.present).not.toHaveBeenCalled();
+    await expect(coordinator.waitForPresentation('orphan')).resolves.toEqual({ status: 'aborted' });
+  });
+
+  it('closes descendants from the deepest native presenter outward', async () => {
+    const parent = makeSheet();
+    const child = makeSheet();
+    const grandchild = makeSheet();
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.register({ id: 'grandchild', group: 'tick', parentId: 'child', ...grandchild });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('child', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('grandchild', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('parent', false);
+    expect(grandchild.dismiss).toHaveBeenCalledTimes(1);
+    expect(child.dismiss).not.toHaveBeenCalled();
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    coordinator.notifyFullyDismissed('grandchild');
+    expect(child.dismiss).toHaveBeenCalledTimes(1);
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    coordinator.notifyFullyDismissed('child');
+    expect(parent.dismiss).toHaveBeenCalledTimes(1);
+    coordinator.notifyFullyDismissed('parent');
+    expect(coordinator.isBusy('root')).toBe(false);
+    await Promise.resolve();
+  });
+
+  it('retains child ancestry through unmount teardown without duplicate close callbacks', async () => {
+    const parent = makeSheet();
+    const child = { ...makeSheet(), onDisplaced: vi.fn() };
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    const unregisterChild = coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('child', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('parent', false);
+    await Promise.resolve();
+    expect(child.onDisplaced).toHaveBeenCalledTimes(1);
+    unregisterChild();
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(parent.dismiss).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(child.onDisplaced).toHaveBeenCalledTimes(1);
+    expect(child.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release a natively closed parent until its child has also settled', () => {
+    const parent = makeSheet();
+    const child = makeSheet();
+    const replacement = makeSheet();
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.register({ id: 'child', group: 'queue', parentId: 'parent', ...child });
+    coordinator.register({ id: 'replacement', group: 'root', ...replacement });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.setDesiredOpen('child', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    coordinator.notifyClosed('parent');
+    coordinator.notifyFullyDismissed('parent');
+    coordinator.setDesiredOpen('replacement', true);
+    expect(child.dismiss).toHaveBeenCalledTimes(1);
+    expect(replacement.present).not.toHaveBeenCalled();
+    coordinator.notifyFullyDismissed('child');
+    expect(replacement.present).toHaveBeenCalledTimes(1);
+  });
+
+  it('prunes unique child groups after teardown while preserving their in-flight guard', () => {
+    const parent = makeSheet();
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.setDesiredOpen('parent', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+    const deleteGroup = vi.spyOn(Map.prototype, 'delete');
+    try {
+      for (let cycle = 0; cycle < 25; cycle += 1) {
+        const group = `queue-tick-cleanup-${cycle}`;
+        const child = makeSheet();
+        const unregister = coordinator.register({ id: `child-${cycle}`, group, parentId: 'parent', ...child });
+        coordinator.setDesiredOpen(`child-${cycle}`, true);
+        vi.advanceTimersByTime(SETTLE_MS);
+        unregister();
+        expect(deleteGroup).not.toHaveBeenCalledWith(group);
+        expect(coordinator.isBusy(group)).toBe(true);
+        vi.advanceTimersByTime(SETTLE_MS);
+        expect(deleteGroup).toHaveBeenCalledWith(group);
+        expect(coordinator.isBusy(group)).toBe(false);
+      }
+      expect(
+        deleteGroup.mock.calls.filter(([key]) => typeof key === 'string' && key.startsWith('queue-tick-cleanup-')),
+      ).toHaveLength(25);
+      expect(parent.dismiss).not.toHaveBeenCalled();
+    } finally {
+      deleteGroup.mockRestore();
+    }
+  });
+
   it('serializes a sheet-over-sheet handoff: dismiss A, settle, then present B', () => {
     const a = makeSheet();
     const b = makeSheet();
@@ -413,9 +821,25 @@ function makeSheetApi(): SheetApiMock {
 let managed: ReturnType<typeof useManagedSheet> | null = null;
 let sheetApi: SheetApiMock;
 
-function ManagedHarness({ open, onClose }: { open?: boolean; onClose?: () => void }) {
+function ManagedHarness({
+  open,
+  onClose,
+  parentId,
+  group,
+}: {
+  open?: boolean;
+  onClose?: () => void;
+  parentId?: string;
+  group?: string;
+}) {
   const sheetRef = useRef(sheetApi as unknown as BottomSheetMethods);
-  managed = useManagedSheet({ open, sheetRef: sheetRef as RefObject<BottomSheetMethods | null>, onClose });
+  managed = useManagedSheet({
+    open,
+    sheetRef: sheetRef as RefObject<BottomSheetMethods | null>,
+    onClose,
+    parentId,
+    group,
+  });
   return null;
 }
 
@@ -445,6 +869,53 @@ describe('useManagedSheet bridge', () => {
     act(() => managed?.onFullyDismissed());
 
     await expect(resultPromise).resolves.toEqual({ status: 'dismissed' });
+  });
+
+  it('exposes a stable waitForPresentation callback outside the imperative handle', async () => {
+    const { rerender } = render(
+      createElement(SheetPresentationProvider, null, createElement(ManagedHarness, { open: true })),
+    );
+    if (!managed) throw new Error('managed sheet did not mount');
+    const waitForPresentation = managed.waitForPresentation;
+    const sheetId = managed.sheetId;
+    expect(typeof sheetId).toBe('string');
+    const settled = vi.fn();
+    const result = waitForPresentation();
+    void result.then(settled);
+    act(() => managed?.onChange(0));
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled(); // a detent callback is not native animation completion
+    rerender(createElement(SheetPresentationProvider, null, createElement(ManagedHarness, { open: true })));
+    expect(managed.waitForPresentation).toBe(waitForPresentation);
+    expect(managed.sheetId).toBe(sheetId);
+    expect(managed.handle).not.toHaveProperty('waitForPresentation');
+    vi.advanceTimersByTime(SETTLE_MS);
+    await expect(result).resolves.toEqual({ status: 'presented' });
+    expect(sheetApi.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('registers a managed native child under its explicit parent id', async () => {
+    function Harness({ open }: { open: boolean }) {
+      return createElement(
+        SheetPresentationProvider,
+        null,
+        createElement(Capture),
+        createElement(ManagedHarness, { open, parentId: 'parent', group: 'queue-tick' }),
+      );
+    }
+    const { rerender } = render(createElement(Harness, { open: false }));
+    const parent = makeSheet();
+    coordinator.register({ id: 'parent', group: 'root', ...parent });
+    coordinator.setDesiredOpen('parent', true);
+    rerender(createElement(Harness, { open: true }));
+    expect(sheetApi.snapToIndex).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(sheetApi.snapToIndex).toHaveBeenCalledTimes(1);
+    expect(parent.dismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SETTLE_MS);
+    if (!managed) throw new Error('managed child did not mount');
+    const ready = managed.waitForPresentation();
+    await expect(ready).resolves.toEqual({ status: 'presented' });
   });
 
   it('a user pan-down (onChange(-1)) fires onClose', () => {

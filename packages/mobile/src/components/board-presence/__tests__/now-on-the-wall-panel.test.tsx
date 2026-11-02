@@ -92,6 +92,7 @@ vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({
 // Self-subscribing (React Query, Reanimated, expo-router); its own suite covers
 // what it draws. Here: where it mounts and what the panel hands it.
 const liveSessionsBlock = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
+vi.mock('../WallDisplayEntry', () => ({ WallDisplayEntry: () => null }));
 vi.mock('../../live-sessions/BoardLiveSessionsBlock', () => ({
   BoardLiveSessionsBlock: (props: Record<string, unknown>) => {
     liveSessionsBlock.props.push(props);

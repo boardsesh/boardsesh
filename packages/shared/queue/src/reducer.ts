@@ -22,6 +22,7 @@ import {
   lineAfterDelta,
   normaliseHistoryCount,
   placeOnWall,
+  historyCopyRuleFor,
   upNextStart,
   type CurrentClimbPlacement,
 } from './now-slot';
@@ -99,7 +100,9 @@ function placeLocally<TSearchParams extends QueueSearchParams>(
   placement: CurrentClimbPlacement,
   trimHistory: boolean,
 ): NowSlotCurrentChange {
-  const placed = placeOnWall(state, item, placement);
+  // The provider resolved the open already, so a new uuid here is one it put up
+  // fresh, as the server places it (`historyCopyRuleFor`).
+  const placed = placeOnWall(state, item, placement, undefined, historyCopyRuleFor(placement));
   const { queue, currentClimbQueueItem, historyCount } = trimHistory ? capHistory(placed) : placed;
   return { queue, currentClimbQueueItem, historyCount };
 }
@@ -183,6 +186,7 @@ export const initialState = <TSearchParams extends QueueSearchParams>(
   needsResync: false,
   unconfirmedMove: null,
   historyCount: null,
+  currentChangedBy: null,
   nowSlotMode: false,
 });
 
@@ -190,8 +194,46 @@ export function queueReducer<TSearchParams extends QueueSearchParams>(
   state: QueueState<TSearchParams>,
   action: QueueAction<TSearchParams>,
 ): QueueState<TSearchParams> {
-  const nextState = retireStaleUnconfirmedMove(reduceQueue(state, action));
+  const nextState = reconcileCurrentChangedBy(state, retireStaleUnconfirmedMove(reduceQueue(state, action)), action);
   return action.serverSequence === undefined ? nextState : { ...nextState, serverSequence: action.serverSequence };
+}
+
+/**
+ * Apply attribution after pointer reconciliation, including its own-echo early
+ * returns. An old echo or snapshot must never name its mover on a newer local
+ * climb that the reducer protected. Local pointer changes have no authoritative
+ * mover until their server confirmation arrives.
+ */
+function reconcileCurrentChangedBy<TSearchParams extends QueueSearchParams>(
+  previous: QueueState<TSearchParams>,
+  next: QueueState<TSearchParams>,
+  action: QueueAction<TSearchParams>,
+): QueueState<TSearchParams> {
+  const currentUuid = next.currentClimbQueueItem?.uuid ?? null;
+  let currentChangedBy = next.currentChangedBy ?? null;
+  if (currentUuid === null || currentUuid !== (previous.currentClimbQueueItem?.uuid ?? null)) {
+    currentChangedBy = null;
+  }
+  if (
+    action.type === 'INITIAL_QUEUE_DATA' &&
+    hasCurrentClimbQueueItem(action.payload) &&
+    (action.payload.currentClimbQueueItem?.uuid ?? null) === currentUuid
+  ) {
+    currentChangedBy = currentUuid === null ? null : (action.payload.currentChangedBy ?? null);
+  } else if (
+    action.type === 'DELTA_UPDATE_CURRENT_CLIMB' &&
+    action.payload.isServerEvent &&
+    (action.payload.item?.uuid ?? null) === currentUuid
+  ) {
+    currentChangedBy = currentUuid === null ? null : (action.payload.currentChangedBy ?? null);
+  } else if (
+    action.type === 'UPDATE_QUEUE' &&
+    Object.prototype.hasOwnProperty.call(action.payload, 'currentChangedBy') &&
+    (!hasCurrentClimbQueueItem(action.payload) || (action.payload.currentClimbQueueItem?.uuid ?? null) === currentUuid)
+  ) {
+    currentChangedBy = currentUuid === null ? null : (action.payload.currentChangedBy ?? null);
+  }
+  return (next.currentChangedBy ?? null) === currentChangedBy ? next : { ...next, currentChangedBy };
 }
 
 function reduceQueue<TSearchParams extends QueueSearchParams>(
@@ -309,7 +351,13 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       // server runs when it lands, so the queue, the line and the hash match
       // the server's once it does.
       const replayed = state.nowSlotMode
-        ? placeOnWall(snapshotState, movedItem, move.placement ?? 'NOW')
+        ? placeOnWall(
+            snapshotState,
+            movedItem,
+            move.placement ?? 'NOW',
+            undefined,
+            historyCopyRuleFor(move.placement ?? 'NOW'),
+          )
         : {
             queue: replayUnconfirmedMove(filteredQueue, snapshotCurrentUuid, move, movedItem),
             currentClimbQueueItem: movedItem,

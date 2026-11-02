@@ -77,6 +77,21 @@ describe('computeBoardRenderVersion', () => {
     const after = computeBoardRenderVersion(scratchTree({ geometryShard: 'module.exports = { outlines: {1:[0]} };' }));
     expect(after).not.toBe(before);
   });
+
+  it.each([
+    'packages/shared/frosted-bokeh/src/index.ts',
+    'packages/shared/frosted-bokeh/assets/grain.png',
+    'packages/shared/board-render/src/frosted-bokeh.ts',
+    'packages/shared/board-render/src/og-card.ts',
+    'packages/backend/src/services/spray-og-card.ts',
+  ])('moves when share-card pixels change in %s', (relativePath) => {
+    const scratchRoot = scratchTree({ geometryShard: 'module.exports = {};' });
+    const before = computeBoardRenderVersion(scratchRoot);
+    const pixelInput = path.join(scratchRoot, relativePath);
+    const original = readFileSync(pixelInput);
+    writeFileSync(pixelInput, Buffer.concat([original, Buffer.from('\nchanged-render-input')]));
+    expect(computeBoardRenderVersion(scratchRoot)).not.toBe(before);
+  });
 });
 
 describe('OPAQUE_RENDER_INPUTS', () => {

@@ -25,6 +25,9 @@ import { LargeContentViewer } from '../LargeContentViewer';
 import { largeContentTitle } from './accessory-large-content-title';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { BoardControlIndicator } from './BoardControlIndicator';
+import { PickBulbSlot } from './PickPutOnBoardBulb';
+import { usePickBulb } from './use-pick-bulb';
+import { lastPickClimb } from '../../lib/last-pick-store';
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -91,17 +94,23 @@ export function ClimbCapsule({
   const { systemColors, brandColors } = useTheme();
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
-  const { openPlay, preparePlay, currentItem } = useAccessoryClimbTap();
+  const { openPlay, preparePlay, currentItem, pick } = useAccessoryClimbTap();
   // Connection state drives the leading control + the "you have control" glow.
   // Read from the single source so the bar can't disagree with the drawer bulb.
   const { inAppBoardConnection, bluetooth } = useBoardConnectionState();
 
-  // Queue head only — the wall's lit climb lives in the top "On the wall" strip.
-  const currentClimb = currentItem?.climb ?? null;
+  // The climber's last pick (its mirror flip drawn) or the queue's current
+  // (owner decision A). Never the wall's lit climb: that lives in the top "On
+  // the wall" strip.
+  const currentClimb = useMemo(() => (pick ? lastPickClimb(pick) : (currentItem?.climb ?? null)), [pick, currentItem]);
   // Board art needs the active board config; matches the iOS 26 native accessory.
   const showThumbnail = boardConfig != null;
-  // Show the connect control once a board is bound (the BLE context exists).
-  const hasBoardControl = bluetooth != null;
+  // The last pick's bulb (owner decision A): lit, unlit, or none for a climb
+  // this wall can't light. Null while the bar shows the queue's current climb.
+  const pickBulb = usePickBulb(pick);
+  // Show the connect control once a board is bound (the BLE context exists),
+  // and not for a pick no board here can light.
+  const hasBoardControl = bluetooth != null && pickBulb?.kind !== 'none';
   // Only "you are driving the wall" lights the bar up.
   const connected = inAppBoardConnection === 'connectedByMe';
 
@@ -150,6 +159,7 @@ export function ClimbCapsule({
         />
       ) : null}
       <AccessoryPlayLink
+        testID={`mini-player-current-${currentClimb.uuid}`}
         style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
         accessibilityLabel={currentClimb.name}
         onOpen={openPlay}
@@ -174,7 +184,18 @@ export function ClimbCapsule({
           drawer. Sits over the bar's left edge, symmetric to the trailing tick. */}
       {hasBoardControl ? (
         <View style={[styles.leadingActionSlot, { height }]}>
-          <BoardControlIndicator size={glassSize.inline} enableLongPress />
+          {pick && pickBulb ? (
+            // The last pick: unlit, the bulb puts it on the board (owner decision A).
+            <PickBulbSlot
+              pick={pick}
+              bulb={pickBulb}
+              size={glassSize.inline}
+              enableLongPress
+              litBulb={<BoardControlIndicator size={glassSize.inline} enableLongPress />}
+            />
+          ) : (
+            <BoardControlIndicator size={glassSize.inline} enableLongPress />
+          )}
         </View>
       ) : null}
       {endAction ? <View style={[styles.endActionSlot, { width: endActionSize, height }]}>{endAction}</View> : null}

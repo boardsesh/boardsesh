@@ -1,6 +1,6 @@
 import { requestPrivacyFollow, removePrivacyFollow } from '../privacy';
 import { canViewUserActivity, userActivityVisibilityCondition } from '../../../services/privacy';
-import { eq, and, count, sql, ilike, inArray } from 'drizzle-orm';
+import { eq, and, count, desc, sql, ilike, inArray } from 'drizzle-orm';
 import { isSizeScopedBoard, resolveRenderBoard } from '@boardsesh/board-config';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
@@ -36,9 +36,11 @@ const DEFAULT_ANGLE = 40;
  * the caller is always someone else looking at someone else's work.
  *
  * A published, listed climb is public whoever set it, so a private account's
- * climbs list here like anyone's. What a private account keeps from strangers
- * is the link from the setter name to its Boardsesh identity (`linkedUser*` in
- * `setterProfile`).
+ * climbs list here like anyone's. Who set it is public with it where the climb
+ * names the account (`board_climbs.user_id`), so `setterProfile` names a
+ * private account behind a setter name it set climbs under. A Kilter or
+ * Tension login linked to a private account (`user_board_mappings`) is not on
+ * any climb, and stays private to viewers who may not see its activity.
  */
 function visibleSetterClimbConditions(username: string, viewerUserId: string | null | undefined) {
   return [
@@ -66,6 +68,64 @@ function visibleSetterClimbConditions(username: string, viewerUserId: string | n
  */
 function listableSetterClimbConditions(username: string, viewerUserId: string | null | undefined) {
   return [...visibleSetterClimbConditions(username, viewerUserId), eq(dbSchema.boardClimbs.isHidden, false)];
+}
+
+/**
+ * The Boardsesh account a setter name points to for this viewer, or null.
+ * `boardTypes` are the boards the name has visible climbs on.
+ */
+async function getSetterAccount(username: string, viewerUserId: string | null | undefined, boardTypes: string[]) {
+  // The Boardsesh account behind the name. First the account that set this
+  // name's listable climbs: who set a published, listed climb is public with
+  // it, a private account included, and a MoonBoard or other Boardsesh climb
+  // has no linked login to find it by. A climb the community hid names no
+  // one, as on every browse surface and the web hero. Most climbs first, then
+  // the id, so two accounts sharing a name resolve the same way every time.
+  const identityColumns = {
+    displayName: dbSchema.userProfiles.displayName,
+    avatarUrl: dbSchema.userProfiles.avatarUrl,
+    userName: dbSchema.users.name,
+    userImage: dbSchema.users.image,
+  };
+  const authors = await db
+    .select({ userId: dbSchema.users.id, ...identityColumns })
+    .from(dbSchema.boardClimbs)
+    .innerJoin(dbSchema.users, eq(dbSchema.boardClimbs.userId, dbSchema.users.id))
+    .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+    .where(and(...listableSetterClimbConditions(username, viewerUserId)))
+    .groupBy(
+      dbSchema.users.id,
+      dbSchema.userProfiles.displayName,
+      dbSchema.userProfiles.avatarUrl,
+      dbSchema.users.name,
+      dbSchema.users.image,
+    )
+    .orderBy(desc(count()), dbSchema.users.id)
+    .limit(1);
+
+  // Otherwise a Kilter or Tension login linked under this name, on a board
+  // type the name has visible climbs on. That login is on no climb, so a
+  // private account's stays with the viewers who may see its activity.
+  // Ordered as the web setter hero orders it.
+  const linkedUsers =
+    authors.length > 0
+      ? authors
+      : await db
+          .select({ userId: dbSchema.userBoardMappings.userId, ...identityColumns })
+          .from(dbSchema.userBoardMappings)
+          .innerJoin(dbSchema.users, eq(dbSchema.userBoardMappings.userId, dbSchema.users.id))
+          .leftJoin(dbSchema.userProfiles, eq(dbSchema.userBoardMappings.userId, dbSchema.userProfiles.userId))
+          .where(
+            and(
+              eq(dbSchema.userBoardMappings.boardUsername, username),
+              inArray(dbSchema.userBoardMappings.boardType, boardTypes),
+              userActivityVisibilityCondition(dbSchema.userBoardMappings.userId, viewerUserId),
+            ),
+          )
+          .orderBy(sql`${dbSchema.userProfiles.userId} IS NULL`, dbSchema.userBoardMappings.userId)
+          .limit(1);
+
+  return linkedUsers[0] ?? null;
 }
 
 export const setterFollowQueries = {
@@ -116,27 +176,7 @@ export const setterFollowQueries = {
       isFollowedByMe = Number(followCheck?.count ?? 0) > 0;
     }
 
-    // Check for linked Boardsesh user
-    const linkedUsers = await db
-      .select({
-        userId: dbSchema.userBoardMappings.userId,
-        displayName: dbSchema.userProfiles.displayName,
-        avatarUrl: dbSchema.userProfiles.avatarUrl,
-        userName: dbSchema.users.name,
-        userImage: dbSchema.users.image,
-      })
-      .from(dbSchema.userBoardMappings)
-      .innerJoin(dbSchema.users, eq(dbSchema.userBoardMappings.userId, dbSchema.users.id))
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.userBoardMappings.userId, dbSchema.userProfiles.userId))
-      .where(
-        and(
-          eq(dbSchema.userBoardMappings.boardUsername, username),
-          userActivityVisibilityCondition(dbSchema.userBoardMappings.userId, ctx.isAuthenticated ? ctx.userId : null),
-        ),
-      )
-      .limit(1);
-
-    const linkedUser = linkedUsers[0];
+    const linkedUser = await getSetterAccount(username, ctx.isAuthenticated ? ctx.userId : null, boardTypes);
 
     return {
       username,
@@ -331,6 +371,7 @@ export const setterFollowQueries = {
           // needs it to tell Woods' two sizes apart (their hold ids overlap as
           // different holds).
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          required_set_ids: tables.climbs.requiredSetIds,
           // How many of the climb's holds have come off the wall — see get-climb.ts.
           missing_hold_count: tables.climbs.missingHoldCount,
           revision_number: tables.climbs.revisionNumber,
@@ -392,6 +433,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        requiredSetIds: result.required_set_ids ?? null,
         missingHoldCount: result.missing_hold_count ?? null,
         revisionNumber: result.revision_number ?? null,
         holdsRevisionNumber: result.holds_revision_number ?? null,
@@ -454,6 +496,7 @@ export const setterFollowQueries = {
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          required_set_ids: tables.climbs.requiredSetIds,
           // How many of the climb's holds have come off the wall — see get-climb.ts.
           missing_hold_count: tables.climbs.missingHoldCount,
           revision_number: tables.climbs.revisionNumber,
@@ -523,6 +566,7 @@ export const setterFollowQueries = {
           framesCount: result.frames_count ?? null,
           framesPace: result.frames_pace ?? null,
           compatibleSizeIds: result.compatible_size_ids ?? null,
+          requiredSetIds: result.required_set_ids ?? null,
           missingHoldCount: result.missing_hold_count ?? null,
           revisionNumber: result.revision_number ?? null,
           holdsRevisionNumber: result.holds_revision_number ?? null,
@@ -560,25 +604,27 @@ export const setterFollowQueries = {
     const validatedInput = validateInput(UserClimbsInputSchema, input, 'input');
     const { userId, sortBy, limit, offset } = validatedInput;
 
-    // A published, listed climb is public whoever set it, everywhere else: in
-    // search, on its page, on the setter page under its setter name. What a
-    // private account keeps is the link from those climbs to itself. This list
-    // IS that link (these climbs, under this account), so a viewer who may not
-    // see the account's activity gets an empty list, the same answer an account
-    // with no climbs gives. Followers and the owner get the full list.
+    // A published, listed climb is public whoever set it, and so is who set it,
+    // so the climbs whose `user_id` is this account go to everyone, a private
+    // account's included. Anyone but the owner gets the published, listed,
+    // unhidden climbs only (below); the owner also gets their unlisted and
+    // community-hidden ones.
     const isSelf = !!ctx.userId && ctx.userId === userId;
-    if (!isSelf && !(await canViewUserActivity(ctx.userId, userId))) {
-      return { climbs: [], totalCount: 0, hasMore: false };
-    }
 
-    // 1. Look up linked Aurora usernames
-    const mappings = await db
-      .select({
-        boardType: dbSchema.userBoardMappings.boardType,
-        boardUsername: dbSchema.userBoardMappings.boardUsername,
-      })
-      .from(dbSchema.userBoardMappings)
-      .where(eq(dbSchema.userBoardMappings.userId, userId));
+    // 1. Look up linked Aurora usernames. Climbs imported under a linked Kilter
+    // or Tension login carry no `user_id`, so listing them under the account
+    // would name its board logins: a private account's stay with the viewers
+    // who may see its activity.
+    const showLinkedLogins = isSelf || (await canViewUserActivity(ctx.isAuthenticated ? ctx.userId : null, userId));
+    const mappings = showLinkedLogins
+      ? await db
+          .select({
+            boardType: dbSchema.userBoardMappings.boardType,
+            boardUsername: dbSchema.userBoardMappings.boardUsername,
+          })
+          .from(dbSchema.userBoardMappings)
+          .where(eq(dbSchema.userBoardMappings.userId, userId))
+      : [];
 
     const linkedMappings = mappings.filter(
       (mapping): mapping is { boardType: string; boardUsername: string } =>
@@ -777,6 +823,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        requiredSetIds: result.required_set_ids ?? null,
         missingHoldCount: result.missing_hold_count ?? null,
         revisionNumber: result.revision_number ?? null,
         holdsRevisionNumber: result.holds_revision_number ?? null,
@@ -1008,14 +1055,16 @@ export const setterFollowMutations = {
     const setterUsername = validatedInput.setterUsername;
 
     // Verify the setter exists AND is visible — the same rule the profile 404s
-    // on, so you cannot follow a setter whose page does not resolve.
-    const [exists] = await db
-      .select({ count: count() })
-      .from(dbSchema.boardClimbs)
-      .where(and(...visibleSetterClimbConditions(setterUsername, myUserId)))
-      .limit(1);
+    // on, so you cannot follow a setter whose page does not resolve. The board
+    // types it returns also limit which linked logins can name an account.
+    const boardTypes = (
+      await db
+        .selectDistinct({ boardType: dbSchema.boardClimbs.boardType })
+        .from(dbSchema.boardClimbs)
+        .where(and(...visibleSetterClimbConditions(setterUsername, myUserId)))
+    ).map((row) => row.boardType);
 
-    if (Number(exists?.count ?? 0) === 0) {
+    if (boardTypes.length === 0) {
       throw new Error('Setter not found');
     }
 
@@ -1031,17 +1080,13 @@ export const setterFollowMutations = {
 
     // Check if setter has a linked Boardsesh account
     if (result.length > 0) {
-      const linkedUsers = await db
-        .select({ userId: dbSchema.userBoardMappings.userId })
-        .from(dbSchema.userBoardMappings)
-        .where(eq(dbSchema.userBoardMappings.boardUsername, setterUsername))
-        .limit(1);
+      const linkedUser = await getSetterAccount(setterUsername, myUserId, boardTypes);
 
       // A private linked account only gets a follow request (and its inbox
       // notification). The setter follow itself is made either way: a setter's
       // published climbs are public, so the result stays true.
-      if (linkedUsers.length > 0 && linkedUsers[0].userId !== myUserId) {
-        await requestPrivacyFollow(myUserId, linkedUsers[0].userId);
+      if (linkedUser !== null && linkedUser.userId !== myUserId) {
+        await requestPrivacyFollow(myUserId, linkedUser.userId);
       }
 
       publishSocialEvent({
@@ -1072,20 +1117,28 @@ export const setterFollowMutations = {
     const myUserId = ctx.userId!;
     const setterUsername = validatedInput.setterUsername;
 
+    const boardTypes = (
+      await db
+        .selectDistinct({ boardType: dbSchema.boardClimbs.boardType })
+        .from(dbSchema.boardClimbs)
+        .where(and(...visibleSetterClimbConditions(setterUsername, myUserId)))
+    ).map((row) => row.boardType);
+
     await db
       .delete(dbSchema.setterFollows)
       .where(
         and(eq(dbSchema.setterFollows.followerId, myUserId), eq(dbSchema.setterFollows.setterUsername, setterUsername)),
       );
 
-    // Also remove user_follows if linked
-    const linkedUsers = await db
-      .select({ userId: dbSchema.userBoardMappings.userId })
-      .from(dbSchema.userBoardMappings)
-      .where(eq(dbSchema.userBoardMappings.boardUsername, setterUsername))
-      .limit(1);
+    // No visible climbs, so no account to unfollow; the setter follow is already gone
+    if (boardTypes.length === 0) {
+      return true;
+    }
 
-    if (linkedUsers.length > 0) await removePrivacyFollow(myUserId, linkedUsers[0].userId);
+    // Also remove user_follows if linked
+    const linkedUser = await getSetterAccount(setterUsername, myUserId, boardTypes);
+
+    if (linkedUser !== null) await removePrivacyFollow(myUserId, linkedUser.userId);
 
     return true;
   },

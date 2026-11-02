@@ -98,6 +98,7 @@ export type QueueEvent =
       stateHashOrdered?: string | null;
       item: ClimbQueueItem | null;
       frames?: string | null;
+      currentChangedBy?: string | null;
       clientId: string | null;
       correlationId: string | null;
     }
@@ -150,6 +151,7 @@ export type SubscriptionQueueEvent =
       stateHashOrdered?: string | null;
       currentItem: ClimbQueueItem | null;
       frames?: string | null;
+      currentChangedBy?: string | null;
       clientId: string | null;
       correlationId: string | null;
     }

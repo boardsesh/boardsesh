@@ -37,8 +37,17 @@ runs:
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: '3.4'
-        bundler-cache: true
         working-directory: fastlane
+    # Every caller holds App Store Connect credentials, so gems are installed
+    # fresh instead of restored from a shared cache
+    # (scripts/workflow-cache-restore.test.ts).
+    - name: Install fastlane gems
+      shell: bash
+      working-directory: fastlane
+      run: |
+        bundle config set --local path "$PWD/vendor/bundle"
+        bundle config set --local deployment true
+        bundle install --jobs 4
     - name: Test CPP reconciliation and publication gates
       shell: bash
       run: vp exec ruby fastlane/tests/custom_product_pages_test.rb

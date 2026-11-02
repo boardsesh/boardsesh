@@ -426,6 +426,9 @@
     "cancel": "Abbrechen",
     "mobileConnectAnyway": "Trotzdem verbinden",
     "mobileConnectAnywayWarning": "Bei uns gehört dieser Controller zu einem anderen Board-Setup. Wenn du trotzdem verbindest, werden Boulder womöglich falsch beleuchtet.",
+    "mobileDifferentBoardTitle": "Anderes gespeichertes Board",
+    "mobileDifferentBoardNamedWarning": "Dieser Controller ist mit {{name}}, einem anderen gespeicherten Board, verknüpft. Wenn du dich trotzdem verbindest, erscheinen deine Boulder im Feed deines aktuellen Boards.",
+    "mobileDifferentBoardWarning": "Dieser Controller ist mit einem anderen gespeicherten Board verknüpft. Wenn du dich trotzdem verbindest, erscheinen deine Boulder im Feed deines aktuellen Boards.",
     "mobileSwitchSetup": "Board-Setup wechseln",
     "mobileUseRecordedSetup": "Hinterlegtes Setup verwenden"
   },
@@ -443,6 +446,7 @@
     "searchingForBoard": "Suche nach deinem {{board}}…",
     "searchingForSavedBoard": "Suche nach deinem Board…",
     "searchAnyBoard": "Nach allen Boards suchen",
+    "selectedBoardNotFound": "Dein ausgewähltes Board wurde nicht gefunden",
     "writing": "Board wird beleuchtet…",
     "selectBoard": "Board auswählen",
     "devicesFound_one": "{{count}} Board gefunden",
@@ -462,36 +466,39 @@
     "cancel": "Abbrechen",
     "connectBoard": "Board verbinden",
     "relightBoard": "Board neu beleuchten",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Trennt die Verbindung zum Board, wenn für die gewählte Zeit kein Boulder angezeigt wurde.",
-      "enabledLabel": "Automatisch trennen",
-      "enabledDescription": "Lass andere Kletterer*innen verbinden, sobald der Timer abläuft.",
-      "timeoutLabel": "Trennen nach",
-      "toggleTitle": "Automatisch trennen",
-      "toggleSubtitle": "Trennen nach {{timeout}} ohne Aktivität",
-      "timeoutOptions": {
-        "10": "10 Sekunden",
-        "15": "15 Sekunden",
-        "30": "30 Sekunden",
-        "45": "45 Sekunden",
-        "60": "1 Minute",
-        "120": "2 Minuten",
-        "300": "5 Minuten",
-        "600": "10 Minuten"
-      }
-    },
     "lighting": {
       "title": "Board-Beleuchtung",
-      "description": "Lege fest, was das verbundene Board automatisch beleuchtet.",
-      "onSwipeLabel": "Board beim Wischen beleuchten",
-      "onSwipeDescription": "Nur wenn schon ein Boulder am Board leuchtet. Eine Vorschau beleuchtet beim Wischen nie das Board.",
-      "onTapLabel": "Board beleuchten, wenn ich einen Boulder antippe",
-      "onTapDescription": "Tippst du in einer Liste einen Boulder an, wird er am Board beleuchtet. Ist das aus, öffnet das Antippen eine Vorschau.",
+      "keep": {
+        "label": "Steuern beenden nach",
+        "off": "Sofort",
+        "options": {
+          "30": "30 Sekunden",
+          "45": "45 Sekunden",
+          "60": "1 Minute",
+          "120": "2 Minuten",
+          "300": "5 Minuten"
+        },
+        "untilStopped": "Bis ich stoppe",
+        "inSessionLabel": "Auch in einer Session",
+        "inSessionAccessibilityLabel": "„Am Board beleuchten“ und „Board immer steuern“ gelten auch in einer Session",
+        "inSessionDescription": "Wenn dein Handy das Board der Crew hat. Ist das aus, bleiben die Boulder, die du in einer Session wählst, Vorschauen.",
+        "inSessionOffReason": "Stell dafür „Steuern beenden nach“ auf etwas anderes als „Sofort“.",
+        "alwaysDriveReason": "„Board immer steuern“ ist an, deshalb gilt das nicht.",
+        "footer": "„Am Board beleuchten“ beleuchtet den Boulder und du steuerst das Board: Jeder Boulder, den du wählst, wird auch beleuchtet, und jeder startet die Uhr neu. Ist die Zeit um, öffnet sich dein nächster Boulder als Vorschau.",
+        "footerUntilStopped": "„Am Board beleuchten“ beleuchtet den Boulder und du steuerst das Board: Jeder Boulder, den du wählst, wird auch beleuchtet, bis du auf „Du steuerst das Board“ tippst.",
+        "footerOff": "„Am Board beleuchten“ beleuchtet den Boulder, den du offen hast. Dein nächster Boulder öffnet sich als Vorschau."
+      },
+      "drivingEnds": {
+        "label": "Bluetooth trennen, wenn das Steuern endet",
+        "description": "Endet dein Steuern, gibt dein Handy das Board frei, damit sich die nächste Person verbinden kann: wenn du stoppst oder alle Lichter ausschaltest, wenn die Zeit um ist oder wenn jemand aus deiner Crew einen Boulder beleuchtet, während dein Steuern ein Zeitlimit hat. „Am Board beleuchten“ verbindet wieder."
+      },
+      "drivingHelp": "So funktioniert das Steuern des Boards",
+      "alwaysDriveLabel": "Board immer steuern",
+      "alwaysDriveDescription": "Jeder Boulder, den du wählst, wird beleuchtet, solange dieses Handy das Board hat. In einer Session braucht es „Auch in einer Session“.",
+      "alwaysDriveFooter": "Tippe auf „Du steuerst das Board“, um aufzuhören. Danach öffnen sich die Boulder, die du wählst, als Vorschau, bis du die Verbindung trennst oder auf „Am Board beleuchten“ tippst.",
       "playlistTapLoadsQueueLabel": "Antippen einer Playlist lädt sie in meine Warteschlange",
-      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, ersetzt diese Liste deine Warteschlange. Ist „Board beleuchten, wenn ich einen Boulder antippe“ aus, lädst du sie mit Abspielen."
+      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, lädt das diese Liste. Steuerst du das Board, ersetzt die Liste deine Warteschlange und der angetippte Boulder wird beleuchtet. Sonst kommt die Liste ab dem angetippten Boulder in Als Nächstes und der Boulder öffnet sich als Vorschau, während das Board seinen Boulder behält, bis du Am Board beleuchten wählst. In einer Session kommt die Liste nie in die geteilte Warteschlange."
     },
-    "turnOff": "Board ausschalten",
     "holdForControls": "Halten für die Board-Steuerung",
     "boardControls": "Board-Steuerung",
     "sendFailedTitle": "Board ließ sich nicht beleuchten",
@@ -513,19 +520,23 @@
     "releaseWall": "Wand freigeben",
     "barControl": {
       "connectedLabel": "Board verbunden, du hast die Steuerung",
-      "connectedHint": "Öffnet die Board-Steuerung",
+      "youHaveBoard": "Du hast das Board",
+      "youHaveBoardWithClimb": "Du hast das Board: {{name}}, {{grade}}",
+      "connectedHint": "Trennt das Board",
       "peerLabel": "An der Wand von {{name}}",
       "peerLabelAnonymous": "An der Wand",
       "peerHint": "Öffnet den Boulder an der Wand",
       "disconnectedLabel": "Board getrennt",
       "disconnectedHint": "Mit dem Board verbinden",
       "wallHeldLabel": "Du hast die Wand",
+      "wallHeldWithClimb": "Du hast die Wand: {{name}}, {{grade}}",
       "wallHeldHint": "Gibt die Wand frei",
       "wallOpenLabel": "Wand ist frei",
-      "wallOpenHint": "Übernimmt die Wand"
+      "wallOpenHint": "Übernimmt die Wand",
+      "drivingValue": "Du steuerst das Board"
     },
     "relayToWall": "Deinen Boulder am Board beleuchten",
-    "peerDrivingBoard": "Jemand anderes steuert das Board"
+    "peerDrivingBoard": "Jemand anderes hat das Board"
   },
   "integrations": {
     "title": "Verbundene Apps",

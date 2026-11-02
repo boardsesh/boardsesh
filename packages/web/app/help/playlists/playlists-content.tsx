@@ -19,8 +19,9 @@ import { HelpScreenshot } from '../help-screenshot';
  * Every UI claim here was checked against packages/mobile: the Discover screen
  * (section order, the create plus, per-device smart-list pins), ClimbListRow
  * (swipe directions), InlinePlaylistPicker (checklist + board scoping),
- * PlaylistDetailView / use-playlist-activation (tap-to-queue, the Start
- * playlist? confirm, view-only taps in a shared session) and the backend
+ * PlaylistDetailView / use-playlist-activation (tap-to-preview, the opt-in
+ * load into Up next, the three-way Start playlist? prompt, view-only taps in a
+ * shared session) and the backend
  * smart-playlists resolver (what feeds each curated list).
  */
 export default function PlaylistsContent() {

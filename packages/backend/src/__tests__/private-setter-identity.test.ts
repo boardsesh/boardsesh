@@ -1,9 +1,10 @@
 /**
- * Real-DB coverage for the identity a private account keeps on the new-climb
- * surfaces. A published, listed climb is public whoever set it, so it shows up
- * everywhere; the account behind it is named (display name, avatar, account id)
- * only to viewers who may see that account's activity: the account itself and
- * its approved followers. Everyone else sees the climb under its setter name.
+ * Real-DB coverage for who set a private account's published climb on the
+ * new-climb surfaces. A published, listed climb is public whoever set it, and
+ * so is who set it (#6418): the account behind it is named (display name,
+ * avatar, account id) to everyone, signed in or not, the way the board sync
+ * already carries its `user_id`. What a private account keeps private is its
+ * activity, so anyone ELSE acting on its climb keeps their own account privacy.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -17,8 +18,10 @@ import { publishSocialEvent } from '../events/index';
 import { newClimbSubscriptionResolvers } from '../graphql/resolvers/social/new-climb-subscriptions';
 import { crewFeedQueries } from '../graphql/resolvers/social/crew-feed';
 import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
+import { activityFeedQueries } from '../graphql/resolvers/social/activity-feed';
 
-// Feed fan-out is not under test here; the notification rows are.
+// The notification rows are under test here, so the worker's feed fan-out is
+// stubbed; the activity-feed block below runs the real one on purpose.
 vi.mock('../events/feed-fanout', () => ({
   fanoutFeedItems: vi.fn(async () => {}),
   fanoutNewClimbFeedItems: vi.fn(async () => {}),
@@ -35,7 +38,9 @@ const PRIVATE_AUTHOR = 'identity-private-author';
 const PUBLIC_AUTHOR = 'identity-public-author';
 const FOLLOWER = 'identity-follower';
 const STRANGER = 'identity-stranger';
-const USERS = [PRIVATE_AUTHOR, PUBLIC_AUTHOR, FOLLOWER, STRANGER];
+/** Another private account, which never set the climbs below. */
+const OTHER_PRIVATE = 'identity-other-private';
+const USERS = [PRIVATE_AUTHOR, PUBLIC_AUTHOR, FOLLOWER, STRANGER, OTHER_PRIVATE];
 
 /** The private account's linked board handle: its climbs list under this name. */
 const PRIVATE_SETTER_NAME = 'identity-private-handle';
@@ -48,12 +53,17 @@ const PUBLIC_AVATAR = 'https://example.test/identity-public.png';
 const PRIVATE_CLIMB = 'identity-private-climb';
 const PUBLIC_CLIMB = 'identity-public-climb';
 const PRIVATE_CLIMB_INLINE = 'identity-private-climb-inline';
+const PRIVATE_CLIMB_FEED = 'identity-private-climb-feed';
 
 const ctxFor = (userId: string): ConnectionContext =>
   ({ userId, isAuthenticated: true, connectionId: `identity-${userId}` }) as ConnectionContext;
 const anonymous = { isAuthenticated: false, userId: undefined, connectionId: 'identity-anon' } as ConnectionContext;
 
+/** The private account, as every surface below now names it. */
+const PRIVATE_IDENTITY = { displayName: PRIVATE_DISPLAY, avatarUrl: PRIVATE_AVATAR };
+
 async function removeFixtures(): Promise<void> {
+  await db.execute(sql`DELETE FROM feed_items WHERE entity_id LIKE 'identity-%'`);
   await db.execute(sql`DELETE FROM notifications WHERE entity_id LIKE 'identity-%'`);
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE 'identity-%'`);
   await db.execute(sql`DELETE FROM users WHERE id IN (${sql.join(USERS, sql`, `)})`);
@@ -129,7 +139,7 @@ async function strangerInboxGroup(climbUuid: string) {
   return page.groups.find((group) => group.entityId === climbUuid);
 }
 
-describeWithDatabase("a private account's identity on the new-climb surfaces (real DB)", () => {
+describeWithDatabase("who set a private account's published climb, on the new-climb surfaces (real DB)", () => {
   beforeAll(async () => {
     await removeFixtures();
     await db
@@ -138,6 +148,7 @@ describeWithDatabase("a private account's identity on the new-climb surfaces (re
     await db.insert(dbSchema.userProfiles).values([
       { userId: PRIVATE_AUTHOR, isPrivate: true, displayName: PRIVATE_DISPLAY, avatarUrl: PRIVATE_AVATAR },
       { userId: PUBLIC_AUTHOR, isPrivate: false, displayName: PUBLIC_DISPLAY, avatarUrl: PUBLIC_AVATAR },
+      { userId: OTHER_PRIVATE, isPrivate: true, displayName: 'Other private' },
     ]);
     await db.insert(dbSchema.userFollows).values({ followerId: FOLLOWER, followingId: PRIVATE_AUTHOR });
     await db
@@ -157,6 +168,7 @@ describeWithDatabase("a private account's identity on the new-climb surfaces (re
     await insertClimb(PRIVATE_CLIMB, PRIVATE_AUTHOR, PRIVATE_SETTER_NAME);
     await insertClimb(PUBLIC_CLIMB, PUBLIC_AUTHOR, PUBLIC_SETTER_NAME);
     await insertClimb(PRIVATE_CLIMB_INLINE, PRIVATE_AUTHOR, PRIVATE_SETTER_NAME);
+    await insertClimb(PRIVATE_CLIMB_FEED, PRIVATE_AUTHOR, PRIVATE_SETTER_NAME);
   });
   afterAll(removeFixtures);
 
@@ -173,24 +185,17 @@ describeWithDatabase("a private account's identity on the new-climb surfaces (re
     it.each([
       ['an anonymous caller', anonymous],
       ['a stranger', ctxFor(STRANGER)],
-    ])("lists a private account's climb to %s under its setter name, with no avatar", async (_label, ctx) => {
-      const items = await feedFor(ctx);
-      expect(items.get(PRIVATE_CLIMB)).toMatchObject({ setterDisplayName: PRIVATE_SETTER_NAME, setterAvatarUrl: null });
-      // A public account is named to everyone.
-      expect(items.get(PUBLIC_CLIMB)).toMatchObject({
-        setterDisplayName: PUBLIC_DISPLAY,
-        setterAvatarUrl: PUBLIC_AVATAR,
-      });
-    });
-
-    it.each([
       ['an approved follower', ctxFor(FOLLOWER)],
       ['the account itself', ctxFor(PRIVATE_AUTHOR)],
-    ])('names the private account to %s', async (_label, ctx) => {
+    ])('names the private account behind its climb to %s', async (_label, ctx) => {
       const items = await feedFor(ctx);
       expect(items.get(PRIVATE_CLIMB)).toMatchObject({
         setterDisplayName: PRIVATE_DISPLAY,
         setterAvatarUrl: PRIVATE_AVATAR,
+      });
+      expect(items.get(PUBLIC_CLIMB)).toMatchObject({
+        setterDisplayName: PUBLIC_DISPLAY,
+        setterAvatarUrl: PUBLIC_AVATAR,
       });
     });
   });
@@ -202,36 +207,33 @@ describeWithDatabase("a private account's identity on the new-climb surfaces (re
       return card && 'climb' in card ? card.climb : undefined;
     };
 
-    it("shows a followed setter name's climb to a stranger without the private account behind it", async () => {
-      expect(await cardFor(STRANGER, PRIVATE_CLIMB)).toMatchObject({
-        actorId: null,
-        actorDisplayName: PRIVATE_SETTER_NAME,
-        actorAvatarUrl: null,
+    it.each([
+      ['a stranger following its setter name', STRANGER],
+      ['its approved follower', FOLLOWER],
+    ])('names the private account behind a climb card to %s', async (_label, viewerId) => {
+      expect(await cardFor(viewerId, PRIVATE_CLIMB)).toMatchObject({
+        actorId: PRIVATE_AUTHOR,
+        actorDisplayName: PRIVATE_DISPLAY,
+        actorAvatarUrl: PRIVATE_AVATAR,
         setterUsername: PRIVATE_SETTER_NAME,
       });
+    });
+
+    it('names a public account to a stranger, as before', async () => {
       expect(await cardFor(STRANGER, PUBLIC_CLIMB)).toMatchObject({
         actorId: PUBLIC_AUTHOR,
         actorDisplayName: PUBLIC_DISPLAY,
         actorAvatarUrl: PUBLIC_AVATAR,
       });
     });
-
-    it('names the private account to its approved follower', async () => {
-      expect(await cardFor(FOLLOWER, PRIVATE_CLIMB)).toMatchObject({
-        actorId: PRIVATE_AUTHOR,
-        actorDisplayName: PRIVATE_DISPLAY,
-        actorAvatarUrl: PRIVATE_AVATAR,
-      });
-    });
   });
 
   describe('new-climb notifications', () => {
-    // Who set a published climb is public by its setter name, so a stranger
-    // watching the layout still hears about it: with no account id or avatar,
-    // the way the board's new-climb feed shows it. The follower is told who.
+    // Every recipient is told which account set the climb: the follower, and
+    // the stranger who only watches the layout.
     const expected = {
       [FOLLOWER]: { type: 'new_climb', actorId: PRIVATE_AUTHOR },
-      [STRANGER]: { type: 'new_climb_global', actorId: null },
+      [STRANGER]: { type: 'new_climb_global', actorId: PRIVATE_AUTHOR },
     };
 
     afterEach(() => vi.restoreAllMocks());
@@ -245,44 +247,88 @@ describeWithDatabase("a private account's identity on the new-climb surfaces (re
       return pushed;
     };
 
-    /** The live push names the account to its follower and only the setter name to the stranger. */
+    /** The live push names the account, with its avatar, to both recipients. */
     const expectPushes = (pushed: Map<string, Record<string, unknown>>) => {
       expect(pushed.get(FOLLOWER)).toMatchObject({
+        type: 'new_climb',
         actorId: PRIVATE_AUTHOR,
         actorDisplayName: PRIVATE_DISPLAY,
         actorAvatarUrl: PRIVATE_AVATAR,
       });
-      const toStranger = pushed.get(STRANGER);
-      expect(toStranger).toMatchObject({
+      expect(pushed.get(STRANGER)).toMatchObject({
         type: 'new_climb_global',
-        actorId: null,
-        actorDisplayName: PRIVATE_SETTER_NAME,
+        actorId: PRIVATE_AUTHOR,
+        actorDisplayName: PRIVATE_DISPLAY,
+        actorAvatarUrl: PRIVATE_AVATAR,
       });
-      expect(toStranger?.actorAvatarUrl ?? null).toBeNull();
     };
 
-    it('reach the stranger watching the layout under the setter name (notification worker)', async () => {
+    it('name the author to the stranger watching the layout (notification worker)', async () => {
       const pushed = capturePushes();
       await captureWorkerHandler()(climbCreated(PRIVATE_CLIMB));
       expect(await notifiedAbout(PRIVATE_CLIMB)).toEqual(expected);
       expectPushes(pushed);
       expect(await strangerInboxGroup(PRIVATE_CLIMB)).toMatchObject({
         type: 'new_climb_global',
-        actorCount: 0,
-        actors: [],
-        setterUsername: PRIVATE_SETTER_NAME,
+        actorCount: 1,
+        actors: [{ id: PRIVATE_AUTHOR, ...PRIVATE_IDENTITY }],
       });
     });
 
-    it('reach the stranger watching the layout under the setter name (inline, no Redis)', async () => {
+    it('name the author to the stranger watching the layout (inline, no Redis)', async () => {
       const pushed = capturePushes();
       await publishSocialEvent(climbCreated(PRIVATE_CLIMB_INLINE));
       expect(await notifiedAbout(PRIVATE_CLIMB_INLINE)).toEqual(expected);
       expectPushes(pushed);
       expect(await strangerInboxGroup(PRIVATE_CLIMB_INLINE)).toMatchObject({
-        actors: [],
-        setterUsername: PRIVATE_SETTER_NAME,
+        actorCount: 1,
+        actors: [{ id: PRIVATE_AUTHOR, ...PRIVATE_IDENTITY }],
       });
+    });
+  });
+
+  describe('activity feed', () => {
+    const feedRowsFor = async (viewerId: string) => {
+      const page = await activityFeedQueries.activityFeed(null, { input: { limit: 50 } }, ctxFor(viewerId));
+      return page.items.filter((item) => item.entityId === PRIVATE_CLIMB_FEED);
+    };
+
+    beforeAll(async () => {
+      // The real fan-out, as the worker runs it after a climb is published:
+      // the author's approved follower and the setter name's follower.
+      const { fanoutNewClimbFeedItems } =
+        await vi.importActual<typeof import('../events/feed-fanout')>('../events/feed-fanout');
+      await fanoutNewClimbFeedItems(climbCreated(PRIVATE_CLIMB_FEED));
+    });
+
+    it.each([
+      ['a stranger following the setter name', STRANGER],
+      ['its approved follower', FOLLOWER],
+    ])("shows a private account's new climb to %s, naming the account", async (_label, viewerId) => {
+      expect(await feedRowsFor(viewerId)).toEqual([
+        expect.objectContaining({
+          type: 'new_climb',
+          actorId: PRIVATE_AUTHOR,
+          actorDisplayName: PRIVATE_DISPLAY,
+          actorAvatarUrl: PRIVATE_AVATAR,
+          setterUsername: PRIVATE_SETTER_NAME,
+        }),
+      ]);
+    });
+
+    it('still hides a row naming another private account on that climb', async () => {
+      // Only the climb's own author is public with it. A row about the same
+      // climb that names a different private account is that account's activity.
+      await db.insert(dbSchema.feedItems).values({
+        recipientId: STRANGER,
+        actorId: OTHER_PRIVATE,
+        type: 'new_climb',
+        entityType: 'climb',
+        entityId: PRIVATE_CLIMB_FEED,
+        metadata: { climbUuid: PRIVATE_CLIMB_FEED, actorDisplayName: 'Other private' },
+      });
+      const rows = await feedRowsFor(STRANGER);
+      expect(rows.map((row) => row.actorId)).toEqual([PRIVATE_AUTHOR]);
     });
   });
 });

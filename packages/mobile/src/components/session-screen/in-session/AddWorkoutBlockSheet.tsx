@@ -15,6 +15,7 @@
 // are passed over where the pool has others. The block's climb filters open on
 // those of the run's last stage, and its stage keeps them in the run.
 
+import { useQueryClient } from '@tanstack/react-query';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
@@ -36,6 +37,7 @@ import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import {
   getWorkoutRunForSession,
   hydrateWorkoutRun,
+  isWorkoutRunPendingStart,
   setWorkoutRun,
   useWorkoutRun,
 } from '../../../lib/workout-run-store';
@@ -65,6 +67,8 @@ import {
 import { buildPreviewListRows, type PreviewListRow } from '../pre-session/workout-preview-sections';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { addWorkoutBlock, defaultMidSessionBlock, defaultMidSessionFilters } from './add-workout-block';
+import { captureWorkoutRunClimbs } from '../../../lib/session-workout-plan';
+import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
 
 // Keys the one block this sheet edits. Stage ids are minted per plan, so a
 // fixed id never reaches the run.
@@ -90,6 +94,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const { isAuthenticated } = useAuth();
   const { sessionId } = useQueueSessionId();
   const { appendQueueItems, getQueueSnapshot } = useQueueActions();
+  const queryClient = useQueryClient();
   const { data: activeBoard } = useActiveBoard();
   const run = useWorkoutRun(sessionId);
   const boardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
@@ -256,11 +261,15 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       setIsSubmitting(false);
       return;
     }
-    setWorkoutRun(sessionId, result.run);
+    setWorkoutRun(sessionId, result.run, captureWorkoutRunClimbs(blockItems));
+    // The server's copy gains the block (#6903). The live queue fills in the
+    // earlier blocks' climbs if the run lost them (a run an older bundle wrote).
+    // Otherwise only a local End fills them in, and a crew guest never presses End.
+    void enqueueSessionWorkoutWrite(sessionId, { queryClient, queueItems: getQueueSnapshot().queue });
     // The added block's own pacing, not the run's: adding a volume block to a
     // workout that once had a 4x4 must not turn back on a timer the climber
     // switched off.
-    armRestTimerForWorkout(sessionId, blockRun, nowMs());
+    if (!isWorkoutRunPendingStart(sessionId)) armRestTimerForWorkout(sessionId, blockRun, nowMs());
     track(SHARED_EVENTS.SessionQueueGenerated, {
       // One block and never a warm-up, so both fields hold the same type here;
       // `phase` tells this add apart from a pre-session workout.
@@ -290,6 +299,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     t,
     onClose,
     planSummary.substituted,
+    queryClient,
   ]);
   const handleAddPress = useCallback(() => void handleAdd(), [handleAdd]);
 

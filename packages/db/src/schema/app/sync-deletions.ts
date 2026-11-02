@@ -44,6 +44,10 @@ export const syncDeletions = pgTable(
     // Prune path (sync-deletions-prune.ts): DELETE WHERE deleted_at < cutoff
     // can't use the user-scoped composite or the NULL-scope partial index.
     pruneIdx: index('sync_deletions_deleted_at_idx').on(table.deletedAt),
+    // Stable offline creates must not resurrect a UUID already deleted elsewhere.
+    climbIdentityIdx: index('sync_deletions_climb_identity_idx')
+      .on(table.recordId)
+      .where(sql`${table.tableName} = 'board_climbs'`),
   }),
 );
 

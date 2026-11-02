@@ -1,3 +1,4 @@
+import { adminBoardsTypeDefs } from './admin-boards';
 import { privacyTypeDefs } from './privacy';
 import { scalarTypeDefs } from './scalars';
 import { climbTypeDefs } from './climb';
@@ -35,12 +36,14 @@ import { holdOutlineOverridesTypeDefs } from './hold-outline-overrides';
 import { sprayWallsTypeDefs, sprayWallResetTypeDefs, sprayWallModerationTypeDefs } from './spray-walls';
 import { sprayDetectionTypeDefs } from './spray-detection';
 import { sprayTrainingTypeDefs } from './spray-training';
+import { sessionWorkoutsTypeDefs } from './session-workouts';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
 
 export const typeDefs = [
+  adminBoardsTypeDefs,
   releaseContextTypeDefs,
   appleAdsAttributionTypeDefs,
   privacyTypeDefs,
@@ -72,6 +75,7 @@ export const typeDefs = [
   sprayWallsTypeDefs,
   sprayDetectionTypeDefs,
   sprayTrainingTypeDefs,
+  sessionWorkoutsTypeDefs,
   sprayWallResetTypeDefs,
   sprayWallModerationTypeDefs,
   queriesTypeDefs,

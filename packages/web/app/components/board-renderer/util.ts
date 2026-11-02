@@ -307,12 +307,9 @@ export const buildOverlayPreloadUrls = (
  * backend origin can't be resolved (misconfigured env, some test contexts) it
  * falls back to the web board-render route unchanged.
  *
- * The backend branch deliberately carries no `v=`: mobile builds the same
- * `/og/climb` URL independently (`packages/mobile/src/hooks/use-share-climb.ts`)
- * from a shipped binary, so versioning it on this side alone would split the edge
- * entry in two instead of versioning it. `/og/climb` gets its own fix — do not
- * "helpfully" add `v` here. The fallback branch goes through
- * `buildBoardRenderUrl` and is versioned like every other web producer.
+ * Web and mobile's fallback prewarm both append the generated renderer version.
+ * A drawing change therefore gets a fresh immutable CDN entry; mobile still
+ * reads the page's advertised card to pick up newer versions and identity.
  */
 export type OgClimbCardIdentity = {
   /** Climb name as displayed. */
@@ -370,6 +367,7 @@ export const buildOgBoardRenderUrl = (
     for (const [key, value] of identityParams) {
       if (value) backendParams.set(key, value);
     }
+    backendParams.set('v', BOARD_RENDER_VERSION);
 
     return `${backendOrigin}/og/climb?${backendParams}`;
   }
@@ -450,6 +448,7 @@ export const buildSprayOgImageUrl = (layoutId: number, frames: string): string |
     set_ids: '1',
     frames: flatFrames,
     format: 'jpeg',
+    v: BOARD_RENDER_VERSION,
   });
   return `${backendOrigin}/og/climb?${backendParams}`;
 };

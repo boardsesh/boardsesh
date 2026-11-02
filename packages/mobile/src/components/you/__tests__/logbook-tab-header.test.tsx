@@ -27,6 +27,11 @@ function flattenStyles(styles: unknown): Record<string, unknown> {
 
 // The list-play hook has its own suite; here a tap only has to reach it.
 vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({ useTickListActivation: () => vi.fn() }));
+// ReadableColumn pads by the side safe area; a portrait phone has none.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   useWindowDimensions: () => ({ fontScale: 1 }),

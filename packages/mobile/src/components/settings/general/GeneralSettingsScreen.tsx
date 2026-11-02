@@ -10,6 +10,7 @@ import { useTheme } from '../../../providers/theme-provider';
 import { useLocalePreference } from '../../../providers/i18n-provider';
 import { useToast } from '../../../providers/toast-provider';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
+import { useDonationLinksAllowed } from '../../../lib/donation-links';
 import { track } from '../../../lib/analytics';
 import { useConnectivity } from '../../../lib/connectivity/use-connectivity';
 import { isOfflineModeSupported } from '../../../lib/connectivity/connectivity-store';
@@ -19,6 +20,7 @@ import { hapticLight, hapticSelection } from '../../../lib/haptics';
 import { reportError } from '../../../lib/error-reporting';
 import { isOfflineEngineEnabled } from '../../../lib/offline-engine';
 import { replayOnboarding } from '../../../lib/onboarding/onboarding-storage';
+import { forgetPreviewFirstTip } from '../../../lib/onboarding/preview-first-tip';
 import { replayBoardLookStep } from '../../../lib/board-render/replay-board-look-step';
 import { withSettingTracking } from '../../../lib/settings-analytics';
 import { useOutboxSummary } from '../../../offline/outbox-store';
@@ -61,6 +63,10 @@ export function GeneralSettingsScreen() {
   const schemaReady = useOfflineSchemaReady();
   const outboxSummary = useOutboxSummary(schemaReady ? db : null);
   const pendingCount = outboxSummary?.pendingCount ?? 0;
+  // "Show support asks": offered only where the app can ask at all, so the
+  // switch never names something this install will never show.
+  const donationLinksAllowed = useDonationLinksAllowed();
+  const [supportAsksShown] = useSetting('supportAsksShown');
 
   const onAutoOfflineBoardsToggle = useMemo(
     () =>
@@ -88,6 +94,10 @@ export function GeneralSettingsScreen() {
     // If the SecureStore clear rejects (keychain locked or unavailable),
     // replayOnboarding never navigates, so surface an error toast instead of the
     // row silently doing nothing. Log and report so a recurring failure shows.
+    // The player's preview-first card (2.7) comes back with the tour: it is the
+    // only in-app explanation of previews and the frost once the What's New
+    // spotlight retires. Best effort: it never holds up or fails the replay.
+    void forgetPreviewFirstTip().catch(() => undefined);
     replayOnboarding(() => router.push('/onboarding')).catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.warn('[onboarding] Failed to replay walkthrough', error);
@@ -154,6 +164,15 @@ export function GeneralSettingsScreen() {
           },
           onReplayWalkthrough: handleReplayWalkthrough,
           onReplayBoardLook: handleReplayBoardLook,
+          supportAsks: donationLinksAllowed
+            ? {
+                shown: supportAsksShown,
+                onShownChange: (shown) => {
+                  hapticSelection();
+                  setSetting('supportAsksShown', shown);
+                },
+              }
+            : null,
         }),
         'general',
       ),
@@ -173,6 +192,8 @@ export function GeneralSettingsScreen() {
       showStorage,
       handleReplayWalkthrough,
       handleReplayBoardLook,
+      donationLinksAllowed,
+      supportAsksShown,
     ],
   );
 

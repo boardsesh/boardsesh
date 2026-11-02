@@ -100,9 +100,13 @@ export type ReleaseNotes = { title: string; body?: string };
  * code blocks. HTML comments and bullet markers are stripped; standalone `none`
  * lines (case-insensitive), git trailers (`Co-Authored-By:` and friends), and
  * bare link-only URL lines are dropped. Returns null when nothing is left — those
- * PRs (absent / empty / `none` / trailer-only) produce no changelog entry.
+ * PRs (absent / empty / `none` / trailer-only) produce no changelog entry. A
+ * checked "No release note needed" checkbox opts the entire PR out, even when
+ * explanatory text remains in the section, matching the release-notes gate.
  */
 export function extractReleaseNotes(prBody: string | null | undefined): ReleaseNotes | null {
+  if (isNoReleaseNoteBoxChecked(prBody)) return null;
+
   // The section walker (fence-aware, comment-stripped, footer-bounded) is shared
   // with the PR test-plan gate and the backend via @boardsesh/pr-body.
   const sectionLines = extractSection(prBody, RELEASE_NOTES_HEADING);
@@ -128,8 +132,8 @@ export function extractReleaseNotes(prBody: string | null | undefined): ReleaseN
 /**
  * True when the PR ticks the template's "No release note needed" checkbox — an
  * explicit, on-purpose skip (internal/technical change). The release-notes gate
- * honors it as a pass; it never produces a changelog entry (the box line is
- * stripped in `extractReleaseNotes`). Distinct from an empty/missing section,
+ * honors it as a pass; `extractReleaseNotes` skips the entire PR so accompanying
+ * explanations never become changelog content. Distinct from an empty/missing section,
  * which is a forgotten note and still fails the gate.
  */
 export function isNoReleaseNoteBoxChecked(prBody: string | null | undefined): boolean {

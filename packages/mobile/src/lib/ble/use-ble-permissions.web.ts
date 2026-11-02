@@ -1,17 +1,5 @@
-import type { State } from 'react-native-ble-plx';
 import { isWebBluetoothAvailable } from './web-adapter';
 import type { BleRuntimePermissionStatus } from './use-ble-permissions';
-
-type BlePermissionsResult = {
-  bleState: State;
-  isAvailable: boolean;
-  requestPermissions: () => Promise<boolean>;
-};
-
-// ble-plx's State enum is native-only; on web we map the single Web Bluetooth
-// availability signal onto the two states the shared UI actually branches on.
-const POWERED_ON = 'PoweredOn' as unknown as State;
-const UNSUPPORTED = 'Unsupported' as unknown as State;
 
 // Web Bluetooth has no separate runtime-permission grant: the permission prompt
 // is the browser's device chooser, shown by navigator.bluetooth.requestDevice on
@@ -35,13 +23,4 @@ export function requestBleRuntimePermissionStatus(_options?: {
 // Browsers have no Android foreground-service notification to ask for.
 export function requestOptionalNotificationPermission(): Promise<void> {
   return Promise.resolve();
-}
-
-export function useBlePermissions(): BlePermissionsResult {
-  const available = isWebBluetoothAvailable();
-  return {
-    bleState: available ? POWERED_ON : UNSUPPORTED,
-    isAvailable: available,
-    requestPermissions: () => Promise.resolve(available),
-  };
 }

@@ -74,10 +74,16 @@ export default function SessionsContent() {
 
       <PageSection id="browsing" title={t('help.sessions.crowd.title')}>
         <Prose>{t('help.sessions.crowd.p1')}</Prose>
+        <Prose>{t('help.sessions.crowd.p2')}</Prose>
         <Prose>
-          {t('help.sessions.crowd.p2')}{' '}
+          {t('help.sessions.crowd.p3')}{' '}
           <MuiLink component={LocaleLink} href="/help/climb-actions">
             {t('help.sessions.crowd.previewLink')}
+          </MuiLink>
+        </Prose>
+        <Prose>
+          <MuiLink component={LocaleLink} href="/help/board-and-bluetooth#driving">
+            {t('help.sessions.crowd.drivingLink')}
           </MuiLink>
         </Prose>
       </PageSection>

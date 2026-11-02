@@ -94,6 +94,114 @@ Main firmware for controlling Kilter/Tension climbing board LEDs. Features:
 `esp32s3dev-proxy`, `tdisplay-s3`, `waveshare-7inch`, `waveshare-amoled-216`,
 `esp32dev` (legacy), and **`gledopto-c015`** (below).
 
+#### Waveshare 2.16-inch AMOLED variant
+
+`waveshare-amoled-216` targets the ESP32-S3-Touch-AMOLED-2.16 (480×480).
+Its current platform requires **pioarduino Core 6.2 or newer**; system
+PlatformIO 6.1.19 fails with `IncompatiblePlatform`.
+The controller accepts and previews climbs over Bluetooth without WiFi setup.
+WiFi remains available for configuration and optional backend sync.
+
+Capture the display over USB from the repo root:
+
+```bash
+vp run controller:screenshot --port /dev/cu.usbmodem101 --output /tmp/preview.png
+```
+
+The task uses `uv` with pinned `pyserial==3.5`. Close any serial monitor before
+capturing. Pass flags directly as shown: a standalone `--` is forwarded literally
+by `vp` and breaks argument parsing.
+
+At 115200 baud, the serial commands `display-status` and `screenshot` return
+preview diagnostics and the tagged RGB565 screen stream, respectively. The
+capture task converts that stream into a PNG. It captures the logical framebuffer;
+physical orientation or electrical display faults still need a photo or a check
+of the panel itself.
+
+#### Production QA gym fixture
+
+`waveshare-amoled-gym` is a separate firmware target for a gym with one to three
+simulated boards. It fetches the gym's current serials, layouts, JPEGs and exact
+LED-position maps at startup. Kilter, Tension and MoonBoard advertise independent
+connectable identities concurrently; each connection has its own protocol parser.
+The legacy controller and proxy targets keep their existing BLE configuration.
+
+The latest complete Bluetooth send selects its board automatically. Short presses
+of GPIO18/KEY advance through the boards; a short PWR press selects the previous
+board. Long PWR behavior and the reset button are preserved. Each board retains
+its latest preview during the current boot; previews start empty after reboot.
+
+Use the existing local settings page to choose a gym link, slug or UUID and enter
+the registered controller key. Keys are write-only in the fixture configuration
+API. Settings changes restart the device and fetch the selected gym. Validated
+configuration and assets support an offline boot with a visible saved-gym status.
+Explicit access rejection stops the advertisements and remains effective across
+an offline reboot.
+
+The fixture reserves only the blank tail at `0xF20000` for its cache. It verifies
+the partition and every byte before first initialization, never formats existing
+factory storage, and commits complete asset generations atomically. Back up the
+connected device before changing firmware or its partition table.
+
+```sh
+vp run controller:build -e waveshare-amoled-gym
+vp run controller:upload -e waveshare-amoled-gym --upload-port /dev/cu.usbmodem2101
+vp run controller:screenshot --port /dev/cu.usbmodem2101 --output /tmp/gym-preview.png
+vp run controller:fixture:test --sanitize
+```
+
+USB commands `fixture-status`, `fixture-next`, `fixture-prev` and
+`fixture-refresh` support diagnostics without changing BLE connections merely to
+browse a preview. `fixture-config <JSON>` supports private USB setup using
+`fixture_gym_ref`, `fixture_endpoint`, `fixture_api_key`, and optional `wifi_ssid`
+and `wifi_password`; it saves settings and restarts without echoing secrets.
+
+The local two-phone runner uses a separate, memory-only USB QA protocol:
+
+```text
+fixture-qa {"action":"status","requestId":"inspect"}
+fixture-qa {"action":"start","requestId":"start-1","runId":"local-run-1"}
+fixture-qa {"action":"status","requestId":"poll-1","runId":"local-run-1"}
+fixture-qa {"action":"drop","requestId":"drop-1","runId":"local-run-1","boardUuid":"<fixture-board-uuid>"}
+fixture-qa {"action":"end","requestId":"end-1","runId":"local-run-1"}
+```
+
+Each reply is one `BOARDSESH_QA `-prefixed JSON line with `schemaVersion: 1`,
+the request ID, `ok`, an optional `error`, a per-boot ID, firmware build identity,
+the owning run ID, the active `policy`, and `leaseRemainingMs`. `boards` contains
+UUIDs, active writer handles, counters, latest completed sequence and writer
+generation, angle, and decoded `{position,r,g,b}` commands sorted by position
+then RGB. The decoded payload remains available after the display consumes it;
+an incomplete packet never replaces it. Complete tagged replies are built before
+one HWCDC enqueue. The gym target disables NimBLE console logs because IDF's
+secondary USB console can otherwise write the same FIFO during deferred HWCDC
+transmission; a stdout lock does not protect that later drain. Short writes and
+exceptional console output still fail the strict host parser. No keys, WiFi settings or phone addresses
+are included. Request IDs contain 1–80 letters, digits, dots, hyphens or underscores;
+run IDs use the same bounds without dots.
+
+Starting requires an active fixture with zero existing Bluetooth connections.
+During QA, a newer central evicts older centrals only for that simulated board;
+old handles lose write permission before disconnection. `drop` targets one board
+and is owner-only. A matching status request renews the 30-second lease. Status
+without a run ID is read-only and does not renew a lease; another run cannot
+renew, end or drop it. Ending, lease expiry, reset or firmware reconfiguration
+restores the normal concurrent connection policy without changing persisted
+configuration or cached gym data. End/expiry do not disconnect the current links.
+The radio still has three total connection slots; this two-phone mode does not
+establish stock-controller takeover behavior or a fourth-connection guarantee.
+
+Keep DTR asserted and RTS released before opening USB to avoid resetting the
+device. Keep one serial owner; screenshot capture must share that owner's port
+or wait until the QA run releases it.
+
+`waveshare-amoled-gym-proof` is an explicit hardware feasibility build with three
+synthetic identities and connection-specific echo probes. It does not fetch or
+represent production gym data. Complete its discovery, simultaneous connection
+and routing checks before production provisioning. See
+[the production QA gym runbook](../docs/prod-qa-gym.md) for release order,
+idempotent provisioning and credential handling.
+
 #### GLEDOPTO GL-C-015WL-D variant
 
 `gledopto-c015` targets the [GLEDOPTO GL-C-015WL-D](https://gledopto.com/h-pd-125.html) —
@@ -204,6 +312,7 @@ Most editors support clang-format:
 vp run controller:build         # Build board-controller
 vp run controller:upload        # Flash board-controller
 vp run controller:monitor       # Serial monitor
+vp run controller:screenshot --port /dev/cu.usbmodem101 --output /tmp/preview.png
 vp run moonboard:build          # Build moonboard-dev-server
 vp run moonboard:upload         # Flash moonboard-dev-server
 vp run moonboard:monitor        # Serial monitor for moonboard-dev-server

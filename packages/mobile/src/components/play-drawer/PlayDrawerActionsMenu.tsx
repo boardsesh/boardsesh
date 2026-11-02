@@ -1,7 +1,8 @@
 import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/shared-schema';
-import { AppMenu } from '../AppMenu';
+import { ClimbMenu } from '../climb-actions/ClimbMenu';
 import {
   useClimbActions,
   type ClimbActionsFavoriteControl,
@@ -10,13 +11,18 @@ import {
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { useProfile } from '../../lib/graphql/hooks';
-import { buildPlayDrawerMenuRows, type PlayDrawerHiddenButtons } from './play-drawer-menu-rows';
+import {
+  buildPlayDrawerMenuRows,
+  type PlayDrawerHiddenButtons,
+  type PlayDrawerMenuItem,
+} from './play-drawer-menu-rows';
 import type { BoardConfig } from './play-drawer-types';
 
 /** Opens one of the player's own sheets, pinned to the climb ⋯ was opened on. */
 type PinnedSheetOpener = (climb: Climb, boardConfig: BoardConfig) => void;
 
 export type PlayDrawerActionsMenuProps = {
+  analyticsContext?: AnalyticsEventProperties;
   climb: Climb;
   /**
    * The board the climb is DRAWN on (PlayCore's `renderBoardConfig`), never the
@@ -65,6 +71,12 @@ export type PlayDrawerActionsMenuProps = {
   onOpenAngle?: () => void;
   /** Supplied only by the `/play` route; the persistent iPad pane has nothing to dismiss. */
   dismissPlayerAndWait?: DismissSurfaceAndWait;
+  /**
+   * The board sheet (Re-light, Turn off all lights, Disconnect). Supplied by
+   * the player (#7000) while this phone holds the link: its wall button never
+   * disconnects, so Disconnect needs a way in from here.
+   */
+  onOpenBoardControls?: () => void;
 };
 
 /**
@@ -74,11 +86,15 @@ export type PlayDrawerActionsMenuProps = {
  * A menu row reports a position, so a row set that changes while the menu is
  * open (a crew member moves the wall, commit mode flips, the scrim comes up)
  * would land a tap on whatever row has moved into that slot. The menu is keyed
- * on the climb and its row set instead: any such change remounts it, which closes
- * it, and a tap always resolves against the rows it was drawn from.
+ * on the climb, its board and its row set instead: any such change remounts it,
+ * which closes it, and a tap always resolves against the rows it was drawn from.
+ * The angle is left out of the key on purpose: a crew member moving the wall
+ * changes no row, so the menu stays open and the picked row runs at the new
+ * angle, the one the wall is now at.
  */
 export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   climb,
+  analyticsContext,
   boardConfig,
   queueItemUuid,
   isAuthenticated,
@@ -96,8 +112,10 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   onOpenQueue,
   onOpenViewOptions,
   dismissPlayerAndWait,
+  onOpenBoardControls,
 }: PlayDrawerActionsMenuProps) {
   const { t } = useTranslation('session');
+  const { t: tSettings } = useTranslation('settings');
   const activeClimbUuid = useActiveClimbUuid();
   // Who is looking decides Edit, Delete and Report. Read off the app-wide profile
   // cache, the same answer the long-press menu gets, rather than the player's
@@ -137,32 +155,30 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
     dismissPlayerAndWait,
     favoriteControl,
     analyticsSource: 'play_drawer_menu',
+    analyticsContext,
   });
+
+  const boardControlsTitle = tSettings('ble.boardControls');
+  const menuItems = useMemo<readonly PlayDrawerMenuItem[]>(
+    () =>
+      onOpenBoardControls
+        ? [...items, { id: 'boardControls', title: boardControlsTitle, icon: 'lightbulb', run: onOpenBoardControls }]
+        : items,
+    [items, onOpenBoardControls, boardControlsTitle],
+  );
 
   const isActiveClimb = climb.uuid === activeClimbUuid;
   const rows = useMemo(
-    () => buildPlayDrawerMenuRows(items, { hidden, boardMismatch, isActiveClimb }),
-    [items, hidden, boardMismatch, isActiveClimb],
-  );
-  // Disabled rows are refused here as well as by the platform menus: the row set
-  // is data, and the next row added to it may not guard itself.
-  const handleSelectIndex = useCallback(
-    (index: number) => {
-      const row = rows[index];
-      if (!row || row.disabled) return;
-      row.run();
-    },
-    [rows],
+    () => buildPlayDrawerMenuRows(menuItems, { hidden, boardMismatch, isActiveClimb }),
+    [menuItems, hidden, boardMismatch, isActiveClimb],
   );
   const rowSignature = rows.map((row) => (row.disabled ? `${row.id}:off` : row.id)).join(',');
 
   return (
-    <AppMenu
-      key={`${climb.uuid}|${rowSignature}`}
-      iconName="more"
+    <ClimbMenu
+      menuKey={`${currentUserId}|${climb.uuid}|${boardConfig.boardName}|${boardConfig.layoutId}|${boardConfig.sizeId}|${boardConfig.setIds}|${queueItemUuid}|${rowSignature}`}
       accessibilityLabel={t('playView.actionBar.climbActionsAria')}
-      actions={rows}
-      onSelectIndex={handleSelectIndex}
+      rows={rows}
     />
   );
 });

@@ -61,6 +61,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          cache-binary: false
 
       - name: Generate backend Docker context
         run: node scripts/create-service-docker-context.mjs backend
@@ -135,6 +137,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          cache-binary: false
 
       - name: Verify and promote only the accepted daemon digest
         env:

@@ -31,6 +31,11 @@ const settings = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
 }));
 
+// The workout data (#6903) has its own suites; these sessions carry no workout.
+vi.mock('../../../../src/components/session/workout/use-session-workout-view', () => ({
+  useSessionWorkoutView: () => undefined,
+  useSessionWorkoutHeadlines: () => new Map(),
+}));
 vi.mock('../../../../src/settings/hooks', () => ({
   subscribeSettings: (listener: (change: SettingsChange) => void) => {
     settings.listeners.add(listener);
@@ -101,6 +106,7 @@ vi.mock('../../../../src/components/Button', () => ({
     createElement('button', { onClick: onPress, 'data-testid': testID }, title),
 }));
 vi.mock('../../../../src/components/AppStorePrompt', () => ({ AppStorePrompt: () => null }));
+vi.mock('../../../../src/components/home/HomeSupportCard', () => ({ HomeSupportCard: () => null }));
 vi.mock('../../../../src/components/you/SessionFeedCard', () => ({ SessionFeedCard: () => null }));
 vi.mock('../../../../src/components/feed/NewClimbFeedCard', () => ({ NewClimbFeedCard: () => null }));
 vi.mock('../../../../src/components/you/CommentSheet', () => ({ CommentSheet: () => null }));

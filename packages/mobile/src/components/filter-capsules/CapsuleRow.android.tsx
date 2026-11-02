@@ -8,17 +8,24 @@
 //                           marks the selected one; `actions` after a divider.
 //   toggleMenu            → a plain toggle chip. Its `actions` are unreachable:
 //                           a Compose FilterChip eats the long-press (#3319, #3322).
-// Active chips take the brand fill with on-fill text (filterChipBrandColors).
+// Active chips take the brand fill with on-fill text, idle chips an `outline`
+// border and a brand icon (filterChipBrandColors / filterChipBorders).
 
 import { memo, useMemo } from 'react';
 import { StyleSheet } from 'react-native';
-import { Host } from '@expo/ui';
+import { ComposeHost } from '../ComposeHost.android';
 import { Row, HorizontalDivider, Spacer } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, horizontalScroll, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
-import { filterChipBrandColors } from '../../theme/expo-ui-modifiers';
-import { ActionChip, MenuChip, MenuItem, type CapsuleChipColors } from './CapsuleChips.android';
+import { filterChipBorders, filterChipBrandColors } from '../../theme/expo-ui-modifiers';
+import {
+  ActionChip,
+  MenuChip,
+  MenuItem,
+  type CapsuleChipBorders,
+  type CapsuleChipColors,
+} from './CapsuleChips.android';
 import { CAPSULE_ICON_SOURCE } from './capsule-icons.android';
 import { isCapsuleActive } from './CapsuleRow.logic';
 import type { Capsule, CapsuleIcon, CapsuleRowProps, MenuCapsule } from './CapsuleRow.types';
@@ -30,10 +37,12 @@ function iconSourceFor(icon: CapsuleIcon | undefined) {
 function MenuCapsuleChip({
   capsule,
   colors,
+  borders,
   errorColor,
 }: {
   capsule: MenuCapsule;
   colors: CapsuleChipColors;
+  borders: CapsuleChipBorders;
   errorColor: string;
 }) {
   const { options, selected, onSelect, actions } = capsule;
@@ -42,6 +51,7 @@ function MenuCapsuleChip({
       label={capsule.label}
       selected={capsule.active}
       colors={colors}
+      borders={borders}
       iconSource={iconSourceFor(capsule.icon)}
       renderItems={(close) => (
         <>
@@ -83,18 +93,22 @@ function MenuCapsuleChip({
 function CapsuleChip({
   capsule,
   colors,
+  borders,
   errorColor,
 }: {
   capsule: Capsule;
   colors: CapsuleChipColors;
+  borders: CapsuleChipBorders;
   errorColor: string;
 }) {
-  if (capsule.kind === 'menu') return <MenuCapsuleChip capsule={capsule} colors={colors} errorColor={errorColor} />;
+  if (capsule.kind === 'menu')
+    return <MenuCapsuleChip capsule={capsule} colors={colors} borders={borders} errorColor={errorColor} />;
   return (
     <ActionChip
       label={capsule.label}
       selected={isCapsuleActive(capsule)}
       colors={colors}
+      borders={borders}
       iconSource={capsule.kind === 'sheet' || capsule.kind === 'toggleMenu' ? iconSourceFor(capsule.icon) : undefined}
       iconOnly={capsule.kind === 'sheet' && capsule.presentation === 'iconBadge'}
       badgeCount={capsule.kind === 'sheet' ? capsule.count : undefined}
@@ -105,14 +119,14 @@ function CapsuleChip({
 }
 
 function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
-  const { brandColors, colorScheme } = useTheme();
-  const colors = useMemo(() => filterChipBrandColors(brandColors), [brandColors]);
+  const { brandColors, m3 } = useTheme();
+  const colors = useMemo(() => filterChipBrandColors(brandColors, m3), [brandColors, m3]);
+  const borders = useMemo(() => filterChipBorders(m3), [m3]);
   return (
-    // `colorScheme` keeps the Compose MaterialTheme on our in-app Light/Dark toggle.
     // `matchContents={{ vertical: true }}` (NOT the boolean form) fills the parent
     // width so the Row's `fillMaxWidth()` has a bounded width to scroll within, while
     // height tracks the chip content (mirrors SwitchRow / SegmentedControl).
-    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
+    <ComposeHost matchContents={{ vertical: true }} style={styles.host}>
       <Row
         modifiers={[fillMaxWidth(), horizontalScroll(), padding(spacing[4], spacing[2], spacing[4], spacing[2])]}
         verticalAlignment="center"
@@ -122,10 +136,16 @@ function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
             `width()`-sized Spacer broke the app. */}
         {capsules.flatMap((capsule, index) => [
           ...(index > 0 ? [<Spacer key={`${capsule.key}:gap`} modifiers={[padding(spacing[3], 0, 0, 0)]} />] : []),
-          <CapsuleChip key={capsule.key} capsule={capsule} colors={colors} errorColor={brandColors.error} />,
+          <CapsuleChip
+            key={capsule.key}
+            capsule={capsule}
+            colors={colors}
+            borders={borders}
+            errorColor={brandColors.error}
+          />,
         ])}
       </Row>
-    </Host>
+    </ComposeHost>
   );
 }
 

@@ -22,6 +22,9 @@
 //     change is taken, through the server clock offset (server-clock.ts). A
 //     later sample that moves the offset by more than 250 ms converts the held
 //     clock again, even from a change too old to take (adoptCrewCadence).
+//   - `autoAdvanceOnce` (a 4x4 set rest: move the wall once, then wait) rides
+//     in the config, so every CONFIGURE this phone re-sends from the clock it
+//     holds keeps it, and a CONFIGURE without it clears it on the server.
 
 import type {
   SessionRestCadenceAnchor,
@@ -29,7 +32,7 @@ import type {
   SessionRestCadenceInput,
 } from '@boardsesh/shared-schema/generated';
 import type { RestTimerMode } from './rest-timer';
-import type { CrewRestConfig, RestAdvanceRule, RestTimerLastTick } from './rest-timer-pacing';
+import type { CrewConfigFields, CrewRestConfig, RestAdvanceRule, RestTimerLastTick } from './rest-timer-pacing';
 import type { SessionRestCadenceChangeWire, SessionRestCadenceWire } from './graphql/operations';
 import {
   adoptCrewCadence,
@@ -40,6 +43,8 @@ import {
   type RestTimerState,
 } from './rest-timer-store';
 import { noteServerTimeFromEvent, noteServerTimeFromMutation, serverToLocalMs, localToServerMs } from './server-clock';
+
+export { spendAdvanceOnce, type CrewConfigFields } from './rest-timer-pacing';
 
 /**
  * The crew clock as the rest-timer store holds it: the server's state with
@@ -115,6 +120,9 @@ function parseCrewConfig(wire: SessionRestCadenceWire): CrewRestConfig | null {
     mode: wire.mode,
     targetSeconds,
     autoAdvance: wire.autoAdvance === true,
+    // Null from a server that predates the flag: false, as it ran. Inert
+    // without auto-advance (no FIRE applies), so it is held only with it.
+    ...(wire.autoAdvance === true && wire.autoAdvanceOnce === true ? { autoAdvanceOnce: true as const } : {}),
     advanceOn: wire.advanceOn,
     source: wire.source,
     setByParticipantId: wire.setByParticipantId ?? null,
@@ -146,9 +154,6 @@ export function parseCrewRestCadence(
   };
 }
 
-/** The five fields an ARM or CONFIGURE carries. */
-export type CrewConfigFields = Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>;
-
 /** Field by field, so a freshly built config compares equal to the one held. */
 export function sameCrewConfig(left: CrewConfigFields | null, right: CrewConfigFields | null): boolean {
   if (left === null || right === null) return left === right;
@@ -156,6 +161,7 @@ export function sameCrewConfig(left: CrewConfigFields | null, right: CrewConfigF
     left.mode === right.mode &&
     left.targetSeconds === right.targetSeconds &&
     left.autoAdvance === right.autoAdvance &&
+    (left.autoAdvanceOnce === true) === (right.autoAdvanceOnce === true) &&
     left.advanceOn === right.advanceOn &&
     left.source === right.source
   );
@@ -337,7 +343,12 @@ export function resetCrewCadenceForTests(): void {
 /** What this phone would run on with no crew clock: its stage, else its settings. */
 export type OwnRestPacing = CrewConfigFields;
 
-/** A config the server accepts: the rest length rounded and clamped into its mode's bounds. */
+/**
+ * A config the server accepts: the rest length rounded and clamped into its
+ * mode's bounds. `autoAdvanceOnce` is kept only while auto-advance is on (off,
+ * it moves nothing), and left out otherwise, so every other config goes out
+ * exactly as before the flag (the server reads it missing as false).
+ */
 export function normalizeCrewConfig(pacing: CrewConfigFields): CrewConfigFields {
   const bounds = CREW_REST_TARGET_SECONDS[pacing.mode];
   const targetSeconds =
@@ -348,6 +359,7 @@ export function normalizeCrewConfig(pacing: CrewConfigFields): CrewConfigFields 
     mode: pacing.mode,
     targetSeconds,
     autoAdvance: pacing.autoAdvance,
+    ...(pacing.autoAdvance && pacing.autoAdvanceOnce === true ? { autoAdvanceOnce: true as const } : {}),
     advanceOn: pacing.advanceOn,
     source: pacing.source,
   };
@@ -377,7 +389,9 @@ export function buildArmInput(own: OwnRestPacing, state: RestTimerState, nowMs: 
  * A rest restarting on this phone (back from the background, or a FIRE that
  * never landed) as the server's equivalent. On the deadline the restart is a
  * RESET; under a tick or send rule RESET would forget the tick the next advance
- * needs, so it is a CONFIGURE that moves only the anchor (contracts §10).
+ * needs, so it is a CONFIGURE that moves only the anchor (contracts §10). It
+ * re-sends the clock's config as held, so a 4x4 set rest that restarts still
+ * moves the wall only once.
  */
 export function buildRestartInput(
   config: CrewConfigFields,
@@ -454,9 +468,12 @@ export type CrewRestPacingEdit = Partial<Pick<CrewConfigFields, 'targetSeconds' 
  * from the timer's sheet or the Record tab (Marco, 2026-10-25: in a crew those
  * controls show and change the crew's clock). The crew's config, as this phone
  * holds it or last edited it, with only that change; the advance rule stays,
- * and the source becomes 'settings', since a workout no longer set it. The
- * publisher sends it as a CONFIGURE (buildCrewPacingEditInput). False when this
- * phone follows no crew clock it can run, or nothing changed.
+ * and the source becomes 'settings', since a workout no longer set it. A 4x4
+ * set rest's once-only advance stays too, unless the edit turns auto-advance
+ * off: a longer set rest still moves the wall once, unless the server spent
+ * that move before the edit went out. The publisher sends it as a CONFIGURE
+ * (buildCrewPacingEditInput). False when this phone follows no
+ * crew clock it can run, or nothing changed.
  */
 export function editCrewRestPacing(edit: CrewRestPacingEdit): boolean {
   const state = getRestTimerState();
@@ -465,15 +482,38 @@ export function editCrewRestPacing(edit: CrewRestPacingEdit): boolean {
   const base = state.crewPacingDraft ?? crewConfig;
   const next = normalizeCrewConfig({ ...base, ...edit, source: 'settings' });
   if (sameCrewConfig(next, base)) return false;
-  return setCrewRestPacingDraft({ ...base, ...next });
+  // Built from `next` alone, so a flag the edit dropped is not put back from `base`.
+  return setCrewRestPacingDraft({ ...next, setByParticipantId: base.setByParticipantId });
 }
 
 /**
- * The CONFIGURE for a crew pacing edit, against the config the server holds. A
- * change of cadence moves the anchor as the server's own rule for a stage
- * boundary does: on the minute starts its beat now, after the tick waits for
- * the next one. The same cadence keeps it, so a new rest length on the minute
- * keeps the crew's beat. Null when the server already holds exactly this.
+ * A crew pacing draft against the clock the server holds when it goes out. An
+ * edit never sets the once-only advance, so a draft carries it only from the
+ * clock it was made on, and its auto-advance with it. When the held clock no
+ * longer has the flag, the server spent it (the holder's FIRE moved the wall)
+ * or a CONFIGURE cleared it (the builder's next set) after the tap: the draft
+ * takes the held auto-advance and leaves the flag off. Otherwise a rest-length
+ * edit that crossed the set rest's beat would turn its move back on, and the
+ * wall would move again after the next set's first rep.
+ */
+export function rebaseCrewPacingDraft(draft: CrewConfigFields, held: CrewConfigFields | null): CrewConfigFields {
+  if (draft.autoAdvanceOnce !== true || held === null || held.autoAdvanceOnce === true) return draft;
+  return {
+    mode: draft.mode,
+    targetSeconds: draft.targetSeconds,
+    autoAdvance: held.autoAdvance,
+    advanceOn: draft.advanceOn,
+    source: draft.source,
+  };
+}
+
+/**
+ * The CONFIGURE for a crew pacing edit, against the config the server holds
+ * (the draft rebased on it first, rebaseCrewPacingDraft), and the config it
+ * sends. A change of cadence moves the anchor as the server's own rule for a
+ * stage boundary does: on the minute starts its beat now, after the tick waits
+ * for the next one. The same cadence keeps it, so a new rest length on the
+ * minute keeps the crew's beat. Null when the server already holds exactly this.
  */
 export function buildCrewPacingEditInput({
   draft,
@@ -481,12 +521,12 @@ export function buildCrewPacingEditInput({
 }: {
   draft: CrewConfigFields;
   held: CrewConfigFields | null;
-}): SessionRestCadenceInput | null {
-  const config = normalizeCrewConfig(draft);
+}): { input: SessionRestCadenceInput; config: CrewConfigFields } | null {
+  const config = normalizeCrewConfig(rebaseCrewPacingDraft(draft, held));
   if (held !== null && sameCrewConfig(held, config)) return null;
   const anchor: SessionRestCadenceAnchor =
     held !== null && held.mode === config.mode ? 'KEEP' : config.mode === 'onTheMinute' ? 'NOW' : 'CLEAR';
-  return { action: 'CONFIGURE', config, anchor, ...(anchor === 'NOW' ? { elapsedMs: 0 } : {}) };
+  return { input: { action: 'CONFIGURE', config, anchor, ...(anchor === 'NOW' ? { elapsedMs: 0 } : {}) }, config };
 }
 
 /** A tick's TICK: how long ago the climb was logged, the queue item and how it went. */

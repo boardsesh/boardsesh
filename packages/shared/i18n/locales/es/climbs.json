@@ -324,6 +324,7 @@
       "title": "Opciones de la lista de bloques",
       "viewOptions": "Opciones de vista",
       "history": "Historial del plafón, {{board}}",
+      "historyTitle": "Historial del plafón",
       "historyHint": "Mira los bloques que se han iluminado en este muro"
     },
     "moderation": {
@@ -422,7 +423,7 @@
       "recovery": {
         "scope": "{{board}} · {{angle}}°",
         "filters": "Filtros activos: {{filters}}",
-        "removeHint": "Quita un filtro para volver a intentarlo. Se mantienen la búsqueda y la configuración.",
+        "removeHint": "Quita un filtro para volver a intentarlo. Todo lo demás se mantiene.",
         "openFilters": "Ajustar filtros"
       }
     },
@@ -504,6 +505,9 @@
       "pinChip": "Fijar {{name}} en la fila superior",
       "unpinChip": "Quitar {{name}} de la fila superior",
       "recentDescription": "Tus últimas 10 búsquedas aparecerán aquí.",
+      "ratingAtLeast": "{{count}}★+",
+      "quickFiltersLink": "Filtros rápidos",
+      "quickFiltersFooter": "Elige qué filtros se muestran en la fila superior y en qué orden.",
       "established2plus": "Establecido 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Ver {{count}} vía",
@@ -602,11 +606,11 @@
       "clearAll": "Borrar todo",
       "nameToken": "«{{name}}»",
       "drafts": "Mis borradores",
-      "popularityUnrepeated": "Sin repetir"
+      "popularityUnrepeated": "Sin repetir",
+      "wallDrafts": "Borradores"
     },
     "search": {
       "recentFilters": "Recientes",
-      "clearRecent": "Borrar",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
       "gradeMax": "≤{{grade}}",
@@ -716,7 +720,8 @@
       "sameGrade": "Ese ya es el grado actual",
       "reasonPlaceholder": "Cuéntale al grupo por qué (mínimo 10 caracteres)",
       "reasonAria": "Motivo del reporte",
-      "reasonRemaining": "Faltan {{count}} caracteres",
+      "reasonRemaining_one": "Añade 1 carácter más para enviar",
+      "reasonRemaining_other": "Añade {{count}} caracteres más para enviar",
       "reasonCount": "{{count}}/500",
       "submit": "Enviar",
       "submitError": "No se pudo enviar tu reporte",
@@ -728,7 +733,6 @@
       }
     },
     "hidden": {
-      "short": "oculto",
       "chip": "Oculto",
       "banner": "Oculto por la comunidad"
     },
@@ -743,13 +747,13 @@
       "editorHint_other": "Quita las presas grises para guardar"
     },
     "climbActions": {
-      "preview": "Vista previa",
       "playNext": "Poner a continuación",
       "playLast": "Poner al final",
       "replayFromHere": "Repetir desde aquí",
       "nameCopied": "Nombre copiado",
       "copyNameError": "No se pudo copiar el nombre",
       "copyNameHint": "Mantén pulsado para copiar el nombre",
+      "copyName": "Copiar nombre",
       "tick": "Registrar un encadene",
       "addBetaVideo": "Añadir vídeo de beta",
       "openInApp": "Abrir en la app Aurora",
@@ -758,7 +762,6 @@
       "editEntry": "Editar registro",
       "report": "Reportar bloque",
       "changeGrade": "Cambiar grado",
-      "closeOverlay": "Cerrar acciones de la vía",
       "openQueue": "Abrir la cola",
       "deleteClimb": {
         "row": "Eliminar bloque",
@@ -823,7 +826,8 @@
         "campusLabel": "Campus (sin pies)",
         "campusDescription": "Solo manos, sin apoyar los pies",
         "anyFeetLabel": "Pies libres",
-        "anyFeetDescription": "Los pies pueden usar cualquier presa, no solo las marcadas"
+        "anyFeetDescription": "Los pies pueden usar cualquier presa, no solo las marcadas",
+        "wallDraftDescription": "Quienes tengan acceso a este Spraywall pueden escalar tus borradores guardados."
       },
       "drafts": {
         "holds_one": "{{count}} presa",
@@ -851,7 +855,8 @@
         "done": "Guardado",
         "draftToast": "Borrador guardado",
         "publishedToast": "Vía publicada",
-        "needsHold": "Añade una presa para guardar"
+        "needsHold": "Añade una presa para guardar",
+        "beforeLogging": "Guarda este bloque antes de registrarlo."
       },
       "autosave": {
         "onDevice": "Borrador guardado en este teléfono",
@@ -861,7 +866,8 @@
         "unsyncedEdits": "Los últimos cambios están solo en este teléfono",
         "notStored": "Inicia sesión para guardar este borrador",
         "saveFailed": "No se pudo guardar en tu cuenta. Toca Guardar para reintentar.",
-        "keptToast": "Borrador guardado en este teléfono. Vuelve a abrir el editor para terminarla."
+        "keptToast": "Borrador guardado en este teléfono. Vuelve a abrir el editor para terminarla.",
+        "waitingToSync": "Guardado en este dispositivo · Pendiente de sincronizar"
       },
       "newClimb": {
         "confirm": {

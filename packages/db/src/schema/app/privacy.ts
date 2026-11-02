@@ -38,15 +38,7 @@ export const contentPrivacy = pgTable(
     primaryKey({ columns: [table.entityType, table.entityId] }),
     index('content_privacy_owner_idx').on(table.ownerId),
     check('content_privacy_audience_check', sql`${table.audience} IN ('public', 'followers', 'only_me')`),
-    // 'climb' stays allowed for one release (expand/contract): migrations run
-    // before the backend deploys and a rollback keeps the schema, so the
-    // previous backend may still write a climb policy in that window. Nothing
-    // reads one. TODO(#6376): delete any stray climb rows and drop 'climb'
-    // here once no deployed backend writes it.
-    check(
-      'content_privacy_type_check',
-      sql`${table.entityType} IN ('tick', 'session', 'comment', 'climb', 'playlist', 'beta')`,
-    ),
+    check('content_privacy_type_check', sql`${table.entityType} IN ('tick', 'session', 'comment', 'playlist', 'beta')`),
   ],
 );
 

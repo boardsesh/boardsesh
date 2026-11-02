@@ -15,7 +15,7 @@
 // the angle ("Angle, 40°") in front of it, the nearest Compose gets to the iOS
 // `accessibilityValue` override; @expo/ui exposes no stateDescription.
 
-import { Host } from '@expo/ui';
+import { ComposeHost } from '../ComposeHost.android';
 import { Slider } from '@expo/ui/jetpack-compose';
 import { semantics } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
@@ -25,7 +25,7 @@ import { makeAngleSliderHandler, sliderIndexForAngle } from './AngleSlider.logic
 import type { AngleSliderProps } from './AngleSlider.types';
 
 export function AngleSlider({ angles, value, onChange, accessibilityLabel }: AngleSliderProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const count = angles.length;
   // An empty angle set (unknown-board `[]` fallback) has nothing to pick — render
   // nothing rather than a degenerate Slider. Mirrors the iOS impl.
@@ -50,9 +50,7 @@ export function AngleSlider({ angles, value, onChange, accessibilityLabel }: Ang
   const contentDescription = accessibilityLabel ? `${accessibilityLabel}, ${value}°` : `${value}°`;
 
   return (
-    // `colorScheme` pins the Compose MaterialTheme (the slider's inactive track)
-    // to our in-app Light/Dark toggle, not the OS scheme (as SwitchRow/AppMenu do).
-    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
+    <ComposeHost matchContents={{ vertical: true }} style={styles.host}>
       <Slider
         value={valueIndex}
         min={0}
@@ -65,7 +63,7 @@ export function AngleSlider({ angles, value, onChange, accessibilityLabel }: Ang
         colors={sliderControlColors(brandColors)}
         modifiers={[semantics({ contentDescription })]}
       />
-    </Host>
+    </ComposeHost>
   );
 }
 

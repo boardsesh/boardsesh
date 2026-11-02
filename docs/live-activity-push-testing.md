@@ -192,7 +192,7 @@ not need to add them manually in Xcode.
 Source locations:
 
 - Main-app Swift (BoardBleManager, LiveActivityManager, SessionWebSocketManager, intents, helpers): `packages/mobile/modules/live-activity/ios/`
-- Widget extension target (Live Activity SwiftUI, AppIntents, WidgetNetworking, plus byte-identical copies of ClimbSessionAttributes / SharedConstants / SharedKeychain / Intent files): `packages/mobile/targets/BoardseshWidgets/` — managed by `@bacons/apple-targets`
+- Widget extension target (Live Activity SwiftUI, AppIntents, WidgetNetworking, plus byte-identical copies of ClimbSessionAttributes / SharedConstants / SharedKeychain / Intent files): `packages/mobile/targets/BoardseshWidgets/` — managed by `@bacons/apple-targets`. Every file in it is a fingerprint input (#7215), so a widget-only edit needs a store build and never ships as an OTA.
 - Widget target build settings that @bacons/apple-targets does not expose directly, including `WIDGET_EXTENSION`: `packages/mobile/plugins/with-boardsesh-widget-build-settings.js`
 
 #### Swift unit tests and CI
@@ -372,7 +372,33 @@ Lock your iPhone. The Live Activity widget should update within a few seconds sh
 3. Tap Next/Previous — the widget updates optimistically
 4. The HTTP request to `/api/widget/navigate` should appear in backend logs
 5. Other connected clients should see the queue change
-6. **The board will NOT repaint in this case.** iOS does not background-launch a user-killed app for `LiveActivityIntent`, so the intent falls back to the widget extension process, which cannot reach `BoardBleManager`. Re-opening the app on this device will re-sync the board via the foreground WS path.
+6. **The board will usually NOT repaint in this case.** iOS usually does not background-launch a user-killed app for `LiveActivityIntent`, so the intent falls back to the widget extension process, which cannot reach `BoardBleManager`. Re-opening the app on this device will re-sync the board via the foreground WS path. iOS may still launch the killed app in-process for the intent; the press then behaves as in the background case above (step 12 of "Test driving the wall" covers what that means for the drive).
+
+### Test driving the wall
+
+Driving the wall (2.7) on the Lock Screen, in the Dynamic Island and in the Android notification: Put on board's timed drive (Settings › Board › **Stop driving after**) and an open-ended drive. Background in `docs/live-activity-board-control.md`.
+
+1. Start a party session, connect to the board, and leave **Stop driving after** on the default (45 s) and **Disconnect Bluetooth when driving ends** off.
+2. Tap **Put on board**, then lock the phone. The Lock Screen bulb sits in an amber ring that drains, with no digits beside it (VoiceOver: "Driving the wall", then "Every climb you pick lights up"). The compact Dynamic Island shows the ring and keeps the grade. On Android the notification header reads "Driving the wall" with the system countdown beside it.
+3. Tap **Next** on the Lock Screen while the drive runs. The wall lights the next climb and the ring fills again (Android: the clock restarts at 0:45).
+4. Wait out the drive. Within a second of its end the ring goes and the bulb stands alone ("Wall lit, picks are previews" for VoiceOver); the Android header drops its line, its clock and the bulb small icon.
+5. With nothing driving, tap **Next** again. The press starts a fresh timed drive from the settings. With **Until I stop** it starts an open-ended drive instead, on a MoonBoard too: a full amber disc with no time beside it, and on Android "Driving the wall" with no clock.
+6. Swipe the wall button in the app to drive, then lock the phone. The disc shows with no clock (a swipe drive is open-ended), and Android's header reads "Driving the wall" with no clock.
+7. Suspend the app (lock for 30 s or more), press **Next**, then open the app. The player shows the frosted button with the clock still running, ending where the Lock Screen showed; Drive Mode Started reads `startedBy: 'lock_screen'` when nothing was driving before. On Android the header appears once the wall confirms the climb, not at the tap.
+8. Set **Stop driving after** to **Right away** and press **Next** with nothing driving. The wall lights that one climb; no ring, no disc, and no "Driving the wall" header.
+9. Turn **Disconnect Bluetooth when driving ends** on. Start a timed drive, suspend the app past its end, then press **Next**. The wall lights the next climb and the board stays connected: the press starts a drive of its own (iOS) or arms one (Android). Then let a timed drive run out with the app open: the board is let go.
+10. Pick a climb from a list in the app (a preview), then lock the phone. The Lock Screen and the notification still show the climb on the wall, not the MiniPlayer's last pick.
+11. iOS: with the app suspended and nothing driving, press **Next** (the ring appears), swipe the app away in the app switcher, then open it. On relaunch the ring is gone and nothing is driving.
+12. iOS: swipe the app away first, then press **Next** on the Lock Screen, then open the app. Usually the press runs in the widget extension: the wall stays dark, no ring appears, and the app opens with nothing driving. iOS may instead launch the killed app in-process for the intent (the `LiveActivityIntent` Console.app category shows the App process): then the wall lights and the ring appears, and the app opens either with that drive running to the Lock Screen's end (its JS started before the press was written) or with the ring cleared and nothing driving (its JS started after). Never a ring over a dark wall.
+13. From a second device, add or reorder climbs while the timed drive runs. The countdown survives the crew push.
+14. From the second device, put a climb up while the timed drive runs. The wall lights their climb, the ring goes, and this phone's next pick is a preview. Your own Lock Screen **Next** never does this: it renews the drive.
+15. On a crewmate's phone (`heldByPeer`), nothing about the holder's drive shows.
+16. Tap **Put on board**, lock the phone, then tap the ringed bulb. The ring goes, the wall keeps its climb, and the app shows previews when opened (Drive Mode Ended `stopped`). Same for the disc of an open-ended drive. On Android the lit bulb reads "Stop driving" while a drive runs.
+17. Turn **Disconnect Bluetooth when driving ends** on and repeat 16. The board is freed and the card reads "Tap to reconnect"; a tap relinks, lights the current climb and lights the bulb, and the app opens connected.
+18. Disconnect from the in-app bulb, then lock the phone. The card reads "Open Boardsesh to connect" and tapping it opens the app.
+19. With a board remembered, walk out of range (or switch it off) and tap "Tap to reconnect". After the connect timeout the card reads "Board didn't answer. Tap again". With Bluetooth off it reads "Turn on Bluetooth, then tap".
+
+Known gap: if the app is suspended before a timed drive's end, iOS has nothing to redraw the card at the deadline, so the ring sits empty at 0:00 until the next update (the next press, a push, or opening the app).
 
 ## Testing Background Updates
 
@@ -519,7 +545,10 @@ If you have the push token from the database, you can send a test push directly:
 # Generate a JWT for APNs auth (requires the .p8 key)
 # Or use a tool like https://github.com/nicklama/apns-push-tester
 
-# The payload must match ClimbSessionAttributes.ContentState exactly:
+# The payload must match ClimbSessionAttributes.ContentState exactly. The
+# device-only fields (restRevision, lightingRevision and the ownership fields)
+# are optional and left out here; the rest timer and the drive (timed or
+# open-ended) live in the App Group, so a push like this never wipes them.
 {
   "aps": {
     "timestamp": 1712345678,
@@ -583,6 +612,14 @@ The .p8 key JWT has expired (tokens are valid for 1 hour). The `@parse/node-apn`
 - Check backend logs for incoming requests to `/api/widget/navigate` or `/api/widget/take-control`.
 
 ### Live Activity goes stale after 10 minutes
+
+A stale card keeps the last climb, dimmed on the Lock Screen and in the expanded Dynamic Island, and swaps the Prev/Next/Mirror row for "Open Boardsesh to refresh". The rest clock keeps counting at full strength because the phone computes it. The card never says the session ended, because a stale card can't tell (#6529):
+
+- Usually the session is still on and the phone stopped hearing from the app or the backend.
+- A session the backend ended can also leave a stale card. The "end" push expires after 60 s, so an inactivity-sweep end sent to a phone that is offline for longer is dropped. `endLiveActivity` also skips the push when the session has no registered push token.
+- Opening the app clears that card when the app is still holding the session: the rejoin gets `SESSION_ENDED` and ends the activity. After a cold start it does not. The launch restore drops an ended session without touching ActivityKit, and `LiveActivityManager.cleanupOrphanedActivities()` has no caller, so the card stays until the next session starts or iOS ends the activity at its own time limit.
+
+When a live session goes stale, the updates stopped arriving:
 
 - APNs pushes are not reaching the device. Check backend logs for send failures.
 - The APNs rate limit may be exceeded (~4/hr for non-prominent activities). When the activity is on the lock screen, the limit is much higher.

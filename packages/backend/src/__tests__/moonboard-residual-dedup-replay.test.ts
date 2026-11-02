@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, it } from 'vite-plus/test';
 import postgres from 'postgres';
+import { getWorkerDatabaseName } from './worker-db';
 
 import {
   RESIDUAL_MIGRATION_TAG,
@@ -31,8 +32,8 @@ const ADMIN_URL = (
   process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test'
 ).replace(/\/[^/]+$/, '/postgres');
 
-// Unique per vitest worker so parallel workers can't collide.
-const DB_NAME = `bs_moonboard_residual_replay_w${process.env.VITEST_POOL_ID || '0'}`;
+// Same validated checkout/salt namespace as worker-db, including for forced teardown.
+const DB_NAME = getWorkerDatabaseName('bs_moonboard_residual_replay');
 
 describe(`moonboard residual dedup migration replay (${RESIDUAL_MIGRATION_TAG})`, () => {
   let admin: postgres.Sql;

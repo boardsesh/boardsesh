@@ -280,7 +280,7 @@ void test('publisher workflows hold the lane, await unlock, and never unlock sta
   for (const platform of ['ios', 'android']) {
     const publish = steps.find((step) => step.id === `publish_${platform}`);
     assert.ok(publish.if.includes("inputs.stage_for_production_deploy || steps.unlock.outcome == 'success'"));
-    assert.ok(publish.if.includes(`steps.train_guard.outputs.publish_${platform} != 'false'`));
+    assert.ok(!publish.if.includes('train_guard'));
     assert.ok(steps.indexOf(wait) < steps.indexOf(publish));
   }
   const backportSteps = backport.jobs.backport.steps;

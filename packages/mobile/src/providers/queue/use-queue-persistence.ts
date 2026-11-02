@@ -1,4 +1,4 @@
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { getCurrentUserStorageOwner } from '../../lib/user-storage-owner';
 import { useEffect, useState, useCallback } from 'react';
 import type { ClimbQueueItem, PlaylistSuggestionSource, QueueAction, QueueState } from '@boardsesh/queue';
@@ -8,6 +8,7 @@ import {
   getQueueSnapshotGeneration,
 } from '../../lib/queue-snapshot-store';
 import { getStoredSessionId, clearStoredSessionId } from '../../lib/session-store';
+import { announceStoredSessionEnded } from '../../lib/ended-session-signal';
 import { getHttpClient } from '../../lib/graphql/client';
 import { SESSION_STATUS, type SessionStatusQueryResponse } from '../../lib/graphql/operations';
 import { reportError } from '../../lib/error-reporting';
@@ -29,7 +30,7 @@ export const SOLO_QUEUE_SAVE_DEBOUNCE_MS = 500;
 type UseQueuePersistenceParams = {
   authenticatedUserId?: string | null;
   identityReady?: boolean;
-  privacyRevocationGeneration?: number;
+  credentialGeneration?: number;
   dispatch: React.Dispatch<QueueAction>;
   sessionIdRef: React.RefObject<string | null>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -72,11 +73,15 @@ type UseQueuePersistenceParams = {
  * Hydration completion is reactive and scoped to the viewer and the sign-in
  * generation, so a pending save resumes after a sign-in or sign-out without
  * overwriting another owner.
+ *
+ * Returns `restored`: the cold-start restore has landed for this scope (the
+ * provider's `QueueRestoredContext`). It turns true in the same render as a
+ * restored climb, and stays false in screenshot mode, where nothing restores.
  */
 export function useQueuePersistence({
   authenticatedUserId,
   identityReady = true,
-  privacyRevocationGeneration,
+  credentialGeneration,
   dispatch,
   sessionIdRef,
   setSessionId,
@@ -90,12 +95,12 @@ export function useQueuePersistence({
   playlistSuggestionSource,
   setPlaylistSuggestionSourceState,
   activeBoardSettled,
-}: UseQueuePersistenceParams): void {
+}: UseQueuePersistenceParams): { restored: boolean } {
   const [verifiedOwner, setVerifiedOwner] = useState<{ userId: string; generation: number } | null>(null);
   useEffect(() => {
     if (identityReady) return;
     let cancelled = false;
-    const generation = getPrivacyRevocationGeneration();
+    const generation = getCredentialGeneration();
     void (async () => {
       // The profile has not answered (an offline cold start), so the owner comes
       // from the phone: the token's account, when the offline database is
@@ -109,13 +114,13 @@ export function useQueuePersistence({
         import('@boardsesh/offline-sync'),
         import('../../lib/local-user-id'),
       ]);
-      if (cancelled || generation !== getPrivacyRevocationGeneration()) return;
+      if (cancelled || generation !== getCredentialGeneration()) return;
       const database = getDatabaseHandle();
       const [stampedUserId, tokenUserId] = database
         ? await Promise.all([getLocalUserId(database), readLocalUserId()])
         : [null, undefined];
       const userId = stampedUserId && stampedUserId === tokenUserId ? stampedUserId : null;
-      if (!cancelled && generation === getPrivacyRevocationGeneration()) {
+      if (!cancelled && generation === getCredentialGeneration()) {
         setVerifiedOwner(userId ? { userId, generation } : null);
       }
     })().catch(() => {
@@ -124,16 +129,12 @@ export function useQueuePersistence({
     return () => {
       cancelled = true;
     };
-  }, [identityReady, privacyRevocationGeneration]);
+  }, [identityReady, credentialGeneration]);
   const ownerUserId =
     authenticatedUserId ??
-    (!identityReady && verifiedOwner?.generation === getPrivacyRevocationGeneration() ? verifiedOwner.userId : null);
+    (!identityReady && verifiedOwner?.generation === getCredentialGeneration() ? verifiedOwner.userId : null);
   const ownerReady = identityReady || !!ownerUserId;
-  const hydrationScope = JSON.stringify([
-    ownerReady,
-    ownerUserId,
-    privacyRevocationGeneration ?? getPrivacyRevocationGeneration(),
-  ]);
+  const hydrationScope = JSON.stringify([ownerReady, ownerUserId, credentialGeneration ?? getCredentialGeneration()]);
   const [hydratedScope, setHydratedScope] = useState<string | null>(null);
 
   const restoreQueueSnapshot = useCallback(
@@ -181,8 +182,8 @@ export function useQueuePersistence({
     // Leave the stored bytes untouched so normal launches still restore them.
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !ownerReady) return;
     let cancelled = false;
-    const generation = getPrivacyRevocationGeneration();
-    const isCurrent = () => !cancelled && generation === getPrivacyRevocationGeneration();
+    const generation = getCredentialGeneration();
+    const isCurrent = () => !cancelled && generation === getCredentialGeneration();
     const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
     const hydrateLocalSnapshot = async () => {
       const snapshotGeneration = getQueueSnapshotGeneration();
@@ -192,6 +193,11 @@ export function useQueuePersistence({
       // before the async load resolved; never clobber newer state.
       if (sessionIdRef.current !== null) return;
       if (stateRef.current.queue.length > 0 || stateRef.current.currentClimbQueueItem) return;
+      // Marked done in the same tick as the restore's dispatch, so the render
+      // that lands the restored climb is the render that says `restored`; the
+      // `finally` below then changes nothing. LastPickWatcher reads the two
+      // together to tell this change of current from the climber's own.
+      setHydratedScope(hydrationScope);
       restoreQueueSnapshot(snapshot);
     };
     void getStoredSessionId()
@@ -229,10 +235,20 @@ export function useQueuePersistence({
             if (__DEV__) {
               console.info(`[session] stored session ${storedId} ended/missing; clearing`);
             }
+            // A workout run for it is over too (#6903): its last copy and recap
+            // would otherwise wait for a session id that never comes back.
+            // Announced before any await, still under the isCurrent() check above.
+            announceStoredSessionEnded(storedId);
             await clearStoredSessionId();
             await hydrateLocalSnapshot();
             return;
           }
+          // `restored` turns true in the `finally` below, before the session's
+          // queue arrives from the server (the rejoin's FullSync). So a last
+          // pick made while launching into an open crew session is cleared
+          // when that queue lands: LastPickWatcher can't tell it from a
+          // crewmate's newer put-up, which must end the pick. Same for the
+          // offline rejoin below.
           setSessionId(storedId);
         } catch (err) {
           if (!isCurrent()) return;
@@ -281,10 +297,10 @@ export function useQueuePersistence({
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return undefined;
     if (!ownerReady || hydratedScope !== hydrationScope || sessionId !== null || !activeBoardSettled) return undefined;
     const snapshotGeneration = getQueueSnapshotGeneration();
-    const generation = getPrivacyRevocationGeneration();
+    const generation = getCredentialGeneration();
     const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
     const persistTimeout = setTimeout(() => {
-      if (generation !== getPrivacyRevocationGeneration()) return;
+      if (generation !== getCredentialGeneration()) return;
       void setStoredQueueSnapshot(
         {
           queue,
@@ -315,6 +331,8 @@ export function useQueuePersistence({
     hydrationScope,
     hydratedScope,
   ]);
+
+  return { restored: hydratedScope === hydrationScope };
 }
 
 let queueSnapshotRestoreReported = false;

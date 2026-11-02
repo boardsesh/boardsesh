@@ -148,8 +148,9 @@ const SMART_PLAYLIST_UNFILTERED_COUNT_SELECTION = 'unfilteredCount';
  * is collapsed.
  */
 export const SESSION_REST_CADENCE_SELECTION =
-  '... on SessionRestCadenceChanged { restCadence { mode targetSeconds autoAdvance advanceOn source isRunning ' +
-  'anchorAt pausedElapsedSeconds lastFiredBeatAt lastTickQueueItemUuid lastTickStatus setByParticipantId } ' +
+  '... on SessionRestCadenceChanged { restCadence { mode targetSeconds autoAdvance autoAdvanceOnce advanceOn ' +
+  'source isRunning anchorAt pausedElapsedSeconds lastFiredBeatAt lastTickQueueItemUuid lastTickStatus ' +
+  'setByParticipantId } ' +
   'revision serverNow isSnapshot action }';
 
 /**
@@ -1320,6 +1321,12 @@ export type ReplayDefaultResponse = {
  * that does not answer the current document.
  */
 export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResponse>> = {
+  QueueCapabilitiesProbe: {
+    response: {
+      data: { queueState: { fields: [] }, currentClimbChanged: { fields: [] } },
+    },
+    reason: 'recorded queue sessions retain legacy documents without additive server capabilities',
+  },
   PrivacySettings: {
     response: {
       data: {
@@ -1342,6 +1349,23 @@ export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResp
   ProfileAdminFlag: {
     response: { data: { profile: null } },
     reason: 'the screenshots account is not an admin',
+  },
+  // query GetSessionWorkouts / GetSessionWorkoutHeadlines —
+  // packages/shared/graphql/src/operations/session-workouts.ts (#6903). Session
+  // detail and every feed card ask them. The pinned set's sessions were
+  // recorded before workouts were stored on the server, so none of them has
+  // one: an empty list is the server's own answer for each, and every screen
+  // then draws the session as before. A recording made after a workout session
+  // records them, and the keyed lookup takes over; GetSessionWorkoutHeadlines
+  // then wants a BATCHED_OPERATIONS row (`sessionIds` → `sessionId`), since a
+  // feed page's id list changes with timing.
+  GetSessionWorkouts: {
+    response: { data: { sessionWorkouts: [] } },
+    reason: 'no recorded session followed a workout stored on the server',
+  },
+  GetSessionWorkoutHeadlines: {
+    response: { data: { sessionWorkoutHeadlines: [] } },
+    reason: 'no recorded session followed a workout stored on the server',
   },
 };
 

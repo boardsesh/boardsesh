@@ -32,6 +32,8 @@ export interface OtaComment {
   authorType: string;
 }
 
+export type OtaCommit = { sha: string; parents: readonly string[] };
+
 export interface NativeTestScenario {
   prNumber: number;
   title: string;
@@ -58,7 +60,11 @@ export function selectNativeNotesPullRequests(
 }
 
 /** The label is cross-platform; only the bot's final-head iOS row proves relevance. */
-export function hasIosNativeChange(pullRequest: NativeNotesPullRequest, comments: readonly OtaComment[]): boolean {
+export function hasIosNativeChange(
+  pullRequest: NativeNotesPullRequest,
+  comments: readonly OtaComment[],
+  resolveCommit?: (reportedSha: string) => OtaCommit,
+): boolean {
   const comment = comments
     .filter(
       (candidate) =>
@@ -67,8 +73,20 @@ export function hasIosNativeChange(pullRequest: NativeNotesPullRequest, comments
         candidate.body.startsWith(OTA_COMMENT_MARKER),
     )
     .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt))[0];
-  const reportedHead = comment?.body.match(/^Branch `[^`]+` → `[^`]+` · commit `([0-9a-f]{7,40})`\.$/m)?.[1];
-  if (!reportedHead || !pullRequest.headRefOid.startsWith(reportedHead)) {
+  const reported = comment?.body.match(/^Branch `([^`]+)` → `[^`]+` · commit `([0-9a-f]{7,40})`\.$/m);
+  const reportedHead = reported?.[2];
+  let finalHead = reportedHead !== undefined && pullRequest.headRefOid.startsWith(reportedHead);
+  // Before the producer was corrected, pull_request runs reported their synthetic
+  // merge ref. Recover only that exact form, with GitHub proving its final head.
+  if (!finalHead && reportedHead && reported?.[1] === `${pullRequest.number}/merge` && resolveCommit) {
+    const commit = resolveCommit(reportedHead);
+    finalHead =
+      /^[0-9a-f]{40}$/.test(commit.sha) &&
+      commit.sha.startsWith(reportedHead) &&
+      commit.parents.length === 2 &&
+      commit.parents[1] === pullRequest.headRefOid;
+  }
+  if (!finalHead || !comment) {
     throw new Error(`PR #${pullRequest.number} needs an OTA compatibility comment for its final head.`);
   }
   const iosRows = comment.body.split('\n').filter((line) => line.startsWith('| iOS |'));
@@ -286,7 +304,20 @@ export function generateTestflightNotes(
   }
   const candidates = fetchNativeNotesPullRequests(runner, repository, changedCommits);
   const nativePullRequests = candidates.filter((pullRequest) =>
-    hasIosNativeChange(pullRequest, fetchOtaComments(runner, repository, pullRequest.number)),
+    hasIosNativeChange(pullRequest, fetchOtaComments(runner, repository, pullRequest.number), (reportedSha) => {
+      const commit: unknown = JSON.parse(runner('gh', ['api', `repos/${repository}/commits/${reportedSha}`]));
+      if (typeof commit !== 'object' || commit === null || !('sha' in commit) || !('parents' in commit))
+        throw new Error(`PR #${pullRequest.number} has unreadable historical OTA commit evidence.`);
+      const fields = commit as { sha: unknown; parents: unknown };
+      if (typeof fields.sha !== 'string' || !Array.isArray(fields.parents))
+        throw new Error(`PR #${pullRequest.number} has unreadable historical OTA commit evidence.`);
+      const parents = fields.parents.map((parent: unknown) => {
+        if (typeof parent !== 'object' || parent === null || !('sha' in parent) || typeof parent.sha !== 'string')
+          throw new Error(`PR #${pullRequest.number} has unreadable historical OTA commit parents.`);
+        return parent.sha;
+      });
+      return { sha: fields.sha, parents };
+    }),
   );
   const scenarios = nativePullRequests
     .map(nativeTestScenario)

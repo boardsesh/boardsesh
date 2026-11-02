@@ -68,7 +68,7 @@ describe('auth-store', () => {
   it('waits for the new credential before rebuilding a privacy snapshot', async () => {
     const store = await secureStore();
     const { storeTokens, getAuthToken } = await import('../auth-store');
-    const { subscribeToPrivacyRevocations } = await import('../privacy/privacy-cache');
+    const { subscribeToCredentialChanges } = await import('../privacy/privacy-cache');
     await storeTokens('old-jwt', 'old-refresh', '2026-10-01T00:00:00.000Z');
     // Complete the migration before this transition, matching a running app.
     await getAuthToken();
@@ -76,7 +76,7 @@ describe('auth-store', () => {
     const heldWrite = new Promise<void>((resolve) => (release = resolve));
     store.setItemAsync.mockImplementationOnce(() => heldWrite);
     let rebuiltToken: Promise<string | null> | undefined;
-    const unsubscribe = subscribeToPrivacyRevocations(() => {
+    const unsubscribe = subscribeToCredentialChanges(() => {
       rebuiltToken = getAuthToken();
     });
     try {

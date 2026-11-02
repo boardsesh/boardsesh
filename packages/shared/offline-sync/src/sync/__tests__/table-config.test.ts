@@ -124,8 +124,12 @@ describe('board_climbs.retired_by_reset (#6024)', () => {
     // Only a full spray reset sets the flag. A spray replay backfills rows an
     // older bundle dropped it from; the same on Kilter would re-crawl every
     // downloaded catalogue to write NULLs.
-    expect(refreshRevisionFor('board_climbs', 'spray')).toBe(2);
+    expect(refreshRevisionFor('board_climbs', 'spray')).toBe(3);
     expect(refreshRevisionFor('board_climbs', 'kilter')).toBe(1);
+    expect(refreshRevisionFor('board_climb_stats', 'spray')).toBe(1);
+    expect(refreshRevisionFor('board_climb_grades', 'spray')).toBe(1);
+    expect(refreshRevisionFor('board_climb_stats', 'kilter')).toBeUndefined();
+    expect(refreshRevisionFor('board_climb_grades', 'kilter')).toBeUndefined();
     expect(refreshColumnsFor('board_climbs', 'spray')).toEqual(['is_hidden', 'retired_by_reset']);
     expect(refreshColumnsFor('board_climbs', 'kilter')).toEqual(['is_hidden']);
   });

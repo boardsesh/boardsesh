@@ -24,6 +24,7 @@ export {
   isNotSessionMemberError,
   isNotInSessionError,
   isTransportClosedError,
+  isTransientTransportClose,
   parseRateLimitError,
   isRateLimitedError,
 } from './errors';

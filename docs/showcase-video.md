@@ -22,7 +22,7 @@ the moment the app changes.
 
 ### CI measurement (Phase 0)
 
-Dispatch **Mobile Store Videos** to record MoonBoard in en-US, es, fr and de
+Dispatch **Mobile Store Videos (Measure)** to record MoonBoard in en-US, es, fr and de
 on one macOS 26 runner, then render on Ubuntu. It reuses the screenshot
 dev-client cache and checksum-pinned Maestro. Set `SCREENSHOT_USER_EMAIL` and
 `SCREENSHOT_USER_PASSWORD` in the same scope as the screenshot workflow.
@@ -40,6 +40,90 @@ samples are every five seconds, so brief peaks may be higher.
 Copy the timing artifact's table and measured RAM into the Phase 0 PR after a
 green dispatch. Those measurements decide Phase 5 optimizations; estimates
 are not recorded as measurements. This dispatch does not write to R2 or Apple.
+
+### Open-train Search Results pipeline
+
+**Mobile Store Videos** stays dormant for automatic runs until the repository
+variable `STORE_VIDEOS_ENABLED` is exactly `true`. Keep it unset while retained
+footage, the dedicated crew account or video storage credentials are missing.
+Manual dispatch remains available and runs the same strict prerequisite checks.
+
+Once enabled, it follows successful **Mobile Store Draft Submission** runs for
+`release/next`, including version-only releases. The draft publishes
+its pinned iOS source, marketing version and build as an Actions artifact.
+The dependent workflow uses that artifact rather than the fingerprint tag or
+the draft run's `head_branch` (which is `main` for a chained workflow run).
+Dispatching by hand checks the current train instead.
+
+A sparse, dependency-free Ubuntu job checks `isVersionTaken` and
+`readMarketingVersion` before Production environment approval. A closed train
+skips recording. The next gate requires an editable iOS version with that exact
+marketing version. Both recording accounts and all three
+`STORE_CREATIVES_R2_AWS_*` secrets must exist before any macOS job starts, and so
+must the reviewed physical source ZIP for every selected cut that ends on the
+Live Activity (Kilter's for the default page while its storyboard still has that
+ending, Tension's for Tension). After importing and reviewing both physical
+takes, configuring those credentials, and verifying a manual twenty-video run,
+enable automatic recording with `gh variable set STORE_VIDEOS_ENABLED --body true`.
+Unset the variable or set it to `false` to suspend automatic recording.
+
+#### Recording a subset of pages
+
+A manual dispatch takes a `variants` input: `all` (the default, and what every
+automatic run uses) or a comma list of `default`, `kilter`, `tension`,
+`moonboard` and `spray`. Each selected page renders in all four locales, so
+`default` alone makes 4 videos. To ship only the default page:
+
+```bash
+gh workflow run mobile-store-videos.yml --ref release/next -f variants=default
+```
+
+The preflight job resolves the list against the recording source's own
+storyboards (`store-videos-gate.ts plan`). It decides which pages need a crew
+take and which end on the Live Activity, and it checks physical footage only for
+those endings. A typo or an unknown name fails there, before any macOS minute.
+A source commit from before subset support has no `plan`; preflight then falls
+back to the old rules (every page, both physical takes) and refuses any list
+other than `all`.
+
+Run subsets for one train one at a time. A manual run waits for the running
+pipeline of the same version instead of cancelling it. GitHub keeps only one
+waiting run per version, so a third dispatch replaces the second while it
+waits. An automatic run from a newer draft still cancels whatever is running.
+
+One record job per selected page records the ordinary takes in all four
+locales, with at most three macOS jobs running together. One crew job then
+records the selected pages that have a crew take, serially; it is skipped when
+none do. A global crew concurrency group also prevents account conflicts
+between train versions. One Ubuntu cell per selected page and locale hydrates
+the physical ending where needed, renders and validates the MP4, and retains
+the poster and provenance. Simulator frame artifacts expire after one day.
+
+The publisher rechecks the open draft, collects exactly the selected exports,
+finalizes only their search entries using Apple's current placement
+specifications, and uploads SHA-addressed candidates to R2. It refreshes one
+draft PR on `store-videos/v<version>` with the posters and MP4 links for the
+pages under review. Pages this run did not record keep main's entries
+untouched. An earlier subset run of the same train that is still on the open
+review branch is carried forward, so recording Kilter later does not drop the
+default page from the PR. Only pages the branch itself changed against its
+merge-base with main are carried, so a fix that landed on main since is never
+reverted. Each review commit records every page's source commit in a
+`Store-Video-Source:` trailer; the PR body names each carried page, the review
+commit it came from and its source. Before pushing, the publisher HEAD-checks
+the carried pages' R2 candidates and stops if any expired (after 30 days):
+re-record those pages in the same run. The PR body also says exactly which
+pages merging will place. Ordinary same-version train syncs retain the pinned
+recording source; rewritten history or a changed version is rejected. A newer
+draft run cancels the older pipeline for that version. An already merged
+video PR prevents another review PR for the same train.
+
+Merge that review PR to promote and upload the exact hashes. See
+[the creative upload contract](app-store-creative-assets.md) for guards,
+manual live-version recovery and the separate Apple asset-review submission.
+Header PNG generation and App Preview uploads retain their manual paths.
+
+### Local recording prerequisites
 
 - Xcode with an iOS 26 simulator runtime.
 - Maestro (`curl -Ls "https://get.maestro.mobile.dev" | bash`) and a JDK 21 at
@@ -67,12 +151,24 @@ The default backend is **prod**, for real content. Two accounts sign in:
 | Phone | Account | Env vars |
 | --- | --- | --- |
 | Primary (recorded) | `test@boardsesh.com`, the App Store account | `SCREENSHOT_USER_PASSWORD`; `SCREENSHOT_USER_EMAIL` overrides the email (default `test@boardsesh.com`) |
-| Secondary (crew take only) | Marco's own account | `SHOWCASE_SECONDARY_EMAIL`, `SHOWCASE_SECONDARY_PASSWORD` |
+| Secondary (crew take only) | Dedicated production crew account, with a real photo avatar and display name | `SHOWCASE_SECONDARY_EMAIL`, `SHOWCASE_SECONDARY_PASSWORD` |
 
 The recorder reads these from the environment, and from `--env-file`
 (default `~/.config/boardsesh/showcase-secrets.env`, mode 600, outside the
 repo). The file may only set those four keys; anything else in it is ignored.
 Never commit either password, and never paste them into a PR.
+
+Create the dedicated crew account before enabling the full train pipeline.
+Use the same GitHub secret scope as `SCREENSHOT_USER_*` (repository secrets,
+or add `--env Production` to both commands if those accounts are environment-scoped):
+
+```sh
+gh secret set SHOWCASE_SECONDARY_EMAIL
+gh secret set SHOWCASE_SECONDARY_PASSWORD
+```
+
+Each command prompts for its value. The pipeline records crew takes serially
+after the ordinary app takes; the shared account cannot run two live sessions.
 
 To fill the env file from 1Password without the values touching disk, keep
 `op://` references in a file and let `op run` resolve them:
@@ -80,8 +176,8 @@ To fill the env file from 1Password without the values touching disk, keep
 ```sh
 cat > ~/.config/boardsesh/showcase-secrets.op.env <<'EOF'
 SCREENSHOT_USER_PASSWORD=op://<vault>/<App Store test account item>/password
-SHOWCASE_SECONDARY_EMAIL=op://<vault>/Boardsesh Login/username
-SHOWCASE_SECONDARY_PASSWORD=op://<vault>/Boardsesh Login/password
+SHOWCASE_SECONDARY_EMAIL=op://<vault>/<dedicated crew account item>/username
+SHOWCASE_SECONDARY_PASSWORD=op://<vault>/<dedicated crew account item>/password
 EOF
 op run --env-file ~/.config/boardsesh/showcase-secrets.op.env -- vp run video:record
 ```
@@ -145,7 +241,7 @@ error screen. Navigation links still use the primed custom-scheme dialog.
 
 To inspect the profile filter without recording any takes, run
 `vp run video:record -- --kind moonboard --locale en-US --diagnose-profile-filter --app-path <Boardsesh.app>`
-on macOS, or dispatch **Mobile Store Videos** with mode
+on macOS, or dispatch **Mobile Store Videos (Measure)** with mode
 `diagnose-profile-filter`. This diagnostic requires the MoonBoard variant. It
 uses one iOS simulator and one locale, primes the
 profile as the progress take does, taps its filter once, and saves a screenshot
@@ -302,7 +398,8 @@ The spray wall is filmed twice: held still as `boards-spray`, one of the nine
 board phones, and with two swipes as `spray`, the scene of its own. Its photo is
 fetched, so both takes give the last deep link 8 s to draw before recording
 starts (`primeSettleMs` in `takes.ts`; every other take gets 3 s). The default
-name is `Home Spray Wall`; point slot 6 at another wall with `--boards`.
+name is `Liz's Wall` (the CPP bootstrap renamed the old Home Spray Wall in place);
+point slot 6 at another wall with `--boards`.
 
 The wall's photo was taken by a friend of the project, who agreed to it
 appearing in the video, the store previews and ads. It is not in the repo: to
@@ -312,7 +409,7 @@ public wall copies the photo into the world-readable media bucket and lists the
 wall.
 
 The wall check reads the board type from the app's own log line, which ends
-with it: `[screenshot] board[6] "Home Spray Wall" -> "<name>" (<layout> L..
+with it: `[screenshot] board[6] "Liz's Wall" -> "<name>" (<layout> L..
 S.. @..°, spray)`. A spray wall's name and layout are whatever its owner typed, so
 the type is never taken from either (`findBoardSlotProblem` in `record.ts`).
 
@@ -486,8 +583,9 @@ warning; asking for `--target homepage` with it fails instead).
 
 ### Whole native phone endings
 
-Kilter, Tension and default `store-search` cuts end with **Next climb. Outside
-the app.** Their required `lock-screen` take is the complete physical iPhone
+Kilter and Tension `store-search` cuts end with **Next climb. Outside the
+app.** The default cut ends on the logbook instead, so it renders from
+simulator takes alone. Their required `lock-screen` take is the complete physical iPhone
 13 Pro native screen, identified by `presentation: "native-lock-screen"` or
 `"native-notification-center"`, matching its actual `captureSurface`. Preserve
 its actual clock, wallpaper, notch, Live Activity and native controls. Clear

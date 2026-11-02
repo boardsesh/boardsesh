@@ -70,6 +70,61 @@ export const CATALOG_SNAPSHOT_REDACTED_COLUMNS: Partial<Record<CatalogSnapshotTa
 export const CATALOG_SNAPSHOT_REDACTED_VALUE = 'redacted';
 
 /**
+ * Board types whose rows never enter the artifact, from any table.
+ *
+ * A spray wall is a runtime-created catalogue layout: creating one writes the
+ * climber's wall name into `board_layouts` / `board_product_sizes` and every
+ * hold they mark into `board_holes` / `board_placements`. Those are private
+ * rows, and the artifact is world-readable. The rows every wall shares (the
+ * spray product, hold set, roles and grade scale) are seeded by migration 0227,
+ * so a database built from the artifact still has them.
+ *
+ * The loader applies the same filter, so an older artifact that still carries
+ * spray rows cannot put them back into a rebuilt developer image.
+ */
+export const CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES = ['spray'] as const;
+
+/** A bare or table-qualified lowercase SQL identifier, e.g. `board_type` or `board_layouts.board_type`. */
+const SAFE_COLUMN_REFERENCE = /^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/;
+
+/**
+ * `<column> NOT IN ('spray')` for a SQL WHERE clause. The values are the
+ * literals above, never input, so splicing them is safe. `column` is spliced
+ * too, so anything but a plain (optionally table-qualified) identifier throws.
+ */
+export function catalogSnapshotBoardTypeFilter(column: string): string {
+  if (!SAFE_COLUMN_REFERENCE.test(column)) {
+    throw new Error(`catalogSnapshotBoardTypeFilter: unsafe column reference ${JSON.stringify(column)}`);
+  }
+  const excluded = CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES.map((boardType) => `'${boardType}'`).join(', ');
+  return `${column} NOT IN (${excluded})`;
+}
+
+/**
+ * Moves the two spray id sequences past any spray catalogue row already in the
+ * database, and never backwards. One statement per sequence.
+ *
+ * A loaded artifact used to carry production's spray rows (ids 1, 2, 3, ...)
+ * while both sequences still stood at 1, so the first wall created locally
+ * collided with a row it could not see. The filter above stops new loads from
+ * bringing those rows in; this keeps a database that already holds some from
+ * handing out their ids again. A sequence is left alone when no row uses it.
+ */
+export const SPRAY_CATALOGUE_SEQUENCE_ADVANCE_SQL: readonly string[] = [
+  {
+    sequence: 'spray_wall_catalog_id_seq',
+    tables: ['board_layouts', 'board_product_sizes', 'board_product_sizes_layouts_sets'],
+  },
+  { sequence: 'spray_hold_catalog_id_seq', tables: ['board_holes', 'board_placements'] },
+].map(({ sequence, tables }) => {
+  const maxIds = tables.map((table) => `COALESCE((SELECT max(id) FROM ${table} WHERE board_type = 'spray'), 0)`);
+  return `WITH used AS (SELECT GREATEST(${maxIds.join(', ')}) AS max_id)
+SELECT setval('${sequence}', GREATEST(used.max_id, (SELECT last_value FROM ${sequence})))
+FROM used
+WHERE used.max_id > 0`;
+});
+
+/**
  * For a deferred table, the column carrying a `board_climbs.uuid` that a
  * foreign key enforces. The loader filters on it: a climb updated inside the
  * export's stability window is absent from its layout artifact, and an alias

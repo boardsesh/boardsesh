@@ -5,11 +5,10 @@ import type { LayoutChangeEvent } from 'react-native';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlayDrawerSectionId } from '../../../lib/play-drawer-sections-preference';
 
-const authority = vi.hoisted(() => ({ privacy: 0, credential: 0 }));
+const authority = vi.hoisted(() => ({ credential: 0 }));
 vi.mock('../../../lib/privacy/privacy-cache', () => ({
-  getPrivacyRevocationGeneration: () => authority.privacy,
-  getPrivacyCredentialGeneration: () => authority.credential,
-  subscribeToPrivacyRevocations: () => () => {},
+  getCredentialGeneration: () => authority.credential,
+  subscribeToCredentialChanges: () => () => {},
 }));
 import {
   buildOpeningLayoutKey,
@@ -100,7 +99,6 @@ function measure(callbacks: ReturnType<typeof useMeasuredLayout>, section = true
 describe('usePlayOpeningLayout', () => {
   beforeEach(() => {
     clearOpeningLayoutCache();
-    authority.privacy = 0;
     authority.credential = 0;
   });
 
@@ -190,7 +188,7 @@ describe('usePlayOpeningLayout', () => {
   it('cannot repopulate a revoked cache using a previously captured key', () => {
     const key = buildOpeningLayoutKey(identity);
     const { result } = renderHook(useMeasuredLayout, { initialProps: props(key) });
-    authority.privacy++;
+    authority.credential++;
     act(() => measure(result.current));
     expect(readOpeningLayout(key)).toBeUndefined();
   });

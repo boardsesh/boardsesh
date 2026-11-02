@@ -150,6 +150,13 @@ describe('deploy/app-subdomain/_headers', () => {
     }
   });
 
+  // The next deploy reads this file from the live site to decide which old
+  // chunks to keep (#5780). A cached copy would silently drop a deploy's worth.
+  it('never caches the chunk carry-over manifest', () => {
+    const cacheControl = effectiveHeaderValues('/chunk-carryover.json', 'Cache-Control').join(', ');
+    expect(cacheControl).toBe('no-store');
+  });
+
   it('never caches index.html or wasm/* as immutable (fixed filenames, must revalidate)', () => {
     for (const fixedNamePath of ['/index.html', '/wasm/board_renderer_bg.wasm']) {
       const cacheControl = effectiveHeaderValues(fixedNamePath, 'Cache-Control').join(', ');

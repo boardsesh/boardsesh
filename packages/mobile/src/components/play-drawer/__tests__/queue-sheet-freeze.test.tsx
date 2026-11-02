@@ -17,6 +17,36 @@ import { act, render } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { WaitForPresentationResult } from '../../../providers/sheet-presentation-provider';
+import type { LogAscentInput } from '../../../providers/drawer-host-provider';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
+vi.mock('../../LogAscentSheet', () => ({
+  LogAscentSheet: ({
+    visible,
+    climbUuid,
+    presenterGroup,
+    parentSheetId,
+    onClose,
+    onFullyDismissed,
+  }: {
+    visible: boolean;
+    climbUuid: string;
+    presenterGroup?: string;
+    parentSheetId?: string;
+    onClose: () => void;
+    onFullyDismissed: () => void;
+  }) => {
+    sheetCallbacks.tickClose = onClose;
+    sheetCallbacks.tickFullyDismissed = onFullyDismissed;
+    return createElement('div', {
+      'data-testid': 'queue-tick-sheet',
+      'data-climb': climbUuid,
+      'data-visible': String(visible),
+      'data-presenter': presenterGroup,
+      'data-parent': parentSheetId,
+    });
+  },
+}));
 
 // Freeze-contract harness for QueueSheet. Both queue sheets (root + /play copy,
 // PR #3337) stay mounted the whole session. A HIDDEN sheet must freeze the queue
@@ -37,6 +67,7 @@ const managedSheet = vi.hoisted(() => ({
   dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
   onChange: vi.fn(),
   onFullyDismissed: vi.fn(),
+  waitForPresentation: vi.fn<() => Promise<WaitForPresentationResult>>(),
 }));
 
 // Counts QueueList renders and records the queue prop identity it last saw. The
@@ -52,6 +83,9 @@ const sheetCallbacks = vi.hoisted(() => ({
   clearAll: null as (() => void) | null,
   toggleEditMode: null as (() => void) | null,
   toggleSelect: null as ((uuid: string) => void) | null,
+  tickHistory: null as ((item: ClimbQueueItem) => void | Promise<void>) | null,
+  tickClose: null as (() => void) | null,
+  tickFullyDismissed: null as (() => void) | null,
 }));
 const gestureRoot = vi.hoisted(() => ({ style: undefined as unknown }));
 
@@ -86,17 +120,22 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetModal: ({ children }: ViewProps) => createElement('div', { 'data-testid': 'sheet' }, children),
 }));
 
-vi.mock('../../../providers/sheet-presentation-provider', () => ({
-  useManagedSheet: () => ({
-    handle: {
-      present: managedSheet.present,
-      dismiss: managedSheet.dismiss,
-      dismissAndWait: managedSheet.dismissAndWait,
-    },
-    onChange: managedSheet.onChange,
-    onFullyDismissed: managedSheet.onFullyDismissed,
-  }),
-}));
+vi.mock('../../../providers/sheet-presentation-provider', () => {
+  const handle = {
+    present: managedSheet.present,
+    dismiss: managedSheet.dismiss,
+    dismissAndWait: managedSheet.dismissAndWait,
+  };
+  return {
+    useManagedSheet: () => ({
+      sheetId: 'queue-sheet-test',
+      handle,
+      onChange: managedSheet.onChange,
+      onFullyDismissed: managedSheet.onFullyDismissed,
+      waitForPresentation: managedSheet.waitForPresentation,
+    }),
+  };
+});
 
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: safeArea.bottom, left: 0, right: 0 }),
@@ -137,8 +176,17 @@ vi.mock('../QueueList', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
   return {
     QueueList: React.memo(
-      ({ queue, onToggleSelect }: { queue: ClimbQueueItem[]; onToggleSelect: (uuid: string) => void }) => {
+      ({
+        queue,
+        onToggleSelect,
+        onTickHistory,
+      }: {
+        queue: ClimbQueueItem[];
+        onToggleSelect: (uuid: string) => void;
+        onTickHistory: (item: ClimbQueueItem) => void | Promise<void>;
+      }) => {
         sheetCallbacks.toggleSelect = onToggleSelect;
+        sheetCallbacks.tickHistory = onTickHistory;
         queueList.renders += 1;
         queueList.lastQueue = queue;
         return React.createElement('div', {
@@ -196,6 +244,17 @@ function makeData(uuids: string[]) {
   return { queue, currentClimbQueueItem: queue[0] ?? null };
 }
 
+function presentLocalTick(item: ClimbQueueItem, present?: (input: LogAscentInput) => void) {
+  present?.({
+    climbUuid: item.climb.uuid,
+    boardName: 'kilter',
+    angle: 40,
+    isMirror: false,
+    isBenchmark: false,
+    baseAscensionistCount: 0,
+  });
+}
+
 const board = {
   boardName: 'kilter' as const,
   layoutId: 1,
@@ -212,8 +271,11 @@ const noopProps = {
   onTickHistory: () => {},
 };
 
-function renderSheet(handleRef: ReturnType<typeof createRef<QueueSheetHandle>>) {
-  return render(createElement(QueueSheet, { ...noopProps, ref: handleRef }));
+function renderSheet(
+  handleRef: ReturnType<typeof createRef<QueueSheetHandle>>,
+  overrides: Partial<Parameters<typeof QueueSheet>[0]> = {},
+) {
+  return render(createElement(QueueSheet, { ...noopProps, ...overrides, ref: handleRef }));
 }
 
 describe('QueueSheet freeze contract', () => {
@@ -224,6 +286,10 @@ describe('QueueSheet freeze contract', () => {
     managedSheet.present.mockClear();
     managedSheet.dismiss.mockClear();
     managedSheet.dismissAndWait.mockClear();
+    managedSheet.waitForPresentation.mockReset().mockResolvedValue({ status: 'presented' });
+    sheetCallbacks.tickHistory = null;
+    sheetCallbacks.tickClose = null;
+    sheetCallbacks.tickFullyDismissed = null;
     queueList.renders = 0;
     queueList.lastQueue = null;
     safeArea.bottom = 0;
@@ -293,6 +359,166 @@ describe('QueueSheet freeze contract', () => {
     if (!handleRef.current) throw new Error('queue sheet handle did not mount');
     await expect(handleRef.current.dismissAndWait()).resolves.toEqual({ status: 'dismissed' });
     expect(managedSheet.dismissAndWait).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits until the Queue parent settles before requesting its local Tick presenter', async () => {
+    let settleParent!: (outcome: WaitForPresentationResult) => void;
+    managedSheet.waitForPresentation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleParent = resolve;
+        }),
+    );
+    const onTickHistory = vi.fn(presentLocalTick);
+    const handleRef = createRef<QueueSheetHandle>();
+    const rendered = renderSheet(handleRef, { onTickHistory });
+    act(() => handleRef.current?.present());
+    const item = makeQueueItem('history');
+    let pending: void | Promise<void>;
+    act(() => {
+      pending = sheetCallbacks.tickHistory?.(item);
+    });
+    expect(managedSheet.waitForPresentation).toHaveBeenCalledOnce();
+    expect(onTickHistory).not.toHaveBeenCalled();
+    await act(async () => {
+      settleParent({ status: 'presented' });
+      await pending;
+    });
+    expect(onTickHistory).toHaveBeenCalledExactlyOnceWith(item, expect.any(Function));
+    const tick = rendered.getByTestId('queue-tick-sheet');
+    expect(rendered.getByTestId('sheet').contains(tick)).toBe(true);
+    expect(tick.getAttribute('data-presenter')).toBe('queue-tick:queue-sheet-test');
+    expect(tick.getAttribute('data-parent')).toBe('queue-sheet-test');
+    expect(managedSheet.dismiss).not.toHaveBeenCalled();
+    expect(managedSheet.dismissAndWait).not.toHaveBeenCalled();
+  });
+
+  it.each(['dismiss', 'dismissAndWait'] as const)(
+    'cancels an immediate Tick then %s before the awaited continuation',
+    async (close) => {
+      const onTickHistory = vi.fn();
+      const handleRef = createRef<QueueSheetHandle>();
+      renderSheet(handleRef, { onTickHistory });
+      act(() => handleRef.current?.present());
+      let pending: void | Promise<void>;
+      act(() => {
+        pending = sheetCallbacks.tickHistory?.(makeQueueItem('history'));
+        void handleRef.current?.[close]();
+      });
+      await act(async () => {
+        await pending;
+      });
+      expect(onTickHistory).not.toHaveBeenCalled();
+      expect(managedSheet[close]).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('abandons an awaited Tick when the parent presentation is aborted', async () => {
+    managedSheet.waitForPresentation.mockResolvedValue({ status: 'aborted' });
+    const onTickHistory = vi.fn();
+    renderSheet(createRef<QueueSheetHandle>(), { onTickHistory });
+    await act(async () => {
+      await sheetCallbacks.tickHistory?.(makeQueueItem('history'));
+    });
+    expect(onTickHistory).not.toHaveBeenCalled();
+  });
+
+  it('abandons an awaited Tick after a credential boundary', async () => {
+    let settleParent!: (outcome: WaitForPresentationResult) => void;
+    managedSheet.waitForPresentation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleParent = resolve;
+        }),
+    );
+    const onTickHistory = vi.fn();
+    renderSheet(createRef<QueueSheetHandle>(), { onTickHistory });
+    let pending: void | Promise<void>;
+    act(() => {
+      pending = sheetCallbacks.tickHistory?.(makeQueueItem('private-history'));
+    });
+    await act(async () => {
+      invalidateCredentialSnapshots();
+      settleParent({ status: 'presented' });
+      await pending;
+    });
+    expect(onTickHistory).not.toHaveBeenCalled();
+  });
+
+  it('abandons an awaited Tick when Queue unmounts', async () => {
+    let settleParent!: (outcome: WaitForPresentationResult) => void;
+    managedSheet.waitForPresentation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleParent = resolve;
+        }),
+    );
+    const onTickHistory = vi.fn();
+    const rendered = renderSheet(createRef<QueueSheetHandle>(), { onTickHistory });
+    let pending: void | Promise<void>;
+    act(() => {
+      pending = sheetCallbacks.tickHistory?.(makeQueueItem('history'));
+    });
+    rendered.unmount();
+    await act(async () => {
+      settleParent({ status: 'presented' });
+      await pending;
+    });
+    expect(onTickHistory).not.toHaveBeenCalled();
+  });
+
+  it('defers a layout-only Queue fold until the Tick fully dismisses', async () => {
+    const handleRef = createRef<QueueSheetHandle>();
+    const rendered = renderSheet(handleRef, { onTickHistory: presentLocalTick });
+    act(() => handleRef.current?.present());
+    await act(async () => {
+      await sheetCallbacks.tickHistory?.(makeQueueItem('history'));
+    });
+    const tick = rendered.getByTestId('queue-tick-sheet');
+    act(() => handleRef.current?.dismissWhenUncovered(true));
+    expect(managedSheet.dismiss).not.toHaveBeenCalled();
+    act(() => sheetCallbacks.tickClose?.());
+    expect(rendered.getByTestId('queue-tick-sheet')).toBe(tick);
+    expect(tick.getAttribute('data-visible')).toBe('false');
+    expect(managedSheet.dismiss).not.toHaveBeenCalled();
+    act(() => sheetCallbacks.tickFullyDismissed?.());
+    expect(rendered.queryByTestId('queue-tick-sheet')).toBeNull();
+    expect(managedSheet.dismiss).toHaveBeenCalledOnce();
+  });
+
+  it('cancels a deferred layout fold when rotating back before Tick finishes', async () => {
+    const handleRef = createRef<QueueSheetHandle>();
+    renderSheet(handleRef, { onTickHistory: presentLocalTick });
+    act(() => handleRef.current?.present());
+    await act(async () => {
+      await sheetCallbacks.tickHistory?.(makeQueueItem('history'));
+    });
+    act(() => handleRef.current?.dismissWhenUncovered(true));
+    act(() => handleRef.current?.dismissWhenUncovered(false));
+    act(() => sheetCallbacks.tickClose?.());
+    act(() => sheetCallbacks.tickFullyDismissed?.());
+    expect(managedSheet.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('keeps a deferred layout fold waiting through a queued replacement Tick', async () => {
+    const handleRef = createRef<QueueSheetHandle>();
+    const rendered = renderSheet(handleRef, { onTickHistory: presentLocalTick });
+    act(() => handleRef.current?.present());
+    await act(async () => {
+      await sheetCallbacks.tickHistory?.(makeQueueItem('a'));
+    });
+    const firstFullyDismissed = sheetCallbacks.tickFullyDismissed;
+    act(() => handleRef.current?.dismissWhenUncovered(true));
+    act(() => sheetCallbacks.tickClose?.());
+    await act(async () => {
+      await sheetCallbacks.tickHistory?.(makeQueueItem('b'));
+    });
+    act(() => firstFullyDismissed?.());
+    expect(rendered.getByTestId('queue-tick-sheet').getAttribute('data-climb')).toBe('b');
+    expect(managedSheet.dismiss).not.toHaveBeenCalled();
+    act(() => sheetCallbacks.tickClose?.());
+    act(() => sheetCallbacks.tickFullyDismissed?.());
+    expect(managedSheet.dismiss).toHaveBeenCalledOnce();
   });
 });
 

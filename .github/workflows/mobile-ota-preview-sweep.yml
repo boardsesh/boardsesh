@@ -69,7 +69,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       # Lists branches plus transitional legacy channels via the V3 read API, keeps
       # only ^pr-[1-9][0-9]*$ whose PR is closed, and deletes each via

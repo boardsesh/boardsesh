@@ -36,9 +36,10 @@ export type FilterChipSortControl = {
 
 export type FilterChipRowProps = {
   /**
-   * The chips the user has pinned, in render order (see lib/pinnable-chips.ts).
+   * The chips the user has pinned, in render order: the order the pin store
+   * saved (Settings › Climbs & grades › Quick filters; see lib/pinnable-chips.ts).
    * Each pinnable chip, Recent included, renders only when its kind is present;
-   * the Filters button always renders. Defaults reproduce today's row.
+   * the Filters button always renders first. Defaults reproduce today's row.
    */
   pinnedChips: readonly FilterChipKind[];
 

@@ -47,6 +47,10 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchControllerRef = useRef<AbortController | null>(null);
+  const searchVersionRef = useRef(0);
+  const locationRef = useRef({ latitude, longitude, userCoords });
+  locationRef.current = { latitude, longitude, userCoords };
 
   const placeMarker = useCallback((lat: number, lng: number) => {
     const L = leafletRef.current;
@@ -64,9 +68,11 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
         iconSize: [16, 16],
         iconAnchor: [8, 8],
       });
-      markerRef.current = L.marker([lat, lng], { icon, draggable: true }).addTo(map);
-      markerRef.current.on('dragend', () => {
-        const pos = markerRef.current!.getLatLng();
+      const marker = L.marker([lat, lng], { icon, draggable: true }).addTo(map);
+      markerRef.current = marker;
+      marker.on('dragend', () => {
+        if (mapRef.current !== map || markerRef.current !== marker) return;
+        const pos = marker.getLatLng();
         onChangeRef.current(Math.round(pos.lat * 1000000) / 1000000, Math.round(pos.lng * 1000000) / 1000000);
       });
     }
@@ -75,18 +81,17 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
   // Initialize map once the accordion is expanded
   useEffect(() => {
     if (!expanded || !containerRef.current) return;
-
-    // Guard against React strict mode double-mount
-    if (mapRef.current) {
-      mapRef.current.remove();
-      mapRef.current = null;
-      markerRef.current = null;
-      leafletRef.current = null;
-    }
+    const container = containerRef.current;
+    let disposed = false;
+    let ownedMap: LeafletMap | null = null;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
     void Promise.all([import('leaflet'), import('leaflet/dist/leaflet.css')]).then(([L]) => {
-      if (!containerRef.current) return;
+      // A collapsed accordion or StrictMode cleanup may have happened while
+      // Leaflet loaded. Only this effect's live instance may claim its element.
+      if (disposed || containerRef.current !== container) return;
 
+      const { latitude, longitude, userCoords } = locationRef.current;
       const hasCoords = latitude != null && longitude != null;
       let center: [number, number] = [40, -95];
       if (hasCoords) {
@@ -96,10 +101,14 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
       }
       const zoom = hasCoords || userCoords ? 14 : 3;
 
-      const map = L.map(containerRef.current, {
+      const map = L.map(container, {
         zoomControl: true,
         attributionControl: false,
+        // Leaflet 1.9.4 leaves its CSS zoom completion timer alive after remove().
+        // This form map can unmount immediately when a setup step changes.
+        zoomAnimation: false,
       }).setView(center, zoom);
+      ownedMap = map;
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -116,6 +125,7 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
 
       // Click to place/move marker
       map.on('click', (e: { latlng: { lat: number; lng: number } }) => {
+        if (disposed || mapRef.current !== map) return;
         const lat = Math.round(e.latlng.lat * 1000000) / 1000000;
         const lng = Math.round(e.latlng.lng * 1000000) / 1000000;
         placeMarker(lat, lng);
@@ -123,20 +133,24 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
       });
 
       // Fix size after accordion transition
-      setTimeout(() => map.invalidateSize(), 100);
+      resizeTimer = setTimeout(() => {
+        if (!disposed && mapRef.current === map) map.invalidateSize();
+      }, 100);
     });
 
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
+      disposed = true;
+      if (resizeTimer) clearTimeout(resizeTimer);
+      ownedMap?.remove();
+      ownedMap?.off();
+      if (ownedMap && mapRef.current === ownedMap) {
         mapRef.current = null;
         markerRef.current = null;
         leafletRef.current = null;
         setMapReady(false);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
+  }, [expanded, placeMarker]);
 
   const handleUseMyLocation = useCallback(() => {
     if (userCoords) {
@@ -150,32 +164,35 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
     }
   }, [userCoords, placeMarker, requestPermission]);
 
-  // Invalidate map size when accordion expands
   const handleAccordionChange = useCallback((_: React.SyntheticEvent, isExpanded: boolean) => {
     setExpanded(isExpanded);
-    if (isExpanded && mapRef.current) {
-      setTimeout(() => mapRef.current?.invalidateSize(), 200);
-    }
   }, []);
 
   const handleAddressSearch = useCallback(
     (query: string) => {
       setSearchQuery(query);
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      searchControllerRef.current?.abort();
+      const searchVersion = ++searchVersionRef.current;
+      setIsSearching(false);
       if (!query.trim()) return;
 
       searchTimerRef.current = setTimeout(async () => {
+        const controller = new AbortController();
+        searchControllerRef.current = controller;
         setIsSearching(true);
         try {
           const encoded = encodeURIComponent(query.trim());
           const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encoded}`, {
             headers: { 'Accept-Language': 'en' },
+            signal: controller.signal,
           });
           if (!res.ok) {
             console.error('Nominatim search failed:', res.status, res.statusText);
             return;
           }
           const results: NominatimResult[] = await res.json();
+          if (controller.signal.aborted || searchVersionRef.current !== searchVersion) return;
           if (results.length > 0) {
             const lat = Math.round(parseFloat(results[0].lat) * 1000000) / 1000000;
             const lng = Math.round(parseFloat(results[0].lon) * 1000000) / 1000000;
@@ -184,19 +201,20 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
             onChangeRef.current(lat, lng);
           }
         } catch (error) {
-          console.error('Address search failed:', error);
+          if (!controller.signal.aborted) console.error('Address search failed:', error);
         } finally {
-          setIsSearching(false);
+          if (searchVersionRef.current === searchVersion) setIsSearching(false);
         }
       }, 500);
     },
     [placeMarker],
   );
 
-  // Cleanup search timer
   useEffect(() => {
     return () => {
+      searchVersionRef.current += 1;
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      searchControllerRef.current?.abort();
     };
   }, []);
 

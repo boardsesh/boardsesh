@@ -93,6 +93,7 @@ function createMockChain(resolveValue: unknown = [], onValues?: (values: unknown
     'leftJoin',
     'orderBy',
     'limit',
+    'for',
     'values',
     'set',
     'returning',
@@ -2093,7 +2094,8 @@ describe('climb mutations', () => {
   });
 
   it('deletes an owned draft climb', async () => {
-    mockDb.select.mockReturnValueOnce(createMockChain([{ uuid: 'draft-1', userId: 'user-123', isDraft: true }]));
+    const draftRead = createMockChain([{ uuid: 'draft-1', userId: 'user-123', isDraft: true }]);
+    mockDb.select.mockReturnValueOnce(draftRead);
     mockDb.delete.mockReturnValue(createMockChain([{ uuid: 'draft-1' }]));
 
     const result = await climbMutations.deleteDraftClimb(
@@ -2106,6 +2108,7 @@ describe('climb mutations', () => {
     );
 
     expect(result).toBe(true);
+    expect(draftRead.for).toHaveBeenCalledWith('update');
     expect(mockDb.delete).toHaveBeenCalledTimes(4);
   });
 

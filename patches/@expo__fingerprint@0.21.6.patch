@@ -1,0 +1,84 @@
+diff --git a/build/hash/Hash.js b/build/hash/Hash.js
+index 6429d8a..4d96cd3 100644
+--- a/build/hash/Hash.js
++++ b/build/hash/Hash.js
+@@ -191,7 +191,7 @@ async function createFileHashResultsAsync(filePath, limiter, projectRoot, option
+                     } : undefined;
+                     resolve({
+                         type: 'file',
+-                        id: filePath,
++                        id: (0, _Path.normalizeIsolatedStoreModulePath)(filePath),
+                         hex,
+                         ...debugInfo ? {
+                             debugInfo
+@@ -237,7 +237,7 @@ async function createDirHashResultsAsync(dirPath, limiter, projectRoot, options,
+     const hasher = (0, _crypto().createHash)(options.hashAlgorithm);
+     const children = [];
+     for (const result of results){
+-        hasher.update(result.id);
++        hasher.update((0, _Path.normalizeIsolatedStoreModulePath)(result.id));
+         hasher.update(result.hex);
+         children.push(result.debugInfo);
+     }
+@@ -312,9 +312,9 @@ function createSourceId(source) {
+         case 'contents':
+             return source.id;
+         case 'file':
+-            return source.overrideHashKey ?? source.filePath;
++            return source.overrideHashKey ?? (0, _Path.normalizeIsolatedStoreModulePath)(source.filePath);
+         case 'dir':
+-            return source.overrideHashKey ?? source.filePath;
++            return source.overrideHashKey ?? (0, _Path.normalizeIsolatedStoreModulePath)(source.filePath);
+         case 'package':
+             return source.overrideHashKey ?? `${source.name}@${source.version}`;
+         default:
+diff --git a/build/utils/Path.d.ts b/build/utils/Path.d.ts
+index 7f6f3ca..e53ec58 100644
+--- a/build/utils/Path.d.ts
++++ b/build/utils/Path.d.ts
+@@ -34,6 +34,7 @@ export declare function normalizeFilePath(filePath: string, options: {
+ /**
+  * Convert any platform-specific path to a POSIX path.
+  */
++export declare function normalizeIsolatedStoreModulePath(filePath: string): string;
+ export declare function toPosixPath(filePath: string): string;
+ /**
+  * Check if the given `filePath` exists.
+diff --git a/build/utils/Path.js b/build/utils/Path.js
+index 4e8dce8..4029360 100644
+--- a/build/utils/Path.js
++++ b/build/utils/Path.js
+@@ -41,6 +41,9 @@ _export(exports, {
+     get normalizeFilePath () {
+         return normalizeFilePath;
+     },
++    get normalizeIsolatedStoreModulePath () {
++        return normalizeIsolatedStoreModulePath;
++    },
+     get pathExistsAsync () {
+         return pathExistsAsync;
+     },
+@@ -155,9 +158,21 @@ function isIgnoredPathWithMatchObjects(filePath, matchObjects) {
+ const STRIP_PARENT_PREFIX_REGEX = /^(\.\.\/)+/g;
+ function normalizeFilePath(filePath, options) {
+     if (options.stripParentPrefix) {
+-        return filePath.replace(STRIP_PARENT_PREFIX_REGEX, '');
++        filePath = filePath.replace(STRIP_PARENT_PREFIX_REGEX, '');
+     }
+-    return filePath;
++    return normalizeIsolatedStoreModulePath(filePath);
++}
++// Collapse isolated package-store wrappers before ignore matching and hash IDs.
++// Keep repeating because a dependency can itself live beneath a stored package.
++const ISOLATED_STORE_MODULE_ROOT_REGEX = /(^|[\\/])node_modules[\\/]\.[^\\/]+[\\/][^\\/]+[\\/]node_modules[\\/]/g;
++function normalizeIsolatedStoreModulePath(filePath) {
++    let normalizedPath = filePath;
++    let previousPath;
++    do {
++        previousPath = normalizedPath;
++        normalizedPath = normalizedPath.replace(ISOLATED_STORE_MODULE_ROOT_REGEX, '$1node_modules/');
++    } while (normalizedPath !== previousPath);
++    return normalizedPath;
+ }
+ const REGEXP_REPLACE_SLASHES = /\\/g;
+ function toPosixPath(filePath) {

@@ -1,11 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { usePrivacyCredentialScope } from '../../hooks/use-privacy-scoped-state';
 import { useFavoriteStatus, useToggleFavorite } from '../../lib/graphql/hooks';
-import {
-  getPrivacyCredentialGeneration,
-  getPrivacyRevocationGeneration,
-  subscribeToPrivacyRevocations,
-} from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 
 type ToggleFavoriteMutate = ReturnType<typeof useToggleFavorite>['mutate'];
 
@@ -18,7 +14,6 @@ export type PlayCoreEnhancementSnapshot = {
   boardName: string;
   climbUuid: string | null;
   angle: number;
-  privacyGeneration: number;
   credentialGeneration: number;
   serverFavorited: boolean | undefined;
   toggleFavoriteMutate: ToggleFavoriteMutate;
@@ -34,16 +29,11 @@ type PlayCoreEnhancementsProps = {
 
 /** Query observers and favorite mutation wiring mount after the interactive core. */
 export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onSnapshot }: PlayCoreEnhancementsProps) {
-  const privacyGeneration = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
-  );
   const credentialGeneration = usePrivacyCredentialScope();
   const targetKey = getPlayCoreEnhancementTargetKey(boardName, climbUuid, angle);
   const callbackScope = useMemo(
-    () => ({ targetKey, privacyGeneration, credentialGeneration, enabled }),
-    [targetKey, privacyGeneration, credentialGeneration, enabled],
+    () => ({ targetKey, credentialGeneration, enabled }),
+    [targetKey, credentialGeneration, enabled],
   );
   const currentScopeRef = useRef(callbackScope);
   currentScopeRef.current = callbackScope;
@@ -61,10 +51,8 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
           enabled &&
           currentScope.enabled &&
           currentScope.targetKey === targetKey &&
-          currentScope.privacyGeneration === privacyGeneration &&
           currentScope.credentialGeneration === credentialGeneration &&
-          getPrivacyRevocationGeneration() === privacyGeneration &&
-          getPrivacyCredentialGeneration() === credentialGeneration
+          getCredentialGeneration() === credentialGeneration
         );
       };
       if (
@@ -93,18 +81,13 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
           : undefined,
       );
     },
-    [mutate, boardName, climbUuid, angle, targetKey, enabled, privacyGeneration, credentialGeneration, callbackScope],
+    [mutate, boardName, climbUuid, angle, targetKey, enabled, credentialGeneration, callbackScope],
   );
 
   useEffect(() => {
     mountedRef.current = true;
     const scope = currentScopeRef.current;
-    if (
-      !enabled ||
-      scope.targetKey !== targetKey ||
-      getPrivacyRevocationGeneration() !== privacyGeneration ||
-      getPrivacyCredentialGeneration() !== credentialGeneration
-    ) {
+    if (!enabled || scope.targetKey !== targetKey || getCredentialGeneration() !== credentialGeneration) {
       onSnapshot(null);
     } else {
       onSnapshot({
@@ -112,7 +95,6 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
         boardName,
         climbUuid,
         angle,
-        privacyGeneration,
         credentialGeneration,
         serverFavorited,
         toggleFavoriteMutate,
@@ -129,7 +111,6 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
     climbUuid,
     angle,
     enabled,
-    privacyGeneration,
     credentialGeneration,
     serverFavorited,
     toggleFavoriteMutate,

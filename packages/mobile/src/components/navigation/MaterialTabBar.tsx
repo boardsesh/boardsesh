@@ -19,7 +19,7 @@ import { isLiveTabBadge } from './tab-badge';
  * each screen's React Navigation options, so this stays a generic custom tab
  * bar.
  */
-export function MaterialTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
+export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, insets }: BottomTabBarProps) {
   const { systemColors, brandColors, m3 } = useTheme();
   // M3 navigation bar roles: the focused destination's icon sits on a
   // secondaryContainer active-indicator circle (onSecondaryContainer glyph), its
@@ -66,13 +66,13 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
         const labelColor = focused ? activeLabelColor : inactiveColor;
 
         const onPress = () => {
-          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) {
-            navigation.navigate(route.name);
+            navigateToTab(route.key);
           }
         };
         const onLongPress = () => {
-          navigation.emit({ type: 'tabLongPress', target: route.key });
+          emitter.emit({ type: 'tabLongPress', target: route.key });
         };
 
         return (

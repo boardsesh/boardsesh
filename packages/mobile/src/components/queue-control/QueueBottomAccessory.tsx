@@ -1,15 +1,10 @@
-import { useMemo, useRef, useSyncExternalStore } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { useRef, useSyncExternalStore } from 'react';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import type { Climb } from '@boardsesh/queue';
+import type { ClimbQueueItem } from '@boardsesh/queue';
 import { useQueue } from '../../providers/queue-provider';
-import {
-  glassSize,
-  NATIVE_BOTTOM_ACCESSORY_MAX_WIDTH,
-  NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER,
-} from '../../theme/layout';
 import { NativeAccessoryClimbRow } from './NativeAccessoryClimbRow';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../../lib/privacy/privacy-cache';
+import { useBarClimb } from './use-bar-climb';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib/privacy/privacy-cache';
 
 /**
  * Hold the last shown climb while this component stays mounted. The mount itself
@@ -22,13 +17,13 @@ import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '.
  * — rather than a second timer — keeps it consistent with the presence hold by
  * construction: the host unmount is the single thing that finally clears it.
  */
-function useRetainedAccessoryClimb(currentClimb: Climb | null): Climb | null {
+function useRetainedAccessoryClimb(currentClimb: ClimbQueueItem | null): ClimbQueueItem | null {
   const generation = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
-  const retained = useRef({ generation, climb: currentClimb, withdrawn: null as Climb | null });
+  const retained = useRef({ generation, climb: currentClimb, withdrawn: null as ClimbQueueItem | null });
   if (retained.current.generation !== generation) {
     // The provider may not have painted its cleared queue yet. Do not adopt
     // that same old object again while the sticky UIKit host remains mounted.
@@ -41,7 +36,9 @@ function useRetainedAccessoryClimb(currentClimb: Climb | null): Climb | null {
 /**
  * iOS 26 tab-bar bottom accessory content. UIKit supplies the outer Liquid Glass
  * platter and swaps this subtree between regular and inline placements as the
- * tab bar minimizes, so the content stays bare: current climb plus tick only.
+ * tab bar minimizes, so the content stays bare: the bar's climb plus its
+ * controls. That climb is the climber's last pick, or the queue's current when
+ * THAT changed after it (`useBarClimb`, owner decision A).
  *
  * This is the single source of truth for the displayed climb and the single
  * render gate. It renders {@link NativeAccessoryClimbRow} directly (no extra
@@ -51,31 +48,37 @@ function useRetainedAccessoryClimb(currentClimb: Climb | null): Climb | null {
  */
 export function QueueBottomAccessory() {
   const placement = NativeTabs.BottomAccessory.usePlacement();
-  const { width: screenWidth } = useWindowDimensions();
   const { state, sessionId } = useQueue();
-  // The accessory shows the local queue head only — never the wall's lit climb
-  // (that lives in the top "On the wall" strip now). Retained across a presence
+  // The climber's last pick or the queue's current, never the wall's lit climb
+  // (that lives in the top "On the wall" strip). Retained across a presence
   // blip so the live platter never blanks while the host is held open.
-  const resolvedClimb = state.currentClimbQueueItem?.climb ?? null;
-  const currentClimb = useRetainedAccessoryClimb(resolvedClimb);
+  const bar = useBarClimb();
+  const currentItem = useRetainedAccessoryClimb(bar.item);
 
-  const accessoryWidth = useMemo(() => {
-    return Math.max(
-      glassSize.standard * 2,
-      Math.min(NATIVE_BOTTOM_ACCESSORY_MAX_WIDTH, screenWidth - NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER),
-    );
-  }, [screenWidth]);
-
-  if (!currentClimb) return null;
+  if (!currentItem) return null;
+  // The pick's drawn copy (its mirror flip applied) while it is the one shown.
+  const showsBar = currentItem === bar.item;
+  const currentClimb = showsBar && bar.climb ? bar.climb : currentItem.climb;
+  const pick = showsBar ? bar.pick : null;
 
   // A retained row during rehydration cannot prove that the real solo queue
   // currently contains this climb. Capture metadata belongs to the actual head.
+  const head = state.currentClimbQueueItem;
   const testID =
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
     process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL &&
     sessionId === null &&
-    resolvedClimb?.uuid === currentClimb.uuid
+    head != null &&
+    head.uuid === currentItem.uuid
       ? `cpp-accessory-climb-${currentClimb.uuid}`
       : undefined;
-  return <NativeAccessoryClimbRow climb={currentClimb} placement={placement} width={accessoryWidth} testID={testID} />;
+  return (
+    <NativeAccessoryClimbRow
+      climb={currentClimb}
+      queueItemUuid={currentItem.uuid}
+      pick={pick}
+      placement={placement}
+      testID={testID}
+    />
+  );
 }

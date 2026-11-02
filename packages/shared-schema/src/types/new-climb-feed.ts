@@ -109,6 +109,8 @@ export type SimilarClimb = {
   qualityAverage?: number | null;
   ascensionistCount?: number | null;
   compatibleSizeIds: number[];
+  // Frame-derived hold sets. Null/undefined is unknown; [] requires no sets.
+  requiredSetIds?: number[] | null;
   characteristics?: string[] | null;
   similarity: number;
   sharedHoldCount: number;

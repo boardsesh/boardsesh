@@ -5,6 +5,7 @@ import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming
 import { Stack, router, useNavigation, type NativeStackNavigationProp } from 'expo-router';
 import { HeaderLeadingButton } from '../src/components/HeaderActionButtons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Updates from 'expo-updates';
 import { useTranslation } from 'react-i18next';
 import { useProfile } from '../src/lib/graphql/hooks';
 import { useAuth } from '../src/providers/auth-provider';
@@ -19,10 +20,15 @@ import { useUserDrawer } from '../src/components/user-drawer/UserDrawerProvider'
 import { latestEntryDate } from '../src/lib/changelog';
 import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changelog-seen';
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
+import { hasUnseenPreviewFirstSpotlight } from '../src/lib/preview-first-spotlight';
 import { useClimbModerationEnabled, useOfflineDownloadsEnabled } from '../src/providers/feature-flags-provider';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useQaMenu } from '../src/lib/qa/use-qa-menu';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
+import { trackSupportLinkTapped } from '../src/lib/analytics-support-link';
+import { supportUrlFor } from '../src/lib/donation-links';
+import { openExternalUrl } from '../src/lib/open-url';
+import { useSupportAsksAllowed } from '../src/lib/support-asks';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -77,8 +83,11 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
     void Promise.all([
       getLastSeenChangelogDate(),
       spotlightReachable ? hasUnseenOfflineSpotlight() : Promise.resolve(false),
-    ]).then(([lastSeen, spotlightUnseen]) => {
-      if (active) setChangelogUnseen(hasUnseenChangelog(latestEntryDate, lastSeen) || spotlightUnseen);
+      // The 2.7 preview-first card pinned there, until it has shown once.
+      hasUnseenPreviewFirstSpotlight(),
+    ]).then(([lastSeen, spotlightUnseen, previewFirstUnseen]) => {
+      if (active)
+        setChangelogUnseen(hasUnseenChangelog(latestEntryDate, lastSeen) || spotlightUnseen || previewFirstUnseen);
     });
     return () => {
       active = false;
@@ -111,6 +120,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   // without the marker the drawer would keep offering to finish testing something
   // already signed off.
   const { show: showQaRows, prNumber: qaPrNumber } = useQaMenu();
+  const supportAsksAllowed = useSupportAsksAllowed();
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;
@@ -121,6 +131,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   // so they do not start during the drawer's slide-out.
   const pendingAfterCloseRef = useRef<(() => void) | null>(null);
   const closingRef = useRef(false);
+  const supportBrowserOpenRef = useRef(false);
   const signOutPreparationRef = useRef<AbortController | null>(null);
   // Guards popRoute against firing after this screen has unmounted (an interrupted
   // slide-out's completion callback could otherwise router.back() the wrong route).
@@ -167,8 +178,8 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
 
   // Defer drawer actions one frame past React unmount to separate the pop and
   // presentation transactions (#3211). React unmount does not guarantee native
-  // dismissal has completed: iOS Account sign-out confirms while Account stays
-  // mounted instead of relying on this frame to finish its modal dismissal.
+  // dismissal has completed: iOS Account presents sign-out confirmation and the
+  // support browser while mounted rather than racing its modal dismissal.
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -229,6 +240,22 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
     close(() => presentFeedback());
   };
 
+  const handleSupport = () => {
+    if (!mountedRef.current || closingRef.current || !navigation.isFocused() || supportBrowserOpenRef.current) return;
+    // Counted on the tap, before the browser opens, like every support link.
+    trackSupportLinkTapped('account');
+    if (isAccount && Platform.OS === 'ios') {
+      // React can unmount Account before its native dismissal finishes. Keep
+      // its presenter stable so that dismissal cannot close the browser too.
+      supportBrowserOpenRef.current = true;
+      void openExternalUrl(supportUrlFor('account'), 'account-support').finally(() => {
+        supportBrowserOpenRef.current = false;
+      });
+      return;
+    }
+    close(() => void openExternalUrl(supportUrlFor('account'), 'account-support'));
+  };
+
   const handleReportBug = () => {
     setFeedbackMode('bug');
     close(() => presentFeedback());
@@ -252,6 +279,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
 
   const menuContent = (
     <ScrollView
+      testID={`app-runtime-${__DEV__ ? 'metro' : 'release'}-${Updates.runtimeVersion ?? 'none'}-${Updates.updateId ?? 'embedded'}`}
       contentContainerStyle={[
         styles.drawerContent,
         isAccount && { paddingTop: spacing[4], paddingBottom: insets.bottom + spacing[4] },
@@ -265,6 +293,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
               chevron. */}
       {profile?.id ? (
         <PressableSurface
+          testID={`account-user-${profile.id}`}
           style={styles.profileHeader}
           onPress={() => (isAccount ? router.push('/account/settings/edit') : close(() => navigateToEditProfile()))}
           accessibilityRole="button"
@@ -278,6 +307,20 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
           <ProfileHeaderBody avatarUrl={profile?.avatarUrl} displayName={profileDisplayName} email={profileEmail} />
         </View>
       )}
+
+      {/* US iPhones and the browser app only, and only while "Show support
+              asks" is on (lib/support-asks.ts). Everywhere else, nothing. */}
+      {supportAsksAllowed ? (
+        <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+          <DrawerRow
+            icon="favorite.fill"
+            title={t('mobile.supportAsks.accountRow')}
+            tintColor={brandColors.primary}
+            onPress={handleSupport}
+            showSeparator={false}
+          />
+        </View>
+      ) : null}
 
       <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
         {/* One row, not two: "Change board" and "My Boards" were adjacent

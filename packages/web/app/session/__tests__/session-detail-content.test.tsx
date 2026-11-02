@@ -23,6 +23,10 @@ vi.mock('next-auth/react', () => ({
   useSession: () => mockSession,
 }));
 
+vi.mock('@/app/hooks/use-session-workouts', () => ({
+  useSessionWorkouts: () => [],
+}));
+
 vi.mock('@/app/hooks/use-session-detail', () => ({
   useSessionDetail: ({ initialData }: { initialData: unknown }) => ({
     session: initialData ?? null,
@@ -374,6 +378,18 @@ describe('SessionDetailContent', () => {
     const sessionVote = voteButtons.find((el) => el.getAttribute('data-entity-type') === 'session');
     expect(sessionVote).toBeTruthy();
     expect(sessionVote!.getAttribute('data-entity-id')).toBe('session-1');
+  });
+
+  it.each([
+    ['daily_highlight', 'daily:user-1:2024-01-15'],
+    ['party (id prefix only)', 'daily:user-1:2024-01-15'],
+  ] as const)('hides session-level like and comment on a daily group (%s)', (sessionTypeLabel, sessionId) => {
+    const sessionType = sessionTypeLabel === 'daily_highlight' ? 'daily_highlight' : 'party';
+    render(<SessionDetailContent session={makeSession({ sessionId, sessionType })} />);
+    const voteButtons = screen.getAllByTestId('vote-button');
+    expect(voteButtons.some((el) => el.getAttribute('data-entity-type') === 'session')).toBe(false);
+    expect(voteButtons.some((el) => el.getAttribute('data-entity-type') === 'tick')).toBe(true);
+    expect(screen.queryByTestId('session-comment-toggle')).toBeNull();
   });
 
   it('renders session-level CommentSection collapsed by default', () => {

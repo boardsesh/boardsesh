@@ -36,6 +36,7 @@ import { getRestTimerStartMs, type RestTimerMode } from './rest-timer';
 import { getAfterTickRestFloorMs, isTickFreshEnoughToArm } from './rest-timer-auto-advance';
 import {
   sameStagePacing,
+  spendAdvanceOnce,
   type CrewRestConfig,
   type RestTimerLastTick,
   type RestTimerPacingTransition,
@@ -57,8 +58,9 @@ export type RestTimerState = {
   armedForSessionId: string | null;
   /**
    * The crew's shared clock for `armedForSessionId`, when this phone follows
-   * one (#5382). Written only by `adoptCrewCadence` and `clearCrewCadence`; a
-   * local arm or disarm drops it until the server's answer comes back. Its
+   * one (#5382). Adopted by `adoptCrewCadence`, dropped by `clearCrewCadence`,
+   * and spent locally after a once-only fallback advance. A local arm or disarm
+   * drops it until the server's answer comes back. Its
    * config is null for a clock this app cannot run (never fired on).
    */
   crew: CrewRestCadence | null;
@@ -196,7 +198,7 @@ export type LocalRestTimerAction =
   | { type: 'reset'; sessionId: string | null; isRunning: boolean }
   | { type: 'queueEndedCleared'; sessionId: string | null; anchorAfter: RestTimerAnchorAfter }
   /** This phone moved the wall itself (no crew clock, or a solo FIRE that got no answer). */
-  | { type: 'fired'; sessionId: string | null; anchorAfter: RestTimerAnchorAfter }
+  | { type: 'fired'; sessionId: string | null; anchorAfter: RestTimerAnchorAfter; spentAdvanceOnce?: true }
   | { type: 'reanchored'; sessionId: string | null }
   /** `atMs`: the instant an `anchorNow` transition started the beat at, so the crew's NOW counts from it. */
   | { type: 'stagePacing'; sessionId: string | null; transition: RestTimerPacingTransition; atMs: number }
@@ -529,8 +531,20 @@ export function noteRestTimerAutoAdvanceFired(
   anchorAfter: RestTimerAnchorAfter = mode === 'onTheMinute' ? 'keep' : 'now',
 ): boolean {
   if (!state.armed || state.cycleId !== expectedCycleId) return false;
+  const { crew } = state;
+  const spentAdvanceOnce = crew?.config?.autoAdvanceOnce === true;
+  // Consume before notifying readers or publishing: the same connection that
+  // lost FIRE may also lose CONFIGURE, and the next tick must not earn a move.
+  const spentCrew =
+    spentAdvanceOnce && crew?.config
+      ? {
+          ...crew,
+          config: { ...spendAdvanceOnce(crew.config), setByParticipantId: crew.config.setByParticipantId },
+        }
+      : crew;
   setState({
     ...state,
+    crew: spentCrew,
     anchorMs: anchorFor(anchorAfter, nowMs),
     lastTick: anchorAfter === 'clear' ? null : state.lastTick,
     isRunning: true,
@@ -538,7 +552,12 @@ export function noteRestTimerAutoAdvanceFired(
     cycleId: state.cycleId + 1,
     lastFiredDeadlineMs: firedDeadlineMs,
   });
-  announce({ type: 'fired', sessionId: state.armedForSessionId, anchorAfter });
+  announce({
+    type: 'fired',
+    sessionId: state.armedForSessionId,
+    anchorAfter,
+    ...(spentAdvanceOnce ? { spentAdvanceOnce: true as const } : {}),
+  });
   return true;
 }
 
@@ -695,6 +714,7 @@ function sameCrewTimerConfig(left: CrewRestCadence['config'], right: CrewRestCad
     left.mode === right.mode &&
     left.targetSeconds === right.targetSeconds &&
     left.autoAdvance === right.autoAdvance &&
+    (left.autoAdvanceOnce === true) === (right.autoAdvanceOnce === true) &&
     left.advanceOn === right.advanceOn &&
     left.source === right.source &&
     left.setByParticipantId === right.setByParticipantId
@@ -706,15 +726,19 @@ function sameLastTick(left: RestTimerLastTick | null, right: RestTimerLastTick |
   return left.status === right.status && left.queueItemUuid === right.queueItemUuid;
 }
 
-/** The five fields a CONFIGURE carries, compared one by one. */
-function sameCrewPacingFields(
-  left: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
-  right: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
-): boolean {
+/** The fields a CONFIGURE carries. */
+type CrewPacingFields = Pick<
+  CrewRestConfig,
+  'mode' | 'targetSeconds' | 'autoAdvance' | 'autoAdvanceOnce' | 'advanceOn' | 'source'
+>;
+
+/** The fields a CONFIGURE carries, compared one by one. */
+function sameCrewPacingFields(left: CrewPacingFields, right: CrewPacingFields): boolean {
   return (
     left.mode === right.mode &&
     left.targetSeconds === right.targetSeconds &&
     left.autoAdvance === right.autoAdvance &&
+    (left.autoAdvanceOnce === true) === (right.autoAdvanceOnce === true) &&
     left.advanceOn === right.advanceOn &&
     left.source === right.source
   );
@@ -740,9 +764,7 @@ export function setCrewRestPacingDraft(config: CrewRestConfig): boolean {
  * draft goes unless the climber has changed it again since, in which case the
  * newer one is still on its way.
  */
-export function settleCrewRestPacingDraft(
-  sent: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
-): void {
+export function settleCrewRestPacingDraft(sent: CrewPacingFields): void {
   const draft = state.crewPacingDraft;
   if (draft === null || !sameCrewPacingFields(draft, sent)) return;
   setState({ ...state, crewPacingDraft: null });

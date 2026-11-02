@@ -127,13 +127,45 @@ describe('a 4x4 set on the wall', () => {
       source: 'stage',
     });
 
+    // The set rest moves the wall once, then the clock waits for the next set.
     act(() => applyRestTimerStagePacing(fourByFourSet(4), 0, 'none'));
     expect(getOwnRestPacing()).toEqual({
       mode: 'afterTick',
       targetSeconds: 180,
       autoAdvance: true,
+      autoAdvanceOnce: true,
       advanceOn: 'tick',
       source: 'stage',
+    });
+  });
+
+  it('never hands the next set, another block or the climber’s settings a once-only advance', () => {
+    act(() => applyRestTimerStagePacing(fourByFourSet(4), 0, 'none'));
+    expect(getOwnRestPacing()).toMatchObject({ autoAdvanceOnce: true });
+
+    // The next set on the wall, before its first rep: no advance at all.
+    act(() => applyRestTimerStagePacing({ ...fourByFourSet(0), queueItemUuid: 'b' }, 0, 'waitForTick'));
+    expect(getOwnRestPacing()).not.toHaveProperty('autoAdvanceOnce');
+    expect(getOwnRestPacing()).toMatchObject({ autoAdvance: false });
+
+    // A limit block after the 4x4: it moves on after every send.
+    act(() => applyRestTimerStagePacing(LIMIT, 0, 'waitForTick'));
+    expect(getOwnRestPacing()).toEqual({
+      mode: 'afterTick',
+      targetSeconds: 180,
+      autoAdvance: true,
+      advanceOn: 'send',
+      source: 'stage',
+    });
+
+    // Past the workout: the climber's own settings.
+    act(() => applyRestTimerStagePacing(null, 0, 'none'));
+    expect(getOwnRestPacing()).toEqual({
+      mode: 'afterTick',
+      targetSeconds: 90,
+      autoAdvance: false,
+      advanceOn: 'deadline',
+      source: 'settings',
     });
   });
 });

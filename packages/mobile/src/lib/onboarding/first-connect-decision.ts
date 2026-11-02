@@ -4,11 +4,18 @@
 //
 // The surfaces:
 // - treatment only: a card at the top of the Climbs list ("Light climbs on
-//   {{board}}") and a labelled "Light it on the board" pill in place of the
-//   play view's bare bulb;
+//   {{board}}"). Its play-view pill went in #7000: the player's Connect board
+//   button now does that job for everyone;
 // - both arms: a one-time "Connected to {{board}}" confirmation after this
-//   phone's first successful connect.
+//   phone's first successful connect, saying what lights from here on.
 
+import {
+  alwaysDriveApplies,
+  driveLengthWords,
+  resolveKeepLightingPlan,
+  resolveKeepLightingReach,
+  type KeepLightingChoice,
+} from '../keep-lighting';
 import { isNativeVersionAtLeast } from '../native-version';
 import { isNewAccount } from './first-board-picker-decision';
 import { assignConnectStepArm, type ConnectStepArm } from './connect-step-arm';
@@ -25,9 +32,6 @@ export const CONNECT_STEP_MIN_NATIVE_VERSION = '2.7.0';
 
 /** How many app launches the Climbs card may appear on. */
 export const FIRST_CONNECT_CARD_MAX_LAUNCHES = 2;
-
-/** How many calendar days (the phone's own) the play-view pill may appear on. */
-export const FIRST_CONNECT_PILL_MAX_DAYS = 3;
 
 /** One account's place in the test, written once, at exposure. */
 export type ConnectStepEnrolment = {
@@ -56,7 +60,10 @@ export type FirstConnectDeviceState = {
   confirmationShownAt: number | null;
   /** The launches the Climbs card appeared on (one id per JS process). */
   cardLaunchIds: string[];
-  /** The local calendar days (`YYYY-MM-DD`) the play-view pill appeared on. */
+  /**
+   * The local calendar days (`YYYY-MM-DD`) the play-view pill appeared on.
+   * Nothing writes it since the pill went (#7000); kept so stored records stay valid.
+   */
   pillDays: string[];
 };
 
@@ -234,82 +241,118 @@ export function shouldShowFirstConnectCard(input: FirstConnectCardInput): boolea
   return input.cardLaunchIds.length < FIRST_CONNECT_CARD_MAX_LAUNCHES;
 }
 
-export type FirstConnectPillWouldConnectInput = {
-  /** Signed out: a reader gets no bulb at all. */
-  isAnonymous: boolean;
-  /** A Bluetooth provider exists, i.e. a board is selected. */
-  hasBluetooth: boolean;
-  /** The switch-board scrim covers the row. */
-  boardMismatch: boolean;
-  /** The second row is the browse latch's commit row. */
-  commitMode: boolean;
-  /**
-   * The second row is a timed workout block's one-tap Fell / Sent (#6231), which
-   * wins over the pill, so a day there would count without the pill on screen.
-   */
-  workoutOutcome: boolean;
-  /** A party session with a crew in it. */
-  sharedSession: boolean;
-  /** Another account holds the wall. */
-  wallHeldByOtherUser: boolean;
-  /** The bulb's press action is `'connect'`. */
-  tapConnects: boolean;
-  /** A connect or disconnect is in flight. */
-  pending: boolean;
-  /** This phone holds a Bluetooth link. */
-  localConnected: boolean;
-  /** This phone holds the wall with no Bluetooth link. */
-  wallHeldLocally: boolean;
-};
-
-/**
- * Whether a tap on the play view's bulb right now would connect THIS phone,
- * which is the only moment the pill may stand in for it. Never for a signed-out
- * reader, under the switch-board scrim, in commit mode, while a workout's Fell /
- * Sent holds the row, with a crew in the session, or while someone else holds
- * the wall. A connect already in flight
- * keeps it (no link and no virtual hold yet, so the pending work is the
- * connect), so the pill does not jump back to a bulb mid-connect; a pending
- * disconnect does not.
- */
-export function deriveFirstConnectPillWouldConnect(input: FirstConnectPillWouldConnectInput): boolean {
-  if (input.isAnonymous || !input.hasBluetooth || input.boardMismatch) return false;
-  if (input.commitMode || input.workoutOutcome) return false;
-  if (input.sharedSession || input.wallHeldByOtherUser) return false;
-  return input.tapConnects || (input.pending && !input.localConnected && !input.wallHeldLocally);
-}
-
-export type FirstConnectPillInput = {
-  treatmentLive: boolean;
-  /** Today on the phone's own calendar, `YYYY-MM-DD`. */
-  today: string;
-  pillDays: readonly string[];
-  /** The bulb's tap would connect this phone (`deriveFirstConnectPillWouldConnect`). */
-  wouldConnect: boolean;
-};
-
-/** The play-view pill: on at most three calendar days, same rule as the card. */
-export function shouldShowFirstConnectPill(input: FirstConnectPillInput): boolean {
-  if (!input.treatmentLive || !input.wouldConnect) return false;
-  if (input.pillDays.includes(input.today)) return true;
-  return input.pillDays.length < FIRST_CONNECT_PILL_MAX_DAYS;
-}
-
 /**
  * The confirmation after the first successful connect, in both arms. Only for
- * an enrolled account, never with the kill switch on, only once per phone, and
- * only while tapping a climb really does light it (`lightOnClimbTap`), since
- * that is what it says.
+ * an enrolled account, never with the kill switch on, and only once per phone.
+ *
+ * Nothing about the lighting settings gates it: its body says what lights
+ * under them (`firstConnectConfirmationCopy`). The host records the connect
+ * BEFORE it asks, so a gate here that the climber could later change (it was
+ * Light the board when I tap a climb until 2.7) would use the confirmation up
+ * for good on the first connect it turned away.
  */
 export function shouldConfirmFirstConnect(input: {
   enrolment: ConnectStepEnrolment | null;
   enabled: boolean;
   /** The phone's state BEFORE this connect was recorded. */
   device: FirstConnectDeviceState;
-  lightOnClimbTap: boolean;
 }): boolean {
-  if (!input.enabled || input.enrolment === null || !input.lightOnClimbTap) return false;
+  if (!input.enabled || input.enrolment === null) return false;
   return input.device.connectedAt === null && input.device.confirmationShownAt === null;
+}
+
+/**
+ * Whether this phone drives the wall once it connects, as the Climbs card and
+ * the confirmation promise it: Always drive the wall on, for this session
+ * (`alwaysDriveApplies`: in a crew only with In a session too on, on every
+ * board, and never with the swipe flag off). Then every climb picked lights,
+ * from a list or a swipe. Nothing drives the wall before a first connect.
+ */
+export function firstConnectAlwaysDrives({
+  alwaysDrive,
+  swipeToDriveEnabled,
+  drivesInSession,
+  inSession,
+}: {
+  /** Settings › Board's Always drive the wall. */
+  alwaysDrive: boolean;
+  /** The `wall-swipe-to-drive` flag: off, nothing drives the wall. */
+  swipeToDriveEnabled: boolean;
+  /** Settings › Board's In a session too. */
+  drivesInSession: boolean;
+  /** A crew is in this session (the roster's `useIsCrewSession`), as `DriveModeWatcher` reads it. */
+  inSession: boolean;
+}): boolean {
+  return alwaysDriveApplies({
+    alwaysDrive,
+    swipeToDriveEnabled,
+    drivesInSession,
+    inSession,
+  });
+}
+
+/**
+ * What the confirmation says lights from here on:
+ *
+ * - `always_drive` — Always drive the wall drives the wall: every climb picked
+ *   lights until the climber stops (`firstConnectAlwaysDrives`).
+ * - `window` — Put on board drives the wall for `seconds` after each climb
+ *   (Settings › Board's Stop driving after, 45 s by default). Never a whole
+ *   minute: that is `window_minute` (one) or `window_minutes`, worded as the
+ *   preview-first card words them.
+ * - `until_stop` — Put on board drives until the climber taps the button
+ *   (Until I stop).
+ * - `put_on_board` — Put on board lights one climb: the choice is Right away,
+ *   or no drive can start here (a crew session with In a session too off, or
+ *   the swipe flag off).
+ */
+export type FirstConnectConfirmationCopy =
+  | { variant: 'always_drive' }
+  | { variant: 'window'; seconds: number }
+  | { variant: 'window_minute' }
+  | { variant: 'window_minutes'; minutes: number }
+  | { variant: 'until_stop' }
+  | { variant: 'put_on_board' };
+
+/** Settings › Board's Stop driving after choice and the crew read, as `resolveKeepLightingPlan` takes them. */
+export type FirstConnectKeepLightingInput = {
+  keepLighting: KeepLightingChoice;
+  drivesInSession: boolean;
+  inSession: boolean;
+};
+
+/**
+ * The confirmation's body, read by the rules the drive and Put on board follow
+ * (`firstConnectAlwaysDrives`, `resolveKeepLightingPlan`,
+ * `resolveKeepLightingReach`), so it never promises lighting the climber won't
+ * get.
+ */
+export function firstConnectConfirmationCopy({
+  alwaysDrive,
+  keepLighting,
+}: {
+  /** Always drive the wall drives here (`firstConnectAlwaysDrives`). */
+  alwaysDrive: boolean;
+  /** Null when Put on board's drive is off for everyone (its `wall-swipe-to-drive` kill switch). */
+  keepLighting: FirstConnectKeepLightingInput | null;
+}): FirstConnectConfirmationCopy {
+  if (alwaysDrive) return { variant: 'always_drive' };
+  if (keepLighting === null) return { variant: 'put_on_board' };
+  const reach = resolveKeepLightingReach({
+    plan: resolveKeepLightingPlan(keepLighting),
+    alwaysDrive: false,
+  });
+  switch (reach.kind) {
+    case 'one_climb':
+      return { variant: 'put_on_board' };
+    case 'until_stop':
+      return { variant: 'until_stop' };
+    case 'window': {
+      const length = driveLengthWords(reach.seconds);
+      if (length.unit === 'seconds') return { variant: 'window', seconds: length.count };
+      return length.count === 1 ? { variant: 'window_minute' } : { variant: 'window_minutes', minutes: length.count };
+    }
+  }
 }
 
 /** The phone's local calendar day, `YYYY-MM-DD`. */

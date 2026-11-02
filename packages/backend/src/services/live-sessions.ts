@@ -108,6 +108,7 @@ type BoardRow = {
   deletedAt: Date | null;
   gymName: string | null;
   gymIsPublic: boolean | null;
+  gymIsListed?: boolean | null;
 };
 
 /** A board that can put sessions in the board arm, with what every resolution step matches on. */
@@ -144,6 +145,7 @@ async function loadBoardRows(
       deletedAt: dbSchema.userBoards.deletedAt,
       gymName: dbSchema.gyms.name,
       gymIsPublic: dbSchema.gyms.isPublic,
+      gymIsListed: dbSchema.gyms.isListed,
     })
     .from(dbSchema.userBoards)
     .leftJoin(dbSchema.gyms, and(eq(dbSchema.gyms.id, dbSchema.userBoards.gymId), isNull(dbSchema.gyms.deletedAt)))
@@ -174,6 +176,7 @@ async function toVisibleBoard(
 ): Promise<LiveSessionBoard | null> {
   if (!row || row.deletedAt || !row.identityVisible) return null;
   const isOwner = viewerId !== null && row.ownerId === viewerId;
+  if (row.gymIsListed === false && !linkHeld && !isOwner) return null;
   if (!isOwner) {
     if (
       isSprayBoardType(row.boardType) &&

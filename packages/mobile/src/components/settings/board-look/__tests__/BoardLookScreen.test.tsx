@@ -14,6 +14,7 @@ const screen = vi.hoisted(() => ({
   showPreview: false,
   applyPreset: vi.fn(),
   lastModel: null as MoreFormModel | null,
+  lightingSections: [] as MoreFormModel['sections'],
 }));
 
 vi.mock('react-native', () => ({
@@ -93,7 +94,9 @@ vi.mock('../../../../lib/spray-wall-look-preference', () => ({
 }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../../lib/settings-analytics', () => ({ withSettingTracking: (model: MoreFormModel) => model }));
-vi.mock('../../board-lighting/use-board-lighting-sections', () => ({ useBoardLightingSections: () => [] }));
+vi.mock('../../board-lighting/use-board-lighting-sections', () => ({
+  useBoardLightingSections: () => screen.lightingSections,
+}));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: screen.activeBoardType ? { boardType: screen.activeBoardType } : null }),
 }));
@@ -115,6 +118,7 @@ afterEach(() => {
   screen.showPreview = false;
   screen.applyPreset.mockClear();
   screen.lastModel = null;
+  screen.lightingSections = [];
   setSetting('moonboardGridLabels', DEFAULT_SETTINGS.moonboardGridLabels);
 });
 
@@ -159,5 +163,19 @@ describe('BoardLookScreen renderer routing', () => {
     const view = render(<BoardLookScreen />);
     expect(view.queryByText('Board preset preview')).toBeNull();
     expect(screen.lastModel?.sections.find((section) => section.key === 'presets')?.rows[0].kind).toBe('custom');
+  });
+});
+
+// The player's preview-first card opens this page for the keep-lighting choice
+// (`?section=lighting`), so the lighting group leads.
+describe('BoardLookScreen opened for its lighting', () => {
+  it('leads with the lighting group only when asked', () => {
+    screen.lightingSections = [{ key: 'lighting', title: 'Board lighting', rows: [] }];
+    render(<BoardLookScreen leadWithLighting />);
+    expect(screen.lastModel?.sections[0]?.key).toBe('lighting');
+    cleanup();
+
+    render(<BoardLookScreen />);
+    expect(screen.lastModel?.sections.at(-1)?.key).toBe('lighting');
   });
 });

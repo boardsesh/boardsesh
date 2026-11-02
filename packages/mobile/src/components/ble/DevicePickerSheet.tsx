@@ -10,7 +10,9 @@ import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
+import { groupPickerDevices, type PickerBoardTarget } from '../../lib/ble/picker-device-target';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
+import type { DevicePickerSeen } from '../../lib/ble/picker-seen';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
 import { hapticSelection } from '../../lib/haptics';
 import { recordDevicePickerNoLights } from '../../lib/onboarding/device-picker-no-lights';
@@ -22,6 +24,10 @@ import { spacing } from '../../theme/tokens';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
+
+function sortByRssi(devices: ReadonlyArray<DiscoveredDevice>): DiscoveredDevice[] {
+  return [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi);
+}
 
 // "Kilter Board", "Tension Board", "MoonBoard": the product name a climber
 // knows, never the serial (#5658). The suffix is the one the board-account card
@@ -51,6 +57,8 @@ type DevicePickerSheetProps = {
   isScanning: boolean;
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
   currentBoardConfig?: BleBoardConfig;
+  targetBoard?: PickerBoardTarget;
+  showAllBoards?: boolean;
   /**
    * `searching`: a connect to the saved board is still trying to auto-select it
    * (#5658). The sheet shows a spinner, "Searching for your board" and "Search
@@ -60,16 +68,22 @@ type DevicePickerSheetProps = {
   /** Whether the sheet should be on screen. Defaults to true. */
   open?: boolean;
   /**
-   * The picker ended without a choice (the saved board was found, or the connect
-   * failed). The sheet dismisses itself and calls `onClosed` once that has
-   * settled, so it is never unmounted mid-present.
+   * The picker ended (a board was selected, or the connect failed). The sheet
+   * dismisses itself and calls `onClosed` once that has settled, so it is never
+   * unmounted mid-present.
    */
   closing?: boolean;
   onClosed?: () => void;
-  /** "Search for any board", shown while `searching`. */
+  /** "Search for any board", for saved-device searches and known-board lists. */
   onSearchAnyBoard?: () => void;
   /** Another sheet displaced this one. Defaults to `onDismiss`. */
   onDisplaced?: () => void;
+  /**
+   * What this session showed the climber, once each while on screen: "your
+   * board isn't in the list" and the troubleshooting tips. For the release
+   * watch (2.7); no render of the host's rides on it.
+   */
+  onSeen?: (seen: DevicePickerSeen) => void;
 };
 
 export function DevicePickerSheet({
@@ -79,6 +93,8 @@ export function DevicePickerSheet({
   isScanning,
   resolvedBoards,
   currentBoardConfig,
+  targetBoard,
+  showAllBoards = false,
   onNoLeds,
   onScanAgain,
   mode = 'list',
@@ -87,6 +103,7 @@ export function DevicePickerSheet({
   onClosed,
   onSearchAnyBoard,
   onDisplaced,
+  onSeen,
 }: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
@@ -99,7 +116,7 @@ export function DevicePickerSheet({
   // clears the host's picker state on a user pan-down / backdrop.
   const visible = open && !closing;
 
-  // Closing without a choice: wait for the coordinator's dismissal to settle
+  // Closing a completed picker: wait for the coordinator's dismissal to settle
   // (immediately if the sheet never reached the screen), then let the host drop
   // the session. Unmounting straight away could tear the sheet down while it is
   // still presenting, the UIKit overlap the coordinator exists to prevent.
@@ -116,7 +133,22 @@ export function DevicePickerSheet({
     };
   }, [closing]);
 
-  const sortedDevices = useMemo(() => [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi), [devices]);
+  // A known board (gym or saved) lists its own controller first, then the
+  // controllers nothing identifies (no serial, or a serial nobody recorded),
+  // strongest signal first within each. Only controllers that are positively a
+  // different board wait behind "Search for any board" (#7125).
+  //
+  // Sorted once per scan push, never per serial lookup: the scan cache refreshes
+  // RSSI in place between pushes, so re-sorting on a lookup could swap rows the
+  // climber is about to tap. Grouping keeps the sorted order, so a lookup moves
+  // a row only when its group changes, and the full list keeps its identity.
+  const filteringTarget = Boolean(targetBoard?.boardUuid) && !showAllBoards;
+  const devicesByRssi = useMemo(() => sortByRssi(devices), [devices]);
+  const listedDevices = useMemo(() => {
+    if (!filteringTarget || !targetBoard) return devicesByRssi;
+    const groups = groupPickerDevices(devicesByRssi, resolvedBoards, targetBoard);
+    return [...groups.target, ...groups.unknown];
+  }, [devicesByRssi, filteringTarget, resolvedBoards, targetBoard]);
 
   // Pre-compute once per devices update; name is stable for a given device
   // throughout a scan session so parsing per renderItem invocation is wasteful.
@@ -161,6 +193,8 @@ export function DevicePickerSheet({
   const { systemColors } = theme;
 
   const searching = mode === 'searching';
+  // "Not found" only when every controller heard is positively another board.
+  const targetNotListed = !searching && filteringTarget && listedDevices.length === 0 && devices.length > 0;
   const showScanningState = !searching && isScanning && devices.length === 0;
   const showEmptyState = !searching && !isScanning && devices.length === 0;
 
@@ -210,8 +244,21 @@ export function DevicePickerSheet({
   // it's clearly listed, and not while the initial scan is still running
   // (showEmptyState gates the zero-device path on the scan having finished empty).
   const showHardwareTips =
-    !showLocationHint && !showLocationServicesHint && (showEmptyState || noneMatchedSelectedType);
+    !showLocationHint && !showLocationServicesHint && (showEmptyState || (!filteringTarget && noneMatchedSelectedType));
   const showHints = showLocationHint || showLocationServicesHint || showHardwareTips;
+
+  // Report what the climber saw, while the sheet is on screen. Read through a
+  // ref so a host's new callback never re-reports.
+  const onSeenRef = useRef(onSeen);
+  onSeenRef.current = onSeen;
+  const targetNotListedShown = visible && targetNotListed;
+  const hintsShown = visible && showHints;
+  useEffect(() => {
+    if (targetNotListedShown) onSeenRef.current?.('target_not_listed');
+  }, [targetNotListedShown]);
+  useEffect(() => {
+    if (hintsShown) onSeenRef.current?.('tips');
+  }, [hintsShown]);
 
   // ModalSheet hands the native sheet a single flex child and pads the body for
   // the window bottom inset. Cancel sits in the top bar; the hints that used to
@@ -226,7 +273,7 @@ export function DevicePickerSheet({
       header={
         <SheetTopBar
           title={t('ble.selectBoard')}
-          subtitle={devices.length > 0 ? t('ble.devicesFound', { count: devices.length }) : undefined}
+          subtitle={listedDevices.length > 0 ? t('ble.devicesFound', { count: listedDevices.length }) : undefined}
           leading={{ kind: 'cancel', onPress: onDismiss }}
         />
       }
@@ -272,7 +319,23 @@ export function DevicePickerSheet({
         </View>
       )}
 
-      {devices.length > 0 && noneMatchedSelectedType && currentBoardConfig && (
+      {!searching && filteringTarget && (
+        <View style={targetNotListed ? styles.scanningContainer : styles.searchAnyBoardRow}>
+          {targetNotListed && (
+            <>
+              {isScanning && <ActivityIndicator size="small" color={theme.brandColors.primary} />}
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {isScanning ? t('ble.searchingForSavedBoard') : t('ble.selectedBoardNotFound')}
+              </Text>
+            </>
+          )}
+          {onSearchAnyBoard && (
+            <Button title={t('ble.searchAnyBoard')} onPress={onSearchAnyBoard} variant="tonal" size="medium" />
+          )}
+        </View>
+      )}
+
+      {!filteringTarget && devices.length > 0 && noneMatchedSelectedType && currentBoardConfig && (
         <View style={styles.typeHint}>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
             {t('ble.differentBoardType', { board: formatBoardDisplayName(currentBoardConfig.boardName) })}
@@ -280,10 +343,10 @@ export function DevicePickerSheet({
         </View>
       )}
 
-      {devices.length > 0 && (
+      {listedDevices.length > 0 && (
         <BottomSheetFlatList
           style={styles.list}
-          data={sortedDevices}
+          data={listedDevices}
           keyExtractor={keyExtractor}
           renderItem={renderDeviceItem}
           contentContainerStyle={styles.listContent}
@@ -376,6 +439,10 @@ export function DevicePickerSheet({
 }
 
 const styles = StyleSheet.create({
+  searchAnyBoardRow: {
+    alignItems: 'center',
+    paddingVertical: spacing[3],
+  },
   scanningContainer: {
     flex: 1,
     alignItems: 'center',

@@ -21,18 +21,24 @@ export const ONBOARDING_BOARD_TIP_KEY = 'onboarding_board_tip_pending';
 export const ONBOARDING_TIP_WORKOUT_KEY = 'onboarding_tip_workout_seen';
 export const ONBOARDING_TIP_CREW_KEY = 'onboarding_tip_crew_seen';
 export const ONBOARDING_TIP_RECORD_KEY = 'onboarding_tip_record_seen';
-// One-shot tip for the bottom accessory bar (current-climb / queue platter):
-// teaches that the bar always mirrors what's on the wall. Fires the first time a
-// current climb exists (so the bar is on screen), then never again.
-export const ONBOARDING_TIP_ACCESSORY_KEY = 'onboarding_tip_accessory_seen';
+// One-shot tip for the bottom accessory bar (the MiniPlayer): teaches that the
+// bar keeps the last climb you opened, preview included, until the queue moves
+// on (owner decision A, `useBarClimb`), and that its bulb puts that climb on the
+// board. Fires the first time a current climb exists (so the bar is on screen),
+// then never again. `_v2` since 2.7: the tip before it taught that the bar
+// mirrors the wall, the opposite of what it does now, so everyone who dismissed
+// that one sees this one once.
+export const ONBOARDING_TIP_ACCESSORY_KEY = 'onboarding_tip_accessory_v2_seen';
+// One-shot card in the player, under the wall button: climbs open as a preview
+// now (2.7), Put on board lights one, and what the frosted "You are driving the
+// wall" button means. Marked seen the first time it shows; the same flag gates
+// the one queued screen-reader line that goes with it, so a climber hears that
+// line once per install.
+export const ONBOARDING_TIP_PREVIEW_FIRST_KEY = 'onboarding_tip_preview_first_seen';
 // One-shot tip on the Climbs list teaching the quick-actions menu: long-press a
 // climb (or tap the ⋯ button) for queue / tick / playlists and more. Fires once,
 // after the board-reveal banner has had its turn.
 export const ONBOARDING_TIP_QUICKACTIONS_KEY = 'onboarding_tip_quickactions_seen';
-// One-shot tip for new accounts on iOS 26 Liquid Glass iPhones, where Climbs is
-// the tab bar's search-role magnifier (#5654): shown the first time another tab
-// is open, pointing back to the magnifier. Written as soon as it shows.
-export const ONBOARDING_TIP_CLIMBS_TAB_KEY = 'onboarding_tip_climbs_tab_seen';
 // The spray-wall hold editor's first-run hints, each marked seen when the
 // climber does the thing it teaches (or closes it), never merely on showing:
 // tapping a ring to pick it and again to switch it, keeping a dashed maybe,

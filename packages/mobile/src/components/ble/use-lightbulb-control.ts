@@ -1,28 +1,46 @@
 import { useCallback, useMemo } from 'react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
-import { trackBoardConnectTapped, type BoardConnectSurface } from '../../lib/analytics-board-connect';
+import {
+  trackBoardConnectTapped,
+  type AccessoryPlacement,
+  type BoardConnectSurface,
+  type BoardControlsSource,
+} from '../../lib/analytics-board-connect';
 import {
   derivePlayDrawerLightbulbPressAction,
   type PlayDrawerLightbulbPressAction,
 } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
+import { useCrewHolderUnconfirmed } from './use-crew-holder-unconfirmed';
+import { useClimbBoardConnect } from '../../lib/boards/climb-board-connect-context';
+import type { ClimbBoardModel } from '../../lib/boards/gym-board-for-climb';
+import type { UserBoard } from '@boardsesh/shared-schema';
 
 /** Which bulb was tapped, for Board Connect Tapped. */
 export type LightbulbSurface = Extract<
   BoardConnectSurface,
-  'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator' | 'first_connect_card' | 'first_connect_pill'
+  'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator' | 'first_connect_card' | 'header_pill'
 >;
+
+/**
+ * Where a connect can start from: any bulb, plus the play view's Put on the
+ * wall with no board connected (#6939), which isn't a bulb and never opens the
+ * controls sheet.
+ */
+export type ConnectSurface = LightbulbSurface | Extract<BoardConnectSurface, 'put_on_wall' | 'move_to_board'>;
 
 type UseLightbulbControlOptions = {
   /** Required so every bulb reports where a connect tap came from. */
   surface: LightbulbSurface;
+  /** The accessory platter's placement, for a bulb on the platter; omitted elsewhere. */
+  placement?: AccessoryPlacement;
   /**
    * Opens the BLE controls sheet (Re-light / Turn off all lights / Disconnect).
    * Wired to the returned `onLongPress` so every lightbulb shares one gesture
    * vocabulary: short press connects/disconnects, long press (when connected)
    * opens the labelled controls. Omit on surfaces with no long-press affordance.
    */
-  onOpenControls?: () => void;
+  onOpenControls?: (source: BoardControlsSource) => void;
   /**
    * Put the climb this surface is displaying onto the wall a session peer is
    * driving, by making it the session's current climb. The holder's auto-sender
@@ -78,8 +96,21 @@ export type LightbulbControl = {
    * play drawer's bulb shown as the connect-step pill). The connect-step card
    * awaits it to know when to offer "Try again", so the card, the pill and
    * every bulb share this one connect path.
+   *
+   * When the current climb is on another board at this gym (a MoonBoard climb
+   * with the Kilter selected), the connect moves to that board first and
+   * connects there (#7001). Pass `climb` when the caller has just made it
+   * current, since the queue may not have caught up yet.
    */
-  connect: (surface?: LightbulbSurface) => Promise<boolean>;
+  connect: (surface?: ConnectSurface, climb?: ClimbBoardModel | null) => Promise<boolean>;
+  /**
+   * Put on {board} (#7076): the climb is on another board at this gym. Moves
+   * there (a crew session moves too) and connects to that board, whatever this
+   * phone is linked to now: the switch tears the old link down. Resolves with
+   * whether the new link came up; false without a move, while a connect is in
+   * flight, or for a board with no lights (the move still happens).
+   */
+  moveToClimbBoard: (surface?: ConnectSurface, climb?: ClimbBoardModel | null) => Promise<boolean>;
   /**
    * What a tap will actually do, resolved from the same ladder `onPress` runs.
    * Exposed so each bulb can LABEL itself honestly: before this, all three
@@ -88,7 +119,9 @@ export type LightbulbControl = {
    */
   pressAction: PlayDrawerLightbulbPressAction;
   /**
-   * A session peer authoritatively holds the board. Exposed alongside
+   * A session peer holds the board: presence's authoritative holder, or, while
+   * presence has confirmed no holder yet, the session member it says lit the
+   * wall under an hour ago (`deriveCrewHolderUnconfirmed`). Exposed alongside
    * `pressAction` because `'noop'` is ambiguous on its own — it also covers "no
    * board selected" and "a connect is in flight" — and only this pairing tells a
    * label the difference between "nothing to do" and "someone else is driving".
@@ -119,11 +152,28 @@ export type LightbulbControl = {
  * controls and board-presence controls are always present under the tab tree.
  */
 export function useLightbulbControl(options: UseLightbulbControlOptions): LightbulbControl {
-  const { surface, onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
+  const { surface, placement, onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
-  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } =
-    useBoardConnectionState();
+  const {
+    bluetooth,
+    lit,
+    localConnected,
+    pending,
+    ledless,
+    wallHeldLocally,
+    holderIsAuthoritative: holderConfirmed,
+  } = useBoardConnectionState();
+  // A crewmate's board that presence hasn't confirmed yet reads as theirs: a
+  // tap relays and never connects, so it can't both move the crew's climb and
+  // open the picker (#7017 QA). Its owner confirms it, or lets it go in 10 s.
+  const crewHolderUnconfirmed = useCrewHolderUnconfirmed({
+    localConnected,
+    holderIsAuthoritative: holderConfirmed,
+    lastLocalHolderUserId: bluetooth?.lastLocalHolderUserId ?? null,
+  });
+  const holderIsAuthoritative = holderConfirmed || crewHolderUnconfirmed;
+  const climbBoardConnect = useClimbBoardConnect();
 
   const pressAction = useMemo(
     () =>
@@ -143,15 +193,43 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   // later. The tap itself is tracked too (#5654): a tap that dies at a denied
   // permission or a radio that's off never reaches either outcome event, so
   // without it "tapped connect" couldn't be told apart from "never tried".
+  // The connect after a move to another board at this gym (#7001, #7076).
+  const connectAfterMove = useCallback(
+    (board: UserBoard, surfaceOverride?: ConnectSurface): Promise<boolean> => {
+      if (!bluetooth) return Promise.resolve(false);
+      // A wall with no light kit has no radio, so there is nothing to scan
+      // for. Stop at the move: on the new board the bulb re-derives to taking
+      // the wall, the same tap a ledless board offers everywhere else. Taking
+      // it here would bind the wall still in these props, the board just left.
+      if (board.hasLeds === false) return Promise.resolve(false);
+      trackBoardConnectTapped({
+        surface: surfaceOverride ?? surface,
+        placement,
+        boardName: board.boardType,
+        reconnect: bluetooth.hasRememberedDeviceForBoard(board),
+        boardUuid: board.uuid,
+      });
+      return bluetooth.connectAfterBoardSwitch(board);
+    },
+    [bluetooth, surface, placement],
+  );
+
   const connect = useCallback(
-    async (surfaceOverride?: LightbulbSurface): Promise<boolean> => {
+    async (surfaceOverride?: ConnectSurface, climb?: ClimbBoardModel | null): Promise<boolean> => {
       // The same gate onPress applies, so a caller that skips its own check
       // can't open a second link while one is pending or a peer holds the wall.
       if (!bluetooth || pressAction !== 'connect') return false;
+      // The climb decides which board to connect to, not the board that happens
+      // to be selected. Connecting to the selected board would scan for the
+      // wrong family: a Kilter scan never lists the MoonBoard the climb needs.
+      const move = climbBoardConnect ? await climbBoardConnect.moveToClimbBoard(climb) : null;
+      if (move?.kind === 'failed') return false;
+      if (move?.kind === 'switched') return connectAfterMove(move.board, surfaceOverride);
       const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
       const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
       trackBoardConnectTapped({
         surface: surfaceOverride ?? surface,
+        placement,
         boardName: bluetooth.boardName,
         reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
       });
@@ -160,7 +238,19 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // (MoonBoard). With neither remembered, the adapter opens the picker.
       return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
     },
-    [bluetooth, pressAction, surface],
+    [bluetooth, pressAction, surface, placement, climbBoardConnect, connectAfterMove],
+  );
+
+  const moveToClimbBoard = useCallback(
+    async (surfaceOverride?: ConnectSurface, climb?: ClimbBoardModel | null): Promise<boolean> => {
+      // Unlike `connect`, a live link doesn't stop this: the move tears it down.
+      // A connect already in flight does, so two can't race for the radio.
+      if (!bluetooth || !climbBoardConnect || bluetooth.loading) return false;
+      const move = await climbBoardConnect.moveToClimbBoard(climb);
+      if (move.kind !== 'switched') return false;
+      return connectAfterMove(move.board, surfaceOverride);
+    },
+    [bluetooth, climbBoardConnect, connectAfterMove],
   );
 
   const onPress = useCallback(() => {
@@ -209,8 +299,8 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // while THIS device holds the link (the sheet self-guards too). Disconnected,
     // long-press does nothing — short press connects.
     if (!localConnected) return;
-    onOpenControls?.();
-  }, [localConnected, onOpenControls]);
+    onOpenControls?.({ surface, placement });
+  }, [localConnected, onOpenControls, surface, placement]);
 
   return {
     bluetooth,
@@ -219,6 +309,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     pending,
     onPress,
     connect,
+    moveToClimbBoard,
     onLongPress,
     ledless,
     wallHeldLocally,

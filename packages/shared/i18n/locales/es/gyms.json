@@ -1,4 +1,26 @@
 {
+  "create": {
+    "action": "Crear rocódromo",
+    "title": "Añade tu rocódromo",
+    "description": "Pon tu rocódromo en el mapa y vincula los plafones que ya aparecen en Boardsesh.",
+    "details": "Datos del rocódromo",
+    "boards": "Plafones existentes",
+    "continue": "Guardar y elegir plafones",
+    "saved": "{{name}} ya está guardado. Vincula sus plafones existentes aquí o vuelve más tarde.",
+    "managerHint": "Gestionarás esta ficha. El personal del rocódromo podrá reclamarla más adelante.",
+    "back": "Editar datos",
+    "finish": "Ver rocódromo",
+    "skip": "Omitir por ahora",
+    "locationMissing": "Añade un marcador en el mapa desde Datos del rocódromo para encontrar plafones cercanos. También puedes vincular tus propios plafones.",
+    "loadMore": "Cargar más plafones",
+    "loadError": "No hemos podido cargar tus plafones. Tu rocódromo está guardado; inténtalo de nuevo.",
+    "retry": "Intentar de nuevo",
+    "refreshError": "Los cambios están guardados, pero el directorio de rocódromos aún no se ha actualizado.",
+    "refreshRetry": "Actualizar directorio",
+    "moveTitle": "¿Mover este plafón?",
+    "moveBody": "¿Mover {{board}} de {{source}} a este rocódromo? Si su antigua ficha importada queda vacía, se fusionará con este rocódromo y sus enlaces redirigirán aquí.",
+    "moveConfirm": "Mover plafón"
+  },
   "metadata": {
     "all": {
       "title": "Rocódromos con plafones de entrenamiento",

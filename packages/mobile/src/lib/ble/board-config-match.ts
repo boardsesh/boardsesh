@@ -10,6 +10,8 @@ export type BleBoardConfig = {
   sizeId: number;
   setIds: string;
   boardSlug?: string | null;
+  /** Absent or empty on legacy/anonymous resolutions that know only geometry. */
+  boardUuid?: string | null;
 };
 
 export type PickerSelectionDecision =
@@ -26,6 +28,7 @@ export function configFromResolvedEntry(entry: ResolvedBoardEntry): BleBoardConf
       sizeId: entry.board.sizeId,
       setIds: entry.board.setIds,
       boardSlug: entry.board.slug,
+      boardUuid: entry.board.uuid,
     };
   }
 
@@ -37,11 +40,15 @@ export function configFromResolvedEntry(entry: ResolvedBoardEntry): BleBoardConf
     sizeId: entry.config.sizeId,
     setIds: entry.config.setIds,
     boardSlug: entry.config.boardSlug,
+    boardUuid: entry.config.boardUuid,
   };
 }
 
 export function matchesBleBoardConfig(config: BleBoardConfig, currentConfig: BleBoardConfig | undefined): boolean {
   if (!currentConfig) return true;
+  // Identical hold layouts can belong to two different physical boards. Only
+  // known identities can contradict each other; anonymous resolutions use ''.
+  if (config.boardUuid && currentConfig.boardUuid && config.boardUuid !== currentConfig.boardUuid) return false;
   return (
     config.boardName === currentConfig.boardName &&
     config.layoutId === currentConfig.layoutId &&

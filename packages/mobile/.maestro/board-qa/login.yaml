@@ -1,0 +1,22 @@
+appId: ${APP_ID}
+name: Sign in normally to the supplied QA account
+---
+- openLink: ${LOGIN_URL}
+- extendedWaitUntil:
+    visible:
+      id: auth-email-input
+    timeout: 30000
+- tapOn:
+    id: auth-email-input
+- eraseText
+- inputText: ${QA_EMAIL}
+- tapOn:
+    id: auth-password-input
+- inputText: ${QA_PASSWORD}
+- tapOn:
+    id: auth-submit-button
+- extendedWaitUntil:
+    notVisible:
+      id: auth-submit-button
+    timeout: 30000
+- runFlow: inspect-account.yaml

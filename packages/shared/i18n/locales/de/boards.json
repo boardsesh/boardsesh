@@ -90,7 +90,7 @@
     "onboardingPrompt": "Folge der Wand, an der du kletterst — damit schaltest du ihre Historie frei.",
     "firstBoard": {
       "title": "Wo kletterst du?",
-      "body": "Wähl dein Board, um seine Boulder zu laden. Sobald du verbunden bist, tippst du einen Boulder an und er wird am Board beleuchtet.",
+      "body": "Wähl dein Board, um seine Boulder zu laden. Ein Antippen öffnet einen Boulder als Vorschau; Am Board beleuchten beleuchtet ihn an der Wand.",
       "gym": "In der Halle",
       "gymHint": "Wähl das Board deiner Halle",
       "own": "Mein eigenes Board",
@@ -111,7 +111,8 @@
       "card": {
         "title": "{{board}}: Boulder beleuchten",
         "titleNoName": "Boulder am Board beleuchten",
-        "body": "Verbinde dieses Handy mit dem Board und tippe dann einen Boulder an, um ihn zu beleuchten.",
+        "body": "Verbinde dieses Handy mit dem Board, tipp einen Boulder an und dann auf Am Board beleuchten.",
+        "bodyAlwaysDrive": "Verbinde dieses Handy mit dem Board und du steuerst es: Jeder Boulder, den du wählst, wird beleuchtet.",
         "connect": "Verbinde das Board",
         "tryAgain": "Nochmal versuchen",
         "noLights": "Diese Wand hat kein Licht",
@@ -121,11 +122,15 @@
         "failed": "Noch keine Verbindung zu {{board}}. Versuch es nochmal, wenn du so weit bist.",
         "failedNoName": "Noch keine Verbindung zu deinem Board. Versuch es nochmal, wenn du so weit bist."
       },
-      "pill": "Am Board beleuchten",
       "confirm": {
         "title": "Mit {{board}} verbunden",
         "titleNoName": "Mit deinem Board verbunden",
-        "body": "Tippst du jetzt einen Boulder in der Liste an, wird er am Board beleuchtet.",
+        "bodyAlwaysDrive": "„Board immer steuern“ ist an: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf „Du steuerst das Board“ tippst, um aufzuhören.",
+        "bodyWindow": "Mit „Am Board beleuchten“ steuerst du das Board: {{seconds}} Sekunden lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyWindowMinute": "Mit „Am Board beleuchten“ steuerst du das Board: 1 Minute lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyWindowMinutes": "Mit „Am Board beleuchten“ steuerst du das Board: {{minutes}} Minuten lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyUntilStop": "Mit „Am Board beleuchten“ steuerst du das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf den Button tippst, um aufzuhören.",
+        "bodyPutOnBoard": "Tipp einen Boulder an und dann auf „Am Board beleuchten“.",
         "gotIt": "Verstanden"
       }
     },
@@ -179,7 +184,7 @@
       "limitReached": "Du hast die maximale Anzahl Boards für ein Konto erreicht. Lösch ein Board, das du nicht mehr nutzt, um ein neues anzulegen.",
       "timer": "Workout-Timer",
       "timerNone": "Kein Timer gekoppelt",
-      "timerHint": "Koppel einen Rogue-Hallentimer mit diesem Board. Solange du die Wand steuerst, startet seine Stoppuhr mit jeder Pause neu, oder bei jedem eingetragenen Boulder, wenn der Pausentimer aus ist.",
+      "timerHint": "Koppel einen Rogue-Hallentimer mit diesem Board. Solange dieses Handy mit dem Board verbunden ist, startet seine Stoppuhr mit jeder Pause neu, oder bei jedem eingetragenen Boulder, wenn der Pausentimer aus ist.",
       "timerPairCta": "Timer koppeln",
       "timerChangeCta": "Timer wechseln",
       "timerRemoveCta": "Entfernen",
@@ -214,6 +219,7 @@
       "resolving": "Boards werden geladen…",
       "noResults": "Keine Boards in Reichweite",
       "unavailable": "Schalt Bluetooth ein, um zu suchen",
+      "notAsked": "Erlaube Bluetooth, um Boards in deiner Nähe zu finden.",
       "unknownSetupTitle": "{{board}} Board gefunden",
       "unknownSetupBody": "Sein Setup kennen wir noch nicht.",
       "moonboardTitle": "MoonBoard in der Nähe gefunden",
@@ -585,7 +591,9 @@
     "helperText": {
       "unlisted": "Taucht nicht in der Suche auf, ist aber über den direkten Link erreichbar",
       "hideLocation": "Taucht nicht in der Umkreissuche auf, außer du folgst der suchenden Person",
-      "hasLeds": "Aus heißt: kein LED-Kit. Ihr wechselt euch trotzdem ab, und der Hallen-Bildschirm zeigt weiter den aktuellen Boulder."
+      "hasLeds": "Aus heißt: kein LED-Kit. Ihr wechselt euch trotzdem ab, und der Hallen-Bildschirm zeigt weiter den aktuellen Boulder.",
+      "ownerOnlyPrivacy": "Nur der*die Eigentümer*in des Boards kann Sichtbarkeit und Standortfreigabe ändern.",
+      "ownerOnlyCredentials": "Nur der*die Eigentümer*in des Boards kann Controller-Zugangsdaten sehen oder ändern."
     },
     "alerts": {
       "configEditable": "Du kannst Layout, Größe und Hold-Sets ändern. Schon eingetragene Begehungen bleiben erhalten."
@@ -602,7 +610,11 @@
       "duplicateBodyWithLocation": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ in {{location}} — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
       "duplicateBodyGeneric": "Mit dieser Änderung ist das Board identisch mit einem anderen Board desselben Kontos.",
       "saveAnyway": "Trotzdem speichern",
-      "cancel": "Abbrechen"
+      "cancel": "Abbrechen",
+      "discardTitle": "Ungespeicherte Änderungen verwerfen?",
+      "discardBody": "Deine Änderungen am Board wurden nicht gespeichert.",
+      "discard": "Änderungen verwerfen",
+      "keepEditing": "Weiter bearbeiten"
     },
     "serialReuse": {
       "warning": "Diese Seriennummer gehört schon zu „{{name}}“. Wenn du dich diesem Board anschließt, bleiben die Begehungen und Stats aller an einer Wand.",
@@ -755,8 +767,8 @@
       "address": "Adresse",
       "contactEmail": "Kontakt-E-Mail",
       "contactPhone": "Kontakt-Telefon",
-      "isPublic": "Öffentliche Halle",
-      "website": "Website"
+      "website": "Website",
+      "visibility": "Sichtbarkeit"
     },
     "placeholders": {
       "name": "z. B. Boulderwelt, Kletterfabrik",
@@ -780,7 +792,13 @@
     },
     "helpers": {
       "website": "Damit prüfen wir die Inhaberschaft, wenn jemand diese Halle beansprucht",
-      "hours": "Eine Zeile, so wie du sie schreibst. Deine Seite zeigt, wann du sie zuletzt bestätigt hast."
+      "hours": "Eine Zeile, so wie du sie schreibst. Deine Seite zeigt, wann du sie zuletzt bestätigt hast.",
+      "visibility": "Nicht gelistete Hallen sind über ihren Link erreichbar und erscheinen weder in der Suche noch auf der Karte."
+    },
+    "visibility": {
+      "public": "Öffentlich",
+      "unlisted": "Nicht gelistet",
+      "private": "Privat"
     }
   },
   "claimGym": {

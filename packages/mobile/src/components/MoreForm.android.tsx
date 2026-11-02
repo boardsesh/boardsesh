@@ -17,7 +17,7 @@
 // tree renders props and invokes handlers.
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { Host } from '@expo/ui';
+import { ComposeHost } from './ComposeHost.android';
 import {
   LazyColumn,
   Card,
@@ -133,7 +133,7 @@ const SECTION_GAP = spacing[5];
 
 type RowColors = {
   brandColors: BrandControlColors & { error: string };
-  /** On-track in the control tint; a dark checked thumb in dark mode. */
+  /** On-track in the control tint (dark thumb in dark mode); Velvet off state. */
   switchColors: ReturnType<typeof switchControlColors>;
   segmentColors: ReturnType<typeof segmentedBrandColors>;
   /** Tint for a nav row's leading Material icon — the secondary-label colour. */
@@ -513,10 +513,10 @@ function SliderRow({ row, colors }: { row: MoreSliderRow; colors: RowColors }) {
 // (#6500, #6585, #6546). Screens whose model has a `custom` row therefore pick
 // MoreFormRN themselves, once per screen, so the renderer never swaps mid-flow.
 export function MoreForm({ model }: MoreFormProps) {
-  const { brandColors, systemColors, colorScheme } = useTheme();
+  const { brandColors, systemColors, colorScheme, m3 } = useTheme();
   const colors: RowColors = {
     brandColors,
-    switchColors: switchControlColors(brandColors, colorScheme),
+    switchColors: switchControlColors(brandColors, m3, colorScheme),
     segmentColors: segmentedBrandColors(brandColors),
     iconTint: systemColors.secondaryLabel,
     itemColor: systemColors.label as string,
@@ -566,14 +566,11 @@ export function MoreForm({ model }: MoreFormProps) {
   });
 
   return (
-    // `colorScheme` forces the Compose MaterialTheme to follow our in-app
-    // Light/Dark toggle (`themeOverride`) instead of the OS scheme — without it the
-    // cards stay dark when the user picks "Light" in-app.
-    <Host style={styles.host} colorScheme={colorScheme}>
+    <ComposeHost style={styles.host}>
       <LazyColumn contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}>
         {items}
       </LazyColumn>
-    </Host>
+    </ComposeHost>
   );
 }
 

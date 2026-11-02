@@ -101,7 +101,7 @@ async function enrol(request: ConnectStepEnrolmentRequest): Promise<ConnectStepE
   const { enrolment } = decision;
   try {
     // A forced arm starts the phone from a clean slate, so a tester whose phone
-    // has connected before still sees the card and the pill.
+    // has connected before still sees the card.
     if (enrolment.forced) await resetFirstConnectDeviceForQa();
     // Written BEFORE the event: an enrolment that cannot be stored cannot hold
     // an arm either, and a climber who was never enrolled must not be counted.

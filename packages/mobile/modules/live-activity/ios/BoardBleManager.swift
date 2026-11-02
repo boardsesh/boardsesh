@@ -190,6 +190,52 @@ enum BoardBleError: LocalizedError {
     }
 }
 
+/// How a Live Activity bulb reconnect ended, as the card shows it
+/// (`SharedBoardReconnect`). Only an outcome the climber can act on reaches
+/// the card: one this tap did not decide records nothing, so a tap that a
+/// second tap took over does not flash "Board didn't answer" before the
+/// second one settles.
+enum BoardReconnectOutcome: Equatable {
+    /// This phone holds the board again: the bulb lights.
+    case reconnected
+    /// The tap could not reach the board: the card says why and offers it again.
+    case failed(SharedBoardReconnectFailure)
+    /// Something else decided: a newer tap or connect took over
+    /// (`superseded`, or `notConnected` from the scan it ended), or the board
+    /// was let go or forgotten meanwhile (`notConnected` from a disconnect,
+    /// `deviceNotFound` with no pairing), which the card reads from the
+    /// pairing itself.
+    case overtaken
+
+    init(_ result: Result<Void, Error>) {
+        guard case .failure(let error) = result else {
+            self = .reconnected
+            return
+        }
+        switch error as? BoardBleError {
+        case .bluetoothUnavailable?:
+            self = .failed(.bluetoothOff)
+        case .superseded?, .notConnected?, .deviceNotFound?:
+            self = .overtaken
+        default:
+            self = .failed(.unreachable)
+        }
+    }
+
+    /// Stores this outcome for the card's next render; `overtaken` leaves
+    /// whatever the card already says.
+    func record(in defaults: UserDefaults) {
+        switch self {
+        case .reconnected:
+            SharedBoardReconnect.record(nil, in: defaults)
+        case .failed(let failure):
+            SharedBoardReconnect.record(failure, in: defaults)
+        case .overtaken:
+            return
+        }
+    }
+}
+
 /// One-shot result for the specific display request issued by a Live Activity
 /// intent. Display callbacks settle on `bleQueue`; the awaiting task reads the
 /// result after the global drain waiter resumes. The lock makes that cross-task
@@ -213,6 +259,12 @@ private final class BoardBleDisplayWriteOutcome: @unchecked Sendable {
     }
 }
 
+private struct BoardBleAssociation: Codable {
+    var configuration: BoardBleConfiguration
+    let configKey: String
+    var boundPeripheralUuid: UUID?
+}
+
 final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     // Strict-concurrency audit: the manager is bleQueue-confined by design — all state
     // mutation happens on that serial queue — so this global is safe without claiming
@@ -229,6 +281,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let peripheralId: UUID
         let origin: BoardBleConnectOrigin
         let requestedAt: Date
+        let preparationToken: String?
         let completion: (Result<Void, Error>) -> Void
     }
 
@@ -272,6 +325,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // with-response via the stall fallback stay ack-only (no fixed delay).
     private let kilterBoxChunkDelay: TimeInterval = 0.100
     private let connectTimeout: TimeInterval = 8
+    // How long a Live Activity reconnect waits for a just-created central's
+    // first state before failing as Bluetooth off. That state normally comes
+    // in well under a second; the wait is short because it runs ahead of the
+    // reconnect scan and the connect (`connectTimeout` each), and the whole
+    // tap has to finish inside the time iOS gives a background-launched
+    // intent: 3 + 8 + 8 = 19 s at worst, not 24 s.
+    static let reconnectFirstCentralStateTimeout: TimeInterval = 3
     // How old a connect request may be before its success stops authorising an
     // implicit re-light of the wall (#4499). Deliberately WALL CLOCK, not
     // DispatchTime: every in-process deadline in this file is a GCD work item
@@ -299,11 +359,27 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // a reconnect loop. The counter resets whenever a write fully drains (#3181).
     private let maxWriteStallRecoveries = 2
 
-    private lazy var centralManager = CBCentralManager(
-        delegate: self,
-        queue: bleQueue,
-        options: [CBCentralManagerOptionRestoreIdentifierKey: "com.boardsesh.app.board-ble"]
-    )
+    // How long `requestAuthorization` waits for the climber to answer the
+    // system Bluetooth alert. The alert is modal, so this is a leak backstop,
+    // not a deadline anyone should reach: a climber who leaves the alert up
+    // and comes back minutes later still carries straight on.
+    private let authorizationAnswerTimeout: TimeInterval = 600
+    // Fallback for `requestAuthorization` in case CoreBluetooth answers the
+    // alert without a state change the delegate hears about.
+    private let authorizationAnswerPollInterval: TimeInterval = 0.5
+
+    /// The CoreBluetooth central, once something has created it. Creating a
+    /// `CBCentralManager` while the app's Bluetooth authorization is
+    /// `.notDetermined` is what shows the system "allow Bluetooth" alert, so
+    /// on a phone that has never answered it this stays nil until the climber
+    /// starts a scan (or JS asks through `requestAuthorization`). Every other
+    /// read goes through `centralStateOnBleQueue`, which never creates it.
+    /// See `completeInit` for the launch-time rule.
+    private var createdCentralManager: CBCentralManager?
+    private let authorizationProvider: () -> CBManagerAuthorization
+    private var authorizationAnswerWaiters: [(CBManagerAuthorization) -> Void] = []
+    private var authorizationAnswerWatchdog: BleOneShotTimer?
+    private var authorizationAnswerPoller: BleRepeatingTimer?
 
     private var discoveredPeripherals: [String: WritableBlePeripheral] = [:]
     private var discoveredNames: [String: String] = [:]
@@ -339,6 +415,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var reconnectScanOrigin: BoardBleConnectOrigin?
     private var reconnectScanRequestedAt: Date?
     private var reconnectScanTimeoutWorkItem: DispatchWorkItem?
+    // A Live Activity reconnect that arrived before the central reported its
+    // first state: iOS launched the app in the background for the intent
+    // itself, so the central was created a moment ago and still reads
+    // `.unknown`, which would otherwise fail the tap as "Bluetooth off". It
+    // runs again on that first state, or fails at
+    // `reconnectFirstCentralStateTimeout`.
+    private var reconnectAwaitingCentralState: (
+        origin: BoardBleConnectOrigin,
+        requestedAt: Date,
+        completion: (Result<Void, Error>) -> Void
+    )?
+    private var reconnectAwaitingCentralStateWatchdog: BleOneShotTimer?
     private var intentionalDisconnectGenerations: [UUID: UInt64] = [:]
     // CoreBluetooth's terminal callback for a manager-initiated cancellation can
     // arrive after `cancelPeripheralConnection` returns. Because the callback has
@@ -465,6 +553,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // from there the reconnect's own connect timeout owns the deadline (#3181).
     private var writeStallRecoveryWatchdog: BleOneShotTimer?
     private var configuration: BoardBleConfiguration?
+    // Encoding and physical-device identity are one persisted value. A staged
+    // configuration has no device until its own explicit connect becomes ready.
+    private var association: BoardBleAssociation?
+    private let associationDefaults: UserDefaults?
+    private var preparationEpoch: UInt64 = 0
+    private var activePreparationToken: String?
+    private var connectingPreparation: (token: String, peripheralId: UUID, generation: UInt64)?
     private lazy var readyWaiters = WaiterPool(queue: bleQueue)
     private lazy var drainWaiters = WaiterPool(queue: bleQueue)
 
@@ -492,6 +587,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var connectPeripheralOverrideForTesting: ((WritableBlePeripheral) -> Void)?
     /// Test-only central state. nil keeps production/dev on the real manager.
     private var centralStateOverrideForTesting: CBManagerState?
+    /// Test-only interception of `CBCentralManager` creation. The XCTest host
+    /// has no bluetooth-central background mode, so a real central with a
+    /// restore identifier would crash it; tests count creations instead. The
+    /// handler runs once per manager, as a real creation does: production
+    /// stores the central and every later call reuses it.
+    private var centralManagerCreationOverrideForTesting: (() -> Void)?
+    /// Whether the creation override has already stood in for this manager's
+    /// one creation. Reset whenever a handler is installed.
+    private var centralCreatedByOverrideForTesting = false
+    /// Test-only interception of the single `scanForPeripherals` call site,
+    /// handed the service filter (nil = unfiltered).
+    private var scanForPeripheralsOverrideForTesting: (([CBUUID]?) -> Void)?
     #endif
 
     private var onScanResult: ((BoardBleScanResult) -> Void)?
@@ -505,20 +612,39 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// natively-established connections so the in-app lightbulb matches the
     /// wall. Payload: (deviceId, deviceName).
     private var onConnected: ((String, String?) -> Void)?
+    /// Which `BoardBleModule` instance installed the three handlers above, so
+    /// only that instance can clear them (#7023). See `setEventHandlers`.
+    private var eventHandlerOwner: UUID?
 
     /// `private` keeps the singleton compiler-enforced: a second live instance
     /// would register a second `CBCentralManager` with the same restoration
     /// identifier and split connection state across two delegates.
     override private init() {
+        // `CBManager.authorization` is a class property: reading it creates no
+        // manager and shows no alert, so it is safe here at launch.
+        authorizationProvider = { CBManager.authorization }
+        associationDefaults = SharedConstants.sharedDefaults
         super.init()
-        completeInit(createCentralManagerEagerly: true)
+        completeInit(
+            createCentralManagerEagerly: Self.shouldCreateCentralManagerAtLaunch(
+                authorization: authorizationProvider()
+            )
+        )
     }
 
     #if DEBUG || BOARDSESH_TESTS
     /// Test-only isolated instance: a fake scheduler plus
     /// `createCentralManagerEagerly: false` means no CoreBluetooth stack (or
     /// permission prompt) ever spins up. Production must use `.shared`.
-    init(timerScheduler: BleTimerScheduling, createCentralManagerEagerly: Bool) {
+    /// `authorizationProvider` stands in for `CBManager.authorization`.
+    init(
+        timerScheduler: BleTimerScheduling,
+        createCentralManagerEagerly: Bool,
+        authorizationProvider: @escaping () -> CBManagerAuthorization = { .allowedAlways },
+        associationDefaults: UserDefaults? = SharedConstants.sharedDefaults
+    ) {
+        self.authorizationProvider = authorizationProvider
+        self.associationDefaults = associationDefaults
         super.init()
         // Assign before the lazy `timerScheduler` default (or anything else)
         // can touch it — nothing in completeInit reads the scheduler.
@@ -527,14 +653,152 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
     #endif
 
+    /// Whether the singleton creates its central at launch. It does for every
+    /// climber who has already answered the Bluetooth question (allowed, denied
+    /// or restricted), exactly as before, because CoreBluetooth state
+    /// restoration only delivers `willRestoreState` to a central created with
+    /// our restore identifier during launch: that is what lets a connection
+    /// survive the system relaunching the app in the background (Live
+    /// Activity lightbulb, Next/Previous intents).
+    ///
+    /// It does not when the answer is still `.notDetermined`, because creating
+    /// the central then shows the system alert before sign-in, with nothing on
+    /// screen to explain it. Deferring loses nothing: without Bluetooth
+    /// permission this app can never have connected to a board, so there is no
+    /// peripheral for CoreBluetooth to restore, no remembered board for the
+    /// lightbulb, and nothing to keep alive. The first scan creates the central
+    /// (see `centralManagerCreatingIfNeeded`), and from then on the answer is
+    /// known, so every later launch takes the eager path again.
+    static func shouldCreateCentralManagerAtLaunch(authorization: CBManagerAuthorization) -> Bool {
+        authorization != .notDetermined
+    }
+
+    /// The JS name for an authorization value (`getBluetoothAuthorization`).
+    /// JS reads any other string as "can't tell" and keeps the old behaviour.
+    static func authorizationName(_ authorization: CBManagerAuthorization) -> String {
+        switch authorization {
+        case .notDetermined:
+            return "notDetermined"
+        case .allowedAlways:
+            return "allowedAlways"
+        case .denied:
+            return "denied"
+        case .restricted:
+            return "restricted"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
     private func completeInit(createCentralManagerEagerly: Bool) {
         bleQueue.setSpecific(key: bleQueueKey, value: ())
         runOnBleQueueSync {
-            configuration = readConfiguration()
+            association = readAssociation()
+            configuration = association?.configuration ?? readLegacyConfiguration()
             if createCentralManagerEagerly {
-                _ = centralManager
+                centralManagerCreatingIfNeeded()
             }
         }
+    }
+
+    /// The central, created first if nothing has created it yet. On a phone
+    /// whose Bluetooth authorization is `.notDetermined`, creating it shows the
+    /// system alert, so only a path the climber started may call this: a scan
+    /// (`startScanOnBleQueue`), `requestAuthorization`, or the launch-time
+    /// rule above. Returns nil only in the native test target, whose seam
+    /// records the creation without standing up CoreBluetooth. Must run on
+    /// `bleQueue`; the delegate callbacks land there after this returns.
+    @discardableResult
+    private func centralManagerCreatingIfNeeded() -> CBCentralManager? {
+        if let createdCentralManager {
+            return createdCentralManager
+        }
+        #if DEBUG || BOARDSESH_TESTS
+        if let overrideForTesting = centralManagerCreationOverrideForTesting {
+            // Nothing concrete is stored (createdCentralManager stays nil, so
+            // state reads keep peeking), but only the first call counts.
+            if !centralCreatedByOverrideForTesting {
+                centralCreatedByOverrideForTesting = true
+                overrideForTesting()
+            }
+            return nil
+        }
+        #endif
+        let central = CBCentralManager(
+            delegate: self,
+            queue: bleQueue,
+            options: [CBCentralManagerOptionRestoreIdentifierKey: "com.boardsesh.app.board-ble"]
+        )
+        createdCentralManager = central
+        return central
+    }
+
+    /// Ask the climber for Bluetooth, then report their answer. Creates the
+    /// central, which is what makes iOS show the alert while authorization is
+    /// `.notDetermined`, and completes once the answer is in AND the central
+    /// has reported a real state, so a JS `isAvailable` straight after reads
+    /// the outcome rather than `.unknown` (which counts as available). That
+    /// holds even when the question was answered already: a central created a
+    /// moment ago still reads `.unknown` until CoreBluetooth's first update.
+    /// Completes at once only when both are already known. JS calls this at
+    /// the scan or connect tap, never at launch. The completion runs on
+    /// `bleQueue`.
+    func requestAuthorization(completion: @escaping (CBManagerAuthorization) -> Void) {
+        runOnBleQueue { [weak self] in
+            guard let self else {
+                completion(CBManager.authorization)
+                return
+            }
+            self.requestAuthorizationOnBleQueue(completion: completion)
+        }
+    }
+
+    private func requestAuthorizationOnBleQueue(completion: @escaping (CBManagerAuthorization) -> Void) {
+        centralManagerCreatingIfNeeded()
+        let authorization = authorizationProvider()
+        if authorization != .notDetermined, Self.isSettledCentralState(centralStateOnBleQueue) {
+            completion(authorization)
+            return
+        }
+        authorizationAnswerWaiters.append(completion)
+        guard authorizationAnswerWatchdog == nil else { return }
+        authorizationAnswerWatchdog = timerScheduler.scheduleOneShot(
+            after: authorizationAnswerTimeout,
+            label: "authorizationAnswerWatchdog"
+        ) { [weak self] in
+            self?.settleAuthorizationAnswerWaitersOnBleQueue(evenIfUnanswered: true)
+        }
+        let poller = timerScheduler.makeRepeatingTimer()
+        poller.setEventHandler { [weak self] in
+            self?.settleAuthorizationAnswerWaitersOnBleQueue()
+        }
+        poller.schedule(interval: authorizationAnswerPollInterval, leeway: .milliseconds(100))
+        poller.activate()
+        authorizationAnswerPoller = poller
+    }
+
+    /// Whether the central has reported a real state, one that says whether
+    /// Bluetooth can be used.
+    private static func isSettledCentralState(_ state: CBManagerState) -> Bool {
+        state != .unknown && state != .resetting
+    }
+
+    /// Hand the climber's answer to everyone waiting in `requestAuthorization`.
+    /// Waits while the answer is still `.notDetermined`, or while the central
+    /// has not reported its first state yet, unless the watchdog says stop.
+    private func settleAuthorizationAnswerWaitersOnBleQueue(evenIfUnanswered: Bool = false) {
+        guard !authorizationAnswerWaiters.isEmpty else { return }
+        let authorization = authorizationProvider()
+        if !evenIfUnanswered {
+            guard authorization != .notDetermined, Self.isSettledCentralState(centralStateOnBleQueue) else { return }
+        }
+        let waiters = authorizationAnswerWaiters
+        authorizationAnswerWaiters = []
+        authorizationAnswerWatchdog?.cancel()
+        authorizationAnswerWatchdog = nil
+        authorizationAnswerPoller?.cancel()
+        authorizationAnswerPoller = nil
+        waiters.forEach { $0(authorization) }
     }
 
     var isAvailable: Bool {
@@ -553,12 +817,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// nil. Exposed to JS as `getConnectedDevice` so a foregrounding app can
     /// adopt a connection established while it was backgrounded (widget
     /// reconnect) even if the `connected` event was missed.
-    var connectedDeviceInfo: (deviceId: String, name: String?, diagnostics: BoardBleConnectionDiagnostics)? {
+    var connectedDeviceInfo: (deviceId: String, name: String?, configKey: String, diagnostics: BoardBleConnectionDiagnostics)? {
         runOnBleQueueSync {
-            guard let peripheral = connectedPeripheral, let characteristic = writeCharacteristic else { return nil }
+            guard let peripheral = connectedPeripheral, let characteristic = writeCharacteristic,
+                  hasBinding(for: peripheral.identifier), let association else { return nil }
             let deviceId = peripheral.identifier.uuidString
             let diagnostics = connectionDiagnosticsOnBleQueue(peripheral: peripheral, characteristic: characteristic)
-            return (deviceId, discoveredNames[deviceId] ?? peripheral.name, diagnostics)
+            return (deviceId, discoveredNames[deviceId] ?? peripheral.name, association.configKey, diagnostics)
         }
     }
 
@@ -584,15 +849,42 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
+    /// Install the handlers that carry scan results and connection events to
+    /// JS. `owner` names the module instance installing them, and only that
+    /// owner can clear them later (`clearEventHandlers(owner:)`).
+    ///
+    /// This manager outlives the JS runtime, and each runtime gets its own
+    /// `BoardBleModule`. A reload (an OTA `reloadAsync`) starts the new runtime
+    /// while the old one is still tearing down: Expo creates the new module, and
+    /// its `OnCreate` installs handlers, before the old runtime finalises and
+    /// the old module's `OnDestroy` runs. When that destroy cleared the handlers
+    /// unconditionally, it wiped the new module's handlers too. The scan still
+    /// ran, but no result reached JS, so the picker said "No boards found
+    /// nearby" until the app was restarted (#7023).
     func setEventHandlers(
+        owner: UUID,
         onScanResult: ((BoardBleScanResult) -> Void)?,
         onDisconnect: ((String, [String: Any]?) -> Void)?,
         onConnected: ((String, String?) -> Void)? = nil
     ) {
         runOnBleQueue { [weak self] in
+            self?.eventHandlerOwner = owner
             self?.onScanResult = onScanResult
             self?.onDisconnect = onDisconnect
             self?.onConnected = onConnected
+        }
+    }
+
+    /// Clear the event handlers, but only when `owner` installed the current
+    /// ones. A module destroyed after a newer module took over leaves the newer
+    /// module's handlers in place (#7023).
+    func clearEventHandlers(owner: UUID) {
+        runOnBleQueue { [weak self] in
+            guard let self, self.eventHandlerOwner == owner else { return }
+            self.eventHandlerOwner = nil
+            self.onScanResult = nil
+            self.onDisconnect = nil
+            self.onConnected = nil
         }
     }
 
@@ -605,11 +897,22 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// wall the connect gate just kept dark (#4499). It defaults to `true` at
     /// the bridge so an older JS bundle running against this binary keeps
     /// today's behaviour instead of silently losing mid-session re-lights.
-    func configure(_ configuration: BoardBleConfiguration, appActive: Bool = true) {
+    func configure(
+        _ configuration: BoardBleConfiguration,
+        appActive: Bool = true,
+        configKey: String? = nil,
+        deviceId: String? = nil
+    ) {
         runOnBleQueue { [weak self] in
             guard let self else { return }
+            guard let deviceId, let peripheralId = UUID(uuidString: deviceId),
+                  let configKey, self.association?.configKey == configKey,
+                  self.hasBinding(for: peripheralId),
+                  self.connectedPeripheral?.identifier == peripheralId,
+                  self.writeCharacteristic != nil else { return }
             self.configuration = configuration
-            self.writeConfiguration(configuration)
+            self.association?.configuration = configuration
+            guard self.persistAssociation() else { return }
             // Foreground: the user is looking at the app and just changed
             // something, so re-light regardless of how the link came to be.
             // Background: only re-light onto a connection the gate already
@@ -624,6 +927,49 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             }
             self.implicitRelightAttempts += 1
             self.displaySharedCurrentItemOnBleQueue()
+        }
+    }
+
+    /// Invalidates the old pairing before the picker can be cancelled. The
+    /// token belongs to this exact staged configuration, never to a later one.
+    func prepareBoardConnection(
+        _ configuration: BoardBleConfiguration,
+        configKey: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        runOnBleQueue { [weak self] in
+            guard let self, !configKey.isEmpty else {
+                completion(.failure(BoardBleError.notConnected))
+                return
+            }
+            self.disconnectOnBleQueue()
+            self.configuration = configuration
+            self.association = BoardBleAssociation(configuration: configuration, configKey: configKey)
+            guard self.persistAssociation() else {
+                self.association = nil
+                completion(.failure(BoardBleError.notConnected))
+                return
+            }
+            let token = UUID().uuidString
+            self.activePreparationToken = token
+            completion(.success(token))
+        }
+    }
+
+    func connectPreparedBoard(
+        deviceId: String,
+        preparationToken: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let requestedAt = Date()
+        runOnBleQueue { [weak self] in
+            self?.connectOnBleQueue(
+                deviceId: deviceId,
+                origin: .userConnect,
+                requestedAt: requestedAt,
+                preparationToken: preparationToken,
+                completion: completion
+            )
         }
     }
 
@@ -654,9 +1000,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
-    func disconnect(completion: (() -> Void)? = nil) {
+    /// Let go of the board. `forgetBoard: false` (Disconnect Bluetooth when
+    /// driving ends, 2.7) frees it for the next climber but keeps the pairing,
+    /// so the Live Activity bulb and the next Put on board can reconnect to it
+    /// without the board list. Every other disconnect forgets it.
+    func disconnect(forgetBoard: Bool = true, completion: (() -> Void)? = nil) {
         runOnBleQueue { [weak self] in
-            self?.disconnectOnBleQueue(completion: completion)
+            self?.disconnectOnBleQueue(forgetBoard: forgetBoard, completion: completion)
         }
     }
 
@@ -739,11 +1089,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         drainTimeout: TimeInterval = 1.5,
         stillCurrent: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
+        let requestEpoch = runOnBleQueueSync { preparationEpoch }
         await waitUntilReady(timeout: readyTimeout)
         let ready = runOnBleQueueSync { isReadyForWrite }
         if !ready {
+            // Peek, never create: an intent firing on a phone that has never
+            // answered the Bluetooth question must not raise the alert.
             let state = runOnBleQueueSync { (
-                centralState: centralManager.state.rawValue,
+                centralState: centralStateOnBleQueue.rawValue,
                 hasPeripheral: connectedPeripheral != nil,
                 hasWriteChar: writeCharacteristic != nil
             ) }
@@ -754,6 +1107,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             items: items,
             currentIndex: currentIndex,
             drainTimeout: drainTimeout,
+            expectedPreparationEpoch: requestEpoch,
             stillCurrent: stillCurrent
         )
     }
@@ -762,6 +1116,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         items: [SharedQueueItem],
         currentIndex: Int,
         drainTimeout: TimeInterval,
+        expectedPreparationEpoch: UInt64? = nil,
         stillCurrent: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
         let displayOutcome = BoardBleDisplayWriteOutcome()
@@ -773,7 +1128,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 displayOutcome.settle(succeeded: false)
                 return
             }
-            guard stillCurrent() else {
+            guard stillCurrent(), expectedPreparationEpoch == nil || expectedPreparationEpoch == self.preparationEpoch else {
                 displayOutcome.settle(succeeded: false)
                 return
             }
@@ -801,13 +1156,29 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
+    /// The central's state, read WITHOUT creating it. A central nobody has
+    /// created yet means the Bluetooth question was unanswered at launch (see
+    /// `completeInit`). If it is still unanswered this reads `.unknown`, which
+    /// keeps `isAvailable` true, as it was for a central that had not reported
+    /// its first state. If the climber has since said no through another
+    /// manager (an older JS bundle's ble-plx asks at launch), it reads
+    /// `.unauthorized`, as a central would, so that bundle's availability gate
+    /// shows its blocked copy instead of scanning a refused radio.
     private var centralStateOnBleQueue: CBManagerState {
         #if DEBUG || BOARDSESH_TESTS
         if let centralStateOverrideForTesting {
             return centralStateOverrideForTesting
         }
         #endif
-        return centralManager.state
+        guard let createdCentralManager else {
+            switch authorizationProvider() {
+            case .denied, .restricted:
+                return .unauthorized
+            default:
+                return .unknown
+            }
+        }
+        return createdCentralManager.state
     }
 
     private func startScanOnBleQueue(serviceUuids: [String], completion: @escaping (Result<Void, Error>) -> Void) {
@@ -820,20 +1191,66 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         scanRequested = true
         emittedScanResults = [:]
 
+        // The climber asked to scan, so this is where a phone that has never
+        // answered the Bluetooth question gets asked: creating the central
+        // shows the system alert.
+        centralManagerCreatingIfNeeded()
+
+        // A central that has not reported its first state can't say yet
+        // whether the scan can run, and `.unknown` would count as available:
+        // a JS bundle that scans without asking first (one older than
+        // `requestBluetoothAuthorization`) would be told the scan started,
+        // then sit on an empty picker after Don't Allow. Settle the request on
+        // the answer instead, so a refusal rejects the scan promise and that
+        // bundle's existing "Bluetooth unavailable" path shows.
+        // `.resetting` keeps its old meaning (park as available): it only
+        // happens mid-session, after the question was answered.
+        guard centralStateOnBleQueue != .unknown else {
+            requestAuthorizationOnBleQueue { [weak self] _ in
+                self?.settleScanRequestOnBleQueue(completion: completion)
+            }
+            return
+        }
+        settleScanRequestOnBleQueue(completion: completion)
+    }
+
+    /// Start (or park) the requested scan for the central's current state, and
+    /// settle the caller. `.unknown` / `.resetting` park it as available: the
+    /// scan then starts from the next powered-on state update (scanRequested).
+    private func settleScanRequestOnBleQueue(completion: @escaping (Result<Void, Error>) -> Void) {
         guard centralStateOnBleQueue == .poweredOn else {
             if isAvailableOnBleQueue {
                 completion(.success(()))
             } else {
+                // Nothing will start it later, so don't leave it armed.
+                scanRequested = false
                 completion(.failure(BoardBleError.bluetoothUnavailable))
             }
             return
         }
+        // Stopped while waiting for the answer (picker closed): nothing to start.
+        if scanRequested {
+            scanForRequestedPeripheralsOnBleQueue()
+        }
+        completion(.success(()))
+    }
 
-        centralManager.scanForPeripherals(
-            withServices: scanServices.isEmpty ? nil : scanServices,
+    /// The single concrete `scanForPeripherals` call site, for a fresh scan
+    /// and for the restart after the radio powers on. Repeating it while a scan
+    /// runs only restarts that scan with the same parameters.
+    private func scanForRequestedPeripheralsOnBleQueue() {
+        // Empty scanServices = unfiltered scan (see startScanOnBleQueue).
+        let services = scanServices.isEmpty ? nil : scanServices
+        #if DEBUG || BOARDSESH_TESTS
+        if let overrideForTesting = scanForPeripheralsOverrideForTesting {
+            overrideForTesting(services)
+            return
+        }
+        #endif
+        createdCentralManager?.scanForPeripherals(
+            withServices: services,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
         )
-        completion(.success(()))
     }
 
     private func stopScanOnBleQueue() {
@@ -844,8 +1261,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
         #endif
-        if centralManager.isScanning {
-            centralManager.stopScan()
+        // Nothing to stop on a central nobody created, and creating one here
+        // would ask for Bluetooth from a teardown path.
+        if let createdCentralManager, createdCentralManager.isScanning {
+            createdCentralManager.stopScan()
         }
     }
 
@@ -853,8 +1272,23 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         deviceId: String,
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
+        preparationToken: String? = nil,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        // Check ownership before even the already-connected shortcut. A picker
+        // from preparation A cannot use preparation B's configuration.
+        if origin == .userConnect {
+            guard let preparationToken, preparationToken == activePreparationToken,
+                  association != nil else {
+                completion(.failure(BoardBleError.superseded))
+                return
+            }
+        } else {
+            guard let peripheralId = UUID(uuidString: deviceId), hasBinding(for: peripheralId) else {
+                completion(.failure(BoardBleError.notConnected))
+                return
+            }
+        }
         // Supersede any in-flight reconnect-by-last-known scan: this is a no-op
         // when called from the reconnect path itself (which already nils the scan
         // state first), but settles a stranded scan immediately when an unrelated
@@ -909,6 +1343,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                     peripheralId: peripheralId,
                     origin: origin,
                     requestedAt: requestedAt,
+                    preparationToken: preparationToken,
                     completion: completion
                 )
                 return
@@ -959,6 +1394,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let generation = connectionGeneration
         intentionalDisconnectGenerations.removeValue(forKey: peripheral.identifier)
         pendingConnectCompletion = completion
+        if let preparationToken {
+            connectingPreparation = (preparationToken, peripheral.identifier, generation)
+        } else {
+            connectingPreparation = nil
+        }
         connectedPeripheral = peripheral
         writeCharacteristic = nil
         peripheralGenerations[peripheral.identifier] = generation
@@ -984,6 +1424,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         peripheralId: UUID,
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
+        preparationToken: String?,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         failDeferredConnect(BoardBleError.superseded)
@@ -1006,6 +1447,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             peripheralId: peripheralId,
             origin: origin,
             requestedAt: requestedAt,
+            preparationToken: preparationToken,
             completion: completion
         )
     }
@@ -1019,10 +1461,19 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private func reconnectToLastKnownBoardOnBleQueue(
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
+        waitedForCentralState: Bool = false,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        guard let uuid = association?.boundPeripheralUuid, hasBinding(for: uuid) else {
+            completion(.failure(BoardBleError.deviceNotFound))
+            return
+        }
         // Already connected — re-light the wall and report success.
         if let connectedPeripheral, writeCharacteristic != nil {
+            guard connectedPeripheral.identifier == uuid else {
+                completion(.failure(BoardBleError.notConnected))
+                return
+            }
             connectRequestOrigin = origin
             connectRequestedAt = requestedAt
             completion(.success(()))
@@ -1031,21 +1482,24 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             )
             return
         }
+        // Reads, never creates: an unanswered Bluetooth question means no
+        // board was ever connected, so there is nothing to reconnect to, and a
+        // Live Activity tap must not raise the system alert from the background.
+        // A central that has not reported its first state yet (a cold
+        // background launch for this very tap) is waited for, once.
+        if !waitedForCentralState, Self.awaitsFirstCentralState(centralStateOnBleQueue, authorization: authorizationProvider()) {
+            awaitCentralStateForReconnectOnBleQueue(origin: origin, requestedAt: requestedAt, completion: completion)
+            return
+        }
         guard centralStateOnBleQueue == .poweredOn else {
             completion(.failure(BoardBleError.bluetoothUnavailable))
             return
         }
-        guard let defaults = SharedConstants.sharedDefaults,
-              let uuidString = defaults.string(forKey: SharedConstants.bleLastPeripheralUuidKey),
-              let uuid = UUID(uuidString: uuidString)
-        else {
-            completion(.failure(BoardBleError.deviceNotFound))
-            return
-        }
+        let uuidString = uuid.uuidString
 
         // Fast path: the system still has this peripheral cached — connect
         // directly without scanning (works while backgrounded).
-        if let peripheral = centralManager.retrievePeripherals(withIdentifiers: [uuid]).first {
+        if let peripheral = createdCentralManager?.retrievePeripherals(withIdentifiers: [uuid]).first {
             discoveredPeripherals[uuidString] = peripheral
             if let name = peripheral.name {
                 discoveredNames[uuidString] = name
@@ -1068,12 +1522,64 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         )
     }
 
+    /// Whether a reconnect should wait for the central's first state rather
+    /// than fail: the central has not reported one yet (or is resetting), and
+    /// the Bluetooth question was answered, so no alert can come of it.
+    static func awaitsFirstCentralState(_ state: CBManagerState, authorization: CBManagerAuthorization) -> Bool {
+        guard state == .unknown || state == .resetting else { return false }
+        return authorization == .allowedAlways
+    }
+
+    private func awaitCentralStateForReconnectOnBleQueue(
+        origin: BoardBleConnectOrigin,
+        requestedAt: Date,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        // One at a time: a second tap supersedes the first, like connect.
+        failReconnectAwaitingCentralState(BoardBleError.superseded)
+        reconnectAwaitingCentralState = (origin: origin, requestedAt: requestedAt, completion: completion)
+        reconnectAwaitingCentralStateWatchdog = timerScheduler.scheduleOneShot(
+            after: Self.reconnectFirstCentralStateTimeout,
+            label: "reconnectAwaitingCentralStateWatchdog"
+        ) { [weak self] in
+            self?.failReconnectAwaitingCentralState(BoardBleError.bluetoothUnavailable)
+        }
+    }
+
+    /// The central reported a state: run the parked reconnect against it.
+    /// Still settling (`.unknown`, `.resetting`): keep waiting.
+    private func resumeReconnectAwaitingCentralStateOnBleQueue(_ state: CBManagerState) {
+        guard state != .unknown, state != .resetting, let parked = reconnectAwaitingCentralState else { return }
+        reconnectAwaitingCentralState = nil
+        reconnectAwaitingCentralStateWatchdog?.cancel()
+        reconnectAwaitingCentralStateWatchdog = nil
+        reconnectToLastKnownBoardOnBleQueue(
+            origin: parked.origin,
+            requestedAt: parked.requestedAt,
+            waitedForCentralState: true,
+            completion: parked.completion
+        )
+    }
+
+    private func failReconnectAwaitingCentralState(_ error: Error) {
+        guard let parked = reconnectAwaitingCentralState else { return }
+        reconnectAwaitingCentralState = nil
+        reconnectAwaitingCentralStateWatchdog?.cancel()
+        reconnectAwaitingCentralStateWatchdog = nil
+        parked.completion(.failure(error))
+    }
+
     private func beginReconnectScanOnBleQueue(
         targetUuid: UUID,
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        // One at a time: a second bulb tap while the first still looks for the
+        // board takes over. Settle the first now (its intent returns instead
+        // of hanging on a completion nobody would call) and cancel its
+        // timeout, which would otherwise fire against this scan.
+        failReconnectScan(BoardBleError.superseded)
         reconnectScanTargetUuid = targetUuid
         reconnectScanCompletion = completion
         // Carried through the scan so the eventual connect is attributed to the
@@ -1116,18 +1622,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         completion(.failure(error))
     }
 
-    private func persistLastConnectedPeripheral(_ peripheral: WritableBlePeripheral) {
-        SharedConstants.sharedDefaults?.set(
-            peripheral.identifier.uuidString,
-            forKey: SharedConstants.bleLastPeripheralUuidKey
-        )
-    }
-
     private func clearLastConnectedPeripheral() {
-        SharedConstants.sharedDefaults?.removeObject(forKey: SharedConstants.bleLastPeripheralUuidKey)
+        associationDefaults?.removeObject(forKey: SharedConstants.bleLastPeripheralUuidKey)
     }
 
-    private func disconnectOnBleQueue(completion: (() -> Void)? = nil) {
+    private func disconnectOnBleQueue(forgetBoard: Bool = true, completion: (() -> Void)? = nil) {
+        preparationEpoch += 1
+        activePreparationToken = nil
+        connectingPreparation = nil
+        if forgetBoard {
+            association?.boundPeripheralUuid = nil
+            _ = persistAssociation()
+        }
         connectionGeneration += 1
         // A deliberate disconnect supersedes any in-flight write-stall recovery
         // (#3181): drop the recovery window and reset the budget.
@@ -1135,9 +1641,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         writeStallRecoveries = 0
         // Settle any in-flight reconnect-by-last-known scan before tearing down.
         failReconnectScan(BoardBleError.notConnected)
+        failReconnectAwaitingCentralState(BoardBleError.notConnected)
         // A deliberate disconnect forgets the board so the widget lightbulb won't
-        // silently reconnect to it later. An unexpected drop leaves it intact.
-        clearLastConnectedPeripheral()
+        // silently reconnect to it later. An unexpected drop leaves it intact,
+        // and so does freeing the board as a drive ends (`forgetBoard: false`):
+        // the climber still has it, the next climber can connect meanwhile.
+        if forgetBoard {
+            clearLastConnectedPeripheral()
+        }
         // Forget who asked, so a later restored or long-parked connect cannot
         // inherit this request's human provenance and re-light the wall (#4499).
         clearConnectProvenanceOnBleQueue()
@@ -1168,6 +1679,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // `notConnected`, which the JS classifier treats as a hard drop and
             // would tear the connection down mid-recovery (#3181).
             completion?(writeStallRecovery != nil ? BoardBleError.writeTimedOut : BoardBleError.notConnected, nil)
+            return
+        }
+        guard hasBinding(for: peripheral.identifier) else {
+            completion?(BoardBleError.notConnected, nil)
             return
         }
 
@@ -1228,9 +1743,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// exists only so the Swift suite can drive this against an isolated
     /// suite instead of a developer machine's app-group defaults.
     private func displaySharedCurrentItemOnBleQueue(
-        defaults: UserDefaults? = SharedConstants.sharedDefaults
+        defaults: UserDefaults? = nil
     ) {
-        guard let defaults else { return }
+        guard let defaults = defaults ?? associationDefaults else { return }
         guard let item = SharedQueueState.currentItem(from: defaults) else {
             logger.info("Skipping implicit BLE re-light: no current climb in the App Group queue copy (#4544)")
             return
@@ -1255,7 +1770,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             completion?(false)
             return
         }
-        guard connectedPeripheral != nil, writeCharacteristic != nil else {
+        guard let connectedPeripheral, hasBinding(for: connectedPeripheral.identifier), writeCharacteristic != nil else {
             completion?(false)
             return
         }
@@ -1304,7 +1819,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             completion?(false)
             return
         }
-        guard connectedPeripheral != nil, writeCharacteristic != nil else {
+        guard let connectedPeripheral, hasBinding(for: connectedPeripheral.identifier), writeCharacteristic != nil else {
             completion?(false)
             return
         }
@@ -1425,7 +1940,27 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // MARK: - CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        handleCentralStateUpdateOnBleQueue(state: central.state) {
+        handleCentralStateUpdateOnBleQueue(state: central.state)
+    }
+
+    /// Shared state-update body for the real delegate and the native XCTest
+    /// seam. The scan seam keeps the concrete central manager out of tests,
+    /// so both halves run there as in production.
+    private func handleCentralStateUpdateOnBleQueue(state: CBManagerState) {
+        // Answering the Bluetooth alert lands here as the central's first real
+        // state (.poweredOn or .poweredOff on Allow, .unauthorized on Don't
+        // Allow). Settle any requestAuthorization waiter after this update's
+        // own work, so the scan an Allow restarts below is already running.
+        // Ordering contract: on Allow, the powered-on branch below restarts a
+        // parked scan first, then this settles the startScan waiter, whose
+        // settleScanRequestOnBleQueue issues scanForPeripherals once more with
+        // the same services and options. CoreBluetooth treats that as the same
+        // scan with the same parameters, so the repeat is harmless.
+        defer { settleAuthorizationAnswerWaitersOnBleQueue() }
+        // Runs before the waiters above (defers unwind in reverse), after this
+        // update's own work below.
+        defer { resumeReconnectAwaitingCentralStateOnBleQueue(state) }
+        if state == .poweredOn {
             // Defensive: during state restoration after an intent-driven
             // background launch, `didDiscoverCharacteristicsFor` (which
             // normally calls `readyWaiters.signalAll()`) can land before
@@ -1437,22 +1972,20 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             if isReadyForWrite {
                 readyWaiters.signalAll()
             }
+            // A scan parked while the radio was unknown, resetting or off (or
+            // while the Bluetooth alert was up) starts now, so an Allow
+            // carries on without a second tap.
             if scanRequested {
-                // Empty scanServices = unfiltered scan (see startScanOnBleQueue).
-                central.scanForPeripherals(withServices: scanServices.isEmpty ? nil : scanServices, options: [
-                    CBCentralManagerScanOptionAllowDuplicatesKey: true,
-                ])
+                scanForRequestedPeripheralsOnBleQueue()
             }
-        }
-    }
-
-    /// Shared state-update body for the real delegate and the native XCTest
-    /// seam. The powered-on closure keeps the concrete central manager out of
-    /// tests while the unavailable transition exercises the production cleanup.
-    private func handleCentralStateUpdateOnBleQueue(state: CBManagerState, onPoweredOn: () -> Void = {}) {
-        if state == .poweredOn {
-            onPoweredOn()
         } else {
+            // A refusal or a phone without Bluetooth LE can't recover inside
+            // this process (iOS relaunches the app when the Settings switch
+            // moves), so a parked scan must not survive to start later. A
+            // radio switched off keeps it: switching back on resumes the scan.
+            if state == .unauthorized || state == .unsupported {
+                scanRequested = false
+            }
             // Bluetooth went away mid-recovery: the deferred reconnect's
             // didDisconnect may never arrive, so close the write-stall recovery
             // window and reset the budget. Otherwise a later intentional
@@ -1501,20 +2034,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        guard let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
-              let peripheral = peripherals.first
-        else {
-            return
-        }
+        guard let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] else { return }
+        restorePeripheralsOnBleQueue(peripherals)
+    }
 
-        // More than one restored peripheral means a superseded connect attempt
-        // was still mid-flight at suspension. Keep only the first; cancel the
-        // rest so they don't linger as system-held connections — these boards
-        // are last-connection-wins, so a phantom link blocks the wall.
-        for extra in peripherals.dropFirst() {
-            logger.info("Cancelling extra restored BLE peripheral \(extra.identifier.uuidString, privacy: .public)")
+    private func restorePeripheralsOnBleQueue(_ peripherals: [WritableBlePeripheral]) {
+        let peripheral = peripherals.first { hasBinding(for: $0.identifier) }
+        for extra in peripherals where extra.identifier != peripheral?.identifier {
             cancelPeripheralConnection(extra)
         }
+        guard let peripheral else { return }
 
         let deviceId = peripheral.identifier.uuidString
         connectionGeneration += 1
@@ -1525,15 +2054,23 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectRequestedAt = nil
         implicitRelightAuthorizedForConnection = false
         discoveredPeripherals[deviceId] = peripheral
-        peripheral.delegate = self
+        preparePeripheralForConnection(peripheral)
 
-        switch peripheral.state {
+        // Only CoreBluetooth objects reach this branch in production. The
+        // fake seam exercises identity selection without constructing a central.
+        guard let concretePeripheral = peripheral as? CBPeripheral else {
+            peripheralGenerations[peripheral.identifier] = connectionGeneration
+            connectedPeripheral = peripheral
+            return
+        }
+
+        switch concretePeripheral.state {
         case .connected:
             peripheralGenerations[peripheral.identifier] = connectionGeneration
             connectedPeripheral = peripheral
             logger.info("Restored BLE peripheral \(deviceId, privacy: .public)")
             retriedFullServiceDiscovery.remove(peripheral.identifier)
-            peripheral.discoverServices(writeServiceUuids())
+            concretePeripheral.discoverServices(writeServiceUuids())
         case .connecting:
             // The restored connect request is still pending; didConnect will
             // run service discovery when the link comes up (the generation set
@@ -1545,7 +2082,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // Disconnected or disconnecting: nothing usable to restore, and
             // adopting it would leave a half-open connectedPeripheral with no
             // write characteristic.
-            logger.info("Restored BLE peripheral \(deviceId, privacy: .public) not connected (state=\(peripheral.state.rawValue, privacy: .public)); ignoring")
+            logger.info("Restored BLE peripheral \(deviceId, privacy: .public) not connected (state=\(concretePeripheral.state.rawValue, privacy: .public)); ignoring")
         }
     }
 
@@ -1804,7 +2341,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             connectOnBleQueue(
                 deviceId: deferredRequest.deviceId,
                 origin: deferredRequest.origin,
-                requestedAt: deferredRequest.requestedAt
+                requestedAt: deferredRequest.requestedAt,
+                preparationToken: deferredRequest.preparationToken
             ) { [weak self] result in
                 deferredRequest.completion(result)
                 if isJoiningWriteStallRecovery {
@@ -1819,6 +2357,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private func beginWriteStallReconnectOnBleQueue(peripheralId: UUID) {
         guard let recovery = writeStallRecovery, recovery.peripheralId == peripheralId else { return }
+        guard hasBinding(for: peripheralId) else {
+            abandonWriteStallRecoveryOnBleQueue(peripheralId: peripheralId, context: "board_pairing_invalidated")
+            return
+        }
         let deviceId = peripheralId.uuidString
 
         // Recovery re-lights on purpose (#3181) — repainting the wall the user is
@@ -2148,6 +2690,31 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         peripheral: WritableBlePeripheral,
         characteristic: CBCharacteristic
     ) {
+        let peripheralId = peripheral.identifier
+        guard connectedPeripheral?.identifier == peripheralId,
+              peripheralGenerations[peripheralId] == connectionGeneration else {
+            cancelPeripheralConnection(peripheral)
+            return
+        }
+        if connectRequestOrigin == .userConnect, pendingConnectCompletion != nil {
+            guard let preparation = connectingPreparation,
+                  preparation.token == activePreparationToken,
+                  preparation.peripheralId == peripheralId,
+                  preparation.generation == connectionGeneration else {
+                rejectUnboundReadyConnection(peripheral)
+                return
+            }
+            association?.boundPeripheralUuid = peripheralId
+            guard persistAssociation() else {
+                association?.boundPeripheralUuid = nil
+                rejectUnboundReadyConnection(peripheral)
+                return
+            }
+        }
+        guard hasBinding(for: peripheralId) else {
+            rejectUnboundReadyConnection(peripheral)
+            return
+        }
         connectedPeripheral = peripheral
         writeCharacteristic = characteristic
         // Any successful (re)connect closes a write-stall recovery window (#3181)
@@ -2163,9 +2730,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // still avoids trusting a stale property bit as the live trigger. Shared
         // with the `setConnection` test seam so the two paths can't drift.
         reseedForceWriteWithResponse(peripheral: peripheral, characteristic: characteristic)
-        // Remember the board so the Live Activity lightbulb can reconnect to it
-        // by identifier later, no device pick required.
-        persistLastConnectedPeripheral(peripheral)
+        // Whatever the last Live Activity reconnect failed on, this phone holds
+        // the board now: the card must not keep saying it couldn't reach it.
+        if let defaults = associationDefaults {
+            SharedBoardReconnect.clearFailure(in: defaults)
+        }
         completePendingConnect(.success(()))
         logger.info("Connected to board BLE peripheral \(peripheral.identifier.uuidString, privacy: .public)")
         // One-time write diagnostics (#3181 follow-up): records what the UART RX
@@ -2209,6 +2778,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         } else {
             performImplicitRelightIfAuthorizedOnBleQueue(deviceId: connectedDeviceId)
         }
+    }
+
+    private func rejectUnboundReadyConnection(_ peripheral: WritableBlePeripheral) {
+        connectedPeripheral = nil
+        writeCharacteristic = nil
+        completePendingConnect(.failure(BoardBleError.notConnected))
+        cancelPeripheralConnection(peripheral)
     }
 
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
@@ -2351,6 +2927,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         centralStateOnBleQueue == .poweredOn
             && connectedPeripheral != nil
             && writeCharacteristic != nil
+            && connectedPeripheral.map { hasBinding(for: $0.identifier) } == true
     }
 
     private func waitUntilReady(timeout: TimeInterval) async {
@@ -2438,6 +3015,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectTimeoutTimer = nil
         let completion = pendingConnectCompletion
         pendingConnectCompletion = nil
+        if completion != nil {
+            if connectingPreparation?.token == activePreparationToken {
+                activePreparationToken = nil
+            }
+            connectingPreparation = nil
+        }
         completion?(result)
     }
 
@@ -3048,7 +3631,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             assertionFailure("WritableBlePeripheral is always CBPeripheral outside tests")
             return
         }
-        centralManager.cancelPeripheralConnection(concretePeripheral)
+        // A concrete peripheral only ever comes from a created central.
+        createdCentralManager?.cancelPeripheralConnection(concretePeripheral)
     }
 
     private func registerManagerCancellationBarrierOnBleQueue(peripheralId: UUID) -> Bool {
@@ -3107,13 +3691,30 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             assertionFailure("WritableBlePeripheral is always CBPeripheral outside tests")
             return
         }
-        centralManager.connect(concretePeripheral, options: [
+        // A concrete peripheral only ever comes from a created central.
+        guard let central = createdCentralManager else {
+            logger.error("connectPeripheral: no central manager for a discovered peripheral")
+            return
+        }
+        central.connect(concretePeripheral, options: [
             CBConnectPeripheralOptionNotifyOnDisconnectionKey: true,
         ])
     }
 
-    private func readConfiguration() -> BoardBleConfiguration? {
-        guard let defaults = SharedConstants.sharedDefaults,
+    private func hasBinding(for peripheralId: UUID) -> Bool {
+        guard let association, !association.configKey.isEmpty else { return false }
+        return association.boundPeripheralUuid == peripheralId
+    }
+
+    private func readAssociation() -> BoardBleAssociation? {
+        guard let data = associationDefaults?.data(forKey: SharedConstants.bleBoardConfigKey),
+              let stored = try? JSONDecoder().decode(BoardBleAssociation.self, from: data),
+              !stored.configKey.isEmpty else { return nil }
+        return stored
+    }
+
+    private func readLegacyConfiguration() -> BoardBleConfiguration? {
+        guard let defaults = associationDefaults,
               let data = defaults.data(forKey: SharedConstants.bleBoardConfigKey)
         else {
             return nil
@@ -3121,13 +3722,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         return try? JSONDecoder().decode(BoardBleConfiguration.self, from: data)
     }
 
-    private func writeConfiguration(_ configuration: BoardBleConfiguration) {
-        guard let defaults = SharedConstants.sharedDefaults,
-              let data = try? JSONEncoder().encode(configuration)
+    @discardableResult
+    private func persistAssociation() -> Bool {
+        guard let defaults = associationDefaults, let association,
+              let data = try? JSONEncoder().encode(association)
         else {
-            return
+            return false
         }
         defaults.set(data, forKey: SharedConstants.bleBoardConfigKey)
+        return true
     }
 }
 
@@ -3197,6 +3800,14 @@ extension BoardBleManager {
             manager.writeCharacteristic = characteristic
             if let peripheral {
                 manager.discoveredPeripherals[peripheral.identifier.uuidString] = peripheral
+                manager.peripheralGenerations[peripheral.identifier] = manager.connectionGeneration
+                // Fixtures used by flow-control tests represent a connection
+                // already authorized by an explicit successful pairing.
+                manager.association = BoardBleAssociation(
+                    configuration: manager.configuration ?? Self.fixtureConfiguration,
+                    configKey: "native-test-fixture",
+                    boundPeripheralUuid: peripheral.identifier
+                )
             }
             // Mirror the production reset in didDiscoverCharacteristicsFor so a
             // reconnect in a test starts with the gate re-armed and the
@@ -3215,7 +3826,48 @@ extension BoardBleManager {
         /// `configure()` performs — so a dev machine's stored config can't leak in.
         func setConfiguration(_ configuration: BoardBleConfiguration?) {
             manager.configuration = configuration
+            manager.association = configuration.map {
+                BoardBleAssociation(configuration: $0, configKey: "native-test-fixture")
+            }
         }
+
+        private static var fixtureConfiguration: BoardBleConfiguration {
+            BoardBleConfiguration(
+                boardName: "kilter", layoutId: 1, sizeId: 1, apiLevel: nil,
+                deviceName: nil, colorOverrides: [:], numRows: nil
+            )
+        }
+
+        /// State-machine characterization tests seed the preparation that
+        /// their existing connect fixture assumes. Regression tests below use
+        /// the public prepare/connect pair instead.
+        func connect(deviceId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+            let token = UUID().uuidString
+            manager.activePreparationToken = token
+            if manager.association == nil {
+                manager.association = BoardBleAssociation(
+                    configuration: manager.configuration ?? Self.fixtureConfiguration,
+                    configKey: "native-test-fixture"
+                )
+            }
+            manager.connectPreparedBoard(deviceId: deviceId, preparationToken: token, completion: completion)
+        }
+
+        func restorePeripherals(_ peripherals: [WritableBlePeripheral]) {
+            manager.restorePeripheralsOnBleQueue(peripherals)
+        }
+
+        /// Model a lingering system-held link without granting an association.
+        /// Used to prove the write/reconnect guards independently of teardown.
+        func setUnboundConnection(peripheral: WritableBlePeripheral, characteristic: CBCharacteristic) {
+            manager.connectedPeripheral = peripheral
+            manager.writeCharacteristic = characteristic
+            manager.peripheralGenerations[peripheral.identifier] = manager.connectionGeneration
+        }
+
+        var boundPeripheralUuid: UUID? { manager.association?.boundPeripheralUuid }
+        var preparationEpoch: UInt64 { manager.preparationEpoch }
+        var hasReadyWaiters: Bool { manager.readyWaiters.hasPendingWaiters }
 
         /// Seed the consecutive-stall counter to exercise the recovery-budget
         /// boundary in `handleWriteStall`.
@@ -3238,6 +3890,31 @@ extension BoardBleManager {
         func setCentralState(_ state: CBManagerState?) {
             manager.centralStateOverrideForTesting = state
         }
+
+        /// Count `CBCentralManager` creations instead of performing them. The
+        /// handler runs on the first `centralManagerCreatingIfNeeded` call only,
+        /// matching production, where later calls reuse the stored central: a
+        /// count of 1 means a path created the central (and with it showed the
+        /// Bluetooth alert), 0 means nothing did. Installing a handler resets
+        /// the "already created" flag.
+        func setCentralManagerCreationOverride(_ handler: (() -> Void)?) {
+            manager.centralManagerCreationOverrideForTesting = handler
+            manager.centralCreatedByOverrideForTesting = false
+        }
+
+        /// Whether a `requestAuthorization` completion is still waiting for
+        /// the climber's answer.
+        var hasPendingAuthorizationAnswer: Bool { !manager.authorizationAnswerWaiters.isEmpty }
+
+        /// Intercept the concrete `scanForPeripherals` call (fresh scans and
+        /// the powered-on restart), with its service filter.
+        func setScanForPeripheralsOverride(_ handler: (([CBUUID]?) -> Void)?) {
+            manager.scanForPeripheralsOverrideForTesting = handler
+        }
+
+        /// Whether a scan is requested (running, or parked until the radio
+        /// powers on).
+        var isScanRequested: Bool { manager.scanRequested }
 
         /// Make a fake peripheral discoverable by the production connect path.
         func setDiscoveredPeripheral(_ peripheral: WritableBlePeripheral) {
@@ -3287,7 +3964,9 @@ extension BoardBleManager {
             }
         }
 
-        /// Fire the unavailable half of `centralManagerDidUpdateState`.
+        /// Fire `centralManagerDidUpdateState`'s body, both halves: the scan
+        /// seam (`setScanForPeripheralsOverride`) stands in for the concrete
+        /// central in the powered-on restart.
         func fireCentralStateUpdate(_ state: CBManagerState) {
             manager.runOnBleQueueSync {
                 let previousStateOverride = manager.centralStateOverrideForTesting
@@ -3327,7 +4006,12 @@ extension BoardBleManager {
 
         /// Drive `configure(_:)` with an explicit foreground flag.
         func configure(_ configuration: BoardBleConfiguration, appActive: Bool) {
-            manager.configure(configuration, appActive: appActive)
+            manager.configure(
+                configuration,
+                appActive: appActive,
+                configKey: manager.association?.configKey,
+                deviceId: manager.connectedPeripheral?.identifier.uuidString
+            )
         }
 
         var connectRequestOrigin: BoardBleConnectOrigin? { manager.connectRequestOrigin }

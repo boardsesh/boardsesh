@@ -60,6 +60,7 @@ export async function mirrorSessionClimb(sessionId: string, mirrored: boolean, e
               currentClimbQueueItem: item,
               historyCount: normalised.historyCount,
               currentChangedAt: snapshot.currentChangedAt,
+              currentChangedBy: snapshot.currentChangedBy ?? null,
             },
           }
         : event;

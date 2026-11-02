@@ -14,6 +14,7 @@ import {
   Platform,
   useWindowDimensions,
   type ViewStyle,
+  type ScrollViewInstance,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
@@ -236,7 +237,7 @@ export function BoardForm({
   // to it from wherever the climber was, and a screen reader hears it. The
   // header inset is the rest offset under `automatic` on a glass header. Runs
   // once per attempt, when the save has settled with an error.
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const headerInset = useTransparentHeaderInset();
   const headerInsetRef = useRef(headerInset);
   headerInsetRef.current = headerInset;

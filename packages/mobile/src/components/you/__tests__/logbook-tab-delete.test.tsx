@@ -77,6 +77,11 @@ const feed = vi.hoisted(() => ({
 
 vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 
+// ReadableColumn pads by the side safe area; a portrait phone has none.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   RefreshControl: () => null,
@@ -155,7 +160,7 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEf
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: vi.fn() }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ getBoardConfigForPlaylist: vi.fn() }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ openPlayDrawer: vi.fn(), openClimbActions: vi.fn() }),
+  useDrawerHost: () => ({ openPlayDrawer: vi.fn(), getClimbActions: vi.fn() }),
 }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => dialog.confirm }));
 // Pin the flags explicitly: kill switch off, filters off — the suite must
@@ -205,7 +210,7 @@ describe('LogbookTab guarded delete', () => {
       render(createElement(LogbookTab, { userId: 'user-1' }));
       await fireDeleteRequest(method);
       expect(owner.scheduleDelete).toHaveBeenCalledWith(
-        expect.objectContaining({ uuid: 'tick-1', method, viaChooser: false, onSettled: expect.any(Function) }),
+        expect.objectContaining({ uuids: ['tick-1'], method, viaChooser: false }),
       );
       expect(analytics.track).not.toHaveBeenCalled();
     },
@@ -253,16 +258,25 @@ describe('LogbookTab guarded delete', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(owner.scheduleDelete).toHaveBeenCalledWith(
-      expect.objectContaining({ uuid: 'tick-1', originScope: 'scope' }),
+      expect.objectContaining({ uuids: ['tick-1'], originScope: 'scope' }),
     );
   });
 
-  it('re-arms the local flow after the owner settles an Undo', async () => {
+  it('takes a second delete while the first is still in its Undo window', async () => {
     dialog.confirm.mockImplementation(async () => true);
     render(createElement(LogbookTab, { userId: 'user-1' }));
     await fireDeleteRequest('swipe');
-    const request = owner.scheduleDelete.mock.calls[0][0] as unknown as { onSettled: () => void };
-    act(() => request.onSettled());
+    // The owner never settles the first request here: it is waiting out Undo.
+    await fireDeleteRequest('swipe');
+    expect(dialog.confirm).toHaveBeenCalledTimes(2);
+    expect(owner.scheduleDelete).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-arms the local flow when the owner refuses to schedule', async () => {
+    dialog.confirm.mockImplementation(async () => true);
+    owner.scheduleDelete.mockImplementationOnce(() => false);
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+    await fireDeleteRequest('swipe');
     await fireDeleteRequest('swipe');
     expect(owner.scheduleDelete).toHaveBeenCalledTimes(2);
   });

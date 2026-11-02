@@ -1,6 +1,9 @@
 name: App Store Creative Assets
 
 on:
+  push:
+    branches: [main]
+    paths: [app-stores/apple/creative-assets.json]
   workflow_dispatch:
     inputs:
       action:
@@ -13,6 +16,11 @@ on:
         default: all
         options: [all, default, kilter, tension, moonboard, spray]
         description: 'Page variant to reconcile.'
+      placement:
+        type: choice
+        default: all
+        options: [all, search]
+        description: 'Search-only retries preserve manually maintained Header placements.'
       allow_live:
         type: boolean
         default: false
@@ -34,46 +42,122 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: Production
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
-      - uses: voidzero-dev/setup-vp@v1
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
+      - name: Select creative operation
+        id: operation
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ACTION: ${{ inputs.action }}
+          INPUT_VARIANT: ${{ inputs.variant }}
+          INPUT_PLACEMENT: ${{ inputs.placement }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = push ]; then
+            echo 'action=upload-and-place' >> "$GITHUB_OUTPUT"
+            echo 'variant=all' >> "$GITHUB_OUTPUT"
+            echo 'placement=search' >> "$GITHUB_OUTPUT"
+          else
+            echo "action=$INPUT_ACTION" >> "$GITHUB_OUTPUT"
+            echo "variant=$INPUT_VARIANT" >> "$GITHUB_OUTPUT"
+            echo "placement=$INPUT_PLACEMENT" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install video probe
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Test creative reconciliation
         run: |
           vp exec ruby fastlane/tests/custom_product_pages_test.rb
           vp exec ruby fastlane/tests/creative_assets_test.rb
-      - name: Download finalized release assets
-        if: inputs.action != 'refdata'
+          vp exec ruby fastlane/tests/creative_download_test.rb
+          vp exec ruby fastlane/tests/prepare_creative_manifest_test.rb
+      - name: Validate each shipped search video matrix
+        id: search
+        if: github.event_name == 'push'
         env:
-          GH_TOKEN: ${{ github.token }}
-          CREATIVE_VARIANT: ${{ inputs.variant }}
+          BEFORE_SHA: ${{ github.event.before }}
+        # Ship only variants whose search entries changed in this push; unchanged ones (an earlier
+        # train's included) are never promoted, uploaded or placed again. A failed fetch fails closed.
         run: |
           set -euo pipefail
-          vp exec ruby fastlane/download_creative_assets.rb
+          manifest=app-stores/apple/creative-assets.json
+          previous=()
+          if [[ "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
+            git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
+            if ! git cat-file -e "$BEFORE_SHA:$manifest"; then
+              echo "::error::$manifest is missing at $BEFORE_SHA; refusing to ship every variant without a baseline."
+              exit 1
+            fi
+            git show "$BEFORE_SHA:$manifest" > "$RUNNER_TEMP/previous-creative-assets.json"
+            previous=(--previous "$RUNNER_TEMP/previous-creative-assets.json")
+          else
+            echo "::error::Push has no previous commit to compare the manifest against."
+            exit 1
+          fi
+          variants="$(vp exec tsx scripts/store-creatives-r2.ts ready-search-variants "${previous[@]}")"
+          echo "variants=$variants" >> "$GITHUB_OUTPUT"
+          if [ -n "$variants" ]; then
+            echo "Shipping search videos for: $variants" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No search video entries changed in this push; nothing to promote, upload or place." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Promote reviewed search videos
+        if: github.event_name == 'push' && steps.search.outputs.variants != ''
+        env:
+          STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
+          STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
+          STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+          SEARCH_VARIANTS: ${{ steps.search.outputs.variants }}
+        run: |
+          set -euo pipefail
+          vp exec tsx scripts/store-creatives-r2.ts promote --placement search --variant "$SEARCH_VARIANTS" | tee "$RUNNER_TEMP/creative-promotion-report.json"
+      - name: Fetch verified approved search videos
+        if: github.event_name == 'push' && steps.search.outputs.variants != ''
+        env:
+          STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
+          STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
+          STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+          SEARCH_VARIANTS: ${{ steps.search.outputs.variants }}
+        run: |
+          set -euo pipefail
+          vp exec tsx scripts/store-creatives-r2.ts fetch --placement search --variant "$SEARCH_VARIANTS" | tee "$RUNNER_TEMP/creative-fetch-report.json"
+      - name: Download finalized approved assets for manual operation
+        if: github.event_name == 'workflow_dispatch' && inputs.action != 'refdata'
+        env:
+          CREATIVE_VARIANT: ${{ steps.operation.outputs.variant }}
+          CREATIVE_PLACEMENT: ${{ steps.operation.outputs.placement }}
+        run: vp exec ruby fastlane/download_creative_assets.rb
       - name: Run creative lane with ephemeral API key
+        if: github.event_name != 'push' || steps.search.outputs.variants != ''
         working-directory: fastlane
         env:
-          CREATIVE_ACTION: ${{ inputs.action }}
-          CREATIVE_VARIANT: ${{ inputs.variant }}
-          ALLOW_LIVE: ${{ inputs.allow_live }}
-          ALLOW_REPLACE: ${{ inputs.allow_replace }}
+          CREATIVE_ACTION: ${{ steps.operation.outputs.action }}
+          # A merge uploads and places only the variants whose search matrix it shipped.
+          CREATIVE_VARIANT: ${{ github.event_name == 'push' && steps.search.outputs.variants || steps.operation.outputs.variant }}
+          CREATIVE_PLACEMENT: ${{ steps.operation.outputs.placement }}
+          ALLOW_LIVE: ${{ inputs.allow_live || false }}
+          ALLOW_REPLACE: ${{ inputs.allow_replace || false }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           ASC_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
-          ASC_CREATIVES_OUTPUT: ${{ runner.temp }}/creative-assets-report.json
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_DISABLE_ANIMATION: '1'
         run: |
@@ -84,12 +168,94 @@ jobs:
           trap 'rm -f "$ASC_KEY_PATH"' EXIT
           chmod 600 "$ASC_KEY_PATH"
           printf '%s' "$ASC_PRIVATE_KEY_BASE64" | base64 --decode > "$ASC_KEY_PATH"
-          bundle exec fastlane ios creatives "action:$CREATIVE_ACTION" "variant:$CREATIVE_VARIANT" "allow_live:$ALLOW_LIVE" "allow_replace:$ALLOW_REPLACE"
-      - name: Retain creative report
+          run_lane() {
+            local lane_action="$1"
+            export ASC_CREATIVES_OUTPUT="$RUNNER_TEMP/creative-assets-${lane_action}-report.json"
+            bundle exec fastlane ios creatives "action:$lane_action" "variant:$CREATIVE_VARIANT" "allow_live:$ALLOW_LIVE" "allow_replace:$ALLOW_REPLACE"
+          }
+          if [ "$CREATIVE_ACTION" != upload-and-place ]; then
+            run_lane "$CREATIVE_ACTION"
+            exit 0
+          fi
+          run_lane upload
+          # Asset processing is asynchronous. Retry only its explicit pre-write guard.
+          # All other errors retain their original status and need operator review.
+          # Give processing up to 30 minutes; never retry placement conflicts or other errors.
+          for attempt in $(seq 1 61); do
+            set +e
+            run_lane place 2>&1 | tee "$RUNNER_TEMP/creative-place-attempt.log"
+            lane_status=${PIPESTATUS[0]}
+            set -e
+            if [ "$lane_status" -eq 0 ]; then exit 0; fi
+            if [ "$attempt" -eq 61 ] || ! grep -q 'Apple processing/review preparation must reach PREPARE_FOR_SUBMISSION' "$RUNNER_TEMP/creative-place-attempt.log"; then
+              exit "$lane_status"
+            fi
+            sleep 30
+          done
+      - name: Summarize creative results
+        if: always()
+        env:
+          SEARCH_OUTCOME: ${{ steps.search.outcome }}
+          CREATIVE_ACTION: ${{ steps.operation.outputs.action }}
+          SHIPPED_VARIANTS: ${{ steps.search.outputs.variants }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const read = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
+          const record = (entry) => entry !== null && typeof entry === 'object' && !Array.isArray(entry);
+          const report = (name) => read(path.join(process.env.RUNNER_TEMP, name));
+          const manifest = read('app-stores/apple/creative-assets.json');
+          const variants = record(manifest) && record(manifest.variants) ? manifest.variants : {};
+          // A merge ships only the variants its validation step listed; count those alone.
+          const shipped = (process.env.SHIPPED_VARIANTS || '').split(',').filter(Boolean);
+          const inventory = () => {
+            const objects = new Map();
+            const videos = new Set();
+            for (const [name, variant] of Object.entries(variants)) {
+              if (shipped.length && !shipped.includes(name)) continue;
+              if (!record(variant) || !Array.isArray(variant.assets)) return null;
+              for (const asset of variant.assets) {
+                if (!record(asset)) return null;
+                if (asset.placement !== 'search-results') continue;
+                for (const [file, sha256] of [[asset.file, asset.sha256], [asset.provenance, asset.provenanceSha256], [asset.poster, asset.posterSha256]]) {
+                  if (typeof file !== 'string' || !file || typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) return null;
+                  if (objects.has(file) && objects.get(file) !== sha256) return null;
+                  objects.set(file, sha256);
+                }
+                videos.add(asset.file);
+              }
+            }
+            return { objects: objects.size, videos: videos.size };
+          };
+          const expected = inventory();
+          const storageCount = (entry, fetched = false) => {
+            if (!expected?.objects || !record(entry) || entry.objects !== expected.objects || !Number.isSafeInteger(entry.changed) || entry.changed < 0 || entry.changed > entry.objects || (fetched && entry.changed !== entry.objects)) return 0;
+            return expected.videos;
+          };
+          const unique = (entries) => Array.isArray(entries) ? new Set(entries.filter((entry) => record(entry) && entry.placement === 'search-results' && typeof entry.fileName === 'string' && entry.fileName.trim()).map((entry) => entry.fileName)).size : 0;
+          const promoted = report('creative-promotion-report.json');
+          const fetched = report('creative-fetch-report.json');
+          const uploads = report('creative-assets-upload-report.json');
+          const placements = report('creative-assets-place-report.json');
+          const lines = ['### Store creative results', ''];
+          if (process.env.CREATIVE_ACTION === 'upload-and-place' && process.env.SEARCH_OUTCOME !== 'success') {
+            lines.push('Search video validation did not pass; nothing was promoted, uploaded or placed.', '');
+          } else if (process.env.CREATIVE_ACTION === 'upload-and-place' && !shipped.length) {
+            lines.push('No search video entries changed in this push; nothing was promoted, uploaded or placed.', '');
+          } else if (process.env.CREATIVE_ACTION === 'upload-and-place') {
+            lines.push(`| Search videos | Count |`, '| --- | ---: |', `| Promoted or already approved | ${storageCount(promoted)} |`, `| Downloaded and SHA256 verified | ${storageCount(fetched, true)} |`, `| Uploaded or already in Asset Library | ${unique(uploads)} |`, `| Placed or already assigned | ${unique(placements)} |`, '');
+          }
+          lines.push('Asset-review submission stays manual. Inspect ASC Preview for every locale.', '');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n'));
+          NODE
+      - name: Retain creative reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: creative-assets-report
-          path: ${{ runner.temp }}/creative-assets-report.json
+          name: creative-assets-reports
+          path: |
+            ${{ runner.temp }}/creative-*-report.json
+            ${{ runner.temp }}/creative-place-attempt.log
           if-no-files-found: ignore
           retention-days: 14

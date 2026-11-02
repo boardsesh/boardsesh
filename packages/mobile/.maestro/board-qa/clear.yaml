@@ -1,0 +1,13 @@
+appId: ${APP_ID}
+name: Clear the LEDs without disconnecting the holder
+---
+- assertVisible:
+    id: wall-control-.*-self-.*
+- longPressOn:
+    id: play-drawer-wall-control
+- extendedWaitUntil:
+    visible:
+      id: ble-control-clear
+    timeout: 10000
+- tapOn:
+    id: ble-control-clear

@@ -49,9 +49,13 @@ on:
 concurrency:
   group: mobile-ota-production
   cancel-in-progress: false
-  # Keep `queue: max` in lockstep with mobile-ota-production.yml — the two share
-  # this group, and a lane that supersedes pending runs on one side would drop the
-  # per-platform republishes the other side depends on. See the long note there.
+  # Keep `queue: max` in lockstep with mobile-ota-production.yml's `publish` job —
+  # the two share this group, and a lane that supersedes pending runs on one side
+  # would drop the per-platform republishes the other side depends on. See the
+  # long note there. This workflow keeps the group at workflow level: every job
+  # here belongs to the publish (setup only fans out the platform matrix).
+  # production-deploy-watchdog.yml does not watch this workflow, so a backport
+  # parked at its environment gate needs cancelling by hand.
   queue: max
 
 permissions:
@@ -148,7 +152,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       # The hotfix tree is about to move to an older release anchor, which may
       # predate OTA source-map support. Snapshot the exact trusted workflow commit
@@ -160,7 +164,6 @@ jobs:
           mkdir -p "$tooling_root/scripts/lib"
           for source_path in \
             scripts/mobile-publish.ts \
-            scripts/mobile-release-train-policy.ts \
             scripts/lib/mobile-release-policy.ts \
             scripts/lib/release-tags.ts \
             scripts/lib/ota-preview-boot-receipt.ts \
@@ -235,8 +238,25 @@ jobs:
               exit 1
             fi
           done
-          echo "Cherry-picking onto $tag: ${commits[*]}"
-          git cherry-pick "${commits[@]}"
+          # Only reviewed code reaches a production OTA: every fix must already be
+          # on main (the runbook lands it there first). The checkout fetched every
+          # branch, so an unreviewed commit pushed anywhere would otherwise resolve.
+          # Fail closed on an unknown, ambiguous or off-main SHA.
+          git fetch --no-tags --quiet origin main
+          resolved=()
+          for commit in "${commits[@]}"; do
+            if ! full="$(git rev-parse --verify --quiet "${commit}^{commit}")"; then
+              echo "::error::'$commit' is not a single known commit."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$full" origin/main; then
+              echo "::error::$full is not on main. Land the fix on main first, then backport its SHA."
+              exit 1
+            fi
+            resolved+=("$full")
+          done
+          echo "Cherry-picking onto $tag: ${resolved[*]}"
+          git cherry-pick "${resolved[@]}"
 
       - name: Overlay trusted OTA publish tooling
         run: |
@@ -244,7 +264,6 @@ jobs:
           tooling_root="$RUNNER_TEMP/ota-publish-tooling"
           mkdir -p scripts/lib
           cp "$tooling_root/scripts/mobile-publish.ts" scripts/mobile-publish.ts
-          cp "$tooling_root/scripts/mobile-release-train-policy.ts" scripts/mobile-release-train-policy.ts
           cp "$tooling_root/scripts/lib/mobile-release-policy.ts" scripts/lib/mobile-release-policy.ts
           cp "$tooling_root/scripts/lib/release-tags.ts" scripts/lib/release-tags.ts
           cp "$tooling_root/scripts/lib/ota-preview-boot-receipt.ts" scripts/lib/ota-preview-boot-receipt.ts
@@ -254,7 +273,7 @@ jobs:
           cp "$tooling_root/scripts/lib/mobile-publish-retry.ts" scripts/lib/mobile-publish-retry.ts
           cp "$tooling_root/scripts/lib/ota-branch-probe.ts" scripts/lib/ota-branch-probe.ts
           cp "$tooling_root/scripts/mobile-upload-sourcemaps.ts" scripts/mobile-upload-sourcemaps.ts
-          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/lib/ota-branch-probe.ts scripts/mobile-upload-sourcemaps.ts scripts/mobile-release-train-policy.ts scripts/lib/mobile-release-policy.ts scripts/lib/release-tags.ts scripts/lib/ota-preview-boot-receipt.ts scripts/lib/ota-publish-protocol.ts scripts/lib/ota-boot-check.ts
+          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/lib/ota-branch-probe.ts scripts/mobile-upload-sourcemaps.ts scripts/lib/mobile-release-policy.ts scripts/lib/release-tags.ts scripts/lib/ota-preview-boot-receipt.ts scripts/lib/ota-publish-protocol.ts scripts/lib/ota-boot-check.ts
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => controls.nativeBarItems }));
+vi.mock('../../chrome/use-root-bar-items', () => ({
+  useAccountRailItem: () => ({ type: 'button', label: 'account', onPress: () => undefined }),
+  useBarItemsOnRail: () => controls.onRail,
+}));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -10,12 +15,15 @@ type HeaderProps = {
   leftActionsStandalone?: boolean;
   rightActions?: ReactNode;
   rightItems?: NativeStackNavigationOptions['unstable_headerRightItems'];
+  leftItems?: NativeStackNavigationOptions['unstable_headerLeftItems'];
   onHeightChange?: (height: number) => void;
 };
 
 const controls = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   nativeHeader: false,
+  nativeBarItems: false,
+  onRail: false,
   glassCapability: true,
   nativeProps: null as HeaderProps | null,
   fallbackProps: null as HeaderProps | null,
@@ -23,7 +31,6 @@ const controls = vi.hoisted(() => ({
 const appbar = vi.hoisted(() => ({
   title: null as string | null,
   contentPress: null as (() => void) | null,
-  contentAria: null as string | null,
   contentHint: null as string | null,
 }));
 
@@ -48,25 +55,26 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('react-native-paper', () => ({
   Appbar: {
     Header: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-appbar': 'true' }, children),
-    Content: ({
-      title,
-      onPress,
-      accessibilityLabel,
-      accessibilityHint,
-    }: {
-      title?: string;
-      onPress?: () => void;
-      accessibilityLabel?: string;
-      accessibilityHint?: string;
-    }) => {
-      appbar.title = title ?? null;
-      appbar.contentPress = onPress ?? null;
-      appbar.contentAria = accessibilityLabel ?? null;
-      appbar.contentHint = accessibilityHint ?? null;
-      return createElement('div', { 'data-appbar-title': title ?? '', onClick: onPress }, title);
-    },
     Action: ({ accessibilityLabel, onPress }: { accessibilityLabel?: string; onPress?: () => void }) =>
       createElement('button', { 'data-action': accessibilityLabel, onClick: onPress }),
+  },
+}));
+// The shared Material title. Captures what the chrome hands it; its own rendering
+// is covered by the board switcher suite.
+vi.mock('../../chrome/MaterialAppBarTitle', () => ({
+  MaterialAppBarTitle: ({
+    title,
+    onPress,
+    accessibilityHint,
+  }: {
+    title: string;
+    onPress?: () => void;
+    accessibilityHint?: string;
+  }) => {
+    appbar.title = title;
+    appbar.contentPress = onPress ?? null;
+    appbar.contentHint = accessibilityHint ?? null;
+    return createElement('div', { 'data-appbar-title': title, onClick: onPress }, title);
   },
 }));
 vi.mock('../../icon-map', () => ({
@@ -168,12 +176,13 @@ describe('RecordTopChrome', () => {
   beforeEach(() => {
     controls.variant = 'liquidGlass';
     controls.nativeHeader = false;
+    controls.nativeBarItems = false;
+    controls.onRail = false;
     controls.glassCapability = true;
     controls.nativeProps = null;
     controls.fallbackProps = null;
     appbar.title = null;
     appbar.contentPress = null;
-    appbar.contentAria = null;
     appbar.contentHint = null;
   });
 
@@ -197,6 +206,34 @@ describe('RecordTopChrome', () => {
       expect(controls.nativeProps ?? controls.fallbackProps ?? {}).not.toHaveProperty('onOpenBoardSwitcher');
     },
   );
+
+  it('puts the account and invite in native leading items on the iPhone Duo rail', () => {
+    controls.nativeHeader = true;
+    controls.nativeBarItems = true;
+    controls.onRail = true;
+    const onShare = vi.fn();
+    render(<RecordTopChrome {...makeProps({ onShare })} />);
+    const leftItems = controls.nativeProps?.leftItems?.({ tintColor: '#000', canGoBack: false }) ?? [];
+    expect(leftItems.map((item) => (item.type === 'button' ? item.label : item.type))).toEqual([
+      'account',
+      'mobile.session.invite',
+    ]);
+    const invite = leftItems[1];
+    if (invite?.type !== 'button') throw new Error('Expected a native invite button');
+    expect(invite.icon).toEqual({ type: 'sfSymbol', name: 'person.badge.plus' });
+    invite.onPress();
+    expect(onShare).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['native items are off', false],
+    ['the bar is horizontal', true],
+  ])('keeps the glass avatar and invite where %s', (_case, nativeBarItems) => {
+    controls.nativeHeader = true;
+    controls.nativeBarItems = nativeBarItems;
+    render(<RecordTopChrome {...makeProps({ onShare: vi.fn() })} />);
+    expect(controls.nativeProps?.leftItems).toBeUndefined();
+  });
 
   it('lets the native header own the contextual title and updates it as a session starts', () => {
     controls.nativeHeader = true;
@@ -309,7 +346,6 @@ describe('RecordTopChrome', () => {
     );
     expect(container.querySelectorAll('[data-appbar-title]')).toHaveLength(1);
     expect(appbar.title).toBe('Active session');
-    expect(appbar.contentAria).toBe('Active session');
     expect(appbar.contentHint).toBe('mobile.session.editTitleAria');
     fireEvent.click(container.querySelector('[data-action="mobile.session.editTitleAria"]')!);
     expect(onEditTitle).toHaveBeenCalledOnce();
@@ -319,5 +355,15 @@ describe('RecordTopChrome', () => {
     expect(appbar.contentPress).toBeNull();
     expect(appbar.contentHint).toBeNull();
     expect(container.querySelector('[data-action="mobile.session.editTitleAria"]')).toBeNull();
+  });
+
+  it('starts the Material title right after the avatar, with invite among the trailing actions', () => {
+    controls.variant = 'material';
+    const { container } = render(<RecordTopChrome {...makeProps({ onShare: vi.fn(), onEndSession: vi.fn() })} />);
+    const bar = container.querySelector('[data-appbar]')!;
+    const order = Array.from(bar.children).map(
+      (child) => child.getAttribute('data-action') ?? (child.hasAttribute('data-appbar-title') ? 'title' : null),
+    );
+    expect(order.slice(0, 3)).toEqual(['ariaLabels.userMenu', 'title', 'mobile.session.invite']);
   });
 });

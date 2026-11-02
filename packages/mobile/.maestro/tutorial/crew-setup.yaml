@@ -4,7 +4,9 @@ name: Tutorial setup - private crew session
 - runFlow: kilter-ready.yaml
 - openLink: com.boardsesh.app://climbs/00007DA715CE4E7DBF60928D240CE7F2?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
 - extendedWaitUntil:
-    visible: NuVu
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*'
     timeout: 90000
 - extendedWaitUntil:
     visible: '.*Board:.*'
@@ -22,7 +24,10 @@ name: Tutorial setup - private crew session
     commands:
       - tapOn: '.*Connect.*[Bb]oard.*'
 - extendedWaitUntil:
-    visible: 'On the wall.*'
+    visible:
+      # The wall button says this phone has the lit board (#7000): a press would let go of it, or stop driving it.
+      id: play-drawer-wall-control
+      text: '(Disconnect board|You are driving the wall).*'
     timeout: 15000
 - openLink: com.boardsesh.app://record
 - waitForAnimationToEnd
@@ -33,7 +38,9 @@ name: Tutorial setup - private crew session
 # Sam becomes the first future row rather than an unanchored first item.
 - openLink: com.boardsesh.app://climbs/00007DA715CE4E7DBF60928D240CE7F2?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
 - extendedWaitUntil:
-    visible: NuVu
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*'
     timeout: 90000
 - extendedWaitUntil:
     visible: '.*Board:.*'
@@ -48,10 +55,17 @@ name: Tutorial setup - private crew session
 # rather than assuming the wall banner exists on that underlying list.
 - openLink: com.boardsesh.app://play
 - extendedWaitUntil:
-    visible: NuVu
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*'
     timeout: 20000
 - extendedWaitUntil:
-    # Player pill names the driver; NuVu is the separate title above. The
-    # recorder additionally verifies its exact UUID as the sole joined row.
-    visible: 'On the wall\. Alex is lighting the wall\..*'
+    # The wall button says the climb is lit and whose board it is (#7000):
+    # this phone's ("Disconnect board" or "You are driving the wall") or
+    # Alex's ("Put on board, Alex has the board", or "On Alex's board" when
+    # there is nothing to relay). The recorder additionally verifies its exact UUID as the
+    # sole joined row.
+    visible:
+      id: play-drawer-wall-control
+      text: '(Disconnect board|You are driving the wall|Put on board, Alex has the board|On Alex.s board).*'
     timeout: 20000

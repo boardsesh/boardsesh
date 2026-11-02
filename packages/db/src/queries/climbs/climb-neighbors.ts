@@ -195,6 +195,7 @@ export type MaterializedSimilarClimb = {
   qualityAverage: number | null;
   ascensionistCount: number | null;
   compatibleSizeIds: number[];
+  requiredSetIds?: number[] | null;
   characteristics: string[] | null;
   similarity: number;
   sharedHoldCount: number;
@@ -225,6 +226,7 @@ type MaterializedRow = {
   layout_id: number;
   frames: string | null;
   compatible_size_ids: number[] | null;
+  required_set_ids: number[] | null;
   characteristics: string[] | null;
   difficulty_name: string | null;
   quality_average: number | string | null;
@@ -261,6 +263,7 @@ export async function getMaterializedSimilarClimbs(
       ${boardClimbs.layoutId} AS layout_id,
       ${boardClimbs.frames} AS frames,
       ${boardClimbs.compatibleSizeIds} AS compatible_size_ids,
+      ${boardClimbs.requiredSetIds} AS required_set_ids,
       ${boardClimbs.characteristics} AS characteristics,
       ${boardDifficultyGrades.boulderName} AS difficulty_name,
       ${boardClimbStats.qualityAverage} AS quality_average,
@@ -304,6 +307,7 @@ export async function getMaterializedSimilarClimbs(
     qualityAverage: row.quality_average == null ? null : Number(row.quality_average),
     ascensionistCount: row.ascensionist_count == null ? null : Number(row.ascensionist_count),
     compatibleSizeIds: row.compatible_size_ids ?? [],
+    requiredSetIds: row.required_set_ids ?? null,
     // `?? null`, not `?? []`: null is a climb whose rules were never recorded,
     // which the Woods drawer prints differently from "default rules" (#5214).
     characteristics: row.characteristics ?? null,

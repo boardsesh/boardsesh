@@ -79,6 +79,7 @@ export async function enrichProposal(
           // unlisted climb to its owner alone, like proposalClimbVisibilityCondition.
           ownedOrPublicClimbCondition(
             {
+              boardType: dbSchema.boardClimbs.boardType,
               isDraft: dbSchema.boardClimbs.isDraft,
               isListed: dbSchema.boardClimbs.isListed,
               userId: dbSchema.boardClimbs.userId,
@@ -329,6 +330,7 @@ export async function batchEnrichProposals(
         inArray(dbSchema.boardClimbs.uuid, uniqueClimbUuids),
         ownedOrPublicClimbCondition(
           {
+            boardType: dbSchema.boardClimbs.boardType,
             isDraft: dbSchema.boardClimbs.isDraft,
             isListed: dbSchema.boardClimbs.isListed,
             userId: dbSchema.boardClimbs.userId,

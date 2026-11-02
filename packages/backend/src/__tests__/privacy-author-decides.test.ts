@@ -328,6 +328,95 @@ describe('author decides across feeds', () => {
     expect(await trending(GRANTEE)).toContain('author-decides-trending');
   });
 
+  it('excludes private ticks from a board’s daily cards and totals', async () => {
+    const readableTickUuid = 'author-decides-board-daily-public';
+    const privateTickUuid = 'author-decides-board-daily-private';
+    const privateOnlyTickUuid = 'author-decides-board-daily-private-only';
+    await insertTick(readableTickUuid, { boardId: unlistedBoardId, climbedAt: '2026-09-17T10:00:00Z' });
+    await insertTick(privateTickUuid, { boardId: unlistedBoardId, climbedAt: '2026-09-17T11:00:00Z' });
+    await insertTick(privateOnlyTickUuid, { boardId: unlistedBoardId, climbedAt: '2026-09-18T10:00:00Z' });
+    await db.insert(dbSchema.contentPrivacy).values(
+      [privateTickUuid, privateOnlyTickUuid].map((entityId) => ({
+        entityType: 'tick' as const,
+        entityId,
+        ownerId: CLIMBER,
+        audience: 'only_me' as const,
+      })),
+    );
+
+    const feed = await sessionFeedQueries.sessionGroupedFeed(
+      undefined,
+      { input: { boardUuid: 'author-decides-unlisted', includeDailyHighlights: true, limit: 50 } },
+      viewer(GRANTEE),
+    );
+    const daily = feed.sessions.find((card) => card.socialEntityId === readableTickUuid);
+    expect(daily).toMatchObject({
+      sessionType: 'daily_highlight',
+      tickCount: 1,
+      totalSends: 1,
+      hardestSend: { uuid: readableTickUuid },
+    });
+    expect(feed.sessions.filter((card) => card.firstTickAt.startsWith('2026-09-18'))).toEqual([]);
+    expect(JSON.stringify(feed)).not.toContain(privateTickUuid);
+    expect(JSON.stringify(feed)).not.toContain(privateOnlyTickUuid);
+    if (!daily) throw new Error('Readable daily card missing');
+    const detail = await sessionFeedQueries.sessionDetail(undefined, { sessionId: daily.sessionId }, viewer(GRANTEE));
+    expect(detail?.ticks.map((tick) => tick.uuid)).toEqual([readableTickUuid]);
+
+    await db.insert(dbSchema.contentPrivacy).values({
+      entityType: 'tick',
+      entityId: readableTickUuid,
+      ownerId: CLIMBER,
+      audience: 'only_me',
+    });
+    expect(
+      await sessionFeedQueries.sessionDetail(undefined, { sessionId: daily.sessionId }, viewer(GRANTEE)),
+    ).toBeNull();
+  });
+
+  it('shows a restricted session’s readable tick on its board’s daily card without session metadata', async () => {
+    const sessionId = 'author-decides-board-daily-restricted';
+    const tickUuid = 'author-decides-restricted-board-tick';
+    await insertSession(sessionId, {
+      createdBy: HOST,
+      boardId: unlistedBoardId,
+      name: 'Private board session',
+    });
+    await db.insert(dbSchema.resourcePrivacy).values({
+      kind: 'session',
+      resourceId: sessionId,
+      ownerId: HOST,
+      audience: 'only_me',
+    });
+    await insertTick(tickUuid, {
+      sessionId,
+      boardId: unlistedBoardId,
+      climbedAt: '2026-09-16T10:00:00Z',
+    });
+    expect(await canAccessResource('session', sessionId, GRANTEE)).toBe(false);
+
+    const feed = await sessionFeedQueries.sessionGroupedFeed(
+      undefined,
+      { input: { boardUuid: 'author-decides-unlisted', includeDailyHighlights: true, limit: 50 } },
+      viewer(GRANTEE),
+    );
+    const daily = feed.sessions.find((card) => card.socialEntityId === tickUuid);
+    expect(daily).toMatchObject({
+      sessionType: 'daily_highlight',
+      sessionName: null,
+      ownerUserId: CLIMBER,
+      participants: [expect.objectContaining({ userId: CLIMBER })],
+      tickCount: 1,
+      totalSends: 1,
+      hardestSend: { uuid: tickUuid },
+      socialEntityType: 'tick',
+      socialEntityId: tickUuid,
+    });
+    expect(JSON.stringify(feed)).not.toContain(sessionId);
+    expect(JSON.stringify(feed)).not.toContain('Private board session');
+    expect(JSON.stringify(daily)).not.toContain(HOST);
+  });
+
   it('puts a followed climber’s log from a session the reader cannot open on their daily card', async () => {
     const day = '2026-09-20T10:00:00Z';
     await insertSession('author-decides-host-followers', { createdBy: HOST, name: 'Host secret session' });

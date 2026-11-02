@@ -59,7 +59,7 @@ export type FeatureFlagDefinition = {
    * — the layer that actually knows the region — is overruled. Marking the flag
    * here makes the override apply in `__DEV__` builds only (QA still exercises
    * the path in a dev client) and be ignored in production, where PostHog stays
-   * authoritative. See `donation-links` and docs/feature-flags.md.
+   * authoritative. See `donation-links-v2` and docs/feature-flags.md.
    */
   policyControlled?: boolean;
 };
@@ -138,7 +138,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'shared-session-browse',
     label: 'Preview-first shared sessions',
     description:
-      'In a session with 2+ climbers, swipes and climb-list taps browse instead of writing the shared queue and lighting the wall; "Put on the wall" becomes the one commit. Off = every gesture drives the wall as it always did.',
+      'In a session with 2+ climbers, swipes and climb-list taps browse instead of writing the shared queue and lighting the wall; "Put on board" becomes the one commit. Off = every gesture lights the wall as it always did.',
   },
   {
     key: 'queue-now-slot',
@@ -150,7 +150,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'stale-current-hold-kill',
     label: 'Disable the stale-climb hold',
     description:
-      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the player shows Put on the wall with "Last on the wall …". With it on, connecting lights that climb as before and the line never shows. Unresolved reads as enabled.',
+      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the wall button reads Put on board. With it on, connecting lights that climb as before. Unresolved reads as enabled.',
   },
   {
     key: 'moonboard-wide-angles',
@@ -171,11 +171,17 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Abort interactive GraphQL requests after 20 s so a hung server cannot pin a screen. Kill switch for marginal networks: set to false (sync keeps its own 30 s).',
   },
   {
-    key: 'donation-links',
+    key: 'donation-links-v2',
     label: 'Donation links',
     policyControlled: true,
     description:
-      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. An external donation link is a store-policy violation outside two narrow windows, and ONLY ONE OF THEM IS ENFORCED IN THE APP: iOS additionally requires an App Store storefront of USA, read natively, so an over-broad rollout cannot reach a non-US iPhone. Android has no such client guard — Play exposes no storefront to the app — so the PostHog targeting IS the guard, and it must be exactly: platform = Android AND country = AU AND date >= 2026-09-30. Rolling this out to Android by percentage, or to any other country, ships a policy violation.',
+      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. On a phone the app only ever shows the link on an iPhone whose App Store storefront is USA (read natively); Android and screenshot mode always get the unlinked text whatever this flag says. The Expo browser app ignores this flag and has its own, donation-links-web-kill. Rolled out to everyone with no conditions. The -v2 suffix keeps older Android bundles, which read the old donation-links key and still carried an Android branch, off: never create that old key.',
+  },
+  {
+    key: 'donation-links-web-kill',
+    label: 'Donation links kill switch (browser app)',
+    description:
+      'Emergency kill switch for support asks in the Expo browser app at /app, which no store rule covers and so ignores donation-links-v2. On hides the Support Boardsesh row in Account and turns the Acknowledgements link back into unlinked text, without a deploy. Native builds never read it. Unresolved reads as enabled.',
   },
   {
     key: 'climb-moderation-kill',
@@ -217,13 +223,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'first-connect-cta-kill',
     label: 'Disable the connect step',
     description:
-      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs, the "Light it on the board" pill in the play view, and the one-time "Connected to" confirmation. With it on, no new account is enrolled and everyone already enrolled gets the plain bulb back. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
+      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs and the one-time "Connected to" confirmation (the play view pill went in #7000: its Connect board button does that job for everyone). With it on, no new account is enrolled and everyone already enrolled stops seeing the card. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
   },
   {
     key: 'first-connect-cta-arm',
     label: 'Force the connect-step arm (QA)',
     description:
-      'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
+      'QA only. Puts the signed-in account in the treatment (the Climbs card) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
     variants: ['treatment', 'control'],
   },
   {
@@ -245,6 +251,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Offers the 4x4, Limit Bouldering and On the Minute blocks on the Record tab and in "Add a block" before they launch (#5380): 8 type chips instead of 5. Dev builds always offer them. A POSITIVE rollout flag, off by default: with no value at all a store build shows the 5 chips climbers have today. Screenshot mode ignores it.',
     defaultEnabled: false,
+  },
+  {
+    key: 'wall-swipe-to-drive',
+    label: 'Swipe the wall button to drive',
+    description:
+      "Swipe the player's wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action \"Light every climb\" appears, and the board sheet gets a Light every climb row. It also gates Put on board's timed drive (2.7) and Always drive the wall's always-on drive: off, Put on board lights one climb, nothing drives the wall, and every pick is a preview. A POSITIVE rollout flag: unresolved or off is the button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.",
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
@@ -378,7 +390,7 @@ export function FeatureFlagsProvider({
   const value = useMemo<FeatureFlags>(() => {
     // Policy-controlled flags lose their override outside a dev build, so this
     // has to happen BEFORE the empty check: on a store binary a lone
-    // donation-links override leaves nothing to merge at all.
+    // donation-links-v2 override leaves nothing to merge at all.
     const honouredOverrides = applyOverridePolicy(overrides);
     const hasOverrides = Object.keys(honouredOverrides).length > 0;
     if (posthogFlags === DEFAULT_FEATURE_FLAGS && flags === DEFAULT_FEATURE_FLAGS && !hasOverrides) {
@@ -529,8 +541,8 @@ export function useFirstBoardPickerEnabled(): boolean {
 }
 
 /**
- * Kill switch for the connect-step test (#5654, PR 7): the Climbs card, the
- * play-view pill and the first-connect confirmation, plus new enrolments.
+ * Kill switch for the connect-step test (#5654, PR 7): the Climbs card and the
+ * first-connect confirmation, plus new enrolments.
  * Unresolved reads as "not killed". The gate waits for
  * `useFeatureFlagsResolved()` before it enrols, and the surfaces re-render when
  * the value lands, so flipping it in PostHog takes the whole test down.
@@ -620,6 +632,27 @@ export function useSharedSessionBrowseEnabled(): boolean {
  */
 export function useWorkoutTimedBlocksFlag(): boolean {
   return useFeatureFlag('workout-timed-blocks') === true;
+}
+
+/**
+ * Swipe the wall button left to drive the wall (#7113): the gesture, its
+ * chevrons and peek, the "Light every climb" screen-reader action and the board
+ * sheet's row. A POSITIVE rollout flag read strictly: unresolved or off is
+ * today's button, so the first frames of a cold open never offer a swipe a
+ * flag then takes back. Dev builds read it as on unless a tester turns it off
+ * on the Feature Flags screen. Explicit store hero captures opt in through
+ * screenshot driving; other screenshot flows and E2E smokes keep it off.
+ */
+export function useWallSwipeToDriveEnabled(): boolean {
+  return wallSwipeToDriveOffered(useFeatureFlag('wall-swipe-to-drive'));
+}
+
+/** The rule behind `useWallSwipeToDriveEnabled`, for tests. */
+export function wallSwipeToDriveOffered(flag: boolean | string | undefined): boolean {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
+    return process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1';
+  }
+  return __DEV__ ? flag !== false : flag === true;
 }
 
 /**

@@ -193,6 +193,7 @@ export type QueueState = {
    * #4979 hold's clock). Null only for a room that has never been written.
    */
   currentChangedAt: string | null;
+  currentChangedBy?: string | null;
 };
 
 /** What a queue-state write returns to the resolver that publishes its event. */
@@ -204,6 +205,7 @@ export type QueueWriteResult = {
   /** The line the write stored, clamped and resolved. */
   historyCount: number;
   currentChangedAt: string | null;
+  currentChangedBy?: string | null;
 };
 
 export type PendingWrite = {

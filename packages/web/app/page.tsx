@@ -12,6 +12,9 @@ import HomeGymSearch from './components/home/home-gym-search';
 import { cachedCommunityStats } from './lib/graphql/server-cached-client';
 import HomeFeatureStrip from './components/home/home-feature-strip';
 import HomeSupportBlock from './components/home/home-support-block';
+import HomeSupportBanner from './components/home/home-support-banner';
+import { isSupportBannerWindow } from './components/home/support-banner-window';
+import { hasMonthlyLinks, readSupportLinksConfig } from './support/support-links';
 
 export async function generateMetadata() {
   const { t, locale } = await getServerTranslation('marketing');
@@ -44,6 +47,10 @@ export default async function Home() {
       })
     : t('home.hero.proofNoCount');
 
+  // The banner asks people to go monthly, so it waits for a monthly Payment Link
+  // to exist. The page reads request headers, so this env read is per request.
+  const showSupportBanner = isSupportBannerWindow(new Date()) && hasMonthlyLinks(readSupportLinksConfig());
+
   return (
     <I18nProvider locale={locale} namespaces={['marketing', 'boards', 'climbs', 'profile', 'feed']}>
       {/* The hero's Next Image owns its responsive preload. Board and beta
@@ -64,6 +71,7 @@ export default async function Home() {
         gymSearch={<HomeGymSearch />}
         featureStrip={<HomeFeatureStrip />}
         supportBlock={<HomeSupportBlock />}
+        supportBanner={showSupportBanner ? <HomeSupportBanner /> : null}
       />
     </I18nProvider>
   );

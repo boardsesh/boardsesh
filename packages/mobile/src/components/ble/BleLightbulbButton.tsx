@@ -28,6 +28,14 @@ import {
 
 type BleLightbulbButtonProps = {
   isConnected: boolean;
+  /** Not lit but linked: an amber outline (see `getBleLightbulbVisualState`). */
+  ready?: boolean;
+  /**
+   * Draw the lit bulb's amber halo and glow (the default). Off under Put on
+   * board's draining ring, which meets the row itself, as on the MiniPlayer
+   * and the Live Activity: amber on its own halo falls under 3:1.
+   */
+  halo?: boolean;
   isScanning: boolean;
   onPress: () => void;
   /**
@@ -44,14 +52,22 @@ type BleLightbulbButtonProps = {
    * VoiceOver reflects what tapping does, not just the filled look.
    */
   accessibilitySelected?: boolean;
-  /** Subtle visual warning that auto-disconnect is in its final ten seconds. */
-  autoDisconnectWarning?: boolean;
+  /** What the bulb shows, spoken after the label ("Board lights, Off"). */
+  accessibilityValueText?: string;
+  /** What a tap does ("Turns the lights off"), when the label doesn't say it. */
+  accessibilityTapHint?: string;
   scanningAccessibilityHint?: string;
   /** Announces the foreground wall write while preserving the button's action label. */
   writingAccessibilityHint?: string;
   /** Hint describing the long-press action (e.g. "Hold to disconnect"). */
   longPressAccessibilityHint?: string;
   haptic?: 'light' | 'medium' | 'none';
+  /** The hold's own buzz. Off where the caller's handler already buzzes (the player's board control). */
+  longPressHaptic?: boolean;
+  /** The hold's named accessibility action. Defaults to "Board controls". */
+  longPressActionLabel?: string;
+  /** A climb going to the LEDs, from the caller. Left out, the button reads it itself. */
+  writing?: boolean;
   size?: number;
   /**
    * Width/height of the pressable container in pixels. Defaults to 44 (iOS HIG
@@ -65,24 +81,30 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function BleLightbulbButton({
   isConnected,
+  ready = false,
+  halo = true,
   isScanning,
   onPress,
   onLongPress,
   accessibilityLabel,
   accessibilitySelected,
-  autoDisconnectWarning = false,
+  accessibilityValueText,
+  accessibilityTapHint,
   scanningAccessibilityHint,
   writingAccessibilityHint,
   longPressAccessibilityHint,
   haptic = 'light',
+  longPressHaptic = true,
+  longPressActionLabel,
+  writing,
   size = 24,
   containerSize = 44,
 }: BleLightbulbButtonProps) {
   const { systemColors, brandColors } = useTheme();
   const { t: tSettings } = useTranslation('settings');
-  const isWriting = useBluetoothWriteInProgress();
+  const liveWriting = useBluetoothWriteInProgress();
+  const isWriting = writing ?? liveWriting;
   const pulseOpacity = useSharedValue(1);
-  const warningPulse = useSharedValue(0);
 
   useEffect(() => {
     if (isScanning) {
@@ -93,19 +115,8 @@ export function BleLightbulbButton({
     }
   }, [isScanning, pulseOpacity]);
 
-  useEffect(() => {
-    if (autoDisconnectWarning) {
-      warningPulse.value = withRepeat(withTiming(1, { duration: timing.slow }), -1, true);
-    } else {
-      cancelAnimation(warningPulse);
-      warningPulse.value = withTiming(0, { duration: timing.fast });
-    }
-  }, [autoDisconnectWarning, warningPulse]);
-
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: pulseOpacity.value,
-    borderWidth: warningPulse.value * 2,
-    borderColor: brandColors.warning,
   }));
 
   const handlePress = () => {
@@ -121,14 +132,17 @@ export function BleLightbulbButton({
     ? () => {
         // A medium tap confirms the (heavier) disconnect action regardless of
         // the configured tap haptic.
-        hapticMedium();
+        if (longPressHaptic) hapticMedium();
         onLongPress();
       }
     : undefined;
 
   const longPressActions = useMemo(
-    () => (onLongPress ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, tSettings('ble.boardControls')) : undefined),
-    [onLongPress, tSettings],
+    () =>
+      onLongPress
+        ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, longPressActionLabel ?? tSettings('ble.boardControls'))
+        : undefined,
+    [onLongPress, longPressActionLabel, tSettings],
   );
   const onLongPressAction = useMemo(
     () => (handleLongPress ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPress) : undefined),
@@ -139,6 +153,7 @@ export function BleLightbulbButton({
 
   const visualState = getBleLightbulbVisualState({
     isConnected,
+    ready,
     connectedColor: brandColors.warning,
     disconnectedColor: systemColors.secondaryLabel,
   });
@@ -152,13 +167,14 @@ export function BleLightbulbButton({
       onAccessibilityAction={onLongPressAction}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityValue={accessibilityValueText !== undefined ? { text: accessibilityValueText } : undefined}
       accessibilityHint={getBleLightbulbAccessibilityHint(
         isScanning,
         isWriting,
         scanningAccessibilityHint,
         writingAccessibilityHint,
         // The custom action already names the long-press route; a hint would read it twice.
-        onLongPress ? undefined : longPressAccessibilityHint,
+        onLongPress ? accessibilityTapHint : (longPressAccessibilityHint ?? accessibilityTapHint),
       )}
       accessibilityState={{ selected: accessibilitySelected ?? isConnected, busy: displayMode !== 'idle' }}
       hitSlop={8}
@@ -166,11 +182,12 @@ export function BleLightbulbButton({
         styles.container,
         { width: containerSize, height: containerSize, borderRadius: containerSize / 2 },
         animatedStyle,
-        isConnected && {
-          backgroundColor: visualState.backgroundColor,
-          shadowColor: visualState.shadowColor,
-        },
-        isConnected && styles.connected,
+        isConnected &&
+          halo && {
+            backgroundColor: visualState.backgroundColor,
+            shadowColor: visualState.shadowColor,
+          },
+        isConnected && halo && styles.connected,
         pressed && styles.pressed,
       ]}
     >

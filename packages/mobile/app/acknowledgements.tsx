@@ -11,7 +11,8 @@ import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
 import { contributors, sponsors, privateSponsorCount, friends, dogName, XPREM_URL } from '../src/lib/acknowledgements';
 import { openDiscordInvite } from '../src/lib/discord';
-import { SUPPORT_URL, SUPPORT_URL_DISPLAY, useDonationLinksAllowed } from '../src/lib/donation-links';
+import { SUPPORT_URL_DISPLAY, supportUrlFor, useDonationLinksAllowed } from '../src/lib/donation-links';
+import { trackSupportLinkTapped } from '../src/lib/analytics-support-link';
 import { openExternalUrl } from '../src/lib/open-url';
 import { useTheme } from '../src/providers/theme-provider';
 import { borderRadius, cardCorners, spacing } from '../src/theme/tokens';
@@ -95,7 +96,8 @@ export default function AcknowledgementsScreen() {
     void openExternalUrl(url, 'acknowledgements');
   }, []);
   const handleSupport = useCallback(() => {
-    void openExternalUrl(SUPPORT_URL, 'acknowledgements-sponsor');
+    trackSupportLinkTapped('acknowledgements');
+    void openExternalUrl(supportUrlFor('acknowledgements'), 'acknowledgements-sponsor');
   }, []);
   const handleJoinDiscord = useCallback(() => {
     void openDiscordInvite('acknowledgements');

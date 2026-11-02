@@ -1,3 +1,51 @@
+"Stored board metadata for global admins; separate from public UserBoard projections."
+type AdminBoard {
+  uuid: ID!
+  slug: String!
+  ownerId: ID
+  ownerDisplayName: String
+  boardType: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  name: String!
+  description: String
+  locationName: String
+  latitude: Float
+  longitude: Float
+  isPublic: Boolean!
+  isUnlisted: Boolean!
+  hideLocation: Boolean!
+  isOwned: Boolean!
+  angle: Int!
+  isAngleAdjustable: Boolean!
+  hasLeds: Boolean!
+  "Owner-only, including in the admin registry."
+  serialNumber: String
+  "Owner-only, including in the admin registry."
+  timerName: String
+  createdAt: String!
+  updatedAt: String!
+  gymUuid: ID
+  gymName: String
+  gymSlug: String
+  canEdit: Boolean!
+}
+
+type AdminBoardConnection {
+  boards: [AdminBoard!]!
+  totalCount: Int!
+  hasMore: Boolean!
+}
+
+input AdminBoardsInput {
+  "Case-insensitive board name, UUID, slug, gym name, or gym slug search."
+  query: String
+  boardType: String
+  limit: Int
+  offset: Int
+}
+
 "Identity of the running bundle; excludes a pending download or requested track."
 input ReleaseContextInput {
   channel: String
@@ -273,6 +321,11 @@ Arbitrary JSON data
 """
 scalar JSON
 
+enum DraftScope {
+  OWN
+  WALL
+}
+
 """
 A climbing problem/route on an interactive training board.
 Contains all information needed to display and light up the climb on the board.
@@ -350,6 +403,8 @@ type Climb {
   apart (see canAddClimbToBoard rule 5).
   """
   compatibleSizeIds: [Int!]
+  "Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets."
+  requiredSetIds: [Int!]
   """
   How many of this climb's holds are no longer on the wall.
 
@@ -462,6 +517,8 @@ input ClimbInput {
   boardseshConfidence: String
   "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
   compatibleSizeIds: [Int!]
+  "Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets."
+  requiredSetIds: [Int!]
   "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
   missingHoldCount: Int
   "The climb's revision as the queueing client read it (`Climb.revisionNumber`). Round-tripped through the queue so whoever logs a queued climb can say which revision was on the wall without a refetch. Null from a client that predates the field."
@@ -569,6 +626,8 @@ input ClimbSearchInput {
   useMyGrades: Boolean
   "Show only the user's draft climbs (requires auth)"
   onlyDrafts: Boolean
+  "OWN lists personal drafts; WALL lists all drafts on an accessible spray wall."
+  draftScope: DraftScope
   "Show only climbs the user has hearted on this board. A heart belongs to the climb, not to an angle, so it matches at every angle. Signed out returns no climbs. (requires auth)"
   onlyFavorited: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
@@ -785,6 +844,8 @@ type QueueState {
   historyCount: Int
   "When the room's current climb last changed to a different climb (ISO 8601). Null from a pre-F3 server."
   currentChangedAt: String
+  "Session participant who last changed the current queue item. Null when unknown."
+  currentChangedBy: ID
 }
 
 """
@@ -2369,7 +2430,7 @@ input ActivityFeedInput {
   userId: String
   "Restrict results to users followed by the authenticated viewer"
   followingOnly: Boolean
-  "Include one daily hardest-send card for followed/user-filtered days without explicit sessions"
+  "Include daily activity cards for user, followed-user, or board scopes, covering readable logs outside listed sessions"
   includeDailyHighlights: Boolean
 }
 
@@ -3337,6 +3398,15 @@ type SmartPlaylistCount {
   count: Int!
 }
 
+input ObservedBoardSerialInput {
+  boardType: String!
+  observedSerialNumber: String!
+}
+type ObservedBoardSerialMatch {
+  boardType: String!
+  observedSerialNumber: String!
+  candidates: [UserBoard!]!
+}
 "A redacted snapshot of the last confirmed climb while its sender still holds the board."
 type BoardDiscoveryClimb {
   uuid: ID!
@@ -3467,6 +3537,8 @@ type UserBoard {
   gymUuid: String
   "Gym name if linked to a gym"
   gymName: String
+  "Whether the linked gym participates in discovery; null when no gym is linked."
+  gymIsListed: Boolean
   "Distance in meters from search origin (only set for proximity queries)"
   distanceMeters: Float
   "Controller box serial number"
@@ -3932,6 +4004,8 @@ type Gym {
   longitude: Float
   "Whether publicly visible"
   isPublic: Boolean!
+  "Whether this gym appears in discovery. False keeps direct links readable."
+  isListed: Boolean!
   "Image URL"
   imageUrl: String
   "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, which is the gym photo."
@@ -4054,13 +4128,19 @@ enum StrayBoardReason {
 """
 A board that probably belongs to a gym but isn't linked to it yet — either it
 followed a listing that got merged into this gym, or it sits at the gym's
-coordinates while unlinked or attached to a synced (SYSTEM) listing.
+coordinates while unlinked or attached to a synced (SYSTEM) listing. Public,
+unlinked boards owned by another person are candidates only for an in-scope
+platform admin who can read their location.
 """
 type StrayBoard {
   "The board's unique identifier."
   uuid: ID!
   "The board's display name."
   name: String!
+  "Board type (kilter, tension, moonboard, ...)."
+  boardType: String!
+  "Board angle in degrees."
+  angle: Int!
   "The gym this board is currently linked to (a merged twin or a synced listing); null when unlinked."
   currentGymUuid: ID
   "Name of the gym this board is currently linked to; null when unlinked."
@@ -4109,6 +4189,8 @@ input CreateGymInput {
   name: String!
   "Optional description"
   description: String
+  "Opening hours; nonblank hours receive a confirmation timestamp."
+  hours: String
   "Physical address"
   address: String
   "Website URL"
@@ -4123,6 +4205,8 @@ input CreateGymInput {
   longitude: Float
   "Whether publicly visible (default true)"
   isPublic: Boolean
+  "Whether listed in discovery (default true)"
+  isListed: Boolean
   "Image URL"
   imageUrl: String
   "Optional board UUID to link on creation"
@@ -4157,6 +4241,8 @@ input UpdateGymInput {
   longitude: Float
   "New visibility"
   isPublic: Boolean
+  "Whether listed in discovery"
+  isListed: Boolean
   "New image URL"
   imageUrl: String
   "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, the gym photo. Pass null to clear it."
@@ -4289,6 +4375,10 @@ input AttachBoardToGymInput {
   gymUuid: ID!
   "Stray board UUID to attach"
   boardUuid: ID!
+  "False prevents merging an emptied source gym. Omitted preserves legacy behavior."
+  allowSourceGymMerge: Boolean
+  "The source gym the user saw; null means unlinked. A changed source rejects the move."
+  expectedCurrentGymUuid: ID
 }
 
 """
@@ -5947,6 +6037,8 @@ type NewClimbCreatedEvent {
 }
 
 input SaveClimbInput {
+  "Optional stable client-generated climb UUID for idempotent offline replay."
+  uuid: ID
   "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
   privacy: PrivacyPublicationInput
     @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
@@ -6019,6 +6111,8 @@ input SaveMoonBoardClimbInput {
 }
 
 type SaveClimbResult {
+  "True when the UUID already existed and no fields were changed."
+  replayed: Boolean
   uuid: ID!
   synced: Boolean!
   "ISO timestamp of when the row was created"
@@ -6035,6 +6129,8 @@ updated by its setter within 24 hours of its first publish, on every board,
 spray walls included. The edit is made in place; no revision is recorded.
 """
 input UpdateClimbInput {
+  "Stable UUID for one edit; retries acknowledge the original committed edit."
+  clientMutationId: ID
   "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
   privacy: PrivacyPublicationInput
     @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
@@ -6166,6 +6262,8 @@ type SimilarClimb {
   server has no compatibility data for this climb (legacy row).
   """
   compatibleSizeIds: [Int!]!
+  "Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets."
+  requiredSetIds: [Int!]
   """
   Structured climb rules ('no_match', 'any_feet', 'campus', 'no_kickboard',
   method_*). Nullable, unlike compatibleSizeIds above: null means the server
@@ -7392,6 +7490,162 @@ extend type Mutation {
   exportSprayTrainingDataset: SprayTrainingExportResult!
 }
 
+"One queued climb of a workout block, captured when the run is written."
+input SessionWorkoutItemInput {
+  queueItemUuid: ID!
+  climbUuid: String!
+  angle: Int!
+  isMirror: Boolean
+}
+
+"A timed block's pacing. 4x4 adds repsPerSet and restBetweenSetsSeconds."
+input SessionWorkoutPacingInput {
+  "onTheMinute or afterTick."
+  mode: String!
+  restSeconds: Int!
+  advanceOn: String
+  repsPerSet: Int
+  restBetweenSetsSeconds: Int
+}
+
+input SessionWorkoutStageInput {
+  "The run stage's id (a uuid)."
+  id: ID!
+  "A workout stage kind (warmUp, volume, fourByFour, ...). Any string, so a newer kind survives."
+  kind: String!
+  coolDown: Boolean
+  "Difficulty id the block was built around."
+  targetGrade: Int
+  pacing: SessionWorkoutPacingInput
+  items: [SessionWorkoutItemInput!]!
+}
+
+"Which queue item a tick was logged on."
+input SessionWorkoutTickInput {
+  tickUuid: ID!
+  queueItemUuid: ID!
+}
+
+input RecordSessionWorkoutInput {
+  sessionId: ID!
+  "The phone's per-session write counter. Only a higher revision than the stored one is written."
+  revision: Int!
+  stages: [SessionWorkoutStageInput!]!
+  ticks: [SessionWorkoutTickInput!]!
+}
+
+"How one rep or climb of a workout ended."
+enum SessionWorkoutRepOutcome {
+  FLASH
+  SEND
+  ATTEMPT
+}
+
+type SessionWorkoutClimb {
+  queueItemUuid: ID!
+  climbUuid: String!
+  angle: Int!
+  isMirror: Boolean
+  name: String
+  "Display grade: the climber's own when they logged it, else the consensus at this angle."
+  grade: String
+  boardType: String
+  layoutId: Int
+  frames: String
+  renderBoard: RenderBoardConfig
+  "One per tick on this climb, in tick order."
+  reps: [SessionWorkoutRepOutcome!]!
+  "The ticks behind reps, same order: only ticks the viewer may see, so a client can group the session's ticks by block."
+  tickUuids: [ID!]!
+  "True when the climber logged nothing on it."
+  skipped: Boolean!
+}
+
+"Counts in ticks, the unit the session totals use."
+type SessionWorkoutTally {
+  "Flash and send ticks."
+  sent: Int!
+  "Attempt ticks."
+  attempts: Int!
+  "Climbs of the block with no tick."
+  skipped: Int!
+  "Climbs in the block."
+  climbs: Int!
+}
+
+type SessionWorkoutStage {
+  id: ID!
+  kind: String!
+  isCoolDown: Boolean!
+  "Display grade name of the block's target grade."
+  targetGrade: String
+  "A 4x4: reps per climb."
+  repsPerSet: Int
+  "A 4x4: one set per climb."
+  sets: Int
+  "On the minute: the interval."
+  intervalSeconds: Int
+  "A paced block's rest after each tick (a 4x4: between reps)."
+  restSeconds: Int
+  climbs: [SessionWorkoutClimb!]!
+  tally: SessionWorkoutTally!
+}
+
+type SessionWorkout {
+  userId: ID!
+  displayName: String
+  avatarUrl: String
+  stages: [SessionWorkoutStage!]!
+  "The climber's ticks in the session that match no climb of the workout."
+  offPlan: Int!
+  "The climber's ticks behind offPlan that the viewer may see."
+  offPlanTickUuids: [ID!]!
+  updatedAt: String!
+}
+
+"One line for a feed card: the main block, the second for 'A + B', how many more."
+type SessionWorkoutHeadline {
+  sessionId: ID!
+  userId: ID!
+  mainKind: String
+  "Display grade name of the main block's target grade."
+  mainTargetGrade: String
+  secondMainKind: String
+  "Every block, warm-ups and cool-downs included."
+  blockCount: Int!
+  "Main blocks after the first."
+  extraMainBlocks: Int!
+}
+
+extend type Query {
+  """
+  The workouts followed in a session, one per climber, with what each block
+  came to. Follows sessionDetail: the session must open for the viewer, the
+  climber must be someone its own surfaces name to them, and at least one of
+  the climber's ticks in it must be visible to them. Climbs the viewer may not
+  see are left out along with their ticks.
+  """
+  sessionWorkouts(sessionId: ID!): [SessionWorkout!]!
+
+  """
+  Feed-card headlines for up to 50 sessions, under the sessionWorkouts rule
+  for who appears. Sessions the viewer may not open, or with no workout, are
+  left out.
+  """
+  sessionWorkoutHeadlines(sessionIds: [ID!]!): [SessionWorkoutHeadline!]!
+}
+
+extend type Mutation {
+  """
+  Store the caller's workout for a session. Written only when revision is
+  higher than the stored one; an equal or lower revision is a no-op that still
+  returns true, so outbox replays are idempotent. The caller must have created
+  or joined the session. Tick-map entries that are not the caller's own ticks
+  in the session are dropped.
+  """
+  recordSessionWorkout(input: RecordSessionWorkoutInput!): Boolean!
+}
+
 """
 One hold the client found in the NEW photo, already mapped through that photo's
 homography into the wall's canonical frame.
@@ -7790,7 +8044,15 @@ type Query {
   """
   Get a single climb by its UUID.
   """
-  climb(boardName: String!, layoutId: Int!, sizeId: Int!, setIds: String!, angle: Int!, climbUuid: ID!): Climb
+  climb(
+    boardName: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+    angle: Int!
+    climbUuid: ID!
+    sprayWallUuid: String
+  ): Climb
 
   """
   Setter usernames with climb counts for the given board, optionally filtered by username substring.
@@ -8041,6 +8303,8 @@ type Query {
 
   # Get current user's registered controllers
   myControllers: [ControllerInfo!]!
+  "Read a gym's device configuration using a registered gym owner/admin's controller API key."
+  controllerGymManifest(gymRef: String!): ControllerGymManifest!
 
   # ============================================
   # Social / Follow Queries
@@ -8311,6 +8575,8 @@ type Query {
   backward compatibility with already-shipped clients.
   """
   boardsBySerialNumbers(serialNumbers: [String!]!, boardType: String): [UserBoard!]!
+  "Correlate radio-observed serials with readable candidates without exposing stored owner-only serial fields."
+  observedBoardSerialMatches(input: [ObservedBoardSerialInput!]!): [ObservedBoardSerialMatch!]!
 
   """
   Recorded board configurations for the current user keyed by controller serial.
@@ -8329,6 +8595,11 @@ type Query {
   Search public boards.
   """
   searchBoards(input: SearchBoardsInput!): UserBoardConnection!
+
+  "Search all active registered boards, including private boards. Global admins only."
+  adminBoards(input: AdminBoardsInput!): AdminBoardConnection!
+  "Stored editable metadata for one active board. Global admins only."
+  adminBoard(boardUuid: ID!): AdminBoard
 
   "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
   boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
@@ -8512,7 +8783,7 @@ type Query {
   The spray wall occupying a catalogue layout id, for a client holding only a
   board config. Same visibility rules as `sprayWall`.
   """
-  sprayWallByLayout(layoutId: Int!): SprayWall
+  sprayWallByLayout(layoutId: Int!, sprayWallUuid: String): SprayWall
 
   """
   Everything needed to render a wall at one version: the photo, the homography
@@ -8809,6 +9080,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    sprayWallUuid: String
     cursor: SyncCursorInput
     limit: Int! = 500
     audience: SyncAudience = ALL
@@ -8823,6 +9095,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    sprayWallUuid: String
     cursor: SyncCursorInput
     limit: Int! = 500
     audience: SyncAudience = ALL
@@ -8837,6 +9110,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    sprayWallUuid: String
     cursor: SyncCursorInput
     limit: Int! = 500
     audience: SyncAudience = ALL
@@ -8862,6 +9136,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    sprayWallUuid: String
     cursor: SyncCursorInput
     limit: Int! = 500
   ): SyncResult!
@@ -9149,6 +9424,16 @@ type Mutation {
   """
   reportBoardDisconnect(boardId: Int!): Boolean!
 
+  """
+  Report that this client turned off every light on `boardId` while keeping its
+  BLE link (the "Turn off all lights" action). Publishes `BoardClimbCleared` so
+  every viewer stops showing the cleared climb as lit, and keeps the clear for a
+  week so a late subscriber sees it too. Requires board membership, and is refused
+  when another emitter holds the board. History is untouched. Auth-optional.
+  Returns whether the clear was accepted.
+  """
+  reportBoardClear(boardId: Int!): Boolean!
+
   # ============================================
   # User Management Mutations (require auth)
   # ============================================
@@ -9392,6 +9677,9 @@ type Mutation {
   Update a board's metadata.
   """
   updateBoard(input: UpdateBoardInput!): UserBoard!
+
+  "Edit active board metadata as a global admin; privacy and credentials remain owner-only."
+  adminUpdateBoard(input: UpdateBoardInput!): AdminBoard!
 
   """
   Soft-delete a board.
@@ -10528,6 +10816,8 @@ type CurrentClimbChanged {
   clientId: ID
   "Correlation ID for request tracking"
   correlationId: ID
+  "Session participant who last changed the current queue item. Null when unknown."
+  currentChangedBy: ID
 }
 
 """
@@ -10610,6 +10900,39 @@ type PlaybackStateChanged {
   anchorTimestamp: String!
   "Client ID of the publisher, used for echo suppression"
   clientId: ID
+}
+
+type ControllerPreviewDescriptor {
+  imageUrl: String!
+  geometryUrl: String!
+  imageSha256: String!
+  geometrySha256: String!
+  imageBytes: Int!
+  geometryBytes: Int!
+  width: Int!
+  height: Int!
+  positionCount: Int!
+}
+
+type ControllerGymBoard {
+  uuid: ID!
+  name: String!
+  boardType: String!
+  serialNumber: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  angle: Int!
+  advertisedName: String!
+  preview: ControllerPreviewDescriptor!
+}
+
+type ControllerGymManifest {
+  version: Int!
+  gymUuid: ID!
+  name: String!
+  slug: String!
+  boards: [ControllerGymBoard!]!
 }
 
 # ============================================
@@ -11188,14 +11511,18 @@ type BoardClimbSet {
 }
 
 """
-Event: the wall was cleared (best-effort — only emitted on a deliberate
-disconnect; an involuntary BLE drop leaves the last climb sticky).
+Event: the wall was cleared. Emitted when the phone driving the wall turns
+off all its lights (`reportBoardClear`), and replayed to a new subscriber
+while that clear is still the wall's latest state. A disconnect, deliberate
+or not, leaves the last climb sticky: the board keeps its lights.
 """
 type BoardClimbCleared {
   "ISO 8601 timestamp when the wall was cleared"
   clearedAt: String!
   "Monotonic per-board sequence number"
   seq: Int!
+  "UUID of the climb that was on the wall when it was cleared, when known"
+  climbUuid: String
 }
 
 """

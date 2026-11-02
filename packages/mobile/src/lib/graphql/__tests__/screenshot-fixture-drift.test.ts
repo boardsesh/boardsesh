@@ -56,6 +56,7 @@ import * as sharedPlaylists from '@boardsesh/graphql/operations/playlists';
 import * as sharedProposals from '@boardsesh/graphql/operations/proposals';
 import * as sharedQa from '@boardsesh/graphql/operations/qa';
 import * as sharedQueueSession from '@boardsesh/graphql/operations/queue-session';
+import * as sharedSessionWorkouts from '@boardsesh/graphql/operations/session-workouts';
 import * as sharedPrivacy from '@boardsesh/graphql/operations/privacy';
 import * as sharedNotifications from '@boardsesh/graphql/operations/notifications';
 import * as sharedAnalyticsConsent from '@boardsesh/graphql/operations/analytics-consent';
@@ -183,6 +184,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/proposals': sharedProposals,
   '@boardsesh/graphql/operations/qa': sharedQa,
   '@boardsesh/graphql/operations/queue-session': sharedQueueSession,
+  '@boardsesh/graphql/operations/session-workouts': sharedSessionWorkouts,
 };
 
 // Build the schema inside this test's own `graphql` instance. Importing a
@@ -455,6 +457,27 @@ describe('the operations mobile sends', () => {
         'Land the server half on main first, then merge main into the train.',
     ).toEqual([]);
   });
+
+  // The native Live Activity socket (SessionWebSocketManager.swift) sends its
+  // own subscription, which the registry above never sees because no JS call
+  // site sends it. A train binary that selects a field main's schema lacks
+  // gets a subscription error on every connect and stops updating the lock
+  // screen. Only QueueState.historyCount (F3) has a native fallback (it
+  // resubscribes without that line), and that fallback costs the F3 behaviour,
+  // so this still holds the train to main's schema. NATIVE_IOS_QUEUE_UPDATES is
+  // pinned to the Swift text by the backend's native drift guard.
+  it.runIf(process.env.PRODUCTION_SCHEMA_SDL)(
+    'validates the native Live Activity subscription against the production (main) schema',
+    () => {
+      const productionSchema = buildSchema(readFileSync(process.env.PRODUCTION_SCHEMA_SDL as string, 'utf8'));
+      const errors = validate(productionSchema, parse(sharedQueueSession.NATIVE_IOS_QUEUE_UPDATES));
+      expect(
+        errors.map((error) => error.message),
+        'Production deploys from main, so this train binary would lose its Live Activity socket. ' +
+          'Land the server half on main first, then merge main into the train.',
+      ).toEqual([]);
+    },
+  );
 
   it('carries every operation the store flow depends on', () => {
     const missing = REQUIRED_STORE_FLOW_OPERATIONS.filter((operationName) => !registry.has(operationName));

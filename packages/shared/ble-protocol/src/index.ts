@@ -5,3 +5,4 @@ export * from './woods';
 export * from './transport';
 export * from './connection-error';
 export * from './scan-constants';
+export * from './advertised-identity';

@@ -13,6 +13,8 @@ type PickerProps = { visible: boolean; onClose: () => void; onAngleChange: (angl
 const state = vi.hoisted(() => ({
   board: null as Board | null,
   isPad: false,
+  isTablet: false,
+  nativeAccessory: true,
   widthClass: 'compact',
   os: 'ios',
   push: vi.fn(),
@@ -51,8 +53,11 @@ vi.mock('@boardsesh/board-config', () => ({ formatBoardDisplayName: (boardType: 
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: state.board }) }));
 vi.mock('../../../lib/boards/use-set-board-angle', () => ({ useSetBoardAngle: () => state.change }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: state.haptic }));
+vi.mock('../../../hooks/use-bottom-accessory', () => ({
+  useTabChrome: () => ({ nativeAccessory: state.nativeAccessory }),
+}));
 vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ isPad: state.isPad, widthClass: state.widthClass }),
+  useDeviceLayout: () => ({ isPad: state.isPad, isTablet: state.isTablet, widthClass: state.widthClass }),
 }));
 vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => [30, 35, 40, 45] }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 4: 16 } }));
@@ -93,7 +98,6 @@ vi.mock('../../LargeContentViewer', () => ({
 vi.mock('react-native-paper', () => ({
   Appbar: {
     Action: MockAction,
-    Content: ({ title }: { title: string }) => createElement('span', { 'data-board-title': true }, title),
   },
 }));
 vi.mock('../../Icon', () => ({
@@ -184,7 +188,7 @@ vi.mock('../../play-drawer/AngleSlider', () => ({
     createElement('button', { onClick: () => onChange(45), 'data-preview': value }, 'Preview 45'),
 }));
 
-import { ClimbListBoardActions, ClimbListBoardTitle, climbListBoardActionCount } from '../ClimbListBoardActions';
+import { ClimbListBoardActions, climbListBoardActionCount } from '../ClimbListBoardActions';
 
 const BOARD: Board = {
   uuid: 'board-a',
@@ -200,6 +204,8 @@ const BOARD: Board = {
 beforeEach(() => {
   state.board = { ...BOARD };
   state.isPad = false;
+  state.isTablet = false;
+  state.nativeAccessory = true;
   state.widthClass = 'compact';
   state.os = 'ios';
   state.push.mockReset();
@@ -281,6 +287,32 @@ describe('Climb list angle, history and options', () => {
     }
   });
 
+  it('leaves Wall display to the MiniPlayer and the board sheet on a tablet', () => {
+    state.isPad = true;
+    state.isTablet = true;
+    render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
+    expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.switchBoard',
+    ]);
+    // Switch board still opens its own group.
+    expect(state.menu?.actions[1].dividerBefore).toBe(true);
+  });
+
+  it('keeps Wall display between View options and Switch board on a tablet with no native MiniPlayer', () => {
+    state.isPad = true;
+    state.isTablet = true;
+    state.nativeAccessory = false;
+    const { getByRole } = render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
+    expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.wallDisplay.open',
+      'mobile.boardPresence.switchBoard',
+    ]);
+    fireEvent.click(getByRole('button', { name: 'mobile.boardPresence.wallDisplay.open' }));
+    expect(state.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
+  });
+
   it('cancels a phone picker without saving and applies only after confirmation', () => {
     const { getByRole, queryByRole } = render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
     fireEvent.click(getByRole('button', { name: 'Board angle, 35°' }));
@@ -329,26 +361,16 @@ describe('Climb list angle, history and options', () => {
     expect(state.menusMounted).toBe(1);
   });
 
-  it('leaves the Material angle to the filter chip: no angle button, M3 menu target, angle off the title', () => {
+  // The Material title (screen name over the board) is BoardSwitcherButton's; its
+  // suite covers when the subtitle keeps the angle.
+  it('leaves the Material angle to the filter chip: no angle button, M3 menu target', () => {
     state.os = 'android';
     const openHistory = vi.fn();
-    const { getByRole, queryByRole, container } = render(
-      <>
-        <ClimbListBoardTitle />
-        <ClimbListBoardActions material onOpenHistory={openHistory} />
-      </>,
-    );
+    const { getByRole, queryByRole } = render(<ClimbListBoardActions material onOpenHistory={openHistory} />);
     expect(queryByRole('button', { name: /Board angle/ })).toBeNull();
     expect(state.menu?.anchorSize).toBeUndefined();
-    expect(container.querySelector('[data-board-title]')?.textContent).toBe('Garage wall');
     fireEvent.click(getByRole('button', { name: 'Board history, Garage wall • 35°' }));
     expect(openHistory).toHaveBeenCalledOnce();
-  });
-
-  it('keeps the angle in the Material title of a fixed-angle board, which has no chip', () => {
-    state.board = { ...BOARD, isAngleAdjustable: false };
-    const { container } = render(<ClimbListBoardTitle />);
-    expect(container.querySelector('[data-board-title]')?.textContent).toBe('Garage wall • 35°');
   });
 });
 

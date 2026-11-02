@@ -14,7 +14,7 @@
  * This script closes that gap with changed-file knowledge instead of pixels:
  * given the paths that changed between the stored baseline's commit and the
  * commit under test, it decides whether the probe should be overridden and the
- * full 16-shard capture forced regardless of what the pixel comparison found.
+ * full 20-shard capture forced regardless of what the pixel comparison found.
  *
  * Usage:
  *   vp run screenshot:probe-scope -- --changed-files-file <path>
@@ -44,7 +44,7 @@
  * `mobile-ipad-tablet` path rule above, since the rule matches the FILE PATH
  * ("ipad"/"tablet" in the name), not what the component actually renders.
  * There is no changed-path signal to force full off of here without also
- * forcing a full 16-shard capture on every ordinary component edit, which
+ * forcing a full 20-shard capture on every ordinary component edit, which
  * would defeat the whole point of probing first. The intentional remedy:
  * dispatch with `gate: full` (or `upload: true`) by hand when you know a
  * change is iPad-specific in effect, even though its path says nothing about
@@ -70,6 +70,9 @@ const SHARED_I18N_LOCALES_PREFIX = 'packages/shared/i18n/locales/';
 const MOBILE_LOCALES_PREFIX = 'packages/mobile/locales/';
 const MOBILE_PREFIX = 'packages/mobile/';
 const IPAD_TABLET_PATTERN = /ipad|tablet/i;
+// The iPhone Duo's open layout (board beside the list, split at the hinge) and
+// its two-display capture. Matched by path name, like the iPad rule.
+const DUO_FOLDABLE_PATTERN = /duo|hinge|split-pane/i;
 const MOBILE_APP_CONFIG_PATH = 'packages/mobile/app.config.ts';
 const APP_STORES_APPLE_PREFIX = 'app-stores/apple/';
 
@@ -88,6 +91,8 @@ export const PROBE_SCOPE_RULES: readonly ProbeScopeRule[] = [
       path === 'scripts/screenshot-probe-scope.ts' ||
       path === '.github/workflows/mobile-screenshots-ios.yml' ||
       path === '.github/actions/ios-screenshot-shard/action.yml' ||
+      path === 'scripts/lib/ios-duo-hinge.ts' ||
+      path.startsWith('scripts/ios-duo-hinge/') ||
       path.startsWith('packages/mobile/.maestro/app-store'),
   },
   {
@@ -113,6 +118,11 @@ export const PROBE_SCOPE_RULES: readonly ProbeScopeRule[] = [
     name: 'mobile-ipad-tablet',
     description: 'an iPad/tablet-specific mobile path (matches /ipad|tablet/i under packages/mobile/)',
     matches: (path) => path.startsWith(MOBILE_PREFIX) && IPAD_TABLET_PATTERN.test(path),
+  },
+  {
+    name: 'mobile-iphone-duo',
+    description: 'an iPhone Duo / foldable mobile path (matches /duo|hinge|split-pane/i under packages/mobile/)',
+    matches: (path) => path.startsWith(MOBILE_PREFIX) && DUO_FOLDABLE_PATTERN.test(path),
   },
   {
     name: 'mobile-app-config',

@@ -15,6 +15,7 @@ import {
   onOverlayCacheHydrated,
   overlayCacheEntryExists,
   deleteOverlayCacheEntry,
+  rendererOverlayUri,
 } from './overlay-cache-warmup';
 import { isSprayOverlayCurrent, sprayPrivacyGeneration } from '../lib/spray/spray-privacy-generation';
 import { RENDERER_VERSION } from './renderer-version';
@@ -50,7 +51,7 @@ import {
 import { useAppColorScheme } from '../providers/theme-provider';
 import { addErrorBreadcrumb, reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
-import { sweepBoardArtCache } from '../lib/sweep-caches';
+import { reconcileOverlayIndexWithDisk, sweepBoardArtCache } from '../lib/sweep-caches';
 import { measureFreeCacheSpaceBytes } from '../lib/cache-dir-io';
 import {
   isRenderCancelled,
@@ -63,6 +64,7 @@ import {
 } from '../lib/board-render/render-scheduler';
 import {
   cacheRenderedOverlay,
+  getOverlayGenerationWatermark,
   getRenderedOverlay,
   invalidateRenderedOverlay,
   _renderedOverlaysForTests,
@@ -108,13 +110,13 @@ import {
   subscribeToUnsupportedSignatures,
 } from './marker-renderer-support';
 import { getPlayOverlayWidth } from '../lib/board-render/play-board-prewarm';
-import { isBoardArtInMemory } from '../lib/board-render/board-art-memory-index';
+import { isBoardArtInMemory, msSinceImageMemorySweep } from '../lib/board-render/board-art-memory-index';
 import {
   captureReadyBoardArt,
   type ReadyBoardArtIdentity,
   type ReadyBoardArtSnapshot,
 } from '../lib/board-render/ready-board-art';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
 
 const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
@@ -194,6 +196,13 @@ type NativeClimbRenderParams = {
    *    climber is waiting on.
    */
   playSurface?: boolean;
+  /**
+   * The play board's own view layer writes here whether its live stack is held
+   * invisible under the opening-art bridge (`BoardImageNative`). Read only when
+   * the paint watchdog fires, and reported as `bridging` on `paint_timeout`.
+   * Left out, the event says `false`.
+   */
+  paintBridgingRef?: { readonly current: boolean };
   /**
    * A render nobody is looking at yet — the play drawer warming the next few
    * queue items. Requests at the scheduler's `prefetch` rank (runs only when
@@ -601,6 +610,8 @@ type RenderFailureNote = {
   holdMatch?: { litCount: number; unmatchedCount: number };
   /** `render_stalled` only: where the render was waiting when the watchdog fired. */
   stall?: RenderQueueSnapshot;
+  /** `paint_timeout` only: what the board looked like when the watchdog fired. */
+  paint?: { bridging: boolean; msSinceImageSweep: number | null };
 } & (
   | { stage: 'native'; failureKind: BoardRenderNativeFailureKind }
   | { stage: 'image_load'; failureKind: BoardRenderImageLoadFailureKind }
@@ -680,6 +691,8 @@ function noteRenderFailure(note: RenderFailureNote): number {
           ms_waiting: note.stall.msWaiting,
         }
       : {}),
+    // And for the paint watchdog's two fields (#7081).
+    ...(note.paint ? { bridging: note.paint.bridging, ms_since_image_sweep: note.paint.msSinceImageSweep } : {}),
   };
   // Branch rather than spread a `{ stage, failure_kind }` pair: the two are one
   // discriminated pair in `BoardRenderFailedInput`, and keeping the branch is
@@ -997,7 +1010,9 @@ function warmupRenderedOverlaysOnce(): void {
         continue;
       }
       const cacheKey = name.slice(0, -'.png'.length);
-      cacheRenderedOverlay(cacheKey, entry.uri);
+      // The listing's URI is percent-encoded on Android (`1,2,3` -> `1%2C2%2C3`);
+      // index the form the renderer returns, so one file has one URI (#7026).
+      cacheRenderedOverlay(cacheKey, rendererOverlayUri(entry.uri));
     }
   } catch {
     // Filesystem errors at startup shouldn't break the app — the hook's
@@ -1017,9 +1032,18 @@ onOverlayCacheHydrated(() => {
   warmupRenderedOverlaysOnce();
 });
 
+/**
+ * Set once the first native render of this JS lifetime has resolved and the
+ * index has been checked against the directory (issue #5882). Both native
+ * modules prune `board-thumbnails` once per launch, inside that first render and
+ * after the warm-up above indexed it, without telling JS what they deleted.
+ */
+let reconciledAfterNativePrune = false;
+
 /** Test-only handle for re-running the warm-up against a fresh mock list. */
 export function _resetWarmupForTests(): void {
   warmupRun = false;
+  reconciledAfterNativePrune = false;
   // Board hold ids are memoised per board key, so a suite that swaps what
   // `getBoardRenderData` returns for the SAME board would otherwise keep
   // matching against the previous fixture's holds.
@@ -1065,7 +1089,29 @@ export function getOrStartInflightRender(
       deleteOverlayCacheEntry(uri);
       throw new RenderCancelledError(cacheKey);
     }
-    return cacheRenderedOverlay(cacheKey, uri);
+    // The watermark is taken before this result goes in: the file native just
+    // wrote is on disk, and only what the index held before the prune is suspect.
+    const generationBeforeFirstRender = reconciledAfterNativePrune ? null : getOverlayGenerationWatermark();
+    const entry = cacheRenderedOverlay(cacheKey, uri);
+    if (generationBeforeFirstRender !== null) {
+      reconciledAfterNativePrune = true;
+      void reconcileOverlayIndexWithDisk(generationBeforeFirstRender)
+        .then((forgottenKeys) => {
+          // Rides along on any later board-render report, so a BOARDSESH-DR event
+          // after release shows whether this launch's prune left dead keys behind.
+          addErrorBreadcrumb({
+            category: 'board-render',
+            message: 'Overlay index checked after native prune',
+            level: 'info',
+            data: { forgottenKeys },
+          });
+        })
+        .catch(() => {
+          // Best-effort: an index left unreconciled still recovers each dead key
+          // through the cache_entry_missing re-render, as it did before.
+        });
+    }
+    return entry;
   });
   inflightRenders.set(cacheKey, promise);
   // Run cleanup as a detached handler so it doesn't change the promise
@@ -1786,14 +1832,14 @@ function isNativeRendererUnavailable(): boolean {
  * and the component shows backgrounds alone.
  */
 export function useNativeClimbRender(params: NativeClimbRenderParams): NativeClimbRenderResult {
-  const privacyGeneration = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+  const credentialGeneration = useSyncExternalStore(
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
-  // A privacy-only render does not authorize the old row projection again.
+  // A later render does not authorize the old row projection again.
   // Conservatively retire its handoff source for the rest of this hook's life.
-  const artworkPrivacyGeneration = useRef(privacyGeneration).current;
+  const artworkCredentialGeneration = useRef(credentialGeneration).current;
   const {
     frames,
     boardName,
@@ -1807,6 +1853,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     holdColorOverride,
     verifyOverlayFile = false,
     playSurface = false,
+    paintBridgingRef,
     prefetch = false,
     maxVeilOpacity,
     extraHoldStates,
@@ -2756,8 +2803,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
    *
    * Arming on the mount rather than on `overlayUri` is the whole correctness
    * argument. `LayeredClimbImage` renders a bare `<View>` and no image at all
-   * while the app is backgrounded or the tab's board art is released (opening
-   * `/play` does exactly that to every other surface). Nothing then fires
+   * while the app is backgrounded or the tab's board art is released (an
+   * inactive iPad tab, including any tab the player is not open over). Nothing then fires
    * `onLoad` — there is nothing there to fire it — so a watchdog armed on the
    * URI would report silence from a surface that was never asked to paint, and
    * a backgrounded app's timers would land on resume before the remount.
@@ -2773,6 +2820,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
    */
   const playSurfaceRef = useRef(playSurface);
   playSurfaceRef.current = playSurface;
+  // Through a ref like the telemetry context above, so the watchdog's callback
+  // keeps one identity and reads whatever the view layer wrote last.
+  const paintBridgingSourceRef = useRef(paintBridgingRef);
+  paintBridgingSourceRef.current = paintBridgingRef;
   // The overlay image that is mounted now, and whether expo-image has answered
   // for it. The view layer reports a mount from a layout effect, inside the
   // commit that mounts the image, so nothing that image fires can reach JS
@@ -2793,6 +2844,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         failureKind: 'paint_timeout',
         errorCode: 'paint_timeout',
         context: failureTelemetryContextRef.current,
+        paint: {
+          bridging: paintBridgingSourceRef.current?.current ?? false,
+          msSinceImageSweep: msSinceImageMemorySweep(),
+        },
       });
     }, OVERLAY_PAINT_TIMEOUT_MS);
     paintWatchdogRef.current = { loadKey, timer };
@@ -3108,9 +3163,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   );
   const getReadyBoardArtSnapshot = useCallback(
     (climbUuid: string, mirrored: boolean, displayedOverlayLoadKey: string | null) => {
-      // Credential/privacy invalidation is synchronous, before React gets to
+      // Credential invalidation is synchronous, before React gets to
       // replace this recycled row's closure. Never bless its old pixels anew.
-      if (artworkPrivacyGeneration !== getPrivacyRevocationGeneration()) return undefined;
+      if (artworkCredentialGeneration !== getCredentialGeneration()) return undefined;
       const width = getPlayOverlayWidth({ boardName, layoutId, sizeId, setIds });
       if (width !== undefined) {
         // This is the renderer's own key builder and resolved signature, not a
@@ -3199,7 +3254,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       missingBackgroundCount,
       backgroundPaths,
       filledStyle,
-      artworkPrivacyGeneration,
+      artworkCredentialGeneration,
     ],
   );
   return {

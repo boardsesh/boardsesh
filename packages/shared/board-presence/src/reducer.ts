@@ -24,6 +24,7 @@ export const initialBoardPresenceState: BoardPresenceState = {
   history: [],
   lastSeq: 0,
   lastClearedAt: null,
+  lastClearedClimbUuid: null,
   stats: null,
   lastStatsSeq: 0,
   holder: null,
@@ -103,6 +104,16 @@ function updateWallFromHistory(
   };
 }
 
+/**
+ * The climb a "Turn off all lights" left dark, while nothing has been lit since;
+ * `null` once anything is on the wall again, or when no clear was seen. Keyed on
+ * the climb rather than "the wall is dark" so a peer whose queue moves ahead of
+ * the presence echo isn't told its new climb is dark.
+ */
+export function selectClearedClimbUuid(state: BoardPresenceState): string | null {
+  return state.currentClimb === null ? state.lastClearedClimbUuid : null;
+}
+
 export function boardPresenceReducer(state: BoardPresenceState, action: BoardPresenceAction): BoardPresenceState {
   switch (action.type) {
     case 'MERGE_HISTORY': {
@@ -129,7 +140,12 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
       if (action.payload.seq <= state.lastSeq) return state;
       // Import arrival order cannot tell whether Kilter displayed a climb before
       // or after this clear. Keep its timestamp even after a later native set.
-      return updateWallFromHistory(state, state.history, action.payload.seq, action.payload.clearedAt);
+      const cleared = updateWallFromHistory(state, state.history, action.payload.seq, action.payload.clearedAt);
+      // A replayed clear can land before the history backfill, when nothing is
+      // current yet, so the server names the climb; an older server doesn't, and
+      // the climb that was current is the best guess.
+      const lastClearedClimbUuid = action.payload.climbUuid ?? state.currentClimb?.climbUuid ?? null;
+      return cleared.lastClearedClimbUuid === lastClearedClimbUuid ? cleared : { ...cleared, lastClearedClimbUuid };
     }
 
     case 'BACKFILL_HISTORY': {

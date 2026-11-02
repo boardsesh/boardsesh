@@ -69,6 +69,7 @@ void test('ignores incomplete runs and malformed head SHAs from the Actions resp
 });
 
 void test('classifies changed paths with the production workflow semantics', () => {
+  assert.equal(classifyChangedFiles(['scripts/mobile-ota-unreleased-native.ts']).ota, true);
   assert.equal(classifyChangedFiles(['packages/mobile/src/data/changelog.generated.json']).ota, false);
   assert.equal(classifyChangedFiles(['packages/mobile/src/data/changelog.generated.json']).backend, false);
   // The Expo web export bundles What's New, so app.boardsesh.com still picks it up.
@@ -193,6 +194,7 @@ void test('keeps production deploy unit tests CI-only', () => {
     'scripts/railway-deployment-status.test.mjs',
     'scripts/production-smoke.test.ts',
     'scripts/mobile-ota-promote.test.ts',
+    'scripts/mobile-ota-unreleased-native.test.ts',
     'scripts/mobile-ota-schema-ready.test.mjs',
     'scripts/mobile-ota-stage-verify.test.ts',
   ]) {
@@ -203,6 +205,58 @@ void test('keeps production deploy unit tests CI-only', () => {
       ota: false,
       cloudflare: false,
       staticAssets: false,
+    });
+  }
+});
+
+for (const filePath of [
+  'scripts/__tests__/production-deploy-web-targets.test.ts',
+  'scripts/__tests__/static-asset-deploy-origin.test.ts',
+  'scripts/__tests__/future-deploy-contract.test.ts',
+]) {
+  void test(`keeps ${filePath} CI-only without an exact-path exception`, () => {
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: false,
+      backend: false,
+      app: false,
+      ota: false,
+      cloudflare: false,
+      staticAssets: false,
+    });
+  });
+}
+
+void test('limits the script test exclusion to direct test filenames', () => {
+  for (const filePath of [
+    'scripts/__tests__/runtime.ts',
+    'scripts/__tests__/fixture.test.ts.json',
+    'scripts/__tests__/nested/fixture.test.ts',
+    'nested/scripts/__tests__/fixture.test.ts',
+    'scripts/lib/deploy-runtime.ts',
+    'packages/web/app/page.tsx',
+  ]) {
+    assert.equal(classifyChangedFiles([filePath]).web, true, `${filePath} must remain web-affecting`);
+  }
+});
+
+void test('script tests alongside runtime code still deploy the runtime targets', () => {
+  for (const runtimePath of ['packages/backend/src/index.ts', 'packages/mobile/app/index.tsx']) {
+    assert.deepEqual(
+      classifyChangedFiles(['scripts/__tests__/future-deploy-contract.test.ts', runtimePath]),
+      classifyChangedFiles([runtimePath]),
+    );
+  }
+});
+
+void test('script tests alongside deploy controls still affect every target', () => {
+  for (const controlPath of ['.github/workflows/production-deploy.yml', 'scripts/production-deploy-changes.mjs']) {
+    assert.deepEqual(classifyChangedFiles(['scripts/__tests__/future-deploy-contract.test.ts', controlPath]), {
+      web: true,
+      backend: true,
+      app: true,
+      ota: true,
+      cloudflare: true,
+      staticAssets: true,
     });
   }
 });

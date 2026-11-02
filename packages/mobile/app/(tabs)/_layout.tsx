@@ -14,6 +14,7 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { selectByVariant } from '../../src/theme/variants/select-by-variant';
 import { useTabChrome } from '../../src/hooks/use-bottom-accessory';
 import { useAccessoryHostRoute } from '../../src/hooks/use-accessory-host-route';
+import { useVerticalTabBar } from '../../src/hooks/use-vertical-tab-bar';
 import { useDeviceLayout } from '../../src/hooks/use-device-layout';
 import { TabletSidebar } from '../../src/components/navigation/TabletSidebar';
 import { IpadPlayPane } from '../../src/components/play-drawer/IpadPlayPane';
@@ -26,14 +27,14 @@ import {
   resolveDetailPaneWidth,
   WALL_COLUMN_WIDTH,
 } from '../../src/theme/size-class';
-import { isAccessoryHiddenRoute, tabsActiveSegment } from '../../src/lib/route-segments';
+import { isAccessoryHiddenRoute } from '../../src/lib/route-segments';
+import { useWallDisplayOpen } from '../../src/lib/wall-display-presence';
 import { usePendingBoardSyncPoll } from '../../src/lib/integrations/use-pending-board-sync-poll';
-import { useKeepAwakeWhile } from '../../src/hooks/use-keep-awake-while';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 import { getAppEntryTab } from '../../src/lib/app-entry-route';
 
 // Select the start-up tab (Climbs unless the climber chose Home) on ordinary
-// entry without moving its native search tab. Read once, at module load, so a
+// entry without reordering the native tabs. Read once, at module load, so a
 // change in Settings applies from the next start. Explicit routes keep their
 // destination; screenshot captures still start at Home.
 export const unstable_settings = { initialRouteName: getAppEntryTab() };
@@ -47,12 +48,16 @@ type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 const materialTabIcon =
   (active: MaterialIconName, inactive: MaterialIconName) =>
   ({ focused, color, size }: TabIconProps) => (
-    <MaterialCommunityIcons name={focused ? active : inactive} color={color} size={size} />
+    <MaterialCommunityIcons
+      name={focused ? active : inactive}
+      color={color as React.ComponentProps<typeof MaterialCommunityIcons>['color']}
+      size={size}
+    />
   );
 
 // HIG Tab bars: a selected tab shows the filled variant of its SF Symbol, an
-// unselected one the outline. Climbs keeps the plain magnifying glass: it is the
-// search-role tab and the symbol has no fill variant. The Android JS bar fills
+// unselected one the outline. Climbs keeps the plain magnifying glass, like
+// Apple Music's Search tab: the symbol has no fill variant. The Android JS bar fills
 // its Material icons on focus already (`materialTabIcon`).
 const TAB_SF_SYMBOLS = {
   home: { default: 'house', selected: 'house.fill' },
@@ -78,14 +83,15 @@ const ACCESSORY_SHOWN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: false } } a
 const ACCESSORY_HIDDEN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: true } } as const;
 
 /**
- * Bottom tabs. Every iPhone on the Liquid Glass variant gets the system UIKit tab
- * bar (`expo-router/unstable-native-tabs`), iOS 18 included (HIG, Tab bars: use
- * the system bar so it carries the platform's own materials, Dynamic Type and
- * accessibility). iOS 26 adds the Liquid Glass extras on top: a native
- * `BottomAccessory` platter for the current climb + tick, the separated search
- * tab and minimize-on-scroll. On iOS 18 the bar has none of those, so Climbs is
- * an ordinary labelled tab and the current climb rides the floating JS
- * `PersistentQueueBar` just above the native bar. Material, Android and the
+ * Bottom tabs. Every iPhone and iPad on the Liquid Glass variant gets the system
+ * UIKit tab bar (`expo-router/unstable-native-tabs`), iOS 18 included (HIG, Tab
+ * bars: use the system bar so it carries the platform's own materials, Dynamic
+ * Type and accessibility); on iPad it adapts to a sidebar. iOS 26 adds the Liquid
+ * Glass extras on top: a native `BottomAccessory` platter for the current climb +
+ * tick (on iPad too, like Music's MiniPlayer) and minimize-on-scroll.
+ * On iOS 18 the bar has neither, so the current climb rides the floating JS
+ * `PersistentQueueBar` just above the native bar. Climbs is an ordinary labelled
+ * tab everywhere, like Apple Music's Search tab. Material, Android and the
  * tablet shell use a JS `Tabs` navigator with the Material 3 `MaterialTabBar`.
  * `useTabChrome()` is the one answer for all of it.
  */
@@ -122,8 +128,9 @@ export default function TabLayout() {
   // Route term on the same mount gate: the host stays mounted anywhere the tab bar is
   // on screen — every route inside the tabs group, pushed sub-routes included, plus the
   // transparent player. The accessory is a CHILD of the bar, so unmounting it on a push
-  // ran `setBottomAccessory:nil` with the bar still up and left the docked role="search"
-  // Climbs item on a stale frame, unhittable until a force-quit (#5055). It unmounts only
+  // ran `setBottomAccessory:nil` with the bar still up and left the then docked
+  // role="search" Climbs item on a stale frame, unhittable until a force-quit (#5055;
+  // Climbs is an ordinary tab since #6827, the rule stands). It unmounts only
   // on a root push/modal, where the whole tab VC leaves and the accessory co-detaches
   // with the bar — the case that releases the backing view, so UIKit still never stacks a
   // stale glass platter under the fresh one on return (doubled, offset text). See
@@ -145,25 +152,41 @@ export default function TabLayout() {
   // (deviceLayout.expanded is computed but intentionally unconsumed here — it's
   // reserved for the Phase-3 master+detail Climbs browser; see size-class.ts.)
   const deviceLayout = useDeviceLayout();
+  // iOS 27 lets any tab be prominent: it stays visible, at the trailing end, when the
+  // bar collapses on scroll (WWDC26 "Modernize your UIKit app"), like Apple Music's
+  // Search. The API is iOS 27-only and react-native-screens warns below it. iPhone
+  // only: that is where the bar collapses.
+  const prominentClimbsTab =
+    liquidGlassTabBar && !deviceLayout.isPad && Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 27;
+  // On iPhone Duo the bar is a vertical rail, and collapsing it on scroll leaves
+  // only Climbs: Home, Record, Discover and Profile disappear until the climber
+  // scrolls back up. HIG ("Designing for iPhone Duo"): in navigation-focused
+  // screens, keep "the tab bar and primary destinations" accessible. So the rail
+  // never minimizes; the horizontal iPhone bar keeps minimize-on-scroll.
+  const verticalTabBar = useVerticalTabBar();
+  const tabBarMinimizeBehavior = liquidGlassTabBar ? (verticalTabBar ? 'never' : 'onScrollDown') : undefined;
   const { width: windowWidth } = useWindowDimensions();
-  // The focused tab drives the wall-redundancy rule below: when the "On the
-  // Wall" destination is open, the ambient column is suppressed so the same feed
-  // isn't shown twice. `tabsActiveSegment` reads segment 1 without indexing the
-  // route-typed tuple (see route-segments.ts).
   const segments = useSegments();
-  const onWallTab = tabsActiveSegment(segments) === 'wall';
+  // The wall-redundancy rule below: while the full-screen Wall display covers the
+  // shell, the shell's own wall column and player pane stand down, so the same
+  // feed isn't rendered twice behind an opaque kiosk. Read from the root stack,
+  // not the focused segments, so a page pushed over the kiosk does not remount
+  // them behind it.
+  const wallDisplayOpen = useWallDisplayOpen();
   // The hold-type and zone filter boards keep their controls at the bottom of the
   // screen, right where the accessory platter draws. Hide the platter there through
   // the native `bottomAccessoryHidden` prop instead of unmounting the host (#5055);
-  // see `isAccessoryHiddenRoute`.
+  // see `isAccessoryHiddenRoute`. Not while the tab bar is a vertical rail (iPhone
+  // Duo, closed or open in landscape): hiding the accessory then collapses the
+  // rail to the Climbs tab. There it stays, spanning the bottom of the content
+  // like Music's mini player, and those filter boards clear it through the tab's
+  // own inset instead (HoldFilterPicker; the zone footer already does). The iPad
+  // "On the Wall" kiosk hides it too: its hero already shows the lit climb. The
+  // bottom-chrome metrics mirror this expression so nothing is reserved for it.
   const accessoryNativeProps =
-    nativeAccessoryActive && isAccessoryHiddenRoute(segments)
+    nativeAccessoryActive && isAccessoryHiddenRoute(segments) && !verticalTabBar
       ? ACCESSORY_HIDDEN_NATIVE_PROPS
       : ACCESSORY_SHOWN_NATIVE_PROPS;
-  // Kiosk stays lit: hold the screen awake while the "On the Wall" tab is the
-  // focused destination (iPad-only — /wall is unreachable elsewhere). Released
-  // on navigate-away and unmount so other tabs don't hold the lock.
-  useKeepAwakeWhile(onWallTab, 'wall');
   // The live wall gets a dedicated column in landscape (room for sidebar + browse
   // list + detail pane + wall) and falls back to a strip atop the pane in portrait
   // (see resolveWallSurface). Gated on a bound board so an empty column never sits
@@ -178,8 +201,8 @@ export default function TabLayout() {
   // Below the device-size floor (iPad mini / base 11" / Air 11" — see
   // WALL_PANEL_MIN_DEVICE_LONG_SIDE) `resolveEffectiveWallSurface` collapses the
   // column AND the strip to `none`; those devices reach the wall through the
-  // BoardSheet peek and the "On the Wall" tab, like the phone. Only the 11" Pro
-  // and 13" iPads keep the persistent panel.
+  // BoardSheet and its Wall display. Only the 11" Pro and 13" tablets keep the
+  // persistent panel.
   const wallSurface = resolveEffectiveWallSurface({
     width: windowWidth,
     widthClass: deviceLayout.widthClass,
@@ -228,11 +251,6 @@ export default function TabLayout() {
       options={{ title: t('mobile.nav.home'), tabBarIcon: materialTabIcon('home', 'home-outline') }}
     />,
     <Tabs.Screen
-      key="climbs"
-      name="climbs"
-      options={{ title: t('mobile.nav.climbs'), tabBarIcon: materialTabIcon('magnify', 'magnify') }}
-    />,
-    <Tabs.Screen
       key="record"
       name="record"
       options={{
@@ -246,18 +264,6 @@ export default function TabLayout() {
         // leaving the Record tab blank until another tab forces a remount.
         lazy: eagerMountRecord ? false : undefined,
       }}
-    />,
-    <Tabs.Screen
-      key="wall"
-      name="wall"
-      // iPad-only "On the Wall" destination. `href: null` hides it from the JS
-      // Material tab bar (expo-router turns it into tabBarItemStyle:{display:'none'},
-      // which MaterialTabBar filters) and there's no NativeTabs.Trigger below, so it
-      // never appears as a 6th bottom tab on any phone. It's registered here anyway
-      // so the single JS Tabs navigator can route /wall INSIDE the shell content
-      // (keeping the sidebar + panes), reached from the iPad sidebar rail row; a root
-      // route would cover the shell instead.
-      options={{ href: null, title: t('mobile.nav.wall') }}
     />,
     <Tabs.Screen
       key="discover"
@@ -275,11 +281,18 @@ export default function TabLayout() {
         tabBarIcon: materialTabIcon('account-circle', 'account-circle-outline'),
       }}
     />,
+    // Last, so Climbs is the rightmost tab here too, matching the native bar.
+    <Tabs.Screen
+      key="climbs"
+      name="climbs"
+      options={{ title: t('mobile.nav.climbs'), tabBarIcon: materialTabIcon('magnify', 'magnify') }}
+    />,
   ];
 
-  // Material tablets retain the JS rail and pane shell at every width.
-  // Native iPad instead keeps one UIKit adaptive sidebar navigator below;
-  // NativeTabletContent owns panes inside each measured native tab host.
+  // Material tablets (Android, Expo web, an iPad on the Material variant) retain
+  // the JS rail and pane shell at every width. Native iPad instead keeps one UIKit
+  // adaptive sidebar navigator below, with one content column and the current
+  // climb in the bottom accessory, like Apple Music.
   if (deviceLayout.isTablet && !nativeTabBar) {
     const isRegular = deviceLayout.widthClass === 'regular';
     const tabsNavigator = (
@@ -303,21 +316,20 @@ export default function TabLayout() {
             master-detail). Width-budgeted like the wall column (resolveDetailPaneSurface):
             the tightest regular portraits — iPad mini and 9.7–10.2" (744–810pt) — suppress
             it rather than squeeze the browse list below the readable floor; there the
-            compact bottom-sheet PlayDrawer takes over (see drawer-host-provider). Hidden
-            on the "On the Wall" tab: the kiosk IS the wall surface and needs the full
-            content pane, so a persistent (usually empty) detail pane there just squeezes
-            it — same redundancy guard as the wall column below. */}
-        {isRegular && showDetailPane && !onWallTab ? (
+            compact bottom-sheet PlayDrawer takes over (see drawer-host-provider). Not
+            mounted under the Wall display, which covers the whole shell — same
+            redundancy guard as the wall column below. */}
+        {isRegular && showDetailPane && !wallDisplayOpen ? (
           <View key="pane" style={[styles.playPane, { width: playPaneWidth, borderLeftColor: shellDividerColor }]}>
             <IpadPlayPane />
           </View>
         ) : null}
         {/* Dedicated "Now on the wall" column — landscape only, where the width
             budget leaves room for it (see resolveWallSurface). In portrait the wall
-            rides a strip atop the pane (IpadPlayPane) instead. Hidden while the
-            "On the Wall" tab is the focused destination — it shows the same feed,
-            so two live copies would be redundant. */}
-        {isRegular && showWallColumn && !onWallTab ? (
+            rides a strip atop the pane (IpadPlayPane) instead. Hidden under the
+            Wall display — it shows the same feed, so two live copies would be
+            redundant. */}
+        {isRegular && showWallColumn && !wallDisplayOpen ? (
           <View
             key="wall"
             style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: shellDividerColor }]}
@@ -344,14 +356,14 @@ export default function TabLayout() {
   return (
     // `minimizeBehavior="onScrollDown"` relies on UIKit finding the climbs
     // FlashList's nested scroll view, which it can't by default — that fallback
-    // lives in patches/react-native-screens@4.26.2.patch, alongside the
+    // lives in patches/react-native-screens@4.30.0.patch, alongside the
     // bottom-accessory relayout fix. `vp run check:mobile-patches` (CI) fails the
     // build if either hunk ever stops applying after a dep bump. Minimizing is an
     // iOS 26 UIKit feature (react-native-screens logs a warning for any other
     // value below 26), so the iOS 18 bar keeps the system default.
     <NativeTabs
       sidebarAdaptable={deviceLayout.isPad}
-      minimizeBehavior={liquidGlassTabBar ? 'onScrollDown' : undefined}
+      minimizeBehavior={tabBarMinimizeBehavior}
       unstable_nativeProps={accessoryNativeProps}
       iconColor={{ default: systemColors.secondaryLabel, selected: systemColors.label }}
       labelStyle={{ default: { color: systemColors.secondaryLabel }, selected: { color: systemColors.label } }}
@@ -380,22 +392,9 @@ export default function TabLayout() {
         </NativeTabs.BottomAccessory>
       ) : null}
 
-      {/* A hidden trigger still registers its route. Declare Wall exactly once,
-          keeping it first in the iPad sidebar and off the iPhone tab bar. */}
-      <NativeTabs.Trigger name="wall" hidden={!deviceLayout.isPad}>
-        <NativeTabs.Trigger.Icon sf={{ default: 'rectangle.portrait', selected: 'rectangle.portrait.fill' }} />
-        <NativeTabs.Trigger.Label>{t('mobile.nav.wall')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
       <NativeTabs.Trigger name="home">
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.home} md="home" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.home')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      {/* Only the iOS 26 bar has a separated search slot. */}
-      <NativeTabs.Trigger name="climbs" role={liquidGlassTabBar ? 'search' : undefined}>
-        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
-        <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="record">
@@ -416,6 +415,18 @@ export default function TabLayout() {
       <NativeTabs.Trigger name="profile">
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.profile} md="account_circle" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.profile')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+
+      {/* Last, so it is the rightmost tab, like Apple Music's Search tab (HIG Tab
+          bars: the search tab sits "at the trailing end"). An ordinary labelled tab,
+          not `role="search"`: since SDK 58 that role makes a UISearchTab, which iOS 26
+          sets apart from the other tabs and which brings a search field into the bar.
+          Climbs has no search field; a second tap on the tab opens Filters instead
+          (`useTabReselect` in climbs/index.tsx). `prominent` keeps it on screen at the
+          right when the bar collapses on scroll, as Music's Search does. */}
+      <NativeTabs.Trigger name="climbs" prominent={prominentClimbsTab}>
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
+        <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );

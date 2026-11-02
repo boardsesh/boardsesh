@@ -24,13 +24,6 @@ export function sanitizeQueueItem(item: ClimbQueueItem): ClimbQueueItem {
   return { uuid: item.uuid, suggested: item.suggested, climb: sanitizeQueueClimb(item.climb) };
 }
 
-/** Keep a composer's target identity so withdrawing copied metadata keeps its draft mounted. */
-export function sanitizeClimbTarget<Target extends { climb: Climb }>(
-  target: Target,
-): Omit<Target, 'climb'> & { climb: Climb } {
-  return { ...target, climb: sanitizeQueueClimb(target.climb) };
-}
-
 type QueueSnapshot = {
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;

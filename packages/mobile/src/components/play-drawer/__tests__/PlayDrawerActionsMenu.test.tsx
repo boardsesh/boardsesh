@@ -24,6 +24,8 @@ const queue = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(),
   // The real one answers null outside now-slot mode; a played slot is not History.
   findReplayFromHereItem: vi.fn((_queueItemUuid: string): unknown => null),
+  // What Play next reads when it runs: the displayed slot only counts while it is still queued.
+  queueUuids: ['slot-2'] as string[],
 }));
 const toggleFavoriteMutate = vi.hoisted(() => vi.fn());
 // The app-wide profile cache: who is looking.
@@ -52,6 +54,15 @@ vi.mock('../../AppMenu', () => ({
     );
   },
 }));
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@tanstack/react-query')>();
+  const client = new original.QueryClient();
+  return { ...original, useQueryClient: () => client };
+});
+vi.mock('../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => 0 }));
+vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
+vi.mock('../../play-drawer/use-climb-change-lights', () => ({ isDrivingWall: () => false }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-uuid' }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }));
@@ -69,8 +80,13 @@ vi.mock('../../../providers/queue-provider', () => ({
     playNext: queue.playNext,
     setCurrentClimb: queue.setCurrentClimb,
     findReplayFromHereItem: queue.findReplayFromHereItem,
+    getQueueSnapshot: () => ({
+      queue: queue.queueUuids.map((uuid) => ({ uuid })),
+      currentClimbQueueItem: null,
+    }),
   }),
   useQueueSessionId: () => ({ sessionId: null }),
+  useIsSharedSession: () => false,
   useActiveClimbUuid: () => queue.activeClimbUuid,
 }));
 vi.mock('../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: (climb: unknown) => ({ uuid: 'qi', climb }) }));
@@ -99,7 +115,8 @@ import { PlayDrawerActionsMenu, type PlayDrawerActionsMenuProps } from '../PlayD
 const CLIMB = { uuid: 'climb-1', name: 'Crimp Line', frames: 'p1r12', userId: 'setter-9' } as unknown as Climb;
 // The board the climb is DRAWN on, which here is not the selected one.
 const TENSION = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13', angle: 35 };
-const EVERYTHING_HIDDEN = { favorite: true, share: true, queue: true, mirror: true, angle: true };
+// Log is in the bar for a member; ⋯ stands in for it only in a timed block with the wall button (#7000).
+const EVERYTHING_HIDDEN = { tick: false, favorite: true, share: true, queue: true, mirror: true, angle: true };
 
 function makeProps(overrides: Partial<PlayDrawerActionsMenuProps> = {}): PlayDrawerActionsMenuProps {
   return {
@@ -137,6 +154,7 @@ beforeEach(() => {
   menu.mounts = 0;
   menu.props = [];
   queue.activeClimbUuid = null;
+  queue.queueUuids = ['slot-2'];
   favoriteStatusReads.length = 0;
   profile.id = 'me';
   profile.reads = [];
@@ -153,6 +171,13 @@ describe('PlayDrawerActionsMenu', () => {
     expect(queue.playNext).toHaveBeenCalledTimes(1);
     expect(queue.playNext).toHaveBeenCalledWith(expect.objectContaining({ queueItemUuid: 'slot-2' }));
     expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('falls back to matching by climb when the displayed slot left the queue before the tap', () => {
+    queue.queueUuids = ['some-other-slot'];
+    const { container } = render(createElement(PlayDrawerActionsMenu, makeProps({ queueItemUuid: 'slot-2' })));
+    tap(container, 'mobile.climbActions.playNext');
+    expect(queue.playNext).toHaveBeenCalledWith(expect.objectContaining({ queueItemUuid: undefined }));
   });
 
   it('lets Play next match by climb when the displayed climb has no queued slot', () => {

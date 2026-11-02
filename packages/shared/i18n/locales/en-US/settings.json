@@ -426,6 +426,9 @@
     "cancel": "Cancel",
     "mobileConnectAnyway": "Connect anyway",
     "mobileConnectAnywayWarning": "Our records show this controller belongs to another board setup. Connecting anyway may light climbs incorrectly.",
+    "mobileDifferentBoardTitle": "Different saved board",
+    "mobileDifferentBoardNamedWarning": "This controller is linked to {{name}}, a different saved board. Connecting anyway puts your climbs in your current board's wall feed.",
+    "mobileDifferentBoardWarning": "This controller is linked to a different saved board. Connecting anyway puts your climbs in your current board's wall feed.",
     "mobileSwitchSetup": "Switch board setup",
     "mobileUseRecordedSetup": "Use recorded setup"
   },
@@ -443,6 +446,7 @@
     "searchingForBoard": "Searching for your {{board}}…",
     "searchingForSavedBoard": "Searching for your board…",
     "searchAnyBoard": "Search for any board",
+    "selectedBoardNotFound": "Your selected board was not found",
     "writing": "Lighting the board…",
     "selectBoard": "Select Board",
     "devicesFound_one": "{{count}} board found",
@@ -462,36 +466,39 @@
     "cancel": "Cancel",
     "connectBoard": "Connect Board",
     "relightBoard": "Re-light board",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Disconnect from the board after no climb has been displayed for the selected time.",
-      "enabledLabel": "Auto-disconnect",
-      "enabledDescription": "Let other climbers connect after the timer expires.",
-      "timeoutLabel": "Disconnect after",
-      "toggleTitle": "Auto-disconnect",
-      "toggleSubtitle": "Disconnect after {{timeout}} of inactivity",
-      "timeoutOptions": {
-        "10": "10 seconds",
-        "15": "15 seconds",
-        "30": "30 seconds",
-        "45": "45 seconds",
-        "60": "1 minute",
-        "120": "2 minutes",
-        "300": "5 minutes",
-        "600": "10 minutes"
-      }
-    },
     "lighting": {
       "title": "Board lighting",
-      "description": "Choose what lights up the connected board automatically.",
-      "onSwipeLabel": "Light the board as I swipe",
-      "onSwipeDescription": "Only once a climb is on the wall. A preview never lights the board as you swipe.",
-      "onTapLabel": "Light the board when I tap a climb",
-      "onTapDescription": "A tap in any list puts the climb on the wall. Off, the tap opens a preview.",
+      "keep": {
+        "label": "Stop driving after",
+        "off": "Right away",
+        "options": {
+          "30": "30 seconds",
+          "45": "45 seconds",
+          "60": "1 minute",
+          "120": "2 minutes",
+          "300": "5 minutes"
+        },
+        "untilStopped": "Until I stop",
+        "inSessionLabel": "In a session too",
+        "inSessionAccessibilityLabel": "Put on board and Always drive the wall also apply in a session",
+        "inSessionDescription": "When your phone has the crew's board. Off, your picks in a session stay previews.",
+        "inSessionOffReason": "Change Stop driving after from Right away to use this.",
+        "alwaysDriveReason": "Always drive the wall is on, so this doesn't apply.",
+        "footer": "Put on board lights the climb and you drive the wall: every climb you pick lights too, and each one restarts the clock. When the time runs out, your next pick opens as a preview.",
+        "footerUntilStopped": "Put on board lights the climb and you drive the wall: every climb you pick lights too, until you tap You are driving the wall.",
+        "footerOff": "Put on board lights the climb you are on. Your next pick opens as a preview."
+      },
+      "drivingEnds": {
+        "label": "Disconnect Bluetooth when driving ends",
+        "description": "When your drive ends, your phone lets go of the board so the next climber can connect: when you stop it or turn off all lights, when its time runs out, or when a crewmate puts a climb up while your drive has a time limit. Put on board reconnects."
+      },
+      "drivingHelp": "How driving the wall works",
+      "alwaysDriveLabel": "Always drive the wall",
+      "alwaysDriveDescription": "Every climb you pick lights while this phone holds the board. In a session it needs In a session too.",
+      "alwaysDriveFooter": "Tap You are driving the wall to stop. Your picks then open as previews until you disconnect or tap Put on board.",
       "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
-      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter's page replaces your queue with that list. With Light the board when I tap a climb off, use Play to load it."
+      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter’s page loads that list. While you drive the wall, the list replaces your queue and the climb you tapped lights. Otherwise the list from the climb you tapped becomes Up next, and that climb opens as a preview while the wall keeps its climb until you Put on board. In a session the list never goes into the shared queue."
     },
-    "turnOff": "Turn off the board",
     "holdForControls": "Hold for board controls",
     "boardControls": "Board controls",
     "sendFailedTitle": "Couldn't light board",
@@ -513,19 +520,23 @@
     "releaseWall": "Release the wall",
     "barControl": {
       "connectedLabel": "Board connected, you have control",
-      "connectedHint": "Opens board controls",
+      "youHaveBoard": "You have the board",
+      "youHaveBoardWithClimb": "You have the board: {{name}}, {{grade}}",
+      "connectedHint": "Disconnects from the board",
       "peerLabel": "On {{name}}'s wall",
       "peerLabelAnonymous": "On the wall",
       "peerHint": "Opens the climb on the wall",
       "disconnectedLabel": "Board disconnected",
       "disconnectedHint": "Connect to the board",
       "wallHeldLabel": "You have the wall",
+      "wallHeldWithClimb": "You have the wall: {{name}}, {{grade}}",
       "wallHeldHint": "Releases the wall",
       "wallOpenLabel": "Wall's open",
-      "wallOpenHint": "Takes the wall"
+      "wallOpenHint": "Takes the wall",
+      "drivingValue": "Driving the wall"
     },
     "relayToWall": "Put your climb on the wall",
-    "peerDrivingBoard": "Someone else is driving the board"
+    "peerDrivingBoard": "Someone else has the board"
   },
   "integrations": {
     "title": "Connected apps",

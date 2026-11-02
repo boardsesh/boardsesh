@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -34,8 +36,11 @@ describe.skipIf(process.platform !== 'darwin')('Expo native runtime teardown', (
     const sqlitePackage = dirname(mobileRequire.resolve('expo-sqlite/package.json'));
     const sqliteDirectory = join(sqlitePackage, 'vendor/sqlite3');
     const corePackage = dirname(mobileRequire.resolve('expo-modules-core/package.json'));
-    const [sqliteSource, coreSource, fixture] = await Promise.all([
+    const [sqliteSource, databaseSource, statementSource, resultSource, coreSource, fixture] = await Promise.all([
       readFile(join(sqlitePackage, 'ios/SQLiteModule.swift'), 'utf8'),
+      readFile(join(sqlitePackage, 'ios/NativeDatabase.swift'), 'utf8'),
+      readFile(join(sqlitePackage, 'ios/NativeStatement.swift'), 'utf8'),
+      readFile(join(sqlitePackage, 'ios/SQLiteResult.swift'), 'utf8'),
       readFile(join(corePackage, 'ios/Core/AppContext.swift'), 'utf8'),
       readFile(new URL('./fixtures/expo-sqlite-runtime-teardown.swift', import.meta.url), 'utf8'),
     ]);
@@ -46,15 +51,29 @@ describe.skipIf(process.platform !== 'darwin')('Expo native runtime teardown', (
           .map((declaration) => swiftBlock(coreSource, declaration))
           .join('\n'),
       )
+      .replace('// INSERT_SQLITE_RESULTS', resultSource.replace(/^import .+$/gm, ''))
+      .replace(
+        '// INSERT_DATABASE_METHODS',
+        ['func ensureOpen()', 'func lastErrorMessage()', 'private func prepare(', 'private func exec(source:']
+          .map((declaration) => swiftBlock(databaseSource, declaration))
+          .join('\n'),
+      )
+      .replace(
+        '// INSERT_STATEMENT_METHODS',
+        ['func ensureNotFinalized()', 'func finalize(']
+          .map((declaration) => swiftBlock(statementSource, declaration))
+          .join('\n'),
+      )
       .replace('// INSERT_SQLITE_QUEUE', `${swiftBlock(sqliteSource, 'private let moduleQueue: DispatchQueue')}()`)
       .replace(
         '// INSERT_SQLITE_METHODS',
         [
           'private func closeAllDatabases()',
           'private func removeAllCachedDatabases()',
-          'private func closeDatabase(',
+          'func closeDatabase(',
+          'private func initDb(',
+          'private func maybeThrowForClosedDatabase(',
           'private func maybeFinalizeAllStatements(',
-          'private func convertSqlLiteErrorToString(_ db: OpaquePointer?)',
           'private func convertSqlLiteErrorToString(_ db: NativeDatabase)',
         ]
           .map((declaration) => swiftBlock(sqliteSource, declaration))
@@ -93,14 +112,19 @@ describe.skipIf(process.platform !== 'darwin')('Expo native runtime teardown', (
     if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
   });
 
-  it.each(['lifecycle', 'retained-context', 'admitted-prepare', 'same-queue', 'other-module-queue'])(
-    '%s closes abandoned writers without touching the next runtime',
-    async (scenario) => {
-      const { stdout } = await executeFile(executable, [scenario, join(temporaryDirectory, `${scenario}.db`)], {
-        timeout: 10_000,
-        maxBuffer: 1024 * 1024,
-      });
-      expect(stdout.trim()).toBe(`PASS ${scenario}`);
-    },
-  );
+  it.each([
+    'lifecycle',
+    'retained-context',
+    'admitted-prepare',
+    'same-queue',
+    'other-module-queue',
+    'init-close-lock-order',
+    'concurrent-exec',
+  ])('%s closes abandoned writers without touching the next runtime', async (scenario) => {
+    const { stdout } = await executeFile(executable, [scenario, join(temporaryDirectory, `${scenario}.db`)], {
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    });
+    expect(stdout.trim()).toBe(`PASS ${scenario}`);
+  });
 });

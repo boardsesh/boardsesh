@@ -1,5 +1,9 @@
 # OAuth and Email Verification Setup
 
+This guide describes the current authentication system. The accepted replacement
+and its compatibility requirements are in [Better Auth migration](./better-auth-migration.md);
+that migration is planned, not yet deployed.
+
 This guide covers setting up OAuth authentication providers (Google, Apple, Facebook) and email verification for Boardsesh.
 
 ## Table of Contents

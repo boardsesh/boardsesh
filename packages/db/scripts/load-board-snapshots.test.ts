@@ -4,7 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { catalogSnapshotBoardTypeFilter } from '../src/catalog-snapshot.js';
 import {
+  artifactSelectSql,
   booleanToPg,
   buildColumnPlans,
   castExpression,
@@ -268,6 +270,53 @@ describe('catalogue load order', () => {
     const aliases = DEFERRED_CATALOG_TABLES.find((entry) => entry.table === 'board_climb_aliases');
     assert.ok(aliases);
     assert.equal(aliases.requiresClimb, 'canonical_uuid');
+  });
+});
+
+describe('artifactSelectSql', () => {
+  // Artifacts built before the exporter filtered spray still carry private
+  // spray-wall rows. A rebuilt image must not load them.
+  it('skips spray rows from an artifact that still carries them', () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'artifact-select-'));
+    const artifact = new DatabaseSync(join(workDir, 'catalog.db'));
+    try {
+      artifact.exec('CREATE TABLE board_layouts (board_type TEXT, id INTEGER, name TEXT)');
+      artifact.exec("INSERT INTO board_layouts VALUES ('kilter', 1, 'Original'), ('spray', 7, 'Private garage wall')");
+      const selectSql = artifactSelectSql('board_layouts', sqliteColumns(artifact, 'board_layouts'));
+      assert.deepEqual(
+        artifact
+          .prepare(selectSql)
+          .all()
+          .map((row) => ({ ...row })),
+        [{ board_type: 'kilter', id: 1, name: 'Original' }],
+      );
+    } finally {
+      artifact.close();
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads a table without a board_type column unfiltered', () => {
+    assert.equal(
+      artifactSelectSql('snapshot_meta', ['table_name', 'row_count']),
+      'SELECT table_name, row_count FROM snapshot_meta',
+    );
+  });
+});
+
+describe('catalogSnapshotBoardTypeFilter', () => {
+  it('builds the spray filter for a bare or table-qualified column', () => {
+    assert.equal(catalogSnapshotBoardTypeFilter('board_type'), "board_type NOT IN ('spray')");
+    assert.equal(
+      catalogSnapshotBoardTypeFilter('board_layouts.board_type'),
+      "board_layouts.board_type NOT IN ('spray')",
+    );
+  });
+
+  it('refuses a column reference that is not a plain identifier', () => {
+    for (const unsafe of ['', 'board_type; DROP TABLE board_layouts', "board_type OR '1'='1'", 'a.b.c', 'Board_Type']) {
+      assert.throws(() => catalogSnapshotBoardTypeFilter(unsafe), /unsafe column reference/);
+    }
   });
 });
 

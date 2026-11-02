@@ -3,39 +3,95 @@ import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { RawLayoutPercentage, RawStatisticsSummary } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
+import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { getCachedNumberFormat } from '../../lib/intl-formatter-cache';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
 import { gradeBadgeColor } from './profile-chart-colors';
+import type { ProfileTotalsStatus } from '../../lib/graphql/hooks/use-you-profile-data';
 
-/** The authoritative all-board total is independent of the progress filters. */
+/**
+ * The authoritative all-board total is independent of the progress filters. It
+ * renders a number only once the totals request succeeded (`status: 'ready'`);
+ * otherwise it says what state the totals are in, never a made-up 0.
+ */
 export const ProfileBoardOverview = memo(function ProfileBoardOverview({
   summary,
+  status,
+  onRetry,
   isOwnProfile = true,
 }: {
   summary: RawStatisticsSummary;
+  status: ProfileTotalsStatus;
+  onRetry: () => void;
   isOwnProfile?: boolean;
 }) {
   const { t, i18n } = useTranslation('profile');
-  const { systemColors } = useTheme();
+  const { t: tCommon } = useTranslation('common');
+  const { systemColors, brandColors, textStyles } = useTheme();
   const totalColor = useVariantValue({ liquidGlass: systemColors.accent, material: systemColors.label });
   return (
-    <View style={styles.header} testID="profile-board-overview" accessible>
+    <View style={styles.header} testID="profile-board-overview" accessible={status !== 'error'}>
       <Text variant="title2" style={styles.heading}>
         {isOwnProfile ? t('stats.boardOverview.title') : t('stats.boardOverview.publicTitle')}
       </Text>
-      <View style={styles.totalRow}>
-        <Text variant="largeTitle" color={totalColor} style={styles.total}>
-          {getCachedNumberFormat(i18n.language).format(summary.totalAscents)}
-        </Text>
-        <View style={styles.totalCaption}>
-          <Text variant="subheadline">{t('stats.boardOverview.climbsLabel', { count: summary.totalAscents })}</Text>
-          <Text variant="caption1" color={systemColors.secondaryLabel}>
-            {t('stats.boardOverview.layouts', { count: summary.layoutPercentages.length })}
+      {status === 'ready' ? (
+        <View style={styles.totalRow}>
+          <Text variant="largeTitle" color={totalColor} style={styles.total}>
+            {getCachedNumberFormat(i18n.language).format(summary.totalAscents)}
+          </Text>
+          <View style={styles.totalCaption}>
+            <Text variant="subheadline">{t('stats.boardOverview.climbsLabel', { count: summary.totalAscents })}</Text>
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
+              {t('stats.boardOverview.layouts', { count: summary.layoutPercentages.length })}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+      {status === 'loading' ? (
+        <View
+          style={styles.totalRow}
+          testID="profile-board-overview-loading"
+          accessibilityLabel={t('stats.boardOverview.totalsLoading')}
+        >
+          <View
+            style={[
+              styles.skeletonTotal,
+              { height: textStyles.largeTitle.lineHeight, backgroundColor: systemColors.fill },
+            ]}
+          />
+          <View style={[styles.totalCaption, styles.skeletonCaption]}>
+            <View style={[styles.skeletonLine, { backgroundColor: systemColors.fill }]} />
+            <View style={[styles.skeletonLineShort, { backgroundColor: systemColors.fill }]} />
+          </View>
+        </View>
+      ) : null}
+      {status === 'error' ? (
+        <View style={styles.statusRow} testID="profile-board-overview-error">
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.statusText}>
+            {t('stats.boardOverview.totalsError')}
+          </Text>
+          <PressableSurface
+            testID="profile-board-overview-retry"
+            onPress={onRetry}
+            feedback="opacity"
+            accessibilityRole="button"
+            style={styles.retry}
+          >
+            <Text variant="subheadline" color={brandColors.primary}>
+              {tCommon('actions.retry')}
+            </Text>
+          </PressableSurface>
+        </View>
+      ) : null}
+      {status === 'offline' ? (
+        <View testID="profile-board-overview-offline">
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.statusText}>
+            {t('stats.boardOverview.totalsOffline')}
           </Text>
         </View>
-      </View>
+      ) : null}
       <Text variant="caption1" color={systemColors.secondaryLabel}>
         {t('stats.boardOverview.allTime')}
       </Text>
@@ -120,6 +176,14 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
   total: { fontWeight: '700', fontVariant: ['tabular-nums'] },
   totalCaption: { flex: 1 },
+  // Same footprint as the loaded total so the list doesn't jump when it lands.
+  skeletonTotal: { width: spacing[12], borderRadius: borderRadius.sm },
+  skeletonCaption: { gap: spacing[2] },
+  skeletonLine: { width: '50%', height: spacing[3], borderRadius: borderRadius.sm },
+  skeletonLineShort: { width: '35%', height: spacing[3], borderRadius: borderRadius.sm },
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: spacing[3] },
+  statusText: { paddingVertical: spacing[2] },
+  retry: { minHeight: spacing[12], justifyContent: 'center' },
   row: { marginHorizontal: spacing[4], paddingHorizontal: spacing[4], paddingVertical: spacing[3], gap: spacing[1] },
   layoutName: { flexShrink: 1 },
   rowDetails: {

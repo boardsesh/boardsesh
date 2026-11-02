@@ -131,7 +131,7 @@ What this means for targeting:
 
 - **Kill switches and percentage rollouts work for everyone**, consented or not, signed in or out.
 - **Conditions on what the request carries still work**: OS, app version and build, and the
-  proxy's edge-verified country (`donation-links` below depends on that).
+  proxy's edge-verified country.
 - **Conditions on stored person properties or cohorts cannot match a climber who is signed out,
   or who declined.** Signed out, every flag request carries the `flags-install:` / `flags-browser:`
   id, which never has a person, so person-property and cohort conditions miss every signed-out
@@ -190,9 +190,23 @@ diagnostic) applies on native. The whole surface lives in three files:
   `stale-current-hold-kill` is a kill switch (read through
   `useStaleCurrentHoldEnabled`, unresolved = enabled) for the #4979 hold: when
   the climb on the wall has not changed for 4 h, connecting a board keeps it
-  dark and the player offers Put on the wall with "Last on the wall …". With it
-  on, connecting lights that climb as before and the line never shows. See
-  `docs/current-climb-outside-queue.md`, section 6.
+  dark and the wall button reads Put on board. With it on, connecting lights
+  that climb as before. See `docs/current-climb-outside-queue.md`, section 6.
+  `wall-swipe-to-drive` is a POSITIVE flag (read through
+  `wallSwipeToDriveOffered`: unresolved or off means off in a store build; dev
+  builds read it as on unless it is set to off; screenshot mode ignores it). It
+  gates more than the swipe: the ‹‹ chevrons and the one-time peek, the Light
+  every climb action and sheet row, since 2.7 Put on board's timed drive, and
+  since 2026-11 **Always drive the wall**'s always-on drive (`alwaysDriveApplies`).
+  The first-connect confirmation and the player's preview-first card read it
+  too. Turned off, Put on board lights one climb and starts no drive, and
+  nothing drives the wall: Always drive the wall's running drive ends keeping the
+  link (`always_off`), and every pick is a preview until the flag is back. Check its rollout in PostHog before reading any
+  driving metric.
+  `shared-session-browse` is a POSITIVE flag (read `=== true`, unresolved =
+  off) that decides whether a crew's swipes and list taps preview instead of
+  writing the shared queue and lighting the wall; off, every gesture lights the
+  wall as before 2.7. `docs/climb-lists-and-queue.md` records its rollout.
   `active-board-follow-heal-kill` is a kill switch (read through
   `useActiveBoardFollowHealEnabled`, unresolved = enabled) for the silent
   launch follow of the active board (#5654, `use-active-board-follow-heal.ts`).
@@ -234,9 +248,28 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useFeatureFlagsResolved()` before it decides, like the others.
   `first-connect-cta-kill` (read through `useFirstConnectCtaEnabled`,
   unresolved = enabled) takes down the connect-step A/B test (#5654, PR 7):
-  no new account is enrolled, and every enrolled one gets the plain bulb back
-  (no Climbs card, no "Light it on the board" pill, no first-connect
-  confirmation). The test deliberately assigns arms WITHOUT a PostHog flag: a
+  no new account is enrolled, and every enrolled one stops seeing the Climbs
+  card and the first-connect confirmation. (The play view's "Light it on the
+  board" pill went in #7000: the player's wall button (Put on board) does that job
+  in both arms.) The confirmation ("Connected to {{board}}") shows at every
+  enrolled account's first connect on the phone, in both arms, whatever **Light
+  the board when I tap a climb** says. Until 2.7 it showed only with that switch
+  on, and 2.7 turns it off by default, so it would have reached almost nobody.
+  Its body now says what lights from there, read the way Always drive the wall and
+  Put on board read it (`firstConnectConfirmationCopy`): every pick, while **Light
+  automatically** drives there (`firstConnectAlwaysDrives`: the switch on, and in a
+  crew In a session too on, on every board; it replaced the two switches in
+  2026-11), Put on board's timed drive (30 or 45 seconds, or whole minutes from 1
+  minute up), until the climber stops it (Until I stop), or the one climb
+  Put on board lights (Stop driving after set to Right away, a crew with In a
+  session too off, or `wall-swipe-to-drive` off) (`resolveKeepLightingReach`, the
+  same rule the player's preview-first card reads). The Climbs card's body follows
+  Always drive the wall and the crew the same way.
+  The host announces the confirmation (`first-connect-confirmation-presence.ts`)
+  before it records the connect, since that record hides the Climbs card: from
+  then until the dialog closes the Climbs list's board-reveal and quick-actions
+  tips and the player's one-shot preview-first card wait, so none of them shows
+  under the dialog. The test deliberately assigns arms WITHOUT a PostHog flag: a
   first launch has no cached flags, so a flag-driven arm could change under a
   climber the moment it resolved. The arm is
   `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2` (1 =
@@ -431,52 +464,75 @@ The coercion happens once, in `readPosthogFeatureFlags` /
 flag's `variants` and only a declared member survives the read; omit it for a
 plain boolean flag and the behaviour is byte-identical to before multivariate
 flags existed. The on-device override widens the same way — `setOverride(key,
-value)` accepts `boolean | string`, and the Feature Flags screen renders a
-`select`-style row (Default + each declared variant) instead of the boolean
-On/Off segmented control whenever a definition has `variants`.
+value)` accepts `boolean | string`, and the Feature Flags screen renders
+Default plus one choice per declared variant instead of the boolean On/Off
+control whenever a definition has `variants`: a segmented control for up to
+three choices, a menu past that (`buildFeatureFlagRows`, `MAX_SEGMENTS`). A
+choice writes the variant string; Default clears it. A boolean left on a
+multivariate flag (the screen wrote one while the select was gone), or a
+variant the flag no longer declares, is cleared when the screen opens
+(`findStaleFeatureFlagOverrideKeys`).
 
-### `donation-links` — the one flag whose targeting is a compliance boundary
+### `donation-links-v2` — the one flag that guards a store policy
 
 Almost every flag here decides whether a feature is visible. This one decides
 whether the app breaks a store policy, so it is worth reading before touching it
 in the dashboard.
 
-An external donation link is a rejection risk in both stores. Two narrow windows
-allow it: the **iOS US storefront** (external purchase links, allowed since May
-2025) and **Android in Australia** from **30 Sept 2026**. Outside them the
-compliant surface is unlinked text that merely names the website — the pattern
-StreetComplete ships and Google sanctions. The Acknowledgements screen renders
-exactly one of those two, and `useDonationLinksAllowed`
-(`packages/mobile/src/lib/donation-links.ts`) picks.
+An external donation link is a rejection risk in both stores. The app acts on
+one narrow window: the **iOS US storefront** (external purchase links, allowed
+since May 2025). Everywhere else the compliant surface is unlinked text that
+merely names the website — the pattern StreetComplete ships and Google
+sanctions. The Acknowledgements screen renders exactly one of those two, and
+`useDonationLinksAllowed` (`packages/mobile/src/lib/donation-links.ts`) picks.
+The same answer gates the Support Boardsesh row in Account and the monthly
+card on Home (days 1 to 7 of each month) (`packages/mobile/src/lib/support-asks.ts`), which also need the
+climber's own "Show support asks" switch in Settings › General to be on. The
+Home card is US iPhones (and admins' phones, for QA) only: it never shows in the Expo browser app, where the
+Account row and the Acknowledgements link are the only asks.
 
-**The two platforms are not equally protected, and the asymmetry is the whole
-point of this section.**
+**On a phone, the code enforces the platform and the region; the flag is only
+the native kill switch.**
 
 - **iOS cannot be rolled out wrong.** Past the flag, the hook also requires an
   App Store storefront of `USA`, read from the device through
   `requireOptionalNativeModule('Storefront')`. A flag enabled worldwide still
-  shows a French iPhone the unlinked text. The module is a native change, so on
-  every binary that predates it — and in Expo Go, and on Android — the probe
-  returns null, which reads as not-allowed. That is the designed degradation.
-- **Android has no client guard at all.** Play exposes no storefront to the app,
-  so there is nothing on-device to check a country against. Functional flag
-  requests preserve OS/version/build targeting when analytics is denied. The
-  first-party proxy supplies only an edge-verified current country, disables
-  upstream GeoIP inference, and replaces unknown/untrusted countries with `XX`.
-  See `docs/cloudflare.md` for the trusted ingress and header prerequisite.
-  **The PostHog
-  targeting IS the guard**, and it has to be exactly:
+  shows a French iPhone the unlinked text. On a binary without the module, in
+  Expo Go, and on Android the probe returns null, which reads as not-allowed.
+- **Android never shows the link**, whatever the flag says. Play exposes no
+  storefront to the app, so the only possible guard there was the PostHog
+  targeting, and Google threatened AnkiDroid with removal over a donation link
+  in Aug–Oct 2026. The earlier plan to open AU Android after 30 Sept 2026 is
+  withdrawn.
+- **The Expo browser app shows it unless `donation-links-web-kill` is on**,
+  whatever `donation-links-v2` says. At `/app` the app is a web page, not a store
+  binary, so no store rule applies — the same reason boardsesh.com links
+  /support from every page. Turning `donation-links-v2` off is a store-policy
+  call and should not take the link off the web, so the browser app has
+  its own kill switch, an ordinary `-kill` flag: absent or unresolved leaves the
+  Account row and the link on, and turning it on in PostHog takes both off
+  `/app` without a deploy. Native builds never read it.
+- **Screenshot mode never shows it**, on any platform, so App Store captures and
+  the replayed screenshot fixtures stay free of donation asks.
+- **Admin accounts see it on any phone, for QA.** With the flag on, an admin
+  (`useIsAdmin`) gets the link on iOS in any storefront and on Android, so the
+  maintainer can check it from Australia. App Review never signs in as an admin.
+  It is still covered by the kill switch and by screenshot mode.
 
-  > platform = Android **and** country = AU **and** date >= 2026-09-30
+**Why the key ends in `-v2`.** Every Android bundle from #5523 (17 Sep 2026)
+until #7057 (31 Oct 2026) returns `true` on Android whenever the old
+`donation-links` key is on. Targeting cannot fence them off: the app sends no
+`$os` with its flag requests, so an `OS = iOS` condition is matched against the
+person's last-seen OS, and a climber who also has an iPhone would get `true` on
+their Android phone. Older store binaries never receive a main OTA either. So
+the app reads `donation-links-v2`, which only bundles with the Android hard-off
+know about, and the old key stays absent from PostHog for good (absent reads as
+off). `donation-links.test.ts` pins that the old key does nothing.
 
-  A percentage rollout on Android, or any country condition wider than AU, ships
-  a policy violation directly — nothing downstream will catch it.
-
-  **And the answer is sticky.** PostHog values persist on the device, so an
-  Android phone that resolved `true` while in an allowed country keeps the link
-  until its next flag reload somewhere else. Narrowing the targeting does not
-  reach back and correct a device already holding a `true`; plan the rollout
-  knowing a wrong answer outlives the config that produced it.
+**How it is set (since 31 Oct 2026):** active, 100% of everyone, no conditions.
+The code limits the link to iPhones on the US storefront; the flag only turns it
+off. To stop the link everywhere, disable the flag. Never add a percentage, and
+never create `donation-links`.
 
 **The tester override is disabled for it in production**, which is what
 `policyControlled: true` on a flag definition means. Ordinarily the on-device
@@ -492,8 +548,8 @@ build"). Mark any future flag the same way if flipping it wrong is a policy
 violation rather than an early look at a feature.
 
 Everything else about the flag is ordinary: a POSITIVE rollout flag read as
-`=== true`, so unresolved, absent and off all land on the unlinked text, which
-is the safe answer in every region. It deliberately does not wait on
+`=== true`, so unresolved, absent and off all land on the unlinked text on
+native, which is the safe answer in every region. It deliberately does not wait on
 `useFeatureFlagsResolved` — the first-frame render is already the compliant one.
 
 ### The board-render flags (issue #2202) — both retired
@@ -517,14 +573,12 @@ coercion branch and the `variants` field on a definition.
 
 `observe-sample-rate` (#5038) brought back the two pieces a live flag actually
 needs — `variants` on the definition, and the coercion branch that lets a
-declared member survive `readPosthogFeatureFlags`. **The tester screen was not
-rebuilt.** `buildFeatureFlagRows` and `FeatureFlagOverrideAction`
-(`packages/mobile/src/components/feature-flag-rows.ts`) are still boolean-only,
-so a multivariate flag renders there as On/Off and an on-device override can
-only write a boolean. For `observe-sample-rate` that is harmless — a boolean
-parses back to the shipped rate — but it does mean **the sample rate can only be
-changed from the PostHog dashboard, not from the device.** Rebuild the row
-rendering if a future flag needs on-device variant selection.
+declared member survive `readPosthogFeatureFlags`. The tester screen's variant
+select came back with the QA-only `first-connect-cta-arm`, which is read from
+the on-device override alone, during #7000: `buildFeatureFlagRows` and `resolveFeatureFlagOverrideAction`
+(`packages/mobile/src/components/feature-flag-rows.ts`) render Default plus each
+variant and write the variant string, so the sample rate can be forced from
+the device too (`parseObserveSampleRate` reads the string).
 
 Full event contract, the PostHog dashboard setup (both flags plus the
 Experiment), and the stratification rule for reading the results:

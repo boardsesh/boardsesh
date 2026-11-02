@@ -8,14 +8,15 @@
 // each mount owns its own `visible` state.
 
 import { useCallback, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { I18nManager, StyleSheet, View } from 'react-native';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
+import { useStartWorkout } from '../../hooks/use-start-workout';
+import { useQueueSessionId } from '../../providers/queue-provider';
+import { useWorkoutRunPendingStart } from '../../lib/workout-run-store';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useDeviceLayout } from '../../hooks/use-device-layout';
-import { resolveDetailPaneSurface } from '../../theme/size-class';
-import { SIDEBAR_WIDTH } from '../../theme/layout';
+import { useCurrentClimbSurface } from '../../hooks/use-current-climb-surface';
 import { spacing } from '../../theme/tokens';
-import { RestTimerPill } from './RestTimerPill';
+import { RestTimerPill, WorkoutStartPill } from './RestTimerPill';
 import { RestTimerSheet } from './RestTimerSheet';
 
 export type RestTimerPillHostProps = {
@@ -24,17 +25,20 @@ export type RestTimerPillHostProps = {
 };
 
 /**
- * The pill plus the sheet it opens. Gated on the timer actually being armed — an
- * unarmed timer has no pill, which is also why `armed` is never persisted (see
- * lib/rest-timer-store.ts).
+ * A prepared workout offers its explicit Start before the timer's clock and
+ * settings sheet. Otherwise an unarmed timer has no pill.
  */
 export function RestTimerPillHost({ compact = false }: RestTimerPillHostProps) {
   const armed = useRestTimerArmed();
+  const { pending, firstItem, startWorkout } = useStartWorkout();
   const [sheetVisible, setSheetVisible] = useState(false);
 
   const openSheet = useCallback(() => setSheetVisible(true), []);
   const closeSheet = useCallback(() => setSheetVisible(false), []);
 
+  if (pending) {
+    return <WorkoutStartPill compact={compact} onPress={startWorkout} firstClimbName={firstItem?.climb.name ?? null} />;
+  }
   if (!armed) return null;
 
   return (
@@ -47,10 +51,13 @@ export function RestTimerPillHost({ compact = false }: RestTimerPillHostProps) {
 
 export type RestTimerPillGateInputs = {
   armed: boolean;
+  workoutStartPending?: boolean;
   /** `BottomChromeMetrics.insideTabs`. */
   insideTabs: boolean;
-  /** True on the regular-width iPad shell, where the sidebar replaces the tab bar. */
+  /** True on the regular-width JS tablet shell, where its rail replaces the tab bar. */
   usesSidebar: boolean;
+  /** `BottomChromeMetrics.restTimerPillHiddenOnRoute`: the Session page while the timer is idle. */
+  hiddenOnRoute?: boolean;
 };
 
 /**
@@ -58,7 +65,7 @@ export type RestTimerPillGateInputs = {
  *
  * This must agree with the bottom-chrome reserve, term for term. That reserve is
  *
- *     restTimerArmed && insideTabs && !usesSidebar        (bottom-chrome-metrics.ts)
+ *     (restTimerArmed || workoutStartPending) && insideTabs && !usesSidebar && !restTimerPillHiddenOnRoute
  *
  * and if the two ever disagree the climber gets one of two visible bugs: a dead
  * 54pt gap under the last list row (reserve without a pill), or the pill sitting
@@ -68,8 +75,14 @@ export type RestTimerPillGateInputs = {
  * Pinned by `rest-timer-pill-host.test.tsx`, which drives this against the real
  * `computeBottomChromeMetrics`.
  */
-export function shouldRenderRestTimerPill({ armed, insideTabs, usesSidebar }: RestTimerPillGateInputs): boolean {
-  return armed && insideTabs && !usesSidebar;
+export function shouldRenderRestTimerPill({
+  armed,
+  workoutStartPending = false,
+  insideTabs,
+  usesSidebar,
+  hiddenOnRoute = false,
+}: RestTimerPillGateInputs): boolean {
+  return (armed || workoutStartPending) && insideTabs && !usesSidebar && !hiddenOnRoute;
 }
 
 /**
@@ -79,38 +92,68 @@ export function shouldRenderRestTimerPill({ armed, insideTabs, usesSidebar }: Re
  *
  * The anchor is `bottomChrome.restTimerBottom` verbatim: it already clears the
  * tab bar and the active queue chrome exactly once. Adding an offset of our own
- * here is #4089's failure shape.
+ * here is #4089's failure shape. Horizontally it sits on the content column
+ * (`contentColumnLeft` / `contentColumnRight`), the same span as the accessory.
  */
 export function RootRestTimerPillHost() {
   const armed = useRestTimerArmed();
+  const { sessionId } = useQueueSessionId();
+  const workoutStartPending = useWorkoutRunPendingStart(sessionId);
   const bottomChrome = useBottomChromeMetrics();
-  const { widthClass } = useDeviceLayout();
-  const { width } = useWindowDimensions();
+  // `usesSidebar` is the reserve's own term, from the same resolver the reserve
+  // reads. The native iPad is not the sidebar shell, so there the pill floats
+  // above the accessory exactly as on iPhone.
+  const { sidebarShell } = useCurrentClimbSurface();
+  const usesSidebar = bottomChrome.insideTabs && sidebarShell;
 
-  // `usesSidebar` is the reserve's own term, recomputed from the same inputs.
-  // The detail-pane check is the persistent-queue-bar bail-out and is strictly
-  // narrower, so it is kept only as documentation of which shell this is.
-  const usesSidebar = bottomChrome.insideTabs && widthClass === 'regular';
-  const detailPaneOwnsQueue =
-    usesSidebar && resolveDetailPaneSurface({ width, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
-
-  if (!shouldRenderRestTimerPill({ armed, insideTabs: bottomChrome.insideTabs, usesSidebar })) return null;
-  // Unreachable while the gate above holds (a detail pane implies the sidebar),
-  // but stated so the iPad shell's intent survives a future edit to either.
-  if (detailPaneOwnsQueue) return null;
+  if (
+    !shouldRenderRestTimerPill({
+      armed,
+      workoutStartPending,
+      insideTabs: bottomChrome.insideTabs,
+      usesSidebar,
+      hiddenOnRoute: bottomChrome.restTimerPillHiddenOnRoute,
+    })
+  ) {
+    return null;
+  }
 
   return (
-    <View pointerEvents="box-none" style={[styles.overlay, { bottom: bottomChrome.restTimerBottom }]}>
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.overlay,
+        {
+          bottom: bottomChrome.restTimerBottom,
+          // Centre on the column the accessory spans, not the window: the native
+          // iPad sidebar and the iPhone Duo rail take a side of it.
+          ...physicalHorizontalInsets(
+            spacing[3] + bottomChrome.contentColumnLeft,
+            spacing[3] + bottomChrome.contentColumnRight,
+          ),
+        },
+      ]}
+    >
       <RestTimerPillHost />
     </View>
   );
 }
 
+/**
+ * Safe-area insets are physical (the sidebar is on the left whatever the
+ * language), but React Native swaps `left` and `right` in a right-to-left
+ * layout by default. Swap them back there so the offsets stay on the side the
+ * inset came from. No shipped locale is right-to-left yet; this keeps the pill
+ * right when one is.
+ */
+function physicalHorizontalInsets(left: number, right: number): { left: number; right: number } {
+  const swapped = I18nManager.isRTL && I18nManager.doLeftAndRightSwapInRTL;
+  return swapped ? { left: right, right: left } : { left, right };
+}
+
 const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
-    left: spacing[3],
-    right: spacing[3],
     alignItems: 'center',
     // Above the tab bar / native accessory in z-order, and one rung BELOW the
     // onboarding tip (100) so a tip pointing at the bar still wins.

@@ -118,6 +118,7 @@ const {
   _STALL_EVENT_CAP_FOR_TESTS,
   _MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS,
 } = await import('../use-native-climb-render');
+const { forgetBoardArtInMemory } = await import('../../lib/board-render/board-art-memory-index');
 
 const BASE = { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '26,27', filledStyle: false };
 const FRAMES = 'p1100r12p1200r13';
@@ -152,6 +153,7 @@ function renderRow(
     renderWidth?: number;
     playSurface?: boolean;
     prefetch?: boolean;
+    paintBridgingRef?: { current: boolean };
   } = {},
 ) {
   return renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES, ...overrides }));
@@ -676,6 +678,38 @@ describe('the overlay paint watchdog', () => {
     expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
+  // Issue #7081. A blank iPad player board left only this event behind, and it
+  // could not say whether an image-cache sweep had just run or whether the board
+  // was still hidden under the opening-art bridge. Both ride the paint timeout.
+  it('says how long ago the image cache was swept and whether the board was bridging', async () => {
+    vi.useFakeTimers();
+    forgetBoardArtInMemory();
+    _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES), 'file:///overlay-cached.png');
+    const { result } = renderRow({ playSurface: true, paintBridgingRef: { current: true } });
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4100);
+    });
+
+    expect(paintTimeouts()).toHaveLength(1);
+    const [event] = paintTimeouts() as (FailureProperties & { bridging?: boolean; ms_since_image_sweep?: number })[];
+    expect(event.bridging).toBe(true);
+    expect(event.ms_since_image_sweep).toBeGreaterThanOrEqual(4000);
+    expect(event.ms_since_image_sweep).toBeLessThan(5000);
+  });
+
+  it('leaves the paint fields off every other failure', async () => {
+    forgetBoardArtInMemory();
+    renderRow({ playSurface: true, paintBridgingRef: { current: true } });
+    await waitFor(() => expect(failureEvents().some((event) => event.failure_kind === 'render_failed')).toBe(true));
+
+    for (const event of failureEvents()) {
+      expect(event).not.toHaveProperty('bridging');
+      expect(event).not.toHaveProperty('ms_since_image_sweep');
+    }
+  });
+
   // The regression this shape exists to prevent. A surface with an overlay URI
   // but no `<Image>` mounted cannot answer, so it must never be asked.
   it('never reports a surface that is rendering no image at all', async () => {
@@ -696,7 +730,7 @@ describe('the overlay paint watchdog', () => {
     vi.useFakeTimers();
     const { result } = renderPlayBoard();
     act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
-    // The app backgrounds, or /play opens and this tab releases its board art.
+    // The app backgrounds, or this iPad tab goes inactive and releases its board art.
     act(() => result.current.onOverlayMounted(null));
 
     await act(async () => {

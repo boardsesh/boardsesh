@@ -161,5 +161,6 @@ export default function YouScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  page: { width: '100%', maxWidth: 672, alignSelf: 'center', flex: 1 },
+  // ReadableColumn supplies the 672pt cap, widened by any side safe area it pads.
+  page: { flex: 1 },
 });

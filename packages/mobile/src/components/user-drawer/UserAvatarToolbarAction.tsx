@@ -11,6 +11,9 @@ import { useUserDrawer } from './UserDrawerProvider';
 // shrinks to stay 4pt inside each edge (30pt in 38pt).
 const GLASS_AVATAR_SIZE = 34;
 const GLASS_AVATAR_INSET = 8;
+// M3 top app bar: a 32dp avatar in a 48dp target. Paper's IconButton pads the
+// icon box by 8dp a side, so the icon size must match the avatar; the default
+// 24dp box clips the avatar into a lopsided shape.
 const MATERIAL_AVATAR_SIZE = 32;
 
 type UserAvatarToolbarActionProps = {
@@ -32,6 +35,7 @@ export function UserAvatarToolbarAction({ variant }: UserAvatarToolbarActionProp
     return (
       <Appbar.Action
         icon={() => <Avatar uri={profile?.avatarUrl} name={avatarName} size={MATERIAL_AVATAR_SIZE} />}
+        size={MATERIAL_AVATAR_SIZE}
         color={systemColors.label as string}
         onPress={openUserDrawer}
         accessibilityLabel={accessibilityLabel}

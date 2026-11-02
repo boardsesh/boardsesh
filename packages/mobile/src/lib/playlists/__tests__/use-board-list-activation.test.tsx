@@ -6,6 +6,11 @@ import type { Climb } from '@boardsesh/queue';
 import type { UsePlaylistActivationOptions } from '../use-playlist-activation';
 import { useBoardListActivation, type BoardListRow } from '../use-board-list-activation';
 import { setSetting } from '../../../settings/hooks';
+import {
+  enterDriveMode,
+  markDriveLive,
+  resetDriveModeForTests,
+} from '../../../components/play-drawer/drive-mode-store';
 
 type ActiveBoard = { boardType: string; layoutId: number; sizeId: number; setIds: string; angle: number } | null;
 
@@ -56,7 +61,7 @@ beforeEach(() => {
   mocks.options = undefined;
   mocks.isSharedSession = false;
   mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
-  setSetting('lightOnClimbTap', true);
+  resetDriveModeForTests();
 });
 
 describe('useBoardListActivation', () => {
@@ -131,23 +136,34 @@ describe('useBoardListActivation', () => {
   });
 
   it.each([
-    ['solo, lighting on', false, true, false],
-    ['solo, lighting off', false, false, true],
-    ['in a crew', true, true, true],
-  ] as const)('sends a row with nothing to draw to its own route (%s)', (_case, shared, lightOnTap, preview) => {
-    mocks.isSharedSession = shared;
-    setSetting('lightOnClimbTap', lightOnTap);
-    const openFallback = vi.fn();
-    const row = makeRow('r1', null);
-    const { result } = renderHook(() =>
-      useBoardListActivation({ sourceId: 's', label: 'l', rows: [row], describeRow, openFallback }),
-    );
+    // Always drive the wall on with no drive yet (no link): still a preview.
+    ['solo, Always drive the wall on, not driving', false, true, true, false],
+    ['solo, not driving', false, false, true, false],
+    ['in a crew', true, false, true, false],
+    // #7113: driving the wall lights the tap, in a crew too.
+    ['in a crew, driving', true, false, false, true],
+    ['solo, driving', false, true, false, true],
+  ] as const)(
+    'sends a row with nothing to draw to its own route (%s)',
+    (_case, shared, alwaysDrive, preview, driving) => {
+      mocks.isSharedSession = shared;
+      setSetting('alwaysDrive', alwaysDrive);
+      if (driving) {
+        enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+        markDriveLive();
+      }
+      const openFallback = vi.fn();
+      const row = makeRow('r1', null);
+      const { result } = renderHook(() =>
+        useBoardListActivation({ sourceId: 's', label: 'l', rows: [row], describeRow, openFallback }),
+      );
 
-    result.current(row);
+      result.current(row);
 
-    expect(openFallback).toHaveBeenCalledWith(row, { preview });
-    expect(mocks.activate).not.toHaveBeenCalled();
-  });
+      expect(openFallback).toHaveBeenCalledWith(row, { preview });
+      expect(mocks.activate).not.toHaveBeenCalled();
+    },
+  );
 
   it('keeps its tap handler as pages land, so memoised rows hold', () => {
     let rows = [makeRow('r1', 'climb-a')];

@@ -57,6 +57,13 @@
     "calendarAria": "Kletterkalender: {{days}} aktive Tage, {{count}} Boulder",
     "calendarLess": "Weniger",
     "calendarMore": "Mehr",
+    "calendarToday": "Heute",
+    "calendarTapHint": "Tippe auf einen Tag, um seine Boulder zu sehen",
+    "calendarClimbs_one": "{{count}} Boulder",
+    "calendarClimbs_other": "{{count}} Boulder",
+    "calendarNoClimbs": "Keine Boulder",
+    "calendarWeekAria": "Woche vom {{date}}: {{days}}",
+    "calendarWeekEmptyAria": "Woche vom {{date}}: keine Boulder",
     "percentile": "Perzentil",
     "topPercent": "Top {{value}}%",
     "moreSentThan": "Mehr Boulder getoppt als {{value}}% der Kletterer*innen",
@@ -98,7 +105,10 @@
       "rowAria": "{{name}}: {{count}} verschiedene Boulder getoppt, gesamte Zeit",
       "recordAria": "Beste Begehung: {{grade}}",
       "publicTitle": "An allen Boards",
-      "publicEmpty": "Noch keine Begehungen erfasst."
+      "publicEmpty": "Noch keine Begehungen erfasst.",
+      "totalsLoading": "Summen werden geladen",
+      "totalsError": "Diese Summen konnten nicht geladen werden.",
+      "totalsOffline": "Diese Summen laden, sobald du wieder online bist."
     },
     "progress": {
       "title": "Dein Fortschritt",

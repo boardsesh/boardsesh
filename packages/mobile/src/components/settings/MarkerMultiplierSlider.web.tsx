@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, View, StyleSheet, type GestureResponderEvent } from 'react-native';
+import { PanResponder, View, StyleSheet, type GestureResponderEvent, type ViewInstance } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { brandControlTint } from '../../theme/expo-ui-modifiers';
@@ -58,7 +58,7 @@ export function MarkerMultiplierSlider({
   // slider matches them. The foreground violet, not the fill: the track sits on
   // the card with no white text over it.
   const onTrackColor = brandControlTint(brandColors);
-  const trackRef = useRef<View>(null);
+  const trackRef = useRef<ViewInstance>(null);
   const trackLayoutRef = useRef<{ pageLeft: number; width: number } | null>(null);
   // The last value `applyPageX` actually applied via `onChange`. RN seeds
   // `gestureState.moveX` at 0 and only updates it on a touch-move, so a tap

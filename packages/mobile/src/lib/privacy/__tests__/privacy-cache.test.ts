@@ -1,26 +1,23 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  getPrivacyCredentialGeneration,
-  getPrivacyRevocationGeneration,
-  invalidatePrivacySnapshots,
+  getCredentialGeneration,
+  invalidateCredentialSnapshots,
   refreshAfterOwnPrivacyChange,
-  subscribeToPrivacyRevocations,
+  subscribeToCredentialChanges,
 } from '../privacy-cache';
 
 describe('credential boundaries', () => {
-  it('moves both generations and notifies listeners before returning', () => {
-    const credential = getPrivacyCredentialGeneration();
-    const revocation = getPrivacyRevocationGeneration();
+  it('moves the credential generation and notifies listeners before returning', () => {
+    const credential = getCredentialGeneration();
     const listener = vi.fn(() => {
       // Listeners read the new generation, not the one being retired.
-      expect(getPrivacyCredentialGeneration()).toBe(credential + 1);
+      expect(getCredentialGeneration()).toBe(credential + 1);
     });
-    const unsubscribe = subscribeToPrivacyRevocations(listener);
+    const unsubscribe = subscribeToCredentialChanges(listener);
     try {
-      invalidatePrivacySnapshots('credential');
-      expect(getPrivacyCredentialGeneration()).toBe(credential + 1);
-      expect(getPrivacyRevocationGeneration()).toBe(revocation + 1);
+      invalidateCredentialSnapshots();
+      expect(getCredentialGeneration()).toBe(credential + 1);
       expect(listener).toHaveBeenCalledOnce();
     } finally {
       unsubscribe();
@@ -100,16 +97,14 @@ describe("refreshing after the viewer's own privacy write", () => {
     queryClient.clear();
   });
 
-  it('moves neither generation, so open drawers and queued work carry on', async () => {
+  it('does not move the credential generation, so open drawers and queued work carry on', async () => {
     const queryClient = new QueryClient();
-    const credential = getPrivacyCredentialGeneration();
-    const revocation = getPrivacyRevocationGeneration();
+    const credential = getCredentialGeneration();
     const listener = vi.fn();
-    const unsubscribe = subscribeToPrivacyRevocations(listener);
+    const unsubscribe = subscribeToCredentialChanges(listener);
     try {
       await refreshAfterOwnPrivacyChange(queryClient);
-      expect(getPrivacyCredentialGeneration()).toBe(credential);
-      expect(getPrivacyRevocationGeneration()).toBe(revocation);
+      expect(getCredentialGeneration()).toBe(credential);
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsubscribe();

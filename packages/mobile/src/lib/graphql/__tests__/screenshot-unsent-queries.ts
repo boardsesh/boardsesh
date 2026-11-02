@@ -65,6 +65,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetNearbySessions',
   'GetNotificationActors',
   'GetNotifications',
+  // Only a real BLE scan sends observed identities; capture flows do not scan.
+  'GetObservedBoardSerialMatches',
   'GetPlaylist',
   'GetPlaylistClimbs',
   // A playlist's or smart list's setter picker (#6651): only a tap inside its filter sheet asks.
@@ -77,6 +79,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetSessionHealthExport',
   // F3 resync (#6666): only in now-slot mode. Screenshot mode runs no PostHog and pins no env value for queue-now-slot.
   'GetSessionQueueStateNowSlot',
+  // Spray-only detail; the recorded capture flows use catalogue boards.
+  'GetSprayClimb',
   'GetSprayWallArchive',
   'GetSprayWallArt',
   'GetSprayWallByLayout',
@@ -106,8 +110,6 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'ProfilePrivacy',
   'ProposalReportReleaseContexts', // Only expanded report reasons for scoped admins.
   'QaPreviews',
-  // F3 server probe (#6666): runs only with queue-now-slot on. Screenshot mode runs no PostHog and pins no env value for it.
-  'QueueStateFieldsProbe',
   'ResourceAccessRequests',
   'ResourcePrivacy',
   'SavedClimbDocuments',

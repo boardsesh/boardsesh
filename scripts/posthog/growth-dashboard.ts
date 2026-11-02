@@ -157,7 +157,7 @@ export const growthDashboard = {
       key: 'sources',
       name: 'Acquisition quality: first-touch sources',
       description:
-        'All clean native newcomers; 28/29/56-day eligible denominators shown. Source outcomes independent of funnel registration. First28 board-day average includes zeros. Exact Day28 differs from days 28–55. Earliest verified acquisition touch only; unknown stays unknown. Organic App Store/Apple Ads unavailable.',
+        'All clean native newcomers; 28/29/56-day eligible denominators shown. Source outcomes independent of funnel registration. First28 board-day average includes zeros. Exact Day28 differs from days 28–55. Earliest verified acquisition touch only; unknown stays unknown. Organic App Store is unknown; Apple association is reported separately, not rewritten as first touch.',
       query: table(sourceQualityQuery()),
     },
     {
@@ -185,7 +185,7 @@ export const growthDashboard = {
   drilldown: {
     name: 'Acquisition first touch: campaign and country detail',
     description:
-      'Saved detail for the source-quality tile. Immutable acquisition-linked campaign, observed country, platform and evidence. No Apple Ads keyword/cost/attributed-install data currently. Two-day outcome denominator: mature first28 newcomers; not inferred from iOS.',
+      'Saved detail for the source-quality tile. Immutable acquisition-linked campaign, observed country, platform and evidence. Apple Ads warehouse delivery and current person association are reported on the separate Apple Ads dashboard. Two-day outcome denominator: mature first28 newcomers; not inferred from iOS.',
     query: table(acquisitionBreakdownQuery()),
   },
   retentionDetails: {
@@ -210,21 +210,19 @@ ORDER BY app.acquisition_week, app.period LIMIT 400`),
   max(computed_as_of) AS observed_through_exclusive_utc FROM growth_native_person_days
 UNION ALL SELECT 'Native newcomers', count(), max(computed_as_of) FROM growth_native_newcomers`),
   },
-  paidAcquisitionBody: `## Apple Ads baseline: attribution and spend pending
+  paidAcquisitionBody: `## Apple Ads: delivery and consented outcomes
 
-Proposed budget: **A$500/month**. Actual spend, Apple-attributed installs/first opens and every acquisition cost are **unavailable**, not zero. iOS usage is never Apple Ads attribution. Organic App Store discovery is also currently unknown.
+Apple Ads reports and person attribution are connected. Use [Apple Ads to Active Climbers](https://us.posthog.com/project/412845/dashboard/2192729) for campaign delivery, named keywords, attribution coverage and climbing outcomes.
 
-Keep three inputs separate: advertising spend in AUD; verified install/first-open attribution; canonical-person engagement outcomes. Play install referrers and identity-linked first web landings support today's source table. They do not identify Apple Ads users.
+**Signup capture on 2.6.0 is incomplete.** The 2.7.0 repair is awaiting verified release evidence. Missing signup events do not mean signup failed. Do not infer historical conversions or replay events without evidence.
 
-Once attribution is verified, report spend ÷ attributed installs, registrations, first successful board users, 2+ board-day users, and retained board users during days 28–55. Each outcome must use the same acquisition cohort and mature denominator. Exact Day28 is a separate product measure. First opens are not store installs.
+Store reports cover eligible ad traffic. Product outcomes cover consenting attributed people, and clean newcomer charts are a smaller validated subset. Spend, tap/view installs, new downloads/redownloads, and person outcomes remain separate. No campaign CPA divides store spend by these consenting-person signup or climber counts.
 
-Needed: Apple AdServices attribution linked to the original person, acquisition/campaign identifiers and timestamps; actual dated spend and currency; country/campaign/keyword dimensions where supplied. Compare later campaign interactions separately from the first touch. No cost calculation until spend and attributed acquisition are reliably joined.
+This dashboard's first-touch table keeps its existing Play/web classification. Current Apple campaign association can arrive later and does not prove the earliest acquisition touch. Organic App Store discovery and unlinked word of mouth remain unknown.
 
-Today's source-quality table includes known organic Google Play, Reddit/community where linked, other identifiable sources and direct/unknown. It cannot recover unattributed Reddit word of mouth. See the saved “Acquisition first touch: campaign and country detail” insight for supported breakdowns.
+Board activity means a successful climb sent to an LED board. Spray-wall activation is reported separately. Every outcome uses its named window, eligible denominator and exclusive source cutoff; unknown and immature values never become zero by default.
 
-Board activity means a successful climb sent to an LED board. Browsing, successful connection alone and spray-wall activity are not that metric. The source table reports people without a successful send, including search-only and connection-only subcounts; this does not prove someone has never climbed.
-
-[Eligible / retained cohort counts](https://us.posthog.com/project/412845/insights/4BQhqXOB) · [Campaign / country detail](https://us.posthog.com/project/412845/insights/ddw4wY4T) · [Observed-through dates](https://us.posthog.com/project/412845/insights/pkfI8ln2)
+[Eligible / retained cohort counts](https://us.posthog.com/project/412845/insights/4BQhqXOB) · [First-touch detail](https://us.posthog.com/project/412845/insights/ddw4wY4T) · [Observed-through dates](https://us.posthog.com/project/412845/insights/pkfI8ln2)
 
 ## Reading this dashboard
 

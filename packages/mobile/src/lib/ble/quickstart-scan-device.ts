@@ -2,7 +2,7 @@
 // lists boards in.
 //
 // The quickstart used to keep only devices whose name carried an Aurora serial
-// (`Kilter Board#751737@3`). That dropped every MoonBoard (no serial, ever) and
+// (`Kilter Board#751737@3`). That dropped ordinary serial-less MoonBoards and
 // every Kilter-built box (a bare `Kilter Board`), so a climber standing at one
 // waited 15 seconds for "No boards in range". 45% of the connect picker's
 // sightings had no serial. These are kept now, keyed by the BLE device id, so
@@ -14,6 +14,7 @@ import { isKilterBuiltBox, parseBoardTypeFromDeviceName, parseSerialNumber } fro
 import { isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
 import { MOONBOARD_BOARD_NAME, toBoardName } from '@boardsesh/board-config';
 import { isLikelyBoardDevice } from './board-device-filter';
+import { isUsableRssi } from './rssi-strength';
 
 type QuickstartScanDeviceBase = {
   /**
@@ -34,8 +35,7 @@ type QuickstartScanDeviceBase = {
 };
 
 /**
- * An Aurora box whose name carries its serial. The sheet resolves it to a saved
- * board through `boardsBySerialNumbers`, exactly as before.
+ * A controller whose name carries its serial, including MoonBoard fixtures.
  */
 export type QuickstartSerialDevice = QuickstartScanDeviceBase & {
   kind: 'serial';
@@ -45,7 +45,7 @@ export type QuickstartSerialDevice = QuickstartScanDeviceBase & {
 };
 
 /**
- * A board that advertises no serial: a MoonBoard controller (never has one) or
+ * A board that advertises no serial: an ordinary MoonBoard controller or
  * a Kilter-built Aurora box that advertises only its type, `Kilter Board`
  * (`isKilterBuiltBox`). Its type is all we know.
  */
@@ -56,14 +56,6 @@ export type QuickstartSeriallessDevice = QuickstartScanDeviceBase & {
 };
 
 export type QuickstartScanDevice = QuickstartSerialDevice | QuickstartSeriallessDevice;
-
-// CoreBluetooth reports 127 when it has no RSSI for a packet. Read as a number
-// it would sort that board above every real reading.
-const RSSI_UNAVAILABLE = 127;
-
-function usableRssi(rssi: number | null | undefined): number | null {
-  return typeof rssi === 'number' && Number.isFinite(rssi) && rssi < RSSI_UNAVAILABLE ? rssi : null;
-}
 
 const AURORA_SERVICE_UUID = AURORA_ADVERTISED_SERVICE_UUID.toLowerCase();
 // `Kilter Board@2`: the spec allows an API level with no serial.
@@ -116,9 +108,21 @@ export function classifyQuickstartDevice({
   rssi: number | null | undefined;
 }): QuickstartScanDevice | null {
   if (!name) return null;
-  const signal = usableRssi(rssi);
+  const signal = isUsableRssi(rssi) ? rssi : null;
 
   if (isMoonboardDeviceName(name)) {
+    const serial = parseSerialNumber(name);
+    if (serial) {
+      return {
+        key: `serial:${serial}`,
+        deviceId,
+        name,
+        kind: 'serial',
+        boardType: MOONBOARD_BOARD_NAME,
+        serial,
+        rssi: signal,
+      };
+    }
     return {
       key: `device:${deviceId}`,
       deviceId,

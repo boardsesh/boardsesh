@@ -20,6 +20,8 @@ export {
 } from './reconcile-identity';
 export { SHARED_EVENTS, type SharedEventKey, type SharedEventName } from './events';
 export { parseAccountCreationReceipt, type AccountCreationReceipt } from './account-creation';
+// Release-watch props on BLE Picker Devices Resolved (2.7): one picker session each.
+export { blePickerSessionProps, type BlePickerSessionInput, type BlePickerSessionProps } from './ble-picker-events';
 // Props shared by more than one event, built in one place so the emitters agree.
 export {
   ANALYTICS_BOARD_TYPES,
@@ -111,6 +113,38 @@ export {
   type BoardQrScannedProps,
   type BoardQrPayload,
 } from './board-qr-events';
+// Queue navigation (#6940): Next / Previous and queue-sheet opens. Mobile-only
+// call sites today; `Queue Navigation` is the name www fired before W-16.
+export {
+  queueNavigation,
+  driveModeEnded,
+  driveModeStarted,
+  type DriveModeEndReason,
+  type DriveModeStartedBy,
+  type DriveModeEndedInput,
+  type DriveModeEndedProps,
+  type DriveModeStartedInput,
+  type DriveModeStartedProps,
+  queueSheetOpened,
+  type QueueNavigationDirection,
+  type QueueNavigationMethod,
+  type QueueNavigationSurface,
+  type QueueNavigationOutcome,
+  type QueueNavigationBoard,
+  type QueueNavigationArtState,
+  type QueueNavigationArtWait,
+  type QueueNavigationInput,
+  type QueueNavigationProps,
+  type QueueNavigationPayload,
+  type QueueSheetSurface,
+  type QueueSheetOpenedInput,
+  type QueueSheetOpenedProps,
+} from './queue-navigation-events';
+export {
+  wallControlPreviewReason,
+  type WallControlPreviewReason,
+  type WallControlPreviewReasonInput,
+} from './wall-control-events';
 export {
   buildCohortPersonProperties,
   type CohortProfileInput,
@@ -155,3 +189,15 @@ export {
   type GymQrSearchParams,
   type GymQrLanding,
 } from './gym-funnel';
+// The www /support page (#2 of the Q4 support plan). www-only, like the gym
+// funnel; the app's support link is SHARED_EVENTS.SupportLinkTapped.
+export {
+  SUPPORT_EVENTS,
+  supportCtaClicked,
+  type SupportCadence,
+  type SupportCtaClickedInput,
+  type SupportCtaCurrency,
+  type SupportCtaPlacement,
+  type SupportEventName,
+  type SupportEventPayload,
+} from './support-events';

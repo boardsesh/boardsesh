@@ -1,5 +1,5 @@
 // Settings is one stack registered in eight places: the root `settings/`, the
-// iOS Account sheet, and every tab, so a page opened from a tab keeps that tab's
+// iOS Account sheet, the Wall display and every tab, so a page opened from a tab keeps that tab's
 // bar and its Back. Each copy is a one-line re-export of the real route. A page
 // missing from one copy is a row that pushes into a navigator without it, which
 // only shows up on a phone, in that one scope. This test is the guard.
@@ -18,7 +18,7 @@ const MIRRORS = [
   '(tabs)/record/settings',
   '(tabs)/discover/settings',
   '(tabs)/profile/settings',
-  '(tabs)/wall/settings',
+  'wall-display/settings',
 ];
 
 /** Route files under `root`, as POSIX paths relative to it. Tests are not routes. */

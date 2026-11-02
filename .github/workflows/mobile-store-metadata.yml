@@ -36,9 +36,7 @@ name: Mobile Store Metadata
 #
 # Runs automatically when the committed listing assets change on main
 # (fastlane/metadata/**, fastlane/Fastfile, or app-stores/google/screenshots/**),
-# pushing to both stores. Not on release/next: release-train-sync.yml carries
-# main's notes to the train, and two refs pushing listings could disturb a review.
-# The train's own copy still lands on its draft through the dispatch above. The
+# pushing to both stores. Exact-source listing text also lands through the draft. The
 # Android screenshot set is refreshed by
 # mobile-screenshots-android.yml, which captures fresh shots and commits them
 # back to main — that commit re-triggers this workflow, which uploads them. Also
@@ -54,7 +52,7 @@ on:
   push:
     # main only. deliver writes onto whichever App Store version is editable, so a
     # main push also refreshes the train's draft; the train's own edits reach it
-    # through mobile-store-draft.yml's dispatch against release/next.
+    # through mobile-store-draft.yml's dispatch against main.
     branches: [main]
     paths:
       - 'fastlane/metadata/**'
@@ -110,8 +108,13 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
 
       - name: Decode App Store Connect API key
         env:
@@ -167,8 +170,13 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
 
       - name: Upload Play Store listing text
         working-directory: fastlane

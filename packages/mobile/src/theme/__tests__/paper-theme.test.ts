@@ -46,6 +46,17 @@ describe('buildPaperTheme', () => {
     expect(theme.colors.surface).toBe('#221A33');
   });
 
+  it('uses the foreground tint for dark primary, with dark ink on top', () => {
+    const theme = buildPaperTheme('dark');
+    // Not the fill-only #7C3AED: primary colours text (tab labels, text buttons).
+    expect(theme.colors.primary).toBe('#A78BFA');
+    expect(theme.colors.onPrimary).toBe('#2E1065');
+    expect(theme.colors.secondary).toBe('#A78BFA');
+    expect(theme.colors.onSecondary).toBe('#2E1065');
+    // The tonal containers still derive from the fill violet.
+    expect(theme.colors.primaryContainer).toContain('124, 58, 237');
+  });
+
   it('passes a provided dynamic palette straight through (Material You hook)', () => {
     const dynamic = { primary: '#123456' } as unknown as Parameters<typeof buildPaperTheme>[1];
     const theme = buildPaperTheme('light', dynamic);

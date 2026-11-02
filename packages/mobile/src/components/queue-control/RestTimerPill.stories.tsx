@@ -6,7 +6,7 @@ import { nowMs } from '../../lib/clock';
 import { armRestTimer, disarmRestTimer, noteRestTimerTick } from '../../lib/rest-timer-store';
 import { getSetting, setSetting } from '../../settings';
 import { spacing } from '../../theme/tokens';
-import { RestTimerClock, RestTimerHeroClock, RestTimerPill } from './RestTimerPill';
+import { RestTimerClock, RestTimerHeroClock, RestTimerPill, WorkoutStartPill } from './RestTimerPill';
 
 // The rest timer's readouts in one state each: the floating pill, the drawer
 // header's compact pill, the Record tab's clock and the sheet's hero (#5396).
@@ -84,6 +84,22 @@ function Readout({ label, children }: { label: string; children: ReactNode }) {
 const stories: StoryModule = {
   title: 'Rest timer / Readouts',
   stories: {
+    preparedWorkout: {
+      name: 'Prepared workout, before its first climb',
+      render: () => (
+        <View style={styles.stack}>
+          <Readout label="pill">
+            <WorkoutStartPill onPress={noop} firstClimbName="Crimp City" />
+          </Readout>
+          <Readout label="drawer header pill">
+            <WorkoutStartPill onPress={noop} firstClimbName="Crimp City" compact />
+          </Readout>
+          <Readout label="all climbs removed">
+            <WorkoutStartPill onPress={noop} firstClimbName={null} />
+          </Readout>
+        </View>
+      ),
+    },
     finalCountdown: {
       name: 'Final countdown, 0:03 left of a 1:00 rest',
       render: () => <EveryReadout secondsLeft={3} />,

@@ -65,8 +65,9 @@ function isProductionDeployWatchdogFile(filePath) {
 
 function isProductionDeployTestFile(filePath) {
   return (
-    filePath === 'scripts/__tests__/docker-build-release-stamp.test.ts' ||
-    filePath === 'scripts/__tests__/production-deploy-serial-plan.test.ts' ||
+    // Direct Vitest suites in this directory are CI inputs, including new ones.
+    // Keep runtime scripts and nested fixtures subject to normal classification.
+    /^scripts\/__tests__\/[^/]+\.test\.ts$/.test(filePath) ||
     filePath === 'scripts/production-backend-smoke.test.mjs' ||
     filePath === 'scripts/production-deploy-changes.test.mjs' ||
     filePath === 'scripts/production-web-deploy-targets.test.mjs' ||
@@ -74,6 +75,7 @@ function isProductionDeployTestFile(filePath) {
     filePath === 'scripts/railway-deployment-status.test.mjs' ||
     filePath === 'scripts/production-smoke.test.ts' ||
     filePath === 'scripts/mobile-ota-promote.test.ts' ||
+    filePath === 'scripts/mobile-ota-unreleased-native.test.ts' ||
     filePath === 'scripts/mobile-ota-schema-ready.test.mjs' ||
     filePath === 'scripts/mobile-ota-server-ready.test.mjs' ||
     filePath === 'scripts/mobile-ota-stage-verify.test.ts'
@@ -194,6 +196,7 @@ function isOtaAffecting(filePath) {
     filePath === 'scripts/lib/ota-branch-probe.ts' ||
     filePath === 'scripts/lib/eoas.ts' ||
     filePath === 'scripts/mobile-ota-promote.ts' ||
+    filePath === 'scripts/mobile-ota-unreleased-native.ts' ||
     filePath === 'scripts/mobile-ota-schema-ready.mjs' ||
     filePath === 'scripts/mobile-ota-server-ready.mjs' ||
     filePath === 'scripts/mobile-ota-stage-verify.ts' ||

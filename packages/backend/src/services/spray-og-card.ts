@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import sharp from 'sharp';
 import { BoundedLru, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, type OutputFormat } from '@boardsesh/board-render';
+import { renderFrostedBokehBuffer } from '@boardsesh/board-render/frosted-bokeh';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants';
 import { IDENTITY_HOMOGRAPHY, invert, mapPoint, mapRadius, type Homography } from '@boardsesh/spray-wall-geometry';
 import { sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
@@ -24,9 +25,6 @@ import { logger } from '../utils/logger';
  * over HTTP can never satisfy, and its WASM overlay draws a catalogue board's
  * fixed geometry. sharp plus an SVG overlay does the whole job here.
  */
-
-/** The dark play field every other OG card composites over. */
-const OG_FIELD_COLOR = '#181225';
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const FALLBACK_HOLD_COLOR = '#FFFFFF';
@@ -421,7 +419,7 @@ export async function renderSprayOgCard(
     const photoWidth = version.photoWidth ?? sourceMetadata.width ?? placedWidth;
     const photoToPlaced = photoWidth > 0 ? placedWidth / photoWidth : 1;
 
-    const overlaySvg = buildOverlayForWall({
+    const marks = buildMarksForWall({
       wall,
       holds,
       frames,
@@ -432,15 +430,16 @@ export async function renderSprayOgCard(
     });
 
     const composites: sharp.OverlayOptions[] = [{ input: placed.data, left, top }];
-    if (overlaySvg !== null) composites.push({ input: Buffer.from(overlaySvg), left, top });
-
-    const canvas = sharp({
-      create: {
-        width: OG_IMAGE_WIDTH,
-        height: OG_IMAGE_HEIGHT,
-        channels: 4,
-        background: OG_FIELD_COLOR,
-      },
+    if (marks.length > 0) {
+      const overlaySvg = buildSprayOverlaySvg({ width: placedWidth, height: placedHeight, marks });
+      composites.push({ input: Buffer.from(overlaySvg), left, top });
+    }
+    const background = await renderFrostedBokehBuffer({
+      points: marks.map((mark) => ({ x: mark.centerX, y: mark.centerY, color: mark.color })),
+      source: { w: placedWidth, h: placedHeight },
+    });
+    const canvas = sharp(background, {
+      raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 },
     }).composite(composites);
 
     const { buffer, contentType } = await encodeCard(canvas, format);
@@ -452,14 +451,14 @@ export async function renderSprayOgCard(
 }
 
 /**
- * The overlay, or null when the wall's matrix cannot be inverted.
+ * Photo-mapped marks shared by the overlay and backdrop; empty for a singular matrix.
  *
  * `invert` throws on a singular matrix by design — it is handed something the
  * system itself stored, so a singular one is an upstream bug. It is not a reason
  * to break a shared link: a card with no holds on it is a worse card, a 500 on a
  * link somebody already posted is a broken one.
  */
-function buildOverlayForWall(params: {
+function buildMarksForWall(params: {
   wall: SprayOgWallRow;
   holds: readonly SprayOgHold[];
   frames: string;
@@ -467,7 +466,7 @@ function buildOverlayForWall(params: {
   placedWidth: number;
   placedHeight: number;
   photoToPlaced: number;
-}): string | null {
+}): SprayOverlayMark[] {
   let canonicalToPhoto: Homography;
   try {
     canonicalToPhoto = invert(params.homography ?? IDENTITY_HOMOGRAPHY);
@@ -477,18 +476,15 @@ function buildOverlayForWall(params: {
       wallId: params.wall.wallId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return null;
+    return [];
   }
 
-  const marks = buildSprayOverlayMarks({
+  return buildSprayOverlayMarks({
     holds: params.holds,
     frames: params.frames,
     canonicalToPhoto,
     photoToPlaced: params.photoToPlaced,
   });
-  if (marks.length === 0) return null;
-
-  return buildSprayOverlaySvg({ width: params.placedWidth, height: params.placedHeight, marks });
 }
 
 /** The production dependency set, wired to drizzle + the media bucket + fetch. */

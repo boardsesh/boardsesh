@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 
 export interface IosAppIdentity {
   bundleIdentifier: string;
@@ -14,11 +15,52 @@ export function fileSha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function readPlistString(plistPath: string, key: string): string {
+  return execFileSync('plutil', ['-extract', key, 'raw', '-o', '-', plistPath], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+/** A necessary Debug/Metro check; matching RN alone does not prove native ABI compatibility. */
+export function assertAppReactNativeVersion(
+  appPath: string,
+  configuration: 'Debug' | 'Release',
+  mobileDirectory: string,
+): void {
+  // Release carries its own JS bundle; it need not match this checkout's Metro.
+  if (configuration === 'Release') return;
+  const nativePlist = join(appPath, 'React-Core_privacy.bundle', 'Info.plist');
+  let nativeVersion: string;
+  try {
+    nativeVersion = readPlistString(nativePlist, 'CFBundleShortVersionString');
+    if (!nativeVersion) throw new Error('Missing React Native version.');
+  } catch {
+    throw new Error(
+      `Cannot verify cached Debug app React Native version from ${nativePlist}. Select or rebuild a Debug app with readable React-Core metadata before running the smoke check.`,
+    );
+  }
+  let installedVersion: string;
+  try {
+    const requireFromMobile = createRequire(join(mobileDirectory, 'package.json'));
+    const packagePath = requireFromMobile.resolve('react-native/package.json');
+    const packageVersion = objectRecord(JSON.parse(readFileSync(packagePath, 'utf8')))?.version;
+    if (typeof packageVersion !== 'string' || !packageVersion.trim()) throw new Error('Missing installed version.');
+    installedVersion = packageVersion.trim();
+  } catch {
+    throw new Error(
+      `Cannot read the installed React Native version for ${mobileDirectory}. Prepare this checkout's mobile dependencies before running the smoke check.`,
+    );
+  }
+  if (nativeVersion !== installedVersion) {
+    throw new Error(
+      `Cached Debug app uses React Native ${nativeVersion}, but this checkout installs ${installedVersion}. Select or rebuild a matching Debug app before running the smoke check.`,
+    );
+  }
+}
+
 export function readAppIdentity(appPath: string, configuration: 'Debug' | 'Release'): IosAppIdentity {
-  const plist = (key: string) =>
-    execFileSync('plutil', ['-extract', key, 'raw', '-o', '-', join(appPath, 'Info.plist')], {
-      encoding: 'utf8',
-    }).trim();
+  const plist = (key: string) => readPlistString(join(appPath, 'Info.plist'), key);
   const executable = join(appPath, plist('CFBundleExecutable'));
   const uuid = execFileSync('xcrun', ['dwarfdump', '--uuid', executable], { encoding: 'utf8' })
     .split('\n')

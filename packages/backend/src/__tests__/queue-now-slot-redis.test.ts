@@ -184,6 +184,66 @@ describe.skipIf(!redisAvailable)('F3 Redis fields against real Redis', () => {
     expect((await roomManager.getQueueState(sessionId)).currentChangedAt).not.toBe(rewoundIso);
   });
 
+  it('mover attribution is atomic, survives queue edits and clears on an unknown move', async () => {
+    const sessionId = await freshSession();
+    const itemA = wallItem('a');
+    const itemB = wallItem('b');
+    await roomManager.updateQueueState(sessionId, [itemA, itemB], itemA, undefined, 0, 'sam-participant');
+    const first = await roomManager.getQueueState(sessionId);
+    expect(first.currentChangedBy).toBe('sam-participant');
+    const stamped = await redis.hgetall(sessionKey(sessionId));
+    expect(stamped.currentChangedByVersion).toBe(stamped.version);
+
+    await queueMutations.addQueueItem({}, { item: wallItem('c') }, ctxFor(sessionId));
+    await mirrorSessionClimb(sessionId, true, 'a');
+    const edited = await roomManager.getQueueState(sessionId);
+    expect(edited.currentChangedBy).toBe('sam-participant');
+    await expect(
+      roomManager.updateQueueState(sessionId, edited.queue, itemB, first.version, 1, 'wrong-participant'),
+    ).rejects.toBeInstanceOf(VersionConflictError);
+    expect((await roomManager.getQueueState(sessionId)).currentChangedBy).toBe('sam-participant');
+
+    await roomManager.updateQueueState(sessionId, edited.queue, itemB, edited.version, 1);
+    expect((await roomManager.getQueueState(sessionId)).currentChangedBy).toBeNull();
+    const unknown = await roomManager.getQueueState(sessionId);
+    await roomManager.updateQueueState(sessionId, unknown.queue, itemA, unknown.version, 0, 'lee-participant');
+    const known = await roomManager.getQueueState(sessionId);
+    expect(known.currentChangedBy).toBe('lee-participant');
+    await roomManager.updateQueueState(sessionId, known.queue, null, known.version, 0, 'lee-participant');
+    expect((await roomManager.getQueueState(sessionId)).currentChangedBy).toBeNull();
+  });
+
+  it('an old replica cannot preserve a stale mover after moving away and back', async () => {
+    const sessionId = await freshSession();
+    const itemA = wallItem('a');
+    const itemB = wallItem('b');
+    await roomManager.updateQueueState(sessionId, [itemA, itemB], itemA, undefined, 0, 'sam-participant');
+    const oldVersion = Number(await redis.hget(sessionKey(sessionId), 'version'));
+    // Today's pre-attribution writer refreshes every F3 field, but leaves the
+    // new actor and its version behind. Moving A -> B -> A hides a UUID-only check.
+    await redis.hset(sessionKey(sessionId), {
+      version: String(oldVersion + 2),
+      sequence: String(oldVersion + 2),
+      historyCountVersion: String(oldVersion + 2),
+      currentUuid: itemA.uuid,
+      currentClimbQueueItem: JSON.stringify(itemA),
+      currentChangedAt: String(Date.now()),
+    });
+    const stale = await roomManager.getQueueState(sessionId);
+    expect(stale.currentChangedBy).toBeNull();
+    await roomManager.updateQueueOnly(sessionId, stale.queue, stale.version, stale, stale.historyCount);
+    const healed = await roomManager.getQueueState(sessionId);
+    expect(healed.currentChangedBy).toBeNull();
+    const stored = await redis.hgetall(sessionKey(sessionId));
+    expect(stored.currentChangedByVersion).toBe(stored.version);
+    // A pre-F3 replica leaves even the UUID freshness proof stale. A same-item
+    // write-back cannot claim its caller moved the climb.
+    await redis.hset(sessionKey(sessionId), 'version', String(healed.version + 1));
+    const preF3 = await roomManager.getQueueState(sessionId);
+    await roomManager.updateQueueState(sessionId, preF3.queue, itemA, preF3.version, 0, 'not-the-mover');
+    expect((await roomManager.getQueueState(sessionId)).currentChangedBy).toBeNull();
+  });
+
   it('a nothing-current setQueue raced by a removal between read and write conflicts and retries', async () => {
     const sessionId = await freshSession();
     const itemA = wallItem('a');
@@ -251,5 +311,30 @@ describe.skipIf(!redisAvailable)('F3 Redis fields against real Redis', () => {
     await expect(
       roomManager.updateQueueState(sessionId, [wallItem('b')], null, state.version, 0),
     ).rejects.toBeInstanceOf(VersionConflictError);
+  });
+
+  it('recreating a dormant hash does not name a same-current write-back caller', async () => {
+    const sessionId = await freshSession();
+    const current = wallItem('a');
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current, undefined, 0);
+    const durable = await getQueueState(sessionId, null);
+    expect(durable.version).toBeGreaterThan(0);
+    await redis.del(sessionKey(sessionId));
+
+    await roomManager.updateQueueState(
+      sessionId,
+      durable.queue,
+      durable.currentClimbQueueItem,
+      durable.version,
+      durable.historyCount,
+      'restoring-participant',
+    );
+
+    const restored = await roomManager.getQueueState(sessionId);
+    expect(restored.currentClimbQueueItem?.uuid).toBe(current.uuid);
+    expect(restored.currentChangedBy).toBeNull();
+    const hash = await redis.hgetall(sessionKey(sessionId));
+    expect(hash.currentChangedBy).toBe('');
+    expect(hash.currentChangedByVersion).toBe(hash.version);
   });
 });

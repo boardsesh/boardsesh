@@ -46,30 +46,24 @@ export function refreshAfterOwnPrivacyChange(queryClient: QueryClient): Promise<
   });
 }
 
-let privacyRevocationGeneration = 0;
-let privacyCredentialGeneration = 0;
-const revocationListeners = new Set<() => void>();
+let credentialGeneration = 0;
+const credentialListeners = new Set<() => void>();
 
-export const getPrivacyCredentialGeneration = (): number => privacyCredentialGeneration;
+export const getCredentialGeneration = (): number => credentialGeneration;
 
-export const getPrivacyRevocationGeneration = (): number => privacyRevocationGeneration;
-
-export function subscribeToPrivacyRevocations(listener: () => void): () => void {
-  revocationListeners.add(listener);
+export function subscribeToCredentialChanges(listener: () => void): () => void {
+  credentialListeners.add(listener);
   return () => {
-    revocationListeners.delete(listener);
+    credentialListeners.delete(listener);
   };
 }
 
 /**
  * Retire copied content and older asynchronous work. The app calls this at
  * credential boundaries (sign-in, sign-out, a browser session changing
- * identity), before asynchronous credential storage, so both generations move.
- * The default `'privacy'` reason moves the revocation generation alone; since
- * the app stopped reacting to `privacyChanged`, nothing in it passes that reason.
+ * identity), before asynchronous credential storage.
  */
-export function invalidatePrivacySnapshots(reason: 'privacy' | 'credential' = 'privacy'): void {
-  if (reason === 'credential') privacyCredentialGeneration += 1;
-  privacyRevocationGeneration += 1;
-  for (const listener of revocationListeners) listener();
+export function invalidateCredentialSnapshots(): void {
+  credentialGeneration += 1;
+  for (const listener of credentialListeners) listener();
 }

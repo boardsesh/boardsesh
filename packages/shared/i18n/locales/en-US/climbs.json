@@ -324,6 +324,7 @@
       "title": "Climb list options",
       "viewOptions": "View options",
       "history": "Board history, {{board}}",
+      "historyTitle": "Board history",
       "historyHint": "See what has been lit on this wall"
     },
     "moderation": {
@@ -422,7 +423,7 @@
       "recovery": {
         "scope": "{{board}} · {{angle}}°",
         "filters": "Active filters: {{filters}}",
-        "removeHint": "Remove one filter to try again. Your search and setup stay selected.",
+        "removeHint": "Remove one filter to try again. Everything else stays selected.",
         "openFilters": "Adjust filters"
       }
     },
@@ -504,6 +505,9 @@
       "pinChip": "Pin {{name}} to the top row",
       "unpinChip": "Unpin {{name}} from the top row",
       "recentDescription": "Your last 10 searches will show here.",
+      "ratingAtLeast": "{{count}}★+",
+      "quickFiltersLink": "Quick filters",
+      "quickFiltersFooter": "Choose the filters that show in the top row, and their order.",
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Show {{count}} climb",
@@ -602,11 +606,11 @@
       "clearAll": "Clear all",
       "nameToken": "“{{name}}”",
       "drafts": "My drafts",
-      "popularityUnrepeated": "Unrepeated"
+      "popularityUnrepeated": "Unrepeated",
+      "wallDrafts": "Drafts"
     },
     "search": {
       "recentFilters": "Recent",
-      "clearRecent": "Clear",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
       "gradeMax": "≤{{grade}}",
@@ -716,7 +720,8 @@
       "sameGrade": "That's already the current grade",
       "reasonPlaceholder": "Tell the crew why (10 characters minimum)",
       "reasonAria": "Reason for the report",
-      "reasonRemaining": "{{count}} more characters",
+      "reasonRemaining_one": "Add 1 more character to send",
+      "reasonRemaining_other": "Add {{count}} more characters to send",
       "reasonCount": "{{count}}/500",
       "submit": "Send",
       "submitError": "Couldn't send your report",
@@ -728,7 +733,6 @@
       }
     },
     "hidden": {
-      "short": "hidden",
       "chip": "Hidden",
       "banner": "Hidden by the community"
     },
@@ -743,13 +747,13 @@
       "editorHint_other": "Remove the grey holds to save"
     },
     "climbActions": {
-      "preview": "Preview",
       "playNext": "Play next",
       "playLast": "Play last",
       "replayFromHere": "Replay from here",
       "nameCopied": "Name copied",
       "copyNameError": "Couldn't copy name",
       "copyNameHint": "Press and hold to copy the name",
+      "copyName": "Copy name",
       "tick": "Log a tick",
       "addBetaVideo": "Add beta video",
       "openInApp": "Open in Aurora app",
@@ -758,7 +762,6 @@
       "editEntry": "Edit logbook entry",
       "report": "Report climb",
       "changeGrade": "Change grade",
-      "closeOverlay": "Close climb actions",
       "openQueue": "Open the queue",
       "deleteClimb": {
         "row": "Delete climb",
@@ -823,7 +826,8 @@
         "campusLabel": "Campus (no feet)",
         "campusDescription": "Hands only — no feet allowed",
         "anyFeetLabel": "Any feet",
-        "anyFeetDescription": "Feet can use any hold, not just the marked ones"
+        "anyFeetDescription": "Feet can use any hold, not just the marked ones",
+        "wallDraftDescription": "Everyone with access to this Spraywall can climb your saved drafts."
       },
       "drafts": {
         "holds_one": "{{count}} hold",
@@ -851,7 +855,8 @@
         "done": "Saved",
         "draftToast": "Draft saved",
         "publishedToast": "Climb published",
-        "needsHold": "Paint a hold to save"
+        "needsHold": "Paint a hold to save",
+        "beforeLogging": "Save this climb before logging it."
       },
       "autosave": {
         "onDevice": "Draft saved on this phone",
@@ -861,7 +866,8 @@
         "unsyncedEdits": "Latest edits are on this phone only",
         "notStored": "Sign in to keep this draft",
         "saveFailed": "Couldn't save to your account. Tap Save to retry.",
-        "keptToast": "Draft kept on this phone. Reopen the creator to finish it."
+        "keptToast": "Draft kept on this phone. Reopen the creator to finish it.",
+        "waitingToSync": "Saved on this device · Waiting to sync"
       },
       "newClimb": {
         "confirm": {

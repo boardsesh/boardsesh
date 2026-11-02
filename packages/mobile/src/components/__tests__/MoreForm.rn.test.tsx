@@ -4,7 +4,6 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MoreFormModel, MoreSelectRow } from '../MoreForm.types';
 import type { AppMenuProps } from '../AppMenu.types';
-import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../lib/ble/auto-disconnect-controller';
 
 const controls = vi.hoisted(() => ({
   contentLayout: null as null | ((event: { nativeEvent: { layout: { height: number } } }) => void),
@@ -27,7 +26,20 @@ vi.mock('../../theme/tokens', () => ({
   borderRadius: { lg: 12 },
 }));
 vi.mock('../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({
+    children,
+    accessibilityElementsHidden,
+    importantForAccessibility,
+  }: {
+    children?: ReactNode;
+    accessibilityElementsHidden?: boolean;
+    importantForAccessibility?: string;
+  }) =>
+    createElement(
+      'span',
+      { 'data-hidden-ios': accessibilityElementsHidden, 'data-important-android': importantForAccessibility },
+      children,
+    ),
 }));
 vi.mock('../PressableSurface', () => ({ PressableSurface: () => null }));
 vi.mock('../Icon', () => ({
@@ -118,6 +130,9 @@ describe('MoreFormRN fitted preview', () => {
   });
 });
 
+// Eight choices, so the menu is long enough to test past its first screen.
+const TIMEOUT_SECONDS = [10, 15, 30, 45, 60, 120, 300, 600] as const;
+
 describe('MoreFormRN menu selects', () => {
   function selectModel(row: MoreSelectRow): MoreFormModel {
     return { sections: [{ key: 'settings', rows: [row] }] };
@@ -127,7 +142,7 @@ describe('MoreFormRN menu selects', () => {
       kind: 'select',
       key: 'timeout',
       label: 'Disconnect timeout',
-      options: AUTO_DISCONNECT_TIMEOUT_OPTIONS.map((seconds) => ({
+      options: TIMEOUT_SECONDS.map((seconds) => ({
         key: String(seconds),
         label: `${seconds} seconds`,
       })),
@@ -184,6 +199,24 @@ describe('MoreFormRN menu selects', () => {
     view.unmount();
     act(() => currentMenu?.onSelectIndex(0));
     expect(row.onSelect).not.toHaveBeenCalled();
+  });
+
+  // Settings › Board renders through MoreFormRN on Android: the menu's name
+  // carries the label and the value, so TalkBack reads the row once.
+  it('names the menu with the label and value, and hides the visible label from screen readers', () => {
+    const row = { ...timeoutRow(), accessibilityLabel: 'Board disconnect timeout' };
+    const view = render(<MoreFormRN model={selectModel(row)} />);
+    expect(controls.menu?.accessibilityLabel).toBe('Board disconnect timeout, 30 seconds');
+    const label = view.getByText('Disconnect timeout');
+    expect(label.getAttribute('data-hidden-ios')).toBe('true');
+    expect(label.getAttribute('data-important-android')).toBe('no-hide-descendants');
+  });
+
+  it("keeps a disabled row's label readable: it has no menu to carry the name", () => {
+    const view = render(<MoreFormRN model={selectModel({ ...timeoutRow(), disabled: true })} />);
+    const label = view.getByText('Disconnect timeout');
+    expect(label.getAttribute('data-hidden-ios')).toBe('false');
+    expect(label.getAttribute('data-important-android')).toBe('auto');
   });
 
   it('retains the Board look and Accessibility navigation icons', () => {

@@ -1,4 +1,5 @@
 import type { OpaqueColorValue } from 'react-native';
+import type { TFunction } from 'i18next';
 import type { IconName } from '../icon-map';
 import type { BoardConnection } from '../play-drawer/lightbulb-control';
 
@@ -33,7 +34,40 @@ type BoardControlIndicatorVisualInput = {
    * it must stay exclusive to a real write.
    */
   wallHeldColor?: string;
+  /**
+   * Draw the "tap to connect" state filled too (the iOS 26 accessory platter, whose
+   * glyphs are solid like Apple Music's). The open state then reads by colour and
+   * the held state's halo, so callers turn this off while Differentiate Without
+   * Color is on, which brings back the outline.
+   */
+  solidGlyphs?: boolean;
+  /**
+   * Driving the wall (#7113): the bulb on the wall button's live fill, so a
+   * tap on any climb reads as lighting it. Only with this phone's link and
+   * lights (`resolveWallBulbLook` says `driving`).
+   */
+  driving?: DrivingBulbColors | null;
 };
+
+/** The wall button's live look, for the bulb of a driver (#7113). */
+export type DrivingBulbColors = {
+  /** The live fill behind the glyph (`brandColors.live`). */
+  fillColor: string;
+  /** The glyph on that fill: the wall button's lit label colour. */
+  iconColor: string;
+};
+
+/**
+ * The wall button's live look (`WallControlButton`): the `live` fill, with its
+ * lit label colour on top (dark ink on the dark scheme's pale amber, white on
+ * the light scheme's deep amber).
+ */
+export function drivingBulbColors(
+  brand: { live: string; onAccent: string; onPrimary: string },
+  colorScheme: string,
+): DrivingBulbColors {
+  return { fillColor: brand.live, iconColor: colorScheme === 'dark' ? brand.onAccent : brand.onPrimary };
+}
 
 /**
  * Maps the board-connection tri-state to the accessory bar's leading control
@@ -49,7 +83,12 @@ export function getBoardControlIndicatorVisual({
   disconnectedColor,
   ledless = false,
   wallHeldColor,
+  solidGlyphs = false,
+  driving = null,
 }: BoardControlIndicatorVisualInput): BoardControlIndicatorVisual {
+  if (driving && !ledless && boardConnection === 'connectedByMe') {
+    return { iconName: 'lightbulb.fill', iconColor: driving.iconColor, haloColor: driving.fillColor };
+  }
   if (ledless) {
     switch (boardConnection) {
       case 'connectedByMe': {
@@ -61,7 +100,7 @@ export function getBoardControlIndicatorVisual({
         return { iconName: 'person.fill', iconColor: peerColor };
       case 'disconnected':
         // The wall is open — tap to take it.
-        return { iconName: 'pin', iconColor: disconnectedColor };
+        return { iconName: solidGlyphs ? 'pin.fill' : 'pin', iconColor: disconnectedColor };
     }
   }
   switch (boardConnection) {
@@ -73,6 +112,113 @@ export function getBoardControlIndicatorVisual({
       return { iconName: 'person.fill', iconColor: peerColor };
     case 'disconnected':
       // Tap to take control — neutral outline bulb, no glow.
-      return { iconName: 'lightbulb', iconColor: disconnectedColor };
+      return { iconName: solidGlyphs ? 'lightbulb.fill' : 'lightbulb', iconColor: disconnectedColor };
+  }
+}
+
+/**
+ * The open Duo's bar bulb while it stands in for the pane player's board
+ * control (#7000): drawn from that control's model, in the indicator's own
+ * glyphs. Amber fill when lit, an amber outline when linked but dark, the
+ * person glyph for a crewmate's board, the pin on a wall with no lights.
+ */
+export function getPaneWallControlVisual({
+  look,
+  holder,
+  state,
+  connectedColor,
+  peerColor,
+  disconnectedColor,
+  wallHeldColor,
+  solidGlyphs = false,
+  driving = null,
+}: {
+  look: 'off' | 'ready' | 'lit' | 'driving';
+  holder: 'self' | 'crew' | null;
+  state: string | null;
+  connectedColor: string;
+  peerColor: string | OpaqueColorValue;
+  disconnectedColor: string | OpaqueColorValue;
+  wallHeldColor: string;
+  solidGlyphs?: boolean;
+  /** The live fill for `look: 'driving'` (#7113); without it, driving draws as lit. */
+  driving?: DrivingBulbColors | null;
+}): BoardControlIndicatorVisual {
+  if (look === 'driving' && driving) {
+    return { iconName: 'lightbulb.fill', iconColor: driving.iconColor, haloColor: driving.fillColor };
+  }
+  if (state === 'release_wall')
+    return { iconName: 'pin.fill', iconColor: wallHeldColor, haloColor: `${wallHeldColor}24` };
+  if (state === 'take_wall') return { iconName: solidGlyphs ? 'pin.fill' : 'pin', iconColor: disconnectedColor };
+  if (holder === 'crew') return { iconName: 'person.fill', iconColor: peerColor };
+  if (look === 'lit' || look === 'driving')
+    return { iconName: 'lightbulb.fill', iconColor: connectedColor, haloColor: `${connectedColor}24` };
+  if (look === 'ready') return { iconName: solidGlyphs ? 'lightbulb.fill' : 'lightbulb', iconColor: connectedColor };
+  return { iconName: solidGlyphs ? 'lightbulb.fill' : 'lightbulb', iconColor: disconnectedColor };
+}
+
+export type BoardConnectionBadgeVisual = {
+  iconName: IconName;
+  iconColor: string | OpaqueColorValue;
+};
+
+type BoardConnectionBadgeVisualInput = Pick<
+  BoardControlIndicatorVisualInput,
+  'boardConnection' | 'connectedColor' | 'peerColor' | 'ledless'
+> & {
+  /** "You have the wall" on a board with no lights. Required: falling back to amber would claim lit LEDs. */
+  wallHeldColor: string;
+};
+
+/**
+ * The status mark on the accessory platter's climb thumbnail: who holds the
+ * board, in the indicator's own glyphs and tones, so the mark and the bulb can
+ * never disagree. It is how the collapsed platter, which has no room for the
+ * bulb once you are connected, still says so. Shape carries the state (bulb /
+ * pin / person, or nothing), so it reads without colour; amber only ever means
+ * the LEDs are on. `null` when the board is free: no mark at all.
+ */
+export function getBoardConnectionBadgeVisual({
+  boardConnection,
+  connectedColor,
+  peerColor,
+  ledless = false,
+  wallHeldColor,
+}: BoardConnectionBadgeVisualInput): BoardConnectionBadgeVisual | null {
+  switch (boardConnection) {
+    case 'connectedByMe':
+      return ledless
+        ? { iconName: 'pin.fill', iconColor: wallHeldColor }
+        : { iconName: 'lightbulb.fill', iconColor: connectedColor };
+    case 'heldByPeer':
+      return { iconName: 'person.fill', iconColor: peerColor };
+    case 'disconnected':
+      return null;
+  }
+}
+
+type BoardConnectionLabelInput = {
+  boardConnection: BoardConnection;
+  ledless: boolean;
+  holderDisplayName: string | null;
+};
+
+/**
+ * What the board connection is, in words: the bulb's accessibility label, and
+ * the collapsed platter's climb value, where only the thumbnail mark shows it.
+ */
+export function getBoardConnectionLabel(
+  t: TFunction<'settings'>,
+  { boardConnection, ledless, holderDisplayName }: BoardConnectionLabelInput,
+): string {
+  switch (boardConnection) {
+    case 'connectedByMe':
+      return t(ledless ? 'ble.barControl.wallHeldLabel' : 'ble.barControl.connectedLabel');
+    case 'heldByPeer':
+      return holderDisplayName
+        ? t('ble.barControl.peerLabel', { name: holderDisplayName })
+        : t('ble.barControl.peerLabelAnonymous');
+    case 'disconnected':
+      return t(ledless ? 'ble.barControl.wallOpenLabel' : 'ble.barControl.disconnectedLabel');
   }
 }

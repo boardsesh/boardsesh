@@ -3,6 +3,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { SaveTickMutationResponse, SaveTickMutationVariables } from '@boardsesh/graphql/operations';
 import type { ClimbStatsForClimbEntry } from '@boardsesh/graphql/operations';
 import type { ClimbStatsEvent } from '@boardsesh/shared-schema';
+import type { SaveClimbInput, UpdateClimbInput } from '@boardsesh/shared-schema';
+import type { SaveClimbResponse, UpdateClimbResponse } from './climb-helpers';
 
 export type ClimbStatsSubscriptionHandlers = {
   next: (event: ClimbStatsEvent) => void;
@@ -17,6 +19,7 @@ export type OfflineMutationDelivery = {
   tableName: string;
   operation: string;
   idempotencyKey: string;
+  entityKey?: string;
   status: 'acknowledged' | 'dead_letter';
 };
 
@@ -44,6 +47,15 @@ export type BoardAdapter = {
   isAuthLoading: boolean;
   executeHttp: ExecuteHttp;
   executeWs: ExecuteWs;
+  /** Atomic local climb + replay storage; null keeps the platform's network path. */
+  saveClimbOffline?: (
+    input: SaveClimbInput,
+    helpers: { queryClient: QueryClient },
+  ) => Promise<SaveClimbResponse | null>;
+  updateClimbOffline?: (
+    input: UpdateClimbInput,
+    helpers: { queryClient: QueryClient },
+  ) => Promise<UpdateClimbResponse | null>;
   /** Await local mirroring after remote success, before query invalidation. */
   afterClimbWrite?: (write: {
     boardType: string;

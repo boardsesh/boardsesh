@@ -214,7 +214,7 @@ export default function ManageGymContent({ initialGym }: { initialGym: Gym }) {
       {activeTab === 'profile' && (
         <ProfileTab gym={gym} onGymChange={handleProfileSaved} onDirtyChange={setIsActiveTabDirty} />
       )}
-      {activeTab === 'boards' && <GymBoardsTab gym={gym} onGymChange={setGym} />}
+      {activeTab === 'boards' && <GymBoardsTab gym={gym} onGymChange={setGym} onDirtyChange={setIsActiveTabDirty} />}
       {activeTab === 'members' && (
         <GymMemberManagement
           gymUuid={gym.uuid}

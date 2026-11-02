@@ -14,6 +14,7 @@ export * from './activity-feed';
 export * from './new-climb-feed';
 export * from './hold-heatmap';
 export * from './sessions';
+export * from './session-workouts';
 export * from './create-session';
 export * from './live-sessions';
 export * from './climb-stats-history';
@@ -36,3 +37,5 @@ export * from './spray-training';
 export * from './saved-climb-sync';
 export * from './apple-ads-attribution';
 export * from './release-context';
+
+export * from './admin-boards';

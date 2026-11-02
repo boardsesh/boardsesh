@@ -195,6 +195,25 @@ describe('drainMutationQueue', () => {
     });
   });
 
+  it.each(['acknowledged', 'dead_letter'] as const)('includes a climb entity key on %s delivery', async (status) => {
+    const mutation = makeMutation({
+      table_name: 'board_climbs',
+      idempotency_key: 'climb:update:operation',
+      entity_key: 'climb:spray:climb-uuid',
+    });
+    mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+    if (status === 'dead_letter') mockProcessMutation.mockRejectedValueOnce(new Error('Invalid climb'));
+    const onMutationStatus = vi.fn();
+    await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, { ...ONLINE, onMutationStatus });
+    expect(onMutationStatus).toHaveBeenCalledWith({
+      tableName: 'board_climbs',
+      operation: 'create',
+      idempotencyKey: 'climb:update:operation',
+      entityKey: 'climb:spray:climb-uuid',
+      status,
+    });
+  });
+
   it('reports a throwing mutation-status callback and continues delivering the batch', async () => {
     const mutationA = makeMutation({ id: 1, idempotency_key: 'tick-a' });
     const mutationB = makeMutation({ id: 2, idempotency_key: 'tick-b' });
@@ -578,9 +597,14 @@ describe('drainMutationQueue', () => {
 
     function expectFavoriteBatch(queryClient: ReturnType<typeof recordingQueryClient>, staleOnly = false) {
       expect(queryClient.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual(
-        ['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount', 'favoriteStatus'].map((head) =>
-          staleOnly ? { queryKey: [head], refetchType: 'none' } : { queryKey: [head] },
-        ),
+        [
+          ['searchClimbs'],
+          ['infiniteSearchClimbs'],
+          ['searchClimbsCount'],
+          ['favoriteStatus'],
+          ['smartPlaylist', 'LIKED_CLIMBS'],
+          ['mySmartPlaylistCounts'],
+        ].map((queryKey) => (staleOnly ? { queryKey, refetchType: 'none' } : { queryKey })),
       );
     }
 
@@ -627,8 +651,8 @@ describe('drainMutationQueue', () => {
 
       const filters = queryClient.invalidateQueries.mock.calls.map(([filter]) => filter);
       const heads = filters.map((filter) => filter.queryKey[0]);
-      expect(heads).toHaveLength(13);
-      expect(new Set(heads).size).toBe(13);
+      expect(heads).toHaveLength(16);
+      expect(new Set(heads).size).toBe(16);
       expect(heads).toContain('localTicks');
       expect(heads).toContain('favoriteStatus');
       expect(heads).toContain('playlistClimbs');
@@ -672,8 +696,8 @@ describe('drainMutationQueue', () => {
         // from any outcome branch must lose localTicks and fail this guard.
         expect(heads).toContain('localTicks');
         expect(heads).toContain('favoriteStatus');
-        expect(heads).toHaveLength(10);
-        expect(new Set(heads).size).toBe(10);
+        expect(heads).toHaveLength(13);
+        expect(new Set(heads).size).toBe(13);
         expect(heads.filter((head) => head === 'searchClimbs')).toHaveLength(1);
         expect(heads.filter((head) => head === 'infiniteSearchClimbs')).toHaveLength(1);
         expect(invalidationCountsAtDelivery.every((count) => count === 0)).toBe(true);
@@ -757,6 +781,8 @@ describe('drainMutationQueue', () => {
         { queryKey: ['infiniteSearchClimbs'], refetchType: 'none' },
         { queryKey: ['searchClimbsCount'], refetchType: 'none' },
         { queryKey: ['favoriteStatus'], refetchType: 'none' },
+        { queryKey: ['smartPlaylist', 'LIKED_CLIMBS'], refetchType: 'none' },
+        { queryKey: ['mySmartPlaylistCounts'], refetchType: 'none' },
       ]);
     });
 
@@ -778,7 +804,7 @@ describe('drainMutationQueue', () => {
       await expect(drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE)).rejects.toThrow(failure);
       await Promise.all(nestedDrains);
 
-      expect(drainingSnapshots).toEqual([true, true, true, true]);
+      expect(drainingSnapshots).toEqual(Array.from({ length: 6 }, () => true));
       expectFavoriteBatch(queryClient);
       expect(mockPeekPending).toHaveBeenCalledTimes(2);
       expect(mockMarkCompleted).toHaveBeenCalledTimes(1);

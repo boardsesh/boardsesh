@@ -1,0 +1,434 @@
+diff --git a/ios/RNSScreen.mm b/ios/RNSScreen.mm
+index 049fd22..9cbb0ca 100644
+--- a/ios/RNSScreen.mm
++++ b/ios/RNSScreen.mm
+@@ -1151,10 +1151,43 @@ RNS_IGNORE_SUPER_CALL_END
+   }
+ }
+ 
++// Depth-first search for this screen's own scroll view. It never descends into a
++// nested screen, so an outer screen's edge effects cannot overwrite an inner one's.
++static const NSInteger RNSEdgeEffectScrollViewSearchMaxDepth = 24;
++
++static UIScrollView *_Nullable rnscreens_findOwnEdgeEffectScrollView(UIView *_Nullable view, UIView *_Nonnull screen, NSInteger depth)
++{
++  if (view == nil || depth < 0) {
++    return nil;
++  }
++  if (view != screen && [view isKindOfClass:RNSScreenView.class]) {
++    return nil;
++  }
++  if ([view isKindOfClass:UIScrollView.class]) {
++    return static_cast<UIScrollView *>(view);
++  }
++  for (UIView *subview in view.subviews) {
++    UIScrollView *found = rnscreens_findOwnEdgeEffectScrollView(subview, screen, depth - 1);
++    if (found != nil) {
++      return found;
++    }
++  }
++  return nil;
++}
++
+ - (void)updateContentScrollViewEdgeEffectsIfExists
+ {
+-  [RNSScrollEdgeEffectApplicator applyToScrollView:[RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:self]
+-                                      withProvider:self];
++  UIScrollView *scrollView = [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:self];
++  if (scrollView == nil) {
++    // The first-child walk stops at any leading sibling, and FlashList nests its
++    // UIScrollView below wrappers, so `scrollEdgeEffects` never reached it and
++    // iOS 26 kept drawing its top edge effect over full-bleed heroes.
++    scrollView = rnscreens_findOwnEdgeEffectScrollView(self, self, RNSEdgeEffectScrollViewSearchMaxDepth);
++  }
++  if (scrollView == nil) {
++    return;
++  }
++  [RNSScrollEdgeEffectApplicator applyToScrollView:scrollView withProvider:self];
+ }
+ 
+ #pragma mark - RNSSafeAreaProviding
+diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.h b/ios/helpers/scroll-view/RNSScrollViewFinder.h
+index 04d40b3..3ae83fe 100644
+--- a/ios/helpers/scroll-view/RNSScrollViewFinder.h
++++ b/ios/helpers/scroll-view/RNSScrollViewFinder.h
+@@ -25,4 +25,15 @@
+  */
+ + (nullable UIScrollView *)findContentScrollViewWithDelegatingToProvider:(nullable UIView *)view;
+ 
++/**
++ * Searches for the content UIScrollView inside an RNScreens-managed subtree.
++ * The traversal delegates to `RNSContentScrollViewProviding` before falling back
++ * to a bounded depth-first UIScrollView walk. It only returns blind UIScrollView
++ * matches after entering an `RNSScreenView` / content-scroll-provider subtree,
++ * so unrelated UIViewController trees are left untouched.
++ *
++ * When `view == nil`, it should also return `nil`.
++ */
+++ (nullable UIScrollView *)findContentScrollViewInManagedSubtreeFrom:(nullable UIView *)view;
++
+ @end
+diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.mm b/ios/helpers/scroll-view/RNSScrollViewFinder.mm
+index 2434c61..fb36bbf 100644
+--- a/ios/helpers/scroll-view/RNSScrollViewFinder.mm
++++ b/ios/helpers/scroll-view/RNSScrollViewFinder.mm
+@@ -1,4 +1,6 @@
+ #import "RNSScrollViewFinder.h"
++#import <objc/message.h>
++#import <objc/runtime.h>
+ 
+ @implementation RNSScrollViewFinder
+ 
+@@ -41,4 +43,119 @@
+   return nil;
+ }
+ 
++// Bound the fallback DFS so unusual hierarchies cannot turn UIKit's scroll-view
++// query into an unbounded traversal. Normal RNScreens + tab/FlashList nesting is
++// shallow; 24 leaves room for extra wrapper views while still failing closed.
++static const NSInteger RNSManagedContentScrollViewSearchMaxDepth = 24;
++
++static BOOL RNSViewIsManagedContentRoot(UIView *view)
++{
++  Class screenViewClass = NSClassFromString(@"RNSScreenView");
++  return (screenViewClass != Nil && [view isKindOfClass:screenViewClass]) ||
++      [view respondsToSelector:@selector(findContentScrollView)];
++}
++
+++ (nullable UIScrollView *)findContentScrollViewInManagedSubtreeFrom:(nullable UIView *)view
++{
++  return [RNSScrollViewFinder findContentScrollViewInManagedSubtreeFrom:view
++                                                         remainingDepth:RNSManagedContentScrollViewSearchMaxDepth
++                                                    insideManagedSubtree:NO];
++}
++
+++ (nullable UIScrollView *)findContentScrollViewInManagedSubtreeFrom:(nullable UIView *)view
++                                                     remainingDepth:(NSInteger)remainingDepth
++                                                insideManagedSubtree:(BOOL)insideManagedSubtree
++{
++  if (view == nil || remainingDepth < 0) {
++    return nil;
++  }
++
++  BOOL isManagedSubtree = insideManagedSubtree || RNSViewIsManagedContentRoot(view);
++
++  if (isManagedSubtree && [view respondsToSelector:@selector(findContentScrollView)]) {
++    UIScrollView *provided =
++        [static_cast<id<RNSContentScrollViewProviding>>(view) findContentScrollView];
++    if (provided != nil) {
++      return provided;
++    }
++  }
++
++  if (isManagedSubtree && [view isKindOfClass:UIScrollView.class]) {
++    return static_cast<UIScrollView *>(view);
++  }
++
++  // Visit children in order, fully descending each managed branch first. The
++  // climbs list (FlashList) nests its UIScrollView below non-scroll containers,
++  // so UIKit's first-child heuristic misses it.
++  for (UIView *subview in view.subviews) {
++    UIScrollView *found = [RNSScrollViewFinder findContentScrollViewInManagedSubtreeFrom:subview
++                                                                        remainingDepth:remainingDepth - 1
++                                                                   insideManagedSubtree:isManagedSubtree];
++    if (found != nil) {
++      return found;
++    }
++  }
++  return nil;
++}
++
++@end
++
++#pragma mark - contentScrollView fallback for iOS 26 tab-bar minimize
++
++// iOS 26's UITabBarController.minimizeBehavior tracks the scroll view that the
++// selected tab's view controller vends via -contentScrollViewForEdge:. UIKit
++// resolves that for plain RN ScrollView/FlatList, but misses FlashList's nested
++// UIScrollView, so the climbs tab never minimizes. Swizzle the getter to fall
++// back to a bounded RNScreens-managed search when UIKit returns nil — leaving
++// every case UIKit already handles untouched.
++static UIScrollView *RNSContentScrollViewForEdgeFallback(
++    UIViewController *self,
++    SEL _cmd,
++    NSDirectionalRectEdge edge) API_AVAILABLE(ios(26.0))
++{
++  SEL originalSelectorAfterSwizzle = NSSelectorFromString(@"rnscreens_contentScrollViewForEdge:");
++  using ContentScrollViewForEdgeMsgSend = UIScrollView *(*)(id, SEL, NSDirectionalRectEdge);
++  UIScrollView *resolved =
++      reinterpret_cast<ContentScrollViewForEdgeMsgSend>(objc_msgSend)(self, originalSelectorAfterSwizzle, edge);
++  if (resolved != nil) {
++    return resolved;
++  }
++  return [RNSScrollViewFinder findContentScrollViewInManagedSubtreeFrom:self.viewIfLoaded];
++}
++
++@interface UIViewController (RNSContentScrollViewFallback)
++@end
++
++@implementation UIViewController (RNSContentScrollViewFallback)
++
+++ (void)load
++{
++  if (@available(iOS 26.0, *)) {
++    // Use a process-wide selector-keyed marker, not a per-image dispatch_once.
++    // If two react-native-screens copies are linked, the second +load must not
++    // exchange the IMPs back.
++    SEL installedKey = NSSelectorFromString(@"rnscreens_contentScrollViewFallbackInstalled");
++    // +load is serialized by the Objective-C runtime; avoid taking another lock.
++    // The associated marker still prevents duplicate linked copies from re-swizzling.
++    if ([objc_getAssociatedObject(UIViewController.class, installedKey) boolValue]) {
++      return;
++    }
++    SEL originalSelector = @selector(contentScrollViewForEdge:);
++    SEL fallbackSelector = NSSelectorFromString(@"rnscreens_contentScrollViewForEdge:");
++    Method originalMethod = class_getInstanceMethod(UIViewController.class, originalSelector);
++    if (originalMethod != NULL &&
++        class_addMethod(
++            UIViewController.class,
++            fallbackSelector,
++            reinterpret_cast<IMP>(RNSContentScrollViewForEdgeFallback),
++            method_getTypeEncoding(originalMethod))) {
++      Method fallbackMethod = class_getInstanceMethod(UIViewController.class, fallbackSelector);
++      if (fallbackMethod != NULL) {
++        method_exchangeImplementations(originalMethod, fallbackMethod);
++        objc_setAssociatedObject(UIViewController.class, installedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++      }
++    }
++  }
++}
++
+ @end
+diff --git a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm
+index b806d38..172f2e8 100644
+--- a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm
++++ b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm
+@@ -2,6 +2,12 @@
+ 
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ 
++// Boardsesh: the widest the accessory glass gets, in points. Apple Music's mini
++// player measures 689 pt wide, centred, on an iPad Pro 11" and 13" in both
++// orientations (iOS 26 and 27), and about 690 pt across the open iPhone Duo's
++// inner display.
++static const CGFloat RNSTabsBottomAccessoryMaxWidth = 689.0;
++
+ @implementation RNSTabsBottomAccessoryWrapperView
+ 
+ - (CGSize)sizeThatFits:(CGSize)size
+@@ -14,6 +20,14 @@
+   // device). By returning the proposed size, we make sure that the accessory always
+   // takes full available width.
+   // See https://github.com/software-mansion/react-native-screens/issues/4728.
++  //
++  // Boardsesh: cap the width at 689 pt. UIKit centres a smaller answer on the
++  // content column. The cap still derives from the proposed size on every query,
++  // so the platter keeps tracking sidebar show/hide and rotation (#4728) whenever
++  // the column is narrower than the cap. The app is portrait-only on iPhone, and
++  // a portrait phone screen is narrower than 689 pt, so the cap only shows on
++  // iPad and across the open iPhone Duo's inner display. The height always stays
++  // the proposed one: answering a smaller height shrinks the platter to 48 pt.
+-  return size;
++  return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);
+ }
+ 
+diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
+index 69bd2fc..66cd93c 100644
+--- a/ios/tabs/host/RNSTabsHostComponentView.mm
++++ b/ios/tabs/host/RNSTabsHostComponentView.mm
+@@ -54,6 +54,10 @@ namespace react = facebook::react;
+ 
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+   UIView *_Nullable _bottomAccessoryWrapperView;
++  // rnscreens_bottomAccessoryDynamicAttachFix
++  BOOL _rnscreens_bottomAccessoryRelayoutScheduled;
++  BOOL _rnscreens_bottomAccessoryRelayoutNeedsRepeat;
++  UIView *__weak _rnscreens_lastAppliedBottomAccessoryView;
+ #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ }
+ 
+@@ -89,6 +93,13 @@ namespace react = facebook::react;
+ 
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+   _bottomAccessoryWrapperView = nil;
++  // rnscreens_bottomAccessoryDynamicAttachFix
++  // Redundant today (ivars are zero-initialized and `shouldBeRecycled` is NO), but
++  // this flag suppresses every later relayout while it's set, so if recycling is
++  // ever turned on a stale YES would silently break the accessory forever.
++  _rnscreens_bottomAccessoryRelayoutScheduled = NO;
++  _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
++  _rnscreens_lastAppliedBottomAccessoryView = nil;
+ #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ }
+ 
+@@ -445,15 +456,167 @@ namespace react = facebook::react;
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ - (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0))
+ {
+-  if (_bottomAccessoryWrapperView != nil && !_bottomAccessoryHidden) {
+-    [_controller setBottomAccessory:[[UITabAccessory alloc] initWithContentView:_bottomAccessoryWrapperView]
+-                           animated:YES];
++  UIView *accessoryView =
++      (_bottomAccessoryWrapperView != nil && !_bottomAccessoryHidden) ? _bottomAccessoryWrapperView : nil;
++
++  if (accessoryView != nil) {
++    [_controller setBottomAccessory:[[UITabAccessory alloc] initWithContentView:accessoryView] animated:YES];
+   } else {
+     [_controller setBottomAccessory:nil animated:YES];
+   }
++
++  // rnscreens_bottomAccessoryDynamicAttachFix
++  // ATTACH **AND** DETACH. The previous shape scheduled only on attach, on the
++  // theory that UIKit removes the accessory itself. It does — but nothing marks
++  // `-[UITabBar layoutSubviews]` dirty, and that is what owns the frame of a
++  // docked `role="search"` tab item. So a detach during a route push left that
++  // item on a stale frame, drawn wrong and hit-testing to nowhere, until the
++  // process restarted (boardsesh/boardsesh#5055).
++  //
++  // Schedule on the accessory-IDENTITY edge, not on every call: this method also
++  // runs for transactions that don't change the accessory, and an unconditional
++  // schedule would add forced tab-bar layout passes that never existed before.
++  // Identity, not a BOOL: attach→attach with a NEW wrapper (the accessory
++  // component remounting with different content) is a real edge, and it is the
++  // original case this whole fix exists for.
++  //
++  // NEVER LAY OUT SYNCHRONOUSLY HERE — see
++  // `rnscreens_layoutBottomAccessoryOutsideTransition` for why (BOARDSESH-9K).
++  if (accessoryView != _rnscreens_lastAppliedBottomAccessoryView) {
++    _rnscreens_lastAppliedBottomAccessoryView = accessoryView;
++    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
++  }
+ }
+ #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ 
++// rnscreens_bottomAccessoryDynamicAttachFix
++// iOS 26's UITabBarController.setBottomAccessory lays the accessory in for free
++// when it's set during the controller's initial setup, but NOT when it's set
++// after the tab bar has already appeared — UIKit attaches it to the controller
++// yet doesn't lay it in until the tab bar is otherwise invalidated. In the
++// Boardsesh app this surfaces solo: the bottom accessory is mounted only once a
++// current climb exists, so the very first climb set (while the user is already
++// on a tab) attaches an accessory that never renders until something else
++// (a tab-item badge, a tab change) re-lays-out the bar. Force the layout pass
++// ourselves whenever the accessory CHANGES after the host is on screen — attach
++// and detach alike, since #5055 showed the detach edge needs it just as much.
++//
++// Renamed from `rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance`: the
++// old name encoded the attach-only assumption that #5055 disproved, and the
++// rename is what makes `scripts/mobile-patches-check.ts` reject a re-applied
++// attach-only patch instead of passing it green.
++//
++// Anchored on `applyBottomAccessoryVisibility` (4.26.0 extracted it out of
++// `updateContainer`), so it also covers the `bottomAccessoryHidden` prop path —
++// the 4.25.2 patch only covered the mount/unmount path.
++//
++// NEVER LAY OUT SYNCHRONOUSLY HERE, and never during a transition.
++//
++// `applyBottomAccessoryVisibility` runs from `updateContainer`, i.e. inside a
++// React Native mounting transaction. The original version of this method called
++// `-layoutIfNeeded` right there, and that synchronous layout got pulled into a
++// UIKit layout/animation feedback loop between a presenting/dismissing
++// UISheetPresentationController and the tab bar's minimize machinery: our
++// layout → `-[UITabBar layoutSubviews]` → `_minimizeBehavior` → a sheet
++// alongside-animation property set → `_sheetLayoutInfoLayout` → tab bar again.
++// On iOS 27 that trips an AnimationKit assertion; underneath it is a stack
++// overflow. Six users, 27 crashes, one of them looping 13 times in a session
++// (Sentry BOARDSESH-9K).
++//
++// So: hop out of the mounting transaction with a single coalesced
++// `dispatch_async`, and if a transition is running when it fires, hand the work
++// to the coordinator's completion block instead of laying out underneath it. The
++// deferred hop also still covers the original async-sizing case (the accessory
++// content is sized by the shadow-state proxy, so an immediate pass could lay in
++// a zero-size accessory before its frame KVO lands).
++- (void)rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange
++{
++#if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++  if (self.window == nil) {
++    // Initial mount (accessory present from the start) lays in for free — only
++    // the post-appearance attach needs the nudge.
++    return;
++  }
++  if (_rnscreens_bottomAccessoryRelayoutScheduled) {
++    // A pass is already in flight. Do NOT drop this edge: the flag stays armed
++    // until the layout actually RUNS, so a coordinator wait that outlives an
++    // attach would otherwise swallow the detach that follows it — exactly the
++    // #5055 sequence. Remember it instead, and re-arm once that pass has laid
++    // out. One in-flight pass at a time, one queued edge, no second chain.
++    _rnscreens_bottomAccessoryRelayoutNeedsRepeat = YES;
++    return;
++  }
++  _rnscreens_bottomAccessoryRelayoutScheduled = YES;
++  _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
++
++  __weak __typeof__(self) weakSelf = self;
++  dispatch_async(dispatch_get_main_queue(), ^{
++    [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
++  });
++#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++}
++
++// rnscreens_bottomAccessoryDynamicAttachFix
++// Forcing layout while a presentation/dismissal is in flight is the dangerous
++// case (see above), so defer to the coordinator's completion block instead.
++//
++// Under continuous navigation a completion can fire straight into the NEXT
++// transition, so this chain is not bounded by a fixed number of hops — it drains
++// when navigation settles. That is the intended behaviour, not a compromise:
++// there is no safe moment to force tab-bar layout mid-transition, and while
++// transitions are running UIKit is laying the bar out anyway. The cost of being
++// wrong is a late-appearing accessory; the cost of laying out anyway is
++// BOARDSESH-9K. Clearing the coalescing flag only in the terminal branch keeps
++// the whole chain to a single in-flight pass.
++- (void)rnscreens_layoutBottomAccessoryOutsideTransition
++{
++  id<UIViewControllerTransitionCoordinator> transitionCoordinator = _controller.transitionCoordinator;
++  if (transitionCoordinator != nil) {
++    __weak __typeof__(self) weakSelf = self;
++    BOOL registered = [transitionCoordinator
++        animateAlongsideTransition:nil
++                        completion:^(__unused id<UIViewControllerTransitionCoordinatorContext> context) {
++                          [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
++                        }];
++    if (registered) {
++      return;
++    }
++    // The coordinator refused the block (it stops accepting registrations once
++    // the transition is far enough along), so nothing will call us back. Falling
++    // through is not just the safe option, it's the necessary one: returning here
++    // would leave the coalescing flag armed with no pending pass, permanently
++    // suppressing every later attach nudge for this host. The transition is
++    // effectively over at this point, which is exactly when laying out is fine.
++  }
++#if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++  _rnscreens_bottomAccessoryRelayoutScheduled = NO;
++#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++  UIView *controllerView = _controller.view;
++  // rnscreens_bottomAccessoryDynamicAttachFix
++  // Marking only the controller view is not enough on a DETACH. The accessory
++  // lives in the tab bar's own subtree, and a docked `role="search"` item's frame
++  // comes out of `-[UITabBar layoutSubviews]`; if the bar isn't dirty, the
++  // recursive `layoutIfNeeded` below walks straight past it and the item keeps
++  // its accessory-era frame — visually shoved, hit-test misses (#5055).
++  // This is invalidation, not layout: it adds no synchronous work of its own, it
++  // only widens the reach of the ONE pass below.
++  [_controller.tabBar setNeedsLayout];
++  [controllerView setNeedsLayout];
++  [controllerView layoutIfNeeded];
++#if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++  // Drain a single edge that arrived while this pass was in flight. This flag is
++  // set ONLY by an accessory-identity change in `applyBottomAccessoryVisibility`,
++  // never by this method, and it is cleared before re-arming — so a layout pass
++  // can never schedule itself, and the chain terminates as soon as React stops
++  // changing the accessory. That termination property is what BOARDSESH-9K's
++  // self-sustaining loop lacked.
++  if (_rnscreens_bottomAccessoryRelayoutNeedsRepeat) {
++    _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
++    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
++  }
++#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++}
++
+ - (void)setLayoutDirection:(UITraitEnvironmentLayoutDirection)layoutDirection
+ {
+   _layoutDirection = layoutDirection;

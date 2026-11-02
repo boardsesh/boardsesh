@@ -133,6 +133,8 @@ that file holds one `board_climb_grades` table. MoonBoard layouts have none by d
 scales — is a third artifact, one file for every board, discovered from its own manifest at
 `board-snapshots/v1-catalog/manifest.json`. That is what turns a climb's `frames` string and
 `layout_id` into coordinates on a wall. Same conventions: read the manifest, never hardcode a URL.
+Spray walls are private to the climbers who built them, so no artifact carries a `board_type =
+'spray'` row.
 
 Not included: user accounts, ticks/logbooks, or any personal data beyond the public setter username
 and first-ascent username attached to climbs and ascents by the climbers who published them.

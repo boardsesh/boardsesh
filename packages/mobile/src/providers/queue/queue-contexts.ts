@@ -19,7 +19,27 @@ import type { CurrentChangeClock } from '../../lib/ble/stale-current-hold';
 /** What triggered a queue reorder — attribution for `SHARED_EVENTS.QueueReordered`. */
 export type QueueReorderSource = 'drag' | 'play-next';
 
+/**
+ * Which queue-sheet control cleared the queue — attribution for
+ * `SHARED_EVENTS.QueueCleared`: the edit mode's Clear, or the header's ⋯ menu.
+ */
+export type QueueClearSource = 'edit' | 'menu';
+
 export type WidgetNavigationOptions = { sendMutation?: boolean };
+
+/** A Next the climber did not press: the rest timer moving the wall on its own. */
+export type NextClimbCaller = 'rest_timer';
+
+export type EndSessionOptions = {
+  notes?: string;
+  /**
+   * Awaited just before END_SESSION, with the session marked as ending locally.
+   * The in-session screen passes the queued-tick wait here (#6903); it lives
+   * outside the queue hooks so they never load the native offline engine.
+   * Errors are swallowed: the session ends whatever it does.
+   */
+  beforeEnd?: (sessionId: string) => Promise<void>;
+};
 
 export type StartSessionConfig = {
   audience?: 'public' | 'unlisted' | 'followers' | 'invite_only';
@@ -99,9 +119,15 @@ type QueueContextValue = {
   restoreQueueItems: (before: QueueContentSnapshot, removedUuids: ReadonlySet<string>, scope: string) => void;
   /** `source` is analytics attribution only — a drag in the queue sheet vs a Play next. */
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => void;
-  clearQueue: () => void;
-  /** Replace the entire queue (optimistic local UPDATE_QUEUE + best-effort party sync). */
-  setQueue: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => void;
+  /** `source` is analytics attribution only — the edit mode's Clear vs the header's ⋯ menu. */
+  clearQueue: (options?: { source?: QueueClearSource }) => void;
+  /**
+   * Replace the entire queue (optimistic local UPDATE_QUEUE + best-effort party
+   * sync). `historyCount` is the History / Up next line while nothing is current
+   * (F3); left out, such a payload is all Up next. A current climb's index is
+   * the line whatever it says.
+   */
+  setQueue: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null, historyCount?: number) => void;
   /**
    * Read the live queue, current climb and usable playlist source without
    * subscribing to state. Stable
@@ -111,6 +137,8 @@ type QueueContextValue = {
    * queue change.
    */
   getQueueSnapshot: () => {
+    /** Live session identity, for actions that must reject a stale session callback. */
+    sessionId?: string | null;
     queue: ClimbQueueItem[];
     currentClimbQueueItem: ClimbQueueItem | null;
     /** F3 now-slot mode: the History / Up next line. Null or absent in legacy mode. */
@@ -154,7 +182,8 @@ type QueueContextValue = {
    * Local-only; touches neither the queue order nor the party session.
    */
   refreshAuthoredClimb: (climbUuid: string, patch: ClimbAuthoredPatch) => void;
-  nextClimb: () => void;
+  /** `caller` names a Next the climber did not press (the `Set Active Climb` trigger). */
+  nextClimb: (caller?: NextClimbCaller) => void;
   previousClimb: () => void;
   /** Resolves true only when the server accepted the orientation. */
   mirrorCurrentClimb: (mirrored: boolean, queueItemUuid: string) => Promise<boolean>;
@@ -180,8 +209,11 @@ type QueueContextValue = {
    * End the active session. An optional recap (`notes`) is trimmed and sent only
    * when non-empty; the returned SessionSummary echoes it back for the summary
    * screen. Resolves null when there's no active session or the mutation failed.
+   * `beforeEnd` runs after the session is marked as ending locally (so a remote
+   * SessionEnded during it is suppressed) and before END_SESSION; see
+   * EndSessionOptions.
    */
-  endSession: (options?: { notes?: string }) => Promise<SessionSummary | null>;
+  endSession: (options?: EndSessionOptions) => Promise<SessionSummary | null>;
   /**
    * Explicitly create a session with optional config (name, goal, etc.).
    * Returns the new sessionId, or null if there is no active board or the
@@ -294,6 +326,32 @@ type QueueSessionIdContextValue = {
 export const QueueSessionIdContext = createContext<QueueSessionIdContextValue | null>(null);
 
 /**
+ * The session's board path (`/b/{slug}` or the positional tuple), '' outside a
+ * session. Its own context, read by the player to tell when a crewmate moved
+ * the session to another board at the gym (#7076); it changes only when the
+ * session's board does.
+ */
+export const QueueSessionBoardPathContext = createContext<string>('');
+
+export function useSessionBoardPath(): string {
+  return useContext(QueueSessionBoardPathContext);
+}
+
+/**
+ * Whether the cold-start queue restore has landed for this viewer: the saved
+ * solo queue came back, or there was nothing to bring back. A bare boolean
+ * that flips once per launch (and again after a sign-in or sign-out), in the
+ * same render as the restored climb, so a reader can tell the restore's change
+ * of current from the climber's own. Read by `LastPickWatcher`. False outside
+ * the provider, where no current change is the restore's.
+ */
+export const QueueRestoredContext = createContext<boolean>(false);
+
+export function useQueueRestored(): boolean {
+  return useContext(QueueRestoredContext);
+}
+
+/**
  * Live session analytics + presence, split out of the main QueueContext so the
  * ≤1/2s `SessionStatsUpdated` party push (and roster deltas) re-renders only the
  * session screen — not every `useQueue()` consumer (climb list, persistent bar,
@@ -378,12 +436,18 @@ export const QueueHasActiveClimbContext = createContext<QueueHasActiveClimbConte
 type QueueDataContextValue = {
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  /** Server-bound participant who last changed the current queue item. */
+  currentChangedBy?: string | null;
+  /** Current mover projected through the session roster, excluding this participant. */
+  currentClimbMover?: { username: string; avatarUrl: string | null } | null;
   /**
    * F3 now-slot mode: the History / Up next line while nothing is current
    * (`upNextStart` reads it). Null or absent in legacy mode, which every reader
    * then treats exactly as today.
    */
   historyCount?: number | null;
+  /** F3 now-slot mode is on: History rows can be replayed from. Absent reads as off. */
+  nowSlotMode?: boolean;
 };
 
 export const QueueDataContext = createContext<QueueDataContextValue | null>(null);

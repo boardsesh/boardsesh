@@ -2,8 +2,9 @@
  * PersistentQueueBar — the persistent climb toolbar that mounts at the app root
  * and is visible on every screen while a current climb is set.
  *
- * It is a thin adapter: it decides *whether* the climb bar should show (a current
- * climb exists and the native iOS 26 bottom accessory isn't already owning it),
+ * It is a thin adapter: it decides *whether* the climb bar should show (a climb
+ * to show exists, the climber's last pick or the queue's current, and the
+ * native iOS 26 bottom accessory isn't already owning it),
  * then lays it out per variant via {@link ActiveContextBar}:
  *
  *   Liquid Glass / fallback   [ grade · name ]        [ ✓ tick ]
@@ -13,54 +14,48 @@
  *     one full-width opaque active-context bar docked above the tab bar
  *
  * On the Liquid Glass variant on iOS 26 the native bottom accessory owns this
- * pair, so `jsQueueToolbarVisible` is false here and this returns null.
+ * pair (iPhone and iPad), so `useCurrentClimbSurface` answers `nativeAccessory`
+ * and this returns null.
  */
 
-import { useWindowDimensions } from 'react-native';
 import { useSegments } from 'expo-router';
-import {
-  MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
-  SIDEBAR_WIDTH,
-  TOOLBAR_RESERVE,
-  TAB_BAR_HEIGHT,
-  glassSize,
-} from '../../theme/layout';
-import { resolveDetailPaneSurface } from '../../theme/size-class';
-import { useQueue, useQueueSessionId } from '../../providers/queue-provider';
+import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
+import { useQueueSessionId } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { isTopLevelTabRoute, tabsActiveSegment } from '../../lib/route-segments';
-import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useDeviceLayout } from '../../hooks/use-device-layout';
+import { useCurrentClimbSurface } from '../../hooks/use-current-climb-surface';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { ReturnToSessionButton } from './ReturnToSessionButton';
+import { useBarClimb } from './use-bar-climb';
 
 // Re-export so layout consumers that already import toolbar metrics from this
 // module don't need to know which file owns them. Source of truth: theme/layout.
 export { TOOLBAR_RESERVE, TAB_BAR_HEIGHT };
 
 export function PersistentQueueBar() {
-  const { state } = useQueue();
   const { variant } = useTheme();
   const segments = useSegments();
-  const bottomChrome = useBottomChromeMetrics();
-  const { widthClass } = useDeviceLayout();
-  const { width } = useWindowDimensions();
+  const { home } = useCurrentClimbSurface();
   // sessionId-only subscription (mirrors the tab layout's own read) — a "return to
   // session" affordance while a session is live and the user isn't already on the
   // Record tab.
   const { sessionId } = useQueueSessionId();
 
-  // Queue head only — the wall's lit climb lives in the top "On the wall" strip.
-  const currentClimb = state.currentClimbQueueItem?.climb ?? null;
-  const detailPaneOwnsQueue = resolveDetailPaneSurface({ width, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+  // The climber's last pick, or the queue's current when THAT changed after it
+  // (owner decision A). Never the wall's lit climb: that lives in the top "On
+  // the wall" strip. ✓ logs the climb the bar shows.
+  const { climb: currentClimb, pick } = useBarClimb();
+  // A pick logs the flip the bar draws, its own; the queue's current, its slot's.
+  const pickMirrored = pick ? pick.mirrored : undefined;
 
-  // The iPad shell shows the current climb in the persistent right-column pane
-  // (IpadPlayPane), so the floating bar must not also render there.
-  if (detailPaneOwnsQueue) return null;
+  // One climb, one surface: the JS tablet shell's pane (IpadPlayPane) or the
+  // native accessory (iPhone, iPad, and the iPhone Duo's split) already show it,
+  // so the floating bar renders only where neither does.
+  if (home !== 'floatingBar') return null;
   if (!currentClimb) return null;
   // Show the climb bar only on a top-level tab page (a tab's own index), never on a
   // pushed sub-route or any root push/modal. This single gate subsumes the old
@@ -68,7 +63,6 @@ export function PersistentQueueBar() {
   // routes, and every in-tab sub-route is ≥ 3 segments deep, so all of them read as
   // not-top-level here.
   if (!isTopLevelTabRoute(segments)) return null;
-  if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryPresented) return null;
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   if (isMaterial) {
@@ -82,7 +76,7 @@ export function PersistentQueueBar() {
             fillWidth
             height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
             surfaceTreatment="docked"
-            endAction={<LogAscentToolbarButton climb={currentClimb} size={glassSize.inline} />}
+            endAction={<LogAscentToolbarButton climb={currentClimb} isMirror={pickMirrored} size={glassSize.inline} />}
             endActionSize={glassSize.inline}
           />
         }
@@ -104,7 +98,7 @@ export function PersistentQueueBar() {
           endActionSize={showReturnToSession ? glassSize.inline : undefined}
         />
       }
-      trailing={<LogAscentFab climb={currentClimb} />}
+      trailing={<LogAscentFab climb={currentClimb} isMirror={pickMirrored} />}
     />
   );
 }

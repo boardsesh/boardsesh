@@ -149,6 +149,7 @@ export async function findActiveBoardsBySerial(
         latitude: dbSchema.gyms.latitude,
         longitude: dbSchema.gyms.longitude,
         isPublic: dbSchema.gyms.isPublic,
+        isListed: dbSchema.gyms.isListed,
         deletedAt: dbSchema.gyms.deletedAt,
       },
     })
@@ -336,7 +337,7 @@ export async function claimSerialForBoard(
     if (!isDuplicateBoardSerialError(error)) {
       throw error;
     }
-    logger.warn(`[board-presence] serial claim skipped, already bound elsewhere: ${String(error)}`);
+    logger.warn('[board-presence] serial claim skipped, already bound elsewhere');
     return board;
   }
   // Lost the `serial_number IS NULL` race — re-read what the winner wrote so
@@ -1205,7 +1206,7 @@ export async function resolveSharedBoardForConfig(
     if (!isUniqueViolation(error, 'user_boards_unique_slug')) {
       throw error;
     }
-    logger.warn(`[board-presence] resolveSharedBoardForConfig create race: ${String(error)}`);
+    logger.warn('[board-presence] resolveSharedBoardForConfig create race');
     const [winner] = await db
       .select()
       .from(dbSchema.userBoards)

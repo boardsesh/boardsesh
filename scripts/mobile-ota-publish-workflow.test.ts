@@ -1,7 +1,19 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -40,7 +52,7 @@ function stepBlock(workflow: string, stepName: string): string {
 
 describe('production OTA workflow reliability', () => {
   it('stages main alongside service builds, then promotes after backend deployment', () => {
-    const mobile = parse(production) as { on: { push: { branches: string[] } }; jobs: Record<string, unknown> };
+    const mobile = parse(production) as { on: { push?: { branches: string[] } }; jobs: Record<string, unknown> };
     const deploy = parse(pipeline) as {
       jobs: Record<
         string,
@@ -52,7 +64,7 @@ describe('production OTA workflow reliability', () => {
         }
       >;
     };
-    expect(mobile.on.push.branches).toEqual(['release/next']);
+    expect(mobile.on.push).toBeUndefined();
     expect(deploy.jobs['stage-mobile-ota'].needs).toBe('detect-changes');
     expect(deploy.jobs['stage-mobile-ota'].uses).toBe('./.github/workflows/mobile-ota-production.yml');
     expect(deploy.jobs['stage-mobile-ota'].with?.stage_for_production_deploy).toBe(true);
@@ -190,7 +202,7 @@ describe('production OTA workflow reliability', () => {
       jobs: Record<string, { if?: string; needs?: string[] }>;
     };
     const publisher = workflow.jobs.publish;
-    expect(publisher.needs).toEqual(['resolve-staging-runtimes', 'capture-staging-baselines', 'live-store-runtimes']);
+    expect(publisher.needs).toEqual(['resolve-staging-runtimes', 'capture-staging-baselines']);
     const expression = publisher
       .if!.replace(/needs\.([a-z-]+)/g, 'needs["$1"]')
       .replaceAll('github.ref', '"refs/heads/main"');
@@ -252,7 +264,7 @@ describe('production OTA workflow reliability', () => {
 
   it('keeps the gate watching exactly the paths that trigger the Railway apply job', () => {
     const railway = parse(readFileSync(resolve(WORKFLOW_DIR, 'railway-drift.yml'), 'utf8')) as {
-      on: { push: { paths: string[] } };
+      on: { push: { paths: string[]; branches: string[] } };
     };
     const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
     const listed = gateSource.match(/RAILWAY_APPLY_PATHS = \[([\s\S]*?)\];/)?.[1] ?? '';
@@ -260,6 +272,9 @@ describe('production OTA workflow reliability', () => {
     expect(gatePaths.map((path) => (path.endsWith('/') ? `${path}**` : path)).sort()).toEqual(
       [...railway.on.push.paths].sort(),
     );
+    // The gate only expects a run on the one branch whose pushes start one.
+    expect(railway.on.push.branches).toEqual(['main']);
+    expect(gateSource).toContain("RAILWAY_APPLY_REF = 'refs/heads/main'");
   });
 
   it('keeps the job-overhead allowance above the steps it is meant to cover', () => {
@@ -424,16 +439,26 @@ describe('production OTA workflow reliability', () => {
   // platform and do not cover for each other, so a superseded pending run leaves
   // that platform's fleet stranded.
   it('queues runs in the shared production lane instead of superseding pending ones', () => {
-    for (const [name, source] of [
-      ['mobile-ota-production.yml', production],
-      ['mobile-ota-backport.yml', backport],
+    type Concurrency = { group?: string; queue?: string; 'cancel-in-progress'?: boolean };
+    const productionWorkflow = parse(production) as {
+      concurrency?: Concurrency;
+      jobs: Record<string, { concurrency?: Concurrency }>;
+    };
+    // The lane sits on the publish job alone: a workflow-level group let a
+    // notify job that never got a runner hold it for 27 hours (run 40105607795).
+    expect(productionWorkflow.concurrency).toBeUndefined();
+    expect(
+      Object.entries(productionWorkflow.jobs)
+        .filter(([, job]) => job.concurrency !== undefined)
+        .map(([jobName]) => jobName),
+    ).toEqual(['publish']);
+    for (const [name, concurrency] of [
+      ['mobile-ota-production.yml', productionWorkflow.jobs.publish.concurrency ?? {}],
+      ['mobile-ota-backport.yml', (parse(backport) as { concurrency: Concurrency }).concurrency],
     ] as const) {
       // Read the PARSED concurrency block, not the workflow text: both files
       // explain `queue: max` in a comment right above the setting, so a
       // `toContain('queue: max')` stays green when the setting itself is deleted.
-      const { concurrency } = parse(source) as {
-        concurrency: { group?: string; queue?: string; 'cancel-in-progress'?: boolean };
-      };
       if (name === 'mobile-ota-production.yml') {
         expect(concurrency.group).toContain("'mobile-ota-staging' || 'mobile-ota-production'");
       } else {
@@ -458,7 +483,7 @@ describe('production OTA workflow reliability', () => {
       'scripts/lib/ota-branch-probe.ts',
       'scripts/lib/eoas.ts',
     ]) {
-      expect(parse(production).on.push.paths).toBeUndefined();
+      expect(parse(production).on.push).toBeUndefined();
       // Preview intentionally has no trigger paths filter: every synchronize
       // must run so removing the final mobile change tears down the old branch.
       expect(preview).toContain(`path === '${implementationPath}'`);
@@ -509,7 +534,6 @@ describe('backport OTA workflow upload pressure', () => {
 
     for (const implementationPath of [
       'scripts/mobile-publish.ts',
-      'scripts/mobile-release-train-policy.ts',
       'scripts/lib/mobile-release-policy.ts',
       'scripts/lib/release-tags.ts',
       'scripts/lib/ota-preview-boot-receipt.ts',
@@ -597,4 +621,564 @@ describe('publisher helper preview routing', () => {
       expect(affectsPreview('docs/unrelated.md')).toBe(false);
     },
   );
+});
+
+// babel-preset-expo inlines every EXPO_PUBLIC_* value into the transformed code,
+// and Metro's own cache key never sees those values, so the cache key must carry
+// them. The store never goes through actions/cache (writable by any main-scope run,
+// restored with `tar -P`), and no other job in the run touches it (they share an
+// artifact namespace). It travels only as an artifact from an earlier successful publish
+// run, and is HMAC-sealed with a Production secret.
+describe('production OTA Metro transform cache', () => {
+  type WorkflowStep = {
+    id?: string;
+    name?: string;
+    if?: string;
+    uses?: string;
+    run?: string;
+    env?: Record<string, string>;
+    with?: Record<string, string | boolean>;
+    'working-directory'?: string;
+    'continue-on-error'?: boolean;
+  };
+  type WorkflowJob = {
+    environment?: string;
+    permissions?: Record<string, string>;
+    env?: Record<string, string>;
+    if?: string;
+    steps?: WorkflowStep[];
+  };
+  const parsedProduction = parse(production) as {
+    env: Record<string, string>;
+    jobs: Record<string, WorkflowJob>;
+  };
+  const publishSteps = parsedProduction.jobs.publish.steps ?? [];
+  const stepIn = (steps: WorkflowStep[], name: string): WorkflowStep => {
+    const step = steps.find((candidate) => candidate.name === name);
+    if (!step) throw new Error(`no step named ${name}`);
+    return step;
+  };
+  const stepNamed = (name: string) => stepIn(publishSteps, name);
+  const KEY_STEP = 'Key the Metro transform cache on the inlined build env';
+  const ENV_STEP = 'Write .env for Expo build-time inlining';
+  const keyStep = stepNamed(KEY_STEP);
+  const sealKeyStep = stepNamed('Check for the Metro cache seal key');
+  const findStep = stepNamed('Find the newest trusted Metro store');
+  const downloadStep = stepNamed('Download the Metro store');
+  const unpackStep = stepNamed('Unpack the Metro cache artifact');
+  const verifyStep = stepNamed('Verify the Metro cache seal');
+  const sealStep = stepNamed("Seal Metro's OTA transform cache");
+  const packStep = stepNamed('Pack the sealed Metro store');
+  const uploadStep = stepNamed('Upload the sealed Metro store');
+  const sealScript = resolve(REPO_ROOT, 'scripts', 'ci', 'metro-cache-seal.sh');
+  const SEAL_ENV = { METRO_CACHE_HMAC_KEY: 'production-secret', METRO_CACHE_PREFIX: 'metro-ota-Linux-a-b-' };
+  const WORKFLOW_ENV = {
+    EXPO_PUBLIC_BACKEND_URL: 'https://ws.boardsesh.com',
+    EXPO_PUBLIC_SENTRY_DSN: 'dsn-a',
+    EXPO_PUBLIC_POSTHOG_KEY: 'phc_test',
+  };
+
+  function withWorkspace<T>(body: (workspace: string) => T): T {
+    const workspace = mkdtempSync(join(tmpdir(), 'metro-ota-cache-'));
+    try {
+      return body(workspace);
+    } finally {
+      spawnSync('chmod', ['-R', 'u+rwX', workspace]);
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  }
+
+  function runBash(script: string, cwd: string, env: Record<string, string>) {
+    return spawnSync('bash', ['-e', '-c', script], {
+      cwd,
+      encoding: 'utf8',
+      env: { NODE_ENV: 'test', PATH: process.env.PATH ?? '', ...env },
+    });
+  }
+
+  function readOutputs(outputPath: string): Record<string, string> {
+    let text = '';
+    try {
+      text = readFileSync(outputPath, 'utf8');
+    } catch {
+      return {};
+    }
+    return Object.fromEntries(
+      text
+        .split('\n')
+        .filter((line) => line.includes('='))
+        .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
+    );
+  }
+
+  /** Runs the job's own `.env` writer and key step, the way the job would. */
+  function keyOutputs(steps: WorkflowStep[], env: Record<string, string>): Record<string, string> {
+    return withWorkspace((workspace) => {
+      const mobileDir = join(workspace, 'packages', 'mobile');
+      mkdirSync(mobileDir, { recursive: true });
+      const runnerEnv = {
+        RUNNER_OS: 'Linux',
+        RUNNER_TEMP: join(workspace, 'runner-temp'),
+        GITHUB_STEP_SUMMARY: join(workspace, 'summary'),
+        METRO_INPUTS_HASH: 'inputs',
+        ...env,
+      };
+      const written = runBash(stepIn(steps, ENV_STEP).run ?? '', mobileDir, runnerEnv);
+      expect(written.status, written.stderr).toBe(0);
+      const outputPath = join(workspace, 'github-output');
+      const keyed = runBash(stepIn(steps, KEY_STEP).run ?? '', workspace, { ...runnerEnv, GITHUB_OUTPUT: outputPath });
+      expect(keyed.status, keyed.stderr).toBe(0);
+      return readOutputs(outputPath);
+    });
+  }
+
+  function prefixFrom(steps: WorkflowStep[], env: Record<string, string>): string {
+    const prefix = keyOutputs(steps, env).prefix;
+    if (!prefix) throw new Error('key step wrote no prefix output');
+    return prefix;
+  }
+
+  // A store shaped like Metro's binary FileStore: two-hex-digit shards of `<hex>.mp`.
+  function writeStore(store: string): void {
+    mkdirSync(join(store, 'ab'), { recursive: true });
+    mkdirSync(join(store, 'cd'), { recursive: true });
+    writeFileSync(join(store, 'ab', 'cdef01.mp'), 'transformed module one');
+    writeFileSync(join(store, 'cd', '234567.mp'), 'transformed module two');
+  }
+
+  function seal(store: string, env: Record<string, string> = SEAL_ENV) {
+    return spawnSync('bash', [sealScript, 'seal', store], {
+      encoding: 'utf8',
+      env: { NODE_ENV: 'test', PATH: process.env.PATH ?? '', ...env },
+    });
+  }
+
+  const storeIn = (workspace: string) => join(workspace, 'runner-temp', 'metro-ota', 'metro-cache');
+
+  // Runs the workflow's own verify step, so its store_ready verdict is tested too.
+  function runVerifyStep(workspace: string, env: Record<string, string> = SEAL_ENV) {
+    const outputPath = join(workspace, 'verify-output');
+    const result = runBash(verifyStep.run ?? '', REPO_ROOT, {
+      RUNNER_TEMP: join(workspace, 'runner-temp'),
+      GITHUB_OUTPUT: outputPath,
+      GITHUB_STEP_SUMMARY: join(workspace, 'summary'),
+      ...env,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return { result, outputs: readOutputs(outputPath) };
+  }
+
+  type TarMember = { name: string; kind: 'file' | 'dir' | 'symlink' | 'hardlink'; target?: string };
+
+  /** Writes the artifact a (possibly hostile) fetch job would hand over. */
+  function writeArtifact(workspace: string, members: TarMember[]): void {
+    const archive = join(workspace, 'runner-temp', 'metro-ota-download', 'metro-cache.tar');
+    mkdirSync(dirname(archive), { recursive: true });
+    const built = spawnSync(
+      'python3',
+      [
+        '-I',
+        '-c',
+        `
+import io, json, sys, tarfile
+kinds = {"file": tarfile.REGTYPE, "dir": tarfile.DIRTYPE, "symlink": tarfile.SYMTYPE, "hardlink": tarfile.LNKTYPE}
+with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
+    for member in json.loads(sys.argv[2]):
+        info = tarfile.TarInfo(member["name"])
+        info.type = kinds[member["kind"]]
+        info.linkname = member.get("target", "")
+        data = b"payload" if member["kind"] == "file" else b""
+        info.size = len(data)
+        info.mode = 0o755 if member["kind"] == "dir" else 0o644
+        archive.addfile(info, io.BytesIO(data) if data else None)
+`,
+        archive,
+        JSON.stringify(members),
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(built.status, built.stderr).toBe(0);
+  }
+
+  function runUnpackStep(workspace: string, env: Record<string, string> = {}) {
+    const result = runBash(unpackStep.run ?? '', workspace, {
+      RUNNER_TEMP: join(workspace, 'runner-temp'),
+      GITHUB_STEP_SUMMARY: join(workspace, 'summary'),
+      ...env,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return result;
+  }
+
+  const entriesIn = (store: string): string[] =>
+    spawnSync('find', [store, '-mindepth', '1'], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+  const hasSeal = (store: string) => entriesIn(store).some((entry) => entry.endsWith('.metro-ota-seal'));
+  const GENUINE_MEMBERS: TarMember[] = [
+    { name: 'metro-cache/', kind: 'dir' },
+    { name: 'metro-cache/ab/', kind: 'dir' },
+    { name: 'metro-cache/ab/cdef01.mp', kind: 'file' },
+    { name: 'metro-cache/.metro-ota-seal', kind: 'file' },
+  ];
+
+  it('keys the store on every inlined EXPO_PUBLIC_* value, and nothing unrelated', () => {
+    const prefix = prefixFrom(publishSteps, WORKFLOW_ENV);
+    expect(prefix).toMatch(/^metro-ota-Linux-inputs-[0-9a-f]{64}-$/);
+    expect(prefixFrom(publishSteps, { ...WORKFLOW_ENV, EXPO_PUBLIC_BACKEND_URL: 'https://staging.example' })).not.toBe(
+      prefix,
+    );
+    expect(prefixFrom(publishSteps, { ...WORKFLOW_ENV, EXPO_PUBLIC_SENTRY_DSN: 'dsn-b' })).not.toBe(prefix);
+    expect(prefixFrom(publishSteps, { ...WORKFLOW_ENV, EXPO_PUBLIC_NEW_FLAG: '1' })).not.toBe(prefix);
+    expect(prefixFrom(publishSteps, { ...WORKFLOW_ENV, UNRELATED_TOKEN: 'secret' })).toBe(prefix);
+    expect(prefixFrom(publishSteps, { ...WORKFLOW_ENV, METRO_INPUTS_HASH: 'bumped-lockfile' })).not.toBe(prefix);
+  });
+
+  it('names the store artifact after the whole key', () => {
+    const outputs = keyOutputs(publishSteps, WORKFLOW_ENV);
+    expect(outputs.store_artifact).toMatch(/^metro-ota-store-[0-9a-f]{40}$/);
+    const otherEnv = keyOutputs(publishSteps, { ...WORKFLOW_ENV, EXPO_PUBLIC_BACKEND_URL: 'https://staging.example' });
+    expect(otherEnv.store_artifact).not.toBe(outputs.store_artifact);
+    // The publish job may not add an EXPO_PUBLIC_* of its own on top of the shared env.
+    expect(
+      Object.keys(parsedProduction.jobs.publish.env ?? {}).filter((key) => key.startsWith('EXPO_PUBLIC_')),
+    ).toEqual([]);
+  });
+
+  it('hashes the same Metro inputs as ci.yml, and never uses actions/cache', () => {
+    for (const input of [
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
+      'packages/mobile/metro.config.js',
+      'packages/mobile/babel.config.js',
+      'packages/mobile/app.config.ts',
+      'patches/**',
+    ]) {
+      expect(keyStep.env?.METRO_INPUTS_HASH).toContain(`'${input}'`);
+    }
+    expect(keyStep.run).toContain('prefix="metro-ota-');
+    // actions/cache is writable by any main-scope run and restores with `tar -P`.
+    for (const [jobName, job] of Object.entries(parsedProduction.jobs)) {
+      for (const step of job.steps ?? []) {
+        expect(step.uses ?? '', `${jobName}: ${step.name}`).not.toMatch(/^actions\/cache/);
+      }
+    }
+  });
+
+  it('moves the store only between publish jobs of trusted runs', () => {
+    // Jobs in one run share an artifact namespace, so no other job may touch the store.
+    expect(Object.keys(parsedProduction.jobs)).not.toContain('metro-cache-fetch');
+    for (const [jobName, job] of Object.entries(parsedProduction.jobs)) {
+      if (jobName === 'publish') continue;
+      expect(JSON.stringify(job), jobName).not.toMatch(/metro/i);
+    }
+    expect(findStep.run).toBe('vp exec tsx scripts/ci/metro-cache-select.ts');
+    expect(findStep.if).toBe(
+      "steps.gate.outputs.configured == 'true' && steps.metro_seal_key.outputs.sealing == 'true'",
+    );
+    expect(findStep.env?.METRO_STORE_ARTIFACT).toBe('${{ steps.metro_cache.outputs.store_artifact }}');
+    expect(downloadStep.uses).toBe('actions/download-artifact@v4');
+    expect(downloadStep.if).toBe(
+      "steps.gate.outputs.configured == 'true' && steps.metro_find.outputs.run_id != '' && steps.metro_find.outputs.artifact_id != ''",
+    );
+    // By the vetted id, never by name: a same-named re-upload can't take its place.
+    expect(downloadStep.with).toEqual({
+      'artifact-ids': '${{ steps.metro_find.outputs.artifact_id }}',
+      'run-id': '${{ steps.metro_find.outputs.run_id }}',
+      'github-token': '${{ github.token }}',
+      'merge-multiple': true,
+      path: '${{ runner.temp }}/metro-ota-download',
+    });
+    expect(uploadStep.uses).toBe('actions/upload-artifact@v4');
+    expect(uploadStep.with?.name).toBe('${{ steps.metro_cache.outputs.store_artifact }}');
+    expect(uploadStep.with?.['retention-days']).toBe(7);
+    expect(packStep.run).not.toMatch(/\s-P\b|--absolute-names/);
+    expect(packStep.run).toContain('size_bytes=');
+  });
+
+  it('unpacks a genuine artifact into the store', () => {
+    withWorkspace((workspace) => {
+      writeArtifact(workspace, GENUINE_MEMBERS);
+      runUnpackStep(workspace);
+      const store = storeIn(workspace);
+      expect(readFileSync(join(store, 'ab', 'cdef01.mp'), 'utf8')).toBe('payload');
+      expect(hasSeal(store)).toBe(true);
+    });
+  });
+
+  it.each<[string, TarMember[]]>([
+    ['a ../ member', [...GENUINE_MEMBERS, { name: '../escaped', kind: 'file' }]],
+    ['a nested ../ member', [...GENUINE_MEMBERS, { name: 'metro-cache/ab/../../escaped', kind: 'file' }]],
+    ['an absolute member', [...GENUINE_MEMBERS, { name: '/tmp/metro-ota-absolute-escape', kind: 'file' }]],
+    ['a member outside metro-cache/', [...GENUINE_MEMBERS, { name: 'escaped', kind: 'file' }]],
+    ['a symlink member', [...GENUINE_MEMBERS, { name: 'metro-cache/ab/00.mp', kind: 'symlink', target: '/etc' }]],
+    [
+      'a hardlink member',
+      [...GENUINE_MEMBERS, { name: 'metro-cache/ab/11.mp', kind: 'hardlink', target: 'metro-cache/ab/cdef01.mp' }],
+    ],
+    ['a member deeper than a shard', [...GENUINE_MEMBERS, { name: 'metro-cache/ab/cd/ef.mp', kind: 'file' }]],
+  ])('refuses an artifact with %s and writes nothing', (_label, members) => {
+    withWorkspace((workspace) => {
+      writeArtifact(workspace, members);
+      const { stdout } = runUnpackStep(workspace);
+      expect(stdout).toContain('::warning::Metro cache artifact refused');
+      expect(entriesIn(storeIn(workspace))).toEqual([]);
+      expect(entriesIn(join(workspace, 'runner-temp', 'metro-ota'))).toEqual([storeIn(workspace)]);
+      expect(entriesIn(workspace).some((entry) => entry.endsWith('escaped'))).toBe(false);
+    });
+    expect(() => readFileSync('/tmp/metro-ota-absolute-escape')).toThrow();
+  });
+
+  it('refuses a tar over the budget before listing it', () => {
+    withWorkspace((workspace) => {
+      writeArtifact(workspace, GENUINE_MEMBERS);
+      const { stdout } = runUnpackStep(workspace, { METRO_CACHE_MAX_BYTES: '4096' });
+      expect(stdout).toContain('its tar is');
+      expect(entriesIn(storeIn(workspace))).toEqual([]);
+    });
+  });
+
+  // The compressed size the selector checks says nothing about what a tar
+  // unpacks to: a sparse member is a few bytes in the tar and any size on disk.
+  it('refuses a tar whose members add up to more than the budget', () => {
+    withWorkspace((workspace) => {
+      const source = join(workspace, 'source');
+      mkdirSync(join(source, 'metro-cache', 'ab'), { recursive: true });
+      expect(spawnSync('truncate', ['-s', '64M', join(source, 'metro-cache', 'ab', '0123.mp')]).status).toBe(0);
+      const archive = join(workspace, 'runner-temp', 'metro-ota-download', 'metro-cache.tar');
+      mkdirSync(dirname(archive), { recursive: true });
+      const packed = spawnSync('tar', ['--sparse', '--format=gnu', '-cf', archive, '-C', source, 'metro-cache'], {
+        encoding: 'utf8',
+      });
+      expect(packed.status, packed.stderr).toBe(0);
+      expect(statSync(archive).size).toBeLessThan(1024 * 1024);
+      const { stdout } = runUnpackStep(workspace, { METRO_CACHE_MAX_BYTES: String(1024 * 1024) });
+      expect(stdout).toContain('it unpacks to 67108864 bytes');
+      expect(entriesIn(storeIn(workspace))).toEqual([]);
+    });
+  });
+
+  it('builds cold when there is no artifact, or it is not a tar archive', () => {
+    withWorkspace((workspace) => {
+      expect(runUnpackStep(workspace).stdout).toContain('No Metro cache artifact');
+      expect(entriesIn(storeIn(workspace))).toEqual([]);
+      const archive = join(workspace, 'runner-temp', 'metro-ota-download', 'metro-cache.tar');
+      mkdirSync(dirname(archive), { recursive: true });
+      writeFileSync(archive, 'not a tar archive');
+      expect(runUnpackStep(workspace).stdout).toContain('::warning::Metro cache artifact refused');
+      expect(entriesIn(storeIn(workspace))).toEqual([]);
+    });
+  });
+
+  it('accepts a store sealed with the key and prefix it is checked against', () => {
+    withWorkspace((workspace) => {
+      const store = storeIn(workspace);
+      writeStore(store);
+      const sealed = seal(store);
+      expect(sealed.status, sealed.stdout + sealed.stderr).toBe(0);
+      const { outputs } = runVerifyStep(workspace);
+      expect(outputs.store_ready).toBe('true');
+      expect(readFileSync(join(store, 'ab', 'cdef01.mp'), 'utf8')).toBe('transformed module one');
+      // The seal is consumed, so the next seal hashes only Metro's own files.
+      expect(hasSeal(store)).toBe(false);
+    });
+  });
+
+  it('makes a genuine read-only shard writable so Metro can add entries to it', () => {
+    withWorkspace((workspace) => {
+      const store = storeIn(workspace);
+      writeStore(store);
+      chmodSync(join(store, 'cd'), 0o555);
+      expect(seal(store).status).toBe(0);
+      expect(runVerifyStep(workspace).outputs.store_ready).toBe('true');
+      expect(statSync(join(store, 'cd')).mode & 0o200).toBe(0o200);
+    });
+  });
+
+  it('drops Metro temp files left by an unfinished write before sealing', () => {
+    withWorkspace((workspace) => {
+      const store = storeIn(workspace);
+      writeStore(store);
+      writeFileSync(join(store, 'ab', '.tmp4242_cdef02.mp'), 'half written');
+      expect(seal(store).status).toBe(0);
+      expect(entriesIn(store).some((entry) => entry.includes('.tmp4242_'))).toBe(false);
+      expect(runVerifyStep(workspace).outputs.store_ready).toBe('true');
+    });
+  });
+
+  it.each([
+    ['a modified file', (store: string) => writeFileSync(join(store, 'ab', 'cdef01.mp'), 'attacker module')],
+    ['an added file', (store: string) => writeFileSync(join(store, 'cd', 'ffffff.mp'), 'attacker module')],
+    ['a removed file', (store: string) => rmSync(join(store, 'cd', '234567.mp'))],
+    ['a missing seal', (store: string) => rmSync(join(store, '.metro-ota-seal'))],
+    ['a malformed seal', (store: string) => writeFileSync(join(store, '.metro-ota-seal'), 'metro-ota-seal-v1 nope\n')],
+    ['a symlink', (store: string) => symlinkSync('/etc/hostname', join(store, 'ab', 'linked.mp'))],
+    ['a file outside the shard layout', (store: string) => writeFileSync(join(store, 'ab', 'notes.txt'), 'x')],
+    [
+      'a directory deeper than a shard',
+      (store: string) => {
+        mkdirSync(join(store, 'ab', 'cd'));
+        writeFileSync(join(store, 'ab', 'cd', 'ef.mp'), 'attacker module');
+      },
+    ],
+    [
+      'a read-only planted shard',
+      (store: string) => {
+        mkdirSync(join(store, 'ef'));
+        writeFileSync(join(store, 'ef', '00.mp'), 'attacker module');
+        chmodSync(join(store, 'ef'), 0o555);
+      },
+    ],
+  ])('empties the store on %s and still lets the export run', (_label, tamper) => {
+    withWorkspace((workspace) => {
+      const store = storeIn(workspace);
+      writeStore(store);
+      expect(seal(store).status).toBe(0);
+      tamper(store);
+      const { result, outputs } = runVerifyStep(workspace);
+      expect(result.stdout).toContain('::warning::Metro cache rejected');
+      expect(entriesIn(store)).toEqual([]);
+      expect(outputs.store_ready).toBe('true');
+    });
+  });
+
+  it.each([
+    ['a wrong key', { ...SEAL_ENV, METRO_CACHE_HMAC_KEY: 'attacker-guess' }],
+    // A genuine store sealed under old EXPO_PUBLIC_* values, replanted under the current prefix.
+    ['a different cache prefix', { ...SEAL_ENV, METRO_CACHE_PREFIX: 'metro-ota-Linux-a-old-env-' }],
+  ])('empties the store when it was sealed with %s', (_label, sealEnv) => {
+    withWorkspace((workspace) => {
+      const store = storeIn(workspace);
+      writeStore(store);
+      expect(seal(store, sealEnv).status).toBe(0);
+      runVerifyStep(workspace);
+      expect(entriesIn(store)).toEqual([]);
+    });
+  });
+
+  it('starts fresh past the size budget, and refuses to save past it', () => {
+    withWorkspace((workspace) => {
+      const store = storeIn(workspace);
+      writeStore(store);
+      expect(seal(store).status).toBe(0);
+      runVerifyStep(workspace, { ...SEAL_ENV, METRO_CACHE_MAX_BYTES: '10' });
+      expect(entriesIn(store)).toEqual([]);
+      writeStore(store);
+      expect(seal(store, { ...SEAL_ENV, METRO_CACHE_MAX_BYTES: '10' }).status).not.toBe(0);
+      expect(hasSeal(store)).toBe(false);
+    });
+  });
+
+  it('without the key: nothing is downloaded, a store is never used, and nothing is saved', () => {
+    const sealingFor = (hasKey: string) =>
+      withWorkspace((workspace) => {
+        const outputPath = join(workspace, 'output');
+        const result = runBash(sealKeyStep.run ?? '', workspace, {
+          HAS_HMAC_KEY: hasKey,
+          OWN_PREFIX: 'p',
+          FETCH_PREFIX: 'p',
+          GITHUB_OUTPUT: outputPath,
+          GITHUB_STEP_SUMMARY: join(workspace, 'summary'),
+        });
+        expect(result.status, result.stderr).toBe(0);
+        return readOutputs(outputPath).sealing;
+      });
+    expect(sealingFor('false')).toBe('false');
+    expect(sealingFor('true')).toBe('true');
+    expect(findStep.if).toContain("steps.metro_seal_key.outputs.sealing == 'true'");
+    expect(sealStep.if).toContain("steps.metro_seal_key.outputs.sealing == 'true'");
+    const noKey = { METRO_CACHE_PREFIX: SEAL_ENV.METRO_CACHE_PREFIX };
+    withWorkspace((workspace) => {
+      const store = storeIn(workspace);
+      writeStore(store);
+      expect(seal(store).status).toBe(0);
+      runVerifyStep(workspace, noKey);
+      expect(entriesIn(store)).toEqual([]);
+      writeStore(store);
+      expect(seal(store, noKey).status).not.toBe(0);
+      expect(hasSeal(store)).toBe(false);
+    });
+  });
+
+  it('publishes only a sealed store, from main, after a platform published', () => {
+    expect(packStep.if).toContain("steps.metro_seal.outcome == 'success'");
+    expect(uploadStep.if).toContain("steps.metro_pack.outcome == 'success'");
+    expect(sealStep.run).toContain('scripts/ci/metro-cache-seal.sh seal');
+    expect(sealStep.if).toContain("github.ref == 'refs/heads/main'");
+    expect(sealStep.if).toContain(
+      "(steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')",
+    );
+    expect(sealStep.if).toContain("steps.metro_verify.outputs.store_ready == 'true'");
+    expect(sealStep.if).toContain('!cancelled()');
+  });
+
+  it('keeps METRO_CACHE_HMAC_KEY inside the Production-environment publish job', () => {
+    const secretReference = /secrets\.METRO_CACHE_HMAC_KEY/;
+    expect(parsedProduction.jobs.publish.environment).toBe('Production');
+    for (const [jobName, job] of Object.entries(parsedProduction.jobs)) {
+      if (jobName === 'publish') continue;
+      expect(JSON.stringify(job), jobName).not.toMatch(secretReference);
+    }
+    expect(JSON.stringify(parsedProduction.env)).not.toMatch(secretReference);
+    const holders = publishSteps
+      .filter((step) => secretReference.test(JSON.stringify(step)))
+      .map((step) => step.name ?? '');
+    expect(holders).toEqual([sealKeyStep.name, verifyStep.name, sealStep.name]);
+    // The seal-key check only learns whether the key exists.
+    expect(sealKeyStep.env?.HAS_HMAC_KEY).toBe("${{ secrets.METRO_CACHE_HMAC_KEY != '' }}");
+    for (const filename of readdirSync(WORKFLOW_DIR)) {
+      if (filename === 'mobile-ota-production.yml') continue;
+      expect(readFileSync(resolve(WORKFLOW_DIR, filename), 'utf8'), filename).not.toContain('METRO_CACHE_HMAC_KEY');
+    }
+  });
+  it('lets an export read the store only when the seal check said so', () => {
+    for (const name of ['Publish iOS OTA', 'Publish Android OTA']) {
+      const env = stepNamed(name).env ?? {};
+      expect(env.TMPDIR, name).toBe(
+        "${{ steps.metro_verify.outputs.store_ready == 'true' && format('{0}/metro-ota', runner.temp) || runner.temp }}",
+      );
+      // The key step reads EXPO_PUBLIC_* from the shared env; one set only on a
+      // publish step would be inlined without ever reaching the key.
+      expect(
+        Object.keys(env).filter((key) => key.startsWith('EXPO_PUBLIC_')),
+        name,
+      ).toEqual([]);
+    }
+    expect(parsedProduction.env.TMPDIR).toBeUndefined();
+    // The unpack and verify steps run whenever an export does, whatever came before.
+    expect(unpackStep.if).toBe("steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'");
+    expect(verifyStep.if).toBe("steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'");
+    // A cache problem must never block a publish.
+    for (const step of [
+      keyStep,
+      sealKeyStep,
+      findStep,
+      downloadStep,
+      unpackStep,
+      verifyStep,
+      sealStep,
+      packStep,
+      uploadStep,
+    ]) {
+      expect(step['continue-on-error'], step.name).toBe(true);
+    }
+  });
+
+  it('unpacks and verifies before the first export and seals after the last', () => {
+    const position = (name: string) => publishSteps.findIndex((step) => step.name === name);
+    const order = [
+      'Validate Sentry uploader support before publishing',
+      KEY_STEP,
+      'Check for the Metro cache seal key',
+      'Find the newest trusted Metro store',
+      'Download the Metro store',
+      'Unpack the Metro cache artifact',
+      'Verify the Metro cache seal',
+      'Publish iOS OTA',
+      'Publish Android OTA',
+      "Seal Metro's OTA transform cache",
+      'Pack the sealed Metro store',
+      'Upload the sealed Metro store',
+    ].map(position);
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+  });
 });

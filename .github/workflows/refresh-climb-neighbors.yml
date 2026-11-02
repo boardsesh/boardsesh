@@ -64,7 +64,7 @@ jobs:
         if: env.SELECTED == 'true'
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         if: env.SELECTED == 'true'

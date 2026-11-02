@@ -1,3 +1,4 @@
+import { adminBoardQueries, adminBoardMutations } from './social/admin-boards';
 import { boardSessionPrivacyResolvers } from './shared/board-session-privacy';
 import {
   privacyQueries,
@@ -60,6 +61,7 @@ import { sessionFeedQueries } from './social/session-feed';
 import { followedAuthorQueries } from './social/followed-authors';
 import { crewFeedQueries } from './social/crew-feed';
 import { sessionEditMutations } from './social/session-mutations';
+import { sessionWorkoutMutations, sessionWorkoutQueries } from './sessions/session-workouts';
 import { socialCommentQueries, socialCommentMutations } from './social/comments';
 import { socialVoteQueries, socialVoteMutations } from './social/votes';
 import { socialBoardQueries, socialBoardMutations } from './social/boards';
@@ -139,6 +141,7 @@ export const resolvers = {
     ...socialCommentQueries,
     ...socialVoteQueries,
     ...socialBoardQueries,
+    ...adminBoardQueries,
     ...boardDiscoveryQueries,
     ...communityStatsQueries,
     ...socialGymQueries,
@@ -153,6 +156,7 @@ export const resolvers = {
     ...socialGymOwnerReassignQueries,
     ...activityFeedQueries,
     ...sessionFeedQueries,
+    ...sessionWorkoutQueries,
     ...followedAuthorQueries,
     ...crewFeedQueries,
     ...socialNotificationQueries,
@@ -197,6 +201,7 @@ export const resolvers = {
     ...socialCommentMutations,
     ...socialVoteMutations,
     ...socialBoardMutations,
+    ...adminBoardMutations,
     ...socialGymMutations,
     ...gymActivityStatsMutations,
     ...socialGymStrayBoardMutations,
@@ -213,6 +218,7 @@ export const resolvers = {
     ...socialCommunitySettingsMutations,
     ...newClimbSubscriptionResolvers.Mutation,
     ...sessionEditMutations,
+    ...sessionWorkoutMutations,
     ...feedbackMutations,
     ...qaMutations,
     ...boardPresenceResolvers.Mutation,
@@ -264,10 +270,11 @@ export const resolvers = {
     lostHolds: (climb: ClimbLostHoldsParent, _args: unknown, ctx: ConnectionContext) =>
       resolveClimbLostHolds(climb, ctx),
 
-    // The author's account id goes only to a viewer who may see that account's
-    // activity — see resolveClimbAuthorId. Every Climb producer passes through
-    // here, after any shared cache.
-    userId: (climb: { userId?: string | null }, _args: unknown, ctx: ConnectionContext) =>
+    // The author's account id: public with a published, listed climb, and
+    // otherwise only for a viewer who may see that account's activity — see
+    // resolveClimbAuthorId. Every Climb producer passes through here, after any
+    // shared cache.
+    userId: (climb: { uuid?: string | null; userId?: string | null }, _args: unknown, ctx: ConnectionContext) =>
       resolveClimbAuthorId(climb, ctx),
   },
 

@@ -2,21 +2,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-// Controllable InteractionManager: the test decides whether (and when) a
-// scheduled callback ever runs, so it can simulate a STARVED interaction queue
+// Controllable idle scheduler: the test decides whether (and when) a
+// scheduled callback ever runs, so it can simulate a STARVED idle queue
 // (the production stall this hook guards against).
-const { scheduled, runAfterInteractions } = vi.hoisted(() => {
+const { scheduled, scheduleIdleTask } = vi.hoisted(() => {
   const scheduled: Array<() => void> = [];
   return {
     scheduled,
-    runAfterInteractions: vi.fn((callback: () => void) => {
+    scheduleIdleTask: vi.fn((callback: () => void) => {
       scheduled.push(callback);
       return { cancel: vi.fn() };
     }),
   };
 });
 
-vi.mock('react-native', () => ({ InteractionManager: { runAfterInteractions } }));
+vi.mock('../../lib/schedule-idle-task', () => ({ scheduleIdleTask }));
 
 import { useDeferredAfterInteractions } from '../use-deferred-after-interactions';
 
@@ -27,24 +27,24 @@ function flushInteractions() {
 describe('useDeferredAfterInteractions', () => {
   beforeEach(() => {
     scheduled.length = 0;
-    runAfterInteractions.mockClear();
+    scheduleIdleTask.mockClear();
     vi.useFakeTimers();
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('returns false until interactions settle, then true', () => {
+  it('returns false until idle callback runs, then true', () => {
     const { result } = renderHook(() => useDeferredAfterInteractions(true));
     expect(result.current).toBe(false);
     act(() => flushInteractions());
     expect(result.current).toBe(true);
   });
 
-  it('falls back to true after the timeout if runAfterInteractions never fires (the stall bug)', () => {
+  it('falls back to true after the timeout if scheduleIdleTask never fires (the stall bug)', () => {
     const { result } = renderHook(() => useDeferredAfterInteractions(true, undefined, 350));
     expect(result.current).toBe(false);
-    // Never flush the interaction queue — simulate a starved queue.
+    // Never flush the idle queue — simulate a starved queue.
     act(() => {
       vi.advanceTimersByTime(350);
     });

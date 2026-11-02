@@ -30,6 +30,7 @@ const oauth = vi.hoisted(() => ({
   setError: null as ((message: string | null) => void) | null,
 }));
 const providers = vi.hoisted(() => ({ apple: true, google: true }));
+const platform = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'web' }));
 const form = vi.hoisted(() => ({
   setters: {} as Record<string, (text: string) => void>,
   submit: null as (() => void) | null,
@@ -71,7 +72,11 @@ vi.mock('expo-router', () => ({ Stack: { Screen: () => null }, useRouter: () => 
 vi.mock('expo-image', () => ({ Image: () => null }));
 vi.mock('react-native', () => ({
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Platform: { OS: 'ios' },
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+  },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -116,6 +121,7 @@ function authOptionTaps(): unknown[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  platform.os = 'ios';
   providers.apple = true;
   providers.google = true;
   oauth.setError = null;
@@ -193,7 +199,7 @@ describe('LoginScreen Auth Option Tapped', () => {
     expect(router.push).toHaveBeenCalledWith('/auth/forgot-password');
   });
 
-  it('reports an email sign-in and hands Login Succeeded to the account-age tracker', async () => {
+  it('delegates native email sign-in without duplicating provider-owned success', async () => {
     auth.signInWithCredentials.mockResolvedValue({ success: true });
     render(createElement(LoginScreen));
 
@@ -206,13 +212,31 @@ describe('LoginScreen Auth Option Tapped', () => {
     });
 
     expect(authOptionTaps()).toEqual([{ option: 'email_sign_in', screen: 'login' }]);
+    expect(auth.signInWithCredentials).toHaveBeenCalledOnce();
+    expect(auth.signInWithCredentials).toHaveBeenCalledWith('climber@example.com', 'supersecure1');
+    expect(analytics.trackLoginSucceeded).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, expect.anything());
+  });
+
+  it('keeps browser email-success tracking on the screen', async () => {
+    platform.os = 'web';
+    auth.signInWithCredentials.mockResolvedValue({ success: true });
+    render(createElement(LoginScreen));
+    await act(async () => {
+      form.setters.email?.('climber@example.com');
+      form.setters.password?.('supersecure1');
+    });
+    await act(async () => {
+      form.submit?.();
+    });
+    expect(auth.signInWithCredentials).toHaveBeenCalledWith('climber@example.com', 'supersecure1');
+    expect(analytics.trackLoginSucceeded).toHaveBeenCalledOnce();
     expect(analytics.trackLoginSucceeded).toHaveBeenCalledWith({
       auth_method: 'credentials',
       provider: 'email',
-      flow: 'native',
+      flow: 'web',
       screen: 'login',
     });
-    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, expect.anything());
   });
 
   it('does not report an email sign-in while the form is still empty', async () => {

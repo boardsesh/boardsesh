@@ -91,6 +91,11 @@ vi.mock('../integrations/registry', async () => {
   };
 });
 
+// The stored workout is read through its own module (integration-export-workout.test.ts
+// covers it against the database); here it is absent, so the mocked selects above
+// line up with the export path alone.
+vi.mock('../integrations/export-workout', () => ({ loadExportWorkout: vi.fn(async () => null) }));
+
 import { IntegrationHttpError } from '../integrations/strava';
 import { autoSyncSessionToIntegrations, syncPartySessionForUser } from '../integrations/export-service';
 

@@ -1,5 +1,5 @@
 import { forwardRef, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ViewInstance } from 'react-native';
 import { Host, Spacer } from '@expo/ui/swift-ui';
 import { onGeometryChange } from '@expo/ui/swift-ui/modifiers';
 import type { SheetWindowOriginProbeProps } from './sheet-window-origin-probe.types';
@@ -19,16 +19,15 @@ import type { SheetWindowOriginProbeProps } from './sheet-window-origin-probe.ty
  * rising for the keyboard), so the readout remounts this probe with a new `key`
  * whenever it re-measures; a fresh Host reports its initial frame.
  */
-export const SheetWindowOriginProbe = forwardRef<View, SheetWindowOriginProbeProps>(function SheetWindowOriginProbe(
-  { onFrame, style },
-  ref,
-) {
-  const modifiers = useMemo(() => [onGeometryChange(onFrame)], [onFrame]);
-  return (
-    <View ref={ref} collapsable={false} pointerEvents="none" style={style}>
-      <Host ignoreSafeArea="all" style={StyleSheet.absoluteFill} modifiers={modifiers}>
-        <Spacer />
-      </Host>
-    </View>
-  );
-});
+export const SheetWindowOriginProbe = forwardRef<ViewInstance, SheetWindowOriginProbeProps>(
+  function SheetWindowOriginProbe({ onFrame, style }, ref) {
+    const modifiers = useMemo(() => [onGeometryChange(onFrame)], [onFrame]);
+    return (
+      <View ref={ref} collapsable={false} pointerEvents="none" style={style}>
+        <Host ignoreSafeArea="all" style={StyleSheet.absoluteFill} modifiers={modifiers}>
+          <Spacer />
+        </Host>
+      </View>
+    );
+  },
+);

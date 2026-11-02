@@ -41,7 +41,7 @@ vp run mobile:android-shots                                  # background this; 
 vp run mobile:android-shots -- screenshot --to board-view --label board
 vp run mobile:android-shots -- screenshot --to profile --label profile
 vp run mobile:android-shots -- navigate --to discover        # deep-link only, no capture
-vp run mobile:android-shots -- shutdown                       # stop emulator + Metro
+vp run mobile:android-shots -- shutdown                       # stop emulator, Metro, readiness server
 ```
 
 PNGs land in `.boardsesh/android-screenshots/NN-<label>.png` (gitignored); the absolute
@@ -73,6 +73,12 @@ By default the tool downloads the latest `rn-android-dev-*` prerelease asset
 (`boardsesh-dev-android.apk`, package `com.boardsesh.app.dev`) and caches it, then verifies
 it carries the `x86_64` ABI. The CI dev-client APK is **universal** (`arm64-v8a` + `x86_64`)
 — see `docs/android-sideload-build.md` and `.github/workflows/android-apk-dev-client.yml`.
+
+An explicit `--app-path` APK is checked for native libraries for the selected ABI
+before installation too. `unzip` must be on PATH and the archive must be readable;
+an archive-listing failure is reported separately from a missing ABI. The APK
+resolver accepts both `--abi arm64-v8a` and `--abi=arm64-v8a` for physical phones;
+screenshot callers retain their `x86_64` default.
 
 If the download is unavailable, the APK lacks `x86_64`, or you pass `--build-local`, the
 tool builds a dev-client APK locally (`BOARDSESH_APP_VARIANT=dev` prebuild +

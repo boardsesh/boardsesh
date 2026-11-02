@@ -1,0 +1,211 @@
+{
+  "board": {
+    "headline": "Vedi il prossimo movimento",
+    "description": "Leggi le prese, controlla il grado e illumina il blocco in parete."
+  },
+  "boards": {
+    "headline": "Un'app per i tuoi pannelli",
+    "description": "Compatibile con Kilter e Tension, con tutta la tua storia insieme."
+  },
+  "home": {
+    "headline": "Ritrova la tua crew",
+    "description": "Scopri le ultime session e i blocchi che tutti stanno provando."
+  },
+  "climbs": {
+    "headline": "Trova il prossimo progetto",
+    "description": "Cerca blocchi per grado, inclinazione e altro."
+  },
+  "session": {
+    "headline": "Ogni session conta",
+    "description": "Rivedi i tuoi blocchi, tentativi e ripetizioni."
+  },
+  "workout": {
+    "headline": "Pianifica la tua session",
+    "description": "Crea un allenamento per il tuo pannello e il tuo livello."
+  },
+  "discover": {
+    "headline": "Scopri nuovi blocchi",
+    "description": "Esplora le playlist consigliate e salvate per il tuo pannello."
+  },
+  "playlist": {
+    "headline": "Riunisci i prossimi blocchi",
+    "description": "Apri una playlist e scala i blocchi al tuo ritmo."
+  },
+  "logbook": {
+    "headline": "Ricorda ogni ripetizione",
+    "description": "Tieni ripetizioni e tentativi in un solo diario."
+  },
+  "profile": {
+    "headline": "Tutti i tuoi pannelli.\nUn solo profilo.",
+    "description": "Segui ripetizioni e progressi su ogni pannello."
+  },
+  "wall": {
+    "headline": "Segui il tuo pannello",
+    "description": "Vedi le ultime ripetizioni e le statistiche del tuo pannello."
+  },
+  "wallKiosk": {
+    "headline": "Lascialo vicino al pannello.",
+    "description": "Il blocco illuminato, leggibile dal materasso."
+  },
+  "boardFamily": {
+    "headline": "I tuoi pannelli. Un'app.",
+    "description": "Cambia pannello senza cambiare app."
+  },
+  "liveQueue": {
+    "headline": "La tua crew.\nUna coda in diretta.",
+    "description": "Aggiungete blocchi insieme. Tutti restano sincronizzati."
+  },
+  "liveClimb": {
+    "headline": "Scegli un blocco.\nLo vedono tutti.",
+    "description": "Il blocco attuale si aggiorna per tutti nella tua session."
+  },
+  "wallStatus": {
+    "headline": "Vedi il blocco in parete.",
+    "description": "Vedi il blocco illuminato mentre cerchi il prossimo."
+  },
+  "moreBoards": {
+    "headline": "Più pannelli. Stessa app.",
+    "description": "Compatibile con Woods Board, Grasshopper e MoonBoard 2024."
+  },
+  "crossBoardLogbook": {
+    "headline": "Tutti i tuoi pannelli.\nUn solo diario.",
+    "description": "Riunisci ripetizioni e session di tutti i pannelli."
+  },
+  "storeBoards": {
+    "headline": "Un'app per\ntutti i tuoi pannelli",
+    "description": "Un solo diario per ogni pannello."
+  },
+  "storeCrew": {
+    "headline": "La tua crew.\nUna coda.",
+    "description": "Aggiungete blocchi insieme. Tutti possono scegliere il prossimo.",
+    "emphasis": "coda."
+  },
+  "storeSpray": {
+    "headline": "Anche la tua\nSpraywall.",
+    "description": "Traccia blocchi sulla foto della tua Spraywall.",
+    "emphasis": "Anche"
+  },
+  "storeMoreBoards": {
+    "headline": "Più pannelli.\nStessa app.",
+    "description": "Compatibile anche con Touchstone e So iLL.",
+    "emphasis": "app."
+  },
+  "storeIsland": {
+    "headline": "Prossimo blocco.\nDa Dynamic Island.",
+    "description": "Cambia blocco senza aprire l'app.",
+    "emphasis": "Dynamic Island."
+  },
+  "cppOtherBoards": {
+    "headline": "Un'app per tutti i tuoi pannelli",
+    "description": "Tutti i tuoi diari in un solo posto"
+  },
+  "cppSearch": {
+    "headline": "Trova il tuo\nprossimo progetto",
+    "description": "Filtra per grado e nascondi i blocchi chiusi."
+  },
+  "cppLogbook": {
+    "headline": "Ripetizioni\ne tentativi",
+    "description": "Per giorno, con il tuo grado più alto."
+  },
+  "cppQueue": {
+    "headline": "La crew sceglie\nil prossimo",
+    "description": "Ognuno aggiunge alla coda dal proprio telefono."
+  },
+  "cppWorkout": {
+    "headline": "Allenati\ncon un piano",
+    "description": "Blocchi scelti per il tuo grado obiettivo."
+  },
+  "cppStatus": {
+    "headline": "Vedi il blocco\nilluminato",
+    "description": "Mostra ogni blocco illuminato con Boardsesh."
+  },
+  "cppIsland": {
+    "headline": "Prossimo blocco\nda qualsiasi app",
+    "description": "Direttamente nella Dynamic Island."
+  },
+  "cppKiosk": {
+    "headline": "Lascialo vicino\nal pannello",
+    "description": "Mostra il blocco illuminato e tiene lo schermo acceso."
+  },
+  "cppKilterGrade": {
+    "headline": "Kilter Board:\nil tuo grado",
+    "description": "Scegli grado e inclinazione, poi illumina il blocco."
+  },
+  "cppKilterLayouts": {
+    "headline": "Compatibile con Kilter",
+    "description": "Possiamo anche importare il tuo diario per te."
+  },
+  "cppKilterLogbookImport": {
+    "headline": "Importa il diario\nKilter Board",
+    "description": "Ritrova anche le ripetizioni e i tentativi passati."
+  },
+  "cppMoonboardGrade": {
+    "headline": "Blocchi MoonBoard\nal tuo grado",
+    "description": "Scegli un grado, poi illumina il blocco."
+  },
+  "cppMoonboardLogbook": {
+    "headline": "Ripetizioni\ne tentativi",
+    "description": "Importa il tuo diario da un file CSV."
+  },
+  "cppMoonboardSets": {
+    "headline": "Compatibile con MoonBoard",
+    "description": "Possiamo anche importare il tuo diario da un file CSV."
+  },
+  "cppSprayHolds": {
+    "headline": "Prese suggerite\nda una foto",
+    "description": "Correggi il resto direttamente sulla foto."
+  },
+  "cppSprayOtherBoards": {
+    "headline": "Pannelli diversi,\nstesso diario",
+    "description": "Anche ripetizioni su Kilter, Tension e MoonBoard.",
+    "emphasis": "stesso diario"
+  },
+  "cppSprayProjects": {
+    "headline": "Ritrova i tuoi\nprogetti",
+    "description": "I blocchi provati ma non ancora chiusi."
+  },
+  "cppSpraySetting": {
+    "headline": "Traccia sulla tua\nSpraywall",
+    "description": "Tocca le prese sulla foto della tua Spraywall.",
+    "emphasis": "Spraywall"
+  },
+  "cppSprayWalls": {
+    "headline": "Anche le Spraywall",
+    "description": "Traccia blocchi sulle foto delle tue Spraywall."
+  },
+  "cppSprayWorkout": {
+    "headline": "Allenati\ncon un piano",
+    "description": "Quando la tua Spraywall ha blocchi con un grado."
+  },
+  "cppTensionLayouts": {
+    "headline": "Compatibile con Tension",
+    "description": "Possiamo anche importare il tuo diario per te."
+  },
+  "cppTensionLogbookImport": {
+    "headline": "Importa il diario\nTension Board",
+    "description": "Le tue ripetizioni passate in un solo diario."
+  },
+  "cppTensionMirrorBoard": {
+    "headline": "Scala su\nTension 2 Mirror",
+    "description": "Compatibile con il tuo pannello speculare."
+  },
+  "cppTensionQueue": {
+    "headline": "Scala su Tension\ncon la crew",
+    "description": "Ognuno aggiunge alla coda dal proprio telefono.",
+    "emphasis": "crew"
+  },
+  "cppTensionSearch": {
+    "headline": "Vai al\ntuo grado",
+    "description": "Poi nascondi i blocchi già chiusi."
+  },
+  "storeLiveActivity": {
+    "headline": "Prossimo blocco.\nFuori dall'app.",
+    "description": "Cambia blocco senza aprire l'app.",
+    "emphasis": "Fuori dall'app."
+  },
+  "cppLiveActivity": {
+    "headline": "Prossimo blocco.\nFuori dall'app.",
+    "description": "Cambia blocco senza aprire l'app.",
+    "emphasis": "Fuori dall'app."
+  }
+}

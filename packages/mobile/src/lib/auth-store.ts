@@ -1,4 +1,4 @@
-import { invalidatePrivacySnapshots } from './privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from './privacy/privacy-cache';
 import {
   createOnceRunner,
   deferredReconcileKeys,
@@ -31,7 +31,7 @@ export function subscribeAuthCredentialGenerationChanges(listener: (generation: 
 
 function advanceCredentialGeneration(): number {
   credentialGeneration += 1;
-  invalidatePrivacySnapshots('credential');
+  invalidateCredentialSnapshots();
   for (const listener of credentialGenerationListeners) listener(credentialGeneration);
   return credentialGeneration;
 }

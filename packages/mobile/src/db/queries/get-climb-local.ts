@@ -1,6 +1,13 @@
 import type { OfflineDatabase } from '@boardsesh/offline-sync';
 import type { Climb } from '@boardsesh/shared-schema';
-import { effectiveStatsSql, isDetailCrossAngleStats, mapRowToClimb, type LocalClimbRow } from './search-climbs-local';
+import {
+  effectiveStatsSql,
+  isDetailCrossAngleStats,
+  mapRowToClimb,
+  localSprayGradeJoin,
+  effectiveDisplayDifficultySql,
+  type LocalClimbRow,
+} from './search-climbs-local';
 
 /**
  * On-device climb detail read (board_climbs ⋈ board_climb_stats ⋈
@@ -50,13 +57,16 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
       ON s_set.climb_uuid = c.uuid AND s_set.board_type = ? AND s_set.angle = c.angle`
     : '';
   const gradeAngleSql = crossAngle ? 'COALESCE(s.angle, s_set.angle, ?)' : '?';
+  const localGrade = localSprayGradeJoin(boardName, angle, viewerId);
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
+      EXISTS (SELECT 1 FROM pending_mutations mutation WHERE mutation.table_name = 'board_climbs'
+        AND mutation.entity_key = 'climb:' || c.board_type || ':' || c.uuid) AS local_write_pending,
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
-      ${eff('display_difficulty')} AS display_difficulty,
+      ${effectiveDisplayDifficultySql(boardName, crossAngle)} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,
       ${eff('quality_average')} AS quality_average,
       ${eff('benchmark_difficulty')} AS benchmark_difficulty,
@@ -75,8 +85,10 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
     ${setAngleJoin}
     LEFT JOIN board_climb_grades g
       ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = ${gradeAngleSql}
+    ${localGrade.sql}
     WHERE c.uuid = ? AND c.board_type = ?
-      AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?)
+      AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
+        OR (c.board_type = 'spray' AND EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id)))
     LIMIT 1
   `;
   // Bind order follows the SQL text: the two tick subqueries, the stats join, the
@@ -93,6 +105,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
     ...(crossAngle ? [boardName] : []),
     boardName,
     angle,
+    ...localGrade.binds,
     climbUuid,
     boardName,
     viewerId,

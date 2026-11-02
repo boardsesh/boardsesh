@@ -82,6 +82,8 @@ export type Climb = {
   // it is one climber's opinion, not a property of the climb. See
   // PRIVATE_CLIMB_FIELDS in @boardsesh/queue.
   myDifficulty?: number | null;
+  /** Device-only outbox state; never included in shared queue or API payloads. */
+  localWritePending?: boolean;
   // Board configuration to draw this climb on, resolved against its setter's
   // boards. Populated by `userClimbs` (the profile Climbs tab, where no board is
   // in the route); null everywhere the board comes from the URL.
@@ -93,6 +95,8 @@ export type Climb = {
   // their own origins, so hold-id containment alone can't tell them apart
   // (canAddClimbToBoard rule 5).
   compatibleSizeIds?: number[] | null;
+  // Frame-derived hold sets. Null/undefined is unknown; [] requires no sets.
+  requiredSetIds?: number[] | null;
   // `board_climbs.missing_hold_count` — how many of this climb's holds have come
   // off the wall. Spray walls only: null/undefined on every catalogue board, and
   // on any spray row a reset has never touched. Both mean intact.
@@ -148,6 +152,8 @@ export type ClimbInput = {
   // party peer on a different-sized wall can tell the climb doesn't fit theirs.
   // Null/undefined means unknown and imposes no constraint.
   compatibleSizeIds?: number[] | null;
+  // Frame-derived hold sets. Null/undefined is unknown; [] requires no sets.
+  requiredSetIds?: number[] | null;
   // How many of this climb's holds are no longer on the wall after a spray-wall
   // reset. Round-tripped through the queue because a broken climb stays
   // queueable and stays playable, and the peer showing it has to be able to say
@@ -228,6 +234,8 @@ export type ClimbSearchInput = {
    */
   useMyGrades?: boolean;
   onlyDrafts?: boolean;
+  /** OWN keeps the personal draft list; WALL shares spray drafts with wall readers. */
+  draftScope?: 'OWN' | 'WALL';
   // Only climbs the user has hearted on this board. A heart is per climb, not
   // per angle, so it matches at every angle.
   onlyFavorited?: boolean;
@@ -322,6 +330,8 @@ export type ClimbStatsEvent = {
 };
 
 export type SaveClimbInput = {
+  /** Stable client identity for idempotent offline replay. Omit for server generation. */
+  uuid?: string | null;
   boardType: string;
   layoutId: number;
   name: string;
@@ -389,6 +399,8 @@ export type SaveMoonBoardClimbInput = {
 };
 
 export type SaveClimbResult = {
+  /** The UUID already existed; the create did not apply this request's fields. */
+  replayed?: boolean;
   uuid: string;
   synced: boolean;
   /** ISO timestamp of when the row was created */
@@ -405,6 +417,8 @@ export type SaveClimbResult = {
  */
 export type UpdateClimbInput = {
   uuid: string;
+  /** Stable identity of one offline edit, reused only when retrying that edit. */
+  clientMutationId?: string | null;
   boardType: string;
   name?: string | null;
   description?: string | null;

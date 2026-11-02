@@ -1,5 +1,11 @@
 import { State } from 'react-native-ble-plx';
-import { bleManager } from './ble-manager';
+import { getBleManager } from './ble-manager';
+import {
+  allowsBluetoothUse,
+  readBluetoothAuthorization,
+  requestBluetoothAuthorization,
+} from './bluetooth-authorization';
+import { setBackgroundSafeTimeout } from './background-safe-timeout';
 
 const DEFAULT_BLE_POWERED_ON_TIMEOUT_MS = 2_500;
 
@@ -17,9 +23,20 @@ export async function waitForBlePoweredOn(timeoutMs = DEFAULT_BLE_POWERED_ON_TIM
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1')
     return true;
 
+  // Every caller is a scan or connect the climber started, so this is where an
+  // iOS phone that has never answered the Bluetooth question gets asked. The
+  // native ask shows the alert and waits for the answer; ble-plx below then
+  // starts with the answer known, so it shows nothing. A no (or no answer yet)
+  // ends here, before ble-plx exists: readBluetoothUnavailableReason reads why
+  // without it. Null (Android, web, an older binary): carry on as before, with
+  // no extra await, so those paths keep their exact timing.
+  let authorization = readBluetoothAuthorization();
+  if (authorization === 'notDetermined') authorization = await requestBluetoothAuthorization();
+  if (!allowsBluetoothUse(authorization)) return false;
+
   let currentState: State;
   try {
-    currentState = await bleManager.state();
+    currentState = await getBleManager().state();
   } catch {
     return false;
   }
@@ -34,14 +51,14 @@ export async function waitForBlePoweredOn(timeoutMs = DEFAULT_BLE_POWERED_ON_TIM
 
   return new Promise<boolean>((resolve) => {
     let settled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelTimeout: (() => void) | null = null;
     let subscription: BleStateSubscription | null = null;
     let removeAfterSubscribe = false;
 
     const finish = (available: boolean) => {
       if (settled) return;
       settled = true;
-      if (timeoutId) clearTimeout(timeoutId);
+      cancelTimeout?.();
       if (subscription) {
         subscription.remove();
       } else {
@@ -50,10 +67,12 @@ export async function waitForBlePoweredOn(timeoutMs = DEFAULT_BLE_POWERED_ON_TIM
       resolve(available);
     };
 
-    timeoutId = setTimeout(() => finish(false), timeoutMs);
+    // On the native clock too: a background connect (the session notification's
+    // bulb) would otherwise wait here until Android resumed JS timers (#7038).
+    cancelTimeout = setBackgroundSafeTimeout(() => finish(false), timeoutMs);
 
     try {
-      subscription = bleManager.onStateChange((nextState) => {
+      subscription = getBleManager().onStateChange((nextState) => {
         if (nextState === State.PoweredOn) {
           finish(true);
           return;

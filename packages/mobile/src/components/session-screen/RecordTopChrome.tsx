@@ -1,7 +1,6 @@
-import { useCallback } from 'react';
-import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import type { NativeStackNavigationOptions } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
 import {
@@ -12,6 +11,9 @@ import {
   TOP_ACTION_SIZE,
 } from '../chrome';
 import { NativeRootHeader } from '../chrome/NativeRootHeader';
+import { MaterialAppBarTitle } from '../chrome/MaterialAppBarTitle';
+import { MaterialTopAppBar } from '../chrome/MaterialTopAppBar';
+import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { LargeContentViewer } from '../LargeContentViewer';
@@ -25,6 +27,9 @@ import { glassSize } from '../../theme/layout';
 import { topBarFor } from '../../theme/top-bar';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
+import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
+import { barItemsFactory, symbolBarItem, type RootBarItem } from '../chrome/root-bar-items';
+import { useAccountRailItem, useBarItemsOnRail } from '../chrome/use-root-bar-items';
 
 type RecordTopChromeProps = {
   /** The native or Material header owns the contextual session title. */
@@ -33,6 +38,8 @@ type RecordTopChromeProps = {
   onEditTitle?: () => void;
   /** Supplementary chrome height; UIKit accounts for its own header. */
   onHeightChange: (height: number) => void;
+  /** The list under the bar, so the Material app bar tints once it scrolls under. */
+  scrollEdge?: ScrollEdgeBackdrop;
   onShare?: () => void;
   onEndSession?: () => void;
   /** The owner stops the session; a joiner leaves without ending it. */
@@ -44,13 +51,13 @@ export function RecordTopChrome({
   title,
   onEditTitle,
   onHeightChange,
+  scrollEdge,
   onShare,
   onEndSession,
   exitVariant = 'end',
 }: RecordTopChromeProps) {
   const { t } = useTranslation('session');
   const { brandColors, systemColors, variant, radii } = useTheme();
-  const insets = useSafeAreaInsets();
   const nativeRootHeader = useNativeRootHeader();
   const glassCapability = useGlassCapability();
   const topBar = topBarFor(variant);
@@ -60,14 +67,32 @@ export function RecordTopChrome({
   const exitTint = isLeaveExit ? systemColors.label : brandColors.error;
   const editLabel = t('mobile.session.editTitleAria');
 
-  const handleLayout = useCallback(
-    (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
-    [onHeightChange],
-  );
+  // On iPhone Duo's side rail the account and invite are native bar items. A
+  // horizontal bar keeps the glass avatar (round photo, initials) and invite.
+  const nativeBarItems = useNativeRootBarItems();
+  const onRail = useBarItemsOnRail();
+  const accountItem = useAccountRailItem();
+  const inviteLabel = t('mobile.session.invite');
+  const leftItems = useMemo(() => {
+    if (!nativeBarItems || !onRail) return undefined;
+    const items: RootBarItem[] = [accountItem];
+    if (onShare) {
+      items.push(
+        symbolBarItem({
+          label: inviteLabel,
+          symbol: iconMap['person.badge.plus'].ios,
+          onPress: onShare,
+          identifier: 'root.invite',
+        }),
+      );
+    }
+    return barItemsFactory(items);
+  }, [nativeBarItems, onRail, accountItem, inviteLabel, onShare]);
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const exitAction = onEndSession ? (
     <PressableSurface
+      testID={`session-exit-${exitVariant}`}
       onPress={onEndSession}
       feedback="opacity"
       rippleColor={exitTint as string}
@@ -95,52 +120,35 @@ export function RecordTopChrome({
   ) : null;
 
   if (isMaterial) {
+    // Invite sits with the other trailing actions, so the title starts at the same
+    // inset after the avatar as every other tab's.
     return (
-      <View
-        pointerEvents="auto"
-        style={[
-          styles.materialContainer,
-          {
-            paddingTop: insets.top,
-            backgroundColor: systemColors.secondaryBackground,
-            borderBottomColor: systemColors.separator,
-          },
-        ]}
-        onLayout={handleLayout}
-      >
-        <Appbar.Header
-          statusBarHeight={0}
-          mode="small"
-          elevated
-          style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
-        >
-          <UserAvatarToolbarAction variant="material" />
-          {onShare ? (
-            <Appbar.Action
-              icon={iconMap['person.badge.plus'].android}
-              color={systemColors.label as string}
-              onPress={onShare}
-              accessibilityLabel={t('mobile.session.invite')}
-            />
-          ) : null}
-          <Appbar.Content
-            title={title}
-            color={systemColors.label as string}
+      <MaterialTopAppBar onHeightChange={onHeightChange} scrollEdge={scrollEdge}>
+        <UserAvatarToolbarAction variant="material" />
+        <MaterialAppBarTitle
+          title={title}
+          onPress={onEditTitle}
+          accessibilityHint={onEditTitle ? editLabel : undefined}
+        />
+        {onEditTitle ? (
+          <Appbar.Action
+            icon={iconMap.edit.android}
+            color={systemColors.secondaryLabel as string}
             onPress={onEditTitle}
-            accessibilityLabel={title}
-            accessibilityHint={onEditTitle ? editLabel : undefined}
+            accessibilityLabel={editLabel}
           />
-          {onEditTitle ? (
-            <Appbar.Action
-              icon={iconMap.edit.android}
-              color={systemColors.secondaryLabel as string}
-              onPress={onEditTitle}
-              accessibilityLabel={editLabel}
-            />
-          ) : null}
-          {exitAction}
-        </Appbar.Header>
-      </View>
+        ) : null}
+        {onShare ? (
+          <Appbar.Action
+            icon={iconMap['person.badge.plus'].android}
+            testID="session-invite"
+            color={systemColors.label as string}
+            onPress={onShare}
+            accessibilityLabel={t('mobile.session.invite')}
+          />
+        ) : null}
+        {exitAction}
+      </MaterialTopAppBar>
     );
   }
 
@@ -148,7 +156,7 @@ export function RecordTopChrome({
     <GlassActionToolbar actionCount={onShare ? 2 : 1}>
       <UserAvatarToolbarAction variant="glass" />
       {onShare ? (
-        <GlassToolbarAction onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
+        <GlassToolbarAction testID="session-invite" onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
           <Icon maxFontSizeMultiplier={1} name="person.badge.plus" size={topBar.glyphSize} color={systemColors.label} />
         </GlassToolbarAction>
       ) : null}
@@ -184,6 +192,7 @@ export function RecordTopChrome({
             items.push({
               type: 'button',
               label: exitActionLabel,
+              identifier: `session-exit-${exitVariant}`,
               variant: 'plain',
               labelStyle: { fontWeight: '600' },
               ...(isLeaveExit ? {} : { tintColor: brandColors.error }),
@@ -199,6 +208,7 @@ export function RecordTopChrome({
         title={title}
         leftActions={leftActions}
         leftActionsStandalone={!onShare}
+        leftItems={leftItems}
         rightActions={rightActions}
         rightItems={rightItems}
         onHeightChange={onHeightChange}
@@ -213,18 +223,6 @@ export function RecordTopChrome({
 }
 
 const styles = StyleSheet.create({
-  materialContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  materialAppbar: {
-    elevation: 0,
-    shadowOpacity: 0,
-  },
   rightActions: {
     flexDirection: 'row',
     alignItems: 'center',

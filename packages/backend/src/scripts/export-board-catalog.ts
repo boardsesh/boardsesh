@@ -42,6 +42,7 @@ import {
   CATALOG_SNAPSHOT_EXCLUDED_COLUMNS,
   CATALOG_SNAPSHOT_REDACTED_COLUMNS,
   CATALOG_SNAPSHOT_REDACTED_VALUE,
+  catalogSnapshotBoardTypeFilter,
   type CatalogSnapshotTableName,
 } from '@boardsesh/db/catalog-snapshot';
 import {
@@ -197,20 +198,27 @@ async function streamTableIntoSqlite(
             AND snapshot_beta_climb.uuid = board_beta_links.climb_uuid
             AND snapshot_beta_climb.user_id IS NULL AND NOT snapshot_beta_climb.is_boardsesh_authored
             AND snapshot_beta_climb.is_draft IS NOT TRUE
-            AND snapshot_beta_climb.board_type <> 'spray'
-            AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_climb_privacy
-              WHERE snapshot_climb_privacy.entity_type = 'climb' AND snapshot_climb_privacy.entity_id = snapshot_beta_climb.uuid))`
+            AND snapshot_beta_climb.board_type <> 'spray')`
       : tableName === 'board_climb_aliases'
         ? ` WHERE EXISTS (SELECT 1 FROM board_climbs snapshot_alias_climb
           WHERE snapshot_alias_climb.board_type = board_climb_aliases.board_type
             AND snapshot_alias_climb.uuid = board_climb_aliases.canonical_uuid
             AND snapshot_alias_climb.user_id IS NULL AND NOT snapshot_alias_climb.is_boardsesh_authored
             AND snapshot_alias_climb.is_draft IS NOT TRUE
-            AND snapshot_alias_climb.board_type <> 'spray'
-            AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_alias_privacy
-              WHERE snapshot_alias_privacy.entity_type = 'climb' AND snapshot_alias_privacy.entity_id = snapshot_alias_climb.uuid))`
+            AND snapshot_alias_climb.board_type <> 'spray')`
         : '';
-  const selectSql = `SELECT ${selectList} FROM ${tableName}${catalogueScope}`;
+  // Spray walls are private, runtime-created catalogue rows (a wall's name, its
+  // marked holds). No table publishes them. See CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES.
+  const boardTypeFilter = columnNames.includes('board_type')
+    ? catalogSnapshotBoardTypeFilter(`${tableName}.board_type`)
+    : null;
+  const rowScope =
+    boardTypeFilter === null
+      ? catalogueScope
+      : catalogueScope === ''
+        ? ` WHERE ${boardTypeFilter}`
+        : `${catalogueScope}\n        AND ${boardTypeFilter}`;
+  const selectSql = `SELECT ${selectList} FROM ${tableName}${rowScope}`;
   for await (const batch of tx.unsafe(selectSql).cursor(2000)) {
     for (const row of batch as RawRow[]) {
       const normalized = normalizeRow(row);

@@ -24,7 +24,14 @@ function mockReactNative(platformOS: 'ios' | 'android') {
   vi.doMock('react-native', () => ({
     Platform: { OS: platformOS },
     Pressable: ({ children, style }: PressableMockProps) =>
-      createElement('button', { 'data-elevation': String(flattenStyle(style).elevation) }, children),
+      createElement(
+        'button',
+        {
+          'data-elevation': String(flattenStyle(style).elevation),
+          'data-background': String(flattenStyle(style).backgroundColor),
+        },
+        children,
+      ),
     StyleSheet: { create: (styles: Record<string, unknown>) => styles },
   }));
 }
@@ -82,5 +89,22 @@ describe('BleLightbulbButton connected halo elevation', () => {
       }),
     );
     expect(view.getByRole('button').getAttribute('data-elevation')).toBe('0');
+  });
+
+  // Under Put on board's draining ring (the player's first row): the arc meets the row itself.
+  it('draws no halo and no shadow under the lit bulb when asked for none', async () => {
+    mockReactNative('ios');
+    const { BleLightbulbButton } = await import('../BleLightbulbButton');
+    const view = render(
+      createElement(BleLightbulbButton, {
+        isConnected: true,
+        halo: false,
+        isScanning: false,
+        onPress: vi.fn(),
+        accessibilityLabel: 'Disconnect board',
+      }),
+    );
+    expect(view.getByRole('button').getAttribute('data-elevation')).toBe('undefined');
+    expect(view.getByRole('button').getAttribute('data-background')).toBe('undefined');
   });
 });

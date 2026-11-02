@@ -2,6 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 import { createMMKV } from 'react-native-mmkv';
 import type { AppSettings, SettingsKey } from './types';
 import { DEFAULT_SETTINGS } from './defaults';
+import { migrateAutoDisconnect, migrateLightAutomatically } from './migrations';
 
 const storage = createMMKV({ id: 'boardsesh-settings' });
 
@@ -69,6 +70,11 @@ export function getSetting<K extends SettingsKey>(key: K): AppSettings[K] {
   return readSetting(key);
 }
 
+/** Presence is distinct from a stored default such as `null`, including during migrations. */
+export function hasSetting(key: SettingsKey): boolean {
+  return storage.getString(key) !== undefined;
+}
+
 export function setSetting<K extends SettingsKey>(key: K, value: AppSettings[K]): void {
   writeSetting(key, value);
 }
@@ -108,4 +114,28 @@ export function useSetting<K extends SettingsKey>(key: K): [AppSettings[K], (val
 
 export function useSettings(): AppSettings {
   return useSyncExternalStore(subscribe, getAllSettings, () => DEFAULT_SETTINGS);
+}
+
+/** A stored key's parsed value, retired keys included, or undefined when absent or unreadable. */
+function readStoredValue(key: string): unknown {
+  const raw = storage.getString(key);
+  if (raw === undefined) return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+// One-time carries from retired settings, before any screen reads a setting.
+// A store that can't be read or written leaves the defaults in place.
+try {
+  migrateAutoDisconnect({ read: readStoredValue, has: hasSetting, set: writeSetting });
+} catch {
+  // The new defaults stay usable if the old keys can't be read.
+}
+try {
+  migrateLightAutomatically({ read: readStoredValue, has: hasSetting, set: writeSetting });
+} catch {
+  // Always drive the wall stays off if the old switches can't be read.
 }

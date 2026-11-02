@@ -371,6 +371,57 @@ export type RestTimerPillProps = {
   compact?: boolean;
 };
 
+/** The prepared workout shares the timer's surface, but has no running clock yet. */
+export function WorkoutStartPill({
+  onPress,
+  compact = false,
+  firstClimbName,
+}: RestTimerPillProps & { firstClimbName: string | null }) {
+  const { t } = useTranslation('session');
+  const { systemColors, brandColors } = useTheme();
+  const reduceMotion = useReduceMotion();
+  const height = compact ? glassSize.mini : REST_TIMER_PILL_HEIGHT;
+  const disabled = firstClimbName === null;
+  const title = t('mobile.workoutRunner.startWorkout');
+
+  return (
+    <AccessoryBarSurface height={height} style={compact ? styles.pillCompact : styles.pill}>
+      <PressableSurface
+        onPress={onPress}
+        disabled={disabled}
+        feedback={reduceMotion ? 'none' : 'scale'}
+        hitSlop={compact ? 8 : 0}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityHint={
+          firstClimbName === null
+            ? t('mobile.workoutRunner.startEmptyHint')
+            : t('mobile.workoutRunner.startHint', { name: firstClimbName })
+        }
+        testID="workout-start-pill"
+        style={[styles.row, { height, borderRadius: height / 2 }, compact ? styles.rowCompact : null]}
+      >
+        <Icon
+          maxFontSizeMultiplier={1}
+          name="play.fill"
+          size={compact ? 14 : 16}
+          color={disabled ? systemColors.tertiaryLabel : brandColors.primary}
+        />
+        <LargeContentViewer title={title} onActivate={disabled ? undefined : onPress} style={styles.labelViewer}>
+          <Text
+            variant={compact ? 'subheadline' : 'headline'}
+            color={disabled ? systemColors.tertiaryLabel : brandColors.primary}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
+        </LargeContentViewer>
+      </PressableSurface>
+    </AccessoryBarSurface>
+  );
+}
+
 /**
  * `[ 🕐  1:42   Rest · 2m   ⏭ ]` — one row, on the shared accessory surface so it
  * inherits Liquid Glass / M3 tonal / blur / Reduce-Transparency for free.

@@ -149,6 +149,7 @@ describe('blocked crawler origin rejection outside production', () => {
 });
 
 const TTL_24H = 86400;
+const TTL_15M = 900;
 const LEGACY_LIST = '/kilter/original/12x12-square/screw_bolt/40/list';
 const SLUG_LIST = '/b/kilter-original-12x12/40/list';
 // View pages, all three URL shapes that resolve to the same climb.
@@ -183,11 +184,16 @@ describe('getListPageCacheTTL', () => {
 
     // Slug format: /b/[board_slug]/[angle]/list
     it('matches slug format list page', () => {
-      expect(getListPageCacheTTL(SLUG_LIST, sp())).toBe(TTL_24H);
+      expect(getListPageCacheTTL(SLUG_LIST, sp())).toBe(TTL_15M);
     });
 
     it('matches slug format with different slug', () => {
-      expect(getListPageCacheTTL('/b/tension-two-wall-12x12/30/list', sp())).toBe(TTL_24H);
+      expect(getListPageCacheTTL('/b/tension-two-wall-12x12/30/list', sp())).toBe(TTL_15M);
+    });
+
+    // MoonBoard and Woods stats are live, so their edge copy matches the 15 minute data cache (#6803).
+    it.each(['moonboard', 'woods', 'MoonBoard'])('uses the 15 minute TTL for %s list pages', (board) => {
+      expect(getListPageCacheTTL(`/${board}/1/2/3,4/40/list`, sp())).toBe(TTL_15M);
     });
 
     it('rejects slug path with too few segments (/b/list)', () => {
@@ -226,11 +232,15 @@ describe('getListPageCacheTTL', () => {
     });
 
     it('caches with name search', () => {
-      expect(getListPageCacheTTL(SLUG_LIST, sp({ name: 'benchmark' }))).toBe(TTL_24H);
+      expect(getListPageCacheTTL(LEGACY_LIST, sp({ name: 'benchmark' }))).toBe(TTL_24H);
     });
 
     it('caches with minAscents', () => {
-      expect(getListPageCacheTTL(SLUG_LIST, sp({ minAscents: '5' }))).toBe(TTL_24H);
+      expect(getListPageCacheTTL(LEGACY_LIST, sp({ minAscents: '5' }))).toBe(TTL_24H);
+    });
+
+    it('caches slug-tree filtered searches at the 15 minute TTL', () => {
+      expect(getListPageCacheTTL(SLUG_LIST, sp({ name: 'benchmark', minAscents: '5' }))).toBe(TTL_15M);
     });
   });
 
@@ -755,6 +765,14 @@ describe('middleware cache headers on list pages', () => {
     expect(response.headers.get('CDN-Cache-Control')).toBe(
       `s-maxage=${TTL_24H}, stale-while-revalidate=${TTL_24H * 7}`,
     );
+  });
+
+  it('sets a 15 minute CDN cache on Woods list pages', () => {
+    const response = middleware(makeRequest('/woods/1/2/3,4/40/list'));
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(
+      `s-maxage=${TTL_15M}, stale-while-revalidate=${TTL_15M}`,
+    );
+    expect(response.headers.get('CDN-Cache-Control')).toBe(`s-maxage=${TTL_15M}, stale-while-revalidate=${TTL_15M}`);
   });
 
   it('still sets cache headers when vercel-flag-overrides cookie is present', () => {

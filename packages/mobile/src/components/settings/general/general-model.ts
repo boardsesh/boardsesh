@@ -17,6 +17,17 @@ export type GeneralModelInput = {
   offline: GeneralOfflineInput;
   onReplayWalkthrough: () => void;
   onReplayBoardLook: () => void;
+  /**
+   * The "Show support asks" switch, or `null` where the app never asks (every
+   * install `useDonationLinksAllowed` turns down): a switch for something that
+   * can never show would only raise the question.
+   */
+  supportAsks: GeneralSupportAsksInput | null;
+};
+
+export type GeneralSupportAsksInput = {
+  shown: boolean;
+  onShownChange: (shown: boolean) => void;
 };
 
 export type GeneralOfflineInput = {
@@ -103,7 +114,8 @@ function buildGeneralOfflineSections(t: SettingsTranslate, input: GeneralOffline
 
 /**
  * "General": how the app looks and reads, what it keeps for when there's no
- * signal, and the two walkthroughs you can run again.
+ * signal, whether it asks for support, and the two walkthroughs you can run
+ * again.
  */
 export function buildGeneralModel(input: GeneralModelInput): MoreFormModel {
   const { t } = input;
@@ -175,6 +187,23 @@ export function buildGeneralModel(input: GeneralModelInput): MoreFormModel {
         ],
       },
       ...buildGeneralOfflineSections(t, input.offline),
+      ...(input.supportAsks
+        ? [
+            {
+              key: 'supportAsks',
+              footer: t('mobile.supportAsks.settingFooter'),
+              rows: [
+                {
+                  kind: 'toggle' as const,
+                  key: 'supportAsksShown',
+                  label: t('mobile.supportAsks.settingTitle'),
+                  value: input.supportAsks.shown,
+                  onValueChange: input.supportAsks.onShownChange,
+                },
+              ],
+            },
+          ]
+        : []),
       {
         // Buttons, not nav rows: both open a full-screen walkthrough over
         // Settings rather than a page inside it, so a chevron would mislead.

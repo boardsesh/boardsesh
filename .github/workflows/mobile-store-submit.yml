@@ -1,55 +1,30 @@
 name: Mobile Store Submission
 
-run-name: Mobile Store Submission (${{ github.event_name == 'workflow_dispatch' && format('{0} {1}', inputs.action, inputs.version || 'latest merge-back') || github.event_name }})
+run-name: Mobile Store Submission (${{ inputs.action }} ${{ inputs.version }})
 
-# Merging release/next into main (the "merge-back") submits that version to both
-# stores. iOS goes to App Review set to release on approval; Android goes to
-# production at 100% (`completed`) for Play review. See
-# docs/mobile-store-release.md, "Submission on merge-back".
-#
-# State-based, so every run is a retry: nothing is stored between runs. The
-# target job finds the newest merge-back (scripts/mobile-store-submit-target.ts);
-# one status job per store asks it, GET-only, whether that version still needs
-# submitting; only a store that says "pending" goes further, and a store that
-# cannot be read stops only its own submission. A push submits right
-# after a merge-back, and the hourly run picks up whatever was deferred (a Play or
-# App Review already in progress) or failed. Once both release anchors exist the
-# run stops before asking any store.
-#
-# Kill switch: repository variable STORE_AUTO_SUBMIT=off turns every run into a
-# plan (store reads only; scheduled runs stop, and only the merge-back push itself
-# plans). A dispatch plans by default
-# and submits only with action=submit.
-#
-# Store writes, in order, and only in submit mode:
-#   draft          mobile-store-draft.yml, called with the merge commit, attaches
-#                  the exact tagged iOS build to the App Store version (creating it
-#                  if needed) after checking both builds match the commit's
-#                  fingerprints. It writes no Android draft: submit-android
-#                  releases from internal directly.
-#   submit-ios     listing text + What's New, releaseType AFTER_APPROVAL (read
-#                  back), then the review submission of the exact plan snapshot.
-#   submit-android Android Production Release's own code at 100%, committed with
-#                  ERROR_IF_IN_REVIEW. A review already in progress defers it.
-# Rejections are left to a person: fix on the train and merge back again, or
-# resolve it in App Store Connect or Play Console.
+# Public-store writes require an explicit manual dispatch selecting the exact
+# release commit and tester build pair. Merges and schedules never submit.
+# STORE_AUTO_SUBMIT=off remains an emergency read-only switch.
 
 on:
-  push:
-    branches: [main]
-  schedule:
-    # Hourly retry for whatever was deferred. Nothing races it: android-apk-rn.yml
-    # holds the next train version's Android build until production carries the
-    # merge-back's build (scripts/mobile-store-android-merge-back-hold.ts), so Play
-    # internal keeps the build this releases from.
-    - cron: '13 * * * *'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Marketing version to work on (blank: the newest merge-back)'
-        required: false
+      release_sha:
+        description: 'Full source commit SHA contained in main'
+        required: true
         type: string
-        default: ''
+      ios_build_number:
+        description: 'Exact uploaded iOS build number'
+        required: true
+        type: string
+      android_version_code:
+        description: 'Exact published Play internal versionCode'
+        required: true
+        type: string
+      version:
+        description: 'Exact marketing version at release_sha'
+        required: true
+        type: string
       action:
         description: 'plan reads both stores and plans; submit also writes'
         required: true
@@ -71,14 +46,13 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read # gh pr list: the merge-backs
 
 jobs:
   target:
-    name: Find the merge-back
+    name: Verify the selected build pair
     # Schedules only run on main, but a dispatch can name any ref. With the kill
     # switch off, scheduled runs have nothing to do: a push and a dispatch still plan.
-    if: github.ref == 'refs/heads/main' && (github.event_name != 'schedule' || vars.STORE_AUTO_SUBMIT != 'off')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -86,29 +60,34 @@ jobs:
       mode: ${{ steps.target.outputs.mode }}
       release_sha: ${{ steps.target.outputs.release_sha }}
       version: ${{ steps.target.outputs.version }}
-      pr_number: ${{ steps.target.outputs.pr_number }}
+      ios_build_number: ${{ steps.target.outputs.ios_build_number }}
+      android_version_code: ${{ steps.target.outputs.android_version_code }}
       android_version_codes: ${{ steps.target.outputs.android_version_codes }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
 
-      # Git and GitHub reads only. Warns when the merge-back was squashed (the
+      # Git and GitHub reads only. Warns when the manual release was squashed (the
       # changelog then drops the train's PRs) or its release notes did not change
-      # since the previous merge-back; neither stops the submission. Most runs end
+      # since the previous manual release; neither stops the submission. Most runs end
       # here while holding the store-draft lock, so no workspace install: the
       # script imports only Node builtins, and tsx is pinned to the lockfile's.
-      - name: Resolve the merge-back to submit
+      - name: Resolve the exact manual target
         id: target
         env:
           GH_TOKEN: ${{ github.token }}
           SUBMIT_ACTION: ${{ inputs.action }}
           REQUESTED_VERSION: ${{ inputs.version }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          IOS_BUILD_NUMBER: ${{ inputs.ios_build_number }}
+          ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
           STORE_AUTO_SUBMIT: ${{ vars.STORE_AUTO_SUBMIT }}
         run: vp dlx tsx@4.23.12 scripts/mobile-store-submit-target.ts
 
@@ -130,6 +109,7 @@ jobs:
       ios_needs_draft: ${{ steps.ios.outputs.needs_draft }}
     env:
       RELEASE_VERSION: ${{ needs.target.outputs.version }}
+      IOS_BUILD_NUMBER: ${{ needs.target.outputs.ios_build_number }}
       FASTLANE_SKIP_UPDATE_CHECK: '1'
       FASTLANE_DISABLE_ANIMATION: '1'
     steps:
@@ -141,8 +121,13 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
 
       - name: Where the iOS version stands
         id: ios
@@ -207,7 +192,7 @@ jobs:
           echo "- **Android $RELEASE_VERSION:** $(jq -r '.status' "$STORE_SUBMIT_ANDROID_OUTPUT"). $reason" >> "$GITHUB_STEP_SUMMARY"
 
   draft:
-    name: Draft from the merge commit
+    name: Draft from the selected release commit
     needs: [target, status-ios, status-android]
     # Runs when either store is pending, even if the other store's status job
     # failed: that store's own submit job is skipped, and the run shows red.
@@ -217,6 +202,8 @@ jobs:
     uses: ./.github/workflows/mobile-store-draft.yml
     with:
       release_sha: ${{ needs.target.outputs.release_sha }}
+      ios_build_number: ${{ needs.target.outputs.ios_build_number }}
+      android_version_code: ${{ needs.target.outputs.android_version_code }}
       # Only the App Store needs a draft (the version, with the exact build
       # attached) before it can be submitted, and only while the version is missing
       # or in Prepare for Submission. A plan writes nothing: `none` still selects
@@ -256,8 +243,8 @@ jobs:
           NEEDS_DRAFT: ${{ needs.status-ios.outputs.ios_needs_draft }}
         run: |
           set -euo pipefail
-          [ "$CANDIDATE_READY" = true ] || { echo "::error::No verified build pair for $TARGET_VERSION: the tagged builds are missing or do not match the merge commit's fingerprints. See the draft job."; exit 1; }
-          [ "$RELEASE_VERSION" = "$TARGET_VERSION" ] || { echo "::error::The draft read version '$RELEASE_VERSION' at the merge commit, expected $TARGET_VERSION."; exit 1; }
+          [ "$CANDIDATE_READY" = true ] || { echo "::error::No verified build pair for $TARGET_VERSION: the tagged builds are missing or do not match the selected release commit's fingerprints. See the draft job."; exit 1; }
+          [ "$RELEASE_VERSION" = "$TARGET_VERSION" ] || { echo "::error::The draft read version '$RELEASE_VERSION' at the selected release commit, expected $TARGET_VERSION."; exit 1; }
           [[ "$IOS_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "::error::The draft returned no iOS build number."; exit 1; }
           if [ "$SUBMIT" = true ] && [ "$NEEDS_DRAFT" = true ] && [ "$IOS_DRAFT" != success ]; then
             echo "::error::The App Store draft for $RELEASE_VERSION build $IOS_BUILD_NUMBER did not succeed ($IOS_DRAFT). See the draft job."
@@ -265,18 +252,18 @@ jobs:
           fi
 
       # Tooling from this run's commit (fixes on main reach every retry); listing
-      # text and release notes from the merge commit, the version being submitted.
+      # text and release notes from the selected release commit, the version being submitted.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Take the listing text from the merge commit
+      - name: Take the listing text from the selected release commit
         env:
           RELEASE_SHA: ${{ needs.target.outputs.release_sha }}
         run: |
           set -euo pipefail
-          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::Invalid merge commit.'; exit 1; }
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::Invalid selected release commit.'; exit 1; }
           git fetch --quiet --no-tags --depth=1 origin "$RELEASE_SHA"
           rm -rf fastlane/metadata
           git checkout "$RELEASE_SHA" -- fastlane/metadata
@@ -288,8 +275,13 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
 
       - name: Test the submission guards
         run: |
@@ -309,7 +301,7 @@ jobs:
           echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
 
       # The draft workflow's own metadata dispatch is asynchronous; push the text
-      # now, from the merge commit, so the plan below compares against it. It also
+      # now, from the selected release commit, so the plan below compares against it. It also
       # creates any locale the version lacks. The lane refuses any other version
       # and skips one that is already submitted or in a review draft.
       - name: Push listing text and What's New
@@ -448,8 +440,8 @@ jobs:
           TARGET_VERSION: ${{ needs.target.outputs.version }}
         run: |
           set -euo pipefail
-          [ "$CANDIDATE_READY" = true ] || { echo "::error::No verified build pair for $TARGET_VERSION: the tagged builds are missing or do not match the merge commit's fingerprints. See the draft job."; exit 1; }
-          [ "$DRAFT_VERSION" = "$TARGET_VERSION" ] || { echo "::error::The draft read version '$DRAFT_VERSION' at the merge commit, expected $TARGET_VERSION."; exit 1; }
+          [ "$CANDIDATE_READY" = true ] || { echo "::error::No verified build pair for $TARGET_VERSION: the tagged builds are missing or do not match the selected release commit's fingerprints. See the draft job."; exit 1; }
+          [ "$DRAFT_VERSION" = "$TARGET_VERSION" ] || { echo "::error::The draft read version '$DRAFT_VERSION' at the selected release commit, expected $TARGET_VERSION."; exit 1; }
           [[ "$ANDROID_VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || { echo "::error::The draft returned no Android versionCode."; exit 1; }
 
       - uses: actions/checkout@v4
@@ -460,7 +452,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         run: vp install --frozen-lockfile
@@ -477,7 +469,7 @@ jobs:
 
       # 100% (`completed`): everyone gets it once Play approves. A review already
       # in progress makes Play refuse the commit; that is a deferred run, green,
-      # retried hourly, never a cancelled review.
+      # retried by explicit dispatch, never a cancelled review.
       - name: Release to production at 100%
         if: env.SUBMIT == 'true'
         env:

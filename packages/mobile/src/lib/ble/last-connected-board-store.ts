@@ -5,8 +5,9 @@
 //
 // The reconnect handle is one of two, depending on board generation:
 //   - `serial` — Aurora boards advertise a parseable serial; reconnect matches it.
-//   - `deviceId` — MoonBoards carry no serial, so we remember the BLE peripheral
-//     id (a stable per-device identifier on iOS) and match on that instead.
+//   - `deviceId` — MoonBoards and serial-less Kilter-built boxes (`Kilter Board`,
+//     `isKilterBuiltBox`) carry no serial, so we remember the BLE peripheral id
+//     (a stable per-device identifier on iOS) and match on that instead.
 // At least one is always present.
 //
 // This ONLY remembers the reconnect *target*; it never auto-connects. The
@@ -14,9 +15,11 @@
 // no-auto-reconnect policy (bluetooth-provider.tsx) intact — so it can't fight
 // another climber for a last-connection-wins box.
 //
-// A deliberate disconnect forgets the board (clears this), matching the
-// in-memory `lastConnectedBoard` semantics in use-board-bluetooth.ts. Only an
-// involuntary drop or a config switch keeps the memory alive.
+// A hang-up (a deliberate Disconnect) keeps the board for
+// HANG_UP_REMEMBER_MS (remembered-board-expiry.ts): it stamps `forgetAfter`, and once that time passes the
+// record counts as forgotten wherever it is read. A hang-up from a wrong-box
+// connect and a sign-out forget it at once. An involuntary drop, a config
+// switch and Disconnect Bluetooth when driving ends keep it with no stamp.
 //
 // The stored `configKey` is `boardConfigKey(boardName, layoutId, sizeId, boardUuid)`. The
 // caller only rehydrates when it matches the board currently in view, so a
@@ -24,15 +27,18 @@
 // target for the wrong config.
 
 import { getPreference, setPreference, removePreference } from '../preference-store';
+import { hasValidForgetAfter } from './remembered-board-expiry';
 
 const LAST_CONNECTED_BOARD_KEY = 'boardsesh_last_connected_board_v1';
 
 export type StoredLastConnectedBoard = {
   configKey: string;
-  // Aurora reconnect handle (parsed from the advertised name). Absent for MoonBoard.
+  // Aurora reconnect handle (parsed from the advertised name). Absent for a box with no serial.
   serial?: string;
-  // MoonBoard reconnect handle (BLE peripheral id). Absent for serial-bearing boards.
+  // Reconnect handle for a box with no serial (BLE peripheral id). Absent for serial-bearing boards.
   deviceId?: string;
+  // Epoch ms after which a hang-up's memory of this board is gone. Absent: kept until replaced.
+  forgetAfter?: number;
 };
 
 function isStoredLastConnectedBoard(value: unknown): value is StoredLastConnectedBoard {
@@ -45,8 +51,9 @@ function isStoredLastConnectedBoard(value: unknown): value is StoredLastConnecte
   // config-only record can never be offered as a reconnect target.
   if (candidate.serial !== undefined && !hasSerial) return false;
   if (candidate.deviceId !== undefined && !hasDeviceId) return false;
+  if (!hasValidForgetAfter(candidate)) return false;
   // The two handles are mutually exclusive by board generation (Aurora serial vs.
-  // MoonBoard device id) — the writer only ever sets one. Reject a record with
+  // a serial-less box's device id) — the writer only ever sets one. Reject a record with
   // both rather than silently picking one, so a future writer bug that sets both
   // fails visibly (falls back to the picker) instead of reconnecting on an
   // unvalidated pairing.

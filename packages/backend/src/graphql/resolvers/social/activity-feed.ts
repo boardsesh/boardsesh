@@ -201,13 +201,16 @@ export const activityFeedQueries = {
     const conditions = [
       eq(dbSchema.feedItems.recipientId, myUserId),
       // A row names its actor only to a viewer who may see that account's
-      // activity; on a climb, its author keeps that identity too. The climb's
-      // draft rule and spray-wall rule are in socialEntityPrivacyCondition below.
+      // activity, except a `new_climb` row naming the author of that published,
+      // listed climb, who is public with it: a setter name's followers see its
+      // new climbs whoever set them. The climb's draft rule and spray-wall rule
+      // are in socialEntityPrivacyCondition below.
       entityActorVisibilityCondition(
         dbSchema.feedItems.entityType,
         dbSchema.feedItems.entityId,
         dbSchema.feedItems.actorId,
         myUserId,
+        dbSchema.feedItems.type,
       ),
       // A feed is discovery: a comment on an unlisted session reaches only the
       // people who would see that session listed, never its link holders.

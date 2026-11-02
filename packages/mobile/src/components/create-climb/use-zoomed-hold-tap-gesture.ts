@@ -1,6 +1,6 @@
 import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import { type MutableRefObject, useMemo, useRef } from 'react';
-import { Gesture, type ComposedGesture, type GestureType } from 'react-native-gesture-handler';
+import { Gesture, type LegacyComposedGesture as ComposedGesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import { resolveHoldAtPoint, type HoldHitTarget } from './holdLayout';
 

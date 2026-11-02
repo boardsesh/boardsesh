@@ -49,7 +49,7 @@ vi.mock('react-native', () => ({
 
 import { resetActiveBoardSelfHealValidationCache } from '../active-board-self-heal-validation-cache';
 import { useActiveBoardSelfHeal, resetActiveBoardSelfHealForTests } from '../use-active-board-self-heal';
-import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../privacy/privacy-cache';
 
 function board(uuid: string): UserBoard {
   return { uuid, boardType: 'kilter', layoutId: 1, sizeId: 2, setIds: '3,4', name: 'Wall' } as unknown as UserBoard;
@@ -407,7 +407,7 @@ describe('useActiveBoardSelfHeal', () => {
     renderHook(() => useActiveBoardSelfHeal());
     await waitFor(() => expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(1));
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidateCredentialSnapshots();
     });
     await waitFor(() => expect(mocks.clearActiveBoard).toHaveBeenCalledTimes(1));
     expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(2);
@@ -427,7 +427,7 @@ describe('useActiveBoardSelfHeal', () => {
     renderHook(() => useActiveBoardSelfHeal());
     await waitFor(() => expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(1));
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidateCredentialSnapshots();
     });
     await act(async () => {
       completeOldRequest?.({ ...board('private-wall'), name: 'Withdrawn location', angle: 40 });

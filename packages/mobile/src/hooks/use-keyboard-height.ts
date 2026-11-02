@@ -21,7 +21,7 @@ import { Keyboard, LayoutAnimation, Platform, type KeyboardEvent } from 'react-n
  * iOS `will*` events fire before the animation (and don't exist on Android);
  * Android only fires the `did*` pair. The height is read straight off the event,
  * so the listeners never re-register mid-event (same pattern as
- * ClimbReactionMenu).
+ * native sheet content).
  *
  * `enabled: false` registers no listeners and reads 0, for a caller that only
  * needs the height on one platform (it also skips the iOS LayoutAnimation).

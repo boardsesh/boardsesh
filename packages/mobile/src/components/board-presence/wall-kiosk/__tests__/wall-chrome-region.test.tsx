@@ -2,7 +2,7 @@
 import { createElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { BoardClimbRecentSender, BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { WallPreviewState } from '../useWallPreview';
 
 type HostProps = { children?: ReactNode };
@@ -14,14 +14,7 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    // Every byline key the chrome can render, so a test that stops mocking
-    // WallAttributionBlock gets real copy instead of raw key strings.
-    t: (key: string, values?: Record<string, string>) => {
-      if (key === 'mobile.boardPresence.setByLine') return `Set by ${values?.setter}`;
-      if (key === 'boardPresence.litByLine') return `Lit by ${values?.name}`;
-      if (key === 'boardPresence.sentByLabel') return 'Sent by';
-      return key;
-    },
+    t: (key: string) => key,
   }),
 }));
 
@@ -34,22 +27,8 @@ vi.mock('../WallScrubber', () => ({
 }));
 
 vi.mock('../WallIdentityBlock', () => ({
-  WallIdentityBlock: ({
-    showAttribution,
-    showSetter,
-    nameLines,
-  }: {
-    showAttribution?: boolean;
-    showSetter?: boolean;
-    nameLines?: number;
-  }) =>
-    createElement('div', {
-      'data-testid': 'identity',
-      'data-show-attribution': String(showAttribution),
-      'data-show-setter': String(showSetter),
-      'data-name-lines': String(nameLines),
-    }),
-  WallAttributionBlock: () => createElement('div', { 'data-testid': 'attribution' }),
+  WallIdentityBlock: ({ nameLines }: { nameLines?: number }) =>
+    createElement('div', { 'data-testid': 'identity', 'data-name-lines': String(nameLines) }),
 }));
 
 vi.mock('../../../Text', () => ({
@@ -120,73 +99,37 @@ const preview: WallPreviewState = {
   cancelOverride: vi.fn(),
 };
 
-const recentSenders: BoardClimbRecentSender[] = [
-  {
-    userId: 'sender-1',
-    displayName: 'Alex',
-    avatarUrl: null,
-    lastSentAt: '2026-07-31T11:00:00.000Z',
-  },
-];
-
-describe('WallChromeRegion band attribution placement', () => {
-  it('uses the controls column slack on a two-column 11-inch portrait band', () => {
-    const { getByTestId } = render(
-      <WallChromeRegion
-        region="band"
-        mode="live"
-        preview={preview}
-        typeScale={typeScale}
-        bandWidth={738}
-        compact={false}
-        recentSenders={recentSenders}
-      />,
+describe('WallChromeRegion at reading distance', () => {
+  it('puts the state strip and identity beside the scrubber on a two-column 11-inch portrait band', () => {
+    const { getByTestId, container } = render(
+      <WallChromeRegion region="band" mode="live" preview={preview} typeScale={typeScale} bandWidth={738} />,
     );
 
-    expect(getByTestId('identity').getAttribute('data-show-attribution')).toBe('false');
-    expect(getByTestId('identity').getAttribute('data-show-setter')).toBe('true');
     expect(getByTestId('identity').getAttribute('data-name-lines')).toBe('2');
-    expect(getByTestId('attribution')).toBeTruthy();
-    expect(getByTestId('scrubber')).toBeTruthy();
+    expect(getByTestId('state-strip').parentElement).toBe(getByTestId('identity').parentElement);
+    expect(getByTestId('scrubber').parentElement).not.toBe(getByTestId('identity').parentElement);
+    // No setter byline: it was too small to read from the mat.
+    expect(container.textContent).not.toContain('setByLine');
   });
 
-  it('uses a dedicated byline column and fitted name on a three-column 13-inch landscape band', () => {
-    const { getByTestId, getByText } = render(
-      <WallChromeRegion
-        region="band"
-        mode="live"
-        preview={preview}
-        typeScale={typeScale}
-        bandWidth={1270}
-        compact={false}
-        recentSenders={recentSenders}
-      />,
+  it('gives the state strip its own column and fits the name to one line on a three-column 13-inch band', () => {
+    const { getByTestId, container } = render(
+      <WallChromeRegion region="band" mode="live" preview={preview} typeScale={typeScale} bandWidth={1270} />,
     );
 
-    expect(getByTestId('identity').getAttribute('data-show-attribution')).toBe('false');
-    expect(getByTestId('identity').getAttribute('data-show-setter')).toBe('false');
     expect(getByTestId('identity').getAttribute('data-name-lines')).toBe('1');
-    expect(getByText('Set by Taylor')).toBeTruthy();
-    expect(getByTestId('attribution')).toBeTruthy();
-    expect(getByTestId('state-strip').parentElement).toBe(getByTestId('attribution').parentElement);
     expect(getByTestId('state-strip').parentElement).not.toBe(getByTestId('identity').parentElement);
+    expect(getByTestId('state-strip').parentElement).not.toBe(getByTestId('scrubber').parentElement);
+    expect(container.textContent).not.toContain('setByLine');
   });
 
-  it('keeps the paired attribution inside a tall rail identity block', () => {
-    const { getByTestId, queryByTestId } = render(
-      <WallChromeRegion
-        region="rail"
-        mode="live"
-        preview={preview}
-        typeScale={typeScale}
-        bandWidth={360}
-        compact={false}
-        recentSenders={recentSenders}
-      />,
+  it('stacks the state strip over the identity in a rail, with the scrubber below', () => {
+    const { getByTestId } = render(
+      <WallChromeRegion region="rail" mode="live" preview={preview} typeScale={typeScale} bandWidth={360} />,
     );
 
-    expect(getByTestId('identity').getAttribute('data-show-attribution')).toBe('true');
-    expect(getByTestId('identity').getAttribute('data-show-setter')).toBe('true');
-    expect(queryByTestId('attribution')).toBeNull();
+    expect(getByTestId('identity').getAttribute('data-name-lines')).toBe('2');
+    expect(getByTestId('state-strip').parentElement).toBe(getByTestId('identity').parentElement);
+    expect(getByTestId('scrubber').parentElement).not.toBe(getByTestId('identity').parentElement);
   });
 });

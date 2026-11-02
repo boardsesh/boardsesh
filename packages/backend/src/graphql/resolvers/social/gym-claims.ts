@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { eq, ne, gt, or, and, isNull, desc, count, sql } from 'drizzle-orm';
+import { eq, ne, gt, or, and, isNull, desc, asc, count, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { isClaimableDomain, emailDomainMatchesWebsite } from '@boardsesh/gym-claim';
@@ -647,7 +647,7 @@ export const socialGymClaimQueries = {
       .leftJoin(dbSchema.users, eq(dbSchema.gymClaims.claimantUserId, dbSchema.users.id))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.gymClaims.claimantUserId, dbSchema.userProfiles.userId))
       .where(pendingAdminClaims)
-      .orderBy(desc(dbSchema.gymClaims.createdAt))
+      .orderBy(desc(dbSchema.gymClaims.createdAt), asc(dbSchema.gymClaims.id))
       .limit(limit)
       .offset(offset);
 

@@ -1,3 +1,4 @@
+import { getGradeColor } from '@boardsesh/board-constants';
 import { withRecentSenderBoardContext } from '../shared/board-session-privacy';
 import { tickPrivacyCondition } from '../shared/activity-privacy';
 import { redactBoardClimbs, redactBoardStats, redactBoardHolder } from '../../../services/board-session-privacy';
@@ -178,7 +179,7 @@ export const boardPresenceQueries = {
         queueItemUuid: null,
         name: row.name,
         grade: row.grade,
-        gradeColor: null,
+        gradeColor: getGradeColor(row.grade) ?? null,
         frames: row.frames,
         angle: row.angle,
         setter: row.setter,

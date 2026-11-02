@@ -21,16 +21,11 @@ export type LiveStoreRuntimes = {
 const FULL_FINGERPRINT = /^[0-9a-f]{40}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 export const LIVE_STORE_MAX_AGE_MS = 6 * 60 * 60 * 1_000;
-
 /** Read the literal Expo marketing version without executing branch configuration. */
 export function readMarketingVersion(source: string): string {
   const matches = [...source.matchAll(/^\s*version\s*:\s*(['"])(\d+\.\d+\.\d+)\1\s*,?\s*$/gm)];
   if (matches.length !== 1) throw new Error('Expected one literal mobile marketing version');
   return matches[0]![2]!;
-}
-
-export function isReleaseTrainActive(mainSource: string, trainSource: string): boolean {
-  return readMarketingVersion(mainSource) !== readMarketingVersion(trainSource);
 }
 
 function record(input: unknown): Record<string, unknown> {
@@ -40,16 +35,21 @@ function record(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
-export function parseLiveStoreRuntimes(input: unknown, now = Date.now()): LiveStoreRuntimes {
+export function parseLiveStoreRuntimes(
+  input: unknown,
+  now = Date.now(),
+  maxAgeMs = LIVE_STORE_MAX_AGE_MS,
+): LiveStoreRuntimes {
   const parsed = record(input);
   const checkedAt = parsed['checkedAt'];
   if (parsed['schemaVersion'] !== 1 || typeof checkedAt !== 'string' || !Number.isFinite(Date.parse(checkedAt))) {
     throw new Error('Invalid live store runtime schema or timestamp');
   }
   const age = now - Date.parse(checkedAt);
-  if (age < -60_000 || age > LIVE_STORE_MAX_AGE_MS)
+  if (age < -60_000 || age > maxAgeMs)
     throw new Error(
-      `Live store runtime evidence is stale (age ${Math.floor(age / 1000)} seconds; maximum ${LIVE_STORE_MAX_AGE_MS / 1000} seconds)`,
+      `Live store runtime evidence is stale (age ${Math.floor(age / 1000)} seconds; maximum ${maxAgeMs / 1000} seconds). ` +
+        'Resolve it again: re-run all jobs of this workflow run, or dispatch a new run.',
     );
   const platformRecord = (platform: MobilePlatform): LiveStoreRuntime => {
     const runtime = record(parsed[platform]);
@@ -91,10 +91,6 @@ export function parseLiveStoreRuntimes(input: unknown, now = Date.now()): LiveSt
     };
   };
   return { schemaVersion: 1, checkedAt, ios: platformRecord('ios'), android: platformRecord('android') };
-}
-
-export function mayPublishTrainRuntime(live: LiveStoreRuntimes, platform: MobilePlatform, runtime: string): boolean {
-  return FULL_FINGERPRINT.test(runtime) && !live[platform].protectedRuntimeVersions.includes(runtime);
 }
 
 export function stableCandidateMatchesLiveRuntimes(

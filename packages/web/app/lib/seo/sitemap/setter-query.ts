@@ -9,6 +9,7 @@ import { resolveClimbSitemapGroups, type ClimbConfigGroup } from './climb-entrie
 import { latestLastModified, type SitemapItem } from './entries';
 import { publishableAngleWhere } from './published-angle';
 import { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE } from './setter-page-contract';
+import { SETTER_IDENTITY_ORDER, authoredAccountPerSetterName, linkedLoginCandidates } from './setter-identity';
 
 /**
  * How many publicly visible climbs a setter needs before their page is worth a
@@ -158,9 +159,15 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
   // (~31k lookups) rather than once per visible climb (~10x that). It has to be
   // in here at all because the page's `<h1>`, summary, avatar and `ProfilePage`
   // JSON-LD are `users.name` / `user_profiles.display_name` / `avatar_url` —
-  // rename a mapped setter and every one of those changes while the climb rows
-  // sit still. `LIMIT 1` mirrors `fetchSetterIdentity`'s own lookup, so the
-  // clock describes the identity the page actually renders.
+  // rename the setter's account and every one of those changes while the climb
+  // rows sit still. The account is the one `fetchSetterIdentity` renders, from
+  // the shared builders in `setter-identity.ts`: the account that set the
+  // name's visible climbs, picked for every name in ONE pass
+  // (`authoredAccountPerSetterName`, joined on the name), else a public
+  // account's linked login (`linkedLoginCandidates`, per name off the
+  // `board_username` index), in `SETTER_IDENTITY_ORDER`. Asking for the
+  // authored account per name walked the partial `user_id` index once per
+  // name, so its cost grew with every Boardsesh-authored climb.
   //
   // `linked_at` is in the fold because it is the only clock that moves when an
   // account is newly linked to a setter name — the moment the rendered identity
@@ -174,7 +181,8 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
   // `LIMIT 1` happened to reach would let `<lastmod>` move, or go BACKWARDS, on
   // a page nothing changed about, after nothing worse than a plan change.
   // `max()` over that user's mappings is the honest clock: any relink rebinds
-  // the identity the page renders.
+  // the identity the page renders. An account named by its own climbs and
+  // never linked has no mapping, and its user clocks stand alone.
   //
   // `page_rank_ascents` reproduces the page's sort key. The page joins stats at
   // `mostAscendedAngle` and orders on `COALESCE(stats.ascensionist_count, 0)
@@ -226,7 +234,8 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
       GROUP BY setter_username
       HAVING count(*) FILTER (WHERE is_linkable) >= ${SETTER_MIN_VISIBLE_CLIMBS}
          AND count(*) FILTER (WHERE is_linkable AND page_position <= ${SETTER_PAGE_SIZE}) >= 1
-    )
+    ),
+    authored_identity AS MATERIALIZED (${authoredAccountPerSetterName()})
     SELECT
       eligible.setter_username,
       to_char(
@@ -234,14 +243,24 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
         'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
       ) AS last_modified
     FROM eligible
+    LEFT JOIN authored_identity ON authored_identity.setter_username = eligible.setter_username
     LEFT JOIN LATERAL (
-      SELECT GREATEST(u.updated_at, max(ubm.linked_at), COALESCE(p.updated_at, u.updated_at)) AS updated_at
-      FROM user_board_mappings ubm
-      JOIN users u ON u.id = ubm.user_id
-      LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
-      WHERE ubm.board_username = eligible.setter_username
-      GROUP BY u.id, u.updated_at, p.user_id, p.updated_at
-      ORDER BY p.user_id IS NULL, u.id
+      SELECT GREATEST(u.updated_at, COALESCE(linked.linked_at, u.updated_at), COALESCE(p.updated_at, u.updated_at))
+        AS updated_at
+      FROM (
+        SELECT authored_identity.user_id, 0 AS source_rank, 0 AS climb_count
+        WHERE authored_identity.user_id IS NOT NULL
+        UNION ALL
+        ${linkedLoginCandidates(sql`eligible.setter_username`)}
+      ) AS candidate
+      JOIN users u ON u.id = candidate.user_id
+      LEFT JOIN user_profiles p ON p.user_id = candidate.user_id
+      LEFT JOIN LATERAL (
+        SELECT max(ubm.linked_at) AS linked_at
+        FROM user_board_mappings ubm
+        WHERE ubm.user_id = candidate.user_id AND ubm.board_username = eligible.setter_username
+      ) AS linked ON true
+      ORDER BY ${SETTER_IDENTITY_ORDER}
       LIMIT 1
     ) AS identity ON true
     ORDER BY eligible.setter_username ASC

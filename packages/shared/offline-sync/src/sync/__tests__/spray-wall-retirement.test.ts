@@ -67,6 +67,41 @@ afterEach(() => {
 });
 
 describe('confirmed inaccessible spray walls', () => {
+  it('carries the verified scope capability through every wall query and retirement confirmation', async () => {
+    await seed();
+    const scopedQueries: string[] = [];
+    const getSprayWallUuid = vi.fn(async (scope: { boardType: string; layoutId: number; sizeId: number }) => {
+      expect(scope).toEqual({ boardType: 'spray', layoutId: 4, sizeId: 4 });
+      return 'held-wall-capability';
+    });
+    await pullSync(
+      db,
+      queryClient,
+      fetchPages({ uuid: 'board-4' }, async (query, variables) => {
+        if (variables?.boardType === 'spray' || query.includes('ConfirmSprayWallVisibility')) {
+          expect(query).toContain('$sprayWallUuid: String');
+          expect(variables?.sprayWallUuid).toBe('held-wall-capability');
+          scopedQueries.push(query);
+        }
+      }),
+      { enabledBoards: [scopeKeys[0]], getSprayWallUuid },
+    );
+    expect(getSprayWallUuid).toHaveBeenCalledOnce();
+    for (const queryName of [
+      'syncSprayWalls',
+      'syncClimbs',
+      'syncClimbStats',
+      'syncClimbGrades',
+      'ConfirmSprayWallVisibility',
+    ]) {
+      expect(
+        scopedQueries.some((query) => query.includes(queryName)),
+        queryName,
+      ).toBe(true);
+    }
+    expect(await wallCount()).toBe(1);
+  });
+
   it('removes every downloaded row and marker, and calls the photo sink after commit', async () => {
     await seed();
     await seed(5);

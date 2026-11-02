@@ -6,9 +6,11 @@ import {
   MAX_CREW_FIRE_RETRIES,
   buildArmInput,
   buildConfigureInput,
+  buildCrewPacingEditInput,
   buildRestartInput,
   buildTickInput,
   crewBeatFenced,
+  editCrewRestPacing,
   crewBeatServerMs,
   getLastCrewCadenceSnapshot,
   handleCrewCadenceChange,
@@ -16,7 +18,10 @@ import {
   noteCrewClockTurnedOffHere,
   parseCrewRestCadence,
   planCrewFireOutcome,
+  rebaseCrewPacingDraft,
   resetCrewCadenceForTests,
+  sameCrewConfig,
+  spendAdvanceOnce,
   subscribeCrewCadenceSnapshots,
   toCrewConfigInput,
   type OwnRestPacing,
@@ -552,5 +557,184 @@ describe('planCrewFireOutcome', () => {
     expect(
       planCrewFireOutcome({ applied: false, change: onTheMinute, beatServerMs: T0 + 170_000, attempt: 0 }),
     ).toEqual({ kind: 'refused' });
+  });
+});
+
+// A 4x4 set rest on the crew clock (#5382, #5380): the server moves the wall
+// once and then turns auto-advance off. The flag rides in the config, so every
+// CONFIGURE this phone re-sends from the clock it holds keeps it, and nothing
+// else ever sends it.
+describe('a once-only advance (autoAdvanceOnce)', () => {
+  /** The set rest after a 4x4 set's last rep, as the builder's phone sends it. */
+  const setRest: OwnRestPacing = {
+    mode: 'afterTick',
+    targetSeconds: 180,
+    autoAdvance: true,
+    autoAdvanceOnce: true,
+    advanceOn: 'tick',
+    source: 'stage',
+  };
+  const setRestWire = wireClock({ targetSeconds: 180, advanceOn: 'tick', source: 'stage', autoAdvanceOnce: true });
+
+  it('reads it from the wire, and a server that sends none, or false, as no once-only advance', () => {
+    expect(parseCrewRestCadence(SESSION, 1, setRestWire).config).toMatchObject({ autoAdvanceOnce: true });
+    expect(parseCrewRestCadence(SESSION, 1, wireClock({ autoAdvanceOnce: false })).config).not.toHaveProperty(
+      'autoAdvanceOnce',
+    );
+    expect(parseCrewRestCadence(SESSION, 1, wireClock({ autoAdvanceOnce: null })).config).not.toHaveProperty(
+      'autoAdvanceOnce',
+    );
+    expect(parseCrewRestCadence(SESSION, 1, wireClock()).config).not.toHaveProperty('autoAdvanceOnce');
+    // Without auto-advance no FIRE applies, so it means nothing: never revived by a later edit.
+    expect(
+      parseCrewRestCadence(SESSION, 1, wireClock({ autoAdvance: false, autoAdvanceOnce: true })).config,
+    ).not.toHaveProperty('autoAdvanceOnce');
+  });
+
+  it('keeps it on the clock this phone follows, so the scheduler and the publisher see it', () => {
+    armRestTimer('afterTick', T0, SESSION);
+    handleCrewCadenceChange(change({ restCadence: setRestWire }), context);
+    expect(getRestTimerState().crew?.config).toMatchObject({ autoAdvance: true, autoAdvanceOnce: true });
+
+    // The FIRE that took the beat spent it: the same clock, auto-advance off.
+    handleCrewCadenceChange(
+      change({
+        revision: 11,
+        action: 'FIRE',
+        restCadence: { ...setRestWire, autoAdvance: false, autoAdvanceOnce: false },
+      }),
+      context,
+    );
+    expect(getRestTimerState().crew?.config).toMatchObject({ autoAdvance: false });
+    expect(getRestTimerState().crew?.config).not.toHaveProperty('autoAdvanceOnce');
+  });
+
+  it('sends it only with auto-advance on, and leaves it out of every other config', () => {
+    expect(toCrewConfigInput(setRest)).toEqual({
+      mode: 'afterTick',
+      targetSeconds: 180,
+      autoAdvance: true,
+      autoAdvanceOnce: true,
+      advanceOn: 'tick',
+      source: 'stage',
+    });
+    // Off moves nothing, so a once-only flag on it means nothing either.
+    expect(toCrewConfigInput({ ...setRest, autoAdvance: false })).not.toHaveProperty('autoAdvanceOnce');
+    // Every config without it goes out exactly as before the flag.
+    expect(Object.keys(toCrewConfigInput(ownSettings))).toEqual([
+      'mode',
+      'targetSeconds',
+      'autoAdvance',
+      'advanceOn',
+      'source',
+    ]);
+  });
+
+  it('counts it as a change of config, and the same config with it as none', () => {
+    const { autoAdvanceOnce: _once, ...everyRest } = setRest;
+    expect(sameCrewConfig(setRest, everyRest)).toBe(false);
+    expect(sameCrewConfig(setRest, { ...setRest })).toBe(true);
+
+    armRestTimer('afterTick', T0, SESSION);
+    const configure = (own: OwnRestPacing, previous: OwnRestPacing) =>
+      buildConfigureInput({ own, previous, anchor: 'KEEP', boundaryAtMs: null, state: getRestTimerState(), nowMs: T0 });
+    // The set's last rep: the clock held "advance on every rest"; the set rest goes out once-only.
+    expect(configure(setRest, everyRest)).toEqual({
+      action: 'CONFIGURE',
+      config: toCrewConfigInput(setRest),
+      anchor: 'KEEP',
+    });
+    expect(configure(setRest, setRest)).toBeNull();
+    // A limit block after it: the flag goes, and the server clears it.
+    expect(configure({ ...everyRest, advanceOn: 'send' }, setRest)).toEqual({
+      action: 'CONFIGURE',
+      config: { mode: 'afterTick', targetSeconds: 180, autoAdvance: true, advanceOn: 'send', source: 'stage' },
+      anchor: 'KEEP',
+    });
+  });
+
+  it('keeps it in the CONFIGURE that restarts a set rest, and sends none without it', () => {
+    armRestTimer('afterTick', T0, SESSION);
+    const state = { ...getRestTimerState(), anchorMs: T0 };
+    expect(buildRestartInput(setRest, state, T0 + 400)).toEqual({
+      action: 'CONFIGURE',
+      config: toCrewConfigInput(setRest),
+      anchor: 'NOW',
+      elapsedMs: 400,
+    });
+    const { autoAdvanceOnce: _once, ...everyRest } = setRest;
+    const restart = buildRestartInput(everyRest, state, T0 + 400);
+    expect(restart).toMatchObject({ action: 'CONFIGURE', anchor: 'NOW' });
+    expect(restart.config).not.toHaveProperty('autoAdvanceOnce');
+  });
+
+  it('is spent by a move this phone made itself, and nothing else changes', () => {
+    expect(spendAdvanceOnce(setRest)).toEqual({
+      mode: 'afterTick',
+      targetSeconds: 180,
+      autoAdvance: false,
+      advanceOn: 'tick',
+      source: 'stage',
+    });
+    expect(spendAdvanceOnce(ownSettings)).toBe(ownSettings);
+  });
+
+  it('stays through a crew rest-length edit, and goes when the edit turns auto-advance off', () => {
+    armRestTimer('afterTick', T0, SESSION);
+    handleCrewCadenceChange(change({ restCadence: setRestWire }), context);
+
+    expect(editCrewRestPacing({ targetSeconds: 240 })).toBe(true);
+    expect(getRestTimerState().crewPacingDraft).toEqual({
+      mode: 'afterTick',
+      targetSeconds: 240,
+      autoAdvance: true,
+      autoAdvanceOnce: true,
+      advanceOn: 'tick',
+      source: 'settings',
+      setByParticipantId: SAM,
+    });
+
+    expect(editCrewRestPacing({ autoAdvance: false })).toBe(true);
+    expect(getRestTimerState().crewPacingDraft).toMatchObject({ targetSeconds: 240, autoAdvance: false });
+    expect(getRestTimerState().crewPacingDraft).not.toHaveProperty('autoAdvanceOnce');
+  });
+
+  it('is not put back by a rest-length edit that goes out after the server spent or cleared it', () => {
+    const editedSetRest = { ...setRest, targetSeconds: 240, source: 'settings' as const };
+    const spent = spendAdvanceOnce(setRest);
+    const { autoAdvanceOnce: _once, ...everyRest } = setRest;
+
+    // The holder's FIRE spent it after the tap: the edit keeps its length, auto-advance stays off.
+    expect(rebaseCrewPacingDraft(editedSetRest, spent)).toEqual({
+      mode: 'afterTick',
+      targetSeconds: 240,
+      autoAdvance: false,
+      advanceOn: 'tick',
+      source: 'settings',
+    });
+    expect(buildCrewPacingEditInput({ draft: editedSetRest, held: spent })).toEqual({
+      input: {
+        action: 'CONFIGURE',
+        config: { mode: 'afterTick', targetSeconds: 240, autoAdvance: false, advanceOn: 'tick', source: 'settings' },
+        anchor: 'KEEP',
+      },
+      config: { mode: 'afterTick', targetSeconds: 240, autoAdvance: false, advanceOn: 'tick', source: 'settings' },
+    });
+    // A CONFIGURE cleared it but left auto-advance on: the edit takes that clock's auto-advance.
+    expect(rebaseCrewPacingDraft(editedSetRest, everyRest)).toEqual({
+      ...everyRest,
+      targetSeconds: 240,
+      source: 'settings',
+    });
+    // The server still holds it: the edit goes out with it, as tapped.
+    expect(rebaseCrewPacingDraft(editedSetRest, setRest)).toBe(editedSetRest);
+    // A draft without it, or no held clock to compare with, goes out as it is.
+    const editedEveryRest = { ...everyRest, targetSeconds: 240 };
+    expect(rebaseCrewPacingDraft(editedEveryRest, spent)).toBe(editedEveryRest);
+    expect(rebaseCrewPacingDraft(editedSetRest, null)).toBe(editedSetRest);
+    // Nothing left to send when the rebased edit is what the server holds.
+    expect(
+      buildCrewPacingEditInput({ draft: { ...setRest, source: 'settings' }, held: { ...spent, source: 'settings' } }),
+    ).toBeNull();
   });
 });

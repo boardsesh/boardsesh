@@ -32,9 +32,11 @@ name: showcase take - the logbook fills itself
     optional: true
 
 # Slow, so the list does not fling past the calendar.
+# Stop short of the sticky tabs: a longer scroll parks the Filters row under
+# them, and tapping it then lands on the Social tab instead.
 - swipe:
     start: '50%,80%'
-    end: '50%,40%'
+    end: '50%,52%'
     duration: 1800
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/scrolled')}

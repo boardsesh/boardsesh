@@ -41,6 +41,11 @@ export function useConnectivityField<Field>(select: (snapshot: ConnectivitySnaps
   return useSyncExternalStore(subscribeConnectivity, readSelectedField, readSelectedField);
 }
 
+/** Hoisted for `useConnectivityField`: no signal, our server down, or Offline mode on. */
+export function selectEffectiveOffline(snapshot: ConnectivitySnapshot): boolean {
+  return snapshot.effectiveOffline;
+}
+
 /** Hoisted for `useConnectivityField`: the deliberate offline-mode switch only. */
 export function selectOfflineMode(snapshot: ConnectivitySnapshot): boolean {
   return snapshot.offlineMode;

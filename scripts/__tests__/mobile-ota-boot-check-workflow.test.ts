@@ -43,7 +43,10 @@ interface Job {
 }
 const workflow = parse(source) as {
   on: {
-    workflow_call: { inputs: Record<string, { default?: string }>; outputs: Record<string, { value: string }> };
+    workflow_call: {
+      inputs: Record<string, { default?: string | boolean }>;
+      outputs: Record<string, { value: string }>;
+    };
     workflow_dispatch: { inputs: Record<string, { default?: string }> };
     pull_request: { paths: string[] };
   };
@@ -62,7 +65,8 @@ const indexOfStep = (job: Job, name: string): number => job.steps.indexOf(stepNa
 
 describe('mobile-ota-boot-check.yml', () => {
   it('can be called, dispatched, and runs itself on a PR that edits it', () => {
-    expect(Object.keys(workflow.on.workflow_call.inputs)).toEqual(['ref', 'branch', 'receipt_json']);
+    // `called` exists only on workflow_call, so a dispatch can be told apart from a call.
+    expect(Object.keys(workflow.on.workflow_call.inputs)).toEqual(['ref', 'branch', 'receipt_json', 'called']);
     expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual(['ref', 'branch', 'receipt_json']);
     expect(workflow.on.workflow_call.inputs.branch.default).toBe('pr-staging');
     expect(workflow.on.workflow_call.outputs.passed.value).toBe('${{ jobs.verdict.outputs.passed }}');
@@ -106,12 +110,32 @@ describe('mobile-ota-boot-check.yml', () => {
     expect(receipt.run).toContain('elif [ -n "$RECEIPT_JSON" ]; then');
   });
 
+  it('builds only the run history and its own branch artifacts on a protected dispatch', () => {
+    const receipt = stepNamed(workflow.jobs.resolve, 'Find the receipt for the commit under test');
+    expect(receipt.env?.PROTECTED_DISPATCH).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && !inputs.called && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) }}",
+    );
+    expect(receipt.env?.RUN_SHA).toBe('${{ github.sha }}');
+    const run = receipt.run ?? '';
+    // A hand-written receipt can name any commit or source artifact.
+    expect(run.indexOf('if [ "$PROTECTED_DISPATCH" = true ] && [ -n "$RECEIPT_JSON" ]; then')).toBeLessThan(
+      run.indexOf('printf \'%s\' "$RECEIPT_JSON" > receipt.json'),
+    );
+    expect(run).toContain(
+      '.workflow_run.head_branch == \\"$GITHUB_REF_NAME\\" and .workflow_run.head_repository_id == .workflow_run.repository_id',
+    );
+    expect(run).toContain('gh api "repos/$GITHUB_REPOSITORY/compare/$commit...$RUN_SHA" --jq .status');
+    expect(workflow.on.workflow_call.inputs.called.default).toBe(true);
+  });
+
   it('retains receipts and exact generated source from the same candidate publication', () => {
     const preview = parse(readFileSync(join(REPO_ROOT, '.github/workflows/mobile-ota-preview.yml'), 'utf8')) as {
       jobs: { publish: Job };
     };
     const publishJob = preview.jobs.publish;
-    expect(stepNamed(publishJob, 'Rebase and compare both pinned preview candidates').env?.EOO_TOKEN).toBeUndefined();
+    expect(
+      stepNamed(publishJob, 'Rebase and compare the pinned main preview candidate').env?.EOO_TOKEN,
+    ).toBeUndefined();
     expect(stepNamed(publishJob, 'Publish compatible preview runtime variants').env?.EOO_TOKEN).toBe(
       '${{ secrets.EOO_TOKEN }}',
     );
@@ -131,14 +155,24 @@ describe('mobile-ota-boot-check.yml', () => {
 
   it('refreshes same-repository previews from base pushes without authorizing forks', () => {
     const refresh = readFileSync(join(REPO_ROOT, '.github/workflows/mobile-ota-preview-refresh.yml'), 'utf8');
-    const parsed = parse(refresh) as { on: { push: { branches: string[] } }; jobs: { refresh: Job } };
-    expect(parsed.on.push.branches).toEqual(['main', 'release/next']);
-    expect(refresh).toContain('pr.head.repo?.full_name !== repository');
+    const parsed = parse(refresh) as { on: { push: { branches: string[] } }; jobs: { plan: Job; dispatch: Job } };
+    expect(parsed.on.push.branches).toEqual(['main']);
+    // The planner filters to same-repository heads; see mobile-ota-preview-refresh.ts.
+    const planner = readFileSync(join(REPO_ROOT, 'scripts/mobile-ota-preview-refresh.ts'), 'utf8');
+    expect(planner).toContain('pull.headRepository === repository');
     expect(refresh).toContain('ref: context.payload.repository.default_branch');
     expect(refresh).toContain("workflow_id: 'mobile-ota-preview.yml'");
-    expect(refresh).not.toContain('secrets.');
-    expect(refresh).not.toContain('actions/checkout');
+    // The only secret is the Discord webhook, read by the failure notice.
+    expect(refresh.match(/secrets\.[A-Z_]+/g)).toEqual(['secrets.DISCORD_DEPLOY_WEBHOOK']);
     expect(refresh).not.toContain('pull_request_target');
+    // The only checkout is the workflow's own trusted commit, never a PR head,
+    // and the job holding actions:write checks out nothing.
+    const checkouts = Object.values(parsed.jobs).flatMap((job) =>
+      job.steps.filter((step) => step.uses?.startsWith('actions/checkout@')),
+    );
+    expect(checkouts.map((step) => step.with?.ref)).toEqual(['${{ github.workflow_sha }}']);
+    expect(parsed.jobs.dispatch.permissions).toEqual({ actions: 'write' });
+    expect(parsed.jobs.dispatch.steps.some((step) => step.uses?.startsWith('actions/checkout@'))).toBe(false);
     const preview = parse(readFileSync(join(REPO_ROOT, '.github/workflows/mobile-ota-preview.yml'), 'utf8')) as {
       jobs: { publish: Job };
     };

@@ -417,6 +417,84 @@ excluded.
 Baseline from the 2026-09-20 audit (2026-08-23 to 2026-09-19 UTC): search to
 send 1,808/2,361 (76.6%); queue adoption 323/2,361 (13.7%).
 
+### Connect release watch (2.7)
+
+The 2.7 phased release is watched on props of two events that already fire,
+never on new events, so 2.6.x and 2.7.x read side by side and the event count
+per session stays the same. Every one of these is absent on 2.6.x.
+
+`BLE Picker Devices Resolved` (once per picker session that showed its list,
+built by `blePickerSessionProps` in `@boardsesh/analytics`):
+
+| Prop                  | Meaning                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `targetFiltered`      | The list first showed filtered to a known gym or saved board.                                             |
+| `searchedAnyBoard`    | The climber tapped Search for any board, in the search or on the filtered list.                          |
+| `listedCount`         | Boards the list showed at close: while filtered, the target's own plus the unidentified ones of its type (#7202); every board found otherwise. |
+| `targetNotListedSeen` | "Your board isn't in the list" was on screen: boards were found, none of them the target.                |
+| `tipsSeen`            | The troubleshooting tips (hardware, location permission, Location services) were on screen.               |
+| `secondsOpen`         | Whole seconds from the list showing to the session closing.                                               |
+| `phoneNeverConnected` | True until this phone's first connect; null while the phone's history hasn't loaded.                      |
+| `entrySurface`        | The `Board Connect Tapped` surface within 2 minutes before the list showed, or null.                      |
+
+The empty-or-not-listed share is sessions with `devicesTotal = 0` or
+`targetNotListedSeen = true` over all sessions. The per-group counts
+`targetMatchedDevices` / `targetUnknownDevices` / `targetOtherDevices` come
+from #7202.
+
+`Board Connect Tapped` gains `boardUuid` (the board the connect is for; the
+board moved to on a move to another gym board) and `phoneNeverConnected`, both
+absent when not known. A newcomer's first connect is `phoneNeverConnected =
+true`. `Drive Mode Ended` already carries `boardType` and `windowSec` (added for the
+MoonBoard keep-lighting field test; since 2026-11 a MoonBoard takes the same Stop
+driving after as every board), and a window that ran out reports `durationSec`
+to its end even when the app noticed late.
+
+#### Dashboard and alerts
+
+The watch has its own PostHog dashboard,
+[Boardsesh 2.7 connect release watch](https://us.posthog.com/project/412845/dashboard/2293063).
+Every chart is native production (`$lib = posthog-react-native`,
+`environment = production`), 2.6.0 and up, internal cohort excluded, daily for
+the last 14 days, and split by `$app_version` and OS, with iPadOS counted as
+iOS. Each chart shows up to 100 lines, so a release at 5%, the smallest line,
+is never the one left off.
+
+| Chart                     | Definition                                                                                                                                               |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Empty list share          | `BLE Picker Devices Resolved` with `devicesTotal = 0`, over all picker sessions.                                                                         |
+| Empty or not listed share | The empty-or-not-listed share above.                                                                                                                     |
+| Connect success rate      | `Bluetooth Connection Success` over Success plus `Bluetooth Connection Failed`, leaving out `failureReason = user_cancelled` (#3088).                    |
+| First light after connect | Sessions with a `Bluetooth Connection Success` followed by a `Climb Sent to Board Success`, over all sessions with a connect (counted by `$session_id`). |
+| Drive ends by reason      | `Drive Mode Ended` by `reason`: `window_ended`, `stopped`, `link_dropped`, `always_off`, `connect_failed` and the rest.                                  |
+| Dropped link share        | `Drive Mode Ended` with `reason = link_dropped`, over all drive ends.                                                                                    |
+| Lock Screen drives        | `Drive Mode Ended` with `startedBy = lock_screen`, by `reason`.                                                                                          |
+| Driving-ended disconnects | `Bluetooth Disconnected` with `disconnectTrigger = driving_ended`: Disconnect Bluetooth when driving ends let go of the board.                           |
+
+A Lock Screen stop has no reason of its own. The bulb stops the drive the way
+the frosted button does (`stopDrivingForLink`), so it reports
+`reason = stopped` and can't be told apart from an in-app stop. 2.6.x sends no
+`Drive Mode Ended`, so the drive charts have no store-version line.
+
+`link_dropped` is any loss of the link during a drive that didn't go through a
+stop (`resolveDriveModeExit` checks it before `board_changed`): a radio drop,
+a switch to another board mid-drive, a connection replaced by a new one, or
+another phone taking the box. The dropped link share and its alert count all of
+these, deliberate switches included.
+
+An OTA keeps `$app_version`, so items that ship by OTA onto the release can't be
+told apart by version. To read one, split a chart by `ota_update_id` (a super
+property on every native event, registered by `OtaUpdateTracker`; events sent
+before it registers at launch carry none), or compare the 7 days before and
+after its publish date.
+
+The table at the bottom of the dashboard, "Connect alerts source", compares
+the release under watch (2.7.0 and up) with the store version (2.6.x) on each
+OS (iOS and Android, iPadOS folded into iOS) over the trailing 7 days. Four
+alerts read it; they were created switched off. The hold rule that uses them,
+their thresholds and their volume floor are in `docs/mobile-store-release.md`,
+"Phased release: hold at 5%".
+
 ### Spray-wall activation
 
 A spray wall has no Bluetooth (`docs/spray-walls.md`, "No Bluetooth, and the
@@ -431,7 +509,7 @@ their own definition:
 | Step | Events | Filter |
 | ---- | ------ | ------ |
 | 1. Created or took a wall | `Board Created` or `Wall Taken` | `boardType = 'spray'` on `Board Created`; `boardName = 'spray'` on `Wall Taken` |
-| 2. Lit or ticked a climb | `Set Active Climb` or `Tick Logged` | `boardType = 'spray'`; on `Set Active Climb` also `trigger` is not `climb_saved` |
+| 2. Lit or ticked a climb | `Set Active Climb` or `Tick Logged` | `boardType = 'spray'`; on `Set Active Climb` also `trigger` is null or `put_on_wall` |
 
 Ordered, unique people, native production, internal cohort excluded, both steps
 inside 7 days of the first-ever `$screen`.
@@ -442,14 +520,21 @@ with no light kit.
 
 Saving a climb also fires `Set Active Climb`, because the create screen puts
 the saved climb on the queue. Those carry `trigger = 'climb_saved'` and are
-left out of step 2. A commit from the Put on the wall button carries
-`trigger = 'put_on_wall'`; it is a real pick and stays in step 2. Every spray wall starts empty and the first thing anyone
+left out of step 2. A commit from the Put on board button (or the MiniPlayer
+bulb's Put on board) carries `trigger = 'put_on_wall'`; it is a real pick and
+stays in step 2. From 2.7 a tap opens a preview, so `put_on_wall` is the main
+way a climber starts committing climbs (before 2.7 a tap committed it with no
+trigger). The climbs picked while the drive it starts runs commit through list
+activation with a null trigger, or with a navigation trigger; a step 2
+count across the 2.7 line mixes the two, so split it by app version. Every spray wall starts empty and the first thing anyone
 does on one is set a climb, so with saves counted step 2 would read "saved a
 climb" for nearly everyone and could not tell a climber who came back from one
-who did not. In HogQL the filter is
-`coalesce(toString(properties.trigger), '') != 'climb_saved'`: `trigger` is
-null on most climbs the climber chose and `put_on_wall` on one put up from a
-browse preview, so the filter keeps both.
+who did not. Next and Previous steps also fire it, with `trigger` `next`,
+`previous` or `rest_timer`; a step is not a pick, so step 2 leaves them out too.
+In HogQL the filter is
+`coalesce(toString(properties.trigger), '') IN ('', 'put_on_wall')`: `trigger`
+is null on most climbs the climber chose and `put_on_wall` on one put up from a
+browse preview (from 2.7, most of them), so the filter keeps both and nothing else.
 
 `boardType` on both step 2 events is the climb's own board, not the board the
 app has active. A spray climb opened from a shared link by someone whose active
@@ -796,60 +881,68 @@ Withdrawal cancels outstanding work and clears campaign data, retaining only
 the ownership/deduplication marker. A late result can enrich an already-sent
 signup through person properties; it never sends that signup again.
 
-Use `attributed` people for a campaign conversion report. This HogQL example
-counts unique consenting production iOS people observed during the selected
-window, their verified signups in that window, and board activation within
-seven days of their first observed screen in that window. Replace both window
-bounds together. Include only the new binary's builds when comparing release
-cohorts; this query does not claim that its first observed screen is a new
-store install, nor that returning accounts are new users.
+The live [Apple Ads to Active Climbers dashboard](https://us.posthog.com/project/412845/dashboard/2192729)
+now has versioned definitions in `scripts/posthog/apple-ads-dashboard.ts` and
+`apple-ads-queries.ts`. Export them with
+`vp exec node --import tsx scripts/posthog/export-apple-ads-dashboard.ts`.
+The separate Apple Ads sections replace the old claim that campaign reporting
+is unavailable; the original all-source iOS charts remain a labelled baseline.
 
-```sql
-WITH campaign_people AS (
-  SELECT
-    person_id,
-    toString(person.properties.apple_ads_campaign_id) AS campaign_id,
-    minOrNullIf(timestamp, event = '$screen'
-      AND timestamp < '2026-11-01') AS first_open,
-    minOrNullIf(timestamp, event = 'Signup Completed'
-      AND timestamp < '2026-11-01') AS signup_at
-  FROM events
-  WHERE timestamp >= '2026-10-01' AND timestamp < '2026-11-08'
-    AND properties.$lib = 'posthog-react-native'
-    AND properties.environment = 'production'
-    AND properties.$os = 'iOS'
-    AND person.properties.attribution_provider = 'apple_ads'
-    AND person.properties.apple_ads_attribution_status = 'attributed'
-    AND person_id NOT IN COHORT 295337
-  GROUP BY person_id, campaign_id
-)
-SELECT
-  campaign_people.campaign_id,
-  uniqExactIf(campaign_people.person_id, first_open IS NOT NULL) AS observed_first_opens,
-  uniqExactIf(campaign_people.person_id, signup_at IS NOT NULL) AS verified_signups,
-  uniqExactIf(campaign_people.person_id,
-    activity.event = 'Climb Sent to Board Success'
-    AND activity.timestamp >= first_open
-    AND activity.timestamp < first_open + INTERVAL 7 DAY) AS board_active_in_7_days
-FROM campaign_people
-LEFT JOIN events AS activity ON activity.person_id = campaign_people.person_id
-WHERE activity.timestamp >= '2026-10-01' AND activity.timestamp < '2026-11-08'
-  AND activity.properties.$lib = 'posthog-react-native'
-  AND activity.properties.environment = 'production'
-  AND activity.properties.$os = 'iOS'
-GROUP BY campaign_people.campaign_id
-```
+The dashboard keeps three populations separate:
 
-For ad-group or keyword cuts, use the corresponding person properties. Keep
-absent keyword IDs in an unknown bucket rather than dropping those people.
-Use the separate spray-wall activation definition above for spray-wall crews.
+1. **Apple report delivery:** dated warehouse spend and impressions/taps,
+   tap/view installs, new downloads and redownloads. Group by currency. Read
+   `applesearchads.*` only; underscored tables are aliases, not extra traffic.
+   Exact duplicate report rows deduplicate. Conflicting daily versions suppress
+   totals. Missing metric fields stay unknown. A partial final reporting day is
+   included when selected, while an exact midnight remains exclusive; the
+   current incomplete UTC day is excluded by the observation cutoff. Apple
+   report timezone is unverified, so report dates are not native UTC cohorts.
+2. **Attributed people:** current `persons.properties` attribution joined onto
+   canonical native production iOS `person_id`, excluding internal cohort
+   295337. Include every attributed person active in the selected range;
+   unidentified people and those without a captured screen remain in coverage.
+   Split `Download`/`Redownload` and `Click`/`Impression`. Unknown keyword/country
+   stays unknown. Current person properties are necessary because this project
+   stores event-time person properties: late attribution must enrich earlier
+   activity without requiring the campaign to have existed on that event.
+3. **Clean newcomers:** the attributed subset with selected entry dates in
+   `growth_native_newcomers`. Reuse its first-ever checks and phantom exclusions,
+   without rewriting the global first-touch model. The first native screen is
+   the exact time anchor. Report verified signup evidence independently of
+   screen ordering: the backend creation timestamp can precede the first
+   captured screen, including across midnight. Registration evidence therefore
+   has its own bounded 365-day scan; it never infers signup from account age.
 
-Apple Ads reports spend, taps, downloads and acquisition cost for all eligible
-campaign traffic. PostHog reports only consenting people whose attribution
-was available, and can identify accounts across installs. Do not divide Apple
-spend by these signup counts and label it Apple's acquisition cost. Show the
-two populations and their date windows separately; App Store `ct` links below
-are yet another aggregate measurement.
+Outcome windows are exact elapsed intervals from that first screen: seven-day
+LED board activation and separate spray-wall activation, two distinct UTC board
+days within 28 days, return in days 7–13, and return in days 28–55. The denominator
+for each rate is every clean newcomer whose entire corresponding 7/14/28/56-day
+window is observed, independent of signup or earlier activation. Outcome
+observation is capped by the earlier of the UTC cutoff and the newcomer view's
+exclusive `computed_as_of`. Immature cohorts show a null rate and their eligible
+count, not zero percent. Spray saves and unrelated queue/navigation triggers do
+not activate; `Set Active Climb` requires an absent trigger or `put_on_wall`.
+
+`Install Attributed` is the attribution lookup/publication observation. Apple
+installation dates are not part of the normalized contract. It is neither a
+store-install timestamp nor proof of earliest paid first touch. A person can be
+identified across installations, so the three populations are not an install
+funnel. Do not divide store spend by these consenting-person signup or climber
+counts as campaign CPA, or label a keyword-report residual as Search Match.
+
+Measurement quality is part of the report. Show store/native/view freshness,
+unidentified and missing-screen people, unknown dimensions, and auth event
+counts by app version/provider/OTA. The native trends diagnostic limits its
+breakdown to 25 values plus Others. The separate SQL integrity check filters to
+auth/board evidence before grouping, shows the latest relevant event, puts the
+target 2.7.0 release first, then the newest remaining groups, and displays up to
+500 groups. Neither bounded diagnostic certifies complete event coverage. Historical 2.6.0 login/signup
+capture is known incomplete. Its raw observed signup counts are evidence only,
+not a reliable conversion rate. The 2.7.0 repair remains **awaiting verified
+release evidence** until an actual release-mode auth test supplies the release,
+OTA and timestamp in `apple-ads-deployment.json`; do not invent those values or
+backfill events. The repair is next-release-only, with no 2.6.0 backport.
 
 Before closing #6285, record evidence from a real campaign and the released
 2.6.0 binary: one fresh attributed download, fresh email/Apple/Google signup
@@ -1204,7 +1297,13 @@ finished the period shown as final. Mark the current, unfinished period.
 | #6358 web deploy and OTA (fill in the date when it ships) | Analytics starts on by default outside the prompt regions (EU, EEA, UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`), so PostHog person and event counts from those other countries jump on this date. Do not compare those counts across it. Install attribution (`Install Attributed`, Apple Ads campaign fields, `install_*` person properties) keeps needing an explicit Allow, so its counts do not jump; the share of people who carry them falls instead |
 | community-monthly-stats first run (fill in the date when it ships) | `Community Monthly Summary` and `Community Monthly Rank` start. The first Monday run sends the 12 months before it as well, so those months appear on one day; read them by their own `month`, not by when they arrived |
 | 2026-10-19 (crew browse UI, #4281) | `Set Active Climb` gains `trigger = 'put_on_wall'` when a climber commits a pinned preview on purpose: the Put on the wall (or Set active) button, or the lightbulb relaying it. It is a real pick: filters on `trigger != 'climb_saved'` count it unchanged. Crew commits are the ones with `participantCount >= 2` |
+| 2.7.0 store binary (fill in the date when it ships) | The #5654 first-connect confirmation ("Connected to {{board}}") reaches every enrolled account's first connect, in both arms. 2.7.0 is the first binary that enrols, and until this release the confirmation also needed **Light the board when I tap a climb** on, which 2.7 turns off by default: TestFlight or QA-forced readings from earlier 2.7 builds undercount it. It has no event of its own (a one-time dialog, under the gesture rule), so read its reach as the enrolled accounts (`arm_connect_step` set) whose first `Bluetooth Connection Success` comes from 2.7.0 or later. Its body now says what lights next (every tap, Put on board's 45 s window, until stopped on a MoonBoard, or one climb), so a confirmation effect read across builds compares different copy |
+| 2.7 preview-first (OTA promoted 2026-11-02 per the changelog refresh `968f583766`; confirm with `vp run ota:rollout -- status`) | A tap on a climb opens a preview instead of lighting it, so `Set Active Climb` with `trigger = 'put_on_wall'` counts the Put on board presses (and the MiniPlayer bulb's Put on board) that start each drive. The climbs picked while its timed drive runs (45 s by default) or a MoonBoard drive runs keep a null or navigation `trigger`. Before 2.7 most picks carried a null `trigger`. Counts of climbs picked that keep null and `put_on_wall` stay comparable; a `put_on_wall`-only count jumps and must not be read as growth. Split by app version |
+| MoonBoard drives like every board (#7218 OTA, fill in the date when it ships) | A MoonBoard's Put on board takes Stop driving after (45 s by default) instead of its own Until I stop, and in a crew drives only with In a session too on, as Always drive the wall does there. `Drive Mode Started` / `Drive Mode Ended` with `boardType = 'moonboard'` and `startedBy = 'tap'` shift from open-ended (`windowSec` null) to timed drives, and crew MoonBoard drives drop where In a session too is off. `Setting Changed` stops sending key `moonboardPutOnBoardKeepsLighting`. Split MoonBoard drive lengths at this date |
+| Next / Previous telemetry OTA (fill in the date when it ships) | `Set Active Climb` starts firing on every Next and Previous, with `trigger` `next`, `previous` or `rest_timer`. Its volume jumps by about one event per step. A count of climbs picked must keep only `trigger` null or `put_on_wall`; a filter on `trigger != 'climb_saved'` alone counts the steps too from this date |
 | #4415 web deploy (fill in the date when it ships) | `Board QR Scanned` starts on `/b/{slug}/{angle}/list`: kiosk and board-poster scans had no count before it. `Gym QR Scanned` starts waiting for consent to settle; before this it fired too early and was dropped, so its earlier counts are near zero for that reason, not for lack of scans. Store buttons on a Spraywall page start sending `placement: 'spray-wall'`, and a `/b` list page reached by a scan adds the medium to the link id (`spray-wall.board`, `climb-list.kiosk`) |
+| Dead-swipe fix OTA (fill in the date when it ships) | A swipe in the player no longer waits for good on a next climb whose board never paints: it goes 700 ms after the page is mounted, or at once onto a board that failed. Such swipes add `heldArtState` and `heldMs` to `Queue Navigation`; earlier events have neither, and before this date those swipes did not step at all, so `Queue Navigation` swipe counts per player session rise slightly from here |
+| #6940 OTA (fill in the date when it ships) | Mobile starts firing `Queue Navigation` (Next and Previous in the player and the MiniPlayer, with `method`, `surface` and `outcome`) and `Queue Sheet Opened`. www's `Queue Navigation` stopped with W-16; read mobile's on `surface`, which www never sent |
 
 None of these repairs past data. Annotate them; do not backfill.
 
@@ -1392,31 +1491,24 @@ not unique published climb or database-record counts. Tick events with
 submissions. Report draft creations separately; a creation event does not prove
 publication, and later draft publication cannot yet be counted reliably.
 
-The Apple Ads status card prepares the dashboard without fabricated metrics.
-The new 2.6.0 integration's property and report contract is documented in
-[Apple Ads (iOS)](#apple-ads-ios); it still requires real campaign evidence
-before these dashboard metrics can be populated.
-The proposed **A$500/month** is a budget, not observed spend. Keep actual AUD
-spend, store-reported installs, attributed first opens and product outcomes
-separate until reliable person-level attribution exists. Future costs divide
-matching campaign/cohort spend by attributed installs, registrations, first
-board-active people, people reaching 2+ board days, or retained board-active
-people in days 28–55. Retained-user costs use only mature acquisition cohorts.
-Campaign, keyword and country breakdowns require corresponding attribution and
-cost evidence; country on an activity event alone is not ad targeting evidence.
+The Apple Ads status card links to the separate campaign dashboard. Store
+reporting and current person attribution are available, but consent coverage,
+identity continuity and the historical 2.6.0 signup gap still limit product
+conversion interpretation. Keep Apple delivery, attributed people and validated
+newcomers separate, as specified in [Apple Ads (iOS)](#apple-ads-ios).
 
-Missing inputs and known limits:
+Known limits:
 
-1. Person-level Apple Ads attribution, campaign/keyword/country evidence, and
-   actual AUD spend and install reports are unavailable.
+1. Historical 2.6.0 auth success/signup telemetry is incomplete; 2.7.0 still
+   requires release evidence. Missing events cannot establish failed signup.
 2. iOS has no install referrer; reliable anonymous web-to-iOS acquisition joins
    and known organic App Store attribution are unavailable.
-3. Remaining unresolved registration evidence and historical phantom identities
-   can undercount registration or split people. Validate evidence coverage.
+3. Current Apple association does not prove earliest paid first touch.
+   Consent, missing screens and unresolved identities affect the observed subset.
 4. Unique published-climb identifiers and draft-to-publication evidence are
    missing. Creation-event counts must not be called unique published climbs.
-5. Completed 56-day clean newcomer cohorts do not yet exist. Older acquisition
-   regimes and incomplete windows must not fill the gap.
+5. Retention needs fully mature cohorts. Older acquisition regimes and partial
+   windows must not fill a pending 56-day cell.
 
 ### Versioning and validation
 
@@ -1444,3 +1536,21 @@ ordered registration-first funnel has 198 first senders, 119 two-day users and
 63 four-day users. Those smaller counts reflect its registration prerequisite.
 No one has a mature 56-day observation yet. Latest-period contribution totals
 reconcile to all 2,387 board-active people.
+
+
+### Apple Ads dashboard deployment and fixture validation
+
+`apple-ads-deployment.json` records stable dashboard/insight/tile IDs and the
+actual deployment time. Keep the existing all-source insight IDs; publishing
+adds the separate sections and moves the old charts into their labelled
+baseline section without deleting them. Update the baseline growth dashboard's
+status text from the versioned `paidAcquisitionBody` too.
+
+Export synthetic calculations with
+`vp exec node --import tsx scripts/posthog/export-apple-ads-dashboard.ts --fixtures`.
+Execute every exact query in PostHog and record its query SHA-256 and returned
+rows in `apple-ads-fixture-validation.json`. The adjacent test checks the hashes
+and edge-case results, so a calculation edit needs fresh execution evidence.
+Fixtures contain synthetic identities and synthetic spending only; do not put
+actual campaign finances in repository fixtures. Reconcile live campaign and
+ad-group delivery totals and inspect coverage before publishing the dashboard.

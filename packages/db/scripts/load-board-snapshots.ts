@@ -62,7 +62,9 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import {
   CATALOG_SNAPSHOT_CLIMB_REFERENCE_COLUMNS,
   catalogSnapshotBaseTables,
+  catalogSnapshotBoardTypeFilter,
   catalogSnapshotDeferredTables,
+  SPRAY_CATALOGUE_SEQUENCE_ADVANCE_SQL,
   type CatalogSnapshotTableName,
 } from '../src/catalog-snapshot.js';
 import { describeDatabaseHost, isLocalDatabaseUrl } from './db-connection.js';
@@ -491,6 +493,18 @@ export function* mapSqliteRows(
   }
 }
 
+/**
+ * The SELECT that reads one artifact table. Rows of an excluded board type
+ * (spray) are skipped whatever the artifact carries: artifacts built before the
+ * exporter filtered them still hold private spray-wall rows.
+ */
+export function artifactSelectSql(table: string, artifactCols: readonly string[]): string {
+  const boardTypeScope = artifactCols.includes('board_type')
+    ? ` WHERE ${catalogSnapshotBoardTypeFilter('board_type')}`
+    : '';
+  return `SELECT ${artifactCols.join(', ')} FROM ${table}${boardTypeScope}`;
+}
+
 async function loadArtifactTable(params: {
   sqlClient: Sql;
   db: DatabaseSync;
@@ -508,7 +522,7 @@ async function loadArtifactTable(params: {
     sqlClient,
     targetTable: table,
     plans,
-    rows: mapSqliteRows(db, `SELECT ${artifactCols.join(', ')} FROM ${table}`, plans),
+    rows: mapSqliteRows(db, artifactSelectSql(table, artifactCols), plans),
     extraWhere: requiresClimb
       ? `EXISTS (SELECT 1 FROM board_climbs climb WHERE climb.board_type = staging.board_type AND climb.uuid = staging.${assertSafeIdentifier(requiresClimb, 'climb reference column')})`
       : undefined,
@@ -869,6 +883,12 @@ async function main(): Promise<void> {
         catalogDb.close();
       }
       await rm(catalogArtifactPath, { force: true });
+    }
+
+    // Defensive: nothing above loads a spray row any more, but a wall created on
+    // this database must never be handed an id a stray row already holds.
+    for (const statement of SPRAY_CATALOGUE_SEQUENCE_ADVANCE_SQL) {
+      await sqlClient.unsafe(statement);
     }
 
     console.info('\n>>> ANALYZE');

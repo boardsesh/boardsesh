@@ -1,5 +1,7 @@
+import type { AnalyticsEventProperties } from '@boardsesh/analytics';
+import type { ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { ClimbQueueItem, PlaylistSuggestionSource, SetCurrentClimbOptions } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import type { SwipeDismissAnimation } from './use-drawer-dismiss-gesture';
@@ -36,6 +38,8 @@ export type PlayDrawerOpenOptions = {
    * acting on the active climb, not this preview.
    */
   previewQueueItem?: ClimbQueueItem | null;
+  /** Queue selection/replay intent, applied only when this preview is put on the wall. */
+  previewCommitOptions?: SetCurrentClimbOptions;
   /**
    * The preview is the live wall climb behind the accessory bar — a peer (or
    * another climber on this board) is driving the wall and this climb is lit
@@ -51,12 +55,36 @@ export type PlayDrawerOpenOptions = {
    */
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
   /**
-   * The accessory bar or the mini player reopening the current climb. Every
-   * other open of the current climb is a pick, which lights a climb the #4979
-   * hold kept dark (docs/current-climb-outside-queue.md, section 6); this one
-   * only shows the climb, so a hold stays and the player offers Put on the wall.
+   * The accessory bar or the mini player reopening the current climb, or a
+   * preview-first pick of the climb already up (a queue sheet row, Replay from
+   * here, the playlist switch). Every other open of the current climb is a
+   * pick, which lights a climb the #4979 hold kept dark
+   * (docs/current-climb-outside-queue.md, section 6); this one only shows the
+   * climb, so a hold stays and the player offers Put on the wall.
    */
   reopensCurrent?: boolean;
+  /**
+   * The MiniPlayer reopening the climber's last pick (`lib/last-pick-store.ts`):
+   * the mirror flip the player showed on that preview, put back. Only
+   * meaningful alongside `previewQueueItem`.
+   */
+  previewMirrored?: boolean;
+  /**
+   * The MiniPlayer reopening the last pick: the wall as it was when the
+   * climber started looking, and when, so the busy-wall question compares
+   * against THAT wall rather than the wall at the reopen. A crewmate who lit
+   * something while the player was closed still gets asked about. Only
+   * meaningful alongside `previewQueueItem`.
+   */
+  previewLatchStart?: { wallClimbUuid: string | null; at: number };
+  /**
+   * The MiniPlayer's bulb on a last pick that isn't lit (owner decision A):
+   * once the preview lands, press Put on board for it, through the wall
+   * button's own handler, so the busy-wall question in a crew and the timed
+   * drive per Stop driving after both apply. A pane's later replay never
+   * presses. Only meaningful alongside `previewQueueItem`.
+   */
+  putOnBoard?: boolean;
 };
 
 /**
@@ -76,12 +104,23 @@ export type PlayDrawerOpenTarget = {
   claimFirstApply?: () => boolean;
 };
 
+/** The climb on screen, handed to the landscape iPad player's side panel. */
+export type PlayerSidePanelClimb = {
+  climb: Climb;
+  /** The board the climb renders on (it can differ from the active board). */
+  boardName: string;
+  layoutId: number;
+  angle: number;
+  /** Opens the full logbook sheet the player hosts. */
+  onOpenFullLogbook: () => void;
+};
+
 export type PlayDrawerProps = {
   /** `/play` owns the transform so its backing and content travel together. */
   swipeDismiss?: SwipeDismissAnimation;
   onClose?: () => void;
   boardConfig: BoardConfig;
-  onAngleChange?: (angle: number) => void;
+  onAngleChange?: (angle: number, analyticsContext?: AnalyticsEventProperties) => void;
   /** When false, the board's angle is fixed — the angle pill is hidden. */
   isAngleAdjustable?: boolean;
   /** Open the queue list sheet (the route hosts its own QueueSheet instance so it
@@ -118,6 +157,25 @@ export type PlayDrawerProps = {
    *  when a WallStrip is docked above the pane and already owns that inset. Ignored
    *  in route mode (the modal always owns the top inset). */
   paneTopInset?: boolean;
+  /** Pane mode only: what the pane shows with no climb. Defaults to the "Pick a
+   *  climb" placeholder; the phone split passes the unlit board instead. */
+  paneEmptyState?: ReactNode;
+  /** Pane mode only: take the scroll position the full-screen player left behind
+   *  when the phone split replaced it (see route-player-handoff). Only the
+   *  focused tab's pane accepts, so a background tab never consumes it. */
+  acceptsScrollHandoff?: boolean;
+  /** Size the board from the viewport's height, with the sections below the
+   *  fold. The phone split's pane keeps every control row above its bottom
+   *  inset (the MiniPlayer capsule); the landscape iPad player hangs its
+   *  favourite / share row below the fold. Everywhere else keeps the usual
+   *  first screen. */
+  fitBoardToHeight?: boolean;
+  /**
+   * The landscape iPad player's side panel (see `resolvePlayerArrangement`).
+   * Rendered to the right of the board column, which narrows to make room; it
+   * receives the climb on screen, or null before one resolves.
+   */
+  renderSidePanel?: (displayed: PlayerSidePanelClimb | null) => ReactNode;
   /**
    * Who is looking. `'anonymous'` is the signed-out reader that
    * `AnonymousClimbView` renders on the web export's read-only climb URL: the

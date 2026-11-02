@@ -14,7 +14,10 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 const ws = vi.hoisted(() => {
   type WsEventName = 'connected' | 'closed';
-  type QueueUpdatesSink = { next: (payload: { data?: { queueUpdates?: unknown } }) => void };
+  type QueueUpdatesSink = {
+    next: (payload: { data?: { queueUpdates?: unknown } }) => void;
+    error?: (error: unknown) => void;
+  };
   let queueUpdatesSink: QueueUpdatesSink | null = null;
   const listeners: Record<WsEventName, Set<() => void>> = { connected: new Set(), closed: new Set() };
   return {
@@ -40,7 +43,10 @@ const ws = vi.hoisted(() => {
 });
 
 const flags = vi.hoisted(() => ({ nowSlot: true }));
-const probe = vi.hoisted(() => ({ fields: ['sequence', 'historyCount', 'currentChangedAt'] as string[] }));
+const probe = vi.hoisted(() => ({
+  fields: ['sequence', 'historyCount', 'currentChangedAt'] as string[],
+  eventFields: [] as string[],
+}));
 const graph = vi.hoisted(() => ({ execute: vi.fn() }));
 const http = vi.hoisted(() => ({ request: vi.fn() }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
@@ -133,7 +139,14 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })), currentState: 'active' },
 }));
-vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-correlation-id' }));
+// A fresh uuid per call: two track peeks minted in a row must not share one.
+const uuids = vi.hoisted(() => ({ minted: 0 }));
+vi.mock('expo-crypto', () => ({
+  randomUUID: () => {
+    uuids.minted += 1;
+    return `test-uuid-${uuids.minted}`;
+  },
+}));
 vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
   execute: graph.execute,
@@ -157,6 +170,8 @@ vi.mock('../../lib/graphql/ws-client', () => ({ getWsClient: () => ws.client }))
 vi.mock('../../lib/session-store', () => sessionStore);
 vi.mock('../../lib/queue-snapshot-store', () => queueSnapshotStore);
 vi.mock('../../lib/active-board-store', () => ({ getStoredActiveBoard: activeBoard.getStoredActiveBoard }));
+// No board art in these tests, so a track keeps every climb it was given.
+vi.mock('../../lib/board-details', () => ({ getBoardRenderData: () => null }));
 vi.mock('../../lib/graphql/use-active-board', () => ({
   getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: activeBoard.stored }),
@@ -178,6 +193,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFee
 
 import { QueueProvider, useQueue, useQueueSessionId } from '../queue-provider';
 import { resetQueueServerProbeReportForTests } from '../queue/now-slot-server';
+import { clearRelayReceipt, takeRelayReceipt } from '../../lib/relay-receipt';
 
 type Queue = ReturnType<typeof useQueue>;
 type Snapshot = Pick<
@@ -191,6 +207,7 @@ type Snapshot = Pick<
   | 'playNext'
   | 'removeQueueItems'
   | 'restoreQueueItems'
+  | 'setQueue'
   | 'getQueueSnapshot'
 > & { undoScope: string };
 
@@ -208,6 +225,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       playNext: queue.playNext,
       removeQueueItems: queue.removeQueueItems,
       restoreQueueItems: queue.restoreQueueItems,
+      setQueue: queue.setQueue,
       getQueueSnapshot: queue.getQueueSnapshot,
       undoScope,
     });
@@ -360,6 +378,7 @@ describe('QueueProvider now-slot mode (F3)', () => {
   beforeEach(() => {
     flags.nowSlot = true;
     probe.fields = ['sequence', 'historyCount', 'currentChangedAt'];
+    probe.eventFields = [];
     ws.reset();
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
@@ -378,8 +397,11 @@ describe('QueueProvider now-slot mode (F3)', () => {
     analytics.track.mockClear();
     graph.execute.mockReset();
     graph.execute.mockImplementation(async (_client: unknown, operation: { query: string }) => {
-      if (operation.query.includes('QueueStateFieldsProbe')) {
-        return { __type: { fields: probe.fields.map((name) => ({ name })) } };
+      if (operation.query.includes('QueueCapabilitiesProbe')) {
+        return {
+          queueState: { fields: probe.fields.map((name) => ({ name })) },
+          currentClimbChanged: { fields: probe.eventFields.map((name) => ({ name })) },
+        };
       }
       return {
         joinSession: {
@@ -418,6 +440,65 @@ describe('QueueProvider now-slot mode (F3)', () => {
         rewrite: 'dedupe-up-next',
         placement: 'NOW',
       });
+    });
+
+    it('Next onto a list climb History holds puts up a fresh copy, and says how it got there', async () => {
+      // A (climb x) was climbed earlier; B is on the wall, from a list [B, C, x].
+      const A = makeQueueItem('a', 'climb-x');
+      const latest = await renderSolo([A, B], B);
+      const list: PlaylistSuggestionSource = {
+        playlistUuid: 'search-1',
+        activatedClimbUuid: B.climb.uuid,
+        boardKey: 'kilter:1:10:1,2',
+        climbs: [B.climb, C.climb, A.climb],
+      };
+      act(() => latest().setCurrentClimb(B, { playlistSuggestionSource: list }));
+      act(() => latest().nextClimb());
+      const onC = latest().state.currentClimbQueueItem;
+      expect(onC?.climb.uuid).toBe(C.climb.uuid);
+      act(() => latest().nextClimb());
+      const onX = latest().state.currentClimbQueueItem;
+      expect(onX?.climb.uuid).toBe('climb-x');
+      expect(onX?.uuid).not.toBe('a');
+      // History keeps A where it was.
+      expect(uuidsOf(latest()).slice(0, 3)).toEqual(['a', 'b', onC?.uuid]);
+      expect(setActiveClimbEvents().at(-1)?.[1]).toMatchObject({
+        trigger: 'next',
+        navSource: 'peek',
+        rewrite: 'insert',
+        placement: 'NOW',
+        listIndex: 2,
+        fromQueueItemUuid: onC?.uuid,
+        toQueueItemUuid: onX?.uuid,
+      });
+      act(() => latest().previousClimb());
+      expect(setActiveClimbEvents().at(-1)?.[1]).toMatchObject({
+        trigger: 'previous',
+        navSource: 'list',
+        fromQueueItemUuid: onX?.uuid,
+        toQueueItemUuid: onC?.uuid,
+      });
+    });
+
+    // #7113: driving the wall from a preview that walks a list steps through
+    // setCurrentClimb, placed as nextClimb places a step.
+    it('a list step through setCurrentClimb with historyCopy fresh leaves a History copy where it was', async () => {
+      // A (climb x) was climbed earlier, with Z after it; B is on the wall.
+      const A = makeQueueItem('a', 'climb-x');
+      const Z = makeQueueItem('z', 'climb-z');
+      const latest = await renderSolo([A, Z, B], B);
+      act(() =>
+        latest().setCurrentClimb(makeQueueItem('x-step', 'climb-x'), { trigger: 'next', historyCopy: 'fresh' }),
+      );
+      const onX = latest().state.currentClimbQueueItem;
+      expect(onX?.climb.uuid).toBe('climb-x');
+      expect(onX?.uuid).not.toBe('a');
+      expect(uuidsOf(latest()).slice(0, 3)).toEqual(['a', 'z', 'b']);
+      expect(setActiveClimbEvents().at(-1)?.[1]).toMatchObject({ trigger: 'next', placement: 'NOW' });
+      // A pick (the default) still moves the History entry into Now.
+      const picked = await renderSolo([A, Z, B], B);
+      act(() => picked().setCurrentClimb(makeQueueItem('x-pick', 'climb-x')));
+      expect(picked().state.currentClimbQueueItem?.uuid).toBe('a');
     });
 
     it('a fresh track peek goes on the wall at the Now slot, and moving on files it under History', async () => {
@@ -556,6 +637,22 @@ describe('QueueProvider now-slot mode (F3)', () => {
         expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
       });
 
+      // A playlist loaded into Up next while nothing is up (preview-first):
+      // History stays behind the line, here and on the wire.
+      it('setQueue keeps the line it is given, and a replace without one is all Up next', async () => {
+        const latest = await renderSolo([A, B, C], null, 2);
+        act(() => latest().setQueue([A, B, D], null, 2));
+        expect(uuidsOf(latest())).toEqual(['a', 'b', 'd']);
+        expect(latest().state.historyCount).toBe(2);
+        await waitFor(() => expect(queueMutations.setQueue).toHaveBeenCalled());
+        expect(queueMutations.setQueue.mock.calls.at(-1)?.[2]).toBe(2);
+        act(() => latest().nextClimb());
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('d');
+
+        act(() => latest().setQueue([A, B], null));
+        expect(latest().state.historyCount).toBe(0);
+      });
+
       it('Undo of an Up next removal keeps History as History', async () => {
         const latest = await renderSolo([A, B, C, D], null, 2);
         const before = latest().getQueueSnapshot();
@@ -585,7 +682,7 @@ describe('QueueProvider now-slot mode (F3)', () => {
   describe('in a session', () => {
     it('probe yes: the _NOW_SLOT join and subscription, and opens send placement with no queue-add', async () => {
       const latest = await renderSession([A, B, C], B);
-      expect(executedQueries().some((query) => query.includes('QueueStateFieldsProbe'))).toBe(true);
+      expect(executedQueries().some((query) => query.includes('QueueCapabilitiesProbe'))).toBe(true);
       expect(executedQueries().some((query) => query.includes('JoinSessionNowSlot'))).toBe(true);
       expect(subscribedQueries().some((query) => query.includes('QueueUpdatesNowSlot'))).toBe(true);
       expect(capturedMutationDeps.current?.shouldUseNowSlotDocuments?.()).toBe(true);
@@ -661,14 +758,246 @@ describe('QueueProvider now-slot mode (F3)', () => {
       expect(uuidsOf(latest())).toEqual(['a', 'b', 'c-prime', 'c']);
     });
 
-    it('flag off: no probe at all, and today’s documents', async () => {
+    it('flag off: still probes attribution, and keeps today’s now-slot documents', async () => {
       flags.nowSlot = false;
       await renderSession([A, B, C], B);
-      expect(executedQueries().some((query) => query.includes('QueueStateFieldsProbe'))).toBe(false);
+      expect(executedQueries().some((query) => query.includes('QueueCapabilitiesProbe'))).toBe(true);
       expect(subscribedQueries().some((query) => query.includes('QueueUpdatesNowSlot'))).toBe(false);
       expect(analytics.track.mock.calls.some(([eventName]) => eventName === SHARED_EVENTS.QueueServerProbe)).toBe(
         false,
       );
+    });
+
+    it('reads mover attribution even with the now-slot flag off', async () => {
+      flags.nowSlot = false;
+      probe.fields.push('currentChangedBy');
+      probe.eventFields = ['currentChangedBy'];
+      const latest = await renderSession([A, B, C], B);
+      expect(subscribedQueries().some((query) => query.includes('currentChangedBy'))).toBe(true);
+      expect(latest().state.nowSlotMode).toBe(false);
+      act(() =>
+        ws.getQueueUpdatesSink()?.next({
+          data: {
+            queueUpdates: {
+              __typename: 'CurrentClimbChanged',
+              sequence: 2,
+              stateHash: 'hash-2',
+              currentItem: C,
+              currentChangedBy: 'participant-peer',
+              clientId: 'client-peer',
+            },
+          },
+        }),
+      );
+      await waitFor(() => expect(latest().state.currentChangedBy).toBe('participant-peer'));
+      expect(takeRelayReceipt('c')).toMatchObject({ currentChangedBy: 'participant-peer' });
+    });
+
+    it('retries a rejected attribution subscription once without disabling now-slot', async () => {
+      probe.fields.push('currentChangedBy');
+      probe.eventFields = ['currentChangedBy'];
+      const latest = await renderSession([A, B, C], B);
+      const before = subscribedQueries().filter((query) => query.includes('queueUpdates')).length;
+      act(() =>
+        ws.getQueueUpdatesSink()?.error?.([{ message: 'Cannot query field "currentChangedBy" on type "QueueState".' }]),
+      );
+      await waitFor(() =>
+        expect(subscribedQueries().filter((query) => query.includes('queueUpdates')).length).toBe(before + 1),
+      );
+      const query = subscribedQueries()
+        .filter((query) => query.includes('queueUpdates'))
+        .at(-1);
+      expect(query).not.toContain('currentChangedBy');
+      expect(query).toContain('historyCount');
+      expect(latest().state.nowSlotMode).toBe(true);
+    });
+
+    it('retries an older HTTP replica without attribution and keeps now-slot enabled', async () => {
+      probe.fields.push('currentChangedBy');
+      probe.eventFields = ['currentChangedBy'];
+      const latest = await renderSession([A, B, C], B);
+      const snapshots: string[] = [];
+      http.request.mockImplementation(async (query: string) => {
+        if (query.includes('SessionStatus')) return statusResponse();
+        snapshots.push(query);
+        if (query.includes('currentChangedBy'))
+          throw new Error('Cannot query field "currentChangedBy" on type "QueueState".');
+        return {
+          session: {
+            queueState: { sequence: 2, stateHash: 'hash-2', queue: [B, C], currentClimbQueueItem: B, historyCount: 0 },
+          },
+        };
+      });
+      queueMutations.removeQueueItem.mockRejectedValueOnce(new Error('offline'));
+      act(() => latest().removeQueueItems(['a']));
+      await waitFor(() => expect(snapshots.length).toBe(2));
+      expect(snapshots[0]).toContain('currentChangedBy');
+      expect(snapshots[1]).not.toContain('currentChangedBy');
+      expect(snapshots[1]).toContain('historyCount');
+      expect(latest().state.nowSlotMode).toBe(true);
+    });
+
+    it('does not relay a live snapshot whose current loses to the protected optimistic move', async () => {
+      const latest = await renderSession([A, B, C], B);
+      act(() => latest().setCurrentClimb(C));
+      clearRelayReceipt();
+      act(() =>
+        ws.getQueueUpdatesSink()?.next({
+          data: {
+            queueUpdates: {
+              __typename: 'FullSync',
+              sequence: 1,
+              state: {
+                sequence: 1,
+                stateHash: 'hash-1',
+                queue: [A, B, C],
+                currentClimbQueueItem: B,
+                currentChangedBy: 'participant-peer',
+                historyCount: 1,
+              },
+            },
+          },
+        }),
+      );
+      expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+      expect(takeRelayReceipt('b')).toBeNull();
+    });
+
+    // #7014: the BLE auto-sender times a crewmate's climb from the moment this
+    // stream hands it over, so a peer's move is stamped and this phone's own
+    // echo is not.
+    describe('relay receipt', () => {
+      function sendCurrentClimbChanged(item: ClimbQueueItem, clientId: string, correlationId: string) {
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'CurrentClimbChanged',
+                sequence: 2,
+                stateHash: 'hash-2',
+                currentItem: item,
+                clientId,
+                correlationId,
+              },
+            },
+          });
+        });
+      }
+
+      it('stamps a crewmate moving the wall', async () => {
+        const latest = await renderSession([A, B, C], B);
+        clearRelayReceipt();
+
+        sendCurrentClimbChanged(C, 'client-peer', 'corr-peer');
+
+        await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe('c'));
+        expect(takeRelayReceipt('c')).toMatchObject({
+          queueItemUuid: 'c',
+          eventType: 'CurrentClimbChanged',
+          correlationId: 'corr-peer',
+        });
+      });
+
+      it('does not stamp the FullSync that opens the stream', async () => {
+        clearRelayReceipt();
+
+        // The join's FullSync makes B current on a phone that had nothing.
+        const latest = await renderSession([A, B, C], B);
+
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('b');
+        expect(takeRelayReceipt('b')).toBeNull();
+      });
+
+      it('stamps a crewmate’s open that arrives as a FullSync on the live stream', async () => {
+        const latest = await renderSession([A, B, C], B);
+        clearRelayReceipt();
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'FullSync',
+                sequence: 2,
+                state: {
+                  sequence: 2,
+                  stateHash: 'hash-2',
+                  queue: [A, B, C],
+                  currentClimbQueueItem: C,
+                  historyCount: 2,
+                },
+              },
+            },
+          });
+        });
+
+        await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe('c'));
+        expect(takeRelayReceipt('c')).toMatchObject({ queueItemUuid: 'c', eventType: 'FullSync' });
+      });
+
+      // #7039 review: the climber picks A, then C, before A's echo arrives. The
+      // echo names A while C is current, so the uuid check alone would stamp it.
+      it('does not stamp a late echo of an earlier move of this phone', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        const firstMoveCorrelationId = queueMutations.setCurrentClimb.mock.calls[0]?.[2];
+        expect(firstMoveCorrelationId).toEqual(expect.any(String));
+        clearRelayReceipt();
+
+        sendCurrentClimbChanged(A, 'client-self', firstMoveCorrelationId ?? '');
+
+        expect(takeRelayReceipt('a')).toBeNull();
+      });
+
+      it('does not stamp the now-slot FullSync echo of an earlier move of this phone', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        clearRelayReceipt();
+        // clearRelayReceipt also forgets own moves, so re-arm them the way the
+        // provider's send seam does on a re-send.
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'FullSync',
+                sequence: 2,
+                state: {
+                  sequence: 2,
+                  stateHash: 'hash-2',
+                  queue: [A, B, C],
+                  currentClimbQueueItem: A,
+                  historyCount: 0,
+                },
+              },
+            },
+          });
+        });
+
+        expect(takeRelayReceipt('a')).toBeNull();
+      });
+
+      it('does not stamp the echo of this phone’s own move', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        clearRelayReceipt();
+
+        sendCurrentClimbChanged(C, 'client-self', 'corr-self');
+
+        expect(takeRelayReceipt('c')).toBeNull();
+      });
     });
   });
 });

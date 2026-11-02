@@ -11,8 +11,8 @@ import { useTypographyStyles, type TypographyScale } from '../hooks/use-typograp
 // exact card insets) is a Phase-1 item. The row-kind exhaustiveness guard and the
 // select-label lookup live in MoreForm.logic.ts, shared with both native files.
 
-import { useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useId, useState, type ReactNode } from 'react';
+import { Text as RNText, ScrollView, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Divider, List, Menu, Surface, Switch, Text } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
@@ -24,9 +24,10 @@ import {
   disabledOptionKeys,
   guardedButtonPress,
   selectedOptionLabel,
+  toggleRowSubtitle,
   useOpensOutsideAppHint,
 } from './MoreForm.logic';
-import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
+import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow, MoreToggleRow } from './MoreForm.types';
 
 // Semantic leading-icon name → MaterialCommunityIcons glyph (Paper routes `icon`
 // through the app's MDI font). Minimal-functional: each glyph reads sensibly for
@@ -54,11 +55,29 @@ const MORE_ICON: Record<MoreIconName, string> = {
   policy: 'file-document-outline',
 };
 
+/**
+ * A row's own name for assistive tech (`accessibilityLabel`) replaces the name
+ * the browser builds from the row's text, and with it the line under the label
+ * and the value. So the value rides the name, as the native renderers say it,
+ * and the line under the label is the row's description (`aria-describedby`).
+ * Without its own name, the row is named from its text as before.
+ */
+function useNamedRowText(accessibilityLabel: string | undefined, description: string | undefined) {
+  const descriptionId = useId();
+  if (!accessibilityLabel || !description) return { description, describedBy: undefined };
+  return {
+    // Nested inside Paper's description Text, so it keeps that line's style.
+    description: <RNText nativeID={descriptionId}>{description}</RNText>,
+    describedBy: descriptionId,
+  };
+}
+
 function SelectRow({ row }: { row: MoreSelectRow }) {
   const styles = useTypographyStyles(createStyles);
   const [visible, setVisible] = useState(false);
   const { systemColors } = useTheme();
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
+  const named = useNamedRowText(row.accessibilityLabel, row.subtitle);
   return (
     <Menu
       visible={visible && !row.disabled}
@@ -66,6 +85,9 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
       anchor={
         <List.Item
           title={row.label}
+          description={named.description}
+          accessibilityLabel={row.accessibilityLabel ? `${row.accessibilityLabel}, ${currentLabel}` : undefined}
+          aria-describedby={named.describedBy}
           disabled={row.disabled}
           style={row.disabled ? styles.disabledRow : undefined}
           aria-disabled={row.disabled ?? false}
@@ -89,6 +111,29 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
         />
       ))}
     </Menu>
+  );
+}
+
+function ToggleRow({ row }: { row: MoreToggleRow }) {
+  const styles = useTypographyStyles(createStyles);
+  // The reason replaces the description while greyed out (`toggleRowSubtitle`).
+  const named = useNamedRowText(row.accessibilityLabel, toggleRowSubtitle(row).text);
+  return (
+    <List.Item
+      title={row.label}
+      description={named.description}
+      accessibilityLabel={row.accessibilityLabel}
+      aria-describedby={named.describedBy}
+      disabled={row.disabled}
+      style={row.disabled ? styles.disabledToggle : undefined}
+      onPress={() => {
+        if (!row.disabled) row.onValueChange(!row.value);
+      }}
+      accessibilityRole="switch"
+      aria-checked={row.value}
+      aria-disabled={row.disabled ?? false}
+      right={() => <Switch value={row.value} disabled={row.disabled} pointerEvents="none" />}
+    />
   );
 }
 
@@ -147,22 +192,7 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
       );
     }
     case 'toggle':
-      return (
-        <List.Item
-          key={row.key}
-          title={row.label}
-          description={row.subtitle}
-          disabled={row.disabled}
-          style={row.disabled ? styles.disabledToggle : undefined}
-          onPress={() => {
-            if (!row.disabled) row.onValueChange(!row.value);
-          }}
-          accessibilityRole="switch"
-          aria-checked={row.value}
-          aria-disabled={row.disabled ?? false}
-          right={() => <Switch value={row.value} disabled={row.disabled} pointerEvents="none" />}
-        />
-      );
+      return <ToggleRow key={row.key} row={row} />;
     case 'segmented':
       return (
         <View key={row.key} style={styles.segmentedRow}>

@@ -1,5 +1,6 @@
 package com.boardsesh.liveactivity
 
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
@@ -10,10 +11,12 @@ import io.mockk.Runs
 import io.mockk.unmockkObject
 import io.mockk.verify
 import org.junit.After
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -75,6 +78,22 @@ class BoardSessionActionReceiverTest {
     }
 
     @Test
+    fun `connectedByMe lightbulb drawn as Stop driving dispatches stopDriving`() {
+        receiver.onReceive(context, bulbIntent("connectedByMe").apply {
+            putExtra(BoardSessionService.EXTRA_STOPS_DRIVE, true)
+        })
+        verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("stopDriving", "corr-1") }
+    }
+
+    @Test
+    fun `a stale Stop driving flag never stops a drive this phone no longer holds`() {
+        receiver.onReceive(context, bulbIntent("disconnected").apply {
+            putExtra(BoardSessionService.EXTRA_STOPS_DRIVE, true)
+        })
+        verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("reconnect", "corr-1") }
+    }
+
+    @Test
     fun `heldByPeer lightbulb dispatches reconnect`() {
         receiver.onReceive(context, bulbIntent("heldByPeer"))
         verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("reconnect", "corr-1") }
@@ -94,5 +113,22 @@ class BoardSessionActionReceiverTest {
         }
         receiver.onReceive(context, intent)
         verify(exactly = 1) { SessionPresenceModule.dispatchQueueNavigate("next", 2, "corr-2") }
+    }
+
+    // --- Driving the wall (2.7) ---
+
+    @Test
+    fun `Previous and Next write no drive and wake no service, so JS starts it at the lit confirm`() {
+        for (action in listOf(BoardSessionService.ACTION_NAV_NEXT, BoardSessionService.ACTION_NAV_PREVIOUS)) {
+            receiver.onReceive(context, Intent(action).apply {
+                putExtra(BoardSessionService.EXTRA_CURRENT_INDEX, 2)
+                putExtra(BoardSessionService.EXTRA_CORRELATION_ID, "corr-3")
+            })
+        }
+
+        assertNull(LightingWindowStore.loadWindow(context))
+        assertNull(shadowOf(context as Application).nextStartedService)
+        verify(exactly = 1) { SessionPresenceModule.dispatchQueueNavigate("next", 2, "corr-3") }
+        verify(exactly = 1) { SessionPresenceModule.dispatchQueueNavigate("previous", 2, "corr-3") }
     }
 }

@@ -16,6 +16,7 @@ import { OfflineState } from '../OfflineState';
 import { SessionFeedCard } from './SessionFeedCard';
 import { SessionsFeedHeader } from './SessionsFeedHeader';
 import { FeedSectionLabel } from './FeedSectionLabel';
+import { useSessionWorkoutHeadlines } from '../session/workout/use-session-workout-view';
 import { CommentSheet } from './CommentSheet';
 import { bucketSessionsByRecency, dedupeSessionsById, type FeedRecencyBucket } from '../../lib/feed-time-buckets';
 import { useSessionGroupedFeed, useBulkVoteSummaries } from '../../lib/graphql/hooks';
@@ -34,6 +35,7 @@ type TFunc = (key: string) => string;
 const PENDING_SKELETON_KEYS = ['session-skeleton-1', 'session-skeleton-2'];
 // A session card shows one climb, so it plays from a list of just that one.
 const NO_TICKS: SessionFeedTickHighlight[] = [];
+const NO_SESSION_ID_PAGES: readonly (readonly string[])[] = [];
 
 type SessionsTabProps = {
   userId: string | undefined;
@@ -181,6 +183,15 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
     return map;
   }, [sessionVoteSummaries.data, tickVoteSummaries.data]);
 
+  // Each card's workout line (#6903): one headline request per feed page.
+  const sessionIdPages = useMemo(
+    () =>
+      feed.data?.pages.map((page) => page.sessionGroupedFeed.sessions.map((session) => session.sessionId)) ??
+      NO_SESSION_ID_PAGES,
+    [feed.data],
+  );
+  const workoutHeadlines = useSessionWorkoutHeadlines(sessionIdPages);
+
   const handleOpenComments = useCallback((entityId: string, entityType: SocialEntityType) => {
     setCommentTarget({ entityId, entityType });
     commentSheetRef.current?.snapToIndex(0);
@@ -222,10 +233,11 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
           onOpenComments={handleOpenComments}
           onPress={handleOpenSession}
           onOpenClimb={handleOpenClimb}
+          workoutHeadline={workoutHeadlines.get(row.item.sessionId)}
         />
       );
     },
-    [handleOpenComments, handleOpenSession, summaryMap, t, handleOpenClimb],
+    [handleOpenComments, handleOpenSession, summaryMap, t, handleOpenClimb, workoutHeadlines],
   );
 
   // The feed rollup, shown when there are sessions. Memoized so FlashList doesn't
@@ -247,7 +259,11 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
   if (offline.isBlocked && offline.reason) {
     return (
       <View style={[styles.centered, { paddingTop: topInset }]}>
-        <OfflineState reason={offline.reason} onRetry={() => void feed.refetch()} />
+        <OfflineState
+          reason={offline.reason}
+          errorTitle={t('mobile.loadError.sessions')}
+          onRetry={() => void feed.refetch()}
+        />
       </View>
     );
   }

@@ -12,7 +12,7 @@
  * QueueActionsType stay in the web app.
  */
 
-import type { CurrentClimbPlacement } from './now-slot';
+import type { CurrentClimbPlacement, HistoryCopyRule } from './now-slot';
 
 export type QueueItemUser = {
   id: string;
@@ -45,6 +45,8 @@ export type Climb = {
   userAttempts?: number | null;
   created_at?: string | null;
   published_at?: string | null;
+  /** Device-only pending write state; stripped before a party queue broadcast. */
+  localWritePending?: boolean;
   // Multi-frame playback metadata: how many snapshots the climb has and the
   // setter-chosen per-frame pace (ms). Carried through queue conversion so
   // multi-frame playback uses the setter's pace instead of DEFAULT_PACE_MS.
@@ -63,6 +65,8 @@ export type Climb = {
   // only field that stops an 8x10 climb lighting up wrong (canAddClimbToBoard
   // rule 5).
   compatibleSizeIds?: number[] | null;
+  // Frame-derived hold sets. Null/undefined is unknown; [] requires no sets.
+  requiredSetIds?: number[] | null;
   // `board_climbs.missing_hold_count` — how many of this climb's holds are no
   // longer on the wall after a spray-wall hold edit. Null/undefined means
   // "unknown", which every catalogue board is: holds do not come off a Kilter.
@@ -134,7 +138,19 @@ export type PlaylistSuggestionSource = {
    * `withPlaylistTrackResume` alone: clearing `resume` moves it here, setting a
    * new one drops it. Client-only, like the rest of the track.
    */
-  detour?: PlaylistTrackResume;
+  detour?: PlaylistTrackDetour;
+  /**
+   * Set on the list a look off the climb on the wall carries (issue #7227): a
+   * preview that began as a swipe, Next or Previous from the committed climb,
+   * walking the list that climb is on. The look's steps, and the last pick it
+   * leaves on the bar, keep it. Its Put on board, or a step once a drive
+   * starts, then leaves the queue as Next would (`keepQueue`), whichever way
+   * the look went: forward through Up next, or back up the list. A list opened
+   * any other way (a list tap, a suggestion, the board sheet) never has it.
+   * Only a preview's list carries it: the queue drops it when the list goes
+   * up. Client-only, like the rest of the track.
+   */
+  lookOffWall?: true;
 };
 
 /**
@@ -151,6 +167,20 @@ export type PlaylistSuggestionSource = {
 export type PlaylistTrackResume = {
   climbUuid: string;
   queueItemUuid: string;
+};
+
+/**
+ * A walk's last stretch of Up next. See {@link PlaylistSuggestionSource.detour}.
+ *
+ * `lastUpNextQueueItemUuid` is the Up next entry the walk stepped off when it
+ * came back to the list (issue #7227), where Previous starts retracing. Without
+ * it Previous takes everything queued after the entry the walk left from as
+ * the stretch, so a climb a crewmate added to Up next meanwhile, or one a
+ * reorder moved there, reads as the last climb played. Absent on a detour from
+ * before it was recorded, or when the step had no queued climb to name.
+ */
+export type PlaylistTrackDetour = PlaylistTrackResume & {
+  lastUpNextQueueItemUuid?: string;
 };
 
 /** Where a track's next page comes from. See {@link PlaylistSuggestionSource}. */
@@ -189,8 +219,11 @@ export type PlaylistTrackPage = {
  *   holder. A real choice, kept apart so the crew browse rollout (#4281) can
  *   count it; the event's `participantCount` tells a crew's commits from solo
  *   ones.
+ * - `next` / `previous`: a step along a list made through `setCurrentClimb`
+ *   rather than `nextClimb` / `previousClimb` (driving the wall from a preview
+ *   that walks a list, #7113). A step, not a pick, as from `nextClimb`.
  */
-export type SetCurrentClimbTrigger = 'climb_saved' | 'put_on_wall';
+export type SetCurrentClimbTrigger = 'climb_saved' | 'put_on_wall' | 'next' | 'previous';
 
 export type SetCurrentClimbOptions = {
   /**
@@ -199,14 +232,38 @@ export type SetCurrentClimbOptions = {
    */
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
   /**
-   * A queued climb a look reached went up on the wall (issue #6777): a preview
-   * that walked the queue from the current climb, then Put on the wall. Where
-   * the climb is Up next on the held track, the track keeps steering and
-   * learns where the list picks up, as Next stepping into Up next does;
-   * otherwise it is cleared, like `playlistSuggestionSource: null`. Passed
-   * instead of `playlistSuggestionSource`.
+   * A climb a trackless look reached went up on the wall (issue #6777): a
+   * preview that walked from the current climb, then Put on the wall. Where the
+   * climb is Up next on the held track, the track keeps steering and learns
+   * where the list picks up, as Next stepping into Up next does; where it is
+   * the walk's own peek of a list climb (`walkedPeek`, #7113 QA), the list goes
+   * on from it, as Next stepping onto it does; otherwise it is cleared, like
+   * `playlistSuggestionSource: null`. Passed instead of
+   * `playlistSuggestionSource`.
    */
-  keepTrackIfUpNext?: boolean;
+  keepWalkedTrack?: boolean;
+  /**
+   * With `keepWalkedTrack`: the climb is the walk's own `playlist-peek:` item,
+   * minted fresh to go up. Only that keeps the list for a list climb that is
+   * not queued; any other fresh item (a crew browse open of a peer's tick, a
+   * deep link) never borrows the track (#5403).
+   */
+  walkedPeek?: boolean;
+  /**
+   * With `playlistSuggestionSource`: a step along a list, which leaves the
+   * queue as Next does (issue #7227). Passed by a preview's step that lights
+   * and by Put on board from a preview with a list, which can now land on an
+   * Up next climb, or on the list after walking one. Without it, a solo commit
+   * with a list drops the `suggested` climbs after the new current climb, which
+   * ends an earlier pass of a list but would also drop a workout's queued
+   * climbs. The queue stays for a look off the climb on the wall (its list's
+   * `lookOffWall`), when the climb is already in the queue, or when the source
+   * holds a `resume` or a `detour` (the walk went through Up next). A climb
+   * not yet queued along a list opened another way (a list tap, its peeks)
+   * still prunes as before. Ignored in now-slot mode and in a session, where
+   * nothing is pruned.
+   */
+  keepQueue?: boolean;
   trigger?: SetCurrentClimbTrigger;
   /**
    * F3 now-slot mode: how the climb goes on the wall. Absent is `NOW`, the
@@ -215,6 +272,13 @@ export type SetCurrentClimbOptions = {
    * the climbs after it are Up next again, in order. Ignored in legacy mode.
    */
   placement?: CurrentClimbPlacement;
+  /**
+   * F3 now-slot mode: a climb only History holds. `reuse` (the default, a
+   * pick) moves that History entry into Now; `fresh` puts up a new copy and
+   * leaves History as it was, the way `nextClimb` places a list step
+   * (docs/current-climb-outside-queue.md). Ignored in legacy mode.
+   */
+  historyCopy?: HistoryCopyRule;
 };
 
 /**
@@ -228,7 +292,14 @@ export type ClimbAuthoredPatch = Pick<Climb, 'name' | 'frames'> &
   Partial<
     Pick<
       Climb,
-      'description' | 'is_draft' | 'published_at' | 'is_no_match' | 'characteristics' | 'framesCount' | 'framesPace'
+      | 'description'
+      | 'is_draft'
+      | 'published_at'
+      | 'is_no_match'
+      | 'characteristics'
+      | 'framesCount'
+      | 'framesPace'
+      | 'localWritePending'
     >
   >;
 
@@ -367,6 +438,8 @@ export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchPara
    * `findIndex + 1`, or 0 with nothing current.
    */
   historyCount?: number | null;
+  /** Server-bound participant who last changed the current queue item, never its queue author. */
+  currentChangedBy?: string | null;
   /**
    * Now-slot mode: the `queue-now-slot` flag is on and, in a session, the
    * connected backend serves the F3 fields. Opens go through `placeOnWall`
@@ -397,7 +470,13 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
   | { type: 'SET_CLIMB_SEARCH_PARAMS'; payload: TSearchParams }
   | {
       type: 'UPDATE_QUEUE';
-      payload: { queue: ClimbQueue; currentClimbQueueItem?: ClimbQueueItem | null; historyCount?: number | null };
+      payload: {
+        queue: ClimbQueue;
+        currentClimbQueueItem?: ClimbQueueItem | null;
+        historyCount?: number | null;
+        /** Explicit null clears session attribution when credentials change but the climb stays. */
+        currentChangedBy?: string | null;
+      };
     }
   | {
       type: 'INITIAL_QUEUE_DATA';
@@ -425,6 +504,7 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
          * the #4979 hold's clock from it (docs/current-climb-outside-queue.md, section 6).
          */
         currentChangedAt?: string | null;
+        currentChangedBy?: string | null;
       };
     }
   /** Turn now-slot mode on or off (section 7). Legacy mode stores `historyCount: null`. */
@@ -444,6 +524,7 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
         shouldAddToQueue?: boolean;
         insertAfterCurrent?: boolean;
         isServerEvent?: boolean;
+        currentChangedBy?: string | null;
         eventClientId?: string;
         myClientId?: string;
         correlationId?: string;

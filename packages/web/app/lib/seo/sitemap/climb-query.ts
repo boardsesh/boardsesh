@@ -121,8 +121,8 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
                 ? sql`(${boardClimbs.requiredSetIds} IS NULL OR ${boardClimbs.requiredSetIds} <@ ${setIdArray(group.setIds)})`
                 : sql`${boardClimbs.requiredSetIds} <@ ${setIdArray(group.setIds)}`,
             ]),
-        // A *genuine* alias uuid keeps its own URL and self-canonicalises there,
-        // so submitting both forms is duplicate content by construction.
+        // A genuine alias redirects to its resolved climb's canonical UUID.
+        // Submit only the canonical destination, never the redirecting URL.
         //
         // `alias_uuid <> canonical_uuid` is load-bearing, not defensive.
         // `board_climb_aliases` is mostly SELF-aliases: every synced Kilter climb

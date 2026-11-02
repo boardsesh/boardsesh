@@ -134,7 +134,9 @@ const NEVER_BROADCAST = new Set(['userAscents', 'userAttempts']);
  * listed here it fails as "read but never written", so the entry has to be
  * removed in the same change that adds the field to the documents.
  */
-const SERVER_READY_NOT_YET_ON_CLIENTS = new Set(['revisionNumber']);
+// requiredSetIds (#5428) follows the same two-phase rollout: deploy every
+// server replica before any client selects or emits the new field.
+const SERVER_READY_NOT_YET_ON_CLIENTS = new Set(['revisionNumber', 'requiredSetIds']);
 
 const expectedReadPathFields = new Set(
   [...climbInputFields].filter((field) => !NEVER_BROADCAST.has(field) && !SERVER_READY_NOT_YET_ON_CLIENTS.has(field)),
@@ -198,6 +200,7 @@ describe('queue climb field parity: GraphQL ClimbInput <-> backend Zod schema', 
       boardseshDifficulty: 19.2,
       boardseshConfidence: 'confirmed',
       compatibleSizeIds: [10, 17],
+      requiredSetIds: [1, 20],
       missingHoldCount: 2,
       revisionNumber: 3,
     };

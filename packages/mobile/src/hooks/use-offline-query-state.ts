@@ -1,6 +1,13 @@
+import {
+  isNetworkError,
+  isServerFailureSignal,
+  isServerUnavailableError,
+} from '@boardsesh/offline-sync/error-classification';
 import type { ConnectivityReason } from '../lib/connectivity/connectivity-store';
 import { useConnectivity } from '../lib/connectivity/use-connectivity';
 import { assertNever } from '../lib/assert-never';
+import { isBackendUnavailableError } from '../lib/connectivity/backend-unavailable-error';
+import { isGraphqlRequestTimeoutError } from '../lib/graphql/request-timeout';
 
 /**
  * The subset of a React Query result this module reads. Kept structural (rather
@@ -12,6 +19,12 @@ export type OfflineQueryInput = {
   status: 'pending' | 'error' | 'success';
   fetchStatus: 'fetching' | 'paused' | 'idle';
   data?: unknown;
+  /**
+   * The query's last error, when it has one. Pass it to let a timeout or a 5xx
+   * blame our server; without it every failure on a reachable network reads as
+   * the generic `'error'`.
+   */
+  error?: unknown;
 };
 
 /**
@@ -74,6 +87,25 @@ export function offlineReasonFor(reason: ConnectivityReason | null): OfflineQuer
 }
 
 /**
+ * A failure that says our server is the problem rather than this one request:
+ * the request never got an answer (a timeout, a dropped connection, DNS) or the
+ * server answered that it broke (a 5xx, a masked INTERNAL_SERVER_ERROR, an edge
+ * 404/502/503/504). The connectivity store needs a few of these and a failed
+ * health probe before it declares an outage, so until then the query's own error
+ * is the only thing that knows (issue #6937).
+ */
+function isServerSideFailure(error: unknown): boolean {
+  // Our own deadline counts; any other abort does not, because a cancelled
+  // request says nothing about the server. `isNetworkError` lets a returned
+  // status outrank English transport prose, so a 400 never reads as an outage.
+  if (isGraphqlRequestTimeoutError(error)) return true;
+  // Thrown before sending while the store said offline; its reason says whose fault.
+  if (isBackendUnavailableError(error)) return error.reason === 'backend_unreachable';
+  const isCancellation = error instanceof Error && error.name === 'AbortError';
+  return (!isCancellation && isNetworkError(error)) || isServerFailureSignal(error) || isServerUnavailableError(error);
+}
+
+/**
  * Why this exists: `query-provider.tsx` sets `networkMode: 'offlineFirst'`, so a
  * network-only query with no signal fires once, fails, and then **pauses**. Its
  * `status` stays `'pending'` forever, which every screen in the app reads as
@@ -112,7 +144,11 @@ export function deriveOfflineQueryState(
     return { isOffline: effectiveOffline, isBlocked: true, reason: offlineReasonFor(connectivityReason) };
   }
 
-  return { isOffline: effectiveOffline, isBlocked: true, reason: 'error' };
+  // The server is reachable as far as the store knows, but the request timed out
+  // or came back a 5xx: that is still us being down, not a request the climber
+  // can fix, so it gets the server placard rather than a vague "couldn't load".
+  const serverFailed = queries.some((query) => query.status === 'error' && isServerSideFailure(query.error));
+  return { isOffline: effectiveOffline, isBlocked: true, reason: serverFailed ? 'backend_unreachable' : 'error' };
 }
 
 /**
@@ -120,7 +156,7 @@ export function deriveOfflineQueryState(
  * Pass every query the screen needs before it can render anything meaningful;
  * if any of them has data the screen is not blocked.
  *
- * Deliberately not memoized: the reducer is three array scans over a handful of
+ * Deliberately not memoized: the reducer is a few array scans over a handful of
  * entries, and React Query hands back a fresh result object each render anyway,
  * so a `useMemo` here would need a hand-rolled dependency fingerprint to buy
  * anything at all.

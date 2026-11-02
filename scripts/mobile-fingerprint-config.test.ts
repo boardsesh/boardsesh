@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { createRequire } from 'node:module';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -16,7 +18,9 @@ type HashSource = {
 };
 type ExtraSource = HashSource & { overrideHashKey: string };
 type FingerprintConfig = {
+  preset: string;
   extraSources: ExtraSource[];
+  ignorePaths: string[];
   sourceSkips: string[];
   fileHookTransform(source: HookSource, chunk: HookChunk): HookChunk;
   __test: {
@@ -44,7 +48,15 @@ type FingerprintConfigApi = {
 };
 type FingerprintOptionsApi = {
   DEFAULT_SOURCE_SKIPS: number;
-  normalizeOptionsAsync(projectRoot: string, options?: Record<string, unknown>): Promise<{ sourceSkips: number }>;
+  normalizeOptionsAsync(
+    projectRoot: string,
+    options?: Record<string, unknown>,
+  ): Promise<{
+    sourceSkips: number;
+    nativeModuleSourceType: string;
+    configPluginSourceType: string;
+    ignorePathMatchObjects: Array<{ pattern: string }>;
+  }>;
 };
 type ContentsSource = { type: 'contents'; id: string; contents: string; reasons: string[] };
 type ExpoSourcerApi = {
@@ -82,6 +94,9 @@ const fingerprintHashApi = requireFromMobile(
   resolve(fingerprintPackageRoot, 'build/hash/Hash.js'),
 ) as FingerprintHashApi;
 const patchedPathApi = requireFromMobile(resolve(fingerprintPackageRoot, 'build/utils/Path.js')) as PatchedPathApi;
+const fingerprintPresetsApi = requireFromMobile(resolve(fingerprintPackageRoot, 'build/Presets.js')) as {
+  resolvePreset(preset: string): { sourceSkips: number };
+};
 const fingerprintConfigApi = requireFromMobile(
   resolve(fingerprintPackageRoot, 'build/Config.js'),
 ) as FingerprintConfigApi;
@@ -107,8 +122,11 @@ function writeFixtureFile(projectRoot: string, relativePath: string, contents: s
   writeFileSync(absolutePath, contents);
 }
 
-function createHashOptions(): Record<string, unknown> {
-  const ignorePathMatchObjects = patchedPathApi.buildPathMatchObjects(fingerprintApi.DEFAULT_IGNORE_PATHS);
+function createHashOptions(extraIgnorePaths: string[] = []): Record<string, unknown> {
+  const ignorePathMatchObjects = patchedPathApi.buildPathMatchObjects([
+    ...fingerprintApi.DEFAULT_IGNORE_PATHS,
+    ...extraIgnorePaths,
+  ]);
   return {
     concurrentIoLimit: 4,
     debug: false,
@@ -240,7 +258,7 @@ describe('mobile fingerprint config', () => {
     ).toThrow();
   });
 
-  it('hashes the config itself, the iOS locale strings and the monorepo root patches with stable keys', () => {
+  it('hashes the config itself, the iOS locale strings, the Apple targets and the monorepo root patches with stable keys', () => {
     expect(fingerprintConfig.extraSources).toEqual([
       {
         type: 'file',
@@ -256,11 +274,51 @@ describe('mobile fingerprint config', () => {
       },
       {
         type: 'dir',
+        filePath: 'targets',
+        reasons: ['iosAppleTargets'],
+        overrideHashKey: 'iosAppleTargets',
+      },
+      {
+        type: 'dir',
         filePath: '../../patches',
         reasons: ['rootPatchedDependencies'],
         overrideHashKey: 'rootPatchedDependencies',
       },
     ]);
+  });
+
+  it('adds editor and patch leftovers to the default ignores instead of replacing them', async () => {
+    expect(fingerprintConfig.ignorePaths).toEqual(['**/*.swp', '**/*.swo', '**/*~', '**/*.orig', '**/*.rej']);
+
+    // The real loader: if the config replaced the defaults, .DS_Store and the
+    // Pods/build dirs would start hashing and every local resolve would drift.
+    const normalizedOptions = await fingerprintOptionsApi.normalizeOptionsAsync(MOBILE_ROOT, { silent: true });
+    const patterns = normalizedOptions.ignorePathMatchObjects.map((matchObject) => matchObject.pattern);
+    for (const pattern of [...fingerprintApi.DEFAULT_IGNORE_PATHS, ...fingerprintConfig.ignorePaths]) {
+      expect(patterns).toContain(pattern);
+    }
+  });
+
+  it('keeps a widget dir hash still for editor leftovers and moves it for a Swift edit', async () => {
+    const projectRoot = createTemporaryRoot();
+    writeFixtureFile(projectRoot, 'targets/Widget/Live.swift', 'struct Live {}\n');
+    const hashTargets = async () =>
+      (
+        await fingerprintHashApi.createFingerprintFromSourcesAsync(
+          [{ type: 'dir', filePath: 'targets', reasons: ['iosAppleTargets'], overrideHashKey: 'iosAppleTargets' }],
+          projectRoot,
+          createHashOptions(fingerprintConfig.ignorePaths),
+        )
+      ).hash;
+
+    const baseline = await hashTargets();
+    for (const leftover of ['.Live.swift.swp', '.Live.swift.swo', 'Live.swift~', 'Live.swift.orig', 'Live.swift.rej']) {
+      writeFixtureFile(projectRoot, `targets/Widget/${leftover}`, 'not source\n');
+    }
+    expect(await hashTargets()).toBe(baseline);
+
+    writeFixtureFile(projectRoot, 'targets/Widget/Live.swift', 'struct Live { let edited = true }\n');
+    expect(await hashTargets()).not.toBe(baseline);
   });
 });
 
@@ -319,7 +377,8 @@ describe('mobile fingerprint source skips', () => {
 
   it('resolves to bitmask 513 through the real config loader and option merge', async () => {
     expect(fingerprintConfigApi.normalizeSourceSkips(fingerprintConfig.sourceSkips)).toBe(513);
-    expect(fingerprintOptionsApi.DEFAULT_SOURCE_SKIPS).toBe(512);
+    expect(fingerprintConfig.preset).toBe('strict');
+    expect(fingerprintPresetsApi.resolvePreset('strict').sourceSkips).toBe(512);
 
     const loadedConfig = await fingerprintConfigApi.loadConfigAsync(MOBILE_ROOT, true);
     expect(loadedConfig?.sourceSkips).toBe(513);
@@ -329,7 +388,9 @@ describe('mobile fingerprint source skips', () => {
     // package.json-scripts skip survived being replaced.
     const normalizedOptions = await fingerprintOptionsApi.normalizeOptionsAsync(MOBILE_ROOT, { silent: true });
     expect(normalizedOptions.sourceSkips).toBe(513);
-    expect(normalizedOptions.sourceSkips & fingerprintOptionsApi.DEFAULT_SOURCE_SKIPS).toBe(512);
+    expect(normalizedOptions.sourceSkips & fingerprintPresetsApi.resolvePreset('strict').sourceSkips).toBe(512);
+    expect(normalizedOptions.nativeModuleSourceType).toBe('files');
+    expect(normalizedOptions.configPluginSourceType).toBe('files');
   });
 
   it('keeps the hash still for a version or build-number bump and moves it for a real native input', async () => {
@@ -342,9 +403,9 @@ describe('mobile fingerprint source skips', () => {
       baseline,
     );
 
-    // Control: under @expo/fingerprint's default the same version bump DOES move
-    // the hash, so the equality above is the skip working, not a blind fixture.
-    const defaultSkips = fingerprintOptionsApi.DEFAULT_SOURCE_SKIPS;
+    // Control: the strict preset without our explicit version skip hashes version
+    // changes. SDK 58's new balanced default already skips versions.
+    const defaultSkips = fingerprintPresetsApi.resolvePreset('strict').sourceSkips;
     expect(await expoConfigFingerprint(defaultSkips, { version: '2.6.1' })).not.toBe(
       await expoConfigFingerprint(defaultSkips, {}),
     );
@@ -476,11 +537,11 @@ describe('@expo/fingerprint resolver parity', () => {
     const requireFromExpo = createRequire(expoPackageJsonPath);
     const expoFingerprintPath = requireFromExpo.resolve('@expo/fingerprint/package.json');
 
-    expect(mobilePackage.devDependencies?.['@expo/fingerprint']).toBe('0.20.13');
-    expect(workspaceManifest.patchedDependencies?.['@expo/fingerprint@0.20.13']).toBe(
-      'patches/@expo__fingerprint@0.20.13.patch',
+    expect(mobilePackage.devDependencies?.['@expo/fingerprint']).toBe('0.21.6');
+    expect(workspaceManifest.patchedDependencies?.['@expo/fingerprint@0.21.6']).toBe(
+      'patches/@expo__fingerprint@0.21.6.patch',
     );
-    expect(installedPackage.version).toBe('0.20.13');
+    expect(installedPackage.version).toBe('0.21.6');
     expect(realpathSync(expoFingerprintPath)).toBe(realpathSync(fingerprintPackageJsonPath));
     expect(readFileSync(resolve(dirname(expoPackageJsonPath), 'fingerprint.js'), 'utf8').trim()).toBe(
       "module.exports = require('@expo/fingerprint');",

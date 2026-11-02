@@ -158,8 +158,12 @@ const ClimberLogsBlocked = memo(function ClimberLogsBlocked({
     <View style={styles.empty}>
       <Text variant="headline">{title}</Text>
       <Text variant="subheadline" color={systemColors.secondaryLabel}>
-        {/* A request that reached a working server and failed is not a signal problem. */}
-        {reason === 'error' ? tCommon('mobile.offlineState.errorBody') : t('mobile.climberLogs.offlineBody')}
+        {/* A failed request or our server being down is not a signal problem. */}
+        {reason === 'error'
+          ? tCommon('mobile.offlineState.errorBody')
+          : reason === 'backend_unreachable'
+            ? tCommon('mobile.offlineState.serverBody')
+            : t('mobile.climberLogs.offlineBody')}
       </Text>
       <View style={styles.cta}>
         <Button title={tCommon('mobile.offlineState.retry')} variant="tonal" size="small" onPress={onRetry} />

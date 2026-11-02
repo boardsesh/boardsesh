@@ -26,7 +26,8 @@
     "feedback": "Rapports de bugs",
     "gymDuplicates": "Salles en double",
     "locationSync": "Gels de synchronisation des lieux",
-    "sprayWalls": "Données d'entraînement des Spraywalls"
+    "sprayWalls": "Données d'entraînement des Spraywalls",
+    "boards": "Boards enregistrées"
   },
   "feedback": {
     "title": "Bugs et retours",
@@ -511,5 +512,34 @@
     },
     "backToAdmin": "Retour à l'admin",
     "noAccess": "Vos droits d'administration ne couvrent pas les Spraywalls. Cette page demande un accès admin Spraywall ou sur tout le site."
+  },
+  "boards": {
+    "title": "Boards enregistrées",
+    "description": "Recherchez et modifiez les boards enregistrées, y compris les boards privées et celles sans salle associée.",
+    "backToAdmin": "Retour à l’administration",
+    "search": "Rechercher des boards",
+    "searchPlaceholder": "Nom de la board, UUID, slug ou salle",
+    "boardType": "Type de board",
+    "allTypes": "Tous les types",
+    "searchAction": "Rechercher",
+    "loading": "Chargement des boards",
+    "editLoadError": "Impossible de charger cette board pour la modifier.",
+    "retry": "Réessayer",
+    "backToList": "Toutes les boards",
+    "loadError": "Impossible de charger les boards enregistrées.",
+    "empty": "Aucune board ne correspond à cette recherche.",
+    "owner": "Propriétaire : {{name}}",
+    "systemOwner": "Boardsesh",
+    "noGym": "Aucune salle associée",
+    "editNamed": "Modifier {{name}}",
+    "results_one": "{{count}} board",
+    "results_other": "{{count}} boards",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "visibility": {
+      "public": "Publique",
+      "unlisted": "Non répertoriée",
+      "private": "Privée"
+    }
   }
 }

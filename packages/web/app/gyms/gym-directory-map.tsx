@@ -88,6 +88,8 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
             // OSM's tile policy is not optional on a public page.
             attributionControl: true,
             scrollWheelZoom: false,
+            // Leaflet's CSS zoom timer can outlive remove() during navigation.
+            zoomAnimation: false,
             minZoom: 1,
             maxZoom: 19,
             maxBounds: [

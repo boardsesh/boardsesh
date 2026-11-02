@@ -16,7 +16,11 @@ import { cloneElement, createElement, type ReactElement, type ReactNode } from '
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const settings = vi.hoisted(() => ({ platform: { OS: 'ios', Version: 26, isPad: false }, reduceMotion: false }));
+const settings = vi.hoisted(() => ({
+  platform: { OS: 'ios', Version: 26, isPad: false },
+  reduceMotion: false,
+  screenReader: false,
+}));
 vi.mock('react-native', () => ({
   Platform: settings.platform,
   StyleSheet: { flatten: (style: unknown) => style },
@@ -35,6 +39,9 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({ opacity: { subtle: 0.7 } }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => settings.reduceMotion }));
+vi.mock('../../../hooks/use-screen-reader-enabled', () => ({
+  useScreenReaderEnabled: () => settings.screenReader,
+}));
 vi.mock('expo-router', () => {
   const Link = Object.assign(
     ({
@@ -64,6 +71,7 @@ beforeEach(() => {
   settings.platform.Version = 26;
   settings.platform.isPad = false;
   settings.reduceMotion = false;
+  settings.screenReader = false;
 });
 
 function renderLink(zoomSourceRetained = true) {
@@ -71,6 +79,7 @@ function renderLink(zoomSourceRetained = true) {
   const onPrepare = vi.fn(() => true);
   render(
     <AccessoryPlayLink
+      testID="mini-player-current-pinned-climb"
       zoomSourceRetained={zoomSourceRetained}
       accessibilityLabel="My project"
       onOpen={onOpen}
@@ -83,6 +92,13 @@ function renderLink(zoomSourceRetained = true) {
 }
 
 describe('accessory player navigation', () => {
+  it.each([true, false])('keeps the current-climb selector on the actionable host (retained=%s)', (retained) => {
+    const callbacks = renderLink(retained);
+    const action = screen.getByTestId('mini-player-current-pinned-climb');
+    expect(action).toBe(screen.getByRole('button', { name: 'My project' }));
+    fireEvent.click(action);
+    expect(retained ? callbacks.onPrepare : callbacks.onOpen).toHaveBeenCalledOnce();
+  });
   it('uses the opener for floating hosts that unmount under the player', () => {
     const callbacks = renderLink(false);
     fireEvent.click(screen.getByRole('button', { name: 'My project' }));
@@ -107,11 +123,37 @@ describe('accessory player navigation', () => {
     expect(screen.getByTestId('native-zoom-source')).toBeDefined();
   });
 
-  it.each(['android', 'web', 'ipad', 'older-ios', 'reduce-motion'])('uses the existing opener for %s', (mode) => {
+  it('zooms from the accessory on iPad too, like the MiniPlayer in Music', () => {
+    settings.platform.isPad = true;
+    const callbacks = renderLink();
+    fireEvent.click(screen.getByRole('button', { name: 'My project' }));
+    expect(callbacks.onPrepare).toHaveBeenCalledOnce();
+    expect(callbacks.onOpen).not.toHaveBeenCalled();
+    expect(screen.getByTestId('native-zoom-source')).toBeDefined();
+  });
+
+  it.each(['android', 'web', 'older-ios', 'reduce-motion'])('uses the existing opener for %s', (mode) => {
     if (mode === 'android' || mode === 'web') settings.platform.OS = mode;
-    if (mode === 'ipad') settings.platform.isPad = true;
     if (mode === 'older-ios') settings.platform.Version = 17;
     if (mode === 'reduce-motion') settings.reduceMotion = true;
+    const callbacks = renderLink();
+    fireEvent.click(screen.getByRole('button', { name: 'My project' }));
+    expect(callbacks.onOpen).toHaveBeenCalledOnce();
+    expect(callbacks.onPrepare).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('native-zoom-source')).toBeNull();
+  });
+});
+
+// UIKit's zoom leaves the presented player, and the zoom source in the tab
+// accessory, out of the accessibility tree (#7082). A screen reader gets the
+// same open as a climb row, which keeps both in the tree.
+describe('accessory player navigation with a screen reader', () => {
+  it.each([
+    ['iPhone', false],
+    ['iPad', true],
+  ])('opens the player without the zoom on %s', (_device, isPad) => {
+    settings.platform.isPad = isPad;
+    settings.screenReader = true;
     const callbacks = renderLink();
     fireEvent.click(screen.getByRole('button', { name: 'My project' }));
     expect(callbacks.onOpen).toHaveBeenCalledOnce();

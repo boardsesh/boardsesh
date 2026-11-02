@@ -145,8 +145,7 @@ class StoreReviewSubmissionTest < Minitest::Test
           metadata["promotionalText"] = { "text" => "#{target} #{app_locale}", "sha256" => Digest::SHA256.hexdigest("#{target} #{app_locale}") }
         end
         { "id" => "#{target}-#{locale}", "locale" => locale, "metadata" => metadata,
-          "screenshotSets" => BoardseshStoreReview::DEFAULT_COUNTS.map do |display, count|
-            count = 9 if target != "default"
+          "screenshotSets" => (target == "default" ? BoardseshStoreReview::DEFAULT_COUNTS : BoardseshStoreReview::CPP_COUNTS).map do |display, count|
             width, height = BoardseshCPP::Runner::DISPLAY_DIMENSIONS.fetch(display).first
             { "id" => "#{target}-#{locale}-#{display}", "displayType" => display, "count" => count,
               "screenshots" => (1..count).map do |position|
@@ -176,7 +175,8 @@ class StoreReviewSubmissionTest < Minitest::Test
     @report["customProductPages"] = []
     result = plan
     images = result.fetch("snapshot").fetch("surfaces").first.fetch("localizations").flat_map { |locale| locale.fetch("screenshotSets").flat_map { |set| set.fetch("screenshots") } }
-    assert_equal 150, images.length
+    # Five locales x (9 + 9 + 6 + 6 + 8 iPhone Duo) screenshots.
+    assert_equal 190, images.length
     assert_empty @client.writes
     assert_equal (1..6).to_a, result.dig("snapshot", "surfaces", 0, "localizations", 0, "screenshotSets", 0, "screenshots").map { |image| image.fetch("position") }
   end
@@ -295,6 +295,23 @@ class StoreReviewSubmissionTest < Minitest::Test
     digest = plan.fetch("snapshotSha256")
     @report.dig("localizations", 0, "metadata", "whatsNew")["text"] = "Old notes"
     assert_raises(BoardseshStoreReview::Error) { submit(digest) }
+    assert_empty @client.writes
+  end
+
+  def test_default_can_add_italian_without_expanding_cpp_campaigns
+    FileUtils.mkdir_p(File.join(@directory, "android", "it-IT"))
+    FileUtils.mkdir_p(File.join(@directory, "it"))
+    BoardseshStoreReview::METADATA_FILES.each { |field, filename| File.write(File.join(@directory, "it", filename), "it: #{field}\n") }
+    italian = Marshal.load(Marshal.dump(@report.fetch("localizations").first))
+    italian["locale"] = "it"
+    italian["id"] = "default-it"
+    italian["metadata"] = BoardseshStoreReview::METADATA_FILES.to_h { |field, _filename| [field, { "text" => "it: #{field}", "sha256" => Digest::SHA256.hexdigest("it: #{field}") }] }
+    @report.fetch("localizations") << italian
+    result = runner(["default", "kilter"]).run(action: "plan")
+    assert_equal 6, result.fetch("snapshot").fetch("surfaces").find { |surface| surface.fetch("target") == "default" }.fetch("localizations").length
+    assert_equal 5, result.fetch("snapshot").fetch("surfaces").find { |surface| surface.fetch("target") == "kilter" }.fetch("localizations").length
+    @report.fetch("localizations").pop
+    assert_raises(BoardseshStoreReview::Error) { runner.run(action: "plan") }
     assert_empty @client.writes
   end
 

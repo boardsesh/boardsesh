@@ -604,6 +604,8 @@ export type SyncOptions = {
   requireOwnedDatabase?: boolean;
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
+  /** Verified account-scoped capability for this exact spray-wall scope. */
+  getSprayWallUuid?: (scope: OfflineBoardScope) => string | undefined | Promise<string | undefined>;
   /** User-started scopes go first in both bootstrap and board pulls. */
   getPriorityBoards?: () => readonly string[];
   /** Per-page side-effect sink for board reference data. See DocumentsPulledSink. */
@@ -696,7 +698,7 @@ export type HoldIndexSyncOptions = {
 };
 
 /** A per-board download target: the parsed scope plus its encoded key. */
-type BoardScope = OfflineBoardScope & { scopeKey: string };
+type BoardScope = OfflineBoardScope & { scopeKey: string; sprayWallUuid?: string };
 
 const PAGE_LIMIT = 500;
 
@@ -706,8 +708,12 @@ function buildSyncQuery(queryName: string, isPerBoard: boolean, supplemental = f
   // Per-board pulls carry the board type plus optional layout/size scope so a
   // downloaded board is a fixed (boardType, layout, size) superset — all sets.
   // layoutId/sizeId are nullable server-side, so passing them undefined is a no-op.
-  const boardScopeParam = isPerBoard ? '$boardType: String!, $layoutId: Int, $sizeId: Int, ' : '';
-  const boardScopeArg = isPerBoard ? 'boardType: $boardType, layoutId: $layoutId, sizeId: $sizeId, ' : '';
+  const boardScopeParam = isPerBoard
+    ? '$boardType: String!, $layoutId: Int, $sizeId: Int, $sprayWallUuid: String, '
+    : '';
+  const boardScopeArg = isPerBoard
+    ? 'boardType: $boardType, layoutId: $layoutId, sizeId: $sizeId, sprayWallUuid: $sprayWallUuid, '
+    : '';
   const supplementParams = supplemental ? '$audience: SyncAudience!, $snapshotClimbWatermark: SyncCursorInput!, ' : '';
   const supplementArgs = supplemental ? 'audience: $audience, snapshotClimbWatermark: $snapshotClimbWatermark, ' : '';
   const operationName = `${queryName[0].toUpperCase()}${queryName.slice(1)}${supplemental ? 'SnapshotSupplement' : ''}`;
@@ -760,8 +766,8 @@ export type SyncPullDocument = { operationName: string; document: string };
  */
 class SprayWallRetirementInterruptedError extends Error {}
 
-const CONFIRM_SPRAY_WALL_VISIBILITY_QUERY = `query ConfirmSprayWallVisibility($layoutId: Int!) {
-  sprayWallByLayout(layoutId: $layoutId) { uuid }
+const CONFIRM_SPRAY_WALL_VISIBILITY_QUERY = `query ConfirmSprayWallVisibility($layoutId: Int!, $sprayWallUuid: String) {
+  sprayWallByLayout(layoutId: $layoutId, sprayWallUuid: $sprayWallUuid) { uuid }
 }`;
 
 export function listSyncPullDocuments(): SyncPullDocument[] {
@@ -1007,6 +1013,7 @@ async function syncTable(
         variables.boardType = boardScope.boardType;
         variables.layoutId = boardScope.layoutId;
         variables.sizeId = boardScope.sizeId;
+        if (boardScope.sprayWallUuid) variables.sprayWallUuid = boardScope.sprayWallUuid;
       }
       if (supplement) {
         variables.audience = 'SNAPSHOT_SUPPLEMENTAL';
@@ -3605,6 +3612,7 @@ async function performPullSync(
       if (!row || cycleAborted() || scopePurged(scope)) return false;
       const response = await graphqlFetch<{ sprayWallByLayout?: unknown }>(CONFIRM_SPRAY_WALL_VISIBILITY_QUERY, {
         layoutId: scope.layoutId,
+        ...(scope.sprayWallUuid ? { sprayWallUuid: scope.sprayWallUuid } : {}),
       });
       if (cycleAborted() || scopePurged(scope)) return false;
       if (response?.sprayWallByLayout === null) {
@@ -3638,7 +3646,10 @@ async function performPullSync(
     const boardScopes: BoardScope[] = [];
     for (const scopeKey of enabledBoards) {
       const scope = parseOfflineBoardKey(scopeKey);
-      if (scope) boardScopes.push({ ...scope, scopeKey });
+      if (scope) {
+        const sprayWallUuid = scope.boardType === 'spray' ? await options?.getSprayWallUuid?.(scope) : undefined;
+        boardScopes.push({ ...scope, scopeKey, ...(sprayWallUuid ? { sprayWallUuid } : {}) });
+      }
     }
 
     const pendingDownloads = new Set<string>();
@@ -4210,7 +4221,9 @@ async function performPullSync(
         if (state && state.revision >= revision && state.complete) continue;
         if (cycleAborted() || scopePurged(boardScope)) break;
         const shouldContinue = async (): Promise<boolean> =>
-          !cycleAborted() && !scopePurged(boardScope) && (await (options?.isOnUnmeteredNetwork?.() ?? false));
+          !cycleAborted() &&
+          !scopePurged(boardScope) &&
+          (boardScope.boardType === 'spray' || (await (options?.isOnUnmeteredNetwork?.() ?? false)));
         if (!(await shouldContinue())) continue;
         try {
           await syncTable(

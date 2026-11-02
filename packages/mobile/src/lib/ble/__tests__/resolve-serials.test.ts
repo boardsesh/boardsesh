@@ -3,6 +3,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import {
   GET_BOARDS_BY_SERIAL_NUMBERS,
   GET_MY_BOARD_SERIAL_CONFIGS,
+  GET_OBSERVED_BOARD_SERIAL_MATCHES,
   type BoardSerialConfig,
 } from '@boardsesh/graphql/operations';
 
@@ -95,6 +96,69 @@ describe('serialsFromDiscoveredDevices', () => {
 });
 
 describe('resolveBleSerialNumbers', () => {
+  it('correlates three observed families when another account cannot read stored serials', async () => {
+    const observed = [
+      { boardType: 'kilter', observedSerialNumber: '99000001' },
+      { boardType: 'tension', observedSerialNumber: '99000002' },
+      { boardType: 'moonboard', observedSerialNumber: '99000003' },
+    ];
+    const candidates = observed.map(({ boardType, observedSerialNumber }) =>
+      makeBoard(observedSerialNumber, { boardType, serialNumber: null, isPublic: true }),
+    );
+    harness.request.mockResolvedValue({
+      observedBoardSerialMatches: observed.map((observation, index) => ({
+        ...observation,
+        candidates: [candidates[index]],
+      })),
+    });
+    const resolved = await resolveBleSerialNumbers(
+      observed.map(({ observedSerialNumber }) => observedSerialNumber),
+      null,
+      new Map(observed.map(({ observedSerialNumber, boardType }) => [observedSerialNumber, boardType])),
+    );
+    expect(harness.request).toHaveBeenCalledTimes(1);
+    expect(harness.request).toHaveBeenCalledWith(GET_OBSERVED_BOARD_SERIAL_MATCHES, { input: observed });
+    expect([...resolved.keys()]).toEqual(['99000001', '99000002', '99000003']);
+    expect(resolved.get('99000003')).toEqual({
+      kind: 'saved',
+      board: { ...candidates[2], serialNumber: '99000003' },
+    });
+    expect(candidates.every((board) => board.serialNumber === null)).toBe(true);
+  });
+
+  it('rejects unsolicited correlation records and candidates of a different family', async () => {
+    harness.request.mockResolvedValue({
+      observedBoardSerialMatches: [
+        { boardType: 'moonboard', observedSerialNumber: '99000003', candidates: [makeBoard('99000003')] },
+        { boardType: 'kilter', observedSerialNumber: 'UNHEARD', candidates: [makeBoard('UNHEARD')] },
+      ],
+    });
+    const resolved = await resolveBleSerialNumbers(['99000003'], null, new Map([['99000003', 'moonboard']]));
+    expect(resolved.size).toBe(0);
+  });
+
+  it('retains the geometry-only fallback for an observed hidden board', async () => {
+    const projection = makeBoard('99000001', {
+      uuid: '',
+      slug: '',
+      ownerId: '',
+      name: 'kilter',
+      serialNumber: null,
+      isPublic: false,
+    });
+    harness.request.mockResolvedValue({
+      observedBoardSerialMatches: [
+        {
+          boardType: 'kilter',
+          observedSerialNumber: '99000001',
+          candidates: [projection],
+        },
+      ],
+    });
+    const resolved = await resolveBleSerialNumbers(['99000001'], null, new Map([['99000001', 'kilter']]));
+    expect(resolved.get('99000001')).toEqual({ kind: 'saved', board: { ...projection, serialNumber: '99000001' } });
+  });
+
   it('resolves saved boards and lets saved boards win over recorded configs', async () => {
     harness.authToken = 'token-1';
     const savedBoard = makeBoard('SN-1', { name: 'Saved board' });
@@ -154,7 +218,6 @@ describe('resolveBleSerialNumbers', () => {
     expect(harness.request).toHaveBeenCalledTimes(1);
     expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
       serialNumbers: ['SN-1'],
-      boardType: undefined,
     });
   });
 
@@ -212,6 +275,14 @@ describe('resolveBleSerialNumbers — advertised board type', () => {
   function mockLookup(boards: UserBoard[], configs: BoardSerialConfig[] = []) {
     harness.request.mockImplementation((operation: unknown) => {
       if (operation === GET_BOARDS_BY_SERIAL_NUMBERS) return Promise.resolve({ boardsBySerialNumbers: boards });
+      if (operation === GET_OBSERVED_BOARD_SERIAL_MATCHES)
+        return Promise.resolve({
+          observedBoardSerialMatches: boards.map((board) => ({
+            boardType: board.boardType,
+            observedSerialNumber: board.serialNumber,
+            candidates: [board],
+          })),
+        });
       if (operation === GET_MY_BOARD_SERIAL_CONFIGS) return Promise.resolve({ myBoardSerialConfigs: configs });
       return Promise.reject(new Error('Unexpected operation'));
     });
@@ -265,9 +336,8 @@ describe('resolveBleSerialNumbers — advertised board type', () => {
 
     await resolveBleSerialNumbers(['SN-1'], null, advertisedBoardTypesBySerial(tensionDevices));
 
-    expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
-      serialNumbers: ['SN-1'],
-      boardType: 'tension',
+    expect(harness.request).toHaveBeenCalledWith(GET_OBSERVED_BOARD_SERIAL_MATCHES, {
+      input: [{ boardType: 'tension', observedSerialNumber: 'SN-1' }],
     });
   });
 
@@ -286,9 +356,11 @@ describe('resolveBleSerialNumbers — advertised board type', () => {
       advertisedBoardTypesBySerial(mixedDevices),
     );
 
-    expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
-      serialNumbers: ['SN-1', 'SN-2'],
-      boardType: undefined,
+    expect(harness.request).toHaveBeenCalledWith(GET_OBSERVED_BOARD_SERIAL_MATCHES, {
+      input: [
+        { boardType: 'tension', observedSerialNumber: 'SN-1' },
+        { boardType: 'kilter', observedSerialNumber: 'SN-2' },
+      ],
     });
     expect(resolvedBoards.has('SN-1')).toBe(false);
     expect(resolvedBoards.get('SN-2')?.kind).toBe('saved');

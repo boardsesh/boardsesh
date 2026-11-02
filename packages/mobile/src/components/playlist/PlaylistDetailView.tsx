@@ -30,7 +30,6 @@ import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
 import type { Climb, QueueAddPlacement } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
-import type { PlaylistActivationOptions } from '../../lib/playlists/use-playlist-activation';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
@@ -38,7 +37,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbProgressProvider, type ClimbProgressTarget } from '../../providers/climb-progress-provider';
 import { ActiveAwareClimbListRow } from '../ActiveAwareClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
-import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
+import { useClimbListThumbnailSize } from '../climb-list-thumbnail-metrics';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { Button } from '../Button';
 import { ButtonSurfaceProvider } from '../Button.surface';
@@ -154,11 +153,10 @@ export type PlaylistDetailViewProps = {
   hasNextPage: boolean;
   fetchNextPage: () => void;
   /**
-   * Activate a tapped climb (wires the queue + opens the play drawer). The
-   * header's Play button calls it with the first row and `deliberate` (see
-   * `PlaylistActivationOptions`).
+   * Select a climb using the current lighting preference. The header's Play
+   * button selects the first row through the same callback.
    */
-  onActivateClimb: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => void;
+  onActivateClimb: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => void;
   /** Already-resolved empty-list copy (callers translate with a static key). */
   emptyMessage: string;
   /** An unavailable climb source keeps the hero while explaining the gap. */
@@ -378,8 +376,9 @@ export function PlaylistDetailView({
   // Play: plays the list from its first row (#6667), in the glass header and
   // Material's app bar alike. Hidden on an empty list, behind the switch-board
   // banner (row taps still open the drawer so it can explain the mismatch) and
-  // in edit mode. A deliberate play, so Light the board when I tap a climb (a
-  // row-tap setting) does not turn it into a preview.
+  // in edit mode. It goes through the row-tap callback, so it follows a row
+  // tap's rule: it lights while this phone drives the wall, and previews
+  // otherwise.
   //
   // The rows and the callback are read through refs: both change identity as
   // pages land, and the glass header re-sets its native options whenever the
@@ -392,7 +391,7 @@ export function PlaylistDetailView({
   // `showPlayAll` already hides the button behind the board banner.
   const handleActivateAll = useCallback(() => {
     const first = playAllClimbsRef.current[0];
-    if (first) onActivateClimbRef.current(first, undefined, { deliberate: true });
+    if (first) onActivateClimbRef.current(first);
   }, []);
 
   const navigation = useNavigation();
@@ -416,6 +415,10 @@ export function PlaylistDetailView({
       headerLargeTitle: false,
       headerTransparent: true,
       headerBlurEffect: 'none',
+      // iOS 26 dims the scroll view under a transparent bar. The hero runs up under
+      // it, so that dim reads as a dark band; the collapsed blur bar below is our
+      // own edge effect once the hero scrolls away.
+      scrollEdgeEffects: { top: 'hidden' },
       title: headerTitle,
       headerTitle: renderNoHeaderTitle,
       // Keyed on the memoised `actions`, `filterAction` and `collapsed`, never on
@@ -492,7 +495,7 @@ export function PlaylistDetailView({
   // Stable per-row activate handler so the memoized `ClimbListRow`s aren't handed
   // a fresh closure each render — every renderItem rebuild (e.g. when the sticky
   // header `collapsed` flips during scroll) would otherwise re-render every row.
-  const { openClimbActions, openAddToPlaylist } = useDrawerHost();
+  const { getClimbActions, openAddToPlaylist } = useDrawerHost();
   const { playNext } = useQueueActions();
   const handleActivate = useCallback((tapped: SchemaClimb) => onActivateClimb(toQueueClimb(tapped)), [onActivateClimb]);
   // A row's right swipe is Play next, the same as in search (#6772).
@@ -571,16 +574,16 @@ export function PlaylistDetailView({
     return targets;
   }, [resolvedRowsByClimbUuid]);
 
-  // Long press → reaction menu, using the row's resolved render board (a playlist can
+  // Long press → climb menu, using the row's resolved render board (a playlist can
   // mix boards, so this isn't always the active board).
   const handleOpenActions = useCallback(
     (tapped: SchemaClimb) => {
       const resolved = resolvedRowsByClimbUuid.get(tapped.uuid);
       if (!resolved || resolved.kind !== 'renderable') return;
       const { boardName, layoutId, sizeId, setIds, angle } = resolved.renderBoard;
-      openClimbActions(tapped, { boardName, layoutId, sizeId, setIds, angle });
+      return getClimbActions(tapped, { boardName, layoutId, sizeId, setIds, angle });
     },
-    [openClimbActions, resolvedRowsByClimbUuid],
+    [getClimbActions, resolvedRowsByClimbUuid],
   );
   const handleOpenPlaylist = useCallback(
     (climb: SchemaClimb, anchorPoint?: WindowAnchorPoint) => {
@@ -671,6 +674,12 @@ export function PlaylistDetailView({
     ) : null;
 
   const baseColor = normalizePlaylistColor(hero.color) ?? PLAYLIST_COLORS[0];
+  const islandFillStyle = useMemo(
+    () => ({
+      experimental_backgroundImage: `linear-gradient(to bottom, ${baseColor} ${insets.top}px, transparent ${insets.top}px)`,
+    }),
+    [baseColor, insets.top],
+  );
 
   // Shared list state visuals. The first-page load renders skeleton rows (a far
   // better "shape of what's coming" cue than a bare spinner). Empty + footer are
@@ -823,39 +832,48 @@ export function PlaylistDetailView({
         </ReadableColumn>
 
         {/* Collapsing M3 top app bar — sits over the hero band; its title fades in
-            as the band scrolls under it, then the band's name is hidden behind. */}
-        <Appbar.Header
-          statusBarHeight={insets.top}
-          mode="small"
-          style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
+            as the band scrolls under it, then the band's name is hidden behind.
+            The wrapper is the absolute layer: Paper sends `style` to the inner bar,
+            not to its in-flow root View, which would land below the list. */}
+        <View
+          style={[
+            styles.materialAppbarContainer,
+            { paddingTop: insets.top, backgroundColor: systemColors.secondaryBackground },
+          ]}
         >
-          <Appbar.BackAction
-            onPress={() => router.back()}
-            color={systemColors.label as string}
-            rippleColor={withAlpha(accent, 0.16)}
-            accessibilityLabel={tCommon('ariaLabels.back')}
-          />
-          <Animated.View style={[styles.materialAppbarTitle, headerBarStyle]}>
-            <Appbar.Content title={hero.name} titleStyle={styles.materialAppbarTitleText} />
-          </Animated.View>
-          {/* The ≡ filter button, then the owner / follow / pin controls. The app bar
+          <Appbar.Header
+            statusBarHeight={0}
+            mode="small"
+            style={{ height: NAV_BAR_HEIGHT, backgroundColor: systemColors.secondaryBackground }}
+          >
+            <Appbar.BackAction
+              onPress={() => router.back()}
+              color={systemColors.label as string}
+              rippleColor={withAlpha(accent, 0.16)}
+              accessibilityLabel={tCommon('ariaLabels.back')}
+            />
+            <Animated.View style={[styles.materialAppbarTitle, headerBarStyle]}>
+              <Appbar.Content title={hero.name} titleStyle={styles.materialAppbarTitleText} />
+            </Animated.View>
+            {/* The ≡ filter button, then the owner / follow / pin controls. The app bar
               is always present on Material, so we ask for the compact icon form
               (`actions(true)`) — `GlassIconButton` routes to a Paper `IconButton`
               here, fitting the bar. */}
-          {filterAction && !editMode ? (
-            <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
-          ) : null}
-          {actions?.(true)}
-          {showPlayAll ? (
-            <Appbar.Action
-              icon="play"
-              color={accent as string}
-              rippleColor={withAlpha(accent, 0.16)}
-              onPress={handleActivateAll}
-              accessibilityLabel={t('detail.activateAll')}
-            />
-          ) : null}
-        </Appbar.Header>
+            {filterAction && !editMode ? (
+              <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
+            ) : null}
+            {actions?.(true)}
+            {showPlayAll ? (
+              <Appbar.Action
+                icon="play"
+                color={accent as string}
+                rippleColor={withAlpha(accent, 0.16)}
+                onPress={handleActivateAll}
+                accessibilityLabel={t('detail.activateAll')}
+              />
+            ) : null}
+          </Appbar.Header>
+        </View>
       </View>
     );
   }
@@ -949,11 +967,13 @@ export function PlaylistDetailView({
   );
 
   return (
-    <View style={styles.container}>
-      {/* Paints the status-bar / dynamic-island strip in the playlist colour so it
-          is never the bare screen background — even on the first frame before the
-          list lays its full-bleed hero out behind the island. */}
-      <View pointerEvents="none" style={[styles.islandFill, { height: insets.top, backgroundColor: baseColor }]} />
+    // The background paints the status-bar / dynamic-island strip in the playlist
+    // colour so it is never the bare screen background, even on the first frame
+    // before the list lays its full-bleed hero out behind the island. It is a
+    // background rather than a sibling view so the list stays the first child:
+    // react-native-screens finds the scroll view for `scrollEdgeEffects` by
+    // following first children only.
+    <View style={[styles.container, islandFillStyle]}>
       <ReadableColumn style={styles.container}>
         <ClimbProgressProvider targets={progressTargets} enabled={!editMode}>
           <FlashList
@@ -1119,6 +1139,8 @@ function UnrenderablePlaylistClimbRow({
   // thumbnails off it has no thumbnail-sized frame and its text starts at the
   // gutter, like theirs.
   const hasThumbnail = useClimbRowField('thumbnail');
+  // The cell its neighbours draw (one column here, so 76×96).
+  const thumbnailSize = useClimbListThumbnailSize();
   const subtitle = t('detail.unrenderableClimb.subtitle');
   const accessibilityLabel = `${climb.name}. ${subtitle}`;
 
@@ -1143,6 +1165,7 @@ function UnrenderablePlaylistClimbRow({
             <View
               style={[
                 styles.unrenderableThumbnail,
+                thumbnailSize,
                 { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
               ]}
             >
@@ -1173,7 +1196,10 @@ function UnrenderablePlaylistClimbRow({
       <View
         style={[
           styles.unrenderableSeparator,
-          { marginStart: climbRowSeparatorInset(hasThumbnail), backgroundColor: systemColors.separator },
+          {
+            marginStart: climbRowSeparatorInset(hasThumbnail, undefined, thumbnailSize.width),
+            backgroundColor: systemColors.separator,
+          },
         ]}
       />
     </View>
@@ -1194,12 +1220,6 @@ const createStyles = (textStyles: TypographyScale) =>
     container: {
       flex: 1,
       minHeight: 0,
-    },
-    islandFill: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
     },
     headerBar: {
       position: 'absolute',
@@ -1274,13 +1294,12 @@ const createStyles = (textStyles: TypographyScale) =>
       opacity: 0.7,
     },
     // ── Material hero ──────────────────────────────────────────────────────────
-    materialAppbar: {
+    materialAppbarContainer: {
       position: 'absolute',
       top: 0,
       left: 0,
       right: 0,
       zIndex: 2,
-      elevation: 0,
     },
     // Wraps Appbar.Content so the title can fade in (opacity-animated) as the hero
     // band scrolls under the bar, without animating the back / play actions.
@@ -1397,9 +1416,8 @@ const createStyles = (textStyles: TypographyScale) =>
       alignItems: 'center',
       gap: spacing[3],
     },
+    // Sized at the call site from `useClimbListThumbnailSize`.
     unrenderableThumbnail: {
-      width: THUMBNAIL_WIDTH,
-      height: THUMBNAIL_HEIGHT,
       borderRadius: borderRadius.md,
       borderWidth: StyleSheet.hairlineWidth,
       alignItems: 'center',

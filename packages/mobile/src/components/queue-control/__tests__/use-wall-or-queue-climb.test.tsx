@@ -22,51 +22,42 @@ vi.mock('@boardsesh/board-presence-react', () => ({
   useBoardPresenceWallClimb: () => cfg.wallClimb,
 }));
 
-import { useWallClimbIfDistinct } from '../use-wall-or-queue-climb';
+import { useLiveWallClimb } from '../use-wall-or-queue-climb';
 
-describe('useWallClimbIfDistinct', () => {
+describe('useLiveWallClimb', () => {
   beforeEach(() => {
     cfg.enabled = true;
     cfg.boardId = 1;
     cfg.wallClimb = { climbUuid: 'wall-1', name: 'Wax On', difficulty: 15 };
   });
 
-  it('returns the wall climb when live and it differs from the queue head', () => {
-    const { result } = renderHook(() => useWallClimbIfDistinct('queue-head'));
+  it('returns the wall climb while the feed is live, whatever the queue holds', () => {
+    const { result } = renderHook(() => useLiveWallClimb());
     expect(result.current).toEqual(cfg.wallClimb);
-  });
-
-  it('returns the wall climb when the local queue is empty (null head — solo/fresh session)', () => {
-    const { result } = renderHook(() => useWallClimbIfDistinct(null));
-    expect(result.current).toEqual(cfg.wallClimb);
-  });
-
-  it('returns null when the wall climb IS the queue head (solo case)', () => {
-    const { result } = renderHook(() => useWallClimbIfDistinct('wall-1'));
-    expect(result.current).toBeNull();
   });
 
   it('returns null when the feature is disabled', () => {
     cfg.enabled = false;
-    const { result } = renderHook(() => useWallClimbIfDistinct('queue-head'));
+    const { result } = renderHook(() => useLiveWallClimb());
     expect(result.current).toBeNull();
   });
 
   it('returns null when no board is bound', () => {
     cfg.boardId = null;
-    const { result } = renderHook(() => useWallClimbIfDistinct('queue-head'));
+    const { result } = renderHook(() => useLiveWallClimb());
     expect(result.current).toBeNull();
   });
 
-  it('returns null when the feed is not live (context already collapses to null)', () => {
+  it('returns null when the feed is not live or has no current climb (context already collapses to null)', () => {
     cfg.wallClimb = null;
-    const { result } = renderHook(() => useWallClimbIfDistinct('queue-head'));
+    const { result } = renderHook(() => useLiveWallClimb());
     expect(result.current).toBeNull();
   });
 
-  it('returns null when the live feed has no current climb', () => {
-    cfg.wallClimb = null;
-    const { result } = renderHook(() => useWallClimbIfDistinct('queue-head'));
-    expect(result.current).toBeNull();
+  it('keeps the same climb reference across re-renders with no wall event', () => {
+    const { result, rerender } = renderHook(() => useLiveWallClimb());
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
   });
 });

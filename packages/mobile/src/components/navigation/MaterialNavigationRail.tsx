@@ -103,30 +103,16 @@ function MaterialNavigationRailComponent({ showWallCell = true }: { showWallCell
 
   // Same destinations and i18n keys as IpadSidebar / MaterialTabBar so the rail,
   // the glass rail, and the phone bottom bar stay one nav system. Active/inactive
-  // glyphs mirror the bottom bar's `materialTabIcon` pairs (Wall gets the bulb).
+  // glyphs mirror the bottom bar's `materialTabIcon` pairs.
   const primary = useMemo<RailDestination[]>(
     () => [
       { segment: 'home', href: '/home', icon: 'home', iconInactive: 'home-outline', label: t('mobile.nav.home') },
-      // Climbs (search) deliberately uses the same glyph for both states — matching
-      // MaterialTabBar's `materialTabIcon('magnify', 'magnify')`; MaterialCommunityIcons
-      // has no filled `magnify` that reads as "search selected". The active pill carries
-      // the focus state instead.
-      { segment: 'climbs', href: '/climbs', icon: 'magnify', iconInactive: 'magnify', label: t('mobile.nav.climbs') },
       {
         segment: 'record',
         href: '/record',
         icon: 'record-circle',
         iconInactive: 'record-circle-outline',
         label: tSession('mobile.session.recordTab'),
-      },
-      // "On the Wall" sits with Record — the two "I'm at the board" activities.
-      // Tablet-only: it's a rail row here, never a phone tab.
-      {
-        segment: 'wall',
-        href: '/wall',
-        icon: 'lightbulb-on',
-        iconInactive: 'lightbulb-on-outline',
-        label: t('mobile.nav.wall'),
       },
       {
         segment: 'discover',
@@ -135,6 +121,12 @@ function MaterialNavigationRailComponent({ showWallCell = true }: { showWallCell
         iconInactive: 'bookmark-multiple-outline',
         label: tPlaylists('bottomTabBar.discover'),
       },
+      // Climbs (search) is the last primary row, as it is the rightmost phone tab. It
+      // deliberately uses the same glyph for both states — matching MaterialTabBar's
+      // `materialTabIcon('magnify', 'magnify')`; MaterialCommunityIcons has no filled
+      // `magnify` that reads as "search selected". The active pill carries the focus
+      // state instead.
+      { segment: 'climbs', href: '/climbs', icon: 'magnify', iconInactive: 'magnify', label: t('mobile.nav.climbs') },
     ],
     [t, tSession, tPlaylists],
   );

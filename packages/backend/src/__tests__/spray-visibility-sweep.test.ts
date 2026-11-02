@@ -691,6 +691,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   // spray-wall-moderation.test.ts, which asserts the non-admin rejection.
   'Query.sprayWallReports':
     'admin-only — requireAdmin runs before any read, so the non-admin owner is rejected — and it answers with report rows (wall uuid, layout id, reason), never a climb name or frames',
+  'Query.adminBoard':
+    'global-admin-only stored board metadata; requireAdmin rejects the non-admin owner before any read. The admin registry deliberately includes private boards, but returns no climbs, photographs, frames or activity. admin-boards.test.ts pins global-admin access, raw metadata and owner-only credentials',
 
   // --- beta links -------------------------------------------------------------
   // The seeded link is not an Instagram or TikTok URL, because those enrich
@@ -740,6 +742,8 @@ const DEFAULT_SELECTION_DEPTH = 2;
 const SELECTION_DEPTH: Record<string, number> = {
   'Query.sessionGroupedFeed': 4,
   'Query.sessionDetail': 3,
+  // A workout names its climbs at `stages.climbs`.
+  'Query.sessionWorkouts': 3,
 };
 
 function enumerateRows(): SweepRow[] {
@@ -1091,6 +1095,11 @@ async function seedWorld(): Promise<SeededWorld> {
             1, false, false, ${sessionId}, ${boardId}, ${TICK_COMMENT}, now(), now(), now())
   `);
 
+  // The workout the owner followed (#6903): one block on the wall's climb, so
+  // `sessionWorkouts` names it to the owner and has to leave it out for
+  // everybody else.
+  await insertSweepWorkout(sessionId, savedClimb.uuid);
+
   // The follow-scoped reader (`followingClimbAscents`) answers with logs by
   // people the VIEWER follows, so the wall needs a log by somebody followed. The
   // owner follows the friend and must see it. The stranger follows the friend
@@ -1212,6 +1221,30 @@ function isExercised(row: SweepRow): boolean {
     return perViewer.owner.subscribed && !perViewer.stranger.subscribed && !perViewer.anonymous.subscribed;
   }
   return findSentinels(perViewer.owner.data, scannableSentinels(row.variables)).length > 0;
+}
+
+/**
+ * The owner's workout on the sweep session: one block holding the private
+ * wall's climb. The session's only owner tick is on that wall too, so for
+ * anybody but the owner there is nothing a workout reader may show.
+ */
+async function insertSweepWorkout(sessionId: string, climbUuid: string): Promise<void> {
+  const plan = {
+    version: 1,
+    stages: [
+      {
+        id: uuidv4(),
+        kind: 'volume',
+        targetGrade: 18,
+        items: [{ queueItemUuid: uuidv4(), climbUuid, angle: ANGLE }],
+      },
+    ],
+  };
+  await db.execute(sql`
+    INSERT INTO session_workouts (session_id, user_id, plan, tick_map, revision)
+    VALUES (${sessionId}, ${OWNER}, ${JSON.stringify(plan)}::jsonb, '[]'::jsonb, 1)
+    ON CONFLICT (session_id, user_id) DO NOTHING
+  `);
 }
 
 /**
@@ -1410,6 +1443,40 @@ describe('the spray-wall visibility sweep', () => {
       } else {
         expect({ viewer: viewer.name, found }).toEqual({ viewer: viewer.name, found: [] });
       }
+    }
+  });
+
+  /**
+   * The headline reader takes `sessionIds`, which the generic sweep does not
+   * name, and a workout whose climber has no tick a viewer may see must not
+   * appear at all (`sessionDetail` answers null for that session).
+   */
+  it('shows the workout on the private wall to its owner only, in both workout readers', async () => {
+    // setup.ts truncates board_sessions (and with it session_workouts) before each test.
+    await db.execute(sql`
+      INSERT INTO board_sessions (id, board_path, created_by_user_id, name, board_id, status, started_at, created_at, last_activity)
+      VALUES (${world.sessionId}, ${`spray/${world.layoutId}/${world.sizeId}/1/${ANGLE}`}, ${OWNER}, 'Sweep session',
+              ${world.boardId}, 'active', now() - interval '1 hour', now(), now())
+      ON CONFLICT (id) DO NOTHING
+    `);
+    await insertSweepWorkout(world.sessionId, world.climbUuid);
+    const row: SweepRow = {
+      key: 'Query.sessionWorkouts+sessionWorkoutHeadlines',
+      rootName: 'Query',
+      fieldName: 'sessionWorkouts',
+      document:
+        'query Sweep($sessionId: ID!) { sessionWorkouts(sessionId: $sessionId) { userId stages { climbs { name frames } } } ' +
+        'sessionWorkoutHeadlines(sessionIds: [$sessionId]) { sessionId userId mainKind } }',
+      variables: { sessionId: world.sessionId },
+      kinds: [],
+    };
+    for (const viewer of VIEWERS) {
+      const outcome = await runRow(row, viewer.ctx);
+      expect(outcome.errorMessages, viewer.name).toEqual([]);
+      const data = outcome.data as { sessionWorkouts: unknown[]; sessionWorkoutHeadlines: unknown[] };
+      const expected = viewer.name === 'owner' ? 1 : 0;
+      expect(data.sessionWorkouts, viewer.name).toHaveLength(expected);
+      expect(data.sessionWorkoutHeadlines, viewer.name).toHaveLength(expected);
     }
   });
 
@@ -1707,8 +1774,9 @@ describe('references to a hard-deleted spray climb', () => {
       )
     `);
 
-    // The real path, not a raw DELETE: this is the mutation that strands them.
-    await climbMutations.deleteDraftClimb({}, { uuid: orphanClimbUuid, boardType: 'spray' }, ctxFor(OWNER));
+    // Historical orphan fixture: shared logged drafts now refuse API deletion.
+    // Legacy rows still require the same fail-closed read behavior.
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${orphanClimbUuid}`);
     const remaining = (await db.execute(
       sql`SELECT 1 FROM board_climbs WHERE uuid = ${orphanClimbUuid}`,
     )) as unknown as unknown[];

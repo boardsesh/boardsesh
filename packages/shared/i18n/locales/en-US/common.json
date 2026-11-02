@@ -469,7 +469,8 @@
         "footer": "Changes apply immediately. Hide all for just the climb, without vertical scrolling.",
         "tabs": {
           "sections": "Below the climb",
-          "buttons": "Buttons"
+          "buttons": "Buttons",
+          "miniPlayer": "Mini player"
         }
       },
       "sectionLayout": {
@@ -513,6 +514,12 @@
         "underName": "Under the name",
         "yourClimbing": "Your climbing",
         "actions": "Actions",
+        "layout": {
+          "title": "Columns",
+          "one": "One column",
+          "two": "Two columns",
+          "footer": "Two columns show when the list has room, like on an iPad in landscape."
+        },
         "gradesTitle": "Grades",
         "previewFooter": "Example. Sends, saves and tags show on climbs that have them.",
         "gradeFooter": "Choose which grade is big in Settings → Climbs & grades.",
@@ -545,7 +552,7 @@
       },
       "playerButtons": {
         "title": "Buttons",
-        "description": "Pick the buttons around Log, their order, and where they sit.",
+        "description": "Pick up to four buttons around Log, their order, and where they sit.",
         "position": {
           "label": "Position",
           "below": "Below the board",
@@ -553,7 +560,7 @@
           "footer": "Log and Board light always keep their places."
         },
         "previousNext": "Previous and next",
-        "previousNextDescription": "Swiping the board still moves between climbs.",
+        "previousNextDescription": "Show navigation arrows beside Log instead of two action buttons. Swiping the board still changes climbs.",
         "buttons": {
           "mirror": "Mirror",
           "favorite": "Favorite",
@@ -569,14 +576,31 @@
           "log": "Log",
           "boardLight": "Board light"
         },
-        "footer": "Whichever of Queue and Mirror comes first gets the big button. A hidden button stays in the ⋯ menu. With every small button off, the board gets their row.",
+        "footer": "With navigation arrows off, up to four enabled buttons appear around Log. If more are available for this board, the first and last three take the places. With arrows on, only the first and last appear. The rest, and any you hide, are in the ⋯ menu.",
         "settingsFooter": "To change the order, open the ⋯ menu on a climb and pick View options.",
-        "previewLabel": "Preview, {{position}}: {{buttons}}"
+        "previewLabel": "Preview, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Board control",
+          "wallButton": "Wall button",
+          "lightbulb": "Lightbulb",
+          "footer": "Both controls connect, light the climb and show who holds the board. Hold while connected for board options. Read the wall button’s label: You are driving the wall means each climb you pick lights up; tap it to stop driving. Your phone stays connected unless Disconnect Bluetooth when driving ends is on. When a drive has a time limit, a clock beside the label and the shrinking frost show when it stops. The lightbulb sits at the top right."
+        }
       },
       "climbView": {
         "title": "Climb view",
         "valueDefault": "Default",
         "valueCustom": "Custom"
+      },
+      "quickFilters": {
+        "title": "Quick filters",
+        "valueDefault": "Default",
+        "valueCustom": "Custom",
+        "climbsTitle": "Climbs",
+        "climbsFooter": "These show above the Climbs list, in this order. A filter you switch on joins the end.",
+        "playlistsTitle": "Playlists",
+        "playlistsFooter": "These show above every playlist, smart playlist and setter page, in this order.",
+        "restoreDefaults": "Restore defaults",
+        "footer": "Changes apply right away, on this phone only. Every filter stays in Filters either way."
       },
       "timers": {
         "restTitle": "Rest",
@@ -590,7 +614,7 @@
         "modeOnTheMinuteHint": "Fixed windows from the moment you turn it on. Logging attempts or sends never resets the clock.",
         "autoAdvance": "Move to the next climb",
         "autoAdvanceHint": "Lights it on the wall for you, only while Boardsesh is open.",
-        "autoAdvanceBlocked": "Only the climber driving the wall can move the queue.",
+        "autoAdvanceBlocked": "Only the climber holding the board can move the queue.",
         "autoAdvanceNeedsLength": "Pick a rest length to move the queue automatically.",
         "cuesTitle": "Cues",
         "cuesFooter": "Off, you still get one heads-up buzz before the wall moves on its own.",
@@ -610,6 +634,24 @@
         "rogueConnecting": "Connecting…",
         "rogueUnreachable": "Can't reach it. Check it's on and close by.",
         "rogueSaveFailed": "Couldn't save the timer. Try again."
+      },
+      "miniPlayer": {
+        "title": "Mini player",
+        "description": "The bar above the tabs keeps the last climb you opened. Tap it to reopen it; Board light puts it on the board.",
+        "buttons": {
+          "next": "Next climb",
+          "previous": "Previous climb",
+          "wallDisplay": "Wall display"
+        },
+        "fixedNote": "Board light is always there, beside Log. Log is always last, under your thumb.",
+        "footer": "On iPhone the bar has room for one of these beside Board light and Log: the first one that's on.",
+        "open": "Open",
+        "collapsed": "Collapsed",
+        "previewLabel": "Preview, {{shape}} bar: {{buttons}}",
+        "footerWide": "On a wide screen the bar fits as many of these as it has room for: the first ones in the list win.",
+        "shapeOpen": "open",
+        "shapeCollapsed": "collapsed",
+        "more": "More"
       }
     },
     "sendRecovery": {
@@ -711,8 +753,21 @@
         "workout": "Build a workout: Volume, Pyramid, Ladder or Grade Focus. Set a grade, preview the burns, send them one at a time.",
         "crew": "Climbing with people? Start a session and share one queue. Anyone sends the next burn, no passing the phone.",
         "record": "Your sends chart out here on Progress: grade spread and hardest send. Import your Kilter and Tension logbook from Aurora to start with your history.",
-        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there.",
-        "climbsTab": "To get back to your climbs, tap the magnifier in the tab bar."
+        "accessory": "The bar at the bottom keeps the last climb you opened, until your queue moves on. Tap it to reopen that climb; its lightbulb puts it on the board and ✓ logs it. The climb on the wall stays at the top of Climbs.",
+        "previewFirst": {
+          "title": "A tap opens a preview. Put on board lights it.",
+          "windowSeconds": "Then you drive the wall: for {{seconds}} seconds after each climb lights, every climb you pick lights too.",
+          "windowMinute": "Then you drive the wall: for 1 minute after each climb lights, every climb you pick lights too.",
+          "windowMinutes": "Then you drive the wall: for {{minutes}} minutes after each climb lights, every climb you pick lights too.",
+          "untilStop": "Then you drive the wall: every climb you pick lights until you stop.",
+          "frost": "The frosted button means you are driving the wall: every climb you pick lights up. A drive from Put on board stops after the time set under Stop driving after (Settings › Board): a clock counts down beside the label and the frost shrinks as it runs out. Swipe the button left to drive with no end (once connected, you can also hold it and pick Light every climb). Tap it to stop.",
+          "frostScreenReader": "When the button reads You are driving the wall, every climb you pick lights up. A drive from Put on board stops after the time set under Stop driving after, in Settings › Board. Use the Light every climb action to drive with no end. Tap the button to stop.",
+          "frostOpenEnded": "The frosted button means you are driving the wall: every climb you pick lights up until you tap it to stop. Swipe the button left to start driving (once connected, you can also hold it and pick Light every climb).",
+          "frostOpenEndedScreenReader": "When the button reads You are driving the wall, every climb you pick lights up until you tap the button to stop. Use the Light every climb action to start driving.",
+          "settings": "Lighting settings",
+          "done": "Got it",
+          "close": "Close tip"
+        }
       },
       "link": {
         "title": "Bring your {{boardName}} sends with you",
@@ -727,7 +782,6 @@
       "home": "Home",
       "boards": "Boards",
       "climbs": "Climbs",
-      "wall": "On the Wall",
       "profile": "Profile",
       "holdFilter": "Hold types",
       "zoneFilter": "Board region",
@@ -782,6 +836,14 @@
         "finishTesting": "Finish testing PR #{{prNumber}}",
         "options": "Update options",
         "earlyUpdatesHelp": "Early updates may have rough edges. Changes apply next launch."
+      },
+      "previewFirstSpotlight": {
+        "title": "Look through climbs without lighting the board",
+        "tap": "A tap opens a preview. Put on board lights it, and then you drive the wall: the climbs you pick light too, until the time you chose runs out (45 seconds by default). Change it under Stop driving after in Settings › Board.",
+        "swipe": "Swipe the wall button left to drive the wall until you stop. While it glows in the climb's colours, every climb you pick lights up. Tap it to stop. When a drive has a time limit, a clock shows beside the label and the frost shrinks as the time runs out.",
+        "back": "The arrow at the top left ends a preview and takes you back to your pick, or to the climb on the wall. The bar at the bottom keeps the last climb you opened.",
+        "cta": "See how it works",
+        "dismiss": "Got it"
       }
     },
     "launchUpdate": {
@@ -854,6 +916,16 @@
       "yes": "Yes",
       "no": "No",
       "unknown": "Unknown"
+    },
+    "supportAsks": {
+      "accountRow": "Support Boardsesh",
+      "cardTitle": "Help build Boardsesh",
+      "cardBody": "Boardsesh is free for every climber. Monthly support pays for the time it takes to build it.",
+      "giveMonthly": "Give monthly",
+      "giveOnce": "Give once",
+      "hideCard": "Hide this card",
+      "settingTitle": "Show support asks",
+      "settingFooter": "A Support Boardsesh row in Account, and a card on Home in the first week of each month."
     }
   },
   "lightControl": {
@@ -1193,6 +1265,7 @@
   },
   "undoDelete": {
     "removed": "Entry removed",
+    "removedMany": "{{count}} entries removed",
     "undo": "Undo",
     "cancelled": "Deletion cancelled. Your entry was kept."
   }

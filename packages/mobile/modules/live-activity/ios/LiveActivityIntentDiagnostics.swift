@@ -10,6 +10,7 @@ enum LiveActivityIntentDiagnosticKind: String, Codable, CaseIterable {
     case previousClimb
     case takeControl
     case reconnectBoard
+    case stopDriving
 }
 
 /// Coarse progress only. These values deliberately carry no queue, climb,
@@ -57,6 +58,9 @@ enum LiveActivityIntentCompletionClass: String, Codable, CaseIterable {
     /// The server confirmed a mirror but there was no local snapshot to publish
     /// it against, so neither the widget nor the wall was updated from it.
     case mirrorNotCommitted
+    /// A lock-screen stop found nothing driving: the timed drive had already
+    /// run out, so there was nothing to stop and only the card was redrawn.
+    case nothingDriving
 }
 
 struct LiveActivityIntentDiagnosticRecord: Codable, Equatable {

@@ -43,6 +43,7 @@ function discoverableBoardConditions(gymUuid: string | undefined): SQL | undefin
     isNotNull(userBoards.slug),
     ne(userBoards.slug, ''),
     eq(gyms.isPublic, true),
+    eq(gyms.isListed, true),
     isNull(gyms.deletedAt),
     isNull(gyms.mergedIntoGymId),
     isNotNull(gyms.slug),

@@ -76,11 +76,11 @@ describe('the target registry', () => {
         expect(target.scenes.length, target.name).toBeGreaterThan(0);
         for (const step of target.scenes) expect(storyboard.has(step.id), `${target.name}/${step.id}`).toBe(true);
         expect(new Set(target.scenes.map((step) => step.id)).size, target.name).toBe(target.scenes.length);
-        // The loop opens on the boards trio and continues to the spray wall.
-        // Search ends on its native card; the other targets retain their outro.
+        // Every loop opens on the boards trio. The default search cut goes to the crew
+        // queue and ends on the logbook; the other targets visit the spray wall and keep their outro.
         expect(target.scenes[0].id, target.name).toBe('boards');
-        expect(target.scenes[1].id, target.name).toBe('spray');
-        expect(target.scenes.at(-1)?.id, target.name).toBe(target.storeSearch ? 'lock-screen' : 'outro');
+        expect(target.scenes[1].id, target.name).toBe(target.storeSearch ? 'crew' : 'spray');
+        expect(target.scenes.at(-1)?.id, target.name).toBe(target.storeSearch ? 'log' : 'outro');
       } else {
         expect(target.scenes, target.name).toEqual([]);
         expect(target.clips.length, target.name).toBeGreaterThan(0);

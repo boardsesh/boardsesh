@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 /**
- * Generates packages/mobile/src/data/acknowledgements.generated.json — the
+ * Generates packages/shared/acknowledgements/src/acknowledgements.generated.json — the
  * contributor + sponsor lists shown on the mobile Acknowledgements screen.
  *
  * Contributors come from paginated GraphQL over the repo's pull requests + issues
@@ -39,7 +39,7 @@ const REPO_NAME = 'boardsesh';
 const SPONSOR_ORG = 'boardsesh';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const OUTPUT_PATH = resolve(here, '../packages/mobile/src/data/acknowledgements.generated.json');
+const OUTPUT_PATH = resolve(here, '../packages/shared/acknowledgements/src/acknowledgements.generated.json');
 const refreshMode: AcknowledgementsRefreshMode = process.argv.includes('--strict') ? 'strict' : 'best-effort';
 
 function gh(args: string[]): string {

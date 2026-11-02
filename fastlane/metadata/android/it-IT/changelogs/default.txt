@@ -1,0 +1,6 @@
+Novità della 2.7:
+- Tocca per sfogliare senza illuminare. Illumina il pannello: le tue scelte si illuminano fino al timer (45 s). Scorri a sinistra: senza fine; tocca per fermarti.
+- Ora in italiano. Recupero con conto alla rovescia e suono nella notifica.
+- Allenamenti in fasi. Scorri nella tua lista; metti subito dopo o in fondo.
+- Ordina e filtra playlist, Mi piace e Progetti.
+- Diario, Mi piace e playlist offline. La ricerca trova MoonBoard.

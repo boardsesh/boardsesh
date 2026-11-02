@@ -14,6 +14,7 @@ import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { SCAN_TIMEOUT_MS } from '@boardsesh/ble-protocol/scan-constants';
 import type { DiscoveredDevice } from '../../lib/ble/types';
+import { classifyRssiStrength } from '../../lib/ble/rssi-strength';
 import { RogueTimerController } from '../../lib/ble/rogue-timer-ble';
 import { waitForBlePoweredOn } from '../../lib/ble/availability';
 import { readBluetoothUnavailableReason } from '../../lib/ble/bluetooth-unavailable';
@@ -77,8 +78,9 @@ type TimerPairingSheetProps = {
 };
 
 function classifyRssi(rssi: number, weakColor: ColorValue): { bars: number; color: ColorValue } {
-  if (rssi > -60) return { bars: 3, color: iosSystemColors.systemGreen };
-  if (rssi > -80) return { bars: 2, color: iosSystemColors.systemYellow };
+  const strength = classifyRssiStrength(rssi);
+  if (strength === 'strong') return { bars: 3, color: iosSystemColors.systemGreen };
+  if (strength === 'good') return { bars: 2, color: iosSystemColors.systemYellow };
   return { bars: 1, color: weakColor };
 }
 

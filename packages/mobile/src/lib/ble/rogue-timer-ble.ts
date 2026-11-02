@@ -10,14 +10,14 @@ import {
   type RogueTimerCommandCode,
 } from '@boardsesh/ble-protocol/rogue-timer';
 import { SCAN_TIMEOUT_MS } from '@boardsesh/ble-protocol/scan-constants';
-import { bleManager } from './ble-manager';
+import { getBleManager } from './ble-manager';
 import { uint8ArrayToBase64 } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
 import type { DiscoveredDevice } from './types';
 
 // Purpose-built controller for the Rogue Fitness workout timer (Home Timer 2.0
-// / Echo Gym Timer 2.0). Reuses the app's shared `bleManager` singleton and
+// / Echo Gym Timer 2.0). Reuses the app's shared `getBleManager()` singleton and
 // mirrors the board adapter's connect/write mechanics, but is deliberately NOT
 // the board-centric `BluetoothAdapter` — the timer is a fire-and-forget
 // key-code peripheral, so this is a small write-only driver. The pure protocol
@@ -86,7 +86,7 @@ export class RogueTimerController {
   // stale characteristic can never be written after the link is gone.
   private disconnectSubscription: { remove: () => void } | null = null;
   private connectedDeviceName: string | undefined;
-  // True while *this* controller holds the shared bleManager's scan slot. Lets
+  // True while *this* controller holds the shared ble-plx manager's scan slot. Lets
   // `teardownConnection` stop only a scan we started, so a provider disconnect
   // can't kill an unrelated pairing-sheet scan on another controller instance.
   private scanActive = false;
@@ -102,7 +102,7 @@ export class RogueTimerController {
    * later tick; the returned stop function is safe to call before then — it
    * flags the scan as cancelled so it never starts.
    *
-   * Known contention: `bleManager` is a shared singleton and react-native-ble-plx
+   * Known contention: `getBleManager()` is a shared singleton and react-native-ble-plx
    * allows only one scan at a time — a `connectByName` (runtime reconnect) scan
    * started while this pairing scan is open would replace it. In practice the two
    * don't overlap (pairing runs on the board-edit screen; reconnect runs on the
@@ -111,6 +111,7 @@ export class RogueTimerController {
   scanForTimers(onUpdate: (devices: DiscoveredDevice[]) => void, onScanStopped?: () => void): () => void {
     const devices = new Map<string, DiscoveredDevice>();
     let stopped = false;
+    let scanStarted = false;
     let scanTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const stopScan = () => {
@@ -118,7 +119,10 @@ export class RogueTimerController {
       stopped = true;
       this.scanActive = false;
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
-      void bleManager.stopDeviceScan();
+      // A sheet closed before the gating finished has no scan to stop, and
+      // reaching for the ble-plx manager here would create it, which on iOS
+      // asks for Bluetooth (see ble-manager.ts).
+      if (scanStarted) void getBleManager().stopDeviceScan();
     };
 
     void (async () => {
@@ -129,7 +133,8 @@ export class RogueTimerController {
       if (!poweredOn || stopped) return;
 
       this.scanActive = true;
-      void bleManager.startDeviceScan([ROGUE_TIMER_ADVERTISED_SERVICE_UUID], null, (scanError, scannedDevice) => {
+      scanStarted = true;
+      void getBleManager().startDeviceScan([ROGUE_TIMER_ADVERTISED_SERVICE_UUID], null, (scanError, scannedDevice) => {
         if (scanError) {
           stopScan();
           return;
@@ -180,10 +185,12 @@ export class RogueTimerController {
 
     let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
     const connected = await Promise.race([
-      bleManager.connectToDevice(deviceId),
+      getBleManager().connectToDevice(deviceId),
       new Promise<never>((_resolve, reject) => {
         connectionTimeoutId = setTimeout(() => {
-          bleManager.cancelDeviceConnection(deviceId).catch(() => {});
+          getBleManager()
+            .cancelDeviceConnection(deviceId)
+            .catch(() => {});
           reject(new Error('Connection timed out — timer may be powered off'));
         }, CONNECTION_TIMEOUT_MS);
       }),
@@ -223,7 +230,7 @@ export class RogueTimerController {
       // Clear cached refs on an unsolicited drop so `pressButton` can't write a
       // dead characteristic. External listeners subscribe separately via
       // `onDisconnect`.
-      this.disconnectSubscription = bleManager.onDeviceDisconnected(deviceId, () => {
+      this.disconnectSubscription = getBleManager().onDeviceDisconnected(deviceId, () => {
         this.connectedDevice = null;
         this.writeCharacteristic = null;
         this.connectedDeviceName = undefined;
@@ -233,7 +240,9 @@ export class RogueTimerController {
 
       return { deviceId, deviceName: this.connectedDeviceName };
     } catch (error) {
-      await bleManager.cancelDeviceConnection(deviceId).catch(() => {});
+      await getBleManager()
+        .cancelDeviceConnection(deviceId)
+        .catch(() => {});
       throw error;
     }
   }
@@ -265,29 +274,33 @@ export class RogueTimerController {
         };
 
         this.scanActive = true;
-        void bleManager.startDeviceScan([ROGUE_TIMER_ADVERTISED_SERVICE_UUID], null, (scanError, scannedDevice) => {
-          if (scanError) {
-            if (!resolved) reject(new Error(`BLE scan failed: ${scanError.message}`));
-            return;
-          }
-          if (!scannedDevice) return;
+        void getBleManager().startDeviceScan(
+          [ROGUE_TIMER_ADVERTISED_SERVICE_UUID],
+          null,
+          (scanError, scannedDevice) => {
+            if (scanError) {
+              if (!resolved) reject(new Error(`BLE scan failed: ${scanError.message}`));
+              return;
+            }
+            if (!scannedDevice) return;
 
-          const deviceName = scannedDevice.localName ?? scannedDevice.name ?? undefined;
-          if (!isDrivableTimer(deviceName)) return;
+            const deviceName = scannedDevice.localName ?? scannedDevice.name ?? undefined;
+            if (!isDrivableTimer(deviceName)) return;
 
-          const lowerName = deviceName?.trim().toLowerCase();
-          const candidate: DiscoveredDevice = {
-            deviceId: scannedDevice.id,
-            name: deviceName,
-            rssi: scannedDevice.rssi ?? -100,
-          };
-          candidates.set(candidate.deviceId, candidate);
+            const lowerName = deviceName?.trim().toLowerCase();
+            const candidate: DiscoveredDevice = {
+              deviceId: scannedDevice.id,
+              name: deviceName,
+              rssi: scannedDevice.rssi ?? -100,
+            };
+            candidates.set(candidate.deviceId, candidate);
 
-          // Exact name match is the confident case — take it immediately.
-          if (lowerName === target) {
-            settleWith(candidate);
-          }
-        });
+            // Exact name match is the confident case — take it immediately.
+            if (lowerName === target) {
+              settleWith(candidate);
+            }
+          },
+        );
 
         scanTimeoutId = setTimeout(() => {
           if (resolved) return;
@@ -310,13 +323,13 @@ export class RogueTimerController {
       // (up to 12s) connect window degrades Android connection reliability.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       this.scanActive = false;
-      void bleManager.stopDeviceScan();
+      void getBleManager().stopDeviceScan();
       return await this.connectById(found.deviceId);
     } finally {
       // Safety net: idempotent stop for the reject/throw paths too.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       this.scanActive = false;
-      void bleManager.stopDeviceScan();
+      void getBleManager().stopDeviceScan();
     }
   }
 
@@ -355,7 +368,7 @@ export class RogueTimerController {
    * write a characteristic that's on its way out.
    */
   private async teardownConnection(): Promise<void> {
-    // Release the shared bleManager's scan slot if *this* controller is
+    // Release the shared ble-plx manager's scan slot if *this* controller is
     // scanning: a `connectByName` may be mid-scan when the board LED drops and
     // the provider calls `disconnect()` (e.g. the timer dropped at the same
     // moment). Without this, that scan holds the singleton's single scan slot
@@ -365,7 +378,7 @@ export class RogueTimerController {
     // scan (e.g. an open pairing sheet).
     if (this.scanActive) {
       this.scanActive = false;
-      void bleManager.stopDeviceScan();
+      void getBleManager().stopDeviceScan();
     }
 
     if (this.disconnectSubscription) {
@@ -379,7 +392,7 @@ export class RogueTimerController {
     this.connectedDeviceName = undefined;
     if (device) {
       try {
-        await bleManager.cancelDeviceConnection(device.id);
+        await getBleManager().cancelDeviceConnection(device.id);
       } catch {
         // Device may already be disconnected.
       }
@@ -394,7 +407,7 @@ export class RogueTimerController {
   onDisconnect(callback: () => void): () => void {
     const device = this.connectedDevice;
     if (!device) return () => {};
-    const subscription = bleManager.onDeviceDisconnected(device.id, () => callback());
+    const subscription = getBleManager().onDeviceDisconnected(device.id, () => callback());
     return () => subscription.remove();
   }
 

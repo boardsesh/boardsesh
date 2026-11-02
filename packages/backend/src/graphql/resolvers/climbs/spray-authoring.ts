@@ -123,8 +123,9 @@ export async function requireVisibleSprayWall(
   layoutId: number,
   userId: string,
   presentedWallUuid?: string | null,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<SprayClimbTarget> {
-  const target = await findVisibleSprayWall(layoutId, userId, presentedWallUuid);
+  const target = await findVisibleSprayWall(layoutId, userId, presentedWallUuid, executor);
   if (!target) {
     throw new GraphQLError('That spray wall could not be found', {
       extensions: { code: SPRAY_CLIMB_CODES.wallNotFound },
@@ -138,8 +139,9 @@ async function findVisibleSprayWall(
   layoutId: number,
   userId: string,
   presentedWallUuid?: string | null,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<SprayClimbTarget | null> {
-  const [row] = await db
+  const [row] = await executor
     .select({
       wall: dbSchema.sprayWalls,
       board: dbSchema.userBoards,
@@ -159,7 +161,7 @@ async function findVisibleSprayWall(
     )
     .limit(1);
 
-  if (!row || !(await viewerCanWriteSprayClimbs(row.wall, row.board, userId, presentedWallUuid))) return null;
+  if (!row || !(await viewerCanWriteSprayClimbs(row.wall, row.board, userId, presentedWallUuid, executor))) return null;
 
   return {
     wallId: row.wall.id,

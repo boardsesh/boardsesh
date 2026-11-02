@@ -369,6 +369,7 @@ const nextConfig = {
     '@boardsesh/velvet-tokens',
     '@boardsesh/logbook',
     '@boardsesh/email',
+    '@boardsesh/workout-summary',
   ],
   // `postgres` (postgres.js, used by @boardsesh/db via drizzle-orm/postgres-js)
   // must stay OUT of the server bundle. Sentry's postgresJsIntegration patches

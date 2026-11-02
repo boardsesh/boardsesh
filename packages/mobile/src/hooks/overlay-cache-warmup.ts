@@ -1,4 +1,5 @@
 import { Directory, File, Paths } from 'expo-file-system';
+import { decodeFileUri } from '../lib/file-uri';
 
 /**
  * A single entry from the native overlay PNG cache directory. Structurally the
@@ -27,6 +28,22 @@ export function listOverlayCacheEntries(cacheDirName: string): OverlayCacheEntry
   const cacheDir = new Directory(Paths.cache, cacheDirName);
   if (!cacheDir.exists) return null;
   return cacheDir.list() as OverlayCacheEntry[];
+}
+
+/**
+ * The URI the BoardRenderer module itself returns for a file this directory
+ * listing found, so the overlay index holds one URI per file (issue #7026).
+ *
+ * Android's renderer returns `"file://${file.absolutePath}"`, unencoded, while
+ * expo-file-system lists the directory through `File.toUri()` =
+ * `Uri.fromFile(...)`, whose `toString()` percent-encodes the `,` between set ids
+ * (`1,2,3` -> `1%2C2%2C3`). A climb adopted from disk at launch then reached the
+ * session notification as a path no file has. iOS returns
+ * `URL.absoluteString` from both, and every character our cache names use is
+ * legal unescaped in an Apple file URL path, so decoding there is a no-op.
+ */
+export function rendererOverlayUri(listedUri: string): string {
+  return decodeFileUri(listedUri);
 }
 
 export function deleteOverlayCacheEntry(uri: string): void {

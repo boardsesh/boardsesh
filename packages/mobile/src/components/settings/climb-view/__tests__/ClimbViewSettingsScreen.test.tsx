@@ -31,8 +31,12 @@ vi.mock('../../../AppMenu', () => ({ AppMenu: () => null }));
 vi.mock('../../../ListRow', () => ({ ListRow: () => null }));
 vi.mock('../../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../../SegmentedControl', () => ({
-  SegmentedControl: ({ onSelect }: { onSelect: (key: string) => void }) =>
-    createElement('button', { onClick: () => onSelect('above') }, 'Place buttons above'),
+  // One per segmented row: Position, then Board control (#7000). Only the
+  // position one is driven here.
+  SegmentedControl: ({ onSelect, selectedKey }: { onSelect: (key: string) => void; selectedKey?: string }) =>
+    selectedKey === 'below' || selectedKey === 'above'
+      ? createElement('button', { onClick: () => onSelect('above') }, 'Place buttons above')
+      : null,
 }));
 vi.mock('../../../SwitchRow', () => ({
   SwitchRow: ({
@@ -52,8 +56,11 @@ vi.mock('../../../MoreForm', () => ({
     return null;
   },
 }));
+const tabChrome = vi.hoisted(() => ({ nativeAccessory: true }));
+vi.mock('../../../../hooks/use-bottom-accessory', () => ({ useTabChrome: () => tabChrome }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ isTablet: false }) }));
 vi.mock('../../../../lib/settings-analytics', () => ({ withSettingTracking: (model: MoreFormModel) => model }));
 vi.mock('../../use-play-drawer-section-controls', () => ({
   usePlayDrawerSectionControls: () => ({ settingsSection: { key: 'below', rows: [] } }),
@@ -99,6 +106,7 @@ afterEach(() => {
   cleanup();
   screen.platform = 'android';
   screen.nativeModel = null;
+  tabChrome.nativeAccessory = true;
 });
 
 describe('ClimbViewSettingsScreen renderer routing', () => {
@@ -118,5 +126,16 @@ describe('ClimbViewSettingsScreen renderer routing', () => {
     const view = render(<ClimbViewSettingsScreen />);
     expect(view.queryByText('Preview below with navigation')).toBeNull();
     expect(screen.nativeModel?.sections[0].rows[0].kind).toBe('custom');
+  });
+
+  it('lists the Mini player section only where the native bottom accessory draws the bar', () => {
+    screen.platform = 'ios';
+    const withAccessory = render(<ClimbViewSettingsScreen />);
+    expect(screen.nativeModel?.sections.map((section) => section.key)).toContain('miniPlayer');
+    withAccessory.unmount();
+
+    tabChrome.nativeAccessory = false;
+    render(<ClimbViewSettingsScreen />);
+    expect(screen.nativeModel?.sections.map((section) => section.key)).not.toContain('miniPlayer');
   });
 });

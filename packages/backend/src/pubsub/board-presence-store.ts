@@ -86,6 +86,18 @@ export type CommitBoardClimbResult = {
   sessionBoardChanged: boolean;
 };
 
+/**
+ * A deliberate "Turn off all lights" that is still the wall's latest state
+ * (`board:{id}:cleared`). Replayed to a new `boardNowPlaying` subscriber so a
+ * late joiner's history backfill can't put the cleared climb back on the wall.
+ */
+export type StoredBoardClear = {
+  clearedAt: string;
+  seq: number;
+  /** The climb that was lit when the wall was cleared, or null when unknown. */
+  climbUuid: string | null;
+};
+
 // Board-presence durable history (Redis FIFO) configuration. The live
 // "now on the wall" feed is ephemeral; this buffer backfills late joiners
 // before the `boardNowPlaying` subscription takes over.
@@ -124,6 +136,32 @@ function parsePlausibleFirstSeenMs(raw: string | null): number | null {
   const firstSeen = Number(raw);
   if (!Number.isFinite(firstSeen) || firstSeen < PLAUSIBLE_EPOCH_MS_FLOOR) return null;
   return firstSeen;
+}
+
+/** Parse `board:{id}:cleared` (an HGETALL reply); null when absent or malformed. */
+function parseStoredBoardClear(raw: unknown): StoredBoardClear | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const fields = raw as Record<string, unknown>;
+  const seq = Number(fields.seq);
+  if (!Number.isSafeInteger(seq) || seq < 1 || typeof fields.clearedAt !== 'string') return null;
+  const climbUuid = typeof fields.climbUuid === 'string' && fields.climbUuid !== '' ? fields.climbUuid : null;
+  return { seq, clearedAt: fields.clearedAt, climbUuid };
+}
+
+/** Highest `seq` among raw history entries; unparseable entries are skipped. */
+function newestStoredClimbSeq(entries: unknown[]): number {
+  let newest = 0;
+  for (const entry of entries) {
+    if (typeof entry !== 'string') continue;
+    try {
+      const climb: unknown = JSON.parse(entry);
+      const seq = typeof climb === 'object' && climb !== null ? (climb as { seq?: unknown }).seq : undefined;
+      if (typeof seq === 'number' && Number.isSafeInteger(seq)) newest = Math.max(newest, seq);
+    } catch {
+      // A corrupt entry can't prove a climb superseded the clear; ignore it.
+    }
+  }
+  return newest;
 }
 
 /**
@@ -491,6 +529,89 @@ export class BoardPresenceStore {
   }
 
   /**
+   * Store a deliberate wall clear (`reportBoardClear`) and drop the write-side
+   * dedup marker, in one Lua script.
+   *
+   * The seq is allocated by `nextBoardSeq` BEFORE this runs (it may consult the
+   * Postgres floor, which can't happen inside Lua), so two clears can reach here
+   * out of order. The compare-and-set keeps the higher seq: a slower, older clear
+   * never overwrites a newer one. A climb set that lands between allocation and
+   * this write is safe too, because readers compare the stored clear's seq against
+   * the newest history seq (`getActiveBoardClear`).
+   *
+   * The dedup marker goes unconditionally: after a clear, re-lighting the same
+   * climb within REPORT_DEDUP_WINDOW_MS is a real wall change, not a retry, and
+   * must publish a fresh `BoardClimbSet`.
+   *
+   * TTL is BOARD_HISTORY_TTL, not the 12 h membership window: the history buffer
+   * that would otherwise re-light the cleared climb for a late joiner lives a week.
+   * Redis-only — returns false without Redis (the live event still goes out).
+   */
+  async commitBoardClear(boardId: string, clear: StoredBoardClear): Promise<boolean> {
+    if (!this.deps.isRedisAvailable()) return false;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const stored = await publisher.eval(
+        "redis.call('del', KEYS[2]); " +
+          "local current = tonumber(redis.call('hget', KEYS[1], 'seq') or '0'); " +
+          'if current >= tonumber(ARGV[1]) then return 0 end; ' +
+          "redis.call('del', KEYS[1]); " +
+          "redis.call('hset', KEYS[1], 'seq', ARGV[1], 'clearedAt', ARGV[2], 'climbUuid', ARGV[3]); " +
+          "redis.call('expire', KEYS[1], ARGV[4]); " +
+          'return 1',
+        2,
+        `board:${boardId}:cleared`,
+        `board:${boardId}:lastReport`,
+        clear.seq,
+        clear.clearedAt,
+        clear.climbUuid ?? '',
+        BOARD_HISTORY_TTL,
+      );
+      return stored === 1;
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to store board clear:', error);
+      return false;
+    }
+  }
+
+  /**
+   * The stored clear when it is still the wall's latest native state: its seq is
+   * above every climb in the history buffer. Null when there is no clear, a later
+   * climb superseded it, or Redis is unavailable. Never throws — a replay is a
+   * convenience on top of the live feed, and must not fail a subscription.
+   *
+   * Also stale when the seq counter is missing or below the clear's seq. Both
+   * keys live a week, but the counter's TTL is set first, and an eviction or a
+   * durable-floor reseed (the floor never counts clears) can take it back. Every
+   * new climb would then number below the clear, and a late joiner would see a
+   * lit wall as dark for up to a week.
+   */
+  async getActiveBoardClear(boardId: string): Promise<StoredBoardClear | null> {
+    if (!this.deps.isRedisAvailable()) return null;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const results = await publisher
+        .pipeline()
+        .hgetall(`board:${boardId}:cleared`)
+        .lrange(`board:${boardId}:history`, 0, BOARD_HISTORY_SIZE - 1)
+        .get(`board:${boardId}:seq`)
+        .exec();
+      if (!results) return null;
+      const [[clearError, clearRaw], [historyError, historyRaw], [seqError, seqRaw]] = results;
+      if (clearError || historyError || seqError) return null;
+      const clear = parseStoredBoardClear(clearRaw);
+      if (!clear) return null;
+      if (!(Number(seqRaw) >= clear.seq)) return null;
+      const newestHistorySeq = Array.isArray(historyRaw) ? newestStoredClimbSeq(historyRaw) : 0;
+      return clear.seq > newestHistorySeq ? clear : null;
+    } catch (error) {
+      this.deps.logger.warn('[PubSub] Board clear read unavailable:', error);
+      return null;
+    }
+  }
+
+  /**
    * One atomic, bounded read for anonymous marketing snapshots. History alone
    * is never proof of current LEDs: release keeps that week-long buffer. The
    * sender must still hold the board, and a mismatched/anonymous holder cannot
@@ -512,13 +633,19 @@ export class BoardPresenceStore {
       const snapshot: unknown = await publisher.eval(
         "local writer = redis.call('get', KEYS[1]); " +
           'if not writer then return {} end; ' +
-          "return {writer, redis.call('lrange', KEYS[2], 0, 49)}",
-        2,
+          // A clear only counts while the seq counter has reached it (see
+          // getActiveBoardClear): a counter that went back makes it stale.
+          "local cleared = tonumber(redis.call('hget', KEYS[3], 'seq') or '0'); " +
+          "if cleared > tonumber(redis.call('get', KEYS[4]) or '0') then cleared = 0 end; " +
+          "return {writer, redis.call('lrange', KEYS[2], 0, 49), tostring(cleared)}",
+        4,
         `board:${boardId}:writer`,
         `board:${boardId}:history`,
+        `board:${boardId}:cleared`,
+        `board:${boardId}:seq`,
       );
-      if (!Array.isArray(snapshot) || snapshot.length !== 2) return null;
-      const [writer, entries] = snapshot;
+      if (!Array.isArray(snapshot) || snapshot.length !== 3) return null;
+      const [writer, entries, clearedSeqRaw] = snapshot;
       if (typeof writer !== 'string' || writer.startsWith('conn:') || !Array.isArray(entries)) return null;
 
       let newest: Record<string, unknown> | null = null;
@@ -546,6 +673,8 @@ export class BoardPresenceStore {
       if (
         !newest ||
         newest.sentByUserId !== writer ||
+        // The holder turned every light off after this climb: nothing is lit.
+        Number(clearedSeqRaw) > (newest.seq as number) ||
         (newest.source != null && newest.source !== 'boardsesh') ||
         typeof newest.climbUuid !== 'string' ||
         !newest.climbUuid ||
@@ -741,7 +870,23 @@ export class BoardPresenceStore {
       const writerCommandIndex = commandLabels.length;
       pipeline.set(writerKey, input.emitterId, 'EX', BOARD_MEMBERSHIP_TTL, 'GET');
       commandLabels.push('writer-set');
-      pipeline.set(lastReportKey, lastReportValue, 'PX', REPORT_DEDUP_WINDOW_MS);
+      // Seq-gated against a stored clear (#7015): when a clear with a higher seq
+      // already ran its Lua (which deletes this marker), setting it again would
+      // make a re-light of this same climb inside the window read as a retry,
+      // and viewers would stay dark over a lit wall. Both scripts are atomic, so
+      // whichever order they run in, the marker ends up absent after a newer clear.
+      pipeline.eval(
+        "local cleared = tonumber(redis.call('hget', KEYS[2], 'seq') or '0'); " +
+          'if cleared > tonumber(ARGV[2]) then return 0 end; ' +
+          "redis.call('set', KEYS[1], ARGV[1], 'PX', ARGV[3]); " +
+          'return 1',
+        2,
+        lastReportKey,
+        `board:${input.boardId}:cleared`,
+        lastReportValue,
+        input.climb.seq,
+        REPORT_DEDUP_WINDOW_MS,
+      );
       commandLabels.push('last-report-set');
       let boardSessionCommandIndex = -1;
       let sessionBoardCommandIndex = -1;

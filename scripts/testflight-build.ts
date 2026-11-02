@@ -1,10 +1,12 @@
 /// <reference types="node" />
 
-import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { formatBuildTag, shortFingerprint } from './lib/release-tags';
+import { createTestflightCommandRunner } from './lib/testflight-github';
+import { readSupersededTestflightSources } from './lib/testflight-distribution';
+import { getSupersededNativeStampShas, validateNativeStampSource } from './mobile-native-release';
 import {
   objectFields,
   parseTestflightBuildReceipt,
@@ -13,9 +15,20 @@ import {
   trustedTestflightRun,
   validateReceiptSource,
 } from './lib/testflight-build';
+import type { TestflightBuildReceipt, TrustedTestflightRun } from './lib/testflight-build';
 
+export function validatePinnedTestflightSource(
+  receipt: TestflightBuildReceipt,
+  run: TrustedTestflightRun,
+  validateStamp: (sha: string) => { sha: string } = validateNativeStampSource,
+): void {
+  const proof = receipt.sourceSha === run.sha ? undefined : validateStamp(receipt.sourceSha).sha;
+  validateReceiptSource(receipt, run, proof);
+}
+
+const runCommand = createTestflightCommandRunner();
 function command(binary: string, argumentsList: string[]): string {
-  return execFileSync(binary, argumentsList, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).trim();
+  return runCommand(binary, argumentsList).trim();
 }
 
 function requiredEnvironment(name: string): string {
@@ -63,7 +76,7 @@ export function main(argumentsList = process.argv.slice(2)): void {
   if (action === 'capture') {
     const version = requiredEnvironment('BOARDSESH_MOBILE_VERSION');
     const buildNumber = requiredEnvironment('IOS_BUILD_NUMBER');
-    const sourceSha = requiredEnvironment('GITHUB_SHA');
+    const sourceSha = process.env.NATIVE_SOURCE_SHA || requiredEnvironment('GITHUB_SHA');
     const sourceRef = requiredEnvironment('GITHUB_REF_NAME');
     const tags = command('git', [
       'for-each-ref',
@@ -78,13 +91,15 @@ export function main(argumentsList = process.argv.slice(2)): void {
         return { name, sha: peeledSha || directSha };
       });
     const ancestorShas = command('git', ['rev-list', '--topo-order', sourceSha]).split('\n');
-    const previous = previousNativeBuild(tags, ancestorShas, version, buildNumber);
+    const supersededSources = new Set(getSupersededNativeStampShas(process.cwd(), sourceSha));
+    const previous = previousNativeBuild(tags, ancestorShas, version, buildNumber, supersededSources);
     writeJson(
       option('--output'),
       parseTestflightBuildReceipt({
         version,
         buildNumber,
         sourceSha,
+        workflowSha: requiredEnvironment('GITHUB_SHA'),
         sourceRef,
         sourceRunId: requiredEnvironment('GITHUB_RUN_ID'),
         buildTag: formatBuildTag(
@@ -160,14 +175,25 @@ export function main(argumentsList = process.argv.slice(2)): void {
     return;
   }
   const receipt = parseTestflightBuildReceipt(JSON.parse(readFileSync(option('--receipt'), 'utf8')));
-  validateReceiptSource(receipt, run);
+  validatePinnedTestflightSource(receipt, run);
   const resolveTag = (tag: string) => command('git', ['rev-parse', '--verify', `refs/tags/${tag}^{commit}`]);
   if (resolveTag(receipt.buildTag) !== receipt.sourceSha) throw new Error('Uploaded build tag moved or is missing.');
   if (receipt.previousBuildTag && receipt.previousBuildSha) {
     if (resolveTag(receipt.previousBuildTag) !== receipt.previousBuildSha) throw new Error('Previous build tag moved.');
     command('git', ['merge-base', '--is-ancestor', receipt.previousBuildSha, receipt.sourceSha]);
   }
-  emit({ version: receipt.version, build_number: receipt.buildNumber });
+  if (readSupersededTestflightSources(runCommand).has(receipt.sourceSha)) {
+    emit({ should_distribute: 'false' });
+    console.log('Native source was explicitly superseded by a version restoration; no build to distribute.');
+    return;
+  }
+  emit({
+    should_distribute: 'true',
+    version: receipt.version,
+    build_number: receipt.buildNumber,
+    source_sha: receipt.sourceSha,
+    source_ref: receipt.sourceRef,
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

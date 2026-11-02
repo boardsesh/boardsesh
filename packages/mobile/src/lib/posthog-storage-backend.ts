@@ -7,7 +7,7 @@ export const posthogStorageBackend = {
     return file.exists ? file.text() : null;
   },
   async setItem(key: string, payload: string): Promise<void> {
-    new File(Paths.document, key).write(payload);
+    new File(Paths.document, key).writeSync(payload);
   },
   async removeItem(key: string): Promise<void> {
     const file = new File(Paths.document, key);

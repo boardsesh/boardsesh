@@ -34,6 +34,11 @@ export async function sweepBoardArtCache(): Promise<CacheSweepResult> {
   return { beforeBytes: 0, freedBytes: 0, filesDeleted: 0 };
 }
 
+/** No native pruner and no directory to walk: browser overlays live in the Cache API. */
+export async function reconcileOverlayIndexWithDisk(): Promise<number> {
+  return 0;
+}
+
 export async function sweepOverlaysForScope(): Promise<CacheSweepResult> {
   return { beforeBytes: 0, freedBytes: 0, filesDeleted: 0 };
 }

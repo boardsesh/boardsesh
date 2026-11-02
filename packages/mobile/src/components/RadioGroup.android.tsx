@@ -7,14 +7,13 @@
 // picks it and TalkBack reads the row as a radio option labelled by its text. The
 // RadioButton's own `onClick` is left undefined so the tap fires once, not twice.
 // Unlike iOS, Android CAN show the per-option `description` and disable a row, so
-// the public API's full fidelity survives here. Brand tint comes from the Compose
-// Material theme the Host sets up (RadioButton has no colours prop — it reads M3
-// `primary`, which is the brand accent under our theme).
+// the public API's full fidelity survives here. The dot takes the brand control
+// tint (radioControlColors), matching the Switch and Slider beside it.
 //
 // One Host per control is intentional for now (RadioGroup is used one-per-card).
 
 import { useMemo } from 'react';
-import { Host } from '@expo/ui';
+import { ComposeHost } from './ComposeHost.android';
 import { Column, Row, Text, RadioButton } from '@expo/ui/jetpack-compose';
 import {
   fillMaxWidth,
@@ -27,12 +26,14 @@ import {
 } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { radioControlColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { makeRadioSelectHandler } from './RadioGroup.logic';
 import type { RadioGroupProps } from './RadioGroup.types';
 
 export function RadioGroup<T extends string>({ options, value, onChange }: RadioGroupProps<T>) {
-  const { colorScheme } = useTheme();
+  const { brandColors, m3 } = useTheme();
+  const radioColors = radioControlColors(brandColors, m3);
   // Memoize so a stable `onChange` doesn't push a new handler into the native Host
   // (and re-render the Compose tree) on every parent render.
   const handleSelect = useMemo(() => makeRadioSelectHandler(onChange), [onChange]);
@@ -41,11 +42,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
     // `matchContents={{ vertical: true }}` (NOT the boolean form, which sizes both
     // axes): the Host fills the parent's width so each Row's `fillMaxWidth()` has a
     // bounded width, while height tracks content. Mirrors SwitchRow.
-    //
-    // `colorScheme` pins the Compose MaterialTheme to our in-app Light/Dark
-    // toggle, not the OS scheme — else the option labels go dark-on-dark when
-    // the app runs dark on a light-mode phone (as SwitchRow/AppMenu do).
-    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
+    <ComposeHost matchContents={{ vertical: true }} style={styles.host}>
       <Column modifiers={[fillMaxWidth(), selectableGroup()]}>
         {options.map((option) => {
           const selected = option.value === value;
@@ -64,7 +61,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
             <Row key={option.value} verticalAlignment="center" modifiers={rowModifiers}>
               {/* The Row's `selectable` owns the tap — leave the RadioButton passive
                   so a tap on it doesn't double-fire the selection. */}
-              <RadioButton selected={selected} />
+              <RadioButton selected={selected} colors={radioColors} />
               <Column modifiers={disabled ? [weight(1), alpha(0.4)] : [weight(1)]}>
                 <Text style={{ typography: 'bodyLarge' }}>{option.label}</Text>
                 {option.description ? (
@@ -77,7 +74,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
           );
         })}
       </Column>
-    </Host>
+    </ComposeHost>
   );
 }
 

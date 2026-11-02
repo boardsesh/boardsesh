@@ -104,9 +104,9 @@ const TEXT_INPUT = { limit: 24, offset: 0 };
 // Parameters are placeholders ($1…), so these strings capture query shape —
 // exactly what a no-regression guard needs.
 const BASELINE_PROXIMITY_COUNT_SQL =
-  'SELECT count(*)::int as count FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint($1, $2)::geography, $3)';
+  'SELECT count(*)::int as count FROM gyms WHERE is_public = true AND is_listed = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint($1, $2)::geography, $3)';
 const BASELINE_PROXIMITY_ROWS_SQL =
-  'SELECT *, ST_Distance(location, ST_MakePoint($1, $2)::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint($3, $4)::geography, $5) ORDER BY distance_meters ASC, gyms.id ASC LIMIT $6 OFFSET $7';
+  'SELECT *, ST_Distance(location, ST_MakePoint($1, $2)::geography) as distance_meters FROM gyms WHERE is_public = true AND is_listed = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint($3, $4)::geography, $5) ORDER BY distance_meters ASC, gyms.id ASC LIMIT $6 OFFSET $7';
 
 // The empty string is a SQL literal, not a bound parameter — it's a constant of
 // the predicate, never caller input.
@@ -284,7 +284,7 @@ describe('searchGyms requireSlug — rendered SQL, text path', () => {
   it('leaves the text where-clause byte-identical when requireSlug is omitted', async () => {
     const { wheres } = await textSearchWith(TEXT_INPUT);
 
-    const BASELINE_TEXT_WHERE = `("gyms"."is_public" = $1 and "gyms"."deleted_at" is null)`;
+    const BASELINE_TEXT_WHERE = `("gyms"."is_public" = $1 and "gyms"."is_listed" = $2 and "gyms"."deleted_at" is null)`;
     expect(wheres).toEqual([BASELINE_TEXT_WHERE, BASELINE_TEXT_WHERE]);
   });
 
@@ -292,8 +292,8 @@ describe('searchGyms requireSlug — rendered SQL, text path', () => {
     const { wheres } = await textSearchWith({ ...TEXT_INPUT, requireSlug: false });
 
     expect(wheres).toEqual([
-      `("gyms"."is_public" = $1 and "gyms"."deleted_at" is null)`,
-      `("gyms"."is_public" = $1 and "gyms"."deleted_at" is null)`,
+      `("gyms"."is_public" = $1 and "gyms"."is_listed" = $2 and "gyms"."deleted_at" is null)`,
+      `("gyms"."is_public" = $1 and "gyms"."is_listed" = $2 and "gyms"."deleted_at" is null)`,
     ]);
   });
 

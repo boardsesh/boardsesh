@@ -141,6 +141,7 @@ export const GET_BOARD_BY_SLUG = gql`
   query GetBoardBySlug($slug: String!) {
     boardBySlug(slug: $slug) {
       ${BOARD_FIELDS_WITH_BOARD_ID}
+      gymIsListed
     }
   }
 `;
@@ -226,6 +227,18 @@ export const GET_BOARDS_BY_SERIAL_NUMBERS = gql`
   query GetBoardsBySerialNumbers($serialNumbers: [String!]!, $boardType: String) {
     boardsBySerialNumbers(serialNumbers: $serialNumbers, boardType: $boardType) {
       ${BOARD_FIELDS_WITH_BOARD_ID}
+    }
+  }
+`;
+
+export const GET_OBSERVED_BOARD_SERIAL_MATCHES = gql`
+  query GetObservedBoardSerialMatches($input: [ObservedBoardSerialInput!]!) {
+    observedBoardSerialMatches(input: $input) {
+      boardType
+      observedSerialNumber
+      candidates {
+        ${BOARD_FIELDS_WITH_BOARD_ID}
+      }
     }
   }
 `;
@@ -459,6 +472,12 @@ export type GetBoardsBySerialNumbersQueryVariables = {
 
 export type GetBoardsBySerialNumbersQueryResponse = {
   boardsBySerialNumbers: UserBoard[];
+};
+
+export type ObservedBoardSerialInput = { boardType: string; observedSerialNumber: string };
+export type ObservedBoardSerialMatch = ObservedBoardSerialInput & { candidates: UserBoard[] };
+export type GetObservedBoardSerialMatchesQueryResponse = {
+  observedBoardSerialMatches: ObservedBoardSerialMatch[];
 };
 
 export type BoardSerialConfig = {

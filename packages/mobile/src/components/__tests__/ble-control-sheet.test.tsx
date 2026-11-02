@@ -69,16 +69,13 @@ const baseProps = {
   onReassert: vi.fn(),
   onClearLights: vi.fn(),
   onDisconnect: vi.fn(),
-  autoDisconnectEnabled: false,
-  autoDisconnectTimeoutLabel: '30 seconds',
-  onToggleAutoDisconnect: vi.fn(),
+  disconnectWhenDrivingEnds: false,
+  onToggleDisconnectWhenDrivingEnds: vi.fn(),
   showLightAdjacentHolds: false,
   lightAdjacentHoldsEnabled: false,
   onToggleLightAdjacentHolds: vi.fn(),
-  lightOnSwipe: true,
-  onToggleLightOnSwipe: vi.fn(),
-  lightOnClimbTap: true,
-  onToggleLightOnClimbTap: vi.fn(),
+  alwaysDrive: true,
+  onToggleAlwaysDrive: vi.fn(),
   onClose: vi.fn(),
 };
 
@@ -86,10 +83,9 @@ beforeEach(() => {
   baseProps.onReassert.mockClear();
   baseProps.onClearLights.mockClear();
   baseProps.onDisconnect.mockClear();
-  baseProps.onToggleAutoDisconnect.mockClear();
+  baseProps.onToggleDisconnectWhenDrivingEnds.mockClear();
   baseProps.onToggleLightAdjacentHolds.mockClear();
-  baseProps.onToggleLightOnSwipe.mockClear();
-  baseProps.onToggleLightOnClimbTap.mockClear();
+  baseProps.onToggleAlwaysDrive.mockClear();
   baseProps.onClose.mockClear();
 });
 
@@ -100,11 +96,10 @@ describe('BleControlSheet', () => {
       row.getAttribute('data-switch-row'),
     );
     expect(rows).toEqual([
-      'ble.autoDisconnect.toggleTitle',
+      'ble.lighting.drivingEnds.label',
       'lightControl.lightAdjacentHolds',
-      // Tap first, swipe nested under it: the same pair as Settings › Board.
-      'ble.lighting.onTapLabel',
-      'ble.lighting.onSwipeLabel',
+      // One switch, as on Settings › Board.
+      'ble.lighting.alwaysDriveLabel',
     ]);
   });
 
@@ -145,26 +140,28 @@ describe('BleControlSheet', () => {
     expect(baseProps.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('toggles auto-disconnect once from the long-press row', () => {
+  it('toggles Disconnect Bluetooth when driving ends once from the long-press row', () => {
     const { getByText } = render(<BleControlSheet {...baseProps} />);
-    fireEvent.click(getByText('ble.autoDisconnect.toggleTitle'));
-    expect(baseProps.onToggleAutoDisconnect).toHaveBeenCalledTimes(1);
-    expect(baseProps.onToggleAutoDisconnect).toHaveBeenCalledWith(true);
+    fireEvent.click(getByText('ble.lighting.drivingEnds.label'));
+    expect(baseProps.onToggleDisconnectWhenDrivingEnds).toHaveBeenCalledTimes(1);
+    expect(baseProps.onToggleDisconnectWhenDrivingEnds).toHaveBeenCalledWith(true);
   });
 
-  it('renders the board-lighting rows and toggles each independently', () => {
-    const { getByText } = render(<BleControlSheet {...baseProps} />);
-    expect(getByText('ble.lighting.onSwipeLabel')).toBeDefined();
-    expect(getByText('ble.lighting.onTapLabel')).toBeDefined();
+  it('leaves Disconnect Bluetooth when driving ends and Always drive the wall to Settings on the player sheet', () => {
+    const { queryByText } = render(<BleControlSheet {...baseProps} showLightingSwitches={false} />);
+    expect(queryByText('ble.lighting.drivingEnds.label')).toBeNull();
+    expect(queryByText('ble.lighting.alwaysDriveLabel')).toBeNull();
+  });
 
-    fireEvent.click(getByText('ble.lighting.onSwipeLabel'));
-    expect(baseProps.onToggleLightOnSwipe).toHaveBeenCalledTimes(1);
-    expect(baseProps.onToggleLightOnSwipe).toHaveBeenCalledWith(false);
-    expect(baseProps.onToggleLightOnClimbTap).not.toHaveBeenCalled();
+  it('renders Always drive the wall, and the two retired switches are gone', () => {
+    const { getByText, queryByText } = render(<BleControlSheet {...baseProps} />);
+    expect(getByText('ble.lighting.alwaysDriveLabel')).toBeDefined();
+    expect(queryByText('ble.lighting.onSwipeLabel')).toBeNull();
+    expect(queryByText('ble.lighting.onTapLabel')).toBeNull();
 
-    fireEvent.click(getByText('ble.lighting.onTapLabel'));
-    expect(baseProps.onToggleLightOnClimbTap).toHaveBeenCalledTimes(1);
-    expect(baseProps.onToggleLightOnClimbTap).toHaveBeenCalledWith(false);
+    fireEvent.click(getByText('ble.lighting.alwaysDriveLabel'));
+    expect(baseProps.onToggleAlwaysDrive).toHaveBeenCalledTimes(1);
+    expect(baseProps.onToggleAlwaysDrive).toHaveBeenCalledWith(false);
   });
 
   it('always renders the turn-off row (every board now has a clear-all, incl. MoonBoard)', () => {

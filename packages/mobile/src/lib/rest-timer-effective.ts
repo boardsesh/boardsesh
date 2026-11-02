@@ -54,16 +54,23 @@ function workoutStartTransition(next: RestTimerStagePacing | null): RestTimerPac
  * crewmate's clock is a boundary on its first paced climb
  * (`workoutStartBoundary`).
  */
-export function syncRestTimerStagePacing(next: RestTimerStagePacing | null, nowMs: number): void {
+export function syncRestTimerStagePacing(
+  next: RestTimerStagePacing | null,
+  nowMs: number,
+  transitionOverride?: RestTimerPacingTransition,
+): void {
   const { stagePacing: current, crew } = getRestTimerState();
-  if (sameStagePacing(current, next)) return;
+  // Always consume a workout's crew boundary, even when an explicit launch
+  // overrides it. Leaving it behind would restart a later climb's beat.
+  const startTransition = workoutStartTransition(next);
+  if (sameStagePacing(current, next) && transitionOverride === undefined && startTransition === null) return;
   const settings = getRestPacingSettings();
   const ranOn = followsAnotherMembersCrewClock() ? (crew?.config ?? null) : null;
   const planned = planRestTimerPacingTransition(
     resolveEffectiveRestPacing({ settings, stage: current, crew: ranOn }),
     resolveEffectiveRestPacing({ settings, stage: next, crew: null }),
   );
-  applyRestTimerStagePacing(next, nowMs, workoutStartTransition(next) ?? planned);
+  applyRestTimerStagePacing(next, nowMs, transitionOverride ?? startTransition ?? planned);
 }
 
 /**

@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
+import type { MiniPlayerButtonId } from '../../../lib/mini-player-buttons';
 import type { PlayerButtonId, PlayerButtonsPosition } from '../../../lib/player-buttons';
 import type { MoreFormModel, MoreOption, MoreRow, MoreSection } from '../../MoreForm.types';
+import type { MiniPlayerButtonControl } from '../use-mini-player-button-controls';
 import type { PlayerButtonControl } from '../use-player-button-controls';
 
 export type ClimbViewModelInput = {
@@ -13,6 +15,11 @@ export type ClimbViewModelInput = {
     positionOptions: MoreOption[];
     position: PlayerButtonsPosition;
     onPositionChange: (key: string) => void;
+    /** Board control: the wall button or the bulb (#7000). */
+    boardControlLabel: string;
+    boardControlOptions: MoreOption[];
+    boardControl: string;
+    onBoardControlChange: (key: string) => void;
     previousNextLabel: string;
     previousNextDescription: string;
     previousNext: boolean;
@@ -26,16 +33,26 @@ export type ClimbViewModelInput = {
     preview: ReactNode;
     previewHeight: number;
   };
+  /** The MiniPlayer's buttons, from `useMiniPlayerButtonControls`. `null` where there is no native bottom accessory to draw them. */
+  miniPlayer: null | {
+    title: string;
+    settingsFooter: string;
+    controls: readonly MiniPlayerButtonControl[];
+    onVisibleChange: (buttonId: MiniPlayerButtonId, visible: boolean) => void;
+    restoreDefaultsLabel: string;
+    canRestoreDefaults: boolean;
+    onRestoreDefaults: () => void;
+  };
   /** "Below the climb", shared with the player's View options sheet. */
   belowTheClimb: MoreSection;
 };
 
 /**
- * Settings › Climbs & grades › Climb view: the player's buttons, then what sits
+ * Settings › Climbs & grades › Climb view: the player's buttons, the MiniPlayer's, then what sits
  * below the climb, top to bottom as the player shows them. Switches only, on
  * the native form; the order changes in the player's ⋯ → View options.
  */
-export function buildClimbViewModel({ buttons, belowTheClimb }: ClimbViewModelInput): MoreFormModel {
+export function buildClimbViewModel({ buttons, miniPlayer, belowTheClimb }: ClimbViewModelInput): MoreFormModel {
   const buttonRows: MoreRow[] = [
     {
       kind: 'toggle',
@@ -62,6 +79,27 @@ export function buildClimbViewModel({ buttons, belowTheClimb }: ClimbViewModelIn
     },
   ];
 
+  const miniPlayerRows: MoreRow[] =
+    miniPlayer === null
+      ? []
+      : [
+          ...miniPlayer.controls.map((control): MoreRow => ({
+            kind: 'toggle',
+            key: `miniPlayer.${control.id}`,
+            label: control.label,
+            subtitle: control.description,
+            value: control.visible,
+            onValueChange: (visible: boolean) => miniPlayer.onVisibleChange(control.id, visible),
+          })),
+          {
+            kind: 'button',
+            key: 'restoreMiniPlayerDefaults',
+            label: miniPlayer.restoreDefaultsLabel,
+            disabled: !miniPlayer.canRestoreDefaults,
+            onPress: miniPlayer.onRestoreDefaults,
+          },
+        ];
+
   return {
     sections: [
       {
@@ -78,9 +116,20 @@ export function buildClimbViewModel({ buttons, belowTheClimb }: ClimbViewModelIn
             selectedKey: buttons.position,
             onSelect: buttons.onPositionChange,
           },
+          {
+            kind: 'segmented',
+            key: 'boardControl',
+            label: buttons.boardControlLabel,
+            options: buttons.boardControlOptions,
+            selectedKey: buttons.boardControl,
+            onSelect: buttons.onBoardControlChange,
+          },
         ],
       },
       { key: 'buttons', footer: buttons.settingsFooter, rows: buttonRows },
+      ...(miniPlayer === null
+        ? []
+        : [{ key: 'miniPlayer', title: miniPlayer.title, footer: miniPlayer.settingsFooter, rows: miniPlayerRows }]),
       belowTheClimb,
     ],
   };

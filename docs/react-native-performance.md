@@ -143,7 +143,7 @@ whole visible window. Inline closures (`onPress={() => …}`) passed to a memoiz
 
 - `keyExtractor` is a module-scope function (line 893), not an inline `(item) => item.uuid`.
 - `renderClimbItem` is a `useCallback` (lines 699–727) whose deps are the board identity tuple plus
-  the **stable** `handleClimbPress` / `openClimbActions` / `handleAddToQueue` callbacks and the
+  the **stable** `handleClimbPress` / `handleOpenClimbActions` / `handleAddToQueue` callbacks and the
   scalar `activeClimbUuid`. No `visibleClimbs.length`, no inline arrows.
 - The handlers it closes over (`handleClimbPress`, `handleAddToQueue`) are themselves `useCallback`s.
 - `ClimbListRow` (`packages/mobile/src/components/ClimbListRow.tsx`) is `React.memo`'d and keeps its
@@ -218,6 +218,18 @@ it can read on the UI thread.
   step before. A qualifying second release during that wait is retained on the UI thread until
   its neighbour is mounted and its exact background and holds overlay have displayed (#6351).
   A React commit, image `onLoad`, or first-paint timeout alone does not make a page ready to enter.
+  The wait is bounded: `RELEASE_ART_DEADLINE_MS` (700 ms) after the page is mounted, the release
+  goes onto it even if it is still painting, and a page whose art `failed` is stepped onto at once.
+  The clock starts when the page is mounted, not at finger-up, so a page React mounts late still
+  gets longer than the 600 ms photo reveal; a swipe repeated toward the same climb keeps the first
+  one's clock. It is a delayed no-op `withTiming` on a shared value with `ReduceMotion.Never`,
+  cancelled the moment the release goes or is dropped: no JS timer and no JS-thread work, and the
+  UI thread only ticks it while a release waits. Unbounded, an overlay that never answered held
+  every swipe for good. While the neighbour paints, the drag follows the finger at 30% (the end
+  card's resistance) instead of staying at 0, and when a page paints mid-drag the board closes the
+  gap at up to twice the finger's speed instead of jumping. Only those anomalous steps hop to the JS
+  thread (`noteStepArtWait`), and they ride the step's own `Queue Navigation` as `heldArtState` /
+  `heldMs`; an ordinary step costs nothing extra.
   The board/carousel host stays mounted when a section header changes and the drawer measures
   itself again (#6383), including the setter-notes layouts reported in #6373. See rule 9.
 - `packages/mobile/src/components/ClimbListRow.tsx` follows the same pattern: the swipe-commit
@@ -401,19 +413,26 @@ in check:
 - **Release board-art on background + memory pressure.** `LayeredClimbImage` blanks its `<Image>`
   layers when `useIsAppBackgrounded()` is true or the surface is a non-focused iPad tab
   (`BoardArtVisibilityProvider` — the iPad shell keeps every tab mounted, and
-  `Image.clearMemoryCache()` cannot reclaim a bitmap a mounted view still holds). Alongside the cap,
-  `useImageCacheMemoryManagement` sweeps expo-image's memory cache on background and on the OS
-  `memoryWarning` event, and `useIpadTabSwitchImageCacheSweep` sweeps at iPad tab switches. Note the
+  `Image.clearMemoryCache()` cannot reclaim a bitmap a mounted view still holds). The tab the
+  player is open over still counts as focused (#7081); every other tab is released. Alongside the
+  cap, `useImageCacheMemoryManagement` sweeps expo-image's memory cache on background and on the OS
+  `memoryWarning` event, and `useIpadTabSwitchImageCacheSweep` sweeps at iPad tab switches. Root
+  routes over the tabs (the player and the pages it pushes) are not switches: the sweep follows the
+  last tab the climber was on, so opening and closing the player never sweeps. Note the
   `memoryWarning` event is a _last_ resort, not a foreground lever: iOS delivers it only after an
   allocation has already failed. Re-decodes from disk (no network).
 
-**Phone player transitions retain thumbnails.** Opening `/play` must keep the underlying
-list's image layers mounted. Although the player has an opaque backing, its opening and closing
+**Player transitions retain thumbnails, on phones and iPad.** Opening `/play` must keep the
+underlying list's image layers mounted. Although the player has an opaque backing, its opening and closing
 animations expose the list; an interactive swipe exposes it while `/play` is still focused.
 Unmounting on route focus leaves blank thumbnails until their images decode again. Keep the
 existing image instances throughout the transition, including a cancelled swipe. This retains
 the mounted list thumbnails while the player is open; list virtualization, cache limits,
-app-background cleanup, and inactive-iPad-tab cleanup continue to bound image memory.
+app-background cleanup, and inactive-iPad-tab cleanup continue to bound image memory. iPad did
+the opposite until #7081: it hid the tab under the player and swept the memory cache on every
+open and close, so the list came back blank behind the closing player. On iPad, a session that
+stays on one tab plus the player now never sweeps, and the 256 MB `maxMemoryCost` cap is the
+bound that matters for #3803.
 
 **Why:** On-device profiling (Pixel 8 Pro, Android 16) showed ~248 MB native heap idle on the feed
 and the play-drawer carousel piling a native-res (~7 MB RGBA) overlay per swiped climb into the
@@ -507,7 +526,17 @@ reference numbers):
 - The accessibility element is one fixed stand-in the size of the board, not a slot. The slots
   change places on every swipe, and focus that sat on one would be left on a hidden view. It takes
   touches, so a screen reader's explore-by-touch finds it, and it is the container's first child, so
-  no board added or dropped after it can change where it sits among its siblings.
+  no board added or dropped after it can change where it sits among its siblings. The header has
+  one fixed stand-in too (#6352), `PlayDrawerHeaderAccessibility`: it reads the whole header as one
+  label (name, attribute glyphs, grade, stats, setter, rules, wall state) and carries its controls
+  (copy the name, the setter, the wall pill) as custom actions, and every header slot is hidden
+  from assistive tech. Unlike the board's slots, the current header takes sighted taps, so a
+  stand-in under it could miss Android's explore-by-touch: hover events go to the topmost view
+  first, a hidden view there that takes them (the setter link) stops them reaching anything below,
+  and RN only skips a view for hover when its `pointerEvents` is `none` or `box-only`. So the
+  header's stand-in is the last child of `SwipeableHeader`, on top, with
+  `pointerEvents="box-none"`, which lets taps through and still takes hover. Being last, it never
+  changes order against another view that stays, so Fabric's differ never removes and reinserts it.
 - The UI thread numbers each step it takes (`uiSteps`); the JS thread writes back the last step it
   has rendered, in one shared value with the page it has in the middle. While they differ the UI
   thread leaves the JS thread alone. When they agree and the pages do not (a Next button, a queue

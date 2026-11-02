@@ -3,7 +3,13 @@ import { markStartup } from '../lib/profiling/startup-profile';
 import { invalidateConsentAccount } from '../lib/consent-state';
 import { createConsentBoundAnalyticsRunner } from '../lib/consent-bound-analytics';
 import { commitVerifiedAuthResult, type VerifiedAuthResult } from '../lib/verified-auth-result';
-import { createSignupConsentLease, publishSignupConversion, type SignupConsentLease } from '../lib/signup-conversion';
+import { publishSignupConversion } from '../lib/signup-conversion';
+import {
+  cancelAuthAnalyticsHandoffs,
+  createAuthAnalyticsHandoff,
+  type AuthAnalyticsHandoff,
+} from '../lib/auth-analytics-handoff';
+import { trackLoginSucceeded, type LoginSucceededProperties } from '../lib/login-analytics';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useSegments, Redirect } from 'expo-router';
@@ -28,8 +34,10 @@ import {
   type RegistrationResult,
 } from '../lib/auth';
 import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screenshot-mode';
-import { isAnalyticsPinnedToAPerson, reset as resetAnalytics, track } from '../lib/analytics';
+import { getAnalyticsIdentity, isAnalyticsPinnedToAPerson, reset as resetAnalytics, track } from '../lib/analytics';
 import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
+import { clearRelayReceipt } from '../lib/relay-receipt';
+import { forgetRememberedBoardsOnSignOut } from '../lib/ble/remembered-boards-sign-out';
 import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
@@ -42,6 +50,7 @@ import { clearFirstBoardPickerShowCount } from '../lib/onboarding/first-board-pi
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { clearWorkoutRun } from '../lib/workout-run-store';
+import { clearEndedWorkouts } from '../lib/ended-workout-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
 import { getAppEntryHref } from '../lib/app-entry-route';
@@ -286,6 +295,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         // Which workout stage each queued climb belongs to. New with #5379, so
         // there is no older native behaviour to keep: cleared on every platform.
         clearWorkoutRun(),
+        // The recaps of ended workouts (#6903), kept for their session summaries.
+        clearEndedWorkouts(),
       ]);
     },
     [],
@@ -410,6 +421,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const localDb = getDatabaseHandle();
       if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
       resetOfflineUsageSignal();
+      // #7014: a pending relay timing belongs to the account that is leaving.
+      clearRelayReceipt();
+      // The boards this phone remembers (a hang-up keeps one for 10 minutes, a
+      // drop keeps it longer): the next account's first bulb tap opens the
+      // board list instead of silently taking the box this one held. Not on a
+      // signed-out cold start: an anonymous climber's board stays remembered.
+      void forgetRememberedBoardsOnSignOut();
       await deactivateNotificationDevice();
       const stopTokenCleanup = stopTokenManagement(async () => {});
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);
@@ -915,10 +933,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     async (
       result: Partial<VerifiedAuthResult>,
       credentialGeneration: number,
-      signupLease: SignupConsentLease,
-    ): Promise<void> => {
-      if (!isAuthCredentialGenerationCurrent(credentialGeneration) || !authStateRef.current.isAuthenticated) return;
-      if (!result.userId) return;
+      handoff: AuthAnalyticsHandoff,
+      loginProperties: LoginSucceededProperties,
+    ): Promise<boolean> => {
+      if (!isAuthCredentialGenerationCurrent(credentialGeneration) || !authStateRef.current.isAuthenticated)
+        return false;
       // A superseded SecureStore write can return success after another login.
       // The server receipt proves creation; this decode only compares its owner
       // against the credential actually committed on this device.
@@ -926,33 +945,48 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       try {
         currentToken = await getAuthToken();
       } catch {
-        return;
+        return false;
       }
+      const credentialOwner = userIdFromJwt(currentToken);
       if (
         !isAuthCredentialGenerationCurrent(credentialGeneration) ||
         !authStateRef.current.isAuthenticated ||
-        userIdFromJwt(currentToken) !== result.userId
+        !credentialOwner ||
+        (result.userId !== undefined && credentialOwner !== result.userId) ||
+        (result.accountCreation !== undefined && result.accountCreation.userId !== credentialOwner)
       )
-        return;
+        return false;
       const verifiedResult: VerifiedAuthResult = {
-        userId: result.userId,
+        userId: credentialOwner,
         ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
       };
+      handoff.bindAccount(credentialOwner);
       commitVerifiedAuthResult(verifiedResult);
-      if (verifiedResult.accountCreation) publishSignupConversion(verifiedResult.accountCreation, signupLease);
+      if (verifiedResult.accountCreation) publishSignupConversion(verifiedResult.accountCreation, handoff);
+      if (Platform.OS !== 'web') trackLoginSucceeded(queryClient, loginProperties, handoff);
+      return true;
     },
-    [],
+    [queryClient],
   );
 
   const resolveSuccessfulAuth = useCallback(
-    async (result: Partial<VerifiedAuthResult>, resolveSession: () => Promise<void>): Promise<void> => {
-      const signupLease = createSignupConsentLease();
+    async (
+      result: Partial<VerifiedAuthResult>,
+      resolveSession: () => Promise<void>,
+      loginProperties: LoginSucceededProperties,
+    ): Promise<void> => {
       const credentialGeneration = captureAuthCredentialGeneration();
+      const handoff = createAuthAnalyticsHandoff({
+        credentialCurrent: () => isAuthCredentialGenerationCurrent(credentialGeneration),
+        identity: getAnalyticsIdentity(),
+      });
+      let committed = false;
       try {
         await resolveSession();
-        await commitSuccessfulAuthMetadata(result, credentialGeneration, signupLease);
+        committed = await commitSuccessfulAuthMetadata(result, credentialGeneration, handoff, loginProperties);
       } finally {
-        signupLease.dispose();
+        // Queued publications retain the lease until delivery/expiry, not the screen's lifetime.
+        if (!committed) handoff.dispose();
       }
     },
     [commitSuccessfulAuthMetadata],
@@ -961,21 +995,37 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // Both native OAuth flows run their provider sheet, exchange the identity
   // token for our JWT pair, and — on success — re-run checkAuth so the provider
   // flips to the authenticated UI (matching signInWithCredentials).
-  const signInWithApple = useCallback(async (): Promise<OAuthSignInResult> => {
-    const result = await authSignInWithApple();
-    if (result.success) {
-      await resolveSuccessfulAuth(result, checkAuth);
-    }
-    return result;
-  }, [checkAuth, resolveSuccessfulAuth]);
+  const signInWithApple = useCallback(
+    async (_webAttemptId?: string, isRegistration = false): Promise<OAuthSignInResult> => {
+      const result = await authSignInWithApple();
+      if (result.success) {
+        await resolveSuccessfulAuth(result, checkAuth, {
+          ...loginProviderProperties('apple'),
+          flow: 'native',
+          screen: isRegistration ? 'register' : 'login',
+          ...(isRegistration ? { is_registration: true } : {}),
+        });
+      }
+      return result;
+    },
+    [checkAuth, resolveSuccessfulAuth],
+  );
 
-  const signInWithGoogle = useCallback(async (): Promise<OAuthSignInResult> => {
-    const result = await authSignInWithGoogle();
-    if (result.success) {
-      await resolveSuccessfulAuth(result, checkAuth);
-    }
-    return result;
-  }, [checkAuth, resolveSuccessfulAuth]);
+  const signInWithGoogle = useCallback(
+    async (_webAttemptId?: string, isRegistration = false): Promise<OAuthSignInResult> => {
+      const result = await authSignInWithGoogle();
+      if (result.success) {
+        await resolveSuccessfulAuth(result, checkAuth, {
+          ...loginProviderProperties('google'),
+          flow: 'native',
+          screen: isRegistration ? 'register' : 'login',
+          ...(isRegistration ? { is_registration: true } : {}),
+        });
+      }
+      return result;
+    },
+    [checkAuth, resolveSuccessfulAuth],
+  );
 
   // Browser-based Google fallback for supported iOS presentation and Android
   // config failures. Same success contract as the native flow: re-run checkAuth
@@ -986,7 +1036,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       try {
         const result = await authSignInWithGoogleWeb(isRegistration);
         if (result.success) {
-          await resolveSuccessfulAuth(result, checkAuthAfterSuccessfulBrowserFallback);
+          await resolveSuccessfulAuth(result, checkAuthAfterSuccessfulBrowserFallback, {
+            ...loginProviderProperties('google'),
+            flow: 'web_fallback',
+            fallback_mechanism: 'browser_deeplink',
+            screen: isRegistration ? 'register' : 'login',
+            ...(isRegistration ? { is_registration: true } : {}),
+          });
         }
         return result;
       } finally {
@@ -1005,7 +1061,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       try {
         const result = await authSignInWithAppleWeb(isRegistration);
         if (result.success) {
-          await resolveSuccessfulAuth(result, checkAuthAfterSuccessfulBrowserFallback);
+          await resolveSuccessfulAuth(result, checkAuthAfterSuccessfulBrowserFallback, {
+            ...loginProviderProperties('apple'),
+            flow: 'web_fallback',
+            fallback_mechanism: 'browser_deeplink',
+            screen: isRegistration ? 'register' : 'login',
+            ...(isRegistration ? { is_registration: true } : {}),
+          });
         }
         return result;
       } finally {
@@ -1019,7 +1081,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     async (email: string, password: string): Promise<CredentialsSignInResult> => {
       const result = await authSignInWithCredentials(email, password);
       if (result.success) {
-        await resolveSuccessfulAuth(result, checkAuth);
+        await resolveSuccessfulAuth(result, checkAuth, {
+          ...loginProviderProperties('credentials'),
+          flow: 'native',
+          screen: 'login',
+        });
       }
       return result;
     },
@@ -1033,7 +1099,12 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     async (email: string, password: string, name?: string): Promise<RegistrationResult> => {
       const result = await authRegisterWithCredentials(email, password, name);
       if (result.success && result.authenticated !== false) {
-        await resolveSuccessfulAuth(result, checkAuth);
+        await resolveSuccessfulAuth(result, checkAuth, {
+          ...loginProviderProperties('credentials'),
+          flow: 'native',
+          screen: 'register',
+          is_registration: true,
+        });
       }
       return result;
     },
@@ -1046,6 +1117,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // remain visible to callers after local account isolation has completed.
   const signOut = useCallback(
     async (method: 'manual' | 'account_deleted' = 'manual') => {
+      cancelAuthAnalyticsHandoffs();
       const credentialGeneration = captureAuthCredentialGeneration();
       const transitionEpoch = beginAuthTransition();
       updateNativeSessionDegraded(false);

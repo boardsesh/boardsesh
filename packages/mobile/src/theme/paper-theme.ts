@@ -42,17 +42,25 @@ export function buildPaperTheme(colorScheme: ColorScheme, dynamic?: MD3Theme['co
   // on the translucent-violet `primaryContainer`. Aliasing `onSurface` made it
   // near-white in dark, illegible on the dark-scheme container.
   const onPrimaryContainer = isDark ? '#EADDFF' : '#21005D';
+  // M3 `primary` is a FOREGROUND role (selected tab label, text buttons, focused
+  // field outline), so it takes the brand foreground tint — `#A78BFA` in dark
+  // (6.11:1 on the `#221A33` surface), not the fill-only `#7C3AED` (2.92:1). A
+  // light `primary` then needs dark ink on top: `#2E1065`, the end of the brand
+  // violet ramp (5.60:1 on `#A78BFA`). Light is unchanged: there `primary` and
+  // `primaryFill` are both `#6D28D9` under white. Filled brand buttons don't use
+  // this role; they paint `primaryFill` with white (`brandAccentColor`).
+  const onPrimary = isDark ? '#2E1065' : brand.onPrimary;
 
   return {
     ...base,
     colors: {
       ...base.colors,
-      primary: brand.primaryFill,
-      onPrimary: brand.onPrimary,
+      primary: brand.primary,
+      onPrimary,
       primaryContainer: withAlpha(brand.primaryFill, isDark ? 0.32 : 0.14),
       onPrimaryContainer,
-      secondary: brand.primaryFill,
-      onSecondary: brand.onPrimary,
+      secondary: brand.primary,
+      onSecondary: onPrimary,
       secondaryContainer: withAlpha(brand.primaryFill, isDark ? 0.28 : 0.16),
       onSecondaryContainer: onPrimaryContainer,
       // Amber accent is the M3 tertiary role — fill-only, so it carries dark text

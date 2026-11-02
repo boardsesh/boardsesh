@@ -5,7 +5,7 @@ name: Mobile Screenshots (iOS)
 # gates PRs. There is no cron.
 #
 # WHEN IT RUNS — two ways, and only these two:
-#   * automatically, after an iOS TestFlight deploy on release/next
+#   * automatically, after an iOS TestFlight deploy on main
 #     that actually SHIPPED a binary. Every checkout pins the deploy's head_sha;
 #   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
 #
@@ -66,7 +66,7 @@ name: Mobile Screenshots (iOS)
 #
 # The run is SELF-GATING. macOS minutes are the scarce resource (free on a public
 # repo, but capped at 5 concurrent), and most runs change no pixels at all, so a
-# `gate: probe` dispatch shoots ONE shard and only pays for the other fifteen when
+# `gate: probe` dispatch shoots ONE shard and only pays for the other twenty-four when
 # that shard actually moved:
 #   setup        — resolve the locale list, the capture matrix and the gate.
 #   ios-build    — build/restore the cached .app ONCE (no per-shard cold build).
@@ -83,25 +83,27 @@ name: Mobile Screenshots (iOS)
 #                  shard) and ios-capture picks between them on
 #                  `needs.probe.result`, not on `gate` alone — a crashed probe
 #                  never actually captured or uploaded that shard, so it needs
-#                  the FULL 16-shard matrix, or ios-finalize's dimension gate
+#                  the FULL 25-shard matrix, or ios-finalize's dimension gate
 #                  would red the whole run over a hole the probe itself left.
 #                  This one shard is blind to a change confined to another locale
-#                  (es/fr/de strings) or to an iPad-only layout — it would always
+#                  (es/fr/de/it strings) or to an iPad-only layout — it would always
 #                  read as "unchanged". scripts/screenshot-probe-scope.ts closes
 #                  that gap: it diffs the changed paths between the baseline's
 #                  commit and this run's commit and forces the fan-out (`force_full`)
 #                  whenever one falls in a documented blind spot, regardless of what
 #                  the pixel comparison found. See docs/mobile-store-release.md.
-#   ios-capture  — matrix of locale (en-US, es, fr, de) × device (the 6.9" iPhone 16
-#                  Pro Max and 6.3" Pro, plus the
-#                  iPad Pro 13-inch and 11-inch, a separate slot that doesn't
-#                  auto-scale) = 16 shards, each its own runner: one Metro, one
-#                  simulator, one capture. When the probe actually SUCCEEDED, its
-#                  own shard is excluded from the matrix (the probe already
-#                  uploaded it), so a changed probe fans out to the remaining 15;
-#                  a skipped (gate=full) or crashed probe gets the full 16.
+#   ios-capture  — matrix of locale (en-US, es, fr, de, it) × device (the 6.9" iPhone 16
+#                  Pro Max and 6.3" Pro, the iPad Pro 13-inch and 11-inch, a
+#                  separate slot that doesn't auto-scale, and the iPhone Duo,
+#                  whose one set holds both its displays) = 25 shards, each its
+#                  own runner: one Metro, one simulator, one capture (the Duo
+#                  shard shoots closed, then unfolds and shoots open). When the
+#                  probe actually SUCCEEDED, its own shard is excluded from the
+#                  matrix (the probe already uploaded it), so a changed probe fans
+#                  out to the remaining 24; a skipped (gate=full) or crashed probe
+#                  gets the full 25.
 #   ios-finalize — merge the per-shard artifacts into one tree, run the dimension
-#                  gate and the content gate (each needs all five App Store
+#                  gate and the content gate (each needs all six App Store
 #                  locales at once), and upload. An automatic run refreshes the
 #                  baseline itself after a green full capture; a dispatch has to
 #                  ask with `publish_baseline`.
@@ -142,7 +144,7 @@ on:
     types: [completed]
     # The deploy workflow's push branches; only the release train builds on push.
     # A hand-dispatched main build gets its screenshots by dispatch too.
-    branches: [release/next]
+    branches: [main]
   workflow_dispatch:
     inputs:
       flow:
@@ -153,16 +155,27 @@ on:
           - app-store
           - onboarding
       gate:
-        description: 'full = capture all 16 shards. probe = shoot en-US × iPhone 16 Pro Max first, compare it with the stored baseline, and fan out to the other 15 shards only when it changed. Automatic runs after a native deploy always probe.'
+        description: 'full = capture all 25 shards. probe = shoot en-US × iPhone 16 Pro Max first, compare it with the stored baseline, and fan out to the other 24 shards only when it changed. Automatic runs after a native deploy always probe.'
         type: choice
         default: full
         options:
           - full
           - probe
       locales:
-        description: 'iOS locales to capture (comma-separated, e.g. "en-US" or "en-US,es,fr"). Empty = the full en-US,es,fr,de set. A narrowed set (or the onboarding flow) skips the App Store dimension gate, which needs all five store locales at once.'
+        description: 'iOS locales to capture (comma-separated, e.g. "en-US" or "en-US,es,fr"). Empty = the full en-US,es,fr,de,it set. A narrowed set (or the onboarding flow) skips the App Store dimension gate, which needs all six store locales at once.'
         type: string
         default: ''
+      devices:
+        description: 'Default-listing capture devices. phone-pro and phone-pro-max capture one iPhone 16 Pro or Pro Max; duo captures only iPhone Duo. Narrowed runs are capture-only; uploads, baselines and CPPs require common.'
+        type: choice
+        default: common
+        options:
+          - common
+          - phones
+          - ipads
+          - phone-pro
+          - phone-pro-max
+          - duo
       render_mode:
         description: 'Board drawing to shoot. Empty = the app default (Aura), which is what the store set is meant to show. "classic" shoots the old look for a comparison set.'
         type: choice
@@ -251,6 +264,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   # The branch that carries the store candidate, mirroring mobile-store-draft.yml.
@@ -264,7 +278,7 @@ jobs:
   # Decide whether this run has anything to capture, then resolve the locale
   # list, the capture matrix and the gate — once, on a cheap ubuntu runner, so
   # every macOS job downstream just reads an output. Empty `locales` = the full
-  # en-US,es,fr,de store set (an automatic run and a no-arg dispatch); a value
+  # en-US,es,fr,de,it store set (an automatic run and a no-arg dispatch); a value
   # narrows it (e.g. a single locale).
   setup:
     # workflow_run fires on every completion; a failed or cancelled deploy has
@@ -388,55 +402,32 @@ jobs:
       # JS-only push does that with its build job skipped. The proof that a
       # binary shipped is the fingerprint tag, so look for it before spending a
       # macOS runner. See the SHIPPED GATE note in the header.
+      - name: Checkout trusted binary-source tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
       - name: Check that a binary shipped at this commit
         id: shipped
         env:
           GH_TOKEN: ${{ github.token }}
+          NATIVE_SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" != "workflow_run" ]; then
-            echo "shipped=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Manual dispatch of $SOURCE_SHA — capturing without the shipped-binary gate."
+          if [ "$EVENT_NAME" != workflow_run ]; then
+            echo 'shipped=true' >> "$GITHUB_OUTPUT"
+            echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # ios-testflight-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`, i.e.
-          # a LIGHTWEIGHT tag, so its ref's object.sha is normally already the
-          # commit. But a lightweight-only assumption is fragile — an annotated tag
-          # (made by hand, or by a future change to the deploy workflow) points at a
-          # TAG object instead, whose own sha is not a commit sha, and would read as
-          # "never shipped" even when it names the right commit. So read each ref's
-          # object type alongside its sha, and peel any "tag"-typed object through
-          # the Git Data API to the commit sha it points at before comparing. Read
-          # over the API: setup has no checkout. Assignment before use (no `local`)
-          # so `set -e` aborts the job on any API failure here — fail closed rather
-          # than mis-reading a real shipped commit as unshipped.
-          tagged_refs="$(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-ios-" \
-            --jq '.[] | "\(.object.type) \(.object.sha)"')"
-          shipped_commit_shas=""
-          while IFS=' ' read -r object_type object_sha; do
-            [ -n "$object_sha" ] || continue
-            if [ "$object_type" = "tag" ]; then
-              commit_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq .object.sha)"
-            else
-              commit_sha="$object_sha"
-            fi
-            shipped_commit_shas="$shipped_commit_shas
-          $commit_sha"
-          done <<<"$tagged_refs"
-          # Assign first, grep second, and via a herestring rather than a pipe:
-          # piping straight into `grep -q` lets grep close the pipe on its first
-          # match, and the SIGPIPE that then kills the producer would read as "not
-          # shipped" under `pipefail` — inverting the gate on exactly the runs that
-          # should capture.
-          if grep -qxF -- "$SOURCE_SHA" <<<"$shipped_commit_shas"; then
-            echo "shipped=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::iOS binary shipped at $SOURCE_SHA — capturing."
-          else
-            echo "shipped=false" >> "$GITHUB_OUTPUT"
-            echo "No iOS binary shipped at $SOURCE_SHA (no fingerprint-ios-* tag) — nothing to capture." >> "$GITHUB_STEP_SUMMARY"
-            echo "::notice::No iOS binary shipped at $SOURCE_SHA (no fingerprint-ios-* tag) — nothing to capture."
-          fi
+          source_file="$RUNNER_TEMP/native-source-output"
+          GITHUB_OUTPUT="$source_file" node --experimental-strip-types scripts/mobile-native-build-source.ts --run-id "$NATIVE_SOURCE_RUN_ID"
+          cat "$source_file" >> "$GITHUB_OUTPUT"
+          source_sha="$(sed -n 's/^source_sha=//p' "$source_file")"
+          if [ -n "$source_sha" ]; then echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"; fi
 
       - name: Compute locales, matrix and gate
         id: compute
@@ -450,6 +441,8 @@ jobs:
           FLOW: ${{ inputs.flow || 'app-store' }}
           UPLOAD_INPUT: ${{ inputs.upload || 'false' }}
           GATE_INPUT: ${{ inputs.gate || 'full' }}
+          DEVICE_SELECTION: ${{ inputs.devices || 'common' }}
+          CPP_TARGET: ${{ inputs.cpp_target || 'none' }}
           FIXTURES_MODE: ${{ inputs.fixtures || 'replay' }}
           PUBLISH_BASELINE: ${{ inputs.publish_baseline || 'false' }}
         run: |
@@ -458,13 +451,21 @@ jobs:
           flow="$FLOW"
           upload="$UPLOAD_INPUT"
           gate="$GATE_INPUT"
+          case "$DEVICE_SELECTION" in common|phones|ipads|phone-pro|phone-pro-max|duo) ;; *) echo '::error::devices must be common, phones, ipads, phone-pro, phone-pro-max, or duo'; exit 1 ;; esac
+          if [ "$DEVICE_SELECTION" != common ]; then
+            if [ "$upload" = true ] || [ "$PUBLISH_BASELINE" = true ] || [ "$CPP_TARGET" != none ]; then
+              echo '::error::narrowed devices are capture-only; uploads, baselines and CPPs require common'
+              exit 1
+            fi
+            gate=full
+          fi
           if [ "$FIXTURES_MODE" != "replay" ] && { [ "$upload" = "true" ] || [ "$PUBLISH_BASELINE" = "true" ]; }; then
             echo "::error::store upload and baseline publication require the verified replay campaign."
             exit 1
           fi
           # An automatic run after a native deploy always probes first: it is the
           # unattended path, most native releases move no store pixels, and the
-          # probe is one macOS runner instead of sixteen. A dispatch keeps the
+          # probe is one macOS runner instead of twenty-five. A dispatch keeps the
           # `gate` input (default full) — a human asking for a capture usually
           # wants the whole set.
           if [ "$EVENT_NAME" = "workflow_run" ]; then
@@ -475,7 +476,7 @@ jobs:
           # (all-blank input) from aborting the step under pipefail; the empty
           # result is then caught explicitly below with a clear error.
           if [ -z "$locales" ]; then
-            ios_locales='["en-US","es","fr","de"]'
+            ios_locales='["en-US","es","fr","de","it"]'
           else
             ios_locales=$(printf '%s' "$locales" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R . | jq -cs . || true)
             if [ -z "$ios_locales" ] || [ "$ios_locales" = "[]" ]; then
@@ -493,19 +494,21 @@ jobs:
           # Same reasoning for the probe gate: an upload must carry the whole set,
           # and the probe deliberately captures one shard and may stop there.
           if [ "$upload" = "true" ] && [ "$gate" = "probe" ]; then
-            echo "::error::upload=true cannot be combined with gate=probe — an upload needs all 16 shards, and the probe stops after one when nothing changed."
+            echo "::error::upload=true cannot be combined with gate=probe — an upload needs all 25 shards, and the probe stops after one when nothing changed."
             exit 1
           fi
           # A narrowed / onboarding / uploading run has no meaningful baseline to
           # compare against (the baseline is the full app-store set), so those
           # always capture everything they were asked for.
-          if [ -n "$locales" ] || [ "$flow" = "onboarding" ] || [ "$upload" = "true" ]; then
+          if [ "$DEVICE_SELECTION" != common ] || [ -n "$locales" ] || [ "$flow" = "onboarding" ] || [ "$upload" = "true" ]; then
             gate=full
           fi
           # The probe already captures en-US × iPhone 16 Pro Max and uploads it as
           # a shard artifact, so exclude that pair from the fan-out instead of
           # shooting it twice.
-          devices='[{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max"},{"name":"iPhone 16 Pro","slug":"iphone-16-pro"},{"name":"iPad Pro 13-inch (M5)","slug":"ipad-pro-13-inch-m5"},{"name":"iPad Pro 11-inch (M5)","slug":"ipad-pro-11-inch-m5"}]'
+          # The iPhone Duo is store-only: custom product pages (the CPP matrix
+          # above) have no Duo set.
+          devices='[{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max"},{"name":"iPhone 16 Pro","slug":"iphone-16-pro"},{"name":"iPad Pro 13-inch (M5)","slug":"ipad-pro-13-inch-m5"},{"name":"iPad Pro 11-inch (M5)","slug":"ipad-pro-11-inch-m5"},{"name":"iPhone Duo","slug":"iphone-duo"}]'
           # devices[0] must stay the iPhone 16 Pro Max entry: the probe shard is
           # always en-US × devices[0], and the exclude below is derived from that
           # same element, so a reordered $devices array would otherwise silently
@@ -514,16 +517,28 @@ jobs:
             echo "::error::devices[0] must be the iPhone 16 Pro Max entry (the probe shard assumption)."
             exit 1
           fi
+          capture_devices="$devices"
+          if [ "$DEVICE_SELECTION" = phones ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select((.slug | startswith("iphone-")) and .slug != "iphone-duo")]')
+          elif [ "$DEVICE_SELECTION" = ipads ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug | startswith("ipad-"))]')
+          elif [ "$DEVICE_SELECTION" = duo ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug == "iphone-duo")]')
+          elif [ "$DEVICE_SELECTION" = phone-pro ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug == "iphone-16-pro")]')
+          elif [ "$DEVICE_SELECTION" = phone-pro-max ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug == "iphone-16-pro-max")]')
+          fi
           # Two full matrices, always computed regardless of `gate` — ios-capture
           # itself picks between them at evaluation time, based on the probe's
           # ACTUAL result rather than this job's gate input. A probe that
           # CRASHES never captured or uploaded its shard, even though gate=probe
           # asked for the exclude, so ios-capture must fall back to the full
-          # 16-shard matrix on that path instead of leaving a hole for
+          # 25-shard matrix on that path instead of leaving a hole for
           # ios-finalize's assertCompleteTree to catch as a red finalize job.
           ios_matrix_full=$(jq -cn \
             --argjson locale "$ios_locales" \
-            --argjson device "$devices" \
+            --argjson device "$capture_devices" \
             '{locale: $locale, device: $device, exclude: []}')
           # Derive the excluded (locale, device) pair from devices[0] instead of
           # hand-copying the literal, so it can never drift from the device the
@@ -532,7 +547,7 @@ jobs:
           probe_exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')
           ios_matrix_without_probe=$(jq -cn \
             --argjson locale "$ios_locales" \
-            --argjson device "$devices" \
+            --argjson device "$capture_devices" \
             --argjson exclude "$probe_exclude" \
             '{locale: $locale, device: $device, exclude: $exclude}')
           {
@@ -554,14 +569,15 @@ jobs:
   # modules, pnpm's patch/override
   # policy, and the root @expo/cli pin). JS/TS-only and web-only
   # changes (incl. pnpm-lock.yaml churn) do NOT bust it, so the common path is a cache
-  # hit and skips the ~30-min native build. Bump `-v1-` to force a rebuild.
+  # hit and skips the ~30-min native build. The selected Xcode and SDK identify
+  # a separate v2 Debug cache entry; a different toolchain cannot reuse it.
   # runner.arch is in the key because a simulator .app is arch-specific.
   ios-build:
     needs: setup
     # Nothing shipped, nothing to photograph — and this is the expensive one to
     # skip: a cache miss here is a ~30-min native build.
     if: (inputs.cpp_record_run_id || '') == '' && needs.setup.outputs.shipped == 'true' && !((inputs.cpp_target || 'none') != 'none' && (inputs.cpp_action == 'plan' || inputs.cpp_action == 'create'))
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     outputs:
       cache-key: ${{ steps.appkey.outputs.key }}
@@ -578,7 +594,34 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.setup.outputs.source_sha }}
+
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -587,9 +630,14 @@ jobs:
 
       # Compute the .app cache key ONCE and surface it as a job output so every
       # ios-capture shard restores the exact same bucket.
+      - name: Select the screenshot build toolchain
+        run: bash .boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh
+
       - name: Compute app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        env:
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/targets/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', '.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts', '.boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh') }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH" --minimum-sdk 27.1
 
       # lookup-only: this job only needs to KNOW whether the .app is cached (the
       # shards do the actual restore), so on a hit we skip downloading a .app this
@@ -615,6 +663,12 @@ jobs:
 
       # Save for the ios-capture shards (and future runs). Only on a miss — on a
       # hit the entry already exists.
+      - name: Verify simulator app identity
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        env:
+          APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app --minimum-sdk 27.1
+
       - name: Save simulator app to cache
         if: steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -633,7 +687,7 @@ jobs:
     # but stated anyway: this `if` has no status function, so the day someone
     # adds one the gate must not quietly disappear with the implicit needs check.
     if: needs.setup.outputs.gate == 'probe' && needs.setup.outputs.shipped == 'true' && (inputs.cpp_target == null || inputs.cpp_target == 'none')
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     outputs:
       changed: ${{ steps.compare.outputs.changed }}
@@ -669,11 +723,38 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.setup.outputs.source_sha }}
           fetch-depth: 0
 
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
       - name: Capture the probe shard
-        uses: ./.github/actions/ios-screenshot-shard
+        uses: ./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard
         env:
           SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
           SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
@@ -774,15 +855,15 @@ jobs:
        (needs.probe.result == 'success' &&
         (needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))
     # The `if:` above lets a crashed probe fan out, but the MATRIX also has to
-    # switch to the full 16-shard set on that path: a crashed probe may have
+    # switch to the full 25-shard set on that path: a crashed probe may have
     # uploaded partial screenshots before a later step failed. Its artifacts
     # stay separate and ios-finalize uses only the recovery captures. `needs.probe.result == 'success'` is the only
-    # branch that gets the excluded (15-shard) matrix; both `skipped` (gate=full,
+    # branch that gets the excluded (24-shard) matrix; both `skipped` (gate=full,
     # no probe ran) and `failure` fall through to the full one. GitHub Actions'
     # `&&`/`||` return the actual operand, not a coerced boolean, and a matrix
     # JSON string is always non-empty (truthy) — so `false && x` short-circuits
     # to `false` without evaluating `x`, and `false || y` then evaluates to `y`.
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     strategy:
       # One shard failing shouldn't abandon the rest — let them all finish so
@@ -790,13 +871,13 @@ jobs:
       fail-fast: false
       # A public repo gets 5 concurrent macOS runners; the sixth queues anyway.
       # Capping at 4 leaves a slot for the other macOS workflows (ios-rn-ci, the
-      # TestFlight deploy) instead of starving them behind a 16-shard sweep.
+      # TestFlight deploy) instead of starving them behind a 25-shard sweep.
       max-parallel: 4
-      # Devices: native large and medium Dynamic Island iPhone slots, plus the
-      # 13-inch and 11-inch landscape iPads. Matrix = 4 locales × 4 devices
-      # = 16 shards, one simulator per shard — minus the probe's own pair when the
-      # probe actually succeeded and uploaded it itself (see the `if:` comment
-      # above for the failure/skip fallback to the full 16).
+      # Devices: native large and medium Dynamic Island iPhone slots, the
+      # 13-inch and 11-inch landscape iPads, and the iPhone Duo. Matrix =
+      # 5 locales × 5 devices = 25 shards, one simulator per shard — minus the
+      # probe's own pair when the probe actually succeeded and uploaded it itself
+      # (see the `if:` comment above for the failure/skip fallback to the full 25).
       matrix: >-
         ${{ fromJSON(needs.probe.result == 'success' && needs.setup.outputs.ios_matrix_without_probe ||
             needs.setup.outputs.ios_matrix_full) }}
@@ -822,10 +903,37 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.setup.outputs.source_sha }}
+
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
 
       - name: Capture shard
-        uses: ./.github/actions/ios-screenshot-shard
+        uses: ./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard
         env:
           SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
           SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
@@ -852,14 +960,14 @@ jobs:
     # and red the dimension gate after every JS-only push.
     if: ${{ !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.shipped == 'true' && (inputs.cpp_target == null || inputs.cpp_target == 'none') }}
     # Gate the App Store Connect secrets behind the Production environment — its
-    # branch policy (main and release/next) fences them off from anyone who can push
+    # branch policy (main and main) fences them off from anyone who can push
     # another branch and workflow_dispatch it. The APP_STORE_CONNECT_* secrets are
     # only referenced in the upload steps below, so every other run resolves to ''
     # (no environment) and never waits on a future required reviewer — see the
     # conditional-vs-bare note at android-apk-rn.yml (gate job). The workflow_run arm
     # covers the automatic trigger; it is deliberately narrowed to a run that
     # actually captured, so an unchanged probe needs no environment. A
-    # train-triggered run resolves Production because #5477 added release/next to
+    # train-triggered run resolves Production because #5477 added main to
     # that environment's deployment-branch policy (a one-time owner action, noted
     # in docs/mobile-store-release.md); without it every automatic upload would
     # fail with a branch-policy rejection instead of a missing secret.
@@ -888,9 +996,9 @@ jobs:
       # A complete, trustworthy App Store tree landed in this run: the fan-out
       # succeeded and neither the flow nor the locale list was narrowed. Whether
       # the probe itself succeeded, was skipped, or crashed does not gate this —
-      # a probe crash also switches ios-capture onto the full 16-shard matrix
+      # a probe crash also switches ios-capture onto the full 25-shard matrix
       # (see its `strategy.matrix` expression above), not just the excluded
-      # 15-shard one gate=probe would otherwise ask for, so all 16 shards are
+      # 24-shard one gate=probe would otherwise ask for, so all 25 shards are
       # genuinely expected here regardless of how the probe fared. Any shard
       # ios-capture itself failed to produce is still caught by the dimension
       # gate below, which every upload and baseline-refresh step is already
@@ -899,7 +1007,8 @@ jobs:
       FULL_SET_CAPTURED: >-
         ${{ needs.ios-capture.result == 'success' &&
             (inputs.flow == null || inputs.flow == 'app-store') &&
-            (inputs.locales == null || inputs.locales == '') }}
+            (inputs.locales == null || inputs.locales == '') &&
+            (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
 
     steps:
       - name: Checkout repository
@@ -907,12 +1016,12 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.setup.outputs.source_sha }}
 
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install Node.js dependencies
         run: vp install --frozen-lockfile
@@ -920,7 +1029,7 @@ jobs:
       # Merge every per-locale artifact back into ONE app-stores/apple/screenshots
       # tree. merge-multiple flattens all matching artifacts into the single path,
       # preserving each one's <locale>/<device>/NN-name.png layout — so the gate
-      # and fastlane see the full five-locale tree. On the unchanged path the
+      # and fastlane see the full six-locale tree. On the unchanged path the
       # probe's single shard is the only match, which merge-multiple handles the
       # same way (it is a merge of one).
       #
@@ -943,10 +1052,10 @@ jobs:
 
       # Fail loudly if any capture isn't an App Store-accepted size for its slot,
       # or if a locale/device folder is missing — so deliver can't get silently
-      # rejected by Apple (or upload a partial set). Requires all five App Store
+      # rejected by Apple (or upload a partial set). Requires all six App Store
       # locales at once, which is why it runs here after the merge, not per-shard.
       - name: Assert screenshot dimensions
-        # The gate needs the full App Store set (all five store locales, app-store
+        # The gate needs the full App Store set (all six store locales, app-store
         # flow). Skip it for the onboarding flow, a narrowed `locales` run, or an
         # unchanged probe — those are capture-only and hold one shard at most; the
         # per-shard artifacts are still produced + uploaded. `success() &&` is kept
@@ -955,7 +1064,7 @@ jobs:
         # success()/failure()/always()/cancelled() still gets the default
         # success() ANDed in automatically, so this condition would behave
         # identically without the explicit `success() &&` prefix.
-        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
         run: vp run check:screenshot-dimensions -- --platform ios
 
       # Fetch the last published baseline for the content gate below to compare
@@ -968,7 +1077,7 @@ jobs:
       # `if` as the dimension gate: both protect the same automatic upload below.
       - name: Fetch previous screenshot baseline
         id: previous_baseline
-        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -983,7 +1092,7 @@ jobs:
       # already runs (mobile-screenshots-android.yml, "Assert screenshots are not
       # blank"). Same `if` as the dimension gate.
       - name: Assert screenshot content
-        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
         env:
           BASELINE_FOUND: ${{ steps.previous_baseline.outputs.found }}
         run: |
@@ -1015,8 +1124,14 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
 
       - name: Decode App Store Connect API key
         if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
@@ -1084,7 +1199,7 @@ jobs:
           elif [ "$PROBE_CHANGED" = "false" ] && [ "$PROBE_FORCE_FULL" = "true" ]; then
             echo "**Forced full capture vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched pixel-for-pixel, but ${PROBE_FORCE_FULL_REASON:-a change outside the probe shard} forced the fan-out anyway (see scripts/screenshot-probe-scope.ts)." >> "$GITHUB_STEP_SUMMARY"
           elif [ "$PROBE_CHANGED" = "false" ]; then
-            echo "**Unchanged vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched, so the other 15 shards were skipped." >> "$GITHUB_STEP_SUMMARY"
+            echo "**Unchanged vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched, so the other 24 shards were skipped." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "**Changed vs baseline ${BASELINE_COMMIT:-(none)}**: ${PROBE_CHANGED_FILES:-(no baseline yet)}. Fanned out to the remaining shards; the baseline is refreshed when this run publishes one." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -1113,7 +1228,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - uses: ./.github/actions/asc-cpp
         with:
@@ -1146,7 +1261,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - uses: ./.github/actions/asc-cpp
         with:
@@ -1170,7 +1285,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - name: Restore account-bound bootstrap checkpoint
         uses: actions/cache/restore@v4
@@ -1216,7 +1331,7 @@ jobs:
   cpp-capture:
     needs: [setup, ios-build, cpp-bootstrap]
     if: ${{ !cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' && (needs.cpp-bootstrap.result == 'success' || needs.cpp-bootstrap.result == 'skipped') && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action != 'plan' && inputs.cpp_action != 'create' && (inputs.cpp_record_run_id || '') == '' }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 65
     strategy:
       fail-fast: false
@@ -1234,8 +1349,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.setup.outputs.source_sha }}
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
       - name: Capture target-specific native scenes
-        uses: ./.github/actions/ios-screenshot-shard
+        uses: ./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard
         env:
           SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
           SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
@@ -1268,7 +1410,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - name: Verify and download retained native records before credentials
         if: ${{ (inputs.cpp_record_run_id || '') != '' }}
@@ -1354,7 +1496,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - uses: actions/download-artifact@v4
         if: ${{ inputs.cpp_target == 'all' || inputs.cpp_target == 'kilter' }}

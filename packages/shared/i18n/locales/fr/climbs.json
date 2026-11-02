@@ -324,6 +324,7 @@
       "title": "Options de la liste de blocs",
       "viewOptions": "Options d’affichage",
       "history": "Historique de la board, {{board}}",
+      "historyTitle": "Historique de la board",
       "historyHint": "Voir les blocs qui ont été allumés sur ce mur"
     },
     "moderation": {
@@ -422,7 +423,7 @@
       "recovery": {
         "scope": "{{board}} · {{angle}}°",
         "filters": "Filtres actifs : {{filters}}",
-        "removeHint": "Retire un filtre pour réessayer. Ta recherche et la configuration restent sélectionnées.",
+        "removeHint": "Retire un filtre pour réessayer. Tout le reste est conservé.",
         "openFilters": "Ajuster les filtres"
       }
     },
@@ -504,6 +505,9 @@
       "pinChip": "Épingler {{name}} dans la rangée du haut",
       "unpinChip": "Retirer {{name}} de la rangée du haut",
       "recentDescription": "Tes 10 dernières recherches s'afficheront ici.",
+      "ratingAtLeast": "{{count}}★+",
+      "quickFiltersLink": "Filtres rapides",
+      "quickFiltersFooter": "Choisis les filtres affichés dans la rangée du haut, et leur ordre.",
       "established2plus": "Établies 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Voir {{count}} voie",
@@ -602,11 +606,11 @@
       "clearAll": "Tout effacer",
       "nameToken": "« {{name}} »",
       "drafts": "Mes brouillons",
-      "popularityUnrepeated": "Non répétés"
+      "popularityUnrepeated": "Non répétés",
+      "wallDrafts": "Brouillons"
     },
     "search": {
       "recentFilters": "Récents",
-      "clearRecent": "Effacer",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
       "gradeMax": "≤{{grade}}",
@@ -716,7 +720,8 @@
       "sameGrade": "C'est déjà la cotation actuelle",
       "reasonPlaceholder": "Explique à la crew pourquoi (10 caractères minimum)",
       "reasonAria": "Motif du signalement",
-      "reasonRemaining": "Encore {{count}} caractères",
+      "reasonRemaining_one": "Encore 1 caractère pour envoyer",
+      "reasonRemaining_other": "Encore {{count}} caractères pour envoyer",
       "reasonCount": "{{count}}/500",
       "submit": "Envoyer",
       "submitError": "Impossible d'envoyer ton signalement",
@@ -728,7 +733,6 @@
       }
     },
     "hidden": {
-      "short": "masqué",
       "chip": "Masqué",
       "banner": "Masqué par la communauté"
     },
@@ -743,13 +747,13 @@
       "editorHint_other": "Retire les prises grises pour enregistrer"
     },
     "climbActions": {
-      "preview": "Aperçu",
       "playNext": "Mettre juste après",
       "playLast": "Mettre à la fin",
       "replayFromHere": "Reprendre d'ici",
       "nameCopied": "Nom copié",
       "copyNameError": "Impossible de copier le nom",
       "copyNameHint": "Appuie longuement pour copier le nom",
+      "copyName": "Copier le nom",
       "tick": "Enregistrer une croix",
       "addBetaVideo": "Ajouter une vidéo beta",
       "openInApp": "Ouvrir dans l'app Aurora",
@@ -758,7 +762,6 @@
       "editEntry": "Modifier l'entrée du carnet",
       "report": "Signaler le bloc",
       "changeGrade": "Changer la cotation",
-      "closeOverlay": "Fermer les actions de la voie",
       "openQueue": "Ouvrir la file",
       "deleteClimb": {
         "row": "Supprimer le bloc",
@@ -823,7 +826,8 @@
         "campusLabel": "Campus (sans pieds)",
         "campusDescription": "Mains seulement, sans les pieds",
         "anyFeetLabel": "Pieds libres",
-        "anyFeetDescription": "Les pieds peuvent utiliser n’importe quelle prise, pas seulement les prises marquées"
+        "anyFeetDescription": "Les pieds peuvent utiliser n’importe quelle prise, pas seulement les prises marquées",
+        "wallDraftDescription": "Toute personne ayant accès à ce Spraywall peut grimper tes brouillons enregistrés."
       },
       "drafts": {
         "holds_one": "{{count}} prise",
@@ -851,7 +855,8 @@
         "done": "Enregistré",
         "draftToast": "Brouillon enregistré",
         "publishedToast": "Voie publiée",
-        "needsHold": "Ajoute une prise pour enregistrer"
+        "needsHold": "Ajoute une prise pour enregistrer",
+        "beforeLogging": "Enregistre ce bloc avant de le noter."
       },
       "autosave": {
         "onDevice": "Brouillon enregistré sur ce téléphone",
@@ -861,7 +866,8 @@
         "unsyncedEdits": "Les dernières modifications sont uniquement sur ce téléphone",
         "notStored": "Connectez-vous pour garder ce brouillon",
         "saveFailed": "Impossible d'enregistrer sur votre compte. Touchez Enregistrer pour réessayer.",
-        "keptToast": "Brouillon gardé sur ce téléphone. Rouvrez l'éditeur pour la terminer."
+        "keptToast": "Brouillon gardé sur ce téléphone. Rouvrez l'éditeur pour la terminer.",
+        "waitingToSync": "Enregistré sur cet appareil · En attente de synchronisation"
       },
       "newClimb": {
         "confirm": {

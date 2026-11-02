@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 
+const lighting = vi.hoisted(() => ({ enabled: true }));
+vi.mock('../../components/play-drawer/use-climb-change-lights', () => ({
+  isDrivingWall: () => lighting.enabled,
+}));
+
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 
 vi.mock('../playlists/board-details-for-playlist', () => ({
@@ -43,10 +48,11 @@ function makeTick(overrides: Partial<TickLike> = {}): TickLike {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  lighting.enabled = true;
 });
 
 describe('openClimbInPlayDrawer', () => {
-  it('kind:climb opens active by default (no preview), tagged as a climb-view', () => {
+  it('kind:climb opens active when automatic lighting is enabled, tagged as a climb-view', () => {
     const deps = makeDeps();
     const climb = { uuid: 'c-1', name: 'X' } as Climb;
     const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20,33', angle: 40 };
@@ -69,7 +75,7 @@ describe('openClimbInPlayDrawer', () => {
     });
   });
 
-  it('kind:tick with frames opens active by default with a resolved board config (no route push)', () => {
+  it('kind:tick with frames opens active with automatic lighting and a resolved board config (no route push)', () => {
     mockedGetBoardConfig.mockReturnValue(KILTER_CONFIG);
     const deps = makeDeps();
     openClimbInPlayDrawer({ kind: 'tick', tick: makeTick({ angle: 50 }) }, deps);
@@ -183,5 +189,38 @@ describe('openClimbInPlayDrawer', () => {
     const deps = makeDeps();
     openClimbInPlayDrawer({ kind: 'ref', climbUuid: 'c-5', boardType: 'moonboard', layoutId: 1, angle: 40 }, deps);
     expect(deps.router.push).not.toHaveBeenCalled();
+  });
+});
+
+describe('preview-first climb opens', () => {
+  it('pins a loaded climb preview before opening when automatic lighting is off', () => {
+    lighting.enabled = false;
+    const deps = makeDeps();
+    const climb = { uuid: 'c-preview', name: 'Preview' } as Climb;
+    const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20,33', angle: 40 };
+    openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, deps);
+    expect(deps.openPlayDrawer).toHaveBeenCalledExactlyOnceWith(climb, {
+      boardConfig,
+      previewQueueItem: expect.objectContaining({ climb: expect.objectContaining({ uuid: climb.uuid }) }),
+    });
+  });
+
+  it('does not create activation intent for a missing-frames tick when lighting is off', () => {
+    lighting.enabled = false;
+    mockedGetBoardConfig.mockReturnValue(KILTER_CONFIG);
+    const deps = makeDeps();
+    openClimbInPlayDrawer({ kind: 'tick', tick: makeTick({ frames: null }) }, deps);
+    expect(deps.openPlayDrawer).not.toHaveBeenCalled();
+    const [route] = deps.router.push.mock.calls[0];
+    expect(route.params).not.toHaveProperty('activationIntent');
+  });
+
+  it('does not let preview:false bypass the lighting preference', () => {
+    lighting.enabled = false;
+    const deps = makeDeps();
+    const climb = { uuid: 'c-preview', name: 'Preview' } as Climb;
+    const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20,33', angle: 40 };
+    openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, deps, { preview: false });
+    expect(deps.openPlayDrawer.mock.calls[0][1]?.previewQueueItem?.climb.uuid).toBe(climb.uuid);
   });
 });

@@ -4,8 +4,8 @@
     "NSHealthShareUsageDescription": "Boardsesh liest dein Körpergewicht, um Kalorien zu schätzen, und deine gesicherten Boardsesh-Workouts, damit nichts doppelt landet.",
     "NSBluetoothAlwaysUsageDescription": "Boardsesh verbindet sich über Bluetooth mit deinem Kilter Board, Tension Board oder MoonBoard und beleuchtet die Griffe. Über Bluetooth werden keine persönlichen Daten übertragen.",
     "NSBluetoothPeripheralUsageDescription": "Boardsesh verbindet sich über Bluetooth mit deinem Board und steuert die LED-Griffe.",
-    "NSLocationWhenInUseUsageDescription": "Boardsesh nutzt deinen Standort, um Boards in der Nähe zu finden und Kletter-Sessions in der Nähe im Party-Modus zu entdecken.",
-    "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh nutzt deinen Standort, um Boards in der Nähe zu finden und Kletter-Sessions in der Nähe im Party-Modus zu entdecken.",
+    "NSLocationWhenInUseUsageDescription": "Boardsesh nutzt deinen Standort, um dir Boards und Kletterhallen in deiner Nähe zu zeigen und ein Board, das du hinzufügst, auf der Karte einzutragen.",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh nutzt deinen Standort, um dir Boards und Kletterhallen in deiner Nähe zu zeigen und ein Board, das du hinzufügst, auf der Karte einzutragen.",
     "NSCameraUsageDescription": "Boardsesh nutzt deine Kamera, damit du eine Wand fotografieren und darauf Boulder setzen kannst.",
     "NSPhotoLibraryUsageDescription": "Boardsesh nutzt deine Fotomediathek, damit du ein Profilbild, ein Foto deiner Wand oder einen Screenshot für dein Feedback auswählen kannst."
   }

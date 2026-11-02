@@ -170,7 +170,9 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     // so they would stay NULL (not retired) here for good. Spray only: no
     // catalogue board ever sets the flag, and bumping `refreshRevision` would
     // re-crawl every downloaded Kilter and Tension catalogue to write NULLs.
-    refreshRevisionByBoardType: { spray: 2 },
+    // Shared drafts were previously filtered out for every other wall viewer;
+    // their existing cursors must replay old rows now made readable.
+    refreshRevisionByBoardType: { spray: 3 },
     refreshColumns: ['is_hidden'],
     // Required on spray pages only. A page from a server that predates the
     // column must not complete the spray replay above, but making it required
@@ -258,6 +260,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     ],
   },
   board_climb_stats: {
+    refreshRevisionByBoardType: { spray: 1 },
     queryName: 'syncClimbStats',
     cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMB_STATS',
@@ -284,6 +287,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     ],
   },
   board_climb_grades: {
+    refreshRevisionByBoardType: { spray: 1 },
     queryName: 'syncClimbGrades',
     // The one table that does NOT cursor on updated_at — it has no such column.
     // Matches `updatedAtColumn: sql`board_climb_grades.computed_at`` in the

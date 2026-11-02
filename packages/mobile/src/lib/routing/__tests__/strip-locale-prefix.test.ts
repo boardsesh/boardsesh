@@ -10,7 +10,7 @@ describe('stripLocalePrefix', () => {
     expect(stripLocalePrefix('/fr/b/the-gym/40/list')).toBe('/b/the-gym/40/list');
   });
 
-  it.each(['de', 'es', 'fr'])('handles every non-root locale (%s)', (locale) => {
+  it.each(['de', 'es', 'fr', 'it'])('handles every non-root locale (%s)', (locale) => {
     expect(stripLocalePrefix(`/${locale}/kilter/1/10/1,20/40/list`)).toBe('/kilter/1/10/1,20/40/list');
   });
 

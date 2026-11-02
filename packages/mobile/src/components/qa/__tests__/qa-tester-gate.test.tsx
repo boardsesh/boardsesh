@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
 // Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../../lib/schedule-idle-task', () => ({
+  scheduleIdleTask: (task: () => void) => {
+    task();
+    return { cancel: vi.fn() };
+  },
+}));
+
 vi.mock('../../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
@@ -36,15 +43,7 @@ vi.mock('expo-updates', () => ({
   },
 }));
 // Run the deferred work inline so each case is one awaited tick rather than a
-// timer dance; the real InteractionManager only postpones it past the frame.
-vi.mock('react-native', () => ({
-  InteractionManager: {
-    runAfterInteractions: (task: () => void) => {
-      task();
-      return { cancel: vi.fn() };
-    },
-  },
-}));
+// timer dance; the idle scheduler postpones it past the first frame.
 vi.mock('../../../lib/onboarding/onboarding-storage', () => ({ hasSeenOnboarding: hasSeenOnboardingMock }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: profileCtrl.id ? { id: profileCtrl.id, isTester: profileCtrl.isTester } : undefined }),

@@ -4,6 +4,7 @@ import { createElement, useEffect, useState, type ChangeEvent, type ReactNode } 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
+import type { ClimbActionsTarget } from '../drawer-host-provider';
 
 const queue = vi.hoisted(() => ({
   sessionId: 'session-1' as string | null,
@@ -30,16 +31,12 @@ const queueSheet = vi.hoisted(() => ({
     };
     onClose: () => void;
     onClimbPress: (item: ClimbQueueItem) => void;
-    onOpenActions: (item: ClimbQueueItem) => void;
+    onOpenActions: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
     onSuggestionPress: (climb: ClimbQueueItem['climb'], source: PlaylistSuggestionSource) => void;
   },
   present: vi.fn(),
   dismiss: vi.fn(),
   dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
-}));
-
-const climbActions = vi.hoisted(() => ({
-  props: null as null | Record<string, unknown>,
 }));
 
 const playlistSheet = vi.hoisted(() => ({
@@ -131,13 +128,38 @@ vi.mock('react-native', () => ({
 // The host reads the device layout to decide sheet (compact) vs pane (regular).
 // Defaults to compact (the bottom-sheet path most tests exercise); the
 // regular-width pane describe flips it.
-const layoutCfg = vi.hoisted(() => ({ widthClass: 'compact' as 'compact' | 'regular' }));
+// `nativeTabBar` models the native iPad (UIKit sidebar, no pane); off, a regular
+// width is the JS tablet shell, whose pane takes taps.
+const layoutCfg = vi.hoisted(() => ({
+  widthClass: 'compact' as 'compact' | 'regular',
+  nativeTabBar: false,
+  windowWidth: 1024,
+}));
 vi.mock('../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ widthClass: layoutCfg.widthClass, expanded: false }),
 }));
-vi.mock('../../hooks/native-tablet-pane-width', () => ({
-  useTabletPaneWidth: () => ({ width: 1024, sidebarWidth: 96 }),
+// The phone split (iPhone Duo in landscape). Off except in its own describe.
+const splitCfg = vi.hoisted(() => ({ phoneSplit: false }));
+vi.mock('../../hooks/use-phone-split', () => ({
+  usePhoneSplit: () => splitCfg.phoneSplit,
 }));
+// The real resolver, fed from the two configs above.
+vi.mock('../../hooks/use-current-climb-surface', async () => {
+  const { resolveCurrentClimbSurface } = await vi.importActual<typeof import('../../hooks/current-climb-surface')>(
+    '../../hooks/current-climb-surface',
+  );
+  return {
+    useCurrentClimbSurface: () =>
+      resolveCurrentClimbSurface({
+        isTablet: layoutCfg.widthClass === 'regular',
+        widthClass: layoutCfg.widthClass,
+        windowWidth: layoutCfg.windowWidth,
+        nativeTabBar: layoutCfg.nativeTabBar,
+        nativeAccessory: layoutCfg.nativeTabBar,
+        phoneSplit: splitCfg.phoneSplit,
+      }),
+  };
+});
 
 vi.mock('expo-crypto', () => ({
   randomUUID: () => 'test-uuid',
@@ -147,6 +169,23 @@ vi.mock('expo-crypto', () => ({
 // `app/play.tsx` route — so the host only needs the barrel to resolve (it imports
 // type-only symbols from it). A no-op keeps the real, native-heavy PlayDrawer out
 // of jsdom.
+// The MiniPlayer's angle sheet (#6940): the props the host hands it.
+type AngleSheetProps = {
+  visible: boolean;
+  onClose: () => void;
+  boardName: string;
+  layoutId: number;
+  climbUuid?: string;
+  currentAngle: number;
+  onAngleChange: (angle: number) => void;
+};
+const angleSheet = vi.hoisted(() => ({ props: null as null | AngleSheetProps }));
+vi.mock('../../components/play-drawer/AngleSelectorSheet', () => ({
+  AngleSelectorSheet: (props: AngleSheetProps) => {
+    angleSheet.props = props;
+    return null;
+  },
+}));
 vi.mock('../../components/play-drawer', () => ({
   PlayDrawer: () => null,
 }));
@@ -166,7 +205,7 @@ vi.mock('../../components/play-drawer/QueueSheet', async () => {
           };
           onClose: () => void;
           onClimbPress: (item: ClimbQueueItem) => void;
-          onOpenActions: (item: ClimbQueueItem) => void;
+          onOpenActions: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
           onSuggestionPress: (climb: ClimbQueueItem['climb'], source: PlaylistSuggestionSource) => void;
         },
         ref,
@@ -195,11 +234,8 @@ vi.mock('../../components/LogAscentSheet', () => ({
     });
   },
 }));
-vi.mock('../../components/climb-actions/ClimbReactionMenu', () => ({
-  ClimbReactionMenu: (props: Record<string, unknown>) => {
-    climbActions.props = props;
-    return createElement('div', { 'data-climb-actions': 'true' });
-  },
+vi.mock('../../components/climb-actions/ClimbActionsMenu', () => ({
+  ClimbMenusProvider: ({ children }: { children?: ReactNode }) => children,
 }));
 vi.mock('../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 vi.mock('../../components/AddToPlaylistSheet', () => ({
@@ -245,17 +281,33 @@ vi.mock('../../components/board-discovery/BoardShareSheet', () => ({
 const nativeNavigation = vi.hoisted(() => ({
   ready: false,
   routeNames: ['(tabs)', 'play'],
+  // The root stack's routes, top last (the phone-split close reads the top one).
+  stack: ['(tabs)'] as string[],
+  segments: ['(tabs)', 'climbs'] as string[],
+  // On a device the root state is expo-router's own stack (`ExpoRoot`'s
+  // `Content`), with one `__root` screen whose nested state is the app's Stack.
+  // False only where a test also covers the flat shape.
+  wrappedInExpoRoot: true,
   dispatch: vi.fn(),
 }));
 const nativeNavigationRef = {
   isReady: () => nativeNavigation.ready,
-  getRootState: () => ({ key: 'root-stack', routeNames: nativeNavigation.routeNames }),
+  getRootState: () => {
+    const appStack = {
+      key: 'root-stack',
+      routeNames: nativeNavigation.routeNames,
+      routes: nativeNavigation.stack.map((name) => ({ name })),
+      index: nativeNavigation.stack.length - 1,
+    };
+    if (!nativeNavigation.wrappedInExpoRoot) return appStack;
+    return { key: 'expo-root', routeNames: ['__root'], routes: [{ name: '__root', state: appStack }], index: 0 };
+  },
   dispatch: nativeNavigation.dispatch,
 };
 vi.mock('expo-router', () => ({
-  router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn() },
+  router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn(), back: vi.fn() },
   useNavigationContainerRef: () => nativeNavigationRef,
-  useSegments: () => ['(tabs)', 'climbs'],
+  useSegments: () => nativeNavigation.segments,
 }));
 
 vi.mock('@boardsesh/board-presence-react', () => ({
@@ -289,6 +341,7 @@ vi.mock('../queue-provider', () => ({
     playNext: queue.playNext,
     setSessionBoardPath: queue.setSessionBoardPath,
     setCurrentClimb: queue.setCurrentClimb,
+    getQueueSnapshot: () => ({ currentClimbQueueItem: null }),
   }),
   useQueueSessionControls: () => ({
     sessionId: queue.sessionId,
@@ -376,8 +429,20 @@ import {
 } from '../drawer-host-provider';
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
-import { setSetting } from '../../settings/hooks';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
+import { resetAllSettings } from '../../settings/hooks';
+import {
+  enterDriveMode,
+  markDriveLive,
+  resetDriveModeForTests,
+  startAlwaysDrive,
+} from '../../components/play-drawer/drive-mode-store';
+import {
+  publishRoutePlayerBusy,
+  registerRoutePlayer,
+  resetRoutePlayerHandoffForTests,
+  takePlayerScrollHandoff,
+} from '../../components/play-drawer/route-player-handoff';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
 const routerNavigate = router.navigate as unknown as ReturnType<typeof vi.fn>;
@@ -428,7 +493,7 @@ function renderHost(onHost: (host: HostValue) => void, onRoute: (route: RouteVal
 }
 
 describe('drawer copied content withdrawal', () => {
-  it('preserves an unsaved tick note while hiding copied metadata, then isolates a credential change', async () => {
+  it('drops an unsaved tick note and its copied target when the credential changes', async () => {
     const hosts: HostValue[] = [];
     const view = renderHost((host) => hosts.push(host));
     const target = {
@@ -443,12 +508,7 @@ describe('drawer copied content withdrawal', () => {
     act(() => hosts.at(-1)!.openLogAscent(target));
     const input = view.container.querySelector('[data-log-ascent]') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'My unsaved note' } });
-    act(() => invalidatePrivacySnapshots());
-    expect(view.container.querySelector('[data-log-ascent]')).toBe(input);
-    expect(input.value).toBe('My unsaved note');
-    expect(input.getAttribute('data-climb-uuid')).toBe('private');
-    expect(input.getAttribute('data-climb-name')).toBe('');
-    act(() => invalidatePrivacySnapshots('credential'));
+    act(() => invalidateCredentialSnapshots());
     expect(view.container.querySelector('[data-log-ascent]')).toBeNull();
     act(() => hosts.at(-1)!.openLogAscent(target));
     expect((view.container.querySelector('[data-log-ascent]') as HTMLInputElement).value).toBe('');
@@ -470,7 +530,7 @@ describe('drawer copied content withdrawal', () => {
       const staleOpen = hosts.at(-1)!.openPlayDrawer;
       act(() => staleOpen(climb));
       await waitFor(() => expect(currentTarget()?.climb.uuid).toBe('private'));
-      act(() => invalidatePrivacySnapshots());
+      act(() => invalidateCredentialSnapshots());
       await waitFor(() => expect(currentTarget()).toBeNull());
       act(() => staleOpen(climb));
       expect(currentTarget()).toBeNull();
@@ -478,11 +538,52 @@ describe('drawer copied content withdrawal', () => {
       await waitFor(() => expect(currentTarget()?.climb.uuid).toBe('fresh'));
     },
   );
+
+  it('sends a native iPad tap to the full-screen player, never a pane', async () => {
+    // Like Apple Music: a regular-width native iPad has no pane, so a climb tap
+    // opens `/play` exactly as on iPhone.
+    layoutCfg.widthClass = 'regular';
+    layoutCfg.nativeTabBar = true;
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    expect(hosts.at(-1)?.usesDetailPane).toBe(false);
+    act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('ipad-tap').climb as Climb));
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('ipad-tap'));
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget ?? null).toBeNull();
+  });
+
+  it('sends a tap to the full-screen player on a JS tablet shell too narrow for the pane', async () => {
+    // 744pt (an Android tablet or iPad mini width on the Material shell): the rail
+    // and a 320pt pane would leave the list under its floor, so there is no pane.
+    layoutCfg.widthClass = 'regular';
+    layoutCfg.windowWidth = 744;
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    expect(hosts.at(-1)?.usesDetailPane).toBe(false);
+    act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('narrow-tap').climb as Climb));
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('narrow-tap'));
+  });
 });
 
 beforeEach(() => {
+  resetAllSettings();
+  resetDriveModeForTests();
+  queue.isSharedSession = false;
   nativeNavigation.ready = false;
   nativeNavigation.routeNames = ['(tabs)', 'play'];
+  nativeNavigation.stack = ['(tabs)'];
+  nativeNavigation.segments = ['(tabs)', 'climbs'];
+  nativeNavigation.wrappedInExpoRoot = true;
+  splitCfg.phoneSplit = false;
+  resetRoutePlayerHandoffForTests();
   nativeNavigation.dispatch.mockClear();
   activeBoard.stored = { ...activeBoard.defaultStored };
   boardShareSheet.props = null;
@@ -505,6 +606,8 @@ beforeEach(() => {
   queue.activeClimbUuid = null;
   previewedClimbUuids.length = 0;
   layoutCfg.widthClass = 'compact';
+  layoutCfg.nativeTabBar = false;
+  layoutCfg.windowWidth = 1024;
 });
 
 describe('DrawerHostProvider board presence binding', () => {
@@ -610,7 +713,7 @@ type BoardSheetTestProps = {
   onClimbPress: (action: BoardSheetClimbAction) => void;
   onPlayNext: (action: BoardSheetClimbAction) => void;
   onOpenPlaylist: (action: BoardSheetClimbAction) => void;
-  onOpenActions: (action: BoardSheetClimbAction) => void;
+  onOpenActions: (action: BoardSheetClimbAction) => ClimbActionsTarget | null | undefined;
   onOpenSprayMaintenance: (wallUuid: string, action: 'editHolds' | 'resetWall') => void;
   onShareSprayWall: (wallUuid: string) => void;
 };
@@ -636,7 +739,7 @@ function makeBoardSheetAction(climb: Climb, overrides: Partial<BoardSheetClimbAc
   };
 }
 
-describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
+describe('DrawerHostProvider queue selection previews', () => {
   beforeEach(() => {
     queue.sessionId = 'session-1';
     queue.participantId = 'participant-self';
@@ -648,7 +751,6 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
     queueSheet.present.mockClear();
     queueSheet.dismiss.mockClear();
     queueSheet.dismissAndWait.mockClear();
-    climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
     boardSheet.present.mockClear();
@@ -656,7 +758,7 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
     boardSheet.dismissAndWait.mockClear();
   });
 
-  it('broadcasts queued climb selection for every session member', async () => {
+  it('previews the exact queued slot without broadcasting a selection', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];
     renderHost(
@@ -675,19 +777,20 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
       queueSheet.props?.onClimbPress(item);
     });
 
-    expect(queue.setCurrentClimb).toHaveBeenCalledWith(item, { playlistSuggestionSource: null });
-    // Tapping a queue item navigates to the player route with the climb as the
-    // open target (committedExternally — the queue already set it current).
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
     expect(routerNavigate).toHaveBeenCalledWith('/play');
     await waitFor(() => {
       expect(routes.at(-1)?.playTarget?.climb).toBe(item.climb);
     });
-    expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
+    expect(routes.at(-1)?.playTarget?.options).toEqual({
+      previewQueueItem: item,
+      previewCommitOptions: { playlistSuggestionSource: null },
+    });
     // The queue sheet that was tapped dismisses behind the player.
     expect(queueSheet.dismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('broadcasts suggestion selection for every session member while anchoring drawer navigation to that item', async () => {
+  it('previews a suggestion while retaining the list it came from', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];
     renderHost(
@@ -719,14 +822,12 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
       climb: suggestion,
       suggested: true,
     };
-    expect(queue.setCurrentClimb).toHaveBeenCalledWith(suggestedItem, {
-      playlistSuggestionSource,
-    });
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
     expect(routerNavigate).toHaveBeenCalledWith('/play');
     await waitFor(() => {
       expect(routes.at(-1)?.playTarget?.climb).toBe(suggestion);
     });
-    expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
+    expect(routes.at(-1)?.playTarget?.options).toEqual({ previewQueueItem: suggestedItem, playlistSuggestionSource });
   });
 
   it('threads the exact queue-sheet settle callback into climb actions', async () => {
@@ -735,10 +836,10 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
     await waitFor(() => expect(queueSheet.props).not.toBeNull());
 
     const item = makeQueueItem('queue-actions', 'climb-actions');
-    act(() => queueSheet.props?.onOpenActions(item));
-    await waitFor(() => expect(climbActions.props).not.toBeNull());
-
-    const dismissSourceSheet = climbActions.props?.dismissSourceSheet as (() => Promise<unknown>) | undefined;
+    const target = queueSheet.props?.onOpenActions(item);
+    expect(target).toMatchObject({ climb: item.climb, queueItemUuid: item.uuid });
+    expect(queueSheet.dismissAndWait).not.toHaveBeenCalled();
+    const dismissSourceSheet = target?.dismissSourceSheet;
     if (!dismissSourceSheet) throw new Error('queue dismiss callback was not forwarded');
     await expect(dismissSourceSheet()).resolves.toEqual({ status: 'dismissed' });
     expect(queueSheet.dismissAndWait).toHaveBeenCalledTimes(1);
@@ -748,12 +849,12 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
 describe('DrawerHostProvider board sheet climb actions', () => {
   beforeEach(() => {
     queue.isSharedSession = false;
-    setSetting('lightOnClimbTap', true);
+    // This phone drives the wall (Always drive the wall's drive): a tap lights.
+    startAlwaysDrive({ sessionId: null, boardId: null });
     queue.sessionId = 'session-1';
     queue.participantId = 'participant-self';
     queue.setCurrentClimb.mockClear();
     queue.playNext.mockClear();
-    climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
     boardSheet.present.mockClear();
@@ -837,31 +938,59 @@ describe('DrawerHostProvider board sheet climb actions', () => {
   });
 
   it.each([
-    ['in a crew', true, true],
-    ['with Light the board when I tap a climb off', false, false],
-  ] as const)('opens a preview with the wall history and leaves the wall alone %s', async (_case, crew, light) => {
+    ['in a crew', true],
+    ['solo', false],
+  ] as const)(
+    'opens a preview with the wall history and leaves the wall alone %s, outside a drive',
+    async (_case, crew) => {
+      queue.isSharedSession = crew;
+      resetDriveModeForTests();
+      const routes: Array<RouteValue> = [];
+      renderHost(
+        () => {},
+        (route) => routes.push(route),
+      );
+      await waitFor(() => expect(boardSheet.props).not.toBeNull());
+
+      const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+      act(() => {
+        getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack, isWallClimb: true }));
+      });
+
+      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+      await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
+      expect(routes.at(-1)?.playTarget?.options).toEqual({
+        // The wall climb's own queue entry, so putting it up queues no second copy.
+        previewQueueItem: expect.objectContaining({ uuid: 'wall-queue-x', climb }),
+        previewIsWallClimb: true,
+        playlistSuggestionSource: wallTrack,
+      });
+    },
+  );
+
+  // #7113: driving the wall lights a board-history tap too, in a crew included.
+  it.each([
+    ['in a crew', true],
+    ['solo', false],
+  ] as const)('puts a board-sheet climb up %s while driving the wall', async (_case, crew) => {
     queue.isSharedSession = crew;
-    setSetting('lightOnClimbTap', light);
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      () => {},
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(boardSheet.props).not.toBeNull());
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+    markDriveLive();
+    try {
+      renderHost(() => {});
+      await waitFor(() => expect(boardSheet.props).not.toBeNull());
 
-    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
-    act(() => {
-      getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack, isWallClimb: true }));
-    });
+      const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+      act(() => {
+        getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack, isWallClimb: true }));
+      });
 
-    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
-    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
-    expect(routes.at(-1)?.playTarget?.options).toEqual({
-      // The wall climb's own queue entry, so putting it up queues no second copy.
-      previewQueueItem: expect.objectContaining({ uuid: 'wall-queue-x', climb }),
-      previewIsWallClimb: true,
-      playlistSuggestionSource: wallTrack,
-    });
+      expect(queue.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'wall-queue-x', climb }), {
+        playlistSuggestionSource: wallTrack,
+      });
+    } finally {
+      resetDriveModeForTests();
+    }
   });
 
   it('reuses queue, playlist, and climb-actions handlers for board-sheet climbs', async () => {
@@ -890,15 +1019,13 @@ describe('DrawerHostProvider board sheet climb actions', () => {
       angle: 30,
     });
 
-    act(() => {
-      getBoardSheetProps().onOpenActions(action);
-    });
-    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).not.toBeNull());
-    expect(climbActions.props).toMatchObject({
+    const target = getBoardSheetProps().onOpenActions(action);
+    expect(target).toMatchObject({
       climb,
       boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 30 },
     });
-    const dismissSourceSheet = climbActions.props?.dismissSourceSheet as (() => Promise<unknown>) | undefined;
+    expect(boardSheet.dismissAndWait).not.toHaveBeenCalled();
+    const dismissSourceSheet = target?.dismissSourceSheet;
     if (!dismissSourceSheet) throw new Error('board dismiss callback was not forwarded');
     await expect(dismissSourceSheet()).resolves.toEqual({ status: 'dismissed' });
     expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
@@ -1032,7 +1159,6 @@ describe('DrawerHostProvider queue sheet open / re-open', () => {
     queueSheet.present.mockClear();
     queueSheet.dismiss.mockClear();
     queueSheet.dismissAndWait.mockClear();
-    climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
     boardSheet.present.mockClear();
@@ -1090,7 +1216,6 @@ describe('DrawerHostProvider climb actions', () => {
   beforeEach(() => {
     queue.sessionId = 'session-1';
     queueSheet.props = null;
-    climbActions.props = null;
     playlistSheet.props = null;
     betaVideoSheet.props = null;
     boardSheet.props = null;
@@ -1098,7 +1223,7 @@ describe('DrawerHostProvider climb actions', () => {
     boardSheet.dismiss.mockClear();
   });
 
-  it('opens the climb reaction menu for a climb against the active board, then closes it', async () => {
+  it('resolves a native menu snapshot without presenting a surface', async () => {
     const hosts: Array<HostValue> = [];
     const { container } = renderHost((host) => hosts.push(host));
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
@@ -1106,22 +1231,42 @@ describe('DrawerHostProvider climb actions', () => {
     expect(container.querySelector('[data-climb-actions]')).toBeNull();
 
     const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
-    act(() => {
-      hosts.at(-1)?.openClimbActions(climb);
-    });
-
-    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).not.toBeNull());
-    // Snapshots the active board config (kilter / 1 / 10 / 1,2 / 40) at open time and
-    // forwards it to the reaction menu so the preview + actions resolve.
-    expect(climbActions.props).toMatchObject({
+    const target = hosts.at(-1)?.getClimbActions(climb);
+    expect(target).toMatchObject({
       climb,
       boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
     });
 
-    act(() => {
-      hosts.at(-1)?.closeClimbActions();
+    expect(container.querySelector('[data-climb-actions]')).toBeNull();
+    expect(routerNavigate).not.toHaveBeenCalled();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('preserves the explicit board, duplicate queue slot, and source callbacks in its target', async () => {
+    const hosts: HostValue[] = [];
+    renderHost((host) => hosts.push(host));
+    const climb = makeQueueItem('second-copy', 'same-climb').climb as Climb;
+    const boardConfig = { boardName: 'tension', layoutId: 9, sizeId: 12, setIds: '3', angle: 35 };
+    const onEditEntry = vi.fn();
+    const dismissSourceSheet = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const target = hosts.at(-1)?.getClimbActions(climb, boardConfig, {
+      queueItemUuid: 'second-copy',
+      onEditEntry,
+      dismissSourceSheet,
     });
-    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).toBeNull());
+
+    expect(target).toEqual({ climb, boardConfig, queueItemUuid: 'second-copy', onEditEntry, dismissSourceSheet });
+    expect(onEditEntry).not.toHaveBeenCalled();
+    expect(dismissSourceSheet).not.toHaveBeenCalled();
+  });
+
+  it('rejects a menu resolver captured before the credential scope changed', async () => {
+    const hosts: HostValue[] = [];
+    renderHost((host) => hosts.push(host));
+    const resolve = hosts.at(-1)!.getClimbActions;
+    const climb = makeQueueItem('private-climb').climb as Climb;
+    act(() => invalidateCredentialSnapshots());
+    expect(resolve(climb)).toBeNull();
   });
 
   it('opens add-to-playlist against the active board snapshot', async () => {
@@ -1183,6 +1328,70 @@ describe('DrawerHostProvider climb actions', () => {
 });
 
 describe('DrawerHostProvider play drawer open target', () => {
+  it.each(['compact', 'regular'] as const)(
+    'pins a default preview before the first %s player target is observed',
+    async (widthClass) => {
+      layoutCfg.widthClass = widthClass;
+      const hosts: HostValue[] = [];
+      const routes: RouteValue[] = [];
+      renderHost(
+        (host) => hosts.push(host),
+        (route) => routes.push(route),
+      );
+      const climb = makeQueueItem('preview-first-frame').climb as Climb;
+      act(() => hosts.at(-1)!.openPlayDrawer(climb));
+
+      const targets =
+        widthClass === 'compact'
+          ? routes.map((route) => route.playTarget)
+          : hosts.map((host) => host.playDrawerPaneProps?.openTarget);
+      const shownTargets = targets.filter((target) => target?.climb.uuid === climb.uuid);
+      expect(shownTargets.length).toBeGreaterThan(0);
+      for (const target of shownTargets) {
+        expect(target?.options?.previewQueueItem?.climb).toBe(climb);
+      }
+      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+      expect(previewedClimbUuids.at(-1)).toBe(climb.uuid);
+    },
+  );
+
+  it.each(["Always drive the wall's drive", 'Driver mode'] as const)(
+    'keeps automatic selection available through %s',
+    async (mode) => {
+      if (mode === "Always drive the wall's drive") startAlwaysDrive({ sessionId: queue.sessionId, boardId: 7 });
+      else {
+        enterDriveMode({ startedBy: 'swipe', sessionId: queue.sessionId, boardId: 7 });
+        markDriveLive();
+      }
+      const hosts: HostValue[] = [];
+      const routes: RouteValue[] = [];
+      renderHost(
+        (host) => hosts.push(host),
+        (route) => routes.push(route),
+      );
+      const climb = makeQueueItem('automatic-open').climb as Climb;
+      act(() => hosts.at(-1)!.openPlayDrawer(climb));
+      expect(routes.at(-1)?.playTarget?.options).toEqual({});
+      expect(previewedClimbUuids.at(-1)).toBeNull();
+    },
+  );
+
+  it('passes a reopen of the current climb through without pinning a preview copy', () => {
+    // The mini player and the workout card's current-climb row reopen the
+    // committed slot. Tap lighting is off by default, but a reopen is not a pick.
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    const climb = makeQueueItem('reopen-current').climb as Climb;
+    act(() => hosts.at(-1)!.openPlayDrawer(climb, { reopensCurrent: true }));
+    expect(routes.at(-1)?.playTarget?.options).toEqual({ reopensCurrent: true });
+    expect(previewedClimbUuids.at(-1)).toBeNull();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
   it('stages a Link target without a second navigation or leaking navigation options', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];
@@ -1196,7 +1405,7 @@ describe('DrawerHostProvider play drawer open target', () => {
     act(() => hosts.at(-1)?.openPlayDrawer(climb, { navigate: false }));
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
     expect(routerNavigate).not.toHaveBeenCalled();
-    expect(routes.at(-1)?.playTarget?.options).toEqual({});
+    expect(routes.at(-1)?.playTarget?.options).toEqual({ previewQueueItem: expect.objectContaining({ climb }) });
   });
   it('does not leak boardConfig into the open target', async () => {
     const hosts: Array<HostValue> = [];
@@ -1467,17 +1676,14 @@ describe('DrawerHostProvider play drawer open target', () => {
       expect(routes.at(-1)?.playTarget?.nonce).toBe(pendingNonce);
     });
 
-    it.each(['privacy', 'credential'] as const)(
-      'rejects replay across a %s boundary before React rerenders',
-      (reason) => {
-        openPendingTarget();
-        act(() => {
-          invalidatePrivacySnapshots(reason);
-          flushReplay();
-        });
-        expect(routerNavigate).not.toHaveBeenCalled();
-      },
-    );
+    it('rejects replay across a credential boundary before React rerenders', () => {
+      openPendingTarget();
+      act(() => {
+        invalidateCredentialSnapshots();
+        flushReplay();
+      });
+      expect(routerNavigate).not.toHaveBeenCalled();
+    });
 
     it('cancels the replay when the host unmounts', () => {
       const { view } = openPendingTarget();
@@ -1491,8 +1697,8 @@ describe('DrawerHostProvider play drawer open target', () => {
 
 describe('DrawerHostProvider previewed-climb highlight', () => {
   // A preview outlives the drawer as "the climb you last had up" — until something
-  // is actually put up after it. Solo with `lightOnSwipe` on, an explicit Preview
-  // of A followed by a swipe commits B through the queue; the list must move to B.
+  // is actually put up after it. While driving, an explicit Preview of A
+  // followed by a swipe commits B through the queue; the list must move to B.
   it('yields to the next committed climb', async () => {
     const hosts: Array<HostValue> = [];
     const view = renderHost((host) => hosts.push(host));
@@ -1891,7 +2097,6 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     // drawer's job (via openTarget.options), so the host never calls
     // setCurrentClimb on a pane open.
     layoutCfg.widthClass = 'regular';
-    climbActions.props = null;
     boardSheet.dismissAndWait.mockClear();
   });
 
@@ -1901,10 +2106,9 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     await waitFor(() => expect(hosts.at(-1)?.boardPanelProps).not.toBeNull());
 
     const climb = makeQueueItem('queue-pane-actions', 'climb-pane-actions').climb as unknown as Climb;
-    act(() => hosts.at(-1)?.boardPanelProps?.onOpenActions(makeBoardSheetAction(climb)));
-    await waitFor(() => expect(climbActions.props).not.toBeNull());
-
-    expect(climbActions.props?.dismissSourceSheet).toBeUndefined();
+    const target = hosts.at(-1)?.boardPanelProps?.onOpenActions(makeBoardSheetAction(climb));
+    expect(target).toMatchObject({ climb });
+    expect(target?.dismissSourceSheet).toBeUndefined();
     expect(boardSheet.dismissAndWait).not.toHaveBeenCalled();
   });
 
@@ -1922,8 +2126,10 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     await waitFor(() => {
       expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.climb.uuid).toBe('pane-open-1');
     });
-    // No override, no caller options → the open target carries an empty options bag.
-    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.options).toEqual({});
+    // An ordinary open is already pinned as a preview before the pane reads it.
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.options).toEqual({
+      previewQueueItem: expect.objectContaining({ climb }),
+    });
     // The pane hosts the drawer in place — no full-screen /play navigation.
     expect(routerNavigate).not.toHaveBeenCalled();
     // The target outlives its first apply: a pane another tab mounts later gets
@@ -2021,7 +2227,9 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     });
     // The board is applied via the override state, not the open target — boardConfig
     // is stripped from options like the /play route path.
-    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.options).toEqual({});
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.options).toEqual({
+      previewQueueItem: expect.objectContaining({ climb }),
+    });
     expect(routerNavigate).not.toHaveBeenCalled();
   });
 
@@ -2063,6 +2271,65 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     });
   });
 
+  describe("the MiniPlayer's angle sheet (#6940)", () => {
+    beforeEach(() => {
+      angleSheet.props = null;
+    });
+
+    it('mounts on the first open with the board the player shows, and closes again', async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      expect(angleSheet.props).toBeNull();
+
+      act(() => hosts.at(-1)?.openAnglePicker('climb-a'));
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(true));
+      expect(angleSheet.props).toMatchObject({
+        boardName: 'kilter',
+        layoutId: 1,
+        currentAngle: 40,
+        climbUuid: 'climb-a',
+      });
+
+      act(() => angleSheet.props?.onClose());
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(false));
+    });
+
+    it("changes the angle the way the player's pill does: crew path and AngleChanged", async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      act(() => hosts.at(-1)?.openAnglePicker());
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(true));
+      analytics.track.mockClear();
+
+      act(() => angleSheet.props?.onAngleChange(30));
+
+      expect(queue.setSessionBoardPath).toHaveBeenCalledWith(expect.stringContaining('30'));
+      expect(analytics.track).toHaveBeenCalledWith('Angle Changed', expect.objectContaining({ angle: 30 }));
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(false));
+    });
+
+    it("follows a foreign-board climb's override, as the pane's pill does", async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      const override: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 55 };
+      const climb = makeQueueItem('queue-x', 'pane-angle-bar').climb as unknown as Climb;
+      act(() => hosts.at(-1)?.openPlayDrawer(climb, { boardConfig: override }));
+      await waitFor(() => expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(override));
+
+      act(() => hosts.at(-1)?.openAnglePicker());
+      await waitFor(() => expect(angleSheet.props).toMatchObject({ boardName: 'tension', currentAngle: 55 }));
+      act(() => angleSheet.props?.onAngleChange(30));
+
+      await waitFor(() => {
+        expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject({ ...override, angle: 30 });
+      });
+      expect(hosts.at(-1)?.boardPanelProps?.boardConfig).toMatchObject({ boardName: 'kilter', angle: 40 });
+    });
+  });
+
   it('bumps openTarget.nonce when the same climb is re-opened so the pane re-applies', async () => {
     const hosts: Array<HostValue> = [];
     renderHost((host) => hosts.push(host));
@@ -2090,9 +2357,19 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     expect(routerNavigate).not.toHaveBeenCalled();
   });
 
-  it('dispatches the known native player route during the open batch', async () => {
+  // The player opens through `router.navigate('/play')` and nothing else. A
+  // direct `NAVIGATE play` dispatch would jump ahead of router calls a caller
+  // queued first (the deep-link hand-off leaves its screen, then opens), and
+  // that queued pop would land on the player it just opened (#7069). Both root
+  // shapes are covered: the flat one is the shape the deleted fast path read.
+  it.each([
+    { shape: 'wrapped in expo-router __root', wrappedInExpoRoot: true },
+    { shape: 'flat app stack', wrappedInExpoRoot: false },
+  ])('opens the player through the router, never a direct dispatch ($shape)', async ({ wrappedInExpoRoot }) => {
     layoutCfg.widthClass = 'compact';
     nativeNavigation.ready = true;
+    nativeNavigation.wrappedInExpoRoot = wrappedInExpoRoot;
+    nativeNavigation.routeNames = ['(tabs)', 'play'];
     const hosts: Array<HostValue> = [];
     const routes: RouteValue[] = [];
     renderHost(
@@ -2100,35 +2377,56 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
       (route) => routes.push(route),
     );
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    const climb = makeQueueItem('queue-native', 'native-open').climb as unknown as Climb;
-    act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb);
-      expect(nativeNavigation.dispatch).toHaveBeenCalledWith({
-        type: 'NAVIGATE',
-        target: 'root-stack',
-        payload: { name: 'play' },
-      });
-      expect(routerNavigate).not.toHaveBeenCalled();
-    });
-    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
-    expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('native-open');
+    const climb = makeQueueItem('queue-router', 'router-open').climb as unknown as Climb;
+    act(() => hosts.at(-1)?.openPlayDrawer(climb));
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+    expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('router-open');
     const firstNonce = routes.at(-1)?.playTarget?.nonce;
     act(() => hosts.at(-1)?.openPlayDrawer(climb));
     expect(routes.at(-1)?.playTarget?.nonce).not.toBe(firstNonce);
-    expect(nativeNavigation.dispatch).toHaveBeenCalledTimes(2);
-    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(routerNavigate).toHaveBeenCalledTimes(2);
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
   });
 
-  it('uses the router if the mounted navigator does not own the player', async () => {
+  // The deep-link hand-off (`use-board-route-target`) leaves its redirector with
+  // `router.back()` and THEN opens the player. expo-router queues both and runs
+  // them in order after the commit, so the pop takes the redirector and `/play`
+  // stays. Modelled here with a queue: a direct dispatch to the navigator runs
+  // at once, jumps the queued pop, and the pop then closes the player it just
+  // opened (#7069). Covers both root shapes so a fast path that learns to read
+  // through expo-router's `__root` wrapper is caught too.
+  it.each([
+    { shape: 'wrapped in expo-router __root', wrappedInExpoRoot: true },
+    { shape: 'flat app stack', wrappedInExpoRoot: false },
+  ])('keeps the player open when a caller queued a pop before opening ($shape)', async ({ wrappedInExpoRoot }) => {
     layoutCfg.widthClass = 'compact';
     nativeNavigation.ready = true;
-    nativeNavigation.routeNames = ['(tabs)'];
-    const hosts: Array<HostValue> = [];
-    renderHost((host) => hosts.push(host));
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-fallback').climb as unknown as Climb));
-    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
-    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    nativeNavigation.wrappedInExpoRoot = wrappedInExpoRoot;
+    nativeNavigation.routeNames = ['(tabs)', 'play'];
+    const routerBack = router.back as unknown as ReturnType<typeof vi.fn>;
+    const appStack = ['(tabs)', 'redirector'];
+    const routerQueue: Array<() => void> = [];
+    routerBack.mockImplementation(() => routerQueue.push(() => appStack.pop()));
+    routerNavigate.mockImplementation((href: string) => routerQueue.push(() => appStack.push(href)));
+    nativeNavigation.dispatch.mockImplementation((action: { type: string; payload?: { name?: string } }) => {
+      if (action.type === 'NAVIGATE' && action.payload?.name === 'play') appStack.push('/play');
+    });
+    try {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      act(() => {
+        router.back();
+        hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-handoff', 'handoff-open').climb as unknown as Climb);
+      });
+      for (const step of routerQueue.splice(0)) step();
+      expect(appStack).toEqual(['(tabs)', '/play']);
+    } finally {
+      routerBack.mockReset();
+      routerNavigate.mockReset();
+      nativeNavigation.dispatch.mockReset();
+    }
   });
 
   it('navigates to /play and leaves the pane open target null on compact width', async () => {
@@ -2174,5 +2472,206 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     await waitFor(() => {
       expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
     });
+  });
+});
+
+describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => {
+  const POP_PLAYER = { type: 'POP', target: 'root-stack', payload: { count: 1 } };
+
+  function renderSplitHost() {
+    const hosts: Array<HostValue> = [];
+    const onHost = (host: HostValue) => hosts.push(host);
+    const view = renderHost(onHost);
+    const rerenderHost = () =>
+      view.rerender(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute: () => {} })));
+    return { hosts, rerenderHost };
+  }
+
+  it('drives the pane on a tap while the tabs are on screen', async () => {
+    splitCfg.phoneSplit = true;
+    const { hosts } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)?.usesDetailPane).toBe(true));
+
+    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-split', 'split-tap').climb as unknown as Climb));
+
+    await waitFor(() => expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.climb.uuid).toBe('split-tap'));
+    expect(routerNavigate).not.toHaveBeenCalled();
+  });
+
+  it('opens /play from a page pushed over the tabs, where the pane is hidden', async () => {
+    splitCfg.phoneSplit = true;
+    nativeNavigation.segments = ['users', '[userId]'];
+    const { hosts } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)?.usesDetailPane).toBe(false));
+
+    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-covered', 'covered-tap').climb as unknown as Climb));
+
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+  });
+
+  it('closes an idle /play when the split appears and carries its live preview and scroll', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    // The route swiped from the climb it was opened with onto this preview.
+    const livePreview = makeQueueItem('queue-swiped', 'swiped-preview');
+    registerRoutePlayer(() => ({
+      climbUuid: 'swiped-preview',
+      offsetY: 320,
+      preview: { item: livePreview, suggestionSource: null, isWallClimb: false },
+    }));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+
+    await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
+    const carried = hosts.at(-1)?.playDrawerPaneProps?.openTarget;
+    expect(carried?.climb.uuid).toBe('swiped-preview');
+    expect(carried?.options?.previewQueueItem).toBe(livePreview);
+    // A look, never a fresh pick: nothing lights or commits on the carry.
+    expect(carried?.claimFirstApply?.()).toBe(false);
+    expect(takePlayerScrollHandoff('swiped-preview')).toBe(320);
+  });
+
+  it('waits for a busy /play (a tick being typed) and closes it once the climber is done', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({ climbUuid: 'busy-climb', offsetY: 0, preview: null }));
+    act(() => publishRoutePlayerBusy('player', true));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    await act(async () => {});
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+
+    act(() => publishRoutePlayerBusy('player', false));
+    await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
+    // The route showed the queue's current climb: the pane shows it by itself.
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+  });
+
+  it("waits while the route's own queue sheet or device picker is up, even with the player idle", async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({ climbUuid: 'queue-open', offsetY: 0, preview: null }));
+    act(() => publishRoutePlayerBusy('route', true));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    act(() => publishRoutePlayerBusy('player', false));
+    await act(async () => {});
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+
+    act(() => publishRoutePlayerBusy('route', false));
+    await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
+  });
+
+  it('leaves /play up when it sits on a page pushed over the tabs', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'users/[userId]', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({
+      climbUuid: 'from-profile',
+      offsetY: 120,
+      preview: { item: makeQueueItem('queue-profile', 'from-profile'), suggestionSource: null, isWallClimb: false },
+    }));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    await act(async () => {});
+
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+  });
+
+  it("clears a foreign board on /play close when the open came from a page over the tabs, not the pane's", async () => {
+    splitCfg.phoneSplit = true;
+    nativeNavigation.segments = ['users', '[userId]'];
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    const foreignBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+
+    act(() =>
+      hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-foreign', 'foreign').climb as unknown as Climb, {
+        boardConfig: foreignBoard,
+      }),
+    );
+    await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).toMatchObject(foreignBoard));
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+
+    act(() => routes.at(-1)?.onPlayDrawerClosed(routes.at(-1)?.playTarget?.nonce ?? null));
+    await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).not.toMatchObject(foreignBoard));
+    expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).not.toMatchObject(foreignBoard);
+  });
+
+  it('keeps a foreign board the pane opened with when a later /play closes', async () => {
+    splitCfg.phoneSplit = true;
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)?.usesDetailPane).toBe(true));
+    const foreignBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+
+    act(() =>
+      hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-pane-foreign', 'pane-foreign').climb as unknown as Climb, {
+        boardConfig: foreignBoard,
+      }),
+    );
+    await waitFor(() => expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(foreignBoard));
+
+    act(() => routes.at(-1)?.onPlayDrawerClosed(null));
+    await act(async () => {});
+    expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(foreignBoard);
+  });
+
+  it('drops a waiting close when the Duo is folded back before the route is idle', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({ climbUuid: 'busy-climb', offsetY: 0, preview: null }));
+    act(() => publishRoutePlayerBusy('player', true));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    splitCfg.phoneSplit = false;
+    rerenderHost();
+    act(() => publishRoutePlayerBusy('player', false));
+    await act(async () => {});
+
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('leaves /play alone on an iPad crossing into its pane', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    layoutCfg.widthClass = 'regular';
+    rerenderHost();
+    await act(async () => {});
+
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
   });
 });

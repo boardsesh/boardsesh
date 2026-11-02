@@ -60,6 +60,7 @@ const boardConfig = { layoutId: 1, sizeId: 10, setIds: [1, 20] as number[], angl
 
 vi.mock('@/app/lib/data/queries', () => ({
   getClimb: vi.fn(async () => ({
+    uuid: CLIMB_UUID,
     name: 'My Test Climb',
     difficulty: 'V5',
     setter_username: 'setter',
@@ -108,14 +109,14 @@ vi.mock('@/app/lib/board-utils', () => ({
 
 // Legacy pages: numeric route params, resolved from the shared board config.
 vi.mock('@/app/lib/url-utils.server', () => ({
-  parseRouteParams: vi.fn(async () => ({
+  parseRouteParams: vi.fn(async (params: { climb_uuid?: string }) => ({
     parsedParams: {
       board_name: 'kilter',
       layout_id: boardConfig.layoutId,
       size_id: boardConfig.sizeId,
       set_ids: boardConfig.setIds,
       angle: boardConfig.angle,
-      climb_uuid: CLIMB_UUID,
+      climb_uuid: params.climb_uuid ?? CLIMB_UUID,
     },
     isNumericFormat: true,
   })),
@@ -192,7 +193,7 @@ function canonicalPath(canonical: string | URL | { url: string | URL } | null | 
   return `${parsed.pathname}${parsed.search}`;
 }
 
-function legacyViewMetadata() {
+function legacyViewMetadata(climbUuid = CLIMB_UUID) {
   return legacyViewPage.generateMetadata({
     params: Promise.resolve({
       board_name: 'kilter',
@@ -200,18 +201,18 @@ function legacyViewMetadata() {
       size_id: String(boardConfig.sizeId),
       set_ids: boardConfig.setIds.join(','),
       angle: String(boardConfig.angle),
-      climb_uuid: CLIMB_UUID,
+      climb_uuid: climbUuid,
     }),
   });
 }
 
-function slugViewMetadata() {
+function slugViewMetadata(climbUuid = CLIMB_UUID) {
   return slugViewPage.generateMetadata({
     searchParams: Promise.resolve({}),
     params: Promise.resolve({
       board_slug: 'kilter-original-12x12',
       angle: String(boardConfig.angle),
-      climb_uuid: CLIMB_UUID,
+      climb_uuid: climbUuid,
     }),
   });
 }
@@ -292,6 +293,29 @@ describe('climb-view canonical parity (A1 landed in W-15)', () => {
 
     expect(legacyCanonical).toMatch(/\/40\/view\//);
     expect(canonicalPath(slug.alternates?.canonical)).toBe(legacyCanonical);
+  });
+
+  it('aliases share resolved canonical and OG URLs across both trees and alternate angles', async () => {
+    boardConfig.angle = 45;
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValue([
+      { angle: 40, ascensionist_count: '20' },
+      { angle: 45, ascensionist_count: '12' },
+    ] as never);
+    const aliasUuid = '11112222333344445555666677778888';
+    const [legacy, slug, canonical] = await Promise.all([
+      legacyViewMetadata(aliasUuid),
+      slugViewMetadata(aliasUuid),
+      legacyViewMetadata(),
+    ]);
+    const expected = canonical.alternates?.canonical;
+    expect(legacy.alternates?.canonical).toBe(expected);
+    expect(slug.alternates?.canonical).toBe(expected);
+    expect(legacy.openGraph?.url).toBe(expected);
+    expect(slug.openGraph?.url).toBe(expected);
+    expect(canonicalPath(expected)).toContain(`/40/view/my-test-climb-${CLIMB_UUID}`);
+    expect(canonicalPath(expected)).not.toContain(aliasUuid);
+    expect(legacy.alternates?.languages).toBeUndefined();
+    expect(slug.alternates?.languages).toBeUndefined();
   });
 
   it('agrees on the shadowed size (Kilter layout 1 size 27) and keeps it distinct from size 10', async () => {

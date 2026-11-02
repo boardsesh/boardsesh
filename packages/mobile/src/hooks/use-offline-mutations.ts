@@ -4,6 +4,7 @@ import {
   beginImmediateWrite,
   enqueue,
   getLocalUserId,
+  getLatestClimbMutationKey,
   runLocalWriteWithRetry,
   OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS,
   OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
@@ -228,7 +229,9 @@ export async function writeTickLocal(
       // this INSERT OR IGNORE can never collide with an existing row. A future
       // tick key derived from climb+angle would inherit the deterministic-key
       // handling the favorites below need — re-check then.
-      await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
+      const dependsOnKey =
+        input.boardType === 'spray' ? await getLatestClimbMutationKey(txn, input.boardType, input.climbUuid) : null;
+      await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid, dependsOnKey ? { dependsOnKey } : {});
     },
     budgetMs,
   );
@@ -268,7 +271,9 @@ export async function enqueueTickOutboxOnly(
     async () => {
       await db.withExclusiveTransactionAsync(async (txn) => {
         await beginImmediateWrite(txn, OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
-        await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
+        const dependsOnKey =
+          input.boardType === 'spray' ? await getLatestClimbMutationKey(txn, input.boardType, input.climbUuid) : null;
+        await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid, dependsOnKey ? { dependsOnKey } : {});
       });
     },
     { ...localWriteRetryOptions('boardsesh_ticks', 'create'), maxAttempts: 2, budgetMs },

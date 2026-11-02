@@ -272,7 +272,7 @@ describe('useActiveBoard', () => {
   it('withdraws cached metadata synchronously before query cancellation and rejects old selection callbacks', async () => {
     const { useActiveBoard, useSetActiveBoard } = await import('../use-active-board');
     const { getStoredActiveBoard } = await import('../../active-board-store');
-    const { invalidatePrivacySnapshots } = await import('../../privacy/privacy-cache');
+    const { invalidateCredentialSnapshots } = await import('../../privacy/privacy-cache');
     const sharedWrapper = wrapper();
     const read = renderHook(() => useActiveBoard(), { wrapper: sharedWrapper });
     const setter = renderHook(() => useSetActiveBoard(), { wrapper: sharedWrapper });
@@ -282,7 +282,7 @@ describe('useActiveBoard', () => {
     });
     await waitFor(() => expect(read.result.current.data?.name).toBe('Private home'));
     const staleSetter = setter.result.current;
-    act(() => invalidatePrivacySnapshots());
+    act(() => invalidateCredentialSnapshots());
     expect(read.result.current.data).toMatchObject({
       uuid: storedBoard.uuid,
       angle: storedBoard.angle,

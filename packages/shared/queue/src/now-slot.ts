@@ -70,6 +70,26 @@ export type NowSlotRewrite =
   | 'insert'
   | 'clear';
 
+/**
+ * What a new uuid does when its climb is only in History (the `dedupe-history`
+ * row). `reuse` moves the newest History copy into the Now slot. `fresh` reuses
+ * only History's last entry, the one right behind the current climb (Previous
+ * then Next, so a back-and-forth adds no copy); for an older copy it puts the
+ * new uuid up and leaves History as it was (`insert`).
+ *
+ * A phone resolves its own open first and sends the entry it resolved to, so a
+ * tap that reuses a History entry reaches the server as that entry's uuid. A
+ * new uuid that comes with `placement` is therefore one the phone chose to put
+ * up fresh (a forward step, Next or a track peek), and the server and the
+ * reducer place it with `fresh`. Requests without `placement` keep `reuse`.
+ */
+export type HistoryCopyRule = 'reuse' | 'fresh';
+
+/** The {@link HistoryCopyRule} for a request: `fresh` when it carries `placement`, the phone already resolved it. */
+export function historyCopyRuleFor(placement: CurrentClimbPlacement | null | undefined): HistoryCopyRule {
+  return placement != null ? 'fresh' : 'reuse';
+}
+
 export type NowSlotPlacement<TItem extends NowSlotQueueItem> = NowSlotResolvedState<TItem> & {
   rewrite: NowSlotRewrite;
 };
@@ -269,6 +289,7 @@ function moveIntoNow<TItem extends NowSlotQueueItem>(
  * | new uuid, same climb as current                            | any           | `dedupe-current` |
  * | new uuid, climb in Up next (first copy)                    | any           | `dedupe-up-next` |
  * | new uuid, climb only in History (newest copy)              | any           | `dedupe-history` |
+ * | the same, `historyCopy: 'fresh'`, not History's last entry | any           | `insert`         |
  * | new uuid, climb nowhere in `queue`                         | any           | `insert`         |
  * | `item: null`                                               | -             | `clear`          |
  *
@@ -281,7 +302,8 @@ function moveIntoNow<TItem extends NowSlotQueueItem>(
  * and mirror flag: the returned `currentClimbQueueItem` is the array's own
  * entry, except for `insert`, where it is `item`. `shouldAddToQueue` only
  * tells a row tap (`true`) from an old Next; it never decides whether the climb
- * joins the array, so no orphan can form. Never trims: callers run
+ * joins the array, so no orphan can form. `historyCopy` decides the
+ * `dedupe-history` row (see {@link HistoryCopyRule}). Never trims: callers run
  * {@link capHistory} on the result.
  */
 export function placeOnWall<TItem extends NowSlotQueueItem>(
@@ -289,6 +311,7 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
   item: TItem | null,
   placement?: CurrentClimbPlacement | null,
   shouldAddToQueue?: boolean | null,
+  historyCopy: HistoryCopyRule = 'reuse',
 ): NowSlotPlacement<TItem> {
   const { queue, currentClimbQueueItem: current, historyCount: line } = normaliseOrphanCurrent(state);
   const currentIndex = currentIndexOf(queue, current);
@@ -341,7 +364,12 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
     }
   }
 
-  for (let index = line - 1; index >= 0; index--) {
+  // A forward step onto a climb History already holds puts up a fresh copy:
+  // pulling an entry from an hour ago forward would rewrite History and replay
+  // the climbs after it with their old entries. The entry right behind is the
+  // one Previous just stepped off, so a forward step still takes it back.
+  const oldestReusableIndex = historyCopy === 'reuse' ? 0 : Math.max(line - 1, 0);
+  for (let index = line - 1; index >= oldestReusableIndex; index--) {
     if (isSameWallClimb(queue[index].climb, item.climb)) {
       return moveIntoNow(queue, line, hasCurrent, index, 'dedupe-history');
     }
@@ -352,6 +380,40 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
     currentClimbQueueItem: item,
     historyCount: firstUpNext,
     rewrite: 'insert',
+  };
+}
+
+/**
+ * Up next swapped for `upNext`, with History and the climb on the wall left
+ * where they are: "Tapping a playlist loads it into my queue" while a tap only
+ * previews (preview-first, 2.7). The wall keeps its climb; the climber previews
+ * the tapped climb's new slot, and Put on board commits it.
+ *
+ * Entries of `upNext` whose uuid History or the Now slot already holds are left
+ * out, so a slot is never stored twice. An orphan current climb stays an orphan,
+ * with nothing current the line is kept. Never trims: the result goes out as a
+ * `setQueue` payload, which {@link clampNowSlotPayload} (or the legacy clamp)
+ * caps like any other.
+ */
+export function replaceUpNext<TItem extends NowSlotQueueItem>(
+  state: NowSlotState<TItem>,
+  upNext: readonly TItem[],
+): NowSlotResolvedState<TItem> {
+  const kept = state.queue.slice(0, upNextStart(state.queue, state.currentClimbQueueItem, state.historyCount));
+  const keptUuids = new Set(kept.map(({ uuid }) => uuid));
+  if (state.currentClimbQueueItem) keptUuids.add(state.currentClimbQueueItem.uuid);
+  const added = new Set<string>();
+  const queue = [...kept];
+  for (const item of upNext) {
+    if (keptUuids.has(item.uuid) || added.has(item.uuid)) continue;
+    added.add(item.uuid);
+    queue.push(item);
+  }
+  const line = historyLine(state);
+  return {
+    queue,
+    currentClimbQueueItem: state.currentClimbQueueItem,
+    historyCount: historyLine({ queue, currentClimbQueueItem: state.currentClimbQueueItem, historyCount: line }),
   };
 }
 

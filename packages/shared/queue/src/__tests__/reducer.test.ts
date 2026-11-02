@@ -963,6 +963,21 @@ describe('REFRESH_AUTHORED_CLIMB', () => {
     expect(moved.currentClimbQueueItem?.climb.holdsRevisionNumber).toBeNull();
   });
 
+  it('clears the device pending marker and refreshes the canonical publish date in every slot', () => {
+    const pending = makeClimbQueueItem({
+      uuid: 'climb-a',
+      climb: { uuid: 'climb-a', localWritePending: true, published_at: '2026-10-01T10:00:00.000Z' },
+    });
+    const state = makeState({ queue: [pending], currentClimbQueueItem: pending });
+    const result = queueReducer(state, {
+      type: 'REFRESH_AUTHORED_CLIMB',
+      payload: { climbUuid: 'climb-a', patch: { ...publishedPatch, localWritePending: false } },
+    });
+    expect(result.currentClimbQueueItem?.climb.localWritePending).toBe(false);
+    expect(result.queue[0].climb.localWritePending).toBe(false);
+    expect(result.queue[0].climb.published_at).toBe(publishedPatch.published_at);
+  });
+
   it('refreshes a queued copy that is not the current climb, and leaves the current one alone', () => {
     const other = makeClimbQueueItem({ uuid: 'other' });
     const draft = makeClimbQueueItem({ uuid: 'climb-a', climb: { uuid: 'climb-a', is_draft: true } });

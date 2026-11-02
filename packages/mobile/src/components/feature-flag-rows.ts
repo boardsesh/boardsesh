@@ -1,7 +1,13 @@
 import type { FeatureFlagDefinition } from '../providers/feature-flags-provider';
 import type { FeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { isDevBuild } from '../lib/is-dev-build';
-import { BOOLEAN_FLAG_OPTIONS } from './FeatureFlagsForm.logic';
+import {
+  BOOLEAN_FLAG_OPTIONS,
+  MAX_SEGMENTS,
+  variantChoiceKey,
+  variantFlagOptions,
+  variantFromChoiceKey,
+} from './FeatureFlagsForm.logic';
 import type { FeatureFlagRow } from './FeatureFlagsForm.types';
 
 /**
@@ -9,19 +15,16 @@ import type { FeatureFlagRow } from './FeatureFlagsForm.types';
  * FeatureFlagsScreen so it can be tested without rendering the platform-split
  * native @expo/ui form.
  *
- * Every flag is a boolean: `configuredValue` is `boolean | undefined` so the
- * caption can distinguish a live default that is not set from an explicit off.
+ * A plain flag renders Default / On / Off and an override writes a boolean.
+ * A flag that declares `variants` renders Default plus one choice per variant,
+ * and an override writes the variant string: `first-connect-cta-arm` is read
+ * from the on-device override alone, so this is the only way to pick it, and
+ * `observe-sample-rate` can be forced to a rate.
+ * The select went with the 2.4 retirement of the last multivariate flags and
+ * came back with these.
  *
- * Multivariate flags used to render a select of their declared variants. That
- * went with the last two of them (`board-render-mode-default`,
- * `board-glow-falloff`), retired for 2.4 when the board drawing and its glow
- * falloff became plain user settings instead of rollout controls.
- *
- * `observe-sample-rate` is multivariate again, but this screen was NOT rebuilt
- * for it: it renders as On/Off and an override here writes a boolean. That is
- * harmless — the consumer parses a boolean back to the shipped rate — but the
- * rate itself can only be changed from PostHog. Rebuild the select if a flag
- * ever needs on-device variant selection. See docs/feature-flags.md.
+ * Up to three choices draw as a segmented control; more draw as a menu
+ * (`control`), which keeps the five sample rates readable on a phone.
  *
  * Permanently shipped capabilities are not listed here.
  */
@@ -40,6 +43,26 @@ export function buildFeatureFlagRows(
     // Rendering the tester's stored choice here would be a toggle that lies.
     const overrideIgnored = definition.policyControlled === true && !isDevBuild();
     const honouredOverride = overrideIgnored ? undefined : override;
+    // i18n-ignore-next-line — tester-only screen
+    const policyNote = overrideIgnored ? ' · override ignored on this build (region-gated)' : '';
+
+    const variants = definition.variants ?? [];
+    if (variants.length > 0) {
+      const overrideVariant =
+        typeof honouredOverride === 'string' && variants.includes(honouredOverride) ? honouredOverride : undefined;
+      const baseVariant = typeof base === 'string' && variants.includes(base) ? base : undefined;
+      const options = variantFlagOptions(variants);
+      return {
+        key: definition.key,
+        label: definition.label,
+        description: definition.description,
+        options,
+        control: options.length > MAX_SEGMENTS ? 'menu' : 'segmented',
+        choice: overrideVariant === undefined ? 'default' : variantChoiceKey(overrideVariant),
+        // i18n-ignore-next-line — tester-only screen
+        effectiveLabel: `Live default: ${baseVariant ?? 'not set'} · Effective: ${overrideVariant ?? baseVariant ?? 'default'}${policyNote}`,
+      };
+    }
 
     const overrideBool = typeof honouredOverride === 'boolean' ? honouredOverride : undefined;
     const baseBool = typeof base === 'boolean' ? base : undefined;
@@ -48,13 +71,12 @@ export function buildFeatureFlagRows(
     const baseLabel = baseBool === undefined ? 'not set' : baseBool ? 'on' : 'off';
     const configuredValue: boolean | undefined = overrideBool ?? baseBool;
     const effective = (configuredValue ?? definition.defaultEnabled) === true;
-    // i18n-ignore-next-line — tester-only screen
-    const policyNote = overrideIgnored ? ' · override ignored on this build (region-gated)' : '';
     return {
       key: definition.key,
       label: definition.label,
       description: definition.description,
       options: BOOLEAN_FLAG_OPTIONS,
+      control: 'segmented',
       choice,
       // i18n-ignore-next-line — tester-only screen
       effectiveLabel: `Live default: ${baseLabel} · Effective: ${effective ? 'on' : 'off'}${policyNote}`,
@@ -62,35 +84,36 @@ export function buildFeatureFlagRows(
   });
 }
 
-/** What the screen should do with one segment selection. */
-export type FeatureFlagOverrideAction = { action: 'clear' } | { action: 'set'; value: boolean };
+/** What the screen should do with one selection. */
+export type FeatureFlagOverrideAction = { action: 'clear' } | { action: 'set'; value: boolean | string };
 
 /**
- * Turn a row's segment selection into a set/clear on the override store.
+ * Turn a row's selection into a set/clear on the override store.
  *
  * Extracted from `FeatureFlagsScreen.handleSelect` for the same reason
  * `buildFeatureFlagRows` was: it is the only branching logic on that screen,
  * and testing it should not require mounting the platform-split native
  * @expo/ui form.
  *
- * Every flag is a boolean, so the only two segments that write are `on` and
- * `off`; anything else clears.
+ * Default clears. A variant choice writes its variant string; `on` / `off`
+ * write a boolean. Anything else (a key no row offers) clears rather than
+ * guessing.
  */
 export function resolveFeatureFlagOverrideAction(choice: string): FeatureFlagOverrideAction {
-  if (choice === 'default') return { action: 'clear' };
-  return { action: 'set', value: choice === 'on' };
+  const variant = variantFromChoiceKey(choice);
+  if (variant !== null) return { action: 'set', value: variant };
+  if (choice === 'on') return { action: 'set', value: true };
+  if (choice === 'off') return { action: 'set', value: false };
+  return { action: 'clear' };
 }
 
 /**
- * Override keys whose stored value no longer fits the flag's declared shape.
- *
- * The case this exists for: a tester who forced a flag to a variant string
- * while it was multivariate still has that string sitting in the override
- * store now that every flag is a boolean again. Readers already ignore it and
- * `buildFeatureFlagRows` renders the row at 'Default' — but the row being
- * ALREADY at 'Default' is precisely why the tester cannot clear it: selecting
- * the segment it is already on fires no change. So the screen migrates it on
- * read instead.
+ * Override keys whose stored value no longer fits the flag's declared shape:
+ * a string on a plain flag, or on a multivariate flag a boolean (the screen
+ * wrote On/Off there while the select was gone) or a variant it no longer
+ * declares. Readers already ignore these and the row renders at 'Default' —
+ * which is precisely why the tester cannot clear one: selecting the segment it
+ * is already on fires no change. So the screen migrates them on read.
  *
  * Deliberately does NOT include keys missing from the catalog. A flag can be
  * removed and restored across branches, and silently dropping a tester's
@@ -105,6 +128,8 @@ export function findStaleFeatureFlagOverrideKeys(
     .filter((definition) => {
       const override = overrides[definition.key];
       if (override === undefined) return false;
+      const variants = definition.variants ?? [];
+      if (variants.length > 0) return typeof override !== 'string' || !variants.includes(override);
       return typeof override !== 'boolean';
     })
     .map((definition) => definition.key);

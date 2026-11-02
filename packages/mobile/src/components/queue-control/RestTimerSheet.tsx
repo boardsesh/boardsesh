@@ -31,6 +31,7 @@ import { useQueueSessionId } from '../../providers/queue-provider';
 import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useSetting } from '../../settings';
 import { useRestTimerArmed, useRestTimerState } from '../../hooks/use-rest-timer';
+import { sessionPresenceSupportsRestTimer } from '../../lib/live-activity/live-activity-plugin';
 import { nowMs } from '../../lib/clock';
 import { hapticMedium } from '../../lib/haptics';
 import { type RestTimerMode } from '../../lib/rest-timer';
@@ -228,6 +229,30 @@ function RestTimerAutoAdvanceSetting() {
 }
 
 /**
+ * Whether the rest also counts down on the Lock Screen, in the Dynamic Island
+ * and in the Android session notification (#6513). On by default; arming the
+ * timer is the real opt-in. Hidden on a binary that cannot draw it, where the
+ * switch would promise something nothing does.
+ */
+export function RestTimerLockScreenRow() {
+  const { t } = useTranslation('session');
+  const [showOnLockScreen, setShowOnLockScreen] = useSetting('restTimerShowOnLockScreen');
+
+  if (!sessionPresenceSupportsRestTimer) return null;
+
+  return (
+    <View style={styles.lockScreenGroup}>
+      <SwitchRow
+        label={t('mobile.restTimer.showOnLockScreen')}
+        description={t('mobile.restTimer.showOnLockScreenHint')}
+        value={showOnLockScreen}
+        onValueChange={setShowOnLockScreen}
+      />
+    </View>
+  );
+}
+
+/**
  * Cadence: what the countdown anchors to.
  *
  * Inline, not folded away. It is a binary with two visible options and a one-line
@@ -376,6 +401,8 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
 
         <RestTimerAutoAdvanceRow />
 
+        <RestTimerLockScreenRow />
+
         {/* Transport last, in the thumb zone. Tonal Reset rather than a text
             button: same silhouette as Pause, one emphasis step down, so it stops
             reading as a link floating beside a button. */}
@@ -451,6 +478,9 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   autoAdvanceGroup: {
+    marginTop: spacing[4],
+  },
+  lockScreenGroup: {
     marginTop: spacing[4],
   },
   transportRow: {

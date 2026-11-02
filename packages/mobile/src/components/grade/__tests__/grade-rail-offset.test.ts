@@ -92,6 +92,12 @@ describe('railRestOffset', () => {
     expect(railRestOffset({ ...baseArgs, focusId: 3, railWidth: 0 })).toBeNull();
   });
 
+  // An unmeasured content width is not "nothing overflows": resting at 0 on it
+  // parked the tick sheet's grade rail on V0 (#7062).
+  it('returns null before the content has been measured', () => {
+    expect(railRestOffset({ ...baseArgs, focusId: CHIP_COUNT - 1, contentWidth: 0 })).toBeNull();
+  });
+
   it('rests at 0 when the content is shorter than the rail', () => {
     expect(railRestOffset({ ...baseArgs, focusId: CHIP_COUNT - 1, contentWidth: RAIL_WIDTH - 40 })).toBe(0);
   });

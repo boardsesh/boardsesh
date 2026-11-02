@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { Children, createElement, isValidElement, useEffect, type ReactNode } from 'react';
 
 const accessoryMounts = vi.hoisted(() => ({ count: 0 }));
@@ -18,6 +18,9 @@ const cfg = vi.hoisted(() => ({
   // the iOS 26 extras (accessory, search role, minimize). false models iOS 18.
   glassCapable: true,
   platformOS: 'ios' as 'ios' | 'android' | 'web',
+  // iOS reports a dotted string. `prominent` (Climbs kept on screen when the bar
+  // collapses) is iOS 27+.
+  platformVersion: '27.0',
   // 'regular' takes the tablet sidebar shell; 'compact' keeps the phone tab bars.
   widthClass: 'compact' as 'compact' | 'regular',
   // Tablet in a narrow split: compact width but still a tablet, which the shell keeps on
@@ -37,9 +40,14 @@ const cfg = vi.hoisted(() => ({
   // panel; 'sheet-only' (mini / base 11" / Air) collapses it to the sheet + tab.
   // Default panel-capable so the width-driven wall-surface tests still hold.
   wallDeviceClass: 'panel-capable' as 'panel-capable' | 'sheet-only',
-  // Focused route segments — drives the wall-tab redundancy rule (the ambient
-  // column is hidden while the "On the Wall" tab is the focused destination).
+  // Focused route segments — drives the wall redundancy rule (the ambient column
+  // and the pane stand down while the full-screen Wall display covers the shell).
   segments: ['(tabs)', 'home'] as readonly string[],
+  // The window height, and the root (window) side insets the real
+  // `useVerticalTabBar` reads. The in-tab side inset comes from the real
+  // native-tab-content-inset-store, which the vertical-rail tests publish to.
+  windowHeight: 1366,
+  windowInsets: { left: 0, right: 0 },
   materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean; href?: string | null } }>,
 }));
 
@@ -47,6 +55,9 @@ vi.mock('react-native', () => ({
   Platform: {
     get OS() {
       return cfg.platformOS;
+    },
+    get Version() {
+      return cfg.platformVersion;
     },
   },
   // _layout.tsx wraps the iPad shell in Views + calls StyleSheet.create at module
@@ -56,7 +67,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   // The regular-width shell sizes the play pane + decides the wall surface off the
   // window width.
-  useWindowDimensions: () => ({ width: cfg.windowWidth, height: 1366 }),
+  useWindowDimensions: () => ({ width: cfg.windowWidth, height: cfg.windowHeight }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -156,11 +167,15 @@ vi.mock('../../../src/hooks/use-bottom-accessory', async () => {
         platformOS: cfg.platformOS,
         variant: cfg.variant,
         glassCapable: cfg.glassCapable,
-        isTablet: cfg.widthClass === 'regular' || cfg.isTablet,
         accessoryAvailable: cfg.nativeAccessoryActive,
       }),
   };
 });
+
+// The real `useVerticalTabBar` runs; only the root safe-area read is stubbed.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, ...cfg.windowInsets }),
+}));
 
 // Stub the Material-variant path so it doesn't pull in native modules.
 vi.mock('expo-router', () => {
@@ -207,22 +222,29 @@ vi.mock('@expo/vector-icons/MaterialCommunityIcons', () => ({
   default: () => createElement('span', { 'data-icon': 'mci' }),
 }));
 
-// The wall tab holds a keep-awake lock (kiosk stays lit); mock the native module
-// so the wall-segment render doesn't reach for it, and assert the lock engages.
-const keepAwake = vi.hoisted(() => ({
-  activate: vi.fn().mockResolvedValue(undefined),
-  deactivate: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock('expo-keep-awake', () => ({
-  activateKeepAwakeAsync: keepAwake.activate,
-  deactivateKeepAwake: keepAwake.deactivate,
-}));
-
 vi.mock('expo-router/unstable-native-tabs', () => {
   const Trigger = Object.assign(
-    ({ name, hidden, role, children }: { name: string; hidden?: boolean; role?: string; children?: ReactNode }) =>
+    ({
+      name,
+      hidden,
+      role,
+      prominent,
+      children,
+    }: {
+      name: string;
+      hidden?: boolean;
+      role?: string;
+      prominent?: boolean;
+      children?: ReactNode;
+    }) =>
       // Model NativeTabs: a `hidden` trigger declares the route but is not a tab.
-      hidden ? null : createElement('section', { 'data-trigger': name, 'data-tab-role': role }, children),
+      hidden
+        ? null
+        : createElement(
+            'section',
+            { 'data-trigger': name, 'data-tab-role': role, 'data-prominent': String(prominent ?? false) },
+            children,
+          ),
     {
       Icon: ({ sf }: { sf?: unknown }) => createElement('span', { 'data-icon': 'true', 'data-sf': JSON.stringify(sf) }),
       Label: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -289,7 +311,12 @@ vi.mock('expo-router/unstable-native-tabs', () => {
 });
 
 import TabLayout, { unstable_settings } from '../_layout';
+import {
+  publishNativeTabContentInsetSides,
+  resetNativeTabContentInsetForTests,
+} from '../../../src/lib/native-tab-content-inset-store';
 import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../../src/components/navigation/tab-badge';
+import { markWallDisplayMounted } from '../../../src/lib/wall-display-presence';
 
 describe('TabLayout', () => {
   beforeEach(() => {
@@ -301,6 +328,7 @@ describe('TabLayout', () => {
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = true;
     cfg.platformOS = 'ios';
+    cfg.platformVersion = '27.0';
     cfg.widthClass = 'compact';
     cfg.isTablet = false;
     cfg.windowWidth = 1024;
@@ -309,9 +337,10 @@ describe('TabLayout', () => {
     cfg.activeBoard = null;
     cfg.wallDeviceClass = 'panel-capable';
     cfg.segments = ['(tabs)', 'home'];
+    cfg.windowHeight = 1366;
+    cfg.windowInsets = { left: 0, right: 0 };
+    resetNativeTabContentInsetForTests();
     cfg.materialScreens = [];
-    keepAwake.activate.mockClear();
-    keepAwake.deactivate.mockClear();
   });
 
   it('selects Climbs by default without changing the tab order', () => {
@@ -336,13 +365,14 @@ describe('TabLayout', () => {
     }
   });
 
-  it('renders Home as the leftmost native tab', () => {
+  // Home leads; Climbs is the rightmost tab, like Apple Music's Search tab.
+  it('renders Home as the leftmost native tab and Climbs as the rightmost', () => {
     const { container } = render(<TabLayout />);
     const triggerNames = Array.from(container.querySelectorAll('[data-trigger]')).map((trigger) =>
       trigger.getAttribute('data-trigger'),
     );
 
-    expect(triggerNames).toEqual(['home', 'climbs', 'record', 'discover', 'profile']);
+    expect(triggerNames).toEqual(['home', 'record', 'discover', 'profile', 'climbs']);
   });
 
   it.each([
@@ -353,7 +383,7 @@ describe('TabLayout', () => {
     ['regular iPad', 'regular', true, true],
     ['regular iPad', 'regular', true, false],
   ] as const)(
-    'registers unique native names including hidden routes on %s/%s (tablet=%s, glass=%s)',
+    'registers five unique native tabs on %s/%s (tablet=%s, glass=%s)',
     (_device, widthClass, isTablet, glassCapable) => {
       cfg.widthClass = widthClass;
       cfg.isTablet = isTablet;
@@ -362,32 +392,57 @@ describe('TabLayout', () => {
       const registered = JSON.parse(
         container.querySelector('[data-tabs]')!.getAttribute('data-registered-trigger-names')!,
       ) as string[];
-      expect(registered).toHaveLength(6);
-      expect(new Set(registered).size).toBe(6);
-      expect(registered.filter((name) => name === 'wall')).toHaveLength(1);
-      expect(container.querySelectorAll('[data-trigger="wall"]')).toHaveLength(isTablet ? 1 : 0);
+      // Five tabs (HIG Tab bars: "aim for a default list of five or fewer"). The
+      // iPad "On the Wall" tab became the full-screen Wall display route.
+      expect(registered).toHaveLength(5);
+      expect(new Set(registered).size).toBe(5);
+      expect(registered).not.toContain('wall');
+      expect(container.querySelector('[data-trigger="wall"]')).toBeNull();
     },
   );
 
-  it('keeps Climbs in the native search role when it is the initial tab', () => {
+  it('keeps Climbs an ordinary labelled tab on the iOS 26 bar, like Apple Music', () => {
+    // No role="search": since SDK 58 that is a UISearchTab, which iOS 26 sets apart
+    // from the other tabs and which moves the search field into the bottom bar.
     const { container } = render(<TabLayout />);
+    const climbs = container.querySelector('[data-trigger="climbs"]');
 
-    expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-tab-role')).toBe('search');
-    expect(container.querySelectorAll('[data-tab-role="search"]')).toHaveLength(1);
+    expect(climbs?.hasAttribute('data-tab-role')).toBe(false);
+    expect(container.querySelector('[data-tab-role]')).toBeNull();
+    expect(climbs?.textContent).toContain('mobile.nav.climbs');
   });
 
-  it('registers Home as the leftmost material tab', () => {
+  // Apple Music keeps Search on screen at the right when the bar collapses. iOS 27
+  // does that for a prominent tab; the API does not exist below 27.
+  it.each([
+    ['iOS 27 iPhone', '27.0', true, false, true],
+    ['iOS 26 iPhone', '26.1', true, false, false],
+    ['iOS 18 iPhone', '18.6', false, false, false],
+    ['iOS 27 iPad', '27.0', true, true, false],
+  ] as const)(
+    'keeps Climbs prominent only where the bar collapses and the API exists (%s)',
+    (_label, platformVersion, glassCapable, isTablet, expected) => {
+      cfg.platformVersion = platformVersion;
+      cfg.glassCapable = glassCapable;
+      cfg.isTablet = isTablet;
+      const { container } = render(<TabLayout />);
+
+      expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-prominent')).toBe(String(expected));
+      expect(container.querySelectorAll('[data-prominent="true"]')).toHaveLength(expected ? 1 : 0);
+    },
+  );
+
+  it('registers Home as the leftmost material tab and Climbs as the rightmost', () => {
     cfg.variant = 'material';
 
     render(<TabLayout />);
 
     expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
       'home',
-      'climbs',
       'record',
-      'wall',
       'discover',
       'profile',
+      'climbs',
     ]);
   });
 
@@ -405,12 +460,12 @@ describe('TabLayout', () => {
     const triggerNames = Array.from(container.querySelectorAll('[data-trigger]')).map((trigger) =>
       trigger.getAttribute('data-trigger'),
     );
-    expect(triggerNames).toEqual(['home', 'climbs', 'record', 'discover', 'profile']);
+    expect(triggerNames).toEqual(['home', 'record', 'discover', 'profile', 'climbs']);
   });
 
   it('leaves the iOS 26-only extras off the iOS 18 native bar', () => {
     // No minimize behavior (react-native-screens warns below iOS 26), no search role
-    // (Climbs stays a labelled tab with its own search field), and no accessory even
+    // (Climbs is an ordinary labelled tab everywhere), and no accessory even
     // with a climb current: the floating JS queue bar carries it instead.
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = false;
@@ -438,31 +493,46 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tabs="true"]')).toBeNull();
     expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
       'home',
-      'climbs',
       'record',
-      'wall',
       'discover',
       'profile',
+      'climbs',
     ]);
   });
 
-  it('keeps native iPad tabs and the Wall destination across a sidebar resize', () => {
+  it('keeps native iPad tabs across a sidebar resize', () => {
     cfg.isTablet = true;
     cfg.widthClass = 'compact';
     const { container, rerender } = render(<TabLayout />);
     const navigator = container.querySelector('[data-tabs="true"]');
     expect(navigator?.getAttribute('data-sidebar-adaptable')).toBe('true');
-    expect(container.querySelector('[data-trigger="wall"]')).not.toBeNull();
     expect(container.querySelector('[data-accessory="true"]')).toBeNull();
     cfg.widthClass = 'regular';
     cfg.windowWidth = 1366;
     rerender(<TabLayout />);
     expect(container.querySelector('[data-tabs="true"]')).toBe(navigator);
-    expect(container.querySelector('[data-trigger="wall"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-trigger]')).toHaveLength(5);
     expect(container.querySelector('[data-tablet-sidebar="true"]')).toBeNull();
   });
 
-  it('renders the iPad sidebar shell at regular width and registers all six tabs (wall hidden from the bar)', () => {
+  it('gives native iPad the Music MiniPlayer: the accessory, and no pane or wall column', () => {
+    cfg.isTablet = true;
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1366;
+    cfg.hasCurrentClimb = true;
+    cfg.boardPresenceEnabled = true;
+    cfg.boardPresenceBoardId = 1;
+    cfg.activeBoard = { uuid: 'board' };
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-sidebar-adaptable')).toBe('true');
+    expect(container.querySelector('[data-bottom-accessory="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
+    expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
+  });
+
+  it('renders the iPad sidebar shell at regular width and registers all five tabs', () => {
     cfg.variant = 'material';
     // Regular-width iPad takes the sidebar branch before the native/Material tab
     // bars: the glass sidebar carries navigation and the native iOS 26 tab bar is
@@ -481,15 +551,11 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tabs="true"]')).toBeNull();
     expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
       'home',
-      'climbs',
       'record',
-      'wall',
       'discover',
       'profile',
+      'climbs',
     ]);
-    // The wall screen registers with href:null so it never shows as a Material tab
-    // button (MaterialTabBar filters the resulting display:none item).
-    expect(cfg.materialScreens.find((screen) => screen.name === 'wall')?.options).toMatchObject({ href: null });
   });
 
   it('mounts the same shell on an Android tablet (Material variant, regular width, no NativeTabs)', () => {
@@ -509,11 +575,10 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tabs="true"]')).toBeNull();
     expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
       'home',
-      'climbs',
       'record',
-      'wall',
       'discover',
       'profile',
+      'climbs',
     ]);
   });
 
@@ -561,11 +626,10 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-ipad-wall-column="true"]')).not.toBeNull();
     expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
       'home',
-      'climbs',
       'record',
-      'wall',
       'discover',
       'profile',
+      'climbs',
     ]);
   });
 
@@ -635,7 +699,7 @@ describe('TabLayout', () => {
     cfg.variant = 'material';
     // iPad mini / base 11" / Air 11": physically below the 11" Pro, so the wall panel
     // is dropped even though the window is wide enough for a column — the wall reaches
-    // the user via the BoardSheet peek + the "On the Wall" tab instead, like the phone.
+    // the user via the BoardSheet and its Wall display instead.
     cfg.widthClass = 'regular';
     cfg.windowWidth = 1366;
     cfg.wallDeviceClass = 'sheet-only';
@@ -650,38 +714,41 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tablet-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe('true');
   });
 
-  it('hides the wall column while the "On the Wall" tab is the focused destination', () => {
+  it('hides the wall column and the pane while the Wall display covers the shell', () => {
     cfg.variant = 'material';
-    // Panel-capable landscape with a bound board would show the column, but on the
-    // wall tab the same feed is already the content pane — so the ambient column
-    // steps aside (no two live copies of the feed).
+    // Panel-capable landscape with a bound board would show the column, but the
+    // Wall display already shows the same feed full screen — so the ambient
+    // column steps aside (no two live copies of the feed behind an opaque kiosk).
     cfg.widthClass = 'regular';
     cfg.windowWidth = 1366;
     cfg.boardPresenceEnabled = true;
     cfg.boardPresenceBoardId = 1;
     cfg.activeBoard = { uuid: 'board-1' };
-    cfg.segments = ['(tabs)', 'wall'];
+    // The player pushed over the kiosk is the focused route; the display is still
+    // in the stack, so nothing may remount behind it.
+    cfg.segments = ['play'];
+    const release = markWallDisplayMounted();
 
-    const { container } = render(<TabLayout />);
+    try {
+      const { container, rerender } = render(<TabLayout />);
 
-    expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
-    // The kiosk IS the wall surface on this tab, so the persistent detail pane also
-    // steps aside — it would otherwise squeeze the kiosk into a narrow left column.
-    expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
-    // The surface still EXISTS for this layout, so the sidebar cell stays hidden — it
-    // doesn't pop back in merely because the wall tab is open.
-    expect(container.querySelector('[data-tablet-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe('false');
-    // Kiosk stays lit while the wall tab is focused.
-    expect(keepAwake.activate).toHaveBeenCalledWith('wall');
-  });
+      expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
+      // The pane is covered too, so it is not mounted behind the display.
+      expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
+      // The surface still EXISTS for this layout, so the sidebar cell stays hidden — it
+      // doesn't pop back in merely because the display is open.
+      expect(container.querySelector('[data-tablet-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe(
+        'false',
+      );
 
-  it('does not hold the wall keep-awake lock off the "On the Wall" tab', () => {
-    cfg.segments = ['(tabs)', 'home'];
-
-    render(<TabLayout />);
-
-    expect(keepAwake.activate).not.toHaveBeenCalled();
-    expect(keepAwake.deactivate).toHaveBeenCalledWith('wall');
+      // Leaving the display brings both back.
+      act(() => release());
+      rerender(<TabLayout />);
+      expect(container.querySelector('[data-ipad-wall-column="true"]')).not.toBeNull();
+      expect(container.querySelector('[data-ipad-play-pane="true"]')).not.toBeNull();
+    } finally {
+      release();
+    }
   });
 
   it('hides the sidebar wall cell when the portrait play-pane strip owns the wall surface', () => {
@@ -798,6 +865,76 @@ describe('TabLayout', () => {
     const { container } = render(<TabLayout />);
 
     expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-minimize-behavior')).toBe('onScrollDown');
+  });
+
+  describe('a vertical tab rail (iPhone Duo)', () => {
+    const minimizeBehavior = (container: HTMLElement) =>
+      container.querySelector('[data-tabs="true"]')?.getAttribute('data-minimize-behavior');
+
+    it('keeps minimizing on a portrait iPhone once a tab reports no side inset', () => {
+      // An iPhone 17 Pro: the probe's first publish is a 0 side inset.
+      cfg.windowWidth = 402;
+      cfg.windowHeight = 874;
+      act(() => publishNativeTabContentInsetSides(0, 0));
+      const { container } = render(<TabLayout />);
+
+      expect(minimizeBehavior(container)).toBe('onScrollDown');
+    });
+
+    it('stops minimizing when a tab measures the rail, and resumes when it goes', () => {
+      // The Duo's outer display, 466 x 678pt. Minimized, its rail kept only Climbs
+      // and hid the other four tabs.
+      cfg.windowWidth = 466;
+      cfg.windowHeight = 678;
+      const { container } = render(<TabLayout />);
+      expect(minimizeBehavior(container)).toBe('onScrollDown');
+
+      // INFERRED: the rail plus the side status bar, 84pt as on the inner display.
+      act(() => publishNativeTabContentInsetSides(0, 84));
+      expect(minimizeBehavior(container)).toBe('never');
+
+      act(() => publishNativeTabContentInsetSides(0, 0));
+      expect(minimizeBehavior(container)).toBe('onScrollDown');
+    });
+
+    it('reads the rail from the window inset before any tab measures', () => {
+      cfg.windowWidth = 466;
+      cfg.windowHeight = 678;
+      cfg.windowInsets = { left: 0, right: 62 };
+      const { container } = render(<TabLayout />);
+
+      expect(minimizeBehavior(container)).toBe('never');
+    });
+
+    it("never minimizes on the Duo's inner display in landscape", () => {
+      cfg.windowWidth = 951;
+      cfg.windowHeight = 669;
+      const { container } = render(<TabLayout />);
+
+      expect(minimizeBehavior(container)).toBe('never');
+    });
+
+    // Hiding the accessory beside a vertical rail collapses the rail to Climbs, so
+    // the filter boards keep it there and clear it through the tab's inset.
+    it.each([
+      ['closed', 466, 678, 84],
+      ['open in landscape', 951, 669, 84],
+    ])('keeps the accessory on the hold and zone filter boards on the %s Duo', (_pose, width, height, sideInset) => {
+      cfg.windowWidth = width;
+      cfg.windowHeight = height;
+      cfg.nativeAccessoryActive = true;
+      cfg.hasCurrentClimb = true;
+      act(() => publishNativeTabContentInsetSides(0, sideInset));
+
+      for (const route of ['holds', 'zone']) {
+        cfg.segments = ['(tabs)', 'climbs', route];
+        const { container, unmount } = render(<TabLayout />);
+        expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-bottom-accessory-hidden')).toBe(
+          'false',
+        );
+        unmount();
+      }
+    });
   });
 
   it('uses adaptive neutral colors for native Liquid Glass tab icons and labels', () => {

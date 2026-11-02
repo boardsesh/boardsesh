@@ -1,4 +1,4 @@
-import type { ImageSourcePropType } from 'react-native';
+import type { ImageProps } from 'expo-image';
 import type { IconName } from '../../components/icon-map';
 // Real board-presence "now on the wall" capture, cropped by
 // `vp run mobile:onboarding-assets` from the onboarding screenshot flow. ESM
@@ -24,7 +24,7 @@ export type OnboardingCard = {
   id: OnboardingCardId;
   icon: IconName;
   /** Real board-presence illustration; falls back to `icon` when absent. */
-  image?: ImageSourcePropType;
+  image?: ImageProps['source'];
 };
 
 export const ONBOARDING_PROMPT_CARD: OnboardingCard = {

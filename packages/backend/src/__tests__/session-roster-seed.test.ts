@@ -258,17 +258,18 @@ describe('sessionUpdates roster seed ↔ real backend (#2860)', () => {
           elapsedMs: 90_000,
         });
         expect(armed.applied).toBe(true);
-        expect(armed.change.restCadence?.autoAdvance).toBe(true);
+        // The shared selection the app sends carries the flag both ways (#5382 mobile).
+        expect(armed.change.restCadence).toMatchObject({ autoAdvance: true, autoAdvanceOnce: true });
 
         const fired = await blake.setRestCadence({ action: 'FIRE', expectedRevision: armed.change.revision });
         expect(fired.applied).toBe(true);
-        expect(fired.change.restCadence?.autoAdvance).toBe(false);
+        expect(fired.change.restCadence).toMatchObject({ autoAdvance: false, autoAdvanceOnce: false });
         await waitFor(() => alex.restCadenceEvents.some((event) => event.revision === fired.change.revision), {
           label: 'Alex hears the advance',
         });
         expect(alex.restCadenceEvents.find((event) => event.revision === fired.change.revision)).toMatchObject({
           action: 'FIRE',
-          restCadence: { autoAdvance: false },
+          restCadence: { autoAdvance: false, autoAdvanceOnce: false },
         });
       } finally {
         await blake.dispose();

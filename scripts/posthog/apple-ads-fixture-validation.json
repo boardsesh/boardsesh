@@ -1,0 +1,451 @@
+{
+  "executedAt": "2026-11-01T14:07:03.499470+00:00",
+  "engine": "PostHog HogQL project 412845",
+  "fixtures": {
+    "delivery": {
+      "querySha256": "92776839ce44099de6c9df31c320e624a7d8e7b0e8ef503f265a6aa8f00df173",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "campaign_name": "Synthetic campaign",
+          "currency": "AUD",
+          "reporting_days": "2",
+          "first_report_day": "2026-10-01",
+          "last_report_day": "2026-10-02",
+          "conflicting_daily_rows": "0",
+          "spend": "22",
+          "impressions": "220",
+          "taps": "22",
+          "installs": "14",
+          "new_downloads": "13",
+          "redownloads": "1",
+          "tap_installs": "9",
+          "view_installs": "5",
+          "cost_per_reported_install": "1.5714",
+          "cost_per_tap_install": "2.4444",
+          "cost_per_tap": "1.0",
+          "tap_through_percent": "10.0",
+          "view_install_percent": "35.71"
+        },
+        {
+          "campaign_id": "campaign-a",
+          "campaign_name": "Synthetic campaign",
+          "currency": "USD",
+          "reporting_days": "1",
+          "first_report_day": "2026-10-02",
+          "last_report_day": "2026-10-02",
+          "conflicting_daily_rows": "0",
+          "spend": "5",
+          "impressions": "50",
+          "taps": "5",
+          "installs": "3",
+          "new_downloads": "2",
+          "redownloads": "1",
+          "tap_installs": "2",
+          "view_installs": "1",
+          "cost_per_reported_install": "1.6667",
+          "cost_per_tap_install": "2.5",
+          "cost_per_tap": "1.0",
+          "tap_through_percent": "10.0",
+          "view_install_percent": "33.33"
+        }
+      ]
+    },
+    "conflictingDelivery": {
+      "querySha256": "fbefb206ea487e615df28b04938d516b32ad694dc5d63b21baf2d5386e2c3db6",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "campaign_name": "Synthetic campaign",
+          "currency": "AUD",
+          "reporting_days": "2",
+          "first_report_day": "2026-10-01",
+          "last_report_day": "2026-10-02",
+          "conflicting_daily_rows": "1",
+          "spend": null,
+          "impressions": null,
+          "taps": null,
+          "installs": null,
+          "new_downloads": null,
+          "redownloads": null,
+          "tap_installs": null,
+          "view_installs": null,
+          "cost_per_reported_install": null,
+          "cost_per_tap_install": null,
+          "cost_per_tap": null,
+          "tap_through_percent": null,
+          "view_install_percent": null
+        },
+        {
+          "campaign_id": "campaign-a",
+          "campaign_name": "Synthetic campaign",
+          "currency": "USD",
+          "reporting_days": "1",
+          "first_report_day": "2026-10-02",
+          "last_report_day": "2026-10-02",
+          "conflicting_daily_rows": "0",
+          "spend": "5",
+          "impressions": "50",
+          "taps": "5",
+          "installs": "3",
+          "new_downloads": "2",
+          "redownloads": "1",
+          "tap_installs": "2",
+          "view_installs": "1",
+          "cost_per_reported_install": "1.6667",
+          "cost_per_tap_install": "2.5",
+          "cost_per_tap": "1.0",
+          "tap_through_percent": "10.0",
+          "view_install_percent": "33.33"
+        }
+      ]
+    },
+    "keywords": {
+      "querySha256": "ecbfd98e949ae57b9b8bdabab6d646f4c45d4bdfe4bada4b0ffc94edaf281e9f",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "ad_group_id": "group-a",
+          "keyword_id": "keyword-a",
+          "keyword": "synthetic a",
+          "match_type": "EXACT",
+          "currency": "AUD",
+          "reporting_days": "2",
+          "first_report_day": "2026-10-01",
+          "last_report_day": "2026-10-02",
+          "conflicting_daily_rows": "0",
+          "spend": "10",
+          "impressions": "100",
+          "taps": "10",
+          "installs": "7",
+          "new_downloads": "7",
+          "redownloads": "0",
+          "tap_installs": "5",
+          "view_installs": "2",
+          "cost_per_reported_install": "1.4286",
+          "cost_per_tap_install": "2.0",
+          "cost_per_tap": "1.0",
+          "tap_through_percent": "10.0",
+          "view_install_percent": "28.57"
+        },
+        {
+          "campaign_id": "campaign-a",
+          "ad_group_id": "group-a",
+          "keyword_id": "keyword-b",
+          "keyword": "synthetic b",
+          "match_type": "EXACT",
+          "currency": "AUD",
+          "reporting_days": "1",
+          "first_report_day": "2026-10-02",
+          "last_report_day": "2026-10-02",
+          "conflicting_daily_rows": "0",
+          "spend": "4",
+          "impressions": "40",
+          "taps": "4",
+          "installs": "2",
+          "new_downloads": "1",
+          "redownloads": "1",
+          "tap_installs": "1",
+          "view_installs": "1",
+          "cost_per_reported_install": "2.0",
+          "cost_per_tap_install": "4.0",
+          "cost_per_tap": "1.0",
+          "tap_through_percent": "10.0",
+          "view_install_percent": "50.0"
+        }
+      ]
+    },
+    "unmappedSpend": {
+      "querySha256": "e6d39fc06a871ba6c976c37be3daee6492dbd47ae318ea28024ca35a07d77dd1",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "currency": "AUD",
+          "campaign_spend": "22",
+          "named_keyword_spend": "14",
+          "unmapped_spend": "8",
+          "interpretation": "Unmapped to named keyword rows; source is not inferred"
+        },
+        {
+          "campaign_id": "campaign-a",
+          "currency": "USD",
+          "campaign_spend": "5",
+          "named_keyword_spend": "0",
+          "unmapped_spend": "5",
+          "interpretation": "Unmapped to named keyword rows; source is not inferred"
+        }
+      ]
+    },
+    "coverage": {
+      "querySha256": "657089c126db41fba38ec1081ce44f4018a14e31aa4ac1c84e814032b44411c6",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "conversion_type": "Download",
+          "claim_type": "Click",
+          "attributed_people": "9",
+          "unidentified_people": "7",
+          "without_captured_screen": "1",
+          "unknown_keyword_people": "0",
+          "unknown_country_people": "0",
+          "observed_signup_people": "1",
+          "first_attribution_observed_at": "2026-10-15T12:00:00Z",
+          "interpretation": "Observed attribution is not an install timestamp; signup capture before the verified fix is incomplete"
+        },
+        {
+          "campaign_id": "campaign-a",
+          "conversion_type": "Download",
+          "claim_type": "Impression",
+          "attributed_people": "1",
+          "unidentified_people": "1",
+          "without_captured_screen": "0",
+          "unknown_keyword_people": "1",
+          "unknown_country_people": "1",
+          "observed_signup_people": "0",
+          "first_attribution_observed_at": "2026-10-18T12:01:00Z",
+          "interpretation": "Observed attribution is not an install timestamp; signup capture before the verified fix is incomplete"
+        },
+        {
+          "campaign_id": "campaign-a",
+          "conversion_type": "Redownload",
+          "claim_type": "Click",
+          "attributed_people": "1",
+          "unidentified_people": "0",
+          "without_captured_screen": "0",
+          "unknown_keyword_people": "0",
+          "unknown_country_people": "0",
+          "observed_signup_people": "0",
+          "first_attribution_observed_at": null,
+          "interpretation": "Observed attribution is not an install timestamp; signup capture before the verified fix is incomplete"
+        }
+      ]
+    },
+    "outcomes": {
+      "querySha256": "7e8bc5b6bb9b7eb635019ee664bf4222716d9cbc85fa5a9a6796e6f6788e70b9",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "dimension": "campaign-a",
+          "conversion_type": "Download",
+          "claim_type": "Click",
+          "clean_newcomers": "8",
+          "observed_signup_people": "2",
+          "eligible_7d": "7",
+          "board_active_7d": "3",
+          "board_activation_7d_percent": "42.86",
+          "spray_active_7d": "1",
+          "spray_activation_7d_percent": "14.29",
+          "eligible_14d": "5",
+          "returned_days7_13": "1",
+          "return_days7_13_percent": "20.0",
+          "eligible_28d": "3",
+          "two_board_days_28d": "2",
+          "two_board_days_28d_percent": "66.67",
+          "eligible_56d": "2",
+          "returned_days28_55": "1",
+          "return_days28_55_percent": "50.0",
+          "observed_before_utc": "2026-11-01T00:00:00Z",
+          "measurement_status": "Observed outcomes; signup measurement awaits verified 2.7.0 release"
+        },
+        {
+          "campaign_id": "campaign-a",
+          "dimension": "campaign-a",
+          "conversion_type": "Download",
+          "claim_type": "Impression",
+          "clean_newcomers": "1",
+          "observed_signup_people": "0",
+          "eligible_7d": "1",
+          "board_active_7d": "0",
+          "board_activation_7d_percent": "0.0",
+          "spray_active_7d": "0",
+          "spray_activation_7d_percent": "0.0",
+          "eligible_14d": "0",
+          "returned_days7_13": "0",
+          "return_days7_13_percent": null,
+          "eligible_28d": "0",
+          "two_board_days_28d": "0",
+          "two_board_days_28d_percent": null,
+          "eligible_56d": "0",
+          "returned_days28_55": "0",
+          "return_days28_55_percent": null,
+          "observed_before_utc": "2026-11-01T00:00:00Z",
+          "measurement_status": "Observed outcomes; signup measurement awaits verified 2.7.0 release"
+        }
+      ]
+    },
+    "staleOutcomes": {
+      "querySha256": "1d50de957d145afe18413765248da062b7259c71c3328b9fdad999ca09739c62",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "dimension": "campaign-a",
+          "conversion_type": "Download",
+          "claim_type": "Click",
+          "clean_newcomers": "7",
+          "observed_signup_people": "2",
+          "eligible_7d": "5",
+          "board_active_7d": "2",
+          "board_activation_7d_percent": "40.0",
+          "spray_active_7d": "1",
+          "spray_activation_7d_percent": "20.0",
+          "eligible_14d": "5",
+          "returned_days7_13": "1",
+          "return_days7_13_percent": "20.0",
+          "eligible_28d": "2",
+          "two_board_days_28d": "1",
+          "two_board_days_28d_percent": "50.0",
+          "eligible_56d": "0",
+          "returned_days28_55": "0",
+          "return_days28_55_percent": null,
+          "observed_before_utc": "2026-10-27T00:00:00Z",
+          "measurement_status": "Observed outcomes; signup measurement awaits verified 2.7.0 release"
+        },
+        {
+          "campaign_id": "campaign-a",
+          "dimension": "campaign-a",
+          "conversion_type": "Download",
+          "claim_type": "Impression",
+          "clean_newcomers": "1",
+          "observed_signup_people": "0",
+          "eligible_7d": "1",
+          "board_active_7d": "0",
+          "board_activation_7d_percent": "0.0",
+          "spray_active_7d": "0",
+          "spray_activation_7d_percent": "0.0",
+          "eligible_14d": "0",
+          "returned_days7_13": "0",
+          "return_days7_13_percent": null,
+          "eligible_28d": "0",
+          "two_board_days_28d": "0",
+          "two_board_days_28d_percent": null,
+          "eligible_56d": "0",
+          "returned_days28_55": "0",
+          "return_days28_55_percent": null,
+          "observed_before_utc": "2026-10-27T00:00:00Z",
+          "measurement_status": "Observed outcomes; signup measurement awaits verified 2.7.0 release"
+        }
+      ]
+    },
+    "inclusiveReportEnd": {
+      "querySha256": "9440deb268050949e0a68051a5bc324d9696dd8144f61da026fcb8af6f33615d",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "campaign_name": "Synthetic campaign",
+          "currency": "AUD",
+          "reporting_days": "2",
+          "first_report_day": "2026-10-01",
+          "last_report_day": "2026-10-02",
+          "conflicting_daily_rows": "0",
+          "spend": "22",
+          "impressions": "220",
+          "taps": "22",
+          "installs": "14",
+          "new_downloads": "13",
+          "redownloads": "1",
+          "tap_installs": "9",
+          "view_installs": "5",
+          "cost_per_reported_install": "1.5714",
+          "cost_per_tap_install": "2.4444",
+          "cost_per_tap": "1.0",
+          "tap_through_percent": "10.0",
+          "view_install_percent": "35.71"
+        },
+        {
+          "campaign_id": "campaign-a",
+          "campaign_name": "Synthetic campaign",
+          "currency": "USD",
+          "reporting_days": "1",
+          "first_report_day": "2026-10-02",
+          "last_report_day": "2026-10-02",
+          "conflicting_daily_rows": "0",
+          "spend": "5",
+          "impressions": "50",
+          "taps": "5",
+          "installs": "3",
+          "new_downloads": "2",
+          "redownloads": "1",
+          "tap_installs": "2",
+          "view_installs": "1",
+          "cost_per_reported_install": "1.6667",
+          "cost_per_tap_install": "2.5",
+          "cost_per_tap": "1.0",
+          "tap_through_percent": "10.0",
+          "view_install_percent": "33.33"
+        }
+      ]
+    },
+    "exclusiveReportEnd": {
+      "querySha256": "c6e38acdc998caff560746d92b467f5180c42700a2b8a25bd17c54be33acb9f0",
+      "rows": [
+        {
+          "campaign_id": "campaign-a",
+          "campaign_name": "Synthetic campaign",
+          "currency": "AUD",
+          "reporting_days": "1",
+          "first_report_day": "2026-10-01",
+          "last_report_day": "2026-10-01",
+          "conflicting_daily_rows": "0",
+          "spend": "10",
+          "impressions": "100",
+          "taps": "10",
+          "installs": "8",
+          "new_downloads": "7",
+          "redownloads": "1",
+          "tap_installs": "5",
+          "view_installs": "3",
+          "cost_per_reported_install": "1.25",
+          "cost_per_tap_install": "2.0",
+          "cost_per_tap": "1.0",
+          "tap_through_percent": "10.0",
+          "view_install_percent": "37.5"
+        }
+      ]
+    },
+    "emptyFreshness": {
+      "querySha256": "59c6a3ff992552b217a6d2d6bb9b38d887bedfd39f2307321fa42a728331b7cb",
+      "rows": [
+        {
+          "source": "Apple reporting day (timezone unverified)",
+          "latest_observation": null,
+          "interpretation": "Reporting dates remain separate from UTC person windows"
+        },
+        {
+          "source": "Clean newcomer model (exclusive UTC cutoff)",
+          "latest_observation": null,
+          "interpretation": "Outcome maturity never advances past this source cutoff"
+        },
+        {
+          "source": "Native production iOS event (UTC)",
+          "latest_observation": null,
+          "interpretation": "Latest event in the last 24 hours"
+        }
+      ]
+    },
+    "authQuality": {
+      "querySha256": "6c00834bce72d6739ed621d1cbb3f53fd195df2e029b649c7879e1556967c62c",
+      "rows": [
+        {
+          "app_version": "2.7.0",
+          "ota_update_id": "target-270-ota",
+          "login_attempters": "1",
+          "login_success_people": "1",
+          "signup_people": "1",
+          "board_active_people": "1",
+          "latest_event_utc": "2026-10-31T23:53:00Z",
+          "measurement_status": "Awaiting verified release evidence"
+        },
+        {
+          "app_version": "2.6.0",
+          "ota_update_id": "known-incomplete-260-ota",
+          "login_attempters": "1",
+          "login_success_people": "0",
+          "signup_people": "0",
+          "board_active_people": "1",
+          "latest_event_utc": "2026-10-31T23:55:00Z",
+          "measurement_status": "Known incomplete auth measurement; do not infer signup conversion"
+        }
+      ]
+    }
+  }
+}

@@ -19,8 +19,8 @@ const scope = vi.hoisted(() => ({
   unmounts: 0,
 }));
 vi.mock('../../lib/privacy/privacy-cache', () => ({
-  getPrivacyCredentialGeneration: () => scope.generation,
-  subscribeToPrivacyRevocations: (listener: () => void) => {
+  getCredentialGeneration: () => scope.generation,
+  subscribeToCredentialChanges: (listener: () => void) => {
     scope.listeners.add(listener);
     return () => scope.listeners.delete(listener);
   },

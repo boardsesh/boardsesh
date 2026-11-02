@@ -67,6 +67,7 @@ describe('configFromResolvedEntry', () => {
       sizeId: 10,
       setIds: '20,1',
       boardSlug: 'garage-kilter',
+      boardUuid: 'board-1',
     });
   });
 
@@ -98,7 +99,7 @@ describe('decideBlePickerSelection', () => {
       deviceId: 'device-1',
       devices: [{ deviceId: 'device-1', name: 'Kilter Board#SN-1@3', rssi: -40 }],
       resolvedBoards,
-      currentBoardConfig: makeCurrentConfig({ setIds: '1,20' }),
+      currentBoardConfig: makeCurrentConfig({ setIds: '1,20', boardUuid: 'board-1' }),
     });
 
     expect(decision).toEqual({ kind: 'forward' });
@@ -127,6 +128,7 @@ describe('decideBlePickerSelection', () => {
         sizeId: 10,
         setIds: '1',
         boardSlug: null,
+        boardUuid: null,
       },
       entry: recordedEntry,
     });
@@ -151,6 +153,66 @@ describe('decideBlePickerSelection', () => {
     expect(decision.entry.kind).toBe('recorded');
     if (decision.entry.kind !== 'recorded') throw new Error('expected recorded entry');
     expect(decision.entry.config.boardUuid).toBe('recorded-board-uuid');
+  });
+
+  it.each(['saved', 'recorded'] as const)('rejects an identically configured sibling resolved from %s', (kind) => {
+    const entry: ResolvedBoardEntry =
+      kind === 'saved'
+        ? { kind: 'saved', board: makeBoard({ uuid: 'wall-a' }) }
+        : { kind: 'recorded', config: makeConfig({ boardName: 'kilter', setIds: '20,1', boardUuid: 'wall-a' }) };
+    const decision = decideBlePickerSelection({
+      deviceId: 'device-1',
+      devices: [{ deviceId: 'device-1', name: 'Kilter Board#SN-1@3', rssi: -40 }],
+      resolvedBoards: new Map([['SN-1', entry]]),
+      currentBoardConfig: makeCurrentConfig({ boardUuid: 'wall-b' }),
+    });
+
+    expect(decision).toMatchObject({ kind: 'mismatch', config: { boardUuid: 'wall-a' }, entry });
+  });
+
+  it.each([
+    { resolvedUuid: undefined, currentUuid: 'wall-b' },
+    { resolvedUuid: null, currentUuid: 'wall-b' },
+    { resolvedUuid: '', currentUuid: 'wall-b' },
+    { resolvedUuid: 'wall-a', currentUuid: undefined },
+    { resolvedUuid: 'wall-a', currentUuid: null },
+    { resolvedUuid: 'wall-a', currentUuid: '' },
+  ])(
+    'keeps legacy compatibility when one identity is unknown: $resolvedUuid / $currentUuid',
+    ({ resolvedUuid, currentUuid }) => {
+      const entry: ResolvedBoardEntry = {
+        kind: 'recorded',
+        config: makeConfig({ boardName: 'kilter', setIds: '20,1', boardUuid: resolvedUuid }),
+      };
+      const decision = decideBlePickerSelection({
+        deviceId: 'device-1',
+        devices: [{ deviceId: 'device-1', name: 'Kilter Board#SN-1@3', rssi: -40 }],
+        resolvedBoards: new Map([['SN-1', entry]]),
+        currentBoardConfig: makeCurrentConfig({ boardUuid: currentUuid }),
+      });
+
+      expect(decision).toEqual({ kind: 'forward' });
+    },
+  );
+
+  it('treats an anonymous saved-board UUID as unknown', () => {
+    const decision = decideBlePickerSelection({
+      deviceId: 'device-1',
+      devices: [{ deviceId: 'device-1', name: 'Kilter Board#SN-1@3', rssi: -40 }],
+      resolvedBoards: new Map([['SN-1', { kind: 'saved', board: makeBoard({ uuid: '' }) }]]),
+      currentBoardConfig: makeCurrentConfig({ boardUuid: 'wall-b' }),
+    });
+    expect(decision).toEqual({ kind: 'forward' });
+  });
+
+  it('still rejects different geometry when the saved UUID matches', () => {
+    const decision = decideBlePickerSelection({
+      deviceId: 'device-1',
+      devices: [{ deviceId: 'device-1', name: 'Kilter Board#SN-1@3', rssi: -40 }],
+      resolvedBoards: new Map([['SN-1', { kind: 'saved', board: makeBoard({ uuid: 'wall-a', layoutId: 2 }) }]]),
+      currentBoardConfig: makeCurrentConfig({ boardUuid: 'wall-a' }),
+    });
+    expect(decision.kind).toBe('mismatch');
   });
 });
 

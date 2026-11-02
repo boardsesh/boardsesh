@@ -649,7 +649,10 @@ ships on the `release/next` train because it moves the native fingerprint.
   touch lands on. It is `box-none`, not `none`: on iOS, Fabric turns `none` into
   `userInteractionEnabled = NO`, and UIKit can then refuse it first responder
   and never hit-tests it, which would silence both the key commands and the
-  Pencil interaction. For a climber who can edit, JS hands it the shortcut
+  Pencil interaction. On Android the module's view is an `ExpoView`, which is a
+  `LinearLayout`, so it holds a single JS wrapper child (absolute-fill) that
+  carries the editor's layout; `box-none` only takes effect on that wrapper
+  there. For a climber who can edit, JS hands it the shortcut
   list (`sprayShortcutCommands`: keys, plus the titles the iPad's Cmd-hold
   overlay shows). iOS registers each one as a `UIKeyCommand` on a view that
   makes itself first responder. Android matches key presses on a view that
@@ -2044,7 +2047,7 @@ beside it.
 | --- | --- |
 | `spray-wall-loader.ts` | The two round trips: `sprayWallByLayout` for the uuid (cached hard; a wall's uuid never moves), then `sprayWallRenderData` for the payload (10-minute stale time, bounded by the photo signature, not by how often a wall changes). Injected into the registry with `setSprayWallLoader`, so the draw path can ASK for a wall without being able to reach the network itself. |
 | `use-spray-wall.ts` | `useSprayWall(layoutId)` — the active board's wall, called once from `drawer-host-provider`, and the hook a surface reads `isUnrenderable` off. |
-| `use-spray-wall-token.ts` | `useSprayWallToken(boardName, layoutId)` — the one line a SYNCHRONOUS surface needs above its early return, because a component that gates on `getBoardRenderData() === null` returns before it mounts anything that subscribes. Requests the wall and subscribes to it in one call. Every synchronous board surface calls it — the play drawer, both board rows, the kiosk, the board-look preview, the reaction menu, the accessory thumbnail — and `spray-render-surfaces-subscribe.test.ts` fails a new one that does not. |
+| `use-spray-wall-token.ts` | `useSprayWallToken(boardName, layoutId)` — the one line a SYNCHRONOUS surface needs above its early return, because a component that gates on `getBoardRenderData() === null` returns before it mounts anything that subscribes. Requests the wall and subscribes to it in one call. Every synchronous board surface calls it — the play drawer, both board rows, the kiosk, the board-look preview, the accessory thumbnail — and `spray-render-surfaces-subscribe.test.ts` fails a new one that does not. |
 | `spray-hold-geometry.ts` | Canonical pixels -> this version's photo pixels, through `invert()` of the stored matrix. Centres via `mapPoint`, radii via `mapRadius`, silhouettes point by point via `mapRing` and back into radius units of the MAPPED radius. |
 | `spray-wall-registry.ts` | The map every downstream reader consults synchronously, plus `sprayCacheToken`. Registering also publishes the wall's silhouettes as runtime board-art geometry. |
 | `spray-photo-cache.ts` | The photograph on disk at `{cache}/spray-walls/<layoutId>-<version>.jpg`. The presigned URL is never the cache key — it changes on every read. |
@@ -2256,8 +2259,8 @@ That fixes every surface that mounts the board. The ones that **early-return on 
 null `getBoardRenderData`**, before mounting anything that subscribes, need their
 own line: `useSprayWallToken(boardName, layoutId)` ABOVE the early return, which
 both asks and subscribes. `BoardManageRow`, `AccessoryClimbThumbnail`,
-`BoardDiscoveryCard`, `BoardConfigPreview`, `PlayDrawer`, `WallKioskScreen`, the
-hold filter and `ClimbReactionMenu` all do this. Adding a new synchronous board
+`BoardDiscoveryCard`, `BoardConfigPreview`, `PlayDrawer`, `WallKioskScreen` and the
+hold filter all do this. Adding a new synchronous board
 surface means adding that call; forgetting it is a permanent placeholder, not a
 crash.
 
@@ -3731,9 +3734,10 @@ Three older events also fire on a wall and now say so (#6027): `Tick Logged`,
 Its value is one of the nine board types or null and nothing else, so it stays
 inside the second rule: a wall's name, slug or uuid passed to it comes out as
 null. It is what makes a spray session countable at all, because a wall's
-`layoutId` is created with the wall. `Set Active Climb` also carries `trigger`,
-`climb_saved` or null: saving a climb on a wall puts it on the queue, and that
-is not the same act as choosing a climb to climb. The spray-wall activation
+`layoutId` is created with the wall. `Set Active Climb` also carries `trigger`:
+`climb_saved` when saving a climb on a wall put it on the queue, which is not
+the same act as choosing a climb to climb, and `next` / `previous` /
+`rest_timer` for a step through the queue, which is not a choice either. The spray-wall activation
 definition built on both is in `docs/growth-metrics.md`.
 
 None of the above says how the fleet's walls are living after the funnels
@@ -4042,9 +4046,12 @@ aliases, revisions and lineage (as the child) cascade from the climb row.
 The climb's tombstone stays unscoped, as `log_deletion_board_climbs` writes it.
 Everybody who could open the wall could read the climb, and gym members or
 public-wall viewers may have it on their phone. A tombstone scoped to the
-setter would leave them a climb they could tick and then lose. A draft deleted
-here writes the same unscoped tombstone as `deleteDraftClimb`, which is the leak
-#6150 tracks; its fix has to cover both callers.
+setter would leave them a climb they could tick and then lose. A draft is the
+exception: only its setter can read one, so since migration 0280 (#6150) the
+triggers scope a draft's tombstones (the climb's and its `board_climb_stats`
+rows') to the setter, whichever caller deletes it (this mutation,
+`deleteDraftClimb` or account deletion). A draft with no Boardsesh owner keeps
+unscoped tombstones: a phone that downloaded it before #6432 still holds it.
 
 **The race with a tick.** Both sides lock the climb row. The delete takes the
 wall lock, then `SELECT … FOR UPDATE` on the climb, then counts ticks. `saveTick`
@@ -4337,7 +4344,27 @@ somebody else's wall climb — has no registry entry yet, so `CreateClimbScreen`
 holds a spinner on `useSprayWall`'s load state instead of settling on "can't set
 climbs here" and never looking again.
 
+## Shared climb drafts
+
+Every saved climb draft on a spray wall is available to everyone who can access that wall, including existing drafts. The wall's current permission and link-capability checks remain authoritative. The Drafts collection browses the wall's drafts; the creator's Open drafts section stays personal so picking a row always opens an editable climb. Editing, publishing and deletion remain setter-only. Ordinary climb deletion applies the same retention and concurrent-delete guard to drafts with logged ticks as it does to published climbs. Account erasure retains its existing separate draft-erasure behavior.
+
+`ClimbSearchInput.draftScope` is `OWN` by default and accepts `WALL` only for spray walls. Normal published-climb lists, global new-climb announcements, snapshots and sitemaps continue to exclude drafts. An unfinished editor autosave is not shared until the climber saves it.
+
 ## Offline: a wall on the device
+
+Opening a spray wall on native starts downloading its photo, holds, published climbs and shared drafts. The account-scoped first-open record respects a later explicit disable or Storage removal; rendering a wall thumbnail never starts a download. Download completion is required before a cold offline opening can draw the wall. Unlisted downloads retain the verified wall UUID alongside its exact scope independently of the recent-board card limit, and send it through every wall sync query and retirement check.
+
+Spray climb Save and Update commit the local climb and a replay operation atomically. A stable client-generated UUID identifies the climb on device, in the queue, in ticks and eventually on the server. Multiple saved climbs survive an app restart; the single working editor autosave remains separate. The existing draft switch controls whether reconnect saves a draft or publishes a climb. A queued save says that it is saved on this device and waiting to sync.
+
+The mutation outbox orders each climb's operations and holds dependent ticks until the preceding climb write is acknowledged. Pending and rejected authored rows cannot be overwritten by an older pull. Canonical primary-backed documents reconcile the acknowledged write, while failed climbs and their dependent ticks remain recoverable through the creator and Sync issues. First-ascent grades are stored with the offline tick; wall and hold editing and deletion remain online.
+
+Favorite and playlist additions also wait for the queued climb write, including a rejected write that needs repair. Deleting a draft or published climb checks this device's pending climb writes and ticks first, then removes the downloaded copy after the server accepts the deletion.
+
+An offline first ascent supplies an ungraded spray climb's local grade before search filtering, counting, sorting and pagination. The fallback uses this account's first graded send at the browsed angle; canonical stats and grade estimates take precedence when available.
+
+`climb_mutation_receipts` reserves client-created climb UUIDs beyond the sync feed's 90-day tombstone retention. Update receipts use `UpdateClimbInput.clientMutationId` to acknowledge an already committed edit without overwriting later changes or rejecting its retry after the 24-hour edit window. Replays still check current ownership and wall access. Editing a rejected operation creates a fresh update identity; retrying it unchanged keeps the original identity. Receipts contain identifiers and acknowledgment metadata, never climb content; account erasure clears their user attribution.
+
+A network create retry returns `SaveClimbResult.replayed` when that UUID already exists. The shared save hook then applies the currently submitted form through the update path before reporting success, so changes made after a lost response are not silently discarded. Deploy the compatible backend and migrations 0285–0287 before this mobile update.
 
 A wall lives in a garage or a basement, which is exactly where there is no
 signal, so SW-15 (#5448) mirrors it. The mechanics live in
@@ -4532,7 +4559,14 @@ property rather than a catalogue:
 4. **Public snapshots.** `discoverLayoutPairs` in
    `packages/backend/src/scripts/export-board-snapshots.ts` skips `spray`. The
    nightly snapshots go to a public bucket under guessable keys; a spray
-   partition is one climber's wall.
+   partition is one climber's wall. The `v1-catalog` artifact
+   (`export-board-catalog.ts`) drops every `board_type = 'spray'` row from every
+   table it exports, by `CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES` in
+   `packages/db/src/catalog-snapshot.ts`: a wall's layout and size rows carry
+   its name and its hole and placement rows carry its marked holds. The shared
+   spray product, set, roles and grades come from migration 0227 instead. The
+   dev-db loader applies the same filter to older artifacts and moves both
+   spray id sequences past any spray row it finds.
 5. **Sitemaps.** `isIndexableBoardType` in
    `packages/web/app/lib/seo/sitemap/indexable-boards.ts` keeps `spray` out of
    both the boards and the climbs shards. Per-wall visibility governs who may
@@ -4757,9 +4791,7 @@ After a successful spray climb save or edit, mobile awaits an exact-UUID canonic
 mirror before invalidating the downloaded climb list. `syncClimbDocuments`
 requires the exact board type and layout, and the existing wall visibility rule (including an explicitly supplied unlisted wall
 UUID). Climb and stats documents come from one repeatable-read primary snapshot,
-including the real server `updated_at` and `sync_seq` values. Authors can mirror
-their own drafts; other readable spray rows must be published, so a mirror
-never exposes anybody else's draft. In the app only a climb's setter can edit it
+including the real server `updated_at` and `sync_seq` values. Any authenticated wall reader can mirror its shared drafts; the exact wall capability and current access policy still apply. In the app only a climb's setter can edit it
 (`canEditClimb`); a wall owner cannot edit another setter's climb. The response's authenticated `viewerId` gates the local account
 stamp, while the climb keeps its original `user_id` attribution.
 

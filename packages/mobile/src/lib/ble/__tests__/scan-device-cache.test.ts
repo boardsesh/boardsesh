@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { upsertDiscoveredDevice } from '../scan-device-cache';
+import { signalStrengthOf, upsertDiscoveredDevice } from '../scan-device-cache';
 import type { DiscoveredDevice } from '../types';
 
 // The map key is the cache's own business (name for a serial-named box, id
@@ -8,11 +8,94 @@ function storedDevice(devices: Map<string, DiscoveredDevice>, deviceId: string):
   return [...devices.values()].find((device) => device.deviceId === deviceId);
 }
 
+// The bars the picker would draw for that row.
+function storedBars(devices: Map<string, DiscoveredDevice>, deviceId: string): string {
+  const device = storedDevice(devices, deviceId);
+  if (!device) throw new Error(`no stored device ${deviceId}`);
+  return signalStrengthOf(device);
+}
+
 describe('upsertDiscoveredDevice', () => {
   it('returns true and stores a first-seen device', () => {
     const devices = new Map<string, DiscoveredDevice>();
     expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -50 })).toBe(true);
     expect(storedDevice(devices, 'a')?.deviceId).toBe('a');
+  });
+
+  it('re-pushes with a fresh object when the signal moves to a new bar bucket', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -85 });
+    const before = storedDevice(devices, 'a');
+
+    const pushedAgain = upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -50 });
+
+    expect(pushedAgain).toBe(true);
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-50);
+    expect(storedDevice(devices, 'a')).not.toBe(before);
+  });
+
+  it('keeps the stored rssi fresh inside one bucket without re-pushing', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -70 });
+
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -65 })).toBe(false);
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-65);
+  });
+
+  it('does not flap the bars when a reading jitters around a bucket edge', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -58 });
+    for (const rssi of [-62, -58, -61, -59, -63]) {
+      expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi })).toBe(false);
+    }
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -66 })).toBe(true);
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -57 })).toBe(false);
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -54 })).toBe(true);
+  });
+
+  it('steps to the bucket a big jump clears instead of staying on the old one', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    const upsert = (rssi: number) => upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi });
+    const bars = () => storedBars(devices, 'a');
+
+    upsert(-85);
+    expect(upsert(-58)).toBe(true);
+    expect(bars()).toBe('good');
+    expect(upsert(-57)).toBe(false);
+    expect(bars()).toBe('good');
+    expect(upsert(-55)).toBe(true);
+    expect(bars()).toBe('strong');
+
+    expect(upsert(-82)).toBe(true);
+    expect(bars()).toBe('good');
+  });
+
+  it('shows the last-pushed bars, not the raw reading, between pushes', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    const upsert = (rssi: number) => upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi });
+
+    upsert(-58);
+    expect(upsert(-62)).toBe(false);
+    // A re-render now (say a board resolution lands) must still draw strong.
+    expect(storedBars(devices, 'a')).toBe('strong');
+    expect(upsert(-54)).toBe(false);
+    expect(storedBars(devices, 'a')).toBe('strong');
+  });
+
+  it('does not keep a first-sight 127 reading, and a real reading corrects it', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: 127 });
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-100);
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -55 })).toBe(true);
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-55);
+  });
+
+  it('ignores the CoreBluetooth unavailable reading (127)', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -70 });
+
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: 127 })).toBe(false);
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-70);
   });
 
   it('enriches the stored record with recon data that arrives in a later packet', () => {

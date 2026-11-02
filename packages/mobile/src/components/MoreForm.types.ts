@@ -99,7 +99,22 @@ export type MoreToggleRow = {
   kind: 'toggle';
   key: string;
   label: string;
+  /**
+   * The control's name for assistive tech when `label` leans on the row above
+   * ("In a session too" under Keep lighting): the VoiceOver rotor, Voice
+   * Control's names and TalkBack read the control on its own. iOS sets it on
+   * the Toggle (the subtitle then rides as its hint); MoreFormRN (Settings ›
+   * Board on Android) on the SwitchRow. MoreForm.android draws neither field:
+   * no screen it renders sets them.
+   */
+  accessibilityLabel?: string;
   subtitle?: string;
+  /**
+   * Why the row is greyed out, shown in place of `subtitle` while `disabled`,
+   * at full label contrast: on iOS as its own line under the Toggle, so the
+   * disabled control's dimming leaves it alone.
+   */
+  disabledReason?: string;
   value: boolean;
   disabled?: boolean;
   onValueChange: (value: boolean) => void;
@@ -138,6 +153,14 @@ export type MoreSelectRow = {
   kind: 'select';
   key: string;
   label: string;
+  /** The control's name for assistive tech when `label` leans on the row above (see `MoreToggleRow`). */
+  accessibilityLabel?: string;
+  /**
+   * Secondary text under the row (Settings › Board's Stop driving after row
+   * says why it is greyed), so its explanation rides the row a screen reader
+   * lands on, not only the footer.
+   */
+  subtitle?: string;
   options: MoreOption[];
   selectedKey: string;
   onSelect: (key: string) => void;

@@ -30,7 +30,11 @@ import {
   getWorkoutRunLog,
   getWorkoutRunState,
   hydrateWorkoutRun,
+  isWorkoutRunPendingStart,
+  markWorkoutRunStarted,
+  addWorkoutRunClimbs,
   noteWorkoutRunTick,
+  prepareWorkoutRun,
   resetWorkoutRunStoreForTests,
   setWorkoutRun,
   subscribeWorkoutRun,
@@ -85,6 +89,107 @@ beforeEach(() => {
 });
 
 describe('workout-run-store', () => {
+  it('persists preparation through a cold start without treating legacy runs as pending', async () => {
+    setWorkoutRun('legacy-session', run);
+    expect(isWorkoutRunPendingStart('legacy-session')).toBe(false);
+
+    prepareWorkoutRun('session-1', run);
+    await flushStorageWrites();
+    expect(isWorkoutRunPendingStart('session-1')).toBe(true);
+    expect(isWorkoutRunPendingStart('session-2')).toBe(false);
+    expect(isWorkoutRunPendingStart(null)).toBe(false);
+    expect(storedRecord()).toEqual({ sessionId: 'session-1', run, pendingStart: true });
+
+    resetWorkoutRunStoreForTests();
+    await hydrateWorkoutRun('session-1');
+    expect(isWorkoutRunPendingStart('session-1')).toBe(true);
+  });
+
+  it('starts once, publishes the marker change with the same run, and persists it', async () => {
+    prepareWorkoutRun('session-1', run);
+    const listener = vi.fn();
+    subscribeWorkoutRun(listener);
+
+    expect(markWorkoutRunStarted('other-session')).toBe(false);
+    expect(markWorkoutRunStarted('session-1')).toBe(true);
+    expect(markWorkoutRunStarted('session-1')).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(getWorkoutRunForSession('session-1')).toBe(run);
+    await flushStorageWrites();
+    expect(storedRecord()).toEqual({ sessionId: 'session-1', run });
+    resetWorkoutRunStoreForTests();
+    await hydrateWorkoutRun('session-1');
+    expect(isWorkoutRunPendingStart('session-1')).toBe(false);
+  });
+
+  it('keeps preparation through adding a block and logging a tick, but not another session', async () => {
+    prepareWorkoutRun('session-1', run);
+    const withBlock: WorkoutRun = {
+      stages: [...run.stages, { id: 'added', kind: 'ladder', itemUuids: ['added-1'] }],
+    };
+    setWorkoutRun('session-1', withBlock);
+    noteWorkoutRunTick('session-1', tick('w1'));
+    expect(isWorkoutRunPendingStart('session-1')).toBe(true);
+    await flushStorageWrites();
+    expect(storedRecord()).toMatchObject({ pendingStart: true, run: withBlock, log: [tick('w1')] });
+
+    setWorkoutRun('session-2', run);
+    expect(isWorkoutRunPendingStart('session-2')).toBe(false);
+  });
+
+  it('fills a climb the run lost from the tick logged on it, and never replaces one it kept (#6903)', async () => {
+    // A run an older bundle wrote: no climbs.
+    setWorkoutRun('session-1', run);
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-w1', angle: 40, isMirror: false });
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-other', angle: 25, isMirror: true });
+    // A climb outside the run is never logged, so its climb is not kept either.
+    noteWorkoutRunTick('session-1', tick('hand-queued'), { climbUuid: 'climb-x', angle: 40 });
+
+    expect(getWorkoutRunState()?.climbs).toEqual({ w1: { climbUuid: 'climb-w1', angle: 40, isMirror: false } });
+    await flushStorageWrites();
+    expect(storedRecord()).toMatchObject({ climbs: { w1: { climbUuid: 'climb-w1', angle: 40, isMirror: false } } });
+  });
+
+  it('lets the queue name a climb a tick filled in, never moving its climb or angle (#6903)', () => {
+    setWorkoutRun('session-1', run);
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-w1', angle: 40, isMirror: false });
+
+    // The local End fills from the live queue: its name, grade and board are new.
+    addWorkoutRunClimbs('session-1', {
+      w1: {
+        climbUuid: 'climb-other',
+        angle: 25,
+        isMirror: true,
+        name: 'Crimp City',
+        difficulty: '6a/V3',
+        boardType: 'kilter',
+      },
+    });
+
+    expect(getWorkoutRunState()?.climbs?.w1).toEqual({
+      climbUuid: 'climb-w1',
+      angle: 40,
+      isMirror: true,
+      name: 'Crimp City',
+      difficulty: '6a/V3',
+      boardType: 'kilter',
+    });
+  });
+
+  it('preserves preparation while joining split storage slots and clears it with the session', async () => {
+    await storage.setItem(
+      WORKOUT_RUN_V2_STORAGE_KEY,
+      JSON.stringify({ sessionId: 'session-1', run: timedRun, pendingStart: true }),
+    );
+    await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run }));
+    await hydrateWorkoutRun('session-1');
+    expect(isWorkoutRunPendingStart('session-1')).toBe(true);
+    await clearWorkoutRunForSession('session-1');
+    expect(isWorkoutRunPendingStart('session-1')).toBe(false);
+    expect(storage.read(WORKOUT_RUN_STORAGE_KEY)).toBeNull();
+    expect(storage.read(WORKOUT_RUN_V2_STORAGE_KEY)).toBeNull();
+  });
+
   it('holds and persists the run for its session', async () => {
     const listener = vi.fn();
     subscribeWorkoutRun(listener);

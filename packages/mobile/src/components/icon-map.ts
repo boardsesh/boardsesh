@@ -51,6 +51,8 @@ export const iconMap = {
   // Navigation
   'chevron.right': { ios: 'chevron.forward', android: 'chevron-right' },
   'chevron.left': { ios: 'chevron.backward', android: 'chevron-left' },
+  // The wall button's swipe to drive, as a board sheet row (#7113).
+  'chevron.left.2': { ios: 'chevron.backward.2', android: 'chevron-double-left' },
   'chevron.down': { ios: 'chevron.down', android: 'chevron-down' },
   'chevron.up': { ios: 'chevron.up', android: 'chevron-up' },
   close: { ios: 'xmark', android: 'close' },
@@ -202,6 +204,9 @@ export const iconMap = {
   'leave.session': { ios: 'rectangle.portrait.and.arrow.right', android: 'exit-to-app' },
   'skip.previous': { ios: 'backward.end', android: 'skip-previous' },
   'skip.next': { ios: 'forward.end', android: 'skip-next' },
+  // The iPad MiniPlayer's transport, drawn filled as Music's is.
+  'skip.previous.fill': { ios: 'backward.end.fill', android: 'skip-previous' },
+  'skip.next.fill': { ios: 'forward.end.fill', android: 'skip-next' },
   'drag.handle': { ios: 'line.3.horizontal', android: 'drag-horizontal-variant' },
   // Move a row one place up or down a list the climber orders.
   'arrow.up': { ios: 'arrow.up', android: 'arrow-up' },

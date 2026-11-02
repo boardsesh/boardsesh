@@ -1,3 +1,4 @@
+import { controllerGymQueries } from './gym-manifest';
 import type { ConnectionContext, ControllerInfo } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
@@ -8,6 +9,7 @@ import { requireAuthenticated } from '../shared/helpers';
 const ONLINE_THRESHOLD_MS = 60 * 1000;
 
 export const controllerQueries = {
+  ...controllerGymQueries,
   /**
    * Get all controllers registered by the current user
    * Requires authentication

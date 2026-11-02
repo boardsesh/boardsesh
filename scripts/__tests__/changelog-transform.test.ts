@@ -96,7 +96,16 @@ describe('extractReleaseNotes', () => {
     expect(extractReleaseNotes(undefined)).toBeNull();
   });
 
-  it('strips the "No release note needed" checkbox line (checked or not)', () => {
+  it.each([
+    '## Release Notes\n- [x] No release note needed (internal / technical change)\nInternal observability only',
+    '## Release Notes\nInternal observability only\n- [x] No release note needed (internal / technical change)',
+    '## Release Notes\n  * [X] NO RELEASE NOTE NEEDED\nInternal observability only',
+    '## Summary\n- [x] No release note needed\n## Release Notes\nInternal observability only',
+  ])('skips accompanying text when the PR opts out of release notes: %s', (body) => {
+    expect(extractReleaseNotes(body)).toBeNull();
+  });
+
+  it('strips the unchecked template checkbox while keeping real notes', () => {
     // Checked box, nothing else → no entry.
     expect(
       extractReleaseNotes('## Release Notes\n- [x] No release note needed (internal / technical change)'),
@@ -247,6 +256,20 @@ describe('buildEntries', () => {
 
   it('drops PRs carrying the skip-changelog label', () => {
     expect(buildEntries([{ ...base, labels: ['skip-changelog'] }])).toEqual([]);
+  });
+
+  it('drops checked opt-outs with explanations while retaining unchecked real notes', () => {
+    const skipped = {
+      ...base,
+      number: 4676,
+      body: '## Release Notes\n- [x] No release note needed\nInternal observability only',
+    };
+    const visible = {
+      ...base,
+      body: '## Release Notes\n- [ ] No release note needed\nA new thing',
+    };
+
+    expect(buildEntries([skipped, visible])).toEqual(buildEntries([base]));
   });
 
   it('drops PRs that are not merged (no mergedAt)', () => {

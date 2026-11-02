@@ -65,7 +65,7 @@ export const CAPTION_IDS = [
   'cppWorkout',
 ] as const;
 export type CaptionId = (typeof CAPTION_IDS)[number];
-export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
+export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de', 'it'] as const;
 export type CaptionLocale = (typeof CAPTION_LOCALES)[number];
 export interface ScreenshotCaption {
   headline: string;
@@ -81,6 +81,7 @@ export const STORE_CAPTION_LOCALES: Readonly<Record<string, CaptionLocale>> = {
   'es-MX': 'es',
   'fr-FR': 'fr',
   'de-DE': 'de',
+  it: 'it',
 };
 
 export function captionLocaleForStore(platform: 'ios' | 'android', storeLocale: string): CaptionLocale {
@@ -110,6 +111,19 @@ const IPAD_CAPTIONS: Readonly<Record<string, CaptionId>> = {
   '04-discover.png': 'discover',
   '05-profile.png': 'profile',
 };
+// iPhone Duo: one App Store set across both displays. 00-04 are the inner
+// display open (landscape), 05-07 the outer display closed (portrait); the
+// frame follows each capture's own aspect ratio.
+const DUO_CAPTIONS: Readonly<Record<string, CaptionId>> = {
+  '00-board-view.png': 'board',
+  '01-board-view-2.png': 'boards',
+  '02-climbs.png': 'climbs',
+  '03-home.png': 'home',
+  '04-playlist-detail.png': 'playlist',
+  '05-profile.png': 'profile',
+  '06-session-detail.png': 'session',
+  '07-workout-generator.png': 'workout',
+};
 const ANDROID_CAPTIONS: Readonly<Record<string, CaptionId>> = {
   '00-tension-board-view.png': 'board',
   '01-kilter-board-view.png': 'boards',
@@ -124,6 +138,7 @@ const ANDROID_CAPTIONS: Readonly<Record<string, CaptionId>> = {
 export function screenshotCaptions(platform: 'ios' | 'android', device: string): Readonly<Record<string, CaptionId>> {
   if (platform === 'android') return ANDROID_CAPTIONS;
   if (device.startsWith('ipad-')) return IPAD_CAPTIONS;
+  if (device === 'iphone-duo') return DUO_CAPTIONS;
   if (device.startsWith('iphone-')) return PHONE_CAPTIONS;
   throw new Error(`No screenshot presentation for device ${device}`);
 }
@@ -228,18 +243,37 @@ export function resolveScreenshotRecipes(
   platform: 'ios' | 'android',
   device: string,
   captureNames: readonly string[],
+  locale: CaptionLocale = 'en-US',
 ): readonly ScreenshotRecipe[] {
   const mapping = screenshotCaptions(platform, device);
   const legacyNames = Object.keys(mapping).sort();
   const actualNames = [...captureNames].sort();
   // Sorting copies ignores capture order while retaining duplicate-name rejection.
   const matches = (expected: readonly string[]) => [...expected].sort().join('\n') === actualNames.join('\n');
-  if (platform === 'ios' && device.startsWith('iphone-') && matches(IOS_CAMPAIGN_CAPTURE_NAMES)) {
-    return IOS_CAMPAIGN_RECIPES;
+  if (
+    platform === 'ios' &&
+    device !== 'iphone-duo' &&
+    device.startsWith('iphone-') &&
+    matches(IOS_CAMPAIGN_CAPTURE_NAMES)
+  ) {
+    // Italian has no reviewed physical Live Activity capture yet. Show the
+    // genuine localized session screen in that slot, keeping nine phone images.
+    return locale === 'it'
+      ? IOS_CAMPAIGN_RECIPES.map((recipe) =>
+          recipe.liveActivity
+            ? {
+                output: '07-session-detail.png',
+                caption: 'session',
+                layout: 'screen',
+                sources: ['04-session-detail.png'],
+              }
+            : recipe,
+        )
+      : IOS_CAMPAIGN_RECIPES;
   }
   // The iPad listing is its own campaign, not the phone set in landscape: the
-  // wall kiosk leads, and the browse screen is shown twice — once whole, once
-  // with its trailing "Now on the wall" column lifted out and enlarged beside it.
+  // wall kiosk leads, followed by the complete browse screen. The current
+  // landscape UI has no trailing wall column to lift out of the capture.
   // It runs on the same six captures the sidebar flow already takes, so it needs
   // no board switching and no extra fixtures.
   //
@@ -251,9 +285,8 @@ export function resolveScreenshotRecipes(
   if (platform === 'ios' && device.startsWith('ipad-') && matches(legacyNames)) {
     return [
       { output: '00-wall-kiosk.png', caption: 'storeBoards', layout: 'screen', sources: ['00-wall.png'] },
-      // The wall column is part of this very capture, enlarged beside the screen
-      // it came from — never a second screen standing in for it.
-      { output: '01-wall-status.png', caption: 'wallStatus', layout: 'wall-column', sources: ['02-climbs.png'] },
+      // Keep the established output name while showing the genuine full list.
+      { output: '01-wall-status.png', caption: 'climbs', layout: 'screen', sources: ['02-climbs.png'] },
       { output: '02-home.png', caption: 'home', layout: 'screen', sources: ['01-home.png'] },
       { output: '03-discover.png', caption: 'discover', layout: 'screen', sources: ['04-discover.png'] },
       {

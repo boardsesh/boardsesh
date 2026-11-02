@@ -5,6 +5,10 @@ import {
   type LiveActivityStartSessionOptions,
   type LiveActivityUpdateOptions,
   type LiveActivityClimbUpdateOptions,
+  type LiveActivityRestTimerOptions,
+  type LiveActivityLightingWindowOptions,
+  type LiveActivityLightingWindowSnapshot,
+  type LiveActivityKeepLightingConfig,
   type WidgetQueueNavigateEvent,
   type WidgetMirrorEvent,
   type BoardControlEvent,
@@ -58,6 +62,101 @@ export async function updateLiveActivityClimb(options: LiveActivityClimbUpdateOp
 }
 
 /**
+ * Whether this binary draws the rest timer outside the app (#6513). False on
+ * an older binary running this JS over the air, where the switch for it would
+ * do nothing.
+ */
+export const sessionPresenceSupportsRestTimer = sessionModule?.supportsRestTimer === true;
+
+/**
+ * Hands the rest timer (#6513) to the Lock Screen, the Dynamic Island and the
+ * Android session notification; `null` takes it off. Optional on both modules,
+ * so an OTA bundle on a binary that predates it is a silent no-op, and a
+ * native failure never reaches the timer itself.
+ */
+export async function updateLiveActivityRestTimer(options: LiveActivityRestTimerOptions | null): Promise<void> {
+  try {
+    await sessionModule?.updateRestTimer?.(options);
+  } catch (error) {
+    console.warn('[LiveActivity] updateRestTimer failed:', error);
+  }
+}
+
+/**
+ * Whether this binary draws driving the wall (2.7) on the Lock Screen,
+ * in the Dynamic Island and in the Android notification. False on an older
+ * binary running this JS over the air, where nothing is sent.
+ */
+export const sessionPresenceSupportsLightingWindow =
+  sessionModule?.supportsLightingWindow === true && typeof sessionModule.updateLightingWindow === 'function';
+
+/**
+ * Hands this phone's drive (timed, open-ended or none) to the Lock Screen, the Dynamic
+ * Island and the Android notification; `null` takes it off. A silent no-op on
+ * a binary that predates it, and a native failure never reaches the drive.
+ */
+export async function updateLiveActivityLightingWindow(
+  options: LiveActivityLightingWindowOptions | null,
+): Promise<void> {
+  if (!sessionPresenceSupportsLightingWindow) return;
+  try {
+    await sessionModule?.updateLightingWindow?.(options);
+  } catch (error) {
+    console.warn('[LiveActivity] updateLightingWindow failed:', error);
+  }
+}
+
+/**
+ * Whether native starts or renews a drive itself on a
+ * lock-screen Next / Previous, and so needs Settings › Board's Stop driving
+ * after choices mirrored. iOS only: its intent lights the wall without JS.
+ * Android's notification press reaches JS before anything lights, so JS starts the drive
+ * there at the wall's lit confirm (`armNotificationPressDrive`).
+ */
+export const sessionPresenceMirrorsKeepLighting =
+  Platform.OS === 'ios' &&
+  sessionPresenceSupportsLightingWindow &&
+  typeof liveActivityNative?.updateKeepLightingConfig === 'function';
+
+/**
+ * Whether the iOS Lock Screen bulb can stop a drive (`StopDrivingIntent`) on
+ * this binary. JS says it adopts that stop through the mirrored settings
+ * (`lockScreenStop`), so the bulb offers it only to a JS that will.
+ */
+export const sessionPresenceSupportsLockScreenDriveStop =
+  sessionPresenceMirrorsKeepLighting && liveActivityNative?.supportsLockScreenDriveStop === true;
+
+/**
+ * Mirrors Settings › Board's keep-lighting choices for the iOS lock-screen
+ * Next / Previous, which open or renew the window natively. `null` clears
+ * them. A silent no-op on Android and on a binary that predates it.
+ */
+export async function updateLiveActivityKeepLightingConfig(
+  config: LiveActivityKeepLightingConfig | null,
+): Promise<void> {
+  if (!sessionPresenceMirrorsKeepLighting) return;
+  try {
+    await liveActivityNative?.updateKeepLightingConfig?.(config);
+  } catch (error) {
+    console.warn('[LiveActivity] updateKeepLightingConfig failed:', error);
+  }
+}
+
+/**
+ * The stored drive, read synchronously so the drive store can adopt a
+ * lock-screen press before its own timed-drive end check runs. Null on an
+ * older binary, when nothing is stored, or when the read fails.
+ */
+export function readLiveActivityLightingWindow(): LiveActivityLightingWindowSnapshot | null {
+  if (!sessionPresenceSupportsLightingWindow) return null;
+  try {
+    return sessionModule?.getLightingWindow?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Explicitly marks that the actual React root committed in this process. This
  * is iOS-only and optional so an OTA bundle stays safe on an older binary.
  * Diagnostics must never affect app startup, so native bridge failures no-op.
@@ -91,6 +190,18 @@ export function addWidgetQueueNavigateListener(callback: (event: WidgetQueueNavi
   return () => subscription.remove();
 }
 
+/**
+ * iOS: the Lock Screen or Dynamic Island bulb stopped this phone's drive and
+ * stored the stop (`getLightingWindow`). The event carries nothing; the
+ * listener adopts the stored stop. A no-op on Android and on a binary without
+ * the stop.
+ */
+export function addLockScreenDriveStopListener(callback: () => void): () => void {
+  if (!sessionPresenceSupportsLockScreenDriveStop || !liveActivityNative) return () => {};
+  const subscription = liveActivityNative.addListener('lockScreenDriveStop', callback);
+  return () => subscription.remove();
+}
+
 // Android-only: lightbulb taps on the foreground-service notification. Reads
 // sessionPresenceNative directly (not the platform-keyed sessionModule) because
 // only that module's typed addListener declares the 'boardControl' overload; it
@@ -104,7 +215,15 @@ export function addBoardControlListener(callback: (event: BoardControlEvent) => 
   return () => subscription.remove();
 }
 
-export type { WidgetQueueNavigateEvent, BoardControlEvent, InterruptedLiveActivityIntentDiagnostic };
+export type {
+  WidgetQueueNavigateEvent,
+  BoardControlEvent,
+  InterruptedLiveActivityIntentDiagnostic,
+  LiveActivityRestTimerOptions,
+  LiveActivityLightingWindowOptions,
+  LiveActivityLightingWindowSnapshot,
+  LiveActivityKeepLightingConfig,
+};
 
 /** New native binaries only; older OTA hosts do not declare this event. */
 export function addWidgetMirrorListener(callback: (event: WidgetMirrorEvent) => void): () => void {

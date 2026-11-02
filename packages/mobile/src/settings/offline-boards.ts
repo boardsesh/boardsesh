@@ -432,6 +432,7 @@ export function forgetOwnedSprayWallPin(wallUuid: string): void {
 
 /** Drop the pins at the account boundary (`clearPersistedUserStores`). */
 export function clearOwnedSprayWallPins(): void {
+  if (getSetting('offlineOpenedSprayWallsV1') !== null) setSetting('offlineOpenedSprayWallsV1', null);
   if (getSetting(OWNED_WALL_PINS_SETTING_KEY) === null) return;
   setSetting(OWNED_WALL_PINS_SETTING_KEY, null);
 }

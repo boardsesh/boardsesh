@@ -4,6 +4,7 @@ import { createNativeAppleAdsAttributionController } from '../../lib/apple-ads-a
 import { subscribeConsent } from '../../lib/consent-state';
 import { subscribeAnalyticsIdentity } from '../../lib/analytics-identity-events';
 import { subscribeVerifiedAuthResult } from '../../lib/verified-auth-result';
+import { subscribeAuthAnalyticsHandoff } from '../../lib/auth-analytics-handoff';
 
 export function AppleAdsAttributionTracker(): null {
   useEffect(() => {
@@ -15,6 +16,7 @@ export function AppleAdsAttributionTracker(): null {
     const unsubscribeConsent = subscribeConsent(reconcile);
     const unsubscribeIdentity = subscribeAnalyticsIdentity(reconcile);
     const unsubscribeAuth = subscribeVerifiedAuthResult(reconcile);
+    const unsubscribeHandoff = subscribeAuthAnalyticsHandoff(reconcile);
     const foreground = AppState.addEventListener('change', (state) => {
       if (state === 'active') reconcile();
     });
@@ -24,6 +26,7 @@ export function AppleAdsAttributionTracker(): null {
       unsubscribeConsent();
       unsubscribeIdentity();
       unsubscribeAuth();
+      unsubscribeHandoff();
       foreground.remove();
     };
   }, []);

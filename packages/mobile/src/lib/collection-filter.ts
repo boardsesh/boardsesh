@@ -22,6 +22,7 @@ export function visibleCollectionValues(options: {
 }): CollectionFilter[] {
   const { canFilterPersonalCollections, isSprayWall, current } = options;
   return COLLECTION_VALUES.filter((value) => {
+    if (value === 'drafts' && isSprayWall) return true;
     if (isPersonalCollection(value)) return canFilterPersonalCollections;
     if (value === 'benchmarks') return !isSprayWall || current === 'benchmarks';
     return true;

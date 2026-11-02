@@ -14,17 +14,17 @@ const device = vi.hoisted(() => ({
   protectedClimbs: new Set<string>(),
 }));
 const queryClient = vi.hoisted(() => ({}));
-const { request, useStoredUserId, useUserReadRefresh, runAfterInteractions } = vi.hoisted(() => ({
+const { request, useStoredUserId, useUserReadRefresh, scheduleIdleTask } = vi.hoisted(() => ({
   request: vi.fn(),
   useStoredUserId: vi.fn(),
   useUserReadRefresh: vi.fn(),
-  runAfterInteractions: vi.fn((callback: () => void) => {
+  scheduleIdleTask: vi.fn((callback: () => void) => {
     callback();
     return { cancel: vi.fn() };
   }),
 }));
 
-vi.mock('react-native', () => ({ InteractionManager: { runAfterInteractions } }));
+vi.mock('../../lib/schedule-idle-task', () => ({ scheduleIdleTask }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => queryClient }));
 vi.mock('../../lib/graphql/offline-user-read-recovery', () => ({
   isPlaylistMembershipWritePending: (_client: unknown, queryKey: readonly unknown[]) =>
@@ -36,7 +36,7 @@ vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthentica
 vi.mock('../use-current-user-id', () => ({ useStoredUserId }));
 vi.mock('../use-user-read-refresh', () => ({ useUserReadRefresh }));
 vi.mock('../../lib/privacy/privacy-cache', () => ({
-  getPrivacyRevocationGeneration: () => device.credentialGeneration,
+  getCredentialGeneration: () => device.credentialGeneration,
 }));
 
 import { playlistMembershipStore } from '@boardsesh/climb-actions';
@@ -70,7 +70,7 @@ beforeEach(() => {
   playlistMembershipStore.reset();
   request.mockReset();
   request.mockResolvedValue(emptyResponse);
-  runAfterInteractions.mockClear();
+  scheduleIdleTask.mockClear();
   device.enabled = true;
   device.isAuthenticated = true;
   device.userId = 'user-a';

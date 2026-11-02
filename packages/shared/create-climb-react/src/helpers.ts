@@ -21,6 +21,8 @@ export type SavedClimbSnapshot = {
   /** ISO timestamp of first publish; null while the climb is a draft. */
   publishedAt: string | null;
   isDraft: boolean;
+  /** Queued saves are durable on this device and still await server delivery. */
+  delivery?: 'queued' | 'acknowledged';
 };
 
 /**
@@ -35,6 +37,7 @@ export function computeCanUpdate(
 ): boolean {
   if (!saved) return false;
   if (saved.boardType !== boardType) return false;
+  if (saved.boardType === 'spray' && saved.delivery === 'queued') return true;
   if (saved.isDraft) return true;
   if (!saved.publishedAt) return false;
   const publishedMs = Date.parse(saved.publishedAt);
@@ -47,6 +50,7 @@ export function computeCanUpdate(
  */
 export function computeEditLocked(saved: SavedClimbSnapshot | null, now: number = Date.now()): boolean {
   if (!saved || saved.isDraft || !saved.publishedAt) return false;
+  if (saved.boardType === 'spray' && saved.delivery === 'queued') return false;
   const publishedMs = Date.parse(saved.publishedAt);
   return Number.isFinite(publishedMs) && now - publishedMs > EDIT_WINDOW_MS;
 }
@@ -59,6 +63,7 @@ export type EditableClimb = {
   is_draft?: boolean | null;
   published_at?: string | null;
   created_at?: string | null;
+  localWritePending?: boolean;
 };
 
 export type CanEditClimbInput = {
@@ -96,6 +101,7 @@ export function canEditClimb({ climb, boardType, currentUserId, now = Date.now()
       createdAt: climb.created_at ?? null,
       publishedAt: climb.published_at ?? null,
       isDraft,
+      ...(climb.localWritePending === true ? { delivery: 'queued' as const } : {}),
     },
     boardType,
     now,

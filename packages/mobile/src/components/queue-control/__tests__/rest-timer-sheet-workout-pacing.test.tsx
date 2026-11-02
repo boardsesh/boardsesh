@@ -34,6 +34,8 @@ vi.mock('../../../settings', () => ({
   getSetting: (key: string) => harness.settings[key],
 }));
 vi.mock('../../../lib/clock', () => ({ nowMs: () => 0 }));
+// Native capability is covered by rest-timer-sheet; these suites exercise crew/workout UI.
+vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({ sessionPresenceSupportsRestTimer: true }));
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn(), hapticSelection: vi.fn() }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#111111', secondaryLabel: '#666666' } }),

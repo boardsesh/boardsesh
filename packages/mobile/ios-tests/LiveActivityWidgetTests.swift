@@ -283,6 +283,790 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertNil(ClimbNavigationDirection.previous.newIndex(from: 3, count: 2))
     }
 
+    // MARK: Rest timer (#6513)
+
+    private let restNow = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func restState(
+        status: String,
+        sessionId: String = "session",
+        startOffset: Double? = nil,
+        deadlineOffset: Double? = nil,
+        periodSeconds: Double? = nil,
+        targetSeconds: Double? = 120,
+        frozenSignedSeconds: Double? = nil
+    ) -> SharedRestTimerState {
+        let nowMs = restNow.timeIntervalSince1970 * 1000
+        return SharedRestTimerState(
+            v: SharedRestTimerState.currentVersion,
+            sessionId: sessionId,
+            status: status,
+            startMs: startOffset.map { nowMs + $0 * 1000 },
+            deadlineMs: deadlineOffset.map { nowMs + $0 * 1000 },
+            periodSeconds: periodSeconds,
+            targetSeconds: targetSeconds,
+            frozenSignedSeconds: frozenSignedSeconds
+        )
+    }
+
+    private func resolveRest(_ state: SharedRestTimerState?, sessionId: String = "session") -> ResolvedRestTimer? {
+        ResolvedRestTimer.resolve(state: state, sessionId: sessionId, now: restNow)
+    }
+
+    func testRestTimerStateRoundTripsThroughTheAppGroup() {
+        let state = restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90)
+        SharedRestTimerStore.save(state, to: defaults)
+        XCTAssertEqual(SharedRestTimerStore.load(from: defaults), state)
+
+        XCTAssertTrue(SharedRestTimerStore.clear(in: defaults))
+        XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+        // A second clear has nothing to take off the card, so it asks for no redraw.
+        XCTAssertFalse(SharedRestTimerStore.clear(in: defaults))
+    }
+
+    func testRestTimerSaveThatCannotEncodeClearsTheOldSnapshot() {
+        let old = restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90)
+        XCTAssertTrue(SharedRestTimerStore.save(old, to: defaults))
+
+        // JSONEncoder rejects a non-finite number; the old rest must not keep counting.
+        let unencodable = SharedRestTimerState(
+            v: SharedRestTimerState.currentVersion,
+            sessionId: "session",
+            status: SharedRestTimerState.statusRunning,
+            startMs: .nan,
+            deadlineMs: 1,
+            periodSeconds: nil,
+            targetSeconds: 120,
+            frozenSignedSeconds: nil
+        )
+        XCTAssertFalse(SharedRestTimerStore.save(unencodable, to: defaults))
+        XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+    }
+
+    func testRestTimerStoreRejectsGarbageAndUnknownVersions() throws {
+        defaults.set(Data("not json".utf8), forKey: SharedConstants.restTimerKey)
+        XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+
+        let future = """
+        {"v": 2, "sessionId": "session", "status": "running", "deadlineMs": 1}
+        """
+        defaults.set(Data(future.utf8), forKey: SharedConstants.restTimerKey)
+        XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+    }
+
+    func testRestTimerStoreDecodesTheJsonJsWritesWithNulls() throws {
+        let json = """
+        {"v": 1, "sessionId": "session", "status": "waiting", "startMs": null, "deadlineMs": null,
+         "periodSeconds": null, "targetSeconds": 90, "frozenSignedSeconds": 90}
+        """
+        defaults.set(Data(json.utf8), forKey: SharedConstants.restTimerKey)
+        let state = try XCTUnwrap(SharedRestTimerStore.load(from: defaults))
+        XCTAssertEqual(resolveRest(state)?.phase, .waiting(signedSeconds: 90))
+    }
+
+    func testRestTimerStoreAndResolverRejectNumbersTheWidgetCannotDraw() {
+        // JSONEncoder writes 1e300 without complaint, and Int(1e300) would trap
+        // the widget extension. Out-of-bounds snapshots render as "no timer".
+        let outOfBounds: [SharedRestTimerState] = [
+            restState(status: SharedRestTimerState.statusWaiting, targetSeconds: 1e300, frozenSignedSeconds: 1e300),
+            restState(status: SharedRestTimerState.statusPaused, frozenSignedSeconds: -1e300),
+            restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90, periodSeconds: 1e300),
+            restState(status: SharedRestTimerState.statusRunning, startOffset: 1e300, deadlineOffset: 90),
+            restState(status: SharedRestTimerState.statusCountUp, startOffset: -1e300, targetSeconds: nil),
+        ]
+        for state in outOfBounds {
+            XCTAssertFalse(state.isWithinBounds)
+            // Never written: save clears the key and reports the refusal.
+            XCTAssertFalse(SharedRestTimerStore.save(state, to: defaults))
+            XCTAssertNil(defaults.data(forKey: SharedConstants.restTimerKey))
+            XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+            XCTAssertNil(resolveRest(state))
+        }
+        // A value on the bound still draws.
+        let edge = restState(status: SharedRestTimerState.statusPaused, frozenSignedSeconds: -86_400)
+        XCTAssertEqual(resolveRest(edge)?.phase, .paused(signedSeconds: -86_400))
+    }
+
+    func testRestWholeSecondsNeverTraps() {
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(1e300), 86_400)
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(-1e300), -86_400)
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(.nan), 0)
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(.infinity), 0)
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(-12.9), -12)
+    }
+
+    func testRunningRestCountsDownToItsDeadline() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90))
+        XCTAssertEqual(
+            resolved?.phase,
+            .running(start: restNow.addingTimeInterval(-30), deadline: restNow.addingTimeInterval(90))
+        )
+        XCTAssertNil(resolved?.periodSeconds)
+        XCTAssertEqual(resolved?.targetSeconds, 120)
+        XCTAssertEqual(resolved?.muted, false)
+    }
+
+    func testRunningRestRenderedAfterItsDeadlineIsOver() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, startOffset: -150, deadlineOffset: -30))
+        XCTAssertEqual(resolved?.phase, .over(deadline: restNow.addingTimeInterval(-30)))
+    }
+
+    func testFixedWindowRollsOnToTheCurrentWindowInsteadOfGoingOver() {
+        // The 60 s window ended 130 s ago: two more windows have started since.
+        let resolved = resolveRest(restState(
+            status: SharedRestTimerState.statusRunning,
+            startOffset: -190,
+            deadlineOffset: -130,
+            periodSeconds: 60,
+            targetSeconds: 60
+        ))
+        XCTAssertEqual(
+            resolved?.phase,
+            .running(start: restNow.addingTimeInterval(-10), deadline: restNow.addingTimeInterval(50))
+        )
+        XCTAssertEqual(resolved?.periodSeconds, 60)
+    }
+
+    func testRunningRangeIsNeverInverted() {
+        // `Text(timerInterval:)` traps on lower > upper.
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, startOffset: 200, deadlineOffset: 90))
+        guard case let .running(start, deadline)? = resolved?.phase else {
+            return XCTFail("expected a running rest, got \(String(describing: resolved?.phase))")
+        }
+        XCTAssertLessThanOrEqual(start, deadline)
+    }
+
+    func testRunningRestWithoutAStartFallsBackToOneRestLength() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, deadlineOffset: 90))
+        XCTAssertEqual(
+            resolved?.phase,
+            .running(start: restNow.addingTimeInterval(-30), deadline: restNow.addingTimeInterval(90))
+        )
+    }
+
+    func testFrozenRestPhasesKeepTheirSign() {
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusPaused, frozenSignedSeconds: -12))?.phase,
+            .paused(signedSeconds: -12)
+        )
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusWaiting, frozenSignedSeconds: nil))?.phase,
+            .waiting(signedSeconds: 120)
+        )
+    }
+
+    func testQueueEndedKeepsCountingTheRestItReplacedMuted() {
+        // Before the deadline: the same countdown the rest was running.
+        let before = resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, startOffset: -30, deadlineOffset: 90))
+        XCTAssertEqual(
+            before?.phase,
+            .running(start: restNow.addingTimeInterval(-30), deadline: restNow.addingTimeInterval(90))
+        )
+        XCTAssertEqual(before?.muted, true)
+
+        // Past it: the overrun keeps counting, still muted (never the over red).
+        let after = resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, startOffset: -150, deadlineOffset: -30))
+        XCTAssertEqual(after?.phase, .over(deadline: restNow.addingTimeInterval(-30)))
+        XCTAssertEqual(after?.muted, true)
+    }
+
+    func testQueueEndedFixedWindowKeepsRolling() {
+        let resolved = resolveRest(restState(
+            status: SharedRestTimerState.statusQueueEnded,
+            startOffset: -190,
+            deadlineOffset: -130,
+            periodSeconds: 60,
+            targetSeconds: 60
+        ))
+        XCTAssertEqual(
+            resolved?.phase,
+            .running(start: restNow.addingTimeInterval(-10), deadline: restNow.addingTimeInterval(50))
+        )
+        XCTAssertEqual(resolved?.muted, true)
+    }
+
+    func testQueueEndedWithoutARestLengthCountsUp() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, startOffset: -42, targetSeconds: nil))
+        XCTAssertEqual(resolved?.phase, .countUp(start: restNow.addingTimeInterval(-42)))
+        XCTAssertEqual(resolved?.muted, true)
+    }
+
+    func testQueueEndedWithNoTimingFallsBackToItsFrozenValue() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, frozenSignedSeconds: 40))
+        XCTAssertEqual(resolved?.phase, .queueEnded(signedSeconds: 40))
+        XCTAssertEqual(resolved?.muted, true)
+    }
+
+    func testCountUpRestNeverStartsInTheFuture() {
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusCountUp, startOffset: -42, targetSeconds: nil))?.phase,
+            .countUp(start: restNow.addingTimeInterval(-42))
+        )
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusCountUp, startOffset: 5, targetSeconds: nil))?.phase,
+            .countUp(start: restNow)
+        )
+    }
+
+    func testRestTimerHiddenForAnotherSessionAnUnknownStatusOrNothingToCount() {
+        XCTAssertNil(resolveRest(nil))
+        XCTAssertNil(resolveRest(restState(status: SharedRestTimerState.statusRunning, deadlineOffset: 90), sessionId: "other"))
+        XCTAssertNil(resolveRest(restState(status: "sprinting", deadlineOffset: 90)))
+        XCTAssertNil(resolveRest(restState(status: SharedRestTimerState.statusRunning)))
+        XCTAssertNil(resolveRest(restState(status: SharedRestTimerState.statusCountUp, targetSeconds: nil)))
+    }
+
+    func testRestClockFormatsLikeTheApp() {
+        XCTAssertEqual(RestTimerFormat.signedClock(90), "1:30")
+        XCTAssertEqual(RestTimerFormat.signedClock(0), "0:00")
+        XCTAssertEqual(RestTimerFormat.signedClock(-12), "\u{2212}0:12")
+        XCTAssertEqual(RestTimerFormat.clock(3_725), "1:02:05")
+    }
+
+    func testDisplayGradeAgreesWhicheverPathDeliveredIt() {
+        // The backend push carries the raw difficulty; the native paths format it.
+        XCTAssertEqual(VGradeFormatter.displayGrade("6a/V3"), "V3")
+        XCTAssertEqual(VGradeFormatter.displayGrade("6c+/V5"), "V5+")
+        XCTAssertEqual(VGradeFormatter.displayGrade("V5+"), "V5+")
+        XCTAssertEqual(VGradeFormatter.displayGrade("v4"), "V4")
+        XCTAssertEqual(VGradeFormatter.displayGrade("7A"), "7A")
+        XCTAssertEqual(VGradeFormatter.displayGrade(""), "")
+        for raw in ["6a/V3", "6c+/V5", "V5+", "7A", "8A+/V11"] {
+            let once = VGradeFormatter.displayGrade(raw)
+            XCTAssertEqual(VGradeFormatter.displayGrade(once), once, "displayGrade must be idempotent for \(raw)")
+        }
+    }
+
+    // MARK: Keep-lighting window (2.7)
+
+    private let lightNow = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private var lightNowMs: Double { lightNow.timeIntervalSince1970 * 1000 }
+
+    private func lightingState(
+        mode: String,
+        sessionId: String = "session",
+        endsInSeconds: Double? = nil,
+        windowSeconds: Double? = nil,
+        family: String? = SharedLightingWindowState.familyGeneral,
+        source: String = SharedLightingWindowState.sourceApp
+    ) -> SharedLightingWindowState {
+        SharedLightingWindowState(
+            v: SharedLightingWindowState.currentVersion,
+            sessionId: sessionId,
+            mode: mode,
+            endsAtMs: endsInSeconds.map { lightNowMs + $0 * 1000 },
+            windowSeconds: windowSeconds,
+            family: family,
+            source: source,
+            updatedAtMs: lightNowMs - 5_000
+        )
+    }
+
+    private func keepLightingConfig(
+        keepLighting: String = "45",
+        moonboardKeepLighting: String = "until_stopped",
+        drivesInSession: Bool = true,
+        inCrew: Bool = false,
+        moonboard: Bool = false,
+        enabled: Bool = true
+    ) -> SharedKeepLightingConfig {
+        SharedKeepLightingConfig(
+            v: SharedKeepLightingConfig.currentVersion,
+            keepLighting: keepLighting,
+            moonboardKeepLighting: moonboardKeepLighting,
+            drivesInSession: drivesInSession,
+            inCrew: inCrew,
+            moonboard: moonboard,
+            enabled: enabled
+        )
+    }
+
+    private func press(
+        current: SharedLightingWindowState?,
+        config: SharedKeepLightingConfig?,
+        sessionId: String = "session"
+    ) -> SharedLightingWindowState? {
+        SharedLightingWindowRuntime.afterPress(current: current, config: config, sessionId: sessionId, now: lightNow)
+    }
+
+    func testLightingWindowRoundTripsThroughTheAppGroup() {
+        let state = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45)
+        XCTAssertTrue(SharedLightingWindowStore.save(state, to: defaults))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults), state)
+
+        XCTAssertTrue(SharedLightingWindowStore.clear(in: defaults))
+        XCTAssertNil(SharedLightingWindowStore.load(from: defaults))
+        XCTAssertFalse(SharedLightingWindowStore.clear(in: defaults))
+    }
+
+    func testLightingWindowStoreRejectsGarbageUnknownVersionsAndNumbersItCannotDraw() {
+        defaults.set(Data("not json".utf8), forKey: SharedConstants.lightingWindowKey)
+        XCTAssertNil(SharedLightingWindowStore.load(from: defaults))
+
+        let future = """
+        {"v": 2, "sessionId": "session", "mode": "window", "endsAtMs": 1800000030000, "source": "app", "updatedAtMs": 1800000000000}
+        """
+        defaults.set(Data(future.utf8), forKey: SharedConstants.lightingWindowKey)
+        XCTAssertNil(SharedLightingWindowStore.load(from: defaults))
+
+        let outOfBounds = [
+            lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 1e300, windowSeconds: 45),
+            lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 1e300),
+            lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 0),
+            lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: -45),
+        ]
+        for state in outOfBounds {
+            XCTAssertFalse(state.isWithinBounds)
+            XCTAssertFalse(SharedLightingWindowStore.save(state, to: defaults))
+            XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+            XCTAssertEqual(LightingRenderPhase.resolve(state: state, sessionId: "session", now: lightNow), .previews)
+        }
+    }
+
+    func testLightingWindowStoreDecodesASnapshotWithNullsAndMissingFields() throws {
+        let json = """
+        {"v": 1, "sessionId": "session", "mode": "driving", "endsAtMs": null, "source": "lockScreen", "updatedAtMs": 1800000000000}
+        """
+        defaults.set(Data(json.utf8), forKey: SharedConstants.lightingWindowKey)
+        let state = try XCTUnwrap(SharedLightingWindowStore.load(from: defaults))
+        XCTAssertNil(state.windowSeconds)
+        XCTAssertNil(state.family)
+        XCTAssertEqual(LightingRenderPhase.resolve(state: state, sessionId: "session", now: lightNow), .driving)
+    }
+
+    func testLightingWindowDrainsToItsEndThenReadsAsPreviews() {
+        let open = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45)
+        XCTAssertEqual(
+            LightingRenderPhase.resolve(state: open, sessionId: "session", now: lightNow),
+            .window(start: lightNow.addingTimeInterval(-15), end: lightNow.addingTimeInterval(30))
+        )
+        // The widget runs no code at the end: the first render past it shows previews.
+        XCTAssertEqual(
+            LightingRenderPhase.resolve(state: open, sessionId: "session", now: lightNow.addingTimeInterval(30)),
+            .previews
+        )
+    }
+
+    func testLightingWindowRangeIsNeverInverted() {
+        // A window with no length on record still draws a valid range.
+        let noLength = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: nil)
+        guard case let .window(start, end) = LightingRenderPhase.resolve(state: noLength, sessionId: "session", now: lightNow) else {
+            return XCTFail("expected a window")
+        }
+        XCTAssertLessThanOrEqual(start, end)
+        XCTAssertEqual(start, lightNow)
+    }
+
+    func testLightingShowsPreviewsForAnotherSessionOffOrAnUnknownMode() {
+        let driving = lightingState(mode: SharedLightingWindowState.modeDriving)
+        XCTAssertEqual(LightingRenderPhase.resolve(state: driving, sessionId: "session", now: lightNow), .driving)
+        XCTAssertEqual(LightingRenderPhase.resolve(state: driving, sessionId: "other", now: lightNow), .previews)
+        XCTAssertEqual(LightingRenderPhase.resolve(state: nil, sessionId: "session", now: lightNow), .previews)
+        XCTAssertEqual(
+            LightingRenderPhase.resolve(state: lightingState(mode: SharedLightingWindowState.modeOff), sessionId: "session", now: lightNow),
+            .previews
+        )
+        XCTAssertEqual(
+            LightingRenderPhase.resolve(state: lightingState(mode: "sprinting", endsInSeconds: 30), sessionId: "session", now: lightNow),
+            .previews
+        )
+    }
+
+    func testKeepLightingPlanFollowsTheBoardFamilyLikeTheApp() {
+        // The general choice: a 45 s timed drive.
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig()),
+            .window(seconds: 45, family: SharedLightingWindowState.familyGeneral)
+        )
+        // A MoonBoard takes its own choice, in a crew too.
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig(drivesInSession: false, inCrew: true, moonboard: true)),
+            .driving(family: SharedLightingWindowState.familyMoonboard)
+        )
+        // In a crew with "In a session too" off, the general choice lights one climb.
+        XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(drivesInSession: false, inCrew: true)))
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig(drivesInSession: true, inCrew: true)),
+            .window(seconds: 45, family: SharedLightingWindowState.familyGeneral)
+        )
+        // Right away lights one climb and starts no drive.
+        XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "off")))
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "until_stopped")),
+            .driving(family: SharedLightingWindowState.familyGeneral)
+        )
+        // Stop driving after's longer choices (2.7): 2 and 5 minutes.
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "120")),
+            .window(seconds: 120, family: SharedLightingWindowState.familyGeneral)
+        )
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "300")),
+            .window(seconds: 300, family: SharedLightingWindowState.familyGeneral)
+        )
+        // Off where the app would not keep lighting, and with no config at all.
+        XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(enabled: false)))
+        XCTAssertNil(SharedKeepLighting.plan(for: nil))
+        // A value this build can't read lights one climb; a newer bundle's longer timed drive still works.
+        XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "forever")))
+        XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "nan")))
+        XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "0")))
+        XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "86400")))
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "90")),
+            .window(seconds: 90, family: SharedLightingWindowState.familyGeneral)
+        )
+    }
+
+    func testKeepLightingConfigRoundTripsAndRejectsAnUnknownVersion() {
+        let config = keepLightingConfig(inCrew: true, moonboard: true)
+        SharedKeepLightingConfigStore.save(config, to: defaults)
+        XCTAssertEqual(SharedKeepLightingConfigStore.load(from: defaults), config)
+
+        let future = """
+        {"v": 2, "keepLighting": "45", "moonboardKeepLighting": "until_stopped", "drivesInSession": true, "inCrew": false, "moonboard": false, "enabled": true}
+        """
+        defaults.set(Data(future.utf8), forKey: SharedConstants.keepLightingConfigKey)
+        XCTAssertNil(SharedKeepLightingConfigStore.load(from: defaults))
+
+        SharedKeepLightingConfigStore.clear(in: defaults)
+        XCTAssertNil(defaults.data(forKey: SharedConstants.keepLightingConfigKey))
+    }
+
+    func testLockScreenPressOpensAWindowFromTheSettings() throws {
+        let opened = try XCTUnwrap(press(current: nil, config: keepLightingConfig()))
+        XCTAssertEqual(opened.mode, SharedLightingWindowState.modeWindow)
+        XCTAssertEqual(opened.endsAtMs, lightNowMs + 45_000)
+        XCTAssertEqual(opened.windowSeconds, 45)
+        XCTAssertEqual(opened.family, SharedLightingWindowState.familyGeneral)
+        XCTAssertEqual(opened.source, SharedLightingWindowState.sourceLockScreen)
+        XCTAssertEqual(opened.updatedAtMs, lightNowMs)
+        XCTAssertEqual(opened.sessionId, "session")
+    }
+
+    func testLockScreenPressRenewsAnOpenWindowByItsOwnLength() throws {
+        // A 30 s window opened in the app, 10 s left; the settings say 60 s now.
+        let open = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 10, windowSeconds: 30)
+        let renewed = try XCTUnwrap(press(current: open, config: keepLightingConfig(keepLighting: "60")))
+        XCTAssertEqual(renewed.mode, SharedLightingWindowState.modeWindow)
+        XCTAssertEqual(renewed.endsAtMs, lightNowMs + 30_000)
+        XCTAssertEqual(renewed.windowSeconds, 30)
+        XCTAssertEqual(renewed.source, SharedLightingWindowState.sourceLockScreen)
+        // It renews even when the settings would no longer open one: the window is the climber's.
+        XCTAssertNotNil(press(current: open, config: nil))
+    }
+
+    func testLockScreenPressKeepsADriveAsItIs() {
+        let driving = lightingState(mode: SharedLightingWindowState.modeDriving)
+        XCTAssertNil(press(current: driving, config: keepLightingConfig()))
+    }
+
+    func testLockScreenPressAfterTheWindowEndedOpensAFreshOne() throws {
+        let over = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: -1, windowSeconds: 30)
+        let fresh = try XCTUnwrap(press(current: over, config: keepLightingConfig()))
+        XCTAssertEqual(fresh.endsAtMs, lightNowMs + 45_000)
+        XCTAssertEqual(fresh.windowSeconds, 45)
+    }
+
+    func testLockScreenPressUnderRightAwayOrNoSettingsLightsOneClimbAndStartsNoDrive() {
+        XCTAssertNil(press(current: nil, config: keepLightingConfig(keepLighting: "off")))
+        XCTAssertNil(press(current: nil, config: nil))
+        XCTAssertNil(press(current: lightingState(mode: SharedLightingWindowState.modeOff), config: keepLightingConfig(enabled: false)))
+        // A timed drive that already ran out is not one to renew: Right away starts nothing new.
+        let over = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: -1, windowSeconds: 45)
+        XCTAssertNil(press(current: over, config: keepLightingConfig(keepLighting: "off")))
+        XCTAssertNil(press(current: over, config: keepLightingConfig(moonboardKeepLighting: "off", moonboard: true)))
+    }
+
+    func testLockScreenPressIgnoresAnotherSessionsWindow() throws {
+        let otherDrive = lightingState(mode: SharedLightingWindowState.modeDriving, sessionId: "old-session")
+        let opened = try XCTUnwrap(press(current: otherDrive, config: keepLightingConfig()))
+        XCTAssertEqual(opened.sessionId, "session")
+        XCTAssertEqual(opened.mode, SharedLightingWindowState.modeWindow)
+    }
+
+    func testLockScreenPressUntilStoppedStartsADrive() throws {
+        let drive = try XCTUnwrap(press(current: nil, config: keepLightingConfig(moonboard: true)))
+        XCTAssertEqual(drive.mode, SharedLightingWindowState.modeDriving)
+        XCTAssertNil(drive.endsAtMs)
+        XCTAssertEqual(drive.family, SharedLightingWindowState.familyMoonboard)
+    }
+
+    func testRecordPressStoresTheWindowForTheStagedSessionOnly() throws {
+        SharedKeepLightingConfigStore.save(keepLightingConfig(), to: defaults)
+        // No session staged: no card to press, nothing stored.
+        XCTAssertNil(SharedLightingWindowRuntime.recordPress(in: defaults, now: lightNow))
+        XCTAssertNil(SharedLightingWindowStore.load(from: defaults))
+
+        defaults.set("session", forKey: SharedConstants.sessionIdKey)
+        let stored = try XCTUnwrap(SharedLightingWindowRuntime.recordPress(in: defaults, now: lightNow))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults), stored)
+
+        // A drive stored, a second press changes nothing and reports so.
+        SharedLightingWindowStore.save(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults)
+        XCTAssertNil(SharedLightingWindowRuntime.recordPress(in: defaults, now: lightNow))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults)?.mode, SharedLightingWindowState.modeDriving)
+    }
+
+    func testLightingSnapshotsThatDrawAlikeIgnoreWhoWroteThem() {
+        let lockScreen = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45, source: SharedLightingWindowState.sourceLockScreen)
+        let app = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45, source: SharedLightingWindowState.sourceApp)
+        XCTAssertTrue(app.drawsLike(lockScreen))
+        XCTAssertFalse(app.drawsLike(nil))
+        XCTAssertFalse(app.drawsLike(lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 40, windowSeconds: 45)))
+    }
+
+    func testLightingStartDropsAnotherSessionsWindowAndKeepsThisOne() {
+        let ours = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45)
+        SharedLightingWindowStore.save(ours, to: defaults)
+        SharedLightingWindowStore.clear(unlessSession: "session", in: defaults)
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults), ours)
+
+        SharedLightingWindowStore.clear(unlessSession: "next-session", in: defaults)
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+    }
+
+    func testLightingEndSessionClearsTheWindowAndTheSettings() {
+        SharedLightingWindowStore.save(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults)
+        SharedKeepLightingConfigStore.save(keepLightingConfig(), to: defaults)
+        XCTAssertNotNil(SharedLightingWindowStore.load(from: defaults))
+        XCTAssertNotNil(SharedKeepLightingConfigStore.load(from: defaults))
+
+        SharedLightingWindowRuntime.endSession(in: defaults)
+
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+        XCTAssertNil(defaults.data(forKey: SharedConstants.keepLightingConfigKey))
+    }
+
+    func testLightingWriteRedrawsOnlyWhenTheCardChanges() {
+        let window = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45)
+        // Clearing nothing draws nothing new.
+        XCTAssertFalse(SharedLightingWindowStore.write(nil, to: defaults))
+        XCTAssertTrue(SharedLightingWindowStore.write(window, to: defaults))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults), window)
+
+        // JS taking over the lock-screen window it adopted: same card, no redraw,
+        // but its own write replaces the lock-screen one so it isn't adopted twice.
+        let lockScreen = lightingState(
+            mode: SharedLightingWindowState.modeWindow,
+            endsInSeconds: 30,
+            windowSeconds: 45,
+            source: SharedLightingWindowState.sourceLockScreen
+        )
+        SharedLightingWindowStore.save(lockScreen, to: defaults)
+        XCTAssertFalse(SharedLightingWindowStore.write(window, to: defaults))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults)?.source, SharedLightingWindowState.sourceApp)
+
+        // A renewal, a drive, and off all redraw.
+        let renewed = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 45, windowSeconds: 45)
+        XCTAssertTrue(SharedLightingWindowStore.write(renewed, to: defaults))
+        XCTAssertTrue(SharedLightingWindowStore.write(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults))
+        XCTAssertTrue(SharedLightingWindowStore.write(nil, to: defaults))
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+
+        // A window it cannot draw is never stored, and only redraws when it takes one off the card.
+        let unreadable = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 0)
+        XCTAssertFalse(SharedLightingWindowStore.write(unreadable, to: defaults))
+        SharedLightingWindowStore.save(window, to: defaults)
+        XCTAssertTrue(SharedLightingWindowStore.write(unreadable, to: defaults))
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+    }
+
+    func testLightingNeedsRedrawComparesWhatTheCardDraws() {
+        let window = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45)
+        XCTAssertFalse(SharedLightingWindowStore.needsRedraw(previous: nil, next: nil))
+        XCTAssertTrue(SharedLightingWindowStore.needsRedraw(previous: window, next: nil))
+        XCTAssertTrue(SharedLightingWindowStore.needsRedraw(previous: nil, next: window))
+        XCTAssertFalse(SharedLightingWindowStore.needsRedraw(previous: window, next: window))
+        XCTAssertTrue(
+            SharedLightingWindowStore.needsRedraw(
+                previous: window,
+                next: lightingState(mode: SharedLightingWindowState.modeWindow, sessionId: "other", endsInSeconds: 30, windowSeconds: 45)
+            )
+        )
+    }
+
+    func testContentStateDecodesAPushWithoutTheRestRevision() throws {
+        // What the backend sends today: no restRevision or lightingRevision (and no device-only fields).
+        let json = """
+        {
+          "climbName": "Masquerade",
+          "climbDifficulty": "6a/V3",
+          "angle": 40,
+          "currentIndex": 0,
+          "totalClimbs": 2,
+          "hasNext": true,
+          "hasPrevious": false,
+          "climbUuid": "climb-1"
+        }
+        """
+        let state = try JSONDecoder().decode(ClimbSessionAttributes.ContentState.self, from: Data(json.utf8))
+        XCTAssertNil(state.restRevision)
+        XCTAssertNil(state.lightingRevision)
+        XCTAssertEqual(state.climbName, "Masquerade")
+    }
+
+    // MARK: Stop driving from the Lock Screen bulb
+
+    private func stopAt(_ current: SharedLightingWindowState?, sessionId: String = "session") -> SharedLightingWindowState? {
+        SharedLightingWindowRuntime.afterStop(current: current, sessionId: sessionId, now: lightNow)
+    }
+
+    func testLockScreenStopTurnsATimedOrOpenEndedDriveOff() throws {
+        for drive in [
+            lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45),
+            lightingState(mode: SharedLightingWindowState.modeDriving, family: nil, source: SharedLightingWindowState.sourceLockScreen),
+        ] {
+            let stopped = try XCTUnwrap(stopAt(drive))
+            XCTAssertEqual(stopped.mode, SharedLightingWindowState.modeOff)
+            XCTAssertNil(stopped.endsAtMs)
+            XCTAssertNil(stopped.windowSeconds)
+            XCTAssertEqual(stopped.source, SharedLightingWindowState.sourceLockScreen)
+            XCTAssertEqual(stopped.updatedAtMs, lightNowMs)
+            XCTAssertEqual(stopped.sessionId, "session")
+            XCTAssertEqual(LightingRenderPhase.resolve(state: stopped, sessionId: "session", now: lightNow), .previews)
+        }
+    }
+
+    func testLockScreenStopFindsNothingToStopOnPreviewsAnEndedDriveOrAnotherSession() {
+        XCTAssertNil(stopAt(nil))
+        XCTAssertNil(stopAt(lightingState(mode: SharedLightingWindowState.modeOff)))
+        // A timed drive that ran out between the render and the tap.
+        XCTAssertNil(stopAt(lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: -1, windowSeconds: 45)))
+        XCTAssertNil(stopAt(lightingState(mode: SharedLightingWindowState.modeDriving), sessionId: "next-session"))
+    }
+
+    func testRecordStopStoresTheStopForTheStagedSessionOnly() throws {
+        SharedLightingWindowStore.save(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults)
+        // No session staged: no card, nothing stored.
+        XCTAssertNil(SharedLightingWindowRuntime.recordStop(in: defaults, now: lightNow))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults)?.mode, SharedLightingWindowState.modeDriving)
+
+        defaults.set("session", forKey: SharedConstants.sessionIdKey)
+        let stored = try XCTUnwrap(SharedLightingWindowRuntime.recordStop(in: defaults, now: lightNow))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults), stored)
+        // A second tap finds nothing driving.
+        XCTAssertNil(SharedLightingWindowRuntime.recordStop(in: defaults, now: lightNow))
+        // A press after the stop starts a drive from the settings again, as Put on board would.
+        SharedKeepLightingConfigStore.save(keepLightingConfig(), to: defaults)
+        XCTAssertEqual(SharedLightingWindowRuntime.recordPress(in: defaults, now: lightNow)?.mode, SharedLightingWindowState.modeWindow)
+    }
+
+    func testTheBulbOffersAStopOnlyToAnAppThatTakesOne() throws {
+        XCTAssertFalse(SharedLightingWindowRuntime.lockScreenStopSupported(in: defaults))
+        // A JS that predates the stop mirrors its settings without the field.
+        let legacy = """
+        {"v": 1, "keepLighting": "45", "moonboardKeepLighting": "until_stopped", "drivesInSession": true, "inCrew": false, "moonboard": false, "enabled": true}
+        """
+        defaults.set(Data(legacy.utf8), forKey: SharedConstants.keepLightingConfigKey)
+        XCTAssertNotNil(SharedKeepLightingConfigStore.load(from: defaults))
+        XCTAssertFalse(SharedLightingWindowRuntime.lockScreenStopSupported(in: defaults))
+
+        var config = keepLightingConfig(enabled: false)
+        config.lockScreenStop = true
+        SharedKeepLightingConfigStore.save(config, to: defaults)
+        // Whatever the press settings say: a swipe's drive is stoppable too.
+        XCTAssertTrue(SharedLightingWindowRuntime.lockScreenStopSupported(in: defaults))
+        XCTAssertEqual(SharedKeepLightingConfigStore.load(from: defaults), config)
+    }
+
+    func testTheStopWaitsForTheAppUntilItWritesItsOwn() {
+        let stop = lightingState(mode: SharedLightingWindowState.modeOff, family: nil, source: SharedLightingWindowState.sourceLockScreen)
+        XCTAssertFalse(StopDrivingIntent.appSettled(stop, current: stop))
+        // JS adopted it and wrote its own off.
+        XCTAssertTrue(StopDrivingIntent.appSettled(stop, current: lightingState(mode: SharedLightingWindowState.modeOff, family: nil)))
+        // Or a later press already replaced it.
+        let later = SharedLightingWindowState(
+            v: SharedLightingWindowState.currentVersion,
+            sessionId: "session",
+            mode: SharedLightingWindowState.modeWindow,
+            endsAtMs: lightNowMs + 45_000,
+            windowSeconds: 45,
+            family: SharedLightingWindowState.familyGeneral,
+            source: SharedLightingWindowState.sourceLockScreen,
+            updatedAtMs: stop.updatedAtMs + 1
+        )
+        XCTAssertTrue(StopDrivingIntent.appSettled(stop, current: later))
+        XCTAssertTrue(StopDrivingIntent.appSettled(stop, current: nil))
+    }
+
+    // MARK: The disconnected card's bulb
+
+    private func storePairing(bound: UUID?, configKey: String = "kilter::1::1::") {
+        var pairing: [String: Any] = [
+            "configKey": configKey,
+            "configuration": ["boardName": "kilter", "layoutId": 1, "sizeId": 1],
+        ]
+        if let bound { pairing["boundPeripheralUuid"] = bound.uuidString }
+        defaults.set(try? JSONSerialization.data(withJSONObject: pairing), forKey: SharedConstants.bleBoardConfigKey)
+    }
+
+    func testTheDisconnectedCardOffersReconnectOnlyForARememberedBoard() {
+        // Nothing paired yet, or an in-app Disconnect cleared the board.
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+        storePairing(bound: nil)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+        storePairing(bound: UUID(), configKey: "")
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+        // An older pairing format (a bare configuration) can't be reconnected either.
+        defaults.set(Data(#"{"boardName": "kilter", "layoutId": 1, "sizeId": 1}"#.utf8), forKey: SharedConstants.bleBoardConfigKey)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+
+        storePairing(bound: UUID())
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .reconnect)
+        // No App Group: today's button.
+        XCTAssertEqual(SharedBoardReconnect.footer(in: nil), .reconnect)
+    }
+
+    func testTheCardSaysWhyTheLastReconnectFailedUntilOneSucceeds() {
+        storePairing(bound: UUID())
+        SharedBoardReconnect.record(.unreachable, in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .retry(.unreachable))
+        SharedBoardReconnect.record(.bluetoothOff, in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .retry(.bluetoothOff))
+        // A forgotten board says open the app, whatever failed before.
+        storePairing(bound: nil)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+
+        storePairing(bound: UUID())
+        SharedWidgetWallControlState.saveBoardConnection("disconnected", holderDisplayName: nil, to: defaults)
+        SharedBoardReconnect.record(nil, in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .reconnect)
+        // The bulb lights at once, before the app adopts the link.
+        XCTAssertEqual(SharedWidgetWallControlState.loadBoardConnection(from: defaults).boardConnection, "connectedByMe")
+    }
+
+    func testContentStateRoundTripsTheLightingRevision() throws {
+        // What this binary's own redraw writes: the revision survives the trip,
+        // so ActivityKit sees a changed state.
+        let json = """
+        {
+          "climbName": "Masquerade",
+          "climbDifficulty": "6a/V3",
+          "angle": 40,
+          "currentIndex": 0,
+          "totalClimbs": 2,
+          "hasNext": true,
+          "hasPrevious": false,
+          "climbUuid": "climb-1",
+          "lightingRevision": 3
+        }
+        """
+        let decoded = try JSONDecoder().decode(ClimbSessionAttributes.ContentState.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.lightingRevision, 3)
+        XCTAssertNil(decoded.restRevision)
+
+        var bumped = decoded
+        bumped.lightingRevision = 4
+        let roundTripped = try JSONDecoder().decode(
+            ClimbSessionAttributes.ContentState.self,
+            from: JSONEncoder().encode(bumped)
+        )
+        XCTAssertEqual(roundTripped.lightingRevision, 4)
+        XCTAssertEqual(roundTripped, bumped)
+    }
+
     func testSharedQueueItemDecodesOldPayloadWithoutMirroredField() throws {
         let json = """
         {
@@ -568,6 +1352,69 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
     }
 
+    func testSubscriptionRejectingHistoryCountResubscribesWithoutIt() {
+        // A backend without QueueState.historyCount (before F3, or rolled back
+        // past it) rejects the whole native document. Reconnecting would send
+        // the same document until the attempt cap and freeze the lock screen,
+        // so the socket resubscribes with the pre-F3 document instead.
+        let errorJson = #"""
+        {"id":"1","type":"error","payload":[{"message":"Cannot query field \"historyCount\" on type \"QueueState\".","locations":[{"line":8,"column":17}]}]}
+        """#
+        let errorPayload = (try? JSONSerialization.jsonObject(with: Data(errorJson.utf8)) as? [String: Any])?["payload"]
+        let messages = QueueGraphQLErrorRouting.errorMessages(inPayload: errorPayload)
+        XCTAssertEqual(messages, ["Cannot query field \"historyCount\" on type \"QueueState\"."])
+        XCTAssertEqual(
+            QueueGraphQLErrorRouting.action(forOperationId: "1", subscriptionId: "1", errorMessages: messages),
+            .resubscribeWithoutHistoryCount
+        )
+
+        // Only the subscription resubscribes: join-session and mutations keep
+        // their routing whatever the message says, and an unrelated
+        // subscription error still reconnects.
+        XCTAssertEqual(
+            QueueGraphQLErrorRouting.action(forOperationId: "join-session", subscriptionId: "1", errorMessages: messages),
+            .reconnect
+        )
+        XCTAssertEqual(
+            QueueGraphQLErrorRouting.action(forOperationId: "mutation-abc123", subscriptionId: "1", errorMessages: messages),
+            .revertOptimisticNavigation(correlationId: "abc123")
+        )
+        XCTAssertEqual(
+            QueueGraphQLErrorRouting.action(forOperationId: "1", subscriptionId: "1", errorMessages: ["Session not found"]),
+            .reconnect
+        )
+        // An object payload (not graphql-ws's error array) carries no messages.
+        XCTAssertEqual(QueueGraphQLErrorRouting.errorMessages(inPayload: ["message": "x"]), [])
+        XCTAssertEqual(QueueGraphQLErrorRouting.errorMessages(inPayload: nil), [])
+    }
+
+    func testFallbackDocumentDropsOnlyTheHistoryCountLine() {
+        let document = """
+        subscription QueueUpdates($sessionId: ID!) {
+          queueUpdates(sessionId: $sessionId) {
+            ... on FullSync {
+              state {
+                sequence
+                stateHash
+                historyCount
+                queue { uuid }
+              }
+            }
+          }
+        }
+        """
+        let fallback = QueueSubscriptionDocument.withoutHistoryCount(document)
+        XCTAssertFalse(fallback.contains("historyCount"))
+        XCTAssertEqual(
+            fallback.components(separatedBy: "\n").count,
+            document.components(separatedBy: "\n").count - 1
+        )
+        XCTAssertTrue(fallback.contains("stateHash"))
+        XCTAssertTrue(fallback.contains("queue { uuid }"))
+        // A document without the field is left as it is.
+        XCTAssertEqual(QueueSubscriptionDocument.withoutHistoryCount(fallback), fallback)
+    }
+
     func testOffQueueCurrentClimbIsAppendedNotIgnored() {
         // Mirrors the JS reducer's shouldAddToQueue: a peer navigating to a
         // search result (not a queue member) must not leave the stale index
@@ -594,6 +1441,138 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
         XCTAssertEqual(state.items.map(\.uuid), ["A", "B", "S"])
         XCTAssertEqual(state.currentIndex, 2)
+    }
+
+    // MARK: - History / Up next line (F3, #6666)
+
+    private func makeQueueItems(_ uuids: [String]) -> [SharedQueueItem] {
+        uuids.map { makeQueueItem(uuid: $0, climbUuid: "climb-\($0)", climbName: "Climb \($0)") }
+    }
+
+    /// Parses a graphql-ws `next` payload from JSON text, the way the socket
+    /// receives it, so JSON null and NSNumber decoding are exercised too.
+    private func parseQueueUpdate(json: String) -> QueueUpdateEvent? {
+        let payload = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        guard let updates = QueueMessageParser.extractQueueUpdates(from: payload) else { return nil }
+        return QueueMessageParser.parseQueueUpdate(updates)
+    }
+
+    private func fullSyncHistoryCount(_ event: QueueUpdateEvent?) -> Int? {
+        guard let event, case .fullSync(_, _, _, let historyCount) = event else { return nil }
+        return historyCount
+    }
+
+    func testFullSyncWithNothingCurrentLandsOnTheHeadOfUpNext() {
+        // History [A B], nothing current, Up next [C D]: a crewmate removed the
+        // current climb. The lock screen used to show A (index 0), History's
+        // oldest climb; it now shows C, the climb Next would pick.
+        let state = QueueStateReducer.apply(
+            .fullSync(items: makeQueueItems(["A", "B", "C", "D"]), currentItem: nil, sequence: 4, historyCount: 2),
+            to: makeQueueState(uuids: ["A", "B", "X", "C", "D"], currentIndex: 2)
+        )
+        XCTAssertEqual(state.items.map(\.uuid), ["A", "B", "C", "D"])
+        XCTAssertEqual(state.currentIndex, 2)
+
+        // No History: the head of Up next is index 0.
+        let noHistory = QueueStateReducer.apply(
+            .fullSync(items: makeQueueItems(["C", "D"]), currentItem: nil, sequence: 5, historyCount: 0),
+            to: state
+        )
+        XCTAssertEqual(noHistory.currentIndex, 0)
+    }
+
+    func testFullSyncWithAnEmptyUpNextShowsNoClimb() {
+        // Up next empty (historyCount == count): the line sits one past
+        // History's newest climb, out of bounds on purpose, so no
+        // already-climbed climb is presented as current. Larger values clamp
+        // to the same place, negative ones to 0.
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 3, itemCount: 3), 3)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 9999, itemCount: 3), 3)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: -3, itemCount: 3), 0)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 0, itemCount: 0), 0)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 2, itemCount: 0), 0)
+        // A pre-F3 server sends no historyCount: today's index 0.
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: nil, itemCount: 3), 0)
+
+        let emptyUpNext = QueueStateReducer.apply(
+            .fullSync(items: makeQueueItems(["A", "B", "C"]), currentItem: nil, sequence: 6, historyCount: 3),
+            to: makeQueueState(uuids: [], currentIndex: 0)
+        )
+        XCTAssertEqual(emptyUpNext.currentIndex, 3)
+        // Nothing reads as current (LiveActivityManager.buildContentState
+        // bounds-checks the same way, so the Live Activity gets no frame)...
+        SharedQueueState.save(items: emptyUpNext.items, currentIndex: emptyUpNext.currentIndex, to: defaults)
+        XCTAssertNil(SharedQueueState.currentItem(from: defaults))
+        // ...and the widget's Previous lands on History's newest climb, the
+        // one the server's Previous picks with nothing current, while Next
+        // is out of bounds, as the server's Next is with Up next empty.
+        XCTAssertEqual(ClimbNavigationDirection.previous.newIndex(from: emptyUpNext.currentIndex, count: 3), 2)
+        XCTAssertNil(ClimbNavigationDirection.next.newIndex(from: emptyUpNext.currentIndex, count: 3))
+
+        // A climb added to the empty Up next becomes the line's head.
+        let added = QueueStateReducer.apply(
+            .itemAdded(item: makeQueueItem(uuid: "D", climbUuid: "climb-D", climbName: "Climb D"), position: 3, sequence: 7),
+            to: emptyUpNext
+        )
+        XCTAssertEqual(added.items.map(\.uuid), ["A", "B", "C", "D"])
+        XCTAssertEqual(added.currentIndex, 3)
+
+        let emptyQueue = QueueStateReducer.apply(
+            .fullSync(items: [], currentItem: nil, sequence: 8, historyCount: 0),
+            to: emptyUpNext
+        )
+        XCTAssertTrue(emptyQueue.items.isEmpty)
+        XCTAssertEqual(emptyQueue.currentIndex, 0)
+        SharedQueueState.save(items: emptyQueue.items, currentIndex: emptyQueue.currentIndex, to: defaults)
+        XCTAssertNil(SharedQueueState.currentItem(from: defaults))
+    }
+
+    func testFullSyncWithACurrentClimbIgnoresHistoryCount() {
+        // While a climb is current the server sends its index as historyCount;
+        // the reducer follows the current uuid whatever the field says.
+        let items = makeQueueItems(["A", "B", "C"])
+        let state = QueueStateReducer.apply(
+            .fullSync(items: items, currentItem: items[1], sequence: 8, historyCount: 0),
+            to: makeQueueState(uuids: [], currentIndex: 0)
+        )
+        XCTAssertEqual(state.currentIndex, 1)
+
+        // An off-queue current climb is still appended, as before F3.
+        let offQueue = makeQueueItem(uuid: "S", climbUuid: "climb-S", climbName: "Search Pick")
+        let appended = QueueStateReducer.apply(
+            .fullSync(items: items, currentItem: offQueue, sequence: 9, historyCount: 1),
+            to: state
+        )
+        XCTAssertEqual(appended.items.map(\.uuid), ["A", "B", "C", "S"])
+        XCTAssertEqual(appended.currentIndex, 3)
+    }
+
+    func testFullSyncParsesHistoryCountFromTheWire() {
+        let withLine = parseQueueUpdate(json: """
+        {"data":{"queueUpdates":{"__typename":"FullSync","sequence":11,"state":{"sequence":11,"stateHash":"h","historyCount":2,"queue":[{"uuid":"A","climb":{"uuid":"climb-A","name":"Climb A"}},{"uuid":"B","climb":{"uuid":"climb-B","name":"Climb B"}},{"uuid":"C","climb":{"uuid":"climb-C","name":"Climb C"}}],"currentClimbQueueItem":null}}}}
+        """)
+        XCTAssertEqual(fullSyncHistoryCount(withLine), 2)
+        guard let parsedWithLine = withLine else { return XCTFail("FullSync did not parse") }
+        XCTAssertEqual(parsedWithLine.sequence, 11)
+        let state = QueueStateReducer.apply(parsedWithLine, to: makeQueueState(uuids: [], currentIndex: 0))
+        XCTAssertEqual(state.items.map(\.uuid), ["A", "B", "C"])
+        XCTAssertEqual(state.currentIndex, 2)
+
+        // JSON null and an absent field (a pre-F3 server) both parse to nil,
+        // which keeps today's index 0.
+        let nullLine = parseQueueUpdate(json: """
+        {"data":{"queueUpdates":{"__typename":"FullSync","sequence":12,"state":{"sequence":12,"stateHash":"h","historyCount":null,"queue":[{"uuid":"A","climb":{"uuid":"climb-A","name":"Climb A"}}],"currentClimbQueueItem":null}}}}
+        """)
+        XCTAssertNotNil(nullLine)
+        XCTAssertNil(fullSyncHistoryCount(nullLine))
+
+        let absentLine = parseQueueUpdate(json: """
+        {"data":{"queueUpdates":{"__typename":"FullSync","sequence":13,"state":{"sequence":13,"stateHash":"h","queue":[{"uuid":"A","climb":{"uuid":"climb-A","name":"Climb A"}}],"currentClimbQueueItem":null}}}}
+        """)
+        XCTAssertNotNil(absentLine)
+        XCTAssertNil(fullSyncHistoryCount(absentLine))
+        guard let parsedAbsentLine = absentLine else { return XCTFail("FullSync did not parse") }
+        XCTAssertEqual(QueueStateReducer.apply(parsedAbsentLine, to: makeQueueState(uuids: [], currentIndex: 0)).currentIndex, 0)
     }
 
     func testMoonboardSerialPositionMiniGridMath() {

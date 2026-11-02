@@ -4,6 +4,8 @@ import { graphqlErrorRejectsUnknownInputField } from './error-classification';
 export type GraphQLFetch = <T>(query: string, variables?: Record<string, unknown>) => Promise<T>;
 
 const MUTATIONS: Record<string, string> = {
+  SaveClimb: `mutation SaveClimb($input: SaveClimbInput!) { saveClimb(input: $input) { uuid } }`,
+  UpdateClimb: `mutation UpdateClimb($input: UpdateClimbInput!) { updateClimb(input: $input) { uuid } }`,
   SaveTick: `mutation SaveTick($input: SaveTickInput!) { saveTick(input: $input) { uuid } }`,
   UpdateTick: `mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) { updateTick(uuid: $uuid, input: $input) { uuid } }`,
   DeleteTick: `mutation DeleteTick($uuid: ID!) { deleteTick(uuid: $uuid) }`,
@@ -22,6 +24,7 @@ const MUTATIONS: Record<string, string> = {
   UnfollowPlaylist: `mutation UnfollowPlaylist($input: FollowPlaylistInput!) { unfollowPlaylist(input: $input) }`,
   PinPlaylist: `mutation PinPlaylist($input: PinPlaylistInput!) { pinPlaylist(input: $input) }`,
   UnpinPlaylist: `mutation UnpinPlaylist($input: PinPlaylistInput!) { unpinPlaylist(input: $input) }`,
+  RecordSessionWorkout: `mutation RecordSessionWorkout($input: RecordSessionWorkoutInput!) { recordSessionWorkout(input: $input) }`,
 };
 
 type MutationDispatch = {
@@ -101,6 +104,20 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
   }
 
   switch (mutation.table_name) {
+    case 'board_climbs':
+      switch (mutation.operation) {
+        case 'create':
+          return { mutationName: 'SaveClimb', variables: { input: payload } };
+        case 'update':
+          return {
+            mutationName: 'UpdateClimb',
+            variables: {
+              input: { ...payload, clientMutationId: mutation.idempotency_key.replace(/^climb:update:/, '') },
+            },
+          };
+        default:
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
+      }
     case 'boardsesh_ticks':
       switch (mutation.operation) {
         case 'create':
@@ -246,6 +263,30 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
           return {
             mutationName: 'UnpinPlaylist',
             variables: { input: { playlistUuid: payload.playlistUuid } },
+          };
+        default:
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
+      }
+
+    // The workout a climber followed in a session (#6903). The payload is the
+    // whole RecordSessionWorkoutInput; the server writes it only when its
+    // revision beats the stored one, so a replay is a no-op.
+    //
+    // A bundle from before this table (only after an OTA rollback across it,
+    // with a write still queued) throws `Unknown table` here: a plain Error, so
+    // retryable. The row sits at the head of the outbox, and every write
+    // behind it (ticks included) waits while it spends its 10 retries (about
+    // two drain cycles: one cycle tries up to 7 times within a minute or so);
+    // then it dead-letters and shows in Sync issues, and sign-out counts it as
+    // unsent until then. An older bundle cannot be taught to skip the row. A
+    // smaller budget would shorten that wait, but on this bundle it would
+    // dead-letter the End write on one bad minute of resolver errors.
+    case 'session_workouts':
+      switch (mutation.operation) {
+        case 'create':
+          return {
+            mutationName: 'RecordSessionWorkout',
+            variables: { input: payload },
           };
         default:
           throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 // Relative, not '@boardsesh/i18n': the scripts vitest project doesn't resolve
 // workspace package names (same as mobile-locales-parity.test.ts).
 import { SUPPORTED_LOCALES } from '../../packages/shared/i18n/src/config';
@@ -15,13 +15,17 @@ import {
   assertIosCampaignSources,
   buildIosCampaignMaestroEnv,
   buildIosSidebarMaestroEnv,
+  iosRecordTabReadinessSelector,
   buildBackendArgs,
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
+  runIosScreenshotMaestro,
+  queueButtonReadinessSelector,
   buildScreenshotSessionEnv,
   collectScreenshots,
   deviceSlug,
   findFrozenClockProblems,
+  findOrCreateIosDevice,
   parseRecordingStatus,
   readScreenshotBackendLogSince,
   reportRecordingSummary,
@@ -55,8 +59,9 @@ import { metroDevClientUrl, SCREENSHOT_READY_PORT, screenshotReadinessCount } fr
 
 const phoneDevices = ['iPhone 16 Pro Max', 'iPhone 16 Pro'];
 const ipadDevices = ['iPad Pro 13-inch (M5)', 'iPad Pro 11-inch (M5)'];
-const commonDevices = [...phoneDevices, ...ipadDevices];
-const allAppLocales: ScreenshotOptions['appLocales'] = ['en-US', 'es', 'fr', 'de'];
+const duoDevices = ['iPhone Duo'];
+const commonDevices = [...phoneDevices, ...ipadDevices, ...duoDevices];
+const allAppLocales = ['en-US', 'es', 'fr', 'de', 'it'] satisfies ScreenshotOptions['appLocales'];
 
 function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOptions {
   return {
@@ -210,6 +215,7 @@ describe('parseArgs', () => {
   it('maps --devices phones and --devices ipads to their platform groups', () => {
     expect(parseArgs(['--devices', 'phones']).devices).toEqual(phoneDevices);
     expect(parseArgs(['--devices', 'ipads']).devices).toEqual(ipadDevices);
+    expect(parseArgs(['--devices', 'duo']).devices).toEqual(duoDevices);
   });
 
   it('rejects invalid locales and empty comma lists', () => {
@@ -224,6 +230,23 @@ describe('parseArgs', () => {
 });
 
 describe('buildScreenshotEnv', () => {
+  it.each(['app-store', 'app-store-campaign'] as const)('opts %s board heroes into fake-Bluetooth driving', (flow) => {
+    const env = buildScreenshotEnv(makeOptions({ flow }), baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBe('1');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE).toBe('1');
+  });
+
+  it('opts help screenshots into the real wall controls with a simulated board', () => {
+    const env = buildScreenshotEnv(makeOptions({ flow: 'help' }), baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBe('1');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE).toBe('1');
+  });
+
+  it.each(['smoke', 'onboarding'] as const)('does not inherit screenshot driving for %s', (flow) => {
+    const env = buildScreenshotEnv(makeOptions({ flow }), baseEnv({ EXPO_PUBLIC_SCREENSHOT_DRIVING: '1' }));
+    expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBeUndefined();
+  });
+
   it('always enables screenshot mode and bakes the theme', () => {
     const env = buildScreenshotEnv(makeOptions({ theme: 'dark' }), baseEnv());
     expect(env.EXPO_PUBLIC_SCREENSHOT_MODE).toBe('1');
@@ -329,11 +352,68 @@ describe('buildScreenshotEnv', () => {
   });
 });
 
+describe('help wall-control capture', () => {
+  it('captures the lit player and its real controls before a stopped preview', () => {
+    const flow = readFileSync('packages/mobile/.maestro/help.yaml', 'utf8');
+    const documents = parseAllDocuments(flow);
+    for (const document of documents) expect(document.errors).toEqual([]);
+    const commands = documents[1].toJS() as Array<{
+      openLink?: string;
+      takeScreenshot?: string;
+      longPressOn?: { point: string };
+      extendedWaitUntil?: { visible?: { id: string }; notVisible?: { id: string } };
+    }>;
+    const driveRequest = commands.findIndex((command) => command.openLink?.includes('screenshotDrive=1'));
+    const drivingReady = commands.findIndex(
+      (command) => command.extendedWaitUntil?.visible?.id === '^store-driving-.+$',
+    );
+    const litPlayer = commands.findIndex((command) => command.takeScreenshot === '10-board-view');
+    const controls = commands.findIndex((command) => command.takeScreenshot === '09-board-sheet');
+    const drivingStopped = commands.findIndex(
+      (command) => command.extendedWaitUntil?.notVisible?.id === '^store-driving-.+$',
+    );
+    const preview = commands.findIndex((command) => command.takeScreenshot === '12-preview');
+
+    expect(driveRequest).toBeGreaterThan(-1);
+    expect(drivingReady).toBeGreaterThan(driveRequest);
+    expect(litPlayer).toBeGreaterThan(drivingReady);
+    expect(controls).toBeGreaterThan(litPlayer);
+    expect(commands.slice(litPlayer + 1, controls).some((command) => command.longPressOn)).toBe(true);
+    expect(drivingStopped).toBeGreaterThan(controls);
+    expect(preview).toBeGreaterThan(drivingStopped);
+    expect(
+      commands.slice(drivingStopped + 1, preview).some((command) => command.openLink?.includes('screenshotDrive=')),
+    ).toBe(false);
+    expect(flow).not.toContain('screenshotOpenBoardSheet=1');
+  });
+});
+
 describe('iOS campaign capture', () => {
   const boardTypes = ['kilter', 'tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray'];
   const boards = boardTypes.map((boardType) => ({ name: `Demo ${boardType}`, boardType }));
   const capture = { sharedSessionId: 'crew', boards: boards.map((board) => board.name) };
-  const options = makeOptions({ flow: 'app-store-campaign', fixtures: 'replay' });
+  const options = makeOptions({
+    flow: 'app-store-campaign',
+    fixtures: 'replay',
+    iosCampaignPhoneBoards: boardTypes.map((boardType, index) => ({
+      selector: `Demo ${boardType}`,
+      board: {
+        name: `Demo ${boardType}`,
+        uuid: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        boardType,
+        layoutId: index + 1,
+        sizeId: index + 1,
+        setIds: '1',
+        angle: 40,
+      },
+      climb: {
+        uuid: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        name: `Genuine ${boardType}`,
+        frames: 'p1r12',
+        angle: 40,
+      },
+    })),
+  });
 
   it('carries the replay roster into the localized Metro session without manual board flags', () => {
     const env = buildScreenshotSessionEnv(options, baseEnv({ EXPO_PUBLIC_SCREENSHOT_BOARDS: 'stale|boards' }), 'de', {
@@ -387,7 +467,7 @@ describe('iOS campaign capture', () => {
       const env = buildIosCampaignMaestroEnv(locale, capture);
       expect(env).toContain('SCREENSHOT_SHARED_SESSION_ID=crew');
       expect(env.some((entry) => entry.startsWith('SCREENSHOT_JOIN_LABEL=') && entry.length > 22)).toBe(true);
-      expect(env.some((entry) => entry.startsWith('SCREENSHOT_QUEUE_LABEL=') && entry.includes('.*'))).toBe(true);
+      expect(env.some((entry) => entry.startsWith('SCREENSHOT_QUEUE_LABEL=') && entry.includes('[0-9]+'))).toBe(true);
       expect(env.join(' ')).not.toContain('{{count}}');
       expect(
         env.some(
@@ -429,6 +509,68 @@ describe('iOS campaign capture', () => {
       }
     },
   );
+
+  it.each(allAppLocales)('matches the real %s queue button in both count and Up next modes', (locale) => {
+    const catalog = JSON.parse(readFileSync(`packages/shared/i18n/locales/${locale}/session.json`, 'utf8')) as {
+      playView: { actionBar: Parameters<typeof queueButtonReadinessSelector>[0] };
+    };
+    const labels = catalog.playView.actionBar;
+    const selector = queueButtonReadinessSelector(labels);
+    const nativeButton = new RegExp(selector);
+    for (const count of [0, 1, 2, 123]) {
+      const countLabel = labels.queueCountAria.replace('{{count}}', String(count));
+      const upNextTemplate =
+        count === 0
+          ? labels.queueUpNextAria_zero
+          : count === 1
+            ? labels.queueUpNextAria_one
+            : labels.queueUpNextAria_other;
+      const upNextLabel = upNextTemplate.replace('{{count}}', String(count));
+      expect(nativeButton.test(countLabel)).toBe(true);
+      expect(nativeButton.test(upNextLabel)).toBe(true);
+      expect(nativeButton.test(`prefix ${countLabel}`)).toBe(false);
+      expect(nativeButton.test(`${upNextLabel} suffix`)).toBe(false);
+    }
+    expect(nativeButton.test(labels.queueCountAria.replace('{{count}}', 'not a number'))).toBe(false);
+    expect(buildIosCampaignMaestroEnv(locale)).toContain(`SCREENSHOT_QUEUE_LABEL=${selector}`);
+  });
+
+  it('treats catalog punctuation literally when matching a numeric queue count', () => {
+    const literal = 'Queue (literal)+[x]. {{count}} climbs?';
+    const nativeButton = new RegExp(
+      queueButtonReadinessSelector({
+        queueCountAria: literal,
+        queueUpNextAria_zero: 'Queue: zero',
+        queueUpNextAria_one: literal,
+        queueUpNextAria_other: literal,
+      }),
+    );
+    expect(nativeButton.test('Queue (literal)+[x]. 5 climbs?')).toBe(true);
+    expect(nativeButton.test('Queue literalxxxx 5 climbs')).toBe(false);
+    expect(nativeButton.test('Queue (literal)+[x]. .* climbs?')).toBe(false);
+  });
+
+  it('opens the crew queue through its real button and keeps title and content gates', () => {
+    const campaign = readFileSync('packages/mobile/.maestro/app-store-campaign.yaml', 'utf8');
+    const steps = parseAllDocuments(campaign)[1].toJS() as {
+      tapOn?: { id: string } | string;
+      extendedWaitUntil?: { visible: string };
+      takeScreenshot?: string;
+    }[];
+    const queueReady = steps.findIndex((step) => step.extendedWaitUntil?.visible === '${SCREENSHOT_QUEUE_LABEL}');
+    const queueTap = steps.findIndex((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}');
+    expect(queueReady).toBeGreaterThan(0);
+    expect(queueReady).toBeLessThan(queueTap);
+    expect(steps.some((step) => typeof step.tapOn === 'object' && step.tapOn.id === '^play-drawer-queue-badge$')).toBe(
+      false,
+    );
+    const titleGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*${SCREENSHOT_QUEUE_TITLE}.*');
+    const contentGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*Wax On.*');
+    const capture = steps.findIndex((step) => step.takeScreenshot === '15-crew-queue');
+    expect(queueTap).toBeLessThan(titleGate);
+    expect(titleGate).toBeLessThan(contentGate);
+    expect(contentGate).toBeLessThan(capture);
+  });
 
   it('captures all seventeen runtime sources without optional skipping of campaign images', () => {
     const legacy = readFileSync('packages/mobile/.maestro/app-store.yaml', 'utf8');
@@ -509,9 +651,29 @@ describe('iOS store capture content readiness', () => {
   ])('blocks %s %s until physical backgrounds and the holds have displayed', (flow, screenshot) => {
     const prerequisites = prerequisitesFor(flow, screenshot);
     expect(canCapture(prerequisites, ['play-drawer-board-overlay'])).toBe(false);
-    expect(canCapture(prerequisites, ['play-drawer-board-overlay', 'cpp-climb-painted-board-uuid-climb-uuid'])).toBe(
-      true,
+    const paintedIds = ['play-drawer-board-overlay', 'cpp-climb-painted-board-uuid-climb-uuid'];
+    if (screenshot !== '14-spray-board-view') {
+      expect(canCapture(prerequisites, paintedIds)).toBe(false);
+      paintedIds.push('store-driving-board-uuid-climb-uuid');
+    }
+    expect(canCapture(prerequisites, paintedIds)).toBe(true);
+  });
+
+  it.each([
+    ['app-store', '03-climbs'],
+    ['app-store-campaign', '16-wall-status'],
+  ])('blocks %s %s until the visible climb search has settled', (flow, screenshot) => {
+    const prerequisites = prerequisitesFor(flow, screenshot);
+    const settledIndex = prerequisites.findIndex(
+      (command) => command.extendedWaitUntil?.visible?.id === '^climbs-capture-settled$',
     );
+    expect(settledIndex).toBeGreaterThanOrEqual(0);
+    // Earlier commands deliberately open then close the player. The final
+    // capture state starts after that navigation, once its rows have settled.
+    const captureState = prerequisites.slice(settledIndex);
+    expect(canCapture(captureState, ['climbs-screen'])).toBe(false);
+    expect(canCapture(captureState, ['climbs-screen', 'climbs-capture-settled'])).toBe(true);
+    expect(prerequisites.at(-1)).toBe('waitForAnimationToEnd');
   });
 });
 
@@ -1041,7 +1203,7 @@ describe('renderMaestroFlowForIosDevice', () => {
     }
   });
 
-  it('drives all six native iPad destinations by localized labels and proves selection', () => {
+  it('drives the native iPad sidebar by localized labels and proves selection', () => {
     const ipadFlow = readFileSync('packages/mobile/.maestro/app-store-ipad.yaml', 'utf8');
     const documents = parseAllDocuments(ipadFlow);
     for (const document of documents) expect(document.errors).toEqual([]);
@@ -1058,19 +1220,35 @@ describe('renderMaestroFlowForIosDevice', () => {
       extendedWaitUntil?: { visible: string };
       assertNotVisible?: string;
     }>;
+    // Sidebar navigations open the collapsed sidebar first; the Wall display's own
+    // retries (open the Wall display from the bar or menu, leave it) do not.
     const navigation = commands.flatMap((command) =>
-      command.retry?.commands.some((nested) => nested.tapOn) ? [command.retry.commands] : [],
+      command.retry?.commands.some((nested) => nested.runFlow?.when.visible === '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}')
+        ? [command.retry.commands]
+        : [],
     );
     expect(navigation).toHaveLength(6);
-    for (const [index, segment] of ['CLIMBS', 'HOME', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
-      const label = '${SCREENSHOT_SIDEBAR_' + segment + '_LABEL}';
+    // The Wall display is no sidebar destination: its scene goes back to Climbs.
+    for (const [index, segment] of ['CLIMBS', 'HOME', 'CLIMBS', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
+      const label =
+        segment === 'RECORD'
+          ? '${SCREENSHOT_SIDEBAR_RECORD_TAB_SELECTOR}'
+          : '${SCREENSHOT_SIDEBAR_' + segment + '_LABEL}';
       expect(navigation[index][0].runFlow).toEqual({
         when: { visible: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' },
         commands: [{ tapOn: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' }],
       });
       expect(navigation[index][1].extendedWaitUntil?.visible).toBe('${SCREENSHOT_SIDEBAR_HIDE_LABEL}');
-      expect(navigation[index][2].tapOn).toEqual({ text: label, index: 0 });
-      expect(navigation[index][3].extendedWaitUntil?.visible).toEqual({ text: label, selected: true });
+      // The primary-board ACK already selected the first Climbs destination.
+      if (index === 0) {
+        expect(navigation[index].some((command) => command.tapOn?.text === label)).toBe(false);
+      } else {
+        expect(navigation[index][2].tapOn).toEqual({ text: label, index: 0 });
+      }
+      expect(navigation[index][index === 0 ? 2 : 3].extendedWaitUntil?.visible).toEqual({
+        text: label,
+        selected: true,
+      });
     }
     expect(commands.flatMap((command) => (command.takeScreenshot ? [command.takeScreenshot] : []))).toEqual([
       '02-climbs',
@@ -1087,7 +1265,13 @@ describe('renderMaestroFlowForIosDevice', () => {
     let collapsedControlVisible = false;
     let sidebarAbsent = false;
     for (const command of commands) {
-      if (command.retry?.commands.some((nested) => nested.tapOn)) selectedDestination = true;
+      if (
+        command.retry?.commands.some((nested) => {
+          const selected = nested.extendedWaitUntil?.visible;
+          return typeof selected === 'object' && selected.selected === true;
+        })
+      )
+        selectedDestination = true;
       if (command.tapOn === '${SCREENSHOT_SIDEBAR_HIDE_LABEL}') {
         expect(selectedDestination).toBe(true);
         collapseRequested = true;
@@ -1113,22 +1297,249 @@ describe('renderMaestroFlowForIosDevice', () => {
     expect(ipadFlow).toContain("id: 'profile-board-overview'");
   });
 
+  it('matches the actual selected native Record parent without accepting its unselected child', () => {
+    type NativeAttributes = { accessibilityText?: string; selected?: string; 'resource-id'?: string };
+    const fixture = JSON.parse(
+      readFileSync('scripts/__tests__/fixtures/ipad-record-blank-badge-7185.json', 'utf8'),
+    ) as {
+      attempts: Array<{
+        recordParent: NativeAttributes;
+        recordChild: NativeAttributes;
+        loadedFooter: NativeAttributes;
+      }>;
+    };
+    const selector = new RegExp(iosRecordTabReadinessSelector('Sesión'));
+    const selectedMatch = (attributes: NativeAttributes) =>
+      selector.test(attributes.accessibilityText ?? '') && attributes.selected === 'true';
+    expect(fixture.attempts).toHaveLength(2);
+    for (const attempt of fixture.attempts) {
+      expect(selectedMatch(attempt.recordParent)).toBe(true);
+      expect(selector.test(attempt.recordChild.accessibilityText ?? '')).toBe(true);
+      expect(selectedMatch(attempt.recordChild)).toBe(false);
+      expect(attempt.loadedFooter['resource-id']).toBe('pre-session-footer');
+    }
+  });
+
+  it.each(allAppLocales)('matches only the literal native Record label and optional blank badge in %s', (locale) => {
+    const env = buildIosSidebarMaestroEnv(locale);
+    const label = env.find((entry) => entry.startsWith('SCREENSHOT_SIDEBAR_RECORD_LABEL='))!.split('=')[1];
+    const pattern = env.find((entry) => entry.startsWith('SCREENSHOT_SIDEBAR_RECORD_TAB_SELECTOR='))!.split('=')[1];
+    const selector = new RegExp(pattern);
+    for (const accepted of [label, `${label},  `]) expect(selector.test(accepted), accepted).toBe(true);
+    for (const rejected of [
+      `Other ${label}`,
+      `${label} extra`,
+      `${label}  `,
+      `${label},`,
+      `${label}, 1`,
+      `${label}, other`,
+    ])
+      expect(selector.test(rejected), rejected).toBe(false);
+  });
+
+  it('escapes every literal regex character in the native Record catalog label', () => {
+    const label = 'Session (crew). [1]+? $^|{2}\\';
+    const selector = new RegExp(iosRecordTabReadinessSelector(label));
+    expect(selector.test(label)).toBe(true);
+    expect(selector.test(`${label},  `)).toBe(true);
+    expect(selector.test('Session crew. 1')).toBe(false);
+    expect(selector.test(`prefix ${label}`)).toBe(false);
+  });
+
   it('provides the current native sidebar labels for every supported locale', () => {
     const expected = {
-      'en-US': ['Home', 'Climbs', 'On the Wall', 'Session', 'Discover', 'Profile'],
-      es: ['Inicio', 'Bloques', 'En el muro', 'Sesión', 'Descubre', 'Perfil'],
-      fr: ['Accueil', 'Blocs', 'Sur le mur', 'Session', 'Découvrir', 'Profil'],
-      de: ['Start', 'Boulder', 'An der Wand', 'Session', 'Entdecken', 'Profil'],
+      'en-US': ['Home', 'Climbs', 'Session', 'Discover', 'Profile'],
+      es: ['Inicio', 'Bloques', 'Sesión', 'Descubre', 'Perfil'],
+      fr: ['Accueil', 'Blocs', 'Session', 'Découvrir', 'Profil'],
+      de: ['Start', 'Boulder', 'Session', 'Entdecken', 'Profil'],
+      it: ['Home', 'Blocchi', 'Session', 'Scopri', 'Profilo'],
+    };
+    const wallDisplay = {
+      'en-US': ['Climb list options', 'Wall display', 'Exit wall display'],
+      es: ['Opciones de la lista de bloques', 'Pantalla de muro', 'Salir de la pantalla de muro'],
+      fr: ['Options de la liste de blocs', 'Affichage mural', "Quitter l'affichage mural"],
+      de: ['Optionen für die Boulderliste', 'Wandanzeige', 'Wandanzeige beenden'],
+      it: ["Opzioni dell'elenco dei blocchi", 'Schermo parete', 'Esci dallo schermo parete'],
     };
     for (const locale of allAppLocales) {
       const env = buildIosSidebarMaestroEnv(locale);
-      expect(env).toHaveLength(16);
+      expect(env).toHaveLength(24);
       expect(env).toContain('SCREENSHOT_SIDEBAR_HIDE_LABEL=Hide Sidebar');
       expect(env).toContain('SCREENSHOT_SIDEBAR_TOGGLE_LABEL=Toggle sidebar');
-      for (const [index, segment] of ['HOME', 'CLIMBS', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
+      for (const [index, segment] of ['HOME', 'CLIMBS', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
         expect(env).toContain('SCREENSHOT_SIDEBAR_' + segment + '_LABEL=' + expected[locale][index]);
       }
+      for (const [index, name] of ['CLIMBS_OPTIONS', 'WALL_DISPLAY', 'WALL_DISPLAY_EXIT'].entries()) {
+        expect(env).toContain('SCREENSHOT_' + name + '_LABEL=' + wallDisplay[locale][index]);
+      }
+      const session = JSON.parse(readFileSync(`packages/shared/i18n/locales/${locale}/session.json`, 'utf8')) as {
+        mobile: { queue: { logAscent: string; alreadyLogged: string } };
+      };
+      const logSelector = env
+        .find((entry) => entry.startsWith('SCREENSHOT_MINI_PLAYER_LOG_LABEL='))!
+        .split('=')
+        .slice(1)
+        .join('=');
+      expect(new RegExp(logSelector).test(session.mobile.queue.logAscent)).toBe(true);
+      expect(
+        new RegExp(logSelector).test(`${session.mobile.queue.logAscent}, ${session.mobile.queue.alreadyLogged}`),
+      ).toBe(true);
+      expect(new RegExp(logSelector).test(`${session.mobile.queue.logAscent} somewhere else`)).toBe(false);
     }
+  });
+});
+
+describe('iPad Wall display capture navigation', () => {
+  type Selector = string | { id?: string; text?: string; childOf?: { id: string } };
+  type Command = {
+    tapOn?: Selector;
+    assertNotVisible?: Selector;
+    extendedWaitUntil?: { visible?: Selector; notVisible?: Selector };
+    runFlow?: { when: { visible?: Selector; notVisible?: Selector }; commands: Command[] };
+    retry?: { commands: Command[] };
+    takeScreenshot?: string;
+  };
+  type Element = { id?: string; text?: string; parentId?: string };
+
+  const row = '${SCREENSHOT_PRIMARY_CLIMB_ROW}';
+  const close = '${SCREENSHOT_CLOSE_LABEL}';
+  const log = '${SCREENSHOT_MINI_PLAYER_LOG_LABEL}';
+  const more = '${SCREENSHOT_MINI_PLAYER_MORE_LABEL}';
+  const options = '${SCREENSHOT_CLIMBS_OPTIONS_LABEL}';
+  const wall = '${SCREENSHOT_WALL_DISPLAY_LABEL}';
+  const routeId = '^wall-display-controls(?:-faded)?$';
+
+  function captureCommands() {
+    const source = readFileSync('packages/mobile/.maestro/app-store-ipad.yaml', 'utf8');
+    const commands = parseAllDocuments(source)[1].toJS() as Command[];
+    const entryIndex = commands.findIndex((command) =>
+      command.retry?.commands.some(
+        (nested) =>
+          typeof nested.extendedWaitUntil?.visible === 'object' && nested.extendedWaitUntil.visible.id === routeId,
+      ),
+    );
+    const primingIndex = commands.findIndex(
+      (command) =>
+        typeof command.extendedWaitUntil?.visible === 'object' &&
+        command.extendedWaitUntil.visible.id === '^climbs-capture-settled$',
+    );
+    expect(primingIndex).toBeGreaterThan(-1);
+    expect(entryIndex).toBeGreaterThan(primingIndex);
+    return { commands, entryIndex, program: commands.slice(primingIndex, entryIndex + 1) };
+  }
+
+  function runFixture(bar: 'direct' | 'overflow' | 'legacy' | 'empty', root = 'wall-display-controls', settled = true) {
+    let elements: Element[] = [
+      { id: 'climbs-screen' },
+      ...(settled ? [{ id: 'climbs-capture-settled' }] : []),
+      { id: 'climb-row', text: row, parentId: 'climb-list' },
+    ];
+    const taps: string[] = [];
+    const visible = (selector: Selector) =>
+      elements.some((element) => {
+        if (typeof selector === 'string') return element.text === selector;
+        return (
+          (!selector.id || new RegExp(selector.id).test(element.id ?? '')) &&
+          (!selector.text || selector.text === element.text) &&
+          (!selector.childOf || new RegExp(selector.childOf.id).test(element.parentId ?? ''))
+        );
+      });
+    const run = (commands: Command[]) => {
+      for (const command of commands) {
+        const flow = command.runFlow;
+        if (flow) {
+          if (
+            (!flow.when.visible || visible(flow.when.visible)) &&
+            (!flow.when.notVisible || !visible(flow.when.notVisible))
+          )
+            run(flow.commands);
+        }
+        if (command.retry) run(command.retry.commands);
+        const wait = command.extendedWaitUntil;
+        if (wait?.visible && !visible(wait.visible)) throw new Error(`Missing ${JSON.stringify(wait.visible)}`);
+        if (wait?.notVisible && visible(wait.notVisible))
+          throw new Error(`Still visible ${JSON.stringify(wait.notVisible)}`);
+        if (command.assertNotVisible && visible(command.assertNotVisible)) throw new Error('Unexpected control');
+        const selector = command.tapOn;
+        if (!selector) continue;
+        if (!visible(selector)) throw new Error(`Cannot tap ${JSON.stringify(selector)}`);
+        const label = typeof selector === 'string' ? selector : selector.text!;
+        taps.push(label);
+        if (label === row) {
+          elements = [{ id: 'play-drawer-board-overlay' }, { id: 'cpp-climb-painted-primary' }, { text: close }];
+        } else if (label === close) {
+          elements = [
+            { id: 'climbs-screen' },
+            { text: options },
+            ...(bar === 'empty' ? [] : [{ text: log }]),
+            ...(bar === 'direct' || bar === 'overflow' ? [{ text: more }] : []),
+            ...(bar === 'direct' ? [{ text: wall }] : []),
+          ];
+        } else if (label === more || label === options) {
+          elements.push({ text: wall });
+        } else if (label === wall) {
+          elements = [{ id: root }];
+        }
+      }
+    };
+    return { run, taps, setRoot: () => (elements = [{ id: root }]) };
+  }
+
+  it.each(['wall-display-controls', 'wall-display-controls-faded'])(
+    'primes the real climb and prefers the direct MiniPlayer button with %s',
+    (root) => {
+      const fixture = runFixture('direct', root);
+      fixture.run(captureCommands().program);
+      expect(fixture.taps).toEqual([row, close, wall]);
+    },
+  );
+
+  it('opens the specific MiniPlayer overflow when its Wall display button is hidden', () => {
+    const fixture = runFixture('overflow');
+    fixture.run(captureCommands().program);
+    expect(fixture.taps).toEqual([row, close, more, wall]);
+  });
+
+  it('keeps the Climbs menu fallback for a populated legacy bar', () => {
+    const fixture = runFixture('legacy');
+    fixture.run(captureCommands().program);
+    expect(fixture.taps).toEqual([row, close, options, wall]);
+  });
+
+  it('fails before menu fallback if closing the player leaves the queue empty', () => {
+    const fixture = runFixture('empty');
+    expect(() => fixture.run(captureCommands().program)).toThrow('SCREENSHOT_MINI_PLAYER_LOG_LABEL');
+    expect(fixture.taps).toEqual([row, close]);
+  });
+
+  it('waits for settled rows before tapping a placeholder result', () => {
+    const fixture = runFixture('direct', 'wall-display-controls', false);
+    expect(() => fixture.run(captureCommands().program)).toThrow('climbs-capture-settled');
+    expect(fixture.taps).toEqual([]);
+  });
+
+  it('accepts an already-open faded kiosk on retry without reopening any menu', () => {
+    const fixture = runFixture('direct', 'wall-display-controls-faded');
+    fixture.setRoot();
+    const { commands, entryIndex } = captureCommands();
+    fixture.run([commands[entryIndex]]);
+    expect(fixture.taps).toEqual([]);
+  });
+
+  it('retains exact title, paint, faded-controls and normal Exit checks around capture', () => {
+    const { commands, entryIndex } = captureCommands();
+    expect(commands.slice(entryIndex + 1, entryIndex + 4).map((command) => command.extendedWaitUntil?.visible)).toEqual(
+      [
+        '.*${SCREENSHOT_PRIMARY_CLIMB_TITLE}.*',
+        { id: '${SCREENSHOT_PRIMARY_WALL_PAINTED_ID}' },
+        { id: '^wall-display-controls-faded$' },
+      ],
+    );
+    const screenshotIndex = commands.findIndex((command) => command.takeScreenshot === '00-wall');
+    expect(commands[screenshotIndex + 1].retry?.commands.slice(0, 2)).toEqual([
+      { tapOn: '.*${SCREENSHOT_PRIMARY_CLIMB_TITLE}.*' },
+      { tapOn: '${SCREENSHOT_WALL_DISPLAY_EXIT_LABEL}' },
+    ]);
   });
 });
 
@@ -1218,13 +1629,121 @@ describe('resolveIosScreenshotDevices', () => {
   });
 });
 
+describe('simulator creation diagnostics', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  function captureCommands() {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    return vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [{ identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1', version: '27.1', isAvailable: true }],
+        }),
+        stderr: '',
+      });
+  }
+
+  it('includes the requested device, runtime and simctl failure diagnostic', () => {
+    const capture = captureCommands().mockReturnValueOnce({
+      status: 1,
+      stdout: '',
+      stderr: 'Invalid device type: com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro',
+    });
+    expect(() => findOrCreateIosDevice(resolveIosScreenshotDevices(['iPhone 16 Pro'])[0], capture)).toThrow(
+      /iPhone 16 Pro.*iOS-27-1.*Invalid device type/,
+    );
+  });
+
+  it('creates phones on the newest runtime that declares support for their device type', () => {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    const device = resolveIosScreenshotDevices(['iPhone 16 Pro'])[0];
+    const created = { udid: 'compatible-device', name: device.name, state: 'Shutdown' };
+    const capture = vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-0',
+              version: '27.0',
+              isAvailable: true,
+              supportedDeviceTypes: [{ identifier: device.typeId }],
+            },
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1',
+              version: '27.1',
+              isAvailable: true,
+              supportedDeviceTypes: [{ identifier: 'other-device' }],
+            },
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-28-0',
+              version: '28.0',
+              isAvailable: false,
+              supportedDeviceTypes: [{ identifier: device.typeId }],
+            },
+          ],
+        }),
+        stderr: '',
+      })
+      .mockReturnValueOnce({ status: 0, stdout: created.udid, stderr: '' })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: { runtime: [created] } }), stderr: '' });
+    expect(findOrCreateIosDevice(device, capture)).toEqual(created);
+    expect(capture).toHaveBeenNthCalledWith(3, 'xcrun', [
+      'simctl',
+      'create',
+      device.name,
+      device.typeId,
+      'com.apple.CoreSimulator.SimRuntime.iOS-27-0',
+    ]);
+  });
+
+  it('reports incompatible installed runtimes before trying to create a simulator', () => {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    const capture = vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1',
+              version: '27.1',
+              isAvailable: true,
+              supportedDeviceTypes: [],
+            },
+          ],
+        }),
+        stderr: '',
+      });
+    expect(() => findOrCreateIosDevice(resolveIosScreenshotDevices(['iPhone 16 Pro'])[0], capture)).toThrow(
+      'no compatible iOS runtime',
+    );
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
+
+  it('still resolves a successfully created simulator from the refreshed inventory', () => {
+    const created = { udid: 'created-device', name: 'iPhone 16 Pro', state: 'Shutdown' };
+    const capture = captureCommands()
+      .mockReturnValueOnce({ status: 0, stdout: created.udid, stderr: '' })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: { runtime: [created] } }), stderr: '' });
+    expect(findOrCreateIosDevice(resolveIosScreenshotDevices([created.name])[0], capture)).toEqual(created);
+  });
+});
+
 describe('resolveAppStoreLocaleTargets', () => {
   it('maps app locales to App Store Connect locale directories', () => {
-    expect(resolveAppStoreLocaleTargets(['en-US', 'es', 'fr', 'de'])).toEqual([
+    expect(resolveAppStoreLocaleTargets(allAppLocales)).toEqual([
       { appLocale: 'en-US', appStoreLocales: ['en-US'] },
       { appLocale: 'es', appStoreLocales: ['es-ES', 'es-MX'] },
       { appLocale: 'fr', appStoreLocales: ['fr-FR'] },
       { appLocale: 'de', appStoreLocales: ['de-DE'] },
+      { appLocale: 'it', appStoreLocales: ['it'] },
     ]);
   });
 
@@ -1253,6 +1772,12 @@ describe('--fixtures', () => {
     const env = buildScreenshotEnv(options, baseEnv());
     expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBeUndefined();
     expect(env.EXPO_PUBLIC_WS_URL).toBeUndefined();
+  });
+
+  it('keeps optional CPP locales scoped to their reviewed manifest', () => {
+    expect(parseArgs(['--cpp', 'kilter']).appLocales).toEqual(['en-US', 'es', 'fr', 'de']);
+    expect(parseArgs(['--cpp', 'all', '--locales', 'all']).appLocales).toEqual(['en-US', 'es', 'fr', 'de']);
+    expect(() => parseArgs(['--cpp', 'kilter', '--locales', 'it'])).toThrow('reviewed campaign assets');
   });
 
   it('isolates the iOS campaign recipe and fixture pin from Android and navigation smoke', () => {
@@ -1577,5 +2102,59 @@ describe('appendNotesToStepSummary', () => {
     appendNotesToStepSummary([], summaryPath);
     appendNotesToStepSummary(['a note'], undefined);
     expect(readdirSync(summaryDir)).toEqual([]);
+  });
+});
+
+describe('bounded iOS Maestro invocation', () => {
+  it.each([false, true])('checks the simulator lease and preserves every raw argument (CPP %s)', (cpp) => {
+    const maestroArgs = [
+      '--device',
+      'owned-simulator',
+      'test',
+      '/capture/a flow.yaml',
+      '-e',
+      'SCREENSHOT_USER_PASSWORD=fixture has spaces',
+    ];
+    const env = baseEnv({ NODE_ENV: 'test' });
+    const operations: string[] = [];
+    const guard = vi.fn(() => {
+      operations.push('lease');
+    });
+    const run = vi.fn(() => {
+      operations.push('run');
+      return 7;
+    });
+    const context = { deviceId: 'owned-simulator', cpp, captureDir: '/capture', env };
+    expect(runIosScreenshotMaestro(maestroArgs, context, { guard, run })).toBe(7);
+    expect(operations).toEqual(['lease', 'run']);
+    expect(guard).toHaveBeenCalledWith('maestro', ['--device', 'owned-simulator'], expect.any(String));
+    expect(run).toHaveBeenCalledWith(
+      'tsx',
+      [
+        expect.stringMatching(/scripts\/mobile-screenshot-maestro\.ts$/),
+        '--capture-timeout-ms',
+        String((cpp ? 30 : 45) * 60 * 1000),
+        ...maestroArgs,
+      ],
+      env,
+      '/capture',
+    );
+  });
+
+  it('does not start the wrapper when the simulator lease is rejected', () => {
+    const run = vi.fn();
+    expect(() =>
+      runIosScreenshotMaestro(
+        ['--device', 'foreign-simulator'],
+        { deviceId: 'foreign-simulator', cpp: false, captureDir: '/capture' },
+        {
+          guard: () => {
+            throw new Error('lease rejected');
+          },
+          run,
+        },
+      ),
+    ).toThrow('lease rejected');
+    expect(run).not.toHaveBeenCalled();
   });
 });

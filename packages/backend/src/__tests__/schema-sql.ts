@@ -4,6 +4,14 @@
  */
 
 import { readFileSync } from 'node:fs';
+const sharedSprayDraftsSchema = readFileSync(
+  new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
+  'utf8',
+);
+const climbMutationReceiptsSchema = readFileSync(
+  new URL('../../../db/drizzle/0287_climb_mutation_receipts.sql', import.meta.url),
+  'utf8',
+);
 import { socialEntityTypeEnum } from '@boardsesh/db/schema';
 
 const socialEntityTypeLabels = socialEntityTypeEnum.enumValues.map((entityType) => `'${entityType}'`).join(', ');
@@ -83,6 +91,12 @@ const privacySchema = readFileSync(
   new URL('../../../db/drizzle/0261_account_resource_privacy.sql', import.meta.url),
   'utf8',
 );
+// Contract step of #6376: the CHECK without 'climb', applied after 0261 so the
+// test database rejects a climb policy exactly as production does.
+const narrowedPrivacyTypeCheck = readFileSync(
+  new URL('../../../db/drizzle/0282_narrow_content_privacy_type_check.sql', import.meta.url),
+  'utf8',
+);
 const anonymousOnForeignBoardsSchema = readFileSync(
   new URL('../../../db/drizzle/0266_anonymous_on_foreign_boards.sql', import.meta.url),
   'utf8',
@@ -93,11 +107,19 @@ const boardShareLinksSchema = readFileSync(
   new URL('../../../db/drizzle/0267_board_share_links.sql', import.meta.url),
   'utf8',
 );
+// The workout a climber followed in a session (#6903), straight from the
+// generated migration, after board_sessions and users.
+const sessionWorkoutsSchema = readFileSync(
+  new URL('../../../db/drizzle/0284_session_workouts.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
+  DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
   DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
+  DROP TABLE IF EXISTS "session_workouts" CASCADE;
   DROP TABLE IF EXISTS "board_session_participants" CASCADE;
   DROP TABLE IF EXISTS "board_sessions" CASCADE;
   DROP TABLE IF EXISTS "user_climb_percentiles" CASCADE;
@@ -891,6 +913,7 @@ export const schemaSQL = `
     "latitude" double precision,
     "longitude" double precision,
     "is_public" boolean DEFAULT true NOT NULL,
+    "is_listed" boolean DEFAULT true NOT NULL,
     "description" text,
     "hours" text,
     "hours_updated_at" timestamp,
@@ -912,6 +935,7 @@ export const schemaSQL = `
   -- above never lands on a DB that already exists. Backfill it here.
   ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "hours" text;
   ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "hours_updated_at" timestamp;
+  ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "is_listed" boolean DEFAULT true NOT NULL;
 
   DROP TABLE IF EXISTS "user_boards" CASCADE;
   CREATE TABLE IF NOT EXISTS "user_boards" (
@@ -1701,13 +1725,19 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     FOR EACH ROW EXECUTE FUNCTION log_deletion_favorites();
 
   CREATE OR REPLACE FUNCTION log_deletion_board_climb_stats() RETURNS TRIGGER AS $$
+  DECLARE
+    draft_owner text;
   BEGIN
     -- Mirrors 0144: see log_deletion_board_climbs.
     IF current_setting('boardsesh.suppress_sync_tombstones', true) = 'on' THEN
       RETURN OLD;
     END IF;
+    -- Mirrors 0280 (#6150): a draft's stats tombstone is scoped to its setter.
+    SELECT bc.user_id INTO draft_owner
+    FROM board_climbs bc
+    WHERE bc.board_type = OLD.board_type AND bc.uuid = OLD.climb_uuid AND bc.is_draft IS TRUE;
     INSERT INTO sync_deletions (table_name, record_id, user_id)
-    VALUES (TG_TABLE_NAME, OLD.board_type || ':' || OLD.climb_uuid || ':' || OLD.angle::text, NULL);
+    VALUES (TG_TABLE_NAME, OLD.board_type || ':' || OLD.climb_uuid || ':' || OLD.angle::text, draft_owner);
     RETURN OLD;
   END;
   $$ LANGUAGE plpgsql;
@@ -1735,8 +1765,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     IF current_setting('boardsesh.suppress_sync_tombstones', true) = 'on' THEN
       RETURN OLD;
     END IF;
+    -- Mirrors 0280 (#6150): a draft reaches only its setter, so its tombstone
+    -- is scoped to them. Published and ownerless climbs stay NULL-scoped.
     INSERT INTO sync_deletions (table_name, record_id, user_id)
-    VALUES (TG_TABLE_NAME, OLD.uuid, NULL);
+    VALUES (TG_TABLE_NAME, OLD.uuid, CASE WHEN OLD.is_draft IS TRUE THEN OLD.user_id ELSE NULL END);
     RETURN OLD;
   END;
   $$ LANGUAGE plpgsql;
@@ -2178,6 +2210,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sprayWallDeletionSchema}
   ${sessionBoardsSchema}
   ${privacySchema}
+  ${narrowedPrivacyTypeCheck}
   ${anonymousOnForeignBoardsSchema};
   ${boardShareLinksSchema}
+  ${sessionWorkoutsSchema}
+  ${sharedSprayDraftsSchema}
+  ${climbMutationReceiptsSchema}
 `;

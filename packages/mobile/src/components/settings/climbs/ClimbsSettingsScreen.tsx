@@ -17,6 +17,9 @@ import {
   usePlayDrawerSectionsPreference,
 } from '../../../lib/play-drawer-sections-preference';
 import { isDefaultPlayerButtons, usePlayerButtonsPreference } from '../../../lib/player-buttons-preference';
+import { climbPinnedChipsStore } from '../../../lib/pinned-chips-store';
+import { playlistPinnedChipsStore } from '../../../lib/playlist-pinned-chips-store';
+import { isDefaultPinOrder } from '../quick-filters/quick-filters-settings-model';
 import { buildClimbsModel } from './climbs-model';
 
 export function ClimbsSettingsScreen() {
@@ -38,6 +41,12 @@ export function ClimbsSettingsScreen() {
   const climbViewIsDefault =
     isDefaultPlayerButtons(playerButtons) &&
     (!sectionsPreference.ready || isDefaultPlayDrawerLayout(sectionsPreference));
+  // Until the saved pins load, both lists read as their defaults.
+  const { pinned: climbPins } = climbPinnedChipsStore.usePinnedChips();
+  const { pinned: playlistPins } = playlistPinnedChipsStore.usePinnedChips();
+  const quickFiltersAreDefault =
+    isDefaultPinOrder(climbPins, climbPinnedChipsStore.defaults) &&
+    isDefaultPinOrder(playlistPins, playlistPinnedChipsStore.defaults);
 
   const model = useMemo(
     () =>
@@ -75,6 +84,13 @@ export function ClimbsSettingsScreen() {
             hapticSelection();
             router.push('/settings/climb-view');
           },
+          quickFiltersLabel: quickFiltersAreDefault
+            ? t('mobile.settings.quickFilters.valueDefault')
+            : t('mobile.settings.quickFilters.valueCustom'),
+          onOpenQuickFilters: () => {
+            hapticSelection();
+            router.push('/settings/quick-filters');
+          },
         }),
         'climbs',
       ),
@@ -89,6 +105,7 @@ export function ClimbsSettingsScreen() {
       setShowBoardseshGrades,
       climbRowDisplay,
       climbViewIsDefault,
+      quickFiltersAreDefault,
     ],
   );
 

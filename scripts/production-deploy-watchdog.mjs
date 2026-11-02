@@ -46,8 +46,12 @@
 // deployed, the watchdog dispatches a fresh run so the wedge ends in a shipped
 // commit rather than an empty queue. It dispatches at most once per head SHA,
 // so a gate that stays broken produces one retry and an alert, not a deploy
-// loop. The OTA lane never dispatches: `queue: max` keeps every pending run, so
-// the queue drains by itself once the group frees.
+// loop. The OTA lane does not re-dispatch the runs it cancels: `queue: max`
+// keeps every pending run, so the queue drains by itself once the group frees.
+// What it does re-dispatch, once each, is the work nothing queued would redo
+// (see recoverStrandedOtaRuns): a native build's republish that was cancelled
+// on main. OTA_LANE_REDISPATCH=off turns those into
+// posted commands.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
@@ -72,8 +76,13 @@ const WATCHDOG_BUDGET_MS = 8 * 60_000;
 const HOLDING_RUN_STATUSES = new Set(['waiting', 'queued', 'requested', 'in_progress']);
 
 // Job statuses that mean "has not run any steps yet". `waiting` is the
-// environment gate; `queued`/`requested`/`pending` are waiting on a runner.
-const PARKED_JOB_STATUSES = new Set(['waiting', 'queued', 'requested', 'pending']);
+// environment gate; `queued`/`requested` are waiting on a runner. A `pending`
+// job is waiting on a job-level concurrency group, i.e. queued behind another
+// run, so it is not parked. In production-deploy that is promote-mobile-ota
+// waiting on the OTA publish lane, which the mobile-ota-production lane
+// watches; counting it as parked cancelled a deploy that waited 45 minutes
+// behind a long publish.
+const PARKED_JOB_STATUSES = new Set(['waiting', 'queued', 'requested']);
 
 // Discord copy for production-deploy, keyed by planWatchdogActions' followUp.
 const FOLLOW_UP_LINES = {
@@ -93,8 +102,7 @@ const FOLLOW_UP_LINES = {
 };
 
 const OTA_FOLLOW_UP_LINES = {
-  'queue-resumes':
-    'Runs queued behind it keep their place (`queue: max`) and start on their own; nothing was re-dispatched.',
+  'queue-resumes': 'Runs queued behind it keep their place (`queue: max`) and start on their own.',
   'cancel-failed': 'A cancel did not land, so the lane may still be held. Retrying next tick.',
   none: '',
 };
@@ -124,6 +132,7 @@ const PRODUCTION_DEPLOY_LANE = Object.freeze({
   // The six-hour ceiling is this lane's backstop for a cancel that never lands.
   forceSettledRunAfterCancel: false,
   redispatch: true,
+  recovery: false,
   deliveryJobName: null,
   copy: {
     quiet: 'no stalled production deploy found',
@@ -141,9 +150,8 @@ const PRODUCTION_DEPLOY_LANE = Object.freeze({
 const MOBILE_OTA_LANE = Object.freeze({
   name: 'mobile-ota-production',
   workflowFile: 'mobile-ota-production.yml',
-  // release/next pushes and dispatches on main or release/next all take the
-  // same `mobile-ota-production` group, so every branch is in scope.
-  branch: null,
+  // Only main can publish or request native post-upload republishes.
+  branch: 'main',
   // Only the environment gate. A job queued for a runner clears on its own, and
   // cancelling it throws away that run's publish — for a per-platform
   // "Republish … after native build" dispatch, nothing re-sends it.
@@ -170,8 +178,12 @@ const MOBILE_OTA_LANE = Object.freeze({
   // finished SETTLED_QUIET_MS ago, so a future `always()` job cannot reopen the
   // race production-deploy has.
   forceSettledRunAfterCancel: true,
-  // `queue: max` keeps every pending run, so nothing needs re-dispatching.
+  // `queue: max` keeps every pending run, so the run this lane cancels is never
+  // re-dispatched as such...
   redispatch: false,
+  // ...but a native republish that nothing queued
+  // would redo is (recoverStrandedOtaRuns).
+  recovery: true,
   // Jobs are created only once their `needs` finish, so a run parked at
   // `live-store-runtimes / resolve` has no publish job listed at all. The report
   // says outright whether this job succeeded, rather than leaving the operator
@@ -184,6 +196,7 @@ const MOBILE_OTA_LANE = Object.freeze({
     // Unreachable while runningAlertMinutes is null; kept so the copy reads
     // right if the lane ever gains an alert.
     stillRunning: '⏳ **Mobile OTA run still running**',
+    recovery: '🔁 **Mobile OTA lane recovery**',
     checkGate: 'Check the Production environment protection rules if stalls repeat.',
     followUps: OTA_FOLLOW_UP_LINES,
     unknownFollowUp: 'cancel-failed',
@@ -280,6 +293,12 @@ function describeParkedJobs(jobs, parkedJobStatuses) {
     .map((job) => `${String(job.name ?? 'unnamed job').replace(/[\r\n`]/g, ' ')} (${job.status})`);
   if (parkedJobs.length > PARKED_JOB_NAME_LIMIT) names.push(`+${parkedJobs.length - PARKED_JOB_NAME_LIMIT} more`);
   return `; parked: ${names.join(', ')}`;
+}
+
+function minutesSince(timestamp, nowMs) {
+  const parsedMs = Date.parse(timestamp ?? '');
+  if (Number.isNaN(parsedMs)) return null;
+  return (nowMs - parsedMs) / 60_000;
 }
 
 // "1h 30m" reads better than "90m" in a Discord ping, and a two-day wedge as
@@ -458,22 +477,22 @@ function deliveryGuidance(entry, lane) {
   if (typeof entry.deliverySucceeded !== 'boolean') return null;
   return entry.deliverySucceeded
     ? `  \`${lane.deliveryJobName}\` had already succeeded; only the jobs after it were lost.`
-    : `  \`${lane.deliveryJobName}\` did not succeed and is not retried: dispatch ${lane.workflowFile} again for this branch unless a later run there publishes the same platforms.`;
+    : `  \`${lane.deliveryJobName}\` did not succeed. A native republish is re-dispatched below; any other run is not retried: dispatch ${lane.workflowFile} again for this branch unless a later run there publishes the same platforms.`;
 }
 
 function shortSha(run) {
   return typeof run?.head_sha === 'string' ? run.head_sha.slice(0, 7) : 'unknown';
 }
 
-// A lane that spans branches names the branch, and the run title: on the OTA
-// lane that is what tells a train push from a "Republish ios after native
+// The OTA lane names its branch and run title to distinguish a normal manual
+// publish from a "Republish ios after native
 // build" dispatch, whose publish nothing else re-sends. Titles come from the
 // workflow's run-name; backticks and newlines are stripped so one cannot break
 // the Discord formatting.
 const RUN_TITLE_LIMIT = 80;
 
 function runContext(run, lane) {
-  if (lane.branch !== null) return '';
+  if (lane.name !== 'mobile-ota-production') return '';
   const branch = String(run?.head_branch ?? 'unknown branch');
   const title = String(run?.display_title ?? '')
     .replace(/[\r\n`]/g, ' ')
@@ -585,6 +604,273 @@ function formatDiscordContent(
     if (runUrlBase !== '') lines.push(`<${runUrlBase}/${entry.run.id}>`);
   }
   return capDiscordContent(lines.join('\n'));
+}
+
+// ─── OTA lane recovery ───────────────────────────────────────────────────────
+
+// mobile-ota-production.yml's run-name for a native build's republish. The run
+// list carries no dispatch inputs, so the name is the only record of them. The
+// fingerprint must be a full hex hash: it is spliced into a dispatch.
+const REPUBLISH_RUN_NAME = /^Republish (ios|android) after native build \(([0-9a-f]{40})\)$/;
+
+function parseRepublishRunName(name) {
+  const match = REPUBLISH_RUN_NAME.exec(typeof name === 'string' ? name : '');
+  return match === null ? null : { platform: match[1], fingerprint: match[2] };
+}
+
+function republishCommand({ ref, platform, fingerprint }) {
+  return `gh workflow run mobile-ota-production.yml --ref ${ref} -f platform=${platform} -f expect_fingerprint=${fingerprint}`;
+}
+
+// A cancelled run can strand JS two ways, and both are checked on EVERY tick,
+// not only right after this pass cancels something. A cancel that lands after
+// the tick gave up confirming it (or one an operator made) leaves a completed,
+// cancelled run that no later tick would otherwise look at again.
+const RECOVERY_WINDOW_MINUTES = 24 * 60;
+
+const FRESH_FAILURE_MINUTES = 30;
+
+const completedWithin = (run, minutes, nowMs) => {
+  const age = minutesSince(run?.updated_at ?? run?.created_at, nowMs);
+  return age !== null && age <= minutes;
+};
+
+const runName = (run) => run?.name ?? run?.display_title;
+const withinRecoveryWindow = (run, nowMs) => {
+  const age = minutesSince(run?.updated_at ?? run?.created_at, nowMs);
+  return age !== null && age <= RECOVERY_WINDOW_MINUTES;
+};
+
+// 1. A native build's republish. One retry per republish: a same-named run
+//    created later means the retry already exists, and an earlier same-named run
+//    that was itself cancelled or failed means this run WAS the retry. Any
+//    unreadable input withholds the dispatch and hands the command to a human.
+function decideRepublish({ run, laneJob, finalJobs, dispatchedRuns }) {
+  const republish = parseRepublishRunName(runName(run));
+  if (republish === null) return { action: 'none' };
+  const ref = run.head_branch ?? '';
+  const decision = {
+    kind: 'republish',
+    ...republish,
+    runId: run.id,
+    name: runName(run),
+    ref,
+    command: republishCommand({ ref: ref || 'main', ...republish }),
+  };
+  if (ref === '') return { ...decision, action: 'unreadable', reason: 'the run has no branch' };
+  if (ref !== 'main') return { action: 'none' };
+  if (finalJobs === null) return { ...decision, action: 'unreadable', reason: 'its job list could not be read' };
+  if (finalJobs.some((job) => job?.name === laneJob && job?.conclusion === 'success')) {
+    return { ...decision, action: 'already-published' };
+  }
+  if (dispatchedRuns === null) {
+    return { ...decision, action: 'unreadable', reason: 'the dispatch history could not be read' };
+  }
+  const sameName = dispatchedRuns.filter(
+    (other) => String(other?.id) !== String(run.id) && runName(other) === decision.name,
+  );
+  if (sameName.some((other) => Number(other.id) > Number(run.id))) return { ...decision, action: 'replacement-exists' };
+  if (
+    sameName.some(
+      (other) =>
+        Number(other.id) < Number(run.id) && (other?.conclusion === 'cancelled' || other?.conclusion === 'failure'),
+    )
+  ) {
+    return { ...decision, action: 'retry-spent' };
+  }
+  return { ...decision, action: 'redispatch' };
+}
+
+const RECOVERY_SUMMARY = {
+  redispatch: (decision, dryRun) =>
+    `${dryRun ? 'would re-dispatch' : 're-dispatched'} ${decision.kind === 'tip' ? decision.name : `"${decision.name}"`} on ${decision.ref}`,
+  'dispatch-failed': (decision) => `could NOT re-dispatch ${decision.name} on ${decision.ref}`,
+  'already-published': (decision) => `${decision.name} had already published; nothing to re-dispatch`,
+  'replacement-exists': (decision) => `${decision.name} already has a newer run; not re-dispatching`,
+  'retry-spent': (decision) => `${decision.name} already had its one retry; not re-dispatching`,
+  'cancel-unconfirmed': (decision) => `${decision.name} is not confirmed stopped; re-checked next tick`,
+  'redispatch-off': (decision) =>
+    `OTA_LANE_REDISPATCH is off; not re-dispatching ${decision.name}: ${decision.command}`,
+  unreadable: (decision) => `not re-dispatching ${decision.name}: ${decision.reason}`,
+};
+
+function recoveryLine({ decision }) {
+  const label = decision.kind === 'tip' ? decision.name : `"${decision.name}"`;
+  switch (decision.action) {
+    case 'redispatch':
+      return decision.kind === 'tip'
+        ? [`• Dispatched a fresh publish for ${label}; its own run was cancelled and older pushes skip as superseded.`]
+        : [`• Re-dispatched ${label} on \`${decision.ref}\` so that binary still gets its update.`];
+    case 'already-published':
+      return [`• ${label} had already published; nothing was stranded.`];
+    case 'replacement-exists':
+      return [`• ${label} already has a newer run; not re-dispatched.`];
+    case 'cancel-unconfirmed':
+      return [`• ${label} is not confirmed stopped. Once it is, the next tick re-dispatches it.`];
+    case 'redispatch-off':
+      return [
+        `⏸️ **${label} needs a re-dispatch**, but OTA_LANE_REDISPATCH is off. Run it when ready:`,
+        `\`${decision.command}\``,
+      ];
+    default: {
+      // No @here: the webhook post sets allowed_mentions.parse=[].
+      const why =
+        decision.action === 'retry-spent'
+          ? 'it already had its one retry'
+          : decision.action === 'dispatch-failed'
+            ? 'the dispatch failed'
+            : decision.reason;
+      return [`🚨 **${label} was NOT re-dispatched** (${why}). Run it by hand:`, `\`${decision.command}\``];
+    }
+  }
+}
+
+// Decisions on runs this tick did not touch are reported only when they act:
+// a spent retry from yesterday must not ping the channel every 15 minutes.
+const QUIET_UNLESS_TOUCHED = new Set(['already-published', 'replacement-exists', 'retry-spent', 'unreadable']);
+const FAILING_RECOVERIES = new Set(['dispatch-failed', 'unreadable', 'retry-spent']);
+
+// Unset, empty or anything but `off` leaves dispatching on: a typo must not
+// silently disable recovery.
+function redispatchEnabledFrom(env) {
+  return (env.OTA_LANE_REDISPATCH ?? '').trim().toLowerCase() !== 'off';
+}
+
+// The OTA lane's recovery pass, run on every tick after the cancels.
+// `stoppedRuns` are the runs this tick stopped (in a dry run, would stop) and
+// `unconfirmedRuns` the ones whose cancel it could not confirm. Returns
+// `{ decision, touched }` entries for the report; decisions about runs this
+// tick did not touch are logged, not reported, unless they act.
+function recoverStrandedOtaRuns({
+  github,
+  lane,
+  stoppedRuns = [],
+  unconfirmedRuns = [],
+  // Stopped runs whose publish had already succeeded: nothing to recover.
+  nowMs,
+  dryRun = false,
+  redispatchEnabled = true,
+  logPrefix = `${lane.name}-watchdog:`,
+}) {
+  const laneJob = lane.deliveryJobName;
+  const recoveries = [];
+  const touched = new Map(stoppedRuns.map((run) => [String(run.id), run]));
+
+  // The cancel may still land after this tick. The scan on a later tick picks
+  // the run up once it has completed.
+  for (const run of unconfirmedRuns) {
+    const republish = parseRepublishRunName(runName(run));
+    if (republish === null) continue;
+    if (run.head_branch !== 'main') continue;
+    const ref = 'main';
+    recoveries.push({
+      decision: {
+        kind: 'republish',
+        ...republish,
+        runId: run.id,
+        name: runName(run),
+        ref,
+        command: republishCommand({ ref, ...republish }),
+        action: 'cancel-unconfirmed',
+      },
+      touched: true,
+    });
+  }
+
+  // `isFresh`: the run completed within the last two ticks, or this tick
+  // stopped it. With dispatch switched off, only those post the command, so a
+  // run stays in the channel for two ticks rather than for a day.
+  const decide = (decision, isTouched, isFresh = isTouched) => {
+    if (decision.action === 'none') return;
+    if (!isTouched && QUIET_UNLESS_TOUCHED.has(decision.action)) {
+      console.error(`${logPrefix} ${RECOVERY_SUMMARY[decision.action](decision, dryRun)}`);
+      return;
+    }
+    if (decision.action === 'redispatch' && !redispatchEnabled) {
+      const held = { ...decision, action: 'redispatch-off' };
+      if (isFresh) recoveries.push({ decision: held, touched: isTouched });
+      else console.error(`${logPrefix} ${RECOVERY_SUMMARY['redispatch-off'](held)}`);
+      return;
+    }
+    let settled = decision;
+    if (decision.action === 'redispatch' && !dryRun) {
+      try {
+        if (decision.kind === 'tip') github.dispatchWorkflow(decision.ref, {});
+        else
+          github.dispatchWorkflow(decision.ref, {
+            platform: decision.platform,
+            expect_fingerprint: decision.fingerprint,
+          });
+      } catch (error) {
+        console.error(`${logPrefix} dispatch failed: ${error.message}`);
+        settled = { ...decision, action: 'dispatch-failed' };
+      }
+    }
+    recoveries.push({ decision: settled, touched: isTouched });
+  };
+
+  let dispatchedRuns = null;
+  try {
+    dispatchedRuns = github.listDispatchedRuns();
+  } catch (error) {
+    console.error(`${logPrefix} could not read dispatch history: ${error.message}`);
+  }
+  const republishRuns = new Map(
+    [...touched.values()]
+      .filter((run) => run.head_branch === 'main' && parseRepublishRunName(runName(run)) !== null)
+      .map((run) => [String(run.id), run]),
+  );
+  // The runs this tick stopped count as history too, in case the listing
+  // predates them.
+  const knownRuns =
+    dispatchedRuns === null
+      ? null
+      : [
+          ...dispatchedRuns,
+          ...[...republishRuns.values()].filter(
+            (run) => !dispatchedRuns.some((listed) => String(listed?.id) === String(run.id)),
+          ),
+        ];
+  const jobsByRunId = new Map();
+  const jobsOf = (run) => {
+    if (!jobsByRunId.has(String(run.id))) jobsByRunId.set(String(run.id), github.listJobs(run.id));
+    return jobsByRunId.get(String(run.id));
+  };
+  for (const run of knownRuns ?? []) {
+    const isRecent =
+      run?.status === 'completed' &&
+      run.head_branch === 'main' &&
+      parseRepublishRunName(runName(run)) !== null &&
+      withinRecoveryWindow(run, nowMs) &&
+      !knownRuns.some((other) => runName(other) === runName(run) && Number(other.id) > Number(run.id));
+    if (!isRecent || republishRuns.has(String(run.id))) continue;
+    if (run.conclusion === 'cancelled') republishRuns.set(String(run.id), run);
+  }
+  for (const run of republishRuns.values()) {
+    decide(
+      decideRepublish({ run, laneJob, finalJobs: jobsOf(run), dispatchedRuns: knownRuns }),
+      touched.has(String(run.id)),
+      touched.has(String(run.id)) || completedWithin(run, FRESH_FAILURE_MINUTES, nowMs),
+    );
+  }
+
+  return recoveries;
+}
+
+function recoveryFailed(recoveries) {
+  return recoveries.some(
+    ({ decision, touched: isTouched }) =>
+      decision.action === 'dispatch-failed' || (isTouched && FAILING_RECOVERIES.has(decision.action)),
+  );
+}
+
+// Appends the recovery lines to a lane report: under the stopped runs when
+// there are any, else under a recovery headline of their own.
+function withRecoveryLines(content, recoveries, lane) {
+  if (recoveries.length === 0) return content;
+  const recoveryLines = recoveries.flatMap((recovery) => recoveryLine(recovery));
+  const head = content === '' ? lane.copy.recovery : content;
+  return capDiscordContent([head, ...recoveryLines].join('\n'));
 }
 
 // A hung API call would give the watchdog the very failure it exists to break —
@@ -738,6 +1024,48 @@ function createCliGitHub({ repository, workflowFile, branch = 'main', api, now =
         `ref=${ref}`,
       ]);
     },
+    // OTA recovery reads. Filtered by event so a backlog of push runs cannot
+    // page a republish out.
+    listDispatchedRuns() {
+      const parsed = JSON.parse(
+        ghApi([
+          '--method',
+          'GET',
+          `repos/${repository}/actions/workflows/${workflowFile}/runs?${branchQuery}event=workflow_dispatch&per_page=${RUNS_PAGE_SIZE}`,
+        ]),
+      );
+      if (!Array.isArray(parsed?.workflow_runs)) throw new Error('unreadable workflow history');
+      return parsed.workflow_runs;
+    },
+    // One branch's recent runs, whatever this adapter's own branch filter is.
+    listBranchRuns(branchName) {
+      const parsed = JSON.parse(
+        ghApi([
+          '--method',
+          'GET',
+          `repos/${repository}/actions/workflows/${workflowFile}/runs?branch=${encodeURIComponent(branchName)}&per_page=${RUNS_PAGE_SIZE}`,
+        ]),
+      );
+      if (!Array.isArray(parsed?.workflow_runs)) throw new Error('unreadable workflow history');
+      return parsed.workflow_runs;
+    },
+    getBranchHead(branchName) {
+      const reference = JSON.parse(ghApi(['--method', 'GET', `repos/${repository}/git/ref/heads/${branchName}`]));
+      if (typeof reference?.object?.sha !== 'string' || !/^[0-9a-f]{40}$/.test(reference.object.sha)) {
+        throw new Error(`unreadable ${branchName} head`);
+      }
+      return reference.object.sha;
+    },
+    dispatchWorkflow(ref, inputs) {
+      ghApi([
+        '--method',
+        'POST',
+        `repos/${repository}/actions/workflows/${workflowFile}/dispatches`,
+        '-f',
+        `ref=${ref}`,
+        ...Object.entries(inputs).flatMap(([name, inputValue]) => ['-f', `inputs[${name}]=${inputValue}`]),
+      ]);
+    },
   };
 }
 
@@ -836,6 +1164,8 @@ async function runCli({
   discordFilePath,
   outputPath,
   dryRun,
+  // OTA_LANE_REDISPATCH=off: the OTA recovery posts commands instead of dispatching.
+  redispatchEnabled = true,
 }) {
   const logPrefix = `${lane.name}-watchdog:`;
   const rules = laneRules(lane);
@@ -930,9 +1260,36 @@ async function runCli({
   if (failedCancelIds.size > 0) plan.followUp = 'cancel-failed';
   else if (lane.redispatch && (!historyOk || dispatchFailed)) plan.followUp = 'dispatch-deferred';
 
-  const summary = formatSummary(plan, { dryRun, failedCancelIds, dispatched, lane, unreadableRuns });
+  const recoveries = lane.recovery
+    ? recoverStrandedOtaRuns({
+        github,
+        lane,
+        stoppedRuns: plan.cancel
+          .filter((entry) => !failedCancelIds.has(String(entry.run.id)))
+          .map((entry) => entry.run),
+        unconfirmedRuns: plan.cancel
+          .filter((entry) => failedCancelIds.has(String(entry.run.id)))
+          .map((entry) => entry.run),
+        deliveredRunIds: new Set(
+          plan.cancel.filter((entry) => entry.deliverySucceeded === true).map((entry) => String(entry.run.id)),
+        ),
+        nowMs: nowMs ?? now(),
+        dryRun,
+        redispatchEnabled,
+        logPrefix,
+      })
+    : [];
+
+  const baseSummary = formatSummary(plan, { dryRun, failedCancelIds, dispatched, lane, unreadableRuns });
+  const recoverySummary = recoveries.map(({ decision }) => RECOVERY_SUMMARY[decision.action](decision, dryRun));
+  const summary =
+    recoverySummary.length === 0
+      ? baseSummary
+      : [...(baseSummary === lane.copy.quiet ? [] : [baseSummary]), ...recoverySummary].join('\n');
   console.error(`${logPrefix} ${summary}`);
-  const discordContent = dryRun ? '' : formatDiscordContent(plan, { runUrlBase, failedCancelIds, lane });
+  const discordContent = dryRun
+    ? ''
+    : withRecoveryLines(formatDiscordContent(plan, { runUrlBase, failedCancelIds, lane }), recoveries, lane);
   if (discordContent !== '' && discordFilePath) writeFileSync(discordFilePath, discordContent, 'utf8');
   if (outputPath) appendFileSync(outputPath, `notify=${discordContent === '' ? 'false' : 'true'}\n`, 'utf8');
   // An incomplete run listing fails both lanes, and an unreadable holder fails a
@@ -941,7 +1298,14 @@ async function runCli({
   return {
     ...plan,
     unreadableRuns,
-    failed: !dryRun && (failedCancelIds.size > 0 || !historyOk || dispatchFailed || unreadableRuns.length > 0),
+    recoveries,
+    failed:
+      !dryRun &&
+      (failedCancelIds.size > 0 ||
+        !historyOk ||
+        dispatchFailed ||
+        unreadableRuns.length > 0 ||
+        recoveryFailed(recoveries)),
   };
 }
 
@@ -999,6 +1363,7 @@ if (process.argv[1] === scriptPath) {
     const options = parseCliArguments(process.argv.slice(2));
     const result = await runCli({
       ...options,
+      redispatchEnabled: redispatchEnabledFrom(process.env),
       github: createCliGitHub({
         repository: options.repository,
         workflowFile: options.lane.workflowFile,
@@ -1025,6 +1390,7 @@ export {
   cancelAndConfirm,
   classifyRun,
   createCliGitHub,
+  decideRepublish,
   formatDiscordContent,
   formatDuration,
   formatSummary,
@@ -1032,6 +1398,9 @@ export {
   isParked,
   laneRules,
   parseCliArguments,
+  parseRepublishRunName,
   planWatchdogActions,
+  recoverStrandedOtaRuns,
+  redispatchEnabledFrom,
   runCli,
 };

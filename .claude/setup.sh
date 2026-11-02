@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Never in GitHub Actions. claude-code-action restores .claude/ from the PR's base
+# but runs this SessionStart hook in a checkout of the PR head, on the default
+# branch's ref. `vp install` there would run the PR's lifecycle scripts in a
+# default-branch run. The Actions workflows set up anything they need themselves.
+# Guarded by scripts/__tests__/untrusted-code-workflow-guard.test.ts.
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  echo "==> GitHub Actions: skipping local setup."
+  exit 0
+fi
+
 echo "==> Installing dependencies..."
 vp install
 

@@ -1,11 +1,15 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { boardSupportsMirroring, parseBoardPath } from '@boardsesh/board-config';
+import { boardSupportsMirroring, parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { z } from 'zod';
 import { applyCorsHeaders } from './cors';
 import { authenticateWidget } from './widget-auth';
 import { verifyWidgetSession } from './widget-session-guard';
 import { checkWidgetRateLimit, ensureWidgetRateLimitPruner } from './widget-rate-limit';
 import { mirrorSessionClimb, MirrorTargetChangedError } from '../services/queue-mirror';
+import { eq } from 'drizzle-orm';
+import { userBoards } from '@boardsesh/db/schema';
+import { db } from '../db/client';
+import { resolveBoardBySlug } from '../graphql/resolvers/shared/board-lookup';
 import { logger } from '../utils/logger';
 
 const mirrorBody = z.object({
@@ -13,6 +17,33 @@ const mirrorBody = z.object({
   queueItemUuid: z.string().min(1),
   mirrored: z.boolean(),
 });
+
+/**
+ * The board type and layout a session is on. A named path (`/b/<slug>`, a gym
+ * wall or a home wall) carries neither. The session's own bound board
+ * (`board_sessions.board_id`) is the exact answer; a slug can be reused once its
+ * board is deleted, so the slug lookup (the watch's session-state endpoint's
+ * way) is only the fallback for a session with no bound board. The caller has
+ * already passed auth and the durable membership guard. Reading only the
+ * positional tuple refused mirroring on every named wall (#7013).
+ */
+async function sessionBoardLayout(session: {
+  boardPath: string;
+  boardId: number | null;
+}): Promise<{ boardName: string; layoutId: number } | null> {
+  const named = parseNamedBoardPath(session.boardPath);
+  if (!named) return parseBoardPath(session.boardPath);
+  if (session.boardId != null) {
+    const [bound] = await db
+      .select({ boardType: userBoards.boardType, layoutId: userBoards.layoutId })
+      .from(userBoards)
+      .where(eq(userBoards.id, session.boardId))
+      .limit(1);
+    if (bound) return { boardName: bound.boardType, layoutId: Number(bound.layoutId) };
+  }
+  const board = await resolveBoardBySlug(named.slug);
+  return board ? { boardName: board.boardType, layoutId: Number(board.layoutId) } : null;
+}
 
 /** Widget requests set an orientation on an exact queue slot, never on a moving index. */
 export async function handleWidgetMirror(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -44,7 +75,7 @@ export async function handleWidgetMirror(req: IncomingMessage, res: ServerRespon
     if (!checkWidgetRateLimit(parsed.sessionId)) return reply(429, { error: 'Too many requests' });
     const guard = await verifyWidgetSession(parsed.sessionId, auth.userId);
     if (!guard.ok) return reply(guard.status, { error: guard.error });
-    const board = parseBoardPath(guard.session.boardPath);
+    const board = await sessionBoardLayout(guard.session);
     if (!board || !boardSupportsMirroring(board.boardName, board.layoutId)) {
       return reply(409, { error: 'This board does not support mirroring' });
     }

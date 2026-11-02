@@ -4,6 +4,7 @@ import {
   chooseQueueEvent,
   normaliseOrphanCurrent,
   placeOnWall,
+  historyCopyRuleFor,
   upNextStart,
   type CurrentClimbPlacement,
   type NowSlotQueueEvent,
@@ -116,7 +117,7 @@ function planNowSlotWrite(
   shouldAddToQueue: boolean | null | undefined,
   placement: CurrentClimbPlacement | null | undefined,
 ): PlannedWrite {
-  const placed = placeOnWall(stored, item, placement, shouldAddToQueue);
+  const placed = placeOnWall(stored, item, placement, shouldAddToQueue, historyCopyRuleFor(placement));
   const capped = capHistory(placed, 0);
   const event = chooseQueueEvent(stored, { item, shouldAddToQueue, placement }, capped);
   return {
@@ -158,6 +159,7 @@ export async function setCurrentClimbAndPublish(
   clientId?: string | null,
   correlationId?: string | null,
   placement?: CurrentClimbPlacement | null,
+  currentChangedBy?: string | null,
 ): Promise<SetCurrentClimbOutcome> {
   const nowSlotRules = placement != null || isNowSlotSession(sessionId);
   let plan: PlannedWrite | null = null;
@@ -176,6 +178,7 @@ export async function setCurrentClimbAndPublish(
         attemptPlan.currentClimbQueueItem,
         stored.version,
         attemptPlan.historyCount,
+        currentChangedBy,
       );
       plan = attemptPlan;
       break;
@@ -214,6 +217,7 @@ export async function setCurrentClimbAndPublish(
       item: current,
       clientId: clientId ?? null,
       correlationId: correlationId ?? null,
+      currentChangedBy: write.currentChangedBy ?? null,
     });
   } else {
     publishFullSync(pubsub, sessionId, write, plan.queue, current);
@@ -259,6 +263,7 @@ export async function navigateToQueueItem(
   pubsub: typeof PubSubInstance,
   clientId?: string,
   correlationId?: string,
+  currentChangedBy?: string | null,
 ): Promise<{ item: ClimbQueueItem; sequence: number } | null> {
   let navigation: {
     item: ClimbQueueItem;
@@ -282,7 +287,14 @@ export async function navigateToQueueItem(
 
     try {
       // The target becomes current, so the line is its index (F3).
-      const write = await roomManager.updateQueueState(sessionId, normalised.queue, item, version, itemIndex);
+      const write = await roomManager.updateQueueState(
+        sessionId,
+        normalised.queue,
+        item,
+        version,
+        itemIndex,
+        currentChangedBy,
+      );
       navigation = { item, queue: normalised.queue, write, normalised: normalised.normalised };
       break; // success
     } catch (error) {
@@ -312,6 +324,7 @@ export async function navigateToQueueItem(
       item,
       clientId: clientId ?? null,
       correlationId: correlationId ?? null,
+      currentChangedBy: write.currentChangedBy ?? null,
     });
   }
 

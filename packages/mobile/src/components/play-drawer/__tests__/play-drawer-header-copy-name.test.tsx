@@ -71,7 +71,8 @@ vi.mock('../../Text', () => ({
 // MarqueeText (the scrolling climb-name label) has its own unit test; here it's a
 // plain text node so the long-press wrapper + name lookup work without Reanimated.
 vi.mock('../../MarqueeText', () => ({
-  MarqueeText: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  MarqueeText: ({ children, shrinkToFitScale }: { children?: ReactNode; shrinkToFitScale?: number }) =>
+    createElement('span', { 'data-shrink-to-fit': shrinkToFitScale }, children),
 }));
 vi.mock('../../DrawerHeader', () => ({
   // Render the center column so the name Pressable is in the tree, and the
@@ -133,6 +134,16 @@ describe('PlayDrawerHeader long-press copy', () => {
 // #4796 / #4828: the drawer header is the screen you hand your partner to show
 // them the beta, so an unlabelled headline number that is actually your private
 // opinion has to say whose it is.
+// #7017 bug 2: a name a few points too long scrolled by those points, and at
+// rest its first glyph sat clipped ("ɹrain from the Brain"). It shrinks into
+// place instead; the marquee's own test covers the rule.
+describe('PlayDrawerHeader name fit', () => {
+  it('lets the name shrink to 90% before it scrolls, so its first glyph shows', () => {
+    const { getByText } = render(createElement(PlayDrawerHeader, baseProps));
+    expect(getByText(baseProps.name).getAttribute('data-shrink-to-fit')).toBe('0.9');
+  });
+});
+
 describe('PlayDrawerHeader personal grade', () => {
   beforeEach(() => {
     typeScale.current = 1;

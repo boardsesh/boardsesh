@@ -5,9 +5,74 @@ import {
   computeFirstScreenHeight,
   computeDrawerFirstScreenHeight,
   computeFirstSectionScrollTarget,
+  computeFitToHeightFirstScreenHeight,
   initialDrawerPreviewItem,
+  PLAYER_SIDE_PANEL_WIDTH,
+  resolvePlayerArrangement,
+  secondaryRowCanFold,
+  shouldFitBoardToHeight,
   shouldShowPanePlaceholder,
 } from '../play-drawer-layout';
+import { resolveActionBarLayout, type ActionBarLayoutInput } from '../action-bar-layout';
+import { DEFAULT_PLAYER_BUTTONS } from '../../../lib/player-buttons';
+
+describe('resolvePlayerArrangement', () => {
+  const ipads = [
+    { name: 'iPad mini', portrait: { width: 744, height: 1133 } },
+    { name: 'iPad 11-inch', portrait: { width: 834, height: 1210 } },
+    { name: 'iPad 13-inch', portrait: { width: 1032, height: 1376 } },
+  ];
+
+  it.each(ipads)('$name puts the board beside the panel in landscape', ({ portrait }) => {
+    const landscape = { width: portrait.height, height: portrait.width };
+    expect(resolvePlayerArrangement({ ...landscape, isTablet: true })).toBe('sideBySide');
+    // The board column keeps at least 600pt beside the 400pt panel.
+    expect(landscape.width - PLAYER_SIDE_PANEL_WIDTH).toBeGreaterThanOrEqual(600);
+  });
+
+  it.each(ipads)('$name keeps the board on top in portrait', ({ portrait }) => {
+    expect(resolvePlayerArrangement({ ...portrait, isTablet: true })).toBe('stacked');
+  });
+
+  it('keeps every phone stacked, landscape and the iPhone Duo split included', () => {
+    for (const phone of [
+      { width: 402, height: 874 },
+      { width: 874, height: 402 },
+      { width: 440, height: 956 },
+      { width: 956, height: 440 },
+      // The Duo opened flat: a wide window, still a phone.
+      { width: 1338, height: 669 },
+    ]) {
+      expect(resolvePlayerArrangement({ ...phone, isTablet: false })).toBe('stacked');
+    }
+  });
+
+  it('keeps a wide but small Stage Manager window stacked', () => {
+    expect(resolvePlayerArrangement({ width: 980, height: 700, isTablet: true })).toBe('stacked');
+    expect(resolvePlayerArrangement({ width: 1000, height: 700, isTablet: true })).toBe('sideBySide');
+  });
+
+  it('stays stacked in a square window', () => {
+    expect(resolvePlayerArrangement({ width: 1032, height: 1032, isTablet: true })).toBe('stacked');
+  });
+});
+
+describe('computeFitToHeightFirstScreenHeight', () => {
+  // The iPhone Duo's split pane: 669pt tall, with a 90pt bottom inset that clears
+  // the MiniPlayer capsule. The pane hangs that inset below the fold and pads it,
+  // so the first screen spans the pane and the first section starts below it.
+  it('spans the whole pane when the capsule band hangs below the fold', () => {
+    expect(computeFitToHeightFirstScreenHeight({ viewport: 669, bottomInset: 90, belowFoldHeight: 90 })).toBe(669);
+  });
+
+  it("hangs the landscape iPad player's favourite / share row below the fold", () => {
+    expect(computeFitToHeightFirstScreenHeight({ viewport: 1000, bottomInset: 20, belowFoldHeight: 52 })).toBe(1032);
+  });
+
+  it('never goes negative before the viewport is measured', () => {
+    expect(computeFitToHeightFirstScreenHeight({ viewport: 0, bottomInset: 90, belowFoldHeight: 0 })).toBe(0);
+  });
+});
 
 describe('computeContainedBoardSize', () => {
   it('height-bounds a tall board on a wide box (horizontal letterbox)', () => {
@@ -166,5 +231,76 @@ describe('computeDrawerFirstScreenHeight', () => {
         sectionMargin: 8,
       }),
     ).toBe(754);
+  });
+});
+
+describe('shouldFitBoardToHeight (#6956)', () => {
+  // A member on a board with lights, on the landscape iPad player's route,
+  // where the MiniPlayer stands in for the first row.
+  const member: ActionBarLayoutInput = {
+    supportsMirroring: false,
+    isAnonymous: false,
+    commitButton: null,
+    workoutOutcome: false,
+    showLightbulb: true,
+    hasShare: true,
+    angleAvailable: true,
+    buttons: DEFAULT_PLAYER_BUTTONS,
+    previousNext: true,
+    miniPlayerMirrors: true,
+  };
+  const landscapeIpad = { fitBoardToHeight: true, isPane: false, hasVisibleSections: true, controlsAbove: false };
+  const fits = (input: Partial<ActionBarLayoutInput>) =>
+    shouldFitBoardToHeight({
+      ...landscapeIpad,
+      secondaryRow: resolveActionBarLayout({ ...member, ...input }).secondaryRow,
+    });
+
+  // Marco: never fold the wall button. With the bulb chosen a preview's Put on
+  // the wall is the second row, and the only way to commit the preview.
+  it("keeps the bulb's Put on the wall on screen", () => {
+    expect(fits({ boardControl: 'lightbulb', commitButton: 'putOnWall' })).toBe(false);
+  });
+
+  it('keeps the wall button on screen where no MiniPlayer stands in for the first row', () => {
+    expect(fits({ miniPlayerMirrors: false })).toBe(false);
+    expect(fits({ miniPlayerMirrors: false, commitButton: 'putOnWall' })).toBe(false);
+  });
+
+  it('keeps the busy-wall question and Fell / Sent on screen', () => {
+    expect(fits({ boardControl: 'lightbulb', commitButton: 'confirm' })).toBe(false);
+    expect(fits({ workoutOutcome: true })).toBe(false);
+  });
+
+  it("folds a plain row: the signed-out reader's Angle / Share, the bulb row's buttons", () => {
+    expect(fits({ isAnonymous: true })).toBe(true);
+    expect(fits({ miniPlayerMirrors: false, boardControl: 'lightbulb', supportsMirroring: true })).toBe(true);
+  });
+
+  it('does not fit with an empty second row, no sections, controls above, or a host that did not ask', () => {
+    const plainRow = resolveActionBarLayout({ ...member, isAnonymous: true }).secondaryRow;
+    expect(fits({})).toBe(false);
+    expect(shouldFitBoardToHeight({ ...landscapeIpad, hasVisibleSections: false, secondaryRow: plainRow })).toBe(false);
+    expect(shouldFitBoardToHeight({ ...landscapeIpad, controlsAbove: true, secondaryRow: plainRow })).toBe(false);
+    expect(shouldFitBoardToHeight({ ...landscapeIpad, fitBoardToHeight: false, secondaryRow: plainRow })).toBe(false);
+  });
+
+  it("always fits the Duo's pane, whose inset clears the MiniPlayer", () => {
+    const pane = { ...landscapeIpad, isPane: true };
+    expect(shouldFitBoardToHeight({ ...pane, secondaryRow: ['wallControl'] })).toBe(true);
+    expect(shouldFitBoardToHeight({ ...pane, hasVisibleSections: false, secondaryRow: [] })).toBe(true);
+    expect(shouldFitBoardToHeight({ ...pane, fitBoardToHeight: false, secondaryRow: [] })).toBe(false);
+  });
+});
+
+describe('secondaryRowCanFold', () => {
+  it('folds only a row of plain items', () => {
+    expect(secondaryRowCanFold(['angle', 'spacer', 'share'])).toBe(true);
+    expect(secondaryRowCanFold(['favorite', 'spacer', 'queue'])).toBe(true);
+    expect(secondaryRowCanFold(['wallControl'])).toBe(false);
+    expect(secondaryRowCanFold(['favorite', 'wallControl', 'queue'])).toBe(false);
+    expect(secondaryRowCanFold([])).toBe(false);
+    expect(secondaryRowCanFold('confirm')).toBe(false);
+    expect(secondaryRowCanFold('workoutOutcome')).toBe(false);
   });
 });

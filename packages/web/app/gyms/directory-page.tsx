@@ -8,6 +8,7 @@ import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
+import AddOutlined from '@mui/icons-material/AddOutlined';
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
 import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id';
@@ -121,6 +122,11 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         <PageShell
           width="wide"
           title={facetHeading(t, facet)}
+          headerActions={
+            <Button component={LocaleLink} href="/gyms/new" variant="contained" startIcon={<AddOutlined />}>
+              {t('create.action')}
+            </Button>
+          }
           breadcrumb={
             <DirectoryBreadcrumb facet={facet} homeLabel={t('breadcrumb.home')} gymsLabel={t('breadcrumb.gyms')} />
           }
@@ -195,6 +201,11 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         width="wide"
         title={facetHeading(t, facet)}
         lead={facetLead(t, facet, facetCounts, formatNumber)}
+        headerActions={
+          <Button component={LocaleLink} href="/gyms/new" variant="contained" startIcon={<AddOutlined />}>
+            {t('create.action')}
+          </Button>
+        }
         breadcrumb={
           <DirectoryBreadcrumb facet={facet} homeLabel={t('breadcrumb.home')} gymsLabel={t('breadcrumb.gyms')} />
         }
@@ -295,6 +306,9 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
               body={t('results.emptyBody')}
               actions={
                 <>
+                  <Button variant="contained" component={LocaleLink} href="/gyms/new" startIcon={<AddOutlined />}>
+                    {t('create.action')}
+                  </Button>
                   {query.query.length > 0 && (
                     <Button variant="outlined" component={LocaleLink} href={FACET_BASE_PATHS[facet]}>
                       {t('results.emptyClearSearch')}

@@ -21,7 +21,7 @@ nodeLinker: isolated
 linkWorkspacePackages: false
 
 # The React Native / Expo peer graph does not satisfy strict peer resolution
-# (react-native pins peers that Expo packages widen, and mobile pins React 19.2.3
+# (react-native pins peers that Expo packages widen, and mobile pins React 19.3.0
 # while the web side is on ^19.2.8). Revisit once the migration has settled.
 strictPeerDependencies: false
 
@@ -40,31 +40,57 @@ enableGlobalVirtualStore: false
 # runtimeVersion than CI does.
 virtualStoreDirMaxLength: 120
 
+# These packages import React types without declaring that peer. Bind them to
+# the consuming app instead of the store's hoisted types: mobile uses React
+# 19.3, while web stays on 19.2. Mixing the declarations breaks refs and keys.
+packageExtensions:
+  'next@16.3.5':
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-dom': '*'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
+        optional: true
+  '@mui/styled-engine@7.3.10':
+    peerDependencies:
+      '@types/react': '*'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+  'react-i18next@17.0.12':
+    peerDependencies:
+      '@types/react': '*'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
 overrides:
   # These Expo fingerprint inputs advance with the release train's native builds.
   baseline-browser-mapping: 2.11.24
   caniuse-lite: 1.0.30001810
-  # expo-app-metrics 57.0.21 asks for 57.0.2, whose Android Maven artifact was
-  # not published. Its Android sources are identical to the autolinked 57.0.1.
-  # Remove when expo-updates-interface >=57.0.2 publishes that Maven artifact (#5867).
-  # Source-build removal conditions: docs/mobile-ota-updates.md, expo-observe section.
-  expo-updates-interface: 57.0.1
+  # Keep Observe and Updates on the same SDK 58 native interface.
+  expo-updates-interface: 58.0.1
   # Remove only when an upstream release passes the disconnect/recovery tests (#5299).
   postgres: 3.4.9
-  react-native-screens: 4.26.2
+  react-native-screens: 4.30.0
 
 patchedDependencies:
-  expo-modules-core@57.0.21: patches/expo-modules-core@57.0.21.patch
+  # Scope MUI's fallback ref declarations to web React, never the ambient mobile namespace.
+  '@mui/material@7.3.11': packages/web/patches/@mui__material@7.3.11.patch
+  'react-native@0.88.0': patches/react-native@0.88.0.patch
+  'expo-dev-launcher@58.0.15': patches/expo-dev-launcher@58.0.15.patch
+  'react-native-screens@4.30.0': patches/react-native-screens@4.30.0.patch
+  '@expo/fingerprint@0.21.6': patches/@expo__fingerprint@0.21.6.patch
+  'expo-updates@58.0.18': patches/expo-updates@58.0.18.patch
+  'expo-image@58.0.17': patches/expo-image@58.0.17.patch
+  '@expo/ui@58.0.23': patches/@expo__ui@58.0.23.patch
+  'expo-sqlite@58.0.14': patches/expo-sqlite@58.0.14.patch
+  'expo-modules-core@58.0.26': patches/expo-modules-core@58.0.26.patch
   'posthog-react-native-session-replay@1.6.0': patches/posthog-react-native-session-replay@1.6.0.patch
-  expo-sqlite@57.0.4: patches/expo-sqlite@57.0.4.patch
   'postgres@3.4.9': packages/db/patches/postgres@3.4.9.patch
   'react-native-ble-plx@3.5.1': patches/react-native-ble-plx@3.5.1.patch
-  '@expo/fingerprint@0.20.13': patches/@expo__fingerprint@0.20.13.patch
-  '@expo/ui@57.0.22': patches/@expo__ui@57.0.22.patch
-  'expo-dev-launcher@57.0.20': patches/expo-dev-launcher@57.0.20.patch
-  'expo-image@57.0.5': patches/expo-image@57.0.5.patch
-  'expo-updates@57.0.25': patches/expo-updates@57.0.25.patch
-  'react-native-screens@4.26.2': patches/react-native-screens@4.26.2.patch
 
 # pnpm blocks dependency lifecycle scripts unless they are listed here. Only
 # add a package after reviewing what its build script does.

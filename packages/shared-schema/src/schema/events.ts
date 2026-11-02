@@ -488,6 +488,8 @@ export const eventsTypeDefs = /* GraphQL */ `
     clientId: ID
     "Correlation ID for request tracking"
     correlationId: ID
+    "Session participant who last changed the current queue item. Null when unknown."
+    currentChangedBy: ID
   }
 
   """

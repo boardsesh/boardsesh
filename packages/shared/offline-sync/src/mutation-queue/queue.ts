@@ -1,4 +1,5 @@
 import type { SqlExecutor } from '../database';
+import type { OfflineBoardScope } from '../offline-board-key';
 
 export type PendingMutation = {
   id: number;
@@ -11,6 +12,8 @@ export type PendingMutation = {
   max_retries: number;
   last_error: string | null;
   status: string;
+  entity_key?: string | null;
+  depends_on_key?: string | null;
 };
 
 /**
@@ -50,6 +53,10 @@ export type EnqueueOptions = {
    * inherits the favorites/follows blind spot the moment it dead-letters.
    */
   reviveDeadLetter?: boolean;
+  /** All authored writes for one climb share this key. */
+  entityKey?: string;
+  /** Replay only after this earlier operation has been acknowledged and removed. */
+  dependsOnKey?: string;
 };
 
 export async function enqueue(
@@ -60,11 +67,29 @@ export async function enqueue(
   idempotencyKey: string,
   options: EnqueueOptions = {},
 ): Promise<EnqueueResult> {
+  if (options.dependsOnKey === idempotencyKey) throw new Error('A queued write cannot depend on itself');
   const serializedPayload = JSON.stringify(payload);
+  // Reference writes must wait for an offline climb too: CLIMB_NOT_FOUND is
+  // otherwise treated as a deleted climb and silently acknowledged by the drain.
+  // Resolve inside the INSERT/UPDATE so even callers without an enclosing
+  // transaction cannot miss a climb write committed before this reference.
+  const referenceEntityKey =
+    operation === 'create' &&
+    (tableName === 'user_favorites' || tableName === 'playlist_climbs') &&
+    typeof payload.climbUuid === 'string'
+      ? climbMutationEntityKey('spray', payload.climbUuid)
+      : null;
+  const dependencySql = referenceEntityKey
+    ? `COALESCE(?, (SELECT idempotency_key FROM pending_mutations
+         WHERE table_name = 'board_climbs' AND entity_key = ? ORDER BY id DESC LIMIT 1))`
+    : '?';
+  const dependencyParams = referenceEntityKey
+    ? [options.dependsOnKey ?? null, referenceEntityKey]
+    : [options.dependsOnKey ?? null];
   const result = await db.runAsync(
-    `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key)
-     VALUES (?, ?, ?, ?)`,
-    [tableName, operation, serializedPayload, idempotencyKey],
+    `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key, entity_key, depends_on_key)
+     VALUES (?, ?, ?, ?, ?, ${dependencySql})`,
+    [tableName, operation, serializedPayload, idempotencyKey, options.entityKey ?? null, ...dependencyParams],
   );
   // Anything other than an explicit `changes: 0` counts as inserted. A driver
   // (or test double) that doesn't report `changes` degrades to losing the
@@ -91,10 +116,10 @@ export async function enqueue(
   // never touch a row a concurrent drain has in flight.
   const revive = await db.runAsync(
     `UPDATE pending_mutations
-     SET table_name = ?, operation = ?, payload = ?, status = 'pending',
+     SET table_name = ?, operation = ?, payload = ?, entity_key = ?, depends_on_key = ${dependencySql}, status = 'pending',
          retry_count = 0, last_error = NULL, created_at = datetime('now')
      WHERE idempotency_key = ? AND status = 'dead_letter'`,
-    [tableName, operation, serializedPayload, idempotencyKey],
+    [tableName, operation, serializedPayload, options.entityKey ?? null, ...dependencyParams, idempotencyKey],
   );
   // Same defensive read as the INSERT above: a driver that reports no `changes`
   // count degrades to "revived", matching the row state we just wrote.
@@ -106,9 +131,45 @@ export async function peekPending(db: SqlExecutor, limit: number = 10): Promise<
   // same second tie on created_at. The `id` (AUTOINCREMENT) tiebreak gives true
   // FIFO for same-second writes — the order a user actually performed them.
   return db.getAllAsync<PendingMutation>(
-    `SELECT * FROM pending_mutations WHERE status = 'pending' ORDER BY created_at ASC, id ASC LIMIT ?`,
+    `SELECT pending.* FROM pending_mutations pending
+     WHERE pending.status = 'pending' AND NOT EXISTS (
+       SELECT 1 FROM pending_mutations dependency WHERE dependency.idempotency_key = pending.depends_on_key
+     ) ORDER BY pending.created_at ASC, pending.id ASC LIMIT ?`,
     [limit],
   );
+}
+
+export function climbMutationEntityKey(boardType: string, climbUuid: string): string {
+  return `climb:${boardType}:${climbUuid}`;
+}
+
+/** Call inside the local-write transaction so a new edit/tick cannot overtake a save. */
+export async function getLatestClimbMutationKey(
+  db: SqlExecutor,
+  boardType: string,
+  climbUuid: string,
+  excludedMutationKey?: string,
+): Promise<string | null> {
+  const mutation = await db.getFirstAsync<{ idempotency_key: string }>(
+    `SELECT idempotency_key FROM pending_mutations
+     WHERE table_name = 'board_climbs' AND entity_key = ? AND (? IS NULL OR idempotency_key <> ?)
+     ORDER BY id DESC LIMIT 1`,
+    [climbMutationEntityKey(boardType, climbUuid), excludedMutationKey ?? null, excludedMutationKey ?? null],
+  );
+  return mutation?.idempotency_key ?? null;
+}
+
+/** User-requested cache removal must never remove the only editable copy of a queued climb. */
+export async function hasPendingClimbWritesForScope(db: SqlExecutor, scope: OfflineBoardScope): Promise<boolean> {
+  if (scope.boardType !== 'spray') return false;
+  const mutation = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM board_climbs climb JOIN pending_mutations mutation
+       ON mutation.entity_key = 'climb:' || climb.board_type || ':' || climb.uuid
+     WHERE climb.board_type = ? AND climb.layout_id = ? AND mutation.table_name = 'board_climbs'
+       AND mutation.status IN ('pending', 'dead_letter') LIMIT 1`,
+    [scope.boardType, scope.layoutId],
+  );
+  return mutation != null;
 }
 
 export async function markCompleted(db: SqlExecutor, id: number): Promise<void> {
@@ -168,13 +229,106 @@ export async function markDeadLetter(db: SqlExecutor, id: number, error: string)
  * then dead-letter as CLIMB_NOT_FOUND. A row being drained stays `pending` until
  * it is marked completed, so an in-flight send counts too. Dead letters do not.
  */
-export async function hasPendingTickForClimb(db: SqlExecutor, climbUuid: string): Promise<boolean> {
+export async function hasPendingTickForClimb(
+  db: SqlExecutor,
+  climbUuid: string,
+  options: { includeDeadLetters?: boolean } = {},
+): Promise<boolean> {
   const row = await db.getFirstAsync<{ found: number }>(
     `SELECT 1 AS found FROM pending_mutations
-     WHERE table_name = 'boardsesh_ticks' AND operation = 'create' AND status = 'pending'
+     WHERE table_name = 'boardsesh_ticks' AND operation = 'create'
+       AND ${options.includeDeadLetters ? "status IN ('pending', 'dead_letter')" : "status = 'pending'"}
        AND json_extract(payload, '$.climbUuid') = ?
      LIMIT 1`,
     [climbUuid],
+  );
+  return row != null;
+}
+
+/**
+ * Whether this device still has a tick logged in `sessionId` waiting in the
+ * outbox (#6903). Ending a session asks before END_SESSION: the server builds
+ * the summary, and the Strava export, from the ticks it already has, so a send
+ * still queued here would be missing from both. Same row rules as
+ * `hasPendingTickForClimb`: an in-flight send counts, a dead letter does not.
+ */
+export async function hasPendingTicksForSession(db: SqlExecutor, sessionId: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_mutations
+     WHERE table_name = 'boardsesh_ticks' AND operation = 'create' AND status = 'pending'
+       AND json_extract(payload, '$.sessionId') = ?
+     LIMIT 1`,
+    [sessionId],
+  );
+  return row != null;
+}
+
+/** What this phone still has to send for one session. */
+export type PendingSessionWrites = {
+  /** Ticks logged in the session (`create`s; edits and deletes are not counted). */
+  ticks: number;
+  /** Workout writes for the session (`session_workouts`). */
+  workouts: number;
+};
+
+/**
+ * What this phone still has to send for `sessionId` (#6903): the session
+ * summary's "Still saving N ticks", and whether the workout it shows is newer
+ * than the server's copy. Same row rules as `hasPendingTicksForSession`: an
+ * in-flight send counts, a dead letter does not.
+ */
+export async function countPendingSessionWrites(db: SqlExecutor, sessionId: string): Promise<PendingSessionWrites> {
+  const row = await db.getFirstAsync<{ ticks: number | null; workouts: number | null }>(
+    `SELECT
+       SUM(CASE WHEN table_name = 'boardsesh_ticks' AND operation = 'create' THEN 1 ELSE 0 END) AS ticks,
+       SUM(CASE WHEN table_name = 'session_workouts' THEN 1 ELSE 0 END) AS workouts
+     FROM pending_mutations
+     WHERE status = 'pending' AND table_name IN ('boardsesh_ticks', 'session_workouts')
+       AND json_extract(payload, '$.sessionId') = ?`,
+    [sessionId],
+  );
+  return { ticks: row?.ticks ?? 0, workouts: row?.workouts ?? 0 };
+}
+
+/**
+ * Make room for a workout write for `sessionId` at `revision` (#6903): drop
+ * the session's writes with a LOWER revision, waiting or dead-lettered (each
+ * write carries the whole workout, so the newest is all the server needs, and
+ * an older copy left in Sync issues would only offer a Retry that does
+ * nothing), and say whether one at this revision or higher is still waiting,
+ * in which case the caller queues nothing. Two writes whose transactions run
+ * out of order therefore never leave the older one in the outbox last. A row
+ * being sent stays `pending` until it is marked completed; deleting it then
+ * only makes that DELETE a no-op.
+ */
+export async function supersedePendingSessionWorkouts(
+  db: SqlExecutor,
+  sessionId: string,
+  revision: number,
+): Promise<{ newerPending: boolean }> {
+  await db.runAsync(
+    `DELETE FROM pending_mutations
+     WHERE table_name = 'session_workouts' AND status IN ('pending', 'dead_letter')
+       AND json_extract(payload, '$.sessionId') = ?
+       AND CAST(json_extract(payload, '$.revision') AS INTEGER) < ?`,
+    [sessionId, revision],
+  );
+  const newer = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_mutations
+     WHERE table_name = 'session_workouts' AND status = 'pending'
+       AND json_extract(payload, '$.sessionId') = ?
+       AND CAST(json_extract(payload, '$.revision') AS INTEGER) >= ?
+     LIMIT 1`,
+    [sessionId, revision],
+  );
+  return { newerPending: newer != null };
+}
+
+/** Whether the row with `idempotencyKey` is still waiting to be sent (in flight included). */
+export async function isMutationPending(db: SqlExecutor, idempotencyKey: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending' LIMIT 1`,
+    [idempotencyKey],
   );
   return row != null;
 }
@@ -262,7 +416,23 @@ export async function retryDeadLetter(db: SqlExecutor, id: number): Promise<void
 }
 
 export async function discardDeadLetter(db: SqlExecutor, id: number): Promise<void> {
-  await db.runAsync('DELETE FROM pending_mutations WHERE id = ? AND status = ?', [id, 'dead_letter']);
+  // One SQL statement checks and deletes, so a concurrently queued tick cannot
+  // slip between a preflight read and the removal of the climb it depends on.
+  const discarded = await db.runAsync(
+    `DELETE FROM pending_mutations WHERE id = ? AND status = ?
+     AND NOT EXISTS (SELECT 1 FROM pending_mutations dependent
+       WHERE dependent.depends_on_key = pending_mutations.idempotency_key)`,
+    [id, 'dead_letter'],
+  );
+  if (discarded?.changes === 0) {
+    const dependency = await db.getFirstAsync<{ found: number }>(
+      `SELECT 1 AS found FROM pending_mutations parent
+       JOIN pending_mutations dependent ON dependent.depends_on_key = parent.idempotency_key
+       WHERE parent.id = ? AND parent.status = 'dead_letter' LIMIT 1`,
+      [id],
+    );
+    if (dependency) throw new Error('Retry or repair this climb before discarding the writes that depend on it');
+  }
 }
 
 export async function clearAll(db: SqlExecutor): Promise<void> {

@@ -162,6 +162,10 @@ name: app-store screenshots
 - tapOn:
     text: 'Open'
     optional: true
+- extendedWaitUntil:
+    visible:
+      id: '^climbs-capture-settled$'
+    timeout: 60000
 - waitForAnimationToEnd
 - takeScreenshot: 03-climbs
 
@@ -199,13 +203,13 @@ name: app-store screenshots
 
 # NOTE: this flow is iPhone-only. iPad deep links don't navigate on the simulator
 # (the scheme-confirm dialog swallows the openurl), so iPad captures — including the
-# On the Wall kiosk — run from app-store-ipad.yaml via sidebar taps, which the
+# Wall display kiosk — run from app-store-ipad.yaml via native taps, which the
 # orchestrator selects for iPad devices (iosSourceFlowFile).
 
 # Board view — the signature feature: the wall with holds lit. The screenshot-mode param
 # auto-opens the first climb's play drawer (no coordinate tap). LAST, because the play
 # drawer overlays the app and would bleed into later shots.
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotDrive=1
 - tapOn:
     text: 'Open'
     optional: true
@@ -215,6 +219,10 @@ name: app-store screenshots
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 00-board-view
 
 # Board view on the second pinned wall (SCREENSHOT_BOARDS[1], the Tension Board 2) — a
@@ -240,7 +248,7 @@ name: app-store screenshots
     notVisible:
       id: 'play-drawer-board-overlay'
     timeout: 60000
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1&screenshotDrive=1
 - tapOn:
     text: 'Open'
     optional: true
@@ -250,4 +258,8 @@ name: app-store screenshots
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 01-board-view-2

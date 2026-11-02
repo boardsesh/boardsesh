@@ -21,7 +21,7 @@ const { storedValues, indexedDbStorage, createAsyncStorage } = vi.hoisted(() => 
   return { storedValues: values, indexedDbStorage: storage, createAsyncStorage: vi.fn(() => storage) };
 });
 
-vi.mock('@react-native-async-storage/async-storage', () => ({ createAsyncStorage }));
+vi.mock('../indexeddb-async-storage', () => ({ createIndexedDbAsyncStorage: createAsyncStorage }));
 
 import AsyncStorage from '../async-storage';
 import * as SecureStore from '../secure-store';
@@ -34,7 +34,7 @@ describe('Expo web storage shims', () => {
     indexedDbStorage.removeItem.mockClear();
   });
 
-  it('constructs the v3 IndexedDB adapter instead of using legacy localStorage', () => {
+  it('constructs the reconnecting IndexedDB adapter on the existing database instead of legacy localStorage', () => {
     expect(createAsyncStorage).toHaveBeenCalledWith('boardsesh-mobile-web');
     expect(AsyncStorage).toBe(indexedDbStorage);
   });

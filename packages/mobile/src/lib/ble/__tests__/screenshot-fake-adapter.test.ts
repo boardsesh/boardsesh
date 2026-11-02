@@ -22,7 +22,13 @@ vi.mock('react-native-ble-plx', () => ({
     Unsupported: 'Unsupported',
   },
 }));
-vi.mock('../ble-manager', () => ({ bleManager: mockBleManager }));
+vi.mock('../ble-manager', () => ({ getBleManager: () => mockBleManager }));
+
+// bluetooth-authorization reads the iOS-only BoardBle module (and importing the
+// real module index loads expo-modules-core). Null is Android, web, or a binary
+// without the module: the paths this suite covers, unchanged by the
+// ask-at-first-scan work.
+vi.mock('../../../../modules/live-activity/src/index', () => ({ boardBleNative: null }));
 
 import {
   SCREENSHOT_FAKE_BLE_DEVICE_ID,

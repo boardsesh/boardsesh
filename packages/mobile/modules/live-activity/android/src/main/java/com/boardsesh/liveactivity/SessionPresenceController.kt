@@ -49,6 +49,21 @@ internal class SessionPresenceController(
     var sessionActive = false
         private set
 
+    // The session the notification belongs to; a rest-timer payload for any other
+    // session is dropped (a late update from the previous session must not paint
+    // its countdown over the new one).
+    @Volatile
+    private var activeSessionId: String = ""
+
+    // Last rest timer forwarded to the service; null = none shown. Reset on every
+    // start/end so a new session window never inherits the previous countdown.
+    @Volatile
+    var restTimer: RestTimerOptions? = null
+        private set
+
+    /** The clock JS's lighting writes are stamped with; a test pins it. */
+    internal var wallClockMs: () -> Long = { System.currentTimeMillis() }
+
     fun startSession(options: StartSessionOptions?) {
         // On API 34+ a connectedDevice FGS can't promote without
         // BLUETOOTH_CONNECT, so skip the start rather than create a
@@ -56,6 +71,13 @@ internal class SessionPresenceController(
         // BLE link alive, so without the permission there's nothing to keep.
         if (!canRunConnectedDeviceService(context)) throw MissingBluetoothPermissionException()
         sessionActive = true
+        activeSessionId = options?.sessionId ?: ""
+        restTimer = null
+        // Another session's drive (a killed app's leftover) goes;
+        // this one's survives, and JS sends it again after the start anyway.
+        LightingWindowStore.loadWindow(context)?.let {
+            if (it.sessionId != activeSessionId) LightingWindowStore.clearWindow(context)
+        }
         val strings = options?.androidNotification
         val intent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_START
@@ -69,7 +91,10 @@ internal class SessionPresenceController(
             putExtra(BoardSessionService.EXTRA_NEXT_LABEL, strings?.nextLabel ?: "Next")
             putExtra(BoardSessionService.EXTRA_RELIGHT_LABEL, strings?.relightLabel ?: "Relight wall")
             putExtra(BoardSessionService.EXTRA_RECONNECT_LABEL, strings?.reconnectLabel ?: "Connect to board")
+            putExtra(BoardSessionService.EXTRA_CONNECTING_LABEL, strings?.connectingLabel ?: "Connecting…")
             putExtra(BoardSessionService.EXTRA_ON_WALL_TEMPLATE, strings?.onWallTemplate ?: "{{name}} is on the wall")
+            putExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL, strings?.lightDrivingLabel ?: "Driving the wall")
+            strings?.stopDrivingLabel?.let { putExtra(BoardSessionService.EXTRA_STOP_DRIVING_LABEL, it) }
             // Initial lightbulb / controls state before the first climb update.
             putExtra(
                 BoardSessionService.EXTRA_BOARD_CONNECTION,
@@ -110,6 +135,8 @@ internal class SessionPresenceController(
             putExtra(BoardSessionService.EXTRA_TOTAL_CLIMBS, options.totalClimbs)
             putExtra(BoardSessionService.EXTRA_BOARD_CONNECTION, options.boardConnection)
             options.holderDisplayName?.let { putExtra(BoardSessionService.EXTRA_HOLDER_NAME, it) }
+            putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, options.bulbOpensApp)
+            putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, options.boardConnecting)
             // On-device thumbnail: the BoardRenderer overlay PNG + the bundled board
             // background layers, composited by the service (no backend fetch).
             options.androidThumbnailOverlayPath?.let { putExtra(BoardSessionService.EXTRA_OVERLAY_PATH, it) }
@@ -128,9 +155,85 @@ internal class SessionPresenceController(
         launchService(intent, clearSessionOnFailure = false)
     }
 
+    /**
+     * Shows (or, with `null`, clears) the rest countdown in the ongoing
+     * notification. Dropped outside a session window and for a payload whose
+     * sessionId isn't the active session's. The service owns the rendering and
+     * the epoch → elapsedRealtime conversion; this only forwards the snapshot.
+     */
+    fun updateRestTimer(options: RestTimerOptions?) {
+        if (!sessionActive) return
+        if (options != null && options.sessionId != activeSessionId) {
+            Log.w(TAG, "updateRestTimer: ignoring a rest timer for another session")
+            return
+        }
+        restTimer = options
+        val intent = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_REST_TIMER
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, activeSessionId)
+            if (options == null) {
+                putExtra(BoardSessionService.EXTRA_REST_CLEAR, true)
+            } else {
+                putExtra(BoardSessionService.EXTRA_REST_STATUS, options.status)
+                options.startMs.finiteLong()?.let { putExtra(BoardSessionService.EXTRA_REST_START_MS, it) }
+                options.deadlineMs.finiteLong()?.let { putExtra(BoardSessionService.EXTRA_REST_DEADLINE_MS, it) }
+                options.periodSeconds.finiteLong()?.let { putExtra(BoardSessionService.EXTRA_REST_PERIOD_SECONDS, it) }
+                options.frozenSignedSeconds.finiteLong()?.let {
+                    putExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS, it)
+                }
+                options.androidCaption?.let { putExtra(BoardSessionService.EXTRA_REST_CAPTION, it) }
+                options.androidOverCaption?.let { putExtra(BoardSessionService.EXTRA_REST_OVER_CAPTION, it) }
+            }
+        }
+        // Same transient-failure contract as updateActivity: the service is
+        // already running, so a backgrounded re-delivery failure keeps the session.
+        launchService(intent, clearSessionOnFailure = false)
+    }
+
+    /**
+     * Stores JS's drive (2.7) for `getLightingWindow`, and shows
+     * it in the notification header; `null` takes it off. Dropped outside a
+     * session window and for another session. A write that draws the header it
+     * already shows (the re-send after every start) doesn't wake the service.
+     */
+    fun updateLightingWindow(options: LightingWindowOptions?) {
+        if (!sessionActive) return
+        if (options != null && options.sessionId != activeSessionId) {
+            Log.w(TAG, "updateLightingWindow: ignoring a window for another session")
+            return
+        }
+        val previous = LightingWindowStore.loadWindow(context)
+        val snapshot = options?.let {
+            LightingWindowSnapshot(
+                sessionId = it.sessionId,
+                mode = it.mode,
+                endsAtMs = it.endsAtMs.finiteLong(),
+                windowSeconds = it.windowSeconds?.takeIf { seconds -> seconds.isFinite() },
+                family = it.family,
+                source = LightingWindowStore.SOURCE_APP,
+                updatedAtMs = wallClockMs(),
+            )
+        }
+        // A snapshot out of bounds is never stored (saveWindow clears instead):
+        // it reads as off, like null.
+        val shown = snapshot?.takeIf { LightingWindowStore.saveWindow(context, it) }
+        if (shown == null) {
+            LightingWindowStore.clearWindow(context)
+            if (previous == null) return
+        } else if (shown.drawsLike(previous)) {
+            return
+        }
+        // Same transient-failure contract as updateRestTimer.
+        launchService(BoardSessionService.lightingIntent(context, activeSessionId, shown), clearSessionOnFailure = false)
+    }
+
     fun endSession() {
         val hadActiveSession = sessionActive
         sessionActive = false
+        activeSessionId = ""
+        restTimer = null
+        // No session, no notification to draw the window on.
+        LightingWindowStore.clearWindow(context)
         val stopIntent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_STOP
         }
@@ -183,6 +286,10 @@ internal class SessionPresenceController(
         return ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
             PackageManager.PERMISSION_GRANTED
     }
+
+    // JS numbers arrive as Doubles; NaN/Infinity would silently become 0 / Long.MAX
+    // through toLong(), so they're dropped instead (the extra stays absent).
+    private fun Double?.finiteLong(): Long? = this?.takeIf { it.isFinite() }?.toLong()
 
     companion object {
         private const val TAG = "BoardSession"

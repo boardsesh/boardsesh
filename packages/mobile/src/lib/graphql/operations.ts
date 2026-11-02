@@ -31,6 +31,7 @@ import type {
   DeleteHoldOutlineOverrideInput,
 } from '@boardsesh/shared-schema';
 import { BOARD_FIELDS } from '@boardsesh/graphql/operations/boards';
+export { GET_SPRAY_CLIMB } from '@boardsesh/graphql/operations/climb-search';
 import type { SubscriptionQueueItem } from '../queue-conversion';
 
 // ============================================
@@ -386,6 +387,7 @@ export const GET_CLIMB = gql`
 `;
 
 export type GetClimbQueryVariables = {
+  sprayWallUuid?: string;
   boardName: string;
   layoutId: number;
   sizeId: number;
@@ -736,6 +738,7 @@ export type GetSessionQueueStateQueryResponse = {
       /** F3: selected only by GET_SESSION_QUEUE_STATE_NOW_SLOT. */
       historyCount?: number | null;
       currentChangedAt?: string | null;
+      currentChangedBy?: string | null;
     } | null;
   } | null;
 };
@@ -1105,6 +1108,7 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
           mode
           targetSeconds
           autoAdvance
+          autoAdvanceOnce
           advanceOn
           source
           isRunning
@@ -1155,6 +1159,8 @@ export type SessionRestCadenceWire = {
   mode: string;
   targetSeconds?: number | null;
   autoAdvance: boolean;
+  /** Move the wall once more, then wait (a 4x4 set rest). Null from a server that predates it: false. */
+  autoAdvanceOnce?: boolean | null;
   advanceOn: string;
   source: string;
   isRunning: boolean;

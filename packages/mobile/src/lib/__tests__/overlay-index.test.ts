@@ -13,6 +13,8 @@ import {
   invalidateRenderedOverlay,
   getRecentlyUsedCacheKeys,
   forgetOverlays,
+  forgetOverlaysMissingFromDisk,
+  getOverlayGenerationWatermark,
   clearOverlayIndex,
   onOverlayWriteThreshold,
   _renderedOverlaysForTests,
@@ -109,5 +111,40 @@ describe('write odometer', () => {
 
   it('costs nothing when nobody is listening', () => {
     expect(() => cacheRenderedOverlay('a', 'file:///a.png')).not.toThrow();
+  });
+});
+
+describe('forgetOverlaysMissingFromDisk', () => {
+  it('drops indexed keys the walk did not find and keeps the ones it did', () => {
+    // Warm-up shape: three keys indexed from the listing, then native pruned two.
+    cacheRenderedOverlay('kept', 'file:///kept.png');
+    cacheRenderedOverlay('pruned-a', 'file:///pruned-a.png');
+    cacheRenderedOverlay('pruned-b', 'file:///pruned-b.png');
+    const watermark = getOverlayGenerationWatermark();
+
+    expect(forgetOverlaysMissingFromDisk(new Set(['kept']), watermark)).toBe(2);
+    expect(getRenderedOverlay('kept')?.uri).toBe('file:///kept.png');
+    expect(getRenderedOverlay('pruned-a')).toBeUndefined();
+    expect(getRenderedOverlay('pruned-b')).toBeUndefined();
+  });
+
+  it('keeps a key rendered after the watermark, even when the walk missed its file', () => {
+    cacheRenderedOverlay('stale', 'file:///stale.png');
+    const watermark = getOverlayGenerationWatermark();
+    // Native finished this one while the chunked walk was still listing.
+    cacheRenderedOverlay('fresh', 'file:///fresh.png');
+
+    expect(forgetOverlaysMissingFromDisk(new Set(), watermark)).toBe(1);
+    expect(_renderedOverlaysForTests.has('stale')).toBe(false);
+    expect(_renderedOverlaysForTests.has('fresh')).toBe(true);
+  });
+
+  it('keeps a key re-rendered after the watermark under the same name', () => {
+    cacheRenderedOverlay('rewritten', 'file:///rewritten.png');
+    const watermark = getOverlayGenerationWatermark();
+    cacheRenderedOverlay('rewritten', 'file:///rewritten.png');
+
+    expect(forgetOverlaysMissingFromDisk(new Set(), watermark)).toBe(0);
+    expect(_renderedOverlaysForTests.has('rewritten')).toBe(true);
   });
 });

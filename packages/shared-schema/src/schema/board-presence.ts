@@ -69,14 +69,18 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   }
 
   """
-  Event: the wall was cleared (best-effort — only emitted on a deliberate
-  disconnect; an involuntary BLE drop leaves the last climb sticky).
+  Event: the wall was cleared. Emitted when the phone driving the wall turns
+  off all its lights (\`reportBoardClear\`), and replayed to a new subscriber
+  while that clear is still the wall's latest state. A disconnect, deliberate
+  or not, leaves the last climb sticky: the board keeps its lights.
   """
   type BoardClimbCleared {
     "ISO 8601 timestamp when the wall was cleared"
     clearedAt: String!
     "Monotonic per-board sequence number"
     seq: Int!
+    "UUID of the climb that was on the wall when it was cleared, when known"
+    climbUuid: String
   }
 
   """

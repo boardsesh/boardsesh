@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
-import { Platform, View, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { Platform, View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { useSheetSubRoute } from '../hooks/use-sheet-sub-route';
@@ -34,6 +34,9 @@ import {
 } from '@boardsesh/climb-filters';
 import { Button } from './Button';
 import { SheetTopBar } from './SheetTopBar';
+import { ClimbFilterForm } from './ClimbFilterForm';
+import { buildClimbFilterFormModel } from './filter-sheet/climb-filter-form-model';
+import { keyboardDetentIndex } from './sheet-scroll-into-view';
 import { SegmentedControl } from './SegmentedControl';
 import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
@@ -48,6 +51,7 @@ import { usePinnedChips } from '../lib/pinned-chips-store';
 import type { RecentFilter } from '../lib/recent-filter-store';
 import { applyRecentFilterById, findCurrentRecentFilter, type ApplyRecentFilter } from '../lib/recent-filter-selection';
 import { PINNABLE_CHIP_KINDS, isValidChipKind, type FilterChipKind } from '../lib/pinnable-chips';
+import { gradeRailRowHeight } from './filter-sheet/grade-rail-row-height';
 import { SPRAY_BOARD_NAME } from '../lib/spray/spray-wall-registry';
 import { collectionPatch, getCollectionFilter, type CollectionFilter } from '../lib/collection-filter';
 import type { SegmentOption } from './SegmentedControl.types';
@@ -57,6 +61,7 @@ import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
 import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
+import { selectByVariant } from '../theme/variants';
 import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { getTallWideScope } from '@boardsesh/board-constants';
@@ -136,13 +141,18 @@ const PICKER_PATHS = {
     setters: '/(tabs)/climbs/setters',
     holds: '/(tabs)/climbs/holds',
     zone: '/(tabs)/climbs/zone',
+    quickFilters: '/(tabs)/climbs/quick-filters',
   },
   discover: {
     setters: '/(tabs)/discover/playlist-setters',
     holds: '/(tabs)/discover/holds',
     zone: '/(tabs)/discover/zone',
+    quickFilters: '/(tabs)/discover/quick-filters',
   },
-} as const satisfies Record<ClimbFilterSheetPickers['stack'], Record<'setters' | 'holds' | 'zone', string>>;
+} as const satisfies Record<
+  ClimbFilterSheetPickers['stack'],
+  Record<'setters' | 'holds' | 'zone' | 'quickFilters', string>
+>;
 
 /**
  * The pins of a list other than Climbs, which keeps its own pin store. Pass the
@@ -206,10 +216,10 @@ export type ClimbFilterSheetProps = {
   lastUsedGradeId?: number;
   /** Commits a selection immediately without closing the sheet. */
   onSelectionChange: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
-  /** Fired per keystroke as the in-sheet name field changes (mirrors into the
-   *  parent's live search, same as the top-bar search field). Required: the sheet
-   *  only owns the field's display state, so an unwired caller would render a name field that
-   *  looks like it filters and doesn't. */
+  /** Fired per keystroke as the in-sheet name field changes; the parent commits it
+   *  to its live search. Required: the sheet only owns the field's display state, so
+   *  an unwired caller would render a name field that looks like it filters and
+   *  doesn't. */
   onNameChange: (text: string) => void;
   /** Fired by Reset and the field's inline × — the ONE clearing path for name,
    *  shared so there is exactly one code path to reason about (#3606). Required
@@ -274,6 +284,10 @@ const POPULARITY_BUCKETS: ReadonlyArray<number | undefined> = [undefined, 2, 10,
 // The sheet's single native detent. The iOS JS-side height bound derived from it
 // lives in the shared useSheetColumnStyle hook (see the sheetColumnStyle below).
 const SHEET_DETENT_FRACTION = 0.9;
+// The iOS Form (Liquid Glass) opens at half height, the HIG's medium detent:
+// the name field, Recent and the grade rail fit there. Dragging up or focusing
+// the name field takes it to the tall detent.
+const NATIVE_FORM_DETENTS = ['50%', `${SHEET_DETENT_FRACTION * 100}%`];
 
 // A presentation belongs to one board and angle. Late native closes and
 // sub-picker results must not affect a search that replaced that scope.
@@ -310,8 +324,13 @@ export function ClimbFilterSheet({
   pickers = CLIMBS_LIST_PICKERS,
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
+  const { t: tCommon } = useTranslation('common');
   const theme = useTheme();
-  const { systemColors } = theme;
+  const { systemColors, variant } = theme;
+  // iOS with Liquid Glass draws the body as a SwiftUI Form (ClimbFilterForm.ios,
+  // #6872). Android and the Material variant keep the RN body below.
+  const nativeForm = Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
+  const { fontScale } = useWindowDimensions();
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const { isAuthenticated } = useAuth();
   // The WINDOW inset, not this mount point's: this sheet lives in the climbs
@@ -371,14 +390,13 @@ export function ClimbFilterSheet({
   const normalizationRef = useRef({ isAuthenticated, lockedDimensions });
   normalizationRef.current = { isAuthenticated, lockedDimensions };
 
-  // Only the name field keeps a display draft, matching the parent search bar's
-  // debounce and preserving a trailing space while the climber types.
+  // Only the name field keeps a display draft, so the parent's debounce does not
+  // strip a trailing space while the climber types.
   const [nameDraft, setNameDraft] = useState(searchName ?? '');
   const nameDraftRef = useRef(nameDraft);
   nameDraftRef.current = nameDraft;
   // Resync the field from an external `searchName` change (board switch, recent
-  // pill, cancel) — but ignore a trim-only difference, exactly like the parent's
-  // own top-bar sync effect (packages/mobile/app/(tabs)/climbs/index.tsx), so a
+  // search, the list's name token) — but ignore a trim-only difference, so a
   // mid-typing space isn't yanked out from under the cursor.
   useEffect(() => {
     if (!visibleSearchTextNeedsSync(nameDraftRef.current, searchName ?? '')) return;
@@ -400,6 +418,8 @@ export function ClimbFilterSheet({
     canResume: isCurrentPresentation,
   });
   const { suspended, presentEpoch, isAwaitingReturn, suspend: beginSubPickerSuspend, cancelResume } = subRoute;
+  // The iOS Form has no RN scroll view for the offset restore above, and SwiftUI
+  // can't scroll a Form to a row, so it comes back from a picker at the top.
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -408,7 +428,15 @@ export function ClimbFilterSheet({
     };
   }, []);
 
-  const detentSnapPoints = useMemo(() => [`${SHEET_DETENT_FRACTION * 100}%`], []);
+  const detentSnapPoints = useMemo(
+    () => (nativeForm ? NATIVE_FORM_DETENTS : [`${SHEET_DETENT_FRACTION * 100}%`]),
+    [nativeForm],
+  );
+  // The resting detent, so the iOS column bound follows a drag between the
+  // Form's two detents. Always 0 with the RN body's single detent.
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndexRef = useRef(activeIndex);
+  activeIndexRef.current = activeIndex;
   const snapPoints = useMemo(() => androidSafeSnapPoints(detentSnapPoints), [detentSnapPoints]);
   // On iOS the SwiftUI sheet host can propose an unbounded height, so a flex:1
   // column sizes to its CONTENT: the scroll body never overflows, so it never
@@ -417,14 +445,28 @@ export function ClimbFilterSheet({
   // column natively, so it keeps flex:1. This sheet stays on the raw native
   // sheet rather than ModalSheet because the sub-picker round trip restores
   // the scroll offset through its own scroll ref.
-  const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
-  // The sheet mounts only while open, and has one detent: nothing to raise.
+  const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints, { activeIndex });
+  // With two detents the keyboard raises the sheet to the tall one, as in
+  // ModalSheet; with the RN body's single detent there is nothing to raise.
+  // Never while suspended: a keyboard on the pushed picker route (the setters
+  // search) would otherwise present this hidden sheet over that route.
+  const raiseToKeyboardDetent = useCallback(() => {
+    if (isAwaitingReturn() || closingRef.current) return;
+    const next = keyboardDetentIndex(activeIndexRef.current, detentSnapPoints.length - 1);
+    if (next != null) sheetRef.current?.snapToIndex(next);
+  }, [detentSnapPoints.length, isAwaitingReturn]);
   const {
     keyboardOverlap,
     columnRef,
     onColumnLayout: measureColumnForKeyboard,
     onHostLayout,
-  } = useSheetKeyboardInset({ enabled: true });
+    measureAfterDetentChange,
+  } = useSheetKeyboardInset({ enabled: !suspended, onKeyboardShow: raiseToKeyboardDetent });
+  // A detent change while the keyboard is up moves the column without a layout
+  // event once the native animation ends.
+  useEffect(() => {
+    if (nativeForm) measureAfterDetentChange();
+  }, [nativeForm, activeIndex, measureAfterDetentChange]);
   // Dev-only observers for #3922 — they feed a log line, never layout. This is
   // the sheet #3776 was reported against, so it is the one to capture on an SE 3.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(sheetColumnStyle, 'ClimbFilterSheet');
@@ -609,7 +651,7 @@ export function ClimbFilterSheet({
 
   // The ONE clearing path for name, shared by the inline × and Reset (#3606) —
   // clears the field's own display state and asks the parent to clear the
-  // committed name + the top-bar/native-search-bar mirror.
+  // committed name.
   const handleClearNameField = useCallback(() => {
     if (!isCurrentPresentation() || closingRef.current) return;
     nameDraftRef.current = '';
@@ -661,10 +703,12 @@ export function ClimbFilterSheet({
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
       ...(offerBenchmarks ? [{ key: 'benchmarks' as const, label: t('mobile.filter.benchmark') }] : []),
       // My drafts and Liked are auth-only: both are the climber's own climbs.
-      ...(isAuthenticated && offerDrafts ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
+      ...((isAuthenticated || isSprayWall) && offerDrafts
+        ? [{ key: 'drafts' as const, label: isSprayWall ? t('mobile.filter.wallDrafts') : t('mobile.filter.drafts') }]
+        : []),
       ...(isAuthenticated && offerLiked ? [{ key: 'liked' as const, label: t('mobile.filter.collection.liked') }] : []),
     ],
-    [t, isAuthenticated, offerBenchmarks, offerDrafts, offerLiked],
+    [t, isAuthenticated, isSprayWall, offerBenchmarks, offerDrafts, offerLiked],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -745,6 +789,14 @@ export function ClimbFilterSheet({
     sheetRef,
     onClose: handleSheetDismiss,
   });
+  const managedOnChange = managed.onChange;
+  const handleSheetChange = useCallback(
+    (index: number) => {
+      if (index >= 0) setActiveIndex(index);
+      managedOnChange(index);
+    },
+    [managedOnChange],
+  );
 
   const handleReset = useCallback(() => {
     if (!isCurrentPresentation() || closingRef.current) return;
@@ -890,6 +942,15 @@ export function ClimbFilterSheet({
     });
   }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router, pickerPaths, handoffId]);
 
+  // Settings › Quick filters, from the iOS Form's last row. The pins are a
+  // device-wide store, so nothing is handed back: the sheet re-presents and the
+  // chip row follows the store.
+  const openQuickFilters = useCallback(() => {
+    if (!isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
+    beginSubPickerSuspend();
+    router.push(pickerPaths.quickFilters);
+  }, [beginSubPickerSuspend, isAwaitingReturn, isCurrentPresentation, router, pickerPaths]);
+
   // useSheetSubRoute re-presents the sheet when a sub-picker route pops (back
   // chevron OR swipe-back both re-focus this screen). The setters route's "Show N
   // climbs" button never gets there: its apply handoff commits the picks and
@@ -1026,6 +1087,118 @@ export function ClimbFilterSheet({
     !!sortControl?.active ||
     !!boardFit?.value;
 
+  // The iOS Form's rows, from the same state and handlers as the RN body below.
+  const formModel = nativeForm
+    ? buildClimbFilterFormModel({
+        t,
+        filters: selectedFilters,
+        isAuthenticated,
+        name: {
+          value: nameDraft,
+          placeholder: namePlaceholder ?? t('search.placeholders.climbs'),
+          clearLabel: tCommon('actions.clear'),
+          onChangeText: handleNameTextChange,
+          onClear: handleClearNameField,
+          onFocus: raiseToKeyboardDetent,
+        },
+        recent: shownSections.recent
+          ? { items: recentFilters, currentId: currentRecentId, onSelect: handleSelectRecent }
+          : null,
+        grade: {
+          rail: (
+            <GradeRangeRail
+              grades={grades ?? []}
+              bound={{ minGradeId: selectedFilters.minGrade, maxGradeId: selectedFilters.maxGrade }}
+              lastUsedGradeId={lastUsedGradeId}
+              boardName={gradesBoardName}
+              onChange={handleGradeChange}
+              contentInsetLeft={spacing[5]}
+              contentInsetRight={spacing[5]}
+            />
+          ),
+          height: gradeRailRowHeight(fontScale),
+        },
+        accuracy: { options: accuracyOptions, onSelect: handleAccuracyChange },
+        progress:
+          isAuthenticated && shownSections.progress
+            ? {
+                labels: progressLabels,
+                selected: flagsToProgress(selectedFilters),
+                onSelect: handleProgressChange,
+                showMyRating,
+              }
+            : null,
+        collection: { options: collectionOptions, selected: collectionFilter, onSelect: handleCollectionChange },
+        popularity: { onStatusChange: handleStatusChange, onBucket: handlePopularity },
+        climbType: {
+          show: showClimbTypeControl,
+          options: climbTypeOptions,
+          selected: climbTypeKey,
+          onSelect: handleClimbTypeChange,
+        },
+        showOtherAngles: showOtherAnglesControl,
+        tall: { show: showTallControl, locked: lockedDimensions.tall },
+        wide: { show: showWideControl, locked: lockedDimensions.wide },
+        showFollowing: isAuthenticated && shownSections.following,
+        showBeta: shownSections.beta,
+        boardFit: boardFit ?? null,
+        pickers: {
+          setters: {
+            show: shownSections.setters,
+            disabled: settersRowNeedsBoard && !boardConfig,
+            value:
+              selectedFilters.setter && selectedFilters.setter.length > 0
+                ? formatSetterSelection(selectedFilters.setter)
+                : t('mobile.filter.none'),
+            onPress: openSetters,
+          },
+          holds: {
+            show: shownSections.holds,
+            disabled: !boardConfig,
+            value:
+              holdFilterCount > 0
+                ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
+                : t('mobile.filter.none'),
+            onPress: openHoldFilter,
+          },
+          zone: {
+            show: shownSections.zone,
+            disabled: !boardConfig,
+            value: zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none'),
+            onPress: openZoneFilter,
+          },
+        },
+        sort: sortControl
+          ? {
+              kind: 'list',
+              options: sortControl.options,
+              selected: sortControl.selected,
+              orderOptions: sortControl.orderOptions,
+              order: sortControl.order,
+              showReshuffle: sortControl.showReshuffle,
+              onSelect: sortControl.onSelect,
+              onOrderChange: sortControl.onOrderChange,
+              onReshuffle: sortControl.onReshuffle,
+            }
+          : {
+              kind: 'climbs',
+              sortBy: selectedFilters.sortBy,
+              sortOrder: selectedFilters.sortOrder,
+              labels: sortLabels,
+              orderOptions: sortOrderOptions,
+              onSortBy: handleSortByChange,
+              onSortOrder: handleSortOrderChange,
+              onReshuffle: handleReshuffle,
+            },
+        quickFilters: {
+          label: t('mobile.filter.quickFiltersLink'),
+          footer: t('mobile.filter.quickFiltersFooter'),
+          onPress: openQuickFilters,
+        },
+        setFiltersPatch,
+      })
+    : null;
+
   return (
     <BottomSheetModal
       key={presentEpoch}
@@ -1034,7 +1207,7 @@ export function ClimbFilterSheet({
       snapPoints={snapPoints}
       enableDynamicSizing={false}
       enablePanDownToClose
-      onChange={managed.onChange}
+      onChange={handleSheetChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={[styles.indicator, { backgroundColor: systemColors.separator }]}
       backgroundStyle={iosBackgroundStyle}
@@ -1072,437 +1245,441 @@ export function ClimbFilterSheet({
           trailing={{ kind: 'forward', label: t('mobile.filter.reset'), onPress: handleReset, disabled: !anyActive }}
         />
 
-        <BottomSheetScrollView
-          ref={subRoute.scrollRef}
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={scrollContentStyle}
-          onScroll={subRoute.onScroll}
-          scrollEventThrottle={32}
-          onContentSizeChange={subRoute.onContentSizeChange}
-          // This sheet never hosted a text input before the name field below —
-          // without this, a first tap on Close/Reset/another row while the
-          // keyboard is up over the field can be swallowed (standard RN
-          // ScrollView gotcha; the tap dismisses the keyboard instead of firing).
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Flat, labeled sections — no accordions. The scroll body is one column
+        {formModel ? (
+          <ClimbFilterForm model={formModel} />
+        ) : (
+          <BottomSheetScrollView
+            ref={subRoute.scrollRef}
+            style={styles.scrollView}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={scrollContentStyle}
+            onScroll={subRoute.onScroll}
+            scrollEventThrottle={32}
+            onContentSizeChange={subRoute.onContentSizeChange}
+            // This sheet never hosted a text input before the name field below —
+            // without this, a first tap on Close/Reset/another row while the
+            // keyboard is up over the field can be swallowed (standard RN
+            // ScrollView gotcha; the tap dismisses the keyboard instead of firing).
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Flat, labeled sections — no accordions. The scroll body is one column
               child (filterSheetStyles.body) so the native sheet scrolls. */}
-          <View style={filterSheetStyles.body}>
-            {/* 1 · NAME — climb-name search term, first row so Reset has something
-                visible to reset (#3606). Committed live via onNameChange/onClearName,
-                same as the top-bar search field. */}
-            <FilterSheetSection title={t('mobile.filter.section.name')} first>
-              <FilterNameField
-                value={nameDraft}
-                onChangeText={handleNameTextChange}
-                onClear={handleClearNameField}
-                placeholder={namePlaceholder ?? t('search.placeholders.climbs')}
-                accessibilityLabel={t('mobile.filter.section.name')}
-              />
-              {/* Recent: the saved searches as chips, a tap applies one. The
+            <View style={filterSheetStyles.body}>
+              {/* 1 · NAME — the climb-name search: no list has a search field of its
+                own, so this first row is where it lives (#3606). Committed live via
+                onNameChange/onClearName. */}
+              <FilterSheetSection title={t('mobile.filter.section.name')} first>
+                <FilterNameField
+                  value={nameDraft}
+                  onChangeText={handleNameTextChange}
+                  onClear={handleClearNameField}
+                  placeholder={namePlaceholder ?? t('search.placeholders.climbs')}
+                  accessibilityLabel={t('mobile.filter.section.name')}
+                />
+                {/* Recent: the saved searches as chips, a tap applies one. The
                   row and its pin (the toolbar Recent chip's) show with no
                   history too, with a line saying where searches will appear. */}
-              {shownSections.recent ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterLabelRow
-                    label={t('mobile.search.recentFilters')}
-                    description={recentFilters.length > 0 ? undefined : t('mobile.filter.recentDescription')}
-                    {...pinProps('recent')}
-                  />
-                  {recentFilters.length > 0 ? (
-                    <RecentSearchRail
-                      recents={recentFilters}
-                      currentId={currentRecentId}
-                      onSelect={handleSelectRecent}
-                      style={filterSheetStyles.inlineRail}
-                    />
-                  ) : null}
-                </>
-              ) : null}
-            </FilterSheetSection>
-
-            {/* 2 · DIFFICULTY — grade bound + grade accuracy. */}
-            <FilterSheetSection title={t('mobile.filter.section.difficulty')}>
-              {/* The inline grade rail updates the live selection. Its own title
-                is replaced by a pinnable label row. */}
-              <FilterLabelRow label={t('mobile.filter.gradeRange')} {...pinProps('grade')} />
-              <GradeRangeRail
-                grades={grades ?? []}
-                bound={{ minGradeId: selectedFilters.minGrade, maxGradeId: selectedFilters.maxGrade }}
-                lastUsedGradeId={lastUsedGradeId}
-                boardName={gradesBoardName}
-                onChange={handleGradeChange}
-                style={filterSheetStyles.inlineRail}
-              />
-
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterLabelRow
-                label={t('mobile.filter.accuracy.label')}
-                description={t('mobile.filter.accuracy.description')}
-                {...pinProps('accuracy')}
-              />
-              <View style={filterSheetStyles.controlGap} />
-              <SegmentedControl
-                options={accuracyOptions}
-                selectedKey={accuracyValue}
-                onSelect={handleAccuracyChange}
-                accessibilityLabel={t('mobile.filter.accuracy.label')}
-              />
-            </FilterSheetSection>
-
-            {/* 3 · YOUR PROGRESS — auth-only; the per-user tick-flag selector plus
-                the "My drafts" toggle (old Status 'drafts', with its side-effects). */}
-            {isAuthenticated && shownSections.progress ? (
-              <FilterSheetSection title={t('mobile.filter.progress.label')} {...pinProps('progress')}>
-                {/* A single-select over the four per-user tick flags. "Projects" =
-                  attempted-but-not-sent; "Unsent" = the old "hide climbs I've sent". */}
-                <FilterChipGroup>
-                  {PROGRESS_FILTER_VALUES.map((value) => (
-                    <FilterChip
-                      key={value}
-                      label={progressLabels[value]}
-                      value={value}
-                      selected={flagsToProgress(selectedFilters) === value}
-                      onPress={handleProgressChange}
-                    />
-                  ))}
-                </FilterChipGroup>
-
-                {/* My rating — the stars you gave, at the angle you're browsing.
-                    The star row keeps climbs you never rated; the switch drops them.
-                    A list whose rows all carry your stars (Five Stars) hides it,
-                    unless a rating filter is already on. */}
-                {showMyRating ? (
+                {shownSections.recent ? (
                   <>
                     <View style={filterSheetStyles.subsectionGap} />
                     <FilterLabelRow
-                      label={t('mobile.filter.myRating')}
-                      description={t('mobile.filter.myRatingDescription')}
+                      label={t('mobile.search.recentFilters')}
+                      description={recentFilters.length > 0 ? undefined : t('mobile.filter.recentDescription')}
+                      {...pinProps('recent')}
                     />
-                    <View style={filterSheetStyles.ratingRow}>
-                      <FilterChip
-                        label={t('mobile.filter.anyRating')}
-                        value={undefined}
-                        selected={selectedFilters.minUserRating == null}
-                        onPress={handleClearMyRating}
+                    {recentFilters.length > 0 ? (
+                      <RecentSearchRail
+                        recents={recentFilters}
+                        currentId={currentRecentId}
+                        onSelect={handleSelectRecent}
+                        style={filterSheetStyles.inlineRail}
                       />
-                      <StarRating
-                        value={selectedFilters.minUserRating}
-                        onChange={(value) => setFiltersPatch({ minUserRating: value })}
-                        clearValue={undefined}
-                      />
-                    </View>
-                    <SwitchRow
-                      label={t('mobile.filter.onlyRatedByMe')}
-                      value={!!selectedFilters.onlyRatedByMe}
-                      onValueChange={(value) => setFiltersPatch({ onlyRatedByMe: value || undefined })}
-                    />
+                    ) : null}
                   </>
                 ) : null}
               </FilterSheetSection>
-            ) : null}
 
-            {/* 4 · QUALITY — benchmarks, min rating, popularity (incl. Unrepeated). */}
-            <FilterSheetSection title={t('mobile.filter.section.quality')}>
-              {/* Collection — Benchmarks, My drafts and Liked are mutually
+              {/* 2 · DIFFICULTY — grade bound + grade accuracy. */}
+              <FilterSheetSection title={t('mobile.filter.section.difficulty')}>
+                {/* The inline grade rail updates the live selection. Its own title
+                is replaced by a pinnable label row. */}
+                <FilterLabelRow label={t('mobile.filter.gradeRange')} {...pinProps('grade')} />
+                <GradeRangeRail
+                  grades={grades ?? []}
+                  bound={{ minGradeId: selectedFilters.minGrade, maxGradeId: selectedFilters.maxGrade }}
+                  lastUsedGradeId={lastUsedGradeId}
+                  boardName={gradesBoardName}
+                  onChange={handleGradeChange}
+                  style={filterSheetStyles.inlineRail}
+                />
+
+                <View style={filterSheetStyles.subsectionGap} />
+                <FilterLabelRow
+                  label={t('mobile.filter.accuracy.label')}
+                  description={t('mobile.filter.accuracy.description')}
+                  {...pinProps('accuracy')}
+                />
+                <View style={filterSheetStyles.controlGap} />
+                <SegmentedControl
+                  options={accuracyOptions}
+                  selectedKey={accuracyValue}
+                  onSelect={handleAccuracyChange}
+                  accessibilityLabel={t('mobile.filter.accuracy.label')}
+                />
+              </FilterSheetSection>
+
+              {/* 3 · YOUR PROGRESS — auth-only; the per-user tick-flag selector plus
+                the "My drafts" toggle (old Status 'drafts', with its side-effects). */}
+              {isAuthenticated && shownSections.progress ? (
+                <FilterSheetSection title={t('mobile.filter.progress.label')} {...pinProps('progress')}>
+                  {/* A single-select over the four per-user tick flags. "Projects" =
+                  attempted-but-not-sent; "Unsent" = the old "hide climbs I've sent". */}
+                  <FilterChipGroup>
+                    {PROGRESS_FILTER_VALUES.map((value) => (
+                      <FilterChip
+                        key={value}
+                        label={progressLabels[value]}
+                        value={value}
+                        selected={flagsToProgress(selectedFilters) === value}
+                        onPress={handleProgressChange}
+                      />
+                    ))}
+                  </FilterChipGroup>
+
+                  {/* My rating — the stars you gave, at the angle you're browsing.
+                    The star row keeps climbs you never rated; the switch drops them.
+                    A list whose rows all carry your stars (Five Stars) hides it,
+                    unless a rating filter is already on. */}
+                  {showMyRating ? (
+                    <>
+                      <View style={filterSheetStyles.subsectionGap} />
+                      <FilterLabelRow
+                        label={t('mobile.filter.myRating')}
+                        description={t('mobile.filter.myRatingDescription')}
+                      />
+                      <View style={filterSheetStyles.ratingRow}>
+                        <FilterChip
+                          label={t('mobile.filter.anyRating')}
+                          value={undefined}
+                          selected={selectedFilters.minUserRating == null}
+                          onPress={handleClearMyRating}
+                        />
+                        <StarRating
+                          value={selectedFilters.minUserRating}
+                          onChange={(value) => setFiltersPatch({ minUserRating: value })}
+                          clearValue={undefined}
+                        />
+                      </View>
+                      <SwitchRow
+                        label={t('mobile.filter.onlyRatedByMe')}
+                        value={!!selectedFilters.onlyRatedByMe}
+                        onValueChange={(value) => setFiltersPatch({ onlyRatedByMe: value || undefined })}
+                      />
+                    </>
+                  ) : null}
+                </FilterSheetSection>
+              ) : null}
+
+              {/* 4 · QUALITY — benchmarks, min rating, popularity (incl. Unrepeated). */}
+              <FilterSheetSection title={t('mobile.filter.section.quality')}>
+                {/* Collection — Benchmarks, My drafts and Liked are mutually
                   exclusive. Personal collections are offered only when signed in. */}
-              <FilterLabelRow label={t('mobile.filter.collection.label')} {...pinProps('collection')} />
-              <View style={filterSheetStyles.controlGap} />
-              <SegmentedControl
-                options={collectionOptions}
-                selectedKey={collectionFilter}
-                onSelect={handleCollectionChange}
-                accessibilityLabel={t('mobile.filter.collection.label')}
-              />
-
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterLabelRow label={t('mobile.filter.minRating')} {...pinProps('rating')} />
-              <View style={filterSheetStyles.ratingRow}>
-                <FilterChip
-                  label={t('mobile.filter.anyRating')}
-                  value={undefined}
-                  selected={selectedFilters.minRating == null}
-                  onPress={handleClearMinRating}
+                <FilterLabelRow label={t('mobile.filter.collection.label')} {...pinProps('collection')} />
+                <View style={filterSheetStyles.controlGap} />
+                <SegmentedControl
+                  options={collectionOptions}
+                  selectedKey={collectionFilter}
+                  onSelect={handleCollectionChange}
+                  accessibilityLabel={t('mobile.filter.collection.label')}
                 />
-                <StarRating
-                  value={selectedFilters.minRating}
-                  onChange={(value) => setFiltersPatch({ minRating: value })}
-                  clearValue={undefined}
-                />
-              </View>
 
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterLabelRow label={t('mobile.filter.popularity')} {...pinProps('popularity')} />
-              {/* "Unrepeated" (status='projects') leads the group, then Any + the
+                <View style={filterSheetStyles.subsectionGap} />
+                <FilterLabelRow label={t('mobile.filter.minRating')} {...pinProps('rating')} />
+                <View style={filterSheetStyles.ratingRow}>
+                  <FilterChip
+                    label={t('mobile.filter.anyRating')}
+                    value={undefined}
+                    selected={selectedFilters.minRating == null}
+                    onPress={handleClearMinRating}
+                  />
+                  <StarRating
+                    value={selectedFilters.minRating}
+                    onChange={(value) => setFiltersPatch({ minRating: value })}
+                    clearValue={undefined}
+                  />
+                </View>
+
+                <View style={filterSheetStyles.subsectionGap} />
+                <FilterLabelRow label={t('mobile.filter.popularity')} {...pinProps('popularity')} />
+                {/* "Unrepeated" (status='projects') leads the group, then Any + the
                 numeric min-ascents buckets. The whole row reads as single-select:
                 picking any bucket clears projects (see handlePopularity), and the
                 Unrepeated chip is selected iff status==='projects'. */}
-              <FilterChipGroup>
-                <FilterChip
-                  label={t('mobile.filter.popularityUnrepeated')}
-                  value="projects"
-                  selected={selectedFilters.status === 'projects'}
-                  onPress={handleStatusChange}
-                />
-                {POPULARITY_BUCKETS.map((bucket) => (
+                <FilterChipGroup>
                   <FilterChip
-                    key={bucket ?? 'any'}
-                    label={popularityLabel(bucket)}
-                    value={bucket}
-                    selected={selectedFilters.minAscents === bucket && selectedFilters.status !== 'projects'}
-                    onPress={handlePopularity}
+                    label={t('mobile.filter.popularityUnrepeated')}
+                    value="projects"
+                    selected={selectedFilters.status === 'projects'}
+                    onPress={handleStatusChange}
                   />
-                ))}
-              </FilterChipGroup>
-            </FilterSheetSection>
+                  {POPULARITY_BUCKETS.map((bucket) => (
+                    <FilterChip
+                      key={bucket ?? 'any'}
+                      label={popularityLabel(bucket)}
+                      value={bucket}
+                      selected={selectedFilters.minAscents === bucket && selectedFilters.status !== 'projects'}
+                      onPress={handlePopularity}
+                    />
+                  ))}
+                </FilterChipGroup>
+              </FilterSheetSection>
 
-            {/* 5 · THE CLIMB — type, angle, shape, setters, holds, zones, beta. */}
-            <FilterSheetSection title={t('mobile.filter.section.theClimb')}>
-              {showClimbTypeControl ? (
-                <>
-                  <FilterLabelRow label={t('mobile.filter.climbType.label')} {...pinProps('climbType')} />
-                  <View style={filterSheetStyles.controlGap} />
-                  <SegmentedControl
-                    options={climbTypeOptions}
-                    selectedKey={climbTypeKey}
-                    onSelect={handleClimbTypeChange}
-                    textVariant="footnote"
-                    trackColor={trackColor}
-                  />
-                </>
-              ) : null}
+              {/* 5 · THE CLIMB — type, angle, shape, setters, holds, zones, beta. */}
+              <FilterSheetSection title={t('mobile.filter.section.theClimb')}>
+                {showClimbTypeControl ? (
+                  <>
+                    <FilterLabelRow label={t('mobile.filter.climbType.label')} {...pinProps('climbType')} />
+                    <View style={filterSheetStyles.controlGap} />
+                    <SegmentedControl
+                      options={climbTypeOptions}
+                      selectedKey={climbTypeKey}
+                      onSelect={handleClimbTypeChange}
+                      textVariant="footnote"
+                      trackColor={trackColor}
+                    />
+                  </>
+                ) : null}
 
-              {showOtherAnglesControl ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <SwitchRow
-                    label={t('mobile.filter.otherAngles')}
-                    description={t('mobile.filter.otherAnglesDescription')}
-                    value={!!selectedFilters.includeOtherAngles}
-                    onValueChange={(value) => setFiltersPatch({ includeOtherAngles: value || undefined })}
-                  />
-                </>
-              ) : null}
+                {showOtherAnglesControl ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <SwitchRow
+                      label={t('mobile.filter.otherAngles')}
+                      description={t('mobile.filter.otherAnglesDescription')}
+                      value={!!selectedFilters.includeOtherAngles}
+                      onValueChange={(value) => setFiltersPatch({ includeOtherAngles: value || undefined })}
+                    />
+                  </>
+                ) : null}
 
-              {/* Tall / Wide — shown wherever a shorter/narrower sibling size exists
+                {/* Tall / Wide — shown wherever a shorter/narrower sibling size exists
                   (Kilter homewall, Tension Board 2, Decoy, Grasshopper); each only
                   where it applies. Matches the chip row so the filter stays
                   reachable here even when its chip is unpinned. They're separate
                   chips, so each gets a header naming its chip with the pin (the
                   Beta videos layout), keeping the switches aligned with the rest. */}
-              {showTallControl ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterLabelRow label={t('mobile.search.chips.tall')} {...pinProps('tall')} />
-                  {/* A locked Tall (iOS chip-row lock) reads on and can't be switched
+                {showTallControl ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterLabelRow label={t('mobile.search.chips.tall')} {...pinProps('tall')} />
+                    {/* A locked Tall (iOS chip-row lock) reads on and can't be switched
                       off here; its hint says how to unlock it from the chip. */}
-                  <SwitchRow
-                    label={t('mobile.filter.tall')}
-                    description={
-                      lockedDimensions.tall ? t('mobile.filter.tallLockedHint') : t('mobile.filter.tallDescription')
-                    }
-                    value={lockedDimensions.tall || !!selectedFilters.onlyTallClimbs}
-                    disabled={lockedDimensions.tall}
-                    onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
-                  />
-                </>
-              ) : null}
-              {showWideControl ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterLabelRow label={t('mobile.search.chips.wide')} {...pinProps('wide')} />
-                  <SwitchRow
-                    label={t('mobile.filter.wide')}
-                    description={
-                      lockedDimensions.wide ? t('mobile.filter.wideLockedHint') : t('mobile.filter.wideDescription')
-                    }
-                    value={lockedDimensions.wide || !!selectedFilters.onlyWideClimbs}
-                    disabled={lockedDimensions.wide}
-                    onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
-                  />
-                </>
-              ) : null}
+                    <SwitchRow
+                      label={t('mobile.filter.tall')}
+                      description={
+                        lockedDimensions.tall ? t('mobile.filter.tallLockedHint') : t('mobile.filter.tallDescription')
+                      }
+                      value={lockedDimensions.tall || !!selectedFilters.onlyTallClimbs}
+                      disabled={lockedDimensions.tall}
+                      onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
+                    />
+                  </>
+                ) : null}
+                {showWideControl ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterLabelRow label={t('mobile.search.chips.wide')} {...pinProps('wide')} />
+                    <SwitchRow
+                      label={t('mobile.filter.wide')}
+                      description={
+                        lockedDimensions.wide ? t('mobile.filter.wideLockedHint') : t('mobile.filter.wideDescription')
+                      }
+                      value={lockedDimensions.wide || !!selectedFilters.onlyWideClimbs}
+                      disabled={lockedDimensions.wide}
+                      onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
+                    />
+                  </>
+                ) : null}
 
-              {shownSections.setters ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterTappableRow
-                    label={t('mobile.filter.setters')}
-                    value={
-                      selectedFilters.setter && selectedFilters.setter.length > 0
-                        ? formatSetterSelection(selectedFilters.setter)
-                        : t('mobile.filter.none')
-                    }
-                    onPress={openSetters}
-                    disabled={settersRowNeedsBoard && !boardConfig}
-                  />
-                </>
-              ) : null}
+                {shownSections.setters ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterTappableRow
+                      label={t('mobile.filter.setters')}
+                      value={
+                        selectedFilters.setter && selectedFilters.setter.length > 0
+                          ? formatSetterSelection(selectedFilters.setter)
+                          : t('mobile.filter.none')
+                      }
+                      onPress={openSetters}
+                      disabled={settersRowNeedsBoard && !boardConfig}
+                    />
+                  </>
+                ) : null}
 
-              {/* Following sits under the Setters row it belongs with; without
+                {/* Following sits under the Setters row it belongs with; without
                   that row it takes the usual gap instead. */}
-              {isAuthenticated && shownSections.following && shownSections.setters ? (
-                <View style={styles.followingSection}>{followingSwitch}</View>
-              ) : null}
-              {isAuthenticated && shownSections.following && !shownSections.setters ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  {followingSwitch}
-                </>
-              ) : null}
+                {isAuthenticated && shownSections.following && shownSections.setters ? (
+                  <View style={styles.followingSection}>{followingSwitch}</View>
+                ) : null}
+                {isAuthenticated && shownSections.following && !shownSections.setters ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    {followingSwitch}
+                  </>
+                ) : null}
 
-              {shownSections.holds ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterTappableRow
-                    label={t('mobile.holdFilter.title')}
-                    value={
-                      holdFilterCount > 0
-                        ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
-                        : t('mobile.filter.none')
-                    }
-                    onPress={openHoldFilter}
-                    disabled={!boardConfig}
-                  />
-                </>
-              ) : null}
+                {shownSections.holds ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterTappableRow
+                      label={t('mobile.holdFilter.title')}
+                      value={
+                        holdFilterCount > 0
+                          ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
+                          : t('mobile.filter.none')
+                      }
+                      onPress={openHoldFilter}
+                      disabled={!boardConfig}
+                    />
+                  </>
+                ) : null}
 
-              {shownSections.zone ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterTappableRow
-                    label={t('mobile.zoneFilter.title')}
-                    value={zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
-                    onPress={openZoneFilter}
-                    disabled={!boardConfig}
-                  />
-                </>
-              ) : null}
+                {shownSections.zone ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterTappableRow
+                      label={t('mobile.zoneFilter.title')}
+                      value={zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
+                      onPress={openZoneFilter}
+                      disabled={!boardConfig}
+                    />
+                  </>
+                ) : null}
 
-              {/* Beta videos — a content property of the climb, not a quality signal.
+                {/* Beta videos — a content property of the climb, not a quality signal.
                   A group header carries the pin; the switch uses the descriptive line
                   as its label so "Beta videos" isn't worded twice. */}
-              {shownSections.beta ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterLabelRow label={t('mobile.filter.betaVideos')} {...pinProps('beta')} />
-                  <SwitchRow
-                    label={t('mobile.filter.betaVideosDescription')}
-                    value={!!selectedFilters.onlyWithBetaVideos}
-                    onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
-                  />
-                </>
-              ) : null}
+                {shownSections.beta ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterLabelRow label={t('mobile.filter.betaVideos')} {...pinProps('beta')} />
+                    <SwitchRow
+                      label={t('mobile.filter.betaVideosDescription')}
+                      value={!!selectedFilters.onlyWithBetaVideos}
+                      onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
+                    />
+                  </>
+                ) : null}
 
-              {/* Fits my board — a playlist-only lever: hides the climbs set for
+                {/* Fits my board — a playlist-only lever: hides the climbs set for
                   another board or size, the rows the list dims. */}
-              {boardFit ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterLabelRow label={t('mobile.filter.boardFit.label')} {...pinProps('boardFit')} />
-                  <SwitchRow
-                    label={t('mobile.filter.boardFit.switch')}
-                    description={t('mobile.filter.boardFit.description')}
-                    value={boardFit.value}
-                    onValueChange={boardFit.onChange}
-                  />
-                </>
-              ) : null}
-            </FilterSheetSection>
+                {boardFit ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterLabelRow label={t('mobile.filter.boardFit.label')} {...pinProps('boardFit')} />
+                    <SwitchRow
+                      label={t('mobile.filter.boardFit.switch')}
+                      description={t('mobile.filter.boardFit.description')}
+                      value={boardFit.value}
+                      onValueChange={boardFit.onChange}
+                    />
+                  </>
+                ) : null}
+              </FilterSheetSection>
 
-            {/* 6 · SORT — sort key + direction (or reshuffle for random). */}
-            <FilterSheetSection title={t('mobile.filter.section.sort')}>
-              <FilterLabelRow label={t('mobile.filter.sortBy')} {...pinProps('sort')} />
-              {/* Flex-wrap (matching the popularity/rating chip rows above), not a
+              {/* 6 · SORT — sort key + direction (or reshuffle for random). */}
+              <FilterSheetSection title={t('mobile.filter.section.sort')}>
+                <FilterLabelRow label={t('mobile.filter.sortBy')} {...pinProps('sort')} />
+                {/* Flex-wrap (matching the popularity/rating chip rows above), not a
                   horizontal ScrollView: a gesture-handler ScrollView nested in the
                   native bottom sheet collapsed the chip row's height on iOS and
                   clipped the labels. SORT_OPTIONS is short, so wrapping is fine. */}
-              {sortControl ? (
-                // A list's own sorts: its keys, then its directions in words
-                // ("Easiest first"), Shuffle again for Random, nothing for a
-                // one-direction key such as the playlist's own order.
-                <>
+                {sortControl ? (
+                  // A list's own sorts: its keys, then its directions in words
+                  // ("Easiest first"), Shuffle again for Random, nothing for a
+                  // one-direction key such as the playlist's own order.
+                  <>
+                    <FilterChipGroup>
+                      {sortControl.options.map((option) => (
+                        <FilterChip
+                          key={option.key}
+                          label={option.label}
+                          value={option.key}
+                          selected={sortControl.selected === option.key}
+                          onPress={sortControl.onSelect}
+                        />
+                      ))}
+                    </FilterChipGroup>
+                    {sortControl.showReshuffle ? (
+                      <>
+                        <View style={filterSheetStyles.subsectionGap} />
+                        <Button
+                          title={t('mobile.filter.sort.reshuffle')}
+                          onPress={sortControl.onReshuffle}
+                          variant="tonal"
+                          size="medium"
+                          icon="shuffle"
+                        />
+                      </>
+                    ) : sortControl.orderOptions ? (
+                      <>
+                        <View style={filterSheetStyles.subsectionGap} />
+                        <FilterLabelRow label={t('mobile.filter.sortOrderLabel')} />
+                        <View style={filterSheetStyles.controlGap} />
+                        <SegmentedControl
+                          options={sortControl.orderOptions}
+                          selectedKey={sortControl.order}
+                          onSelect={sortControl.onOrderChange}
+                          accessibilityLabel={t('mobile.filter.sortOrderLabel')}
+                        />
+                      </>
+                    ) : null}
+                  </>
+                ) : (
                   <FilterChipGroup>
-                    {sortControl.options.map((option) => (
+                    {SORT_OPTIONS.map((option) => (
                       <FilterChip
-                        key={option.key}
-                        label={option.label}
-                        value={option.key}
-                        selected={sortControl.selected === option.key}
-                        onPress={sortControl.onSelect}
+                        key={option}
+                        label={sortLabels[option]}
+                        value={option}
+                        selected={selectedFilters.sortBy === option}
+                        onPress={handleSortByChange}
                       />
                     ))}
                   </FilterChipGroup>
-                  {sortControl.showReshuffle ? (
-                    <>
-                      <View style={filterSheetStyles.subsectionGap} />
-                      <Button
-                        title={t('mobile.filter.sort.reshuffle')}
-                        onPress={sortControl.onReshuffle}
-                        variant="tonal"
-                        size="medium"
-                        icon="shuffle"
-                      />
-                    </>
-                  ) : sortControl.orderOptions ? (
-                    <>
-                      <View style={filterSheetStyles.subsectionGap} />
-                      <FilterLabelRow label={t('mobile.filter.sortOrderLabel')} />
-                      <View style={filterSheetStyles.controlGap} />
-                      <SegmentedControl
-                        options={sortControl.orderOptions}
-                        selectedKey={sortControl.order}
-                        onSelect={sortControl.onOrderChange}
-                        accessibilityLabel={t('mobile.filter.sortOrderLabel')}
-                      />
-                    </>
-                  ) : null}
-                </>
-              ) : (
-                <FilterChipGroup>
-                  {SORT_OPTIONS.map((option) => (
-                    <FilterChip
-                      key={option}
-                      label={sortLabels[option]}
-                      value={option}
-                      selected={selectedFilters.sortBy === option}
-                      onPress={handleSortByChange}
-                    />
-                  ))}
-                </FilterChipGroup>
-              )}
-              {/* For random, direction is meaningless — swap the asc/desc control for
+                )}
+                {/* For random, direction is meaningless — swap the asc/desc control for
                   an explicit reshuffle button (re-tapping the Random chip also works). */}
-              {sortControl ? null : selectedFilters.sortBy === 'random' ? (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <Button
-                    title={t('mobile.filter.sort.reshuffle')}
-                    onPress={handleReshuffle}
-                    variant="tonal"
-                    size="medium"
-                    icon="shuffle"
-                  />
-                </>
-              ) : (
-                <>
-                  <View style={filterSheetStyles.subsectionGap} />
-                  <FilterLabelRow label={t('mobile.filter.sortOrderLabel')} />
-                  <View style={filterSheetStyles.controlGap} />
-                  <SegmentedControl
-                    options={sortOrderOptions}
-                    selectedKey={selectedFilters.sortOrder}
-                    onSelect={handleSortOrderChange}
-                    textVariant="footnote"
-                    trackColor={trackColor}
-                  />
-                </>
-              )}
-            </FilterSheetSection>
-          </View>
-        </BottomSheetScrollView>
+                {sortControl ? null : selectedFilters.sortBy === 'random' ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <Button
+                      title={t('mobile.filter.sort.reshuffle')}
+                      onPress={handleReshuffle}
+                      variant="tonal"
+                      size="medium"
+                      icon="shuffle"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterLabelRow label={t('mobile.filter.sortOrderLabel')} />
+                    <View style={filterSheetStyles.controlGap} />
+                    <SegmentedControl
+                      options={sortOrderOptions}
+                      selectedKey={selectedFilters.sortOrder}
+                      onSelect={handleSortOrderChange}
+                      textVariant="footnote"
+                      trackColor={trackColor}
+                    />
+                  </>
+                )}
+              </FilterSheetSection>
+            </View>
+          </BottomSheetScrollView>
+        )}
       </View>
     </BottomSheetModal>
   );

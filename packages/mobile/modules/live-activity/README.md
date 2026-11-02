@@ -10,7 +10,7 @@ was rewritten as Expo `Module` / `AsyncFunction` / `Events` calls.
 
 | Class                | JS lookup                                     | What it wraps                                                                                                                                                   |
 | -------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BoardBleModule`     | `requireOptionalNativeModule('BoardBle')`     | The `BoardBleManager` singleton — scan, connect, write, configureBoard, plus `scanResult` and `disconnected` listener events                                    |
+| `BoardBleModule`     | `requireOptionalNativeModule('BoardBle')`     | The `BoardBleManager` singleton — scan, connect, write, configureBoard, the Bluetooth authorization read and request, plus `scanResult` and `disconnected` listener events |
 | `LiveActivityModule` | `requireOptionalNativeModule('LiveActivity')` | The Live Activity lifecycle (start/end/update), push-token registration with the backend, and the widget `queueNavigate` event the Darwin notification surfaces |
 
 Both classes register independently via `expo-module.config.json`. JS
@@ -32,6 +32,47 @@ binary, so they live in the same Expo Module.
 Side benefit: iOS BLE traffic that goes through the JS adapter also runs
 through the same Swift singleton, so the App Group's queue state and
 `BoardBleManager.configuration` stay coherent for the widget intent path.
+
+## Board configuration and reconnect identity
+
+Before opening the device picker, JS calls `prepareBoardConnection` with the
+selected board's config key. Native forgets the previous pairing, cancels its
+pending work, and persists the new configuration as unbound without lighting
+the wall. Preparation returns a token that the adapter passes to
+`connectPreparedBoard` after selection. Only that current attempt reaching
+write-ready state can bind the configuration to a peripheral UUID.
+
+The persisted record keeps configuration, config key, and bound UUID together.
+Live Activity reconnect, CoreBluetooth restoration, recovery, and writes require
+that association. A cancelled picker or failed connection leaves it unbound;
+the climber must connect successfully in the app before the Live Activity bulb
+can reconnect. Older saved configurations also need one in-app connection.
+`configureBoard` updates require the bound config key and device UUID, and
+cannot create a pairing. Buffered connected events trigger a fresh native
+snapshot query before JS adopts a link, including between identical boards
+whose advertised names carry no serial.
+
+The complete guard needs a new iOS binary. JS feature-detects both preparation
+methods; on older binaries it explicitly disconnects the native singleton
+before staging configuration. That mitigation closes the ordinary failed
+connect path, but cannot add the new restoration guard through an OTA update.
+
+## When iOS asks for Bluetooth
+
+Expo creates `BoardBleModule` at app start, and its `OnCreate` is the first
+touch of `BoardBleManager.shared`. The manager creates its `CBCentralManager`
+there only when `CBManager.authorization` is already answered (allowed,
+denied or restricted), because CoreBluetooth state restoration needs a central
+with our restore identifier during launch. While the answer is
+`.notDetermined`, creating a central would show the system alert before
+sign-in, so the manager waits: the first scan creates it, or JS asks
+explicitly through `requestBluetoothAuthorization` at the scan or connect tap
+and resolves once the climber answers. Nothing can be restored without
+permission, so deferring loses nothing. `getBluetoothAuthorization` reads the
+answer with no side effects; JS gates on both functions existing, so OTA JS on
+an older binary keeps that binary's ask-at-launch behaviour. The JS side of the
+same rule (ble-plx's manager is created on first use) is in
+`src/lib/ble/bluetooth-authorization.ts`.
 
 ## Widget extension target — duplicated files
 

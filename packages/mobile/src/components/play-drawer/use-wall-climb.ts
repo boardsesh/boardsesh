@@ -8,14 +8,14 @@
 //
 // It reads the NARROW board-presence selector, so the drawer re-renders when the
 // lit climb changes and not on holder / stats / undo-target churn (the same
-// reason `useWallClimbIfDistinct` uses it). And it reads it through `useContext`
+// reason `useLiveWallClimb` uses it). And it reads it through `useContext`
 // rather than `useBoardPresenceWallClimb()`, which throws with no provider in
 // scope: the drawer can render outside that subtree, and a dark wall is the
 // honest answer there — never a crash. Same call the sibling `useBoardDriver`
 // makes, for the same reason.
 
 import { useContext, useMemo } from 'react';
-import { BoardPresenceWallClimbContext } from '@boardsesh/board-presence-react';
+import { BoardPresenceClearedClimbContext, BoardPresenceWallClimbContext } from '@boardsesh/board-presence-react';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 
 export type WallClimb = {
@@ -46,4 +46,16 @@ export function useWallClimb(): WallClimb {
     if (!enabled || boardId === null || !wallClimb) return DARK_WALL;
     return { uuid: wallClimb.climbUuid, name: wallClimb.name ?? null, sentAt: wallClimb.sentAt ?? null };
   }, [enabled, boardId, wallClimb]);
+}
+
+/**
+ * The climb the feed says was turned off with Turn off all lights and not lit
+ * since (#7015), or `null`. This is how a crewmate's phone learns its current
+ * climb went dark: the clearing phone has its own store (`wall-cleared-store`).
+ * Same gating and non-throwing read as `useWallClimb`.
+ */
+export function usePresenceClearedClimbUuid(): string | null {
+  const { enabled, boardId } = useBoardPresenceControls();
+  const clearedClimbUuid = useContext(BoardPresenceClearedClimbContext) ?? null;
+  return enabled && boardId !== null ? clearedClimbUuid : null;
 }

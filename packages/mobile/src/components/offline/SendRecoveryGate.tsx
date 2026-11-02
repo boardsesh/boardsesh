@@ -1,7 +1,7 @@
 import { getConsentSnapshot } from '../../lib/consent-state';
 import { useConsentSettled } from '../../lib/consent-hooks';
 import { useEffect, useRef } from 'react';
-import { InteractionManager } from 'react-native';
+import { scheduleIdleTask } from '../../lib/schedule-idle-task';
 import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { clearDeadLetterRecoveryNotice, readDeadLetterRecoveryNotice } from '@boardsesh/offline-sync';
@@ -87,7 +87,7 @@ export function SendRecoveryGate() {
     if (preflight === 'none') return;
 
     let cancelled = false;
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = scheduleIdleTask(() => {
       void (async () => {
         const db = getDatabaseHandle();
         // No handle means the schema-ready flag and the connection disagree, which

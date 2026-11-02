@@ -373,10 +373,16 @@ export function samePlaylistTrackResume(
  * Clearing a resume is the walk coming back to the list from Up next, so the
  * cleared one is kept as `detour` for Previous to retrace. Setting a resume
  * starts a new stretch of Up next and drops the old detour.
+ *
+ * `steppedOffQueueItemUuid` is the queue entry the step leaves. When the step
+ * clears a resume, that is the last Up next climb the walk played, and the
+ * detour records it (`lastUpNextQueueItemUuid`, issue #7227) so Previous
+ * retraces from there, not from whatever is queued last by then.
  */
 export function withPlaylistTrackResume(
   source: PlaylistSuggestionSource,
   resume: PlaylistTrackResume | null,
+  steppedOffQueueItemUuid?: string,
 ): PlaylistSuggestionSource {
   if (samePlaylistTrackResume(source.resume, resume)) return source;
   const next: PlaylistSuggestionSource = { ...source };
@@ -384,9 +390,37 @@ export function withPlaylistTrackResume(
     next.resume = resume;
     delete next.detour;
   } else {
-    if (source.resume) next.detour = source.resume;
+    if (source.resume) {
+      const { climbUuid, queueItemUuid } = source.resume;
+      next.detour =
+        steppedOffQueueItemUuid && steppedOffQueueItemUuid !== queueItemUuid
+          ? { climbUuid, queueItemUuid, lastUpNextQueueItemUuid: steppedOffQueueItemUuid }
+          : { climbUuid, queueItemUuid };
+    }
     delete next.resume;
   }
+  return keepPreparedIndex(source, next);
+}
+
+/**
+ * `source` as the list a look off the climb on the wall carries
+ * ({@link PlaylistSuggestionSource.lookOffWall}, issue #7227). `source` itself
+ * when it already says so. The copy keeps the source's prepared index.
+ */
+export function asLookOffWall(source: PlaylistSuggestionSource): PlaylistSuggestionSource {
+  if (source.lookOffWall) return source;
+  return keepPreparedIndex(source, { ...source, lookOffWall: true });
+}
+
+/**
+ * `source` without a look's mark, as the queue holds a list that went up
+ * (issue #7227): the mark says how a preview began, which a committed list
+ * never is. `source` itself when it has no mark.
+ */
+export function withoutLookOffWall(source: PlaylistSuggestionSource): PlaylistSuggestionSource {
+  if (!source.lookOffWall) return source;
+  const next: PlaylistSuggestionSource = { ...source };
+  delete next.lookOffWall;
   return keepPreparedIndex(source, next);
 }
 
@@ -399,7 +433,11 @@ export function withPlaylistTrackPlace(
   source: PlaylistSuggestionSource,
   held: PlaylistSuggestionSource,
 ): PlaylistSuggestionSource {
-  if (samePlaylistTrackResume(source.resume, held.resume) && samePlaylistTrackResume(source.detour, held.detour)) {
+  if (
+    samePlaylistTrackResume(source.resume, held.resume) &&
+    samePlaylistTrackResume(source.detour, held.detour) &&
+    source.detour?.lastUpNextQueueItemUuid === held.detour?.lastUpNextQueueItemUuid
+  ) {
     return source;
   }
   const next: PlaylistSuggestionSource = { ...source };

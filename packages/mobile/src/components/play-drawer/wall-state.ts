@@ -1,7 +1,8 @@
 /**
- * Pure state resolvers for the play drawer's wall-state chrome: which state the
- * header pill shows, what the action bar's secondary row is, and whether a
- * commit has to ask before it takes the wall.
+ * Pure state resolvers for the play drawer's wall-state chrome: what the wall
+ * is doing (for the screen-reader announcements), whether the header shows the
+ * back chip, what the browse latch commits, and whether a commit has to ask
+ * before it takes the wall.
  *
  * Kept out of the components (like `play-drawer-layout.ts`) so every ladder is
  * table-testable without rendering PlayDrawer — its dependency graph makes a
@@ -16,10 +17,14 @@
  */
 
 /**
- * What the drawer header's leading slot says.
+ * What the wall is doing, as the climber's swipes see it. The header used to
+ * draw all three as a chip; since #7000 it draws only the back chip
+ * (`resolveHeaderPillState`) and the wall button says whether the climb is lit.
+ * The states still drive the screen-reader announcements
+ * (`resolveWallStateAnnouncement`).
  *
  * - `'onWall'` — the displayed climb is the one lit on the board right now.
- * - `'live'`   — the next navigation drives the wall (or the shared queue).
+ * - `'live'`   — a wall is being driven and the next navigation lights it.
  * - `'browsing'` — a browse latch is up: looking around, wall untouched.
  * - `null` — no wall stakes at all (plain solo, or the signed-out reader), so
  *   the slot stays empty exactly as it is today and the header's mirrored-flank
@@ -52,20 +57,50 @@ export type WallPillStateInput = {
    * next climb goes up on the wall" to a climber with nothing connected at all.
    */
   wallDriven: boolean;
+  /**
+   * The climb on screen is the climber's current climb and it is dark: the
+   * #4979 hold kept it off, or "Turn off all lights" cleared it. The presence
+   * feed can still name that climb as the wall's, so without this the pill
+   * would say On the wall (or Live) over a dark board while the "Lit on the
+   * wall" label is missing. Only the phone holding the link knows this, so a crew phone
+   * can still read the climb as on the wall.
+   */
+  currentDark: boolean;
+  /**
+   * The climb on screen belongs to another board (a reachable one, or the
+   * switch-board overlay would cover it): the connected wall refuses to light
+   * it, so the pill can't claim it either.
+   */
+  otherBoard: boolean;
 };
 
 /**
- * Strict ladder, first match wins.
+ * Strict ladder, first match wins:
+ *
+ * 1. anonymous → `null`;
+ * 2. displayed equals the climb presence names as lit → `onWall`, unless this
+ *    phone knows it is dark (`currentDark`) or on another board (`otherBoard`),
+ *    which is `null` (#7000);
+ * 3. a browse latch is up → `browsing`, so the browse announcement still fires;
+ * 4. the climb on screen is dark or on another board → `null`: neither On the
+ *    wall nor Live may be claimed over it;
+ * 5. the next swipe commits AND a wall is being driven → `live`;
+ * 6. otherwise `null`.
  *
  * `onWall` deliberately outranks `browsing`: if you browse back onto the lit
  * climb the pill tells the truth about the wall while the commit bar keeps
  * carrying the latch. The pill is a statement about the wall, not about how you
  * got here.
  *
- * `live` needs stakes — a known lit climb, or a wall someone is actually driving
- * (this device's own BLE link, or a session member's). Plain solo with neither
- * returns `null`: there is nothing to promise, so the slot stays empty rather
- * than shipping a badge that means nothing.
+ * `live` needs a wall someone is actually driving (this device's own BLE link,
+ * or a session member's). A known lit climb is not enough: with no link the
+ * next swipe lights nothing, and the player would show Put on the wall
+ * beside a Live pill. Plain solo returns `null`: there is nothing to
+ * promise, so the slot stays empty rather than shipping a pill that means
+ * nothing.
+ *
+ * Darkness isn't published through presence yet, so a crew phone can still read
+ * a dark climb as on the wall.
  */
 export function resolveWallPillState({
   isAnonymous,
@@ -74,28 +109,32 @@ export function resolveWallPillState({
   browseLatchActive,
   navigationCommits,
   wallDriven,
+  currentDark,
+  otherBoard,
 }: WallPillStateInput): WallPillState {
   if (isAnonymous) return null;
-  if (wallClimbUuid != null && displayedClimbUuid === wallClimbUuid) return 'onWall';
+  // With no live link presence can name a climb lit hours ago (#7000), so the
+  // pill never says On the wall from presence alone.
+  const displayedCantBeLit = currentDark || otherBoard || !wallDriven;
+  if (wallClimbUuid != null && displayedClimbUuid === wallClimbUuid) return displayedCantBeLit ? null : 'onWall';
   if (browseLatchActive) return 'browsing';
-  if (navigationCommits && (wallClimbUuid != null || wallDriven)) return 'live';
+  if (displayedCantBeLit) return null;
+  if (navigationCommits && wallDriven) return 'live';
   return null;
 }
 
 /**
- * The same face never appears twice: while the pill renders the driver's avatar
- * (`onWall`, and the back chip when it goes to the wall), the lightbulb's holder pip is
- * suppressed. This is the contract PlayDrawer passes to `PlayDrawerActionBar` as
+ * The same face never appears twice: while the back chip renders the driver's
+ * avatar (it goes back to the wall), the bulb's holder pip is suppressed. This
+ * is the contract PlayDrawer passes to `PlayDrawerActionBar` as
  * `showHolderBadge`; it lives here so the ⇔ is pinned by a test rather than by
  * two components agreeing by hand.
  */
 export function shouldShowHolderBadge(pill: HeaderPill): boolean {
-  return pill?.state !== 'onWall' && pill?.backTarget !== 'wall';
+  return pill?.backTarget !== 'wall';
 }
 
 export type HeaderPillInput = {
-  /** What the wall is doing, from `resolveWallPillState`. */
-  wallPillState: WallPillState;
   /** A preview is pinned over the committed climb. */
   previewPinned: boolean;
   isAnonymous: boolean;
@@ -111,15 +150,13 @@ export type HeaderPillInput = {
   isPane: boolean;
 };
 
-export type HeaderPill =
-  | { state: Exclude<WallPillState, null>; backTarget: null }
-  /**
-   * The back chip: `wall` when going back lands on the climb that's lit (it
-   * shows the face of whoever lit it), `current` when it lands on the climber's
-   * own climb and the wall shows something else, or nothing.
-   */
-  | { state: 'browsing'; backTarget: 'wall' | 'current' }
-  | null;
+/**
+ * The back chip, the header's one wall chip (#7000): `wall` when going back
+ * lands on the climb that's lit (it shows the face of whoever lit it),
+ * `current` when it lands on the climber's own climb and the wall shows
+ * something else, or nothing.
+ */
+export type HeaderPill = { state: 'browsing'; backTarget: 'wall' | 'current' } | null;
 
 /**
  * Whether going back from a pinned preview lands somewhere: off the committed
@@ -142,16 +179,17 @@ export function canLeavePreview({
 }
 
 /**
- * The header chip as drawn. While a preview is pinned it is the way back, so it
- * shows only when back goes somewhere: off the committed climb, and onto one (a
- * crew that hasn't lit anything, or a preview on an empty queue, has none, and
- * going back would empty the player; ⌄ closes instead). It also stands in for
- * the Live chip and for no chip at all during a preview, where the one-tap way
- * back used to be Back to live in the second row. On the wall stays: the
- * climber is looking at the lit climb, and its chip opens the explainer.
+ * The header chip as drawn: the back chip while a preview is pinned and going
+ * back lands somewhere, off the committed climb and onto one (a crew that
+ * hasn't lit anything, or a preview on an empty queue, has none, and going back
+ * would empty the player; ⌄ closes instead).
+ *
+ * There is no On the wall or Live chip any more (#7000): the wall button says
+ * whether the climb on screen is lit, and a second place saying it could
+ * disagree. `resolveWallPillState` still names those states for the
+ * screen-reader announcements.
  */
 export function resolveHeaderPillState({
-  wallPillState,
   previewPinned,
   isAnonymous,
   displayedClimbUuid,
@@ -159,15 +197,9 @@ export function resolveHeaderPillState({
   wallClimbUuid,
   isPane,
 }: HeaderPillInput): HeaderPill {
-  if (isAnonymous) return null;
-  if (wallPillState === 'onWall') return { state: 'onWall', backTarget: null };
-  if (canLeavePreview({ previewPinned, isAnonymous, displayedClimbUuid, committedHeadUuid, isPane })) {
-    const backToWall = wallClimbUuid !== null && wallClimbUuid === committedHeadUuid;
-    return { state: 'browsing', backTarget: backToWall ? 'wall' : 'current' };
-  }
-  // A browse with nowhere to go back to shows nothing: ⌄ closes.
-  if (wallPillState === 'browsing' || wallPillState === null) return null;
-  return { state: wallPillState, backTarget: null };
+  if (!canLeavePreview({ previewPinned, isAnonymous, displayedClimbUuid, committedHeadUuid, isPane })) return null;
+  const backToWall = wallClimbUuid !== null && wallClimbUuid === committedHeadUuid;
+  return { state: 'browsing', backTarget: backToWall ? 'wall' : 'current' };
 }
 
 /**
@@ -175,14 +207,16 @@ export function resolveHeaderPillState({
  * being looked at (#6667 panel, confusions 1 and 4; #6745 moved it off the
  * header's stats line):
  *
- * - `preview` — solo: "Preview, not lit". A tap with Light on tap off, or the
- *   Preview action, shows the climb without lighting it, and nothing else on
- *   screen said so.
+ * - `preview` — solo: "Preview · not on the wall". Every tap opens a preview
+ *   since 2.7, and the board art draws the same glowing holds lit or not, so
+ *   this says the wall didn't change. Shown while this phone holds the board,
+ *   while a wall is driven, or while presence names a climb lit under an hour
+ *   ago (#6939).
  * - `crew` — "Only you see this", plus the climb the room has on the wall when
  *   one is lit, so a crewmate can tell a private look from taking the wall.
  * - `null` — nothing to say: the climb on screen is lit, or is the climber's
- *   own current climb, or (solo) no board is connected and nothing is lit, the
- *   same case the commit button falls back to Set active for.
+ *   own current climb, or (solo) nothing could light it: no link and no climb
+ *   lit within the hour, the case the commit button falls back to Set active for.
  */
 export type BrowseCaption = { kind: 'preview' } | { kind: 'crew'; wallClimbName: string | null } | null;
 
@@ -203,6 +237,16 @@ export type BrowseCaptionInput = {
   inCrew: boolean;
   /** A wall is genuinely being driven — see {@link WallPillStateInput.wallDriven}. */
   wallDriven: boolean;
+  /**
+   * This phone holds the board's Bluetooth link. A linked phone with a dark
+   * wall is the commonest 2.7 state, and a preview there must still say so.
+   */
+  holdsLink: boolean;
+  /**
+   * Presence's wall climb can be believed: a live link, or lit under an hour
+   * ago (`isWallPresenceTrusted`). An older one says nothing about the wall.
+   */
+  wallPresenceTrusted: boolean;
 };
 
 export function resolveBrowseCaption({
@@ -214,11 +258,30 @@ export function resolveBrowseCaption({
   wallClimbName,
   inCrew,
   wallDriven,
+  holdsLink,
+  wallPresenceTrusted,
 }: BrowseCaptionInput): BrowseCaption {
   if (isAnonymous || !isPreview || climbUuid === null) return null;
   if (climbUuid === wallClimbUuid || climbUuid === committedHeadUuid) return null;
   if (inCrew) return { kind: 'crew', wallClimbName: wallClimbUuid !== null ? wallClimbName : null };
-  return wallClimbUuid !== null || wallDriven ? { kind: 'preview' } : null;
+  const wallCouldLight = holdsLink || wallDriven || (wallClimbUuid !== null && wallPresenceTrusted);
+  return wallCouldLight ? { kind: 'preview' } : null;
+}
+
+/**
+ * Whether the commit bar reads the climb on screen as the climber's own
+ * committed climb, with nothing to commit (`resolveCommitBarModel`). It compares
+ * CLIMBS, not queue slots: a preview of another slot that holds the current
+ * climb (a History or Up next copy, Replay from here on one) shows no Put on
+ * board.
+ *
+ * So a queue pick of such a slot commits at once instead of previewing: a
+ * deferred commit (`previewCommitOptions`) would have no button to wait for,
+ * and the wall's climb doesn't change. The queue sheet's row tap and Replay
+ * from here both read this rule, so the two can't drift from the bar.
+ */
+export function isCommittedHeadClimb(displayedClimbUuid: string | null, committedHeadUuid: string | null): boolean {
+  return displayedClimbUuid != null && displayedClimbUuid === committedHeadUuid;
 }
 
 /** What the action bar's secondary row is doing. */
@@ -226,9 +289,9 @@ export type CommitBarMode = 'actions' | 'commit';
 
 /**
  * Which label the filled commit button wears. With no wall reachable at all —
- * nobody driving a wall and no known lit climb (the plain #4640 / logbook
- * preview) — it falls back to "Set active" so the button never promises a
- * lighting it cannot do.
+ * nobody driving a wall, no known lit climb, and no board a tap could connect
+ * to (the plain #4640 / logbook preview, a wall with no lights) — it falls back
+ * to "Set active" so the button never promises a lighting it cannot do.
  */
 export type CommitButtonLabel = 'putOnWall' | 'setActive';
 
@@ -237,15 +300,20 @@ export type CommitBarModel = {
   showPutOnWall: boolean;
   showConfirm: boolean;
   commitLabel: CommitButtonLabel;
+  /**
+   * Put on the wall connects this phone after it sets the climb (#6939): no
+   * wall is driven, and a tap on the bulb would connect to a board with lights.
+   * The connect lights the climb the commit just made current.
+   */
+  connectsOnCommit: boolean;
 };
 
 export type CommitBarModelInput = {
   /**
    * A preview is pinned (`drawerPreviewItem != null`) — deliberately WIDER than
-   * the browse latch. A long-press "Preview" with `lightOnSwipe` on has
-   * committing swipes (so no browsing chrome), but the pinned climb still needs
-   * its activation button: today's banner offered "Set active" there, and losing
-   * it would strand the explicit Preview action with no way to promote.
+   * the browse latch. A preview while driving has committing swipes (so no
+   * browsing chrome), but the pinned climb still needs its activation button,
+   * or that preview would have no way to promote.
    */
   previewPinned: boolean;
   isAnonymous: boolean;
@@ -259,6 +327,12 @@ export type CommitBarModelInput = {
   confirmArmed: boolean;
   /** A wall is genuinely being driven — see {@link WallPillStateInput.wallDriven}. */
   wallDriven: boolean;
+  /**
+   * A tap on the bulb would connect this phone (`pressAction === 'connect'`):
+   * a board is selected, it has lights, nothing is in flight and no session
+   * peer holds it.
+   */
+  tapConnects: boolean;
 };
 
 /**
@@ -280,6 +354,9 @@ export type CommitBarModelInput = {
  * `Put on the wall` hides (never renders disabled-dead) when the displayed climb
  * is already the lit one. Going back is not this row's job: the header's back
  * chip does it (`resolveHeaderPillState`).
+ *
+ * On the climber's own climb there is nothing to commit: the wall button's
+ * Connect board, or its tap on a dark climb, lights it (#7000).
  */
 export function resolveCommitBarModel({
   previewPinned,
@@ -290,14 +367,19 @@ export function resolveCommitBarModel({
   wallClimbUuid,
   confirmArmed,
   wallDriven,
+  tapConnects,
 }: CommitBarModelInput): CommitBarModel {
-  const commitLabel: CommitButtonLabel = wallClimbUuid != null || wallDriven ? 'putOnWall' : 'setActive';
-  const displayedIsCommittedHead = displayedClimbUuid != null && displayedClimbUuid === committedHeadUuid;
+  const connectsOnCommit = tapConnects && !wallDriven && !isAnonymous && !boardMismatch;
+  const commitLabel: CommitButtonLabel =
+    wallClimbUuid != null || wallDriven || connectsOnCommit ? 'putOnWall' : 'setActive';
+  const displayedIsCommittedHead = isCommittedHeadClimb(displayedClimbUuid, committedHeadUuid);
+  // With no link, presence can name a climb lit hours ago and nobody can see
+  // the LEDs (#7000), so a tap that connects never counts it as already lit.
+  const displayedIsWallClimb = wallClimbUuid != null && displayedClimbUuid === wallClimbUuid && !connectsOnCommit;
   const inCommitMode = previewPinned && !isAnonymous && !boardMismatch && !displayedIsCommittedHead;
   if (!inCommitMode) {
-    return { mode: 'actions', showPutOnWall: false, showConfirm: false, commitLabel };
+    return { mode: 'actions', showPutOnWall: false, showConfirm: false, commitLabel, connectsOnCommit: false };
   }
-  const displayedIsWallClimb = wallClimbUuid != null && displayedClimbUuid === wallClimbUuid;
   // Browsing onto the busy wall's own climb resolves the conflict, so an armed
   // confirm has nothing left to ask — the pair snaps back to the browse buttons.
   const showConfirm = confirmArmed && !displayedIsWallClimb;
@@ -306,7 +388,19 @@ export function resolveCommitBarModel({
     showPutOnWall: !showConfirm && !displayedIsWallClimb,
     showConfirm,
     commitLabel,
+    connectsOnCommit,
   };
+}
+
+/**
+ * Which commit control the player draws: the busy-wall question, or Put on the
+ * wall (one of the wall button's states) for a preview or a crew browse. A
+ * preview still commits during a timed block: Put on the wall takes the row
+ * from Fell / Sent until the climb is up.
+ */
+export function resolveCommitButton(model: CommitBarModel): 'putOnWall' | 'confirm' | null {
+  if (model.showConfirm) return 'confirm';
+  return model.mode === 'commit' && model.showPutOnWall ? 'putOnWall' : null;
 }
 
 /** How a browse latch ended — recorded by the handler that ended it. */

@@ -1,0 +1,13 @@
+diff --git a/ios/EXDevLauncherController.m b/ios/EXDevLauncherController.m
+index dfeec1c..46a7fbf 100644
+--- a/ios/EXDevLauncherController.m
++++ b/ios/EXDevLauncherController.m
+@@ -32,7 +32,7 @@
+ #define VERSION @ STRINGIZE2(EX_DEV_LAUNCHER_VERSION)
+ #endif
+ 
+-static const NSTimeInterval EXDevLauncherDefaultRequestTimeout = 10.0;
++static const NSTimeInterval EXDevLauncherDefaultRequestTimeout = 120.0;
+ 
+ @interface EXDevLauncherController ()
+ 

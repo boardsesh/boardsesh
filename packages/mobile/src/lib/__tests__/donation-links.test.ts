@@ -18,6 +18,10 @@ vi.mock('react-native', () => ({ Platform: platformMock }));
 vi.mock('../../providers/feature-flags-provider', () => ({
   useFeatureFlag: (key: string) => flagsMock[key],
 }));
+const adminMock = { isAdmin: false };
+vi.mock('../graphql/hooks/use-is-admin', () => ({
+  useIsAdmin: () => ({ isAdmin: adminMock.isAdmin, isLoading: false }),
+}));
 
 async function loadDonationLinks() {
   vi.resetModules();
@@ -35,9 +39,54 @@ async function renderAllowed(): Promise<boolean> {
 }
 
 beforeEach(() => {
+  vi.unstubAllEnvs();
   storefrontMock = null;
   platformMock.OS = 'ios';
   for (const key of Object.keys(flagsMock)) delete flagsMock[key];
+  adminMock.isAdmin = false;
+});
+
+describe('useDonationLinksAllowed for an admin (QA)', () => {
+  it('shows the link on iOS outside the US storefront', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    adminMock.isAdmin = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('AUS') };
+
+    expect(await renderAllowed()).toBe(true);
+  });
+
+  it('shows the link on Android', async () => {
+    platformMock.OS = 'android';
+    flagsMock['donation-links-v2'] = true;
+    adminMock.isAdmin = true;
+
+    expect(await renderAllowed()).toBe(true);
+  });
+
+  it('still obeys the kill switch', async () => {
+    platformMock.OS = 'android';
+    adminMock.isAdmin = true;
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('still hides it in screenshot mode', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    adminMock.isAdmin = true;
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('keeps a non-admin AU iPhone on the unlinked text', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('AUS') };
+
+    expect(await renderAllowed()).toBe(false);
+  });
 });
 
 describe('useDonationLinksAllowed', () => {
@@ -54,16 +103,43 @@ describe('useDonationLinksAllowed', () => {
     expect(await renderAllowed()).toBe(false);
   });
 
-  it('shows links on Android when the flag is on (PostHog carries the country targeting)', async () => {
-    platformMock.OS = 'android';
+  // The key is suffixed because Android bundles from before #7057 show the link
+  // whenever the old `donation-links` key is on. That key must never come back.
+  it('ignores the retired donation-links key, even in the US storefront', async () => {
+    platformMock.OS = 'ios';
     flagsMock['donation-links'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
 
-    expect(await renderAllowed()).toBe(true);
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('never shows links on Android, even with the flag on', async () => {
+    platformMock.OS = 'android';
+    flagsMock['donation-links-v2'] = true;
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('hides links in screenshot mode, even in the US storefront with the flag on', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
+
+    const { useDonationLinksAllowed } = await loadDonationLinks();
+    const { result, rerender } = renderHook(() => useDonationLinksAllowed());
+    // Reach the allowed state first, so the false below is the screenshot guard
+    // answering and not a first frame that has not read the storefront yet.
+    await waitFor(() => expect(result.current).toBe(true));
+
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    rerender();
+
+    expect(result.current).toBe(false);
   });
 
   it('hides links on iOS when the storefront module is missing (every binary shipped today)', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = null;
 
     expect(await renderAllowed()).toBe(false);
@@ -71,7 +147,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('shows links on iOS once the storefront resolves to the US', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
 
     const { useDonationLinksAllowed } = await loadDonationLinks();
@@ -84,7 +160,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('hides links on iOS in a non-US storefront', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     const getCountryCode = vi.fn().mockResolvedValue('AUS');
     storefrontMock = { getCountryCode };
 
@@ -97,7 +173,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('treats a rejected storefront read as unknown', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockRejectedValue(new Error('StoreKit unavailable')) };
 
     expect(await renderAllowed()).toBe(false);
@@ -105,7 +181,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('survives a native proxy that throws synchronously instead of rejecting', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     // A renamed or absent method on the native proxy throws a TypeError before
     // any promise exists. That must degrade to the fallback, not take the screen
     // down on its way out of the effect.
@@ -120,7 +196,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('requires the alpha-3 code, so an alpha-2 "US" is not allowed', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     // StoreKit reports alpha-3. If the native side ever hands back alpha-2, the
     // drift fails SAFE — links stay hidden — and this test is what says so out
     // loud, since nothing else would notice the app quietly stopped matching.
@@ -131,7 +207,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('reads the storefront once across renders', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     const getCountryCode = vi.fn().mockResolvedValue('USA');
     storefrontMock = { getCountryCode };
 
@@ -146,7 +222,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('does not flash back to the fallback when the screen is reopened', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
 
     const { useDonationLinksAllowed } = await loadDonationLinks();
@@ -160,9 +236,40 @@ describe('useDonationLinksAllowed', () => {
     expect(second.result.current).toBe(true);
   });
 
-  it('hides links on Expo web, where there is no storefront to read', async () => {
+  it('shows links in the Expo browser app with the flag off, since no store rule applies there', async () => {
     platformMock.OS = 'web';
-    flagsMock['donation-links'] = true;
+
+    expect(await renderAllowed()).toBe(true);
+  });
+
+  it('shows links in the Expo browser app with the flag on too', async () => {
+    platformMock.OS = 'web';
+    flagsMock['donation-links-v2'] = true;
+
+    expect(await renderAllowed()).toBe(true);
+  });
+
+  it('hides links in the Expo browser app once its own kill switch is on, with no deploy', async () => {
+    platformMock.OS = 'web';
+    flagsMock['donation-links-web-kill'] = true;
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('ignores the browser-app kill switch on a phone', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    flagsMock['donation-links-web-kill'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
+
+    const { useDonationLinksAllowed } = await loadDonationLinks();
+    const { result } = renderHook(() => useDonationLinksAllowed());
+    await waitFor(() => expect(result.current).toBe(true));
+  });
+
+  it('hides links in the Expo browser app in screenshot mode', async () => {
+    platformMock.OS = 'web';
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
 
     expect(await renderAllowed()).toBe(false);
   });
@@ -173,5 +280,22 @@ describe('useDonationLinksAllowed', () => {
     expect(SUPPORT_URL).toBe('https://www.boardsesh.com/support');
     // The displayed form is the same address, bare enough to type off a screen.
     expect(SUPPORT_URL_DISPLAY).toBe('boardsesh.com/support');
+  });
+
+  it('tags the support link with the surface that sent the climber', async () => {
+    const { supportUrlFor } = await loadDonationLinks();
+
+    expect(supportUrlFor('acknowledgements')).toBe('https://www.boardsesh.com/support?src=app-acknowledgements');
+    expect(supportUrlFor('account')).toBe('https://www.boardsesh.com/support?src=app-account');
+    expect(supportUrlFor('home-card')).toBe('https://www.boardsesh.com/support?src=app-home-card');
+  });
+
+  it('carries the way of giving the climber picked, where a surface offers both', async () => {
+    const { supportUrlFor } = await loadDonationLinks();
+
+    expect(supportUrlFor('home-card', 'monthly')).toBe(
+      'https://www.boardsesh.com/support?src=app-home-card&cadence=monthly',
+    );
+    expect(supportUrlFor('home-card', 'once')).toBe('https://www.boardsesh.com/support?src=app-home-card&cadence=once');
   });
 });

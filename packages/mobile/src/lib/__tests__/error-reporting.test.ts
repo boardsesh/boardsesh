@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { SchemaNewerThanAppError } from '@boardsesh/offline-sync';
 import { SCHEMA_NEWER_REPORT_KIND } from '../../db/schema-downgrade';
+import { GraphQLTransportClosedError } from '@boardsesh/graphql-client';
 import { reportError, reportHandledError } from '../error-reporting';
 import { addBreadcrumbToSentry, captureToSentry } from '../sentry';
 import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runtime';
@@ -24,6 +25,24 @@ afterEach(() => {
 });
 
 describe('reportHandledError', () => {
+  it('leaves a breadcrumb, not a report, for a socket loss the client retried to exhaustion', () => {
+    reportHandledError(new GraphQLTransportClosedError(1006, ''), { tags: { source: 'queue-sync' } });
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith(expect.objectContaining({ category: 'network' }));
+  });
+
+  it('reports a fatal websocket close at warning, grouped by close code', () => {
+    reportHandledError(new GraphQLTransportClosedError(4500, 'Internal error'));
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(
+      expect.any(GraphQLTransportClosedError),
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({ ws_close_code: 4500 }),
+        fingerprint: ['ws-transport-closed', '4500'],
+      }),
+    );
+  });
+
   it('drops cancellations (user dismiss / unmount) without reporting', () => {
     reportHandledError(Object.assign(new Error('aborted'), { name: 'AbortError' }));
     reportHandledError(Object.assign(new Error('cancelled'), { name: 'CancelledError' }));

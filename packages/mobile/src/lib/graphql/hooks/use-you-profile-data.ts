@@ -8,6 +8,25 @@ import { nowMs } from '../../clock';
 import { useAllBoardsTicks, useUserProfileStats, useUserClimbPercentile } from './use-you-data';
 
 /**
+ * Where the authoritative all-board totals (`userProfileStats`) stand. The header
+ * renders a number only for `'ready'`: a failed or not-yet-landed request would
+ * otherwise read as a real "0 climbs sent" next to records the logbook did load.
+ */
+export type ProfileTotalsStatus = 'loading' | 'ready' | 'error' | 'offline';
+
+export function profileTotalsStatus(query: {
+  data?: unknown;
+  status: 'pending' | 'error' | 'success';
+  fetchStatus: 'fetching' | 'paused' | 'idle';
+}): ProfileTotalsStatus {
+  if (query.data !== undefined && query.data !== null) return 'ready';
+  // offlineFirst pauses a request it can't send; it stays `pending` for good.
+  if (query.fetchStatus === 'paused') return 'offline';
+  if (query.status === 'error') return 'error';
+  return 'loading';
+}
+
+/**
  * Mobile counterpart of web's `useProfileData`. Fans out the per-board ticks +
  * profile-stats + percentile queries, holds the board / timeframe filter state,
  * and runs the shared `deriveProfileViewModel` to
@@ -60,6 +79,11 @@ export function useYouProfileData(userId: string | undefined) {
     [allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStatsQuery.data, comparisonMode],
   );
 
+  const totalsStatus = profileTotalsStatus(profileStatsQuery);
+  const retryTotals = useCallback(() => {
+    void profileStatsQuery.refetch();
+  }, [profileStatsQuery]);
+
   const refetch = useCallback(() => {
     void allBoardsTicksQuery.refetch();
     void profileStatsQuery.refetch();
@@ -73,8 +97,10 @@ export function useYouProfileData(userId: string | undefined) {
 
   // `!userId` (the brief post-login window before useProfile resolves) counts
   // as loading so the Progress tab shows a spinner instead of flashing the
-  // empty state, then the charts.
-  const loading = !offline.isBlocked && (!userId || allBoardsTicksQuery.isPending || profileStatsQuery.isPending);
+  // empty state, then the charts. Only the logbook gates the spinner: the
+  // all-board totals have their own loading and error states in the header, so
+  // a slow or paused totals request can't hold the whole tab on a spinner.
+  const loading = !offline.isBlocked && (!userId || allBoardsTicksQuery.isPending);
 
   const refreshing = allBoardsTicksQuery.isRefetching || profileStatsQuery.isRefetching || percentileQuery.isRefetching;
 
@@ -86,6 +112,8 @@ export function useYouProfileData(userId: string | undefined) {
     refreshing,
     refetch,
     percentile: percentileQuery.data ?? null,
+    totalsStatus,
+    retryTotals,
 
     // Filter state
     selectedBoard,

@@ -4,8 +4,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest';
 
 const launch = vi.hoisted(() => ({ released: false }));
-const navigation = vi.hoisted(() => ({ replace: vi.fn(), dismiss: vi.fn(), dispatch: vi.fn() }));
+const navigation = vi.hoisted(() => ({ replace: vi.fn(), dismiss: vi.fn(), canDismiss: vi.fn(() => false) }));
 const decisions = vi.hoisted(() => ({ decide: vi.fn() }));
+const preventRemoval = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -18,11 +19,11 @@ vi.mock('react-native', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ ...navigation, canDismiss: () => false }),
+  useRouter: () => navigation,
   useNavigation: () => navigation,
+  usePreventRemove: preventRemoval,
   Stack: { Screen: () => null },
 }));
-vi.mock('expo-router/react-navigation', () => ({ usePreventRemove: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
 vi.mock('../providers/consent-provider', () => ({ decideAnalyticsConsent: decisions.decide }));
@@ -58,10 +59,12 @@ it('holds a direct launch, waits for local consent, then leaves immediately afte
   });
   const view = render(createElement(PrivacyConsentScreen));
   expect(screen.getByText('spinner')).toBeTruthy();
+  expect(preventRemoval).not.toHaveBeenCalled();
   expect(screen.queryByRole('button')).toBeNull();
 
   launch.released = true;
   view.rerender(createElement(PrivacyConsentScreen));
+  expect(preventRemoval).toHaveBeenLastCalledWith(true, expect.any(Function));
   expect((screen.getByRole('button', { name: 'allow' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: 'deny' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'deny' }));
@@ -74,4 +77,42 @@ it('holds a direct launch, waits for local consent, then leaves immediately afte
   expect(decisions.decide).toHaveBeenCalledWith('denied', 'ios');
   expect(navigation.replace).toHaveBeenCalledWith('/');
   expect(getConsentSnapshot().settled).toBe(true);
+  expect(preventRemoval).toHaveBeenLastCalledWith(false, expect.any(Function));
+});
+
+it.each([false, true])('replays blocked navigation after synchronous consent settles (canDismiss=%s)', (canDismiss) => {
+  navigation.replace.mockClear();
+  navigation.dismiss.mockClear();
+  launch.released = true;
+  updateConsentState({ record: null, loaded: true, settled: false, killed: false });
+  navigation.canDismiss.mockReturnValue(canDismiss);
+  const repeat = vi.fn();
+  const view = render(createElement(PrivacyConsentScreen));
+  // Capture the currently installed guard before React can observe the choice.
+  const guard = preventRemoval.mock.lastCall?.[1] as (event: { repeat: () => void }) => void;
+  guard({ repeat });
+  expect(repeat).not.toHaveBeenCalled();
+
+  decisions.decide.mockImplementation((analytics: 'granted' | 'denied') => {
+    updateConsentState({
+      record: { analytics, source: 'ios', version: 1, decidedAt: new Date().toISOString() },
+      settled: true,
+    });
+    return new Promise<void>(() => {});
+  });
+  navigation.replace.mockImplementation(() => guard({ repeat }));
+  fireEvent.click(screen.getByRole('button', { name: 'deny' }));
+  if (canDismiss) {
+    // ConsentGate owns dismissal after observing the settled choice.
+    expect(navigation.dismiss).not.toHaveBeenCalled();
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(repeat).not.toHaveBeenCalled();
+    guard({ repeat });
+  } else {
+    expect(navigation.replace).toHaveBeenCalledWith('/');
+  }
+  expect(repeat).toHaveBeenCalledOnce();
+  expect(preventRemoval).toHaveBeenLastCalledWith(false, expect.any(Function));
+  view.unmount();
+  navigation.canDismiss.mockReturnValue(false);
 });

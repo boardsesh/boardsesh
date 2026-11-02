@@ -426,6 +426,9 @@
     "cancel": "Annuler",
     "mobileConnectAnyway": "Connecter quand même",
     "mobileConnectAnywayWarning": "D'après nos enregistrements, ce contrôleur appartient à une autre configuration de board. Connecter quand même pourrait allumer les voies de façon incorrecte.",
+    "mobileDifferentBoardTitle": "Autre board enregistrée",
+    "mobileDifferentBoardNamedWarning": "Ce contrôleur est associé à {{name}}, une autre board enregistrée. Si vous vous connectez quand même, vos blocs apparaîtront dans le fil d'activité de votre board actuelle.",
+    "mobileDifferentBoardWarning": "Ce contrôleur est associé à une autre board enregistrée. Si vous vous connectez quand même, vos blocs apparaîtront dans le fil d'activité de votre board actuelle.",
     "mobileSwitchSetup": "Changer de board",
     "mobileUseRecordedSetup": "Utiliser la configuration enregistrée"
   },
@@ -443,6 +446,7 @@
     "searchingForBoard": "Recherche de votre {{board}}…",
     "searchingForSavedBoard": "Recherche de votre board…",
     "searchAnyBoard": "Chercher n'importe quelle board",
+    "selectedBoardNotFound": "La board sélectionnée est introuvable",
     "writing": "Allumage de la board…",
     "selectBoard": "Sélectionner une board",
     "devicesFound_one": "{{count}} board trouvée",
@@ -462,36 +466,39 @@
     "cancel": "Annuler",
     "connectBoard": "Connecter la board",
     "relightBoard": "Rallumer la board",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Se déconnecter de la board après la durée choisie sans nouveau bloc affiché.",
-      "enabledLabel": "Déconnexion automatique",
-      "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
-      "timeoutLabel": "Déconnecter après",
-      "toggleTitle": "Déconnexion automatique",
-      "toggleSubtitle": "Déconnexion après {{timeout}} d'inactivité",
-      "timeoutOptions": {
-        "10": "10 secondes",
-        "15": "15 secondes",
-        "30": "30 secondes",
-        "45": "45 secondes",
-        "60": "1 minute",
-        "120": "2 minutes",
-        "300": "5 minutes",
-        "600": "10 minutes"
-      }
-    },
     "lighting": {
       "title": "Éclairage de la board",
-      "description": "Choisissez ce qui allume automatiquement la board connectée.",
-      "onSwipeLabel": "Allumer la board quand je fais défiler",
-      "onSwipeDescription": "Seulement quand un bloc est déjà au mur. Un aperçu n'allume jamais la board quand vous faites défiler.",
-      "onTapLabel": "Allumer la board quand je touche un bloc",
-      "onTapDescription": "Toucher un bloc dans une liste l'allume au mur. Désactivé, le toucher ouvre un aperçu.",
+      "keep": {
+        "label": "Arrêter de piloter après",
+        "off": "Tout de suite",
+        "options": {
+          "30": "30 secondes",
+          "45": "45 secondes",
+          "60": "1 minute",
+          "120": "2 minutes",
+          "300": "5 minutes"
+        },
+        "untilStopped": "Jusqu'à ce que j'arrête",
+        "inSessionLabel": "Aussi en session",
+        "inSessionAccessibilityLabel": "Allumer sur la board et Toujours piloter la board s'appliquent aussi en session",
+        "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
+        "inSessionOffReason": "Choisissez autre chose que Tout de suite dans Arrêter de piloter après pour utiliser ce réglage.",
+        "alwaysDriveReason": "Toujours piloter la board est activé, donc ce réglage ne s'applique pas.",
+        "footer": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi, et chacun relance le chrono. Quand le temps est écoulé, le bloc suivant s'ouvre en aperçu.",
+        "footerUntilStopped": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi, jusqu'à ce que vous touchiez le bouton Tu pilotes la board.",
+        "footerOff": "Allumer sur la board allume le bloc affiché. Le bloc suivant que vous choisissez s'ouvre en aperçu."
+      },
+      "drivingEnds": {
+        "label": "Déconnecter le Bluetooth quand le pilotage s’arrête",
+        "description": "Quand votre pilotage s’arrête, votre téléphone libère la board pour que le grimpeur suivant puisse se connecter : quand vous l’arrêtez ou éteignez tout, quand le temps est écoulé, ou quand quelqu’un de votre crew allume un bloc pendant un pilotage à durée limitée. Allumer sur la board la reconnecte."
+      },
+      "drivingHelp": "Comment marche le pilotage de la board",
+      "alwaysDriveLabel": "Toujours piloter la board",
+      "alwaysDriveDescription": "Chaque bloc que vous choisissez s'allume tant que ce téléphone a la board. En session, il faut Aussi en session.",
+      "alwaysDriveFooter": "Touchez le bouton Tu pilotes la board pour arrêter. Les blocs que vous choisissez s'ouvrent ensuite en aperçu jusqu'à ce que vous vous déconnectiez ou touchiez Allumer sur la board.",
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
-      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste. Si Allumer la board quand je touche un bloc est désactivé, utilisez Lecture pour la charger."
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste. Si vous pilotez la board, la liste remplace votre file et le bloc touché s'allume. Sinon, la liste à partir du bloc touché passe dans À suivre et ce bloc s'ouvre en aperçu, tandis que la board garde son bloc jusqu'à Allumer sur la board. En session, la liste n'entre jamais dans la file partagée."
     },
-    "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",
     "boardControls": "Commandes de la board",
     "sendFailedTitle": "Impossible d'allumer la board",
@@ -513,19 +520,23 @@
     "releaseWall": "Libérer le mur",
     "barControl": {
       "connectedLabel": "Board connectée, vous avez le contrôle",
-      "connectedHint": "Ouvre les commandes de la board",
+      "youHaveBoard": "Vous avez la board",
+      "youHaveBoardWithClimb": "Vous avez la board : {{name}}, {{grade}}",
+      "connectedHint": "Déconnecte la board",
       "peerLabel": "Sur le mur de {{name}}",
       "peerLabelAnonymous": "Sur le mur",
       "peerHint": "Ouvre la voie sur le mur",
       "disconnectedLabel": "Board déconnectée",
       "disconnectedHint": "Se connecter à la board",
       "wallHeldLabel": "Vous avez le mur",
+      "wallHeldWithClimb": "Vous avez le mur : {{name}}, {{grade}}",
       "wallHeldHint": "Libère le mur",
       "wallOpenLabel": "Le mur est libre",
-      "wallOpenHint": "Prend le mur"
+      "wallOpenHint": "Prend le mur",
+      "drivingValue": "Tu pilotes la board"
     },
     "relayToWall": "Allumer ton bloc au mur",
-    "peerDrivingBoard": "Quelqu’un d’autre pilote la board"
+    "peerDrivingBoard": "Quelqu’un d’autre a la board"
   },
   "integrations": {
     "title": "Applications connectées",

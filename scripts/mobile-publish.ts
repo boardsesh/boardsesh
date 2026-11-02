@@ -26,8 +26,6 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { recordPreviewPlatformReceipt } from './lib/ota-preview-boot-receipt';
-import { isRuntimeReservedByMain } from './mobile-release-train-policy';
-import { mayPublishTrainRuntime, parseLiveStoreRuntimes } from './lib/mobile-release-policy';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
 import {
   publishPlatformsSequentially,
@@ -330,57 +328,6 @@ export function authorizePublishRuntime(
   return { ...rawEnv, EXPO_UPDATES_FINGERPRINT_OVERRIDE: resolved };
 }
 
-/** Refresh remote refs before every attempt; an advancing main can reserve a pending store runtime. */
-export function assertPublishTrainAuthorization(
-  platform: OtaPublishPlatform,
-  env: NodeJS.ProcessEnv,
-  runner: typeof execFileSync = execFileSync,
-): void {
-  const mainSha = env.OTA_EXPECT_MAIN_SHA;
-  const trainSha = env.OTA_EXPECT_TRAIN_SHA;
-  if (!mainSha && !trainSha) return;
-  const runtime = env.OTA_EXPECT_RUNTIME_VERSION;
-  if (
-    !runsInGithubActions(env) ||
-    !mainSha ||
-    !trainSha ||
-    !runtime ||
-    ![mainSha, trainSha, runtime].every((sha) => /^[0-9a-f]{40}$/.test(sha))
-  ) {
-    throw new Error('Invalid pinned train publication authorization');
-  }
-  const git = (args: string[]) =>
-    String(
-      runner('git', args, {
-        cwd: ROOT_DIR,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 30_000,
-      }),
-    ).trim();
-  git([
-    'fetch',
-    '--tags',
-    'origin',
-    '+refs/heads/main:refs/remotes/origin/main',
-    '+refs/heads/release/next:refs/remotes/origin/release/next',
-  ]);
-  if (
-    git(['rev-parse', 'origin/main']) !== mainSha ||
-    git(['rev-parse', 'origin/release/next']) !== trainSha ||
-    git(['rev-parse', 'HEAD']) !== trainSha
-  )
-    throw new Error('Train or main advanced after authorization');
-  if (!env.OTA_LIVE_STORE_RUNTIMES) throw new Error('Missing OTA_LIVE_STORE_RUNTIMES for train publication');
-  const live = parseLiveStoreRuntimes(JSON.parse(env.OTA_LIVE_STORE_RUNTIMES));
-  if (
-    !mayPublishTrainRuntime(live, platform, runtime) ||
-    isRuntimeReservedByMain(platform, runtime, mainSha, runner, ROOT_DIR)
-  ) {
-    throw new Error('Runtime is reserved for a current or pending public release');
-  }
-}
-
 /**
  * Ask the update server whether `branchName` is actually being offered to this
  * platform — the same `/branch_lists` question the in-app picker asks.
@@ -587,7 +534,6 @@ async function publishToSelfHostedBranch(
       },
       {
         confirmPublished,
-        beforeAttempt: () => assertPublishTrainAuthorization(requestedPlatform, platformEnvFor(requestedPlatform)),
       },
     );
   });

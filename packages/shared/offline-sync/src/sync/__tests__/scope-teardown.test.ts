@@ -12,6 +12,13 @@ import { getCheckpoint, setCheckpoint, DELETIONS_CHECKPOINT_KEY, isScopeDownload
 import { BOARD_DATA_TABLES } from '../table-config';
 import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
+import {
+  climbMutationEntityKey,
+  enqueue,
+  hasPendingClimbWritesForScope,
+  markDeadLetter,
+  peekPending,
+} from '../../mutation-queue/queue';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import type { OfflineBoardScope } from '../../offline-board-key';
 
@@ -80,6 +87,29 @@ afterEach(() => {
 });
 
 describe('removeBoardScopeData — which rows go', () => {
+  it.each(['pending', 'dead_letter'])(
+    'preserves a spray wall and its markers while a climb write is %s',
+    async (status) => {
+      const scope = { boardType: 'spray', layoutId: 7, sizeId: 7 };
+      await insertClimb({ uuid: 'unsynced', boardType: 'spray', layoutId: 7, compatibleSizeIds: [7] });
+      const checkpointKey = 'checkpoint:board_climbs:spray:7:7';
+      const checkpoint = { updatedAt: '2026-06-01T00:00:00Z', syncSeq: '1' };
+      await setCheckpoint(db, checkpointKey, checkpoint);
+      await enqueue(db, 'board_climbs', 'create', { uuid: 'unsynced', layoutId: 7 }, 'create', {
+        entityKey: climbMutationEntityKey('spray', 'unsynced'),
+      });
+      if (status === 'dead_letter') await markDeadLetter(db, (await peekPending(db))[0].id, 'Needs repair');
+      expect(await hasPendingClimbWritesForScope(db, scope)).toBe(true);
+      expect(await hasPendingClimbWritesForScope(db, { ...scope, layoutId: 8 })).toBe(false);
+      await expect(removeBoardScopeData({ db, scope, scopeKey: 'spray:7:7', retainedScopes: [] })).rejects.toThrow(
+        'Sync or repair',
+      );
+      expect(await climbUuids()).toEqual(['unsynced']);
+      expect(await getCheckpoint(db, checkpointKey)).toEqual(checkpoint);
+      expect(await countOf('pending_mutations')).toBe(1);
+    },
+  );
+
   // The most important case in this file. board_climbs rows are shared across sizes
   // of a layout, so removing one size must not gut the other.
   it('keeps rows a retained sibling size still needs', async () => {

@@ -3,6 +3,7 @@ import type {
   ClimbQueueItem,
   ClimbQueue,
   PlaylistSuggestionSource,
+  PlaylistTrackDetour,
   PlaylistTrackResume,
 } from '@boardsesh/queue';
 import {
@@ -11,6 +12,7 @@ import {
   findPlaylistClimbIndex,
   upNextStart,
   withPlaylistTrackResume,
+  asLookOffWall,
 } from '@boardsesh/queue';
 import {
   classifyClimbBoardCompatibility,
@@ -475,10 +477,13 @@ function scanForFirstCompatible(
  *
  * An orphan current (not in the queue at all — the wrong-board view-only
  * preview, a crew browse, or transiently between a peek commit and the server
- * echo) walks only its list: a preview never plays Up next, since a look must
- * not use up anybody's queue. At the list's last climb it reports `atTrackEnd`
- * like a queued one. Off the list it has nothing to walk. It never falls back
- * to `queue[0]`, and it never dedupes (there is no meaningful adjacency).
+ * echo) walks only its list: a preview opened from a list never plays Up next,
+ * since a look must not use up anybody's queue. (A look that stepped off the
+ * committed climb onto a queued climb is no orphan: it walks Up next and then
+ * its list, as Next would, #7227.) At the list's last climb it reports
+ * `atTrackEnd` like a queued one. Off the list it has nothing to walk. It never
+ * falls back to `queue[0]`, and it never dedupes (there is no meaningful
+ * adjacency).
  *
  * `activeConfig` makes the QUEUE walk board-aware (issue #5099): a swipe walks
  * past queued climbs the board on the wall cannot draw rather than handing back
@@ -660,7 +665,12 @@ const NOTHING_PREVIOUS: PreviousQueueItemSelection = { item: null };
  *
  * An orphan current (not in the queue — the wrong-board view-only preview,
  * whose peeked climbs are never committed) peeks the list predecessor if the
- * climb is in the source, else null.
+ * climb is in the source, else null. The exception is a look off the climb on
+ * the wall that played Up next and went on down the list (#7227): its track's
+ * `detour` names the queue entry it left, so Previous retraces that stretch
+ * from the Up next climb it stepped off (from the queue's end when the detour
+ * names none), then lands on that entry, never on a peek of its climb (see
+ * {@link retraceDetour}).
  *
  * `activeConfig` and `isReachable` steer which queue entry stands for the
  * list predecessor (see {@link findQueuedListNeighbour}) and which Up next
@@ -697,7 +707,7 @@ export function selectPreviousQueueItemWithSuggestions(
   if (source && position.kind === 'list') {
     const listPredecessor = source.climbs[position.trackIndex - 1];
     if (!listPredecessor) return NOTHING_PREVIOUS;
-    const detour = retraceDetour(queue, currentIndex, source, position.trackIndex, activeConfig, isReachable);
+    const detour = retraceDetour(queue, currentIndex, source, position.trackIndex, activeConfig, isReachable, prepared);
     if (detour) return detour;
     const upNextBehind = findUpNextBehind(
       queue,
@@ -741,6 +751,19 @@ export function selectPreviousQueueItemWithSuggestions(
  * back to, when a list-walk entry comes before any queued climb (the walk got
  * here along the list, not out of Up next), or when the entry the detour left
  * from is gone from the queue; Previous then reads History as before.
+ *
+ * An orphan current (`currentIndex` -1) is a look off the climb on the wall
+ * that played Up next and picked the list up as a peek (#7227). None of its
+ * walk sits behind it in the queue, but the stretch it played is Up next after
+ * the entry the detour left from, so this retraces it from the queue's end.
+ * List-walk entries there say nothing about how the look got here, so they are
+ * passed over. With no stretch left (a crewmate cleared Up next), Previous
+ * lands on that entry itself, not on a peek of its climb, so Next from there
+ * plays whatever Up next holds by then.
+ *
+ * Either way the retrace starts at the Up next climb the walk stepped off, when
+ * the detour names it (`lastUpNextQueueItemUuid`) and it still sits in that
+ * stretch (see {@link detourRetraceStart}).
  */
 function retraceDetour(
   queue: ClimbQueue,
@@ -749,20 +772,50 @@ function retraceDetour(
   trackIndex: number,
   activeConfig: ActiveBoardForCompatibility | undefined,
   isReachable: ReachableClimbPredicate | undefined,
+  prepared: PreparedQueueNavigation | undefined,
 ): PreviousQueueItemSelection | null {
   const { detour } = source;
   if (!detour || trackIndexOf(source, detour.climbUuid) !== trackIndex - 1) return null;
+  const orphan = currentIndex < 0;
+  // The detour as the resume Previous steps back into: its two halves only.
+  const trackResume: PlaylistTrackResume = { climbUuid: detour.climbUuid, queueItemUuid: detour.queueItemUuid };
   let lastPlayed: ClimbQueueItem | null = null;
-  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+  for (let index = detourRetraceStart(queue, currentIndex, detour, prepared) - 1; index >= 0; index -= 1) {
     const item = queue[index];
-    if (item.uuid === detour.queueItemUuid) return lastPlayed ? { item: lastPlayed, trackResume: detour } : null;
+    if (item.uuid === detour.queueItemUuid) {
+      if (lastPlayed) return { item: lastPlayed, trackResume };
+      return orphan ? { item, trackResume: null } : null;
+    }
     if (isListWalkEntry(item, source)) {
-      if (!lastPlayed) return null;
+      if (!lastPlayed && !orphan) return null;
       continue;
     }
     if (!lastPlayed && !swipeWalksPast(item, activeConfig, isReachable)) lastPlayed = item;
   }
   return null;
+}
+
+/**
+ * Where {@link retraceDetour} starts walking back (exclusive): right after the
+ * Up next climb the walk stepped off (issue #7227), while that entry still sits
+ * after the entry the detour left from and, for a queued current, before it.
+ * Otherwise, or when the detour names none, from the current climb, or from the
+ * queue's end for an orphan, as before. A climb a crewmate queued after the
+ * walk came back to the list, or one a reorder moved behind the climb it
+ * stepped off, is then never taken for the last climb it played.
+ */
+function detourRetraceStart(
+  queue: ClimbQueue,
+  currentIndex: number,
+  detour: PlaylistTrackDetour,
+  prepared: PreparedQueueNavigation | undefined,
+): number {
+  const fallback = currentIndex < 0 ? queue.length : currentIndex;
+  const { lastUpNextQueueItemUuid } = detour;
+  if (!lastUpNextQueueItemUuid) return fallback;
+  const lastUpNextIndex = findQueueIndexOfEntry(queue, lastUpNextQueueItemUuid, prepared);
+  const leftIndex = findQueueIndexOfEntry(queue, detour.queueItemUuid, prepared);
+  return lastUpNextIndex > leftIndex && lastUpNextIndex < fallback ? lastUpNextIndex + 1 : fallback;
 }
 
 /**
@@ -812,9 +865,14 @@ function findUpNextBehind(
 
 /**
  * What the track's `resume` becomes when a queue entry reached outside the walk
- * goes up on the wall (issue #6777): with Light on swipe off, or in a crew, a
- * swipe off the committed climb is a look that walks the queue, and Put on the
- * wall commits the queued climb it landed on.
+ * goes up on the wall (issue #6777): a look with no list of its own (a queue
+ * slot walked along the queue, a fresh look such as a crewmate's tick) that Put
+ * on the wall, or a step while driving, puts up. A look that stepped off the
+ * committed climb along a list carries that list itself (#7227,
+ * {@link resolvePreviewStepSource}) and goes up with it, so it never gets here.
+ *
+ * The walk's own peek of a list climb (`walkedPeek`, minted fresh on commit)
+ * returns null: it is the list going on, as Next stepping onto it.
  *
  * An entry ahead of the current climb that the walk would play as Up next goes
  * up the way Next steps into it: the list climb the walk is at (the current
@@ -829,13 +887,28 @@ export function resolveUpNextCommitResume(
   currentItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   targetItem: ClimbQueueItem,
-  prepared?: PreparedQueueNavigation,
+  { walkedPeek = false, prepared }: { walkedPeek?: boolean; prepared?: PreparedQueueNavigation } = {},
 ): PlaylistTrackResume | null | undefined {
   if (!source || !currentItem) return undefined;
   const position = resolveTrackPosition(queue, currentItem, source, prepared);
   if (position.kind === 'off') return undefined;
+  // The walk's own peek of a list climb (#7113 QA), reaching Put on board with
+  // no list of its own: a look off the list climb on the wall did until #7227
+  // gave it the list. Put on board commits it as a fresh entry. That is the
+  // list going on, as Next stepping onto it would. Only the peek: any other
+  // fresh item on the list (a crew browse open of a peer's tick) never borrows
+  // the track (#5403).
+  const targetQueueIndex = findQueueIndexOfEntry(queue, targetItem.uuid, prepared);
+  if (
+    walkedPeek &&
+    targetQueueIndex < 0 &&
+    targetItem.climb?.uuid &&
+    findPlaylistClimbIndex(source, targetItem.climb.uuid) >= 0
+  ) {
+    return null;
+  }
   const currentIndex = findCurrentQueueIndex(queue, currentItem, prepared);
-  if (currentIndex < 0 || findQueueIndexOfEntry(queue, targetItem.uuid, prepared) <= currentIndex) return undefined;
+  if (currentIndex < 0 || targetQueueIndex <= currentIndex) return undefined;
   const listIndex = position.kind === 'list' ? position.trackIndex : position.resumeIndex;
   const listSuccessorUuid = source.climbs[listIndex + 1]?.uuid;
   // A finished list has no place to keep: the end card's "Keep going with your
@@ -881,10 +954,16 @@ const REMAINING_COUNT_CAP = 99;
  *
  * A source belongs to exactly one lineage. The provider's source describes the
  * COMMITTED climb's track. A pinned PREVIEW is a different lineage: it navigates
- * the track it was opened with, or no track at all. A preview never borrows,
- * inherits, or captures the committed track — issue #5403, where a list tap that
- * opened as a source-less preview inherited the track from an earlier activation
- * on a different list, and swiping walked climbs the climber had filtered out.
+ * its own track, or no track at all. Its own track is the one it was opened
+ * with, or, for a look that stepped off the committed climb, the track that
+ * step walked ({@link resolvePreviewStepSource}, issue #7227): the list the
+ * climber was already on, handed over by the step itself, so the look goes on
+ * down it as Next would. That is not the list #5403 guarded against. There, a
+ * list tap that opened as a source-less preview inherited the track from an
+ * earlier activation on a different list, and swiping walked climbs the
+ * climber had filtered out. So a preview still never borrows the committed
+ * track here, at render time: one opened with no track walks none, whatever
+ * the committed climb's track says, and so do its steps.
  *
  * The committed track is usable only while it still anchors the committed climb,
  * or while the walk plays Up next in the middle of it (its `resume`).
@@ -937,6 +1016,17 @@ export function anchoredSuggestionSource(
 }
 
 /**
+ * The immediate targets, and what each step does to the track's Up next resume
+ * point: {@link NextQueueItemSelection.trackResume} for `nextItem`,
+ * {@link PreviousQueueItemSelection.trackResume} for `prevItem`. Absent when the
+ * step walks no list or leaves the resume where it is.
+ */
+export type NavigationTargets = Omit<NavigationState, 'remainingCount'> & {
+  nextTrackResume?: PlaylistTrackResume | null;
+  prevTrackResume?: PlaylistTrackResume | null;
+};
+
+/**
  * computeNavigationState over the track rules: while a list is walked,
  * canNext/nextItem come from Up next and then the list (issue #6777), and
  * canPrevious/prevItem retrace the walk; with no list they come from the queue.
@@ -971,8 +1061,12 @@ export function computeNavigationTargetsWithSuggestions(
   isReachable?: ReachableClimbPredicate,
   prepared?: PreparedQueueNavigation,
   historyCount?: number | null,
-): Omit<NavigationState, 'remainingCount'> {
-  const { item: nextItem, atTrackEnd } = selectNextQueueItemWithSuggestions(
+): NavigationTargets {
+  const {
+    item: nextItem,
+    atTrackEnd,
+    trackResume: nextTrackResume,
+  } = selectNextQueueItemWithSuggestions(
     queue,
     currentClimbQueueItem,
     source,
@@ -981,7 +1075,7 @@ export function computeNavigationTargetsWithSuggestions(
     prepared,
     historyCount,
   );
-  const prevItem = findPreviousQueueItemWithSuggestions(
+  const { item: prevItem, trackResume: prevTrackResume } = selectPreviousQueueItemWithSuggestions(
     queue,
     currentClimbQueueItem,
     source,
@@ -990,7 +1084,50 @@ export function computeNavigationTargetsWithSuggestions(
     isReachable,
     historyCount,
   );
-  return { canNext: nextItem !== null, canPrevious: prevItem !== null, nextItem, prevItem, atTrackEnd };
+  return {
+    canNext: nextItem !== null,
+    canPrevious: prevItem !== null,
+    nextItem,
+    prevItem,
+    atTrackEnd,
+    nextTrackResume,
+    prevTrackResume,
+  };
+}
+
+/**
+ * The list a step that only looks (a swipe, Next or Previous outside a drive)
+ * keeps walking once it lands (issue #7227): `source`, the track navigation
+ * walked to reach the step, with the step's `trackResume` stored on it the way
+ * committing the step stores it (`withPlaylistTrackResume`). The preview the
+ * step opens keeps it as its own list, so the look goes on through Up next and
+ * then down the list, as Next would, instead of stopping at the end of the
+ * queue (Up next filled) or one climb past the climb on the wall (Up next
+ * empty).
+ *
+ * `steppedOffQueueItemUuid` is the entry the step leaves (the climb on screen):
+ * a step from Up next back onto the list records it on the detour, so
+ * Previous from the list retraces from the climb the look stepped off.
+ *
+ * `offWall` says the step leaves the climb on the wall itself, so it starts a
+ * look: the list it carries is marked as one (`lookOffWall`), and the look's
+ * Put on board, or a step once a drive starts, leaves the queue as Next would,
+ * whichever way the look went. A step off a preview keeps that preview's list
+ * as it is, marked or not: a list tap's list never becomes a look's.
+ *
+ * Null with no track: a step that walks only the queue carries no list. A
+ * preview opened with no list resolves to no track
+ * ({@link resolveNavigationSuggestionSource}), so its steps never pick up the
+ * committed one (#5403).
+ */
+export function resolvePreviewStepSource(
+  source: PlaylistSuggestionSource | null,
+  trackResume: PlaylistTrackResume | null | undefined,
+  { steppedOffQueueItemUuid, offWall = false }: { steppedOffQueueItemUuid?: string; offWall?: boolean } = {},
+): PlaylistSuggestionSource | null {
+  if (!source) return null;
+  const walked = offWall ? asLookOffWall(source) : source;
+  return trackResume === undefined ? walked : withPlaylistTrackResume(walked, trackResume, steppedOffQueueItemUuid);
 }
 
 export function countRemainingQueueItemsWithSuggestions(

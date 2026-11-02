@@ -1,16 +1,28 @@
-import type { MoreRow, MoreSection } from '../../MoreForm.types';
+import type { MoreRow, MoreSection, MoreSelectRow } from '../../MoreForm.types';
 import type { SettingsTranslate } from '../root/settings-pages';
+import { KEEP_LIGHTING_CHOICES, type KeepLightingChoice } from '../../../lib/keep-lighting';
 
 type Toggle = { enabled: boolean; onChange: (enabled: boolean) => void };
+type KeepLightingPicker = { choice: KeepLightingChoice; onChange: (choice: KeepLightingChoice) => void };
 
 export type BoardLightingModelInput = {
   t: SettingsTranslate;
-  lightOnSwipe: Toggle;
-  lightOnClimbTap: Toggle;
+  /** Stop driving after (2.7): every board, MoonBoards included. */
+  keepLighting: KeepLightingPicker;
+  /** In a session too: Put on board drives in a crew session as well. */
+  drivesInSession: Toggle;
+  /** Disconnect Bluetooth when driving ends (2.7, replacing auto-disconnect). */
+  disconnectWhenDrivingEnds: Toggle;
+  /**
+   * Always drive the wall: this phone drives the wall while it holds the
+   * board. On, Stop driving after shows greyed with its reason on the row,
+   * and In a session too applies whatever Stop driving after says.
+   */
+  alwaysDrive: Toggle;
   /**
    * Whether a playlist, For You or setter-page tap loads that list into the
-   * queue (F4, #6667). Leads the group after the two lighting switches: like
-   * Light the board when I tap a climb, it says what a list tap does.
+   * queue (F4, #6667). Under Always drive the wall: like it, it says what a
+   * list tap does.
    */
   playlistTapLoadsQueue: Toggle;
   /**
@@ -19,46 +31,154 @@ export type BoardLightingModelInput = {
    * reachable without a live connection.
    */
   moonboardLightAdjacentHolds: Toggle | null;
-  autoDisconnect: Toggle;
-  autoDisconnectTimeout: {
-    seconds: number;
-    /** Every choice, in seconds, with its label. */
-    options: readonly { seconds: number; label: string }[];
-    onChange: (seconds: number) => void;
-  };
+  /**
+   * Opens the www help on driving the wall (`/help/board-and-bluetooth#driving`).
+   * The preview-first card and the What's New spotlight both retire, so this
+   * row is where the frost, the clock and Stop driving after stay explained.
+   * No row without it.
+   */
+  onOpenDrivingHelp?: () => void;
 };
 
 /**
- * The Board page's lighting half: what lights the connected board on its own,
- * then what a list tap does (and the MoonBoard's extra LEDs), then the
- * Bluetooth group, which says when the phone lets go of the board so another
- * climber can connect.
+ * The words for each Stop driving after choice. Settings › Board and the board
+ * sheet's row both read it.
+ */
+export function keepLightingLabel(t: SettingsTranslate, choice: KeepLightingChoice): string {
+  switch (choice) {
+    case 'off':
+      return t('settings:ble.lighting.keep.off');
+    case '30':
+      return t('settings:ble.lighting.keep.options.30');
+    case '45':
+      return t('settings:ble.lighting.keep.options.45');
+    case '60':
+      return t('settings:ble.lighting.keep.options.60');
+    case '120':
+      return t('settings:ble.lighting.keep.options.120');
+    case '300':
+      return t('settings:ble.lighting.keep.options.300');
+    case 'until_stopped':
+      return t('settings:ble.lighting.keep.untilStopped');
+  }
+}
+
+/**
+ * The Stop driving after card's footer: a drive with a
+ * clock that each lit climb restarts, a drive until the climber stops it, or
+ * Right away's one climb and no drive.
+ */
+export function keepLightingFooter(t: SettingsTranslate, choice: KeepLightingChoice): string {
+  switch (choice) {
+    case 'off':
+      return t('settings:ble.lighting.keep.footerOff');
+    case 'until_stopped':
+      return t('settings:ble.lighting.keep.footerUntilStopped');
+    case '30':
+    case '45':
+    case '60':
+    case '120':
+    case '300':
+      return t('settings:ble.lighting.keep.footer');
+  }
+}
+
+function keepLightingRow(
+  t: SettingsTranslate,
+  picker: KeepLightingPicker,
+  extra: { subtitle?: string; disabled?: boolean } = {},
+): MoreSelectRow {
+  return {
+    kind: 'select',
+    key: 'putOnBoardKeepsLighting',
+    label: t('settings:ble.lighting.keep.label'),
+    ...(extra.subtitle ? { subtitle: extra.subtitle } : {}),
+    ...(extra.disabled ? { disabled: true } : {}),
+    options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
+    selectedKey: picker.choice,
+    onSelect: (selected) => {
+      const choice = KEEP_LIGHTING_CHOICES.find((candidate) => candidate === selected);
+      if (choice) picker.onChange(choice);
+    },
+  };
+}
+
+/**
+ * The Board page's lighting half (spec B4). First Always drive the wall, one
+ * switch (it replaced Light the board when I tap a climb and Light the board
+ * as I swipe): on, this phone always drives the wall while it holds the board.
+ * It leads because it greys the rows under it: a climber reads the switch
+ * before the rows it turns off. Its footer, only while it is on, says how to
+ * stop and what a stop holds.
  *
- * The two lighting switches get a group of their own, tap first and swipe
- * under it, because swipe only matters once tap (or Put on the wall) has a
- * climb on the wall: a preview never lights the board as you swipe, whatever
- * the swipe switch says (`swipeStaysViewOnly`). The swipe row's subtitle says
- * so, since six climbers in six read the old side-by-side pair as independent.
+ * Then how long Put on board's drive lasts (2.7, Stop driving after), one
+ * choice for every board, MoonBoards included, and In a session too, greyed
+ * with its reason while the choice is Right away. Under Always drive the wall
+ * the choice doesn't apply: it stays in place, greyed, saying why on the row
+ * itself (where a screen reader lands), and the card drops its footer, which
+ * describes Put on board's drive. In a session too still decides a crew
+ * session for Always drive the wall, so it is never greyed then.
+ *
+ * Under that card, what happens when a drive ends: Disconnect Bluetooth when
+ * driving ends, which frees the board for the next climber (it replaced
+ * auto-disconnect). Then what a list tap does (and the MoonBoard's extra LEDs).
  */
 export function buildBoardLightingSections(input: BoardLightingModelInput): MoreSection[] {
-  const { t, autoDisconnectTimeout } = input;
+  const { t } = input;
+
+  const alwaysDrive = input.alwaysDrive.enabled;
+  const keepOff = input.keepLighting.choice === 'off';
+  // Greyed under Always drive the wall, each row says why where a screen reader lands on it.
+  const alwaysDriveReason = t('settings:ble.lighting.keep.alwaysDriveReason');
+  const keepRows: MoreRow[] = [
+    keepLightingRow(t, input.keepLighting, {
+      ...(alwaysDrive ? { subtitle: alwaysDriveReason } : {}),
+      disabled: alwaysDrive,
+    }),
+  ];
+  keepRows.push({
+    kind: 'toggle',
+    key: 'putOnBoardDrivesInSession',
+    label: t('settings:ble.lighting.keep.inSessionLabel'),
+    accessibilityLabel: t('settings:ble.lighting.keep.inSessionAccessibilityLabel'),
+    subtitle: t('settings:ble.lighting.keep.inSessionDescription'),
+    // Greyed with Stop driving after Off: the reason replaces the description,
+    // at full contrast. Always drive the wall drives in a session only with it
+    // on, so it is never greyed then.
+    disabledReason: t('settings:ble.lighting.keep.inSessionOffReason'),
+    value: input.drivesInSession.enabled,
+    disabled: keepOff && !alwaysDrive,
+    onValueChange: input.drivesInSession.onChange,
+  });
+
+  const drivingEndsRows: MoreRow[] = [
+    {
+      kind: 'toggle',
+      key: 'disconnectWhenDrivingEnds',
+      label: t('settings:ble.lighting.drivingEnds.label'),
+      subtitle: t('settings:ble.lighting.drivingEnds.description'),
+      value: input.disconnectWhenDrivingEnds.enabled,
+      onValueChange: input.disconnectWhenDrivingEnds.onChange,
+    },
+  ];
+  if (input.onOpenDrivingHelp) {
+    drivingEndsRows.push({
+      kind: 'nav',
+      key: 'drivingHelp',
+      label: t('settings:ble.lighting.drivingHelp'),
+      external: true,
+      onPress: input.onOpenDrivingHelp,
+    });
+  }
 
   const lightingRows: MoreRow[] = [
     {
       kind: 'toggle',
-      key: 'lightOnClimbTap',
-      label: t('settings:ble.lighting.onTapLabel'),
-      subtitle: t('settings:ble.lighting.onTapDescription'),
-      value: input.lightOnClimbTap.enabled,
-      onValueChange: input.lightOnClimbTap.onChange,
-    },
-    {
-      kind: 'toggle',
-      key: 'lightOnSwipe',
-      label: t('settings:ble.lighting.onSwipeLabel'),
-      subtitle: t('settings:ble.lighting.onSwipeDescription'),
-      value: input.lightOnSwipe.enabled,
-      onValueChange: input.lightOnSwipe.onChange,
+      key: 'alwaysDrive',
+      label: t('settings:ble.lighting.alwaysDriveLabel'),
+      subtitle: t('settings:ble.lighting.alwaysDriveDescription'),
+      value: alwaysDrive,
+      onValueChange: input.alwaysDrive.onChange,
     },
   ];
   const moreLightingRows: MoreRow[] = [
@@ -84,44 +204,29 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
 
   return [
     {
-      key: 'lighting',
+      key: 'lightingAuto',
       title: t('settings:ble.lighting.title'),
-      footer: t('settings:ble.lighting.description'),
+      // How to stop, and what a stop holds: only true while it is on.
+      ...(alwaysDrive ? { footer: t('settings:ble.lighting.alwaysDriveFooter') } : {}),
       rows: lightingRows,
     },
     {
-      // Untitled: the lighting group's second card, so the pair above stays a pair.
-      key: 'lightingMore',
-      rows: moreLightingRows,
+      // Untitled: the same lighting page. Under Always drive the wall the rows
+      // say why they are greyed, and the footer (Put on board's drive) goes.
+      key: 'keepLighting',
+      ...(alwaysDrive ? {} : { footer: keepLightingFooter(t, input.keepLighting.choice) }),
+      rows: keepRows,
     },
     {
-      key: 'bluetooth',
-      title: t('settings:ble.sectionTitle'),
-      footer: t('settings:ble.autoDisconnect.description'),
-      rows: [
-        {
-          kind: 'toggle',
-          key: 'autoDisconnectBle',
-          label: t('settings:ble.autoDisconnect.enabledLabel'),
-          subtitle: t('settings:ble.autoDisconnect.enabledDescription'),
-          value: input.autoDisconnect.enabled,
-          onValueChange: input.autoDisconnect.onChange,
-        },
-        {
-          kind: 'select',
-          key: 'autoDisconnectTimeoutSeconds',
-          label: t('settings:ble.autoDisconnect.timeoutLabel'),
-          options: autoDisconnectTimeout.options.map((option) => ({
-            key: String(option.seconds),
-            label: option.label,
-          })),
-          selectedKey: String(autoDisconnectTimeout.seconds),
-          onSelect: (key) => {
-            const choice = autoDisconnectTimeout.options.find((option) => String(option.seconds) === key);
-            if (choice) autoDisconnectTimeout.onChange(choice.seconds);
-          },
-        },
-      ],
+      // Untitled: Stop driving after's second card, what happens when the drive
+      // ends, then how driving works on the www help.
+      key: 'drivingEnds',
+      rows: drivingEndsRows,
+    },
+    {
+      // Untitled: what a list tap does, and the MoonBoard's extra LEDs.
+      key: 'lightingMore',
+      rows: moreLightingRows,
     },
   ];
 }

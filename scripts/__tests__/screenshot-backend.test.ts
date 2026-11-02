@@ -18,6 +18,7 @@ import WebSocket from 'ws';
 import sharp from 'sharp';
 import { prepareIosCampaignFixtures } from '../prepare-ios-campaign-fixtures';
 import { NATIVE_CAMPAIGN_JOIN_QUERY, NATIVE_CAMPAIGN_REGISTER_QUERY } from '../lib/screenshot-campaign-session';
+import { SEARCH_CLIMBS_COUNT } from '../../packages/shared/graphql/src/operations/climb-search';
 
 import {
   createScreenshotBackend,
@@ -402,6 +403,128 @@ describe('screenshot backend', () => {
       await stop();
       fixturesDir = recordingDir;
     }
+  });
+
+  describe('count pagination replay compatibility', () => {
+    const input = {
+      boardName: 'spray',
+      layoutId: 720,
+      sizeId: 720,
+      setIds: '1',
+      angle: 35,
+      boardUuid: 'owned-spray-board',
+      userId: ACCOUNT_USER_ID,
+      minGrade: 10,
+      maxGrade: 20,
+      onlyOwned: true,
+    };
+    const request = (variables: unknown, query = SEARCH_CLIMBS_COUNT) => ({
+      operationName: 'SearchClimbsCount',
+      query,
+      variables,
+    });
+    const recordCount = async (variables: unknown, count: unknown, errors?: unknown) => {
+      const response = { data: { searchClimbs: { totalCount: count } }, ...(errors === undefined ? {} : { errors }) };
+      upstream.nextGraphqlResponse = { status: 200, body: response };
+      await postGraphql(request(variables));
+      return response;
+    };
+
+    it.each([0, 7])('replays genuine count %i across pagination changes without rewriting fixtures', async (count) => {
+      await start({ mode: 'record', fresh: true });
+      const response = await recordCount({ input: { ...input, page: 0, pageSize: 1 } }, count);
+      await stop();
+      const originals = new Map(
+        listFixtureFiles(fixturesDir).map((file) => [file, readFileSync(join(fixturesDir, file))]),
+      );
+      const upstreamRequests = upstream.graphqlRequests.length;
+      await start({ mode: 'replay' });
+      for (const countInput of [input, { ...input, page: 2, pageSize: 50 }, { ...input, pageSize: 25 }]) {
+        expect(await (await postGraphql(request({ input: countInput }))).json()).toEqual(response);
+      }
+      expect(upstream.graphqlRequests).toHaveLength(upstreamRequests);
+      expect(backend?.stats().misses).toBe(0);
+      expect(backend?.stats().hits).toBe(3);
+      expect(listFixtureFiles(fixturesDir).sort()).toEqual([...originals.keys()].sort());
+      for (const [file, bytes] of originals) expect(readFileSync(join(fixturesDir, file))).toEqual(bytes);
+    });
+
+    it('keeps exact recordings first and rejects contradictory paginated counts', async () => {
+      await start({ mode: 'record', fresh: true });
+      const firstVariables = { input: { ...input, page: 0, pageSize: 1 } };
+      const secondVariables = { input: { ...input, page: 1, pageSize: 1 } };
+      const firstResponse = await recordCount(firstVariables, 7);
+      const secondResponse = await recordCount(secondVariables, 8);
+      await stop();
+      await start({ mode: 'replay' });
+      expect(await (await postGraphql(request(firstVariables))).json()).toEqual(firstResponse);
+      expect(await (await postGraphql(request(secondVariables))).json()).toEqual(secondResponse);
+      expect(await (await postGraphql(request({ input }))).json()).toHaveProperty('errors');
+      expect(hasLine('MISS graphql SearchClimbsCount')).toBe(true);
+    });
+
+    it('accepts matching genuine counts and rejects all filter, board, angle and privacy drift', async () => {
+      await start({ mode: 'record', fresh: true });
+      const response = await recordCount({ input: { ...input, page: 0, pageSize: 1 } }, 7);
+      await recordCount({ input: { ...input, page: 1, pageSize: 50 } }, 7);
+      await stop();
+      await start({ mode: 'replay' });
+      expect(await (await postGraphql(request({ input }))).json()).toEqual(response);
+      for (const change of [
+        { minGrade: 11 },
+        { maxGrade: 21 },
+        { boardName: 'kilter' },
+        { layoutId: 721 },
+        { sizeId: 721 },
+        { setIds: '2' },
+        { boardUuid: 'other-board' },
+        { angle: 40 },
+        { userId: 'other-climber' },
+        { onlyOwned: false },
+        { searchQuery: 'different blocks' },
+      ]) {
+        expect(await (await postGraphql(request({ input: { ...input, ...change } }))).json()).toHaveProperty('errors');
+      }
+      expect(await (await postGraphql(request({ input, privacy: 'different' }))).json()).toHaveProperty('errors');
+      expect(
+        await (
+          await postGraphql(request({ input }, SEARCH_CLIMBS_COUNT.replace('totalCount', 'totalCount hasMore')))
+        ).json(),
+      ).toHaveProperty('errors');
+      expect(await (await postGraphql({ ...request({ input }), operationName: 'SearchClimbs' })).json()).toHaveProperty(
+        'errors',
+      );
+    });
+
+    it.each([-1, 1.5, '7', null])('rejects an invalid recorded count %j', async (count) => {
+      await start({ mode: 'record', fresh: true });
+      await recordCount({ input: { ...input, page: 0, pageSize: 1 } }, count);
+      await stop();
+      await start({ mode: 'replay' });
+      expect(await (await postGraphql(request({ input }))).json()).toHaveProperty('errors');
+    });
+
+    it('rejects an error-bearing candidate even when another count agrees', async () => {
+      await start({ mode: 'record', fresh: true });
+      await recordCount({ input: { ...input, page: 0, pageSize: 1 } }, 7);
+      await recordCount({ input: { ...input, page: 1, pageSize: 1 } }, 7, [{ message: 'Private wall unavailable' }]);
+      await stop();
+      await start({ mode: 'replay' });
+      expect(await (await postGraphql(request({ input }))).json()).toHaveProperty('errors');
+    });
+
+    it('rejects count fixture bytes whose input no longer matches the recorded key', async () => {
+      await start({ mode: 'record', fresh: true });
+      await recordCount({ input: { ...input, page: 0, pageSize: 1 } }, 7);
+      await stop();
+      const entry = readScreenshotFixtureManifest(fixturesDir)!.graphql[0];
+      const path = join(fixturesDir, entry.file);
+      const fixture = JSON.parse(readFileSync(path, 'utf8'));
+      fixture.variables.input.pageSize = 99;
+      writeFileSync(path, JSON.stringify(fixture));
+      await start({ mode: 'replay' });
+      expect(await (await postGraphql(request({ input }))).json()).toHaveProperty('errors');
+    });
   });
 
   it('replays the known nullable spray field without changing old recording bytes or hiding other drift', async () => {

@@ -456,6 +456,7 @@ describe('findSimilarClimbs', () => {
         qualityAverage: null,
         ascensionistCount: null,
         compatibleSizeIds: [],
+        requiredSetIds: null,
         characteristics: ['no_match'],
         similarity: 0.9,
         sharedHoldCount: 9,

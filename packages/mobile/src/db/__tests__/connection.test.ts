@@ -707,6 +707,8 @@ describe('initializeDatabase lock contention (#4104)', () => {
       },
       getFirstAsync: <T>(source: string, ...params: unknown[]): Promise<T | null> =>
         realDb.getFirstAsync<T>(source, ...(params as never[])),
+      getAllAsync: <T>(source: string, ...params: unknown[]): Promise<T[]> =>
+        realDb.getAllAsync<T>(source, ...(params as never[])),
       runAsync: (source: string, ...params: unknown[]) => realDb.runAsync(source, ...(params as never[])),
       withExclusiveTransactionAsync: (task: (txn: unknown) => Promise<void>) =>
         realDb.withExclusiveTransactionAsync(task as never),
@@ -1491,6 +1493,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
       return {
         execAsync: fail,
         getFirstAsync: fail,
+        getAllAsync: fail,
         runAsync: fail,
         withExclusiveTransactionAsync: fail,
       } as unknown as SQLiteDatabase;
@@ -1510,6 +1513,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
         },
         getFirstAsync: <T>(source: string, ...params: unknown[]) =>
           realDb.getFirstAsync<T>(source, ...(params as never[])),
+        getAllAsync: <T>(source: string, ...params: unknown[]) => realDb.getAllAsync<T>(source, ...(params as never[])),
         runAsync: (source: string, ...params: unknown[]) => realDb.runAsync(source, ...(params as never[])),
         withExclusiveTransactionAsync: (task: (txn: unknown) => Promise<void>) =>
           realDb.withExclusiveTransactionAsync(task as never),

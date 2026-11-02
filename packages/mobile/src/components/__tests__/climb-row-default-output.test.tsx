@@ -178,7 +178,7 @@ import {
   ClimbSubtitleView,
   type ClimbRowLeaves,
 } from '../ClimbListItemContent';
-import { climbListRowStyles } from '../climb-list-row-styles';
+import { climbListRowStyles, climbRowSeparatorInsetStyle } from '../climb-list-row-styles';
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
 import { resetClimbRowDisplayForTests, setClimbRowField } from '../../lib/climb-row-display-preference';
 
@@ -291,7 +291,8 @@ describe('the default climb row', () => {
   });
 
   it('starts the row separator 104pt in, under the text column', () => {
-    expect(climbListRowStyles.separator).toEqual({ height: 0.5, marginLeft: 104 });
+    expect(climbListRowStyles.separator).toEqual({ height: 0.5 });
+    expect(climbRowSeparatorInsetStyle(true, 76)).toEqual({ marginLeft: 104 });
     expect(climbListRowStyles.contentRow).toEqual({
       flexDirection: 'row',
       alignItems: 'center',

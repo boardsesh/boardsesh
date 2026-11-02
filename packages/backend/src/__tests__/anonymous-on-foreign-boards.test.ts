@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { buildSchema, graphql, isObjectType } from 'graphql';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   typeDefs,
@@ -1243,6 +1243,119 @@ describe('nearby discovery', () => {
 });
 
 describe('a board’s own feeds', () => {
+  it('keeps daily totals while un-naming a climber on a foreign board', async () => {
+    const gymTickUuid = randomUUID();
+    const ownTickUuid = randomUUID();
+    const tickUuids = [gymTickUuid, ownTickUuid];
+    await db.insert(dbSchema.boardseshTicks).values(
+      [gymBoard, ownBoard].map((board, index) => ({
+        uuid: tickUuids[index],
+        userId: CLIMBER,
+        climbUuid: CLIMB_UUID,
+        boardType: 'kilter',
+        angle: 40,
+        status: 'send' as const,
+        difficulty: 20,
+        comment: `${CLIMBER} daily note`,
+        climbedAt: '2026-10-09T10:00:00Z',
+        boardId: board.id,
+      })),
+    );
+    await db.insert(dbSchema.boardBetaLinks).values({
+      boardType: 'kilter',
+      climbUuid: CLIMB_UUID,
+      link: `https://www.youtube.com/watch?v=${randomUUID()}`,
+      createdByUserId: CLIMBER,
+      tickUuid: gymTickUuid,
+      boardId: gymBoard.id,
+      isListed: true,
+    });
+    const dailyCard = async (board: TestBoard, reader: string) => {
+      const feed = await sessionFeedQueries.sessionGroupedFeed(
+        undefined,
+        { input: { boardUuid: board.uuid, includeDailyHighlights: true } },
+        viewer(reader),
+      );
+      return feed.sessions.find(
+        (session) =>
+          session.sessionType === 'daily_highlight' &&
+          session.socialEntityId === (board.id === gymBoard.id ? gymTickUuid : ownTickUuid),
+      );
+    };
+    try {
+      const before = await dailyCard(gymBoard, STRANGER);
+      expect(before).toMatchObject({
+        sessionType: 'daily_highlight',
+        ownerUserId: CLIMBER,
+        tickCount: 1,
+        totalSends: 1,
+        hardestSend: { userId: CLIMBER },
+      });
+      if (!before) throw new Error('Daily card missing');
+      expect(before.sessionId).toBe(`daily:board:${gymBoard.uuid}:${gymTickUuid}`);
+
+      await setPreference(true);
+      for (const reader of [STRANGER, FOLLOWER]) {
+        const anonymous = await dailyCard(gymBoard, reader);
+        expect(anonymous).toMatchObject({
+          ownerUserId: null,
+          participants: [],
+          hardestSend: null,
+          tickCount: before.tickCount,
+          totalSends: before.totalSends,
+          totalFlashes: before.totalFlashes,
+          totalAttempts: before.totalAttempts,
+          gradeDistribution: before.gradeDistribution,
+        });
+        expect(JSON.stringify(anonymous)).not.toContain(CLIMBER);
+        expect(JSON.stringify(anonymous)).not.toContain('Climber Name');
+        const detail = await sessionFeedQueries.sessionDetail(
+          undefined,
+          { sessionId: before.sessionId },
+          viewer(reader),
+        );
+        expect(detail).toMatchObject({ ownerUserId: null, tickCount: 1, totalSends: 1 });
+        expect(detail?.participants).toHaveLength(1);
+        expect(detail?.ticks).toHaveLength(1);
+        expect(detail?.ticks[0]).toMatchObject({ comment: null, betaLinks: [] });
+        expect(JSON.stringify(detail)).not.toContain(CLIMBER);
+        expect(JSON.stringify(detail)).not.toContain('Climber Name');
+      }
+      const aggregate = await sessionFeedQueries.sessionDetail(
+        undefined,
+        { sessionId: before.sessionId, aggregateOnly: true },
+        viewer(STRANGER),
+      );
+      expect(aggregate).toMatchObject({ ownerUserId: null, participants: [], ticks: [], tickCount: 1, totalSends: 1 });
+      const self = await sessionFeedQueries.sessionDetail(undefined, { sessionId: before.sessionId }, viewer(CLIMBER));
+      expect(self?.ownerUserId).toBe(CLIMBER);
+      expect(self?.ticks[0]).toMatchObject({ userId: CLIMBER, comment: `${CLIMBER} daily note` });
+      expect(self?.ticks[0].betaLinks).toHaveLength(1);
+      const own = await dailyCard(ownBoard, STRANGER);
+      expect(own?.ownerUserId).toBe(CLIMBER);
+      if (!own) throw new Error('Own-board daily card missing');
+      const ownDetail = await sessionFeedQueries.sessionDetail(
+        undefined,
+        { sessionId: own.sessionId },
+        viewer(STRANGER),
+      );
+      expect(ownDetail?.ownerUserId).toBe(CLIMBER);
+      expect(ownDetail?.ticks[0].userId).toBe(CLIMBER);
+
+      await setPreference(false);
+      const namedAgain = await sessionFeedQueries.sessionDetail(
+        undefined,
+        { sessionId: before.sessionId },
+        viewer(STRANGER),
+      );
+      expect(namedAgain?.ownerUserId).toBe(CLIMBER);
+      expect(namedAgain?.participants[0].displayName).toBe('Climber Name');
+    } finally {
+      await db.delete(dbSchema.boardBetaLinks).where(inArray(dbSchema.boardBetaLinks.tickUuid, tickUuids));
+      await db.delete(dbSchema.boardseshTicks).where(inArray(dbSchema.boardseshTicks.uuid, tickUuids));
+    }
+  });
+
   it('unnames the climber on the gym’s session cards (Home’s gym mode), to strangers and followers', async () => {
     await setPreference(true);
     await insertSession('anon-boards-gym-feed', gymBoard.id);

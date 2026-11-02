@@ -87,5 +87,5 @@ Kept in English by convention (technical board-config or loanwords): **layout**,
 
 ## Process
 
-- Add every new key to **all** locales (`en-US`, `es`, `fr`, `de`) — `catalog-completeness.test.ts` fails on missing keys.
-- See the root `CLAUDE.md` "Internationalisation" section for the rest of the i18n workflow, and the Spanish/French glossary docs for the counterparts.
+- Add every new key to **all** locales (`en-US`, `es`, `fr`, `de`, `it`) — `catalog-completeness.test.ts` fails on missing keys.
+- See the root `CLAUDE.md` "Internationalisation" section for the rest of the i18n workflow, and the Spanish/French/Italian glossary docs for the counterparts.

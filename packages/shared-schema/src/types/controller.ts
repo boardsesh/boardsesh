@@ -68,6 +68,36 @@ export type ControllerQueueSync = {
 export type ControllerEvent = LedUpdate | ControllerPing | ControllerQueueSync;
 
 // Controller info for management UI
+export type ControllerPreviewDescriptor = {
+  imageUrl: string;
+  geometryUrl: string;
+  imageSha256: string;
+  geometrySha256: string;
+  imageBytes: number;
+  geometryBytes: number;
+  width: number;
+  height: number;
+  positionCount: number;
+};
+export type ControllerGymBoard = {
+  uuid: string;
+  name: string;
+  boardType: string;
+  serialNumber: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+  advertisedName: string;
+  preview: ControllerPreviewDescriptor;
+};
+export type ControllerGymManifest = {
+  version: number;
+  gymUuid: string;
+  name: string;
+  slug: string;
+  boards: ControllerGymBoard[];
+};
 export type ControllerInfo = {
   id: string;
   name?: string;

@@ -79,6 +79,9 @@ export default function AdminPage() {
         {t('title')}
       </Typography>
       <Box sx={{ mb: 3, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+        <MuiLink component={LocaleLink} href="/admin/boards" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+          {t('nav.boards')}
+        </MuiLink>
         <MuiLink
           component={LocaleLink}
           href="/admin/retention"

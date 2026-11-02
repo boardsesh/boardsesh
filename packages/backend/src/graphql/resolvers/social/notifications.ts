@@ -645,7 +645,7 @@ export const socialNotificationQueries = {
       .from(dbSchema.notifications)
       .where(groupPredicate)
       .groupBy(dbSchema.notifications.actorId)
-      .orderBy(sql`max(${dbSchema.notifications.createdAt}) DESC`)
+      .orderBy(sql`max(${dbSchema.notifications.createdAt}) DESC`, dbSchema.notifications.actorId)
       .limit(limit)
       .offset(offset);
 

@@ -3,6 +3,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import type { DiscoveredDevice } from './types';
 import type { ResolvedBoardEntry } from './resolve-serials';
 import { configFromResolvedEntry, type BleBoardConfig } from './board-config-match';
+import { groupPickerDevices, type PickerBoardTarget } from './picker-device-target';
 
 /**
  * The board type a picker row effectively represents, mirroring DeviceCard: a
@@ -73,6 +74,19 @@ export type PickerResolutionStats = {
    * selected board type — i.e. the user's target board was never discovered.
    */
   noneMatchedSelectedType: boolean;
+  /**
+   * For a picker opened for a known board (gym or saved board), how many
+   * devices fell in each group of `groupPickerDevices`: resolved to that board,
+   * unidentified (no serial, or an unrecorded one), and positively another
+   * board, which waits behind "Search for any board". All three are null when
+   * the picker had no board identity and listed everything. Counted by serial
+   * resolution alone, as since #7202: the box this phone remembers by id
+   * (`rememberedDeviceId`) lists in the sheet's target group but counts where
+   * its serial puts it, so `targetMatchedDevices` still means "resolved".
+   */
+  targetMatchedDevices: number | null;
+  targetUnknownDevices: number | null;
+  targetOtherDevices: number | null;
 };
 
 /**
@@ -85,7 +99,14 @@ export function summarizePickerResolution(
   devices: ReadonlyArray<DiscoveredDevice>,
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>,
   currentBoardConfig: BleBoardConfig | undefined,
+  targetBoard?: PickerBoardTarget,
 ): PickerResolutionStats {
+  const targetGroups = targetBoard?.boardUuid
+    ? groupPickerDevices(devices, resolvedBoards, {
+        boardUuid: targetBoard.boardUuid,
+        boardName: targetBoard.boardName,
+      })
+    : undefined;
   const stats: PickerResolutionStats = {
     devicesTotal: devices.length,
     devicesWithSerial: 0,
@@ -98,6 +119,9 @@ export function summarizePickerResolution(
     mismatchedSelectedType: 0,
     unknownType: 0,
     noneMatchedSelectedType: false,
+    targetMatchedDevices: targetGroups?.target.length ?? null,
+    targetUnknownDevices: targetGroups?.unknown.length ?? null,
+    targetOtherDevices: targetGroups?.other.length ?? null,
   };
 
   const selectedType = currentBoardConfig?.boardName;

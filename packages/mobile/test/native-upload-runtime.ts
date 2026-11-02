@@ -28,8 +28,18 @@ function loadSdkModule<Exports>(filename: string): Exports {
     Blob,
     TextEncoder,
     Uint8Array,
-    require: (specifier: string): unknown =>
-      specifier.startsWith('.') ? loadSdkModule(sourceRequire.resolve(`${specifier}.ts`)) : sourceRequire(specifier),
+    require: (specifier: string): unknown => {
+      if (!specifier.startsWith('.')) return sourceRequire(specifier);
+      let modulePath: string;
+      try {
+        // SDK 58's export map resolves Expo's source entrypoints to built JS.
+        modulePath = sourceRequire.resolve(specifier);
+      } catch {
+        // Older SDK source modules import TypeScript siblings without extensions.
+        modulePath = sourceRequire.resolve(`${specifier}.ts`);
+      }
+      return loadSdkModule(modulePath);
+    },
   });
   return sdkModule.exports as Exports;
 }

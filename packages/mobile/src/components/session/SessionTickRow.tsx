@@ -1,3 +1,4 @@
+import { ClimbActionsPressable } from '../climb-actions/ClimbActionsPressable';
 import { memo, useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +9,6 @@ import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
 import { ListRow } from '../ListRow';
 import { PressableAvatar } from '../PressableAvatar';
-import { PressableSurface } from '../PressableSurface';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { gradeBadgeColor } from '../you/profile-chart-colors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -23,12 +23,7 @@ import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-f
 import { isMultiFrameClimb } from '../../lib/is-multi-frame-climb';
 import { sessionTickToClimb } from '../../lib/session-tick-mapping';
 import { tickToClimb } from '../../lib/tick-to-climb';
-import {
-  LONG_PRESS_ACTION_NAME,
-  namedAccessibilityActions,
-  onNamedAccessibilityAction,
-} from '../../lib/named-accessibility-action';
-import { hapticSelection, hapticMedium } from '../../lib/haptics';
+import { hapticSelection } from '../../lib/haptics';
 
 type TickStatusMeta = { icon: IconName; color: string };
 
@@ -101,7 +96,7 @@ export const SessionTickRow = memo(function SessionTickRow({
   const { systemColors, chartColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const boardseshActive = useBoardseshGradesActive();
-  const { openClimbActions } = useDrawerHost();
+  const { getClimbActions } = useDrawerHost();
 
   const meta = statusMeta(tick.status);
   // The tinted disc (glyph on a 15% wash) adapts with the theme; only the solid
@@ -125,39 +120,19 @@ export const SessionTickRow = memo(function SessionTickRow({
     onPress(tick);
   }, [onPress, tick]);
 
-  // Long press → reaction menu. tickToClimb gives the full schema Climb the menu
-  // needs (sessionTickToClimb returns only the permissive list-visual shape); the
-  // board config + angle match the play-drawer open. No-ops without frames.
-  const handleLongPress = useCallback(() => {
+  const menuTarget = useMemo(() => {
     const menuClimb = tickToClimb(tick);
     const config = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
-    if (!menuClimb || !config) return;
-    hapticMedium();
-    openClimbActions(menuClimb, {
-      boardName: config.boardName,
-      layoutId: config.layoutId,
-      sizeId: config.sizeId,
-      setIds: config.setIds.join(','),
-      angle: tick.angle,
-    });
-  }, [tick, openClimbActions]);
-
-  // Offered only when the long press would open a menu (same early return as handleLongPress).
-  const canOpenMenu = useMemo(
-    () => !!tickToClimb(tick) && !!renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard),
-    [tick],
-  );
-  const longPressActions = useMemo(
-    () =>
-      canOpenMenu
-        ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, t('playView.actionBar.climbActionsAria'))
-        : undefined,
-    [canOpenMenu, t],
-  );
-  const onLongPressAction = useMemo(
-    () => (canOpenMenu ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPress) : undefined),
-    [canOpenMenu, handleLongPress],
-  );
+    return menuClimb && config
+      ? getClimbActions(menuClimb, {
+          boardName: config.boardName,
+          layoutId: config.layoutId,
+          sizeId: config.sizeId,
+          setIds: config.setIds.join(','),
+          angle: tick.angle,
+        })
+      : null;
+  }, [tick, getClimbActions]);
 
   const climb = sessionTickToClimb(tick);
   const climbLabel = tick.climbName ?? t('detail.unknownClimb');
@@ -171,13 +146,9 @@ export const SessionTickRow = memo(function SessionTickRow({
   if (climb && boardConfig) {
     return (
       <View>
-        <PressableSurface
+        <ClimbActionsPressable
+          target={menuTarget}
           onPress={handlePress}
-          onLongPress={handleLongPress}
-          accessibilityActions={longPressActions}
-          onAccessibilityAction={onLongPressAction}
-          feedback="opacity"
-          opacityTo={0.7}
           accessibilityRole="button"
           accessibilityLabel={rowAccessibilityLabel}
           style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
@@ -207,7 +178,7 @@ export const SessionTickRow = memo(function SessionTickRow({
             showAscentStatus={false}
             primarySubtitleOverride={isMultiUser ? (participant?.displayName ?? null) : null}
           />
-        </PressableSurface>
+        </ClimbActionsPressable>
         <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
       </View>
     );

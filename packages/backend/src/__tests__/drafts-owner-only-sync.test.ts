@@ -216,6 +216,12 @@ async function runClimbPolicyMigration(): Promise<void> {
 
 describe('migration 0276 re-sends the climbs the old board sync withheld', () => {
   beforeEach(async () => {
+    // This tests 0276, which ran while the CHECK still allowed 'climb'. The test
+    // database has the narrowed CHECK from 0281, so allow 'climb' again here to
+    // seed the rows 0276 deletes, and restore the narrowed CHECK afterwards.
+    await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
+    await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
+      CHECK (entity_type IN ('tick', 'session', 'comment', 'climb', 'playlist', 'beta'))`);
     await seedPrivateSetter();
     // The other two rows the old sync withheld: a public account's climb with
     // an "Only me" policy, and a deleted author's climb with its tombstone.
@@ -224,6 +230,13 @@ describe('migration 0276 re-sends the climbs the old board sync withheld', () =>
     await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
     await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
       VALUES ('climb', 'policy-only-me', ${OWNER_ID}, 'only_me'), ('climb', 'policy-tombstone', NULL, 'only_me')`);
+  });
+
+  afterEach(async () => {
+    await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
+    await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
+    await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
+      CHECK (entity_type IN ('tick', 'session', 'comment', 'playlist', 'beta'))`);
   });
 
   // A phone that pulled under the old rule walked its cursor past these rows
@@ -261,6 +274,43 @@ describe('migration 0276 re-sends the climbs the old board sync withheld', () =>
       await db.execute(sql`SELECT sync_seq::text AS sync_seq FROM board_climbs WHERE uuid = 'private-draft'`),
     );
     expect(draftAfter?.sync_seq).toBe(draftBefore?.sync_seq);
+    const policies = rowsFromResult(await db.execute(sql`SELECT 1 FROM content_privacy WHERE entity_type = 'climb'`));
+    expect(policies).toHaveLength(0);
+  });
+});
+
+describe('migration 0280 re-sends the climbs a stray climb policy withheld', () => {
+  beforeEach(async () => {
+    // A rolled-back backend could write a climb policy while the CHECK still
+    // allowed 'climb'. The test database has the narrowed CHECK from 0281, so
+    // allow it here to seed such rows, and restore the narrowed CHECK after.
+    await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
+    await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
+      CHECK (entity_type IN ('tick', 'session', 'comment', 'climb', 'playlist', 'beta'))`);
+    await insertClimb({ uuid: 'stray-policy', userId: OWNER_ID, isDraft: false, isListed: true });
+    await insertClimb({ uuid: 'stray-draft', userId: OWNER_ID, isDraft: true, isListed: false });
+    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+      VALUES ('climb', 'stray-policy', ${OWNER_ID}, 'only_me'), ('climb', 'stray-draft', ${OWNER_ID}, 'only_me')`);
+  });
+
+  afterEach(async () => {
+    await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
+    await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
+    await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
+      CHECK (entity_type IN ('tick', 'session', 'comment', 'playlist', 'beta'))`);
+  });
+
+  it('moves the published climb past a cursor that walked by it, leaves the draft, deletes the policies', async () => {
+    const before = await syncQueries.syncClimbs(undefined, scope, ctx(STRANGER_ID));
+    const migration = readFileSync(
+      new URL('../../../db/drizzle/0281_drop_stray_climb_content_privacy.sql', import.meta.url),
+      'utf8',
+    );
+    for (const statement of migration.split('--> statement-breakpoint')) {
+      await db.execute(sql.raw(statement));
+    }
+    const after = await syncQueries.syncClimbs(undefined, { ...scope, cursor: before.cursor }, ctx(STRANGER_ID));
+    expect(documentField(after, 'uuid')).toEqual(['stray-policy']);
     const policies = rowsFromResult(await db.execute(sql`SELECT 1 FROM content_privacy WHERE entity_type = 'climb'`));
     expect(policies).toHaveLength(0);
   });

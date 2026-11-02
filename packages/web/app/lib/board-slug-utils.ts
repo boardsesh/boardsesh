@@ -21,6 +21,8 @@ export type ResolvedBoard = {
   // Link-only: reachable anonymously (when isPublic) but excluded from
   // search/browse and, per this fix, from crawler indexing (noindex,follow).
   isUnlisted: boolean;
+  /** Parent gym listing controls discovery without changing link access. */
+  gymIsListed?: boolean | null;
   isOwned: boolean;
   ownerId: string;
   angle: number;
@@ -80,6 +82,7 @@ const BOARD_BY_SLUG_FIELDS = `
         locationName
         isPublic
         isUnlisted
+        gymIsListed
         isOwned
         angle
         isAngleAdjustable

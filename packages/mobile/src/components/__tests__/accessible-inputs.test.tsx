@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement, createRef, useImperativeHandle, type Ref } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { TextInput as NativeTextInput, TextInputProps } from 'react-native';
+import type { TextInputInstance as NativeTextInput, TextInputProps } from 'react-native';
 const signal = vi.hoisted(() => ({
   bold: false,
   focus: vi.fn(),
@@ -13,7 +13,10 @@ const reveal = vi.hoisted(() => ({ reveal: vi.fn(), follow: vi.fn(), release: vi
 vi.mock('../sheet-scroll-into-view', () => ({ useSheetScrollIntoView: () => reveal }));
 vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => signal.bold }));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ textStyles: { body: { fontSize: 17, lineHeight: 22, fontWeight: '400' } } }),
+  useTheme: () => ({
+    textStyles: { body: { fontSize: 17, lineHeight: 22, fontWeight: '400' } },
+    brandColors: { primary: '#6D28D9', primaryFill: '#6D28D9', onPrimary: '#ffffff' },
+  }),
 }));
 function flatten(style: unknown): Record<string, unknown> {
   return Object.assign({}, ...[style].flat(10).filter(Boolean));
@@ -23,6 +26,9 @@ function InputHost({
   style,
   allowFontScaling,
   maxFontSizeMultiplier,
+  cursorColor,
+  selectionColor,
+  selectionHandleColor,
   onFocus,
   onBlur,
   onChangeText,
@@ -37,13 +43,16 @@ function InputHost({
     'data-style': JSON.stringify(flatten(style)),
     'data-scaling': String(allowFontScaling),
     'data-cap': maxFontSizeMultiplier,
+    'data-cursor': cursorColor,
+    'data-selection': selectionColor,
+    'data-handle': selectionHandleColor,
     onFocus,
     onBlur,
     onChange: (event: React.ChangeEvent<HTMLInputElement>) => onChangeText?.(event.target.value),
     value: value ?? '',
   });
 }
-vi.mock('react-native', () => ({ TextInput: InputHost, StyleSheet: { flatten } }));
+vi.mock('react-native', () => ({ TextInput: InputHost, StyleSheet: { flatten }, Platform: { OS: 'android' } }));
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetTextInput: (props: React.ComponentProps<typeof InputHost>) =>
     createElement(InputHost, { ...props, testID: 'sheet-host' }),
@@ -102,6 +111,16 @@ for (const [name, Input] of [
       expect(onBlur).toHaveBeenCalledOnce();
       expect(onChangeText).toHaveBeenCalledWith('New beta');
     });
+    it('gives the caret and handles the brand tint and the highlight a translucent one', () => {
+      const host = render(<Input />).getByRole('textbox');
+      expect(host.getAttribute('data-cursor')).toBe('#6D28D9');
+      expect(host.getAttribute('data-handle')).toBe('#6D28D9');
+      expect(host.getAttribute('data-selection')).toBe('rgba(109, 40, 217, 0.4)');
+    });
+    it('lets a caller override the brand cursor colour', () => {
+      const host = render(<Input cursorColor="#000000" />).getByRole('textbox');
+      expect(host.getAttribute('data-cursor')).toBe('#000000');
+    });
     it('honors explicit chrome scaling overrides', () => {
       const screen = render(<Input maxFontSizeMultiplier={1.2} />);
       expect(screen.getByRole('textbox').getAttribute('data-cap')).toBe('1.2');
@@ -127,18 +146,24 @@ describe('sheet focus reveal', () => {
     const growth = { nativeEvent: { contentSize: { width: 200, height: 100 } } } as Parameters<
       NonNullable<TextInputProps['onContentSizeChange']>
     >[0];
-    act(() => signal.contentSizeChange?.(growth));
+    act(() => {
+      signal.contentSizeChange?.(growth);
+    });
     expect(reveal.follow).not.toHaveBeenCalled();
     expect(onContentSizeChange).toHaveBeenCalledWith(growth);
     fireEvent.focus(host);
     expect(onFocus).toHaveBeenCalledOnce();
     expect(reveal.reveal).toHaveBeenCalledWith(ref.current);
-    act(() => signal.contentSizeChange?.(growth));
+    act(() => {
+      signal.contentSizeChange?.(growth);
+    });
     expect(reveal.follow).toHaveBeenCalledWith(ref.current);
     fireEvent.blur(host);
     expect(onBlur).toHaveBeenCalledOnce();
     expect(reveal.release).toHaveBeenCalledWith(ref.current);
-    act(() => signal.contentSizeChange?.(growth));
+    act(() => {
+      signal.contentSizeChange?.(growth);
+    });
     expect(reveal.follow).toHaveBeenCalledOnce();
   });
 

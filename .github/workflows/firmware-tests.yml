@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - 'embedded/**'
+      - 'scripts/board-qa/usb-serial*.py'
+      - 'vite.config.ts'
       - '.github/workflows/firmware-tests.yml'
   pull_request:
     paths:
       - 'embedded/**'
+      - 'scripts/board-qa/usb-serial*.py'
+      - 'vite.config.ts'
       - '.github/workflows/firmware-tests.yml'
 
 concurrency:
@@ -22,6 +26,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: ${{ runner.environment == 'github-hosted' }}
+
+      - name: Install workspace dependencies
+        run: vp install --frozen-lockfile
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -39,9 +51,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install platformio
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Test mocked USB transport and private traces
+        run: vp run qa:boards:test-usb
+
       - name: Run native unit tests
         working-directory: embedded/test
-        run: pio test -e native -v
+        run: vp exec pio test -e native -v
+
+      - name: Exercise fixture protocols, buttons, cache, and rendering
+        run: vp run controller:fixture:test --sanitize
+
+      - name: Verify production fixture provisioning
+        run: vp exec node --test embedded/scripts/provision-qa-gym.test.mjs
 
       - name: Upload test results
         uses: actions/upload-artifact@v4

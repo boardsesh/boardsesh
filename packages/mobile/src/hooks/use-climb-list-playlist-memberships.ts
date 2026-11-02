@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { InteractionManager } from 'react-native';
+import { scheduleIdleTask } from '../lib/schedule-idle-task';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   GET_PLAYLISTS_FOR_CLIMBS,
@@ -7,7 +7,7 @@ import {
 } from '@boardsesh/graphql/operations/playlists';
 import { playlistMembershipStore } from '@boardsesh/climb-actions';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
-import { getPrivacyRevocationGeneration } from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { useAuth } from '../providers/auth-provider';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useStoredUserId } from './use-current-user-id';
@@ -35,8 +35,8 @@ type UseClimbListPlaylistMembershipsArgs = {
  * No-op unless the user enabled the setting AND is signed in. Dedupes via a ref
  * so each climb is requested once; resets the ref and clears the store whenever
  * the board/layout/auth/enabled context flips, so a previous board's memberships
- * can't paint the new board's rows. Deferred past the active fling via
- * `runAfterInteractions`, mirroring the logbook fetch.
+ * can't paint the new board's rows. Deferred until the JS thread has idle time
+ * after a frame paints.
  */
 export function useClimbListPlaylistMemberships({
   boardName,
@@ -73,12 +73,12 @@ export function useClimbListPlaylistMemberships({
 
     let cancelled = false;
     const fetchedForContext = fetchedRef.current;
-    const credentialGeneration = getPrivacyRevocationGeneration();
+    const credentialGeneration = getCredentialGeneration();
     let mergedCount = 0;
     const releaseUnmerged = () => {
       for (const uuid of toFetch.slice(mergedCount)) fetchedForContext.delete(uuid);
     };
-    const handle = InteractionManager.runAfterInteractions(async () => {
+    const handle = scheduleIdleTask(async () => {
       // Mark up-front so an overlapping effect run doesn't double-request the
       // same uuids while this batch is in flight.
       for (const uuid of toFetch) fetchedForContext.add(uuid);
@@ -94,7 +94,7 @@ export function useClimbListPlaylistMemberships({
           const response = await offlineAwareRequest<GetPlaylistsForClimbsQueryResponse>(GET_PLAYLISTS_FOR_CLIMBS, {
             input: { boardType: boardName, layoutId, climbUuids: chunk },
           });
-          if (cancelled || getPrivacyRevocationGeneration() !== credentialGeneration) return;
+          if (cancelled || getCredentialGeneration() !== credentialGeneration) return;
           const memberships = new Map(
             response.playlistsForClimbs.map((entry) => [entry.climbUuid, entry.playlistUuids]),
           );

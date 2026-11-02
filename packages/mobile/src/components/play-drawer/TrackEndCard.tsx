@@ -16,7 +16,7 @@
 // Android hardware back closes it. The host closes it on any climb change.
 
 import { memo, useEffect, useRef } from 'react';
-import { BackHandler, StyleSheet, View } from 'react-native';
+import { BackHandler, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { PressableSurface } from '../PressableSurface';
@@ -45,7 +45,7 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
   const { t } = useTranslation('session');
   const { variant, systemColors, m3SurfaceContainers, materialElevation } = useTheme();
   const reduceMotion = useReducedMotion();
-  const titleRef = useRef<View>(null);
+  const titleRef = useRef<ViewInstance>(null);
   useAnnounceBodyFocus(titleRef, true);
 
   // Android hardware back closes the card before it closes the player.

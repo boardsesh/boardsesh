@@ -1,3 +1,4 @@
+import { ClimbActionsPressable } from '../../climb-actions/ClimbActionsPressable';
 import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, View } from 'react-native';
@@ -8,6 +9,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
+import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
 import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
 import { getGradeTextColor } from '@boardsesh/play-view';
 import { tickTimeMs } from '@boardsesh/profile-stats';
@@ -28,6 +30,11 @@ import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useSessionDetail, useSessionPreview, useSessionSummary } from '../../../lib/graphql/hooks';
 import { runSessionEndExports } from '../../../lib/integrations';
 import { SESSION_STORE_REVIEW_CANDIDATE_PARAM, isSessionStoreReviewEligible } from '../../../lib/store-review';
+import {
+  refreshSessionWhenQueuedTicksLand,
+  waitForSessionTicksToSync,
+  type SessionTickSyncResult,
+} from '../../../offline/session-tick-drain';
 import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
 import { renderBoardToPlaylistConfig } from '../../../lib/playlists/board-details-for-playlist';
 import { isMultiFrameClimb } from '../../../lib/is-multi-frame-climb';
@@ -36,11 +43,12 @@ import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { useTickListActivation } from '../../../lib/playlists/use-tick-list-activation';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
+import { useScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 import { withAlpha } from '../../../theme/colors';
 import { springs } from '../../../theme/animations';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import { gradeBadgeColor } from '../../you/profile-chart-colors';
-import { hapticSelection, hapticMedium } from '../../../lib/haptics';
+import { hapticSelection } from '../../../lib/haptics';
 import { reportHandledError } from '../../../lib/error-reporting';
 import { track } from '../../../lib/analytics';
 import { useToast } from '../../../providers/toast-provider';
@@ -146,7 +154,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   const { t } = useTranslation(['session', 'climbs']);
   const { systemColors, brandColors, chartColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
-  const { openClimbActions } = useDrawerHost();
+  const { getClimbActions } = useDrawerHost();
   const statusIconName = statusIcon(status);
   const statusColor = statusTint(status, brandColors, chartColors.secondaryLabel);
   let statusLabel: string;
@@ -161,7 +169,13 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
       statusLabel = t('playView.tickBar.attemptLabel');
       break;
   }
-  const climb = tickToClimb(tick);
+  // Memoized on the tick: the menu target feeds useClimbMenu, which rebuilds the
+  // native menu's rows whenever its identity changes.
+  const climb = useMemo(() => tickToClimb(tick), [tick]);
+  const boardConfig = useMemo(
+    () => (tick.layoutId ? renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard) : null),
+    [tick],
+  );
   const historyRowLabel = t('mobile.session.historyRowAria', {
     name: tick.climbName ?? t('detail.unknownClimb'),
     status: statusLabel,
@@ -169,9 +183,6 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   const rowAccessibilityLabel = isMultiFrameClimb(climb?.framesCount)
     ? `${historyRowLabel}, ${t('mobile.climbRow.frameCount', { ns: 'climbs', count: climb.framesCount })}`
     : historyRowLabel;
-  const boardConfig = tick.layoutId
-    ? renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard)
-    : null;
   const subtitleParts = [
     participant?.displayName ?? null,
     status === 'flash' ? null : t('detail.attemptCount', { count: tick.attemptCount }),
@@ -190,25 +201,26 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
     onPress(tick);
   };
 
-  const handleLongPress = () => {
-    if (!climb || !boardConfig) return;
-    hapticMedium();
-    openClimbActions(climb, {
-      boardName: boardConfig.boardName,
-      layoutId: boardConfig.layoutId,
-      sizeId: boardConfig.sizeId,
-      setIds: boardConfig.setIds.join(','),
-      angle: tick.angle,
-    });
-  };
+  const tickAngle = tick.angle;
+  const menuTarget = useMemo(
+    () =>
+      climb && boardConfig
+        ? getClimbActions(climb, {
+            boardName: boardConfig.boardName,
+            layoutId: boardConfig.layoutId,
+            sizeId: boardConfig.sizeId,
+            setIds: boardConfig.setIds.join(','),
+            angle: tickAngle,
+          })
+        : null,
+    [climb, boardConfig, tickAngle, getClimbActions],
+  );
 
   return (
     <View>
-      <PressableSurface
+      <ClimbActionsPressable
+        target={menuTarget}
         onPress={handlePress}
-        onLongPress={handleLongPress}
-        feedback="opacity"
-        opacityTo={0.7}
         accessibilityRole="button"
         accessibilityLabel={rowAccessibilityLabel}
         style={[styles.historyRow, { backgroundColor: systemColors.secondaryBackground }]}
@@ -248,7 +260,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
             ) : null}
           </>
         )}
-      </PressableSurface>
+      </ClimbActionsPressable>
       <View style={[styles.historySeparator, { backgroundColor: systemColors.separator }]} />
     </View>
   );
@@ -272,7 +284,7 @@ export function InSessionView({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { sessionId, participantId } = useQueueSessionControls();
-  const { endSession, clearSession } = useQueueActions();
+  const { endSession, clearSession, getQueueSnapshot } = useQueueActions();
   const { liveStats, sessionUsers } = useQueueLiveStats();
   // End-for-everyone vs. drop-out-quietly, and which of the two this device
   // leads with. See use-session-exit-options for the id-space reasoning.
@@ -430,8 +442,8 @@ export function InSessionView({
   // the history lists them (issue #6665). It used to make the climb current for
   // everyone with a fresh queue entry, so in a crew it took a crewmate's wall
   // and queued a second copy of a climb already there. Now it follows every
-  // list's rules: a preview in a crew or with Light the board when I tap
-  // a climb off, otherwise the climb goes up like any list tap.
+  // list's rules: a preview unless this phone drives the wall, and while it
+  // does the climb goes up like any list tap.
   const handlePressHistoryTick = useTickListActivation<SessionDetailTick>({
     sourceId: `session:${sessionId ?? ''}`,
     label: t('playView.track.sessionClimbs'),
@@ -446,6 +458,9 @@ export function InSessionView({
   const overlayMode = translateY !== undefined && screenHeight !== undefined;
   const scrollOffset = useSharedValue(0);
   const startedAtTop = useSharedValue(true);
+  // Tells the Material app bar when the session list has scrolled under it.
+  const scrollEdge = useScrollEdgeBackdrop();
+  const edgeOnScroll = scrollEdge.list?.listProps.onScroll;
   // FlashList forwards a plain JS scroll event (it isn't a reanimated host
   // component), so we mirror the offset into the shared value here. The dismiss
   // gesture only reads `scrollOffset.value <= 0` on start, so JS-thread latency
@@ -453,8 +468,9 @@ export function InSessionView({
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       scrollOffset.value = event.nativeEvent.contentOffset.y;
+      edgeOnScroll?.(event);
     },
-    [scrollOffset],
+    [scrollOffset, edgeOnScroll],
   );
   // Measured chrome height (incl. the top safe-area inset) so the list pads its
   // top by it. Only used when the floating chrome renders (tab mode).
@@ -506,7 +522,25 @@ export function InSessionView({
       if (trimmedNotes && endingSessionId) {
         await setDraftComment(endingSessionId, trimmedNotes);
       }
-      const summary = await endSession({ notes: trimmedNotes });
+      // Give ticks still in the offline outbox up to 3 s to land first: the
+      // server builds the summary (and the Strava export) from the ticks it
+      // has, so ending right after the last tick read "0 attempts" (#6903).
+      // Never throws; the session ends whatever it returns. Run by endSession
+      // after it marks the session as ending, so a remote end is suppressed.
+      // Starts as timedOut so a beforeEnd that never ran fails safe: no review
+      // prompt, and the late-tick refresh still watches.
+      const tickSync: { result: SessionTickSyncResult } = { result: 'timedOut' };
+      const summary = await endSession({
+        notes: trimmedNotes,
+        beforeEnd: async (id) => {
+          tickSync.result = await waitForSessionTicksToSync(id, queryClient);
+          // The workout's last copy, with every tick it logged mapped to its
+          // climb (#6903). Queued after the wait, so it drains after any tick
+          // still queued and the server keeps those ticks' entries. The queue
+          // is still here, so a climb the run never captured is filled in.
+          await enqueueSessionWorkoutWrite(id, { queryClient, queueItems: getQueueSnapshot().queue });
+        },
+      });
       onEndDismiss?.();
       if (summary) {
         // The recap landed with the session — drop the local draft and clear the
@@ -519,9 +553,15 @@ export function InSessionView({
         // rejection. The manual save button on the summary screen shares the same
         // dedup guard, so this won't double-write.
         runSessionEndExports(summary, {});
-        const summaryParams = isSessionStoreReviewEligible(summary)
-          ? { sessionId: summary.sessionId, reviewCandidate: SESSION_STORE_REVIEW_CANDIDATE_PARAM }
-          : { sessionId: summary.sessionId };
+        // Some of this session's ticks may still be queued on the phone, so the
+        // summary is short of them for now: refresh it when they land, and
+        // hold back the store-review prompt.
+        const ticksStillQueued = tickSync.result === 'timedOut' || tickSync.result === 'offline';
+        if (ticksStillQueued) refreshSessionWhenQueuedTicksLand(summary.sessionId, queryClient);
+        const summaryParams =
+          isSessionStoreReviewEligible(summary) && !ticksStillQueued
+            ? { sessionId: summary.sessionId, reviewCandidate: SESSION_STORE_REVIEW_CANDIDATE_PARAM }
+            : { sessionId: summary.sessionId };
         router.push({ pathname: '/(tabs)/record/summary', params: summaryParams });
       }
     } catch (error) {
@@ -533,7 +573,7 @@ export function InSessionView({
       // confirm button spinning forever and the sheet undismissable.
       setIsEnding(false);
     }
-  }, [endSession, router, onEndDismiss, endNotes, sessionId]);
+  }, [endSession, router, onEndDismiss, endNotes, sessionId, queryClient, getQueueSnapshot]);
 
   // Drop out WITHOUT ending the session for anyone else (#3502). Deliberately
   // NOT `clearSession()`: `notifyServer` emits LEAVE_SESSION so peers see the
@@ -618,7 +658,7 @@ export function InSessionView({
         </PressableSurface>
       ) : null}
 
-      <SessionPresenceRow users={sessionUsers} />
+      <SessionPresenceRow sessionId={sessionId} users={sessionUsers} />
 
       {/* Solo teaching row for the chrome's bare share glyph (tab mode). A glass
           square can't hold a label, so the affordance is explained here until a
@@ -715,6 +755,7 @@ export function InSessionView({
       }}
       scrollIndicatorInsets={{ top: showChrome ? chromeHeight : 0 }}
       showsVerticalScrollIndicator={false}
+      {...scrollEdge.list?.listProps}
       onScroll={handleScroll}
       scrollEventThrottle={16}
       bounces={false}
@@ -730,6 +771,7 @@ export function InSessionView({
           title={sessionTitle}
           onEditTitle={canEditTitle ? openTitleSheet : undefined}
           onHeightChange={setChromeHeight}
+          scrollEdge={scrollEdge.backdrop}
           onShare={onShare}
           onEndSession={onRequestEndSession}
           exitVariant={defaultMode}

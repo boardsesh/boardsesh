@@ -18,7 +18,8 @@ import { createElement, createRef, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { restoreRemovedQueueItems } from '../../../lib/queue-undo';
-import { invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
+vi.mock('../../LogAscentSheet', () => ({ LogAscentSheet: () => null }));
 
 // The queue sheet's Clear and bulk Remove each offer an Undo (HIG "Undo and
 // redo"). The Undo must restore through the queue's ordinary whole-queue
@@ -53,9 +54,11 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 }));
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: () => ({
+    sheetId: 'queue-sheet-undo-test',
     handle: { present: vi.fn(), dismiss: vi.fn(), dismissAndWait: vi.fn() },
     onChange: vi.fn(),
     onFullyDismissed: vi.fn(),
+    waitForPresentation: vi.fn(async () => ({ status: 'presented' as const })),
   }),
 }));
 vi.mock('react-native-safe-area-context', () => ({
@@ -79,21 +82,25 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../Text', () => ({ Text: ({ children }: ViewProps) => createElement('span', null, children) }));
 
-// Header: Clear + an edit toggle. List: one select button per row.
+// Header: the edit mode's Clear, the ⋯ menu's Clear queue and an edit toggle.
+// List: one select button per row.
 vi.mock('../QueueSheetHeader', () => ({
   QueueSheetHeader: ({
     onClearAll,
     onToggleEditMode,
     queueCount,
+    viewOnlyMode,
   }: {
-    onClearAll: () => void;
+    onClearAll: (source: 'edit' | 'menu') => void;
     onToggleEditMode: () => void;
     queueCount: number;
+    viewOnlyMode: boolean;
   }) =>
     createElement(
       'div',
-      { 'data-testid': 'header', 'data-count': String(queueCount) },
-      createElement('button', { 'data-testid': 'clear', onClick: onClearAll }),
+      { 'data-testid': 'header', 'data-count': String(queueCount), 'data-view-only': String(viewOnlyMode) },
+      createElement('button', { 'data-testid': 'clear', onClick: () => onClearAll('edit') }),
+      createElement('button', { 'data-testid': 'menu-clear', onClick: () => onClearAll('menu') }),
       createElement('button', { 'data-testid': 'edit', onClick: onToggleEditMode }),
     ),
 }));
@@ -247,7 +254,7 @@ describe('QueueSheet undo', () => {
     const undoButton = getByTestId('undo');
     // The mocked provider's scope stays unchanged: only the imperative privacy
     // generation can protect the callback captured by this rendered button.
-    invalidatePrivacySnapshots('credential');
+    invalidateCredentialSnapshots();
     fireEvent.click(undoButton);
 
     expect(actions.restoreQueueItems).not.toHaveBeenCalled();
@@ -269,6 +276,64 @@ describe('QueueSheet undo', () => {
     ];
     expect(uuidsOf(restoredQueue)).toEqual(['a', 'b', 'c']);
     expect(restoredCurrent?.uuid).toBe('b');
+  });
+
+  it.each([
+    ['clear', 'edit'],
+    ['menu-clear', 'menu'],
+  ] as const)('clears from %s through the one clear, with its Undo (source %s)', (control, source) => {
+    const { getByTestId } = renderSheet();
+    fireEvent.click(getByTestId(control));
+    expect(actions.clearQueue).toHaveBeenCalledTimes(1);
+    expect(actions.clearQueue).toHaveBeenCalledWith({ source });
+    expect(getByTestId('undo-snackbar').getAttribute('data-message')).toBe('mobile.queueSheet.cleared');
+
+    fireEvent.click(getByTestId('undo'));
+    expect(actions.restoreQueueItems).toHaveBeenCalledTimes(1);
+    const [restoredQueue, restoredCurrent] = actions.setQueue.mock.calls[0] as [
+      ClimbQueueItem[],
+      ClimbQueueItem | null,
+    ];
+    expect(uuidsOf(restoredQueue)).toEqual(['a', 'b', 'c']);
+    expect(restoredCurrent?.uuid).toBe('b');
+  });
+
+  it('tells the header the queue is empty, which hides the pencil and the ⋯ alike', () => {
+    live.current = { queue: [], currentClimbQueueItem: null };
+    const { getByTestId } = renderSheet();
+    expect(getByTestId('header').getAttribute('data-view-only')).toBe('true');
+  });
+
+  // Crew: the ⋯ adds a second door to the same clear, never a wider one. Both
+  // controls make the identical provider calls in the shared session, and the
+  // Undo restores in that session's scope.
+  it('makes the same crew calls from the ⋯ menu as from the edit mode', () => {
+    const callsFor = (control: 'clear' | 'menu-clear') => {
+      const queue = ['a', 'b', 'c'].map(item);
+      live.current = { queue, currentClimbQueueItem: queue[1] };
+      for (const mock of Object.values(actions)) mock.mockClear();
+      const view = renderSheet();
+      fireEvent.click(view.getByTestId(control));
+      live.current = { queue: [item('peer')], currentClimbQueueItem: null };
+      fireEvent.click(view.getByTestId('undo'));
+      const calls = {
+        clear: actions.clearQueue.mock.calls.length,
+        removes: actions.removeQueueItems.mock.calls.length + actions.removeFromQueue.mock.calls.length,
+        restoreScope: actions.restoreQueueItems.mock.calls.map((call) => call[2]),
+        restored: actions.setQueue.mock.calls.map(([restoredQueue]) => uuidsOf(restoredQueue as ClimbQueueItem[])),
+      };
+      view.unmount();
+      return calls;
+    };
+    const fromEdit = callsFor('clear');
+    const fromMenu = callsFor('menu-clear');
+    expect(fromMenu).toEqual(fromEdit);
+    expect(fromMenu).toEqual({
+      clear: 1,
+      removes: 0,
+      restoreScope: ['session-1:kilter:account-1'],
+      restored: [['a', 'b', 'c', 'peer']],
+    });
   });
 
   it("keeps a crew member's add made while the Undo was on screen", () => {

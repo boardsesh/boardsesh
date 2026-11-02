@@ -1,2 +1,45 @@
+/* Lock Screen and Dynamic Island controls */
+"Prev" = "Zurück";
+"Next" = "Weiter";
+"Previous climb" = "Vorheriger Boulder";
+"Next climb" = "Nächster Boulder";
 "Mirror climb" = "Boulder spiegeln";
 "Unmirror climb" = "Spiegelung aufheben";
+"Tap to reconnect" = "Zum Verbinden tippen";
+"Board disconnected. Tap to reconnect" = "Board getrennt. Zum Verbinden tippen";
+/* Disconnected card: the last tap failed, or no board is remembered */
+"Board didn't answer. Tap again" = "Board antwortet nicht. Tippe erneut";
+"Board didn't answer. Tap to try again" = "Board antwortet nicht. Tippe, um es erneut zu versuchen";
+"Turn on Bluetooth, then tap" = "Schalte Bluetooth ein, dann tippe";
+"Bluetooth is off. Turn it on, then tap to reconnect" = "Bluetooth ist aus. Schalte es ein und tippe zum Verbinden";
+"Open Boardsesh to connect" = "Öffne Boardsesh zum Verbinden";
+"Board disconnected. Open Boardsesh to connect" = "Board getrennt. Öffne Boardsesh zum Verbinden";
+"On the wall" = "An der Wand";
+"%@ is on the wall" = "%@ ist an der Wand";
+"Wall held by another climber" = "Wand wird von jemand anderem gesteuert";
+
+/* Shown when the card has had no update for 10 minutes */
+"Open Boardsesh to refresh" = "Öffne Boardsesh zum Aktualisieren";
+
+/* Climb details: "3 of 12" is the queue position */
+"%lld of %lld" = "%lld von %lld";
+"Grade %@" = "Grad %@";
+
+/* Rest timer (#6513) */
+"Rest timer" = "Pausen-Timer";
+/* "Rest" is the rest period between attempts (noun); "Paused" is the stopped timer. Keep them distinct. */
+"Rest" = "Pause";
+"Over your rest" = "Pause überzogen";
+"Paused" = "Angehalten";
+"Every %@" = "Alle %@";
+"Queue's empty" = "Warteschlange leer";
+"Since your last climb" = "Seit deinem letzten Boulder";
+"Log a climb to start" = "Trag eine Begehung ein";
+
+/* Driving the wall (2.7): what the wall does with the next pick */
+"Wall lit" = "Wand leuchtet";
+"Picks are previews" = "Boulder öffnen sich als Vorschau";
+"Driving the wall" = "Du steuerst das Board";
+"Every climb you pick lights up" = "Jeder Boulder, den du wählst, wird beleuchtet";
+"Lights the climb again" = "Beleuchtet den Boulder erneut";
+"Stops driving" = "Beendet das Steuern";

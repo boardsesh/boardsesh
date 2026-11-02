@@ -62,6 +62,7 @@ const SAMPLE_VALUES: { [Key in PlaylistFilterParamKey]: PlaylistFilterParams[Key
   onlyRatedByMe: true,
   useMyGrades: true,
   onlyDrafts: true,
+  draftScope: 'WALL',
   onlyFavorited: true,
   projectsOnly: true,
   holdIntegrity: 'intact',

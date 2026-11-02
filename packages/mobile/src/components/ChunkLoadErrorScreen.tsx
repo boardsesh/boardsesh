@@ -17,7 +17,7 @@ import { recoverFromChunkLoadError, reloadPage, type ChunkRecoveryOutcome } from
 // otherwise offers exactly one button: Reload.
 //
 // Copy is hardcoded English for the same reason as the generic boundary in
-// app/_layout.tsx: it renders before any provider, so i18next is not ready.
+// CrashScreen.tsx: it renders before any provider, so i18next is not ready.
 //
 // Colours are explicit for the same reason. With no ThemeProvider above the
 // boundary, an uncoloured `Text` falls back to React Native's default black,

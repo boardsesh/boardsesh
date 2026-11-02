@@ -45,12 +45,13 @@ export async function isBoardDownloadedLocally(db: OfflineDatabase, scope: Offli
 
 /**
  * Whether ANY (layout, size) scope of a board TYPE has a completed download.
- * The Boardsesh-grade queries (`boardseshGrade` / `boardseshGradesForAngles`)
- * carry only `boardName` + `climbUuid` (+ angle) — no layout/size — so they gate
- * on the board type, then read `board_climb_grades` by the exact (board_type,
- * climb_uuid, angle) key. A viewed climb from a non-downloaded scope of the same
- * board type simply misses (null row), and the single-row miss retries over the
- * network while online (see offline-request's isLocalMiss).
+ * The single Boardsesh-grade query (`boardseshGrade`) carries only `boardName`
+ * + `climbUuid` + angle — no layout/size — so it gates on the board type, then
+ * reads `board_climb_grades` by the exact (board_type, climb_uuid, angle) key.
+ * A viewed climb from a non-downloaded scope of the same board type simply
+ * misses (null row), and the miss retries over the network while online (see
+ * offline-request's isLocalMiss). `boardseshGradesForAngles` gates on the
+ * climb's own layout instead (`isClimbLayoutDownloadedLocally`).
  *
  * `getSetting` (react-native-mmkv) is imported lazily for the same reason as
  * `isBoardDownloadedLocally` above — keep the MMKV/Flow entry out of the test
@@ -98,6 +99,14 @@ export async function hasDownloadedBoardData(db: OfflineDatabase): Promise<boole
  * does not fit never pulled its stats rows — even when the climb row itself is
  * on the device (a second size of the layout still downloading, say).
  *
+ * A climb whose local row is delisted (`is_listed = 0`) is covered only when
+ * it has rows of its own in `readTable`, the table the caller reads. A
+ * merged-away alias looks like that on the phone (the catalog dedups keep it
+ * and unlist it) but its grade and stats rows live under the canonical uuid,
+ * so with none of its own the read goes to the server, which resolves
+ * aliases. An ordinary unlisted climb (mirrored by the sync, kept in saved
+ * playlists) has its own rows and keeps serving them, offline included.
+ *
  * Short-circuits on the in-memory setting before touching SQLite, so a device
  * with nothing downloaded for this board type pays no probe. `getSetting` is
  * imported lazily for the same reason as `isBoardDownloadedLocally` above.
@@ -106,6 +115,7 @@ export async function isClimbLayoutDownloadedLocally(
   db: OfflineDatabase,
   boardType: string,
   climbUuid: string,
+  readTable: ClimbReadTable,
 ): Promise<boolean> {
   const { getSetting } = await import('../../settings/hooks');
   const scopeKeysForType = getSetting('syncEnabledBoards').filter(
@@ -113,11 +123,18 @@ export async function isClimbLayoutDownloadedLocally(
   );
   if (scopeKeysForType.length === 0) return false;
 
-  const climb = await db.getFirstAsync<{ layout_id: number | null; compatible_size_ids: string | null }>(
-    'SELECT layout_id, compatible_size_ids FROM board_climbs WHERE uuid = ? AND board_type = ? LIMIT 1',
-    [climbUuid, boardType],
-  );
+  const climb = await db.getFirstAsync<{
+    layout_id: number | null;
+    compatible_size_ids: string | null;
+    is_listed: number | null;
+  }>('SELECT layout_id, compatible_size_ids, is_listed FROM board_climbs WHERE uuid = ? AND board_type = ? LIMIT 1', [
+    climbUuid,
+    boardType,
+  ]);
   if (climb?.layout_id == null) return false;
+  // A delisted row may be a merged-away alias whose rows moved to the canonical
+  // uuid. Serve it locally only when it has rows of its own to serve.
+  if (climb.is_listed === 0 && !(await hasOwnRows(db, readTable, boardType, climbUuid))) return false;
 
   const sizeScoped = isSizeScopedBoard(boardType);
   const climbSizeIds = sizeScoped ? parseSizeIds(climb.compatible_size_ids) : null;
@@ -129,6 +146,23 @@ export async function isClimbLayoutDownloadedLocally(
     if (await isScopeDownloadComplete(db, scopeKey)) return true;
   }
   return false;
+}
+
+/** The per-climb tables a layout-gated read serves from. */
+export type ClimbReadTable = 'board_climb_grades' | 'board_climb_stats';
+
+/** Whether `table` holds any row for this exact (board type, climb uuid). */
+async function hasOwnRows(
+  db: OfflineDatabase,
+  table: ClimbReadTable,
+  boardType: string,
+  climbUuid: string,
+): Promise<boolean> {
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM ${table} WHERE board_type = ? AND climb_uuid = ? LIMIT 1`,
+    [boardType, climbUuid],
+  );
+  return row != null;
 }
 
 /** `compatible_size_ids` is stored as a JSON array; anything else reads as no sizes. */

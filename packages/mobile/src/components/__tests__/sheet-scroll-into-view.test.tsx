@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 vi.mock('../use-ios-sheet-background-style', () => ({ useIosSheetBackgroundStyle: () => undefined }));
-vi.mock('../../hooks/use-accessible-input-style', () => ({ useAccessibleInputStyle: (style: unknown) => style }));
+vi.mock('../../hooks/use-accessible-input-style', () => ({
+  useAccessibleInputStyle: (style: unknown) => style,
+  useBrandInputColors: () => undefined,
+}));
 //
 // #5665: with the keyboard up, the logbook edit sheet's Note field sat under the
 // keyboard. Nothing scrolled the sheet body to the focused field, and nothing

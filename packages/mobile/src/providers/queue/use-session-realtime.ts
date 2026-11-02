@@ -1,8 +1,8 @@
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { useContext, useEffect } from 'react';
 import { AppState } from 'react-native';
 import { QueryClientContext } from '@tanstack/react-query';
-import { computeQueueStateHash, computeQueueStateHashOrdered } from '@boardsesh/queue';
+import { computeQueueStateHash, computeQueueStateHashOrdered, queueReducer } from '@boardsesh/queue';
 import type { ClimbQueueItem, QueueAction, QueueState } from '@boardsesh/queue';
 import {
   applySessionRuntimeEvent,
@@ -15,6 +15,7 @@ import {
   type SubscriptionWireEnvelope,
 } from '@boardsesh/queue-runtime';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { buildQueueUpdatesSubscription } from '@boardsesh/graphql/operations/queue-session';
 import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import type { PlaybackStateChangedEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
@@ -36,10 +37,11 @@ import { toClimbQueueItem, type SubscriptionQueueItem } from '../../lib/queue-co
 import { toMobileSessionRuntimeEvent } from '../../lib/session-runtime-event';
 import { handleCrewCadenceChange } from '../../lib/crew-rest-cadence';
 import { nowMs } from '../../lib/clock';
+import { clearRelayReceipt, noteRelayReceipt } from '../../lib/relay-receipt';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
-import { clampSyncedQueue } from './now-slot-server';
+import { clampSyncedQueue, isAttributionValidationError } from './now-slot-server';
 
 const JOIN_SESSION_RETRY_BACKOFF_MS = [1_000, 2_500, 5_000] as const;
 // ws-client remaps a rejected-auth 4401 to the retryable AUTH_REFRESH_RETRY_CLOSE_CODE
@@ -141,7 +143,7 @@ function rosterStateSignature(state: MobileSessionRuntimeState): string {
 
 type UseSessionRealtimeParams = {
   authTransportRevision: number;
-  privacyRevocationGeneration?: number;
+  credentialGeneration?: number;
   sessionId: string | null;
   dispatch: React.Dispatch<QueueAction>;
   coordinator: { clientId: string };
@@ -173,6 +175,7 @@ type UseSessionRealtimeParams = {
    * probe the join ran). Picks the subscription document and the re-seed clamp.
    */
   nowSlotModeRef: React.RefObject<boolean>;
+  attributionServerRef: React.RefObject<boolean>;
   activeBoardRef: React.RefObject<UserBoard | null | undefined>;
   setActiveBoardRef: React.RefObject<(board: UserBoard) => Promise<boolean>>;
   showToastRef: React.RefObject<(message: string, variant?: ToastVariant, duration?: number) => void>;
@@ -211,7 +214,7 @@ type UseSessionRealtimeParams = {
  */
 export function useSessionRealtime({
   authTransportRevision,
-  privacyRevocationGeneration,
+  credentialGeneration,
   sessionId,
   dispatch,
   coordinator,
@@ -223,6 +226,7 @@ export function useSessionRealtime({
   seedFailedSessionIdRef,
   reSeedQueueRef,
   nowSlotModeRef,
+  attributionServerRef,
   activeBoardRef,
   setActiveBoardRef,
   showToastRef,
@@ -275,8 +279,8 @@ export function useSessionRealtime({
     const gate = createQueueSyncGate();
     queueSyncGateRef.current = gate;
     let disposed = false;
-    const privacyGeneration = getPrivacyRevocationGeneration();
-    const isCurrent = () => !disposed && privacyGeneration === getPrivacyRevocationGeneration();
+    const sessionCredentialGeneration = getCredentialGeneration();
+    const isCurrent = () => !disposed && sessionCredentialGeneration === getCredentialGeneration();
     let subscriptionStartToken = 0;
     let queueUpdatesCleanup: (() => void) | null = null;
     let sessionUpdatesCleanup: (() => void) | null = null;
@@ -648,12 +652,16 @@ export function useSessionRealtime({
         {
           // F3: the join above ran the server probe, so the mode is settled for
           // this connection. Now-slot mode selects the line in FullSync.state.
-          query: nowSlotModeRef.current ? QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT : QUEUE_UPDATES_SUBSCRIPTION,
+          query: attributionServerRef.current
+            ? buildQueueUpdatesSubscription({ nowSlot: nowSlotModeRef.current, attribution: true })
+            : nowSlotModeRef.current
+              ? QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT
+              : QUEUE_UPDATES_SUBSCRIPTION,
           variables: { sessionId },
         },
         {
           next: (data) => {
-            if (!isCurrent()) return;
+            if (!isCurrent() || sessionIdRef.current !== sessionId) return;
             if (!data?.queueUpdates) return;
             const event = data.queueUpdates;
             // PlaybackStateChanged is a first-class wire variant but carries no
@@ -744,10 +752,50 @@ export function useSessionRealtime({
             // sequence slot).
             gate.noteApplied(gateEvent);
             if (result.kind !== 'dispatch') return;
-            dispatch({
+            const action = {
               ...tagSnapshotWithSession(result.action, sessionId, joinedOnBoundConnection),
               serverSequence: gateEvent.sequence ?? undefined,
-            });
+            };
+            // #7014: stamp a server event that moves the wall, so the BLE
+            // auto-sender can time receipt → write. Read before the dispatch:
+            // the comparison is against what was current until now. A FullSync
+            // counts only on a stream that was already live: the one that opens
+            // a stream (join, reconnect, auth re-join) is a catch-up, not a
+            // crewmate's move. Under now-slot rules a crewmate's open IS a
+            // FullSync on the live stream (its trailing CurrentClimbChanged is
+            // dropped as same-sequence stale), so those still count.
+            if (
+              event.__typename === 'CurrentClimbChanged' ||
+              (event.__typename === 'FullSync' &&
+                queueStreamLiveRef.current &&
+                // A catch-up may protect a newer optimistic move. Only notify
+                // about a snapshot current the reducer will actually adopt.
+                queueReducer(stateRef.current, action).currentClimbQueueItem?.uuid ===
+                  event.state.currentClimbQueueItem?.uuid)
+            ) {
+              noteRelayReceipt({
+                eventType: event.__typename,
+                incomingQueueItemUuid:
+                  event.__typename === 'FullSync'
+                    ? event.state.currentClimbQueueItem?.uuid
+                    : (event.currentItem !== undefined ? event.currentItem : event.item)?.uuid,
+                localQueueItemUuid: stateRef.current.currentClimbQueueItem?.uuid,
+                correlationId: event.__typename === 'CurrentClimbChanged' ? event.correlationId : null,
+                currentChangedBy:
+                  event.__typename === 'FullSync' ? event.state.currentChangedBy : event.currentChangedBy,
+                participantId: participantIdRef.current,
+                // The reducer's own echo test (DELTA_UPDATE_CURRENT_CLIMB): a
+                // correlation id still pending here, or this connection's
+                // server-issued client id. Not the coordinator's id, which never
+                // reaches the server.
+                ownEcho:
+                  event.__typename === 'CurrentClimbChanged' &&
+                  ((!!event.correlationId &&
+                    stateRef.current.pendingCurrentClimbUpdates.includes(event.correlationId)) ||
+                    (!!event.clientId && event.clientId === sessionRuntimeStateRef.current?.clientId)),
+              });
+            }
+            dispatch(action);
             // A FullSync on a joined connection is applied: from here every
             // change in the session reaches this phone as an event.
             if (event.__typename === 'FullSync' && joinedOnBoundConnection) queueStreamLiveRef.current = true;
@@ -838,6 +886,15 @@ export function useSessionRealtime({
           },
           error: (subscriptionError) => {
             if (!isCurrent()) return;
+            if (
+              currentStartToken === subscriptionStartToken &&
+              attributionServerRef.current &&
+              isAttributionValidationError(subscriptionError)
+            ) {
+              attributionServerRef.current = false;
+              void startJoinedSubscriptions();
+              return;
+            }
             // The server denied our queue subscription because this connection
             // isn't a member of the session (NOT_SESSION_MEMBER). Post-#3695 an
             // authenticated member reconnecting is re-authorized instantly, so
@@ -931,10 +988,12 @@ export function useSessionRealtime({
 
             if (event.__typename === 'WallConfirmedClimb') {
               // A member relayed the current climb to a physical wall — light the
-              // session lightbulb for everyone and replay the local wall-confirm
-              // bus (drives the BLE provider's dedup + confirmation animations).
+              // session lightbulb for everyone and replay it on the local
+              // wall-confirm bus as a relay. It may be a crewmate's confirm or
+              // this phone's own echo, so it never takes this phone's arming
+              // drive live or counts toward its drive (`useDriveWallConfirms`).
               setIsSessionWallLit(true);
-              if (event.climbUuid) emitWallConfirm(event.climbUuid);
+              if (event.climbUuid) emitWallConfirm(event.climbUuid, 'relay');
               return;
             }
 
@@ -1017,7 +1076,7 @@ export function useSessionRealtime({
             if (!isCurrent()) return;
             // Session-update stream errors were swallowed. Surface them for
             // triage (the retained subscription still drives its own reconnect).
-            reportHandledError(sessionSubscriptionError);
+            reportHandledError(sessionSubscriptionError, { tags: { source: 'queue-sync', op: 'sessionUpdates' } });
           },
           complete: () => {},
         },
@@ -1045,7 +1104,7 @@ export function useSessionRealtime({
     // effect re-runs or `resyncQueueFromServer` restarts the join, exactly as
     // when it sat on the dead client. On Expo web the auth transport revision
     // re-runs the effect after a credential change. A native sign-out stays
-    // dormant: the privacy generation moves before the dispose, so the re-run
+    // dormant: the credential generation moves before the dispose, so the re-run
     // effect binds the doomed client and lets go of it here. Re-joining a
     // session the account just left is not this code's call.
     const unsubscribeClientDisposed = subscribeWsClientDisposed((disposedClient) => {
@@ -1096,6 +1155,8 @@ export function useSessionRealtime({
       disposed = true;
       subscriptionStartToken++;
       restartJoinedSubscriptionsRef.current = null;
+      // #7014: a receipt from the session being left is no relay for the next.
+      clearRelayReceipt();
       cleanupSubscriptions();
       unbindClientEvents?.();
       unbindClientEvents = null;
@@ -1119,7 +1180,7 @@ export function useSessionRealtime({
       // ref would otherwise suppress every snapshot angle-follow in session B.
       pendingLocalBoardPathRef.current = null;
     };
-  }, [sessionId, coordinator, ensureJoined, joinTracker, authTransportRevision, privacyRevocationGeneration]);
+  }, [sessionId, coordinator, ensureJoined, joinTracker, authTransportRevision, credentialGeneration]);
 
   // Periodic local-vs-server hash watchdog (mirrors web's 60s interval in
   // use-session-subscriptions.ts, ported into the shared gate's

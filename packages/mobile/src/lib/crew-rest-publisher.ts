@@ -8,7 +8,7 @@
 //   pause / resume / reset    PAUSE / RESUME / RESET
 //   rest restarted            RESET on the deadline, else CONFIGURE anchor NOW
 //   queue refilled, or the    RESET, CONFIGURE anchor CLEAR, or nothing
-//   wall moved by this phone
+//   wall moved by this phone  (a move spends a 4x4 set rest's once-only advance)
 //   settings edit, stage      CONFIGURE with this phone's own pacing, 400 ms
 //   change on the wall        debounced, anchor NOW / CLEAR at a stage boundary
 //                             (no settings edit in a crew: RestTimerCrewPublisher)
@@ -34,6 +34,7 @@ import {
   normalizeCrewConfig,
   noteCrewClockArmedHere,
   noteCrewClockTurnedOffHere,
+  spendAdvanceOnce,
   toCrewConfigInput,
   type CrewAnchorRequest,
   type CrewCadenceSnapshot,
@@ -216,8 +217,10 @@ export function createCrewRestPublisher({
 
   /**
    * A crew pacing edit from the timer's controls. Built when it goes out, from
-   * the draft as it is then, so taps that queue up behind one send go out as
-   * one; the draft goes once the server answers the CONFIGURE that carries it.
+   * the draft as it is then and against the clock held then, so taps that queue
+   * up behind one send go out as one, and a set rest's advance the server spent
+   * meanwhile stays spent; the draft goes once the server answers the CONFIGURE
+   * that carries it.
    */
   function enqueueCrewPacingEdit(): void {
     enqueue(() => {
@@ -226,12 +229,12 @@ export function createCrewRestPublisher({
       const draft = state.crewPacingDraft;
       if (draft === null || state.crew?.sessionId !== sessionId) return null;
       const settle = () => settleCrewRestPacingDraft(draft);
-      const input = buildCrewPacingEditInput({ draft, held: state.crew.config });
-      if (input === null) {
+      const edit = buildCrewPacingEditInput({ draft, held: state.crew.config });
+      if (edit === null) {
         settle();
         return null;
       }
-      return { input, config: normalizeCrewConfig(draft), onSettled: settle };
+      return { input: edit.input, config: edit.config, onSettled: settle };
     });
   }
 
@@ -276,16 +279,32 @@ export function createCrewRestPublisher({
           enqueueInput(() => buildRestartInput(heldConfig(), getState(), nowMs()));
           return;
         // A wall this phone moved itself, or a refilled queue: the shared rest
-        // restarts (RESET), waits for a tick (CLEAR), or keeps its beat.
+        // restarts (RESET), waits for a tick (CLEAR), or keeps its beat. A move
+        // made here spends a once-only advance, as the server's FIRE would have,
+        // including a set rest whose cadence a crewmate changed to on the minute.
         case 'fired':
-        case 'queueEndedCleared':
+        case 'queueEndedCleared': {
+          if (action.type === 'fired' && (action.spentAdvanceOnce || heldConfig().autoAdvanceOnce === true)) {
+            enqueueInput(() => ({
+              action: 'CONFIGURE',
+              config: toCrewConfigInput(spendAdvanceOnce(heldConfig())),
+              anchor: action.anchorAfter === 'keep' ? 'KEEP' : action.anchorAfter === 'now' ? 'NOW' : 'CLEAR',
+              ...(action.anchorAfter === 'now' ? { elapsedMs: 0 } : {}),
+            }));
+            return;
+          }
           if (action.anchorAfter === 'keep') return;
           enqueueInput(() =>
             action.anchorAfter === 'now'
               ? { action: 'RESET', isRunning: true }
-              : { action: 'CONFIGURE', config: toCrewConfigInput(heldConfig()), anchor: 'CLEAR' },
+              : {
+                  action: 'CONFIGURE',
+                  config: toCrewConfigInput(heldConfig()),
+                  anchor: 'CLEAR',
+                },
           );
           return;
+        }
         case 'stagePacing':
           requestConfigure({
             anchor: action.transition === 'anchorNow' ? 'NOW' : action.transition === 'waitForTick' ? 'CLEAR' : 'KEEP',

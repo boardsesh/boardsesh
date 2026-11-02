@@ -60,6 +60,9 @@ export type RedisSessionData = {
   currentUuid: string | null;
   /** When the current climb last changed to a different climb (the #4979 hold's clock). */
   currentChangedAt: Date | null;
+  /** Session-scoped participant identity, meaningful only at its recorded version. */
+  currentChangedBy?: string | null;
+  currentChangedByVersion?: number | null;
   lastActivity: Date;
   discoverable: boolean;
   latitude: number | null;
@@ -87,6 +90,7 @@ export type QueueStateCasResult =
       previousStateHashOrdered: string;
       /** Epoch ms the current climb last changed to a different climb, after this write. */
       currentChangedAt: number;
+      currentChangedBy: string | null;
     }
   | { status: 'CONFLICT'; version: number; sequence: number }
   /**
@@ -151,9 +155,10 @@ export const UPDATE_QUEUE_STATE_CAS_SCRIPT = `
   local floorsKnown = ARGV[12]
   local historyCount = ARGV[13]
   local currentUuid = ARGV[14]
+  local incomingActor = ARGV[15]
 
   local stored = redis.call('HMGET', sessionKey, 'version', 'sequence', 'stateHash', 'stateHashOrdered',
-    'currentUuid', 'currentChangedAt', 'historyCountVersion')
+    'currentUuid', 'currentChangedAt', 'historyCountVersion', 'currentChangedBy', 'currentChangedByVersion')
 
   -- No hash at all: the session may be dormant-but-durable (past the 4h TTL,
   -- counters still in Postgres). Bail out WITHOUT writing so the caller can go
@@ -188,6 +193,18 @@ export const UPDATE_QUEUE_STATE_CAS_SCRIPT = `
     currentChangedAt = now
   end
 
+  -- A replica predating attribution can update the F3 fields while leaving a
+  -- stale mover behind. Only this separate version proves the actor is fresh.
+  local currentChangedBy = ''
+  local actorFresh = stored[9] ~= false and tonumber(stored[9]) == storedVersion
+  if currentUuid ~= '' then
+    if storedFieldsFresh and storedCurrentUuid == currentUuid then
+      if actorFresh then currentChangedBy = stored[8] or '' end
+    elseif storedFieldsFresh or (stored[1] == false and versionFloor == 0) then
+      currentChangedBy = incomingActor
+    end
+  end
+
   redis.call('HSET', sessionKey,
     'sessionId', sessionId,
     'queue', queueJson,
@@ -200,11 +217,13 @@ export const UPDATE_QUEUE_STATE_CAS_SCRIPT = `
     'historyCountVersion', tostring(newVersion),
     'currentUuid', currentUuid,
     'currentChangedAt', currentChangedAt,
+    'currentChangedBy', currentChangedBy,
+    'currentChangedByVersion', tostring(newVersion),
     'lastActivity', now)
   redis.call('EXPIRE', sessionKey, ttl)
   redis.call('ZADD', recentKey, now, sessionId)
 
-  return { 'OK', newVersion, newSequence, priorStateHash, priorStateHashOrdered, currentChangedAt }
+  return { 'OK', newVersion, newSequence, priorStateHash, priorStateHashOrdered, currentChangedAt, currentChangedBy }
 `;
 
 /**
@@ -240,6 +259,8 @@ export class RedisSessionStore {
       historyCountVersion: data.historyCountVersion === null ? '' : data.historyCountVersion.toString(),
       currentUuid: data.currentUuid ?? '',
       currentChangedAt: data.currentChangedAt ? data.currentChangedAt.getTime().toString() : '',
+      currentChangedBy: data.currentChangedBy ?? '',
+      currentChangedByVersion: data.currentChangedByVersion?.toString() ?? '',
       lastActivity: data.lastActivity.getTime().toString(),
       discoverable: data.discoverable ? '1' : '0',
       latitude: data.latitude?.toString() || '',
@@ -299,6 +320,8 @@ export class RedisSessionStore {
       historyCountVersion: version.toString(),
       currentUuid: currentClimbQueueItem?.uuid ?? '',
       currentChangedAt: now,
+      currentChangedBy: '',
+      currentChangedByVersion: version.toString(),
       lastActivity: now,
     });
 
@@ -326,6 +349,7 @@ export class RedisSessionStore {
     stateHashOrdered: string;
     /** The line to store (F3). Required so every writer states it. */
     historyCount: number;
+    currentChangedBy?: string | null;
     versionFloor: number;
     sequenceFloor: number;
     floorsKnown: boolean;
@@ -350,9 +374,11 @@ export class RedisSessionStore {
       input.floorsKnown ? '1' : '0',
       String(input.historyCount),
       input.currentClimbQueueItem?.uuid ?? '',
-    )) as [string, number, number, string, string, string];
+      input.currentChangedBy ?? '',
+    )) as [string, number, number, string, string, string, string];
 
-    const [status, version, sequence, previousStateHash, previousStateHashOrdered, currentChangedAt] = raw;
+    const [status, version, sequence, previousStateHash, previousStateHashOrdered, currentChangedAt, currentChangedBy] =
+      raw;
 
     if (status === 'NEEDS_FLOOR') {
       return { status: 'NEEDS_FLOOR' };
@@ -369,6 +395,7 @@ export class RedisSessionStore {
       previousStateHash,
       previousStateHashOrdered,
       currentChangedAt: Number.parseInt(currentChangedAt, 10) || Date.now(),
+      currentChangedBy: currentChangedBy || null,
     };
   }
 
@@ -396,6 +423,8 @@ export class RedisSessionStore {
       historyCountVersion: parseOptionalInt(data.historyCountVersion),
       currentUuid: data.currentUuid || null,
       currentChangedAt: parseOptionalDate(data.currentChangedAt),
+      currentChangedBy: data.currentChangedBy || null,
+      currentChangedByVersion: parseOptionalInt(data.currentChangedByVersion),
       lastActivity: new Date(parseInt(data.lastActivity, 10)),
       discoverable: data.discoverable === '1',
       latitude: data.latitude ? parseFloat(data.latitude) : null,

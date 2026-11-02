@@ -3,8 +3,9 @@
 
 Usage: apply_opening_probes.py <isolated-repo-root>
 
-Supports the pinned 8b842c4950 baseline and the PlayCore candidate. All anchors
-assert exactly once; all changes are staged before any file is written. Never
+Supports the pinned 8b842c4950 baseline, the historical PlayCore candidate,
+and current nullable-local/abortable-network checkouts. All anchors must occur
+exactly once; all changes are staged before any file is written. Never
 apply to an uncommitted implementation checkout. Never ship injected sources.
 """
 import json
@@ -18,26 +19,33 @@ staged = {}
 
 
 def read(path):
-    return staged.get(path, (mobile / path).read_text())
+    return staged[path] if path in staged else (mobile / path).read_text()
 
 
 def replace(path, old, new):
     source = read(path)
-    assert source.count(old) == 1, (path, old[:80], source.count(old))
-    staged[path] = source.replace(old, new)
+    count = source.count(old)
+    if count != 1:
+        raise ValueError(f"{path}: expected exactly one anchor {old[:80]!r}; found {count}")
+    staged[path] = source.replace(old, new, 1)
 
 
 def add_import(path, statement):
     source = read(path)
-    assert statement not in source, (path, "already instrumented")
-    first = source.index("import ")
+    if statement in source:
+        raise ValueError(f"{path}: already instrumented import {statement!r}")
+    first = source.find("import ")
+    if first < 0:
+        raise ValueError(f"{path}: missing import anchor")
     staged[path] = source[:first] + statement + "\n" + source[first:]
 
 
 candidate = (mobile / "src/components/play-drawer/PlayCore.tsx").exists()
 probe = "src/lib/perf-probe.ts"
-assert "export function perfProbeUi" in read(probe), "Apply standard probes first"
-assert "probeOpeningTap" not in read(probe), "Opening probes already applied"
+if not (mobile / probe).exists() or read(probe).count("export function perfProbeUi(") != 1:
+    raise ValueError(f"{probe}: apply standard probes first (expected one perfProbeUi anchor)")
+if "probeOpeningTap" in read(probe):
+    raise ValueError(f"{probe}: opening probes already applied")
 staged[probe] = read(probe) + r'''
 
 import { createContext, useContext, useEffect, useRef } from 'react';
@@ -137,25 +145,44 @@ replace(climbs, "        perfProbe('climb-open-rejected', { reason: 'placeholder
 if candidate:
     activation = "src/lib/playlists/use-playlist-activation.ts"
     add_import(activation, "import { probeOpeningRejected } from '../perf-probe';")
-    replace(activation,
-        "      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();",
-        """      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) {
+    legacy_guard = "      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();"
+    single_guards = [
+        "      if (privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();",
+        "      if (credentialGeneration !== getCredentialGeneration()) return Promise.resolve();",
+    ]
+    guard_counts = [read(activation).count(anchor) for anchor in [legacy_guard, *single_guards]]
+    if sum(guard_counts) != 1:
+        raise ValueError(f"{activation}: expected exactly one supported activation guard; found {guard_counts}")
+    if guard_counts[0] == 1:
+        replace(activation,
+            "      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();",
+            """      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) {
         probeOpeningRejected(requestedClimb.uuid,
           !loadedSnapshotCurrent ? 'withdrawn-loaded-snapshot' : 'stale-activation-scope', suppliedClimbs.length);
         return Promise.resolve();
       }""")
-    replace(activation,
-        "      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) return Promise.resolve();",
-        """      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) {
+        replace(activation,
+            "      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) return Promise.resolve();",
+            """      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) {
         probeOpeningRejected(requestedClimb.uuid, 'stale-row-object', suppliedClimbs.length);
         return Promise.resolve();
       }""")
-    replace(activation,
-        "      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) return Promise.resolve();",
-        """      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) {
+        replace(activation,
+            "      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) return Promise.resolve();",
+            """      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) {
         probeOpeningRejected(requestedClimb.uuid, 'row-not-reauthorized', suppliedClimbs.length);
         return Promise.resolve();
       }""")
+
+    else:
+        if "capturedGeneration !== undefined" in read(activation) or "initialPrivacyGeneration.current !== privacyGeneration" in read(activation):
+            raise ValueError(f"{activation}: unsupported mixed activation guards")
+        guard = single_guards[guard_counts[1:].index(1)]
+        replace(activation, guard,
+            guard.replace(" return Promise.resolve();", """ {
+        probeOpeningRejected(requestedClimb.uuid, 'stale-activation-scope', allClimbs.length);
+        return Promise.resolve();
+      }"""))
 
 route = "app/play.tsx"
 add_import(route, "import { OpeningProbeRouteContext, useOpeningProbeRouteOwner, probeOpeningTarget } from '../src/lib/perf-probe';")
@@ -199,7 +226,7 @@ if candidate:
                 quality: 'full', source: 'onDisplay',
               });
               onReadyArtDisplayed?.(displayedArt);
-            }""")
+        }""")
     replace(board, "      liveArtRef.current.onReadyArtDisplayed?.(pending.art);", """      if (playSurface) perfProbe('play-full-art-displayed-native', {
         ...probeOpeningDetail(pending.art.frames, probeOwner), key: perfProbeId(probeOverlayCacheKey),
         uri: perfProbeId(pending.art.overlayUri), loadKey: perfProbeId(pending.art.overlayLoadKey),
@@ -280,7 +307,19 @@ else:
           onError={(event) => onOverlayError?.(event, overlayLoadKey ?? null)}""")
 
 carousel = "src/components/play-drawer/SwipeBoardCarousel.tsx"
-add_import(carousel, "import { runOnUI } from 'react-native-reanimated';")
+legacy_reanimated_import = "import Animated, { useAnimatedStyle, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';"
+current_reanimated_import = """import Animated, {
+  runOnUI,
+  useAnimatedStyle,
+  useSharedValue,
+  type AnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';"""
+import_counts = [read(carousel).count(anchor) for anchor in [legacy_reanimated_import, current_reanimated_import]]
+if sum(import_counts) != 1:
+    raise ValueError(f"{carousel}: expected exactly one supported Reanimated import; found {import_counts}")
+if import_counts[0] == 1:
+    replace(carousel, legacy_reanimated_import, legacy_reanimated_import.replace("{ useAnimatedStyle", "{ runOnUI, useAnimatedStyle"))
 add_import(carousel, "import { PERF_PROBE_ENABLED, probeOpeningGeometryUi, probeOpeningDetail, useOpeningProbeOwner } from '../../lib/perf-probe';")
 gesture_condition = "gesturesEnabled" if candidate else "enabled && boardBox != null"
 replace(carousel, "  const boardSurfaceAnchor = useShowcaseAnchor('board-surface');", """  const probeOwner = useOpeningProbeOwner();

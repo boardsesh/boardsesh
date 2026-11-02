@@ -5,15 +5,26 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.ResolveInfo
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
+import android.os.Looper
+import android.os.SystemClock
+import android.widget.Chronometer
+import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockkStatic
+import io.mockk.CapturingSlot
 import io.mockk.Runs
 import io.mockk.slot
 import io.mockk.unmockkStatic
@@ -33,6 +44,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
+import java.io.File
 import java.util.concurrent.Executor
 
 /**
@@ -117,9 +129,10 @@ class BoardSessionServiceTest {
     }
 
     // Starts a service wiring the image seams to run on the calling thread
-    // (deterministic async) with an injectable composer.
+    // (deterministic async) with an injectable composer. A null composer keeps the
+    // real one (decode the files on disk and composite them).
     private fun startWithImageSeams(
-        imageComposer: (String, List<String>) -> Bitmap?,
+        imageComposer: ((String, List<String>) -> Bitmap?)?,
         executor: Executor = Executor { it.run() },
     ): BoardSessionService {
         val intent = Intent(context, BoardSessionService::class.java).apply {
@@ -129,7 +142,7 @@ class BoardSessionServiceTest {
         val service = controller.get()
         service.imageExecutor = executor
         service.postToMain = { it.run() }
-        service.imageComposer = imageComposer
+        imageComposer?.let { service.imageComposer = it }
         controller.startCommand(0, 1)
         return service
     }
@@ -357,6 +370,119 @@ class BoardSessionServiceTest {
         )
     }
 
+    // Robolectric's package manager knows no launcher activity by default, so
+    // getLaunchIntentForPackage would return null and the bulb could never open
+    // the app. Register one the way the real manifest does.
+    private fun registerLauncherActivity() {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.packageName)
+        shadowOf(context.packageManager).addResolveInfoForIntent(
+            launcher,
+            ResolveInfo().apply {
+                activityInfo = ActivityInfo().apply {
+                    packageName = context.packageName
+                    name = "com.boardsesh.app.MainActivity"
+                }
+            },
+        )
+    }
+
+    private fun startForActions(): Pair<BoardSessionService, CapturingSlot<Notification>> {
+        val captured = slot<Notification>()
+        every { ServiceCompat.startForeground(any(), any(), capture(captured), any()) } just Runs
+        val intent = Intent(context, BoardSessionService::class.java).apply { action = BoardSessionService.ACTION_START }
+        val controller = Robolectric.buildService(BoardSessionService::class.java, intent).create()
+        val service = controller.get()
+        controller.startCommand(0, 1)
+        return service to captured
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `with no remembered board the outline bulb opens the app instead of reconnecting in the background`() {
+        registerLauncherActivity()
+        val (service, captured) = startForActions()
+
+        for ((startId, connection) in listOf("disconnected", "heldByPeer").withIndex()) {
+            service.onStartCommand(
+                updateIntent(connection).putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, true),
+                0,
+                startId + 2,
+            )
+            val bulb = captured.captured.actions.single()
+            assertEquals("Connect to board", bulb.title.toString())
+            // An activity PendingIntent: Android 12+ forbids the broadcast receiver
+            // from starting the activity itself, so the bulb must be one (#7087).
+            assertTrue(shadowOf(bulb.actionIntent).isActivityIntent)
+            assertEquals(
+                context.packageName,
+                shadowOf(bulb.actionIntent).savedIntent.component?.packageName,
+            )
+        }
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `with a remembered board, or from an older bundle, the outline bulb still reconnects by broadcast`() {
+        registerLauncherActivity()
+        val (service, captured) = startForActions()
+
+        // An older bundle never sends the extra.
+        service.onStartCommand(updateIntent("disconnected"), 0, 2)
+        val legacyBulb = captured.captured.actions.single()
+        assertTrue(shadowOf(legacyBulb.actionIntent).isBroadcastIntent)
+        assertEquals(BoardSessionService.ACTION_BULB, shadowOf(legacyBulb.actionIntent).savedIntent.action)
+
+        // Opens the app, then the climber connects and the board is remembered.
+        service.onStartCommand(updateIntent("disconnected").putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, true), 0, 3)
+        assertTrue(shadowOf(captured.captured.actions.single().actionIntent).isActivityIntent)
+        service.onStartCommand(updateIntent("disconnected").putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, false), 0, 4)
+        assertTrue(shadowOf(captured.captured.actions.single().actionIntent).isBroadcastIntent)
+
+        // The driver's lit bulb re-lights the wall, whatever the flag says.
+        service.onStartCommand(updateIntent("connectedByMe").putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, true), 0, 5)
+        val litBulb = captured.captured.actions.single()
+        assertEquals("Relight wall", litBulb.title.toString())
+        assertTrue(shadowOf(litBulb.actionIntent).isBroadcastIntent)
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `the outline bulb reads Connecting while a connect runs and goes back when it ends`() {
+        val captured = slot<Notification>()
+        every { ServiceCompat.startForeground(any(), any(), capture(captured), any()) } just Runs
+        val intent = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_RECONNECT_LABEL, "Conectar al plafón")
+            putExtra(BoardSessionService.EXTRA_CONNECTING_LABEL, "Conectando…")
+        }
+        val controller = Robolectric.buildService(BoardSessionService::class.java, intent).create()
+        val service = controller.get()
+        controller.startCommand(0, 1)
+
+        service.onStartCommand(updateIntent("disconnected").putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, true), 0, 2)
+        val connectingBulb = captured.captured.actions.single()
+        assertEquals("Conectando…", connectingBulb.title.toString())
+        // Still the reconnect broadcast: a repeat tap lands on JS's in-flight
+        // guard, and the label is what tells the climber the first one took.
+        assertEquals(BoardSessionService.ACTION_BULB, shadowOf(connectingBulb.actionIntent).savedIntent.action)
+
+        // The connect failed (or an older bundle omits the extra): back to Connect.
+        service.onStartCommand(updateIntent("disconnected"), 0, 3)
+        assertEquals(listOf("Conectar al plafón"), actionTitles(captured.captured))
+
+        // A peer holds the board while this device connects: still Connecting.
+        service.onStartCommand(
+            updateIntent("heldByPeer", holderName = "Alex").putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, true),
+            0,
+            4,
+        )
+        assertEquals(listOf("Conectando…"), actionTitles(captured.captured))
+
+        // The connect landed: the lit bulb, never a Connecting label.
+        service.onStartCommand(updateIntent("connectedByMe").putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, true), 0, 5)
+        assertEquals(listOf("Relight wall"), actionTitles(captured.captured))
+    }
+
     @Test
     @Config(sdk = [30])
     fun `the on-the-wall holder line shows for heldByPeer and clears when this device takes the board`() {
@@ -495,6 +621,160 @@ class BoardSessionServiceTest {
         assertSame(small, service.downscale(small))
     }
 
+    // --- Thumbnail slot (#7041) ---
+
+    private fun renderThumbnail(service: BoardSessionService, layout: Int): ImageView =
+        service.buildContentView(layout).apply(context, FrameLayout(context)).findViewById(R.id.session_image)
+
+    private fun shownBitmap(view: ImageView): Bitmap? = (view.drawable as? BitmapDrawable)?.bitmap
+
+    private val thumbnailLayouts = listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)
+
+    @Test
+    @Config(sdk = [30])
+    fun `localFilePath reads raw paths first and decodes an encoded file URI`() {
+        val onDisk = setOf("/data/o_1,2,3_ab.png", "/data/o_100%25_ab.png")
+        val exists = { path: String -> path in onDisk }
+        assertEquals("/data/o_1,2,3_ab.png", BoardSessionService.localFilePath("/data/o_1,2,3_ab.png", exists))
+        assertEquals("/data/o_1,2,3_ab.png", BoardSessionService.localFilePath("file:///data/o_1,2,3_ab.png", exists))
+        assertEquals("/data/o_1,2,3_ab.png", BoardSessionService.localFilePath("file:///data/o_1%2C2%2C3_ab.png", exists))
+        // A literal % in a real file name is never decoded a second time.
+        assertEquals("/data/o_100%25_ab.png", BoardSessionService.localFilePath("file:///data/o_100%25_ab.png", exists))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun `decodes an overlay handed over as a percent-encoded file URI`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        // Overlay names join the set ids with commas; Uri.fromFile encodes them as %2C.
+        val overlay = File(context.cacheDir, "overlay_moonboard_2_1_1,2,3_cafef00d.png")
+        overlay.outputStream().use {
+            Bitmap.createBitmap(8, 10, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+        val encodedUri = Uri.fromFile(overlay).toString()
+        assertTrue(encodedUri.contains("%2C"))
+
+        val service = startWithImageSeams(imageComposer = null)
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = encodedUri), 0, 2)
+
+        for (layout in thumbnailLayouts) {
+            val image = renderThumbnail(service, layout)
+            assertEquals(View.VISIBLE, image.visibility)
+            assertNotNull(shownBitmap(image))
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a failed compose hides the thumbnail slot in both layouts and re-posts`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = startWithImageSeams(imageComposer = { _, _ -> null })
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/missing.png"), 0, 2)
+
+        for (layout in thumbnailLayouts) {
+            assertEquals(View.GONE, renderThumbnail(service, layout).visibility)
+        }
+        // startForeground is mocked, so a posted notification can only be the
+        // failure re-post that carries the hidden slot to SystemUI.
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertNotNull(shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `no overlay hides the thumbnail slot`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = startWithImageSeams(imageComposer = { _, _ -> error("nothing to compose") })
+
+        service.onStartCommand(updateIntent("connectedByMe"), 0, 2)
+
+        for (layout in thumbnailLayouts) {
+            assertEquals(View.GONE, renderThumbnail(service, layout).visibility)
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a composed thumbnail is shown in both layouts`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val stub = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val service = startWithImageSeams(imageComposer = { _, _ -> stub })
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/A.png"), 0, 2)
+
+        for (layout in thumbnailLayouts) {
+            val image = renderThumbnail(service, layout)
+            assertEquals(View.VISIBLE, image.visibility)
+            assertSame(stub, shownBitmap(image))
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the next climb never keeps the previous climb's board when SystemUI reapplies the views`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val boardA = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val held = mutableListOf<Runnable>()
+        var holdComposes = false
+        val service = startWithImageSeams(
+            imageComposer = { _, _ -> boardA },
+            executor = Executor { if (holdComposes) held.add(it) else it.run() },
+        )
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/A.png"), 0, 2)
+        val shown = thumbnailLayouts.associateWith { layout ->
+            service.buildContentView(layout).apply(context, FrameLayout(context))
+        }
+        for (view in shown.values) {
+            assertSame(boardA, shownBitmap(view.findViewById(R.id.session_image)))
+        }
+
+        // Climb B's compose is still running when the notification re-posts.
+        holdComposes = true
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/B.png"), 0, 3)
+        assertEquals(1, held.size)
+
+        for ((layout, view) in shown) {
+            service.buildContentView(layout).reapply(context, view)
+            val image = view.findViewById<ImageView>(R.id.session_image)
+            // The dark placeholder holds the slot while B composes; A's board is gone.
+            assertEquals(View.VISIBLE, image.visibility)
+            assertNull(shownBitmap(image))
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the same climb keeps its board while a late-background compose runs`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val holdsOnly = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val held = mutableListOf<Runnable>()
+        var holdComposes = false
+        val service = startWithImageSeams(
+            imageComposer = { _, _ -> holdsOnly },
+            executor = Executor { if (holdComposes) held.add(it) else it.run() },
+        )
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/A.png"), 0, 2)
+        assertSame(holdsOnly, shownBitmap(renderThumbnail(service, R.layout.notification_session_expanded)))
+
+        // Same overlay, backgrounds now resolved: a new key whose compose is running.
+        holdComposes = true
+        service.onStartCommand(
+            updateIntent("connectedByMe", overlayPath = "file:///cache/A.png", backgroundPaths = listOf("/assets/bg.png")),
+            0,
+            3,
+        )
+        assertEquals(1, held.size)
+        for (layout in thumbnailLayouts) {
+            val image = renderThumbnail(service, layout)
+            assertEquals(View.VISIBLE, image.visibility)
+            assertSame(holdsOnly, shownBitmap(image))
+        }
+    }
+
     @Test
     @Config(sdk = [30])
     fun `start migrates the legacy LOW channel to a silent DEFAULT-importance channel`() {
@@ -516,5 +796,676 @@ class BoardSessionServiceTest {
         // sound or vibration on session start (the regression this guards).
         assertNull(migrated.sound)
         assertFalse(migrated.shouldVibrate())
+    }
+
+    // --- Rest countdown ---
+
+    private val restNowMs = 1_700_000_000_000L
+
+    private val restSessionId = "rest-session"
+
+    private fun restIntent(
+        status: String,
+        sessionId: String? = restSessionId,
+        startMs: Long? = null,
+        deadlineMs: Long? = null,
+        periodSeconds: Long? = null,
+        frozenSignedSeconds: Long? = null,
+        caption: String? = null,
+        overCaption: String? = null,
+        clear: Boolean = false,
+    ): Intent = Intent(context, BoardSessionService::class.java).apply {
+        action = BoardSessionService.ACTION_REST_TIMER
+        sessionId?.let { putExtra(BoardSessionService.EXTRA_SESSION_ID, it) }
+        if (clear) {
+            putExtra(BoardSessionService.EXTRA_REST_CLEAR, true)
+        } else {
+            putExtra(BoardSessionService.EXTRA_REST_STATUS, status)
+        }
+        startMs?.let { putExtra(BoardSessionService.EXTRA_REST_START_MS, it) }
+        deadlineMs?.let { putExtra(BoardSessionService.EXTRA_REST_DEADLINE_MS, it) }
+        periodSeconds?.let { putExtra(BoardSessionService.EXTRA_REST_PERIOD_SECONDS, it) }
+        frozenSignedSeconds?.let { putExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS, it) }
+        caption?.let { putExtra(BoardSessionService.EXTRA_REST_CAPTION, it) }
+        overCaption?.let { putExtra(BoardSessionService.EXTRA_REST_OVER_CAPTION, it) }
+    }
+
+    // A started service with "now" pinned to restNowMs and the Chronometer's
+    // elapsedRealtime timebase left on Robolectric's (frozen) shadow clock, so a
+    // rendered Chronometer's text is exactly deadline - now.
+    private fun startRestService(
+        scheduled: MutableList<Pair<Runnable, Long>> = mutableListOf(),
+    ): BoardSessionService {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val start = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
+        }
+        val service = Robolectric.buildService(BoardSessionService::class.java, start).create().startCommand(0, 1).get()
+        service.wallClockMs = { restNowMs }
+        service.elapsedRealtimeMs = { SystemClock.elapsedRealtime() }
+        service.scheduleOnMain = { task, delayMs -> scheduled.add(task to delayMs) }
+        service.cancelOnMain = { task -> scheduled.removeAll { it.first === task } }
+        return service
+    }
+
+    private fun renderRest(service: BoardSessionService, layout: Int): android.view.View =
+        service.buildContentView(layout).apply(context, FrameLayout(context))
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveRestDisplay counts an after-tick rest down, then marks it over`() {
+        val rest = RestTimerSnapshot("running", startMs = 0, deadlineMs = 90_000, periodSeconds = null,
+            frozenSignedSeconds = null, caption = null)
+
+        assertEquals(RestDisplay.Countdown(90_000, over = false, nextTransitionMs = 90_000),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 30_000))
+        assertEquals(RestDisplay.Countdown(90_000, over = true, nextTransitionMs = null),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 90_000))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveRestDisplay rolls an on-the-minute beat forward instead of going over`() {
+        val rest = RestTimerSnapshot("running", startMs = 0, deadlineMs = 60_000, periodSeconds = 60,
+            frozenSignedSeconds = null, caption = null)
+
+        assertEquals(RestDisplay.Countdown(60_000, over = false, nextTransitionMs = 60_000),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 10_000))
+        // On the boundary itself the next beat starts.
+        assertEquals(RestDisplay.Countdown(120_000, over = false, nextTransitionMs = 120_000),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 60_000))
+        // Several beats missed (the phone slept): lands on the next one, never behind now.
+        assertEquals(RestDisplay.Countdown(240_000, over = false, nextTransitionMs = 240_000),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 185_000))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveRestDisplay covers count-up, the frozen states and incomplete snapshots`() {
+        fun snapshot(status: String, startMs: Long? = null, deadlineMs: Long? = null, frozen: Long? = null) =
+            RestTimerSnapshot(status, startMs, deadlineMs, null, frozen, null)
+
+        assertEquals(RestDisplay.CountUp(5_000), BoardSessionService.resolveRestDisplay(snapshot("countUp", startMs = 5_000), 9_000))
+        assertEquals(RestDisplay.Frozen("−00:12", over = true),
+            BoardSessionService.resolveRestDisplay(snapshot("paused", frozen = -12), 0))
+        assertEquals(RestDisplay.Frozen("01:30", over = false),
+            BoardSessionService.resolveRestDisplay(snapshot("waiting", frozen = 90), 0))
+        assertEquals(RestDisplay.Frozen(null, over = false),
+            BoardSessionService.resolveRestDisplay(snapshot("queueEnded"), 0))
+        assertNull(BoardSessionService.resolveRestDisplay(snapshot("running"), 0))
+        assertNull(BoardSessionService.resolveRestDisplay(snapshot("countUp"), 0))
+        assertNull(BoardSessionService.resolveRestDisplay(snapshot("someFutureStatus", startMs = 1), 0))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveRestDisplay keeps a queue-ended rest live and muted`() {
+        fun queueEnded(startMs: Long? = null, deadlineMs: Long? = null, periodSeconds: Long? = null) =
+            RestTimerSnapshot("queueEnded", startMs, deadlineMs, periodSeconds, frozenSignedSeconds = null, caption = null)
+
+        // After a tick: counts down, then on past zero, muted and with no re-post at the deadline.
+        assertEquals(RestDisplay.Countdown(90_000, over = false, nextTransitionMs = null, muted = true),
+            BoardSessionService.resolveRestDisplay(queueEnded(startMs = 0, deadlineMs = 90_000), nowMs = 30_000))
+        assertEquals(RestDisplay.Countdown(90_000, over = true, nextTransitionMs = null, muted = true),
+            BoardSessionService.resolveRestDisplay(queueEnded(startMs = 0, deadlineMs = 90_000), nowMs = 120_000))
+        // On the minute: still rolls beat to beat, like the app's pill.
+        assertEquals(RestDisplay.Countdown(120_000, over = false, nextTransitionMs = 120_000, muted = true),
+            BoardSessionService.resolveRestDisplay(queueEnded(startMs = 0, deadlineMs = 60_000, periodSeconds = 60), nowMs = 70_000))
+        // No rest length: counts up.
+        assertEquals(RestDisplay.CountUp(5_000, muted = true),
+            BoardSessionService.resolveRestDisplay(queueEnded(startMs = 5_000), nowMs = 9_000))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `no rest timer keeps the rest block hidden in both layouts`() {
+        val service = startRestService()
+        for (layout in listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)) {
+            assertEquals(android.view.View.GONE, renderRest(service, layout).findViewById<android.view.View>(R.id.session_rest).visibility)
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a running rest renders a ticking countdown to the deadline with its caption`() {
+        val service = startRestService()
+        service.onStartCommand(
+            restIntent("running", startMs = restNowMs - 30_000, deadlineMs = restNowMs + 90_000, caption = "Rest"),
+            0,
+            2,
+        )
+
+        for (layout in listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)) {
+            val content = renderRest(service, layout)
+            assertEquals(android.view.View.VISIBLE, content.findViewById<android.view.View>(R.id.session_rest).visibility)
+            val clock = content.findViewById<Chronometer>(R.id.session_rest_clock)
+            assertEquals(android.view.View.VISIBLE, clock.visibility)
+            assertTrue(clock.isCountDown)
+            assertEquals(SystemClock.elapsedRealtime() + 90_000, clock.base)
+            assertEquals("01:30", clock.text.toString())
+            assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_static).visibility)
+            assertEquals("Rest", content.findViewById<TextView>(R.id.session_rest_caption).text.toString())
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a rest past its deadline runs negative in the over colour`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("running", startMs = restNowMs - 102_000, deadlineMs = restNowMs - 12_000), 0, 2)
+
+        val content = renderRest(service, R.layout.notification_session_expanded)
+        assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_clock).visibility)
+        val clock = content.findViewById<Chronometer>(R.id.session_rest_clock_over)
+        assertEquals(android.view.View.VISIBLE, clock.visibility)
+        assertTrue(clock.isCountDown)
+        assertEquals("−00:12", clock.text.toString())
+        assertEquals(ContextCompat.getColor(context, R.color.session_rest_over), clock.currentTextColor)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `an after-tick rest swaps to its over caption past the deadline`() {
+        val service = startRestService()
+        service.onStartCommand(
+            restIntent("running", startMs = restNowMs - 30_000, deadlineMs = restNowMs + 90_000,
+                caption = "1:30 rest", overCaption = "Over your rest"),
+            0,
+            2,
+        )
+        assertEquals("1:30 rest",
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<TextView>(R.id.session_rest_caption).text.toString())
+
+        // The service's own deadline re-post renders with "now" past the deadline.
+        service.wallClockMs = { restNowMs + 120_000 }
+        assertEquals("Over your rest",
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<TextView>(R.id.session_rest_caption).text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a queue-ended rest keeps counting past zero in the muted colour`() {
+        val service = startRestService()
+        service.onStartCommand(
+            restIntent("queueEnded", startMs = restNowMs - 102_000, deadlineMs = restNowMs - 12_000,
+                caption = "Queue's empty", overCaption = "Over your rest"),
+            0,
+            2,
+        )
+
+        for (layout in listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)) {
+            val content = renderRest(service, layout)
+            assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_clock).visibility)
+            assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_clock_over).visibility)
+            assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_static).visibility)
+            val clock = content.findViewById<Chronometer>(R.id.session_rest_clock_muted)
+            assertEquals(android.view.View.VISIBLE, clock.visibility)
+            assertTrue(clock.isCountDown)
+            assertEquals("−00:12", clock.text.toString())
+            assertEquals(ContextCompat.getColor(context, R.color.session_rest_muted), clock.currentTextColor)
+            // Queue ended keeps its own caption; the over caption is only for a running rest.
+            assertEquals("Queue's empty", content.findViewById<TextView>(R.id.session_rest_caption).text.toString())
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a new rest after an over one shows the normal clock again when SystemUI reapplies the views`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("running", startMs = restNowMs - 102_000, deadlineMs = restNowMs - 12_000), 0, 2)
+        val shown = renderRest(service, R.layout.notification_session_collapsed)
+
+        service.onStartCommand(restIntent("running", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 3)
+        service.buildContentView(R.layout.notification_session_collapsed).reapply(context, shown)
+
+        assertEquals(android.view.View.VISIBLE, shown.findViewById<android.view.View>(R.id.session_rest_clock).visibility)
+        assertEquals(android.view.View.GONE, shown.findViewById<android.view.View>(R.id.session_rest_clock_over).visibility)
+        assertEquals("01:00", shown.findViewById<Chronometer>(R.id.session_rest_clock).text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a rest with no length counts up from the last climb`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("countUp", startMs = restNowMs - 75_000), 0, 2)
+
+        val clock = renderRest(service, R.layout.notification_session_collapsed).findViewById<Chronometer>(R.id.session_rest_clock)
+        assertFalse(clock.isCountDown)
+        assertEquals("01:15", clock.text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a paused rest shows the frozen value instead of a ticking clock`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("paused", frozenSignedSeconds = -12, caption = "Paused"), 0, 2)
+
+        val content = renderRest(service, R.layout.notification_session_expanded)
+        assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_clock).visibility)
+        assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_static).visibility)
+        val frozen = content.findViewById<TextView>(R.id.session_rest_static_over)
+        assertEquals(android.view.View.VISIBLE, frozen.visibility)
+        assertEquals("−00:12", frozen.text.toString())
+        assertEquals(ContextCompat.getColor(context, R.color.session_rest_over), frozen.currentTextColor)
+        assertEquals("Paused", content.findViewById<TextView>(R.id.session_rest_caption).text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `clearing the rest timer hides the block again`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("running", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 2)
+
+        service.onStartCommand(restIntent("running", clear = true), 0, 3)
+
+        assertEquals(android.view.View.GONE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a service with no session yet takes no rest timer`() {
+        // The system can restart the service without its START extras.
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = startService()
+        service.wallClockMs = { restNowMs }
+
+        service.onStartCommand(restIntent("running", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 2)
+        service.onStartCommand(restIntent("running", sessionId = null, startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 3)
+        assertEquals(android.view.View.GONE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a rest timer for another session is ignored and a new session starts without one`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val start = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, "session-1")
+        }
+        val service = Robolectric.buildService(BoardSessionService::class.java, start).create().startCommand(0, 1).get()
+        service.wallClockMs = { restNowMs }
+
+        service.onStartCommand(restIntent("running", sessionId = "session-0", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 2)
+        assertEquals(android.view.View.GONE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+
+        service.onStartCommand(restIntent("running", sessionId = "session-1", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 3)
+        assertEquals(android.view.View.VISIBLE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+
+        service.onStartCommand(start, 0, 4)
+        assertEquals(android.view.View.GONE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the deadline re-post turns an after-tick rest over and arms nothing further`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startRestService(scheduled)
+        service.wallClockMs = { nowMs }
+        service.onStartCommand(restIntent("running", startMs = nowMs - 30_000, deadlineMs = nowMs + 90_000), 0, 2)
+
+        val (transition, delayMs) = scheduled.single()
+        assertEquals(90_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, delayMs)
+
+        nowMs += delayMs
+        transition.run()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertNotNull(shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID))
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `an on-the-minute beat re-posts at every boundary with the next beat`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startRestService(scheduled)
+        service.wallClockMs = { nowMs }
+        service.onStartCommand(
+            restIntent("running", startMs = nowMs - 20_000, deadlineMs = nowMs + 40_000, periodSeconds = 60),
+            0,
+            2,
+        )
+        assertEquals(40_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, scheduled.single().second)
+
+        nowMs += scheduled.single().second
+        scheduled.single().first.run()
+
+        // Re-armed for the beat after: 60 s after the old deadline, minus the slack already spent.
+        assertEquals(60_000L, scheduled.single().second)
+        val clock = renderRest(service, R.layout.notification_session_collapsed).findViewById<Chronometer>(R.id.session_rest_clock)
+        assertEquals(SystemClock.elapsedRealtime() + (restNowMs + 100_000 - nowMs), clock.base)
+    }
+
+    // Deep sleep pauses the uptime-based re-post while wall and elapsed time move
+    // on. Turning the screen on must reconcile at once, not when the leftover
+    // awake-time delay finally runs out.
+    @Test
+    @Config(sdk = [30])
+    fun `turning the screen on re-renders a rest that ended while the phone slept`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startRestService(scheduled)
+        service.wallClockMs = { nowMs }
+        service.onStartCommand(
+            restIntent("running", startMs = nowMs - 30_000, deadlineMs = nowMs + 90_000,
+                caption = "1:30 rest", overCaption = "Over your rest"),
+            0,
+            2,
+        )
+        // The deadline re-post is armed but never ran: the phone slept through it.
+        assertEquals(1, scheduled.size)
+        nowMs += 120_000
+
+        context.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertNotNull(shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID))
+        // The stale re-post is cancelled and nothing more is armed: the rest is over.
+        assertTrue(scheduled.isEmpty())
+        assertEquals("Over your rest",
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<TextView>(R.id.session_rest_caption).text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `turning the screen on rolls a fixed window the phone slept through to the current one`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startRestService(scheduled)
+        service.wallClockMs = { nowMs }
+        service.onStartCommand(
+            restIntent("running", startMs = nowMs - 20_000, deadlineMs = nowMs + 40_000, periodSeconds = 60),
+            0,
+            2,
+        )
+        // Window ends at +40 s, +100 s, +160 s, +220 s; the phone wakes at +185 s.
+        nowMs += 185_000
+
+        context.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertNotNull(shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID))
+        // Re-armed from now for the window ending at +220 s.
+        assertEquals(35_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, scheduled.single().second)
+        val clock = renderRest(service, R.layout.notification_session_collapsed).findViewById<Chronometer>(R.id.session_rest_clock)
+        assertEquals(SystemClock.elapsedRealtime() + (restNowMs + 220_000 - nowMs), clock.base)
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `ACTION_STOP cancels a pending rest re-post`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        val service = startRestService(scheduled)
+        service.onStartCommand(restIntent("running", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 2)
+        assertEquals(1, scheduled.size)
+
+        service.onStartCommand(Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_STOP
+        }, 0, 3)
+
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `formatSignedSeconds matches the Chronometer's own format`() {
+        assertEquals("01:30", BoardSessionService.formatSignedSeconds(90))
+        assertEquals("00:00", BoardSessionService.formatSignedSeconds(0))
+        assertEquals("−00:12", BoardSessionService.formatSignedSeconds(-12))
+    }
+
+    // --- Driving the wall (2.7) ---
+
+    private fun lightingIntent(state: String?, endMs: Long? = null, sessionId: String = restSessionId): Intent =
+        Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_LIGHTING
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, sessionId)
+            state?.let { putExtra(BoardSessionService.EXTRA_LIGHT_STATE, it) }
+            endMs?.let { putExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_END_MS, it) }
+        }
+
+    // A started service for restSessionId with "now" pinned and every promotion's
+    // notification captured, so a test reads the header the latest post drew.
+    private fun startLightingService(
+        captured: CapturingSlot<Notification>,
+        scheduled: MutableList<Pair<Runnable, Long>> = mutableListOf(),
+        nowMs: () -> Long = { restNowMs },
+        start: Intent.() -> Unit = {},
+    ): BoardSessionService {
+        every { ServiceCompat.startForeground(any(), any(), capture(captured), any()) } just Runs
+        val intent = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
+            start()
+        }
+        val controller = Robolectric.buildService(BoardSessionService::class.java, intent).create()
+        val service = controller.get()
+        service.wallClockMs = nowMs
+        service.scheduleOnMain = { task, delayMs -> scheduled.add(task to delayMs) }
+        service.cancelOnMain = { task -> scheduled.removeAll { it.first === task } }
+        controller.startCommand(0, 1)
+        return service
+    }
+
+    private fun Notification.subText(): String? = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+
+    private fun Notification.showsChronometer(): Boolean = extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false)
+
+    private fun Notification.countsDown(): Boolean = extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN, false)
+
+    private fun Notification.showsWhen(): Boolean = extras.getBoolean(Notification.EXTRA_SHOW_WHEN, false)
+
+    private fun Notification.smallIconRes(): Int = smallIcon.resId
+
+    private fun assertTodaysHeader(notification: Notification) {
+        assertNull(notification.subText())
+        assertFalse(notification.showsChronometer())
+        assertFalse(notification.showsWhen())
+        assertEquals(R.drawable.ic_boardsesh_notification, notification.smallIconRes())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a timed drive says driving the wall in the header with the system countdown and the bulb icon`() {
+        val captured = slot<Notification>()
+        val service = startLightingService(captured) {
+            putExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL, "Du steuerst das Board")
+        }
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 2)
+
+        val notification = captured.captured
+        assertEquals("Du steuerst das Board", notification.subText())
+        assertTrue(notification.showsChronometer())
+        assertTrue(notification.countsDown())
+        assertTrue(notification.showsWhen())
+        assertEquals(restNowMs + 38_000, notification.`when`)
+        assertEquals(R.drawable.ic_lightbulb_filled, notification.smallIconRes())
+        // The controls are untouched.
+        assertEquals(listOf("Relight wall"), actionTitles(notification))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `while this phone drives the lit bulb stops driving, and relights once the drive is over`() {
+        val captured = slot<Notification>()
+        var now = restNowMs
+        val service = startLightingService(captured, nowMs = { now }) {
+            putExtra(BoardSessionService.EXTRA_STOP_DRIVING_LABEL, "Stop driving")
+        }
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 2)
+
+        val stop = captured.captured.actions.single()
+        assertEquals("Stop driving", stop.title.toString())
+        val stopIntent = shadowOf(stop.actionIntent).savedIntent
+        assertEquals(BoardSessionService.ACTION_BULB, stopIntent.action)
+        assertTrue(stopIntent.getBooleanExtra(BoardSessionService.EXTRA_STOPS_DRIVE, false))
+
+        // An open-ended drive stops the same way.
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 3)
+        assertEquals(listOf("Stop driving"), actionTitles(captured.captured))
+
+        // Off again: the bulb re-lights.
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_OFF), 0, 4)
+        val relight = captured.captured.actions.single()
+        assertEquals("Relight wall", relight.title.toString())
+        assertFalse(shadowOf(relight.actionIntent).savedIntent.getBooleanExtra(BoardSessionService.EXTRA_STOPS_DRIVE, true))
+
+        // A timed drive past its end draws as over, so the bulb re-lights too.
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 5)
+        now = restNowMs + 39_000
+        service.onStartCommand(updateIntent("connectedByMe").apply {
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
+        }, 0, 6)
+        assertEquals(listOf("Relight wall"), actionTitles(captured.captured))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `an open-ended drive says driving the wall in the header with no clock`() {
+        val captured = slot<Notification>()
+        val service = startLightingService(captured)
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 2)
+
+        val notification = captured.captured
+        assertEquals("Driving the wall", notification.subText())
+        assertFalse(notification.showsChronometer())
+        assertFalse(notification.showsWhen())
+        assertEquals(R.drawable.ic_lightbulb_filled, notification.smallIconRes())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `off, an older bundle and a crewmate's card keep today's header`() {
+        val captured = slot<Notification>()
+        val service = startLightingService(captured)
+        assertTodaysHeader(captured.captured)
+
+        // An older bundle never sends the state: absent reads as off.
+        service.onStartCommand(lightingIntent(null, endMs = restNowMs + 38_000), 0, 2)
+        assertTodaysHeader(captured.captured)
+
+        // A window on a phone that doesn't hold the board shows nothing of it.
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 3)
+        service.onStartCommand(updateIntent("heldByPeer", holderName = "Ana").apply {
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
+        }, 0, 4)
+        assertTodaysHeader(captured.captured)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the header drops the clock just after the window ends`() {
+        val captured = slot<Notification>()
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startLightingService(captured, scheduled, nowMs = { nowMs })
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = nowMs + 45_000), 0, 2)
+
+        val (transition, delayMs) = scheduled.single()
+        assertEquals(45_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, delayMs)
+
+        nowMs += delayMs
+        transition.run()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val reposted = shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID)
+        assertNotNull(reposted)
+        assertTodaysHeader(reposted)
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a renewal re-arms the end and a drive arms nothing`() {
+        val captured = slot<Notification>()
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        val service = startLightingService(captured, scheduled)
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 10_000), 0, 2)
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 45_000), 0, 3)
+        assertEquals(45_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, scheduled.single().second)
+
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 4)
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `turning the screen on re-posts a window the phone slept through`() {
+        val captured = slot<Notification>()
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startLightingService(captured, scheduled, nowMs = { nowMs })
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = nowMs + 45_000), 0, 2)
+        assertEquals(1, scheduled.size)
+        nowMs += 120_000
+
+        context.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val reposted = shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID)
+        assertNotNull(reposted)
+        assertTodaysHeader(reposted)
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a window for another session is ignored and a new session starts without one`() {
+        val captured = slot<Notification>()
+        val service = startLightingService(captured)
+        service.onStartCommand(
+            lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING, sessionId = "session-0"),
+            0,
+            2,
+        )
+        assertTodaysHeader(captured.captured)
+
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 3)
+        assertEquals("Driving the wall", captured.captured.subText())
+        service.onStartCommand(Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, "session-2")
+        }, 0, 4)
+        assertTodaysHeader(captured.captured)
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `a lighting update reaching a service with no session stops it`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = Robolectric.buildService(
+            BoardSessionService::class.java,
+            lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = System.currentTimeMillis() + 45_000),
+        ).create().startCommand(0, 1).get()
+
+        assertTrue(shadowOf(service).isStoppedBySelf)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveLighting shows a window only before its end and only to the holder`() {
+        val now = restNowMs
+        val window = BoardSessionService.LIGHT_STATE_WINDOW
+        val me = BoardSessionService.CONNECTION_CONNECTED_BY_ME
+        assertEquals(LightingDisplay.Window(now + 1), BoardSessionService.resolveLighting(window, now + 1, now, me))
+        assertEquals(LightingDisplay.Off, BoardSessionService.resolveLighting(window, now, now, me))
+        assertEquals(LightingDisplay.Off, BoardSessionService.resolveLighting(window, null, now, me))
+        assertEquals(LightingDisplay.Driving, BoardSessionService.resolveLighting(BoardSessionService.LIGHT_STATE_DRIVING, null, now, me))
+        assertEquals(
+            LightingDisplay.Off,
+            BoardSessionService.resolveLighting(BoardSessionService.LIGHT_STATE_DRIVING, null, now, BoardSessionService.CONNECTION_DISCONNECTED),
+        )
+        assertEquals(LightingDisplay.Off, BoardSessionService.resolveLighting("sprinting", now + 1, now, me))
     }
 }

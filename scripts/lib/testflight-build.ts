@@ -9,6 +9,8 @@ export type TestflightBuildReceipt = {
   version: string;
   buildNumber: string;
   sourceSha: string;
+  /** Trusted workflow checkout; absent on legacy receipts whose source was the run head. */
+  workflowSha?: string;
   sourceRef: string;
   sourceRunId: string;
   buildTag: string;
@@ -35,6 +37,8 @@ export function parseTestflightBuildReceipt(input: unknown): TestflightBuildRece
   if (typeof buildNumber !== 'string' || !POSITIVE_INTEGER.test(buildNumber)) throw new Error('Invalid build number.');
   if (typeof sourceRunId !== 'string' || !POSITIVE_INTEGER.test(sourceRunId)) throw new Error('Invalid source run ID.');
   if (typeof sourceSha !== 'string' || !SHA.test(sourceSha)) throw new Error('Invalid source SHA.');
+  if (receipt.workflowSha !== undefined && (typeof receipt.workflowSha !== 'string' || !SHA.test(receipt.workflowSha)))
+    throw new Error('Invalid workflow SHA.');
   if (sourceRef !== 'main' && sourceRef !== 'release/next') throw new Error('Untrusted TestFlight source branch.');
   if (typeof buildTag !== 'string') throw new Error('Invalid build tag.');
   const parsedTag = parseBuildTag(buildTag);
@@ -56,6 +60,7 @@ export function parseTestflightBuildReceipt(input: unknown): TestflightBuildRece
     version,
     buildNumber,
     sourceSha,
+    ...(receipt.workflowSha === undefined ? {} : { workflowSha: receipt.workflowSha as string }),
     sourceRef,
     sourceRunId,
     buildTag,
@@ -82,12 +87,13 @@ export function previousNativeBuild(
   ancestorShas: readonly string[],
   version: string,
   buildNumber: string,
+  supersededSources: ReadonlySet<string> = new Set(),
 ): NativeBuildTag | null {
   const ancestorOrder = new Map(ancestorShas.map((sha, index) => [sha, index]));
   const candidates = tags.flatMap((tag) => {
     const parsed = parseBuildTag(tag.name);
     const order = ancestorOrder.get(tag.sha);
-    if (parsed?.platform !== 'ios' || order === undefined) return [];
+    if (parsed?.platform !== 'ios' || order === undefined || supersededSources.has(tag.sha)) return [];
     const versionOrder = compareVersions(parsed.version, version);
     if (versionOrder > 0 || (versionOrder === 0 && parsed.buildNumber >= Number(buildNumber))) return [];
     return [{ tag, parsed, order }];
@@ -127,8 +133,21 @@ export function trustedTestflightRun(input: unknown, repository: string): Truste
   return { id: String(run.id), attempt: run.run_attempt, sha: run.head_sha, branch: run.head_branch };
 }
 
-export function validateReceiptSource(receipt: TestflightBuildReceipt, run: TrustedTestflightRun): void {
-  if (receipt.sourceRunId !== run.id || receipt.sourceSha !== run.sha || receipt.sourceRef !== run.branch) {
+export function validateReceiptSource(
+  receipt: TestflightBuildReceipt,
+  run: TrustedTestflightRun,
+  validatedNativeSourceSha?: string,
+): void {
+  if (
+    receipt.sourceRunId !== run.id ||
+    (receipt.workflowSha ?? receipt.sourceSha) !== run.sha ||
+    receipt.sourceRef !== run.branch
+  ) {
     throw new Error('TestFlight receipt does not belong to the requested native build run.');
   }
+  if (
+    receipt.sourceSha !== run.sha &&
+    (run.branch !== 'main' || receipt.workflowSha === undefined || validatedNativeSourceSha !== receipt.sourceSha)
+  )
+    throw new Error('Pinned TestFlight source needs a validated native-release stamp on main.');
 }

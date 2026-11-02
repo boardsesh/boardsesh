@@ -23,7 +23,7 @@ const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   playNext: vi.fn(),
   openAddToPlaylist: vi.fn(),
-  openClimbActions: vi.fn(),
+  getClimbActions: vi.fn(),
   queueAll: vi.fn(),
   activate: vi.fn(),
   pending: null as 'next' | 'end' | null,
@@ -203,7 +203,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
   usePreviewedClimbUuid: () => null,
   useDrawerHost: () => ({
     boardConfig: null,
-    openClimbActions: ctrl.openClimbActions,
+    getClimbActions: ctrl.getClimbActions,
     openAddToPlaylist: ctrl.openAddToPlaylist,
   }),
 }));

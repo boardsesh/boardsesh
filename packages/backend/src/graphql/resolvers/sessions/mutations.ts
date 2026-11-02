@@ -280,6 +280,7 @@ export const sessionMutations = {
         currentClimbQueueItem: result.currentClimbQueueItem,
         historyCount: result.historyCount,
         currentChangedAt: result.currentChangedAt,
+        currentChangedBy: result.currentChangedBy ?? null,
       },
       isLeader: result.isLeader,
       clientId: result.clientId,
@@ -425,6 +426,7 @@ export const sessionMutations = {
             currentClimbQueueItem: result.currentClimbQueueItem,
             historyCount: result.historyCount,
             currentChangedAt: result.currentChangedAt,
+            currentChangedBy: result.currentChangedBy ?? null,
           },
           isLeader: result.isLeader,
           // No board has been paired yet; gets set the first time anyone in the
@@ -777,6 +779,7 @@ export const sessionMutations = {
         currentClimbQueueItem: queueState.currentClimbQueueItem,
         historyCount: queueState.historyCount,
         currentChangedAt: queueState.currentChangedAt,
+        currentChangedBy: queueState.currentChangedBy ?? null,
       },
       isLeader: leaderConnectionId === ctx.connectionId,
       lastConnectedBoardSerial,

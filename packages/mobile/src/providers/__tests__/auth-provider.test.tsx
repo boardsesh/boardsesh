@@ -6,6 +6,8 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import { grantAnalyticsForTest } from '../../../test/consent-fixture';
 import { getConsentSnapshot, updateConsentState } from '../../lib/consent-state';
 import { notifyAnalyticsIdentityChanged } from '../../lib/analytics-identity-events';
+import { createConsentSyncCoordinator } from '@boardsesh/consent';
+import { cancelAuthAnalyticsHandoffs } from '../../lib/auth-analytics-handoff';
 
 const redirectMock = vi.hoisted(() => vi.fn());
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
@@ -171,6 +173,7 @@ beforeEach(() => {
   clearSessionCommentDraftMock.mockResolvedValue(undefined);
   clearWorkoutRunMock.mockReset();
   clearWorkoutRunMock.mockResolvedValue(undefined);
+  forgetRememberedBoardsOnSignOutMock.mockClear();
 });
 
 afterEach(() => {
@@ -233,11 +236,13 @@ vi.mock('../../lib/oauth-return', () => ({
 const authSignOutMock = vi.fn();
 const authRegisterMock = vi.fn();
 const authSignInWithCredentialsMock = vi.fn();
+const authSignInWithAppleMock = vi.fn();
+const authSignInWithGoogleMock = vi.fn();
 const authSignInWithGoogleWebMock = vi.fn();
 const authSignInWithAppleWebMock = vi.fn();
 vi.mock('../../lib/auth', () => ({
-  signInWithApple: vi.fn(),
-  signInWithGoogle: vi.fn(),
+  signInWithApple: (...args: unknown[]) => authSignInWithAppleMock(...args),
+  signInWithGoogle: (...args: unknown[]) => authSignInWithGoogleMock(...args),
   signInWithGoogleWeb: (...args: unknown[]) => authSignInWithGoogleWebMock(...args),
   signInWithAppleWeb: (...args: unknown[]) => authSignInWithAppleWebMock(...args),
   signOutForGeneration: (...args: unknown[]) => authSignOutMock(...args),
@@ -279,6 +284,13 @@ vi.mock('../../lib/workout-run-store', () => ({
   clearWorkoutRun: (...args: unknown[]) => clearWorkoutRunMock(...args),
 }));
 
+// The boards this phone remembers for Bluetooth reconnects (a hang-up keeps
+// one for 10 minutes): a sign-out forgets them, a signed-out cold start doesn't.
+const forgetRememberedBoardsOnSignOutMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../../lib/ble/remembered-boards-sign-out', () => ({
+  forgetRememberedBoardsOnSignOut: forgetRememberedBoardsOnSignOutMock,
+}));
+
 vi.mock('../../lib/user-storage-owner', () => ({
   setCurrentUserStorageOwner: (owner: { userId: string; authSessionId: string } | null) => {
     userStorageOwnerState.set(owner);
@@ -292,6 +304,7 @@ vi.mock('../../lib/auth-transport-revision', () => ({
 const resetHttpClientMock = vi.fn();
 vi.mock('../../lib/graphql/client', () => ({
   resetHttpClient: () => resetHttpClientMock(),
+  getHttpClient: () => ({ request: async () => ({ profile: { createdAt: new Date().toISOString() } }) }),
 }));
 
 const disposeWsClientMock = vi.fn();
@@ -564,6 +577,8 @@ describe('AuthProvider.signOut', () => {
     expect(clearSessionCommentDraftMock).not.toHaveBeenCalled();
     // The workout stage map is new (#5379), so it is cleared on every platform.
     expect(clearWorkoutRunMock).toHaveBeenCalledTimes(1);
+    // The next account's first bulb tap opens the board list, not this one's box.
+    expect(forgetRememberedBoardsOnSignOutMock).toHaveBeenCalledTimes(1);
     expect(resetHttpClientMock).toHaveBeenCalledTimes(1);
     expect(disposeWsClientMock).toHaveBeenCalledTimes(1);
     // Offline mode gates the backend, so a phone left signed out with the switch
@@ -811,6 +826,124 @@ describe('AuthProvider.signOut', () => {
     expect(disposeWsClientMock).not.toHaveBeenCalled();
     expect(queryClient.getQueryData(['userPlaylists'])).toEqual([{ id: 'new-owner-playlist' }]);
   });
+});
+
+describe('AuthProvider native conversion ownership', () => {
+  afterEach(() => {
+    cancelAuthAnalyticsHandoffs();
+    analyticsIdentityMock.mockReturnValue(null);
+  });
+
+  it.each([
+    ['credentials', 'email', 'native', false],
+    ['apple', 'apple', 'native', true],
+    ['google', 'google', 'native', false],
+    ['apple-fallback', 'apple', 'web_fallback', true],
+    ['google-fallback', 'google', 'web_fallback', false],
+    ['registration', 'email', 'native', true],
+    ['token-only', 'email', 'native', false],
+  ] as const)(
+    'owns one %s conversion across real unanswered-account consent',
+    async (method, provider, flow, registration) => {
+      routerState.segments = ['auth', 'login'];
+      const userId = `602c83bf-e090-4c90-9f7e-${String(100 + ['credentials', 'apple', 'google', 'apple-fallback', 'google-fallback', 'registration', 'token-only'].indexOf(method)).padStart(12, '0')}`;
+      const token = `header.${btoa(JSON.stringify({ sub: userId })).replace(/=/g, '')}.signature`;
+      getAuthTokenMock.mockReset().mockResolvedValue(null);
+      isTokenExpiringSoonMock.mockReset().mockResolvedValue(false);
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryClientProvider>
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      grantAnalyticsForTest();
+      trackMock.mockClear();
+      analyticsCaptureMock.mockClear();
+      analyticsIdentityMock.mockReturnValue({ distinctId: 'anonymous', anonymousId: 'anonymous' });
+      const initialRecord = getConsentSnapshot().record;
+      const coordinator = createConsentSyncCoordinator({
+        initialRecord,
+        readAccountConsent: async () => null,
+        writeAccountConsent: async (_accountId, input) => ({
+          analytics: input.analytics,
+          source: input.source,
+          version: input.version,
+          decidedAt: new Date().toISOString(),
+        }),
+        persistLocalConsent: () => {},
+      });
+      const unsubscribe = coordinator.subscribe(() =>
+        updateConsentState({
+          record: coordinator.getSnapshot().record,
+          accountResolved: coordinator.getSnapshot().accountResolved && !coordinator.getSnapshot().syncing,
+        }),
+      );
+      getAuthTokenMock.mockResolvedValue(token).mockImplementationOnce(async () => {
+        coordinator.setAccount(userId);
+        await coordinator.sync();
+        return token;
+      });
+      const createdAt = new Date().toISOString();
+      const success =
+        method === 'token-only'
+          ? { success: true }
+          : {
+              success: true,
+              userId,
+              accountCreation: { userId, accountCreated: true, provider, createdAt },
+            };
+      for (const authMock of [
+        authSignInWithCredentialsMock,
+        authSignInWithAppleMock,
+        authSignInWithGoogleMock,
+        authSignInWithAppleWebMock,
+        authSignInWithGoogleWebMock,
+        authRegisterMock,
+      ])
+        authMock.mockResolvedValue(success);
+      const beforeSuccess = Date.now();
+      await act(async () => {
+        if (method === 'apple') await result.current.signInWithApple(undefined, registration);
+        else if (method === 'google') await result.current.signInWithGoogle(undefined, registration);
+        else if (method === 'apple-fallback') await result.current.signInWithAppleWeb(registration);
+        else if (method === 'google-fallback') await result.current.signInWithGoogleWeb(registration);
+        else if (method === 'registration') await result.current.register('new@example.com', 'password');
+        else await result.current.signInWithCredentials('new@example.com', 'password');
+      });
+      const afterSuccess = Date.now();
+      expect(getConsentSnapshot().record).toBeNull();
+      expect(analyticsCaptureMock).not.toHaveBeenCalled();
+      expect(trackMock).not.toHaveBeenCalledWith('Login Succeeded', expect.anything(), expect.anything());
+      await coordinator.decide('granted', 'ios');
+      analyticsIdentityMock.mockReturnValue({ distinctId: userId, anonymousId: 'anonymous' });
+      updateConsentState({
+        authSettled: true,
+        accountId: userId,
+        accountResolved: true,
+        settled: true,
+        sdkReady: true,
+      });
+      notifyAnalyticsIdentityChanged();
+      await waitFor(() =>
+        expect(trackMock.mock.calls.filter(([event]) => event === 'Login Succeeded')).toHaveLength(1),
+      );
+      const login = trackMock.mock.calls.find(([event]) => event === 'Login Succeeded')!;
+      expect(login[1]).toMatchObject({ provider, flow, screen: registration ? 'register' : 'login' });
+      if (flow === 'web_fallback') expect(login[1]).toHaveProperty('fallback_mechanism', 'browser_deeplink');
+      const capturedAt = (login[2] as { timestamp: Date }).timestamp.getTime();
+      expect(capturedAt).toBeGreaterThanOrEqual(beforeSuccess);
+      expect(capturedAt).toBeLessThanOrEqual(afterSuccess);
+      if (method === 'token-only') expect(analyticsCaptureMock).not.toHaveBeenCalled();
+      else await waitFor(() => expect(analyticsCaptureMock).toHaveBeenCalledOnce());
+      await act(async () => {
+        await result.current.refreshAuthState();
+      });
+      expect(trackMock.mock.calls.filter(([event]) => event === 'Login Succeeded')).toHaveLength(1);
+      unsubscribe();
+    },
+  );
 });
 
 describe('AuthProvider.register', () => {
@@ -1349,7 +1482,7 @@ describe('AuthProvider browser-fallback foreground checks', () => {
       await fallbackPromise;
     });
 
-    expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeFallback + 1);
+    expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeFallback + 2);
   });
 
   it('defers an active event that arrives during the explicit success read until release', async () => {
@@ -1382,7 +1515,7 @@ describe('AuthProvider browser-fallback foreground checks', () => {
       await fallbackPromise;
     });
 
-    expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeFallback + 2);
+    expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeFallback + 3);
   });
 
   it.each([
@@ -2616,6 +2749,8 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     expect(clearUserDataExportDownloadsMock).toHaveBeenCalledWith(1);
     expect(resetHttpClientMock).not.toHaveBeenCalled();
     expect(disposeWsClientMock).not.toHaveBeenCalled();
+    // An anonymous climber's remembered board survives a relaunch (#3609).
+    expect(forgetRememberedBoardsOnSignOutMock).not.toHaveBeenCalled();
   });
 
   // The identity split. A signed-out cold start used to reset analytics, and it

@@ -243,7 +243,7 @@ export default function AllPlaylistsScreen() {
                 <View style={styles.footer}>
                   <ActivityIndicator size="small" />
                 </View>
-              ) : null
+              ) : undefined
             }
           />
         )}

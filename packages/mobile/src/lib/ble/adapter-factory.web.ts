@@ -32,6 +32,10 @@ export function nativeBleSupportsBoard(_boardName: string | undefined): boolean 
   return false;
 }
 
+export function nativeBleSupportsPreparedConnections(): boolean {
+  return false;
+}
+
 export function subscribeNativeBleConnected(
   _listener: (payload: NativeBleConnectedEvent) => void,
 ): { remove: () => void } | null {
@@ -40,4 +44,10 @@ export function subscribeNativeBleConnected(
 
 export function getNativeBleConnectedDevice(): Promise<NativeBleConnectedDevice | null> {
   return Promise.resolve(null);
+}
+
+// A browser has no native pairing for a Live Activity bulb to reconnect to,
+// so there is never one to forget.
+export function forgetNativeKeptBoard(): Promise<boolean> {
+  return Promise.resolve(false);
 }

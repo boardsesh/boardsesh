@@ -1,6 +1,6 @@
-New in 2.6:
-- Add a Spraywall from a photo, review the detected holds, set climbs and log sends. Download it for sessions with no signal.
-- Find your crew's live sessions and their logs on climbs.
-- Set a rest timer and advance the queue automatically while the app stays open.
-- Choose which details appear below a climb. Add playlists without clearing your queue.
-- MoonBoard grades use its V scale. Logbook imports accept more CSV formats.
+New in 2.7:
+- Tap to browse without lighting. Put on board lights it and you drive the wall: picks light until your timer ends (45 s default). Swipe it left to drive with no end; tap to stop.
+- Now in Italian. Rest countdown and finish tone in the session notification.
+- Workouts in blocks. Swipes stay on your list; play next or last.
+- Sort/filter playlists, Liked and Projects.
+- Logbook, likes and playlists work offline. Scans find MoonBoards.

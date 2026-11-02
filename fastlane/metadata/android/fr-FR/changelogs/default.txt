@@ -1,6 +1,6 @@
-Nouveautés de 2.6 :
-- Ajoute un Spraywall depuis une photo, vérifie les prises, ouvre et enregistre tes croix. Télécharge-le pour grimper sans réseau.
-- Retrouve les séances de ton crew et leurs entrées sur les blocs.
-- Minuteur de repos avec passage automatique au bloc suivant, app ouverte.
-- Choisis les détails sous chaque bloc. Ajoute des playlists sans vider la file.
-- MoonBoard utilise son échelle V. Importe des carnets dans davantage de formats CSV.
+Nouveautés de 2.7 :
+- Toucher affiche sans allumer. Allumer sur la board : tes choix s’allument jusqu’à la fin du minuteur (45 s). Balaye à gauche : sans limite ; touche pour arrêter.
+- Italien. Compte à rebours et son de repos dans la notification.
+- Entraînements en phases. Balaye dans ta liste ; mets les blocs après ou à la fin.
+- Trie et filtre playlists, Aimées et Projets.
+- Carnet, likes et playlists hors ligne. Les scans trouvent les MoonBoards.

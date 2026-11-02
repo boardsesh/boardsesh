@@ -161,7 +161,7 @@ export function showcaseFilterPatterns(catalog: ShowcaseFilterCatalog): Record<s
  * the account's roster in the message.
  */
 export const SHOWCASE_DEFAULT_BOARDS: Readonly<Record<ShowcaseBackend, string>> = {
-  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper|Home Spray Wall",
+  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper|Liz's Wall",
   local: 'The Proj Wall|The Slab Lab|MoonBoard 2016',
 };
 
@@ -848,6 +848,23 @@ export function crewPeerRowFallbackPoint(
 }
 
 /** Measured family-specific iOS queue targets when the native drawer omits accessibility controls. */
+/**
+ * The player's Queue button label, as a Maestro full-match pattern. Walking a list it reads
+ * "Queue, N up next" (zero/one/other plural forms); otherwise "Queue, N climbs".
+ */
+export function showcaseQueuePattern(actionBar: Readonly<Record<string, string>>): string {
+  const labels = Object.entries(actionBar)
+    .filter(([key]) => /^queue(CountAria|UpNextAria)(_[a-z]+)?$/.test(key))
+    .map(([, label]) =>
+      label
+        .split('{{count}}')
+        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*'),
+    );
+  if (labels.length === 0) throw new Error('No Queue button label in the session catalog');
+  return labels.length === 1 ? labels[0] : `(${labels.join('|')})`;
+}
+
 export function crewQueueFallbackPoint(kind: ShowcaseVariantKind, platform: ShowcasePlatform, logText: string): string {
   if (platform !== 'ios') return '';
   // Tension mirrors: its genuine Queue button is in the lower-right utility
@@ -862,7 +879,8 @@ export function crewQueueFallbackPoint(kind: ShowcaseVariantKind, platform: Show
     return /\bL10 S\d+ @-?[\d.]+°, tension\)\s*$/.test(lastTensionSlotResolution ?? '') ? '91%,90%' : '';
   }
   if (kind !== 'default' && kind !== 'kilter') return '';
-  return findBoardSlotProblem(logText, 0, 'kilter') === null ? '10%,84%' : '';
+  // The default action bar ends Favorite, Previous, Tick, Next, Queue; Queue is the last slot.
+  return findBoardSlotProblem(logText, 0, 'kilter') === null ? '87%,84%' : '';
 }
 
 /**
@@ -1026,4 +1044,23 @@ export function checkTake(input: TakeCheckInput): string[] {
     }
   }
   return problems;
+}
+
+/** Simulator takes flake (a deep link that never opens, a wall roster that loads late); one locale
+ * of twenty takes failing threw away a whole CI recording. Retry a failed take, but never after a
+ * failed cleanup: a live session that would not end must stop the run. */
+export const SHOWCASE_TAKE_ATTEMPTS = 2;
+
+export async function recordTakeWithRetry<Result extends { problems: readonly string[] }>(
+  attempt: () => Promise<Result>,
+  cleanup: () => Promise<string | null>,
+  onRetry: (failed: Result, attemptNumber: number) => void,
+  attempts = SHOWCASE_TAKE_ATTEMPTS,
+): Promise<{ result: Result; cleanupProblem: string | null }> {
+  for (let attemptNumber = 1; ; attemptNumber++) {
+    const result = await attempt();
+    const cleanupProblem = await cleanup();
+    if (cleanupProblem || result.problems.length === 0 || attemptNumber >= attempts) return { result, cleanupProblem };
+    onRetry(result, attemptNumber);
+  }
 }

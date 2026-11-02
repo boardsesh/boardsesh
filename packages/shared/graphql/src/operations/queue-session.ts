@@ -322,6 +322,7 @@ const REST_CADENCE_CHANGE_FIELDS = `
     mode
     targetSeconds
     autoAdvance
+    autoAdvanceOnce
     advanceOn
     source
     isRunning
@@ -449,6 +450,85 @@ export const QUEUE_STATE_FIELDS_PROBE = `
     }
   }
 `;
+
+/** Independent capabilities: attribution also works when Now slot mode is off. */
+export const QUEUE_CAPABILITIES_PROBE = `
+  query QueueCapabilitiesProbe {
+    queueState: __type(name: "QueueState") { fields { name } }
+    currentClimbChanged: __type(name: "CurrentClimbChanged") { fields { name } }
+  }
+`;
+
+export type QueueReadCapabilities = {
+  nowSlot: boolean;
+  attribution: boolean;
+};
+
+/**
+ * Mobile queue reads share one selection set. Callers enable each additive
+ * field only after probing that capability; legacy/native exports stay intact.
+ */
+export function buildQueueUpdatesSubscription({ nowSlot, attribution }: QueueReadCapabilities): string {
+  return `
+    subscription QueueUpdates${nowSlot ? 'NowSlot' : ''}${attribution ? 'Attributed' : ''}($sessionId: ID!) {
+      queueUpdates(sessionId: $sessionId) {
+        __typename
+        ... on FullSync {
+          sequence
+          state {
+            sequence
+            stateHash
+            stateHashOrdered
+            ${nowSlot ? 'historyCount currentChangedAt' : ''}
+            ${attribution ? 'currentChangedBy' : ''}
+            queue { ${QUEUE_ITEM_FIELDS} }
+            currentClimbQueueItem { ${QUEUE_ITEM_FIELDS} }
+          }
+        }
+        ... on QueueItemAdded {
+          sequence stateHash stateHashOrdered
+          addedItem: item { ${QUEUE_ITEM_FIELDS} }
+          position clientId
+        }
+        ... on QueueItemRemoved {
+          sequence stateHash stateHashOrdered uuid clientId
+        }
+        ... on QueueReordered {
+          sequence stateHash stateHashOrdered uuid oldIndex newIndex
+        }
+        ... on CurrentClimbChanged {
+          sequence stateHash stateHashOrdered
+          currentItem: item { ${QUEUE_ITEM_FIELDS} }
+          clientId correlationId
+          ${attribution ? 'currentChangedBy' : ''}
+        }
+        ... on ClimbMirrored {
+          sequence stateHash stateHashOrdered mirroredUuid: uuid mirrored
+        }
+        ... on PlaybackStateChanged {
+          sequence climbUuid frameIndex frameCount isPlaying speed paceMs anchorTimestamp clientId
+        }
+      }
+    }
+  `;
+}
+
+/** The HTTP resync may reach a different replica, so its caller also handles validation fallback. */
+export function buildSessionQueueStateQuery({ nowSlot, attribution }: QueueReadCapabilities): string {
+  return `
+    query GetSessionQueueState${nowSlot ? 'NowSlot' : ''}${attribution ? 'Attributed' : ''}($sessionId: ID!) {
+      session(sessionId: $sessionId) {
+        queueState {
+          sequence stateHash stateHashOrdered
+          ${nowSlot ? 'historyCount currentChangedAt' : ''}
+          ${attribution ? 'currentChangedBy' : ''}
+          queue { ${QUEUE_ITEM_FIELDS} }
+          currentClimbQueueItem { ${QUEUE_ITEM_FIELDS} }
+        }
+      }
+    }
+  `;
+}
 
 export const CREATE_SESSION = `
   mutation CreateSession($input: CreateSessionInput!) {
@@ -764,7 +844,13 @@ export const QUEUE_UPDATES = `
 
 // Mirrors the native iOS subscription in SessionWebSocketManager.swift. Keeping
 // a copy here lets the schema-validation test catch drift in fields that native
-// decodes manually, including climb.mirrored for widget-triggered BLE updates.
+// decodes manually, including climb.mirrored for widget-triggered BLE updates,
+// and state.historyCount (F3, #6666), which the native reducer reads to land on
+// the head of Up next when nothing is current. A server without that field
+// rejects this whole document; native then resubscribes once without the
+// historyCount line (QueueSubscriptionDocument in SessionQueueState.swift).
+// That fallback covers historyCount only, so any other new field still needs
+// its backend live before a binary ships it.
 export const NATIVE_IOS_QUEUE_UPDATES = `
   subscription QueueUpdates($sessionId: ID!) {
     queueUpdates(sessionId: $sessionId) {
@@ -774,6 +860,7 @@ export const NATIVE_IOS_QUEUE_UPDATES = `
         state {
           sequence
           stateHash
+          historyCount
           queue {
             uuid
             climb { uuid setter_username name frames framesCount framesPace angle ascensionist_count difficulty quality_average stars difficulty_error mirrored benchmark_difficulty }

@@ -39,9 +39,13 @@ export function validatePreviewRun(input: unknown, proof: PreviewProof): Record<
     });
   // Dispatch uses the trusted default branch's workflow, so its head SHA is the
   // tooling commit, not the PR head. The receipt/deployment attest the latter.
+  // Since default-branch runs stopped executing PR code, the publish itself runs
+  // on this PR's ci-sandbox branch (scripts/lib/ci-sandbox.cjs) at that commit.
+  const sandboxBranch = new RegExp(`^ci-sandbox/ota-preview/pr-${proof.pullRequest}/[1-9][0-9]*$`);
   const trustedDispatch =
     run.event === 'workflow_dispatch' &&
-    run.head_branch === (proof.defaultBranch ?? 'main') &&
+    (run.head_branch === (proof.defaultBranch ?? 'main') ||
+      (typeof run.head_branch === 'string' && sandboxBranch.test(run.head_branch))) &&
     typeof run.head_sha === 'string' &&
     /^[0-9a-f]{40}$/.test(run.head_sha);
   if (run.path !== PREVIEW_WORKFLOW || !sameRepository || (!pinnedPull && !trustedDispatch))

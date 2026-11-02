@@ -61,11 +61,32 @@ for (const root of SCAN_ROOTS) {
  */
 const ARRAY_LITERAL_HEAD = /(^|[^\w\]')")`])\[\s*(['"`])([A-Za-z][\w.-]*)\2/g;
 
+/**
+ * A reader can also build its key from a named string constant
+ * (`[SMART_PLAYLIST_COUNTS_QUERY_KEY, token]`). Those heads count only when the
+ * constant is declared as a string literal somewhere in the scanned tree.
+ * Only UPPER_SNAKE_CASE constants are tracked: a camelCase or PascalCase key
+ * constant is not resolved, so its key would read as an orphan here.
+ */
+const STRING_CONSTANT = /\bconst\s+([A-Z][A-Z0-9_]*)\s*=\s*(['"`])([A-Za-z][\w.-]*)\2/g;
+const CONSTANT_ARRAY_HEAD = /(^|[^\w\]')")`])\[\s*([A-Z][A-Z0-9_]*)\s*[,\]]/g;
+
+const scannedSources = scannedFiles.map((filePath) => readFileSync(filePath, 'utf8'));
+const stringConstants = new Map<string, string>();
+for (const source of scannedSources) {
+  for (const match of source.matchAll(STRING_CONSTANT)) {
+    stringConstants.set(match[1], match[3]);
+  }
+}
+
 const readerKeySegments = new Set<string>();
-for (const filePath of scannedFiles) {
-  const source = readFileSync(filePath, 'utf8');
+for (const source of scannedSources) {
   for (const match of source.matchAll(ARRAY_LITERAL_HEAD)) {
     readerKeySegments.add(match[3]);
+  }
+  for (const match of source.matchAll(CONSTANT_ARRAY_HEAD)) {
+    const segment = stringConstants.get(match[2]);
+    if (segment) readerKeySegments.add(segment);
   }
 }
 

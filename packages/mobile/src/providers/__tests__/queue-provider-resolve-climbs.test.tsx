@@ -1,4 +1,4 @@
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 // @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
@@ -224,7 +224,7 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     );
     const retained = snapshots.at(-1)!;
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidateCredentialSnapshots();
       // A captured callback cannot restore its old payload before React renders.
       retained.setQueue([queued], current);
     });
@@ -272,7 +272,7 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     );
     await waitFor(() => expect(resolveOld).toBeTruthy());
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidateCredentialSnapshots();
       resolveOld({ climb: makeClimb('private', 25, 'V8') });
     });
     expect(snapshots.at(-1)?.state.queue[0].climb.name).toBe('');

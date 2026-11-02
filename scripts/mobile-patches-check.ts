@@ -89,7 +89,7 @@ export interface ForbiddenInMethod {
 }
 
 export interface PatchRule {
-  /** The patched package — must be a direct dependency of packages/mobile. */
+  /** The patched package — must be resolvable from the owning workspace. */
   package: string;
   /** Path, within the installed package, to the source file the patch edits. */
   file: string;
@@ -132,7 +132,7 @@ export const RULES: readonly PatchRule[] = [
       'hasPostedAppContextDestroys = true',
       'moduleRegistry.post(event: .appContextDestroys)',
     ],
-    patchedKey: 'expo-modules-core@57.0.21',
+    patchedKey: 'expo-modules-core@58.0.26',
   },
   // Pin the callable source and both distributed JS entrypoints: exporting a
   // type alone cannot stop recording in a compiled native replay SDK.
@@ -249,20 +249,46 @@ export const RULES: readonly PatchRule[] = [
       'closePromise',
       'finalizeStatementWithErrorPreservation',
     ],
-    patchedKey: 'expo-sqlite@57.0.4',
+    patchedKey: 'expo-sqlite@58.0.14',
   })),
-  // Pin the consecutive finalize/state/error sequence, not a global state
-  // assignment: moving it after the throw leaves the native pointer freed but
-  // still reusable whenever SQLite reports the statement's execution error.
+  // SDK 58 moved statements into their own native classes and fixes finalization
+  // upstream. Keep asserting finalized-before-throw so an upgrade cannot lose it.
   {
     package: 'expo-sqlite',
-    file: 'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+    file: 'android/src/main/java/expo/modules/sqlite/NativeStatement.kt',
     sentinels: [
-      `val result = statement.ref.sqlite3_finalize()
-      statement.isFinalized = true
-      if (result != NativeDatabaseBinding.SQLITE_OK)`,
+      'synchronized(connection.statementLifecycleLock)',
+      `val ret = ref.sqlite3_finalize()
+        val error = if (ret != NativeDatabaseBinding.SQLITE_OK) {
+          ref.getLastErrorMessage()
+        } else {
+          null
+        }
+        // SQLite destroys the statement even when returning an earlier execution error.
+        isFinalized = true
+        connection.statements.removeAll { it === this }
+        if (releasedByJavaScript) {
+          ref.close()
+        }
+        if (error != null) {
+          throw SQLiteErrorException(error)`,
     ],
-    patchedKey: 'expo-sqlite@57.0.4',
+    patchedKey: 'expo-sqlite@58.0.14',
+  },
+  {
+    package: 'expo-sqlite',
+    file: 'ios/NativeStatement.swift',
+    sentinels: [
+      'database.statementLifecycleLock.lock()',
+      `let result = sqliteResult(for: database.pointer) { exsqlite3_finalize(pointer) }
+      // SQLite destroys the statement even when returning an earlier execution error.
+      isFinalized = true
+      pointer = nil
+      database.statements.removeAll { $0 === self }
+      if let message = result.message {
+        throw SQLiteErrorException(message)`,
+    ],
+    patchedKey: 'expo-sqlite@58.0.14',
   },
   {
     package: 'expo-sqlite',
@@ -270,15 +296,53 @@ export const RULES: readonly PatchRule[] = [
     sentinels: [
       'private let moduleQueue: DispatchQueue',
       'OnAppContextDestroys {\n      closeAllDatabases()',
-      'OnDestroy {\n      closeAllDatabases()',
+      'public override func willDestroy() {\n    closeAllDatabases()',
       'DispatchQueue.getSpecific(key: moduleQueueKey)',
       'moduleQueue.async(flags: .barrier, execute: closeDatabases)',
       'moduleQueue.sync(flags: .barrier, execute: closeDatabases)',
-      `let result = exsqlite3_finalize(statement.pointer)
-    statement.isFinalized = true
-    if result != SQLITE_OK`,
+      'UInt(bitPattern: ObjectIdentifier($0)) < UInt(bitPattern: ObjectIdentifier($1))',
+      'databases.reversed().forEach { $0.statementLifecycleLock.unlock() }',
     ],
-    patchedKey: 'expo-sqlite@57.0.4',
+    patchedKey: 'expo-sqlite@58.0.14',
+  },
+  {
+    package: 'expo-sqlite',
+    file: 'ios/NativeDatabase.swift',
+    sentinels: [
+      'private func exec(source: String) throws {\n    // Serialize connection lifetime with close;',
+      'statementLifecycleLock.lock()',
+      'defer { statementLifecycleLock.unlock() }',
+    ],
+    patchedKey: 'expo-sqlite@58.0.14',
+  },
+  {
+    package: 'expo-sqlite',
+    file: 'ios/NativeSession.swift',
+    sentinels: [
+      'private func attach(database: NativeDatabase, table: String?) throws {\n    database.statementLifecycleLock.lock()',
+      'private func close(database: NativeDatabase) throws {\n    database.statementLifecycleLock.lock()',
+      'defer { database.statementLifecycleLock.unlock() }',
+    ],
+    patchedKey: 'expo-sqlite@58.0.14',
+  },
+  {
+    package: 'react-native',
+    file: 'ReactCommon/react/renderer/scheduler/Scheduler.h',
+    sentinels: ['std::shared_ptr<std::atomic<bool>> delegateInvalidated_;'],
+    patchedKey: 'react-native@0.88.0',
+  },
+  {
+    package: 'react-native',
+    file: 'ReactCommon/react/renderer/scheduler/Scheduler.cpp',
+    sentinels: [
+      'Scheduler::~Scheduler() {\n  // Boardsesh #5293:',
+      '*delegateInvalidated_ = true;',
+      'delegateInvalidated_ = std::make_shared<std::atomic<bool>>(false);',
+      'invalidated = delegateInvalidated_',
+      'if (*invalidated) {\n              return;',
+      'if (*invalidated) {\n            return;',
+    ],
+    patchedKey: 'react-native@0.88.0',
   },
   {
     package: 'react-native-ble-plx',
@@ -307,13 +371,13 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeIsolatedStoreModulePath', 'ISOLATED_STORE_MODULE_ROOT_REGEX'],
-    patchedKey: '@expo/fingerprint@0.20.13',
+    patchedKey: '@expo/fingerprint@0.21.6',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
     sentinels: ['normalizeIsolatedStoreModulePath'],
-    patchedKey: '@expo/fingerprint@0.20.13',
+    patchedKey: '@expo/fingerprint@0.21.6',
   },
   {
     package: 'react-native-screens',
@@ -324,7 +388,21 @@ export const RULES: readonly PatchRule[] = [
       'findContentScrollViewInManagedSubtreeFrom',
       'RNSManagedContentScrollViewSearchMaxDepth',
     ],
-    patchedKey: 'react-native-screens@4.26.2',
+    patchedKey: 'react-native-screens@4.30.0',
+  },
+  // `scrollEdgeEffects` on a native-stack screen reaches a FlashList only through
+  // this fallback: upstream walks first children, which stops at any leading
+  // sibling. Drop it and iOS 26 draws its top edge blur over full-bleed heroes
+  // again (the playlist hero band, #6525). The second sentinel keeps the search
+  // out of nested screens, so an outer screen can't overwrite an inner one.
+  {
+    package: 'react-native-screens',
+    file: 'ios/RNSScreen.mm',
+    sentinels: [
+      'scrollView = rnscreens_findOwnEdgeEffectScrollView(self, self, RNSEdgeEffectScrollViewSearchMaxDepth);',
+      'if (view != screen && [view isKindOfClass:RNSScreenView.class]) {',
+    ],
+    patchedKey: 'react-native-screens@4.30.0',
   },
   // The bottom-accessory relayout nudge. No single sentinel is enough, because
   // this hunk has TWO regressions to guard, in opposite directions.
@@ -363,7 +441,7 @@ export const RULES: readonly PatchRule[] = [
       '[_controller setBottomAccessory:nil animated:YES];',
       '[self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];',
     ],
-    patchedKey: 'react-native-screens@4.26.2',
+    patchedKey: 'react-native-screens@4.30.0',
     forbiddenInMethod: [
       {
         method: 'applyBottomAccessoryVisibility',
@@ -388,6 +466,40 @@ export const RULES: readonly PatchRule[] = [
           'the layout pass must never arm its own repeat — that turns the coalescing drain into a ' +
           'self-sustaining layout loop, the shape BOARDSESH-9K crashed on. Only an accessory-identity change in ' +
           'applyBottomAccessoryVisibility may set it.',
+      },
+    ],
+  },
+  // The MiniPlayer width cap (#7083). A dropped hunk only shows on an iPad or the
+  // open iPhone Duo: the glass fills the whole content column again instead of
+  // Music's 689 pt capsule. A portrait iPhone is always narrower than the cap, so
+  // the cap applies on every device; the forbidden idiom check stops a pad-only
+  // gate from coming back and leaving the open Duo with a full-width bar. The
+  // other forbidden reads keep the answer derived from the proposed size:
+  // answering from the view's own bounds or super's default brings back the stale
+  // width after a sidebar hide or rotation (react-native-screens #4728).
+  {
+    package: 'react-native-screens',
+    file: 'ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm',
+    sentinels: [
+      'static const CGFloat RNSTabsBottomAccessoryMaxWidth = 689.0;',
+      'return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);',
+    ],
+    patchedKey: 'react-native-screens@4.30.0',
+    forbiddenInMethod: [
+      {
+        method: 'sizeThatFits',
+        substrings: ['self.bounds', 'self.frame', 'super sizeThatFits'],
+        why:
+          'the answer must derive from the proposed size on every query. The view keeps its old bounds after a ' +
+          'sidebar hide or rotation, so answering from them strands the accessory at a stale width ' +
+          '(react-native-screens #4728).',
+      },
+      {
+        method: 'sizeThatFits',
+        substrings: ['userInterfaceIdiom', 'return size;'],
+        why:
+          'the 689 pt cap must apply on every device. A pad-only gate, or an early full-size return, leaves the ' +
+          'open iPhone Duo with a full-width bar instead of the centred capsule (#7083).',
       },
     ],
   },
@@ -416,7 +528,7 @@ export const RULES: readonly PatchRule[] = [
       'hideSwallowingMissingNativeHandler();',
       'const close = hideSwallowingMissingNativeHandler;',
     ],
-    patchedKey: '@expo/ui@57.0.22',
+    patchedKey: '@expo/ui@58.0.23',
   },
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
@@ -427,7 +539,7 @@ export const RULES: readonly PatchRule[] = [
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
     sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
     orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
-    patchedKey: '@expo/ui@57.0.22',
+    patchedKey: '@expo/ui@58.0.23',
   },
   // SwiftUI RNHostView owners can overlap for the same hosted React view.
   // The shared native handler must survive until every owner releases its lease;
@@ -451,7 +563,7 @@ export const RULES: readonly PatchRule[] = [
       'if (leaseCount.unsignedIntegerValue > 1)',
       '[(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];',
     ],
-    patchedKey: '@expo/ui@57.0.22',
+    patchedKey: '@expo/ui@58.0.23',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
@@ -469,7 +581,7 @@ export const RULES: readonly PatchRule[] = [
       'if hasFileHost || hasAbsoluteFilePath',
       'Images/MyIcon',
     ],
-    patchedKey: 'expo-image@57.0.5',
+    patchedKey: 'expo-image@58.0.17',
   },
   // The embedded bundle's commitTime. `expo-updates` launches whichever update
   // has the newest one, and upstream stamps BUILD time — so a long native build
@@ -492,7 +604,7 @@ export const RULES: readonly PatchRule[] = [
       'Math.min(committerTime, now)',
       'commitTime: resolveEmbeddedCommitTime(projectRoot),',
     ],
-    patchedKey: 'expo-updates@57.0.25',
+    patchedKey: 'expo-updates@58.0.18',
   },
 ];
 
@@ -503,19 +615,31 @@ export const RULES: readonly PatchRule[] = [
  * of quietly landing unguarded.
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
-  'expo-dev-launcher@57.0.20':
+  'expo-dev-launcher@58.0.15':
     'raises the iOS dev-launcher request timeout from 10s to 120s. Under an isolated linker the package is ' +
     'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile — pnpm does ' +
     "put it in node_modules/.pnpm/node_modules, but that directory is not on packages/mobile's resolution path. " +
     'dev-client-only — it never ships in a store binary.',
 };
 
-/** Server-only patches stay outside patches/, which is a native fingerprint input.
- * Postgres is guarded by the backend's ESM/CJS disconnect regression tests.
+/**
+ * Server and web patches stay outside patches/, which is a native fingerprint input.
+ * Postgres is guarded by the backend's ESM/CJS disconnect regression tests;
+ * MUI is checked below and by the mixed-React compiler regression fixture.
+ * Only these exact keys and paths may bypass the native patch directory.
  */
-export const SERVER_PATCHES: Readonly<Record<string, string>> = {
+export const NON_NATIVE_PATCHES: Readonly<Record<string, string>> = {
   'postgres@3.4.9': 'packages/db/patches/postgres@3.4.9.patch',
+  '@mui/material@7.3.11': 'packages/web/patches/@mui__material@7.3.11.patch',
 };
+
+/** Resolve these files from web, whose React declarations the patch must use. */
+export const WEB_RULES: readonly PatchRule[] = ['internal/index.d.ts', 'esm/internal/index.d.ts'].map((file) => ({
+  package: '@mui/material',
+  file,
+  sentinels: ["import type * as React from 'react';"],
+  patchedKey: '@mui/material@7.3.11',
+}));
 
 /**
  * Strip `//` line comments and block comments from Objective-C++ source.
@@ -591,8 +715,8 @@ export interface PatchInventoryInput {
   patchedDependencies: Record<string, string>;
   /** Filenames present in patches/ (basenames, not paths). */
   patchFilenames: readonly string[];
-  /** Existing repo-relative server patch paths; only SERVER_PATCHES may use these. */
-  serverPatchPaths?: readonly string[];
+  /** Existing repo-relative non-native patch paths; only NON_NATIVE_PATCHES may use these. */
+  nonNativePatchPaths?: readonly string[];
   /** `patchedKey` of every entry in {@link RULES}. */
   guardedKeys: readonly string[];
   /** Keys deliberately left unguarded, mapped to the reason. */
@@ -614,12 +738,12 @@ export function checkPatchInventory(input: PatchInventoryInput): string[] {
   const guarded = new Set(input.guardedKeys);
 
   for (const [patchedKey, patchPath] of Object.entries(input.patchedDependencies)) {
-    if (Object.prototype.hasOwnProperty.call(SERVER_PATCHES, patchedKey)) {
-      const expectedPath = SERVER_PATCHES[patchedKey];
+    if (Object.prototype.hasOwnProperty.call(NON_NATIVE_PATCHES, patchedKey)) {
+      const expectedPath = NON_NATIVE_PATCHES[patchedKey];
       if (patchPath !== expectedPath) {
-        errors.push(`${patchedKey}: server patch must stay at ${expectedPath}, outside native fingerprint inputs.`);
-      } else if (!input.serverPatchPaths?.includes(patchPath)) {
-        errors.push(`${patchedKey}: server patch ${patchPath} is missing.`);
+        errors.push(`${patchedKey}: non-native patch must stay at ${expectedPath}, outside native fingerprint inputs.`);
+      } else if (!input.nonNativePatchPaths?.includes(patchPath)) {
+        errors.push(`${patchedKey}: non-native patch ${patchPath} is missing.`);
       }
       continue;
     }
@@ -743,9 +867,11 @@ export function checkIosPatchesBuildFromSource(input: BuildFromSourceInput): str
 export interface PatchCheckEnv {
   /** The pnpm-workspace.yaml `patchedDependencies` map. */
   patchedDependencies: Record<string, string>;
-  /** Installed `version` of `pkg` as resolved from packages/mobile. Throws if unresolvable. */
+  /** Owning workspace, used in resolution failure diagnostics; defaults to mobile. */
+  workspace?: string;
+  /** Installed `version` of `pkg` as resolved from the owning workspace. Throws if unresolvable. */
   readInstalledVersion(pkg: string): string;
-  /** Read `fileSubpath` from the installed `pkg` (resolved from packages/mobile). Throws if pkg unresolvable or file absent. */
+  /** Read `fileSubpath` from the installed `pkg` (resolved from the owning workspace). Throws if pkg unresolvable or file absent. */
   readInstalledFile(pkg: string, fileSubpath: string): string;
 }
 
@@ -772,13 +898,14 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
 
   for (const rule of rules) {
     checked += 1;
+    const patchPath = env.patchedDependencies[rule.patchedKey] ?? `patches/${rule.patchedKey}.patch`;
 
     // (1) The patch must still be configured at all.
     if (!Object.prototype.hasOwnProperty.call(env.patchedDependencies, rule.patchedKey)) {
       errors.push(
         `${rule.package}: patch no longer configured — expected key "${rule.patchedKey}" in ` +
           `pnpm-workspace.yaml "patchedDependencies". If you intentionally removed it, also delete the rule in ` +
-          `scripts/mobile-patches-check.ts and patches/${rule.patchedKey}.patch.`,
+          `scripts/mobile-patches-check.ts and its patch file.`,
       );
       continue;
     }
@@ -790,7 +917,9 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
     try {
       installedVersion = env.readInstalledVersion(rule.package);
     } catch (error) {
-      errors.push(`${rule.package}: not resolvable from packages/mobile (${(error as Error).message}).`);
+      errors.push(
+        `${rule.package}: not resolvable from ${env.workspace ?? 'packages/mobile'} (${(error as Error).message}).`,
+      );
       continue;
     }
     if (expectedVersion && installedVersion !== expectedVersion) {
@@ -798,7 +927,7 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
         `${rule.package}: version drift — installed ${installedVersion}, but "patchedDependencies" targets ` +
           `${expectedVersion}. pnpm keys patches by exact version, so this install is UNPATCHED. Regenerate the ` +
           `patch for ${installedVersion} (\`pnpm patch ${rule.package}@${installedVersion}\`, edit, then ` +
-          `\`pnpm patch-commit <dir>\`), update the key + patches/ filename, ` +
+          `\`pnpm patch-commit <dir>\`), update the key + patch filename, ` +
           `then re-run this check.`,
       );
       continue;
@@ -816,7 +945,7 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
     if (missing.length > 0) {
       errors.push(
         `${rule.package}: patch NOT applied — ${rule.file} is missing ${missing.map((s) => `"${s}"`).join(', ')}. ` +
-          `Run \`vp install\` to re-apply patches/${rule.patchedKey}.patch; if it no longer applies cleanly, ` +
+          `Run \`vp install\` to re-apply ${patchPath}; if it no longer applies cleanly, ` +
           `regenerate it with \`pnpm patch ${rule.package}\`.`,
       );
     }
@@ -877,20 +1006,24 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
 }
 
 /** Real-filesystem env used when the script runs for real. */
-export function createNodeEnv(mobilePackageJson: string, patchedDependencies: Record<string, string>): PatchCheckEnv {
-  const requireFromMobile = createRequire(mobilePackageJson);
+export function createNodeEnv(
+  workspacePackageJson: string,
+  patchedDependencies: Record<string, string>,
+  workspace = 'packages/mobile',
+): PatchCheckEnv {
+  const requireFromWorkspace = createRequire(workspacePackageJson);
   const packageManifests = new Map<string, string>();
   const resolvePackageJson = (pkg: string): string => {
     const cached = packageManifests.get(pkg);
     if (cached) return cached;
     let manifest: string;
     try {
-      manifest = requireFromMobile.resolve(`${pkg}/package.json`);
+      manifest = requireFromWorkspace.resolve(`${pkg}/package.json`);
     } catch {
       // Some native packages hide package.json through their exports map.
-      // Resolve the same entry mobile uses, then verify the containing package
+      // Resolve the owning workspace entry, then verify the containing package
       // name rather than guessing a workspace/store node_modules path.
-      let directory = dirname(requireFromMobile.resolve(pkg));
+      let directory = dirname(requireFromWorkspace.resolve(pkg));
       while (true) {
         const candidate = resolve(directory, 'package.json');
         if (existsSync(candidate)) {
@@ -910,6 +1043,7 @@ export function createNodeEnv(mobilePackageJson: string, patchedDependencies: Re
   };
   return {
     patchedDependencies,
+    workspace,
     readInstalledVersion(pkg) {
       const { version } = JSON.parse(readFileSync(resolvePackageJson(pkg), 'utf8')) as { version?: string };
       if (!version) throw new Error(`no "version" field in ${pkg}/package.json`);
@@ -958,10 +1092,14 @@ export function main(): number {
 
   const env = createNodeEnv(mobilePackageJson, patchedDependencies);
   const { checked, errors } = checkPatchesApplied(RULES, env);
+  const webEnv = createNodeEnv(resolve(repoRoot, 'packages/web/package.json'), patchedDependencies, 'packages/web');
+  const webResult = checkPatchesApplied(WEB_RULES, webEnv);
   const inventoryErrors = checkPatchInventory({
     patchedDependencies,
     patchFilenames,
-    serverPatchPaths: Object.values(SERVER_PATCHES).filter((patchPath) => existsSync(resolve(repoRoot, patchPath))),
+    nonNativePatchPaths: Object.values(NON_NATIVE_PATCHES).filter((patchPath) =>
+      existsSync(resolve(repoRoot, patchPath)),
+    ),
     guardedKeys: RULES.map((rule) => rule.patchedKey),
     allowUnguarded: UNGUARDED_PATCHES,
   });
@@ -981,16 +1119,16 @@ export function main(): number {
     readSpmConfig: (pkg) => readSpmConfigFrom(env, pkg),
   });
 
-  const allErrors = [...errors, ...inventoryErrors, ...buildFromSourceErrors];
+  const allErrors = [...errors, ...webResult.errors, ...inventoryErrors, ...buildFromSourceErrors];
 
   if (allErrors.length > 0) {
-    console.error('[mobile-patches] FAILED — native patch(es) not applied:');
+    console.error('[mobile-patches] FAILED — patch(es) not applied:');
     for (const error of allErrors) console.error(`  ✗ ${error}`);
     return 1;
   }
 
   console.log(
-    `[mobile-patches] OK — ${checked} native patch(es) applied, ${patchFilenames.length} patch file(s) accounted for.`,
+    `[mobile-patches] OK — ${checked} native and ${webResult.checked} web patch rule(s) applied, ${patchFilenames.length} native patch file(s) accounted for.`,
   );
   return 0;
 }

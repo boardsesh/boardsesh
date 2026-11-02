@@ -30,6 +30,7 @@ type ListRowProps = {
   wrapSubtitle?: boolean;
   /** e.g. `{ busy: true, disabled: true }` while the row's action is in flight. */
   accessibilityState?: AccessibilityState;
+  testID?: string;
 };
 
 export function ListRow({
@@ -48,6 +49,7 @@ export function ListRow({
   accessibilityHint,
   wrapSubtitle = false,
   accessibilityState,
+  testID,
 }: ListRowProps) {
   const { systemColors } = useTheme();
 
@@ -92,6 +94,7 @@ export function ListRow({
   if (onPress) {
     return (
       <PressableSurface
+        testID={testID}
         onPress={handlePress}
         feedback="opacity"
         opacityTo={0.7}
@@ -106,7 +109,11 @@ export function ListRow({
     );
   }
 
-  return <View style={[styles.container, style]}>{content}</View>;
+  return (
+    <View testID={testID} style={[styles.container, style]}>
+      {content}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

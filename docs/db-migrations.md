@@ -104,6 +104,17 @@ force-pushes. Your SQL is never rewritten. Its PR comment says the renumber land
 only after that force-push succeeds; a failed validation, proof, re-check, or push
 leaves a "Nothing was pushed" comment with the action run to inspect.
 
+Each renumber is two runs. The dispatch on `main` only vets the PR, then re-dispatches
+the workflow on a throwaway `ci-sandbox/db-renumber/pr-<n>/<run id>` branch at the same
+commit, because a run on `main` must never execute PR code (its writes are shared with
+every branch and PR). The sandbox run installs, renumbers and proves your branch with no
+secret in scope, then hands the result to a fresh `push` job as a git bundle; only that
+job holds the App token, and it pushes the bundle's commit to your branch, leased to the
+head it vetted, and only if the result changes nothing outside the migration folder
+beyond files your PR already touches. It never renumbers a `release/*` head or any
+branch a ruleset protects. The sandbox branch is deleted when the run ends. Look for the run whose
+branch starts with `ci-sandbox/db-renumber/` when you want the log.
+
 To do it yourself, or when the bot stops:
 
 ```bash
@@ -269,3 +280,16 @@ both". Union merge is git's built-in answer for exactly this file shape.
 Without it the renumber bot blocks on nearly every table-adding PR, which is most of
 them. The failure mode is loud rather than silent: if both sides add the _same_ export,
 the union keeps both copies and TypeScript fails the build.
+
+## Historical board-presence serial index (#2713)
+
+The migration called 0121 in the original board-presence review was renumbered to
+`0124_majestic_pixie`. It trims serials, clears duplicate bindings, and creates
+`user_boards_unique_serial` inside the migrator transaction. Its lock duration was
+not measured; do not infer a sub-second bound. Later migration 0125 drops that
+global index, 0132 excludes system catalogue boards from owner uniqueness, and
+0207 scopes owner uniqueness by board type. Do not replay or edit the applied
+historical migration or build its obsolete global index concurrently. A populated
+database upgrading from before 0124 needs a separate maintenance assessment of
+the normalization updates and index build on a representative copy. Current
+hardening requires no schema change.

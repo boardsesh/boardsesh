@@ -33,6 +33,7 @@ import {
   guardedButtonPress,
   isButtonRowPressable,
   selectedOptionLabel,
+  toggleRowSubtitle,
   useOpensOutsideAppHint,
 } from './MoreForm.logic';
 import type { MoreFormProps, MoreRow, MoreSection, MoreSelectRow, MoreIconName } from './MoreForm.types';
@@ -63,7 +64,14 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   currentOptionsKeyRef.current = optionsKey;
   return (
     <View style={styles.padded}>
-      <Text variant="footnote" color={systemColors.secondaryLabel}>
+      <Text
+        variant="footnote"
+        color={systemColors.secondaryLabel}
+        // The menu's own name already starts with it: a screen reader reads
+        // the row once, on the control. A disabled row has no menu to carry it.
+        accessibilityElementsHidden={!row.disabled}
+        importantForAccessibility={row.disabled ? 'auto' : 'no-hide-descendants'}
+      >
         {row.label}
       </Text>
       {row.disabled ? (
@@ -77,7 +85,7 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
           // Equivalent option rebuilds keep the same mapping for queued taps.
           key={optionsKey}
           label={currentLabel}
-          accessibilityLabel={`${row.label}, ${currentLabel}`}
+          accessibilityLabel={`${row.accessibilityLabel ?? row.label}, ${currentLabel}`}
           actions={row.options.map((option) => ({ label: option.label, selected: option.key === row.selectedKey }))}
           onSelectIndex={(index) => {
             const currentRow = currentRowRef.current;
@@ -87,6 +95,11 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
           }}
         />
       )}
+      {row.subtitle ? (
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {row.subtitle}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -154,18 +167,28 @@ function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: 
         />
       );
     }
-    case 'toggle':
+    case 'toggle': {
+      const subtitle = toggleRowSubtitle(row);
       return (
         <View style={styles.padded}>
           <SwitchRow
             label={row.label}
-            description={row.subtitle}
+            accessibilityLabel={row.accessibilityLabel}
+            description={subtitle.isReason ? undefined : subtitle.text}
             value={row.value}
             disabled={row.disabled}
             onValueChange={row.onValueChange}
           />
+          {subtitle.isReason ? (
+            // Outside the greyed switch row, so its dimming leaves the reason
+            // at full label contrast (WCAG 1.4.3), as the native forms draw it.
+            <Text variant="footnote" color={systemColors.label} style={styles.toggleReason}>
+              {subtitle.text}
+            </Text>
+          ) : null}
         </View>
       );
+    }
     case 'segmented':
       return (
         <View style={styles.padded}>
@@ -339,6 +362,10 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     gap: spacing[1],
+  },
+  // Under the switch row's own label, which SwitchRow insets by spacing[4].
+  toggleReason: {
+    paddingHorizontal: spacing[4],
   },
   trailingGroup: {
     flexDirection: 'row',

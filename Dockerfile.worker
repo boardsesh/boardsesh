@@ -7,6 +7,7 @@ RUN npm install --global --no-fund --no-audit pnpm@11.22.0
 COPY manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./
 COPY manifests/patches ./patches
 COPY manifests/packages/db/patches ./packages/db/patches
+COPY manifests/packages/web/patches ./packages/web/patches
 RUN --mount=type=cache,id=background-worker-pnpm-store,target=/pnpm/store pnpm fetch
 COPY manifests/packages ./packages
 RUN --mount=type=cache,id=background-worker-pnpm-store,target=/pnpm/store \

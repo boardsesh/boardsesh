@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode, type RefObject } from 'react';
 import type { Proposal } from '@boardsesh/shared-schema';
 
@@ -119,7 +119,7 @@ vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 
-const drawerHostMock = vi.hoisted(() => ({ openPlayDrawer: vi.fn(), openClimbActions: vi.fn() }));
+const drawerHostMock = vi.hoisted(() => ({ openPlayDrawer: vi.fn(), getClimbActions: vi.fn() }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => drawerHostMock }));
 
 vi.mock('../../../providers/theme-provider', () => ({
@@ -157,9 +157,24 @@ vi.mock('../../OfflineState', () => ({
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({ selectedKey }: { selectedKey: string }) => createElement('div', { 'data-segment': selectedKey }),
 }));
+const cards = vi.hoisted(() => ({ onLongPressClimb: null as null | ((proposal: Proposal) => unknown) }));
 vi.mock('../ModerationProposalCard', () => ({
-  ModerationProposalCard: ({ proposal, highlighted }: { proposal: Proposal; highlighted?: boolean }) =>
-    createElement('div', { 'data-card': proposal.uuid, 'data-highlighted': highlighted ? 'yes' : 'no' }),
+  ModerationProposalCard: ({
+    proposal,
+    highlighted,
+    onLongPressClimb,
+  }: {
+    proposal: Proposal;
+    highlighted?: boolean;
+    onLongPressClimb: (proposal: Proposal) => unknown;
+  }) => {
+    cards.onLongPressClimb = onLongPressClimb;
+    return createElement('div', { 'data-card': proposal.uuid, 'data-highlighted': highlighted ? 'yes' : 'no' });
+  },
+}));
+vi.mock('../../AddToPlaylistSheet', () => ({
+  AddToPlaylistSheet: ({ visible, climb }: { visible: boolean; climb: { uuid: string } | null }) =>
+    createElement('div', { 'data-playlist-sheet': climb?.uuid, 'data-visible': visible ? 'yes' : 'no' }),
 }));
 
 import { ModerationFeedScreen } from '../ModerationFeedScreen';
@@ -216,6 +231,7 @@ beforeEach(() => {
   list.renderItem = null;
   list.keyExtractor = null;
   list.onEndReached = null;
+  cards.onLongPressClimb = null;
 });
 
 describe('ModerationFeedScreen states', () => {
@@ -379,5 +395,34 @@ describe('ModerationFeedScreen perf checklist', () => {
 
     expect(list.renderItem).toBe(initialRenderItem);
     expect(list.keyExtractor).toBe(initialKeyExtractor);
+  });
+});
+
+describe('ModerationFeedScreen climb menu', () => {
+  it("presents a card menu's Add to playlist inside this modal route", () => {
+    const proposal = makeProposal('p1');
+    state.query = makeQuery({ data: { pages: [makePage([proposal])] } });
+    drawerHostMock.getClimbActions.mockImplementation(
+      (climb: unknown, boardConfig: unknown, options: Record<string, unknown>) => ({ climb, boardConfig, ...options }),
+    );
+    const { container } = render(<ModerationFeedScreen />);
+    expect(container.querySelector('[data-playlist-sheet]')).toBeNull();
+
+    act(() => {
+      cards.onLongPressClimb?.(proposal);
+    });
+    const options = drawerHostMock.getClimbActions.mock.calls.at(-1)?.[2] as {
+      openPlaylistInRoute?: (climb: { uuid: string }, boardConfig: unknown) => void;
+    };
+    expect(options.openPlaylistInRoute).toBeTypeOf('function');
+    act(() => {
+      options.openPlaylistInRoute?.(
+        { uuid: 'climb-p1' },
+        { boardName: 'kilter', layoutId: 8, sizeId: 25, setIds: '1,20', angle: 40 },
+      );
+    });
+    const sheet = container.querySelector('[data-playlist-sheet]');
+    expect(sheet?.getAttribute('data-playlist-sheet')).toBe('climb-p1');
+    expect(sheet?.getAttribute('data-visible')).toBe('yes');
   });
 });

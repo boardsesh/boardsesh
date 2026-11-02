@@ -1,7 +1,7 @@
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { HOLD_STATE_MAP, STATE_TO_PRIMARY_CODE, type BoardRenderMode } from '@boardsesh/board-constants/hold-states';
+import type { BoardRenderMode } from '@boardsesh/board-constants/hold-states';
 import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import { summarizeActiveHolds, type ActiveHoldRole, type ActiveHoldsGroup } from '@boardsesh/play-view';
@@ -33,6 +33,7 @@ import {
   type ActiveHoldsLineSegment,
 } from './active-holds-line';
 import { PlaybackFrameContext } from './playback-frame-context';
+import { roleStateInfo } from './hold-state-colors';
 
 /**
  * Classic marker shapes as text glyphs. The octagon is a hexagon (⬢): no Apple
@@ -101,11 +102,7 @@ function roleMarker(
   colorOverrides: HoldColorOverrides,
   shapeOverrides: HoldShapeOverrides,
 ): ActiveHoldMarker | null {
-  const stateMap = HOLD_STATE_MAP[boardName];
-  const primaryCode = STATE_TO_PRIMARY_CODE[boardName]?.[role];
-  const stateInfo =
-    (primaryCode === undefined ? undefined : stateMap?.[primaryCode]) ??
-    Object.values(stateMap ?? {}).find((candidate) => candidate.name === role);
+  const stateInfo = roleStateInfo(boardName, role);
   if (!stateInfo) return null;
   const { color, shape } = resolveHoldStateMarker(stateInfo, look.mode, colorOverrides, shapeOverrides);
   return { color, glyph: markerGlyph(role, shape, look), chipColor: markerChipColor(color) };

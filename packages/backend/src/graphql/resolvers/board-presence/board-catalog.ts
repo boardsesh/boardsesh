@@ -54,6 +54,7 @@ export async function assertKnownBoardConfig(
   layoutId: number,
   productSizeId: number,
   setIds: string,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<void> {
   if (!isPostgresInteger(layoutId) || !isPostgresInteger(productSizeId)) {
     throwUnknownBoardConfig();
@@ -103,7 +104,7 @@ export async function assertKnownBoardConfig(
     throwUnknownBoardConfig();
   }
 
-  const matchingAssociations = await db
+  const matchingAssociations = await executor
     .select({ setId: dbSchema.boardProductSizesLayoutsSets.setId })
     .from(dbSchema.boardProductSizesLayoutsSets)
     .where(
@@ -113,7 +114,7 @@ export async function assertKnownBoardConfig(
         eq(dbSchema.boardProductSizesLayoutsSets.productSizeId, productSizeId),
         inArray(dbSchema.boardProductSizesLayoutsSets.setId, uniqueSetIds),
         exists(
-          db
+          executor
             .select({ id: dbSchema.boardPlacements.id })
             .from(dbSchema.boardPlacements)
             .where(

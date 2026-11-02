@@ -53,6 +53,17 @@ describe('shouldFetchNextPage', () => {
     expect(shouldFetchNextPage(input({ loadedCount: 60, lastVisibleIndex: 18 }))).toBe(false);
   });
 
+  it('reaches as far down the screen in two columns, so the lookahead doubles in climbs', () => {
+    expect(nextPageLookaheadRows(PAGE_SIZE * 2, PAGE_SIZE, 2)).toBe(
+      2 * nextPageLookaheadRows(PAGE_SIZE * 2, PAGE_SIZE),
+    );
+    // 120 loaded, 80 climbs (40 rows of two) below the last one on screen.
+    expect(shouldFetchNextPage(input({ loadedCount: 120, lastVisibleIndex: 39, climbsPerRow: 2 }))).toBe(true);
+    expect(shouldFetchNextPage(input({ loadedCount: 120, lastVisibleIndex: 38, climbsPerRow: 2 }))).toBe(false);
+    // The same position in one column is still far from the end.
+    expect(shouldFetchNextPage(input({ loadedCount: 120, lastVisibleIndex: 39 }))).toBe(false);
+  });
+
   it.each([
     ['there is no next page', { hasNextPage: false }],
     ['the rows are the previous search', { isPlaceholderData: true }],

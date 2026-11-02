@@ -69,8 +69,10 @@ async function walkDirectory(
     }
     // `size` is 0 and `lastModified` null for anything unreadable, which is the
     // right answer for a plan: nothing to reclaim, nothing datable to evict on.
-    collected.push({ name: item.name, sizeBytes: item.size, modifiedAtMs: item.lastModified });
-    totalBytes += item.size;
+    // One read of `size`: each property access is a synchronous native call.
+    const sizeBytes = item.size;
+    collected.push({ name: item.name, sizeBytes, modifiedAtMs: item.lastModified });
+    totalBytes += sizeBytes;
     counter.seen += 1;
     if (counter.seen % chunkSize === 0) await yieldToEventLoop();
   }

@@ -1,16 +1,15 @@
 /// <reference types="node" />
 
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseTestflightBuildReceipt } from './lib/testflight-build';
+import { createTestflightCommandRunner } from './lib/testflight-github';
 import { generateTestflightNotes, type NotesCommandRunner } from './lib/testflight-notes';
 
 export function main(
   arguments_: string[] = process.argv.slice(2),
-  runner: NotesCommandRunner = (command, commandArguments) =>
-    execFileSync(command, commandArguments, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
+  runner: NotesCommandRunner = createTestflightCommandRunner(),
 ): void {
   const options = new Map<string, string>();
   for (let index = 0; index < arguments_.length; index += 2) {

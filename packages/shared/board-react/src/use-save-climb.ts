@@ -25,8 +25,15 @@ import {
  * generic fallback toast.
  */
 export function useSaveClimb(boardName: BoardName | null) {
-  const { isAuthenticated, executeWs, showError, afterClimbWrite, captureAuthEpoch, isAuthEpochCurrent } =
-    useBoardAdapter();
+  const {
+    isAuthenticated,
+    executeWs,
+    showError,
+    afterClimbWrite,
+    captureAuthEpoch,
+    isAuthEpochCurrent,
+    saveClimbOffline,
+  } = useBoardAdapter();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -40,10 +47,28 @@ export function useSaveClimb(boardName: BoardName | null) {
 
       const variables: SaveClimbMutationVariables = { input: toSaveClimbInput(boardName, options) };
       const authEpoch = captureAuthEpoch?.();
+      const queued = await saveClimbOffline?.(variables.input, { queryClient });
+      if (queued) return queued;
       const result = await executeWs<SaveClimbMutationResponse, SaveClimbMutationVariables>({
         query: SAVE_CLIMB_MUTATION,
         variables,
       });
+      let savedClimb: SaveClimbResponse = result.saveClimb;
+      if (result.saveClimb.replayed) {
+        if (authEpoch !== undefined && isAuthEpochCurrent?.(authEpoch) === false) {
+          throw new Error('Account changed while recovering climb save');
+        }
+        // A lost create response can leave the editor open. The climber may
+        // have changed the form before retrying with its durable UUID. The
+        // create replay only acknowledges the original write, so apply the
+        // submitted form before reporting that these edits were saved.
+        const { layoutId: _layoutId, ...editableInput } = variables.input;
+        const updateResult = await executeWs<UpdateClimbMutationResponse, UpdateClimbMutationVariables>({
+          query: UPDATE_CLIMB_MUTATION,
+          variables: { input: { ...editableInput, uuid: result.saveClimb.uuid } },
+        });
+        savedClimb = updateResult.updateClimb;
+      }
       if (authEpoch === undefined || isAuthEpochCurrent?.(authEpoch) !== false) {
         try {
           await afterClimbWrite?.({
@@ -60,7 +85,7 @@ export function useSaveClimb(boardName: BoardName | null) {
           showError?.('localClimbRefreshFailed');
         }
       }
-      return result.saveClimb;
+      return savedClimb;
     },
     onSuccess: () => {
       // A new climb may appear in search results and "my climbs" lists.
@@ -90,8 +115,15 @@ export function useSaveClimb(boardName: BoardName | null) {
  * enforces both rules.
  */
 export function useUpdateClimb() {
-  const { isAuthenticated, executeWs, showError, afterClimbWrite, captureAuthEpoch, isAuthEpochCurrent } =
-    useBoardAdapter();
+  const {
+    isAuthenticated,
+    executeWs,
+    showError,
+    afterClimbWrite,
+    captureAuthEpoch,
+    isAuthEpochCurrent,
+    updateClimbOffline,
+  } = useBoardAdapter();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -102,6 +134,8 @@ export function useUpdateClimb() {
 
       const variables: UpdateClimbMutationVariables = { input };
       const authEpoch = captureAuthEpoch?.();
+      const queued = await updateClimbOffline?.(input, { queryClient });
+      if (queued) return queued;
       const result = await executeWs<UpdateClimbMutationResponse, UpdateClimbMutationVariables>({
         query: UPDATE_CLIMB_MUTATION,
         variables,

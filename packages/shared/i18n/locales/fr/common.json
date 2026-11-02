@@ -469,7 +469,8 @@
         "footer": "Les changements s’appliquent immédiatement. Masque tout pour voir uniquement le bloc, sans défilement vertical.",
         "tabs": {
           "sections": "Sous le bloc",
-          "buttons": "Boutons"
+          "buttons": "Boutons",
+          "miniPlayer": "Mini-lecteur"
         }
       },
       "sectionLayout": {
@@ -513,6 +514,12 @@
         "underName": "Sous le nom",
         "yourClimbing": "Ta grimpe",
         "actions": "Actions",
+        "layout": {
+          "title": "Colonnes",
+          "one": "Une colonne",
+          "two": "Deux colonnes",
+          "footer": "Les deux colonnes s'affichent quand la liste a assez de place, comme sur un iPad à l'horizontale."
+        },
         "gradesTitle": "Cotations",
         "previewFooter": "Exemple. Les croix, favoris et étiquettes apparaissent sur les blocs qui en ont.",
         "gradeFooter": "Choisis la cotation principale dans Réglages → Blocs et cotations.",
@@ -545,7 +552,7 @@
       },
       "playerButtons": {
         "title": "Boutons",
-        "description": "Choisis les boutons autour de Enregistrer, leur ordre et leur place.",
+        "description": "Choisis jusqu’à quatre boutons autour de Enregistrer, leur ordre et leur place.",
         "position": {
           "label": "Position",
           "below": "Sous la board",
@@ -553,7 +560,7 @@
           "footer": "Enregistrer et Éclairage de la board gardent toujours leur place."
         },
         "previousNext": "Précédent et suivant",
-        "previousNextDescription": "Glisser sur la board change toujours de bloc.",
+        "previousNextDescription": "Affiche des flèches à côté de Enregistrer à la place de deux boutons d’action. Glisser sur la board change toujours de bloc.",
         "buttons": {
           "mirror": "Miroir",
           "favorite": "Favori",
@@ -569,14 +576,31 @@
           "log": "Enregistrer",
           "boardLight": "Éclairage de la board"
         },
-        "footer": "Le premier entre File et Miroir prend le grand bouton. Un bouton masqué reste dans le menu ⋯. Sans petits boutons, la board prend leur rangée.",
+        "footer": "Sans flèches, jusqu’à quatre boutons activés entourent Enregistrer. S’il y en a davantage pour cette board, le premier et les trois derniers prennent les places. Avec les flèches, seuls le premier et le dernier apparaissent. Les autres, et ceux que tu masques, sont dans le menu ⋯.",
         "settingsFooter": "Pour changer l’ordre, ouvre le menu ⋯ d’un bloc et choisis Options d’affichage.",
-        "previewLabel": "Aperçu, {{position}} : {{buttons}}"
+        "previewLabel": "Aperçu, {{position}} : {{buttons}}",
+        "boardControl": {
+          "label": "Commande de la board",
+          "wallButton": "Bouton du mur",
+          "lightbulb": "Ampoule",
+          "footer": "Les deux commandes connectent, allument le bloc et montrent qui tient la board. Quand la board est connectée, maintiens pour les options. Lis le libellé du bouton du mur : Tu pilotes la board signifie que chaque bloc choisi s’allume ; touche-le pour arrêter de piloter. Ton téléphone reste connecté, sauf si Déconnecter le Bluetooth quand le pilotage s’arrête est activé. Quand le pilotage a une durée limite, un chrono à côté du libellé et le givre qui rétrécit montrent quand il s’arrête. L’ampoule est en haut à droite."
+        }
       },
       "climbView": {
         "title": "Vue du bloc",
         "valueDefault": "Par défaut",
         "valueCustom": "Personnalisée"
+      },
+      "quickFilters": {
+        "title": "Filtres rapides",
+        "valueDefault": "Par défaut",
+        "valueCustom": "Personnalisés",
+        "climbsTitle": "Blocs",
+        "climbsFooter": "Ils s'affichent au-dessus de la liste des blocs, dans cet ordre. Un filtre que tu actives se place à la fin.",
+        "playlistsTitle": "Listes",
+        "playlistsFooter": "Ils s'affichent au-dessus de chaque playlist, playlist intelligente et page d'ouvreur, dans cet ordre.",
+        "restoreDefaults": "Rétablir les réglages par défaut",
+        "footer": "Les changements s'appliquent immédiatement, sur ce téléphone uniquement. Tous les filtres restent dans Filtres."
       },
       "timers": {
         "restTitle": "Repos",
@@ -590,7 +614,7 @@
         "modeOnTheMinuteHint": "Des créneaux fixes dès que tu l’actives. Enregistrer un essai ou une croix ne relance jamais le chrono.",
         "autoAdvance": "Passer au bloc suivant",
         "autoAdvanceHint": "Il s’allume sur le mur pour toi, seulement avec Boardsesh ouvert.",
-        "autoAdvanceBlocked": "Seule la personne qui pilote le mur peut faire avancer la file.",
+        "autoAdvanceBlocked": "Seule la personne qui tient la board peut faire avancer la file.",
         "autoAdvanceNeedsLength": "Choisis une durée de repos pour faire avancer la file automatiquement.",
         "cuesTitle": "Signaux",
         "cuesFooter": "Désactivés, tu reçois quand même une vibration d’alerte avant que le mur avance tout seul.",
@@ -610,6 +634,24 @@
         "rogueConnecting": "Connexion…",
         "rogueUnreachable": "Introuvable. Vérifie qu’il est allumé et à proximité.",
         "rogueSaveFailed": "Impossible d’enregistrer le minuteur. Réessaie."
+      },
+      "miniPlayer": {
+        "title": "Mini-lecteur",
+        "description": "La barre au-dessus des onglets garde le dernier bloc que tu as ouvert. Touche-la pour le rouvrir ; Éclairage de la board l'allume sur la board.",
+        "buttons": {
+          "next": "Bloc suivant",
+          "previous": "Bloc précédent",
+          "wallDisplay": "Affichage mural"
+        },
+        "fixedNote": "Éclairage de la board est toujours là, à côté d'Enregistrer. Enregistrer reste en dernier, sous ton pouce.",
+        "footer": "Sur iPhone, la barre a de la place pour un seul de ces boutons à côté d'Éclairage de la board et d'Enregistrer : le premier qui est activé.",
+        "open": "Ouverte",
+        "collapsed": "Réduite",
+        "previewLabel": "Aperçu, barre {{shape}} : {{buttons}}",
+        "footerWide": "Sur un écran large, la barre garde autant de ces boutons qu'elle peut en contenir : les premiers de la liste passent d'abord.",
+        "shapeOpen": "ouverte",
+        "shapeCollapsed": "réduite",
+        "more": "Plus"
       }
     },
     "sendRecovery": {
@@ -711,8 +753,21 @@
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là.",
-        "climbsTab": "Pour revenir à tes blocs, touche la loupe dans la barre d'onglets."
+        "accessory": "La barre du bas garde le dernier bloc que tu as ouvert, jusqu'à ce que ta file passe à un autre. Touche-la pour le rouvrir ; son ampoule l'allume sur la board et ✓ fait la croix. Le bloc allumé au mur reste en haut de Blocs.",
+        "previewFirst": {
+          "title": "Toucher un bloc ouvre un aperçu. Touche Allumer sur la board pour l'allumer.",
+          "windowSeconds": "Ensuite, tu pilotes la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
+          "windowMinute": "Ensuite, tu pilotes la board : pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
+          "windowMinutes": "Ensuite, tu pilotes la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
+          "untilStop": "Ensuite, tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
+          "frost": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée réglée dans Arrêter de piloter après (Paramètres › Board) : un chrono défile à côté du libellé et le givre rétrécit à mesure que le temps passe. Fais glisser le bouton vers la gauche pour piloter sans limite (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc). Touche-le pour arrêter.",
+          "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée réglée dans Arrêter de piloter après, dans Paramètres › Board. Utilise l'action Allumer chaque bloc pour piloter sans limite. Touche le bouton pour arrêter.",
+          "frostOpenEnded": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu le touches pour arrêter. Fais glisser le bouton vers la gauche pour piloter (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc).",
+          "frostOpenEndedScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter. Utilise l'action Allumer chaque bloc pour piloter.",
+          "settings": "Paramètres d'éclairage",
+          "done": "C'est noté",
+          "close": "Fermer l'astuce"
+        }
       },
       "link": {
         "title": "Emporte tes croix {{boardName}} avec toi",
@@ -727,7 +782,6 @@
       "home": "Accueil",
       "boards": "Boards",
       "climbs": "Blocs",
-      "wall": "Sur le mur",
       "profile": "Profil",
       "holdFilter": "Types de prise",
       "zoneFilter": "Zone du mur",
@@ -782,6 +836,14 @@
         "finishTesting": "Terminer le test de la PR #{{prNumber}}",
         "options": "Options de mise à jour",
         "earlyUpdatesHelp": "Les mises à jour anticipées peuvent avoir des bugs. Les changements s’appliquent au prochain lancement."
+      },
+      "previewFirstSpotlight": {
+        "title": "Parcours les blocs sans allumer la board",
+        "tap": "Toucher un bloc ouvre un aperçu. Allumer sur la board l'allume, puis tu pilotes la board : les blocs que tu choisis s'allument aussi, jusqu'à la fin de la durée choisie (45 secondes par défaut). Change-la dans Arrêter de piloter après, dans Paramètres › Board.",
+        "swipe": "Fais glisser le bouton du mur vers la gauche pour piloter la board jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume. Touche-le pour arrêter. Quand le pilotage a une durée limite, un chrono s'affiche à côté du libellé et le givre rétrécit à mesure que le temps passe.",
+        "back": "La flèche en haut à gauche ferme l'aperçu et te ramène à ton bloc, ou au bloc allumé au mur. La barre du bas garde le dernier bloc que tu as ouvert.",
+        "cta": "Voir comment ça marche",
+        "dismiss": "C'est noté"
       }
     },
     "launchUpdate": {
@@ -854,6 +916,16 @@
       "yes": "Oui",
       "no": "Non",
       "unknown": "Inconnu"
+    },
+    "supportAsks": {
+      "accountRow": "Soutenir Boardsesh",
+      "cardTitle": "Aider à construire Boardsesh",
+      "cardBody": "Boardsesh est gratuit pour tous les grimpeurs et grimpeuses. Un soutien mensuel paie le temps passé à le construire.",
+      "giveMonthly": "Donner chaque mois",
+      "giveOnce": "Donner une fois",
+      "hideCard": "Masquer cette carte",
+      "settingTitle": "Afficher les demandes de soutien",
+      "settingFooter": "Une ligne « Soutenir Boardsesh » dans Compte, et une carte sur Accueil la première semaine de chaque mois."
     }
   },
   "lightControl": {
@@ -1193,6 +1265,7 @@
   },
   "undoDelete": {
     "removed": "Entrée supprimée",
+    "removedMany": "{{count}} entrées supprimées",
     "undo": "Annuler",
     "cancelled": "Suppression annulée. Ton entrée a été conservée."
   }

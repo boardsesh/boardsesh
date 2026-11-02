@@ -5,7 +5,7 @@ import { PressableSurface } from '../PressableSurface';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
-import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
+import { useLiveWallClimb } from '../queue-control/use-wall-or-queue-climb';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -34,7 +34,7 @@ function SidebarWallCellComponent() {
   const { systemColors, brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const { enabled, boardId } = useBoardPresenceControls();
-  const litClimb = useWallClimbIfDistinct(null);
+  const litClimb = useLiveWallClimb();
   const { openBoardSheet, boardPanelProps } = useDrawerHost();
   const boardConfig = boardPanelProps?.boardConfig ?? null;
 

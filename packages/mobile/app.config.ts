@@ -12,7 +12,7 @@ import type { ExpoConfig, ConfigContext } from 'expo/config';
  * scripts/mobile-locales-parity.test.ts enforces that, and that each code has a
  * matching locales/<code>.json translating the same keys.
  */
-export const APP_LOCALIZATIONS = ['en', 'de', 'es', 'fr'] as const;
+export const APP_LOCALIZATIONS = ['en', 'de', 'es', 'fr', 'it'] as const;
 
 /** Where the InfoPlist strings for a declared localization live, relative to this config. */
 export function localeStringsPath(language: string): string {
@@ -50,7 +50,7 @@ export const ANDROID_BOARD_LINK_PREFIXES = [
 // the retry drops the query string, and an unlisted wall's /b/ link needs its
 // ?wall= to open. Hardcoded for the same reason as the board list above, and
 // held to SUPPORTED_LOCALES minus the default by the same parity test.
-export const ANDROID_LINK_LOCALE_SEGMENTS = ['es', 'fr', 'de'] as const;
+export const ANDROID_LINK_LOCALE_SEGMENTS = ['es', 'fr', 'de', 'it'] as const;
 
 export const ANDROID_LOCALISED_BOARD_LINK_PREFIXES: readonly string[] = ANDROID_LINK_LOCALE_SEGMENTS.flatMap((locale) =>
   ANDROID_BOARD_LINK_PREFIXES.map((boardPrefix) => `/${locale}${boardPrefix}`),
@@ -347,7 +347,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     name: appName,
     slug: 'boardsesh',
     owner: 'boardsesh',
-    version: '2.6.0',
+    version: '2.7.0',
     scheme: 'com.boardsesh.app',
     orientation: 'portrait',
     icon: iconPath,
@@ -395,8 +395,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     // plugin turns them into res/values-b+<lang>/strings.xml, so InfoPlist keys
     // would land as junk Android string resources.
     //
-    // This is also what makes the App Store product page list German, Spanish
-    // and French under "Languages" — Apple reads the localizations shipped in
+    // This is also what makes the App Store product page list German, Spanish,
+    // French and Italian under "Languages" — Apple reads the localizations shipped in
     // the binary, not the storefront listings, so a de-DE listing alone would
     // still show "English" there.
     locales: Object.fromEntries(APP_LOCALIZATIONS.map((language) => [language, localeStringsPath(language)])),
@@ -482,9 +482,9 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         NSBluetoothPeripheralUsageDescription:
           'Boardsesh uses Bluetooth to connect to your climbing board and control the LED holds.',
         NSLocationWhenInUseUsageDescription:
-          'Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.',
+          'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
         NSLocationAlwaysAndWhenInUseUsageDescription:
-          'Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.',
+          'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
         NSSupportsLiveActivities: true,
         // bluetooth-central: continuous BLE reconnect + write-during-background.
         // remote-notification: lets the backend's 90s APNs heartbeat update
@@ -628,7 +628,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         'expo-location',
         {
           locationWhenInUsePermission:
-            'Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.',
+            'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
         },
       ],
       // Board search map. Location permissions are already handled by
@@ -696,6 +696,24 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         'expo-notifications',
         {
           color: '#8C4A52',
+        },
+      ],
+      // The rest timer's cue sounds (#5395, src/lib/sounds.ts). Foreground only:
+      // both background switches are off, so no `audio` UIBackgroundMode and no
+      // Android media-playback foreground service (their defaults would add both).
+      // Nothing here records. `microphonePermission` is deliberately left unset:
+      // NSMicrophoneUsageDescription is already in the binary (expo-image-picker
+      // adds it), expo-audio links the recording APIs that App Store processing
+      // checks for it (ITMS-90683), and `false` would delete it whenever this
+      // plugin's Info.plist mod runs after expo-image-picker's. Unset, it keeps
+      // the existing string. Android gains MODIFY_AUDIO_SETTINGS, a normal
+      // permission with no prompt. Native change, ships on the next build (not OTA).
+      [
+        'expo-audio',
+        {
+          recordAudioAndroid: false,
+          enableBackgroundPlayback: false,
+          enableBackgroundRecording: false,
         },
       ],
       // Makes Boardsesh a share target so a beta video link shared from
@@ -778,9 +796,6 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // deobfuscate Java/Kotlin frames. No-op when the env var is unset (local
       // prebuild, PR builds); never moves the fingerprint (env isn't hashed).
       './plugins/with-android-sentry-proguard-uuid',
-      // Pins the generated Android wrapper below Gradle 9 until React Native's
-      // included Foojay toolchain resolver plugin is compatible with Gradle 9.
-      './plugins/with-android-gradle-wrapper-version',
       // Register this before @bacons/apple-targets so Expo's mod chain runs it
       // after the widget target has been created, while keeping the provider last.
       './plugins/with-boardsesh-widget-build-settings',
@@ -819,11 +834,9 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // entitlement-merge ordering concern like the share-intent dedup above —
       // it sets its own distinct keys.
       './plugins/with-healthkit',
-      // #5293 (BOARDSESH-8S): calls modules/react-flag-overrides from the
-      // generated AppDelegate.swift, between the React Native factory init and
-      // startReactNative, to turn on the SchedulerDelegate invalidation guard.
-      // iOS-only mod. Throws at prebuild if the Expo template's anchors move.
-      './plugins/with-scheduler-delegate-invalidation',
+      // #5293 (BOARDSESH-8S): RN 0.88 removed the Scheduler invalidation flag.
+      // Compile the source patch that preserves its enabled lifetime guard.
+      './plugins/with-react-native-source-builds',
       // AppCheckCore (pulled in by Google Sign-In) is a Swift pod that depends
       // on GoogleUtilities and RecaptchaInterop, which don't define modules by
       // default. Without this fix CocoaPods refuses to link them as static

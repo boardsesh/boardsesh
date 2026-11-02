@@ -22,6 +22,7 @@ export type ProjectionGym = {
   latitude: number | null;
   longitude: number | null;
   isPublic: boolean;
+  isListed?: boolean;
   deletedAt: Date | null;
 };
 
@@ -97,6 +98,7 @@ export async function loadProjectionGyms(
       latitude: dbSchema.gyms.latitude,
       longitude: dbSchema.gyms.longitude,
       isPublic: dbSchema.gyms.isPublic,
+      isListed: dbSchema.gyms.isListed,
       deletedAt: dbSchema.gyms.deletedAt,
     })
     .from(dbSchema.gyms)
@@ -115,6 +117,7 @@ export async function loadProjectionGym(gymId: number | null | undefined): Promi
       latitude: dbSchema.gyms.latitude,
       longitude: dbSchema.gyms.longitude,
       isPublic: dbSchema.gyms.isPublic,
+      isListed: dbSchema.gyms.isListed,
       deletedAt: dbSchema.gyms.deletedAt,
     })
     .from(dbSchema.gyms)

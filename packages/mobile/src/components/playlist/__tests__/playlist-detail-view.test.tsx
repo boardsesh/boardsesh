@@ -29,7 +29,7 @@ const ctrl = vi.hoisted(() => ({
   fontScale: 1,
   playNext: vi.fn(),
   openAddToPlaylist: vi.fn(),
-  openClimbActions: vi.fn(),
+  getClimbActions: vi.fn(),
   // The scroll-stage reaction (0 hero in view, 1 hero gone, 2 filter bar gone),
   // so a test can scroll the header away.
   scrollStageReaction: null as null | ((stage: number, previousStage: number | null) => void),
@@ -91,7 +91,9 @@ vi.mock('react-native', () => ({
     if (accessibilityLabel) attrs['aria-label'] = accessibilityLabel;
     // Where a view starts and how wide it is: enough to tell a thumbnail-sized
     // frame, and a separator's inset.
-    const { marginStart, width, minHeight } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
+    const { marginStart, width, minHeight, position, top } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
+      position?: string;
+      top?: number;
       marginStart?: number;
       width?: number | string;
       minHeight?: number;
@@ -99,6 +101,8 @@ vi.mock('react-native', () => ({
     if (marginStart !== undefined) attrs['data-margin-start'] = marginStart;
     if (width !== undefined) attrs['data-width'] = width;
     if (minHeight !== undefined) attrs['data-min-height'] = minHeight;
+    if (position !== undefined) attrs['data-position'] = position;
+    if (top !== undefined) attrs['data-top'] = top;
     return createElement('div', attrs, children);
   },
   Pressable: ({
@@ -233,7 +237,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
   usePreviewedClimbUuid: () => ctrl.previewedClimbUuid,
   useDrawerHost: () => ({
     boardConfig: null,
-    openClimbActions: ctrl.openClimbActions,
+    getClimbActions: ctrl.getClimbActions,
     openAddToPlaylist: ctrl.openAddToPlaylist,
   }),
 }));
@@ -312,7 +316,25 @@ vi.mock('../../icon-map', () => ({ iconMap: {} }));
 // react-native-paper drags in expo-modules-core at import time; stub the only
 // pieces the Material branch uses so the suite can load.
 vi.mock('react-native-paper', () => {
-  const Header = ({ children }: { children?: ReactNode }) => createElement('div', { 'data-appbar': 'true' }, children);
+  const Header = ({
+    children,
+    style,
+    statusBarHeight,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    statusBarHeight?: number;
+  }) => {
+    const { position, height } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
+      position?: string;
+      height?: number;
+    };
+    const attrs: Record<string, unknown> = { 'data-appbar': 'true' };
+    if (position !== undefined) attrs['data-appbar-style-position'] = position;
+    if (height !== undefined) attrs['data-appbar-height'] = height;
+    if (statusBarHeight !== undefined) attrs['data-status-bar-height'] = statusBarHeight;
+    return createElement('div', attrs, children);
+  };
   const BackAction = ({ onPress, accessibilityLabel }: { onPress?: () => void; accessibilityLabel?: string }) =>
     createElement('button', { 'data-icon': 'back', onClick: onPress, 'aria-label': accessibilityLabel });
   const Content = ({ title }: { title?: ReactNode }) => createElement('span', { 'data-appbar-title': 'true' }, title);
@@ -469,7 +491,7 @@ describe('PlaylistDetailView', () => {
     ctrl.setOptions.mockClear();
     ctrl.playNext.mockClear();
     ctrl.openAddToPlaylist.mockClear();
-    ctrl.openClimbActions.mockClear();
+    ctrl.getClimbActions.mockClear();
     ctrl.variant = 'liquidGlass';
     ctrl.fontScale = 1;
     capturedClimbRows.length = 0;
@@ -488,6 +510,23 @@ describe('PlaylistDetailView', () => {
 
     expect(lastHeaderOptions()).toMatchObject({ headerShown: true, headerTransparent: true, title: 'My Playlist' });
     expect(container.querySelector('[data-icon="back"]')).toBeNull();
+  });
+
+  // iOS 26's scroll edge effect would dim the top of the colour hero.
+  it('hides the system top scroll edge effect over the hero', () => {
+    render(<PlaylistDetailView {...makeProps()} />);
+
+    expect(lastHeaderOptions()).toMatchObject({ scrollEdgeEffects: { top: 'hidden' } });
+  });
+
+  // react-native-screens applies `scrollEdgeEffects` to the scroll view it reaches
+  // by following first children only, so nothing may render ahead of the list.
+  it('keeps the list on the first-child chain so the edge setting reaches it', () => {
+    const { container } = render(<PlaylistDetailView {...makeProps()} />);
+
+    let node = container.firstElementChild;
+    while (node && !node.hasAttribute('data-list')) node = node.firstElementChild;
+    expect(node).not.toBeNull();
   });
 
   it('draws no native title over the hero, which already carries the name', () => {
@@ -598,7 +637,7 @@ describe('PlaylistDetailView', () => {
       expect(play.getAttribute('aria-label')).toBe('detail.activateAll');
       fireEvent.click(play);
       expect(onActivateClimb).toHaveBeenCalledTimes(1);
-      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
     });
 
     it('sits after the playlist controls, inside the glass region', () => {
@@ -634,7 +673,7 @@ describe('PlaylistDetailView', () => {
 
       // The handler the header already holds calls the newest callback.
       fireEvent.click(headerRightNode().querySelector('[data-icon="play.fill"]') as HTMLElement);
-      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
     });
   });
 
@@ -1029,6 +1068,22 @@ describe('PlaylistDetailView', () => {
       expect(container.querySelector('[data-gradient]')).toBeNull();
     });
 
+    it('pins the app bar wrapper to the top, not the Appbar.Header style (#6568)', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB] })} />);
+      const appbar = container.querySelector('[data-appbar]') as HTMLElement;
+      expect(appbar.getAttribute('data-appbar-style-position')).toBeNull();
+      expect(appbar.getAttribute('data-status-bar-height')).toBe('0');
+      const wrapper = appbar.parentElement as HTMLElement;
+      expect(wrapper.getAttribute('data-position')).toBe('absolute');
+      expect(wrapper.getAttribute('data-top')).toBe('0');
+    });
+
+    it("sizes the app bar to the scroll-math bar height, not Paper's 64px default", () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB] })} />);
+      const appbar = container.querySelector('[data-appbar]') as HTMLElement;
+      expect(appbar.getAttribute('data-appbar-height')).toBe('56');
+    });
+
     it('keeps its in-body app bar and hides the native header (header XOR in-body Appbar)', () => {
       render(<PlaylistDetailView {...makeProps()} />);
       expect(lastHeaderOptions()).toMatchObject({ headerShown: false });
@@ -1046,9 +1101,9 @@ describe('PlaylistDetailView', () => {
       const playAction = container.querySelector('[data-appbar-action="play"]');
       expect(playAction).not.toBeNull();
       fireEvent.click(playAction as HTMLElement);
-      // A deliberate start: Light the board when I tap a climb (a row-tap
-      // setting) must not turn the Play button into a preview (#6667).
-      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+      // The Play button selects the first row through the row-tap callback, so
+      // driving the wall decides whether it previews, as for a row.
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
       expect(playAction?.getAttribute('aria-label')).toBe('detail.activateAll');
     });
 

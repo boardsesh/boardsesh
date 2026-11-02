@@ -87,7 +87,7 @@ export function parseDeploymentOutbox(input: unknown): DeploymentOutbox {
 }
 export function queueDeploymentEvent(outbox: DeploymentOutbox, input: Omit<DeploymentEvent, 'id'>, key: string): void {
   // Proof/scratch branches must never generate production deployment messages.
-  if (!['production', 'release/next', 'main'].includes(input.branch)) return;
+  if (!['production', 'main'].includes(input.branch)) return;
   const id = createHash('sha256').update(key).digest('hex');
   if (outbox.sent.includes(id) || outbox.pending.some((event) => event.id === id)) return;
   outbox.pending.push(parseDeploymentEvent({ ...input, id }));

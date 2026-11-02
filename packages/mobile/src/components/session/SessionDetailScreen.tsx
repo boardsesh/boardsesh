@@ -16,19 +16,30 @@ import { SessionEditSheet } from './SessionEditSheet';
 import { SessionAnalyticsSection } from './SessionAnalyticsSection';
 import { SessionBetaCarousel } from './SessionBetaCarousel';
 import { SessionLeaderboard } from './SessionLeaderboard';
-import { SessionTickRow } from './SessionTickRow';
+import { SessionClimbsListItem } from './SessionClimbsListItem';
+import { useSessionWorkoutView } from './workout/use-session-workout-view';
+import {
+  buildWorkoutClimbRows,
+  workoutClimbsRowKey,
+  workoutClimbsRowType,
+  type WorkoutClimbsRow,
+  type WorkoutClimbsRows,
+} from './workout/workout-climb-rows';
 import { useSessionDetail, useBulkVoteSummaries, useProfile } from '../../lib/graphql/hooks';
 import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../theme/tokens';
+import { useVariantValue } from '../../theme/variants';
 import { useTheme } from '../../providers/theme-provider';
 import { getSoleBoardType } from '../../lib/grade-label';
 import { canEditSessionDetail, isDailySessionId } from '../../lib/session-edit-permissions';
 
 const EMPTY_TICKS: SessionDetailTick[] = [];
 
-// Hoisted so FlashList gets a stable reference across renders.
-const keyExtractor = (tick: SessionDetailTick) => tick.uuid;
+/** A session without a workout: one row per tick, in the order the server lists them. */
+function plainTickRows(ticks: SessionDetailTick[]): WorkoutClimbsRows {
+  return { rows: ticks.map((tick) => ({ type: 'tick', key: tick.uuid, tick })), orderedTicks: ticks };
+}
 
 /**
  * Session detail — hero + stats + ticks list. Mounted from a per-tab route
@@ -49,6 +60,15 @@ export default function SessionDetailScreen() {
   const paddingBottom = bottomChrome.floatingControlBottom + spacing[6];
 
   const { data: session, isPending } = useSessionDetail(sessionId);
+  // The workout this session was climbed to, if any (#6903): the Climbs list
+  // then groups by block. The viewer's own when they ran one, else the session
+  // owner's (`chooseSessionWorkout`).
+  const workout = useSessionWorkoutView(sessionId, 'session', session?.ownerUserId ?? null)?.workout;
+  const ticks = session?.ticks ?? EMPTY_TICKS;
+  const climbRows = useMemo(
+    () => (workout ? buildWorkoutClimbRows(ticks, workout) : plainTickRows(ticks)),
+    [ticks, workout],
+  );
   // A daily group is a synthesised feed key with no session row, so votes and
   // comments on it as a 'session' would be rejected (#5290). They live on the feed card.
   const isDaily = isDailySessionId(sessionId) || session?.sessionType === 'daily_highlight';
@@ -99,31 +119,33 @@ export default function SessionDetailScreen() {
   const handleTickPress = useTickListActivation<SessionDetailTick>({
     sourceId: `session:${sessionId ?? ''}`,
     label: t('playView.track.sessionClimbs'),
-    rows: session?.ticks ?? EMPTY_TICKS,
+    rows: climbRows.orderedTicks,
   });
 
-  // Stable per-row factory so the memoized `SessionTickRow`s keep their identity
-  // across re-renders — a fresh inline arrow would force FlashList to re-evaluate
+  // Stable per-row factory so the memoized rows keep their identity across
+  // re-renders — a fresh inline arrow would force FlashList to re-evaluate
   // every visible item each pass.
   const renderItem = useCallback(
-    ({ item }: { item: SessionDetailTick }) => (
-      <SessionTickRow
-        tick={item}
+    ({ item }: { item: WorkoutClimbsRow }) => (
+      <SessionClimbsListItem
+        row={item}
         isMultiUser={isMultiUser}
-        participant={participantById.get(item.userId)}
+        participantById={participantById}
         onPress={handleTickPress}
       />
     ),
     [isMultiUser, participantById, handleTickPress],
   );
 
-  // Header title follows the loaded session name/date.
+  // UIKit's header follows the loaded session name/date. Material's app bar names
+  // the screen instead: the summary card right under it already leads with the name.
+  const headerTitle = useVariantValue({ liquidGlass: title, material: '' }) || t('mobileDetail.title');
   useEffect(() => {
     navigation.setOptions({
       headerShown: true,
-      title: title || t('mobileDetail.title'),
+      title: headerTitle,
     });
-  }, [navigation, title, t]);
+  }, [navigation, headerTitle]);
 
   if (isPending) {
     return (
@@ -176,9 +198,10 @@ export default function SessionDetailScreen() {
     // above render without it), so Maestro can wait for the real recap.
     <View testID="session-detail-screen" style={[styles.flex, { backgroundColor: systemColors.groupedBackground }]}>
       <FlashList
-        data={session.ticks}
+        data={climbRows.rows}
         renderItem={renderItem}
-        keyExtractor={keyExtractor}
+        keyExtractor={workoutClimbsRowKey}
+        getItemType={workoutClimbsRowType}
         ListHeaderComponent={header}
         // The stack header is transparent + blurred on iOS, so let the list
         // inset its content below it (and the status bar) rather than draw under.

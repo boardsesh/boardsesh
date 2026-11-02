@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, PlaylistSuggestionSource, PlaylistTrackPage } from '@boardsesh/queue';
 
 const privacy = vi.hoisted(() => ({ generation: 0 }));
-vi.mock('../../privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => privacy.generation }));
+vi.mock('../../privacy/privacy-cache', () => ({ getCredentialGeneration: () => privacy.generation }));
 
 import {
   _resetTrackPagerForTests,

@@ -1,4 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -11,11 +20,7 @@ import { MoonBoardGridLabels } from './board/MoonBoardGridLabels';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
 import { isBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
-import {
-  getPrivacyCredentialGeneration,
-  getPrivacyRevocationGeneration,
-  subscribeToPrivacyRevocations,
-} from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
 import {
   isReadyBoardArtCurrent,
   type ReadyBoardArtIdentity,
@@ -49,7 +54,7 @@ type BoardImageNativeProps = {
    * This is THE board the climber is looking at — the play drawer's current
    * card. Sets `surface: 'play'` on render-failure telemetry and turns on the
    * overlay paint watchdog. Every other call site (preview cards and rails, the
-   * preview sheet, the reaction menu, the wall kiosk hero, the carousel's
+   * preview sheet, the wall kiosk hero, the carousel's
    * off-screen peek) leaves it off: pooling those into one rate would describe
    * nothing anybody experienced.
    */
@@ -196,6 +201,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
   emptyOverlayFallback,
   showGridLabels = false,
 }: BoardImageNativeProps) {
+  // Whether the live stack is held invisible under the opening-art bridge, for
+  // the play board's paint-timeout telemetry. Written after each commit below.
+  const paintBridgingRef = useRef(false);
   const {
     overlayUri,
     overlayLoadKey,
@@ -218,6 +226,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     setIds,
     filledStyle,
     playSurface,
+    paintBridgingRef,
     renderWidth,
     backgroundVariant,
     renderSettingsOverride,
@@ -247,6 +256,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
     !openingArtIsCurrent &&
     !overlayUnavailable &&
     displayedArtIdentity !== currentArtIdentity;
+  useLayoutEffect(() => {
+    paintBridgingRef.current = bridging;
+  }, [bridging]);
   const handleArtReadinessChange = useCallback(
     (ready: boolean) => onArtReadinessChange?.(overlayFailed ? 'failed' : ready && !bridging ? 'ready' : 'loading'),
     [onArtReadinessChange, overlayFailed, bridging],
@@ -278,17 +290,16 @@ const BoardImageNative = React.memo(function BoardImageNative({
 
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, frames);
 
-  // Every credential bump also bumps the revocation generation, so one
-  // subscription covers both. Reading through the store keeps the value stable
-  // for the whole render and re-renders this board when either moves, which is
+  // Reading the credential generation through the store keeps the value stable
+  // for the whole render and re-renders this board when it moves, which is
   // what drops a displayed overlay that belonged to the previous account.
-  const privacyGenerations = useSyncExternalStore(subscribeToPrivacyRevocations, readPrivacyGenerations);
+  const credentialGeneration = useSyncExternalStore(subscribeToCredentialChanges, getCredentialGeneration);
   const retainedOverlayIdentity = useMemo(
     () =>
       retainDisplayedOverlay && frames
-        ? JSON.stringify([overlayRetainIdentity(boardName, layoutId, sizeId, setIds), frames, privacyGenerations])
+        ? JSON.stringify([overlayRetainIdentity(boardName, layoutId, sizeId, setIds), frames, credentialGeneration])
         : undefined,
-    [retainDisplayedOverlay, frames, boardName, layoutId, sizeId, setIds, privacyGenerations],
+    [retainDisplayedOverlay, frames, boardName, layoutId, sizeId, setIds, credentialGeneration],
   );
 
   // One element for both stacks (the bridge and the live board), memoised so
@@ -376,7 +387,5 @@ const BoardImageNative = React.memo(function BoardImageNative({
     </View>
   );
 });
-
-const readPrivacyGenerations = (): string => `${getPrivacyRevocationGeneration()}:${getPrivacyCredentialGeneration()}`;
 
 export { BoardImageNative };

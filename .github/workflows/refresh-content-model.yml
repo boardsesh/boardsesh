@@ -39,7 +39,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - uses: actions/setup-python@v5
         with:

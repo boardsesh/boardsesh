@@ -34,7 +34,10 @@ CODEGEN_SCRIPT = SCRIPT_DIR / "generate-graphql-types.mjs"
 BOARD_DATA_SOURCES = [
     PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "product-sizes-data.ts",
     PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "led-placements-data.ts",
+    PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "hole-placements" / "kilter.cjs",
+    PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "hole-placements" / "tension.cjs",
     PROJECT_ROOT / "packages" / "shared" / "board-config" / "src" / "board-data.ts",
+    SCRIPT_DIR / "generate-board-data.mjs",
 ]
 BOARD_DATA_OUTPUT = SCRIPT_DIR.parent / "libs" / "board-data" / "src" / "board_hold_data.h"
 BOARD_DATA_HASH_FILE = SCRIPT_DIR.parent / "libs" / "board-data" / ".board_data_hash"

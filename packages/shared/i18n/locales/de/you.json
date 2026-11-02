@@ -106,8 +106,11 @@
       "reset": "Zurücksetzen",
       "editTitle": "Begehung bearbeiten",
       "delete": "Löschen",
+      "deleteAll": "Alle löschen",
       "deleteTitle": "Begehung löschen",
+      "deleteAllTitle": "{{count}} Einträge löschen",
       "deleteConfirm": "Das entfernt die eingetragene Begehung und lässt sich nicht rückgängig machen.",
+      "deleteAllConfirm": "Das entfernt alle {{count}} Einträge dieses Tages und lässt sich nicht rückgängig machen.",
       "saveError": "Deine Änderungen konnten nicht gespeichert werden. Versuch es erneut.",
       "deleteError": "Die Begehung konnte nicht gelöscht werden. Versuch es erneut.",
       "tries_one": "{{count}} Versuch",
@@ -133,8 +136,7 @@
         "a11yHasBetaVideo": "hat Beta-Video",
         "a11yMirrored": "gespiegelt",
         "editAction": "Eintrag bearbeiten",
-        "deleteAction": "Eintrag löschen",
-        "moreActions": "Weitere Aktionen"
+        "deleteAction": "Eintrag löschen"
       },
       "day": {
         "today": "Heute",
@@ -147,7 +149,8 @@
       },
       "chooser": {
         "editTitle": "Welchen Eintrag bearbeiten?",
-        "deleteTitle": "Welchen Eintrag löschen?"
+        "deleteTitle": "Welchen Eintrag löschen?",
+        "deleteAll": "Alle {{count}} löschen"
       },
       "boardLabel": "Board",
       "boardNone": "Keines",
@@ -262,6 +265,10 @@
       "moonboardBody": "Fordere deine Daten bei MoonBoard an und importier die Datei hier, um dein Routenbuch zu übertragen.",
       "moonboardCta": "Mein MoonBoard-Routenbuch importieren",
       "dismiss": "Jetzt nicht"
+    },
+    "loadError": {
+      "sessions": "Deine Sessions konnten nicht geladen werden",
+      "progress": "Dein Fortschritt konnte nicht geladen werden"
     }
   }
 }

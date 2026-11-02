@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useBoardAdapter, useLogbook } from '@boardsesh/board-react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { ClimbProgressContext } from '../lib/climb-progress-context';
-import { getPrivacyCredentialGeneration, subscribeToPrivacyRevocations } from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
 import { createClimbProgressStore, type ClimbProgressStore } from '../lib/climb-progress-store';
 import { climbProgressCacheScopeFor } from '../lib/climb-progress-cache-owner';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
@@ -27,19 +27,19 @@ export function ClimbProgressProvider({
   // The wrapper stays mounted when the switch changes. Disabled lists need no
   // auth/query adapter, and subscribe to no credential events.
   const generation = useSyncExternalStore(
-    active ? subscribeToPrivacyRevocations : noCredentialSubscription,
-    getPrivacyCredentialGeneration,
-    getPrivacyCredentialGeneration,
+    active ? subscribeToCredentialChanges : noCredentialSubscription,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
-  const store = useMemo(() => createClimbProgressStore(generation, getPrivacyCredentialGeneration), [generation]);
+  const store = useMemo(() => createClimbProgressStore(generation, getCredentialGeneration), [generation]);
   useLayoutEffect(() => {
     if (!active) store.clear();
   }, [active, store]);
   useEffect(
     () =>
       active
-        ? subscribeToPrivacyRevocations(() => {
-            if (generation !== getPrivacyCredentialGeneration()) store.clear();
+        ? subscribeToCredentialChanges(() => {
+            if (generation !== getCredentialGeneration()) store.clear();
           })
         : undefined,
     [active, generation, store],
@@ -113,7 +113,7 @@ const BoardProgressBatch = memo(function BoardProgressBatch({
   // A cache removal changes useLogbook's accumulated observer, so an old query
   // identity becomes a fresh board query without a separate volatile context.
   useLayoutEffect(() => {
-    if (generation !== getPrivacyCredentialGeneration() || !scope.belongsToCurrentScope(boardName)) return;
+    if (generation !== getCredentialGeneration() || !scope.belongsToCurrentScope(boardName)) return;
     store.publish(boardName, logbook);
   }, [boardName, logbook, generation, scope, store]);
   return null;

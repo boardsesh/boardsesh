@@ -3,7 +3,7 @@
  * present/dismiss transitions.
  *
  * `@expo/ui/community/bottom-sheet` is a SwiftUI `.sheet(isPresented:)` wrapper.
- * Every sheet presents off the SAME root window view controller, and the library
+ * Sibling sheet hosts share their native view controller, and the library
  * does ZERO serialization: `present()` just flips `isPresented` true, `dismiss()`
  * flips it false and fires its close callbacks SYNCHRONOUSLY (before the native
  * animation finishes). UIKit forbids presenting/dismissing a view controller
@@ -22,6 +22,9 @@
  *      displaced this way is CLOSED, not suspended — its parent is notified
  *      (onDisplaced → onClose) and its desired-open flag cleared, so it never
  *      re-presents by itself when B later closes.
+ * Physically nested hosts can declare `parentId` and their own group. Their
+ * parent must settle before they open; descendants settle before a parent
+ * closes. A group name alone does not create a native presenter boundary.
  *
  * "Settled" is detected two ways. On iOS the real post-animation signal arrives
  * via `notifyFullyDismissed`: our `@expo/ui` patch forwards SwiftUI's
@@ -54,9 +57,14 @@ export type PresenterGroup = 'root' | (string & {});
  * host disappeared before its native dismiss settled; callers must stop the
  * handoff instead of presenting a replacement over an indeterminate teardown. */
 export type DismissAndWaitResult = { status: 'dismissed' } | { status: 'aborted' };
+/** Waiting never opens or closes a surface. A changed or cancelled presentation
+ * request aborts its callers instead of letting them act on a stale parent. */
+export type WaitForPresentationResult = { status: 'presented' } | { status: 'aborted' };
 
 const DISMISSED_RESULT: DismissAndWaitResult = { status: 'dismissed' };
 const ABORTED_RESULT: DismissAndWaitResult = { status: 'aborted' };
+const PRESENTED_RESULT: WaitForPresentationResult = { status: 'presented' };
+const PRESENTATION_ABORTED_RESULT: WaitForPresentationResult = { status: 'aborted' };
 
 /** How long after JS asks a native sheet to dismiss we treat it as still
  * animating (the ceiling before we let the next transition run). iOS modal sheet
@@ -77,6 +85,8 @@ const SETTLE_MS = SHEET_SETTLE_MS;
 
 type Registration = {
   group: PresenterGroup;
+  /** A native child presents from this settled sheet, in its own group. */
+  parentId?: string;
   present: () => void;
   dismiss: () => void;
   onFullyDismissed?: () => void;
@@ -100,6 +110,8 @@ type InFlight = {
    * False on Android (no native signal) and for unmount teardowns (the
    * registration is gone, so notifyFullyDismissed can never match). */
   expectNative: boolean;
+  /** Native teardown finished, but dependent children still guard the presenter. */
+  settledViaCeiling?: boolean;
 };
 
 type GroupState = {
@@ -118,6 +130,10 @@ export type SheetCoordinator = {
    * settle signal / platform ceiling. Duplicate callers share the same settle;
    * unregistering the host resolves every pending caller as `aborted`. */
   dismissAndWait: (id: string) => Promise<DismissAndWaitResult>;
+  /** Await this sheet's already-requested presentation without dismissing its
+   * parent or changing sibling replacement. Closing, displacement, unregister
+   * or a newer request aborts callers before that presentation settles. */
+  waitForPresentation: (id: string) => Promise<WaitForPresentationResult>;
   /** The native sheet finished its dismiss animation (patched `@expo/ui`
    * `onDismiss`). Early-resolves the settle so the next transition can start. */
   notifyFullyDismissed: (id: string) => void;
@@ -143,12 +159,18 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
   const registrations = useRef(new Map<string, Registration>());
   const desired = useRef(new Map<string, { open: boolean; seq: number }>());
   const groups = useRef(new Map<PresenterGroup, GroupState>());
+  // Retain ancestry through native unmount teardown, after registration is gone.
+  const parentIds = useRef(new Map<string, string | null>());
+  const displacedPending = useRef(new Set<string>());
   const dismissWaiters = useRef(new Map<string, Set<(result: DismissAndWaitResult) => void>>());
+  const presentationWaiters = useRef(new Map<string, Set<(result: WaitForPresentationResult) => void>>());
   const seqCounter = useRef(0);
 
   useEffect(() => () => publishSheetVisibility(false), []);
 
   const coordinator = useMemo<SheetCoordinator>(() => {
+    let reconciling = false;
+    let reconcileAgain = false;
     function groupState(group: PresenterGroup): GroupState {
       let state = groups.current.get(group);
       if (!state) {
@@ -187,6 +209,97 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
       for (const resolve of waiters) resolve(result);
     }
 
+    function settlePresentationWaiters(id: string, result: WaitForPresentationResult): void {
+      const waiters = presentationWaiters.current.get(id);
+      if (!waiters) return;
+      presentationWaiters.current.delete(id);
+      for (const resolve of waiters) resolve(result);
+    }
+
+    function abortSupersededPresentationWaiters(group: PresenterGroup): void {
+      const want = computeWant(group);
+      for (const id of presentationWaiters.current.keys()) {
+        if (groupOf(id) === group && id !== want) settlePresentationWaiters(id, PRESENTATION_ABORTED_RESULT);
+      }
+    }
+
+    function isDescendant(id: string, ancestorId: string): boolean {
+      if (id === ancestorId) return false;
+      const visited = new Set<string>();
+      let parentId = parentIds.current.get(id);
+      while (parentId) {
+        if (parentId === ancestorId) return true;
+        if (visited.has(parentId)) return false;
+        visited.add(parentId);
+        parentId = parentIds.current.get(parentId);
+      }
+      return false;
+    }
+
+    function hasNativeDescendants(id: string): boolean {
+      return [...groups.current.values()].some(
+        (state) =>
+          (state.presentedId !== null && isDescendant(state.presentedId, id)) ||
+          (state.inFlight !== null && isDescendant(state.inFlight.id, id)),
+      );
+    }
+
+    function nativeInvolved(id: string): boolean {
+      return [...groups.current.values()].some((state) => state.presentedId === id || state.inFlight?.id === id);
+    }
+
+    function pruneAncestry(id: string): void {
+      if (registrations.current.has(id) || nativeInvolved(id) || [...parentIds.current.values()].includes(id)) return;
+      const parentId = parentIds.current.get(id);
+      parentIds.current.delete(id);
+      displacedPending.current.delete(id);
+      if (parentId) pruneAncestry(parentId);
+    }
+
+    function pruneGroups(): void {
+      for (const [group, state] of groups.current) {
+        if (group === 'root' || state.presentedId !== null || state.inFlight !== null) continue;
+        if ([...registrations.current.values()].some((registration) => registration.group === group)) continue;
+        groups.current.delete(group);
+      }
+    }
+
+    function parentsPermit(id: string, requireSettled: boolean): boolean {
+      const visited = new Set([id]);
+      let parentId = parentIds.current.get(id);
+      while (parentId) {
+        if (visited.has(parentId)) return false;
+        visited.add(parentId);
+        const parent = registrations.current.get(parentId);
+        if (!parent || desired.current.get(parentId)?.open !== true || computeWant(parent.group) !== parentId)
+          return false;
+        const state = groupState(parent.group);
+        if (requireSettled && (state.presentedId !== parentId || state.inFlight !== null)) return false;
+        parentId = parentIds.current.get(parentId);
+      }
+      return true;
+    }
+
+    function notifyDisplaced(id: string): void {
+      queueMicrotask(() => registrations.current.get(id)?.onDisplaced?.());
+    }
+
+    function cancelChildRequest(id: string): void {
+      const previous = desired.current.get(id);
+      settlePresentationWaiters(id, PRESENTATION_ABORTED_RESULT);
+      if (previous?.open !== true) return;
+      desired.current.set(id, { open: false, seq: previous.seq });
+      if (nativeInvolved(id)) displacedPending.current.add(id);
+      else notifyDisplaced(id);
+      reconcileAgain = true;
+    }
+
+    function closeDescendants(id: string): void {
+      for (const childId of registrations.current.keys()) {
+        if (isDescendant(childId, id)) cancelChildRequest(childId);
+      }
+    }
+
     function publishVisibility(): void {
       publishSheetVisibility(
         [...groups.current.values()].some((state) => state.presentedId !== null || state.inFlight !== null),
@@ -198,9 +311,24 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
       const inFlight = state.inFlight;
       if (!inFlight) return;
       clearTimeout(inFlight.timer);
+      if (inFlight.op === 'dismiss' && hasNativeDescendants(inFlight.id)) {
+        // A native pan-down or unmount can finish before a child teardown. Keep
+        // guarding the presenter until the existing child transitions settle.
+        inFlight.settledViaCeiling = viaCeiling;
+        pumpAll();
+        return;
+      }
       state.inFlight = null;
       if (inFlight.op === 'present') {
         state.presentedId = inFlight.id;
+        // A present cannot be interrupted, but its desired request may have
+        // closed or lost the group while the animation was in flight. Such a
+        // parent is about to dismiss, so it cannot host a child presentation.
+        const stillWanted =
+          desired.current.get(inFlight.id)?.open === true &&
+          computeWant(group) === inFlight.id &&
+          parentsPermit(inFlight.id, true);
+        settlePresentationWaiters(inFlight.id, stillWanted ? PRESENTED_RESULT : PRESENTATION_ABORTED_RESULT);
       } else {
         state.presentedId = null;
         // Resolve before the consumer's onFullyDismissed callback: that callback
@@ -216,7 +344,8 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           );
         }
       }
-      pump(group);
+      pruneAncestry(inFlight.id);
+      pumpAll();
       publishVisibility();
     }
 
@@ -233,7 +362,12 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
     function pump(group: PresenterGroup): void {
       const state = groupState(group);
       if (state.inFlight) return; // a transition is animating; re-pump on settle
-      const want = computeWant(group);
+      let want = computeWant(group);
+      while (want !== null && !parentsPermit(want, false)) {
+        cancelChildRequest(want);
+        closeDescendants(want);
+        want = computeWant(group);
+      }
       const have = state.presentedId;
       if (have === want) return; // settled
       if (have !== null) {
@@ -249,7 +383,10 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           // (A plain close, want === null, or a handoff whose first sheet already
           // closed itself needs neither: the parent drove those.)
           desired.current.set(have, { open: false, seq: haveDesired.seq });
+          displacedPending.current.add(have);
         }
+        closeDescendants(have);
+        if (hasNativeDescendants(have)) return;
         startTransition(group, 'dismiss', have);
         // Notify via microtask, AFTER the dismiss is in flight. Deferring keeps
         // the parent's setState (onDisplaced → onClose) out of whatever context
@@ -262,12 +399,32 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         // legitimate re-present after the displacer closes — that's the
         // deliberate escape hatch for a sheet that truly must resume; nothing
         // uses it today.
-        if (displaced) {
-          const displacedId = have;
-          queueMicrotask(() => registrations.current.get(displacedId)?.onDisplaced?.());
-        }
+        if (displacedPending.current.delete(have)) notifyDisplaced(have);
       } else {
+        if (want !== null && !parentsPermit(want, true)) return;
         startTransition(group, 'present', want as string);
+      }
+    }
+
+    function pumpAll(): void {
+      if (reconciling) {
+        reconcileAgain = true;
+        return;
+      }
+      reconciling = true;
+      try {
+        do {
+          reconcileAgain = false;
+          for (const [group, state] of groups.current) {
+            if (state.inFlight?.settledViaCeiling !== undefined && !hasNativeDescendants(state.inFlight.id)) {
+              onSettle(group, state.inFlight.settledViaCeiling);
+            }
+            pump(group);
+          }
+        } while (reconcileAgain);
+      } finally {
+        reconciling = false;
+        pruneGroups();
       }
     }
 
@@ -275,11 +432,13 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
       register(reg) {
         registrations.current.set(reg.id, {
           group: reg.group,
+          parentId: reg.parentId,
           present: reg.present,
           dismiss: reg.dismiss,
           onFullyDismissed: reg.onFullyDismissed,
           onDisplaced: reg.onDisplaced,
         });
+        parentIds.current.set(reg.id, reg.parentId ?? null);
         groupState(reg.group);
         return () => {
           const state = groupState(reg.group);
@@ -287,6 +446,9 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           // torn down. Resolve (never reject) so fire-and-forget action paths do
           // not create unhandled promise rejections.
           settleDismissWaiters(reg.id, ABORTED_RESULT);
+          settlePresentationWaiters(reg.id, PRESENTATION_ABORTED_RESULT);
+          closeDescendants(reg.id);
+          displacedPending.current.delete(reg.id);
           // Was this sheet presented or mid-transition when it unmounted? If so its
           // native teardown is still animating out, even though no coordinator
           // dismiss was issued (e.g. a present-on-mount sheet the parent unmounts
@@ -310,9 +472,9 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
             // here — the ceiling is the only possible settle; don't warn on it.
             state.inFlight = { op: 'dismiss', id: reg.id, timer, expectNative: false };
             publishVisibility();
-          } else {
-            pump(reg.group);
           }
+          pruneAncestry(reg.id);
+          pumpAll();
         };
       },
 
@@ -320,12 +482,43 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         const prev = desired.current.get(id);
         const seq = open ? (seqCounter.current += 1) : (prev?.seq ?? 0);
         desired.current.set(id, { open, seq });
+        displacedPending.current.delete(id);
+        if (!open) closeDescendants(id);
+        // A caller waits for this exact request, not any future presentation
+        // of the same host after a close/reopen or a fresh imperative request.
+        settlePresentationWaiters(id, PRESENTATION_ABORTED_RESULT);
         // A fresh open supersedes an in-flight caller-owned dismissal. Resolve
         // those waiters as aborted so the caller does not navigate away while
         // the source surface is being deliberately re-presented.
         if (open) settleDismissWaiters(id, ABORTED_RESULT);
         const group = groupOf(id);
-        if (group) pump(group);
+        if (group) {
+          abortSupersededPresentationWaiters(group);
+          pumpAll();
+        }
+      },
+
+      waitForPresentation(id) {
+        const registration = registrations.current.get(id);
+        if (
+          !registration ||
+          desired.current.get(id)?.open !== true ||
+          computeWant(registration.group) !== id ||
+          !parentsPermit(id, false)
+        ) {
+          return Promise.resolve(PRESENTATION_ABORTED_RESULT);
+        }
+        const state = groupState(registration.group);
+        if (state.presentedId === id && state.inFlight === null && parentsPermit(id, true))
+          return Promise.resolve(PRESENTED_RESULT);
+        return new Promise<WaitForPresentationResult>((resolve) => {
+          let waiters = presentationWaiters.current.get(id);
+          if (!waiters) {
+            waiters = new Set();
+            presentationWaiters.current.set(id, waiters);
+          }
+          waiters.add(resolve);
+        });
       },
 
       dismissAndWait(id) {
@@ -338,12 +531,15 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         const involved = state.presentedId === id || state.inFlight?.id === id;
         const previous = desired.current.get(id);
         desired.current.set(id, { open: false, seq: previous?.seq ?? 0 });
+        displacedPending.current.delete(id);
+        closeDescendants(id);
+        settlePresentationWaiters(id, PRESENTATION_ABORTED_RESULT);
 
         if (!involved) {
           // It may have been desired while another group member was transitioning,
           // but it never reached the native presenter. Cancel that queued desire
           // and finish immediately.
-          pump(registration.group);
+          pumpAll();
           return Promise.resolve(DISMISSED_RESULT);
         }
 
@@ -357,7 +553,7 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           // Presented → dismiss now. Present-in-flight → the desired-close is
           // observed when that transition settles, then the normal pump starts a
           // dismiss. An already-running dismiss simply keeps this waiter attached.
-          pump(registration.group);
+          pumpAll();
         });
       },
 
@@ -375,6 +571,9 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         if (!group) return;
         const prev = desired.current.get(id);
         desired.current.set(id, { open: false, seq: prev?.seq ?? 0 });
+        displacedPending.current.delete(id);
+        closeDescendants(id);
+        settlePresentationWaiters(id, PRESENTATION_ABORTED_RESULT);
         const state = groupState(group);
         // The native sheet is already animating out on its own. Open a settle
         // window (unless we were already driving a dismiss for it) so the next
@@ -385,9 +584,8 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           // so the native settle is expected to early-resolve this window there.
           state.inFlight = { op: 'dismiss', id, timer, expectNative: Platform.OS === 'ios' };
           publishVisibility();
-        } else {
-          pump(group);
         }
+        pumpAll();
       },
 
       isPresented(id) {
@@ -397,7 +595,7 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
       },
 
       isBusy(group = 'root') {
-        return groupState(group).inFlight !== null;
+        return groups.current.get(group)?.inFlight != null;
       },
     };
   }, []);
@@ -430,6 +628,8 @@ type UseManagedSheetOptions = {
    * `handle` / a forwarded ref) — then the prop never fights the ref. */
   open?: boolean;
   group?: PresenterGroup;
+  /** Native child sheets use a distinct group and their presenter's managed id. */
+  parentId?: string;
   /** The native `@expo/ui` sheet ref the wrapper renders. */
   sheetRef: RefObject<BottomSheetMethods | null>;
   /** Fired when the user closes the sheet themselves (pan-down / backdrop), so
@@ -455,6 +655,7 @@ type UseManagedSheetOptions = {
 export function useManagedSheet({
   open,
   group = 'root',
+  parentId,
   sheetRef,
   onClose,
   onDisplaced,
@@ -463,6 +664,8 @@ export function useManagedSheet({
   onChange: (index: number) => void;
   onFullyDismissed: () => void;
   handle: ManagedSheetHandle;
+  waitForPresentation: () => Promise<WaitForPresentationResult>;
+  sheetId: string;
 } {
   const id = useId();
   const coordinator = useSheetPresentation();
@@ -504,12 +707,13 @@ export function useManagedSheet({
       coordinator.register({
         id,
         group,
+        parentId,
         present,
         dismiss,
         onFullyDismissed: fireFullyDismissed,
         onDisplaced: fireDisplaced,
       }),
-    [coordinator, id, group, present, dismiss, fireFullyDismissed, fireDisplaced],
+    [coordinator, id, group, parentId, present, dismiss, fireFullyDismissed, fireDisplaced],
   );
 
   // Controlled mode only: an imperative consumer leaves `open` undefined so this
@@ -541,6 +745,8 @@ export function useManagedSheet({
     coordinator.notifyFullyDismissed(id);
   }, [coordinator, id]);
 
+  const waitForPresentation = useCallback(() => coordinator.waitForPresentation(id), [coordinator, id]);
+
   const handle = useMemo<ManagedSheetHandle>(
     () => ({
       present: () => coordinator.setDesiredOpen(id, true),
@@ -565,5 +771,11 @@ export function useManagedSheet({
     [coordinator, id, sheetRef],
   );
 
-  return { onChange: handleNativeChange, onFullyDismissed: handleNativeFullyDismissed, handle };
+  return {
+    onChange: handleNativeChange,
+    onFullyDismissed: handleNativeFullyDismissed,
+    handle,
+    waitForPresentation,
+    sheetId: id,
+  };
 }

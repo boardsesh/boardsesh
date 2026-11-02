@@ -82,6 +82,7 @@ it('clears once through the queue header viewer and does not run other header ac
   );
   fireEvent.contextMenu(viewer(container, 'queueDrawer.clear'));
   expect(clear).toHaveBeenCalledOnce();
+  expect(clear).toHaveBeenCalledWith('edit');
   expect(other).not.toHaveBeenCalled();
 });
 

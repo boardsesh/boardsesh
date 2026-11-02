@@ -36,7 +36,8 @@
 // #4370).
 
 import type { OfflineDatabase, SqlExecutor, SqlValue } from '../database';
-import { applyBusyTimeout } from '../db/pragmas';
+import { applyBusyTimeout, beginImmediateWrite, OFFLINE_DB_BUSY_TIMEOUT_MS } from '../db/pragmas';
+import { hasPendingClimbWritesForScope } from '../mutation-queue/queue';
 import type { OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter, isSizeScopedBoard, sizeMembershipClause } from './board-scope-sql';
 import {
@@ -336,7 +337,16 @@ export async function removeBoardScopeData(params: {
     // These deletes take seconds on a 40k-climb layout; don't lose the BEGIN
     // EXCLUSIVE to a straggling write on the main connection. Same guard
     // bootstrapScopeFromSnapshot uses.
-    await applyBusyTimeout(txn);
+    if (scope.boardType === SPRAY_BOARD_TYPE) {
+      // Claim the writer before the guard reads: a local save that already
+      // committed must be seen here, and a later save waits for this teardown.
+      await beginImmediateWrite(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
+      if (await hasPendingClimbWritesForScope(txn, scope)) {
+        throw new Error('Sync or repair saved climbs before removing this wall');
+      }
+    } else {
+      await applyBusyTimeout(txn);
+    }
 
     const removed = await removeBoardScopeRows(txn, scope, scopeKey, retainedSizeIds);
     result = removed.result;

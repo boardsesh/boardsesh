@@ -46,7 +46,7 @@ export const socialFollowQueries = {
       .innerJoin(dbSchema.users, eq(dbSchema.userFollows.followerId, dbSchema.users.id))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userFollows.followerId, dbSchema.userProfiles.userId))
       .where(eq(dbSchema.userFollows.followingId, userId))
-      .orderBy(dbSchema.userFollows.createdAt)
+      .orderBy(dbSchema.userFollows.createdAt, dbSchema.userFollows.followerId, dbSchema.userFollows.followingId)
       .limit(limit)
       .offset(offset);
 
@@ -110,7 +110,7 @@ export const socialFollowQueries = {
       .innerJoin(dbSchema.users, eq(dbSchema.userFollows.followingId, dbSchema.users.id))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userFollows.followingId, dbSchema.userProfiles.userId))
       .where(eq(dbSchema.userFollows.followerId, userId))
-      .orderBy(dbSchema.userFollows.createdAt)
+      .orderBy(dbSchema.userFollows.createdAt, dbSchema.userFollows.followerId, dbSchema.userFollows.followingId)
       .limit(limit)
       .offset(offset);
 

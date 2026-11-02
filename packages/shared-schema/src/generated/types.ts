@@ -53,7 +53,7 @@ export type ActivityFeedInput = {
   cursor?: InputMaybe<Scalars['String']['input']>;
   /** Restrict results to users followed by the authenticated viewer */
   followingOnly?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Include one daily hardest-send card for followed/user-filtered days without explicit sessions */
+  /** Include daily activity cards for user, followed-user, or board scopes, covering readable logs outside listed sessions */
   includeDailyHighlights?: InputMaybe<Scalars['Boolean']['input']>;
   /** Maximum number of items to return */
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -210,6 +210,56 @@ export type AdminAppFeedbackResult = {
   reports: Array<AppFeedbackReport>;
   statusCounts: AppFeedbackStatusCounts;
   totalCount: Scalars['Int']['output'];
+};
+
+/** Stored board metadata for global admins; separate from public UserBoard projections. */
+export type AdminBoard = {
+  __typename?: 'AdminBoard';
+  angle: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  canEdit: Scalars['Boolean']['output'];
+  createdAt: Scalars['String']['output'];
+  description?: Maybe<Scalars['String']['output']>;
+  gymName?: Maybe<Scalars['String']['output']>;
+  gymSlug?: Maybe<Scalars['String']['output']>;
+  gymUuid?: Maybe<Scalars['ID']['output']>;
+  hasLeds: Scalars['Boolean']['output'];
+  hideLocation: Scalars['Boolean']['output'];
+  isAngleAdjustable: Scalars['Boolean']['output'];
+  isOwned: Scalars['Boolean']['output'];
+  isPublic: Scalars['Boolean']['output'];
+  isUnlisted: Scalars['Boolean']['output'];
+  latitude?: Maybe<Scalars['Float']['output']>;
+  layoutId: Scalars['Int']['output'];
+  locationName?: Maybe<Scalars['String']['output']>;
+  longitude?: Maybe<Scalars['Float']['output']>;
+  name: Scalars['String']['output'];
+  ownerDisplayName?: Maybe<Scalars['String']['output']>;
+  ownerId?: Maybe<Scalars['ID']['output']>;
+  /** Owner-only, including in the admin registry. */
+  serialNumber?: Maybe<Scalars['String']['output']>;
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  slug: Scalars['String']['output'];
+  /** Owner-only, including in the admin registry. */
+  timerName?: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type AdminBoardConnection = {
+  __typename?: 'AdminBoardConnection';
+  boards: Array<AdminBoard>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
+};
+
+export type AdminBoardsInput = {
+  boardType?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Case-insensitive board name, UUID, slug, gym name, or gym slug search. */
+  query?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Result of fetching the authenticated user's playlists, paginated. */
@@ -516,8 +566,12 @@ export type AttachBetaLinkInput = {
  * the target gym plus the board actually being a stray candidate for it.
  */
 export type AttachBoardToGymInput = {
+  /** False prevents merging an emptied source gym. Omitted preserves legacy behavior. */
+  allowSourceGymMerge?: InputMaybe<Scalars['Boolean']['input']>;
   /** Stray board UUID to attach */
   boardUuid: Scalars['ID']['input'];
+  /** The source gym the user saw; null means unlinked. A changed source rejects the move. */
+  expectedCurrentGymUuid?: InputMaybe<Scalars['ID']['input']>;
   /** Gym UUID to attach the board to */
   gymUuid: Scalars['ID']['input'];
 };
@@ -626,13 +680,17 @@ export type BoardCandidate = {
 };
 
 /**
- * Event: the wall was cleared (best-effort — only emitted on a deliberate
- * disconnect; an involuntary BLE drop leaves the last climb sticky).
+ * Event: the wall was cleared. Emitted when the phone driving the wall turns
+ * off all its lights (`reportBoardClear`), and replayed to a new subscriber
+ * while that clear is still the wall's latest state. A disconnect, deliberate
+ * or not, leaves the last climb sticky: the board keeps its lights.
  */
 export type BoardClimbCleared = {
   __typename?: 'BoardClimbCleared';
   /** ISO 8601 timestamp when the wall was cleared */
   clearedAt: Scalars['String']['output'];
+  /** UUID of the climb that was on the wall when it was cleared, when known */
+  climbUuid?: Maybe<Scalars['String']['output']>;
   /** Monotonic per-board sequence number */
   seq: Scalars['Int']['output'];
 };
@@ -1243,6 +1301,8 @@ export type Climb = {
   quality_average: Scalars['String']['output'];
   /** Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route. */
   renderBoard?: Maybe<RenderBoardConfig>;
+  /** Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets. */
+  requiredSetIds?: Maybe<Array<Scalars['Int']['output']>>;
   /**
    * The climb's stored revision number. Edits no longer move it, so it is 1 for
    * almost every climb and frozen at its last value for the few edited before
@@ -1337,6 +1397,8 @@ export type ClimbInput = {
   /** ISO timestamp of when this climb was first published. */
   published_at?: InputMaybe<Scalars['String']['input']>;
   quality_average: Scalars['String']['input'];
+  /** Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets. */
+  requiredSetIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** The climb's revision as the queueing client read it (`Climb.revisionNumber`). Round-tripped through the queue so whoever logs a queued climb can say which revision was on the wall without a refetch. Null from a client that predates the field. */
   revisionNumber?: InputMaybe<Scalars['Int']['input']>;
   setter_username: Scalars['String']['input'];
@@ -1542,6 +1604,8 @@ export type ClimbSearchInput = {
   boulders?: InputMaybe<Scalars['Boolean']['input']>;
   /** Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle. */
   crossAngleStats?: InputMaybe<Scalars['Boolean']['input']>;
+  /** OWN lists personal drafts; WALL lists all drafts on an accessible spray wall. */
+  draftScope?: InputMaybe<DraftScope>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
   /** Which grade minGrade and maxGrade are compared against. Omitted means UPSTREAM, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels. */
@@ -1911,6 +1975,29 @@ export type ConsentRegion = {
 
 export type ControllerEvent = ControllerPing | ControllerQueueSync | LedUpdate;
 
+export type ControllerGymBoard = {
+  __typename?: 'ControllerGymBoard';
+  advertisedName: Scalars['String']['output'];
+  angle: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  preview: ControllerPreviewDescriptor;
+  serialNumber: Scalars['String']['output'];
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type ControllerGymManifest = {
+  __typename?: 'ControllerGymManifest';
+  boards: Array<ControllerGymBoard>;
+  gymUuid: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  slug: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
 export type ControllerInfo = {
   __typename?: 'ControllerInfo';
   boardName: Scalars['String']['output'];
@@ -1927,6 +2014,19 @@ export type ControllerInfo = {
 export type ControllerPing = {
   __typename?: 'ControllerPing';
   timestamp: Scalars['String']['output'];
+};
+
+export type ControllerPreviewDescriptor = {
+  __typename?: 'ControllerPreviewDescriptor';
+  geometryBytes: Scalars['Int']['output'];
+  geometrySha256: Scalars['String']['output'];
+  geometryUrl: Scalars['String']['output'];
+  height: Scalars['Int']['output'];
+  imageBytes: Scalars['Int']['output'];
+  imageSha256: Scalars['String']['output'];
+  imageUrl: Scalars['String']['output'];
+  positionCount: Scalars['Int']['output'];
+  width: Scalars['Int']['output'];
 };
 
 export type ControllerQueueItem = {
@@ -2021,8 +2121,12 @@ export type CreateGymInput = {
   contactPhone?: InputMaybe<Scalars['String']['input']>;
   /** Optional description */
   description?: InputMaybe<Scalars['String']['input']>;
+  /** Opening hours; nonblank hours receive a confirmation timestamp. */
+  hours?: InputMaybe<Scalars['String']['input']>;
   /** Image URL */
   imageUrl?: InputMaybe<Scalars['String']['input']>;
+  /** Whether listed in discovery (default true) */
+  isListed?: InputMaybe<Scalars['Boolean']['input']>;
   /** Whether publicly visible (default true) */
   isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** GPS latitude */
@@ -2210,6 +2314,8 @@ export type CurrentClimbChanged = {
   clientId?: Maybe<Scalars['ID']['output']>;
   /** Correlation ID for request tracking */
   correlationId?: Maybe<Scalars['ID']['output']>;
+  /** Session participant who last changed the current queue item. Null when unknown. */
+  currentChangedBy?: Maybe<Scalars['ID']['output']>;
   /** Raw Aurora frames for an unknown BLE climb when no database match exists */
   frames?: Maybe<Scalars['String']['output']>;
   /** New current climb (null to clear) */
@@ -2409,6 +2515,8 @@ export type DismissGymClusterInput = {
   /** All member gym UUIDs of the cluster (order-independent; used to compute the signature). */
   gymUuids: Array<Scalars['ID']['input']>;
 };
+
+export type DraftScope = 'OWN' | 'WALL';
 
 /**
  * DEPRECATED. Sessions are always-live; there is no wall driver. This type and its
@@ -3236,6 +3344,8 @@ export type Gym = {
   isClaimed: Scalars['Boolean']['output'];
   /** Whether the current user follows this gym */
   isFollowedByMe: Scalars['Boolean']['output'];
+  /** Whether this gym appears in discovery. False keeps direct links readable. */
+  isListed: Scalars['Boolean']['output'];
   /** Whether the current user is a member */
   isMember: Scalars['Boolean']['output'];
   /** Whether publicly visible */
@@ -4136,6 +4246,8 @@ export type Mutation = {
    * Optional position parameter for inserting at specific index.
    */
   addQueueItem: ClimbQueueItem;
+  /** Edit active board metadata as a global admin; privacy and credentials remain owner-only. */
+  adminUpdateBoard: AdminBoard;
   approveFollowRequest: Scalars['Boolean']['output'];
   approveResourceAccess: Scalars['Boolean']['output'];
   /**
@@ -4457,6 +4569,14 @@ export type Mutation = {
    * Returns null when a saved board already matches the connect (nothing to record).
    */
   recordBoardSerial?: Maybe<BoardSerialConfig>;
+  /**
+   * Store the caller's workout for a session. Written only when revision is
+   * higher than the stored one; an equal or lower revision is a no-op that still
+   * returns true, so outbox replays are idempotent. The caller must have created
+   * or joined the session. Tick-map entries that are not the caller's own ticks
+   * in the session are dropped.
+   */
+  recordSessionWorkout: Scalars['Boolean']['output'];
   /** Join the board a share link names as an approved member. NOT_FOUND for a revoked or unknown link. */
   redeemBoardShareLink: BoardShareLinkRedemption;
   /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
@@ -4499,6 +4619,15 @@ export type Mutation = {
   reorderQueueItem: Scalars['Boolean']['output'];
   /** Replace a queue item with a new one (same UUID). */
   replaceQueueItem: ClimbQueueItem;
+  /**
+   * Report that this client turned off every light on `boardId` while keeping its
+   * BLE link (the "Turn off all lights" action). Publishes `BoardClimbCleared` so
+   * every viewer stops showing the cleared climb as lit, and keeps the clear for a
+   * week so a late subscriber sees it too. Requires board membership, and is refused
+   * when another emitter holds the board. History is untouched. Auth-optional.
+   * Returns whether the clear was accepted.
+   */
+  reportBoardClear: Scalars['Boolean']['output'];
   /**
    * Report the climb a connected phone just lit on the wall to the board's live
    * "now on the wall" feed. Auth-optional — anyone connected to the board emits
@@ -4914,6 +5043,11 @@ export type MutationAddQueueItemArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationAdminUpdateBoardArgs = {
+  input: UpdateBoardInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationApproveFollowRequestArgs = {
   userId: Scalars['ID']['input'];
 };
@@ -5270,6 +5404,11 @@ export type MutationRecordBoardSerialArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRecordSessionWorkoutArgs = {
+  input: RecordSessionWorkoutInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRedeemBoardShareLinkArgs = {
   token: Scalars['String']['input'];
 };
@@ -5341,6 +5480,11 @@ export type MutationReorderQueueItemArgs = {
 export type MutationReplaceQueueItemArgs = {
   item: ClimbQueueItemInput;
   uuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportBoardClearArgs = {
+  boardId: Scalars['Int']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5964,6 +6108,18 @@ export type NotificationType =
   | 'spray_wall_detection_completed'
   | 'vote_on_comment'
   | 'vote_on_tick';
+
+export type ObservedBoardSerialInput = {
+  boardType: Scalars['String']['input'];
+  observedSerialNumber: Scalars['String']['input'];
+};
+
+export type ObservedBoardSerialMatch = {
+  __typename?: 'ObservedBoardSerialMatch';
+  boardType: Scalars['String']['output'];
+  candidates: Array<UserBoard>;
+  observedSerialNumber: Scalars['String']['output'];
+};
 
 /** An alias-less, system-owned live gym with no location-sync source — an orphan for the audit list. */
 export type OrphanGym = {
@@ -6712,6 +6868,10 @@ export type Query = {
    * the comment, with offset pagination.
    */
   adminAppFeedback: AdminAppFeedbackResult;
+  /** Stored editable metadata for one active board. Global admins only. */
+  adminBoard?: Maybe<AdminBoard>;
+  /** Search all active registered boards, including private boards. Global admins only. */
+  adminBoards: AdminBoardConnection;
   /**
    * Get all current user's playlists across boards/layouts, paginated.
    * Optional boardType/layoutId filter. Requires authentication.
@@ -6934,6 +7094,8 @@ export type Query = {
   /** Whether this request comes from a region where the analytics prompt is shown. No sign-in needed. */
   consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
+  /** Read a gym's device configuration using a registered gym owner/admin's controller API key. */
+  controllerGymManifest: ControllerGymManifest;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
   /**
@@ -7176,6 +7338,8 @@ export type Query = {
   notificationActors: FollowConnection;
   /** Get notifications for the current user. */
   notifications: NotificationConnection;
+  /** Correlate radio-observed serials with readable candidates without exposing stored owner-only serial fields. */
+  observedBoardSerialMatches: Array<ObservedBoardSerialMatch>;
   /**
    * Alias-less, system-owned live gyms with no location-sync source — the orphan
    * audit list (admin only). List-only; no bulk action.
@@ -7321,6 +7485,20 @@ export type Query = {
    * Available for ended sessions or active sessions with ticks.
    */
   sessionSummary?: Maybe<SessionSummary>;
+  /**
+   * Feed-card headlines for up to 50 sessions, under the sessionWorkouts rule
+   * for who appears. Sessions the viewer may not open, or with no workout, are
+   * left out.
+   */
+  sessionWorkoutHeadlines: Array<SessionWorkoutHeadline>;
+  /**
+   * The workouts followed in a session, one per climber, with what each block
+   * came to. Follows sessionDetail: the session must open for the viewer, the
+   * climber must be someone its own surfaces name to them, and at least one of
+   * the climber's ticks in it must be visible to them. Climbs the viewer may not
+   * see are left out along with their ticks.
+   */
+  sessionWorkouts: Array<SessionWorkout>;
   /** Get climbs created by a setter. */
   setterClimbs: SetterClimbsConnection;
   /**
@@ -7564,6 +7742,16 @@ export type QueryAdminAppFeedbackArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryAdminBoardArgs = {
+  boardUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminBoardsArgs = {
+  input: AdminBoardsInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryAllUserPlaylistsArgs = {
   input: GetAllUserPlaylistsInput;
 };
@@ -7730,6 +7918,7 @@ export type QueryClimbArgs = {
   layoutId: Scalars['Int']['input'];
   setIds: Scalars['String']['input'];
   sizeId: Scalars['Int']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -7799,6 +7988,11 @@ export type QueryCommunitySettingsArgs = {
 export type QueryContentAudienceArgs = {
   entityId: Scalars['ID']['input'];
   entityType: PrivacyContentType;
+};
+
+/** Root query type for all read operations. */
+export type QueryControllerGymManifestArgs = {
+  gymRef: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -8002,6 +8196,11 @@ export type QueryNotificationsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryObservedBoardSerialMatchesArgs = {
+  input: Array<ObservedBoardSerialInput>;
+};
+
+/** Root query type for all read operations. */
 export type QueryOrphanGymsArgs = {
   input?: InputMaybe<OrphanGymsInput>;
 };
@@ -8165,6 +8364,16 @@ export type QuerySessionSummaryArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySessionWorkoutHeadlinesArgs = {
+  sessionIds: Array<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QuerySessionWorkoutsArgs = {
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QuerySetterClimbsArgs = {
   input: SetterClimbsInput;
 };
@@ -8215,6 +8424,7 @@ export type QuerySprayWallArtArgs = {
 /** Root query type for all read operations. */
 export type QuerySprayWallByLayoutArgs = {
   layoutId: Scalars['Int']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8272,6 +8482,7 @@ export type QuerySyncClimbGradesArgs = {
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8283,6 +8494,7 @@ export type QuerySyncClimbStatsArgs = {
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8294,6 +8506,7 @@ export type QuerySyncClimbsArgs = {
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8339,6 +8552,7 @@ export type QuerySyncSprayWallsArgs = {
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8560,6 +8774,8 @@ export type QueueState = {
   __typename?: 'QueueState';
   /** When the room's current climb last changed to a different climb (ISO 8601). Null from a pre-F3 server. */
   currentChangedAt?: Maybe<Scalars['String']['output']>;
+  /** Session participant who last changed the current queue item. Null when unknown. */
+  currentChangedBy?: Maybe<Scalars['ID']['output']>;
   /** The climb currently being attempted */
   currentClimbQueueItem?: Maybe<ClimbQueueItem>;
   /** Entries before Up next. Equals the current index when a climb is current. Null from a pre-F3 server. */
@@ -8630,6 +8846,14 @@ export type RecordBoardSerialInput = {
   setIds: Scalars['String']['input'];
   /** Size ID at connect */
   sizeId: Scalars['Int']['input'];
+};
+
+export type RecordSessionWorkoutInput = {
+  /** The phone's per-session write counter. Only a higher revision than the stored one is written. */
+  revision: Scalars['Int']['input'];
+  sessionId: Scalars['ID']['input'];
+  stages: Array<SessionWorkoutStageInput>;
+  ticks: Array<SessionWorkoutTickInput>;
 };
 
 export type RegisterControllerInput = {
@@ -8938,6 +9162,8 @@ export type SaveClimbInput = {
   sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
   /** The setter's own grade, seeded into board_climb_stats.display_difficulty. REQUIRED to publish on a spray wall, which has no crowd grade to fall back on; ignored elsewhere, where the grade comes from ticks or the Aurora sync. */
   userGrade?: InputMaybe<Scalars['String']['input']>;
+  /** Optional stable client-generated climb UUID for idempotent offline replay. */
+  uuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 export type SaveClimbResult = {
@@ -8946,6 +9172,8 @@ export type SaveClimbResult = {
   createdAt?: Maybe<Scalars['String']['output']>;
   /** ISO timestamp of when the row was first published (null while still a draft) */
   publishedAt?: Maybe<Scalars['String']['output']>;
+  /** True when the UUID already existed and no fields were changed. */
+  replayed?: Maybe<Scalars['Boolean']['output']>;
   synced: Scalars['Boolean']['output'];
   uuid: Scalars['ID']['output'];
 };
@@ -9775,6 +10003,126 @@ export type SessionUser = {
   username: Scalars['String']['output'];
 };
 
+export type SessionWorkout = {
+  __typename?: 'SessionWorkout';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** The climber's ticks in the session that match no climb of the workout. */
+  offPlan: Scalars['Int']['output'];
+  /** The climber's ticks behind offPlan that the viewer may see. */
+  offPlanTickUuids: Array<Scalars['ID']['output']>;
+  stages: Array<SessionWorkoutStage>;
+  updatedAt: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+export type SessionWorkoutClimb = {
+  __typename?: 'SessionWorkoutClimb';
+  angle: Scalars['Int']['output'];
+  boardType?: Maybe<Scalars['String']['output']>;
+  climbUuid: Scalars['String']['output'];
+  frames?: Maybe<Scalars['String']['output']>;
+  /** Display grade: the climber's own when they logged it, else the consensus at this angle. */
+  grade?: Maybe<Scalars['String']['output']>;
+  isMirror?: Maybe<Scalars['Boolean']['output']>;
+  layoutId?: Maybe<Scalars['Int']['output']>;
+  name?: Maybe<Scalars['String']['output']>;
+  queueItemUuid: Scalars['ID']['output'];
+  renderBoard?: Maybe<RenderBoardConfig>;
+  /** One per tick on this climb, in tick order. */
+  reps: Array<SessionWorkoutRepOutcome>;
+  /** True when the climber logged nothing on it. */
+  skipped: Scalars['Boolean']['output'];
+  /** The ticks behind reps, same order: only ticks the viewer may see, so a client can group the session's ticks by block. */
+  tickUuids: Array<Scalars['ID']['output']>;
+};
+
+/** One line for a feed card: the main block, the second for 'A + B', how many more. */
+export type SessionWorkoutHeadline = {
+  __typename?: 'SessionWorkoutHeadline';
+  /** Every block, warm-ups and cool-downs included. */
+  blockCount: Scalars['Int']['output'];
+  /** Main blocks after the first. */
+  extraMainBlocks: Scalars['Int']['output'];
+  mainKind?: Maybe<Scalars['String']['output']>;
+  /** Display grade name of the main block's target grade. */
+  mainTargetGrade?: Maybe<Scalars['String']['output']>;
+  secondMainKind?: Maybe<Scalars['String']['output']>;
+  sessionId: Scalars['ID']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+/** One queued climb of a workout block, captured when the run is written. */
+export type SessionWorkoutItemInput = {
+  angle: Scalars['Int']['input'];
+  climbUuid: Scalars['String']['input'];
+  isMirror?: InputMaybe<Scalars['Boolean']['input']>;
+  queueItemUuid: Scalars['ID']['input'];
+};
+
+/** A timed block's pacing. 4x4 adds repsPerSet and restBetweenSetsSeconds. */
+export type SessionWorkoutPacingInput = {
+  advanceOn?: InputMaybe<Scalars['String']['input']>;
+  /** onTheMinute or afterTick. */
+  mode: Scalars['String']['input'];
+  repsPerSet?: InputMaybe<Scalars['Int']['input']>;
+  restBetweenSetsSeconds?: InputMaybe<Scalars['Int']['input']>;
+  restSeconds: Scalars['Int']['input'];
+};
+
+/** How one rep or climb of a workout ended. */
+export type SessionWorkoutRepOutcome = 'ATTEMPT' | 'FLASH' | 'SEND';
+
+export type SessionWorkoutStage = {
+  __typename?: 'SessionWorkoutStage';
+  climbs: Array<SessionWorkoutClimb>;
+  id: Scalars['ID']['output'];
+  /** On the minute: the interval. */
+  intervalSeconds?: Maybe<Scalars['Int']['output']>;
+  isCoolDown: Scalars['Boolean']['output'];
+  kind: Scalars['String']['output'];
+  /** A 4x4: reps per climb. */
+  repsPerSet?: Maybe<Scalars['Int']['output']>;
+  /** A paced block's rest after each tick (a 4x4: between reps). */
+  restSeconds?: Maybe<Scalars['Int']['output']>;
+  /** A 4x4: one set per climb. */
+  sets?: Maybe<Scalars['Int']['output']>;
+  tally: SessionWorkoutTally;
+  /** Display grade name of the block's target grade. */
+  targetGrade?: Maybe<Scalars['String']['output']>;
+};
+
+export type SessionWorkoutStageInput = {
+  coolDown?: InputMaybe<Scalars['Boolean']['input']>;
+  /** The run stage's id (a uuid). */
+  id: Scalars['ID']['input'];
+  items: Array<SessionWorkoutItemInput>;
+  /** A workout stage kind (warmUp, volume, fourByFour, ...). Any string, so a newer kind survives. */
+  kind: Scalars['String']['input'];
+  pacing?: InputMaybe<SessionWorkoutPacingInput>;
+  /** Difficulty id the block was built around. */
+  targetGrade?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Counts in ticks, the unit the session totals use. */
+export type SessionWorkoutTally = {
+  __typename?: 'SessionWorkoutTally';
+  /** Attempt ticks. */
+  attempts: Scalars['Int']['output'];
+  /** Climbs in the block. */
+  climbs: Scalars['Int']['output'];
+  /** Flash and send ticks. */
+  sent: Scalars['Int']['output'];
+  /** Climbs of the block with no tick. */
+  skipped: Scalars['Int']['output'];
+};
+
+/** Which queue item a tick was logged on. */
+export type SessionWorkoutTickInput = {
+  queueItemUuid: Scalars['ID']['input'];
+  tickUuid: Scalars['ID']['input'];
+};
+
 export type SetAnalyticsConsentInput = {
   /** granted or denied. */
   analytics: Scalars['String']['input'];
@@ -10045,6 +10393,8 @@ export type SimilarClimb = {
   name?: Maybe<Scalars['String']['output']>;
   /** Average quality at this angle on the canonical 1-5 scale (board_climb_stats.quality_average). */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
+  /** Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets. */
+  requiredSetIds?: Maybe<Array<Scalars['Int']['output']>>;
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** Number of hold positions present in both climbs. */
   sharedHoldCount: Scalars['Int']['output'];
@@ -11031,10 +11381,16 @@ export type SprayWallVisibility = {
 /**
  * A board that probably belongs to a gym but isn't linked to it yet — either it
  * followed a listing that got merged into this gym, or it sits at the gym's
- * coordinates while unlinked or attached to a synced (SYSTEM) listing.
+ * coordinates while unlinked or attached to a synced (SYSTEM) listing. Public,
+ * unlinked boards owned by another person are candidates only for an in-scope
+ * platform admin who can read their location.
  */
 export type StrayBoard = {
   __typename?: 'StrayBoard';
+  /** Board angle in degrees. */
+  angle: Scalars['Int']['output'];
+  /** Board type (kilter, tension, moonboard, ...). */
+  boardType: Scalars['String']['output'];
   /** Name of the gym this board is currently linked to; null when unlinked. */
   currentGymName?: Maybe<Scalars['String']['output']>;
   /** The gym this board is currently linked to (a merged twin or a synced listing); null when unlinked. */
@@ -11517,6 +11873,8 @@ export type UpdateClimbInput = {
   boardType: Scalars['String']['input'];
   /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, any_feet, MoonBoard method) is left untouched. */
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Stable UUID for one edit; retries acknowledge the original committed edit. */
+  clientMutationId?: InputMaybe<Scalars['ID']['input']>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames?: InputMaybe<Scalars['String']['input']>;
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -11601,6 +11959,8 @@ export type UpdateGymInput = {
   hours?: InputMaybe<Scalars['String']['input']>;
   /** New image URL */
   imageUrl?: InputMaybe<Scalars['String']['input']>;
+  /** Whether listed in discovery */
+  isListed?: InputMaybe<Scalars['Boolean']['input']>;
   /** New visibility */
   isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** New GPS latitude */
@@ -11835,6 +12195,8 @@ export type UserBoard = {
   followerCount: Scalars['Int']['output'];
   /** Gym ID if linked to a gym */
   gymId?: Maybe<Scalars['Int']['output']>;
+  /** Whether the linked gym participates in discovery; null when no gym is linked. */
+  gymIsListed?: Maybe<Scalars['Boolean']['output']>;
   /** Gym name if linked to a gym */
   gymName?: Maybe<Scalars['String']['output']>;
   /** Gym UUID if linked to a gym */
@@ -12257,6 +12619,9 @@ export type ResolversTypes = ResolversObject<{
   AddGymMemberInput: AddGymMemberInput;
   AdminAppFeedbackInput: AdminAppFeedbackInput;
   AdminAppFeedbackResult: ResolverTypeWrapper<AdminAppFeedbackResult>;
+  AdminBoard: ResolverTypeWrapper<AdminBoard>;
+  AdminBoardConnection: ResolverTypeWrapper<AdminBoardConnection>;
+  AdminBoardsInput: AdminBoardsInput;
   AllUserPlaylistsResult: ResolverTypeWrapper<AllUserPlaylistsResult>;
   AnalyticsConsent: ResolverTypeWrapper<AnalyticsConsent>;
   Angle: ResolverTypeWrapper<Angle>;
@@ -12350,8 +12715,11 @@ export type ResolversTypes = ResolversObject<{
   CommunityStats: ResolverTypeWrapper<CommunityStats>;
   ConsentRegion: ResolverTypeWrapper<ConsentRegion>;
   ControllerEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ControllerEvent']>;
+  ControllerGymBoard: ResolverTypeWrapper<ControllerGymBoard>;
+  ControllerGymManifest: ResolverTypeWrapper<ControllerGymManifest>;
   ControllerInfo: ResolverTypeWrapper<ControllerInfo>;
   ControllerPing: ResolverTypeWrapper<ControllerPing>;
+  ControllerPreviewDescriptor: ResolverTypeWrapper<ControllerPreviewDescriptor>;
   ControllerQueueItem: ResolverTypeWrapper<ControllerQueueItem>;
   ControllerQueueSync: ResolverTypeWrapper<ControllerQueueSync>;
   ControllerRegistration: ResolverTypeWrapper<ControllerRegistration>;
@@ -12382,6 +12750,7 @@ export type ResolversTypes = ResolversObject<{
   DiscoverablePlaylist: ResolverTypeWrapper<DiscoverablePlaylist>;
   DiscoverableSession: ResolverTypeWrapper<DiscoverableSession>;
   DismissGymClusterInput: DismissGymClusterInput;
+  DraftScope: DraftScope;
   DriverChanged: ResolverTypeWrapper<DriverChanged>;
   DuplicateClusterTier: DuplicateClusterTier;
   DuplicateGymCluster: ResolverTypeWrapper<DuplicateGymCluster>;
@@ -12524,6 +12893,8 @@ export type ResolversTypes = ResolversObject<{
   NotificationConnection: ResolverTypeWrapper<NotificationConnection>;
   NotificationEvent: ResolverTypeWrapper<NotificationEvent>;
   NotificationType: NotificationType;
+  ObservedBoardSerialInput: ObservedBoardSerialInput;
+  ObservedBoardSerialMatch: ResolverTypeWrapper<ObservedBoardSerialMatch>;
   OrphanGym: ResolverTypeWrapper<OrphanGym>;
   OrphanGymConnection: ResolverTypeWrapper<OrphanGymConnection>;
   OrphanGymsInput: OrphanGymsInput;
@@ -12590,6 +12961,7 @@ export type ResolversTypes = ResolversObject<{
   RecentBetaLink: ResolverTypeWrapper<RecentBetaLink>;
   RecordBoardOpenedInput: RecordBoardOpenedInput;
   RecordBoardSerialInput: RecordBoardSerialInput;
+  RecordSessionWorkoutInput: RecordSessionWorkoutInput;
   RegisterControllerInput: RegisterControllerInput;
   RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
   ReleaseContext: ResolverTypeWrapper<ReleaseContext>;
@@ -12662,6 +13034,16 @@ export type ResolversTypes = ResolversObject<{
   SessionStatus: SessionStatus;
   SessionSummary: ResolverTypeWrapper<SessionSummary>;
   SessionUser: ResolverTypeWrapper<SessionUser>;
+  SessionWorkout: ResolverTypeWrapper<SessionWorkout>;
+  SessionWorkoutClimb: ResolverTypeWrapper<SessionWorkoutClimb>;
+  SessionWorkoutHeadline: ResolverTypeWrapper<SessionWorkoutHeadline>;
+  SessionWorkoutItemInput: SessionWorkoutItemInput;
+  SessionWorkoutPacingInput: SessionWorkoutPacingInput;
+  SessionWorkoutRepOutcome: SessionWorkoutRepOutcome;
+  SessionWorkoutStage: ResolverTypeWrapper<SessionWorkoutStage>;
+  SessionWorkoutStageInput: SessionWorkoutStageInput;
+  SessionWorkoutTally: ResolverTypeWrapper<SessionWorkoutTally>;
+  SessionWorkoutTickInput: SessionWorkoutTickInput;
   SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
@@ -12814,6 +13196,9 @@ export type ResolversParentTypes = ResolversObject<{
   AddGymMemberInput: AddGymMemberInput;
   AdminAppFeedbackInput: AdminAppFeedbackInput;
   AdminAppFeedbackResult: AdminAppFeedbackResult;
+  AdminBoard: AdminBoard;
+  AdminBoardConnection: AdminBoardConnection;
+  AdminBoardsInput: AdminBoardsInput;
   AllUserPlaylistsResult: AllUserPlaylistsResult;
   AnalyticsConsent: AnalyticsConsent;
   Angle: Angle;
@@ -12901,8 +13286,11 @@ export type ResolversParentTypes = ResolversObject<{
   CommunityStats: CommunityStats;
   ConsentRegion: ConsentRegion;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
+  ControllerGymBoard: ControllerGymBoard;
+  ControllerGymManifest: ControllerGymManifest;
   ControllerInfo: ControllerInfo;
   ControllerPing: ControllerPing;
+  ControllerPreviewDescriptor: ControllerPreviewDescriptor;
   ControllerQueueItem: ControllerQueueItem;
   ControllerQueueSync: ControllerQueueSync;
   ControllerRegistration: ControllerRegistration;
@@ -13055,6 +13443,8 @@ export type ResolversParentTypes = ResolversObject<{
   NotificationActorsInput: NotificationActorsInput;
   NotificationConnection: NotificationConnection;
   NotificationEvent: NotificationEvent;
+  ObservedBoardSerialInput: ObservedBoardSerialInput;
+  ObservedBoardSerialMatch: ObservedBoardSerialMatch;
   OrphanGym: OrphanGym;
   OrphanGymConnection: OrphanGymConnection;
   OrphanGymsInput: OrphanGymsInput;
@@ -13110,6 +13500,7 @@ export type ResolversParentTypes = ResolversObject<{
   RecentBetaLink: RecentBetaLink;
   RecordBoardOpenedInput: RecordBoardOpenedInput;
   RecordBoardSerialInput: RecordBoardSerialInput;
+  RecordSessionWorkoutInput: RecordSessionWorkoutInput;
   RegisterControllerInput: RegisterControllerInput;
   RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
   ReleaseContext: ReleaseContext;
@@ -13175,6 +13566,15 @@ export type ResolversParentTypes = ResolversObject<{
   SessionStatsUpdated: SessionStatsUpdated;
   SessionSummary: SessionSummary;
   SessionUser: SessionUser;
+  SessionWorkout: SessionWorkout;
+  SessionWorkoutClimb: SessionWorkoutClimb;
+  SessionWorkoutHeadline: SessionWorkoutHeadline;
+  SessionWorkoutItemInput: SessionWorkoutItemInput;
+  SessionWorkoutPacingInput: SessionWorkoutPacingInput;
+  SessionWorkoutStage: SessionWorkoutStage;
+  SessionWorkoutStageInput: SessionWorkoutStageInput;
+  SessionWorkoutTally: SessionWorkoutTally;
+  SessionWorkoutTickInput: SessionWorkoutTickInput;
   SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
@@ -13376,6 +13776,51 @@ export type AdminAppFeedbackResultResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   reports?: Resolver<Array<ResolversTypes['AppFeedbackReport']>, ParentType, ContextType>;
   statusCounts?: Resolver<ResolversTypes['AppFeedbackStatusCounts'], ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AdminBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AdminBoard'] = ResolversParentTypes['AdminBoard'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  canEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymSlug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  hasLeds?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  hideLocation?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isAngleAdjustable?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isOwned?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isUnlisted?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  latitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  locationName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  longitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  ownerDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  ownerId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  serialNumber?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  timerName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AdminBoardConnectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AdminBoardConnection'] = ResolversParentTypes['AdminBoardConnection'],
+> = ResolversObject<{
+  boards?: Resolver<Array<ResolversTypes['AdminBoard']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
@@ -13624,6 +14069,7 @@ export type BoardClimbClearedResolvers<
   ParentType extends ResolversParentTypes['BoardClimbCleared'] = ResolversParentTypes['BoardClimbCleared'],
 > = ResolversObject<{
   clearedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
@@ -13985,6 +14431,7 @@ export type ClimbResolvers<
   published_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   quality_average?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   renderBoard?: Resolver<Maybe<ResolversTypes['RenderBoardConfig']>, ParentType, ContextType>;
+  requiredSetIds?: Resolver<Maybe<Array<ResolversTypes['Int']>>, ParentType, ContextType>;
   revisionNumber?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   setter_username?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   stars?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
@@ -14332,6 +14779,35 @@ export type ControllerEventResolvers<
   __resolveType: TypeResolveFn<'ControllerPing' | 'ControllerQueueSync' | 'LedUpdate', ParentType, ContextType>;
 }>;
 
+export type ControllerGymBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ControllerGymBoard'] = ResolversParentTypes['ControllerGymBoard'],
+> = ResolversObject<{
+  advertisedName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  preview?: Resolver<ResolversTypes['ControllerPreviewDescriptor'], ParentType, ContextType>;
+  serialNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ControllerGymManifestResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ControllerGymManifest'] = ResolversParentTypes['ControllerGymManifest'],
+> = ResolversObject<{
+  boards?: Resolver<Array<ResolversTypes['ControllerGymBoard']>, ParentType, ContextType>;
+  gymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  version?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ControllerInfoResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['ControllerInfo'] = ResolversParentTypes['ControllerInfo'],
@@ -14353,6 +14829,23 @@ export type ControllerPingResolvers<
   ParentType extends ResolversParentTypes['ControllerPing'] = ResolversParentTypes['ControllerPing'],
 > = ResolversObject<{
   timestamp?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ControllerPreviewDescriptorResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ControllerPreviewDescriptor'] =
+    ResolversParentTypes['ControllerPreviewDescriptor'],
+> = ResolversObject<{
+  geometryBytes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  geometrySha256?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  geometryUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  height?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  imageBytes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  imageSha256?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  imageUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  positionCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  width?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14440,6 +14933,7 @@ export type CurrentClimbChangedResolvers<
 > = ResolversObject<{
   clientId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   correlationId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  currentChangedBy?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   item?: Resolver<Maybe<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
   sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
@@ -14875,6 +15369,7 @@ export type GymResolvers<
   imageUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isClaimed?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isListed?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isMember?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   latitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
@@ -15419,6 +15914,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationAddQueueItemArgs, 'item'>
   >;
+  adminUpdateBoard?: Resolver<
+    ResolversTypes['AdminBoard'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationAdminUpdateBoardArgs, 'input'>
+  >;
   approveFollowRequest?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -15809,6 +16310,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRecordBoardSerialArgs, 'input'>
   >;
+  recordSessionWorkout?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRecordSessionWorkoutArgs, 'input'>
+  >;
   redeemBoardShareLink?: Resolver<
     ResolversTypes['BoardShareLinkRedemption'],
     ParentType,
@@ -15892,6 +16399,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationReplaceQueueItemArgs, 'item' | 'uuid'>
+  >;
+  reportBoardClear?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationReportBoardClearArgs, 'boardId'>
   >;
   reportBoardClimb?: Resolver<
     ResolversTypes['Boolean'],
@@ -16462,6 +16975,17 @@ export type NotificationEventResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ObservedBoardSerialMatchResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ObservedBoardSerialMatch'] =
+    ResolversParentTypes['ObservedBoardSerialMatch'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  candidates?: Resolver<Array<ResolversTypes['UserBoard']>, ParentType, ContextType>;
+  observedSerialNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type OrphanGymResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['OrphanGym'] = ResolversParentTypes['OrphanGym'],
@@ -16876,6 +17400,18 @@ export type QueryResolvers<
     ContextType,
     Partial<QueryAdminAppFeedbackArgs>
   >;
+  adminBoard?: Resolver<
+    Maybe<ResolversTypes['AdminBoard']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryAdminBoardArgs, 'boardUuid'>
+  >;
+  adminBoards?: Resolver<
+    ResolversTypes['AdminBoardConnection'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryAdminBoardsArgs, 'input'>
+  >;
   allUserPlaylists?: Resolver<
     ResolversTypes['AllUserPlaylistsResult'],
     ParentType,
@@ -17119,6 +17655,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryContentAudienceArgs, 'entityId' | 'entityType'>
   >;
+  controllerGymManifest?: Resolver<
+    ResolversTypes['ControllerGymManifest'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryControllerGymManifestArgs, 'gymRef'>
+  >;
   crewFeed?: Resolver<ResolversTypes['CrewFeedResult'], ParentType, ContextType, Partial<QueryCrewFeedArgs>>;
   defaultBoard?: Resolver<Maybe<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   deleteAccountInfo?: Resolver<ResolversTypes['DeleteAccountInfo'], ParentType, ContextType>;
@@ -17334,6 +17876,12 @@ export type QueryResolvers<
     ContextType,
     Partial<QueryNotificationsArgs>
   >;
+  observedBoardSerialMatches?: Resolver<
+    Array<ResolversTypes['ObservedBoardSerialMatch']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryObservedBoardSerialMatchesArgs, 'input'>
+  >;
   orphanGyms?: Resolver<ResolversTypes['OrphanGymConnection'], ParentType, ContextType, Partial<QueryOrphanGymsArgs>>;
   pendingGymClaims?: Resolver<
     ResolversTypes['GymClaimConnection'],
@@ -17516,6 +18064,18 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QuerySessionSummaryArgs, 'sessionId'>
+  >;
+  sessionWorkoutHeadlines?: Resolver<
+    Array<ResolversTypes['SessionWorkoutHeadline']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySessionWorkoutHeadlinesArgs, 'sessionIds'>
+  >;
+  sessionWorkouts?: Resolver<
+    Array<ResolversTypes['SessionWorkout']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySessionWorkoutsArgs, 'sessionId'>
   >;
   setterClimbs?: Resolver<
     ResolversTypes['SetterClimbsConnection'],
@@ -17896,6 +18456,7 @@ export type QueueStateResolvers<
   ParentType extends ResolversParentTypes['QueueState'] = ResolversParentTypes['QueueState'],
 > = ResolversObject<{
   currentChangedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  currentChangedBy?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   currentClimbQueueItem?: Resolver<Maybe<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
   historyCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   queue?: Resolver<Array<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
@@ -18021,6 +18582,7 @@ export type SaveClimbResultResolvers<
 > = ResolversObject<{
   createdAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   publishedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  replayed?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   synced?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -18465,6 +19027,82 @@ export type SessionUserResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SessionWorkoutResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionWorkout'] = ResolversParentTypes['SessionWorkout'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  offPlan?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  offPlanTickUuids?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  stages?: Resolver<Array<ResolversTypes['SessionWorkoutStage']>, ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SessionWorkoutClimbResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionWorkoutClimb'] = ResolversParentTypes['SessionWorkoutClimb'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  grade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  isMirror?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  queueItemUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  renderBoard?: Resolver<Maybe<ResolversTypes['RenderBoardConfig']>, ParentType, ContextType>;
+  reps?: Resolver<Array<ResolversTypes['SessionWorkoutRepOutcome']>, ParentType, ContextType>;
+  skipped?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  tickUuids?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SessionWorkoutHeadlineResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionWorkoutHeadline'] = ResolversParentTypes['SessionWorkoutHeadline'],
+> = ResolversObject<{
+  blockCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  extraMainBlocks?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  mainKind?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  mainTargetGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  secondMainKind?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SessionWorkoutStageResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionWorkoutStage'] = ResolversParentTypes['SessionWorkoutStage'],
+> = ResolversObject<{
+  climbs?: Resolver<Array<ResolversTypes['SessionWorkoutClimb']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  intervalSeconds?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  isCoolDown?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  kind?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  repsPerSet?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  restSeconds?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  sets?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  tally?: Resolver<ResolversTypes['SessionWorkoutTally'], ParentType, ContextType>;
+  targetGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SessionWorkoutTallyResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionWorkoutTally'] = ResolversParentTypes['SessionWorkoutTally'],
+> = ResolversObject<{
+  attempts?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  climbs?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sent?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  skipped?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SetSessionRestCadencePayloadResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SetSessionRestCadencePayload'] =
@@ -18550,6 +19188,7 @@ export type SimilarClimbResolvers<
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  requiredSetIds?: Resolver<Maybe<Array<ResolversTypes['Int']>>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sharedHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   similarity?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
@@ -19038,6 +19677,8 @@ export type StrayBoardResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['StrayBoard'] = ResolversParentTypes['StrayBoard'],
 > = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   currentGymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   currentGymUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   distanceMeters?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
@@ -19304,6 +19945,7 @@ export type UserBoardResolvers<
   distanceMeters?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   followerCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   gymId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  gymIsListed?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   gymUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   hasLeds?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -19495,6 +20137,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ActivityFeedItem?: ActivityFeedItemResolvers<ContextType>;
   ActivityFeedResult?: ActivityFeedResultResolvers<ContextType>;
   AdminAppFeedbackResult?: AdminAppFeedbackResultResolvers<ContextType>;
+  AdminBoard?: AdminBoardResolvers<ContextType>;
+  AdminBoardConnection?: AdminBoardConnectionResolvers<ContextType>;
   AllUserPlaylistsResult?: AllUserPlaylistsResultResolvers<ContextType>;
   AnalyticsConsent?: AnalyticsConsentResolvers<ContextType>;
   Angle?: AngleResolvers<ContextType>;
@@ -19565,8 +20209,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CommunityStats?: CommunityStatsResolvers<ContextType>;
   ConsentRegion?: ConsentRegionResolvers<ContextType>;
   ControllerEvent?: ControllerEventResolvers<ContextType>;
+  ControllerGymBoard?: ControllerGymBoardResolvers<ContextType>;
+  ControllerGymManifest?: ControllerGymManifestResolvers<ContextType>;
   ControllerInfo?: ControllerInfoResolvers<ContextType>;
   ControllerPing?: ControllerPingResolvers<ContextType>;
+  ControllerPreviewDescriptor?: ControllerPreviewDescriptorResolvers<ContextType>;
   ControllerQueueItem?: ControllerQueueItemResolvers<ContextType>;
   ControllerQueueSync?: ControllerQueueSyncResolvers<ContextType>;
   ControllerRegistration?: ControllerRegistrationResolvers<ContextType>;
@@ -19655,6 +20302,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   Notification?: NotificationResolvers<ContextType>;
   NotificationConnection?: NotificationConnectionResolvers<ContextType>;
   NotificationEvent?: NotificationEventResolvers<ContextType>;
+  ObservedBoardSerialMatch?: ObservedBoardSerialMatchResolvers<ContextType>;
   OrphanGym?: OrphanGymResolvers<ContextType>;
   OrphanGymConnection?: OrphanGymConnectionResolvers<ContextType>;
   OutlierAnalysis?: OutlierAnalysisResolvers<ContextType>;
@@ -19731,6 +20379,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SessionStatsUpdated?: SessionStatsUpdatedResolvers<ContextType>;
   SessionSummary?: SessionSummaryResolvers<ContextType>;
   SessionUser?: SessionUserResolvers<ContextType>;
+  SessionWorkout?: SessionWorkoutResolvers<ContextType>;
+  SessionWorkoutClimb?: SessionWorkoutClimbResolvers<ContextType>;
+  SessionWorkoutHeadline?: SessionWorkoutHeadlineResolvers<ContextType>;
+  SessionWorkoutStage?: SessionWorkoutStageResolvers<ContextType>;
+  SessionWorkoutTally?: SessionWorkoutTallyResolvers<ContextType>;
   SetSessionRestCadencePayload?: SetSessionRestCadencePayloadResolvers<ContextType>;
   SetterClimb?: SetterClimbResolvers<ContextType>;
   SetterClimbsConnection?: SetterClimbsConnectionResolvers<ContextType>;

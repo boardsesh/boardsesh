@@ -26,6 +26,8 @@ vi.mock('../use-bottom-accessory', () => ({
 }));
 vi.mock('../use-device-layout', () => ({ useDeviceLayout: () => ({ widthClass: 'compact' }) }));
 vi.mock('../use-sticky-accessory-presence', () => ({ useStickyAccessoryPresence: () => false }));
+vi.mock('../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: null }) }));
+vi.mock('../../lib/workout-run-store', () => ({ useWorkoutRunPendingStart: () => false }));
 
 import { useBottomChromeMetrics, FALLBACK_BOTTOM_CHROME_METRICS } from '../use-bottom-chrome-metrics';
 

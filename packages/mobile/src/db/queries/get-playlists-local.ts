@@ -314,7 +314,8 @@ async function completePlaylistCoverage(db: OfflineDatabase, playlistId: string,
   const rows = await db.getAllAsync<CoverageRow>(
     `SELECT c.uuid, c.board_type, c.layout_id, c.compatible_size_ids FROM playlist_climbs pc
      LEFT JOIN board_climbs c ON c.uuid = pc.climb_uuid WHERE pc.playlist_uuid = ?
-       AND (c.uuid IS NULL OR COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?)`,
+       AND (c.uuid IS NULL OR COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
+         OR (c.board_type = 'spray' AND EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id)))`,
     [playlistId, viewerId],
   );
   if (!rows.length) return true;
@@ -389,7 +390,8 @@ function playlistBase(input: GetPlaylistClimbsInput, viewerId: string): SqlFragm
       SELECT c.*, pc.position, pc.added_at AS playlist_added_at, pc.angle AS playlist_angle,
         ${preferred.sql} AS preferred_angle
       FROM playlist_climbs pc JOIN board_climbs c ON c.uuid = pc.climb_uuid
-      WHERE pc.playlist_uuid = ? AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?) AND ${scope.sql}
+      WHERE pc.playlist_uuid = ? AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
+        OR (c.board_type = 'spray' AND EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id))) AND ${scope.sql}
     )`,
     binds: [...preferred.binds, input.playlistId, viewerId, ...scope.binds],
   };

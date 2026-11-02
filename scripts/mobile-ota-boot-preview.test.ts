@@ -117,6 +117,16 @@ describe('frozen preview boot receipt discovery', () => {
     });
     expect(await resolvePreviewReceipt(proof, github)).toEqual(receipt);
     expect(() => validatePreviewRun({ ...dispatched, head_branch: 'release/next' }, proof)).toThrow('trusted');
+    expect(() =>
+      validatePreviewRun({ ...dispatched, head_branch: `ci-sandbox/ota-preview/pr-${proof.pullRequest}/42` }, proof),
+    ).not.toThrow();
+    for (const head_branch of [
+      `ci-sandbox/ota-preview/pr-${proof.pullRequest + 1}/42`,
+      `ci-sandbox/db-renumber/pr-${proof.pullRequest}/42`,
+      `ci-sandbox/ota-preview/pr-${proof.pullRequest}/x`,
+    ]) {
+      expect(() => validatePreviewRun({ ...dispatched, head_branch }, proof)).toThrow('trusted');
+    }
     expect(() => validatePreviewArtifact(artifact, dispatched, proof, NOW)).toThrow();
   });
 

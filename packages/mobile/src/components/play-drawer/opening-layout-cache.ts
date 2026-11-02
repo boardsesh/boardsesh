@@ -1,9 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import {
-  getPrivacyCredentialGeneration,
-  getPrivacyRevocationGeneration,
-  subscribeToPrivacyRevocations,
-} from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib/privacy/privacy-cache';
 
 export type OpeningLayoutIdentity = Readonly<{
   boardName: BoardName;
@@ -41,7 +37,6 @@ const OPENING_LAYOUT_LIMIT = 32;
 const KEY_PREFIX = 'opening-layout-v1:';
 type CachedLayout = {
   measurements: OpeningLayoutMeasurements;
-  privacyGeneration: number;
   credentialGeneration: number;
 };
 const layouts = new Map<string, CachedLayout>();
@@ -114,8 +109,7 @@ export function buildOpeningLayoutKey(identity: OpeningLayoutIdentity): string |
       identity.controlsFingerprint,
       identity.lostBanner,
       identity.playbackFingerprint,
-      getPrivacyRevocationGeneration(),
-      getPrivacyCredentialGeneration(),
+      getCredentialGeneration(),
     ])
   );
 }
@@ -124,10 +118,7 @@ export function readOpeningLayout(key: string | undefined): OpeningLayoutMeasure
   if (!key) return undefined;
   const entry = layouts.get(key);
   if (!entry) return undefined;
-  if (
-    entry.privacyGeneration !== getPrivacyRevocationGeneration() ||
-    entry.credentialGeneration !== getPrivacyCredentialGeneration()
-  ) {
+  if (entry.credentialGeneration !== getCredentialGeneration()) {
     layouts.delete(key);
     return undefined;
   }
@@ -153,13 +144,7 @@ export function rememberOpeningLayout(key: string | undefined, measurements: Ope
   } catch {
     return false;
   }
-  if (
-    !Array.isArray(tuple) ||
-    tuple.length !== 27 ||
-    tuple[25] !== getPrivacyRevocationGeneration() ||
-    tuple[26] !== getPrivacyCredentialGeneration()
-  )
-    return false;
+  if (!Array.isArray(tuple) || tuple.length !== 26 || tuple[25] !== getCredentialGeneration()) return false;
   const identity = {
     boardName: tuple[0],
     layoutId: tuple[1],
@@ -209,8 +194,7 @@ export function rememberOpeningLayout(key: string | undefined, measurements: Ope
   }
   layouts.set(key, {
     measurements: immutable,
-    privacyGeneration: getPrivacyRevocationGeneration(),
-    credentialGeneration: getPrivacyCredentialGeneration(),
+    credentialGeneration: getCredentialGeneration(),
   });
   return true;
 }
@@ -220,4 +204,4 @@ export function clearOpeningLayoutCache(): void {
 }
 
 // Withdraw before asynchronous query cleanup, including an already captured key.
-subscribeToPrivacyRevocations(clearOpeningLayoutCache);
+subscribeToCredentialChanges(clearOpeningLayoutCache);

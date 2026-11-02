@@ -1,0 +1,70 @@
+{
+  "title": "Notifiche",
+  "empty": "Ancora niente",
+  "markAllRead": "Segna tutto come letto",
+  "actorSummary": {
+    "fallback": "Qualcuno",
+    "secondaryFallback": "qualcuno",
+    "two": "{{first}} e {{second}}",
+    "many": "{{first}} e altri {{count}}",
+    "manyOne": "{{first}} e un altro"
+  },
+  "items": {
+    "newFollower": "{{actor}} ha iniziato a seguirti",
+    "followRequest": "{{actor}} vuole seguirti",
+    "commentReplyWithBody": "{{actor}} ha risposto: \"{{body}}\"",
+    "commentReply": "{{actor}} ha risposto al tuo commento",
+    "commentOnTickWithBody": "{{actor}} ha commentato: \"{{body}}\"",
+    "commentOnTick": "{{actor}} ha commentato la tua salita",
+    "commentOnClimbWithBody": "{{actor}} ha commentato il tuo blocco: \"{{body}}\"",
+    "commentOnClimb": "{{actor}} ha commentato il tuo blocco {{climb}}",
+    "commentOnClimbGeneric": "{{actor}} ha commentato il tuo blocco",
+    "commentOnSessionWithBody": "{{actor}} ha commentato la tua session: \"{{body}}\"",
+    "commentOnSession": "{{actor}} ha commentato la tua session",
+    "commentOnPlaylistWithBody": "{{actor}} ha commentato la tua playlist: \"{{body}}\"",
+    "commentOnPlaylist": "{{actor}} ha commentato la tua playlist",
+    "commentOnBoardWithBody": "{{actor}} ha commentato il tuo pannello: \"{{body}}\"",
+    "commentOnBoard": "{{actor}} ha commentato il tuo pannello",
+    "commentOnSprayWallWithBody": "{{actor}} ha commentato la tua Spraywall: \"{{body}}\"",
+    "commentOnSprayWall": "{{actor}} ha commentato la tua Spraywall",
+    "commentOnGymWithBody": "{{actor}} ha commentato la tua palestra: \"{{body}}\"",
+    "commentOnGym": "{{actor}} ha commentato la tua palestra {{gym}}",
+    "commentOnGymGeneric": "{{actor}} ha commentato la tua palestra",
+    "voteOnTick": "A {{actor}} è piaciuta la tua salita",
+    "voteOnComment": "A {{actor}} è piaciuto il tuo commento",
+    "proposalCreated": "{{actor}} ha creato una nuova proposta",
+    "proposalApproved": "La proposta di {{actor}} è stata approvata",
+    "proposalRejected": "La proposta di {{actor}} è stata respinta",
+    "proposalVote": "{{actor}} ha votato la tua proposta",
+    "proposalCreatedHide": "{{actor}} ha segnalato {{climb}}",
+    "proposalApprovedHide": "La crew ha nascosto {{climb}} dopo la tua segnalazione",
+    "proposalRejectedHide": "La tua segnalazione su {{climb}} è stata chiusa senza nascondere il blocco",
+    "proposalVoteHide": "{{actor}} è d'accordo con la tua segnalazione su {{climb}}",
+    "proposalOnYourClimb": "{{actor}} ha aperto una proposta sul tuo blocco {{climb}}",
+    "proposalOnYourClimbGeneric": "{{actor}} ha aperto una proposta sul tuo blocco",
+    "proposalOnYourClimbHide": "{{actor}} ha segnalato il tuo blocco {{climb}} per la rimozione",
+    "proposalOnYourClimbGrade": "{{actor}} ha proposto un cambio di grado per il tuo blocco {{climb}}",
+    "newClimb": "{{actor}} ha creato un nuovo blocco",
+    "newClimbsSyncedSetter": "{{setter}} ha tracciato nuovi blocchi",
+    "newClimbsSynced": "{{actor}} ha tracciato nuovi blocchi",
+    "gymClaimApproved": "Ora gestisci {{gym}}",
+    "gymClaimApprovedGeneric": "Ora sei tu il gestore: la tua richiesta per la palestra è andata a buon fine",
+    "default": "Hai una nuova notifica",
+    "sprayWallReady": "{{wall}} è pronta da controllare.",
+    "sprayWallReadyGeneric": "La foto della tua Spraywall è pronta da controllare."
+  },
+  "followRequest": {
+    "approve": "Approva",
+    "decline": "Rifiuta",
+    "approveLabel": "Approva {{actor}}",
+    "declineLabel": "Rifiuta {{actor}}",
+    "failed": "Impossibile rispondere a questa richiesta. Riprova quando sei online."
+  },
+  "errors": {
+    "load": "Impossibile caricare le tue notifiche"
+  },
+  "push": {
+    "sprayWallTitle": "Pronta da controllare",
+    "sprayWallBody": "La foto di {{wall}} è pronta. Controlla le prese."
+  }
+}

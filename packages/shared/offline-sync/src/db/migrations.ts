@@ -37,6 +37,7 @@ import {
 } from './schema';
 import { applyBusyTimeout } from './pragmas';
 import { requeueTransportDeadLetters, setDeadLetterRecoveryNotice } from '../mutation-queue/dead-letter-recovery';
+import { ensureMutationQueueDependencies } from '../mutation-queue/schema';
 import type { OfflineDatabase, SqlExecutor } from '../database';
 
 export type Migration = {
@@ -253,6 +254,15 @@ export const MIGRATIONS: Migration[] = [
     // v13 clients keep importing v12 artifacts.
     version: 13,
     statements: [INDEX_STATS_ASCENTS],
+  },
+  {
+    // Durable climb writes must precede the ticks and edits that reference them.
+    // Nullable device-only columns leave existing queued payloads unchanged and
+    // keep snapshot artifacts compatible. The version gate keeps older bundles
+    // from draining new climb writes without understanding their dependencies.
+    version: 14,
+    statements: [],
+    run: ensureMutationQueueDependencies,
   },
 ];
 

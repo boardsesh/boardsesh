@@ -363,7 +363,11 @@ describe('daily stable workflow boundaries', () => {
     expect(pipeline.jobs['promote-mobile-ota'].if).toContain("vars.OTA_STABLE_RELEASE_ENABLED != 'true'");
     const early = pipeline.jobs['promote-early-mobile-ota'];
     expect(early.if).not.toContain('OTA_STABLE_RELEASE_ENABLED');
-    expect(early.needs).toEqual(pipeline.jobs['promote-mobile-ota'].needs);
+    const productionNeeds = pipeline.jobs['promote-mobile-ota'].needs;
+    expect(Array.isArray(productionNeeds)).toBe(true);
+    expect(early.needs).toEqual(
+      Array.isArray(productionNeeds) ? productionNeeds.filter((job) => job !== 'unreleased-native-ota') : [],
+    );
     expect(early.concurrency?.group).toBe('mobile-ota-beta');
     expect(early.steps?.some((entry) => entry.run?.includes('scripts/mobile-ota-promote-track.ts ota-stage'))).toBe(
       true,

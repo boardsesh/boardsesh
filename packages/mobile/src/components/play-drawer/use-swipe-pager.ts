@@ -6,6 +6,7 @@ import {
   useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
+import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 
 /**
  * Which climb sits in the middle of the play drawer's swipe, decided on the UI
@@ -40,7 +41,10 @@ import {
  * 66 ms on an iPhone 13 Pro from when it is told; a swipe back needs no new
  * page mount. Either direction still waits for its neighbour’s native artwork.
  * A qualifying release is retained until the mounted neighbour’s background and
- * holds display (#6351), unless another touch or navigation replaces it.
+ * holds display (#6351), unless another touch or navigation replaces it, for at
+ * most `RELEASE_ART_DEADLINE_MS` (700 ms) from when its page is mounted. A board that failed,
+ * or is still painting by then, is stepped onto anyway: waiting on it held the
+ * swipe for good, and the player had to be closed to go on.
  *
  * The JS thread takes the steps one at a time (`requestStep`). Two of them can
  * be waiting when it has been busy, and the navigation callbacks read state that
@@ -54,6 +58,17 @@ import {
  * progress must still survive any carousel teardown, so its pending step and
  * callbacks belong to the pager.
  */
+
+/**
+ * A step that went before its page's board had painted, or after its release
+ * waited past the deadline: what that board was doing then, and how long the
+ * release had waited, in ms. Carried to the step's navigation callback for
+ * `Queue Navigation`; an ordinary step carries none.
+ */
+export type SwipeArtWait = { artState: BoardArtReadiness; waitedMs: number };
+
+/** What a swipe step calls to change the climb. `artWait` is set only on a step that went before its board had painted. */
+export type SwipeStepNavigation = (artWait?: SwipeArtWait) => void;
 
 /** What the JS thread has rendered. One object, so the UI thread never reads half an update. */
 export type SwipePagerJsState = {
@@ -96,8 +111,14 @@ export type SwipePager = {
   requestStep: (direction: 1 | -1, step: number) => void;
   /** JS thread. A render that reflects swipe step `step` has committed. */
   stepRendered: (step: number) => void;
+  /**
+   * JS thread. Swipe step `step` went before its board had painted. Kept until
+   * the step runs, and handed to its navigation callback. Told ahead of the
+   * step itself, which only reaches the JS thread later in the fling.
+   */
+  noteStepArtWait: (step: number, artWait: SwipeArtWait) => void;
   /** JS thread. What a step calls to change the climb. See `useSwipeNavigation`. */
-  setNavigation: (onNext: () => void, onPrevious: () => void) => void;
+  setNavigation: (onNext: SwipeStepNavigation, onPrevious: SwipeStepNavigation) => void;
   /**
    * True while the climb on screen is the last on the list the player walks and
    * the end card is there to show (issue #6664). A forward swipe then gives a
@@ -175,9 +196,14 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
   }, []);
 
   const [stepSignal, setStepSignal] = useState<SwipeStepSignal>({ direction: 0, step: 0 });
-  const navigationRef = useRef<{ onNext: () => void; onPrevious: () => void } | null>(null);
-  const setNavigation = useCallback((onNext: () => void, onPrevious: () => void) => {
+  const navigationRef = useRef<{ onNext: SwipeStepNavigation; onPrevious: SwipeStepNavigation } | null>(null);
+  const setNavigation = useCallback((onNext: SwipeStepNavigation, onPrevious: SwipeStepNavigation) => {
     navigationRef.current = { onNext, onPrevious };
+  }, []);
+  // Rare: only a step that went before its board had painted is noted.
+  const artWaitsRef = useRef(new Map<number, SwipeArtWait>());
+  const noteStepArtWait = useCallback((step: number, artWait: SwipeArtWait) => {
+    artWaitsRef.current.set(step, artWait);
   }, []);
   // Steps the UI thread has taken that the JS thread has not started on, and
   // the one whose render it is waiting for. `setStepSignal` and the navigation
@@ -191,13 +217,15 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
     if (!next) return;
     stepInFlightRef.current = next.step;
     setStepSignal({ direction: next.direction, step: next.step });
+    const artWait = artWaitsRef.current.get(next.step);
+    artWaitsRef.current.delete(next.step);
     // Looked up now, when the step's turn has come, not when the finger
     // lifted: these are the callbacks of the render the step before produced.
     const navigation = navigationRef.current;
     if (next.direction === 1) {
-      navigation?.onNext();
+      navigation?.onNext(artWait);
     } else {
-      navigation?.onPrevious();
+      navigation?.onPrevious(artWait);
     }
   }, []);
   const requestStep = useCallback(
@@ -270,6 +298,7 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       tellUntoldStep,
       requestStep,
       stepRendered,
+      noteStepArtWait,
       setNavigation,
       trackEndAvailable,
       reachTrackEnd,
@@ -288,6 +317,7 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       tellUntoldStep,
       requestStep,
       stepRendered,
+      noteStepArtWait,
       setNavigation,
       trackEndAvailable,
       reachTrackEnd,
@@ -355,7 +385,11 @@ export function useSwipePages(
  * outlive the carousel, and the step it carries must not change the climb with
  * the callbacks of a render that is gone.
  */
-export function useSwipeNavigation(pager: SwipePager, onNext: () => void, onPrevious: () => void): void {
+export function useSwipeNavigation(
+  pager: SwipePager,
+  onNext: SwipeStepNavigation,
+  onPrevious: SwipeStepNavigation,
+): void {
   const { setNavigation } = pager;
   useLayoutEffect(() => {
     setNavigation(onNext, onPrevious);

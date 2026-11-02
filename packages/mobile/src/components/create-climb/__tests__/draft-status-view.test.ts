@@ -17,6 +17,13 @@ const base: DraftStatusState = {
 };
 
 describe('deriveDraftStatusView', () => {
+  it('distinguishes a durable queued save from the account copy', () => {
+    expect(deriveDraftStatusView({ ...base, hasSavedClimb: true, waitingToSync: true }, identity)).toEqual({
+      text: 'mobile.create.autosave.waitingToSync',
+      tone: 'muted',
+      announce: true,
+    });
+  });
   it('says nothing about an empty editor', () => {
     expect(deriveDraftStatusView({ ...base, hasContent: false }, identity)).toBeNull();
   });

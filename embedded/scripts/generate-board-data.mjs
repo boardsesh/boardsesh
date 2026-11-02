@@ -48,9 +48,9 @@ const BOARD_NAMES = ['kilter', 'tension'];
  * build tooling, so this is acceptable. A full TS parser (e.g., ts-morph)
  * would be more robust but adds a heavy dependency for a build-time script.
  */
-function extractJsObject(content, varName) {
+function extractJsObject(content, varName, assignmentPattern = null) {
   // Find the variable declaration and extract the object literal
-  const regex = new RegExp(`(?:export\\s+)?const\\s+${varName}\\s*(?::[^=]+=|=)\\s*`);
+  const regex = assignmentPattern ?? new RegExp(`(?:export\\s+)?const\\s+${varName}\\s*(?::[^=]+=|=)\\s*`);
   const match = regex.exec(content);
   if (!match) return null;
 
@@ -99,6 +99,26 @@ function extractJsObject(content, varName) {
 }
 
 /**
+ * Current catalogues keep each board's holds in a generated CommonJS shard.
+ * Extract only its literal, just as with the older inline TypeScript catalogue;
+ * evaluating the loader would couple firmware generation to its runtime proxy.
+ */
+export function loadHolePlacements(productSizesContent, generatedDirectory = BOARD_CONSTANTS_GENERATED) {
+  const inlinePlacements = extractJsObject(productSizesContent, 'HOLE_PLACEMENTS');
+  if (inlinePlacements) return inlinePlacements;
+
+  return Object.fromEntries(
+    BOARD_NAMES.map((boardName) => {
+      const shardPath = path.join(generatedDirectory, 'hole-placements', `${boardName}.cjs`);
+      const shardContent = fs.readFileSync(shardPath, 'utf-8');
+      const placements = extractJsObject(shardContent, `${boardName} hole placements`, /\bmodule\.exports\s*=\s*/);
+      if (!placements) throw new Error(`Failed to load hole placements from ${shardPath}`);
+      return [boardName, placements];
+    }),
+  );
+}
+
+/**
  * Load all required data from the TypeScript source files
  */
 function loadBoardData() {
@@ -115,7 +135,7 @@ function loadBoardData() {
   const LAYOUTS = extractJsObject(productSizesContent, 'LAYOUTS');
   const SETS = extractJsObject(productSizesContent, 'SETS');
   const IMAGE_FILENAMES = extractJsObject(productSizesContent, 'IMAGE_FILENAMES');
-  const HOLE_PLACEMENTS = extractJsObject(productSizesContent, 'HOLE_PLACEMENTS');
+  const HOLE_PLACEMENTS = loadHolePlacements(productSizesContent);
   const LED_PLACEMENTS = extractJsObject(ledPlacementsContent, 'LED_PLACEMENTS');
   const BOARD_IMAGE_DIMENSIONS = extractJsObject(boardDataContent, 'BOARD_IMAGE_DIMENSIONS');
 
@@ -605,7 +625,9 @@ async function main() {
   console.log('\nDone!');
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

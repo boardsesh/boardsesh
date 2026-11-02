@@ -21,7 +21,7 @@ const ANDROID_CAPTURE_PATH = '.github/workflows/mobile-screenshots-android.yml';
 const IOS_CAPTURE_PATH = '.github/workflows/mobile-screenshots-ios.yml';
 const ANDROID_ACTION_PATH = '.github/actions/android-emulator-capture/action.yml';
 const ANDROID_ACTION_USES = './.github/actions/android-emulator-capture';
-const IOS_ACTION_USES = './.github/actions/ios-screenshot-shard';
+const IOS_ACTION_USES = './.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard';
 
 const TESTED_SHA = '${{ needs.resolve.outputs.sha }}';
 
@@ -89,6 +89,15 @@ describe('mobile-e2e-gate.yml triggers', () => {
     expect(resolveStep.id).toBe('sha');
   });
 
+  it("refuses a person's dispatch on main or release/* for a commit outside the run's history", () => {
+    const [, , historyGuard] = workflow.jobs.resolve.steps ?? [];
+    expect(historyGuard.if).toBe(
+      "(github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && !inputs.called",
+    );
+    expect(historyGuard.run).toContain('gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...$RUN_SHA" --jq .status');
+    expect(historyGuard.run).toContain('ahead|identical) ;;');
+  });
+
   it('exposes the verdict as the workflow_call output', () => {
     expect(workflow.on.workflow_call.outputs.passed.value).toBe('${{ jobs.verdict.outputs.passed }}');
     expect(workflow.on.workflow_call.outputs.sha.value).toBe('${{ jobs.resolve.outputs.sha }}');
@@ -133,19 +142,33 @@ describe('mobile-e2e-gate.yml jobs', () => {
   });
 
   it('spends exactly one macOS runner', () => {
-    const macJobs = Object.entries(workflow.jobs).filter(([, job]) => (job['runs-on'] ?? '').startsWith('macos'));
+    const macJobs = Object.entries(workflow.jobs).filter(([, job]) => /^(macos|xcode)-/.test(job['runs-on'] ?? ''));
     expect(macJobs.map(([name]) => name)).toEqual(['ios-smoke']);
+    expect(workflow.jobs['ios-smoke']['runs-on']).toBe('xcode-27');
   });
 
   it('pins every checkout to the resolved commit', () => {
     const checkouts = Object.entries(workflow.jobs).flatMap(([name, job]) =>
-      stepsUsing(job, 'actions/checkout@').map((step) => ({ name, ref: step.with?.ref })),
+      stepsUsing(job, 'actions/checkout@').map((step) => ({
+        name,
+        ref: step.with?.ref,
+        tooling: step.with?.path === '.boardsesh/cache-tooling',
+      })),
     );
-    expect(checkouts.map((checkout) => checkout.name)).toEqual(['android-smoke', 'ios-smoke', 'verdict']);
+    expect(checkouts.filter((checkout) => !checkout.tooling).map((checkout) => checkout.name)).toEqual([
+      'android-smoke',
+      'ios-smoke',
+      'verdict',
+    ]);
+    expect(checkouts.filter((checkout) => checkout.tooling).map((checkout) => checkout.name)).toEqual(['ios-smoke']);
     for (const checkout of checkouts) {
       // The verdict falls back to the triggering commit only when `resolve`
       // failed, and then fails on the missing SHA.
-      const expected = checkout.name === 'verdict' ? '${{ needs.resolve.outputs.sha || github.sha }}' : TESTED_SHA;
+      const expected = checkout.tooling
+        ? '${{ github.workflow_sha }}'
+        : checkout.name === 'verdict'
+          ? '${{ needs.resolve.outputs.sha || github.sha }}'
+          : TESTED_SHA;
       expect(checkout.ref, `${checkout.name} checkout`).toBe(expected);
     }
   });
@@ -165,13 +188,14 @@ describe('mobile-e2e-gate.yml jobs', () => {
 
   it('runs both smokes on recorded fixtures, with one orchestrator attempt', () => {
     const [android] = stepsUsing(workflow.jobs['android-smoke'], ANDROID_ACTION_USES);
-    expect(android.with).toEqual({ flow: 'smoke', fixtures: 'replay', attempts: '1' });
+    expect(android.with).toEqual({ flow: 'smoke', fixtures: 'replay', attempts: '1', 'restore-caches': 'true' });
     const [ios] = stepsUsing(workflow.jobs['ios-smoke'], IOS_ACTION_USES);
     expect(ios.with).toMatchObject({
       flow: 'smoke',
       fixtures: 'replay',
       attempts: '1',
       'upload-captures': 'false',
+      'restore-caches': 'true',
       locale: 'en-US',
       'device-name': 'iPhone 16 Pro Max',
     });
@@ -182,11 +206,13 @@ describe('mobile-e2e-gate.yml jobs', () => {
     expect(withoutCommentLines(source).join('\n')).not.toContain('SCREENSHOT_USER_');
   });
 
-  it('shares the simulator app cache with the capture workflow, key for key', () => {
-    const keyLine = (text: string) =>
-      text.split('\n').find((line) => line.includes('screenshot-sim-app-v1-${{ hashFiles('));
-    expect(keyLine(source)).toBeTruthy();
-    expect(keyLine(source)?.trim()).toBe(keyLine(readFileSync(IOS_CAPTURE_PATH, 'utf8'))?.trim());
+  it('shares the simulator app native-input recipe with the capture workflow', () => {
+    const capture = parse(readFileSync(IOS_CAPTURE_PATH, 'utf8')) as typeof workflow;
+    const key = (steps: Step[]) => steps.find((step) => step.id === 'appkey');
+    const smokeKey = key(workflow.jobs['ios-smoke'].steps ?? []);
+    const captureKey = key(capture.jobs['ios-build'].steps ?? []);
+    expect(smokeKey?.run).toContain('ios-screenshot-app-cache.ts key');
+    expect(smokeKey?.env?.NATIVE_INPUT_HASH).toBe(captureKey?.env?.NATIVE_INPUT_HASH);
   });
 
   it('reads each smoke result on every outcome', () => {
@@ -264,6 +290,7 @@ describe('android-emulator-capture composite action', () => {
       'attempts',
       'user-email',
       'user-password',
+      'restore-caches',
     ]);
     expect(action.inputs.flow.default).toBe('app-store');
     expect(action.inputs.attempts.default).toBe('3');

@@ -2,7 +2,10 @@ import type { StoredClimbRowDisplay } from '../lib/climb-row-display';
 import type { RestTimerMode } from '../lib/rest-timer';
 import type { SectionLayoutRecord } from '../lib/section-layout';
 import type { PlayerButtonsPosition } from '../lib/player-buttons';
+import type { ClimbListLayoutPreference } from '../components/climb-list-thumbnail-metrics';
+import type { SupportCardRecord } from '../lib/support-asks';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import type { KeepLightingChoice } from '../lib/keep-lighting';
 
 /** What `offlineSprayWallArchiveV1` keeps per archived wall. */
 export type RememberedSprayWallArchive = {
@@ -78,6 +81,8 @@ export type AppSettings = {
    * off. `null` until the first pin; cleared at the account boundary.
    */
   offlineOwnedSprayWallsV1: OwnedSprayWallPinLedger | null;
+  /** Verified opened-wall identities; entries also remember explicit offline opt-outs. */
+  offlineOpenedSprayWallsV1: { userId: string; walls: Record<string, string | null> } | null;
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
   /**
@@ -97,8 +102,6 @@ export type AppSettings = {
    */
   offlineMode: boolean;
   autoConnectBle: boolean;
-  autoDisconnectBle: boolean;
-  autoDisconnectTimeoutSeconds: number;
   /**
    * MoonBoard "V2" BLE feature: also light each active hold's firmware-defined
    * neighbour LED (typically the hold above), dimmer, alongside its role
@@ -113,10 +116,51 @@ export type AppSettings = {
    * (issue #6234). Display only; no effect on other boards or on the LEDs.
    */
   moonboardGridLabels: boolean;
-  /** Light the connected board when swiping to the next/previous climb in the play view. */
-  lightOnSwipe: boolean;
-  /** Light the connected board when tapping a climb to select it from a climbs list. */
-  lightOnClimbTap: boolean;
+  /**
+   * Always drive the wall: this phone drives the wall whenever it holds the board. While this phone's own
+   * Bluetooth link holds the board (never a relay, never a wall with no
+   * lights), it drives with no end (`DriveModeWatcher`, `startedBy: 'always'`),
+   * so every climb picked lights, as after a swipe on the wall button. In a
+   * crew only with In a session too on, on every board, MoonBoards included.
+   * A tap on You are driving the wall stops it until the link drops or the
+   * next Put on board; the switch itself never flips. Stop driving after doesn't apply
+   * while it is on. Replaced the two switches Light the board when I tap a
+   * climb and Light the board as I swipe (`settings/migrations.ts`). Off by
+   * default.
+   */
+  alwaysDrive: boolean;
+  /**
+   * Stop driving after (2.7): how long a drive Put on board starts keeps
+   * lighting. Right away (`off`, one climb, no drive), a 30 s, 45 s, 1, 2 or
+   * 5 minute drive that each lit climb restarts, or Until I stop (an
+   * open-ended drive). Every board, MoonBoards included. The key keeps its
+   * first name so stored choices carry over. Read through
+   * `sanitiseKeepLighting`. Until 2026-11 a MoonBoard had its own choice
+   * (`moonboardPutOnBoardKeepsLighting`, Until I stop by default); that key
+   * stays on disk, read by nothing, so an older bundle still finds it.
+   */
+  putOnBoardKeepsLighting: KeepLightingChoice;
+  /**
+   * "In a session too": Put on board drives in a crew session as well, when
+   * this phone has the crew's board. Off, picks in a session stay previews.
+   * Every board, MoonBoards included.
+   */
+  putOnBoardDrivesInSession: boolean;
+  /**
+   * "Disconnect Bluetooth when driving ends": when a drive ends because the
+   * climber stopped it (the button, Turn off all lights), its time ran out, or
+   * a crewmate's put-up ended it, this phone lets go of the board without
+   * forgetting it, so the next Put on board reconnects. Replaced
+   * auto-disconnect in 2.7 (`settings/migrations.ts`). Off by default.
+   */
+  disconnectWhenDrivingEnds: boolean;
+  /**
+   * One-shot: auto-disconnect's choices (the retired `autoDisconnectBle` and
+   * `autoDisconnectTimeoutSeconds` keys) were carried into Stop driving after
+   * and `disconnectWhenDrivingEnds`. Written once by `migrateAutoDisconnect`;
+   * nothing else reads the old keys.
+   */
+  autoDisconnectMigrated: boolean;
   /**
    * A row tap on a playlist, a For You list or a setter's page loads that list
    * into the queue in place of what was there (the behaviour before F4, #6667).
@@ -140,6 +184,12 @@ export type AppSettings = {
   restTimerAutoAdvance: boolean;
   /** `afterTick` re-anchors on every tick; `onTheMinute` holds a fixed cadence. */
   restTimerMode: RestTimerMode;
+  /**
+   * Count the rest down on the Lock Screen, in the Dynamic Island and in the
+   * Android session notification (#6513). On by default: arming the timer is
+   * already the opt-in, and arming never survives a cold start.
+   */
+  restTimerShowOnLockScreen: boolean;
   theme: 'system' | 'light' | 'dark';
   /**
    * Which tab an ordinary launch opens on. Read synchronously by
@@ -246,14 +296,35 @@ export type AppSettings = {
    */
   climbRowDisplayV1: StoredClimbRowDisplay | null;
   /**
-   * The player's buttons (#6229): their order and switches, `null` while they
-   * match the defaults so a later release's defaults still apply. Read and
-   * written ONLY through `playerButtonsStore` (`lib/player-buttons-preference.ts`),
-   * which keeps its own snapshot; never `useSetting` this key. In this store, not
-   * AsyncStorage, because the bar has to be right on the player's first frame.
+   * One or two columns in the Climbs list where the list is wide enough for two
+   * (a regular-width iPad). Read through `useClimbListLayout`, which sanitises it.
+   * In this store, not AsyncStorage, so the choice is read synchronously on the
+   * list's first render. The list's width is measured after that render, and a
+   * first guess that turns out wrong changes the column count once.
    */
-  playerButtonsV1: SectionLayoutRecord | null;
-  /** The player's ⏮ and ⏭. Off leaves their slots empty; swiping the board still moves. */
+  climbListLayout: ClimbListLayoutPreference;
+  /**
+   * Legacy first/last-only player buttons (#7000), retained for OTA rollback.
+   * Imported by the V3 preference store only while V3 is physically absent;
+   * newer bundles do not overwrite this record. `boardControl` carries the
+   * Lightbulb choice alongside the old order and switches.
+   */
+  playerButtonsV2: (SectionLayoutRecord & { readonly boardControl?: string }) | null;
+  /**
+   * Four customizable positions around Log, or two ends when Previous and next
+   * is on. V2 is imported once and retained for rollback; an explicit V3 `null`
+   * means today's defaults and must never import V2 again. Only the player
+   * buttons preference store reads or writes this record.
+   */
+  playerButtonsV3: (SectionLayoutRecord & { readonly boardControl?: string }) | null;
+  /**
+   * The MiniPlayer's buttons (#6940): their order and switches, `null` while they
+   * match the defaults. Read and written ONLY through `miniPlayerButtonsStore`
+   * (`lib/mini-player-buttons-preference.ts`); never `useSetting` this key. In
+   * this store, not AsyncStorage, because the bar has to be right on its first frame.
+   */
+  miniPlayerButtonsV1: SectionLayoutRecord | null;
+  /** The player's ⏮ and ⏭. Off frees their slots for other actions; swiping still moves. */
   playerPreviousNext: boolean;
   /** Where the player's controls block sits. Read through `sanitisePlayerButtonsPosition`. */
   playerButtonsPosition: PlayerButtonsPosition;
@@ -277,6 +348,19 @@ export type AppSettings = {
    * `lib/playlists/playlist-sort-memory.ts`; never `useSetting` this key.
    */
   playlistSortsV1: { entries: StoredListSort[] } | null;
+  /**
+   * "Show support asks" in Settings › General. Off hides the Support Boardsesh
+   * row in Account and the monthly card on Home. Only offered where those can
+   * show at all (`useDonationLinksAllowed`). Per device; survives sign-out.
+   */
+  supportAsksShown: boolean;
+  /**
+   * The calendar month (`YYYY-MM`) the Home support card was last closed or
+   * tapped in; it stays hidden for the rest of that month. `null` until the
+   * first close. Read with `getSetting` on Home's mount and written only by
+   * `useSupportCard` (`lib/support-asks.ts`); never `useSetting` this key.
+   */
+  supportCardV1: SupportCardRecord | null;
 };
 
 export type SettingsKey = keyof AppSettings;

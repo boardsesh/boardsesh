@@ -1,4 +1,9 @@
 export const climbTypeDefs = /* GraphQL */ `
+  enum DraftScope {
+    OWN
+    WALL
+  }
+
   """
   A climbing problem/route on an interactive training board.
   Contains all information needed to display and light up the climb on the board.
@@ -76,6 +81,8 @@ export const climbTypeDefs = /* GraphQL */ `
     apart (see canAddClimbToBoard rule 5).
     """
     compatibleSizeIds: [Int!]
+    "Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets."
+    requiredSetIds: [Int!]
     """
     How many of this climb's holds are no longer on the wall.
 
@@ -188,6 +195,8 @@ export const climbTypeDefs = /* GraphQL */ `
     boardseshConfidence: String
     "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
     compatibleSizeIds: [Int!]
+    "Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets."
+    requiredSetIds: [Int!]
     "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
     missingHoldCount: Int
     "The climb's revision as the queueing client read it (\`Climb.revisionNumber\`). Round-tripped through the queue so whoever logs a queued climb can say which revision was on the wall without a refetch. Null from a client that predates the field."
@@ -295,6 +304,8 @@ export const climbTypeDefs = /* GraphQL */ `
     useMyGrades: Boolean
     "Show only the user's draft climbs (requires auth)"
     onlyDrafts: Boolean
+    "OWN lists personal drafts; WALL lists all drafts on an accessible spray wall."
+    draftScope: DraftScope
     "Show only climbs the user has hearted on this board. A heart belongs to the climb, not to an angle, so it matches at every angle. Signed out returns no climbs. (requires auth)"
     onlyFavorited: Boolean
     "Show only unclimbed projects (climbs with 0 ascents)"

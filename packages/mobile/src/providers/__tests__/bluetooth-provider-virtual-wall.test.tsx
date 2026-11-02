@@ -41,6 +41,7 @@ const haptics = vi.hoisted(() => ({ hapticLight: vi.fn(), hapticSuccess: vi.fn()
 
 const queue = vi.hoisted(() => ({
   currentClimbQueueItem: null as ClimbQueueItem | null,
+  items: [] as ClimbQueueItem[],
   sessionId: 'session-1' as string | null,
   participantId: 'participant-self' as string | null,
   lastConnectedBoardSerial: null as string | null,
@@ -117,7 +118,7 @@ vi.mock('@tanstack/react-query', () => ({
 }));
 
 vi.mock('../../settings', () => ({
-  useSetting: (key: string) => (key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()]),
+  useSetting: () => [30, vi.fn()],
 }));
 
 vi.mock('@boardsesh/play-view', () => ({ emitWallConfirm: wallConfirm.emitWallConfirm }));
@@ -169,8 +170,16 @@ vi.mock('../../components/ble/DevicePickerSheet', () => ({
 }));
 
 vi.mock('../queue-provider', () => ({
-  useQueue: () => ({ state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] } }),
-  useQueueActions: () => ({ setCurrentClimb: vi.fn() }),
+  useQueue: () => ({ state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: queue.items } }),
+  useQueueActions: () => ({
+    setCurrentClimb: vi.fn(),
+    getQueueSnapshot: () => ({
+      sessionId: queue.sessionId,
+      currentClimbQueueItem: queue.currentClimbQueueItem,
+      queue: queue.items,
+      playlistSuggestionSource: null,
+    }),
+  }),
   useQueueSessionControls: () => ({
     sessionId: queue.sessionId,
     participantId: queue.participantId,
@@ -188,6 +197,7 @@ vi.mock('../../lib/board-details', () => ({
 }));
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
+import { clearRelayReceipt, noteRelayReceipt } from '../../lib/relay-receipt';
 
 // Must match VIRTUAL_WALL_SETTLE_MS in the provider.
 const SETTLE_MS = 600;
@@ -242,6 +252,7 @@ function renderProvider(options?: Parameters<typeof providerElement>[0]) {
 }
 
 beforeEach(() => {
+  queue.items = [];
   presence.lastConnectionSeq = 0;
   presence.currentClimb = null;
   bluetooth.state.pickerState = null;
@@ -350,7 +361,7 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     await settle();
 
     // The whole confirm fan-out fires — the same three things a BLE write does.
-    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
     expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
     expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
@@ -400,6 +411,29 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     await takeTheWall();
     await settle(2);
     expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+  });
+
+  // #7039 review: a virtual hold's "write" is a 600 ms stand-in, so a
+  // crewmate's climb landing on it is no transport timing.
+  it('sends no relay timing for a crewmate’s climb on a virtual hold', async () => {
+    clearRelayReceipt();
+    const { rerender } = renderProvider();
+    await takeTheWall();
+    await settle();
+
+    noteRelayReceipt({
+      eventType: 'CurrentClimbChanged',
+      incomingQueueItemUuid: 'queue-climb-2',
+      localQueueItemUuid: 'queue-climb-1',
+    });
+    queue.currentClimbQueueItem = makeQueueItem('climb-2');
+    await act(async () => {
+      rerender(providerElement());
+    });
+    await settle(2);
+
+    expect(presence.reportClimbForBoard.mock.calls.map((call) => call[1].climb.uuid)).toContain('climb-2');
+    expect(analytics.track.mock.calls.filter(([eventName]) => eventName === 'Climb Relay Write Timed')).toEqual([]);
   });
 
   it('releases the holder slot and stops reporting when the wall is handed back', async () => {
@@ -754,6 +788,7 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
       handleSelect: vi.fn(),
       handleCancel: vi.fn(),
       sessionId: 1,
+      showAllBoards: false,
       mode: 'list',
       presented: true,
       closing: false,

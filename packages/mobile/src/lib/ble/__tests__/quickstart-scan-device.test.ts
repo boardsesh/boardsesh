@@ -22,7 +22,16 @@ describe('classifyQuickstartDevice', () => {
     });
   });
 
-  // MoonBoards never advertise a serial, so the quickstart used to drop them.
+  it('resolves a serial-bearing MoonBoard fixture alongside Aurora controllers', () => {
+    expect(heard('MoonBoard A#99000003', [UART_SERVICE_UUID])).toMatchObject({
+      key: 'serial:99000003',
+      kind: 'serial',
+      boardType: 'moonboard',
+      serial: '99000003',
+    });
+  });
+
+  // Ordinary MoonBoards advertise no serial, so keep their peripheral identity.
   it.each(['MoonBoard A', 'Moonboard', 'MoonBoard'])('keeps a MoonBoard named "%s", keyed by its device', (name) => {
     expect(heard(name)).toMatchObject({
       key: `device:id-${name}`,

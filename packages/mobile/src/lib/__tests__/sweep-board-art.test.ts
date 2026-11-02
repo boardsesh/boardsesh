@@ -17,10 +17,16 @@ vi.mock('expo-image', () => ({ Image: { clearDiskCache } }));
 const track = vi.hoisted(() => vi.fn());
 vi.mock('../analytics', () => ({ track }));
 
-import { sweepBoardArtCache, sweepOverlaysForScope, _resetSweepRateLimitForTests } from '../sweep-caches';
+import {
+  reconcileOverlayIndexWithDisk,
+  sweepBoardArtCache,
+  sweepOverlaysForScope,
+  _resetSweepRateLimitForTests,
+} from '../sweep-caches';
 import { invalidateCacheMeasurement } from '../cache-size-meter';
 import {
   cacheRenderedOverlay,
+  getOverlayGenerationWatermark,
   getRenderedOverlay,
   _renderedOverlaysForTests,
   _resetOverlayIndexForTests,
@@ -28,6 +34,10 @@ import {
 
 const NOW = 1_800_000_000_000;
 const MB = 1024 * 1024;
+
+function overlayKey(index: number): string {
+  return overlayName(index).replace('.png', '');
+}
 
 function overlayName(index: number): string {
   return `v5_f_w400_kilter_1_7_1,20_${index.toString(16).padStart(8, '0')}.png`;
@@ -183,6 +193,64 @@ describe('sweepBoardArtCache', () => {
       freedBytes: 0,
       filesDeleted: 0,
     });
+  });
+
+  // Issue #5882: the warm-up indexed five PNGs, then the native once-per-launch
+  // prune deleted two of them without telling JS. Every warm-up key was "read"
+  // when it went in, so none of them is old enough for the sweep to evict; it
+  // still has to stop the index handing out the two dead URIs.
+  it('forgets indexed keys whose PNG is gone, while under the cap and deleting nothing', async () => {
+    seedOverlays(3);
+    for (let index = 0; index < 5; index += 1) {
+      cacheRenderedOverlay(overlayKey(index), `file:///${overlayName(index)}`);
+    }
+
+    const result = await sweepBoardArtCache({ trigger: 'launch', targetBytes: 100 * MB });
+    expect(result).toEqual({ beforeBytes: 3 * MB, freedBytes: 0, filesDeleted: 0 });
+    expect(track).not.toHaveBeenCalled();
+    for (let index = 0; index < 3; index += 1) {
+      expect(getRenderedOverlay(overlayKey(index))?.uri).toBe(`file:///${overlayName(index)}`);
+    }
+    expect(getRenderedOverlay(overlayKey(3))).toBeUndefined();
+    expect(getRenderedOverlay(overlayKey(4))).toBeUndefined();
+  });
+
+  it('forgets every indexed key when the directory itself is gone', async () => {
+    // iOS purged Library/Caches out from under the session.
+    cacheRenderedOverlay(overlayKey(0), `file:///${overlayName(0)}`);
+    await sweepBoardArtCache({ trigger: 'background' });
+    expect(_renderedOverlaysForTests.size).toBe(0);
+  });
+});
+
+describe('reconcileOverlayIndexWithDisk', () => {
+  it('forgets only the keys without a file, and deletes nothing', async () => {
+    seedOverlays(2);
+    for (let index = 0; index < 4; index += 1) {
+      cacheRenderedOverlay(overlayKey(index), `file:///${overlayName(index)}`);
+    }
+
+    await expect(reconcileOverlayIndexWithDisk()).resolves.toBe(2);
+    expect([..._renderedOverlaysForTests.keys()].sort()).toEqual([overlayKey(0), overlayKey(1)].sort());
+    expect(new Directory('cache/board-thumbnails').list()).toHaveLength(2);
+  });
+
+  it('spares a key inserted after the caller took its watermark', async () => {
+    cacheRenderedOverlay(overlayKey(0), `file:///${overlayName(0)}`);
+    const watermark = getOverlayGenerationWatermark();
+    cacheRenderedOverlay(overlayKey(1), `file:///${overlayName(1)}`);
+
+    // No directory at all: everything older than the watermark goes.
+    await expect(reconcileOverlayIndexWithDisk(watermark)).resolves.toBe(1);
+    expect(_renderedOverlaysForTests.has(overlayKey(0))).toBe(false);
+    expect(_renderedOverlaysForTests.has(overlayKey(1))).toBe(true);
+  });
+
+  it('is not rate-limited', async () => {
+    cacheRenderedOverlay(overlayKey(0), `file:///${overlayName(0)}`);
+    await reconcileOverlayIndexWithDisk();
+    cacheRenderedOverlay(overlayKey(1), `file:///${overlayName(1)}`);
+    await expect(reconcileOverlayIndexWithDisk()).resolves.toBe(1);
   });
 });
 

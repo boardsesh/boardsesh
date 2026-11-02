@@ -20,6 +20,7 @@ import {
   selectNextQueueItemWithSuggestions,
   selectPreviousQueueItemWithSuggestions,
   resolveNavigationSuggestionSource,
+  resolvePreviewStepSource,
   resolveTrackListClimbUuid,
   resolveTrackPosition,
   resolveUpNextProgress,
@@ -498,8 +499,8 @@ describe('computeNavigationStateWithSuggestions', () => {
   });
 
   it('gives a trackless preview nothing to swipe to, even when its climb is queued', () => {
-    // Settings promises "a preview never lights the board as you swipe". With
-    // Light the board as I swipe on, a trackless preview's swipe is not view-only
+    // Settings promises "a preview never lights the board as you swipe". While
+    // driving, a trackless preview's swipe is not view-only
     // (`getViewOnlyPreviewNavigationTarget`), so the promise rests on this: every
     // trackless preview is a fresh queue item (`climbToQueueItem`), an orphan with
     // no list, and an orphan has nowhere to go. A swipe that could land would
@@ -1054,6 +1055,9 @@ describe('prepared navigation', () => {
       canNext: true,
       canPrevious: true,
       atTrackEnd: false,
+      // Both steps stay on the list.
+      nextTrackResume: null,
+      prevTrackResume: null,
     });
     expect(anchoredSuggestionSource(source, queue[1])).toBe(source);
     expect(queueScan).not.toHaveBeenCalled();
@@ -1685,6 +1689,30 @@ describe('Up next plays before the list continues (#6777)', () => {
     expect(resolveUpNextCommitResume([tapped, s4Entry], tapped, results, s4Entry)).toBeNull();
   });
 
+  // #7113 QA: stopped driving, a swipe off the list climb on the wall lands on
+  // the list's next climb (the walk's peek), and Put on board mints it fresh.
+  it('keeps the list for the list climb a look peeked at, minted fresh on commit', () => {
+    const peekS3 = selectNextQueueItemWithSuggestions([tapped], tapped, results).item;
+    expect(peekS3?.uuid).toBe(getPlaylistPeekQueueItemUuid('s3'));
+    const committedS3: ClimbQueueItem = { uuid: 'fresh-s3', climb: s3, suggested: true };
+    expect(resolveUpNextCommitResume([tapped], tapped, results, committedS3, { walkedPeek: true })).toBeNull();
+    // Previous's peek of the list climb behind it is the list too.
+    const freshS1 = { uuid: 'fresh-s1', climb: s1 };
+    expect(resolveUpNextCommitResume(queue, tapped, results, freshS1, { walkedPeek: true })).toBeNull();
+    // A climb off the list, not queued, still leaves it.
+    expect(
+      resolveUpNextCommitResume(queue, tapped, results, makeItem('not-queued'), { walkedPeek: true }),
+    ).toBeUndefined();
+  });
+
+  // #5403: a crew browse open of a list climb (a peer's tick for s1) is a fresh
+  // item, not the walk's peek. Putting it up must not borrow the list, or the
+  // label would jump to "1 of 4" and Next replay s2.
+  it('leaves the list for a fresh item on it that is not the walk peek', () => {
+    const peerTickS1 = { uuid: 'tick-s1', climb: s1 };
+    expect(resolveUpNextCommitResume([tapped], tapped, results, peerTickS1)).toBeUndefined();
+  });
+
   it('leaves the list for a looked-at climb that is not ahead on it', () => {
     const history = queue[0];
     expect(resolveUpNextCommitResume(queue, tapped, results, history)).toBeUndefined();
@@ -1771,5 +1799,375 @@ describe('nothing current with History (F3 now-slot mode)', () => {
         ({ uuid }) => uuid,
       ),
     ).toEqual(['u1', 'u2']);
+  });
+});
+
+describe('a look off the climb on the wall keeps walking its list (#7227)', () => {
+  const s1 = makeClimb('s1');
+  const s2 = makeClimb('s2');
+  const s3 = makeClimb('s3');
+  const s4 = makeClimb('s4');
+  const s5 = makeClimb('s5');
+  const results = makeSource(s2, [s1, s2, s3, s4, s5]);
+  // The climb on the wall: a list tap committed s2, flagged `suggested`.
+  const onWall: ClimbQueueItem = { uuid: 'item-s2', climb: s2, suggested: true };
+  const history = makeItem('history');
+  const playNext1 = makeItem('play-next-1');
+  const playNext2 = makeItem('play-next-2');
+
+  /**
+   * The player's walk when no step lights (outside a drive, solo or in a crew):
+   * each step lands as a preview that carries `resolvePreviewStepSource` of the
+   * track it walked, and the next step resolves its track from that preview
+   * with `resolveNavigationSuggestionSource`, as PlayCore does. `direction` is
+   * one way for up to `steps` steps, or the exact steps to take.
+   */
+  function look(
+    queue: ClimbQueue,
+    committedItem: ClimbQueueItem,
+    committedSource: PlaylistSuggestionSource | null,
+    direction: 'next' | 'previous' | ('next' | 'previous')[],
+    {
+      steps = 20,
+      previewItem: openedItem = null,
+      previewSource: openedSource = null,
+      historyCount,
+    }: {
+      steps?: number;
+      previewItem?: ClimbQueueItem | null;
+      previewSource?: PlaylistSuggestionSource | null;
+      historyCount?: number;
+    } = {},
+  ) {
+    let previewItem = openedItem;
+    let previewSource = openedSource;
+    const landed: ClimbQueueItem[] = [];
+    const carried: (PlaylistSuggestionSource | null)[] = [];
+    let atTrackEnd = false;
+    const stepCount = Array.isArray(direction) ? direction.length : steps;
+    for (let step = 0; step < stepCount; step += 1) {
+      const way = Array.isArray(direction) ? direction[step] : direction;
+      const source = resolveNavigationSuggestionSource({ previewItem, previewSource, committedItem, committedSource });
+      const targets = computeNavigationTargetsWithSuggestions(
+        queue,
+        previewItem ?? committedItem,
+        source,
+        undefined,
+        undefined,
+        undefined,
+        historyCount,
+      );
+      const item = way === 'next' ? targets.nextItem : targets.prevItem;
+      atTrackEnd = targets.atTrackEnd;
+      if (!item) break;
+      // The climb on screen is the one the step leaves, as in PlayCore, and a
+      // step with no preview on screen leaves the climb on the wall.
+      const steppedOffQueueItemUuid = (previewItem ?? committedItem).uuid;
+      const offWall = previewItem === null;
+      previewItem = item;
+      previewSource = resolvePreviewStepSource(
+        source,
+        way === 'next' ? targets.nextTrackResume : targets.prevTrackResume,
+        { steppedOffQueueItemUuid, offWall },
+      );
+      landed.push(item);
+      carried.push(previewSource);
+    }
+    return { landed: landed.map(({ uuid }) => uuid), carried, atTrackEnd, previewItem, previewSource };
+  }
+
+  it('with Up next empty, goes on down the list to its end, not dead after one climb', () => {
+    const queue = [history, onWall];
+    const walk = look(queue, onWall, results, 'next');
+    expect(walk.landed).toEqual([
+      getPlaylistPeekQueueItemUuid('s3'),
+      getPlaylistPeekQueueItemUuid('s4'),
+      getPlaylistPeekQueueItemUuid('s5'),
+    ]);
+    // The last climb is the list's end: the end card, as from the climb on the wall.
+    expect(walk.atTrackEnd).toBe(true);
+    expect(walk.carried.every((carried) => carried?.playlistUuid === results.playlistUuid)).toBe(true);
+  });
+
+  it('with Up next filled, plays Up next and then carries on into the list', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const walk = look(queue, onWall, results, 'next');
+    expect(walk.landed).toEqual([
+      'play-next-1',
+      'play-next-2',
+      getPlaylistPeekQueueItemUuid('s3'),
+      getPlaylistPeekQueueItemUuid('s4'),
+      getPlaylistPeekQueueItemUuid('s5'),
+    ]);
+    expect(walk.atTrackEnd).toBe(true);
+    // In Up next the look holds the list's place; back on the list it lets go.
+    expect(walk.carried[0]?.resume).toEqual({ climbUuid: 's2', queueItemUuid: 'item-s2' });
+    expect(walk.carried[1]?.resume).toEqual({ climbUuid: 's2', queueItemUuid: 'item-s2' });
+    expect(walk.carried[2]?.resume).toBeUndefined();
+  });
+
+  it('lands where Next would, climb for climb', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    expect(look(queue, onWall, results, 'next').landed).toEqual(
+      findUpcomingQueueItemsWithSuggestions(queue, onWall, results, 20).map(({ uuid }) => uuid),
+    );
+  });
+
+  it('in now-slot mode (F3), goes on down the list the same way', () => {
+    const walk = look([history, onWall], onWall, results, 'next', { historyCount: 1 });
+    expect(walk.landed).toEqual([
+      getPlaylistPeekQueueItemUuid('s3'),
+      getPlaylistPeekQueueItemUuid('s4'),
+      getPlaylistPeekQueueItemUuid('s5'),
+    ]);
+    expect(walk.atTrackEnd).toBe(true);
+  });
+
+  it('from the last Up next climb on the wall, picks the list up where it left off', () => {
+    // Next already played Up next: the wall holds its last climb, and the
+    // committed list remembers it picks up after s2.
+    const queue = [history, onWall, playNext1, playNext2];
+    const resumed = { ...results, resume: { climbUuid: 's2', queueItemUuid: 'item-s2' } };
+    const walk = look(queue, playNext2, resumed, 'next');
+    expect(walk.landed).toEqual([
+      getPlaylistPeekQueueItemUuid('s3'),
+      getPlaylistPeekQueueItemUuid('s4'),
+      getPlaylistPeekQueueItemUuid('s5'),
+    ]);
+    expect(walk.atTrackEnd).toBe(true);
+  });
+
+  // #6777's rule, for a look: Previous retraces where Next went. The peek of
+  // s3 is in no queue, so the Up next stretch is read back from the queue's end.
+  it('swipes back through the Up next it played, then onto the climb it left', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const walk = look(queue, onWall, results, ['next', 'next', 'next', 'previous', 'previous', 'previous', 'next']);
+    expect(walk.landed).toEqual([
+      'play-next-1',
+      'play-next-2',
+      getPlaylistPeekQueueItemUuid('s3'),
+      'play-next-2',
+      'play-next-1',
+      // s2's own entry, not a peek: from there Next plays Up next again.
+      'item-s2',
+      'play-next-1',
+    ]);
+    // Back in Up next, the look holds the list's place again.
+    expect(walk.carried[3]?.resume).toEqual({ climbUuid: 's2', queueItemUuid: 'item-s2' });
+  });
+
+  // #7227 review: the look came back to the list, then a crewmate queued X
+  // (Play last). X is Up next after the entry the look left from, but the look
+  // never played it: Previous retraces from the Up next climb it stepped off.
+  it('swipes back to the Up next climb it stepped off, past one queued after it came back', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const there = look(queue, onWall, results, ['next', 'next', 'next']);
+    expect(there.landed.at(-1)).toBe(getPlaylistPeekQueueItemUuid('s3'));
+    expect(there.previewSource?.detour).toEqual({
+      climbUuid: 's2',
+      queueItemUuid: 'item-s2',
+      lastUpNextQueueItemUuid: 'play-next-2',
+    });
+
+    const playLastX = makeItem('play-last-x');
+    const back = look([...queue, playLastX], onWall, results, ['previous', 'previous', 'previous'], {
+      previewItem: there.previewItem,
+      previewSource: there.previewSource,
+    });
+    expect(back.landed).toEqual(['play-next-2', 'play-next-1', 'item-s2']);
+  });
+
+  it('swipes back to the climb it stepped off after a reorder moved another behind it', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const there = look(queue, onWall, results, ['next', 'next', 'next']);
+    // A crewmate drags play-next-1 to the end of Up next.
+    const back = look([history, onWall, playNext2, playNext1], onWall, results, ['previous'], {
+      previewItem: there.previewItem,
+      previewSource: there.previewSource,
+    });
+    expect(back.landed).toEqual(['play-next-2']);
+  });
+
+  it('retraces from the queue’s end when the climb it stepped off moved before the climb it left', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const there = look(queue, onWall, results, ['next', 'next', 'next']);
+    // A crewmate drags play-next-2 above the climb on the wall, into History.
+    const back = look([history, playNext2, onWall, playNext1], onWall, results, ['previous'], {
+      previewItem: there.previewItem,
+      previewSource: there.previewSource,
+    });
+    expect(back.landed).toEqual(['play-next-1']);
+  });
+
+  it('retraces from the queue’s end when the climb it stepped off has gone', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const there = look(queue, onWall, results, ['next', 'next', 'next']);
+    // A crewmate removed play-next-2: the stretch left is play-next-1.
+    const back = look([history, onWall, playNext1], onWall, results, ['previous', 'previous'], {
+      previewItem: there.previewItem,
+      previewSource: there.previewSource,
+    });
+    expect(back.landed).toEqual(['play-next-1', 'item-s2']);
+  });
+
+  // Committed on s3 after Next played Up next, a reorder dragged play-next-2
+  // behind it. Previous must not reach forward past the climb on screen.
+  it('from a queued list climb, never starts the retrace ahead of it', () => {
+    const s3Entry: ClimbQueueItem = { uuid: 'item-s3', climb: s3, suggested: true };
+    const backOnList = {
+      ...makeSource(s3, results.climbs),
+      detour: { climbUuid: 's2', queueItemUuid: 'item-s2', lastUpNextQueueItemUuid: 'play-next-2' },
+    };
+    const queue = [history, onWall, playNext1, s3Entry, playNext2];
+    expect(look(queue, s3Entry, backOnList, ['previous']).landed).toEqual(['play-next-1']);
+  });
+
+  it('passes over list-walk entries at the end of the queue going back', () => {
+    // An older pass down the list left s5's entry at the queue's end.
+    const s5Entry: ClimbQueueItem = { uuid: 'item-s5', climb: s5, suggested: true };
+    const queue = [onWall, playNext1, playNext2, s5Entry];
+    expect(look(queue, onWall, results, ['next', 'next', 'next', 'previous', 'previous', 'previous']).landed).toEqual([
+      'play-next-1',
+      'play-next-2',
+      getPlaylistPeekQueueItemUuid('s3'),
+      'play-next-2',
+      'play-next-1',
+      'item-s2',
+    ]);
+  });
+
+  it('lands on the entry it left when Up next has gone meanwhile', () => {
+    // The look reached s3 out of Up next, then a crewmate cleared Up next.
+    const queue = [history, onWall];
+    const lookAtS3 = { ...results, detour: { climbUuid: 's2', queueItemUuid: 'item-s2' } };
+    const walk = look(queue, onWall, results, 'previous', {
+      steps: 1,
+      previewItem: { ...itemFor(s3), uuid: getPlaylistPeekQueueItemUuid('s3') },
+      previewSource: lookAtS3,
+    });
+    expect(walk.landed).toEqual(['item-s2']);
+  });
+
+  it('walks back up the list the same way', () => {
+    // The list's start stops the walk, as from the climb on the wall itself.
+    const queue = [history, onWall];
+    expect(look(queue, onWall, results, 'previous').landed).toEqual([getPlaylistPeekQueueItemUuid('s1')]);
+    // From the list's later climbs, back up past the climb on the wall to its
+    // start: before #7227 the look stopped after its first step.
+    const atS4 = { ...onWall, uuid: 'item-s4', climb: s4 };
+    expect(look([history, atS4], atS4, makeSource(s4, results.climbs), 'previous').landed).toEqual([
+      getPlaylistPeekQueueItemUuid('s3'),
+      getPlaylistPeekQueueItemUuid('s2'),
+      getPlaylistPeekQueueItemUuid('s1'),
+    ]);
+  });
+
+  it('steps back into the Up next it came out of holding the list’s place', () => {
+    // Next went s2 -> play-next-1 -> play-next-2 -> s3 and put s3 up.
+    const s3Entry: ClimbQueueItem = { uuid: 'item-s3', climb: s3, suggested: true };
+    const queue = [onWall, playNext1, playNext2, s3Entry];
+    const walk = look(queue, s3Entry, makeSource(s3, results.climbs), 'previous');
+    expect(walk.landed).toEqual(['play-next-2', 'play-next-1', 'item-s2', getPlaylistPeekQueueItemUuid('s1')]);
+    // "Up next · 2 of 2" while it is back in Up next, the list's name on s2.
+    expect(walk.carried[0]?.resume).toEqual({ climbUuid: 's2', queueItemUuid: 'item-s2' });
+    expect(walk.carried[2]?.resume).toBeUndefined();
+  });
+
+  it('carries no list when the climb on the wall has none: the queue, as before (a workout)', () => {
+    // A workout queues its climbs flagged `suggested`, with no list to walk.
+    const warmUp: ClimbQueueItem = { ...makeItem('warm-up'), suggested: true };
+    const limit1: ClimbQueueItem = { ...makeItem('limit-1'), suggested: true };
+    const limit2: ClimbQueueItem = { ...makeItem('limit-2'), suggested: true };
+    const queue = [warmUp, limit1, limit2];
+    const walk = look(queue, warmUp, null, 'next');
+    expect(walk.landed).toEqual(['limit-1', 'limit-2']);
+    expect(walk.carried).toEqual([null, null]);
+    expect(walk.atTrackEnd).toBe(false);
+  });
+
+  it("plays a workout's climbs as Up next before the list goes on", () => {
+    const limit1: ClimbQueueItem = { ...makeItem('limit-1'), suggested: true };
+    const limit2: ClimbQueueItem = { ...makeItem('limit-2'), suggested: true };
+    const queue = [history, onWall, limit1, limit2];
+    expect(look(queue, onWall, results, 'next').landed).toEqual([
+      'limit-1',
+      'limit-2',
+      getPlaylistPeekQueueItemUuid('s3'),
+      getPlaylistPeekQueueItemUuid('s4'),
+      getPlaylistPeekQueueItemUuid('s5'),
+    ]);
+  });
+
+  // #5403's stale list: a list tap that opened as a preview with no track of
+  // its own must never walk the committed climb's track, which here even holds
+  // the previewed climb. The look rule only hands on the track a step walked.
+  it('never hands the committed track to a preview opened without one, step after step', () => {
+    const queued = makeItem('queued-after');
+    const queue = [onWall, queued];
+    const openedPreview = itemFor(s3);
+    const walk = look(queue, onWall, results, 'next', { previewItem: openedPreview, previewSource: null });
+    // An orphan with no track has nowhere to go: no s4, no s5.
+    expect(walk.landed).toEqual([]);
+    // A queue slot opened as a preview walks the queue, never the list.
+    const slotWalk = look([onWall, playNext1, playNext2], onWall, results, 'next', {
+      previewItem: playNext1,
+      previewSource: null,
+    });
+    expect(slotWalk.landed).toEqual(['play-next-2']);
+    expect(slotWalk.carried).toEqual([null]);
+  });
+
+  it('keeps a list a preview was opened with as its own', () => {
+    const own = makeSource(s3, [s3, makeClimb('own-next')]);
+    const walk = look([onWall], onWall, results, 'next', { previewItem: itemFor(s3), previewSource: own });
+    expect(walk.landed).toEqual([getPlaylistPeekQueueItemUuid('own-next')]);
+    expect(walk.carried).toEqual([own]);
+  });
+});
+
+describe('resolvePreviewStepSource (#7227)', () => {
+  const a = makeClimb('a');
+  const list = makeSource(a, [a, makeClimb('b')]);
+  const resume = { climbUuid: 'a', queueItemUuid: 'item-a' };
+
+  it('hands the walked track on unchanged when the step leaves its resume alone', () => {
+    expect(resolvePreviewStepSource(list, undefined)).toBe(list);
+  });
+
+  it('stores the step’s resume, and clears it back on the list', () => {
+    const intoUpNext = resolvePreviewStepSource(list, resume);
+    expect(intoUpNext?.resume).toEqual(resume);
+    const backOnList = resolvePreviewStepSource(intoUpNext, null);
+    expect(backOnList?.resume).toBeUndefined();
+    expect(backOnList?.detour).toEqual(resume);
+  });
+
+  it('records the Up next climb a step back onto the list stepped off', () => {
+    const intoUpNext = resolvePreviewStepSource(list, resume, { steppedOffQueueItemUuid: 'item-a' });
+    const backOnList = resolvePreviewStepSource(intoUpNext, null, { steppedOffQueueItemUuid: 'item-up-next' });
+    expect(backOnList?.detour).toEqual({ ...resume, lastUpNextQueueItemUuid: 'item-up-next' });
+  });
+
+  it('carries no list when the walk had none', () => {
+    expect(resolvePreviewStepSource(null, resume)).toBeNull();
+    expect(resolvePreviewStepSource(null, undefined)).toBeNull();
+    expect(resolvePreviewStepSource(null, undefined, { offWall: true })).toBeNull();
+  });
+
+  // #7227 re-review: a look that went back up the list never sets a resume or
+  // a detour, so its list has to say it began off the climb on the wall.
+  it('marks the list a step off the climb on the wall carries, whichever way it goes', () => {
+    const lookedBack = resolvePreviewStepSource(list, undefined, { offWall: true });
+    expect(lookedBack).toEqual({ ...list, lookOffWall: true });
+    expect(list.lookOffWall).toBeUndefined();
+    const intoUpNext = resolvePreviewStepSource(list, resume, { offWall: true });
+    expect(intoUpNext).toEqual({ ...list, resume, lookOffWall: true });
+  });
+
+  it('keeps a preview’s list as it is: marked stays marked, a list tap’s stays unmarked', () => {
+    const marked = resolvePreviewStepSource(list, undefined, { offWall: true });
+    expect(resolvePreviewStepSource(marked, undefined)).toBe(marked);
+    expect(resolvePreviewStepSource(marked, resume)?.lookOffWall).toBe(true);
+    expect(resolvePreviewStepSource(list, resume)?.lookOffWall).toBeUndefined();
   });
 });

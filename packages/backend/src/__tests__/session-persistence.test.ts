@@ -590,7 +590,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       await roomManager.updateQueueState(sessionId, [climb1, climb2], null, currentState.version, 0);
 
       // Check Postgres immediately - should not have latest state yet
-      let queueRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
+      const queueRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
 
       // Either no row yet, or old state
       if (queueRows.length > 0) {
@@ -601,17 +601,19 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       // Fast-forward 30 seconds to trigger the debounce callback
       await vi.advanceTimersByTimeAsync(30000);
 
-      // The debounce callback fires and starts writeQueueStateToPostgres asynchronously.
-      // Switch to real timers and wait briefly for the Postgres I/O to complete.
+      // The timer starts an async write; wait for its latest snapshot to commit.
       vi.useRealTimers();
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // Now check Postgres - should have latest state
-      queueRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
-
-      expect(queueRows.length).toBe(1);
-      const queue = queueRows[0]?.queue as unknown[];
-      expect(queue).toHaveLength(2);
+      await vi.waitFor(
+        async () => {
+          const persistedRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
+          expect(persistedRows).toHaveLength(1);
+          expect(persistedRows[0]?.queue.map(({ climb }) => climb.uuid)).toEqual([
+            climb1.climb.uuid,
+            climb2.climb.uuid,
+          ]);
+        },
+        { timeout: 5000, interval: 50 },
+      );
     });
 
     it('should flush pending writes on flushPendingWrites call', async () => {
@@ -659,7 +661,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       await vi.advanceTimersByTimeAsync(15000);
 
       // Should not be written yet (timer was reset)
-      let queueRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
+      const queueRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
 
       if (queueRows.length > 0) {
         const queue = queueRows[0]?.queue as unknown[];
@@ -669,17 +671,19 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       // Wait final 15 seconds (30s from second update) to trigger the debounce callback
       await vi.advanceTimersByTimeAsync(15000);
 
-      // The debounce callback fires and starts writeQueueStateToPostgres asynchronously.
-      // Switch to real timers and wait briefly for the Postgres I/O to complete.
+      // The timer starts an async write; wait for its latest snapshot to commit.
       vi.useRealTimers();
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // Now should be written
-      queueRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
-
-      expect(queueRows.length).toBe(1);
-      const queue = queueRows[0]?.queue as unknown[];
-      expect(queue).toHaveLength(2);
+      await vi.waitFor(
+        async () => {
+          const persistedRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
+          expect(persistedRows).toHaveLength(1);
+          expect(persistedRows[0]?.queue.map(({ climb }) => climb.uuid)).toEqual([
+            climb1.climb.uuid,
+            climb2.climb.uuid,
+          ]);
+        },
+        { timeout: 5000, interval: 50 },
+      );
     });
   });
 

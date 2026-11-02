@@ -1,0 +1,318 @@
+/// <reference types="node" />
+
+// Keep this entry point dependency-free: closed releases exit before vp install.
+import { createPrivateKey, sign } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { APP_CONFIG_PATH, parseSemver, readMarketingVersion } from './lib/mobile-release-version.ts';
+import { parseReleaseTag } from './lib/release-tags.ts';
+
+export interface VideoSource {
+  sourceSha: string;
+  sourceBranch: 'main';
+  version: string;
+  iosBuild: string;
+}
+
+export function sourceStillOnMain(sourceVersion: string, mainVersion: string, comparison: string): boolean {
+  return sourceVersion === mainVersion && (comparison === 'ahead' || comparison === 'identical');
+}
+
+export function parseVideoSource(input: unknown): VideoSource {
+  if (!input || typeof input !== 'object') throw new Error('Invalid draft video source');
+  const source = input as Partial<VideoSource>;
+  if (
+    source.sourceBranch !== 'main' ||
+    !/^[a-f0-9]{40}$/.test(source.sourceSha ?? '') ||
+    !/^\d+\.\d+\.\d+$/.test(source.version ?? '') ||
+    !/^\d+$/.test(source.iosBuild ?? '')
+  ) {
+    throw new Error('Draft video source needs main, a full commit, version and uploaded iOS build');
+  }
+  return source as VideoSource;
+}
+
+export function appleToken(env: NodeJS.ProcessEnv = process.env, now = Math.floor(Date.now() / 1000)): string {
+  const keyId = env.APP_STORE_CONNECT_API_KEY_ID;
+  const issuer = env.APP_STORE_CONNECT_ISSUER_ID;
+  const encodedKey = env.APP_STORE_CONNECT_API_KEY_BASE64;
+  if (!keyId || !issuer || !encodedKey) throw new Error('Missing App Store Connect credentials');
+  const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: keyId, typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(
+    JSON.stringify({ iss: issuer, iat: now, exp: now + 600, aud: 'appstoreconnect-v1' }),
+  ).toString('base64url');
+  const signingInput = `${header}.${payload}`;
+  const key = createPrivateKey(Buffer.from(encodedKey, 'base64'));
+  return `${signingInput}.${sign('sha256', Buffer.from(signingInput), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url')}`;
+}
+
+interface AppleResource {
+  id: string;
+  attributes: Record<string, unknown>;
+}
+
+export async function appleList(path: string, token: string, request: typeof fetch = fetch): Promise<AppleResource[]> {
+  const resources: AppleResource[] = [];
+  let next: string | undefined = `https://api.appstoreconnect.apple.com${path}`;
+  for (let page = 0; next && page < 100; page += 1) {
+    const url = new URL(next);
+    if (url.origin !== 'https://api.appstoreconnect.apple.com') throw new Error('Unexpected Apple pagination origin');
+    const response = await request(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`Apple read failed (HTTP ${response.status})`);
+    const document = (await response.json()) as { data: AppleResource[]; links?: { next?: string } };
+    if (!Array.isArray(document.data)) throw new Error('Unexpected Apple list response');
+    resources.push(...document.data);
+    next = document.links?.next;
+  }
+  if (next) throw new Error('Apple pagination exceeded 100 pages');
+  return resources;
+}
+
+export function editableVersion(versions: AppleResource[], marketingVersion: string): AppleResource | undefined {
+  const editableStates = ['PREPARE_FOR_SUBMISSION', 'READY_FOR_REVIEW', 'REJECTED'];
+  const matches = versions.filter(
+    (version) =>
+      version.attributes.versionString === marketingVersion &&
+      editableStates.includes(String(version.attributes.appVersionState || version.attributes.appStoreState)),
+  );
+  if (matches.length > 1) throw new Error('Multiple editable iOS versions match this release');
+  return matches[0];
+}
+
+export async function gate(
+  sourceFile?: string,
+  sourceOnly = false,
+  pin?: { sourceSha: string; version: string },
+): Promise<void> {
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!repository) throw new Error('Missing GITHUB_REPOSITORY');
+  const git = (...argumentsList: string[]) =>
+    execFileSync('git', argumentsList, { encoding: 'utf8', timeout: 20_000 }).trim();
+  execFileSync(
+    'git',
+    ['fetch', '--depth=1', '--no-tags', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main'],
+    { timeout: 20_000 },
+  );
+  const mainSha = git('rev-parse', 'origin/main');
+  const mainVersion = readMarketingVersion(git('show', `${mainSha}:${APP_CONFIG_PATH}`));
+  let reason = '';
+  let source: VideoSource | undefined;
+  if (sourceFile) {
+    source = parseVideoSource(JSON.parse(readFileSync(sourceFile, 'utf8')));
+    pin = source;
+  }
+  const sourceSha = pin?.sourceSha ?? mainSha;
+  const version = pin?.version ?? mainVersion;
+  if (!/^[a-f0-9]{40}$/.test(sourceSha) || !/^\d+\.\d+\.\d+$/.test(version))
+    throw new Error('Invalid recording source pin');
+  if (version !== mainVersion) reason = 'Recording belongs to a different marketing version';
+  if (!reason && sourceSha !== mainSha) {
+    const comparison = execFileSync(
+      'gh',
+      ['api', `repos/${repository}/compare/${sourceSha}...${mainSha}`, '--jq', '.status'],
+      { encoding: 'utf8', timeout: 15_000 },
+    ).trim();
+    if (!sourceStillOnMain(version, mainVersion, comparison))
+      reason = 'Recording source is no longer part of this release';
+    else {
+      execFileSync('git', ['fetch', '--depth=1', '--no-tags', '--quiet', 'origin', sourceSha], { timeout: 20_000 });
+      if (readMarketingVersion(git('show', `${sourceSha}:${APP_CONFIG_PATH}`)) !== version)
+        throw new Error('Recording source version does not match its pin');
+    }
+  }
+  const versionParts = parseSemver(version);
+  const anchors = git('ls-remote', '--tags', 'origin', 'refs/tags/release/ios-v*');
+  const alreadyAccepted = anchors.split('\n').some((line) => {
+    const tag = parseReleaseTag((line.split(/\s+/)[1] ?? '').replace(/^refs\/tags\//, '').replace(/\^\{\}$/, ''));
+    if (!tag || tag.platform !== 'ios') return false;
+    const accepted = parseSemver(tag.version);
+    for (let index = 0; index < 3; index++) {
+      if (accepted[index] !== versionParts[index]) return accepted[index]! > versionParts[index]!;
+    }
+    return true;
+  });
+  if (alreadyAccepted) reason = `v${version} is already accepted by Apple`;
+  if (!reason) {
+    const reviews = JSON.parse(
+      execFileSync(
+        'gh',
+        [
+          'pr',
+          'list',
+          '--repo',
+          repository,
+          '--head',
+          `store-videos/v${version}`,
+          '--base',
+          'main',
+          '--state',
+          'all',
+          '--json',
+          'state',
+        ],
+        { encoding: 'utf8', timeout: 15_000 },
+      ),
+    ) as { state: string }[];
+    if (reviews.some((review) => review.state === 'MERGED')) reason = `v${version} already has approved videos`;
+    else if (reviews.some((review) => review.state === 'CLOSED'))
+      reason = `The v${version} review PR was closed; reopen it to regenerate`;
+  }
+  if (!reason && !sourceOnly) {
+    const token = appleToken();
+    const apps = await appleList('/v1/apps?filter[bundleId]=com.boardsesh.app&limit=2', token);
+    if (apps.length !== 1) throw new Error('Need exactly one Boardsesh App Store app');
+    const versions = await appleList(`/v1/apps/${apps[0].id}/appStoreVersions?filter[platform]=IOS&limit=200`, token);
+    if (!editableVersion(versions, version)) reason = `No editable iOS draft exists for v${version}`;
+  }
+  const open = reason === '';
+  const output = `open=${open}\nversion=${version}\nsource_sha=${sourceSha}\nbranch=store-videos/v${version}\n`;
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, output);
+  console.log(
+    open ? `Open release v${version} at ${sourceSha}${source ? ` (iOS build ${source.iosBuild})` : ''}` : reason,
+  );
+  if (process.env.GITHUB_STEP_SUMMARY)
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${open ? `Open release v${version}` : reason}\n`);
+}
+
+/** A dispatch's page selection, resolved against the recording source's storyboards. */
+export interface StoreVideoSelection {
+  /** Selected variants in canonical order. */
+  variants: string[];
+  /** Selected variants whose cut includes a live crew take. */
+  crew: string[];
+  /** Selected variants whose cut ends on the retained physical Live Activity footage. */
+  liveActivity: string[];
+  /** Board families whose reviewed physical footage those endings need. */
+  footage: string[];
+}
+
+/** Parse `all` or a comma list of page variants; reject unknown, empty and repeated names. */
+export function parseVariantSelection(input: string | undefined, known: readonly string[]): string[] {
+  const requested = (input ?? '').trim();
+  if (requested === '' || requested === 'all') return [...known];
+  const names = requested.split(',').map((name) => name.trim());
+  for (const name of names) {
+    if (!name) throw new Error('Empty variant in the variants list');
+    if (name === 'all') throw new Error('Pass all on its own, not inside a list');
+    if (!known.includes(name))
+      throw new Error(`Unknown variant ${name}; expected all or a comma list of ${known.join(', ')}`);
+  }
+  if (new Set(names).size !== names.length) throw new Error('Repeated variant in the variants list');
+  return known.filter((name) => names.includes(name));
+}
+
+/** The default page borrows the Kilter Live Activity ending; every other ending is its own family. */
+export const liveActivityFamily = (variant: string): string => (variant === 'default' ? 'kilter' : variant);
+
+export function storeVideoSelection(
+  input: string | undefined,
+  known: readonly string[],
+  takeIds: (variant: string) => readonly string[],
+): StoreVideoSelection {
+  const variants = parseVariantSelection(input, known);
+  const crew = variants.filter((variant) => takeIds(variant).includes('crew'));
+  const liveActivity = variants.filter((variant) => takeIds(variant).includes('lock-screen'));
+  return { variants, crew, liveActivity, footage: [...new Set(liveActivity.map(liveActivityFamily))] };
+}
+
+/** Reviewed physical footage the selected endings need; unselected families are not checked. */
+export function missingLiveActivityFootage(manifest: unknown, families: readonly string[]): string[] {
+  const footage =
+    manifest && typeof manifest === 'object' ? (manifest as { footage?: Record<string, unknown> }).footage : undefined;
+  return families.filter((family) => {
+    const source = footage?.[family] as { boardFamily?: unknown; sha256?: unknown; key?: unknown } | undefined;
+    return !(
+      source &&
+      source.boardFamily === family &&
+      typeof source.sha256 === 'string' &&
+      /^[a-f0-9]{64}$/.test(source.sha256) &&
+      source.key === `sources/live-activity/${source.sha256}.zip`
+    );
+  });
+}
+
+async function main(): Promise<void> {
+  const [command, argument] = process.argv.slice(2);
+  if (command === 'gate') {
+    const args = process.argv.slice(3);
+    let sourceFile: string | undefined;
+    let pinnedSha: string | undefined;
+    let pinnedVersion: string | undefined;
+    let sourceOnly = false;
+    for (let index = 0; index < args.length; index += 1) {
+      if (args[index] === '--source-only') sourceOnly = true;
+      else if (args[index] === '--pinned-sha') pinnedSha = args[++index];
+      else if (args[index] === '--pinned-version') pinnedVersion = args[++index];
+      else if (!args[index].startsWith('--') && !sourceFile) sourceFile = args[index];
+      else throw new Error(`Invalid gate argument ${args[index]}`);
+    }
+    if (Boolean(pinnedSha) !== Boolean(pinnedVersion) || (sourceFile && pinnedSha))
+      throw new Error('Supply either a draft source file or both recording pins');
+    return gate(
+      sourceFile,
+      sourceOnly,
+      pinnedSha && pinnedVersion ? { sourceSha: pinnedSha, version: pinnedVersion } : undefined,
+    );
+  }
+  if (command === 'refdata' && argument) {
+    writeFileSync(
+      argument,
+      `${JSON.stringify(await appleList('/v1/appAssetLibraryRefData', appleToken()), null, 2)}\n`,
+    );
+    return;
+  }
+  if (command === 'takes' && argument) {
+    // This subcommand runs after dependency installation (the gate above does not).
+    const { storeSearchTakeIds } = await import('./lib/showcase-video/store-search');
+    const { SHOWCASE_VARIANT_KINDS } = await import('./lib/showcase-video/contract');
+    if (!(SHOWCASE_VARIANT_KINDS as readonly string[]).includes(argument)) throw new Error('Unknown variant');
+    const takes = storeSearchTakeIds(argument as (typeof SHOWCASE_VARIANT_KINDS)[number]).filter(
+      (take) => take !== 'crew' && take !== 'lock-screen',
+    );
+    console.log(takes.join(','));
+    return;
+  }
+  if (command === 'plan') {
+    // Resolve against this checkout's storyboards, so a cut that drops its Live Activity ending needs no footage.
+    const { storeSearchTakeIds, STORE_SEARCH_LOCALES, STORE_SEARCH_VARIANTS } =
+      await import('./lib/showcase-video/store-search');
+    const selection = storeVideoSelection(argument, STORE_SEARCH_VARIANTS, (variant) =>
+      storeSearchTakeIds(variant as (typeof STORE_SEARCH_VARIANTS)[number]),
+    );
+    const missing = missingLiveActivityFootage(
+      JSON.parse(readFileSync('app-stores/apple/live-activity-captures/manifest.json', 'utf8')),
+      selection.footage,
+    );
+    if (missing.length)
+      throw new Error(
+        `Missing reviewed retained ${missing.join(' and ')} footage; import one physical take before recording, or leave ${selection.liveActivity.filter((variant) => missing.includes(liveActivityFamily(variant))).join(', ')} out of variants.`,
+      );
+    const output = [
+      `variants=${JSON.stringify(selection.variants)}`,
+      `variants_csv=${selection.variants.join(',')}`,
+      `crew=${JSON.stringify(selection.crew)}`,
+      `live_activity=${JSON.stringify(selection.liveActivity)}`,
+      `exports=${selection.variants.length * STORE_SEARCH_LOCALES.length}`,
+      '',
+    ].join('\n');
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, output);
+    console.log(
+      `Recording ${selection.variants.join(', ')} (${selection.variants.length * STORE_SEARCH_LOCALES.length} videos); crew: ${selection.crew.join(', ') || 'none'}; physical footage: ${selection.footage.join(', ') || 'none'}`,
+    );
+    return;
+  }
+  throw new Error(
+    'Usage: store-videos-gate.ts gate [draft-source.json] | refdata FILE | takes VARIANT | plan all|VARIANT[,VARIANT...]',
+  );
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

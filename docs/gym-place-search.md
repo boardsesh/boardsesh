@@ -98,3 +98,30 @@ after recovery fails. A successful empty response clears the previous results.
 Expected board discovery throttling leaves a sanitized Sentry breadcrumb with
 only the operation, retry delay, and source, rather than a handled exception in
 Sentry or Observe. Other rate-limited operations still report warnings.
+
+## Creating a gym from the directory
+
+The directory and its board-specific pages link to `/gyms/new`. Setup requires
+sign-in and has two steps: details, then existing boards. New listings default to
+public, and their creator manages the listing through the existing gym ownership
+model. Optional opening hours use the same length limit and confirmation timestamp
+as hours entered through the management console.
+
+After the first save, `?gym=<uuid>` identifies the saved gym. Reloading resumes
+board association; returning to details edits that gym instead of creating another.
+The server validates the identifier and edit access on every resume. Setup is a
+`noindex, follow` utility page and is excluded from the sitemap.
+
+Board association reuses the management console's owned-board and nearby-board
+controls. Nearby matching retains the 150-metre radius. A global or matching
+board-type platform admin may also associate an unlinked public board owned by
+someone else, subject to its effective location privacy. Ordinary gym managers
+and community leaders do not gain that permission, and boards on human-managed
+gyms remain excluded from nearby capture.
+
+Setup supplies the candidate's expected source gym when attaching it. A changed
+source produces a conflict so the user can refresh and review the new association.
+An imported source listing may be folded into the new gym only after explicit
+confirmation; the attachment input's optional fields preserve existing callers'
+behavior when omitted. Successful saves and associations invalidate the directory
+and facet-count caches through an authenticated action that checks gym edit access.

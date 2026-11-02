@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { socialGymQueries, GYM_BOARD_SUMMARY_ANGLES_PER_TYPE } from '../graphql/resolvers/social/gyms';
 
 /**
@@ -195,6 +196,148 @@ describe('searchGyms requireSlug', () => {
       secondWalk.push(...page.gyms.map((gym) => gym.uuid));
     }
     expect(secondWalk).toEqual(pagedUuids);
+  });
+});
+
+describe('OFFSET paging over rows sharing one created_at', () => {
+  const sharedCreatedAt = '2026-01-01T00:00:00.000Z';
+  const authCtx = (userId: string): ConnectionContext =>
+    ({ connectionId: `conn-${userId}`, isAuthenticated: true, userId }) as ConnectionContext;
+
+  // Rewriting a row moves its tuple to the end of the heap, so heap order stops
+  // matching id order and an unordered tie would come back scrambled.
+  const scrambleHeap = (table: 'gyms' | 'user_boards' | 'gym_members', ids: number[]) =>
+    db.execute(sql`UPDATE ${sql.raw(table)} SET created_at = created_at WHERE id IN (${sql.join(ids, sql`, `)})`);
+
+  const walk = async <Row>(fetchPage: (offset: number) => Promise<Row[]>): Promise<Row[]> => {
+    const rows: Row[] = [];
+    for (let offset = 0; offset < 6; offset += 2) {
+      rows.push(...(await fetchPage(offset)));
+    }
+    return rows;
+  };
+
+  it('myGyms returns tied gyms in id order, with no duplicates or skips', async () => {
+    const gyms: Array<{ id: number; uuid: string }> = [];
+    for (let index = 0; index < 6; index++) {
+      gyms.push(await insertGym({ ownerId: REAL_OWNER, name: `Mine ${index}`, createdAt: sharedCreatedAt }));
+    }
+    await scrambleHeap(
+      'gyms',
+      gyms.slice(0, 3).map((gym) => gym.id),
+    );
+
+    const fetchPage = async (offset: number) => {
+      const page = (await socialGymQueries.myGyms(null, { input: { limit: 2, offset } }, authCtx(REAL_OWNER))) as {
+        gyms: Array<{ uuid: string }>;
+      };
+      return page.gyms.map((gym) => gym.uuid);
+    };
+
+    const expected = gyms.map((gym) => gym.uuid);
+    expect(await walk(fetchPage)).toEqual(expected);
+    expect(await walk(fetchPage)).toEqual(expected);
+  });
+
+  it('gymMembers returns tied members in join order, with no duplicates or skips', async () => {
+    const gym = await insertGym({ ownerId: REAL_OWNER, name: 'Crowded Gym' });
+    const memberIds: string[] = [];
+    for (let index = 0; index < 6; index++) {
+      const userId = `dir-member-${index}`;
+      memberIds.push(userId);
+      await insertUser(userId);
+      await db.execute(sql`
+        INSERT INTO gym_members (gym_id, user_id, role, created_at)
+        VALUES (${gym.id}, ${userId}, 'member', ${sharedCreatedAt}::timestamp)
+      `);
+    }
+    const rowIds = Array.from(
+      (await db.execute(sql`SELECT id FROM gym_members WHERE gym_id = ${gym.id} ORDER BY id LIMIT 3`)) as Iterable<{
+        id: number;
+      }>,
+    ).map((row) => Number(row.id));
+    await scrambleHeap('gym_members', rowIds);
+
+    const fetchPage = async (offset: number) => {
+      const page = (await socialGymQueries.gymMembers(
+        null,
+        { input: { gymUuid: gym.uuid, limit: 2, offset } },
+        anonCtx(),
+      )) as { members: Array<{ userId: string }> };
+      return page.members.map((member) => member.userId);
+    };
+
+    expect(await walk(fetchPage)).toEqual(memberIds);
+    expect(await walk(fetchPage)).toEqual(memberIds);
+  });
+
+  it('searchBoards text search returns tied boards in id order, with no duplicates or skips', async () => {
+    const boardUuids: string[] = [];
+    for (let index = 0; index < 6; index++) {
+      const uuid = uuidv4();
+      boardUuids.push(uuid);
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, angle, is_public, created_at, updated_at)
+        VALUES (${uuid}, ${uuid}, ${REAL_OWNER}, 'kilter', 1, 10, '1,2', 'Tied Wall', 40, true,
+                ${sharedCreatedAt}::timestamp, now())
+      `);
+    }
+    const rowIds = Array.from(
+      (await db.execute(sql`SELECT id FROM user_boards ORDER BY id LIMIT 3`)) as Iterable<{ id: number }>,
+    ).map((row) => Number(row.id));
+    await scrambleHeap('user_boards', rowIds);
+
+    const fetchPage = async (offset: number) => {
+      const page = (await socialBoardQueries.searchBoards(null, { input: { limit: 2, offset } }, anonCtx())) as {
+        boards: Array<{ uuid: string }>;
+      };
+      return page.boards.map((board) => board.uuid);
+    };
+
+    expect(await walk(fetchPage)).toEqual(boardUuids);
+    expect(await walk(fetchPage)).toEqual(boardUuids);
+  });
+
+  it('boardLeaderboard returns climbers with equal send counts in user-id order, with no duplicates or skips', async () => {
+    const boardUuid = uuidv4();
+    const inserted = await db.execute(sql`
+      INSERT INTO user_boards
+        (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, angle, is_public, created_at, updated_at)
+      VALUES (${boardUuid}, ${boardUuid}, ${REAL_OWNER}, 'kilter', 1, 10, '1,2', 'Leaderboard Wall', 40, true,
+              now(), now())
+      RETURNING id
+    `);
+    const boardId = Number(Array.from(inserted as Iterable<{ id: number }>)[0].id);
+    // The tick privacy filter drops ticks whose climb is not a listed catalogue row.
+    const climbUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed, is_draft, frames)
+      VALUES (${climbUuid}, 'kilter', 1, 'Leaderboard Climb', true, false, 'p1r1')
+    `);
+    const climberIds: string[] = [];
+    // Inserted newest-id-first so heap order is the reverse of the expected order.
+    for (let index = 5; index >= 0; index--) {
+      const userId = `dir-lb-climber-${index}`;
+      climberIds.unshift(userId);
+      await insertUser(userId);
+      await db.execute(sql`
+        INSERT INTO boardsesh_ticks
+          (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, climbed_at, board_id)
+        VALUES (${uuidv4()}, ${userId}, 'kilter', ${climbUuid}, 40, 'send', 1, now(), ${boardId})
+      `);
+    }
+
+    const fetchPage = async (offset: number) => {
+      const page = (await socialBoardQueries.boardLeaderboard(
+        null,
+        { input: { boardUuid, limit: 2, offset } },
+        anonCtx(),
+      )) as { entries: Array<{ userId: string | null; rank: number }> };
+      return page.entries.map((entry) => entry.userId);
+    };
+
+    expect(await walk(fetchPage)).toEqual(climberIds);
   });
 });
 

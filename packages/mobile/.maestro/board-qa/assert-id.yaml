@@ -1,0 +1,7 @@
+appId: ${APP_ID}
+name: Assert the actual visible UI state required by this QA phase
+---
+- extendedWaitUntil:
+    visible:
+      id: ${EXPECTED_ID}
+    timeout: 30000

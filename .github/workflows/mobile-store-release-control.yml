@@ -61,8 +61,13 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
       - name: Test identity, race, and write guards
         run: vp exec ruby fastlane/tests/store_release_control_test.rb
       - name: Set and read back manual Apple release

@@ -1,0 +1,312 @@
+{
+  "projectId": 412845,
+  "dashboardId": 2192729,
+  "baselineDashboardId": 2170056,
+  "targetRelease": "2.7.0",
+  "verifiedMeasurementRelease": null,
+  "deployedAt": "2026-11-01T14:16:37.280Z",
+  "freshnessInsightId": 12710552,
+  "introTextTileId": 13378282,
+  "baselineIntroTextTileId": 13378283,
+  "growthStatusTextTileId": 13390214,
+  "preservedBaselineInsightIds": [12710428, 12710441, 12710442, 12710444, 12710446, 12710447, 12710450],
+  "addedInsights": {
+    "delivery": {
+      "id": 13542411,
+      "shortId": "3wVoE8r5",
+      "tileId": 14614654,
+      "url": "https://us.posthog.com/project/412845/insights/3wVoE8r5"
+    },
+    "delivery-weekly": {
+      "id": 13542412,
+      "shortId": "dYnCwP4E",
+      "tileId": 14614655,
+      "url": "https://us.posthog.com/project/412845/insights/dYnCwP4E"
+    },
+    "keywords": {
+      "id": 13542416,
+      "shortId": "y99rv0aO",
+      "tileId": 14614659,
+      "url": "https://us.posthog.com/project/412845/insights/y99rv0aO"
+    },
+    "unmapped-spend": {
+      "id": 13542418,
+      "shortId": "VWYoVT0B",
+      "tileId": 14614661,
+      "url": "https://us.posthog.com/project/412845/insights/VWYoVT0B"
+    },
+    "attribution-coverage": {
+      "id": 13542419,
+      "shortId": "b3QRIqDK",
+      "tileId": 14614662,
+      "url": "https://us.posthog.com/project/412845/insights/b3QRIqDK"
+    },
+    "climbing-outcomes": {
+      "id": 13542420,
+      "shortId": "ki6wDSm7",
+      "tileId": 14614663,
+      "url": "https://us.posthog.com/project/412845/insights/ki6wDSm7"
+    },
+    "auth-quality": {
+      "id": 13542441,
+      "shortId": "ysmh9Wl4",
+      "tileId": 14614700,
+      "url": "https://us.posthog.com/project/412845/insights/ysmh9Wl4"
+    },
+    "auth-counts": {
+      "id": 13542442,
+      "shortId": "bWNiivjY",
+      "tileId": 14614701,
+      "url": "https://us.posthog.com/project/412845/insights/bWNiivjY"
+    },
+    "outcomes-keyword": {
+      "id": 13542443,
+      "shortId": "EiH28kaT",
+      "url": "https://us.posthog.com/project/412845/insights/EiH28kaT"
+    },
+    "outcomes-country": {
+      "id": 13542444,
+      "shortId": "Qer8epOD",
+      "url": "https://us.posthog.com/project/412845/insights/Qer8epOD"
+    }
+  },
+  "groups": {
+    "measurement-quality": {
+      "title": "Measurement checks",
+      "color": "orange",
+      "collapsed": false
+    },
+    "apple-delivery": {
+      "title": "Apple delivery",
+      "color": "blue",
+      "collapsed": false
+    },
+    "attributed-climbing": {
+      "title": "Consenting attributed people",
+      "color": "green",
+      "collapsed": false
+    },
+    "all-source-baseline": {
+      "title": "All-source iOS baseline",
+      "color": "purple",
+      "collapsed": true
+    }
+  },
+  "tileLayouts": [
+    {
+      "id": 13378282,
+      "groupKey": null,
+      "sm": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 5
+      }
+    },
+    {
+      "id": 13378430,
+      "groupKey": "measurement-quality",
+      "sm": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 4
+      }
+    },
+    {
+      "id": 13378283,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "x": 0,
+        "y": 65,
+        "w": 12,
+        "h": 3
+      }
+    },
+    {
+      "id": 13378228,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 7,
+        "w": 5,
+        "x": 0,
+        "y": 68
+      }
+    },
+    {
+      "id": 13378247,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 7,
+        "w": 7,
+        "x": 5,
+        "y": 68
+      }
+    },
+    {
+      "id": 13378300,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 2,
+        "w": 12,
+        "x": 0,
+        "y": 75
+      }
+    },
+    {
+      "id": 13378248,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 77
+      }
+    },
+    {
+      "id": 13378250,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 83
+      }
+    },
+    {
+      "id": 13378301,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 2,
+        "w": 12,
+        "x": 0,
+        "y": 89
+      }
+    },
+    {
+      "id": 13378252,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 91
+      }
+    },
+    {
+      "id": 13378302,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 3,
+        "w": 12,
+        "x": 0,
+        "y": 98
+      }
+    },
+    {
+      "id": 13378253,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 101
+      }
+    },
+    {
+      "id": 13378255,
+      "groupKey": "all-source-baseline",
+      "sm": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 107
+      }
+    },
+    {
+      "id": 14614654,
+      "groupKey": "apple-delivery",
+      "sm": {
+        "x": 0,
+        "y": 25,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "id": 14614655,
+      "groupKey": "apple-delivery",
+      "sm": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "id": 14614659,
+      "groupKey": "apple-delivery",
+      "sm": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "id": 14614661,
+      "groupKey": "apple-delivery",
+      "sm": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 4
+      }
+    },
+    {
+      "id": 14614662,
+      "groupKey": "attributed-climbing",
+      "sm": {
+        "x": 0,
+        "y": 51,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "id": 14614663,
+      "groupKey": "attributed-climbing",
+      "sm": {
+        "x": 0,
+        "y": 57,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 14614700,
+      "groupKey": "measurement-quality",
+      "sm": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 14614701,
+      "groupKey": "measurement-quality",
+      "sm": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ],
+  "validation": {
+    "syntheticFixtureCount": 11,
+    "liveDashboardTilesVerified": 9,
+    "detailInsightsVerified": 2
+  }
+}

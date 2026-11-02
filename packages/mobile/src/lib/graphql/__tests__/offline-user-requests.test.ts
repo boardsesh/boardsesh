@@ -35,14 +35,14 @@ const transport = vi.hoisted(() => ({
   recordLocalUserRead: vi.fn(),
 }));
 const state = vi.hoisted(() => ({
-  privacyGeneration: 0,
+  credentialGeneration: 0,
   connectivity: { effectiveOffline: false, reason: null as string | null },
 }));
 
 vi.mock('../../../db', () => ({ getDatabaseHandle: transport.getDatabaseHandle }));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request: transport.request }) }));
 vi.mock('../../local-user-id', () => ({ readLocalUserId: transport.readLocalUserId }));
-vi.mock('../../privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => state.privacyGeneration }));
+vi.mock('../../privacy/privacy-cache', () => ({ getCredentialGeneration: () => state.credentialGeneration }));
 vi.mock('../../connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => state.connectivity }));
 vi.mock('../../../offline/offline-usage-signal', () => ({
   recordOfflineRead: transport.recordOfflineRead,
@@ -193,7 +193,7 @@ function setOnline(online: boolean, reason = 'device_offline'): void {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  state.privacyGeneration = 0;
+  state.credentialGeneration = 0;
   setOfflineEngineEnabled(true);
   setOnline(true);
   transport.getDatabaseHandle.mockReturnValue(fakeDb);
@@ -371,7 +371,7 @@ describe('in-flight identity, connectivity and cancellation changes', () => {
   it('rejects a local answer after a credential transition without booking a served read', async () => {
     setOnline(false);
     readers.ticks.mockImplementationOnce(async () => {
-      state.privacyGeneration += 1;
+      state.credentialGeneration += 1;
       return localTickResponse;
     });
     await expect(offlineAwareRequest(GET_TICKS, tickVariables)).rejects.toMatchObject({ name: 'AbortError' });

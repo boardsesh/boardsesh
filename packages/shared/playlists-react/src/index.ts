@@ -47,7 +47,14 @@ export type { UsePinnedPlaylistsOptions, UsePinnedPlaylistsResult, PinnedSource 
 export { SMART_PLAYLIST_COUNTS_QUERY_KEY, useSmartPlaylistCounts } from './use-smart-playlist-counts';
 export type { UseSmartPlaylistCountsOptions } from './use-smart-playlist-counts';
 
-export { useSmartPlaylist, smartPlaylistQueryKey, smartPlaylistGeometryKey } from './use-smart-playlist';
+export {
+  useSmartPlaylist,
+  smartPlaylistQueryKey,
+  smartPlaylistGeometryKey,
+  removeClimbFromLikedList,
+  restoreClimbToLikedList,
+  LIKED_LIST_QUERY_KEY_PREFIX,
+} from './use-smart-playlist';
 export type {
   UseSmartPlaylistOptions,
   UseSmartPlaylistResult,

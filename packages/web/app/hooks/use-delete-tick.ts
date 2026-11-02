@@ -39,6 +39,9 @@ export function useDeleteTick() {
       void queryClient.invalidateQueries({ queryKey: ['ascentsFeed'] });
       queryClient.removeQueries({ queryKey: ['logbook'] });
       void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
+      // A deleted tick changes what a workout's blocks came to (#6903).
+      void queryClient.invalidateQueries({ queryKey: ['sessionWorkouts'] });
+      void queryClient.invalidateQueries({ queryKey: ['sessionWorkoutHeadlines'] });
       void queryClient.invalidateQueries({ queryKey: ['userProfileStats'] });
       void queryClient.invalidateQueries({ queryKey: ['userTicks'] });
       void queryClient.invalidateQueries({ queryKey: ['userClimbPercentile'] });

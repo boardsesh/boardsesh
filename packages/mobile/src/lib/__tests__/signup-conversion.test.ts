@@ -4,6 +4,7 @@ import { grantAnalyticsForTest, grantedConsent } from '../../../test/consent-fix
 import { invalidateConsentAccount, updateConsentState } from '../consent-state';
 import { commitVerifiedAuthResult } from '../verified-auth-result';
 import { notifyAnalyticsIdentityChanged } from '../analytics-identity-events';
+import { createConsentSyncCoordinator } from '@boardsesh/consent';
 
 const analytics = vi.hoisted(() => ({ capture: vi.fn(() => true), setPersonProperties: vi.fn(), distinctId: '' }));
 const preferences = vi.hoisted(() => ({
@@ -68,6 +69,33 @@ afterEach(() => {
 });
 
 describe('verified signup conversion', () => {
+  it('preserves an existing Allow through the real unanswered-account consent handoff', async () => {
+    const creation = receipt('apple');
+    const lease = createSignupConsentLease();
+    const coordinator = createConsentSyncCoordinator({
+      initialRecord: grantedConsent,
+      readAccountConsent: async () => null,
+      writeAccountConsent: async (_accountId, input) => ({
+        analytics: input.analytics,
+        source: input.source,
+        version: input.version,
+        decidedAt: '2026-10-10T00:01:00.000Z',
+      }),
+      persistLocalConsent: () => {},
+    });
+    const unsubscribe = coordinator.subscribe(() => updateConsentState({ record: coordinator.getSnapshot().record }));
+    coordinator.setAccount(creation.userId);
+    await coordinator.sync();
+    expect(coordinator.getSnapshot().record).toBeNull();
+    await coordinator.decide('granted', 'ios');
+    resolveOwner(creation);
+    updateConsentState({ settled: true });
+    publishSignupConversion(creation, lease);
+    await settle();
+    expect(analytics.capture).toHaveBeenCalledOnce();
+    unsubscribe();
+    lease.dispose();
+  });
   it.each(['email', 'apple', 'google'] as const)(
     'captures one %s creation with stable UUID and original timestamp',
     async (provider) => {

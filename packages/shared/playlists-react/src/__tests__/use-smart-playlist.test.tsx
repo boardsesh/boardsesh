@@ -7,6 +7,10 @@ import { PlaylistsAdapterProvider, type ExecutePlaylistsGraphQL, type PlaylistsA
 import { noopRecentsAdapter } from '../recents-adapter';
 import type { PlaylistClimbsView } from '../use-playlist-climbs';
 import {
+  LIKED_LIST_QUERY_KEY_PREFIX,
+  MAX_REMEMBERED_UNLIKED_CLIMBS,
+  removeClimbFromLikedList,
+  restoreClimbToLikedList,
   smartPlaylistGeometryKey,
   smartPlaylistQueryKey,
   useSmartPlaylist,
@@ -229,5 +233,158 @@ describe('smart playlist views (#6651)', () => {
     await waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
     expect(result.current.allClimbs).toEqual([]);
     client.clear();
+  });
+});
+
+describe('removeClimbFromLikedList', () => {
+  function seed(client: QueryClient, key: readonly unknown[], pages: string[][]) {
+    client.setQueryData(key, {
+      pages: pages.map((uuids) => smartPage(uuids).smartPlaylist),
+      pageParams: pages.map((_, index) => index),
+    });
+  }
+
+  it('drops the climb from every cached page of every Liked view and leaves other lists alone', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    const otherBoardKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u', boardUuid: 'b' });
+    const logbookKey = smartPlaylistQueryKey({ smartPlaylistType: 'LOGBOOK', userId: 'u' } as never);
+    seed(client, likedKey, [['a', 'b'], ['c']]);
+    seed(client, otherBoardKey, [['b']]);
+    seed(client, logbookKey, [['b']]);
+
+    removeClimbFromLikedList(client, 'b');
+
+    const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[]; totalCount: number }[] }>(likedKey);
+    expect(liked?.pages.map((page) => page.climbs.map((climb) => climb.uuid))).toEqual([['a'], ['c']]);
+    expect(liked?.pages[0].totalCount).toBe(1);
+    const other = client.getQueryData<{ pages: { climbs: unknown[] }[] }>(otherBoardKey);
+    expect(other?.pages[0].climbs).toEqual([]);
+    const logbook = client.getQueryData<{ pages: { climbs: unknown[] }[] }>(logbookKey);
+    expect(logbook?.pages[0].climbs).toHaveLength(1);
+  });
+
+  it('drops the list-wide total on every page when the climb sat on a later page', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    client.setQueryData(likedKey, {
+      pages: [
+        { ...smartPage(['a', 'b']).smartPlaylist, totalCount: 3, hasMore: true },
+        { ...smartPage(['c']).smartPlaylist, totalCount: 3 },
+      ],
+      pageParams: [0, 1],
+    });
+
+    removeClimbFromLikedList(client, 'c');
+
+    const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[]; totalCount: number }[] }>(likedKey);
+    expect(liked?.pages.map((page) => page.climbs.map((climb) => climb.uuid))).toEqual([['a', 'b'], []]);
+    expect(liked?.pages.map((page) => page.totalCount)).toEqual([2, 2]);
+  });
+
+  it('keeps the Liked key layout the offline-sync invalidation map matches on', () => {
+    expect(smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' }).slice(0, 2)).toEqual(
+      LIKED_LIST_QUERY_KEY_PREFIX,
+    );
+  });
+
+  it('puts a removed climb back where it was, once, and only in views still missing it', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    seed(client, likedKey, [['a', 'b'], ['c']]);
+
+    removeClimbFromLikedList(client, 'b');
+    restoreClimbToLikedList(client, 'b');
+    restoreClimbToLikedList(client, 'b');
+
+    const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[]; totalCount: number }[] }>(likedKey);
+    expect(liked?.pages.map((page) => page.climbs.map((climb) => climb.uuid))).toEqual([['a', 'b'], ['c']]);
+    expect(liked?.pages.map((page) => page.totalCount)).toEqual([2, 1]);
+  });
+
+  it('remembers only the most recent un-liked climbs for a re-like', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    const uuids = Array.from({ length: MAX_REMEMBERED_UNLIKED_CLIMBS + 1 }, (_, index) => `c${index}`);
+    seed(client, likedKey, [uuids]);
+
+    for (const uuid of uuids) removeClimbFromLikedList(client, uuid);
+    restoreClimbToLikedList(client, 'c0');
+    restoreClimbToLikedList(client, 'c1');
+
+    const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[] }[] }>(likedKey);
+    // c0 was the oldest, so it fell past the cap; c1 is still remembered.
+    expect(liked?.pages[0].climbs.map((climb) => climb.uuid)).toEqual(['c1']);
+  });
+
+  it('drops the header count to zero with the last liked climb, on every page (#7024)', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    seed(client, likedKey, [['only']]);
+
+    removeClimbFromLikedList(client, 'only');
+
+    const liked = client.getQueryData<{ pages: { climbs: unknown[]; meta: { climbCount: number } }[] }>(likedKey);
+    expect(liked?.pages[0].climbs).toEqual([]);
+    expect(liked?.pages.map((page) => page.meta.climbCount)).toEqual([0]);
+  });
+
+  it('drops the unfiltered count of a filtered view and leaves a plain view without one (#7024)', () => {
+    const client = new QueryClient();
+    const plainKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    const filteredKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u', view: HARDEST_FIRST });
+    seed(client, plainKey, [['a', 'b']]);
+    client.setQueryData(filteredKey, {
+      pages: [
+        { ...smartPage(['b']).smartPlaylist, meta: { ...smartPage(['b']).smartPlaylist.meta, climbCount: 5 } },
+      ].map((page) => ({ ...page, unfilteredCount: 5 })),
+      pageParams: [0],
+    });
+
+    removeClimbFromLikedList(client, 'b');
+
+    type CachedCounts = { pages: { meta: { climbCount: number }; unfilteredCount: number | null }[] };
+    const plain = client.getQueryData<CachedCounts>(plainKey);
+    expect(plain?.pages[0].meta.climbCount).toBe(1);
+    expect(plain?.pages[0].unfilteredCount).toBeNull();
+    const filtered = client.getQueryData<CachedCounts>(filteredKey);
+    expect(filtered?.pages[0].meta.climbCount).toBe(4);
+    expect(filtered?.pages[0].unfilteredCount).toBe(4);
+
+    restoreClimbToLikedList(client, 'b');
+
+    expect(client.getQueryData<CachedCounts>(plainKey)?.pages[0].meta.climbCount).toBe(2);
+    expect(client.getQueryData<CachedCounts>(plainKey)?.pages[0].unfilteredCount).toBeNull();
+    expect(client.getQueryData<CachedCounts>(filteredKey)?.pages[0].meta.climbCount).toBe(5);
+    expect(client.getQueryData<CachedCounts>(filteredKey)?.pages[0].unfilteredCount).toBe(5);
+  });
+
+  it('hands the screen a header count that follows an un-like and a re-like (#7024)', async () => {
+    const execute = vi.fn(async () => smartPage(['only']));
+    const { client, wrapper } = renderWithAdapter(execute);
+    const { result } = renderHook(() => useSmartPlaylist({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'climber' }), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.meta?.climbCount).toBe(1));
+
+    removeClimbFromLikedList(client, 'only');
+    await waitFor(() => expect(result.current.allClimbs).toEqual([]));
+    expect(result.current.meta?.climbCount).toBe(0);
+
+    restoreClimbToLikedList(client, 'only');
+    await waitFor(() => expect(result.current.meta?.climbCount).toBe(1));
+    expect(execute).toHaveBeenCalledTimes(1);
+    client.clear();
+  });
+
+  it('does nothing for a climb it never removed', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    seed(client, likedKey, [['a']]);
+    const before = client.getQueryData(likedKey);
+
+    restoreClimbToLikedList(client, 'z');
+
+    expect(client.getQueryData(likedKey)).toBe(before);
   });
 });

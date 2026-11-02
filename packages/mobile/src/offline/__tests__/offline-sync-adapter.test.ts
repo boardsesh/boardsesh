@@ -7,11 +7,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const authToken = vi.hoisted(() => ({
   token: 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature' as string | null,
+  readFails: false,
   generationCurrent: true,
   generation: 1,
 }));
 vi.mock('../../lib/auth-store', () => ({
-  getAuthToken: async () => authToken.token,
+  getAuthToken: async () => {
+    if (authToken.readFails) throw new Error('SecureStore unavailable');
+    return authToken.token;
+  },
   captureAuthCredentialGeneration: () => authToken.generation,
   isAuthCredentialGenerationCurrent: () => authToken.generationCurrent,
 }));
@@ -188,6 +192,7 @@ import {
   __resetMeteredStateForTests,
   __resetOutboxOwnerReportForTests,
   readSignedInAccount,
+  readSignedInUserIdOrNull,
 } from '../offline-sync-adapter';
 import { resetLaunchReloadWindowForTests, setJsRestartCount } from '../../lib/launch-reload-window';
 import type {
@@ -350,6 +355,53 @@ describe('drainMutationQueue binding', () => {
     } finally {
       unsubscribeThrowing();
       unsubscribeLater();
+    }
+  });
+
+  it('does not publish an old drain acknowledgement into a replacement account', async () => {
+    const listener = vi.fn();
+    const caller = vi.fn();
+    const unsubscribe = subscribeMutationDelivery(listener);
+    try {
+      await drainMutationQueue(db, queryClient, graphqlFetch, { onMutationStatus: caller });
+      const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+      authToken.generationCurrent = false;
+      options.onMutationStatus?.({
+        tableName: 'board_climbs',
+        operation: 'create',
+        idempotencyKey: 'climb:create:ABC',
+        entityKey: 'climb:spray:ABC',
+        status: 'acknowledged',
+      });
+      expect(caller).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      authToken.generationCurrent = true;
+      unsubscribe();
+    }
+  });
+
+  it('rechecks the source account after a caller handles the acknowledgement', async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeMutationDelivery(listener);
+    try {
+      await drainMutationQueue(db, queryClient, graphqlFetch, {
+        onMutationStatus: () => {
+          authToken.generationCurrent = false;
+        },
+      });
+      const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+      options.onMutationStatus?.({
+        tableName: 'board_climbs',
+        operation: 'create',
+        idempotencyKey: 'climb:create:ABC',
+        entityKey: 'climb:spray:ABC',
+        status: 'acknowledged',
+      });
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      authToken.generationCurrent = true;
+      unsubscribe();
     }
   });
 });
@@ -1988,6 +2040,16 @@ describe('outbox owner binding', () => {
     authToken.token = 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature';
     authToken.generationCurrent = false;
     await expect(readSignedInAccount()).resolves.toEqual({ status: 'unsettled' });
+  });
+
+  it("gives the workout write the token's account, or null, and never rejects (#6903)", async () => {
+    await expect(readSignedInUserIdOrNull()).resolves.toBe('viewer-6653');
+    authToken.token = null;
+    await expect(readSignedInUserIdOrNull()).resolves.toBeNull();
+    authToken.token = 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature';
+    authToken.readFails = true;
+    await expect(readSignedInUserIdOrNull()).resolves.toBeNull();
+    authToken.readFails = false;
   });
 
   it('answers no account when credentials change while the token is read', async () => {

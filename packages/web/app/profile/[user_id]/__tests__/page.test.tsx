@@ -111,6 +111,7 @@ describe('profile page route', () => {
       es: '/es/profile/user-1',
       fr: '/fr/profile/user-1',
       de: '/de/profile/user-1',
+      it: '/it/profile/user-1',
       'x-default': '/profile/user-1',
     });
   });

@@ -1,0 +1,34 @@
+Cerca un blocco e illumina le prese in parete. Meno tempo al telefono, più tempo a scalare.
+
+Illumina le prese
+Cerca un blocco e Boardsesh ne illumina le prese via Bluetooth su Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper e So iLL. Controlla i LED su tutti e otto i pannelli.
+
+Un'app per tutti i tuoi pannelli
+Kilter, Tension e MoonBoard hanno ciascuno la propria app. Boardsesh è compatibile con tutti, oltre a Woods, Decoy, Touchstone, Grasshopper e So iLL. Ritrova qui tutta la tua storia di arrampicata sui diversi pannelli.
+
+Anche la tua Spraywall
+Hai una Spraywall a casa o in palestra? Fotografala e Boardsesh trova le prese. Correggi quelle mancanti, poi traccia blocchi, mettili in coda e registra le ripetizioni nello stesso diario degli altri pannelli. Non servono LED: le prese sono evidenziate sulla foto. Condividi la Spraywall tramite link e anche la tua crew potrà tracciare. Hai smontato la Spraywall? Reimpostala con una nuova foto: quella precedente viene archiviata con i suoi blocchi e le sue ripetizioni. Se cambi una sola presa, ogni blocco che la usava viene segnalato, pronto da ritracciare.
+
+La cronologia del pannello
+Quando condividi un pannello, è facile perdere il blocco precedente o cancellarlo per sbaglio.
+Ritrova i blocchi illuminati su quel pannello tramite Boardsesh: nome, chi li ha illuminati, chi li ha tracciati, grado, inclinazione e ripetizioni recenti.
+
+La connessione resta attiva
+Boardsesh mantiene la connessione al pannello in background: le prese restano illuminate durante i tentativi, anche con lo schermo spento o mentre usi altre app. Una notifica persistente offre Precedente e Successivo sulla schermata di blocco, così puoi scorrere la coda senza riaprire l'app. Non serve riconnettersi tra un blocco e l'altro.
+
+Session con la crew
+Avvia una session e condividi con la crew una coda che tutti possono controllare. Chiunque può illuminare il prossimo blocco in parete. Alla fine trovi un riepilogo con ripetizioni, tentativi, distribuzione dei gradi, il blocco più duro chiuso e i progressi nel tempo.
+
+Crea un allenamento
+Scegli Volume, Piramide, Scala o Grado fisso, imposta grado obiettivo e riscaldamento, guarda l'anteprima dei blocchi e illuminane uno alla volta in parete.
+
+Segui i tuoi progressi
+Registra ripetizioni, flash e tentativi, e segui ripetizioni e gradi nella scheda Progressi. Importa il tuo diario da Aurora Climbing per ritrovare anche i blocchi passati su Kilter e Tension.
+
+Trova altri blocchi
+Segui la crew e chi traccia, cerca altri climber e fissa le playlist da Scopri.
+
+Gratis, senza pubblicità né abbonamenti
+Open source su GitHub.
+
+Boardsesh è un progetto della community compatibile con questi pannelli. Non è affiliato né approvato da alcun produttore.

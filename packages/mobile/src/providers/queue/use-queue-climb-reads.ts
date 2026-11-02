@@ -10,7 +10,7 @@ import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
 import { isGraphqlRequestTimeoutError } from '../../lib/graphql/request-timeout';
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { isClimbResolved } from '../../lib/queue-climb-resolution';
 
 const READ_DEADLINE_MS = 20_000;
@@ -103,9 +103,7 @@ export class QueueClimbReads {
   }
 
   private current(key: string, entry: ReadEntry, scope: ReadScope): boolean {
-    return (
-      this.scope === scope && scope.generation === getPrivacyRevocationGeneration() && this.entries.get(key) === entry
-    );
+    return this.scope === scope && scope.generation === getCredentialGeneration() && this.entries.get(key) === entry;
   }
 
   private schedule(): void {
@@ -122,7 +120,7 @@ export class QueueClimbReads {
 
   private reconcile(): void {
     const scope = this.scope;
-    if (!scope || scope.generation !== getPrivacyRevocationGeneration()) return;
+    if (!scope || scope.generation !== getCredentialGeneration()) return;
     const demands = new Map<string, QueueClimbReadDemand[]>();
     for (const demand of [...this.owners.values()].flat()) {
       const key = this.key(demand);
@@ -235,23 +233,23 @@ export class QueueClimbReads {
 
 export function useQueueClimbReads({
   activeBoard,
-  privacyRevocationGeneration,
+  credentialGeneration,
 }: {
   activeBoard: UserBoard | null | undefined;
-  privacyRevocationGeneration?: number;
+  credentialGeneration?: number;
 }): QueueClimbReads {
   const readsRef = useRef<QueueClimbReads | null>(null);
   if (!readsRef.current) readsRef.current = new QueueClimbReads();
   const reads = readsRef.current;
   useLayoutEffect(() => {
-    reads.setScope(activeBoard, getPrivacyRevocationGeneration());
+    reads.setScope(activeBoard, getCredentialGeneration());
   }, [
     reads,
     activeBoard?.boardType,
     activeBoard?.layoutId,
     activeBoard?.sizeId,
     activeBoard?.setIds,
-    privacyRevocationGeneration,
+    credentialGeneration,
   ]);
   useLayoutEffect(() => {
     const unsubscribe = onlineManager.subscribe((online) => {

@@ -15,6 +15,8 @@ import type { UserStorageOwner } from './user-storage-owner';
 export type CreateClimbDraftOrigin = 'new' | 'edit' | 'fork';
 
 export type CreateClimbDraft = {
+  /** Stable spray identity allocated before an explicit save can reach storage or network. */
+  pendingClimbUuid?: string;
   /**
    * JSON.stringify of the editor's active-frame LitUpHoldsMap. Kept for
    * backward compatibility — `framesJson` below is the full route and takes

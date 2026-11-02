@@ -1,0 +1,2 @@
+ALTER TABLE "content_privacy" DROP CONSTRAINT "content_privacy_type_check";--> statement-breakpoint
+ALTER TABLE "content_privacy" ADD CONSTRAINT "content_privacy_type_check" CHECK ("content_privacy"."entity_type" IN ('tick', 'session', 'comment', 'playlist', 'beta'));

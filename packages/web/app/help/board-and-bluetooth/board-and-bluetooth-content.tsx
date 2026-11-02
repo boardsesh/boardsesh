@@ -7,7 +7,8 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
 import HelpInstallSection from '../help-install-section';
-import { HelpScreenshot, HelpShots } from '../help-screenshot';
+import { HelpScreenshot } from '../help-screenshot';
+import { HelpClip, HelpShots } from '../help-clip';
 
 /**
  * 2,326 climbers hit a failed board connection in 90 days, which makes this the
@@ -20,6 +21,11 @@ import { HelpScreenshot, HelpShots } from '../help-screenshot';
  * Every label, alert text and sheet order quoted here is checked against
  * settings.json / common.json and the BleControlSheet, DevicePickerSheet,
  * use-board-bluetooth and live-activity-bridge sources in packages/mobile.
+ * Since 2.7 (#7188) `#driving` is where the What's New spotlight sends
+ * climbers: a tap previews, Put on board starts a drive timed by Stop driving
+ * after (lib/keep-lighting.ts, the clock and shrinking frost in
+ * play-drawer/wall-control.ts), and Disconnect Bluetooth when driving ends
+ * decides whether a stop keeps the link (use-driving-ended-disconnect.ts).
  */
 export default function BoardAndBluetoothContent() {
   const { t } = useTranslation('marketing');
@@ -33,11 +39,6 @@ export default function BoardAndBluetoothContent() {
       <PageSection id="connect" title={t('help.bluetooth.connect.title')}>
         <HelpShots>
           <HelpScreenshot
-            shot="board-sheet"
-            alt={t('help.bluetooth.connect.shotAlt')}
-            caption={t('help.bluetooth.connect.shotCaption')}
-          />
-          <HelpScreenshot
             shot="board-view"
             alt={t('help.bluetooth.connect.litShotAlt')}
             caption={t('help.bluetooth.connect.litShotCaption')}
@@ -46,6 +47,21 @@ export default function BoardAndBluetoothContent() {
         <Prose>{t('help.bluetooth.connect.p1')}</Prose>
         <Prose>{t('help.bluetooth.connect.p2')}</Prose>
         <Prose>{t('help.bluetooth.connect.p3')}</Prose>
+        <Prose>{t('help.bluetooth.connect.p4')}</Prose>
+      </PageSection>
+
+      <PageSection id="driving" title={t('help.bluetooth.driving.title')}>
+        <HelpShots>
+          <HelpClip
+            name="wall-swipe-to-drive"
+            alt={t('help.bluetooth.driving.clipAlt')}
+            caption={t('help.bluetooth.driving.clipCaption')}
+          />
+        </HelpShots>
+        <Prose>{t('help.bluetooth.driving.p1')}</Prose>
+        <Prose>{t('help.bluetooth.driving.p2')}</Prose>
+        <Prose>{t('help.bluetooth.driving.p3')}</Prose>
+        <Prose>{t('help.bluetooth.driving.p4')}</Prose>
       </PageSection>
 
       <PageSection id="failed" title={t('help.bluetooth.failed.title')} lead={t('help.bluetooth.failed.intro')}>
@@ -60,17 +76,24 @@ export default function BoardAndBluetoothContent() {
       </PageSection>
 
       <PageSection id="hold-the-lightbulb" title={t('help.bluetooth.hidden.title')}>
+        <HelpShots>
+          <HelpScreenshot
+            shot="board-sheet"
+            alt={t('help.bluetooth.hidden.shotAlt')}
+            caption={t('help.bluetooth.hidden.shotCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.bluetooth.hidden.p1')}</Prose>
-        <ProseList ordered>
+        <ProseList>
+          <li>{t('help.bluetooth.hidden.rowStopDriving')}</li>
           <li>{t('help.bluetooth.hidden.row1')}</li>
           <li>{t('help.bluetooth.hidden.row2')}</li>
           <li>{t('help.bluetooth.hidden.row3')}</li>
           <li>{t('help.bluetooth.hidden.row4')}</li>
-          <li>{t('help.bluetooth.hidden.row5')}</li>
-          <li>{t('help.bluetooth.hidden.row6')}</li>
-          <li>{t('help.bluetooth.hidden.row7')}</li>
         </ProseList>
         <Prose>{t('help.bluetooth.hidden.p2')}</Prose>
+        <Prose>{t('help.bluetooth.hidden.autoLight')}</Prose>
+        <Prose>{t('help.bluetooth.hidden.p3')}</Prose>
       </PageSection>
 
       <PageSection id="two-boards" title={t('help.bluetooth.twoBoards.title')}>

@@ -1,6 +1,6 @@
 import { ReadableColumn } from '../../src/components/ReadableColumn';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View, type TextInputInstance } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Stack, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,7 +31,7 @@ export default function ClimberSearchScreen() {
   const insets = useSafeAreaInsets();
   const paddingBottom = insets.bottom + spacing[4];
 
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const { data: currentProfile } = useProfile();
   const currentUserId = currentProfile?.id;
 

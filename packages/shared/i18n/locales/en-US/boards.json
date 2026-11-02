@@ -90,7 +90,7 @@
     "onboardingPrompt": "Follow the wall you climb on — that's what turns its history on.",
     "firstBoard": {
       "title": "Where do you climb?",
-      "body": "Pick your board to load its climbs. When you're connected, tapping a climb lights it on the wall.",
+      "body": "Pick your board to load its climbs. A tap opens a climb as a preview; Put on board lights it on the wall.",
       "gym": "At a gym",
       "gymHint": "Pick your gym's board",
       "own": "My own board",
@@ -111,7 +111,8 @@
       "card": {
         "title": "Light climbs on {{board}}",
         "titleNoName": "Light climbs on your board",
-        "body": "Connect this phone to the board, then tap any climb to light it.",
+        "body": "Connect this phone to the board, then tap a climb and Put on board to light it.",
+        "bodyAlwaysDrive": "Connect this phone to the board and you drive the wall: every climb you pick lights.",
         "connect": "Connect",
         "tryAgain": "Try again",
         "noLights": "This wall has no lights",
@@ -121,11 +122,15 @@
         "failed": "Not connected to {{board}} yet. Try again when you're ready.",
         "failedNoName": "Not connected to your board yet. Try again when you're ready."
       },
-      "pill": "Light it on the board",
       "confirm": {
         "title": "Connected to {{board}}",
         "titleNoName": "Connected to your board",
-        "body": "Tapping a climb in the list now lights it on the wall.",
+        "bodyAlwaysDrive": "Always drive the wall is on: every climb you pick lights until you tap You are driving the wall to stop.",
+        "bodyWindow": "Put on board lets you drive the wall: for {{seconds}} seconds after each climb lights, every climb you pick lights too. After that, tap Put on board again.",
+        "bodyWindowMinute": "Put on board lets you drive the wall: for 1 minute after each climb lights, every climb you pick lights too. After that, tap Put on board again.",
+        "bodyWindowMinutes": "Put on board lets you drive the wall: for {{minutes}} minutes after each climb lights, every climb you pick lights too. After that, tap Put on board again.",
+        "bodyUntilStop": "Put on board lets you drive the wall: every climb you pick lights until you tap the button to stop.",
+        "bodyPutOnBoard": "Tap a climb, then Put on board to light it on the wall.",
         "gotIt": "Got it"
       }
     },
@@ -179,7 +184,7 @@
       "limitReached": "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
       "timer": "Workout timer",
       "timerNone": "No timer paired",
-      "timerHint": "Pair a Rogue gym timer to this board. While you're driving the wall, its stopwatch restarts with each rest, or on every logged climb when the rest timer is off.",
+      "timerHint": "Pair a Rogue gym timer to this board. While this phone is connected to the board, its stopwatch restarts with each rest, or on every logged climb when the rest timer is off.",
       "timerPairCta": "Pair a timer",
       "timerChangeCta": "Change timer",
       "timerRemoveCta": "Remove",
@@ -214,6 +219,7 @@
       "resolving": "Loading boards…",
       "noResults": "No boards in range",
       "unavailable": "Turn on Bluetooth to scan",
+      "notAsked": "Allow Bluetooth to look for boards near you.",
       "unknownSetupTitle": "Found a {{board}} board",
       "unknownSetupBody": "We don't know its setup yet.",
       "moonboardTitle": "Found a MoonBoard nearby",
@@ -585,7 +591,9 @@
     "helperText": {
       "unlisted": "Hidden from search results but accessible via direct link",
       "hideLocation": "Hidden from nearby board searches unless you follow the searcher",
-      "hasLeds": "Off means no light kit. Turns still work, and the gym screen still shows the active climb."
+      "hasLeds": "Off means no light kit. Turns still work, and the gym screen still shows the active climb.",
+      "ownerOnlyPrivacy": "Only the board owner can change visibility and location privacy.",
+      "ownerOnlyCredentials": "Only the board owner can see or change controller credentials."
     },
     "alerts": {
       "configEditable": "You can change the layout, size, and hold sets. Climbs already logged stay put."
@@ -602,7 +610,11 @@
       "duplicateBodyWithLocation": "This change makes the board match \"{{name}}\" at {{location}} — same layout, size and hold sets.",
       "duplicateBodyGeneric": "This change matches a board setup the owner already has.",
       "saveAnyway": "Save anyway",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "discardTitle": "Discard unsaved changes?",
+      "discardBody": "Your board edits have not been saved.",
+      "discard": "Discard changes",
+      "keepEditing": "Keep editing"
     },
     "serialReuse": {
       "warning": "This serial number already belongs to \"{{name}}\". Joining that board keeps everyone's sends and stats on one wall.",
@@ -755,8 +767,8 @@
       "address": "Address",
       "contactEmail": "Contact Email",
       "contactPhone": "Contact Phone",
-      "isPublic": "Public gym",
-      "website": "Website"
+      "website": "Website",
+      "visibility": "Visibility"
     },
     "placeholders": {
       "name": "e.g., Boulder World, The Climbing Factory",
@@ -780,7 +792,13 @@
     },
     "helpers": {
       "website": "Used to verify ownership when someone claims this gym",
-      "hours": "One line, however you write it. Your gym page shows the date you last confirmed it."
+      "hours": "One line, however you write it. Your gym page shows the date you last confirmed it.",
+      "visibility": "Unlisted gyms open through their link and stay out of search and maps."
+    },
+    "visibility": {
+      "public": "Public",
+      "unlisted": "Unlisted",
+      "private": "Private"
     }
   },
   "claimGym": {

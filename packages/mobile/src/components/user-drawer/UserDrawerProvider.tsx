@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useSegments } from 'expo-router';
+import { useNavigationContainerRef, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { openDiscordInvite } from '../../lib/discord';
+import { resolveAppStackState } from '../../lib/phone-split-player';
 import { useConfirmSignOut } from '../../hooks/use-confirm-sign-out';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { FeedbackSheet, type FeedbackSheetMode } from './FeedbackSheet';
@@ -56,6 +57,7 @@ function currentBoardReturnTo(segments: readonly string[]): BoardReturnTo {
 }
 
 export function UserDrawerProvider({ children }: { children: ReactNode }) {
+  const navigationRef = useNavigationContainerRef();
   const confirmSignOut = useConfirmSignOut();
   const segments = useSegments();
   const feedbackSheetRef = useRef<ManagedSheetHandle>(null);
@@ -75,9 +77,22 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   const returnToRef = useRef<BoardReturnTo>('/(tabs)/climbs');
 
   const openUserDrawer = useCallback(() => {
+    if (!navigationRef.isReady()) return;
+    const appStack = resolveAppStackState(navigationRef.getRootState());
+    if (!appStack) return;
+    // A stale avatar event must not push another modal or reset Account's
+    // nested Settings stack. Preloaded routes beyond index are not open yet.
+    if (
+      appStack.routes
+        .slice(0, appStack.index + 1)
+        .some((route) => route.name === 'account' || route.name === 'user-drawer')
+    )
+      return;
     returnToRef.current = currentBoardReturnTo(segmentsRef.current);
-    router.push(Platform.OS === 'ios' ? '/account' : '/user-drawer');
-  }, []);
+    // Repeated taps can queue before navigation state changes. NAVIGATE reuses
+    // the route in that case; PUSH creates duplicate modals or inner pages.
+    router.navigate(Platform.OS === 'ios' ? '/account' : '/user-drawer');
+  }, [navigationRef]);
 
   const closeUserDrawer = useCallback(() => {
     router.back();

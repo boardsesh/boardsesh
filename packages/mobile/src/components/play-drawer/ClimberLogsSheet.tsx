@@ -538,9 +538,10 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
   const emptyText = (() => {
     if (!data) {
       if (!offline.isBlocked) return null;
-      return offline.reason === 'error'
-        ? tCommon('mobile.offlineState.errorBody')
-        : t('mobile.climberLogs.offlineBody');
+      // Literal keys per reason: the i18n linter rejects a computed key.
+      if (offline.reason === 'error') return tCommon('mobile.offlineState.errorBody');
+      if (offline.reason === 'backend_unreachable') return tCommon('mobile.offlineState.serverBody');
+      return t('mobile.climberLogs.offlineBody');
     }
     if (everyoneExhausted) {
       return anyChip ? t('mobile.climberLogs.filterEmpty') : t('mobile.climberLogs.everyone.empty');
@@ -588,9 +589,9 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
         data={items}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={listHeader}
-        ListEmptyComponent={listEmpty}
-        ListFooterComponent={listFooter}
+        ListHeaderComponent={listHeader ?? undefined}
+        ListEmptyComponent={listEmpty ?? undefined}
+        ListFooterComponent={listFooter ?? undefined}
         onEndReached={handleEndReached}
         onEndReachedThreshold={END_REACHED_THRESHOLD}
         style={styles.list}

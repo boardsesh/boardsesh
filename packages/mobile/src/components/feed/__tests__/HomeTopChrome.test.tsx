@@ -1,4 +1,11 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => ctrl.nativeBarItems }));
+// The live item hooks have their own suite; these stand-ins keep the wiring visible.
+vi.mock('../../chrome/use-root-bar-items', () => ({
+  useAccountRailItem: () => ({ type: 'button', label: 'account', onPress: () => undefined }),
+  useBarItemsOnRail: () => ctrl.onRail,
+  useNotificationsBarItem: (onOpen: () => void) => ({ type: 'button', label: 'notifications', onPress: onOpen }),
+}));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -7,8 +14,21 @@ import type { AppMenuAction } from '../../AppMenu';
 const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   nativeHeader: false,
-  nativeHeaderProps: undefined as { title?: string; leftActionsStandalone?: boolean; children?: ReactNode } | undefined,
+  nativeBarItems: false,
+  onRail: false,
+  nativeHeaderProps: undefined as
+    | {
+        title?: string;
+        leftActionsStandalone?: boolean;
+        leftActions?: ReactNode;
+        children?: ReactNode;
+        leftItems?: () => BarItemStandIn[];
+        rightItems?: () => BarItemStandIn[];
+      }
+    | undefined,
 }));
+
+type BarItemStandIn = { label?: string; onPress?: () => void; icon?: { type: string; name?: string } };
 
 type ViewMockProps = {
   children?: ReactNode;
@@ -97,8 +117,13 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../FeedScopeTitle', () => ({
-  FeedScopeTitle: ({ title }: { title: string }) => createElement('div', { 'data-feed-scope': 'true' }, title),
+  FeedScopeTitle: ({ title, headline }: { title: string; headline?: string }) =>
+    createElement('div', { 'data-feed-scope': 'true', 'data-feed-headline': headline ?? '' }, title),
 }));
+vi.mock('../../chrome/MaterialAppBarTitle', () => ({
+  MaterialAppBarTitle: ({ title }: { title: string }) => createElement('div', { 'data-appbar-title': title }),
+}));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 import { HomeTopChrome, type HomeTopChromeProps } from '../HomeTopChrome';
 
@@ -129,6 +154,8 @@ describe('HomeTopChrome', () => {
   beforeEach(() => {
     ctrl.variant = 'liquidGlass';
     ctrl.nativeHeader = false;
+    ctrl.nativeBarItems = false;
+    ctrl.onRail = false;
     ctrl.nativeHeaderProps = undefined;
     routerMock.push.mockClear();
   });
@@ -165,6 +192,37 @@ describe('HomeTopChrome', () => {
       expect(ctrl.nativeHeaderProps).toMatchObject({ leftActionsStandalone: true });
       expect(ctrl.nativeHeaderProps?.title).toBeUndefined();
       expect(ctrl.nativeHeaderProps?.children).toBeUndefined();
+    });
+
+    it('hands UIKit the bell and find-climbers as native items, and keeps the glass avatar, on the iOS 26 iPhone', () => {
+      ctrl.nativeHeader = true;
+      ctrl.nativeBarItems = true;
+      const onOpenSearch = vi.fn();
+      render(<HomeTopChrome {...makeProps({ onOpenSearch })} />);
+
+      // A horizontal bar keeps the glass avatar: round photo, initials without one.
+      expect(ctrl.nativeHeaderProps?.leftItems).toBeUndefined();
+      expect(ctrl.nativeHeaderProps?.leftActionsStandalone).toBe(true);
+      const leading = render(<>{ctrl.nativeHeaderProps?.leftActions}</>).container;
+      expect(leading.querySelector('[data-avatar-variant="glass"]')).not.toBeNull();
+
+      const rightItems = ctrl.nativeHeaderProps?.rightItems?.() ?? [];
+      expect(rightItems.map((item) => item.label)).toEqual(['notifications', 'searchLabel']);
+      expect(rightItems[1]?.icon).toEqual({ type: 'sfSymbol', name: 'person.badge.plus' });
+
+      rightItems[0]?.onPress?.();
+      expect(routerMock.push).toHaveBeenCalledWith('/(tabs)/home/notifications');
+      rightItems[1]?.onPress?.();
+      expect(onOpenSearch).toHaveBeenCalledTimes(1);
+    });
+
+    it('leads with the native account item on the iPhone Duo rail', () => {
+      ctrl.nativeHeader = true;
+      ctrl.nativeBarItems = true;
+      ctrl.onRail = true;
+      render(<HomeTopChrome {...makeProps()} />);
+      const leftItems = ctrl.nativeHeaderProps?.leftItems?.() ?? [];
+      expect(leftItems.map((item) => item.label)).toEqual(['account']);
     });
 
     it('renders the floating glass chrome (blur + avatar/search islands + scope title)', () => {
@@ -209,11 +267,14 @@ describe('HomeTopChrome', () => {
       ctrl.variant = 'material';
     });
 
-    it('renders an M3 app bar (avatar + scope title-menu + find-climbers action), no glass chrome', () => {
+    it('renders an M3 app bar (avatar + Home title-menu over the scope + find-climbers action), no glass chrome', () => {
       const { container } = render(<HomeTopChrome {...makeProps()} />);
       expect(container.querySelector('[data-appbar-header]')).not.toBeNull();
       expect(container.querySelector('[data-avatar-variant="material"]')).not.toBeNull();
-      expect(container.querySelector('[data-feed-scope]')?.textContent).toBe('My crew');
+      // The bar names the tab; the scope rides under it as the title-menu's subtitle.
+      const scope = container.querySelector('[data-feed-scope]');
+      expect(scope?.getAttribute('data-feed-headline')).toBe('mobile.nav.home');
+      expect(scope?.textContent).toBe('My crew');
       expect(searchAction(container)).not.toBeNull();
       // No floating blur / glass islands on Material.
       expect(container.querySelector('[data-blur]')).toBeNull();
@@ -225,7 +286,7 @@ describe('HomeTopChrome', () => {
         <HomeTopChrome {...makeProps({ showScopeMenu: false, scopeTitle: 'Home', scopeActions: [] })} />,
       );
       expect(container.querySelector('[data-feed-scope]')).toBeNull();
-      expect(container.querySelector('[data-appbar-content]')?.textContent).toBe('Home');
+      expect(container.querySelector('[data-appbar-title]')?.getAttribute('data-appbar-title')).toBe('mobile.nav.home');
       expect(bell(container, 'material')).not.toBeNull();
       expect(searchAction(container)).not.toBeNull();
     });

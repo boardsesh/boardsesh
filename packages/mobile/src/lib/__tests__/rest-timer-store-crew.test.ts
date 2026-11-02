@@ -91,6 +91,22 @@ describe('adoptCrewCadence', () => {
     expect(getRestTimerState().crew?.config).toBe(config);
   });
 
+  it('takes a config that changed only its once-only advance, and rolls the cycle for it', () => {
+    // A 4x4 set rest: the same rest, now advancing once (#5382, #5380).
+    const everyRest = crewClock().config;
+    if (everyRest === null) throw new Error('crewClock has a config');
+    adoptCrewCadence(crewClock());
+    const { cycleId } = getRestTimerState();
+    adoptCrewCadence(crewClock({ revision: 6, config: { ...everyRest, autoAdvanceOnce: true } }));
+    expect(getRestTimerState().crew?.config).toMatchObject({ autoAdvanceOnce: true });
+    expect(getRestTimerState().cycleId).toBe(cycleId + 1);
+
+    // And the same once-only config again keeps the object.
+    const onceConfig = getRestTimerState().crew?.config;
+    adoptCrewCadence(crewClock({ revision: 7, config: { ...everyRest, autoAdvanceOnce: true } }));
+    expect(getRestTimerState().crew?.config).toBe(onceConfig);
+  });
+
   it('keeps this phone’s own action while the server’s clock has not moved', () => {
     adoptCrewCadence(crewClock());
     resetRestTimer(T0 + 20_000);
@@ -157,6 +173,19 @@ describe('clearCrewCadence', () => {
 });
 
 describe('local actions', () => {
+  it('spends the crew’s once-only advance synchronously only for the current cycle', () => {
+    const clock = crewClock();
+    if (clock.config === null) throw new Error('crewClock has a config');
+    adoptCrewCadence({ ...clock, config: { ...clock.config, autoAdvanceOnce: true } });
+    const { cycleId } = getRestTimerState();
+
+    expect(noteRestTimerAutoAdvanceFired(cycleId - 1, 'afterTick', T0 + 60_000, T0 + 60_000)).toBe(false);
+    expect(getRestTimerState().crew?.config?.autoAdvanceOnce).toBe(true);
+    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_000, T0 + 60_000)).toBe(true);
+    expect(getRestTimerState().crew?.config?.autoAdvance).toBe(false);
+    expect(getRestTimerState().crew?.config).not.toHaveProperty('autoAdvanceOnce');
+  });
+
   it('announces what this phone did, with the session it was armed for', () => {
     const actions = recordActions();
     armRestTimer('afterTick', T0, null);
@@ -493,6 +522,15 @@ describe('crewPacingDraft', () => {
     adoptCrewCadence(crewClock({ revision: 6, lastTick: { status: 'send', queueItemUuid: 'item-1' } }));
     expect(getRestTimerState().crewPacingDraft).toEqual(draft);
     adoptCrewCadence(crewClock({ revision: 7, config: { ...draft, setByParticipantId: 'participant-me' } }));
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+  });
+
+  it('tells a draft with a once-only advance from one without it', () => {
+    adoptCrewCadence(crewClock());
+    setCrewRestPacingDraft({ ...draft, autoAdvanceOnce: true });
+    settleCrewRestPacingDraft(draft);
+    expect(getRestTimerState().crewPacingDraft).toMatchObject({ autoAdvanceOnce: true });
+    settleCrewRestPacingDraft({ ...draft, autoAdvanceOnce: true });
     expect(getRestTimerState().crewPacingDraft).toBeNull();
   });
 

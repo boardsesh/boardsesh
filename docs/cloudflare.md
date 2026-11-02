@@ -190,6 +190,17 @@ Capture and replay bytes are unchanged. The static edge ranges in
 until this list is updated. This preserves coarse region targeting, rather than
 making IP geolocation an exact location guarantee.
 
+### Web server country (`/support`)
+
+The www `/support` page picks its default currency (USD in the US, AUD
+elsewhere) from the same header. A Next.js server component cannot see its
+socket peer, so it trusts `CF-IPCountry` only when the last `X-Forwarded-For`
+hop, the one our ingress appends, is a Cloudflare address. The ranges and the
+check live in `@boardsesh/consent/edge-country`, which the backend's
+`flag-country.ts` imports too, so one list serves both. A direct-origin request
+reads as no country. The contract is in
+[production deploy](./production-deploy.md#the-support-link-contract).
+
 ### Consent province header
 
 Quebec consent prompting uses a trusted coarse province code. The declared
@@ -849,6 +860,14 @@ sticky-locale 307 (`/kilter/…` → `/es/kilter/…` for a visitor carrying
 carries no cache directive at all, so it bypasses too. **Never switch this rule
 to `override_origin`:** it ignores the origin *and* strips `Set-Cookie` in order
 to cache.
+
+Exception (#6803): MoonBoard and Woods list pages, and every `/b/{slug}` list page,
+get `s-maxage=900` (15 minutes) to match the 15 minute Next data cache for
+boards with live stats. Middleware cannot tell the board from a `/b/` slug
+without a backend call, so the whole slug tree takes the short TTL; every other
+board's config-tuple pages keep 24 h. The stale-while-revalidate window is also 900
+s (not the usual 7x), so a quiet page is at most about 30 minutes old. Existing 24 h edge copies age out on
+their own.
 
 The expression carries three explicit bypasses on top of the host and path
 gates. All three exist because **Cloudflare honours `Vary` only for

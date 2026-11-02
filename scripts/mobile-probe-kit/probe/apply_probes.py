@@ -3,12 +3,13 @@
 
     apply_probes.py <repo-root> [--settle-consent]
 
-Every edit is an exact-text replacement and asserts that its anchor occurs once,
-so a probe point that has moved fails loudly instead of silently measuring
-nothing. Re-fit the anchor when that happens; the probe's purpose is in the doc.
+Every edit is an exact-text replacement whose anchor must occur exactly once.
+All replacements are staged before writing, so a missing, duplicate, or already
+instrumented anchor leaves the checkout unchanged. Re-fit moved anchors using
+the event's purpose in the doc; never silently skip a measurement.
 
-Never commit the result. Undo:
-    git checkout -- packages/mobile && rm -f packages/mobile/src/lib/perf-probe.ts
+Use an isolated clean checkout and never commit the injected result. After
+capturing measurements, restore only the modifiedMobilePaths printed on success.
 
 --settle-consent       Do not show the analytics consent prompt in this build.
                        Consent stays undecided, so analytics stay off. Without
@@ -18,33 +19,68 @@ Never commit the result. Undo:
 The old --keep-offline-boards flag is gone: since #6545 nothing in the app
 drops the offline boards between runs, so there is nothing to suppress.
 """
-import os, sys
+import json
+from pathlib import Path
+import sys
 
 args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
 flags = {arg for arg in sys.argv[1:] if arg.startswith("--")}
 unknown = flags - {"--settle-consent"}
 if len(args) != 1 or unknown:
     sys.exit(__doc__)
-root = args[0].rstrip("/")
-M = root + "/packages/mobile/"
-HERE = os.path.dirname(os.path.abspath(__file__))
+root = Path(args[0]).resolve()
+mobile = root / "packages/mobile"
+HERE = Path(__file__).resolve().parent
+staged = {}
+
+
+def read(path):
+    return staged[path] if path in staged else (mobile / path).read_text()
+
+
+def require_once(path, source, anchor):
+    count = source.count(anchor)
+    if count != 1:
+        raise ValueError(f"{path}: expected exactly one anchor {anchor[:80]!r}; found {count}")
 
 
 def edit(path, pairs):
-    text = open(M + path).read()
+    source = read(path)
     for old, new in pairs:
-        assert text.count(old) == 1, (path, old[:60], text.count(old))
-        text = text.replace(old, new)
-    open(M + path, "w").write(text)
+        require_once(path, source, old)
+        source = source.replace(old, new, 1)
+    staged[path] = source
 
 
-open(M + "src/lib/perf-probe.ts", "w").write(open(os.path.join(HERE, "perf-probe.ts.template")).read())
+def replace_one_of(path, variants):
+    source = read(path)
+    counts = [source.count(old) for old, _new in variants]
+    if sum(counts) != 1:
+        raise ValueError(f"{path}: expected exactly one supported anchor variant; found {counts}")
+    selected = counts.index(1)
+    old, new = variants[selected]
+    staged[path] = source.replace(old, new, 1)
+
+
+def add_import(path, statement):
+    source = read(path)
+    statement = statement.rstrip("\n")
+    if statement in source:
+        raise ValueError(f"{path}: already instrumented import {statement!r}")
+    first = source.find("import ")
+    if first < 0:
+        raise ValueError(f"{path}: missing import anchor")
+    staged[path] = source[:first] + statement + "\n" + source[first:]
+
+
+probe = "src/lib/perf-probe.ts"
+if (mobile / probe).exists():
+    raise ValueError(f"{probe}: standard probes already applied")
+staged[probe] = (HERE / "perf-probe.ts.template").read_text()
 
 PROBE_IMPORT = "import { PERF_PROBE_ENABLED, perfNow, perfProbe, perfProbeId } from '../lib/perf-probe';\n"
 hook = "src/hooks/use-native-climb-render.ts"
-text = open(M + hook).read()
-first_import = text.index("import ")
-open(M + hook, "w").write(text[:first_import] + PROBE_IMPORT + text[first_import:])
+add_import(hook, PROBE_IMPORT)
 edit(hook, [
 ("""    const renderRequest = requestRender(currentCacheKey, renderPriority, () =>
       getOrStartInflightRender(currentCacheKey, () => {
@@ -134,18 +170,16 @@ edit(hook, [
 ("  onOverlayLoad: (loadKey: string | null) => void;", "  onOverlayLoad: (loadKey: string | null, cacheType?: string) => void;"),
 ])
 
-layered_text = open(M + "src/components/LayeredClimbImage.tsx").read()
-background_load_anchor = "          onLoad={() => noteBoardArtInMemory(backgroundImageUri(path))}"
-if background_load_anchor in layered_text:
-    background_load_pair = (
-        background_load_anchor,
+layered_text = read("src/components/LayeredClimbImage.tsx")
+background_load_variants = [
+    (
+        "          onLoad={() => noteBoardArtInMemory(backgroundImageUri(path))}",
         """          onLoad={(event: ImageLoadEventData) => {
             noteBoardArtInMemory(backgroundImageUri(path));
             if (PERF_PROBE_ENABLED) reportBackgroundLoad(event);
           }}""",
-    )
-else:
-    background_load_pair = (
+    ),
+    (
         """          allowDownscaling={false}
         />
       ))}""",
@@ -153,7 +187,9 @@ else:
           onLoad={PERF_PROBE_ENABLED ? reportBackgroundLoad : undefined}
         />
       ))}""",
-    )
+    ),
+]
+replace_one_of("src/components/LayeredClimbImage.tsx", background_load_variants)
 GATED = "awaitingOverlay" if "const awaitingOverlay" in layered_text else "false"
 edit("src/components/LayeredClimbImage.tsx", [
 ("import type { ImageErrorEventData } from 'expo-image';\n",
@@ -165,14 +201,10 @@ edit("src/components/LayeredClimbImage.tsx", [
 }
 
 export function backgroundImageUri(path: string): string {"""),
-background_load_pair,
 ("          onLoad={() => {",
- "          onLoad={(event: ImageLoadEventData) => {\n            perfProbe('overlay-shown', { gated: GATED_EXPR, cacheType: event.cacheType, play: overlayTestID != null });"),
+ "          onLoad={(event: ImageLoadEventData) => {\n            perfProbe('overlay-shown', { gated: " + GATED + ", cacheType: event.cacheType, play: overlayTestID != null });"),
 ("            onOverlayLoad?.(emittingLoadKey);", "            onOverlayLoad?.(emittingLoadKey, event.cacheType);"),
 ])
-
-layered_text = open(M + "src/components/LayeredClimbImage.tsx").read()
-open(M + "src/components/LayeredClimbImage.tsx", "w").write(layered_text.replace("GATED_EXPR", GATED))
 
 edit("src/lib/graphql/hooks/use-infinite-search-climbs.ts", [
 ("""    queryFn: ({ pageParam }) =>
@@ -198,50 +230,62 @@ edit("src/lib/graphql/hooks/use-infinite-search-climbs.ts", [
  "import { useGradeSourceSearchInput } from './search-grade-source';\nimport { perfNow, perfProbe } from '../../perf-probe';\n"),
 ])
 
-text = open(M + "app/(tabs)/climbs/index.tsx").read()
-press_start = text.index("  const handleClimbPress = useCallback(")
+climbs = "app/(tabs)/climbs/index.tsx"
+press_anchor = "  const handleClimbPress = useCallback("
+require_once(climbs, read(climbs), press_anchor)
 guard = "      if (isPlaceholderDataRef.current) return;\n"
-guard_at = text.index(guard, press_start)
-text = text[:guard_at] + """      perfProbe('climb-press');
+press_signatures = [
+    "    (climb: Climb) => {\n",
+    "    (climb: Climb, readyBoardArt?: import('../../../src/lib/board-render/ready-board-art').ReadyBoardArtSnapshot) => {\n",
+]
+replace_one_of(climbs, [
+    (
+        press_anchor + "\n" + signature + guard,
+        press_anchor + "\n" + signature + """      perfProbe('climb-press');
       if (isPlaceholderDataRef.current) {
         perfProbe('climb-open-rejected', { reason: 'placeholder-results' });
         return;
       }
-""" + text[guard_at + len(guard):]
+""",
+    )
+    for signature in press_signatures
+])
 skeleton_import = "import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';\n"
-assert text.count(skeleton_import) == 1
-text = text.replace(skeleton_import, skeleton_import + "import { perfProbe } from '../../../src/lib/perf-probe';\n")
-open(M + "app/(tabs)/climbs/index.tsx", "w").write(text)
+edit(climbs, [(skeleton_import, skeleton_import + "import { perfProbe } from '../../../src/lib/perf-probe';\n")])
 
 edit("app/play.tsx", [
 ("function PlayScreen() {", """function PlayScreen() {
   useEffect(() => { perfProbe('play-route-mounted'); }, []);"""),
 ])
-text = open(M + "app/play.tsx").read()
-first_import = text.index("import ")
-open(M + "app/play.tsx", "w").write(text[:first_import] + "import { perfProbe } from '../src/lib/perf-probe';\n" + text[first_import:])
+add_import("app/play.tsx", "import { perfProbe } from '../src/lib/perf-probe';")
 
 edit("src/components/play-drawer/SwipeBoardCarousel.tsx", [
-("""  const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+("""  const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;
 """,
- """  const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
-  const probeBoardMeasured = boardBox != null;
+ """  const probeBoardMeasured = boardBox != null;
   useEffect(() => {
     perfProbe(probeBoardMeasured ? 'play-board-measured' : 'play-carousel-mounted');
   }, [probeBoardMeasured]);
+  const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;
 """),
 ])
-text = open(M + "src/components/play-drawer/SwipeBoardCarousel.tsx").read()
-first_import = text.index("import ")
-open(M + "src/components/play-drawer/SwipeBoardCarousel.tsx", "w").write(text[:first_import] + "import { perfProbe } from '../../lib/perf-probe';\n" + text[first_import:])
+add_import("src/components/play-drawer/SwipeBoardCarousel.tsx", "import { perfProbe } from '../../lib/perf-probe';")
 
+offline = "src/lib/graphql/offline-request.ts"
+owner_checks = [
+    name for name in ["isLocalDataOwnerCurrent", "canReadPrivateCatalog"]
+    if f"(await {name}(localDb))" in read(offline)
+]
+if len(owner_checks) != 1:
+    raise ValueError(f"{offline}: expected exactly one supported local gate helper; found {owner_checks}")
+owner_check = owner_checks[0]
 edit("src/lib/graphql/offline-request.ts", [
 ("""      localDb = getDatabaseHandle();
 """,
 """      localDb = getDatabaseHandle();
       if (PERF_PROBE_ENABLED && variables !== undefined) {
         const probeGateStartedAtMs = perfNow();
-        const probeOwner = localDb ? await isLocalDataOwnerCurrent(localDb) : false;
+        const probeOwner = localDb ? await OWNER_CHECK(localDb) : false;
         const probeCanServe = localDb && probeOwner ? await operation.canServeLocal(localDb, variables as never) : false;
         perfProbe('offline-gate', {
           surface: String(operation.surface),
@@ -253,22 +297,30 @@ edit("src/lib/graphql/offline-request.ts", [
           gateMs: Math.round(perfNow() - probeGateStartedAtMs),
         });
       }
-"""),
-("""        const localResponse = (await operation.resolveLocal(localDb, variables as never)) as TResponse;
-""",
-"""        const probeLocalStartedAtMs = perfNow();
-        const localResponse = (await operation.resolveLocal(localDb, variables as never)) as TResponse;
-        perfProbe('offline-request', {
+""".replace("OWNER_CHECK", owner_check)),
+])
+local_response_anchors = [
+    "        const localResponse = (await operation.resolveLocal(localDb, variables as never)) as TResponse;\n",
+    "        const localResponse = (await operation.resolveLocal(localDb, variables as never)) as TResponse | null;\n",
+]
+replace_one_of("src/lib/graphql/offline-request.ts", [
+    (anchor, "        const probeLocalStartedAtMs = perfNow();\n" + anchor + """        perfProbe('offline-request', {
           lane: 'local',
           surface: String(operation.surface),
           ms: Math.round(perfNow() - probeLocalStartedAtMs),
         });
-"""),
-("""    const networkResponse = await getHttpClient().request<TResponse>(document, sentVariables);
+""")
+    for anchor in local_response_anchors
+])
+network_response_anchors = [
+    "    const networkResponse = await getHttpClient().request<TResponse>(document, sentVariables);\n",
+    """    const networkResponse = signal
+      ? await getHttpClient().request<TResponse>({ document, variables: sentVariables, signal })
+      : await getHttpClient().request<TResponse>(document, sentVariables);
 """,
-"""    const probeNetworkStartedAtMs = perfNow();
-    const networkResponse = await getHttpClient().request<TResponse>(document, sentVariables);
-    if (operation) {
+]
+replace_one_of("src/lib/graphql/offline-request.ts", [
+    (anchor, "    const probeNetworkStartedAtMs = perfNow();\n" + anchor + """    if (operation) {
       perfProbe('offline-request', {
         lane: 'network',
         surface: String(operation.surface),
@@ -277,11 +329,10 @@ edit("src/lib/graphql/offline-request.ts", [
         online: onlineManager.isOnline(),
       });
     }
-"""),
+""")
+    for anchor in network_response_anchors
 ])
-text = open(M + "src/lib/graphql/offline-request.ts").read()
-first_import = text.index("import ")
-open(M + "src/lib/graphql/offline-request.ts", "w").write(text[:first_import] + "import { PERF_PROBE_ENABLED, perfNow, perfProbe } from '../perf-probe';\n" + text[first_import:])
+add_import("src/lib/graphql/offline-request.ts", "import { PERF_PROBE_ENABLED, perfNow, perfProbe } from '../perf-probe';")
 
 
 SETTLE_CONSENT = [
@@ -294,4 +345,6 @@ SETTLE_CONSENT = [
 if "--settle-consent" in flags:
     edit("src/components/onboarding/ConsentGate.tsx", SETTLE_CONSENT)
 
-print("probes applied to", root)
+for path, contents in staged.items():
+    (mobile / path).write_text(contents)
+print(json.dumps({"modifiedMobilePaths": list(staged)}))

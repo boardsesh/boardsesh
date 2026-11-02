@@ -26,7 +26,7 @@ import {
   type ComponentProps,
 } from 'react';
 import { StyleSheet } from 'react-native';
-import { Host } from '@expo/ui';
+import { ComposeHost } from './ComposeHost.android';
 // useNativeState comes from the platform module (not the @expo/ui root) so its
 // ObservableState type matches the field's `value` prop — the root re-export
 // resolves to the universal, simplified ObservableState that doesn't.
@@ -71,7 +71,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
   },
   ref,
 ) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const textState = useNativeState(value);
   const lastEmittedRef = useRef(value);
   const fieldRef = useRef<{ focus: () => Promise<void> }>(null);
@@ -155,11 +155,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
   const supportingText = error ?? hint;
 
   return (
-    // `colorScheme` pins the Compose MaterialTheme to our in-app Light/Dark
-    // toggle, not the OS scheme — else the typed text, floating label and
-    // supporting text go dark-on-dark when the app runs dark on a light-mode
-    // phone (as SwitchRow/AppMenu do).
-    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
+    <ComposeHost matchContents={{ vertical: true }} style={styles.host}>
       <OutlinedTextField
         ref={fieldRef as unknown as ComponentProps<typeof OutlinedTextField>['ref']}
         value={textState}
@@ -202,7 +198,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
           </OutlinedTextField.TrailingIcon>
         ) : null}
       </OutlinedTextField>
-    </Host>
+    </ComposeHost>
   );
 });
 

@@ -27,7 +27,7 @@ default_platform(:ios)
 REPO_ROOT = File.expand_path("..", __dir__)
 APPLE_SCREENSHOTS_ROOT = File.join(REPO_ROOT, "app-stores", "apple", "screenshots")
 GOOGLE_SCREENSHOTS_DIR = File.join(REPO_ROOT, "app-stores", "google", "screenshots", "pixel-2")
-EXPECTED_DELIVER_LOCALES = ["en-US", "es-ES", "es-MX", "fr-FR", "de-DE"].freeze
+EXPECTED_DELIVER_LOCALES = ["en-US", "es-ES", "es-MX", "fr-FR", "de-DE", "it"].freeze
 SUPPLY_LOCALE = "en-US"
 
 APP_IDENTIFIER = "com.boardsesh.app"
@@ -101,14 +101,48 @@ rescue => error
 end
 
 # True when App Store Connect has a version deliver can edit, false when there is
-# none, so the `metadata` and `screenshots` lanes can skip instead of letting
-# deliver retry "Cannot find edit app store version" for ~20 minutes. When the
-# check itself fails it also returns false: deliver's own lookup would include a
-# version waiting for review, and since the merge-back submission sends versions
-# for review unattended, a push must not run blind. A skipped push is one rerun.
+# none, so the `screenshots` lane can skip instead of letting deliver retry
+# "Cannot find edit app store version" for ~20 minutes (the `metadata` lane makes
+# the same check on the version it reads). When the check itself fails it also
+# returns false: deliver's own lookup would include a version waiting for review,
+# and since the merge-back submission sends versions for review unattended, a
+# push must not run blind. A skipped push is one rerun.
 def editable_app_store_version_present?
   edit_version = editable_app_store_version
   !edit_version.nil? && edit_version != :unknown
+end
+
+# Settings on an App Store version that deliver's metadata step rewrites from an
+# option, so a listing-text push must hand deliver what App Store Connect already
+# holds (#7225). Each entry: the deliver option, the Spaceship read, what it is
+# called in the run summary, and what it is called in an error.
+#
+# deliver's phased_release and reset_ratings options both default to false, not
+# nil (fastlane 2.241.2, deliver/lib/deliver/options.rb). Its metadata step
+# leaves each setting alone only when the option is nil: false deletes the
+# version's phased release or rating reset request, and true creates one
+# (UploadMetadata#upload, "Update phased release" and "Update rating reset", in
+# deliver/lib/deliver/upload_metadata.rb). An explicit nil falls back to that
+# false default (FastlaneCore::Configuration#fetch), so passing what is already
+# there is the only way to keep it. Calls with skip_metadata: true return before
+# that step and need nothing.
+DELIVER_VERSION_SETTINGS = [
+  { option: :phased_release, fetch: :fetch_app_store_version_phased_release, label: "Phased release", noun: "a phased release" },
+  { option: :reset_ratings, fetch: :fetch_reset_ratings_request, label: "Rating reset", noun: "a rating reset request" }
+].freeze
+
+# Whether the App Store version has the given DELIVER_VERSION_SETTINGS entry.
+#
+# App Store Connect answers "none" with `data: null`, which Spaceship raises as a
+# RuntimeError "No data" (Spaceship::ConnectAPI::Models.parse); an empty answer
+# comes back as nil. deliver reads both as none, and so does this. Any other
+# failure stops the push: reading it as none would let deliver delete a setting
+# its own read can see.
+def app_store_version_setting_on?(version, setting)
+  !version.public_send(setting.fetch(:fetch)).nil?
+rescue => error
+  return false if error.instance_of?(RuntimeError) && error.message == "No data"
+  UI.user_error!("Could not read whether App Store version #{version.version_string} has #{setting.fetch(:noun)} (#{error.message}); not pushing listing text, because deliver would remove one this lane cannot see. Rerun once App Store Connect answers.")
 end
 
 # App Store version states in which a version is not out yet: being prepared,
@@ -191,6 +225,11 @@ def screenshot_manifest
 
     reference_devices.each do |device_slug|
       expected_names = manifest.fetch(reference_locale).fetch(device_slug).map { |path| File.basename(path) }
+      if locale == "it" && device_slug.start_with?("iphone-")
+        # Italian uses its native session capture until a physical Live Activity
+        # fixture is reviewed. Every other filename still matches exactly.
+        expected_names = expected_names.map { |name| name == "07-live-activity.png" ? "07-session-detail.png" : name }.sort
+      end
       actual_names = devices.fetch(device_slug).map { |path| File.basename(path) }
       if actual_names != expected_names
         UI.user_error!("Screenshot files for #{locale}/#{device_slug} do not match #{reference_locale}/#{device_slug}.")
@@ -273,8 +312,9 @@ platform :ios do
       "-authenticationKeyID", key_id, "-authenticationKeyIssuerID", issuer_id)
   end
 
-  desc "Submit an exact uploaded build to the discord users TestFlight group with its test notes"
+  desc "Submit an exact uploaded build to the Discord Users TestFlight group with its test notes"
   lane :distribute_testflight do |options|
+    require "json"
     require File.join(REPO_ROOT, "fastlane", "lib", "testflight_distribution")
     require "spaceship"
     version = (options[:version] || ENV["RELEASE_VERSION"]).to_s
@@ -288,6 +328,8 @@ platform :ios do
       find_builds: -> { Spaceship::ConnectAPI::Build.all(app_id: app.id, version: version, build_number: build_number, platform: "IOS") },
       distribute: ->(distribution_options) { upload_to_testflight(api_key: api_key, **distribution_options) }
     ).run
+    output_path = ENV["TESTFLIGHT_DISTRIBUTION_OUTPUT"]
+    File.write(output_path, JSON.pretty_generate(receipt) + "\n") if output_path && !output_path.empty?
     summary = BoardseshTestflightDistribution.summary(receipt)
     UI.success(summary)
     emit_step_summary(summary)
@@ -313,7 +355,7 @@ platform :ios do
       BoardseshStoreAudit::Apple.new(
         client: client, app_id: app.id, version: ENV.fetch("RELEASE_VERSION"),
         build_number: ENV.fetch("IOS_BUILD_NUMBER"), cpp_targets: manifest.fetch("targets").select { |target, _config| selected.include?(target) },
-        locales: EXPECTED_DELIVER_LOCALES, display_types: manifest.fetch("devices").values.uniq
+        locales: EXPECTED_DELIVER_LOCALES, cpp_locales: manifest.fetch("locales").values.flatten, display_types: manifest.fetch("devices").values.uniq
       ).run
     end
     # MANUAL unless asked: only the automatic merge-back submission
@@ -345,7 +387,7 @@ platform :ios do
     report = BoardseshStoreAudit::Apple.new(
       client: client, app_id: app.id, version: ENV.fetch("RELEASE_VERSION"),
       build_number: ENV.fetch("IOS_BUILD_NUMBER"), cpp_targets: cpp_targets,
-      locales: EXPECTED_DELIVER_LOCALES, display_types: manifest.fetch("devices").values.uniq
+      locales: EXPECTED_DELIVER_LOCALES, cpp_locales: manifest.fetch("locales").values.flatten, display_types: manifest.fetch("devices").values.uniq
     ).run
     BoardseshStoreAudit.write_report(ENV.fetch("STORE_AUDIT_OUTPUT"), report)
     UI.success("iOS release identity verified; audit report includes #{report.fetch('readinessIssues').length} asset readiness issue(s).")
@@ -360,7 +402,31 @@ platform :ios do
     app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
     UI.user_error!("App #{APP_IDENTIFIER} not found on App Store Connect") unless app
     client = BoardseshASC::Client.new(token: -> { Spaceship::ConnectAPI.token.refresh! if Spaceship::ConnectAPI.token.expired?; Spaceship::ConnectAPI.token.text })
-    status = BoardseshStoreSubmissionStatus.ios(client.list("/v1/apps/#{app.id}/appStoreVersions?filter[platform]=IOS&limit=200"), version)
+    versions = client.list("/v1/apps/#{app.id}/appStoreVersions?filter[platform]=IOS&limit=200")
+    current = BoardseshStoreSubmissionStatus.ios(versions, version)
+    expected_build = ENV["IOS_BUILD_NUMBER"]
+    attached_build = nil
+    if expected_build && BoardseshStoreSubmissionStatus::BUILD_BOUND_STATES.include?(current.fetch("state"))
+      version_id = current.fetch("versionId")
+      unless version_id.is_a?(String) && version_id.match?(/\A[A-Za-z0-9-]{1,128}\z/)
+        raise BoardseshStoreSubmissionStatus::Error, "Attached iOS version has no valid identity"
+      end
+      build = client.request("GET", "/v1/appStoreVersions/#{version_id}/build").fetch("data")
+      if build
+        unless build.is_a?(Hash) && build["type"] == "builds" && build["id"].is_a?(String) && build["id"].match?(/\A[A-Za-z0-9-]{1,128}\z/)
+          raise BoardseshStoreSubmissionStatus::Error, "Attached iOS build has no valid identity"
+        end
+        prerelease = client.request("GET", "/v1/builds/#{build.fetch('id')}/preReleaseVersion").fetch("data")
+        unless prerelease.is_a?(Hash) && prerelease["type"] == "preReleaseVersions"
+          raise BoardseshStoreSubmissionStatus::Error, "Attached iOS build has no prerelease identity"
+        end
+        attached_build = {
+          "versionId" => version_id, "buildNumber" => build.dig("attributes", "version"),
+          "marketingVersion" => prerelease.dig("attributes", "version"), "platform" => prerelease.dig("attributes", "platform")
+        }
+      end
+    end
+    status = BoardseshStoreSubmissionStatus.ios(versions, version, expected_build: expected_build, attached_build: attached_build)
     File.write(ENV.fetch("STORE_SUBMISSION_STATUS_OUTPUT"), JSON.pretty_generate(status) + "\n")
     UI.message("iOS #{version}: #{status.fetch('status')}. #{status.fetch('reason')}")
   rescue BoardseshStoreSubmissionStatus::Error, BoardseshASC::Error => error
@@ -464,6 +530,10 @@ platform :ios do
           app_identifier: "com.boardsesh.app",
           screenshots_path: staging_dir,
           skip_binary_upload: true,
+          # skip_metadata: true also skips deliver's phased-release and
+          # rating-reset step, so this call cannot remove either. Turning
+          # metadata on here needs the DELIVER_VERSION_SETTINGS pass-through the
+          # `metadata` lane has (#7225).
           skip_metadata: true,
           skip_app_version_update: true,
           overwrite_screenshots: true,
@@ -495,8 +565,8 @@ platform :ios do
     # and this refuses unless that exact version is the one deliver would edit.
     # Nothing editable means it is already submitted or in a review draft (deliver
     # cannot edit either), so that is a skip, not a failure: a rerun stays green.
+    edit_version = editable_app_store_version
     unless expected_version.empty?
-      edit_version = editable_app_store_version
       UI.user_error!("Could not read the editable App Store version; not pushing listing text.") if edit_version == :unknown
       if edit_version.nil?
         UI.important("No editable App Store version (#{expected_version} may already be submitted or in a review draft); not pushing listing text.")
@@ -516,10 +586,28 @@ platform :ios do
     # backoff ladder and then fails — which used to burn the whole metadata job's
     # time budget. Skip cleanly when there's nothing to edit; the text lands on the
     # next run once a version is editable (and it's pushed again at release time).
-    unless editable_app_store_version_present?
+    if edit_version.nil? || edit_version == :unknown
       UI.important("No editable App Store version in 'Prepare for Submission' — nothing for deliver to edit. Skipping the listing-text upload; it will be pushed once a version is editable.")
       emit_step_summary("**Skipped:** no editable App Store version — no iOS listing text uploaded.")
       next
+    end
+
+    # Keep the version's phased release and rating reset request as App Store
+    # Connect has them. Left out, each option defaults to false and deliver
+    # deletes what the owner turned on (see DELIVER_VERSION_SETTINGS). Do not
+    # drop this. Both are read before the upload, so one turned on in App Store
+    # Connect while the push runs is still deleted; the release docs say so.
+    keep_settings = DELIVER_VERSION_SETTINGS.to_h do |setting|
+      on = app_store_version_setting_on?(edit_version, setting)
+      note =
+        if on
+          "#{setting.fetch(:label)}: on for #{edit_version.version_string}; the listing push keeps it on."
+        else
+          "#{setting.fetch(:label)}: none on #{edit_version.version_string}; the listing push leaves it off."
+        end
+      UI.message(note)
+      emit_step_summary(note)
+      [setting.fetch(:option), on]
     end
 
     upload_to_app_store(
@@ -529,6 +617,8 @@ platform :ios do
       skip_binary_upload: true,
       skip_screenshots: true,
       skip_metadata: false,
+      phased_release: keep_settings.fetch(:phased_release),
+      reset_ratings: keep_settings.fetch(:reset_ratings),
       # Only edit the current editable version's text; never create or retitle a version.
       skip_app_version_update: true,
       submit_for_review: false,
@@ -608,6 +698,9 @@ platform :ios do
       build_number: build_number,
       skip_binary_upload: true,
       skip_screenshots: true,
+      # Also skips deliver's phased-release and rating-reset step
+      # (UploadMetadata#upload returns first thing), so a draft never removes
+      # either; see DELIVER_VERSION_SETTINGS before turning metadata on here.
       skip_metadata: true,
       submit_for_review: false,
       automatic_release: false,

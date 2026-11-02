@@ -33,6 +33,11 @@ const TIE_OWNER = 'smart-view-ties';
 const BOARD_TIE_OWNER = 'smart-view-board-ties';
 // A logbook holding a climb whose most-ascended angle is a tie, for the display angle.
 const ANGLE_OWNER = 'smart-view-angles';
+// A logbook with ticks logged on catalog-dedup aliases of k-2 and k-3 (#6809).
+const ALIAS_OWNER = 'smart-view-aliases';
+// ALIAS_OWNER's soft-deleted spray wall, with one climb on it (#6808).
+const SPRAY_WALL_BOARD = 'smart-view-spray-wall';
+const SPRAY_WALL_LAYOUT = 96809;
 
 function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
@@ -147,14 +152,18 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
     await db
       .insert(users)
       .values(
-        [OWNER, STRANGER, PRIVATE_OWNER, GUARDED_OWNER, TIE_OWNER, BOARD_TIE_OWNER, ANGLE_OWNER].map((id) => ({
-          id,
-          email: `${id}@test.invalid`,
-        })),
+        [OWNER, STRANGER, PRIVATE_OWNER, GUARDED_OWNER, TIE_OWNER, BOARD_TIE_OWNER, ANGLE_OWNER, ALIAS_OWNER].map(
+          (id) => ({
+            id,
+            email: `${id}@test.invalid`,
+          }),
+        ),
       )
       .onConflictDoNothing();
     await db.execute(sql`INSERT INTO user_profiles (user_id, is_private) VALUES (${PRIVATE_OWNER}, true)`);
-    await db.execute(sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_OWNER}, ${BOARD_TIE_OWNER})`);
+    await db.execute(
+      sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_OWNER}, ${BOARD_TIE_OWNER}, ${GUARDED_OWNER}, ${ALIAS_OWNER})`,
+    );
 
     // Kilter layout 1 (size 10, set 1) and one Tension climb. The grade each
     // logbook row shows is its most-ascended angle's: k-4 shows 20 (at 50°).
@@ -291,6 +300,61 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
       INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
       VALUES ('tick', 'sv-g2', ${GUARDED_OWNER}, 'only_me')
     `);
+    // GUARDED_OWNER's hearts: k-1, the deleted k-ghost and k-merged, an alias.
+    await db.execute(sql`
+      INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at) VALUES
+        (${GUARDED_OWNER}, 'kilter', 'k-1', 40, '2026-06-01 10:00'),
+        (${GUARDED_OWNER}, 'kilter', 'k-ghost', 40, '2026-06-02 10:00'),
+        (${GUARDED_OWNER}, 'kilter', 'k-merged', 40, '2026-06-03 10:00')
+    `);
+
+    // ALIAS_OWNER: k-2-old and k-3-old are dedup aliases of k-2 and k-3. k-2 is
+    // tried 3 times on the alias and 2 on the climb, both five-star; k-4 4 times;
+    // k-3 sent on the alias and tried twice on the climb; and k-ghost, a deleted
+    // climb, tried 6 times.
+    await db.execute(sql`
+      INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source) VALUES
+        ('kilter', 'k-2-old', 'k-2', 'test'),
+        ('kilter', 'k-3-old', 'k-3', 'test')
+    `);
+    for (const [index, tick] of (
+      [
+        { climbUuid: 'k-2-old', status: 'attempt', attempts: 3, quality: 5, climbedAt: '2026-06-10 10:00' },
+        { climbUuid: 'k-2', status: 'attempt', attempts: 2, quality: 5, climbedAt: '2026-06-01 10:00' },
+        { climbUuid: 'k-4', status: 'attempt', attempts: 4, climbedAt: '2026-06-02 10:00' },
+        { climbUuid: 'k-3-old', status: 'send', attempts: 1, climbedAt: '2026-06-03 10:00' },
+        { climbUuid: 'k-3', status: 'attempt', attempts: 2, climbedAt: '2026-06-04 10:00' },
+        { climbUuid: 'k-ghost', status: 'attempt', attempts: 6, quality: 5, climbedAt: '2026-06-05 10:00' },
+      ] as const
+    ).entries()) {
+      await seedTick({ uuid: `sv-al${index}`, userId: ALIAS_OWNER, ...tick });
+    }
+    // ALIAS_OWNER's deleted spray wall (#6808): a wall delete is soft and keeps
+    // its climbs, and a climb on it is in nobody's list, so its five-star
+    // project (7 tries) and its heart count on no card either.
+    await db.execute(sql`
+      INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name)
+      VALUES (${SPRAY_WALL_BOARD}, ${SPRAY_WALL_BOARD}, ${ALIAS_OWNER}, 'spray', ${SPRAY_WALL_LAYOUT}, ${SPRAY_WALL_LAYOUT}, '1', 'Garage')
+    `);
+    await db.execute(sql`
+      INSERT INTO spray_walls (board_uuid, layout_id, deleted_at)
+      VALUES (${SPRAY_WALL_BOARD}, ${SPRAY_WALL_LAYOUT}, '2026-06-12 10:00')
+    `);
+    await seedClimb('s-gone', 'spray', SPRAY_WALL_LAYOUT, 'Kilo');
+    await seedTick({
+      uuid: 'sv-al-spray',
+      userId: ALIAS_OWNER,
+      climbUuid: 's-gone',
+      boardType: 'spray',
+      status: 'attempt',
+      attempts: 7,
+      quality: 5,
+      climbedAt: '2026-06-11 10:00',
+    });
+    await db.execute(sql`
+      INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at)
+      VALUES (${ALIAS_OWNER}, 'spray', 's-gone', 40, '2026-06-11 10:00')
+    `);
 
     // TIE_OWNER: k-4 tried 5 times, then k-6, k-2 and k-5 three times each.
     for (const [index, [climbUuid, attempts]] of (
@@ -376,11 +440,14 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
 
   afterAll(async () => {
     // Neither table is in setup.ts's per-file reset list.
-    await db.execute(sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_OWNER}, ${BOARD_TIE_OWNER})`);
-    await db.execute(sql`DELETE FROM user_boards WHERE uuid = 'smart-view-board'`);
+    await db.execute(
+      sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_OWNER}, ${BOARD_TIE_OWNER}, ${GUARDED_OWNER}, ${ALIAS_OWNER})`,
+    );
+    await db.execute(sql`DELETE FROM spray_walls WHERE board_uuid = ${SPRAY_WALL_BOARD}`);
+    await db.execute(sql`DELETE FROM user_boards WHERE uuid IN ('smart-view-board', ${SPRAY_WALL_BOARD})`);
     await db.execute(sql`DELETE FROM user_profiles WHERE user_id = ${PRIVATE_OWNER}`);
     await db.execute(sql`DELETE FROM content_privacy WHERE entity_id = 'sv-g2'`);
-    await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid = 'k-merged'`);
+    await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid IN ('k-merged', 'k-2-old', 'k-3-old')`);
   });
 
   describe('no view', () => {
@@ -647,12 +714,12 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
       expect(filtered.unfilteredCount).toBe(1);
     });
 
-    it('a tick on a uuid with no board_climbs row takes no page slot and no count, even for the owner (#6661)', async () => {
+    it('a tick on a deleted climb takes no page slot and no count, even for the owner, and an alias tick is its climb’s (#6661, #6809)', async () => {
       const ownersOwn = makeCtx({ isAuthenticated: true, userId: GUARDED_OWNER });
       for (const type of ['FIVE_STARS', 'MOST_REPEATED', 'PROJECTS'] as const) {
         const paged = await pageThrough({ type, userId: GUARDED_OWNER }, 1, ownersOwn);
-        // Neither a deleted climb nor an alias of a published one: the hydrator
-        // reads the tick's own uuid and finds no row for either.
+        // A deleted climb has no row for the hydrator to read. An alias is never
+        // listed under its own uuid: its tick (sv-g5) belongs to k-1.
         expect(paged.collected, type).not.toContain('k-ghost');
         expect(paged.collected, type).not.toContain('k-merged');
         expect(paged.collected, type).toContain('k-draft');
@@ -660,6 +727,62 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
         const firstPage = await fetchSmart({ type, userId: GUARDED_OWNER, pageSize: 1 }, ownersOwn);
         expect(firstPage.meta.climbCount, type).toBe(paged.collected.length);
       }
+    });
+
+    it('a tick on a catalog alias counts toward its canonical climb, with and without a view (#6809)', async () => {
+      const aliasOwner = makeCtx({ isAuthenticated: true, userId: ALIAS_OWNER });
+      const expected = {
+        // k-2's attempts on both uuids (5) lead k-4's 4; k-3's are 3.
+        MOST_REPEATED: ['k-2', 'k-4', 'k-3'],
+        // k-3 was sent on its alias, so it is no project.
+        PROJECTS: ['k-2', 'k-4'],
+        // Five-star on both uuids, listed once.
+        FIVE_STARS: ['k-2'],
+      };
+      for (const [type, climbs] of Object.entries(expected) as Array<[keyof typeof expected, string[]]>) {
+        for (const view of [undefined, { sortBy: 'position' as const }, { minGrade: 1, maxGrade: 40 }]) {
+          const label = `${type} ${JSON.stringify(view)}`;
+          const paged = await pageThrough({ type, userId: ALIAS_OWNER, view }, 1, aliasOwner);
+          expect(paged.collected, label).toEqual(climbs);
+          expect(paged.totalCount, label).toBe(climbs.length);
+          const firstPage = await fetchSmart({ type, userId: ALIAS_OWNER, view, pageSize: 1 }, aliasOwner);
+          expect(firstPage.meta.climbCount, label).toBe(climbs.length);
+        }
+      }
+    });
+
+    it('each library card counts what its list’s header counts, with alias, deleted-climb and deleted-wall ticks present (#6808)', async () => {
+      for (const userId of [GUARDED_OWNER, ALIAS_OWNER]) {
+        const ownersOwn = makeCtx({ isAuthenticated: true, userId });
+        const cards = await playlistQueries.mySmartPlaylistCounts(null, undefined, ownersOwn);
+        for (const type of ['FIVE_STARS', 'MOST_REPEATED', 'PROJECTS', 'LIKED_CLIMBS'] as const) {
+          const header = await fetchSmart({ type, userId, pageSize: 1 }, ownersOwn);
+          const card = cards.find((entry) => entry.type === type);
+          expect(card?.count, `${userId} ${type}`).toBe(header.totalCount);
+        }
+      }
+      // The header counts themselves, so the equality above is not two zeros.
+      // s-gone, on the deleted spray wall, is on no card: no five stars, no
+      // repeat, no project and no heart.
+      const aliasCards = await playlistQueries.mySmartPlaylistCounts(
+        null,
+        undefined,
+        makeCtx({ isAuthenticated: true, userId: ALIAS_OWNER }),
+      );
+      expect(aliasCards.filter((entry) => !entry.type.startsWith('RECOMMENDED_'))).toEqual([
+        { type: 'FIVE_STARS', count: 1 },
+        { type: 'MOST_REPEATED', count: 3 },
+        { type: 'PROJECTS', count: 2 },
+        { type: 'LIKED_CLIMBS', count: 0 },
+      ]);
+      const guardedCards = await playlistQueries.mySmartPlaylistCounts(
+        null,
+        undefined,
+        makeCtx({ isAuthenticated: true, userId: GUARDED_OWNER }),
+      );
+      // k-1, k-3 and k-draft (k-ghost is deleted, k-merged is k-1); one heart on k-1.
+      expect(guardedCards).toContainEqual({ type: 'FIVE_STARS', count: 3 });
+      expect(guardedCards).toContainEqual({ type: 'LIKED_CLIMBS', count: 1 });
     });
 
     it('a private logbook stays hidden under a view', async () => {

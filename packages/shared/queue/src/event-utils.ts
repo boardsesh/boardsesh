@@ -67,7 +67,7 @@ export function evaluateQueueEventSequence(lastSequence: number | null, eventSeq
  * all: it is unattributed, it is wrong for them, and their next full-queue
  * write pushes it back to everyone.
  */
-export const PRIVATE_CLIMB_FIELDS = ['myDifficulty'] as const;
+export const PRIVATE_CLIMB_FIELDS = ['myDifficulty', 'localWritePending'] as const;
 
 /**
  * A copy of `climb` with every field in `PRIVATE_CLIMB_FIELDS` removed.

@@ -14,6 +14,10 @@ import { useBoardDownloads } from '../offline/use-board-downloads';
 import { planOwnedSprayWallPins } from '../offline/owned-spray-wall-pins';
 import { removeOfflineBoard } from '../offline/remove-offline-board';
 import { getOwnedSprayWallPins, getSetting, setOwnedSprayWallPins, useSetting } from '../settings';
+import { useActiveBoard } from '../lib/graphql/use-active-board';
+import { useSprayWallToken } from '../lib/spray/use-spray-wall-token';
+import { getSprayWall } from '../lib/spray/spray-wall-registry';
+import { recordOpenedSprayWall } from '../offline/opened-spray-wall-pins';
 
 /**
  * The whole roster, every page, for the pin. `myBoards` pages at 20 and puts
@@ -75,6 +79,17 @@ export function OwnedSprayWallsOfflinePin(): null {
   const { enableBoardsOffline } = useBoardDownloads();
   const db = useOfflineDatabase();
   const queryClient = useQueryClient();
+  const { data: activeBoard } = useActiveBoard();
+  const wallToken = useSprayWallToken(active ? activeBoard?.boardType : null, activeBoard?.layoutId);
+
+  useEffect(() => {
+    if (!active || !userId || activeBoard?.boardType !== 'spray' || isSigningOut()) return;
+    const wall = getSprayWall(activeBoard.layoutId);
+    if (!wall || wall.wallUuid !== activeBoard.uuid || wall.version < 1) return;
+    if (recordOpenedSprayWall(userId, activeBoard)) {
+      enableBoardsOffline(activeBoard, { trigger: 'auto-download-all', source: 'more' });
+    }
+  }, [active, userId, activeBoard, wallToken, enableBoardsOffline]);
 
   useEffect(() => {
     if (!active || !userId || !boards || isSigningOut()) return;
@@ -89,6 +104,8 @@ export function OwnedSprayWallsOfflinePin(): null {
     if (plan.ledger) setOwnedSprayWallPins(plan.ledger);
     if (plan.pin.length > 0) enableBoardsOffline(plan.pin, { trigger: 'owned-wall', source: 'owned_wall' });
     for (const board of plan.unpin) {
+      const opened = getSetting('offlineOpenedSprayWallsV1');
+      if (opened?.userId === userId && Object.values(opened.walls).includes(board.uuid)) continue;
       void removeOfflineBoard({ db, queryClient, scope: offlineBoardScopeForBoard(board) }).catch((error: unknown) =>
         reportHandledError(error, { tags: { source: 'offline-sync', op: 'owned-wall-unpin' } }),
       );

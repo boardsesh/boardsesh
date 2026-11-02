@@ -210,9 +210,12 @@ module, so the store fleet's crash screen is unchanged. Any CSP on the app
 subdomain must allow the inline script; see `deploy/app-subdomain/README.md`.
 
 A reload keeps the URL, including `?sessionId`, and the solo queue is already
-persisted, so the climber comes back where they were. Keeping the previous
-deploys' chunks live would avoid the reload entirely; that is tracked
-in #5780.
+persisted, so the climber comes back where they were.
+
+Most tabs never need that reload: each deploy also keeps the JS chunks of the
+deploys from the last 3 days (#5780). See "Chunk carry-over" in
+`deploy/app-subdomain/README.md`. The reload remains the fallback for a tab
+older than that, or for a deploy where the carry-over failed open.
 
 ### Cross-origin backend
 

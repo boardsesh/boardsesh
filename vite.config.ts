@@ -150,6 +150,7 @@ export default defineConfig({
       './packages/shared/spray-wall-geometry/vite.config.ts',
       './packages/shared/board-look/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
+      './packages/shared/frosted-bokeh/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
       './packages/shared/text-redaction/vite.config.ts',
       './packages/shared/pr-body/vite.config.ts',
@@ -174,6 +175,7 @@ export default defineConfig({
       './packages/shared/profile-stats/vite.config.ts',
       './packages/shared/session-inference/vite.config.ts',
       './packages/shared/playlist-generator/vite.config.ts',
+      './packages/shared/workout-summary/vite.config.ts',
       './packages/shared/climb-filters/vite.config.ts',
       './packages/shared/gym-filters/vite.config.ts',
       './packages/shared/community-roles/vite.config.ts',
@@ -212,11 +214,27 @@ export default defineConfig({
     // seam crossfade, the veil buckets), and the traced-art shards are hashed
     // into the version directly — both change pixels without touching anything
     // else listed here.
-    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-look/src/**,packages/shared/board-art-geometry/src/generated/**,packages/shared/board-render/src/**,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
+    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-look/src/**,packages/shared/board-art-geometry/src/generated/**,packages/shared/board-render/src/**,packages/shared/frosted-bokeh/{src/**,assets/**},packages/backend/src/services/spray-og-card.ts,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
       () => 'vp run check:board-render-version',
   },
   run: {
     tasks: {
+      'qa:boards': {
+        command: 'tsx scripts/board-qa.ts',
+        cache: false,
+      },
+      'qa:boards:ios-driver': {
+        command: 'tsx scripts/board-qa-ios-driver.ts',
+        cache: false,
+      },
+      'qa:boards:simulator-peer': {
+        command: 'tsx scripts/board-qa-simulator-peer.ts',
+        cache: false,
+      },
+      'qa:boards:test-usb': {
+        command: 'uv run --script scripts/board-qa/usb-serial.test.py',
+        cache: false,
+      },
       // --- Database ---
       'db:up': {
         command: 'bash scripts/dev-db-up.sh',
@@ -891,6 +909,9 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/board-config run typecheck',
         dependsOn: ['codegen'],
       },
+      'typecheck:frosted-bokeh': {
+        command: 'pnpm --filter @boardsesh/frosted-bokeh run typecheck',
+      },
       'typecheck:board-render': {
         command: 'pnpm --filter @boardsesh/board-render run typecheck',
         dependsOn: ['build:constants'],
@@ -919,6 +940,9 @@ export default defineConfig({
       },
       'typecheck:playlist-generator': {
         command: 'pnpm --filter @boardsesh/playlist-generator run typecheck',
+      },
+      'typecheck:workout-summary': {
+        command: 'pnpm --filter @boardsesh/workout-summary run typecheck',
       },
       'typecheck:climb-filters': {
         command: 'pnpm --filter @boardsesh/climb-filters run typecheck',
@@ -1039,6 +1063,7 @@ export default defineConfig({
           'typecheck:key-value-storage',
           'typecheck:board-config',
           'typecheck:board-render',
+          'typecheck:frosted-bokeh',
           'typecheck:board-art-geometry',
           'typecheck:hold-detection',
           'typecheck:hold-detector',
@@ -1047,6 +1072,7 @@ export default defineConfig({
           'typecheck:playback-react',
           'typecheck:profile-stats',
           'typecheck:playlist-generator',
+          'typecheck:workout-summary',
           'typecheck:climb-filters',
           'typecheck:gym-filters',
           'typecheck:community-roles',

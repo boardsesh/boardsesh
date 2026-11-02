@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
-vi.mock('../../hooks/use-accessible-input-style', () => ({ useAccessibleInputStyle: (style: unknown) => style }));
+vi.mock('../../hooks/use-accessible-input-style', () => ({
+  useAccessibleInputStyle: (style: unknown) => style,
+  useBrandInputColors: () => undefined,
+}));
 vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 import { act, render } from '@testing-library/react';
 import { createElement, useImperativeHandle, type Ref, type ReactNode } from 'react';

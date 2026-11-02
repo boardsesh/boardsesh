@@ -345,6 +345,8 @@ describe('ConsentGate', () => {
   });
 
   it('opens a pending destination once after the answer and privacy route dismissal', async () => {
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = 'user-1';
     expect(deferConsentDestination('com.boardsesh.app://climb/123?board=kilter')).toBe(true);
     const view = render(<ConsentGate />);
     await flushEffects();
@@ -366,6 +368,26 @@ describe('ConsentGate', () => {
     view.rerender(<ConsentGate />);
     expect(router.navigate).toHaveBeenCalledOnce();
     expect(consumeConsentDestination()).toBeNull();
+  });
+
+  it('drops a pending destination signed out instead of opening it under the login redirect', async () => {
+    expect(deferConsentDestination('com.boardsesh.app://changelog')).toBe(true);
+    route.segments = ['privacy-consent'];
+    const view = render(<ConsentGate />);
+    await act(async () => {
+      updateConsentState({ record: granted, settled: true });
+    });
+
+    route.segments = ['auth', 'login'];
+    view.rerender(<ConsentGate />);
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(consumeConsentDestination()).toBeNull();
+
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = 'user-1';
+    route.segments = ['(tabs)', 'climbs'];
+    view.rerender(<ConsentGate />);
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 });
 

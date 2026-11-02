@@ -29,6 +29,9 @@ const isDev = process.env.NODE_ENV !== 'production';
  * Role split:
  * - `primary`/`tint`: brand colour for FOREGROUND use (text, icons, links, borders).
  * - `primaryFill`: brand colour for a FILLED surface/button background.
+ * - `primaryStrong`: brand foreground for text on a TONAL violet wash (the
+ *   player's wall button): one step deeper than `primary` in light, so the label
+ *   keeps 4.6:1 on the 20% wash over every sheet; the same lifted violet in dark.
  * - `onPrimary`: text/icon colour sitting on `primaryFill`.
  * - `accent`: warm amber spark for highlights — FILL-ONLY, always pair with dark text.
  * - `onAccent`: the ink that pairs with `accent`. Same value in both schemes because
@@ -47,6 +50,7 @@ export const brandColors = {
   tint: '#6D28D9',
   primary: '#6D28D9',
   primaryFill: '#6D28D9',
+  primaryStrong: '#5B21B6',
   onPrimary: '#FFFFFF',
   accent: '#FF8A3D',
   onAccent: '#16111F',
@@ -72,6 +76,7 @@ export const brandColorsDark = {
   tint: '#A78BFA',
   primary: '#A78BFA',
   primaryFill: '#7C3AED',
+  primaryStrong: '#A78BFA',
   onPrimary: '#FFFFFF',
   accent: '#FF8A3D',
   onAccent: '#16111F',

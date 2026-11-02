@@ -150,7 +150,7 @@ export function collectArchiveDsyms(archivePathInput: string): ArchiveDsyms {
 /**
  * Resolve the standalone sentry-cli from packages/mobile, where `@sentry/cli`
  * remains a direct dependency for this wrapper under pnpm's isolated linker.
- * Sentry 8.24's native build phases resolve their own SDK-owned CLI separately.
+ * Sentry's native build phases resolve their own SDK-owned CLI separately.
  */
 export function resolveSentryCli(mobileDirInput: string): string {
   const mobileDir = resolve(mobileDirInput);
@@ -167,13 +167,27 @@ export function resolveSentryCli(mobileDirInput: string): string {
         "packages/mobile/package.json (pnpm's isolated linker does not surface transitive deps there).",
     );
   }
-  const getPath = (sentryCliModule as { getPath?: () => string }).getPath;
+  // CLI 3 exports a named SentryCli class; CLI 2 exported the class directly.
+  // Keep both so frozen release anchors continue using their installed CLI.
+  const cliApi =
+    typeof sentryCliModule === 'object' && sentryCliModule !== null && 'SentryCli' in sentryCliModule
+      ? sentryCliModule.SentryCli
+      : sentryCliModule;
+  const getPath =
+    cliApi !== null && (typeof cliApi === 'object' || typeof cliApi === 'function') && 'getPath' in cliApi
+      ? cliApi.getPath
+      : undefined;
   if (typeof getPath !== 'function') {
     throw new Error('The installed @sentry/cli does not expose getPath(); cannot locate the sentry-cli binary.');
   }
-  const executablePath = getPath();
-  if (!executablePath || !existsSync(executablePath) || !statSync(executablePath).isFile()) {
-    throw new Error(`@sentry/cli reported a sentry-cli binary that does not exist: ${executablePath}`);
+  const executablePath: unknown = getPath.call(cliApi);
+  if (
+    typeof executablePath !== 'string' ||
+    !executablePath ||
+    !existsSync(executablePath) ||
+    !statSync(executablePath).isFile()
+  ) {
+    throw new Error(`@sentry/cli reported a sentry-cli binary that does not exist: ${String(executablePath)}`);
   }
   return executablePath;
 }

@@ -469,7 +469,8 @@
         "footer": "Änderungen gelten sofort. Blende alles aus, um nur den Boulder ohne vertikales Scrollen zu sehen.",
         "tabs": {
           "sections": "Unter dem Boulder",
-          "buttons": "Buttons"
+          "buttons": "Buttons",
+          "miniPlayer": "Mini-Player"
         }
       },
       "sectionLayout": {
@@ -513,6 +514,12 @@
         "underName": "Unter dem Namen",
         "yourClimbing": "Dein Klettern",
         "actions": "Aktionen",
+        "layout": {
+          "title": "Spalten",
+          "one": "Eine Spalte",
+          "two": "Zwei Spalten",
+          "footer": "Zwei Spalten erscheinen, wenn die Liste Platz hat, etwa auf einem iPad im Querformat."
+        },
         "gradesTitle": "Schwierigkeitsgrade",
         "previewFooter": "Beispiel. Begehungen, Favoriten und Tags erscheinen bei Bouldern, die sie haben.",
         "gradeFooter": "Wähle den Hauptgrad unter Einstellungen → Boulder & Grade.",
@@ -545,7 +552,7 @@
       },
       "playerButtons": {
         "title": "Buttons",
-        "description": "Wähle die Buttons rund um Eintragen, ihre Reihenfolge und ihren Platz.",
+        "description": "Wähle bis zu vier Buttons rund um Eintragen, ihre Reihenfolge und ihren Platz.",
         "position": {
           "label": "Position",
           "below": "Unter dem Board",
@@ -553,7 +560,7 @@
           "footer": "Eintragen und Board beleuchten behalten immer ihren Platz."
         },
         "previousNext": "Zurück und Weiter",
-        "previousNextDescription": "Das Wischen auf dem Board wechselt weiterhin zwischen Bouldern.",
+        "previousNextDescription": "Zeige Navigationspfeile neben Eintragen statt zwei Aktionsbuttons. Wischen auf dem Board wechselt weiterhin zwischen Bouldern.",
         "buttons": {
           "mirror": "Spiegeln",
           "favorite": "Favorit",
@@ -569,14 +576,31 @@
           "log": "Eintragen",
           "boardLight": "Board beleuchten"
         },
-        "footer": "Was von Warteschlange und Spiegeln zuerst kommt, bekommt den großen Button. Ein ausgeblendeter Button bleibt im ⋯-Menü. Ohne kleine Buttons nimmt das Board ihre Reihe ein.",
+        "footer": "Ohne Navigationspfeile erscheinen bis zu vier eingeschaltete Buttons rund um Eintragen. Sind mehr für dieses Board verfügbar, bekommen der erste und die letzten drei einen Platz. Mit Pfeilen erscheinen nur der erste und der letzte. Die übrigen und alle ausgeblendeten Buttons sind im ⋯-Menü.",
         "settingsFooter": "Die Reihenfolge änderst du im Menü ⋯ eines Boulders unter Ansichtsoptionen.",
-        "previewLabel": "Vorschau, {{position}}: {{buttons}}"
+        "previewLabel": "Vorschau, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Board-Steuerung",
+          "wallButton": "Wand-Button",
+          "lightbulb": "Glühbirne",
+          "footer": "Beide Bedienelemente verbinden, beleuchten den Boulder und zeigen, wer das Board hält. Halten öffnet bei bestehender Verbindung die Optionen. Lies die Beschriftung des Wand-Buttons: Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird; tippe darauf, um das Steuern zu beenden. Dein Handy bleibt verbunden, außer Bluetooth trennen, wenn das Steuern endet ist an. Hat das Steuern ein Zeitlimit, zeigen eine Uhr neben der Beschriftung und die schrumpfende Mattierung, wann es endet. Die Glühbirne sitzt oben rechts."
+        }
       },
       "climbView": {
         "title": "Boulder-Ansicht",
         "valueDefault": "Standard",
         "valueCustom": "Benutzerdefiniert"
+      },
+      "quickFilters": {
+        "title": "Schnellfilter",
+        "valueDefault": "Standard",
+        "valueCustom": "Benutzerdefiniert",
+        "climbsTitle": "Boulder",
+        "climbsFooter": "Sie stehen in dieser Reihenfolge über der Boulderliste. Ein Filter, den du einschaltest, kommt ans Ende.",
+        "playlistsTitle": "Playlists",
+        "playlistsFooter": "Sie stehen in dieser Reihenfolge über jeder Playlist, jeder Smart-Playlist und jeder Seite von Routenbauer*innen.",
+        "restoreDefaults": "Standard wiederherstellen",
+        "footer": "Änderungen gelten sofort und nur auf diesem Handy. Alle Filter bleiben unter Filter."
       },
       "timers": {
         "restTitle": "Pause",
@@ -590,7 +614,7 @@
         "modeOnTheMinuteHint": "Feste Zeitfenster ab dem Einschalten. Versuche oder Begehungen setzen die Uhr nie zurück.",
         "autoAdvance": "Zum nächsten Boulder wechseln",
         "autoAdvanceHint": "Boardsesh beleuchtet ihn für dich am Board, nur solange Boardsesh offen ist.",
-        "autoAdvanceBlocked": "Nur wer das Board steuert, kann die Warteschlange weiterschalten.",
+        "autoAdvanceBlocked": "Nur wer das Board hält, kann die Warteschlange weiterschalten.",
         "autoAdvanceNeedsLength": "Wähl eine Pausenlänge, damit die Warteschlange automatisch weiterschaltet.",
         "cuesTitle": "Signale",
         "cuesFooter": "Wenn sie aus sind, bekommst du trotzdem eine Warn-Vibration, bevor das Board von selbst weiterschaltet.",
@@ -610,6 +634,24 @@
         "rogueConnecting": "Verbinde…",
         "rogueUnreachable": "Nicht erreichbar. Prüf, ob er an und in der Nähe ist.",
         "rogueSaveFailed": "Der Timer konnte nicht gespeichert werden. Versuch es noch mal."
+      },
+      "miniPlayer": {
+        "title": "Mini-Player",
+        "description": "Die Leiste über den Tabs behält den letzten Boulder, den du geöffnet hast. Tippe darauf, um ihn wieder zu öffnen; Board beleuchten bringt ihn ans Board.",
+        "buttons": {
+          "next": "Nächster Boulder",
+          "previous": "Vorheriger Boulder",
+          "wallDisplay": "Wandanzeige"
+        },
+        "fixedNote": "Board beleuchten ist immer da, neben Eintragen. Eintragen steht immer ganz hinten, direkt unter deinem Daumen.",
+        "footer": "Auf dem iPhone hat die Leiste neben Board beleuchten und Eintragen Platz für einen dieser Buttons: den ersten, der aktiv ist.",
+        "open": "Geöffnet",
+        "collapsed": "Eingeklappt",
+        "previewLabel": "Vorschau, Leiste {{shape}}: {{buttons}}",
+        "footerWide": "Auf einem breiten Bildschirm zeigt die Leiste so viele dieser Buttons, wie Platz haben: die ersten in der Liste zuerst.",
+        "shapeOpen": "geöffnet",
+        "shapeCollapsed": "eingeklappt",
+        "more": "Mehr"
       }
     },
     "sendRecovery": {
@@ -711,8 +753,21 @@
         "workout": "Bau ein Workout: Volumen, Pyramide, Leiter oder Grad-Fokus. Grad setzen, Runs vorab ansehen, einen nach dem anderen toppen.",
         "crew": "Kletterst du mit anderen? Startet eine Session und teilt euch eine Warteschlange. Jede*r legt den nächsten Run auf, ohne das Handy weiterzureichen.",
         "record": "Deine Begehungen landen unter Fortschritt im Diagramm: Gradverteilung und schwerste Begehung. Importier dein Kilter- und Tension-Routenbuch aus Aurora und starte mit deiner Historie.",
-        "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder.",
-        "climbsTab": "Um zu deinen Bouldern zurückzukommen, tipp in der Tab-Leiste auf die Lupe."
+        "accessory": "Die Leiste unten behält den letzten Boulder, den du geöffnet hast, bis deine Warteschlange weitergeht. Tipp darauf, um ihn wieder zu öffnen; ihre Glühbirne beleuchtet ihn am Board, und ✓ trägt ihn ein. Der Boulder am Board steht weiter oben im Tab Boulder.",
+        "previewFirst": {
+          "title": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten.",
+          "windowSeconds": "Dann steuerst du das Board: {{seconds}} Sekunden lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet.",
+          "windowMinute": "Dann steuerst du das Board: 1 Minute lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet.",
+          "windowMinutes": "Dann steuerst du das Board: {{minutes}} Minuten lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet.",
+          "untilStop": "Dann steuerst du das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du aufhörst.",
+          "frost": "Der mattierte Button heißt: Du steuerst das Board, und jeder Boulder, den du wählst, wird beleuchtet. Mit „Am Board beleuchten“ endet das nach der Zeit unter Steuern beenden nach (Einstellungen › Board): Neben der Beschriftung läuft eine Uhr rückwärts, und die Mattierung schrumpft, während sie abläuft. Wische den Button nach links, um ohne Ende zu steuern (mit verbundenem Board kannst du ihn auch gedrückt halten und Jeden Boulder beleuchten wählen). Tippe ihn an, um aufzuhören.",
+          "frostScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst. Mit „Am Board beleuchten“ endet das nach der Zeit unter Steuern beenden nach, in Einstellungen › Board. Nutze die Aktion Jeden Boulder beleuchten, um ohne Ende zu steuern. Tippe den Button an, um aufzuhören.",
+          "frostOpenEnded": "Der mattierte Button heißt: Du steuerst das Board, und jeder Boulder, den du wählst, wird beleuchtet, bis du ihn antippst, um aufzuhören. Wische den Button nach links, um das Board zu steuern (mit verbundenem Board kannst du ihn auch gedrückt halten und Jeden Boulder beleuchten wählen).",
+          "frostOpenEndedScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst, bis du den Button antippst, um aufzuhören. Nutze die Aktion Jeden Boulder beleuchten, um das Board zu steuern.",
+          "settings": "Beleuchtung einstellen",
+          "done": "Alles klar",
+          "close": "Tipp schließen"
+        }
       },
       "link": {
         "title": "Nimm deine {{boardName}}-Begehungen mit",
@@ -727,7 +782,6 @@
       "home": "Start",
       "boards": "Boards",
       "climbs": "Boulder",
-      "wall": "An der Wand",
       "profile": "Profil",
       "holdFilter": "Grifftypen",
       "zoneFilter": "Board-Bereich",
@@ -782,6 +836,14 @@
         "finishTesting": "Test von PR #{{prNumber}} abschließen",
         "options": "Update-Optionen",
         "earlyUpdatesHelp": "Frühe Updates können Fehler haben. Änderungen gelten beim nächsten App-Start."
+      },
+      "previewFirstSpotlight": {
+        "title": "Boulder durchsehen, ohne das Board zu beleuchten",
+        "tap": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten, und dann steuerst du das Board: Die Boulder, die du wählst, werden auch beleuchtet, bis die gewählte Zeit um ist (standardmäßig 45 Sekunden). Die Zeit änderst du unter Steuern beenden nach in Einstellungen › Board.",
+        "swipe": "Wische den Wand-Button nach links, dann steuerst du das Board, bis du aufhörst. Solange er in den Farben des Boulders leuchtet, wird jeder Boulder beleuchtet, den du wählst. Tippe ihn an, um aufzuhören. Hat das Steuern ein Zeitlimit, steht eine Uhr neben der Beschriftung, und die Mattierung schrumpft, während die Zeit abläuft.",
+        "back": "Der Pfeil oben links beendet die Vorschau und bringt dich zurück zu deinem Boulder oder zum Boulder am Board. Die Leiste unten behält den letzten Boulder, den du geöffnet hast.",
+        "cta": "So funktioniert's",
+        "dismiss": "Alles klar"
       }
     },
     "launchUpdate": {
@@ -854,6 +916,16 @@
       "yes": "Ja",
       "no": "Nein",
       "unknown": "Unbekannt"
+    },
+    "supportAsks": {
+      "accountRow": "Boardsesh unterstützen",
+      "cardTitle": "Hilf mit, Boardsesh zu bauen",
+      "cardBody": "Boardsesh ist für alle Kletterer*innen kostenlos. Monatliche Unterstützung bezahlt die Zeit, die in Boardsesh steckt.",
+      "giveMonthly": "Monatlich geben",
+      "giveOnce": "Einmal geben",
+      "hideCard": "Diese Karte ausblenden",
+      "settingTitle": "Aufrufe zur Unterstützung zeigen",
+      "settingFooter": "Eine Zeile „Boardsesh unterstützen“ unter Konto und in der ersten Woche jedes Monats eine Karte auf Start."
     }
   },
   "lightControl": {
@@ -1193,6 +1265,7 @@
   },
   "undoDelete": {
     "removed": "Eintrag gelöscht",
+    "removedMany": "{{count}} Einträge gelöscht",
     "undo": "Rückgängig",
     "cancelled": "Löschen abgebrochen. Dein Eintrag bleibt erhalten."
   }

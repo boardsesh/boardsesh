@@ -108,6 +108,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     longitude: Float
     "Whether publicly visible"
     isPublic: Boolean!
+    "Whether this gym appears in discovery. False keeps direct links readable."
+    isListed: Boolean!
     "Image URL"
     imageUrl: String
     "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, which is the gym photo."
@@ -230,13 +232,19 @@ export const gymsTypeDefs = /* GraphQL */ `
   """
   A board that probably belongs to a gym but isn't linked to it yet — either it
   followed a listing that got merged into this gym, or it sits at the gym's
-  coordinates while unlinked or attached to a synced (SYSTEM) listing.
+  coordinates while unlinked or attached to a synced (SYSTEM) listing. Public,
+  unlinked boards owned by another person are candidates only for an in-scope
+  platform admin who can read their location.
   """
   type StrayBoard {
     "The board's unique identifier."
     uuid: ID!
     "The board's display name."
     name: String!
+    "Board type (kilter, tension, moonboard, ...)."
+    boardType: String!
+    "Board angle in degrees."
+    angle: Int!
     "The gym this board is currently linked to (a merged twin or a synced listing); null when unlinked."
     currentGymUuid: ID
     "Name of the gym this board is currently linked to; null when unlinked."
@@ -285,6 +293,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     name: String!
     "Optional description"
     description: String
+    "Opening hours; nonblank hours receive a confirmation timestamp."
+    hours: String
     "Physical address"
     address: String
     "Website URL"
@@ -299,6 +309,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     longitude: Float
     "Whether publicly visible (default true)"
     isPublic: Boolean
+    "Whether listed in discovery (default true)"
+    isListed: Boolean
     "Image URL"
     imageUrl: String
     "Optional board UUID to link on creation"
@@ -333,6 +345,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     longitude: Float
     "New visibility"
     isPublic: Boolean
+    "Whether listed in discovery"
+    isListed: Boolean
     "New image URL"
     imageUrl: String
     "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, the gym photo. Pass null to clear it."
@@ -465,6 +479,10 @@ export const gymsTypeDefs = /* GraphQL */ `
     gymUuid: ID!
     "Stray board UUID to attach"
     boardUuid: ID!
+    "False prevents merging an emptied source gym. Omitted preserves legacy behavior."
+    allowSourceGymMerge: Boolean
+    "The source gym the user saw; null means unlinked. A changed source rejects the move."
+    expectedCurrentGymUuid: ID
   }
 
   """

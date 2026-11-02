@@ -42,7 +42,9 @@ describe('live climb filter sessions', () => {
 
   it('commits the whole selection immediately but coalesces queries for 250 ms', () => {
     const { result, onSelectionChange, onDismiss } = renderFilters();
-    act(() => result.current.openFilters());
+    act(() => {
+      result.current.openFilters();
+    });
     act(() => result.current.onSelectionChange(nextSelection.filters, nextSelection.boardFilters));
     expect(result.current.showFilters).toBe(true);
     expect(result.current.committedSelection).toEqual(nextSelection);
@@ -61,7 +63,9 @@ describe('live climb filter sessions', () => {
 
   it('flushes a last selection and finalizes once when immediately swiped closed', () => {
     const { result, onDismiss } = renderFilters();
-    act(() => result.current.openFilters());
+    act(() => {
+      result.current.openFilters();
+    });
     const close = result.current.closeFilters;
     act(() => {
       result.current.onSelectionChange(nextSelection.filters, nextSelection.boardFilters);
@@ -79,7 +83,9 @@ describe('live climb filter sessions', () => {
 
   it('keeps the latest pair when close and reopen occur in one batch', () => {
     const { result } = renderFilters();
-    act(() => result.current.openFilters());
+    act(() => {
+      result.current.openFilters();
+    });
     const oldClose = result.current.closeFilters;
     act(() => {
       result.current.onSelectionChange(nextSelection.filters, nextSelection.boardFilters);
@@ -94,7 +100,9 @@ describe('live climb filter sessions', () => {
 
   it('does not delay name updates again or restart the filter timer on a name-only render', () => {
     const { result, rerender, onDismiss } = renderFilters();
-    act(() => result.current.openFilters());
+    act(() => {
+      result.current.openFilters();
+    });
     act(() => result.current.onSelectionChange(nextSelection.filters, nextSelection.boardFilters));
     act(() => {
       vi.advanceTimersByTime(200);
@@ -110,7 +118,9 @@ describe('live climb filter sessions', () => {
 
   it('coalesces rapid edits into the final query pair without intermediate history', () => {
     const { result, onDismiss } = renderFilters();
-    act(() => result.current.openFilters());
+    act(() => {
+      result.current.openFilters();
+    });
     act(() => result.current.onSelectionChange(nextSelection.filters, nextSelection.boardFilters));
     act(() => {
       vi.advanceTimersByTime(200);
@@ -132,7 +142,9 @@ describe('live climb filter sessions', () => {
     'rejects stale selection, name and close callbacks after scope changes to %s',
     (scopeKey) => {
       const { result, rerender, onSelectionChange, onDismiss } = renderFilters();
-      act(() => result.current.openFilters());
+      act(() => {
+        result.current.openFilters();
+      });
       const oldControls = result.current;
       rerender({ scopeKey, name: '' });
       expect(result.current.showFilters).toBe(false);
@@ -152,7 +164,9 @@ describe('live climb filter sessions', () => {
 
   it('external hiding leaves live filters applied without finalizing a recent', () => {
     const { result, onDismiss } = renderFilters();
-    act(() => result.current.openFilters());
+    act(() => {
+      result.current.openFilters();
+    });
     act(() => result.current.onSelectionChange(nextSelection.filters, nextSelection.boardFilters));
     act(() => result.current.hideFilters());
     expect(result.current.showFilters).toBe(false);
@@ -165,20 +179,41 @@ describe('live climb filter sessions', () => {
     const changeName = vi.fn();
     act(() => result.current.runWhileOpen(changeName));
     expect(changeName).not.toHaveBeenCalled();
-    act(() => result.current.openFilters());
+    act(() => {
+      result.current.openFilters();
+    });
     act(() => result.current.runWhileOpen(changeName));
     expect(changeName).toHaveBeenCalledTimes(1);
   });
 
   it('ignores callbacks after unmounting and never opens without a board', () => {
     const { result, unmount, onDismiss } = renderFilters();
-    act(() => result.current.openFilters());
+    act(() => {
+      result.current.openFilters();
+    });
     const oldClose = result.current.closeFilters;
     unmount();
     oldClose();
     expect(onDismiss).not.toHaveBeenCalled();
     const withoutBoard = renderFilters(null);
-    act(() => withoutBoard.result.current.openFilters());
+    act(() => {
+      withoutBoard.result.current.openFilters();
+    });
     expect(withoutBoard.result.current.showFilters).toBe(false);
+  });
+
+  // The Climbs list reports `Climb Filters Opened` only for a real opening.
+  it('says whether a call opened the sheet', () => {
+    const { result } = renderFilters();
+    let opened: boolean | undefined;
+    act(() => {
+      opened = result.current.openFilters();
+    });
+    expect(opened).toBe(true);
+    act(() => {
+      opened = result.current.openFilters();
+    });
+    expect(opened).toBe(false);
+    expect(renderFilters(null).result.current.openFilters()).toBe(false);
   });
 });

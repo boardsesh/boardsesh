@@ -729,6 +729,45 @@ describe('gym hours', () => {
 
   const A_YEAR_AGO = '2025-01-02T09:00:00.000Z';
 
+  it('stores trimmed opening hours and confirmation date during creation', async () => {
+    const before = Date.now();
+    const created = await socialGymMutations.createGym(
+      null,
+      { input: { name: 'New club with hours', hours: '  Mon-Fri 7-22  ' } },
+      authCtx(OWNER),
+    );
+
+    expect(created.hours).toBe('Mon-Fri 7-22');
+    expect(new Date(created.hoursUpdatedAt!).getTime()).toBeGreaterThanOrEqual(before);
+    const [stored] = await db
+      .select({ hours: dbSchema.gyms.hours, confirmed: dbSchema.gyms.hoursUpdatedAt })
+      .from(dbSchema.gyms)
+      .where(eq(dbSchema.gyms.uuid, created.uuid));
+    expect(stored.hours).toBe('Mon-Fri 7-22');
+    expect(stored.confirmed).toBeInstanceOf(Date);
+  });
+
+  it.each([undefined, '', '   '])('does not stamp absent or blank creation hours: %j', async (hours) => {
+    const created = await socialGymMutations.createGym(
+      null,
+      { input: { name: 'New club without hours', ...(hours !== undefined ? { hours } : {}) } },
+      authCtx(OWNER),
+    );
+
+    expect(created.hours).toBeNull();
+    expect(created.hoursUpdatedAt).toBeNull();
+  });
+
+  it('rejects overlong opening hours during creation', async () => {
+    await expect(
+      socialGymMutations.createGym(
+        null,
+        { input: { name: 'New club', hours: 'x'.repeat(GYM_HOURS_MAX_LENGTH + 1) } },
+        authCtx(OWNER),
+      ),
+    ).rejects.toThrow();
+  });
+
   it('stamps the confirmation date when the hours are written', async () => {
     const before = Date.now();
 

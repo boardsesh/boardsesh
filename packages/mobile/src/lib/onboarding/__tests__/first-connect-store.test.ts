@@ -35,7 +35,6 @@ import {
   markFirstConnectPhoneConnected,
   readConnectStepEnrolment,
   recordFirstConnectCardLaunch,
-  recordFirstConnectPillDay,
   resetFirstConnectDeviceForQa,
   resetFirstConnectStoreForTests,
   writeConnectStepEnrolment,
@@ -147,26 +146,18 @@ describe('first-connect store', () => {
       expect(getFirstConnectSnapshot()).toBe(dismissed);
     });
 
-    it('counts each launch and each day once', async () => {
+    it('counts each launch once', async () => {
       await recordFirstConnectCardLaunch('launch-1');
       await recordFirstConnectCardLaunch('launch-1');
       await recordFirstConnectCardLaunch('launch-2');
-      await recordFirstConnectPillDay('2026-09-21');
-      await recordFirstConnectPillDay('2026-09-21');
 
-      expect(getFirstConnectSnapshot().device).toMatchObject({
-        cardLaunchIds: ['launch-1', 'launch-2'],
-        pillDays: ['2026-09-21'],
-      });
+      expect(getFirstConnectSnapshot().device).toMatchObject({ cardLaunchIds: ['launch-1', 'launch-2'] });
     });
 
     it('does not lose a change when two land at once', async () => {
-      await Promise.all([recordFirstConnectCardLaunch('launch-1'), recordFirstConnectPillDay('2026-09-21')]);
+      await Promise.all([recordFirstConnectCardLaunch('launch-1'), recordFirstConnectCardLaunch('launch-2')]);
 
-      expect(storage.values.get(DEVICE_KEY)).toMatchObject({
-        cardLaunchIds: ['launch-1'],
-        pillDays: ['2026-09-21'],
-      });
+      expect(storage.values.get(DEVICE_KEY)).toMatchObject({ cardLaunchIds: ['launch-1', 'launch-2'] });
     });
 
     it('keeps the change in memory and reports it when the write fails', async () => {

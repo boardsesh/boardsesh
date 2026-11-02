@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GET_MY_PINNED_PLAYLISTS,
   type GetMyPinnedPlaylistsQueryResponse,
@@ -26,6 +26,23 @@ export type UsePinnedPlaylistsOptions = {
 };
 
 export type PinnedSource = 'pinned' | 'recent' | 'empty';
+
+type PlaylistRequestScope = {
+  token: string | null;
+  boardType?: string;
+  layoutId?: number;
+  executeGraphQL: ExecutePlaylistsGraphQL;
+  recentsAdapter: RecentsStorageAdapter;
+};
+
+type ScopedPlaylistEntries<Entry> = {
+  scope: PlaylistRequestScope;
+  entries: Entry[];
+  isLoading: boolean;
+};
+
+const EMPTY_PLAYLISTS: Playlist[] = [];
+const EMPTY_RECENTS: RecentPlaylistEntry[] = [];
 
 export type UsePinnedPlaylistsResult = {
   pinned: Playlist[];
@@ -57,45 +74,96 @@ export function usePinnedPlaylists({
   const executeGraphQL = executeGraphQLOverride ?? adapter.executeGraphQL;
   const recentsAdapter = recentsOverride ?? adapter.recents;
 
-  const [pinned, setPinned] = useState<Playlist[]>([]);
-  const [recents, setRecents] = useState<RecentPlaylistEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Keep results tagged with their request context so a render for another
+  // account or board never displays the previous scope while effects catch up.
+  const requestScope = useMemo<PlaylistRequestScope>(
+    () => ({ token, boardType, layoutId, executeGraphQL, recentsAdapter }),
+    [token, boardType, layoutId, executeGraphQL, recentsAdapter],
+  );
+  const activeScopeRef = useRef<PlaylistRequestScope | null>(null);
+  // Pins and recents run independently. A refresh of one must neither revive
+  // an older response nor invalidate the other stream's current request.
+  const pinnedRequestIdRef = useRef(0);
+  const recentsRequestIdRef = useRef(0);
+  const [pinnedState, setPinnedState] = useState<ScopedPlaylistEntries<Playlist>>({
+    scope: requestScope,
+    entries: [],
+    isLoading: true,
+  });
+  const [recentsState, setRecentsState] = useState<ScopedPlaylistEntries<RecentPlaylistEntry>>({
+    scope: requestScope,
+    entries: [],
+    isLoading: true,
+  });
 
   const fetchPinned = useCallback(async () => {
-    if (!token) {
-      setPinned([]);
+    if (activeScopeRef.current !== requestScope) return;
+    const requestId = ++pinnedRequestIdRef.current;
+    const isCurrentRequest = () => activeScopeRef.current === requestScope && pinnedRequestIdRef.current === requestId;
+    if (!requestScope.token) {
+      setPinnedState({ scope: requestScope, entries: [], isLoading: false });
       return;
     }
+    setPinnedState((previous) => ({
+      scope: requestScope,
+      entries: previous.scope === requestScope ? previous.entries : [],
+      isLoading: true,
+    }));
     try {
       const variables: GetMyPinnedPlaylistsQueryVariables = {
-        input: { boardType, layoutId },
+        input: { boardType: requestScope.boardType, layoutId: requestScope.layoutId },
       };
-      const response = await executeGraphQL<GetMyPinnedPlaylistsQueryResponse, GetMyPinnedPlaylistsQueryVariables>(
-        GET_MY_PINNED_PLAYLISTS,
-        variables,
-      );
-      setPinned(response.myPinnedPlaylists);
+      const response = await requestScope.executeGraphQL<
+        GetMyPinnedPlaylistsQueryResponse,
+        GetMyPinnedPlaylistsQueryVariables
+      >(GET_MY_PINNED_PLAYLISTS, variables);
+      if (!isCurrentRequest()) return;
+      setPinnedState({ scope: requestScope, entries: response.myPinnedPlaylists, isLoading: false });
     } catch (err: unknown) {
+      if (!isCurrentRequest()) return;
       console.error('Failed to fetch pinned playlists:', err);
-      setPinned([]);
+      setPinnedState({ scope: requestScope, entries: [], isLoading: false });
     }
-  }, [token, boardType, layoutId, executeGraphQL]);
+  }, [requestScope]);
 
   const fetchRecents = useCallback(async () => {
-    const list = await recentsAdapter.getRecentPlaylists();
-    setRecents(list);
-  }, [recentsAdapter]);
+    if (activeScopeRef.current !== requestScope) return;
+    const requestId = ++recentsRequestIdRef.current;
+    const isCurrentRequest = () => activeScopeRef.current === requestScope && recentsRequestIdRef.current === requestId;
+    setRecentsState((previous) => ({
+      scope: requestScope,
+      entries: previous.scope === requestScope ? previous.entries : [],
+      isLoading: true,
+    }));
+    try {
+      const recentPlaylists = await requestScope.recentsAdapter.getRecentPlaylists();
+      if (!isCurrentRequest()) return;
+      setRecentsState({ scope: requestScope, entries: recentPlaylists, isLoading: false });
+    } catch (err: unknown) {
+      if (!isCurrentRequest()) return;
+      console.error('Failed to fetch recent playlists:', err);
+      setRecentsState({ scope: requestScope, entries: [], isLoading: false });
+    }
+  }, [requestScope]);
 
   useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-    void Promise.all([fetchPinned(), fetchRecents()]).finally(() => {
-      if (!cancelled) setIsLoading(false);
-    });
+    activeScopeRef.current = requestScope;
+    void fetchPinned();
+    void fetchRecents();
     return () => {
-      cancelled = true;
+      activeScopeRef.current = null;
+      pinnedRequestIdRef.current += 1;
+      recentsRequestIdRef.current += 1;
     };
-  }, [fetchPinned, fetchRecents]);
+  }, [requestScope, fetchPinned, fetchRecents]);
+
+  const pinned = pinnedState.scope === requestScope ? pinnedState.entries : EMPTY_PLAYLISTS;
+  const recents = recentsState.scope === requestScope ? recentsState.entries : EMPTY_RECENTS;
+  const isLoading =
+    pinnedState.scope !== requestScope ||
+    recentsState.scope !== requestScope ||
+    pinnedState.isLoading ||
+    recentsState.isLoading;
 
   // Refresh recents when other tabs / screens record opens.
   useEffect(() => {

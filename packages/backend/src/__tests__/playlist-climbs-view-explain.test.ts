@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SerialPlanDb } from '@boardsesh/db/queries';
 import type { PlaylistClimbViewInput } from '@boardsesh/shared-schema';
 import { allBoardsScope, specificBoardScope } from '../graphql/resolvers/playlists/queries/playlist-climbs';
-import { logbookViewSource, type LogbookPlaylistType } from '../graphql/resolvers/playlists/queries/smart-playlists';
+import {
+  logbookViewSource,
+  smartPlaylistCountsSql,
+  type LogbookPlaylistType,
+} from '../graphql/resolvers/playlists/queries/smart-playlists';
 import {
   buildPlaylistViewQueries,
   type PlaylistViewSource,
@@ -35,12 +40,19 @@ import { PlaylistClimbViewInputSchema } from '../validation/schemas';
  * The page query carries its match count as `count(*) OVER ()`, so the gate
  * also checks the window is there and the probes stay probes beneath it.
  *
+ * The library cards' counts query (`smartPlaylistCountsSql`, #6808) is planned
+ * over the same heaviest logbook: every tick's climb, alias and spray checks
+ * must reach `board_climbs`, `board_climb_aliases` and the ticks by index,
+ * never a sequential scan, and serially.
+ *
  * Plan with `jit = off`, as production runs (docs/postgres-dr-architecture.md):
  * with JIT on, compiling these plans takes longer than running them.
  */
 const EXPLAIN_DB_URL = process.env.EXPLAIN_DB_URL;
 const RUN_ANALYZE = process.env.EXPLAIN_ANALYZE === '1';
 const PROBED_TABLES = new Set(['board_climb_stats', 'board_climb_grades']);
+// The tables the library cards' query reaches once per tick (#6808).
+const CARD_INDEXED_TABLES = new Set(['boardsesh_ticks', 'board_climbs', 'board_climb_aliases']);
 const VIEWER = 'playlist-view-explain-viewer';
 
 type PlanNode = { type: string; rel?: string; index?: string; ancestors: string[] };
@@ -236,6 +248,20 @@ if (!EXPLAIN_DB_URL) {
         await assertViewPlans(viewQueries(source, view, userId), label);
       });
     }
+    it('plans the library cards’ counts by index, never a scan, serially (#6808)', async () => {
+      const cardSql = smartPlaylistCountsSql(logbookUserId);
+      const { nodes, executionMs } = await explain({ toSQL: () => new PgDialect().sqlToQuery(cardSql) });
+      if (RUN_ANALYZE) console.info(`[playlist-view-explain] library cards: ${executionMs?.toFixed(1)} ms`);
+      // The plan must reach every one of them, or the loop below proves nothing.
+      expect(
+        new Set(nodes.flatMap((node) => (node.rel && CARD_INDEXED_TABLES.has(node.rel) ? [node.rel] : []))),
+      ).toEqual(CARD_INDEXED_TABLES);
+      for (const node of nodes) {
+        expect(node.type, 'serial-plan guard').not.toMatch(/^Gather/);
+        if (!node.rel || !CARD_INDEXED_TABLES.has(node.rel)) continue;
+        expect(node.type, `${node.rel} must be reached by index`).not.toBe('Seq Scan');
+      }
+    });
   });
 
   function viewQueries(source: PlaylistViewSource, view: PlaylistClimbViewInput, viewer: string) {

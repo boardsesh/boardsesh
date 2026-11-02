@@ -19,6 +19,9 @@ vi.mock('react-native', async () => {
     ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
     View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
       createElement('div', { 'data-style': JSON.stringify(flattenStyle(style)) }, children),
+    // react-native-web turns `nativeID` into the element's id.
+    Text: ({ children, nativeID }: { children?: ReactNode; nativeID?: string }) =>
+      createElement('span', { id: nativeID }, children),
     StyleSheet: { create: (styles: unknown) => styles },
   };
 });
@@ -40,12 +43,16 @@ vi.mock('react-native-paper', () => {
         right,
         accessibilityRole,
         accessibilityHint,
+        accessibilityLabel,
         'aria-checked': checked,
         'aria-disabled': ariaDisabled,
         'aria-busy': busy,
+        'aria-describedby': describedBy,
       }: {
         title: string;
-        description?: string;
+        description?: ReactNode;
+        accessibilityLabel?: string;
+        'aria-describedby'?: string;
         onPress?: () => void;
         disabled?: boolean;
         left?: (props: object) => ReactNode;
@@ -67,6 +74,9 @@ vi.mock('react-native-paper', () => {
             'aria-disabled': ariaDisabled,
             'aria-busy': busy,
             'aria-description': accessibilityHint,
+            // react-native-web: `accessibilityLabel` becomes `aria-label`.
+            'aria-label': accessibilityLabel,
+            'aria-describedby': describedBy,
             'data-pressable': onPress ? 'true' : 'false',
           },
           left?.({}),
@@ -375,5 +385,62 @@ describe('select and segmented rows', () => {
       onSelect: vi.fn(),
     });
     expect(segmentedCalls.at(-1)?.disabledKeys).toBe(disabledKeys);
+  });
+});
+
+// A row's own name (`accessibilityLabel`) replaces the name the browser builds
+// from the row's text: the value rides the name, as the native renderers say it,
+// and the line under the label stays as the row's description.
+describe('rows with their own accessible name', () => {
+  const describedText = (element: HTMLElement) =>
+    document.getElementById(element.getAttribute('aria-describedby') ?? '')?.textContent ?? null;
+
+  it("names a select row with its value and keeps its subtitle as the row's description", () => {
+    renderRows({
+      kind: 'select',
+      key: 'stop-driving',
+      label: 'After',
+      accessibilityLabel: 'Stop driving the wall after',
+      subtitle: 'Always drive the wall is on, so this doesn’t apply.',
+      options: [
+        { key: '45', label: '45 seconds' },
+        { key: 'until_stopped', label: 'Until I stop' },
+      ],
+      selectedKey: 'until_stopped',
+      onSelect: vi.fn(),
+    });
+    const row = screen.getByRole('button', { name: 'Stop driving the wall after, Until I stop' });
+    expect(describedText(row)).toBe('Always drive the wall is on, so this doesn’t apply.');
+  });
+
+  it('keeps a greyed switch row named, and reads its off reason as the description', () => {
+    renderRows({
+      kind: 'toggle',
+      key: 'in-session',
+      label: 'In a session too',
+      accessibilityLabel: 'Keep lighting in a session too',
+      subtitle: 'Your crew sees each climb you pick.',
+      disabledReason: 'Turn on Keep lighting after Put on board to use this.',
+      disabled: true,
+      value: false,
+      onValueChange: vi.fn(),
+    });
+    const row = screen.getByRole('switch', { name: 'Keep lighting in a session too' });
+    expect(describedText(row)).toBe('Turn on Keep lighting after Put on board to use this.');
+  });
+
+  it('leaves a row without its own name to be named from its text', () => {
+    renderRows({
+      kind: 'toggle',
+      key: 'tap',
+      label: 'Light on tap',
+      subtitle: 'Each climb you tap lights.',
+      value: false,
+      onValueChange: vi.fn(),
+    });
+    const row = screen.getByRole('switch');
+    expect(row.getAttribute('aria-label')).toBeNull();
+    expect(row.getAttribute('aria-describedby')).toBeNull();
+    expect(row.textContent).toContain('Each climb you tap lights.');
   });
 });

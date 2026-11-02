@@ -35,12 +35,16 @@ vp run mobile:screenshots -- --platform ios --fixtures replay --theme dark --dev
 ```
 
 The common matrix contains iPhone 16 Pro Max, iPhone 16 Pro, and both existing
-landscape iPads, across four app locales. That is 16 capture shards and
-20 storefront sets because Spanish supplies two Apple locales. The campaign
-captures 18 native sources per iPhone and frames nine output images. Sources
+landscape iPads, across five app locales (`en-US`, `es`, `fr`, `de`, `it`). That
+is 20 capture shards and 24 storefront sets because Spanish supplies two Apple
+locales; Italian writes Apple's `it` folder. The default listing has 180 images.
+The campaign captures 18 native sources per iPhone and frames nine output images. Sources
 remain under `app-stores/apple/raw-screenshots/`; composed sets are under
 `app-stores/apple/screenshots/`, with presentation manifests and contact sheets.
 The explicit `--flow app-store-campaign` alias selects the same iOS campaign.
+Italian phone slot 07 uses `07-session-detail.png`, framed from native
+`04-session-detail.png` with the `session` caption, until a reviewed Italian
+physical Live Activity fixture exists.
 
 Explicit `--fixtures record` and `--fixtures off` retain the legacy diagnostic
 flow. The iOS workflow refuses store upload or baseline publication from these
@@ -48,7 +52,9 @@ modes. Review complete replay captures before uploading them.
 
 ## Generate Header and Search Results stills
 
-Record fresh native captures for every app locale (`en-US`, `es`, `fr`, `de`).
+Header, Search Results, CPP and video campaigns retain the four campaign app
+locales (`en-US`, `es`, `fr`, `de`); Italian is enabled for the default listing
+and its screenshots. Record fresh native captures for each campaign locale.
 Use the original PNG directory for the matching variant, device and locale:
 
 ```bash
@@ -59,9 +65,11 @@ vp run store:creatives -- --input app-stores/apple/cpp/kilter/raw-screenshots/en
 `--variant` accepts `default`, `kilter`, `tension`, `moonboard`, and `spray`;
 omitting it selects `default`. The output is always
 `<output>/<variant>/<app-locale>/`. Both iPhone 16 Pro and iPhone 16 Pro Max
-native sources are supported. The default needs unframed `00-board-view.png`
-(Kilter), `14-spray-board-view.png` (the permitted Home Spray Wall), and
-`10-moonboard-board-view.png` (MoonBoard). Each CPP needs its own
+native sources are supported. The default's Search Results still needs unframed
+`00-board-view.png` (Kilter), `14-spray-board-view.png` (the permitted Home Spray
+Wall), and `10-moonboard-board-view.png` (MoonBoard). Its Header also needs
+`01-board-view-2.png` (Tension Board 2), `11-woods-board-view.png`,
+`12-decoy-board-view.png` and `13-grasshopper-board-view.png`. Each CPP needs its own
 `hero-1.png`, `hero-2.png`, and `hero-3.png`; the generator reads the existing
 CPP opening recipe rather than substituting the default campaign trio.
 
@@ -73,10 +81,23 @@ Retain it with review artifacts; it is not an image to upload to Apple.
 These dimensions follow Apple's
 [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications).
 
-Header has no added text or wordmark. Its native hero is 640 px wide, centered
-at x=1920 with top y=40. Rear phones are 560 px wide, centered at x=1320 and
-x=2520 with top y=100. The background is `#110A20`, with a `#7C3AED` glow at
-50% / 45%; native panels retain the violet border and shadow. Kilter shows
+Header has no added text or wordmark. The background is `#110A20`, with a
+`#7C3AED` glow at 50% / 45%; native panels retain the violet border and shadow.
+The geometry is a slot table in `scripts/frame-screenshots.ts`, recorded in the
+manifest's `header.slots`.
+
+The default page fans seven lit walls so the Header doesn't repeat screenshot 1,
+which sits right below it with the Kilter, spray and MoonBoard trio. Left to
+right: Grasshopper (440 px wide, x=290, top y=220, 30% shade), Decoy (500 px,
+x=770, y=160, 15% shade), MoonBoard (560 px, x=1320, y=100), Tension Board 2 in
+front (640 px, x=1920, y=40), Kilter (560 px, x=2520, y=100), the Home Spray
+Wall (500 px, x=3070, y=160, 15% shade) and Woods (440 px, x=3550, y=220, 30%
+shade). The shades darken the outer phones; they never change what the app
+shows. The iPhone crop keeps MoonBoard, Tension and Kilter.
+
+CPP Headers keep a trio: the hero is 640 px wide, centered at x=1920 with top
+y=40, and the rear phones are 560 px wide, centered at x=1320 and x=2520 with
+top y=100. Kilter shows
 Homewall 7x10, Original 12x12 in front, and Homewall 10x10. Tension and MoonBoard
 use their own CPP hero trio. Spray keeps its own three native walls, places Liz's
 Wall in front, and overlaps a framed `lizfinal.JPG` photograph dimmed with a 30%
@@ -152,8 +173,10 @@ Issue #6438 uses fresh iOS footage for every app locale (`en-US`, `es`, `fr`,
 `de`) and every page variant (`default`, `kilter`, `tension`, `moonboard`,
 `spray`). Spanish footage serves both `es-ES` and `es-MX`; no English footage is
 substituted beneath translated captions. The search export is 1920 × 1280,
-30 fps, H.264 High at level 5.0 or higher, with no audio. Default runs about
-20 seconds; CPP cuts run about 15 seconds. Frame zero carries the first caption
+30 fps, H.264 High at level 5.0 or higher, with no audio. Every cut runs
+15 seconds. The default cut is the board pile ("Your boards. One app."), the
+crew queue, the spray wall and the logbook. It needs no physical-phone footage,
+so it can render before a Live Activity take is reviewed. Frame zero carries the first caption
 fully set. Other scenes reuse the hero's word reveals and upright 2D spring
 motion: phones enter before the scene boundary, then move out at its end.
 Captions are readable by frame 10, and board piles arrive with a short stagger.
@@ -219,8 +242,8 @@ approved objects, verifies every SHA256 and removes the output tree on failure.
 verification contract. The TS fetch output defaults to `.boardsesh/app-store-creatives`;
 `--output` chooses another dedicated export tree.
 
-The **App Store Creative Assets** workflow is dispatch-only, runs from `main`,
-and uses the Production environment. Its actions are `refdata`, `plan`, `upload`
+The **App Store Creative Assets** workflow runs from `main` and uses the
+Production environment. Its actions are `refdata`, `plan`, `upload`
 and `place`, with `variant:all` or one page name. `upload` reserves, transfers and
 commits assets without submitting review or requiring a version, CPP, or destination
 localization. `place` attaches processed assets to an existing version or CPP
@@ -229,10 +252,58 @@ localization. Apple must move every selected asset beyond `UPLOAD_COMPLETE` and
 the lane reports the pending state and makes no placement writes. Neither action creates a CPP, edits
 screenshot slots, submits asset review, or publishes a version.
 
+Merging a PR that changes `app-stores/apple/creative-assets.json` starts the
+automatic video path at that exact merge commit. The manifest's `marketingVersion`
+binds placement to the reviewed train: a later train is refused, including for
+CPP-only retries. A CPP-only retry verifies that the matching iOS version exists,
+then uses the CPP's own editable version (or approved version with `allow_live:true`).
+The matching app version may be waiting for Apple review. Default/all placement
+still requires that app version to be editable or live with explicit approval.
+The automatic path ships only the variants whose search entries changed in
+the push, comparing the manifest with the push's previous commit
+(`store-creatives-r2.ts ready-search-variants --previous`). A variant left
+unchanged, such as a page an earlier train shipped, is never promoted, uploaded
+or placed again, so its entries cannot land on a later version. A changed
+variant must have exactly one video with a poster in each of the four app
+locales, or the run stops before promotion; one whose entries were removed is
+skipped. When nothing changed (a header-only edit, say) the run says so and
+stops before any R2 or ASC step. For the changed variants only, the path
+promotes their immutable candidate objects to `approved/`, then downloads and
+verifies every SHA256 before exposing ASC credentials to the upload lane. It
+uploads those search videos, retries Apple's processing guard for up to 30 minutes
+precondition, and places them on the editable version. If that merge run fails,
+re-run it: a later manifest push compares against the failed merge, so it sees
+those variants as unchanged and will not retry them. A missing manifest at the
+previous commit stops the run rather than shipping every variant.
+
+A manual dispatch with `variant:all` and `placement:search` skips variants that
+have no search entries yet, the same way. With `placement:all`, or when a page
+is named explicitly, a pending page still stops the run. Header PNGs
+and their assignments stay on the manual path. A Production environment reviewer
+gate, if configured, requires one approval before the job starts.
+
+The workflow retains separate promotion, fetch, upload and placement reports.
+Its summary counts unique videos for the shipped pages only (20 when every page ships), while the transfer reports count all
+media/poster/provenance objects. Spanish storefront duplication counts as one
+source video. Asset-review submission remains manual; inspect ASC Preview for
+every locale after placement.
+
+Automatic runs keep `allow_live:false` and `allow_replace:false`. For `variant:default`
+or `variant:all`, a submitted train in `WAITING_FOR_REVIEW` or `IN_REVIEW` remains
+blocked even with `allow_live:true`. Once the same reviewed `marketingVersion`
+is live, dispatch `action:place`, `placement:search` with `allow_live:true` after
+checking the destination. The override does not select a newer train. Replacing
+existing owned assignments additionally requires `allow_replace:true`;
+merging a video PR does not grant either override. A missing or expired candidate
+stops before upload: regenerate the train's candidate PR. Apple-processing
+guards retry automatically; other lane errors stop immediately for review.
+
 Planning or placing on live versions requires `allow_live:true`; standalone
 uploads do not. When no editable iOS version exists, the lane selects the latest
 published version by Apple's `createdDate`, refusing missing dates or ties.
-An identical placement is reused.
+An identical placement is reused. Planning and placement read each destination
+localization's placements, including assets outside this manifest, rather than
+relying on each library asset's reverse placement listing.
 Changing an owned placement requires explicit approval for its deletion and
 recreation (`allow_replace:true`); foreign placements are refused. This guard
 preserves the repository's no-deletion-without-approval rule.

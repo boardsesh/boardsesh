@@ -4,6 +4,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import type { NativeStackNavigationOptions } from 'expo-router';
+import { useHorizontalSafeArea } from '../../../hooks/use-horizontal-safe-area';
 
 const controls = vi.hoisted(() => ({
   glassCapability: true,
@@ -132,6 +133,7 @@ import {
   toolbarGlyphSize,
 } from '../GlassActionToolbar';
 import { UserAvatarToolbarAction } from '../../user-drawer/UserAvatarToolbarAction';
+import { HIDDEN_HEADER_TITLE_STYLE } from '../hidden-header-title';
 
 function lastOptions(): NativeStackNavigationOptions {
   return controls.options.at(-1)!;
@@ -286,6 +288,31 @@ describe('NativeRootHeader', () => {
     expect(lastOptions().headerTitle).toBeUndefined();
   });
 
+  // Climbs: the tab names the screen, so the header draws no title in any state,
+  // while the navigation item keeps the route title for the back button's menu.
+  it('draws no title, large or inline, when the title is hidden', () => {
+    const routeOptions: NativeStackNavigationOptions = { title: 'Climbs' };
+    const { rerender } = render(<NativeRootHeader titleHidden onHeightChange={vi.fn()} />);
+
+    expect(lastOptions().headerLargeTitle).toBe(false);
+    // A clear title, not an empty title view: the native stack keeps one centre
+    // view for the screen's life, and a capsule swapped into an empty one kept
+    // its zero size and never showed.
+    expect(lastOptions().headerTitle).toBeUndefined();
+    expect(lastOptions().headerTitleStyle).toBe(HIDDEN_HEADER_TITLE_STYLE);
+    expect(lastOptions()).not.toHaveProperty('title');
+    expect({ ...routeOptions, ...lastOptions() }.title).toBe('Climbs');
+
+    // The wall capsule still takes the centre when it shows.
+    rerender(<NativeRootHeader titleHidden centerContent={<span>On the wall</span>} onHeightChange={vi.fn()} />);
+    expect(lastOptions().headerLargeTitle).toBe(false);
+    expect(typeof lastOptions().headerTitle).toBe('function');
+
+    // And gives it back when it goes, so the next capsule mounts a fresh view.
+    rerender(<NativeRootHeader titleHidden onHeightChange={vi.fn()} />);
+    expect(lastOptions().headerTitle).toBeUndefined();
+  });
+
   it('keeps an explicit title override independent of the focused route', () => {
     controls.focusedSegments = ['play'];
     const { rerender } = render(<NativeRootHeader title="Climbs" onHeightChange={vi.fn()} />);
@@ -313,6 +340,27 @@ describe('NativeRootHeader', () => {
     const customActions = lastOptions().headerRight?.({ tintColor: 'theme-label', canGoBack: false });
     const { getByText } = render(customActions);
     expect(getByText('Custom actions')).toBeTruthy();
+  });
+
+  it('lets native leading items replace the custom leading group, standalone or not', () => {
+    const leftItems: NativeStackNavigationOptions['unstable_headerLeftItems'] = () => [
+      { type: 'button', label: 'User menu', icon: { type: 'sfSymbol', name: 'person.crop.circle' }, onPress: vi.fn() },
+    ];
+    const { rerender } = render(
+      <NativeRootHeader leftItems={leftItems} leftActions={<span>Avatar</span>} onHeightChange={vi.fn()} />,
+    );
+    expect(lastOptions().unstable_headerLeftItems).toBe(leftItems);
+    expect(lastOptions().headerLeft).toBeUndefined();
+
+    rerender(
+      <NativeRootHeader
+        leftItems={leftItems}
+        leftActionsStandalone
+        leftActions={<span>Avatar</span>}
+        onHeightChange={vi.fn()}
+      />,
+    );
+    expect(lastOptions().unstable_headerLeftItems).toBe(leftItems);
   });
 
   it('keeps the existing blur on iOS before native glass support', () => {
@@ -346,6 +394,21 @@ describe('NativeRootHeader', () => {
 
     rerender(<NativeRootHeader onHeightChange={onHeightChange} />);
     expect(onHeightChange).toHaveBeenLastCalledWith(0);
+  });
+
+  it('pads the controls once for a side rail, so nested columns do not pad again', () => {
+    controls.horizontalInsets = { left: 0, right: 84 };
+    const NestedColumn = () => {
+      const { left, right } = useHorizontalSafeArea();
+      return <span data-nested-inset={`${left},${right}`} />;
+    };
+    const { container } = render(
+      <NativeRootHeader onHeightChange={vi.fn()}>
+        <NestedColumn />
+      </NativeRootHeader>,
+    );
+    expect(readStyle(container.querySelector('[data-controls]')).right).toBe(84);
+    expect(container.querySelector('[data-nested-inset]')?.getAttribute('data-nested-inset')).toBe('0,0');
   });
 
   describe('supplementary controls under the bar', () => {

@@ -3,7 +3,12 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runScreenshotMaestro } from '../mobile-screenshot-maestro';
+import {
+  CPP_MAESTRO_TIMEOUT_MS,
+  IOS_MAESTRO_TIMEOUT_MS,
+  parseScreenshotMaestroArguments,
+  runScreenshotMaestro,
+} from '../mobile-screenshot-maestro';
 
 const temporaryDirectories: string[] = [];
 afterEach(() => {
@@ -20,7 +25,7 @@ function runNode(script: string, options: Parameters<typeof runScreenshotMaestro
   });
 }
 
-describe('CPP Maestro subprocess supervision', () => {
+describe('Maestro subprocess supervision', () => {
   it('forwards recorder output and exposes the owned child without losing crash supervision', async () => {
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -115,6 +120,42 @@ describe('CPP Maestro subprocess supervision', () => {
         encoding: 'utf8',
       }).stdout.trim();
       expect(processState === '' || processState.startsWith('Z')).toBe(true);
+    },
+  );
+});
+
+describe('screenshot Maestro wrapper arguments', () => {
+  const maestroArgs = [
+    '--device',
+    'simulator-id',
+    'test',
+    '/capture/a flow.yaml',
+    '-e',
+    'USER=fixture@example.com',
+    '-e',
+    'PASSWORD=fixture has spaces',
+  ];
+
+  it('preserves legacy CPP arguments and its 30-minute default', () => {
+    expect(parseScreenshotMaestroArguments(maestroArgs)).toEqual({ timeoutMs: CPP_MAESTRO_TIMEOUT_MS, maestroArgs });
+  });
+
+  it('consumes only the leading bounded timeout and forwards the exact raw arguments', () => {
+    expect(
+      parseScreenshotMaestroArguments(['--capture-timeout-ms', String(IOS_MAESTRO_TIMEOUT_MS), ...maestroArgs]),
+    ).toEqual({ timeoutMs: IOS_MAESTRO_TIMEOUT_MS, maestroArgs });
+  });
+
+  it.each([undefined, '', '0', '-1', '1.5', '1e3', ' 1000', '1000ms', '3600001', '99999999999999999999999999'])(
+    'rejects invalid timeout %j',
+    (timeout) => {
+      expect(() =>
+        parseScreenshotMaestroArguments([
+          '--capture-timeout-ms',
+          ...(timeout === undefined ? [] : [timeout]),
+          ...maestroArgs,
+        ]),
+      ).toThrow('Maestro capture timeout');
     },
   );
 });

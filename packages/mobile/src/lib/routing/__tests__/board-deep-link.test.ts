@@ -27,7 +27,7 @@ describe('parseBoardLinkPath', () => {
     expect(parseBoardLinkPath(url)).toBe(CLIMB_PATH);
   });
 
-  it.each(['es', 'fr', 'de'])('drops the /%s locale prefix the app has no route for', (locale) => {
+  it.each(['es', 'fr', 'de', 'it'])('drops the /%s locale prefix the app has no route for', (locale) => {
     expect(parseBoardLinkPath(`https://www.boardsesh.com/${locale}${CLIMB_PATH}`)).toBe(CLIMB_PATH);
   });
 

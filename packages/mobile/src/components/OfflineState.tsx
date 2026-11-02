@@ -5,6 +5,7 @@ import { Icon } from './Icon';
 import { Text } from './Text';
 import { Button } from './Button';
 import { useTheme } from '../providers/theme-provider';
+import { selectEffectiveOffline, useConnectivityField } from '../lib/connectivity/use-connectivity';
 import { spacing } from '../theme/tokens';
 import type { OfflineQueryReason } from '../hooks/use-offline-query-state';
 
@@ -17,10 +18,18 @@ type OfflineStateProps = {
    */
   reason: OfflineQueryReason;
   /**
-   * Retry handler — usually the query's `refetch`. Rendered for `'error'` only,
-   * the one reason a tap can fix on the spot: React Query refetches its own
+   * The `'error'` title naming what failed ("Couldn't load your sessions"), in
+   * place of the generic "Couldn't load this". Pass a whole translated sentence,
+   * not a noun to splice in: the verb agrees with the subject in es/fr/de.
+   */
+  errorTitle?: string;
+  /**
+   * Retry handler — usually the query's `refetch`. Rendered only when nothing
+   * else owns the retry: for `'error'`, and for `'backend_unreachable'` while
+   * the connectivity store has not declared an outage (a timeout or 5xx the
+   * query saw first, so no banner is up yet). React Query refetches its own
    * paused queries on the reconnect edge, and the global connectivity banner
-   * owns the retry for the three offline reasons.
+   * owns the retry once the store says we are offline.
    */
   onRetry?: () => void;
   style?: StyleProp<ViewStyle>;
@@ -37,9 +46,12 @@ type OfflineStateProps = {
  * telling a climber with four bars they have "no signal" while our own server is
  * the thing that is down sends them off rebooting their router (issue #4862).
  */
-function OfflineStateComponent({ reason, onRetry, style }: OfflineStateProps) {
+function OfflineStateComponent({ reason, errorTitle, onRetry, style }: OfflineStateProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
+  const effectiveOffline = useConnectivityField(selectEffectiveOffline);
+  const showRetry =
+    onRetry !== undefined && (reason === 'error' || (reason === 'backend_unreachable' && !effectiveOffline));
 
   // One branch per reason, with literal `t()` keys — the i18n linter rejects a
   // computed key, and the icon travels with the copy because it carries half of
@@ -61,7 +73,7 @@ function OfflineStateComponent({ reason, onRetry, style }: OfflineStateProps) {
       case 'error':
         return {
           iconName: 'warning' as const,
-          title: t('mobile.offlineState.errorTitle'),
+          title: errorTitle ?? t('mobile.offlineState.errorTitle'),
           body: t('mobile.offlineState.errorBody'),
         };
       default:
@@ -82,9 +94,10 @@ function OfflineStateComponent({ reason, onRetry, style }: OfflineStateProps) {
       <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.body}>
         {placard.body}
       </Text>
-      {onRetry && reason === 'error' ? (
+      {showRetry ? (
         <View style={styles.cta}>
-          <Button title={t('mobile.offlineState.retry')} variant="tonal" onPress={onRetry} />
+          {/* Filled: on a dead-end screen this is the only way forward. */}
+          <Button title={t('mobile.offlineState.retry')} variant="filled" onPress={onRetry} />
         </View>
       ) : null}
     </View>

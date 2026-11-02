@@ -28,7 +28,7 @@
 import { Image } from 'expo-image';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { OfflineBoardScope } from '@boardsesh/offline-sync';
-import { deleteCacheDirEntries, resolveImageCacheDirName, walkCacheDir } from './cache-dir-io';
+import { deleteCacheDirEntries, resolveImageCacheDirName, walkCacheDir, type CacheDirWalk } from './cache-dir-io';
 import { invalidateCacheMeasurement, measureCacheDirBytes, recordCacheMeasurement } from './cache-size-meter';
 import {
   measureFreedBytes,
@@ -43,10 +43,13 @@ import {
   SNAPSHOT_LEFTOVER_MAX_AGE_MS,
   SPRAY_PHOTO_MAX_AGE_MS,
   cacheKeyForOverlayName,
+  classifyOverlayEntry,
 } from './cache-sweep-plan';
 import {
   clearOverlayIndex,
   forgetOverlays,
+  forgetOverlaysMissingFromDisk,
+  getOverlayGenerationWatermark,
   getRecentlyUsedCacheKeys,
   resetOverlayWriteOdometer,
 } from './overlay-index';
@@ -304,6 +307,36 @@ const SWEEP_RATE_LIMIT_MS = 5 * 60 * 1000;
 const lastSweptAtMsByTrigger = new Map<CacheSweepTrigger, number>();
 
 /**
+ * Forget every indexed key older than `generationBefore` whose PNG the walk did
+ * not find. A null walk means the directory itself is gone, and so is every file
+ * that was in it.
+ */
+function reconcileIndexWithWalk(walk: CacheDirWalk | null, generationBefore: number): number {
+  const presentKeys = new Set<string>();
+  for (const entry of walk?.entries ?? []) {
+    if (classifyOverlayEntry(entry.name) === 'cache-entry') presentKeys.add(cacheKeyForOverlayName(entry.name));
+  }
+  return forgetOverlaysMissingFromDisk(presentKeys, generationBefore);
+}
+
+/**
+ * Check the overlay index against `{cache}/board-thumbnails` once, now (issue #5882).
+ *
+ * The render hook calls this when the first native render of the launch
+ * resolves. Both native modules prune the directory inside that render, before
+ * it resolves, and nothing tells JS which files went. Without this the warm-up's
+ * keys for the pruned files stay in the index for the whole session, and every
+ * surface that shows one of those climbs mounts a dead URI first.
+ *
+ * Not rate-limited and never deletes anything: it only forgets.
+ */
+export async function reconcileOverlayIndexWithDisk(generationBefore?: number): Promise<number> {
+  const watermark = generationBefore ?? getOverlayGenerationWatermark();
+  const walk = await walkCacheDir(OVERLAY_CACHE_DIR_NAME);
+  return reconcileIndexWithWalk(walk, watermark);
+}
+
+/**
  * Bring `{cache}/board-thumbnails` back under the native modules' own 200 MB cap.
  *
  * The cap already exists — what was missing is anything enforcing it during a
@@ -336,7 +369,12 @@ export async function sweepBoardArtCache(params: {
   const sprayPhotoSweep = await sweepSprayPhotos({ nowMs });
   const sprayPhotoBytes = sprayPhotoSweep.freedBytes;
 
+  const generationBefore = getOverlayGenerationWatermark();
   const walk = await walkCacheDir(OVERLAY_CACHE_DIR_NAME);
+  // Whatever this sweep goes on to delete, the walk already says which indexed
+  // keys have no file left. The launch sweep is the one that matters: it runs
+  // after the native prune has deleted files the warm-up indexed.
+  reconcileIndexWithWalk(walk, generationBefore);
   if (walk === null) {
     return sprayPhotoBytes > 0
       ? { beforeBytes: sprayPhotoBytes, freedBytes: sprayPhotoBytes, filesDeleted: sprayPhotoSweep.filesDeleted }

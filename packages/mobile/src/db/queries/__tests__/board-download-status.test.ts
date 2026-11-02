@@ -23,13 +23,13 @@ import { setSetting, resetAllSettings } from '../../../settings/hooks';
 
 async function insertClimb(
   db: TestSqliteDb,
-  opts: { uuid: string; boardType?: string; layoutId?: number; compatibleSizeIds?: number[] | null },
+  opts: { uuid: string; boardType?: string; layoutId?: number; compatibleSizeIds?: number[] | null; listed?: 0 | 1 },
 ): Promise<void> {
   const sizes = opts.compatibleSizeIds === null ? null : JSON.stringify(opts.compatibleSizeIds ?? [5]);
   await db.runAsync(
     `INSERT INTO board_climbs (uuid, board_type, layout_id, is_listed, is_draft, compatible_size_ids, updated_at)
-     VALUES (?, ?, ?, 1, 0, ?, ?)`,
-    [opts.uuid, opts.boardType ?? 'kilter', opts.layoutId ?? 1, sizes, '2026-01-01T00:00:00Z'],
+     VALUES (?, ?, ?, ?, 0, ?, ?)`,
+    [opts.uuid, opts.boardType ?? 'kilter', opts.layoutId ?? 1, opts.listed ?? 1, sizes, '2026-01-01T00:00:00Z'],
   );
 }
 
@@ -138,7 +138,7 @@ describe('isClimbLayoutDownloadedLocally', () => {
     await insertClimb(db, { uuid: 'a', layoutId: 1, compatibleSizeIds: [5, 7] });
     setSetting('syncEnabledBoards', ['kilter:1:7']);
     await markScopeDownloadComplete(db, 'kilter:1:7');
-    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(true);
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a', 'board_climb_grades')).toBe(true);
   });
 
   it('is false when the only completed size of the layout is one the climb does not fit', async () => {
@@ -148,34 +148,60 @@ describe('isClimbLayoutDownloadedLocally', () => {
     await insertClimb(db, { uuid: 'a', layoutId: 1, compatibleSizeIds: [5] });
     setSetting('syncEnabledBoards', ['kilter:1:5', 'kilter:1:7']);
     await markScopeDownloadComplete(db, 'kilter:1:7');
-    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(false);
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a', 'board_climb_grades')).toBe(false);
   });
 
   it('ignores size for a board that is not size-scoped', async () => {
     await insertClimb(db, { uuid: 'm', boardType: 'moonboard', layoutId: 2, compatibleSizeIds: null });
     setSetting('syncEnabledBoards', ['moonboard:2:1']);
     await markScopeDownloadComplete(db, 'moonboard:2:1');
-    expect(await isClimbLayoutDownloadedLocally(db, 'moonboard', 'm')).toBe(true);
+    expect(await isClimbLayoutDownloadedLocally(db, 'moonboard', 'm', 'board_climb_grades')).toBe(true);
+  });
+
+  it('is false for a delisted row with no rows of its own, how a merged-away alias looks on the phone', async () => {
+    await insertClimb(db, { uuid: 'alias', boardType: 'moonboard', layoutId: 2, compatibleSizeIds: null, listed: 0 });
+    setSetting('syncEnabledBoards', ['moonboard:2:1']);
+    await markScopeDownloadComplete(db, 'moonboard:2:1');
+    expect(await isClimbLayoutDownloadedLocally(db, 'moonboard', 'alias', 'board_climb_grades')).toBe(false);
+    expect(await isClimbLayoutDownloadedLocally(db, 'moonboard', 'alias', 'board_climb_stats')).toBe(false);
+  });
+
+  it('is true for an ordinary unlisted climb that has its own rows in the table the read uses', async () => {
+    // The sync mirrors unlisted climbs with their stats and grades, and saved
+    // playlists keep them: their rows are on disk and must serve offline.
+    await insertClimb(db, { uuid: 'unlisted', layoutId: 1, compatibleSizeIds: [5], listed: 0 });
+    setSetting('syncEnabledBoards', ['kilter:1:5']);
+    await markScopeDownloadComplete(db, 'kilter:1:5');
+    await db.runAsync(
+      `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES ('kilter', 'unlisted', 40, 3)`,
+    );
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'unlisted', 'board_climb_stats')).toBe(true);
+    // The probe is per table: no grade rows, so the grade read still asks the server.
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'unlisted', 'board_climb_grades')).toBe(false);
+    await db.runAsync(
+      `INSERT INTO board_climb_grades (board_type, climb_uuid, angle, local_grade) VALUES ('kilter', 'unlisted', 40, 20)`,
+    );
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'unlisted', 'board_climb_grades')).toBe(true);
   });
 
   it('is false when only a different layout of the board type is downloaded', async () => {
     await insertClimb(db, { uuid: 'a', layoutId: 1 });
     setSetting('syncEnabledBoards', ['kilter:8:5']);
     await markScopeDownloadComplete(db, 'kilter:8:5');
-    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(false);
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a', 'board_climb_grades')).toBe(false);
   });
 
   it('is false while the layout download is still in flight', async () => {
     await insertClimb(db, { uuid: 'a', layoutId: 1 });
     setSetting('syncEnabledBoards', ['kilter:1:5']);
-    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(false);
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a', 'board_climb_grades')).toBe(false);
   });
 
   it('is false for a climb that is not on the device, or on another board type', async () => {
     await insertClimb(db, { uuid: 'a', layoutId: 1 });
     setSetting('syncEnabledBoards', ['kilter:1:5']);
     await markScopeDownloadComplete(db, 'kilter:1:5');
-    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'missing')).toBe(false);
-    expect(await isClimbLayoutDownloadedLocally(db, 'tension', 'a')).toBe(false);
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'missing', 'board_climb_grades')).toBe(false);
+    expect(await isClimbLayoutDownloadedLocally(db, 'tension', 'a', 'board_climb_grades')).toBe(false);
   });
 });

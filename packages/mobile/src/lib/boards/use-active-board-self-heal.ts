@@ -5,7 +5,7 @@
 // foreground. The backend follows merge tombstones and returns the canonical
 // board; a null result means an ordinary deletion.
 //
-// Refresh the authorized projection after privacy changes and on foreground,
+// Refresh the authorized projection after credential changes and on foreground,
 // including owner/location redaction and light-kit capability changes. The
 // local angle is preserved when the board reference still matches.
 
@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { fetchBoardByUuid } from '../graphql/hooks';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
 import {
   getActiveBoardWriteGeneration,
   useActiveBoard,
@@ -40,10 +40,10 @@ export function resetActiveBoardSelfHealForTests(): void {
 }
 
 export function useActiveBoardSelfHeal(): void {
-  const privacyGeneration = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+  const credentialGeneration = useSyncExternalStore(
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
   const { data: activeBoard } = useActiveBoard();
   const setActiveBoardIfCurrent = useSetActiveBoardIfCurrentGeneration();
@@ -98,7 +98,7 @@ export function useActiveBoardSelfHeal(): void {
       validationInFlightRef.current = true;
       const requestGeneration = selectionGenerationRef.current;
       const requestWriteGeneration = getActiveBoardWriteGeneration();
-      const requestPrivacyGeneration = getPrivacyRevocationGeneration();
+      const requestCredentialGeneration = getCredentialGeneration();
 
       void (async () => {
         let definitive = false;
@@ -106,7 +106,7 @@ export function useActiveBoardSelfHeal(): void {
           const resolved = await fetchBoardByUuid(storedUuid);
           if (
             !mountedRef.current ||
-            requestPrivacyGeneration !== getPrivacyRevocationGeneration() ||
+            requestCredentialGeneration !== getCredentialGeneration() ||
             selectionGenerationRef.current !== requestGeneration ||
             activeUuidRef.current !== storedUuid
           ) {
@@ -140,7 +140,7 @@ export function useActiveBoardSelfHeal(): void {
           // later mount, selection effect, or foreground transition retries.
           if (__DEV__) console.warn('[ActiveBoardSelfHeal] validation failed; will retry');
         } finally {
-          if (definitive && requestPrivacyGeneration === getPrivacyRevocationGeneration())
+          if (definitive && requestCredentialGeneration === getCredentialGeneration())
             markInitiallyValidatedActiveBoardUuid(storedUuid, hookValidationCacheEpoch);
           validationInFlightRef.current = false;
           const pendingReason = pendingReasonRef.current;
@@ -156,7 +156,7 @@ export function useActiveBoardSelfHeal(): void {
   useEffect(() => {
     mountedRef.current = true;
     validate('initial');
-  }, [activeUuid, validate, privacyGeneration]);
+  }, [activeUuid, validate, credentialGeneration]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {

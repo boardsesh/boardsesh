@@ -15,11 +15,14 @@
 // on them plays from the list like any other list tap, unless the climber turned
 // on "Tapping a playlist loads it into my queue" (F4, #6667). Then the tap (or
 // the Play button) replaces the whole queue with the list (tapped climb active)
-// so previous/next walk the circuit; with Light the board when I tap a climb
-// off, a row tap is still a preview. Because a replace clears any future queue
-// items, a three-way prompt warns first whenever the queue has items after the
-// current: start the playlist (destructive), add it behind what's queued and
-// play from it, or back out to a preview of the tapped climb.
+// so previous/next walk the circuit, while this phone drives the wall. Outside
+// a drive (Always drive the wall off is the default) the list goes into Up next
+// instead, the wall keeps its climb, and the tapped climb's slot opens as a
+// preview for Put on board.
+// Because a replace clears any future queue items, a three-way prompt warns
+// first whenever the queue has items after the current: start the playlist
+// (destructive), add it behind what's queued and play from it, or back out to
+// a preview of the tapped climb. A crew's queue is never replaced.
 //
 // The same additive landing is available on its own, without a row tap, through
 // `addToQueue.queue` — the playlist-detail Play next / Play last rows, which put
@@ -47,8 +50,11 @@ import {
   getQueueBoardKey,
   MAX_SYNCED_QUEUE_ITEMS,
   clampQueueWindow,
+  replaceUpNext,
+  upNextOf,
   type Climb,
   type ClimbQueueItem,
+  type PlaylistSuggestionSource,
   type QueueAddPlacement,
 } from '@boardsesh/queue';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -63,9 +69,10 @@ import { climbToQueueItem } from '../climb-to-queue-item';
 import { reportHandledError } from '../error-reporting';
 import { track } from '../analytics';
 import { toSchemaClimb } from '../climb-types';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
 import type { LoadedListTrackLoader } from './loaded-list-pages';
 import { getSetting } from '../../settings/hooks';
+import { isDrivingWall } from '../../components/play-drawer/use-climb-change-lights';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
 import { registerPendingTrackLoader, registerTrackPageLoader, type TrackPageLoader } from './track-pager';
 import { sourceIdForReports } from './playlist-view';
@@ -222,7 +229,8 @@ export type UsePlaylistActivationOptions = {
    * Same landing as `viewOnlyBoard`, different reason — that one is "this climb
    * is on a board you're not on", this one is "there are other climbers in this
    * session, so a row tap must not take their wall". Read live at tap time, so a
-   * crew forming or breaking up between render and tap is honoured.
+   * crew forming or breaking up between render and tap is honoured. Driving the
+   * wall (#7113) overrides it: the tap plays the climb and lights it.
    */
   previewOnly?: boolean;
   /**
@@ -268,8 +276,7 @@ export type UsePlaylistActivationOptions = {
    * climber's "Tapping a playlist loads it into my queue" setting on, a tap
    * replaces the queue with the list instead of playing from it. The setting is
    * read at the tap. Off (the default), the tap plays from the list. Either way
-   * "Light the board when I tap a climb" off makes a row tap a preview; the
-   * Play button (`deliberate`) still plays or loads the list.
+   * the tap or Play is a preview unless this phone drives the wall.
    */
   honorPlaylistLoadSetting?: boolean;
 };
@@ -289,18 +296,9 @@ export type PlaylistAddToQueueState = {
   pendingPlacement: QueueAddPlacement | null;
 };
 
-export type PlaylistActivationOptions = {
-  /**
-   * A deliberate play, not a row tap: the list header's Play button. "Light the board
-   * when I tap a climb" is about row taps, so it does not turn this
-   * into a preview. The crew rule still does.
-   */
-  deliberate?: boolean;
-};
-
 export type PlaylistActivationResult = {
-  /** Callback to wire onto a climb row tap, or with `deliberate` the Play button. */
-  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => Promise<void>;
+  /** Callback shared by climb row taps and the header Play button. */
+  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => Promise<void>;
   /** Bulk additive queueing for the detail screen's Play next / Play last rows. */
   addToQueue: PlaylistAddToQueueState;
 };
@@ -389,10 +387,10 @@ export function usePlaylistActivation({
   // Bumped at credential boundaries (sign-in, sign-out). Work started for one
   // account checks it after every await, so a late page, prompt answer or
   // callback cannot write that account's playlist into the next one's queue.
-  const privacyGeneration = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+  const credentialGeneration = useSyncExternalStore(
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
   const loadedClimbsByUuid = useMemo(() => {
     const climbsByUuid = new Map<string, Climb>();
@@ -442,7 +440,7 @@ export function usePlaylistActivation({
   const queueApi = useMemo(
     () => ({
       setCurrentClimb: async (climb: Climb, options: Parameters<typeof setCurrentClimb>[1]) => {
-        if (privacyGeneration !== getPrivacyRevocationGeneration()) return null;
+        if (credentialGeneration !== getCredentialGeneration()) return null;
         const pendingItem = pendingQueueItemRef.current;
         pendingQueueItemRef.current = null;
         // The tapped climb is already the active climb (re-tapped from a list
@@ -473,7 +471,7 @@ export function usePlaylistActivation({
         return item;
       },
       refreshPlaylistSuggestionSource: (source: Parameters<typeof refreshPlaylistSuggestionSource>[0]) => {
-        if (privacyGeneration !== getPrivacyRevocationGeneration()) return false;
+        if (credentialGeneration !== getCredentialGeneration()) return false;
         return refreshPlaylistSuggestionSource(source);
       },
     }),
@@ -482,7 +480,7 @@ export function usePlaylistActivation({
       setCurrentClimb,
       setPlaylistSuggestionSource,
       refreshPlaylistSuggestionSource,
-      privacyGeneration,
+      credentialGeneration,
     ],
   );
 
@@ -734,7 +732,7 @@ export function usePlaylistActivation({
   );
 
   useEffect(() => {
-    const unsubscribe = subscribeToPrivacyRevocations(() => {
+    const unsubscribe = subscribeToCredentialChanges(() => {
       replacementAbortRef.current?.abort();
       appendAbortRef.current?.abort();
       pendingQueueItemRef.current = null;
@@ -782,7 +780,7 @@ export function usePlaylistActivation({
    */
   const promptQueueFork = useCallback(
     async (futureQueueCount: number): Promise<QueueForkDecision> => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return 'cancel';
+      if (credentialGeneration !== getCredentialGeneration()) return 'cancel';
       let warnedCount = futureQueueCount;
       for (;;) {
         const picked = await choose<QueueForkDecision>({
@@ -797,7 +795,7 @@ export function usePlaylistActivation({
           ],
           cancelValue: 'cancel',
         });
-        if (privacyGeneration !== getPrivacyRevocationGeneration()) return 'cancel';
+        if (credentialGeneration !== getCredentialGeneration()) return 'cancel';
         if (picked !== 'replace') return picked;
         const { queue, currentClimbQueueItem } = getQueueSnapshot();
         const latestFutureQueueCount = countFutureQueueItems(queue, currentClimbQueueItem);
@@ -805,7 +803,7 @@ export function usePlaylistActivation({
         warnedCount = latestFutureQueueCount;
       }
     },
-    [choose, getQueueSnapshot, t, privacyGeneration],
+    [choose, getQueueSnapshot, t, credentialGeneration],
   );
 
   /**
@@ -839,7 +837,7 @@ export function usePlaylistActivation({
        */
       excludeClimbUuid?: string;
     }) => {
-      if (!activeBoard || privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      if (!activeBoard || credentialGeneration !== getCredentialGeneration()) return;
       if (isAppendingRef.current) {
         // The row swallows its own press while appending (and shows a spinner),
         // so reaching this from `listHeader` means a double tap inside one frame
@@ -900,7 +898,7 @@ export function usePlaylistActivation({
             });
           }
         }
-        if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
+        if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration()) return;
 
         if (fetchedClimbs.length === 0 && (drainStopReason === null || drainStopReason === 'complete')) {
           reportEmptyBoardFetchOnce('append-queue-empty');
@@ -983,11 +981,7 @@ export function usePlaylistActivation({
         // where it landed: "Playing next" or "Playing last".
         showQueueAddedSnackbar({ kind: placement === 'next' ? 'playNext' : 'added', count: appendedCount });
       } catch (error) {
-        if (
-          abortController.signal.aborted ||
-          privacyGeneration !== getPrivacyRevocationGeneration() ||
-          isAbortError(error)
-        )
+        if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration() || isAbortError(error))
           return;
         console.error('Playlist queue append failed:', error);
         reportHandledError(error, { tags: { source: 'playlist', op: 'append-queue' } });
@@ -1013,7 +1007,7 @@ export function usePlaylistActivation({
       sourceId,
       reportSourceId,
       t,
-      privacyGeneration,
+      credentialGeneration,
     ],
   );
 
@@ -1030,7 +1024,7 @@ export function usePlaylistActivation({
         onSettled?: (trackReplaced: boolean) => void;
       } = {},
     ) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) {
+      if (credentialGeneration !== getCredentialGeneration()) {
         options.onSettled?.(false);
         return;
       }
@@ -1069,7 +1063,7 @@ export function usePlaylistActivation({
           drainResult.droppedDuplicates || abortController.signal.aborted
             ? undefined
             : (drainResult.totalCount ?? (await settledWithin(countedTotal, TRACK_COUNT_GRACE_MS)));
-        if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
+        if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration()) return;
         if (drainStopReason === 'page-cap' || drainStopReason === 'no-progress') {
           reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
             tags: { source: 'playlist', op: `replace-queue-${drainStopReason}` },
@@ -1090,7 +1084,7 @@ export function usePlaylistActivation({
           // The prompt is modal, so nothing in the UI can abort underneath it —
           // but an unmount can, and the old sheet flow could not reach this at
           // all. Don't replace a queue on behalf of a screen that is gone.
-          if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
+          if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration()) return;
           if (decision === 'cancel') return;
           if (decision === 'append') {
             // The board-scoped list is already in hand — no second round trip.
@@ -1206,11 +1200,7 @@ export function usePlaylistActivation({
         // Ask the signal, not the error's `name` — see the drain's own catch.
         // A runtime whose abort does not carry `name: 'AbortError'` would
         // otherwise toast the climber for a cancellation they requested.
-        if (
-          abortController.signal.aborted ||
-          privacyGeneration !== getPrivacyRevocationGeneration() ||
-          isAbortError(error)
-        )
+        if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration() || isAbortError(error))
           return;
         console.error('Playlist queue replacement failed:', error);
         reportHandledError(error, {
@@ -1242,7 +1232,172 @@ export function usePlaylistActivation({
       sourceId,
       reportSourceId,
       t,
-      privacyGeneration,
+      credentialGeneration,
+    ],
+  );
+
+  /**
+   * "Tapping a playlist loads it into my queue" while a tap only previews
+   * (preview-first): the list from the tapped climb on becomes Up next, and
+   * History and the climb on the wall stay where they are. The tap already
+   * seeded Up next with `seedItem`, the slot the preview shows; this loads the
+   * rest of the list behind it. A null `seedItem` means the tapped climb is the
+   * one on the wall: its slot is the Now slot, and the list after it loads.
+   *
+   * The climber may move while it loads. Put on board took the seed up: the
+   * list loads behind it with its track, as Start playlist does. Any other
+   * pick came after the tap, and loading would undo it, so the load is skipped.
+   */
+  const loadPlaylistIntoUpNext = useCallback(
+    async (climb: Climb, seedItem: ClimbQueueItem | null) => {
+      if (credentialGeneration !== getCredentialGeneration()) return;
+      replacementAbortRef.current?.abort();
+      const abortController = new AbortController();
+      replacementAbortRef.current = abortController;
+      const wallAtStartUuid = getQueueSnapshot().currentClimbQueueItem?.uuid ?? null;
+      // The tapped climb's slot: the seed, or the Now slot when it was up.
+      const tappedSlotUuid = seedItem?.uuid ?? wallAtStartUuid;
+      let drainStopReason: PlaylistDrainStopReason | null = null;
+      let drainPagesFetched = 0;
+      try {
+        const drainResult = await fetchAllClimbsForBoard({ signal: abortController.signal });
+        const climbs = drainResult.climbs;
+        drainStopReason = drainResult.stopReason;
+        drainPagesFetched = drainResult.pagesFetched;
+        if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration()) return;
+        if (drainStopReason === 'page-cap' || drainStopReason === 'no-progress') {
+          reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
+            tags: { source: 'playlist', op: `replace-queue-${drainStopReason}` },
+            extra: { sourceId: reportSourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
+          });
+        }
+        if (climbs.length === 0 && drainStopReason === 'complete') {
+          reportEmptyBoardFetchOnce('replace-queue-empty');
+        }
+        // Climbs queued while the list loaded would drop out too: ask, as the
+        // lighting path does.
+        const landedMeanwhile = upNextOf(getQueueSnapshot()).filter(({ uuid }) => uuid !== tappedSlotUuid).length;
+        if (landedMeanwhile > 0) {
+          const decision = await promptQueueFork(landedMeanwhile);
+          if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration()) return;
+          if (decision === 'cancel') return;
+          if (decision === 'append') {
+            const {
+              queue: queueAtAnswer,
+              currentClimbQueueItem: wallAtAnswer,
+              playlistSuggestionSource: trackAtAnswer,
+            } = getQueueSnapshot();
+            const tappedStillQueued = queueAtAnswer.some(({ uuid }) => uuid === tappedSlotUuid);
+            // No full-list track here, unlike the replace below: the list now
+            // sits behind the climbs that landed during the load, not beside
+            // the tapped climb. When the tapped climb is up (Put on board took
+            // the seed up with this list's track, or it was up at the tap),
+            // swipes along that track would queue a second copy of each list
+            // climb, so the climb plays from the queue, as after the first
+            // prompt's Play last. Only this list's track: a climber on
+            // another list keeps theirs, and a seed still in preview leaves
+            // the wall's climb its own track.
+            if (
+              tappedSlotUuid !== null &&
+              wallAtAnswer?.uuid === tappedSlotUuid &&
+              trackAtAnswer?.playlistUuid === sourceId
+            ) {
+              setPlaylistSuggestionSource(null);
+            }
+            await queuePlaylistClimbs({
+              loadedClimbs: climbs,
+              drainStopReason,
+              entryPoint: 'replacePrompt',
+              excludeClimbUuid: tappedStillQueued ? climb.uuid : undefined,
+            });
+            return;
+          }
+        }
+        const live = getQueueSnapshot();
+        const liveWallUuid = live.currentClimbQueueItem?.uuid ?? null;
+        // Put on board took the seed up, or the tapped climb was up at the tap
+        // and still is.
+        const tappedIsUp = tappedSlotUuid !== null && liveWallUuid === tappedSlotUuid;
+        if (liveWallUuid !== wallAtStartUuid && !tappedIsUp) return;
+        // Only climbs this board can draw, as Start playlist queues them (#6664).
+        const isClimbableHere = activationTarget?.isClimbable;
+        const boardClimbs = isClimbableHere
+          ? climbs.filter((candidate) => candidate.uuid === climb.uuid || isClimbableHere(candidate))
+          : climbs;
+        // From the tapped climb on, the tapped climb in the seed's slot; when it
+        // was up at the tap, from the climb after it, since the Now slot holds
+        // it. Up next alone may not pass the cap (#6673); History is trimmed to
+        // fit.
+        const { queue: listQueue, currentItem } = buildPlaylistQueue(
+          boardClimbs,
+          climb,
+          seedItem ?? live.currentClimbQueueItem,
+        );
+        const fromTapped = listQueue.slice(listQueue.indexOf(currentItem) + (seedItem ? 0 : 1));
+        const upNext = fromTapped.slice(0, MAX_SYNCED_QUEUE_ITEMS);
+        const next = replaceUpNext(live, upNext);
+        setQueue(next.queue, next.currentClimbQueueItem, next.historyCount);
+        if (upNext.length < fromTapped.length) {
+          showToast(
+            drainStopReason === 'complete'
+              ? t('detail.queueReplace.trimmed', {
+                  loaded: upNext.length,
+                  total: fromTapped.length,
+                  max: MAX_SYNCED_QUEUE_ITEMS,
+                })
+              : t('detail.queueReplace.trimmedUnknownTotal', { loaded: upNext.length, max: MAX_SYNCED_QUEUE_ITEMS }),
+            'info',
+          );
+        }
+        // `setQueue` leaves the track alone, so until the tapped climb is up
+        // the wall's climb keeps the track it had. That one does no harm: the
+        // loaded climbs are not `suggested`, so a walk plays them as Up next
+        // first, and the older list only picks up after them (#6777). Once the
+        // tapped climb is up, the list is its track, as after Start playlist;
+        // before that the preview walks the list on its own, and Put on board
+        // brings the preview's track, which this upgrades to the whole list.
+        if (tappedIsUp && activationTarget && activationTarget.isClimbable(climb)) {
+          setPlaylistSuggestionSource(
+            createPlaylistSuggestionSource({
+              playlistUuid: sourceId,
+              activatedClimb: climb,
+              climbs,
+              boardKey: activationTarget.boardKey,
+              isClimbable: activationTarget.isClimbable,
+              label,
+            }),
+          );
+        }
+      } catch (error) {
+        if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration() || isAbortError(error))
+          return;
+        console.error('Playlist load into Up next failed:', error);
+        reportHandledError(error, {
+          tags: { source: 'playlist', op: 'replace-queue' },
+          extra: { sourceId: reportSourceId, reason: drainStopReason ?? 'error', pagesFetched: drainPagesFetched },
+        });
+        showToast(t('detail.queueReplace.loadFailed'), 'error');
+      } finally {
+        if (replacementAbortRef.current === abortController) {
+          replacementAbortRef.current = null;
+        }
+      }
+    },
+    [
+      activationTarget,
+      fetchAllClimbsForBoard,
+      getQueueSnapshot,
+      label,
+      promptQueueFork,
+      queuePlaylistClimbs,
+      reportEmptyBoardFetchOnce,
+      setPlaylistSuggestionSource,
+      setQueue,
+      showToast,
+      sourceId,
+      reportSourceId,
+      t,
+      credentialGeneration,
     ],
   );
 
@@ -1275,8 +1430,8 @@ export function usePlaylistActivation({
   // the caller already dispatched, so it doesn't re-commit or treat this as a
   // preview.
   const activatePlaylistClimb = useCallback(
-    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot, activationOptions?: PlaylistActivationOptions) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();
+    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot) => {
+      if (credentialGeneration !== getCredentialGeneration()) return Promise.resolve();
       // Row adapters may clone a climb. Prefer the loaded projection over
       // details retained by a menu or native gesture callback. Not when it is
       // the same climb at another angle or the other way round (mirrored): a
@@ -1341,35 +1496,115 @@ export function usePlaylistActivation({
       // two differences: no board override (this climb is on the board the
       // climber is standing at), and the suggestion source is keyed to the
       // ACTIVE board so the drawer's swipes walk this list instead of the queue.
-      const openListPreview = () => {
+      // A null target or no active board degrades to a trackless preview: the
+      // tapped climb still shows, and swipes have nothing to walk (its queue
+      // item is fresh, so it is not in the queue), the same fallback the
+      // wrong-board branch above has. A climber with the setting off and no
+      // board picked can land here: with no wall to light, a preview is all a
+      // tap can be.
+      const listPreviewSource = () => {
         const target = resolveTarget(climb);
+        return target && activeBoard
+          ? createPlaylistSuggestionSource({
+              playlistUuid: sourceId,
+              activatedClimb: climb,
+              climbs: allClimbs,
+              preparedClimbs: preparedPreviewClimbs,
+              boardKey: target.boardKey,
+              label,
+              continuation: previewContinuation({
+                boardName: activeBoard.boardType,
+                layoutId: activeBoard.layoutId,
+                sizeId: activeBoard.sizeId,
+                setIds: activeBoard.setIds,
+                angle: activeBoard.angle,
+              }),
+            })
+          : null;
+      };
+      const openListPreview = () => {
         openPlayDrawer(schemaClimb, {
           ...openingArtOptions,
           previewQueueItem: climbToQueueItem(schemaClimb),
-          // A null target or no active board degrades to a trackless preview:
-          // the tapped climb still shows, and swipes have nothing to walk (its
-          // queue item is fresh, so it is not in the queue), the same fallback
-          // the wrong-board branch above has. A
-          // climber with the setting off and no board picked can land here:
-          // with no wall to light, a preview is all a tap can be.
-          playlistSuggestionSource:
-            target && activeBoard
-              ? createPlaylistSuggestionSource({
-                  playlistUuid: sourceId,
-                  activatedClimb: climb,
-                  climbs: allClimbs,
-                  preparedClimbs: preparedPreviewClimbs,
-                  boardKey: target.boardKey,
-                  label,
-                  continuation: previewContinuation({
-                    boardName: activeBoard.boardType,
-                    layoutId: activeBoard.layoutId,
-                    sizeId: activeBoard.sizeId,
-                    setIds: activeBoard.setIds,
-                    angle: activeBoard.angle,
-                  }),
-                })
-              : null,
+          playlistSuggestionSource: listPreviewSource(),
+        });
+      };
+
+      // The preview of a slot the list just took in Up next: it walks the list
+      // the way any list preview does, and Put on board commits that slot with
+      // the list as its track.
+      const previewQueuedSlot = (slot: ClimbQueueItem, playlistSuggestionSource: PlaylistSuggestionSource | null) => {
+        openPlayDrawer(schemaClimb, {
+          ...openingArtOptions,
+          previewQueueItem: slot,
+          playlistSuggestionSource,
+          previewCommitOptions: { playlistSuggestionSource },
+        });
+      };
+
+      // "Tapping a playlist loads it into my queue" while a tap only previews:
+      // the list loads into Up next, the wall keeps its climb, and the tapped
+      // climb's new slot opens as a preview. Same three-way prompt as the
+      // lighting path whenever Up next has climbs the load would drop.
+      const loadIntoUpNextKeepingWall = (): Promise<void> => {
+        // The tapped climb may be the one already up. A copy seeded into Up
+        // next would be a second slot of it: its preview shows no Put on board
+        // (`isCommittedHeadClimb` compares climbs), and Next would play the
+        // climb again. Instead the Now slot stays, the list after it loads,
+        // and the player reopens the climb as it is: no write, nothing lights,
+        // and a #4979 hold stays (`reopensCurrent`).
+        const tappedIsUp = () => getQueueSnapshot().currentClimbQueueItem?.climb.uuid === climb.uuid;
+        const reopenTapped = () => openPlayDrawer(schemaClimb, { ...openingArtOptions, reopensCurrent: true });
+        const startLoad = (): Promise<void> => {
+          if (tappedIsUp()) {
+            // Up next goes now, as a seed replaces it, so the load
+            // only asks about climbs queued while it ran.
+            const snapshot = getQueueSnapshot();
+            if (upNextOf(snapshot).length > 0) {
+              const cleared = replaceUpNext(snapshot, []);
+              setQueue(cleared.queue, cleared.currentClimbQueueItem, cleared.historyCount);
+            }
+            reopenTapped();
+            return loadPlaylistIntoUpNext(climb, null);
+          }
+          const seedItem = climbToQueueItem(schemaClimb);
+          const seeded = replaceUpNext(getQueueSnapshot(), [seedItem]);
+          setQueue(seeded.queue, seeded.currentClimbQueueItem, seeded.historyCount);
+          previewQueuedSlot(seedItem, listPreviewSource());
+          return loadPlaylistIntoUpNext(climb, seedItem);
+        };
+        // The prompt's Play last: the tapped climb goes in right after the
+        // climb on the wall and the list behind what is queued, as on the
+        // lighting path, but nothing goes up. It plays from the queue, with no
+        // track, for the same reason `playFromQueue` gives.
+        const queueBehindWall = (): Promise<void> => {
+          // Up already: nothing to queue for it, so only the list goes in, and
+          // the climb plays from the queue with no track, as `playFromQueue`
+          // leaves the climb up on the lighting path.
+          if (tappedIsUp()) {
+            setPlaylistSuggestionSource(null);
+            reopenTapped();
+            return queuePlaylistClimbs({ entryPoint: 'replacePrompt', excludeClimbUuid: climb.uuid });
+          }
+          const slot = climbToQueueItem(schemaClimb);
+          const queued = appendQueueItems([slot], { placement: 'next' }) > 0;
+          if (queued) previewQueuedSlot(slot, null);
+          else openListPreview();
+          return queuePlaylistClimbs({
+            entryPoint: 'replacePrompt',
+            excludeClimbUuid: queued ? climb.uuid : undefined,
+          });
+        };
+        const upNextCount = upNextOf(getQueueSnapshot()).length;
+        if (upNextCount === 0) return startLoad();
+        replacementAbortRef.current?.abort();
+        return promptQueueFork(upNextCount).then((decision) => {
+          if (credentialGeneration !== getCredentialGeneration()) return;
+          if (decision === 'cancel') {
+            openListPreview();
+            return;
+          }
+          return decision === 'append' ? queueBehindWall() : startLoad();
         });
       };
 
@@ -1455,22 +1690,29 @@ export function usePlaylistActivation({
 
       // Read at the tap, so the callback does not change identity when the
       // climber flips it. Only lists that opted in can load into the queue.
-      const tapLoadsQueue = honorPlaylistLoadSetting && getSetting('playlistTapLoadsQueue');
+      // Never in a crew, driving or not: replacing a crew's whole queue is the
+      // loudest write in the app, and a row tap must never be it.
+      const tapLoadsQueue =
+        honorPlaylistLoadSetting && getSetting('playlistTapLoadsQueue') && !(previewOnlyRef.current && isDrivingWall());
 
-      // Two reasons to preview, either one enough: there are other climbers in
-      // the session (`previewOnly`), so a tap must not take their wall; or the
-      // climber turned off "Light the board when I tap a climb" (issue #6665:
-      // every list reads it, not only search). The setting is read here, at the
-      // tap, so the callback does not change identity when it flips.
+      // Outside a drive a tap is a preview (issue #6665: every list reads it,
+      // not only search), solo and in a crew alike: a tap must not take a
+      // crew's wall, and solo nothing lights until this phone drives the wall.
+      // Driving it (#7113: a swipe, Put on board, or Always drive the wall)
+      // lights every change of climb, in a crew too, so the tap plays from
+      // the list. Read here, at the tap, so the callback does not change
+      // identity when a drive starts or ends.
       //
-      // Light on tap is about row taps: the Play button (`deliberate`) skips it.
-      // It wins over "Tapping a playlist loads it into my queue" for a row tap,
-      // since a replace lights the wall too; with both on, the Play button is
-      // how a climber loads the list without lighting from a tap.
+      // The header Play button follows the same rule as a row. Loading a
+      // playlist doesn't bypass preview-first browsing either: it loads Up
+      // next and leaves the wall alone.
       //
       // Ordered ahead of the replace deliberately: replacing a crew's whole
       // queue is the loudest write in the app, and a row tap must never be it.
-      if (previewOnlyRef.current || (!activationOptions?.deliberate && !getSetting('lightOnClimbTap'))) {
+      if (!isDrivingWall()) {
+        // The playlist switch still loads the list, keeping the wall. Never in
+        // a crew: the crew's queue is theirs.
+        if (tapLoadsQueue && !previewOnlyRef.current && resolveTarget(climb)) return loadIntoUpNextKeepingWall();
         openListPreview();
         return Promise.resolve();
       }
@@ -1492,7 +1734,7 @@ export function usePlaylistActivation({
             return promptQueueFork(futureQueueCount).then((decision) => {
               // The prompt answers `cancel` for an account change too: nothing
               // opens for an account that has gone.
-              if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+              if (credentialGeneration !== getCredentialGeneration()) return;
               // Backing out still shows the climb they tapped, as a preview that
               // walks the list. The queue stays as it was.
               if (decision === 'cancel') {
@@ -1554,8 +1796,10 @@ export function usePlaylistActivation({
       activate,
       activeBoard,
       allClimbs,
+      appendQueueItems,
       label,
       loadedClimbsByUuid,
+      loadPlaylistIntoUpNext,
       pendingContinuation,
       previewContinuation,
       preparedPreviewClimbs,
@@ -1568,11 +1812,12 @@ export function usePlaylistActivation({
       honorPlaylistLoadSetting,
       replaceQueueWithPlaylist,
       resolveTarget,
+      setPlaylistSuggestionSource,
       setQueue,
       sourceId,
       viewOnlyBoard,
       drawerBoardFor,
-      privacyGeneration,
+      credentialGeneration,
     ],
   );
 

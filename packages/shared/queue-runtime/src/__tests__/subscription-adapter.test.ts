@@ -37,6 +37,30 @@ const wireItem = (uuid: string): WireItem => ({
 });
 
 describe('mapSubscriptionEnvelopeToAction', () => {
+  it.each(['FullSync', 'CurrentClimbChanged'] as const)(
+    'preserves the mover on %s independently of item lifting, and clears missing legacy attribution',
+    (eventType) => {
+      for (const currentChangedBy of ['mover-participant', undefined]) {
+        const result = mapSubscriptionEnvelopeToAction<WireItem>(
+          eventType === 'FullSync'
+            ? {
+                __typename: eventType,
+                state: { queue: [wireItem('a')], currentClimbQueueItem: wireItem('a'), currentChangedBy },
+              }
+            : { __typename: eventType, currentItem: wireItem('a'), currentChangedBy },
+          { mapItem: liftToClimbItem },
+        );
+        expect(result.kind).toBe('dispatch');
+        if (
+          result.kind !== 'dispatch' ||
+          (result.action.type !== 'INITIAL_QUEUE_DATA' && result.action.type !== 'DELTA_UPDATE_CURRENT_CLIMB')
+        )
+          throw new Error('Expected a current-climb action');
+        expect(result.action.payload.currentChangedBy).toBe(currentChangedBy ?? null);
+      }
+    },
+  );
+
   it('lifts FullSync items and dispatches INITIAL_QUEUE_DATA', () => {
     const envelope: SubscriptionWireEnvelope<WireItem> = {
       __typename: 'FullSync',

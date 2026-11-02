@@ -6,7 +6,6 @@ group = 'com.boardsesh'
 version = '0.1.0'
 android {
   namespace 'com.boardsesh.mobilecpuprofile'
-  compileSdk 36
   defaultConfig {
     minSdk 24
     versionCode 1

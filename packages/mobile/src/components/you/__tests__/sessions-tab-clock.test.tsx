@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
 // The list-play hook has its own suite; here a tap only has to reach it.
+// The workout data (#6903) has its own suites; these sessions carry no workout.
+vi.mock('../../session/workout/use-session-workout-view', () => ({
+  useSessionWorkoutView: () => undefined,
+  useSessionWorkoutHeadlines: () => new Map(),
+}));
 vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({ useTickListActivation: () => vi.fn() }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
 import { render, act } from '@testing-library/react';

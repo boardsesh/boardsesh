@@ -23,7 +23,7 @@ const tailscaleStatusTimeoutMs = 1500;
 const maxTailscaleCandidates = 32;
 // Per-candidate ceiling covering the Postgres shape probe, the Redis port
 // probe, and connection teardown, so a single wedged candidate can never
-// stall the Promise.all in discoverDatabase().
+// stall the Promise.all in discoverDatabases().
 const probeCandidateBudgetMs = postgresProbeTimeoutMs + redisProbeTimeoutMs + 1_000;
 // See https://github.com/boardsesh/boardsesh/issues/3874: postgres.js
 // `client.end()` can leave a promise unsettled after its socket handle is
@@ -187,7 +187,7 @@ async function isBoardseshDevDatabase(client: postgres.Sql): Promise<boolean> {
 
 async function probeDatabaseCandidate(candidate: DatabaseCandidate): Promise<DatabaseSelection | null> {
   // Bound the entire probe (including connection teardown) so one wedged
-  // candidate can never stall the Promise.all in discoverDatabase() -- see
+  // candidate can never stall the Promise.all in discoverDatabases() -- see
   // the module-level comment on probeCandidateBudgetMs.
   return withTimeout(probeDatabaseCandidateUnbounded(candidate), probeCandidateBudgetMs).catch(() => null);
 }
@@ -272,15 +272,19 @@ function tailscaleCandidates(): DatabaseCandidate[] {
   }
 }
 
-async function discoverDatabase(): Promise<DatabaseSelection | null> {
+// Every responding database in preference order. A local database is always
+// ours to migrate, so it ends the search; otherwise the caller gates each
+// remote candidate on its own migration state and takes the first usable one.
+async function discoverDatabases(): Promise<DatabaseSelection[]> {
   const localCandidate: DatabaseCandidate = {
     host: 'localhost',
     label: 'localhost',
     source: 'local-standalone',
   };
   const localSelection = await probeDatabaseCandidate(localCandidate);
-  if (localSelection) return localSelection;
+  if (localSelection) return [localSelection];
 
+  const selections: DatabaseSelection[] = [];
   const explicitHost = normalizeHost(process.env.BOARDSESH_DEV_DB_HOST);
   if (explicitHost && explicitHost !== 'localhost' && explicitHost !== '127.0.0.1') {
     const explicitSelection = await probeDatabaseCandidate({
@@ -288,14 +292,15 @@ async function discoverDatabase(): Promise<DatabaseSelection | null> {
       label: explicitHost,
       source: 'env',
     });
-    if (explicitSelection) return explicitSelection;
+    if (explicitSelection) selections.push(explicitSelection);
   }
 
   const candidates = tailscaleCandidates();
-  if (candidates.length === 0) return null;
-
-  const probeResults = await Promise.all(candidates.map((candidate) => probeDatabaseCandidate(candidate)));
-  return probeResults.find((selection): selection is DatabaseSelection => selection !== null) ?? null;
+  if (candidates.length > 0) {
+    const probeResults = await Promise.all(candidates.map((candidate) => probeDatabaseCandidate(candidate)));
+    selections.push(...probeResults.filter((selection): selection is DatabaseSelection => selection !== null));
+  }
+  return selections;
 }
 
 async function ensureMigrationTracker(client: postgres.Sql): Promise<void> {
@@ -323,7 +328,7 @@ async function ensureMigrationTracker(client: postgres.Sql): Promise<void> {
   `;
 }
 
-function loadMigrationJournal(): MigrationJournal {
+export function loadMigrationJournal(): MigrationJournal {
   const journalPath = join(drizzleDirectory, 'meta', '_journal.json');
   const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as MigrationJournal;
   return {
@@ -333,51 +338,162 @@ function loadMigrationJournal(): MigrationJournal {
   };
 }
 
-async function runPendingMigrations(connectionString: string): Promise<void> {
-  const client = postgres(connectionString, {
+export type MigrationTargetDecision =
+  | { action: 'use' }
+  | { action: 'migrate' }
+  | { action: 'skip-remote'; message: string };
+
+// Only a database on this machine may be migrated. A Tailscale peer or an
+// env-provided host belongs to someone else: each migration commits on its
+// own, so a failure partway (0272 needs a cutoff helper that only installs on
+// a local host) would leave their database half-migrated. See #6497.
+export function decideMigrationTarget(
+  selection: Pick<DatabaseCandidate, 'source' | 'host' | 'label'>,
+  pendingTags: string[],
+): MigrationTargetDecision {
+  if (pendingTags.length === 0) return { action: 'use' };
+  if (selection.source === 'local-standalone') return { action: 'migrate' };
+
+  const firstTag = pendingTags[0];
+  const lastTag = pendingTags[pendingTags.length - 1];
+  return {
+    action: 'skip-remote',
+    message:
+      `[dev-db] ${selection.label} (${selection.host}:${postgresPort}) is behind this checkout by ` +
+      `${pendingTags.length} migration(s) (${firstTag} to ${lastTag}). Not migrating another machine's database. ` +
+      'Run `vp run db:up` on that machine to bring it up to date. Falling back to local Docker, which must be installed.',
+  };
+}
+
+function createMigrationClient(connectionString: string): postgres.Sql {
+  return postgres(connectionString, {
     max: 1,
     idle_timeout: 1,
     connect_timeout: 5,
     prepare: false,
     onnotice: () => undefined,
   });
+}
+
+async function readTrackerCreatedAt(client: postgres.Sql, trackerSchema: 'drizzle' | 'public'): Promise<number> {
+  const trackerRows =
+    trackerSchema === 'drizzle'
+      ? await client<MigrationTrackerRow[]>`
+          SELECT COALESCE((SELECT created_at FROM drizzle."__drizzle_migrations" ORDER BY created_at DESC LIMIT 1), 0) AS created_at
+        `
+      : await client<MigrationTrackerRow[]>`
+          SELECT COALESCE((SELECT created_at FROM public."__drizzle_migrations" ORDER BY created_at DESC LIMIT 1), 0) AS created_at
+        `;
+  return Number(trackerRows[0]?.created_at ?? 0);
+}
+
+// Read-only: unlike ensureMigrationTracker this never creates the tracker, so
+// it is safe to point at a database that is not ours. The drizzle tracker only
+// counts when it has rows: an empty one beside a populated public tracker is
+// the state ensureMigrationTracker is about to fill from public.
+async function readLastMigrationCreatedAt(client: postgres.Sql): Promise<number> {
+  const existenceRows = await client<{ has_drizzle: boolean; has_public: boolean }[]>`
+    SELECT
+      to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS has_drizzle,
+      to_regclass('public.__drizzle_migrations') IS NOT NULL AS has_public
+  `;
+  const { has_drizzle: hasDrizzle, has_public: hasPublic } = existenceRows[0] ?? {
+    has_drizzle: false,
+    has_public: false,
+  };
+  const drizzleCreatedAt = hasDrizzle ? await readTrackerCreatedAt(client, 'drizzle') : 0;
+  if (drizzleCreatedAt > 0) return drizzleCreatedAt;
+  return hasPublic ? await readTrackerCreatedAt(client, 'public') : 0;
+}
+
+async function listPendingMigrations(client: postgres.Sql): Promise<MigrationJournalEntry[]> {
+  const lastMigrationCreatedAt = await readLastMigrationCreatedAt(client);
+  return loadMigrationJournal().entries.filter((entry) => entry.when > lastMigrationCreatedAt);
+}
+
+async function applyPendingMigrations(client: postgres.Sql, pendingMigrations: MigrationJournalEntry[]): Promise<void> {
+  await ensureMigrationTracker(client);
+
+  console.info(`  Applying ${pendingMigrations.length} pending migration(s) from ${drizzleDirectory}...`);
+  for (const migration of pendingMigrations) {
+    const migrationFile = join(drizzleDirectory, `${migration.tag}.sql`);
+    const migrationSql = readFileSync(migrationFile, 'utf8');
+    const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
+    console.info(`    -> ${migration.tag}`);
+
+    await client.unsafe('BEGIN');
+    try {
+      await client.unsafe(migrationSql);
+      await client`
+        INSERT INTO drizzle."__drizzle_migrations" (hash, created_at)
+        VALUES (${migrationHash}, ${migration.when})
+      `;
+      await client.unsafe('COMMIT');
+    } catch (migrationError) {
+      await client.unsafe('ROLLBACK').catch(() => undefined);
+      throw migrationError;
+    }
+  }
+}
+
+// 0272 reads a cutoff helper that only exists once the bootstrap script has
+// run. Docker installs it in dev-db-up.sh; a standalone local Postgres has to
+// get it here, before any migration commits, or 0265-0271 land and 0272 fails.
+const cutoffGuardMigrationTag = 'sync_deletions_cutoff';
+
+function installSyncDeletionsCutoffHelper(): void {
+  const databaseDirectory = join(repoRoot, 'packages/db');
+  const environment = { ...process.env };
+  for (const name of ['DB_URL', 'POSTGRES_URL', 'DATABASE_URL', 'SYNC_CUTOFF_RUNTIME_ROLE']) delete environment[name];
+  execFileSync(
+    join(repoRoot, 'node_modules/.bin/tsx'),
+    ['scripts/bootstrap-sync-deletions-cutoff-development.ts', '--apply'],
+    {
+      cwd: databaseDirectory,
+      stdio: 'inherit',
+      env: {
+        ...environment,
+        SYNC_CUTOFF_DEVELOPMENT_BOOTSTRAP: 'true',
+        SYNC_CUTOFF_ADMIN_DATABASE_URL: `postgresql://${postgresUser}:${postgresPassword}@localhost:${postgresPort}/${postgresDatabase}`,
+      },
+    },
+  );
+}
+
+export type PrepareMigrationsOptions = {
+  client?: postgres.Sql;
+  installCutoffHelper?: () => void;
+};
+
+// Returns false when the database is another machine's and is behind: the
+// caller must not use it.
+export async function prepareMigrations(
+  selection: Pick<DatabaseSelection, 'source' | 'host' | 'label' | 'connectionString'>,
+  options: PrepareMigrationsOptions = {},
+): Promise<boolean> {
+  const client = options.client ?? createMigrationClient(selection.connectionString);
+  const installCutoffHelper = options.installCutoffHelper ?? installSyncDeletionsCutoffHelper;
 
   try {
-    await ensureMigrationTracker(client);
-    const migrationTrackerRows = await client<MigrationTrackerRow[]>`
-      SELECT COALESCE(
-        (SELECT created_at FROM drizzle."__drizzle_migrations" ORDER BY created_at DESC LIMIT 1),
-        0
-      ) AS created_at
-    `;
-    const lastMigrationCreatedAt = Number(migrationTrackerRows[0]?.created_at ?? 0);
-    const pendingMigrations = loadMigrationJournal().entries.filter((entry) => entry.when > lastMigrationCreatedAt);
+    const pendingMigrations = await listPendingMigrations(client);
+    const decision = decideMigrationTarget(
+      selection,
+      pendingMigrations.map((migration) => migration.tag),
+    );
 
-    if (pendingMigrations.length === 0) {
+    if (decision.action === 'skip-remote') {
+      console.warn(decision.message);
+      return false;
+    }
+    if (decision.action === 'use') {
       console.info('  No pending migrations.');
-      return;
+      return true;
     }
-
-    console.info(`  Applying ${pendingMigrations.length} pending migration(s) from ${drizzleDirectory}...`);
-    for (const migration of pendingMigrations) {
-      const migrationFile = join(drizzleDirectory, `${migration.tag}.sql`);
-      const migrationSql = readFileSync(migrationFile, 'utf8');
-      const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
-      console.info(`    -> ${migration.tag}`);
-
-      await client.unsafe('BEGIN');
-      try {
-        await client.unsafe(migrationSql);
-        await client`
-          INSERT INTO drizzle."__drizzle_migrations" (hash, created_at)
-          VALUES (${migrationHash}, ${migration.when})
-        `;
-        await client.unsafe('COMMIT');
-      } catch (migrationError) {
-        await client.unsafe('ROLLBACK').catch(() => undefined);
-        throw migrationError;
-      }
-    }
+    // Match on the tag, not the number: the renumber bot may move 0272.
+    const needsCutoffHelper = pendingMigrations.some((migration) => migration.tag.includes(cutoffGuardMigrationTag));
+    if (needsCutoffHelper) installCutoffHelper();
+    await applyPendingMigrations(client, pendingMigrations);
+    return true;
   } finally {
     // Bound teardown for the same reason as probeDatabaseCandidateUnbounded
     // above -- see the module-level comment on discoveryWatchdogTimeoutMs.
@@ -413,11 +529,11 @@ function clearGeneratedEnv(): void {
 }
 
 async function main(): Promise<void> {
-  let selection: DatabaseSelection | null;
+  let selections: DatabaseSelection[];
   try {
     // Watchdog covers discovery only -- migrations can legitimately take
     // minutes and must not be raced against this timer.
-    selection = await raceAgainstWatchdog(discoverDatabase(), discoveryWatchdogTimeoutMs);
+    selections = await raceAgainstWatchdog(discoverDatabases(), discoveryWatchdogTimeoutMs);
   } catch (error) {
     if (!(error instanceof DiscoveryTimeoutError)) throw error;
     clearGeneratedEnv();
@@ -427,27 +543,35 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  if (!selection) {
+  if (selections.length === 0) {
     clearGeneratedEnv();
     console.info('[dev-db] No local or Tailscale Boardsesh dev database found.');
     process.exit(2);
   }
 
-  const sourceLabel = selection.source === 'tailscale' ? `Tailscale peer ${selection.label}` : selection.label;
-  console.info(`[dev-db] Using ${sourceLabel} Postgres at ${selection.host}:${postgresPort}.`);
-  if (selection.redisUrl) {
-    console.info(`[dev-db] Redis available at ${selection.redisUrl}.`);
-  } else {
-    console.info('[dev-db] Redis not reachable; backend will run in local-only pub/sub mode.');
+  // First candidate that is current (or ours to migrate) wins; a peer that is
+  // behind is skipped, not fatal, while another peer may be fine.
+  for (const selection of selections) {
+    const sourceLabel = selection.source === 'tailscale' ? `Tailscale peer ${selection.label}` : selection.label;
+    console.info(`[dev-db] Trying ${sourceLabel} Postgres at ${selection.host}:${postgresPort}.`);
+    console.info('[dev-db] Checking for pending migrations...');
+    if (!(await prepareMigrations(selection))) continue;
+
+    if (selection.redisUrl) {
+      console.info(`[dev-db] Redis available at ${selection.redisUrl}.`);
+    } else {
+      console.info('[dev-db] Redis not reachable; backend will run in local-only pub/sub mode.');
+    }
+    writeGeneratedEnv(selection);
+
+    console.info('');
+    console.info('Development database is ready.');
+    console.info('  Test user: test@boardsesh.com / test');
+    return;
   }
 
-  console.info('[dev-db] Checking for pending migrations...');
-  await runPendingMigrations(selection.connectionString);
-  writeGeneratedEnv(selection);
-
-  console.info('');
-  console.info('Development database is ready.');
-  console.info('  Test user: test@boardsesh.com / test');
+  clearGeneratedEnv();
+  process.exit(2);
 }
 
 function isEntryPoint(): boolean {

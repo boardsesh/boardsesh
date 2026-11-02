@@ -54,6 +54,7 @@ export function OpenDraftsSection({ board, onLoadDraft }: OpenDraftsSectionProps
       page: 0,
       pageSize: 50,
       onlyDrafts: true,
+      draftScope: 'OWN',
       sortBy: 'creation',
       sortOrder: 'desc',
     }),

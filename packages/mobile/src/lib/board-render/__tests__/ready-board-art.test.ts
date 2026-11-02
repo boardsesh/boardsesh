@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const authority = vi.hoisted(() => ({ privacy: 1, credential: 2, spray: 'private-1', version: '-sv1' }));
+const authority = vi.hoisted(() => ({ credential: 2, spray: 'private-1', version: '-sv1' }));
 vi.mock('../../privacy/privacy-cache', () => ({
-  getPrivacyRevocationGeneration: () => authority.privacy,
-  getPrivacyCredentialGeneration: () => authority.credential,
+  getCredentialGeneration: () => authority.credential,
 }));
 vi.mock('../../spray/spray-privacy-generation', () => ({
   sprayPrivacyGeneration: () => authority.spray,
@@ -42,7 +41,6 @@ function snapshot(board: 'kilter' | 'spray' = 'kilter') {
 describe('ready artwork snapshot authority', () => {
   beforeEach(() => {
     _resetOverlayIndexForTests();
-    authority.privacy = 1;
     authority.credential = 2;
     authority.spray = 'private-1';
     authority.version = '-sv1';
@@ -67,9 +65,9 @@ describe('ready artwork snapshot authority', () => {
     expect(isReadyBoardArtCurrent(ready, { ...identity, climbUuid: 'climb-2' })).toBe(false);
     expect(isReadyBoardArtCurrent(ready, { ...identity, mirrored: true })).toBe(false);
   });
-  it.each(['privacy', 'credential'] as const)('rejects a %s withdrawal synchronously', (field) => {
+  it('rejects a credential withdrawal synchronously', () => {
     const ready = snapshot();
-    authority[field] += 1;
+    authority.credential += 1;
     expect(isReadyBoardArtCurrent(ready, identity)).toBe(false);
   });
   it.each(['spray', 'version'] as const)('rejects a spray %s withdrawal/reset', (field) => {

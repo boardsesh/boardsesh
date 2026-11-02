@@ -1,10 +1,14 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   createCreativeStore,
+  changedSearchVariants,
+  creativeObjects,
   parseCreativeManifest,
+  readySearchVariants,
+  selectCreativeVariants,
   runCreativeStorage,
   sha256Creative,
   type CreativeManifest,
@@ -16,7 +20,7 @@ afterEach(() => {
   for (const directory of directories) rmSync(directory, { recursive: true, force: true });
 });
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'store-r2-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'store-r2-')));
   directories.push(root);
   const manifest = JSON.parse(readFileSync('app-stores/apple/creative-assets.json', 'utf8')) as CreativeManifest;
   const file = '.boardsesh/app-store-creatives/moonboard/en-US/search-results.mp4';
@@ -30,6 +34,9 @@ function fixture() {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), bytes);
   }
+  // Start from the real manifest's shape but none of its shipped assets, so the
+  // fixture's one MoonBoard asset is the only file a case reads or uploads.
+  for (const variant of Object.values(manifest.variants)) variant.assets = [];
   manifest.variants.moonboard.assets = [
     {
       locale: 'en-US',
@@ -74,6 +81,13 @@ describe('content-addressed store creative storage', () => {
     duplicate.variants.moonboard.assets.push(duplicate.variants.moonboard.assets[0]);
     expect(() => parseCreativeManifest(duplicate)).toThrow('Duplicate');
     expect(() => parseCreativeManifest({ ...manifest, release: 'old' })).toThrow('schema');
+  });
+  it('preserves an optional marketing version and rejects malformed bindings', () => {
+    const { manifest } = fixture();
+    expect(parseCreativeManifest({ ...manifest, marketingVersion: '2.6.0' }).marketingVersion).toBe('2.6.0');
+    for (const marketingVersion of ['2.6', '../2.6.0', 26, null]) {
+      expect(() => parseCreativeManifest({ ...manifest, marketingVersion })).toThrow('marketing version');
+    }
   });
   it('uploads once, promotes server-side, then fetches verified originals', async () => {
     const { root, manifest, objects, store, video, file } = fixture();
@@ -128,5 +142,87 @@ describe('content-addressed store creative storage', () => {
     expect(store.copy).not.toHaveBeenCalled();
     objects.clear();
     await expect(runCreativeStorage({ action: 'promote', manifest, store, dryRun: true })).rejects.toThrow('expired');
+  });
+});
+describe('shipping a subset of page variants', () => {
+  function searchSet(manifest: CreativeManifest, variant: string) {
+    manifest.variants[variant].assets = Object.keys(manifest.locales).map((locale) => ({
+      locale,
+      placement: 'search-results',
+      file: `.boardsesh/app-store-creatives/${variant}/${locale}/search-results.mp4`,
+      sha256: `${locale.length}`.repeat(64),
+      provenance: `.boardsesh/app-store-creatives/${variant}/${locale}/search-results.manifest.json`,
+      provenanceSha256: 'b'.repeat(64),
+      poster: `.boardsesh/app-store-creatives/${variant}/${locale}/search-results-poster.jpg`,
+      posterSha256: 'c'.repeat(64),
+      specId: 'search',
+      placementGroup: 'search',
+    }));
+  }
+  function pending(): CreativeManifest {
+    const { manifest } = fixture();
+    for (const configuration of Object.values(manifest.variants)) configuration.assets = [];
+    return { ...manifest, marketingVersion: '2.7.0' };
+  }
+  it('selects all, one or a comma list of variants and rejects unknown or repeated names', () => {
+    const manifest = pending();
+    expect(selectCreativeVariants(manifest)).toEqual(['default', 'kilter', 'tension', 'moonboard', 'spray']);
+    expect(selectCreativeVariants(manifest, 'spray')).toEqual(['spray']);
+    expect(selectCreativeVariants(manifest, 'default,spray')).toEqual(['default', 'spray']);
+    for (const variant of ['', 'default,', 'default,default', 'kilterx', 'all,default'])
+      expect(() => selectCreativeVariants(manifest, variant)).toThrow();
+  });
+  it('ships complete changed variants and skips pending ones', () => {
+    const manifest = pending();
+    expect(readySearchVariants(manifest)).toEqual([]);
+    searchSet(manifest, 'default');
+    expect(readySearchVariants(manifest)).toEqual(['default']);
+    searchSet(manifest, 'spray');
+    expect(readySearchVariants(manifest)).toEqual(['default', 'spray']);
+    const header = { ...manifest.variants.default.assets[0], placement: 'header' as const };
+    header.file = '.boardsesh/app-store-creatives/kilter/en-US/header.png';
+    header.provenance = '.boardsesh/app-store-creatives/kilter/en-US/creative-assets.json';
+    manifest.variants.kilter.assets = [header];
+    expect(readySearchVariants(manifest)).toEqual(['default', 'spray']);
+    expect(() => readySearchVariants({ ...manifest, marketingVersion: undefined })).toThrow('marketingVersion');
+  });
+  it('never re-ships a variant whose search entries the push left unchanged', () => {
+    const earlier = pending();
+    earlier.marketingVersion = '2.7.0';
+    searchSet(earlier, 'default');
+    const later = structuredClone(earlier);
+    later.marketingVersion = '2.8.0';
+    searchSet(later, 'kilter');
+    expect(changedSearchVariants(earlier, later)).toEqual(['kilter']);
+    expect(readySearchVariants(later, earlier)).toEqual(['kilter']);
+    expect(readySearchVariants(earlier, earlier)).toEqual([]);
+    expect(readySearchVariants({ ...earlier, marketingVersion: undefined }, earlier)).toEqual([]);
+    const removed = structuredClone(later);
+    removed.variants.default.assets = [];
+    expect(readySearchVariants(removed, later)).toEqual([]);
+    const reshot = structuredClone(later);
+    reshot.variants.default.assets[0].sha256 = 'f'.repeat(64);
+    expect(readySearchVariants(reshot, later)).toEqual(['default']);
+  });
+  it.each([
+    ['a missing locale', (manifest: CreativeManifest) => manifest.variants.spray.assets.pop()],
+    ['a repeated locale', (manifest: CreativeManifest) => (manifest.variants.spray.assets[3].locale = 'en-US')],
+    ['a missing poster', (manifest: CreativeManifest) => delete manifest.variants.spray.assets[0].poster],
+  ])('refuses a partly shipped variant with %s', (_scenario, breakIt) => {
+    const manifest = pending();
+    searchSet(manifest, 'default');
+    searchSet(manifest, 'spray');
+    breakIt(manifest);
+    expect(() => readySearchVariants(manifest)).toThrow('spray needs four search videos with posters');
+  });
+  it('transfers only the selected variants objects', () => {
+    const manifest = pending();
+    searchSet(manifest, 'default');
+    searchSet(manifest, 'spray');
+    const files = (variant: string) =>
+      creativeObjects(manifest, variant, 'search').map((object) => object.file.split('/')[2]);
+    expect(new Set(files('default'))).toEqual(new Set(['default']));
+    expect(new Set(files('default,spray'))).toEqual(new Set(['default', 'spray']));
+    expect(() => creativeObjects(manifest, 'kilter', 'search')).toThrow('No finalized creative assets');
   });
 });

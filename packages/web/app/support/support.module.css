@@ -147,6 +147,52 @@
   margin-top: auto;
 }
 
+/* The hero's "Go monthly" scrolls here; clear the fixed header. */
+.chooser {
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
+}
+
+/* The monthly chooser: cadence on the left, currency on the right, wrapping
+   onto two lines on a phone rather than squeezing. */
+.chooserControls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-2);
+}
+
+/* One full-width pill per Payment Link, so a label of any length fits and every
+   target is the same size. */
+.optionList {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-3);
+  padding-top: var(--spacing-3);
+}
+
+.chooserNote {
+  margin-top: var(--spacing-2);
+  font-size: var(--font-size-sm);
+}
+
+.chooserNote a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* Stripe sends a giver back to ?thanks=1. Above the promise, so it is the first
+   thing they read. */
+.thanksCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-8);
+  text-align: center;
+}
+
 @media (max-width: 760px) {
   .hero {
     padding: var(--spacing-8) 0;

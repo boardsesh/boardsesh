@@ -1,10 +1,11 @@
-// Source-of-truth selector for the "On the wall" status strip.
+// Source-of-truth selector for the wall's lit climb on the status surfaces.
 //
 // The wall's lit climb used to override the bottom accessory (the queue bar). It
-// no longer does — the accessory shows the local queue head only. Instead, the
-// wall's lit climb gets its own surface (the WallStatusCapsule), and only when it
-// DIFFERS from the local queue head: in the common solo case the climb you lit IS
-// your queue head, so the bottom bar already shows it and the strip stays hidden.
+// no longer does — the accessory shows the local queue head only, and the wall's
+// lit climb gets its own surfaces: the iPad wall strip, the sidebar cell, and the
+// Climbs header's WallStatusCapsule, which since the 2026-11-02 owner decision
+// shows the wall's climb even when it IS your queue head
+// (`resolveClimbsHeaderCapsule`).
 //
 // PERF (RN hot-path checklist): this read is O(1) — it uses only the current wall
 // climb from the split presence context and never scans history. It re-renders on
@@ -17,22 +18,19 @@ import { useBoardPresenceWallClimb } from '@boardsesh/board-presence-react';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 
 /**
- * Returns the wall's lit climb ONLY when a board feed is live AND that climb is
- * different from the local queue head; otherwise `null`.
+ * The wall's lit climb while a board feed is live, else `null`.
  *
  * Returns the RAW `BoardPresenceClimb` (not the minimal converted `Climb`) so the
- * capsule can show the sender — `sentByDisplayName`/`sentByAvatarUrl`/`sentByUserId`
+ * surfaces can show the sender — `sentByDisplayName`/`sentByAvatarUrl`/`sentByUserId`
  * — which `boardPresenceClimbToClimb` drops. Convert to a `Climb` at the point of
  * use (e.g. opening the play drawer).
  *
- * Pass the local queue head's uuid as `localClimbUuid` (e.g. from the narrow
- * `useActiveClimbUuid()` selector, so the caller doesn't subscribe to the whole
- * reducer state). When the wall climb equals it (the solo case — you lit your own
- * current climb), this returns `null` so the capsule stays hidden and the climb
- * isn't shown twice (top capsule + bottom queue bar). The capsule self-gates on a
- * `null` return, so no separate presence gate is needed.
+ * It used to take the queue head's uuid and return `null` when the wall showed
+ * it, so the Climbs header capsule stayed hidden in the solo case. The owner
+ * reversed that on 2026-11-02: the capsule shows the climb on the wall whatever
+ * the queue holds, so no caller filters any more.
  */
-export function useWallClimbIfDistinct(localClimbUuid: string | null): BoardPresenceClimb | null {
+export function useLiveWallClimb(): BoardPresenceClimb | null {
   const { enabled, boardId } = useBoardPresenceControls();
   // Already `null` unless a feed is live with a current climb — the isLive gate
   // is subsumed by this narrower context, so this hook re-renders only on an
@@ -43,10 +41,6 @@ export function useWallClimbIfDistinct(localClimbUuid: string | null): BoardPres
   // recomputes off a stable input set and the read stays O(1) on the hot path.
   return useMemo(() => {
     const live = enabled && boardId !== null && wallClimb !== null;
-    if (!live || !wallClimb) return null;
-    // Hide when the wall is showing the user's own current climb — the bottom
-    // queue bar already carries it.
-    if (wallClimb.climbUuid === localClimbUuid) return null;
-    return wallClimb;
-  }, [enabled, boardId, wallClimb, localClimbUuid]);
+    return live ? wallClimb : null;
+  }, [enabled, boardId, wallClimb]);
 }

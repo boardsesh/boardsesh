@@ -18,6 +18,7 @@ const harness = vi.hoisted(() => ({
   // tested in native-ble-supports-board.test.ts; here it's a switch for the
   // factory's routing decision.
   nativeBleSupportsBoard: vi.fn(() => true),
+  nativeBleSupportsPreparedConnections: vi.fn(() => false),
 }));
 
 vi.mock('react-native', () => ({
@@ -36,6 +37,7 @@ vi.mock('../native-ios-adapter', () => ({
   NativeIosBleAdapter: harness.NativeIosBleAdapter,
   nativeBleSupportsConnectionAdoption: vi.fn(() => false),
   nativeBleSupportsBoard: harness.nativeBleSupportsBoard,
+  nativeBleSupportsPreparedConnections: harness.nativeBleSupportsPreparedConnections,
 }));
 vi.mock('../../../../modules/live-activity/src/index', () => ({
   get boardBleNative() {
@@ -49,8 +51,10 @@ const NativeIosBleAdapter = harness.NativeIosBleAdapter;
 
 import {
   createBluetoothAdapter,
+  forgetNativeKeptBoard,
   getNativeBleConnectedDevice,
   isNativeIosBleAdapter,
+  nativeBleSupportsPreparedConnections,
   subscribeNativeBleConnected,
 } from '../adapter-factory';
 import { ScreenshotFakeBleAdapter } from '../screenshot-fake-adapter';
@@ -152,6 +156,61 @@ describe('isNativeIosBleAdapter', () => {
     // unused here — we're only checking the branching logic.)
     expect(isNativeIosBleAdapter(nativeInstance)).toBe(true);
     expect(isNativeIosBleAdapter(rnInstance)).toBe(false);
+  });
+});
+
+it('exports the running binary prepared-connection capability', () => {
+  harness.nativeBleSupportsPreparedConnections.mockReturnValueOnce(true);
+  expect(nativeBleSupportsPreparedConnections()).toBe(true);
+  expect(nativeBleSupportsPreparedConnections()).toBe(false);
+});
+
+// A hang-up keeps the iOS native pairing for 10 minutes; once JS forgets the
+// board, this forgets the pairing so the Live Activity bulb can't reach it.
+describe('forgetNativeKeptBoard', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const nativeThatKeepsBoards = () => ({
+    disconnect: vi.fn(async () => {}),
+    disconnectKeepingBoard: vi.fn(async () => {}),
+  });
+
+  it('forgets the pairing with the plain native disconnect on iOS', async () => {
+    platformMock.OS = 'ios';
+    const native = nativeThatKeepsBoards();
+    harness.module.boardBleNative = native;
+    // True: the caller redraws the Live Activity card off the forgotten pairing.
+    await expect(forgetNativeKeptBoard()).resolves.toBe(true);
+    expect(native.disconnect).toHaveBeenCalledOnce();
+    expect(native.disconnectKeepingBoard).not.toHaveBeenCalled();
+  });
+
+  it('does nothing on a binary that never keeps a board, on Android, or in a fake-Bluetooth build', async () => {
+    const oldBinary = { disconnect: vi.fn(async () => {}) };
+    platformMock.OS = 'ios';
+    harness.module.boardBleNative = oldBinary;
+    await expect(forgetNativeKeptBoard()).resolves.toBe(false);
+    expect(oldBinary.disconnect).not.toHaveBeenCalled();
+
+    const native = nativeThatKeepsBoards();
+    harness.module.boardBleNative = native;
+    platformMock.OS = 'android';
+    await expect(forgetNativeKeptBoard()).resolves.toBe(false);
+    platformMock.OS = 'ios';
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    await expect(forgetNativeKeptBoard()).resolves.toBe(false);
+    expect(native.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('swallows a native rejection', async () => {
+    platformMock.OS = 'ios';
+    const native = nativeThatKeepsBoards();
+    native.disconnect.mockRejectedValue(new Error('BLE_DISCONNECT_FAILED'));
+    harness.module.boardBleNative = native;
+    await expect(forgetNativeKeptBoard()).resolves.toBe(false);
   });
 });
 

@@ -9,12 +9,18 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./edge-country": {
+      "types": "./src/edge-country.ts",
+      "import": "./src/edge-country.ts",
+      "default": "./src/edge-country.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^25.9.5",
     "typescript": "~7.0.2"
   }
 }

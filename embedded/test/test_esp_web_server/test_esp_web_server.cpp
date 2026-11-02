@@ -5,11 +5,11 @@
  */
 
 #include <Preferences.h>
-#include <Update.h>
 #include <WebServer.h>
 #include <esp_web_server.h>
 #include <wifi_utils.h>
 
+#include <Update.h>
 #include <config_manager.h>
 #include <cstring>
 #include <unity.h>
@@ -240,9 +240,10 @@ void test_api_config_get_route(void) {
 void test_api_config_post_route(void) {
     webServer->begin();
     webServer->getServer().mockRequest(
-        "/api/config",
-        HTTP_POST,
-        "{\"device_name\":\"New Name\",\"brightness\":100,\"backend_sync_enabled\":true,\"preview_board_name\":\"tension\",\"preview_layout_id\":2,\"preview_size_id\":10,\"preview_set_ids\":\"1,2\"}");
+        "/api/config", HTTP_POST,
+        "{\"device_name\":\"New "
+        "Name\",\"brightness\":100,\"backend_sync_enabled\":true,\"preview_board_name\":\"tension\",\"preview_layout_"
+        "id\":2,\"preview_size_id\":10,\"preview_set_ids\":\"1,2\"}");
 
     TEST_ASSERT_EQUAL(200, webServer->getServer().getLastResponseCode());
 
@@ -384,6 +385,75 @@ void test_config_partial_update(void) {
     TEST_ASSERT_EQUAL(255, Config.getInt("brightness"));
 }
 
+#ifdef ENABLE_GYM_FIXTURE
+void test_fixture_config_never_returns_controller_keys(void) {
+    Config.setString("fx_api_key", "fixture-secret-never-return");
+    Config.setString("api_key", "legacy-secret-never-return");
+    webServer->begin();
+    for (const char* route : {"/api/config", "/api/status"}) {
+        webServer->getServer().mockRequest(route, HTTP_GET);
+        const std::string& body = webServer->getServer().getLastResponseBody();
+        TEST_ASSERT_TRUE(body.find("\"fixture_mode\":true") != std::string::npos);
+        TEST_ASSERT_TRUE(body.find("\"fixture_key_configured\":true") != std::string::npos);
+        TEST_ASSERT_TRUE(body.find("wss://ws.boardsesh.com/graphql") != std::string::npos);
+        TEST_ASSERT_TRUE(body.find("fixture-secret-never-return") == std::string::npos);
+        TEST_ASSERT_TRUE(body.find("legacy-secret-never-return") == std::string::npos);
+    }
+}
+
+void test_fixture_key_is_write_only_and_cleared_explicitly(void) {
+    const char* key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    webServer->begin();
+    const String update = String("{\"fixture_api_key\":\"") + key + "\"}";
+    webServer->getServer().mockRequest("/api/config", HTTP_POST, update.c_str());
+    TEST_ASSERT_EQUAL(200, webServer->getServer().getLastResponseCode());
+    TEST_ASSERT_EQUAL_STRING(key, Config.getString("fx_api_key").c_str());
+    webServer->getServer().mockRequest("/api/config", HTTP_POST, "{\"fixture_api_key\":\"   \"}");
+    TEST_ASSERT_EQUAL_STRING(key, Config.getString("fx_api_key").c_str());
+    webServer->getServer().mockRequest("/api/config", HTTP_POST, "{\"fixture_clear_key\":true}");
+    TEST_ASSERT_EQUAL(200, webServer->getServer().getLastResponseCode());
+    TEST_ASSERT_FALSE(Config.hasKey("fx_api_key"));
+}
+
+void test_fixture_gym_links_are_normalized_and_empty_overrides_reset(void) {
+    webServer->begin();
+    webServer->getServer().mockRequest(
+        "/api/config", HTTP_POST,
+        "{\"fixture_gym_ref\":\" https://www.boardsesh.com/es/gym/QA-Fixture/?from=link#boards "
+        "\",\"fixture_endpoint\":\" wss://ws.boardsesh.com:443/graphql \"}");
+    TEST_ASSERT_EQUAL(200, webServer->getServer().getLastResponseCode());
+    TEST_ASSERT_EQUAL_STRING("qa-fixture", Config.getString("fx_gym").c_str());
+    TEST_ASSERT_EQUAL_STRING("wss://ws.boardsesh.com:443/graphql", Config.getString("fx_endpoint").c_str());
+    webServer->getServer().mockRequest("/api/config", HTTP_POST,
+                                       "{\"fixture_gym_ref\":\"\",\"fixture_endpoint\":\"\"}");
+    TEST_ASSERT_FALSE(Config.hasKey("fx_gym"));
+    TEST_ASSERT_FALSE(Config.hasKey("fx_endpoint"));
+}
+
+void test_fixture_invalid_settings_do_not_partially_write(void) {
+    Config.setString("fx_gym", "existing-gym");
+    Config.setString("device_name", "Existing controller");
+    webServer->begin();
+    const char* invalidRequests[] = {
+        "{\"fixture_endpoint\":\"ws://ws.boardsesh.com/graphql\",\"device_name\":\"Changed\"}",
+        "{\"fixture_endpoint\":\"wss://user:password@ws.boardsesh.com/graphql\"}",
+        "{\"fixture_endpoint\":\"wss://ws.boardsesh.com:0/graphql\"}",
+        "{\"fixture_endpoint\":\"wss://ws.boardsesh.com/graphql?token=secret\"}",
+        "{\"fixture_gym_ref\":\"https://evil.example/gym/qa\"}",
+        "{\"fixture_gym_ref\":\"qa/another-board\"}",
+        "{\"fixture_gym_ref\":42}",
+        "{\"fixture_clear_key\":\"true\"}",
+        "{\"fixture_api_key\":\"invalid-key\"}",
+    };
+    for (const char* request : invalidRequests) {
+        webServer->getServer().mockRequest("/api/config", HTTP_POST, request);
+        TEST_ASSERT_EQUAL(400, webServer->getServer().getLastResponseCode());
+        TEST_ASSERT_EQUAL_STRING("existing-gym", Config.getString("fx_gym").c_str());
+        TEST_ASSERT_EQUAL_STRING("Existing controller", Config.getString("device_name").c_str());
+    }
+}
+#endif
+
 // =============================================================================
 // Firmware Version Endpoint Tests
 // =============================================================================
@@ -414,8 +484,7 @@ void test_firmware_upload_success(void) {
     webServer->begin();
 
     uint8_t fakeData[] = {0x01, 0x02, 0x03, 0x04};
-    webServer->getServer().mockSimulateUpload(
-        "/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
+    webServer->getServer().mockSimulateUpload("/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
 
     TEST_ASSERT_EQUAL(200, webServer->getServer().getLastResponseCode());
     TEST_ASSERT_TRUE(Update.wasBeginCalled());
@@ -430,8 +499,7 @@ void test_firmware_upload_begin_failure(void) {
     Update.mockSetFailBegin(true);
 
     uint8_t fakeData[] = {0x01};
-    webServer->getServer().mockSimulateUpload(
-        "/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
+    webServer->getServer().mockSimulateUpload("/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
 
     // Should return error status and not restart
     TEST_ASSERT_EQUAL(500, webServer->getServer().getLastResponseCode());
@@ -447,8 +515,7 @@ void test_firmware_upload_write_failure(void) {
     Update.mockSetFailWrite(true);
 
     uint8_t fakeData[] = {0x01, 0x02};
-    webServer->getServer().mockSimulateUpload(
-        "/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
+    webServer->getServer().mockSimulateUpload("/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
 
     TEST_ASSERT_EQUAL(500, webServer->getServer().getLastResponseCode());
     // Should abort the update to avoid resource leak
@@ -461,8 +528,7 @@ void test_firmware_upload_end_failure(void) {
     Update.mockSetFailEnd(true);
 
     uint8_t fakeData[] = {0x01};
-    webServer->getServer().mockSimulateUpload(
-        "/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
+    webServer->getServer().mockSimulateUpload("/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
 
     TEST_ASSERT_EQUAL(500, webServer->getServer().getLastResponseCode());
     TEST_ASSERT_TRUE(Update.wasEndCalled());
@@ -472,8 +538,7 @@ void test_firmware_upload_end_failure(void) {
 void test_firmware_upload_abort(void) {
     webServer->begin();
 
-    webServer->getServer().mockSimulateUploadAbort(
-        "/api/firmware/upload", "firmware.bin");
+    webServer->getServer().mockSimulateUploadAbort("/api/firmware/upload", "firmware.bin");
 
     TEST_ASSERT_EQUAL(500, webServer->getServer().getLastResponseCode());
     TEST_ASSERT_TRUE(Update.wasAbortCalled());
@@ -484,8 +549,7 @@ void test_firmware_upload_rejects_non_bin_file(void) {
     webServer->begin();
 
     uint8_t fakeData[] = {0x01};
-    webServer->getServer().mockSimulateUpload(
-        "/api/firmware/upload", "firmware.txt", fakeData, sizeof(fakeData));
+    webServer->getServer().mockSimulateUpload("/api/firmware/upload", "firmware.txt", fakeData, sizeof(fakeData));
 
     TEST_ASSERT_EQUAL(500, webServer->getServer().getLastResponseCode());
     // Should not have called Update.begin for invalid file type
@@ -497,8 +561,7 @@ void test_firmware_upload_rejects_empty_filename(void) {
     webServer->begin();
 
     uint8_t fakeData[] = {0x01};
-    webServer->getServer().mockSimulateUpload(
-        "/api/firmware/upload", "", fakeData, sizeof(fakeData));
+    webServer->getServer().mockSimulateUpload("/api/firmware/upload", "", fakeData, sizeof(fakeData));
 
     TEST_ASSERT_EQUAL(500, webServer->getServer().getLastResponseCode());
     TEST_ASSERT_FALSE(Update.wasBeginCalled());
@@ -509,8 +572,7 @@ void test_firmware_upload_rejects_short_filename(void) {
     webServer->begin();
 
     uint8_t fakeData[] = {0x01};
-    webServer->getServer().mockSimulateUpload(
-        "/api/firmware/upload", "abc", fakeData, sizeof(fakeData));
+    webServer->getServer().mockSimulateUpload("/api/firmware/upload", "abc", fakeData, sizeof(fakeData));
 
     TEST_ASSERT_EQUAL(500, webServer->getServer().getLastResponseCode());
     TEST_ASSERT_FALSE(Update.wasBeginCalled());
@@ -521,8 +583,7 @@ void test_firmware_upload_passes_total_size_to_update(void) {
     webServer->begin();
 
     uint8_t fakeData[] = {0x01, 0x02, 0x03, 0x04};
-    webServer->getServer().mockSimulateUpload(
-        "/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
+    webServer->getServer().mockSimulateUpload("/api/firmware/upload", "firmware.bin", fakeData, sizeof(fakeData));
 
     // Update.begin should have been called (size validation delegated to Update library)
     TEST_ASSERT_EQUAL(200, webServer->getServer().getLastResponseCode());
@@ -595,6 +656,12 @@ int main(int argc, char** argv) {
     // Config persistence tests
     RUN_TEST(test_config_values_persist);
     RUN_TEST(test_config_partial_update);
+#ifdef ENABLE_GYM_FIXTURE
+    RUN_TEST(test_fixture_config_never_returns_controller_keys);
+    RUN_TEST(test_fixture_key_is_write_only_and_cleared_explicitly);
+    RUN_TEST(test_fixture_gym_links_are_normalized_and_empty_overrides_reset);
+    RUN_TEST(test_fixture_invalid_settings_do_not_partially_write);
+#endif
 
     // Firmware endpoint tests
     RUN_TEST(test_firmware_version_endpoint);

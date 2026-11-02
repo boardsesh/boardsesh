@@ -260,14 +260,20 @@ export function useTickSaver({
             const tickUuid = result?.savedTick.uuid ?? null;
             // The workout's own count of tries and sends, by queue item: only a
             // go of the workout (`isWorkoutGo`, above) on a climb of this
-            // session's run.
+            // session's run. The tick names the item's climb (attribution
+            // checked climb and angle), so it also fills in a climb the run
+            // record lost, and the server copy can still be built (#6903).
             if (queueItemUuid !== null && sessionId && isWorkoutGo) {
-              noteWorkoutRunTick(sessionId, {
-                queueItemUuid,
-                status,
-                climbedAt: climbedAtIso,
-                ...(tickUuid ? { tickUuid } : {}),
-              });
+              noteWorkoutRunTick(
+                sessionId,
+                {
+                  queueItemUuid,
+                  status,
+                  climbedAt: climbedAtIso,
+                  ...(tickUuid ? { tickUuid } : {}),
+                },
+                { climbUuid, angle: fields.angle, isMirror: fields.isMirror },
+              );
             }
             handlers?.onSaved?.(tickUuid);
           },

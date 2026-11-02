@@ -61,6 +61,7 @@ export type SchedulerOptions = {
   /** Resolve secure-store credentials once for each cycle, after its queued writes drain. */
   getViewerUserId?: () => Promise<SyncOptions['viewerUserId']>;
   getPriorityBoards?: SyncOptions['getPriorityBoards'];
+  getSprayWallUuid?: SyncOptions['getSprayWallUuid'];
   onProgress?: SyncProgressSink;
   /**
    * Threaded through to pullSync's SyncOptions. Omitted → pullSync assumes
@@ -185,6 +186,7 @@ async function runSync(request: SyncRunRequest): Promise<void> {
       requireOwnedDatabase: options?.requireOwnedDatabase,
       enabledBoards: getEnabledBoards(),
       getPriorityBoards: options?.getPriorityBoards,
+      getSprayWallUuid: options?.getSprayWallUuid,
       isOnline: options?.isOnline,
       onProgress: options?.onProgress,
       onSchemaDrift: options?.onSchemaDrift,
