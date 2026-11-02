@@ -161,7 +161,7 @@ wall-control simulator is a named one that gets reused, so reset them there.
 
 The wall-control captures also change that simulator's connection and drive
 state. Stop driving before the preview take. After recording, put Settings ›
-Board back to the defaults: Always drive the wall off, Stop driving after 45 seconds (On a MoonBoard: Until I
-stop), In a session too on, Disconnect Bluetooth when driving ends off, and
+Board back to the defaults: Always drive the wall off, Stop driving after 45 seconds,
+In a session too on, Disconnect Bluetooth when driving ends off, and
 Tapping a playlist loads it into my queue off. Keep each refreshed take's source commit and capture date in
 [the capture notes](../../../../docs/help-clips.md#capturing-the-wall-controls).

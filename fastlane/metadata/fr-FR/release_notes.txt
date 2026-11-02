@@ -2,7 +2,7 @@ Boardsesh est maintenant disponible en italien.
 
 SACHE QUAND TU ALLUMES LA BOARD
 
-Toucher un bloc l’affiche sans l’allumer. « Allumer sur la board » l’allume et tu pilotes la board : tes blocs suivants s’allument jusqu’à la fin du temps réglé (45 s au départ). Un MoonBoard, jusqu’à ton arrêt. Balaye le bouton à gauche pour piloter sans limite ; touche « Tu pilotes la board » pour arrêter.
+Toucher un bloc l’affiche sans l’allumer. « Allumer sur la board » l’allume et tu pilotes la board : tes blocs suivants s’allument jusqu’à la fin du temps réglé (45 s au départ). Balaye le bouton à gauche pour piloter sans limite ; touche « Tu pilotes la board » pour arrêter.
 
 iPad et iPhone Duo : plus de place pour la board
 

@@ -121,9 +121,9 @@ export type AppSettings = {
    * Bluetooth link holds the board (never a relay, never a wall with no
    * lights), it drives with no end (`DriveModeWatcher`, `startedBy: 'always'`),
    * so every climb picked lights, as after a swipe on the wall button. In a
-   * crew only with In a session too on, except on a MoonBoard. A tap on You
-   * are driving the wall stops it until the link drops or the next Put on
-   * board; the switch itself never flips. Stop driving after doesn't apply
+   * crew only with In a session too on, on every board, MoonBoards included.
+   * A tap on You are driving the wall stops it until the link drops or the
+   * next Put on board; the switch itself never flips. Stop driving after doesn't apply
    * while it is on. Replaced the two switches Light the board when I tap a
    * climb and Light the board as I swipe (`settings/migrations.ts`). Off by
    * default.

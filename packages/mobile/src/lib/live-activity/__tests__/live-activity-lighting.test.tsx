@@ -103,7 +103,9 @@ beforeEach(() => {
   harness.swipeToDrive = true;
   harness.settings = {
     putOnBoardKeepsLighting: '45',
-    // The retired MoonBoard choice a climber may still have on disk: read by nothing.
+    // Kept on purpose: the retired MoonBoard choice a climber may still have on
+    // disk. It differs from the general 45 s, so the MoonBoard tests below fail
+    // if anything reads it again.
     moonboardPutOnBoardKeepsLighting: 'until_stopped',
     putOnBoardDrivesInSession: true,
     alwaysDrive: false,
