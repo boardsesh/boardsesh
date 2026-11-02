@@ -114,8 +114,13 @@ type QueueContextValue = {
   /** `source` is analytics attribution only — a drag in the queue sheet vs a Play next. */
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => void;
   clearQueue: () => void;
-  /** Replace the entire queue (optimistic local UPDATE_QUEUE + best-effort party sync). */
-  setQueue: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => void;
+  /**
+   * Replace the entire queue (optimistic local UPDATE_QUEUE + best-effort party
+   * sync). `historyCount` is the History / Up next line while nothing is current
+   * (F3); left out, such a payload is all Up next. A current climb's index is
+   * the line whatever it says.
+   */
+  setQueue: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null, historyCount?: number) => void;
   /**
    * Read the live queue, current climb and usable playlist source without
    * subscribing to state. Stable

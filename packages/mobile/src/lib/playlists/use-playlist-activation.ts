@@ -15,11 +15,13 @@
 // on them plays from the list like any other list tap, unless the climber turned
 // on "Tapping a playlist loads it into my queue" (F4, #6667). Then the tap (or
 // the Play button) replaces the whole queue with the list (tapped climb active)
-// so previous/next walk the circuit; with Light the board when I tap a climb
-// off, a row tap is still a preview. Because a replace clears any future queue
-// items, a three-way prompt warns first whenever the queue has items after the
-// current: start the playlist (destructive), add it behind what's queued and
-// play from it, or back out to a preview of the tapped climb.
+// so previous/next walk the circuit. With Light the board when I tap a climb
+// off (the 2.7 default) the list goes into Up next instead, the wall keeps its
+// climb, and the tapped climb's slot opens as a preview for Put on board.
+// Because a replace clears any future queue items, a three-way prompt warns
+// first whenever the queue has items after the current: start the playlist
+// (destructive), add it behind what's queued and play from it, or back out to
+// a preview of the tapped climb. A crew's queue is never replaced.
 //
 // The same additive landing is available on its own, without a row tap, through
 // `addToQueue.queue` — the playlist-detail Play next / Play last rows, which put
@@ -47,8 +49,11 @@ import {
   getQueueBoardKey,
   MAX_SYNCED_QUEUE_ITEMS,
   clampQueueWindow,
+  replaceUpNext,
+  upNextOf,
   type Climb,
   type ClimbQueueItem,
+  type PlaylistSuggestionSource,
   type QueueAddPlacement,
 } from '@boardsesh/queue';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -1231,6 +1236,135 @@ export function usePlaylistActivation({
   );
 
   /**
+   * "Tapping a playlist loads it into my queue" while a tap only previews
+   * (preview-first): the list from the tapped climb on becomes Up next, and
+   * History and the climb on the wall stay where they are. The tap already
+   * seeded Up next with `seedItem`, the slot the preview shows; this loads the
+   * rest of the list behind it.
+   *
+   * The climber may move while it loads. Put on board took the seed up: the
+   * list loads behind it with its track, as Start playlist does. Any other
+   * pick came after the tap, and loading would undo it, so the load is skipped.
+   */
+  const loadPlaylistIntoUpNext = useCallback(
+    async (climb: Climb, seedItem: ClimbQueueItem) => {
+      if (credentialGeneration !== getCredentialGeneration()) return;
+      replacementAbortRef.current?.abort();
+      const abortController = new AbortController();
+      replacementAbortRef.current = abortController;
+      const wallAtStartUuid = getQueueSnapshot().currentClimbQueueItem?.uuid ?? null;
+      let drainStopReason: PlaylistDrainStopReason | null = null;
+      let drainPagesFetched = 0;
+      try {
+        const drainResult = await fetchAllClimbsForBoard({ signal: abortController.signal });
+        const climbs = drainResult.climbs;
+        drainStopReason = drainResult.stopReason;
+        drainPagesFetched = drainResult.pagesFetched;
+        if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration()) return;
+        if (drainStopReason === 'page-cap' || drainStopReason === 'no-progress') {
+          reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
+            tags: { source: 'playlist', op: `replace-queue-${drainStopReason}` },
+            extra: { sourceId: reportSourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
+          });
+        }
+        if (climbs.length === 0 && drainStopReason === 'complete') {
+          reportEmptyBoardFetchOnce('replace-queue-empty');
+        }
+        // Climbs queued while the list loaded would drop out too: ask, as the
+        // lighting path does.
+        const landedMeanwhile = upNextOf(getQueueSnapshot()).filter(({ uuid }) => uuid !== seedItem.uuid).length;
+        if (landedMeanwhile > 0) {
+          const decision = await promptQueueFork(landedMeanwhile);
+          if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration()) return;
+          if (decision === 'cancel') return;
+          if (decision === 'append') {
+            const seedStillQueued = getQueueSnapshot().queue.some(({ uuid }) => uuid === seedItem.uuid);
+            await queuePlaylistClimbs({
+              loadedClimbs: climbs,
+              drainStopReason,
+              entryPoint: 'replacePrompt',
+              excludeClimbUuid: seedStillQueued ? climb.uuid : undefined,
+            });
+            return;
+          }
+        }
+        const live = getQueueSnapshot();
+        const liveWallUuid = live.currentClimbQueueItem?.uuid ?? null;
+        const seedWentUp = liveWallUuid === seedItem.uuid;
+        if (liveWallUuid !== wallAtStartUuid && !seedWentUp) return;
+        // Only climbs this board can draw, as Start playlist queues them (#6664).
+        const isClimbableHere = activationTarget?.isClimbable;
+        const boardClimbs = isClimbableHere
+          ? climbs.filter((candidate) => candidate.uuid === climb.uuid || isClimbableHere(candidate))
+          : climbs;
+        // From the tapped climb on, the tapped climb in the seed's slot. Up next
+        // alone may not pass the cap (#6673); History is trimmed to fit.
+        const { queue: listQueue, currentItem } = buildPlaylistQueue(boardClimbs, climb, seedItem);
+        const fromTapped = listQueue.slice(listQueue.indexOf(currentItem));
+        const upNext = fromTapped.slice(0, MAX_SYNCED_QUEUE_ITEMS);
+        const next = replaceUpNext(live, upNext);
+        setQueue(next.queue, next.currentClimbQueueItem, next.historyCount);
+        if (upNext.length < fromTapped.length) {
+          showToast(
+            drainStopReason === 'complete'
+              ? t('detail.queueReplace.trimmed', {
+                  loaded: upNext.length,
+                  total: fromTapped.length,
+                  max: MAX_SYNCED_QUEUE_ITEMS,
+                })
+              : t('detail.queueReplace.trimmedUnknownTotal', { loaded: upNext.length, max: MAX_SYNCED_QUEUE_ITEMS }),
+            'info',
+          );
+        }
+        // The replace dropped any earlier track. Once the tapped climb is up,
+        // the list is its track again, as after Start playlist; before that the
+        // preview walks the list on its own, and Put on board brings the track.
+        if (seedWentUp && activationTarget && activationTarget.isClimbable(climb)) {
+          setPlaylistSuggestionSource(
+            createPlaylistSuggestionSource({
+              playlistUuid: sourceId,
+              activatedClimb: climb,
+              climbs,
+              boardKey: activationTarget.boardKey,
+              isClimbable: activationTarget.isClimbable,
+              label,
+            }),
+          );
+        }
+      } catch (error) {
+        if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration() || isAbortError(error))
+          return;
+        console.error('Playlist load into Up next failed:', error);
+        reportHandledError(error, {
+          tags: { source: 'playlist', op: 'replace-queue' },
+          extra: { sourceId: reportSourceId, reason: drainStopReason ?? 'error', pagesFetched: drainPagesFetched },
+        });
+        showToast(t('detail.queueReplace.loadFailed'), 'error');
+      } finally {
+        if (replacementAbortRef.current === abortController) {
+          replacementAbortRef.current = null;
+        }
+      }
+    },
+    [
+      activationTarget,
+      fetchAllClimbsForBoard,
+      getQueueSnapshot,
+      label,
+      promptQueueFork,
+      queuePlaylistClimbs,
+      reportEmptyBoardFetchOnce,
+      setPlaylistSuggestionSource,
+      setQueue,
+      showToast,
+      sourceId,
+      reportSourceId,
+      t,
+      credentialGeneration,
+    ],
+  );
+
+  /**
    * How a preview's track keeps going past the loaded rows. A preview opens on
    * the rows the screen already shows. Where their paging does not line up with
    * the track's pages, it asks from the first page and keeps only climbs it has
@@ -1325,35 +1459,88 @@ export function usePlaylistActivation({
       // two differences: no board override (this climb is on the board the
       // climber is standing at), and the suggestion source is keyed to the
       // ACTIVE board so the drawer's swipes walk this list instead of the queue.
-      const openListPreview = () => {
+      // A null target or no active board degrades to a trackless preview: the
+      // tapped climb still shows, and swipes have nothing to walk (its queue
+      // item is fresh, so it is not in the queue), the same fallback the
+      // wrong-board branch above has. A climber with the setting off and no
+      // board picked can land here: with no wall to light, a preview is all a
+      // tap can be.
+      const listPreviewSource = () => {
         const target = resolveTarget(climb);
+        return target && activeBoard
+          ? createPlaylistSuggestionSource({
+              playlistUuid: sourceId,
+              activatedClimb: climb,
+              climbs: allClimbs,
+              preparedClimbs: preparedPreviewClimbs,
+              boardKey: target.boardKey,
+              label,
+              continuation: previewContinuation({
+                boardName: activeBoard.boardType,
+                layoutId: activeBoard.layoutId,
+                sizeId: activeBoard.sizeId,
+                setIds: activeBoard.setIds,
+                angle: activeBoard.angle,
+              }),
+            })
+          : null;
+      };
+      const openListPreview = () => {
         openPlayDrawer(schemaClimb, {
           ...openingArtOptions,
           previewQueueItem: climbToQueueItem(schemaClimb),
-          // A null target or no active board degrades to a trackless preview:
-          // the tapped climb still shows, and swipes have nothing to walk (its
-          // queue item is fresh, so it is not in the queue), the same fallback
-          // the wrong-board branch above has. A
-          // climber with the setting off and no board picked can land here:
-          // with no wall to light, a preview is all a tap can be.
-          playlistSuggestionSource:
-            target && activeBoard
-              ? createPlaylistSuggestionSource({
-                  playlistUuid: sourceId,
-                  activatedClimb: climb,
-                  climbs: allClimbs,
-                  preparedClimbs: preparedPreviewClimbs,
-                  boardKey: target.boardKey,
-                  label,
-                  continuation: previewContinuation({
-                    boardName: activeBoard.boardType,
-                    layoutId: activeBoard.layoutId,
-                    sizeId: activeBoard.sizeId,
-                    setIds: activeBoard.setIds,
-                    angle: activeBoard.angle,
-                  }),
-                })
-              : null,
+          playlistSuggestionSource: listPreviewSource(),
+        });
+      };
+
+      // The preview of a slot the list just took in Up next: it walks the list
+      // the way any list preview does, and Put on board commits that slot with
+      // the list as its track.
+      const previewQueuedSlot = (slot: ClimbQueueItem, playlistSuggestionSource: PlaylistSuggestionSource | null) => {
+        openPlayDrawer(schemaClimb, {
+          ...openingArtOptions,
+          previewQueueItem: slot,
+          playlistSuggestionSource,
+          previewCommitOptions: { playlistSuggestionSource },
+        });
+      };
+
+      // "Tapping a playlist loads it into my queue" while a tap only previews:
+      // the list loads into Up next, the wall keeps its climb, and the tapped
+      // climb's new slot opens as a preview. Same three-way prompt as the
+      // lighting path whenever Up next has climbs the load would drop.
+      const loadIntoUpNextKeepingWall = (): Promise<void> => {
+        const startLoad = (): Promise<void> => {
+          const seedItem = climbToQueueItem(schemaClimb);
+          const seeded = replaceUpNext(getQueueSnapshot(), [seedItem]);
+          setQueue(seeded.queue, seeded.currentClimbQueueItem, seeded.historyCount);
+          previewQueuedSlot(seedItem, listPreviewSource());
+          return loadPlaylistIntoUpNext(climb, seedItem);
+        };
+        // The prompt's Play last: the tapped climb goes in right after the
+        // climb on the wall and the list behind what is queued, as on the
+        // lighting path, but nothing goes up. It plays from the queue, with no
+        // track, for the same reason `playFromQueue` gives.
+        const queueBehindWall = (): Promise<void> => {
+          const slot = climbToQueueItem(schemaClimb);
+          const queued = appendQueueItems([slot], { placement: 'next' }) > 0;
+          if (queued) previewQueuedSlot(slot, null);
+          else openListPreview();
+          return queuePlaylistClimbs({
+            entryPoint: 'replacePrompt',
+            excludeClimbUuid: queued ? climb.uuid : undefined,
+          });
+        };
+        const upNextCount = upNextOf(getQueueSnapshot()).length;
+        if (upNextCount === 0) return startLoad();
+        replacementAbortRef.current?.abort();
+        return promptQueueFork(upNextCount).then((decision) => {
+          if (credentialGeneration !== getCredentialGeneration()) return;
+          if (decision === 'cancel') {
+            openListPreview();
+            return;
+          }
+          return decision === 'append' ? queueBehindWall() : startLoad();
         });
       };
 
@@ -1451,7 +1638,8 @@ export function usePlaylistActivation({
       // tap, so the callback does not change identity when it flips.
       //
       // The header Play button follows the same lighting preference as a row.
-      // Loading a playlist must not bypass preview-first browsing either.
+      // Loading a playlist doesn't bypass preview-first browsing either: it
+      // loads Up next and leaves the wall alone.
       //
       // Ordered ahead of the replace deliberately: replacing a crew's whole
       // queue is the loudest write in the app, and a row tap must never be it.
@@ -1464,6 +1652,9 @@ export function usePlaylistActivation({
           inSharedSession: previewOnlyRef.current,
         })
       ) {
+        // The playlist switch still loads the list, keeping the wall. Never in
+        // a crew: the crew's queue is theirs.
+        if (tapLoadsQueue && !previewOnlyRef.current && resolveTarget(climb)) return loadIntoUpNextKeepingWall();
         openListPreview();
         return Promise.resolve();
       }
@@ -1547,8 +1738,10 @@ export function usePlaylistActivation({
       activate,
       activeBoard,
       allClimbs,
+      appendQueueItems,
       label,
       loadedClimbsByUuid,
+      loadPlaylistIntoUpNext,
       pendingContinuation,
       previewContinuation,
       preparedPreviewClimbs,
