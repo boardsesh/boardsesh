@@ -119,7 +119,7 @@ prompt, so check the switch by eye before recording.
   playlist? prompt only appears when Up next already has climbs. Seed the queue
   first by swiping two or three climb rows left-to-right, or the tap loads the
   list and opens a preview with no prompt. Turn on Tapping a playlist loads it
-  into my queue and leave Light automatically off, so nothing drives the wall. Cancel then
+  into my queue and leave Always drive the wall off, so nothing drives the wall. Cancel then
   opens the tapped climb as a preview; Start playlist would load Up next and keep
   the wall's climb.
 - **The lifted climb menu is a full-window overlay above the navigator.**
@@ -161,7 +161,7 @@ wall-control simulator is a named one that gets reused, so reset them there.
 
 The wall-control captures also change that simulator's connection and drive
 state. Stop driving before the preview take. After recording, put Settings ›
-Board back to the defaults: Light automatically off, Stop driving after 45 seconds (On a MoonBoard: Until I
+Board back to the defaults: Always drive the wall off, Stop driving after 45 seconds (On a MoonBoard: Until I
 stop), In a session too on, Disconnect Bluetooth when driving ends off, and
 Tapping a playlist loads it into my queue off. Keep each refreshed take's source commit and capture date in
 [the capture notes](../../../../docs/help-clips.md#capturing-the-wall-controls).

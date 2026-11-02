@@ -104,12 +104,12 @@ export function migrateAutoDisconnect(store: SettingsMigrationStore): boolean {
   return writes.length > 0;
 }
 
-// The two Light automatically switches gave way to one (2026-11): Light the
+// The two Always drive the wall switches gave way to one (2026-11): Light the
 // board when I tap a climb and Light the board as I swipe each lit picks
-// their own way, outside a drive. Light automatically now always drives the
+// their own way, outside a drive. Always drive the wall now always drives the
 // wall while this phone holds the board, so every pick lights as after a
 // swipe on the wall button. A climber who had either switch on keeps
-// automatic lighting: Light automatically turns on for them.
+// automatic lighting: Always drive the wall turns on for them.
 //
 // Runs at the settings store's first import, after the auto-disconnect carry.
 // It writes only `alwaysDrive`, and only while that key was never stored, so
@@ -122,15 +122,15 @@ export const LEGACY_LIGHT_ON_CLIMB_TAP_KEY = 'lightOnClimbTap';
 /** The retired Light the board as I swipe. Read only here. */
 export const LEGACY_LIGHT_ON_SWIPE_KEY = 'lightOnSwipe';
 
-/** The write the Light automatically carry makes. */
+/** The write the Always drive the wall carry makes. */
 export type AlwaysDriveMigrationWrite = { key: 'alwaysDrive'; value: true };
 
 /**
  * What the carry writes, or an empty list. Pure, for the table tests.
  *
- * - Light automatically already stored (carried, or the climber's own
+ * - Always drive the wall already stored (carried, or the climber's own
  *   choice): nothing, whatever the old keys say.
- * - Either old switch on (`=== true`): Light automatically on.
+ * - Either old switch on (`=== true`): Always drive the wall on.
  * - Otherwise: nothing. The default (off) is what they had.
  */
 export function planAlwaysDriveMigration({
@@ -150,7 +150,7 @@ export function planAlwaysDriveMigration({
   return [{ key: 'alwaysDrive', value: true }];
 }
 
-/** Carry the two retired switches into Light automatically, once. Returns whether anything was written. */
+/** Carry the two retired switches into Always drive the wall, once. Returns whether anything was written. */
 export function migrateLightAutomatically(store: SettingsMigrationStore): boolean {
   const writes = planAlwaysDriveMigration({
     alwaysDriveSet: store.has('alwaysDrive'),

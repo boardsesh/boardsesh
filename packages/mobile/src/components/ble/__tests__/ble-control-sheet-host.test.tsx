@@ -152,8 +152,8 @@ describe('BleControlSheetHost', () => {
     expect(mockSettings.setters.putOnBoardKeepsLighting).not.toHaveBeenCalled();
   });
 
-  // Light automatically drives with no end: no timer applies, so no row.
-  it('leaves Stop driving after out while Light automatically is on', () => {
+  // Always drive the wall drives with no end: no timer applies, so no row.
+  it('leaves Stop driving after out while Always drive the wall is on', () => {
     mockBluetooth.boardName = 'kilter';
     mockSettings.values = { alwaysDrive: true, putOnBoardKeepsLighting: '30' };
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
@@ -177,7 +177,7 @@ describe('BleControlSheetHost', () => {
   });
 
   // #7000: only the player's sheet drops Disconnect Bluetooth when driving
-  // ends and Light automatically; the app-wide sheet keeps them whatever the QA switch says.
+  // ends and Always drive the wall; the app-wide sheet keeps them whatever the QA switch says.
   it.each([
     ['the app-wide sheet', undefined, true],
     ['the player’s sheet', false, false],

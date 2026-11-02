@@ -197,10 +197,10 @@ diagnostic) applies on native. The whole surface lives in three files:
   builds read it as on unless it is set to off; screenshot mode ignores it). It
   gates more than the swipe: the ‹‹ chevrons and the one-time peek, the Light
   every climb action and sheet row, since 2.7 Put on board's timed drive, and
-  since 2026-11 **Light automatically**'s always-on drive (`alwaysDriveApplies`).
+  since 2026-11 **Always drive the wall**'s always-on drive (`alwaysDriveApplies`).
   The first-connect confirmation and the player's preview-first card read it
   too. Turned off, Put on board lights one climb and starts no drive, and
-  nothing drives the wall: Light automatically's running drive ends keeping the
+  nothing drives the wall: Always drive the wall's running drive ends keeping the
   link (`always_off`), and every pick is a preview until the flag is back. Check its rollout in PostHog before reading any
   driving metric.
   `shared-session-browse` is a POSITIVE flag (read `=== true`, unresolved =
@@ -255,7 +255,7 @@ diagnostic) applies on native. The whole surface lives in three files:
   enrolled account's first connect on the phone, in both arms, whatever **Light
   the board when I tap a climb** says. Until 2.7 it showed only with that switch
   on, and 2.7 turns it off by default, so it would have reached almost nobody.
-  Its body now says what lights from there, read the way Light automatically and
+  Its body now says what lights from there, read the way Always drive the wall and
   Put on board read it (`firstConnectConfirmationCopy`): every pick, while **Light
   automatically** drives there (`firstConnectAlwaysDrives`: the switch on, and in a
   crew In a session too on, except on a MoonBoard; it replaced the two switches in
@@ -264,7 +264,7 @@ diagnostic) applies on native. The whole surface lives in three files:
   Put on board lights (Stop driving after set to Right away, a crew with In a
   session too off, or `wall-swipe-to-drive` off) (`resolveKeepLightingReach`, the
   same rule the player's preview-first card reads). The Climbs card's body follows
-  Light automatically and the crew the same way.
+  Always drive the wall and the crew the same way.
   The host announces the confirmation (`first-connect-confirmation-presence.ts`)
   before it records the connect, since that record hides the Climbs card: from
   then until the dialog closes the Climbs list's board-reveal and quick-actions

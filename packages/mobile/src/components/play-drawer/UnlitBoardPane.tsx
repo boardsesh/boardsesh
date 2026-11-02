@@ -30,7 +30,7 @@ type BoardBox = { width: number; height: number };
  * The phone split's empty player: the active board drawn unlit with what a
  * tap on a climb does where the climb's name will be: "Tap a climb to preview
  * it", or "Tap a climb to light it" where a list tap lights (driving the
- * wall: `useDrivingWall`, Light automatically's drive included). The pane
+ * wall: `useDrivingWall`, Always drive the wall's drive included). The pane
  * stays on screen with nothing playing, so the split never reflows when the
  * first climb opens. Passed to PlayDrawer as `paneEmptyState`.
  */

@@ -513,7 +513,7 @@ export function PlayCore({
   const isCrewSession = useIsCrewSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
-  // Light automatically (Settings › Board): this phone drives with no end
+  // Always drive the wall (Settings › Board): this phone drives with no end
   // whenever its link holds the board (`DriveModeWatcher`), so the wall
   // control's press only drops a stop where it applies (`alwaysDriveHere`).
   const [alwaysDrive] = useSetting('alwaysDrive');
@@ -521,7 +521,7 @@ export function PlayCore({
   // wall, in a crew too; outside a drive every change of climb is a preview.
   // A press on the frosted button stops it and keeps the link; picks then
   // stay previews until the link drops or the next Put on board, whatever
-  // Light automatically says (the setting never flips).
+  // Always drive the wall says (the setting never flips).
   const driveModePhase = useDriveModePhase();
   const drivingStopped = useDrivingStoppedForLink();
   const drivingLive = driveModePhase === 'live';
@@ -774,7 +774,7 @@ export function PlayCore({
   // the angle sheet drive the wall the climber is standing at, not the picture.
   const { boardName, layoutId, sizeId, setIds, angle } = renderBoardConfig;
   const activeAngle = boardConfig.angle;
-  // Light automatically drives on this board and in this session (the read
+  // Always drive the wall drives on this board and in this session (the read
   // `DriveModeWatcher` starts its drive on): Put on board then only drops a
   // stop, and the copy promises driving until the climber stops.
   const alwaysDriveHere = alwaysDriveApplies({
@@ -1440,7 +1440,7 @@ export function PlayCore({
         // Keep-lighting's session read, the roster alone: the one the watcher
         // ends a window on when In a session too turns off.
         crewSession: isCrewSession,
-        // Light automatically drives here: the press only drops a stop.
+        // Always drive the wall drives here: the press only drops a stop.
         alwaysDrive: alwaysDriveHere,
         // After Put on board, keep lighting (2.7): the board family's choice.
         // Most MoonBoard controllers don't like phones switching, so a MoonBoard

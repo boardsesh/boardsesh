@@ -137,5 +137,5 @@ try {
 try {
   migrateLightAutomatically({ read: readStoredValue, has: hasSetting, set: writeSetting });
 } catch {
-  // Light automatically stays off if the old switches can't be read.
+  // Always drive the wall stays off if the old switches can't be read.
 }

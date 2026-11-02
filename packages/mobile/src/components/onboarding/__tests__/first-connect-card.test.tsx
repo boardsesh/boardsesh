@@ -229,10 +229,10 @@ describe('FirstConnectCard', () => {
     expect(screen.getByLabelText('Not now')).toBeTruthy();
   });
 
-  // Light automatically on: this phone drives the wall once connected, so every
+  // Always drive the wall on: this phone drives the wall once connected, so every
   // pick lights; off (the default) a tap opens a preview, so the card names Put
   // on board.
-  it('says every pick lights while Light automatically is on', () => {
+  it('says every pick lights while Always drive the wall is on', () => {
     settingsCtrl.alwaysDrive = true;
     renderCard();
 
@@ -243,7 +243,7 @@ describe('FirstConnectCard', () => {
   });
 
   // The swipe flag is driving's kill switch: off, nothing drives, so the card names Put on board.
-  it('names Put on board with the swipe flag off, Light automatically on or not', () => {
+  it('names Put on board with the swipe flag off, Always drive the wall on or not', () => {
     settingsCtrl.alwaysDrive = true;
     flagsCtrl.swipeToDrive = false;
     renderCard();
@@ -253,7 +253,7 @@ describe('FirstConnectCard', () => {
     ).toBeTruthy();
   });
 
-  // In a crew Light automatically drives only with In a session too on.
+  // In a crew Always drive the wall drives only with In a session too on.
   it.each([
     [false, 'Connect this phone to the board, then tap a climb and Put on board to light it.'],
     [true, 'Connect this phone to the board and you drive the wall: every climb you pick lights.'],

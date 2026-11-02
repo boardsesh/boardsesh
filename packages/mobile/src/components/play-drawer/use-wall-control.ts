@@ -296,7 +296,7 @@ export function useWallControl({
     const putsUp = isPutUpAction(action);
     // The swipe peek's replay: a third Put on board within 5 minutes (spec B3).
     if (putsUp && control === 'button') noteWallPutOnBoardPress();
-    // Where Light automatically drives, a press drops a stop and its
+    // Where Always drive the wall drives, a press drops a stop and its
     // open-ended drive comes back to light the next climbs. Otherwise, with
     // Stop driving after set to a time or Until I stop (2.7), the press puts
     // the climb up the ordinary way and, once it went up, arms the drive.

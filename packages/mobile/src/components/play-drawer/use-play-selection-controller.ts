@@ -42,7 +42,7 @@ type SelectionNavigation = {
   browseByDefault: boolean;
   /**
    * Driving the wall (#7113): a live drive on this phone's link (a swipe on the
-   * wall button, Put on board, or Light automatically). Every change of climb
+   * wall button, Put on board, or Always drive the wall). Every change of climb
    * commits and lights, in a crew too, and the busy-wall question never asks
    * this climber. Outside a drive every change of climb is a preview.
    */
@@ -655,7 +655,7 @@ export function usePlaySelectionController({
    * - a crew is here (also `getSimilarClimbTapMode`): a look must not take
    *   their wall;
    * - nobody drives the wall from this phone (#7113: a swipe, Put on board or
-   *   Light automatically), or a press on the frosted button stopped it;
+   *   Always drive the wall), or a press on the frosted button stopped it;
    * - the player is showing a climb from another board, whose similar climbs
    *   are on that board too and can't go up on this one. That used to be the
    *   queue add's cross-board prompt; there is no add any more.

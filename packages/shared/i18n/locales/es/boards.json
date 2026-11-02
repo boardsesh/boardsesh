@@ -125,7 +125,7 @@
       "confirm": {
         "title": "Conectado a {{board}}",
         "titleNoName": "Conectado a tu plafón",
-        "bodyAlwaysDrive": "Encender automáticamente está activado, así que quedas al mando del plafón: cada bloque que elijas se enciende hasta que toques Estás al mando del plafón para parar.",
+        "bodyAlwaysDrive": "Siempre al mando del plafón está activado: cada bloque que elijas se enciende hasta que toques Estás al mando del plafón para parar.",
         "bodyWindow": "Con Poner en el plafón quedas al mando del plafón: durante {{seconds}} segundos después de cada bloque encendido, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",
         "bodyWindowMinute": "Con Poner en el plafón quedas al mando del plafón: durante 1 minuto después de cada bloque encendido, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",
         "bodyWindowMinutes": "Con Poner en el plafón quedas al mando del plafón: durante {{minutes}} minutos después de cada bloque encendido, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",

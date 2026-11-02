@@ -943,10 +943,10 @@ describe('resolveWallControl: driving the wall', () => {
   });
 });
 
-// Light automatically (2026-11): where it drives, a press that puts a climb up
+// Always drive the wall (2026-11): where it drives, a press that puts a climb up
 // only drops a stop (`resume`); its open-ended drive lights the next ones once
 // this phone's link holds the board. Stop driving after doesn't apply.
-describe('resolveWallControl: a press resumes Light automatically', () => {
+describe('resolveWallControl: a press resumes Always drive the wall', () => {
   const PUT_UP: readonly [string, Partial<WallControlInput>][] = [
     ['connect', {}],
     ['put_on_wall', { commitButton: 'putOnWall' }],
@@ -994,8 +994,8 @@ describe('resolveWallControl: a press resumes Light automatically', () => {
   // What the climber sees after the press: the model once the handler ran and
   // the watcher brought the drive back (`resume` drops the stop).
   it.each<[string, boolean, boolean]>([
-    ['Light automatically on', true, true],
-    ['Light automatically off', false, false],
+    ['Always drive the wall on', true, true],
+    ['Always drive the wall off', false, false],
   ])('%s: a press after a stop ends driving %s', (_name, alwaysDrive, drivingAfter) => {
     const before = resolveWallControl({
       ...FREE,
@@ -1035,7 +1035,7 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
     ['dark', MINE],
     ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
   ];
-  /** Solo, the flag on, both choices at their defaults, Light automatically off. */
+  /** Solo, the flag on, both choices at their defaults, Always drive the wall off. */
   const ON: Partial<WallControlInput> = {
     alwaysDrive: false,
     navigationCommits: false,
@@ -1087,10 +1087,10 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
       'moonboardPutOnBoardKeepsLighting',
     ],
     ['MoonBoard, Off', { boardIsMoonboard: true, moonboardKeepLighting: 'off' }, null, null, null],
-    // Where Light automatically drives, its own drive lights the next climbs:
+    // Where Always drive the wall drives, its own drive lights the next climbs:
     // the timed choice doesn't apply, on a MoonBoard neither.
-    ['Light automatically on', { alwaysDrive: true }, 'resume', null, null],
-    ['Light automatically on, a MoonBoard', { alwaysDrive: true, boardIsMoonboard: true }, 'resume', null, null],
+    ['Always drive the wall on', { alwaysDrive: true }, 'resume', null, null],
+    ['Always drive the wall on, a MoonBoard', { alwaysDrive: true, boardIsMoonboard: true }, 'resume', null, null],
     ['the swipe flag off', { swipeToDriveEnabled: false }, null, null, null],
   ];
   const cases = PUT_UP.flatMap(([name, state]) =>

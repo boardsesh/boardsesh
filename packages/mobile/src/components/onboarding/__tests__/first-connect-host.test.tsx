@@ -181,7 +181,7 @@ describe('FirstConnectHost', () => {
     expect(chooseMock).toHaveBeenCalledWith({
       title: 'Connected to Kilter at Blocs',
       message:
-        'Light automatically is on, so you drive the wall: every climb you pick lights until you tap You are driving the wall to stop.',
+        'Always drive the wall is on: every climb you pick lights until you tap You are driving the wall to stop.',
       options: [{ value: 'got_it', label: 'Got it' }],
       cancelValue: 'got_it',
     });
@@ -234,9 +234,9 @@ describe('FirstConnectHost', () => {
     return request.message;
   }
 
-  // With Light automatically off (the default) it still confirms, and says what
+  // With Always drive the wall off (the default) it still confirms, and says what
   // Put on board keeps lighting instead of promising every pick lights.
-  it('confirms with Light automatically off too, naming Put on board’s window', async () => {
+  it('confirms with Always drive the wall off too, naming Put on board’s window', async () => {
     settingsCtrl.values.alwaysDrive = false;
 
     expect(await confirmFirstConnect()).toBe(
@@ -263,11 +263,11 @@ describe('FirstConnectHost', () => {
     );
   });
 
-  // In a crew, Light automatically drives only with In a session too on.
+  // In a crew, Always drive the wall drives only with In a session too on.
   it('says every pick lights in a crew with In a session too on', async () => {
     sessionCtrl.crew = true;
 
-    expect(await confirmFirstConnect()).toMatch(/^Light automatically is on, so you drive the wall/);
+    expect(await confirmFirstConnect()).toMatch(/^Always drive the wall is on:/);
   });
 
   it('falls back to Put on board in a crew with In a session too off', async () => {
@@ -283,11 +283,11 @@ describe('FirstConnectHost', () => {
     sessionCtrl.crew = true;
     boardCtrl.boardType = 'moonboard';
 
-    expect(await confirmFirstConnect()).toMatch(/^Light automatically is on, so you drive the wall/);
+    expect(await confirmFirstConnect()).toMatch(/^Always drive the wall is on:/);
   });
 
-  // The swipe flag is driving's kill switch: off, Light automatically drives nothing either.
-  it('promises one climb with the swipe flag off, Light automatically on or not', async () => {
+  // The swipe flag is driving's kill switch: off, Always drive the wall drives nothing either.
+  it('promises one climb with the swipe flag off, Always drive the wall on or not', async () => {
     flagsCtrl.keepLighting = false;
 
     expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');

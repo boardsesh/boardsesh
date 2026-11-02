@@ -129,7 +129,7 @@ export const SHARED_EVENTS = {
   // 'link_dropped' | 'connect_failed' | 'commit_failed' | 'arming_timed_out' | 'session_changed' |
   // 'board_changed' | 'signed_out' | 'window_ended' (2.7: Put on board's
   // keep-lighting window ran out, or its setting was turned off) |
-  // 'always_off' (2026-11: Light automatically went off, or a crew formed where
+  // 'always_off' (2026-11: Always drive the wall went off, or a crew formed where
   // it doesn't drive; the link stays), durationSec,
   // climbsLit (the swipe's own climb included), inSession, windowRenewals (2.7:
   // lit climbs that renewed the keep-lighting window; 0 with no window, and
@@ -141,7 +141,7 @@ export const SHARED_EVENTS = {
   // 2.7 a solo press that put a climb up, #7113 QA) | 'action' (the
   // screen-reader action or the board sheet's row) | 'solo_carry' (until
   // 2026-11: a solo climber driving by Light the board as I swipe when a crew
-  // formed) | 'always' (2026-11: Light automatically drives the wall while this
+  // formed) | 'always' (2026-11: Always drive the wall drives the wall while this
   // phone's own link holds it: the link came up, the switch turned on, or a
   // Put on board resumed it after a stop) |
   // 'lock_screen' (2.7: a Lock Screen, Dynamic Island or Android notification

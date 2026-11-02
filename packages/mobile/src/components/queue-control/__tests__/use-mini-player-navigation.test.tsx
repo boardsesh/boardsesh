@@ -45,7 +45,7 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../../lib/playlists/track-pager', () => ({ canLoadMoreOfTrack: () => targets.canLoadMore }));
 vi.mock('../../../settings/hooks', () => ({
-  // Light automatically, for Queue Navigation only: whether a step lights reads the drive.
+  // Always drive the wall, for Queue Navigation only: whether a step lights reads the drive.
   useSetting: () => [settings.alwaysDrive, vi.fn()],
 }));
 vi.mock('../../play-drawer/use-track-paging', () => ({ useTrackPaging: vi.fn() }));
@@ -88,7 +88,7 @@ import {
 import { useMiniPlayerNavigation } from '../use-mini-player-navigation';
 import { resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 
-/** Light automatically's drive, as `DriveModeWatcher` starts it once this phone's link is up. */
+/** Always drive the wall's drive, as `DriveModeWatcher` starts it once this phone's link is up. */
 function driveAlways() {
   settings.alwaysDrive = true;
   startAlwaysDrive({ sessionId: null, boardId: 7, boardType: 'kilter' });
@@ -134,7 +134,7 @@ describe('useMiniPlayerNavigation', () => {
     return analytics.track.mock.calls.filter(([eventName]) => eventName === 'Queue Navigation');
   }
 
-  it("moves the queue in Light automatically's drive, as a swipe in the player would", () => {
+  it("moves the queue in Always drive the wall's drive, as a swipe in the player would", () => {
     driveAlways();
     const { result } = renderHook(() => useMiniPlayerNavigation());
     act(() => result.current.onNext());
@@ -144,8 +144,8 @@ describe('useMiniPlayerNavigation', () => {
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
   });
 
-  // Light automatically on with no drive (no link yet): ⏮ and ⏭ preview.
-  it('previews with Light automatically on and nothing driving', () => {
+  // Always drive the wall on with no drive (no link yet): ⏮ and ⏭ preview.
+  it('previews with Always drive the wall on and nothing driving', () => {
     settings.alwaysDrive = true;
     const { result } = renderHook(() => useMiniPlayerNavigation());
     act(() => result.current.onNext());
@@ -156,7 +156,7 @@ describe('useMiniPlayerNavigation', () => {
   // #7113: a press on "You are driving the wall" stopped driving on this link;
   // ⏮ and ⏭ preview, as a swipe in the player does, until the link drops or
   // the next Put on board.
-  it("previews after a press stopped Light automatically's drive", () => {
+  it("previews after a press stopped Always drive the wall's drive", () => {
     driveAlways();
     stopDrivingForLink();
     try {
@@ -253,7 +253,7 @@ describe('useMiniPlayerNavigation', () => {
 
   it.each([
     [
-      'in a crew, Light automatically on with no link',
+      'in a crew, Always drive the wall on with no link',
       () => {
         queue.inSharedSession = true;
         settings.alwaysDrive = true;
@@ -412,7 +412,7 @@ describe('useMiniPlayerNavigation from the last pick', () => {
 
   // A trackless pick (a queue slot, a look walked along the queue): while
   // driving, its neighbour goes up keeping the walked track.
-  it('puts a trackless pick’s neighbour up in Light automatically’s drive', () => {
+  it('puts a trackless pick’s neighbour up in Always drive the wall’s drive', () => {
     pickWith(null);
     driveAlways();
     const { result } = renderHook(() => useMiniPlayerNavigation());

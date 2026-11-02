@@ -55,7 +55,7 @@ describe('settings', () => {
       expect(getSetting('autoConnectBle')).toBe(false);
     });
 
-    it('preserves a saved Light automatically opt-in', () => {
+    it('preserves a saved Always drive the wall opt-in', () => {
       mockStorage.set('alwaysDrive', 'true');
       expect(getSetting('alwaysDrive')).toBe(true);
     });

@@ -41,7 +41,7 @@ const QUESTION = crew({
   busyWall: { holderName: 'Test2', climbName: 'Crimp Ladder' },
 });
 
-// Light automatically pinned off: with it on, this phone's link would drive
+// Always drive the wall pinned off: with it on, this phone's link would drive
 // the wall and the question would never be asked.
 const withWallButton = () => {
   setSetting('alwaysDrive', false);

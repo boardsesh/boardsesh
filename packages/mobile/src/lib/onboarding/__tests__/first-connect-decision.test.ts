@@ -268,9 +268,9 @@ describe('firstConnectConfirmationCopy', () => {
     keepLighting: defaults,
   };
 
-  // Light automatically on (where it drives): every climb picked lights, from
+  // Always drive the wall on (where it drives): every climb picked lights, from
   // a list or a swipe, until the climber stops, whatever Stop driving after says.
-  it('says this phone drives the wall where Light automatically drives', () => {
+  it('says this phone drives the wall where Always drive the wall drives', () => {
     expect(firstConnectConfirmationCopy({ ...base, alwaysDrive: true })).toEqual({ variant: 'always_drive' });
     expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', alwaysDrive: true })).toEqual({
       variant: 'always_drive',
@@ -286,7 +286,7 @@ describe('firstConnectConfirmationCopy', () => {
 
   // Where it doesn't drive (a crew with In a session too off), the copy falls
   // through to Put on board's own plan.
-  it('reads Put on board’s plan where Light automatically doesn’t drive', () => {
+  it('reads Put on board’s plan where Always drive the wall doesn’t drive', () => {
     expect(
       firstConnectConfirmationCopy({
         ...base,

@@ -86,7 +86,7 @@ export function FirstConnectHost() {
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
   // What the confirmation says lights from here on: read when it is decided,
-  // the way Light automatically and Put on board read it
+  // the way Always drive the wall and Put on board read it
   // (`firstConnectConfirmationCopy`).
   const [alwaysDrive] = useSetting('alwaysDrive');
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');

@@ -246,10 +246,10 @@ describe('resolvePreviewFirstWindowLine', () => {
     expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true })).toEqual({ key: 'moonboard' });
   });
 
-  // Where Light automatically drives, Put on board resumes its drive with no
+  // Where Always drive the wall drives, Put on board resumes its drive with no
   // end (the wall control's `tapDrive: 'resume'`), whatever Stop driving after
   // says, on a MoonBoard too: the card promises driving until you stop.
-  it('names driving until you stop where Light automatically drives', () => {
+  it('names driving until you stop where Always drive the wall drives', () => {
     expect(resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false, alwaysDrive: true })).toEqual({
       key: 'untilStop',
     });
@@ -292,7 +292,7 @@ describe('resolvePreviewFirstFrostLine', () => {
     }
   });
 
-  it('names none for Until I stop, Right away, or where Light automatically drives', () => {
+  it('names none for Until I stop, Right away, or where Always drive the wall drives', () => {
     expect(resolvePreviewFirstFrostLine({ plan: plan(null) })).toBe('open_ended');
     expect(resolvePreviewFirstFrostLine({ plan: null })).toBe('open_ended');
     expect(resolvePreviewFirstFrostLine({ plan: plan(45_000), alwaysDrive: true })).toBe('open_ended');

@@ -60,7 +60,7 @@ function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingF
  * starts the drive itself (`armNotificationPressDrive`).
  *
  * `enabled` is `lockScreenPressKeepsLighting`: false where a press would not
- * start a drive in the app either, Light automatically's board and session
+ * start a drive in the app either, Always drive the wall's board and session
  * included (`alwaysDriveApplies`): every pick lights there already.
  */
 export function buildKeepLightingConfig({
@@ -79,7 +79,7 @@ export function buildKeepLightingConfig({
   isCrewSession: boolean;
   boardName: string;
   swipeToDriveEnabled: boolean;
-  /** Settings › Board's Light automatically. */
+  /** Settings › Board's Always drive the wall. */
   alwaysDrive: boolean;
 }): LiveActivityKeepLightingConfig {
   const moonboard = isMoonboardBoardName(boardName);

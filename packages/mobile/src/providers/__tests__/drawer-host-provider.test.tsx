@@ -849,7 +849,7 @@ describe('DrawerHostProvider queue selection previews', () => {
 describe('DrawerHostProvider board sheet climb actions', () => {
   beforeEach(() => {
     queue.isSharedSession = false;
-    // This phone drives the wall (Light automatically's drive): a tap lights.
+    // This phone drives the wall (Always drive the wall's drive): a tap lights.
     startAlwaysDrive({ sessionId: null, boardId: null });
     queue.sessionId = 'session-1';
     queue.participantId = 'participant-self';
@@ -1355,10 +1355,10 @@ describe('DrawerHostProvider play drawer open target', () => {
     },
   );
 
-  it.each(["Light automatically's drive", 'Driver mode'] as const)(
+  it.each(["Always drive the wall's drive", 'Driver mode'] as const)(
     'keeps automatic selection available through %s',
     async (mode) => {
-      if (mode === "Light automatically's drive") startAlwaysDrive({ sessionId: queue.sessionId, boardId: 7 });
+      if (mode === "Always drive the wall's drive") startAlwaysDrive({ sessionId: queue.sessionId, boardId: 7 });
       else {
         enterDriveMode({ startedBy: 'swipe', sessionId: queue.sessionId, boardId: 7 });
         markDriveLive();

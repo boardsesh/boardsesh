@@ -52,7 +52,7 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * lit for Drive Mode Ended, and says when a crewmate put a climb up
  * (`use-drive-follow.ts`).
  *
- * Light automatically (Settings › Board, `alwaysDrive`) drives from here: while
+ * Always drive the wall (Settings › Board, `alwaysDrive`) drives from here: while
  * it applies (`alwaysDriveApplies`: in a crew only with In a session too on,
  * except on a MoonBoard, and never with the `wall-swipe-to-drive` flag off,
  * driving's kill switch) and this phone's own Bluetooth link holds the board,
@@ -120,7 +120,7 @@ export function DriveModeWatcher(): null {
   const swipeToDriveEnabled = useWallSwipeToDriveEnabled();
   const { getQueueSnapshot } = useQueueActions();
   const boardType = bluetooth?.boardName ?? null;
-  // Light automatically: whether it drives on this board and in this session.
+  // Always drive the wall: whether it drives on this board and in this session.
   const [alwaysDrive] = useSetting('alwaysDrive');
   const alwaysApplies = alwaysDriveApplies({
     alwaysDrive,
@@ -132,7 +132,7 @@ export function DriveModeWatcher(): null {
 
   // A lock-screen press's drive, adopted (iOS) or armed (Android) with the
   // latest reads. Stable, so the listeners below subscribe once and the
-  // timed-drive end check can call it first. Where Light automatically drives,
+  // timed-drive end check can call it first. Where Always drive the wall drives,
   // a press lights its climb and starts nothing: every pick lights already.
   const pressPlan = lockScreenPressKeepsLighting({ swipeToDriveEnabled, alwaysDrive: alwaysApplies })
     ? resolveKeepLightingPlan({
@@ -207,7 +207,7 @@ export function DriveModeWatcher(): null {
     }
   }, [linked, pending, sessionId, boardId, isAuthenticated, drive]);
 
-  // Light automatically. Where it no longer applies (the switch off, a crew
+  // Always drive the wall. Where it no longer applies (the switch off, a crew
   // formed with In a session too off, or the swipe flag off) its own drive
   // ends, and so does a timed drive it opened up; the link stays: a settings
   // change or a crewmate joining never frees the board. Where it applies, a

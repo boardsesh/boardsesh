@@ -246,7 +246,7 @@ describe('getSwipeNavigationTarget while driving', () => {
   const next = makeItem('next');
   const preview = makeItem('preview');
 
-  // Light automatically's drive is a drive like any other: every change of
+  // Always drive the wall's drive is a drive like any other: every change of
   // climb lights, from no preview and from a tracked one.
   it('commits from the committed climb and from a tracked preview', () => {
     expect(

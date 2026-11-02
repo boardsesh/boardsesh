@@ -41,7 +41,7 @@ export type MiniPlayerNavigation = {
  * ⏮ and ⏭ on the MiniPlayer (#6940), with the player closed.
  *
  * They move the way a swipe in the player would from the climb on the wall:
- * - Driving the wall (#7113: a swipe, Put on board, or Light automatically):
+ * - Driving the wall (#7113: a swipe, Put on board, or Always drive the wall):
  *   the queue's own `previousClimb` / `nextClimb`, the walk the player, the
  *   rest timer and the workout runner all make (Up next first, then the list).
  *   The board lights the new climb, in a crew too.
@@ -75,7 +75,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   // The climber's last pick on the bar, or null while it shows the queue's current.
   const { pick } = useBarClimb();
-  // For Queue Navigation: the session, and Light automatically.
+  // For Queue Navigation: the session, and Always drive the wall.
   const inSharedSession = useIsSharedSession();
   const [alwaysDrive] = useSetting('alwaysDrive');
   // Driving the wall (#7113): every step lights it, in a crew too.

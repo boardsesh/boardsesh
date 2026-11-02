@@ -65,10 +65,10 @@ remain internal state names for screen-reader announcements.
 | Put on board / Set active    | The commit button under a preview (#7113 relabelled Put on the wall). It says Set active on a board with no lights, or when nothing can be lit. | `CommitButtonLabel`, `wall-state.ts:166`             |
 | Crew                         | A party session with at least one other person connected. A newly arrived peer counts after 3 s, and a peer whose phone drops stays counted while reconnecting. With `shared-session-browse` active at 100%, ordinary crew browsing previews; driving explicitly overrides it. | `shouldDefaultToBrowse`, `SHARED_SESSION_DWELL_MS`, `queue-provider.tsx` |
 
-The lighting setting, in Settings › Board, is **Light automatically** (`alwaysDrive`),
+The lighting setting, in Settings › Board, is **Always drive the wall** (`alwaysDrive`),
 default **off**. It replaced the two switches **Light the board when I tap a climb**
 (`lightOnClimbTap`) and **Light the board as I swipe** (`lightOnSwipe`) in 2026-11: a climber
-who had either on gets Light automatically on, once (`migrateLightAutomatically` in
+who had either on gets Always drive the wall on, once (`migrateLightAutomatically` in
 `settings/migrations.ts`), and the old keys stay on disk for an older bundle. With it off,
 selecting a climb opens a preview without committing it or lighting the wall, including
 playlist **Play** and queue rows. Tap the board button (**Put on board**) to light that
@@ -88,7 +88,7 @@ MoonBoard controllers don't like phones switching (its own setting; still to be 
 field). The top bar's second line says "Preview · not on the wall" for a preview while this
 phone holds the board, or while a climb lit in the last hour may still be on the wall.
 
-**Light automatically** adds no lighting mode of its own: it keeps the phone driving. While it
+**Always drive the wall** adds no lighting mode of its own: it keeps the phone driving. While it
 is on and this phone's own Bluetooth link holds the board (never a relay, never a wall with no
 lights), `DriveModeWatcher` keeps an open-ended drive on (`startAlwaysDrive`,
 `startedBy: 'always'`), started live when the link comes up, when the switch turns on, or when
@@ -112,11 +112,11 @@ MoonBoard's choice don't apply: Settings › Board shows them greyed with that r
 board sheet leaves its timer row out. A Lock Screen Next or Previous lights its climb and starts no drive of its own.
 A playlist tap with **Tapping a playlist loads it into my queue** on depends on driving: outside
 a drive, the list from the tapped climb becomes Up next, the wall keeps its climb and the tapped
-climb opens as a preview; while driving (Light automatically's drive included), the tapped
+climb opens as a preview; while driving (Always drive the wall's drive included), the tapped
 climb lights, and solo the list replaces the queue (a crew's queue is never replaced: the
 tapped climb plays from the list in the shared queue). A newcomer's first-connect confirmation and the
 Climbs list's connect card read the same rule (`firstConnectAlwaysDrives`), so neither promises
-that a pick lights a climb unless Light automatically drives there: otherwise the confirmation
+that a pick lights a climb unless Always drive the wall drives there: otherwise the confirmation
 names Put on board's drive length (or Until I stop on a MoonBoard) instead.
 Changing the angle keeps a default preview and regrades it instead of restoring the
 committed climb underneath it.
@@ -209,7 +209,7 @@ Outside a drive every change of climb is a preview. Every entry point reads that
 the player's swipes, Next and Previous (`getSwipeNavigationTarget` in
 `play-drawer-navigation.ts`), the end card's Keep going, similar climbs, a fresh open (a
 notification, a deep link), the MiniPlayer's ⏮ ⏭ (`useDrivingWall`), and every list tap
-(`isDrivingWall`, at the tap). Light automatically is a drive like any other (above).
+(`isDrivingWall`, at the tap). Always drive the wall is a drive like any other (above).
 
 - **What stays a preview.** A climb from another board model (a wrong-board tick or
   playlist row, a similar climb from a climb on another board): the wall this phone drives
@@ -236,13 +236,13 @@ notification, a deep link), the MiniPlayer's ⏮ ⏭ (`useDrivingWall`), and eve
 - **Stopping it.** Press **You are driving the wall** to stop and keep the link. With the
   default settings, later taps and swipes preview. A board-button tap (Put on board) lights
   that climb and opens the keep-lighting window (`startedBy: 'tap'`: 45 s by default, renewed
-  by each lit climb); a MoonBoard tap starts an open-ended drive instead. With Light automatically
+  by each lit climb); a MoonBoard tap starts an open-ended drive instead. With Always drive the wall
   on, that tap drops the stop and its open-ended drive comes back (`tapDrive: 'resume'`). The
   settings themselves never flip.
 - **A crew forms while you drive** (Marco, 2026-10-30: keep driving). A live drive, whatever
-  started it (a swipe, a MoonBoard press, the accessible action or Light automatically), goes on
+  started it (a swipe, a MoonBoard press, the accessible action or Always drive the wall), goes on
   into the crew in the same session, so "You are driving the wall" stays and swipes, Next, list
-  taps and the MiniPlayer keep lighting. The one exception is Light automatically's drive with In
+  taps and the MiniPlayer keep lighting. The one exception is Always drive the wall's drive with In
   a session too off (not on a MoonBoard): it ends keeping the link (`always_off`), and comes back
   when the crew leaves. After a stop, or with no link, nothing drives and the crew's previews
   rule. (Until 2026-11 solo driving by Light the board as I swipe alone turned into a live drive
@@ -254,7 +254,7 @@ notification, a deep link), the MiniPlayer's ⏮ ⏭ (`useDrivingWall`), and eve
   out (`DriveModeWatcher`). A tap on the frosted button or Turn off all lights during a drive
   ends it as `stopped`. Put on board's timed drive also ends as `window_ended` when its time
   runs out, when a crewmate's put-up ends it, or when Settings › Board turns its choice to Right
-  away (or In a session too off as a crew forms). Light automatically's drive (and a timed drive
+  away (or In a session too off as a crew forms). Always drive the wall's drive (and a timed drive
   it opened up) ends as `always_off` when the switch goes off, it stops applying in a crew, or the
   `wall-swipe-to-drive` flag goes off. Each end fires `Drive Mode Ended {reason,
   startedBy, durationSec, climbsLit, inSession, windowRenewals, windowSec, boardType}` once;
@@ -669,7 +669,7 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
 6. **Ordinary browsing never takes a crewmate's wall**, from any list. The
    `shared-session-browse` flag is active at 100%. A climber driving the wall explicitly
    chooses to light every supported climb change, including in a crew. Without driving every
-   change of climb is a preview, solo too. Light automatically keeps this phone driving
+   change of climb is a preview, solo too. Always drive the wall keeps this phone driving
    whenever its link holds the board (in a crew only with In a session too on); stopping keeps
    changes as previews on that connection until the link drops or a press puts a climb up
    again.
@@ -729,7 +729,7 @@ The model keeps what exists and adds one switch, which shipped with F4.
 
 | Setting                                     | Status                    | What it does                                                                                                                                                         |
 | ------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Light automatically | Exists since 2026-11, default off | On: this phone always drives the wall while its own link holds the board (in a crew only with In a session too on, except on a MoonBoard), so every pick lights, as after a swipe on the wall button. Off: list taps, playlist Play, queue selection and navigation preview outside a drive. Replaced Light the board when I tap a climb and Light the board as I swipe; a climber with either on gets it on. |
+| Always drive the wall | Exists since 2026-11, default off | On: this phone always drives the wall while its own link holds the board (in a crew only with In a session too on, except on a MoonBoard), so every pick lights, as after a swipe on the wall button. Off: list taps, playlist Play, queue selection and navigation preview outside a drive. Replaced Light the board when I tap a climb and Light the board as I swipe; a climber with either on gets it on. |
 | Tapping a playlist loads it into my queue | Exists since F4, default off | On: an active playlist, For You or setter selection replaces the queue with that list, after confirmation when needed. Outside a drive, a row tap or header Play loads Up next from the tapped climb instead, keeps the wall's climb and previews the tapped climb's slot. |
 | End of list: stop or continue into my queue | Rejected                  | Moot since #6777: the queue plays before the list continues (rule 2), so a list only ends once Up next is played too, and the end card offers what the walk passed over. A "list first" setting would bring back the order the owner QA of #6772 rejected. |
 

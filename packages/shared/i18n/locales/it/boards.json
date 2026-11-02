@@ -125,7 +125,7 @@
       "confirm": {
         "title": "Connesso a {{board}}",
         "titleNoName": "Connesso al tuo pannello",
-        "bodyAlwaysDrive": "Illumina in automatico è attivo, quindi guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non tocchi Guidi tu il pannello per smettere.",
+        "bodyAlwaysDrive": "Guida sempre il pannello è attivo: ogni blocco che scegli si illumina in parete finché non tocchi Guidi tu il pannello per smettere.",
         "bodyWindow": "Con Illumina il pannello guidi tu il pannello: per {{seconds}} secondi dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
         "bodyWindowMinute": "Con Illumina il pannello guidi tu il pannello: per 1 minuto dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
         "bodyWindowMinutes": "Con Illumina il pannello guidi tu il pannello: per {{minutes}} minuti dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",

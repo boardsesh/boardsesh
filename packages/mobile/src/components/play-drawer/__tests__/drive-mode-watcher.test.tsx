@@ -18,7 +18,7 @@ type Reads = {
   sessionId: string | null;
   boardId: number | null;
   isAuthenticated: boolean;
-  /** Settings › Board's Light automatically. */
+  /** Settings › Board's Always drive the wall. */
   alwaysDrive?: boolean;
   isCrew?: boolean;
   /** Settings › Board's keep-lighting (2.7). */
@@ -484,10 +484,10 @@ describe('DriveModeWatcher: the wall confirms', () => {
   });
 });
 
-// Light automatically (2026-11): an open-ended drive whenever this phone's own
+// Always drive the wall (2026-11): an open-ended drive whenever this phone's own
 // link holds the board. One switch, no other interaction mode: every pick
 // lights the way a swipe drive's does.
-describe('DriveModeWatcher: Light automatically', () => {
+describe('DriveModeWatcher: Always drive the wall', () => {
   beforeEach(() => {
     reads.current = { ...DEFAULT_READS, alwaysDrive: true, boardName: 'kilter' };
   });
@@ -682,7 +682,7 @@ describe('DriveModeWatcher: Light automatically', () => {
     expect(bluetoothDisconnect).not.toHaveBeenCalled();
   });
 
-  // Driving's kill switch: Light automatically's drive is a drive like any other.
+  // Driving's kill switch: Always drive the wall's drive is a drive like any other.
   it('starts nothing with the swipe flag off, and ends its drive keeping the link when the flag goes off', () => {
     reads.current = { ...reads.current, swipeToDrive: false };
     const watcher = mount();
@@ -695,7 +695,7 @@ describe('DriveModeWatcher: Light automatically', () => {
     expect(bluetoothDisconnect).not.toHaveBeenCalled();
   });
 
-  // Signing out drops no link, and Light automatically drives signed out too
+  // Signing out drops no link, and Always drive the wall drives signed out too
   // (as the switches it replaced lit): one drive ends, the next starts at once.
   it('drives on after a sign-out with the link still up, as a new drive', () => {
     const watcher = mount();
@@ -1445,9 +1445,9 @@ describe('DriveModeWatcher: an Android notification press', () => {
     expect(getDriveMode()).toBeNull();
   });
 
-  // Where Light automatically drives, a press after a stop lights its climb and
+  // Where Always drive the wall drives, a press after a stop lights its climb and
   // starts nothing: only Put on board resumes the drive.
-  it('lights one climb where Light automatically drives, a stop holding its drive off', () => {
+  it('lights one climb where Always drive the wall drives, a stop holding its drive off', () => {
     act(() => {
       stopDrivingForLink();
     });

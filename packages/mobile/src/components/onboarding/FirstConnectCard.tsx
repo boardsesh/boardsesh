@@ -38,7 +38,7 @@ type FirstConnectCardProps = {
   boardName: string | null;
   /**
    * The bound board's type (`kilter`, `moonboard`, …), or null while it isn't
-   * known: a MoonBoard's Light automatically drives in a crew whatever In a
+   * known: a MoonBoard's Always drive the wall drives in a crew whatever In a
    * session too says.
    */
   boardType?: string | null;
@@ -57,7 +57,7 @@ function trackCardAction(action: FirstRunCardAction): void {
  * climbs on {{board}}", with **Connect**, **This wall has no lights** and an X
  * ("Not now").
  *
- * The body follows Light automatically (`firstConnectAlwaysDrives`): off (the
+ * The body follows Always drive the wall (`firstConnectAlwaysDrives`): off (the
  * default) a tap opens a preview, so it names Put on board; on, this phone
  * drives the wall once connected and every climb picked lights, so it says
  * that, except in a crew with In a session too off, where picks stay previews.

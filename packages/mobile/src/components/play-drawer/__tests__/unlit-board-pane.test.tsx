@@ -52,7 +52,7 @@ describe('UnlitBoardPane', () => {
     expect(lights.reads).toBeGreaterThan(0);
   });
 
-  // A live drive (Light automatically's included): the tap lights.
+  // A live drive (Always drive the wall's included): the tap lights.
   it('says a tap lights it where a list tap lights the wall', () => {
     lights.tap = true;
     const { container } = render(<UnlitBoardPane boardConfig={boardConfig} paneTopInset={false} />);

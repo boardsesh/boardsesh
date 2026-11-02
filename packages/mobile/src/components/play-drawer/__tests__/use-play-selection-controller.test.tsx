@@ -778,7 +778,7 @@ describe('driving the wall', () => {
     expect(initialProps.onNavigationStep).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'preview' }));
   });
 
-  // A stop ends the drive, Light automatically's included: swipes preview.
+  // A stop ends the drive, Always drive the wall's included: swipes preview.
   it('once a stop ended the drive, solo swipes are previews', () => {
     const initialProps = inputs();
     const { result } = renderHook(usePlaySelectionController, { initialProps });

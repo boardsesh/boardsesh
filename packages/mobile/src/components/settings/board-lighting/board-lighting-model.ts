@@ -19,7 +19,7 @@ export type BoardLightingModelInput = {
   /** Disconnect Bluetooth when driving ends (2.7, replacing auto-disconnect). */
   disconnectWhenDrivingEnds: Toggle;
   /**
-   * Light automatically: always drive the wall while this phone holds the
+   * Always drive the wall: always drive the wall while this phone holds the
    * board. On, Stop driving after (and the MoonBoard's) shows greyed with its
    * reason on the row, and In a session too applies whatever Stop driving
    * after says.
@@ -27,7 +27,7 @@ export type BoardLightingModelInput = {
   alwaysDrive: Toggle;
   /**
    * Whether a playlist, For You or setter-page tap loads that list into the
-   * queue (F4, #6667). Under Light automatically: like it, it says what a
+   * queue (F4, #6667). Under Always drive the wall: like it, it says what a
    * list tap does.
    */
   playlistTapLoadsQueue: Toggle;
@@ -113,7 +113,7 @@ function keepLightingRow(
 }
 
 /**
- * The Board page's lighting half (spec B4). First Light automatically, one
+ * The Board page's lighting half (spec B4). First Always drive the wall, one
  * switch (it replaced Light the board when I tap a climb and Light the board
  * as I swipe): on, this phone always drives the wall while it holds the board.
  * It leads because it greys the rows under it: a climber reads the switch
@@ -124,11 +124,11 @@ function keepLightingRow(
  * general choice, the MoonBoard's own right under it (only where a MoonBoard
  * is in view), and In a session too, greyed with its reason while the general
  * choice is Right away (its state follows only the general choice; a
- * MoonBoard's applies in a session anyway). Under Light automatically the two
+ * MoonBoard's applies in a session anyway). Under Always drive the wall the two
  * choices don't apply: they stay in place, greyed, each saying why on the row
  * itself (where a screen reader lands), and the card drops its footer, which
  * describes Put on board's drive. In a session too still decides a crew
- * session for Light automatically, so it is never greyed then.
+ * session for Always drive the wall, so it is never greyed then.
  *
  * Under that card, what happens when a drive ends: Disconnect Bluetooth when
  * driving ends, which frees the board for the next climber (it replaced
@@ -139,7 +139,7 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
 
   const alwaysDrive = input.alwaysDrive.enabled;
   const keepOff = input.keepLighting.choice === 'off';
-  // Greyed under Light automatically, each row says why where a screen reader lands on it.
+  // Greyed under Always drive the wall, each row says why where a screen reader lands on it.
   const alwaysDriveReason = t('settings:ble.lighting.keep.alwaysDriveReason');
   const keepRows: MoreRow[] = [
     keepLightingRow(t, 'putOnBoardKeepsLighting', t('settings:ble.lighting.keep.label'), input.keepLighting, {
@@ -170,7 +170,7 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
     accessibilityLabel: t('settings:ble.lighting.keep.inSessionAccessibilityLabel'),
     subtitle: t('settings:ble.lighting.keep.inSessionDescription'),
     // Greyed with the general choice Off: the reason replaces the description,
-    // at full contrast. Light automatically drives in a session only with it
+    // at full contrast. Always drive the wall drives in a session only with it
     // on, so it is never greyed then.
     disabledReason: t('settings:ble.lighting.keep.inSessionOffReason'),
     value: input.drivesInSession.enabled,
@@ -238,7 +238,7 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       rows: lightingRows,
     },
     {
-      // Untitled: the same lighting page. Under Light automatically the rows
+      // Untitled: the same lighting page. Under Always drive the wall the rows
       // say why they are greyed, and the footer (Put on board's drive) goes.
       key: 'keepLighting',
       ...(alwaysDrive ? {} : { footer: keepLightingFooter(t, input.keepLighting.choice) }),

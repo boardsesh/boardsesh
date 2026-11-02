@@ -14,7 +14,7 @@
  *   default, since most MoonBoard controllers don't like phones switching.
  *
  * Only Put on board's drive is timed: a swipe or Light every climb always
- * starts an open-ended one. With Light automatically on (`alwaysDrive`), none
+ * starts an open-ended one. With Always drive the wall on (`alwaysDrive`), none
  * of these apply: this phone drives with no end whenever it holds the board
  * (`alwaysDriveApplies`).
  *
@@ -108,14 +108,14 @@ export function resolveKeepLightingPlan({
 }
 
 /**
- * Whether Light automatically (Settings › Board, `alwaysDrive`) drives here:
+ * Whether Always drive the wall (Settings › Board, `alwaysDrive`) drives here:
  * the switch is on and, in a crew session, In a session too is on too. A
  * MoonBoard drives in a crew session whatever In a session too says, as its
  * Stop driving after choice does: most MoonBoard controllers don't like phones
  * switching, so the phone that has the board keeps it.
  *
  * Never with the `wall-swipe-to-drive` flag off: it is driving's kill switch
- * (docs/feature-flags.md), and Light automatically's drive is a drive like any
+ * (docs/feature-flags.md), and Always drive the wall's drive is a drive like any
  * other, so turned off nothing drives the wall and every pick is a preview.
  *
  * Whether this phone holds the board (its own Bluetooth link, never a relay)
@@ -130,7 +130,7 @@ export function alwaysDriveApplies({
   drivesInSession,
   inSession,
 }: {
-  /** Settings › Board's Light automatically. */
+  /** Settings › Board's Always drive the wall. */
   alwaysDrive: boolean;
   /** The `wall-swipe-to-drive` flag (`useWallSwipeToDriveEnabled`), driving's kill switch. */
   swipeToDriveEnabled: boolean;
@@ -147,7 +147,7 @@ export function alwaysDriveApplies({
 /**
  * Whether a Lock Screen, Dynamic Island or Android notification Next /
  * Previous keeps lighting the way Put on board would (2.7). Not with the swipe
- * flag (keep-lighting's kill switch) off, and not where Light automatically
+ * flag (keep-lighting's kill switch) off, and not where Always drive the wall
  * drives (`alwaysDriveApplies`): every pick lights there already, a stop holds
  * until the next Put on board, and Stop driving after doesn't apply.
  */
@@ -166,7 +166,7 @@ export function lockScreenPressKeepsLighting({
  * What a press on Put on board keeps lighting, as the climber will see it, for
  * the copy that promises it (the first-connect confirmation, the player's
  * preview-first card). It reads the plan against one setting the plan does not
- * take: where Light automatically drives (`alwaysDriveApplies`), this phone
+ * take: where Always drive the wall drives (`alwaysDriveApplies`), this phone
  * drives with no end once it holds the board, whatever Stop driving after
  * says, so every pick lights until the climber stops.
  *

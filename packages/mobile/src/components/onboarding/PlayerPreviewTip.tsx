@@ -101,7 +101,7 @@ export type PlayerPreviewTipProps = {
    */
   keepLighting: KeepLightingPlan | null;
   /**
-   * Light automatically drives here (`alwaysDriveApplies`): this phone drives
+   * Always drive the wall drives here (`alwaysDriveApplies`): this phone drives
    * with no end once it holds the board, so the card promises driving until
    * the climber stops, whatever Stop driving after says.
    */

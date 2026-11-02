@@ -100,7 +100,7 @@ describe('buildKeepLightingConfig', () => {
   it('is off where a press would not start a drive in the app either', () => {
     // The swipe flag is the drive's kill switch.
     expect(buildKeepLightingConfig({ ...base, swipeToDriveEnabled: false }).enabled).toBe(false);
-    // Where Light automatically drives, every pick lights already: solo, and
+    // Where Always drive the wall drives, every pick lights already: solo, and
     // in a crew with In a session too on.
     expect(buildKeepLightingConfig({ ...base, isCrewSession: false, alwaysDrive: true }).enabled).toBe(false);
     expect(buildKeepLightingConfig({ ...base, isCrewSession: true, alwaysDrive: true }).enabled).toBe(false);

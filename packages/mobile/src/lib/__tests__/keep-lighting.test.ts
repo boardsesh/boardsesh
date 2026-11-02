@@ -90,7 +90,7 @@ describe('resolveKeepLightingPlan', () => {
   });
 });
 
-// Light automatically (2026-11): where it drives, and where it leaves a crew alone.
+// Always drive the wall (2026-11): where it drives, and where it leaves a crew alone.
 describe('alwaysDriveApplies', () => {
   const ON = {
     alwaysDrive: true,
@@ -125,9 +125,9 @@ describe('alwaysDriveApplies', () => {
 
 describe('lockScreenPressKeepsLighting', () => {
   it.each([
-    ['keeps lighting with the swipe flag on and Light automatically not driving here', true, false, true],
+    ['keeps lighting with the swipe flag on and Always drive the wall not driving here', true, false, true],
     ['lights one climb with the swipe flag off (the kill switch)', false, false, false],
-    ['lights one climb where Light automatically drives: every pick lights already', true, true, false],
+    ['lights one climb where Always drive the wall drives: every pick lights already', true, true, false],
   ])('%s', (_name, swipeToDriveEnabled, alwaysDrive, expected) => {
     expect(lockScreenPressKeepsLighting({ swipeToDriveEnabled, alwaysDrive })).toBe(expected);
   });
@@ -140,7 +140,7 @@ describe('resolveKeepLightingReach', () => {
   const window300 = { windowMs: 300_000, setting: 'putOnBoardKeepsLighting' } as const;
   const untilStopped = { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } as const;
 
-  it('reads the plan as it is where Light automatically does not drive', () => {
+  it('reads the plan as it is where Always drive the wall does not drive', () => {
     expect(resolveKeepLightingReach({ plan: window45, alwaysDrive: false })).toEqual({
       kind: 'window',
       seconds: 45,
@@ -153,8 +153,8 @@ describe('resolveKeepLightingReach', () => {
     expect(resolveKeepLightingReach({ plan: null, alwaysDrive: false })).toEqual({ kind: 'one_climb' });
   });
 
-  // Light automatically drives with no end whatever Stop driving after says.
-  it('promises driving until the climber stops where Light automatically drives', () => {
+  // Always drive the wall drives with no end whatever Stop driving after says.
+  it('promises driving until the climber stops where Always drive the wall drives', () => {
     expect(resolveKeepLightingReach({ plan: window45, alwaysDrive: true })).toEqual({ kind: 'until_stop' });
     expect(resolveKeepLightingReach({ plan: null, alwaysDrive: true })).toEqual({ kind: 'until_stop' });
   });

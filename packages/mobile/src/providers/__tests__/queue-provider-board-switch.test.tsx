@@ -1002,7 +1002,7 @@ describe('QueueProvider list tracks and climbs this board cannot draw (#6664)', 
   });
 
   it('walks the queue after "Start playlist" from a climb this board cannot draw, adding no copies', async () => {
-    // Driving the wall (Light automatically's drive): a tap lights.
+    // Driving the wall (Always drive the wall's drive): a tap lights.
     startAlwaysDrive({ sessionId: null, boardId: null });
     // "Start playlist" is the replace, which a tap only does with the switch on.
     setSetting('playlistTapLoadsQueue', true);

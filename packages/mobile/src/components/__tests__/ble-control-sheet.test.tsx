@@ -147,13 +147,13 @@ describe('BleControlSheet', () => {
     expect(baseProps.onToggleDisconnectWhenDrivingEnds).toHaveBeenCalledWith(true);
   });
 
-  it('leaves Disconnect Bluetooth when driving ends and Light automatically to Settings on the player sheet', () => {
+  it('leaves Disconnect Bluetooth when driving ends and Always drive the wall to Settings on the player sheet', () => {
     const { queryByText } = render(<BleControlSheet {...baseProps} showLightingSwitches={false} />);
     expect(queryByText('ble.lighting.drivingEnds.label')).toBeNull();
     expect(queryByText('ble.lighting.alwaysDriveLabel')).toBeNull();
   });
 
-  it('renders Light automatically, and the two retired switches are gone', () => {
+  it('renders Always drive the wall, and the two retired switches are gone', () => {
     const { getByText, queryByText } = render(<BleControlSheet {...baseProps} />);
     expect(getByText('ble.lighting.alwaysDriveLabel')).toBeDefined();
     expect(queryByText('ble.lighting.onSwipeLabel')).toBeNull();

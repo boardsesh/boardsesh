@@ -1159,7 +1159,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // wall's history like any list (issue #6665): swipes walk back through what
   // was lit. Like every list it opens a preview, so looking never takes a
   // crewmate's wall, unless this phone is driving the wall (#7113: a swipe,
-  // Put on board or Light automatically), when it goes up.
+  // Put on board or Always drive the wall), when it goes up.
   // The queue entry the wall's climb already has is reused either way, so
   // putting it up from the preview doesn't queue a second copy.
   const handleBoardSheetClimbPress = useCallback(

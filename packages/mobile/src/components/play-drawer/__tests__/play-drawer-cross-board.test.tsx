@@ -570,7 +570,7 @@ const {
   startAlwaysDrive,
 } = await import('../drive-mode-store');
 
-/** Light automatically's drive, as `DriveModeWatcher` starts it once this phone's link is up. */
+/** Always drive the wall's drive, as `DriveModeWatcher` starts it once this phone's link is up. */
 function driveTheWall(): void {
   setSetting('alwaysDrive', true);
   startAlwaysDrive({ sessionId: null, boardId: null });
@@ -2007,7 +2007,7 @@ describe('PlayDrawer wall button taps', () => {
     markDriveLive();
   };
   it.each<[string, () => void]>([
-    ["Light automatically's drive", driveTheWall],
+    ["Always drive the wall's drive", driveTheWall],
     ['a live drive', startLiveDrive],
   ])('a tap on You are driving the wall (%s) stops driving and keeps the link', (_case, arrange) => {
     disconnectAllBluetooth.mockClear();

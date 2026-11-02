@@ -260,7 +260,7 @@ describe('preview-first queue selections', () => {
   });
 });
 
-// Nothing drives the wall (Light automatically off is the default). A pick that previews carries its
+// Nothing drives the wall (Always drive the wall off is the default). A pick that previews carries its
 // selection to Put on board. A pick of the climb already up can't: its
 // preview would have no Put on board, so it commits when the wall keeps its
 // climb, and otherwise reopens the climb up as it is.
@@ -383,7 +383,7 @@ describe('every queue pick reaches a commit', () => {
 });
 
 describe('opted-in suggestion taps', () => {
-  // This phone driving the wall (Light automatically's drive included) reaches the handler as
+  // This phone driving the wall (Always drive the wall's drive included) reaches the handler as
   // `isDrivingWall() === true`.
   it('commit with the suggestion list and open the committed climb', () => {
     lighting.enabled = true;

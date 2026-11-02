@@ -31,10 +31,10 @@ type BleControlSheetHostProps = {
   visible: boolean;
   onClose: () => void;
   /**
-   * Disconnect Bluetooth when driving ends and Light automatically. Only the
+   * Disconnect Bluetooth when driving ends and Always drive the wall. Only the
    * player's own sheet drops them (#7000); the app-wide sheet (toolbar bulb,
    * Climbs header pill) always keeps them. Both keep the Stop driving after
-   * row, unless Light automatically is on.
+   * row, unless Always drive the wall is on.
    */
   showLightingSwitches?: boolean;
   /**
@@ -80,7 +80,7 @@ export function BleControlSheetHost({
   // Stop driving after (2.7, spec B4), the sheet's first row on both sheets:
   // the timer at the wall in two taps (WCAG 2.2.1). On a connected MoonBoard
   // the MoonBoard's own choice, the one its Put on board takes. Left out while
-  // Light automatically is on: it drives with no end, so no timer applies.
+  // Always drive the wall is on: it drives with no end, so no timer applies.
   const [storedKeepLighting, setKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting, setMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const onMoonboard = showLightAdjacentHolds;

@@ -218,9 +218,9 @@ describe('LiveActivityLightingSync', () => {
     expect(harness.configs).toHaveLength(sends);
   });
 
-  // Light automatically drives every pick already: a lock-screen press lights
+  // Always drive the wall drives every pick already: a lock-screen press lights
   // its climb and starts no drive, so native is told to keep none.
-  it('mirrors Light automatically turning on as a press that keeps nothing lighting', () => {
+  it('mirrors Always drive the wall turning on as a press that keeps nothing lighting', () => {
     const view = renderSync();
     expect(harness.configs.at(-1)).toMatchObject({ enabled: true });
     harness.settings.alwaysDrive = true;

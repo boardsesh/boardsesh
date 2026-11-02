@@ -26,11 +26,11 @@ type BleControlSheetProps = {
   showLightAdjacentHolds: boolean;
   lightAdjacentHoldsEnabled: boolean;
   onToggleLightAdjacentHolds: (enabled: boolean) => void;
-  /** Light automatically: always drive the wall while this phone holds the board. */
+  /** Always drive the wall: always drive the wall while this phone holds the board. */
   alwaysDrive: boolean;
   onToggleAlwaysDrive: (enabled: boolean) => void;
   /**
-   * Disconnect Bluetooth when driving ends and Light automatically. The
+   * Disconnect Bluetooth when driving ends and Always drive the wall. The
    * player's own sheet (#7000) leaves them to Settings › Board, where they
    * also live, so the sheet is just the board's actions. Today's bar keeps them.
    */
@@ -54,7 +54,7 @@ type BleControlSheetProps = {
   /**
    * Stop driving after (2.7, spec B4), the first row: the timer changed or set
    * to Right away at the wall in two taps. Omitted, no row: the host leaves it
-   * out while Light automatically drives, where it doesn't apply.
+   * out while Always drive the wall drives, where it doesn't apply.
    */
   keepLighting?: BleKeepLightingRowModel;
   onClose: () => void;

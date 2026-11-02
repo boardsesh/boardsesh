@@ -203,7 +203,7 @@ describe('driveModeEnded', () => {
     });
   });
 
-  it("reports Light automatically's drive, turned off with the link kept", () => {
+  it("reports Always drive the wall's drive, turned off with the link kept", () => {
     expect(
       driveModeEnded({
         reason: 'always_off',
@@ -233,7 +233,7 @@ describe('driveModeStarted', () => {
     });
   });
 
-  it('says Light automatically started it', () => {
+  it('says Always drive the wall started it', () => {
     expect(driveModeStarted({ startedBy: 'always', inSession: true, boardType: 'tension' }).properties).toEqual({
       startedBy: 'always',
       inSession: true,

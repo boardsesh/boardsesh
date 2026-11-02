@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 
 // Preview-first: a change of climb lights the wall only while this phone
-// drives it. Light automatically is a drive like any other, so no setting is
+// drives it. Always drive the wall is a drive like any other, so no setting is
 // read here.
 describe('the live preview-first lighting policy', () => {
   it('keeps taps and navigation in preview outside a drive', () => {
@@ -28,7 +28,7 @@ describe('the live preview-first lighting policy', () => {
     expect(renderHook(() => useDrivingWall()).result.current).toBe(false);
   });
 
-  it('reads no setting: Light automatically on with no drive still previews', () => {
+  it('reads no setting: Always drive the wall on with no drive still previews', () => {
     setSetting('alwaysDrive', true);
     expect(isDrivingWall()).toBe(false);
     expect(renderHook(() => useDrivingWall()).result.current).toBe(false);

@@ -16,7 +16,7 @@
 // on "Tapping a playlist loads it into my queue" (F4, #6667). Then the tap (or
 // the Play button) replaces the whole queue with the list (tapped climb active)
 // so previous/next walk the circuit, while this phone drives the wall. Outside
-// a drive (Light automatically off is the default) the list goes into Up next
+// a drive (Always drive the wall off is the default) the list goes into Up next
 // instead, the wall keeps its climb, and the tapped climb's slot opens as a
 // preview for Put on board.
 // Because a replace clears any future queue items, a three-way prompt warns
@@ -1698,7 +1698,7 @@ export function usePlaylistActivation({
       // Outside a drive a tap is a preview (issue #6665: every list reads it,
       // not only search), solo and in a crew alike: a tap must not take a
       // crew's wall, and solo nothing lights until this phone drives the wall.
-      // Driving it (#7113: a swipe, Put on board, or Light automatically)
+      // Driving it (#7113: a swipe, Put on board, or Always drive the wall)
       // lights every change of climb, in a crew too, so the tap plays from
       // the list. Read here, at the tap, so the callback does not change
       // identity when a drive starts or ends.

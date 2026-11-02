@@ -136,8 +136,8 @@ describe('useBoardListActivation', () => {
   });
 
   it.each([
-    // Light automatically on with no drive yet (no link): still a preview.
-    ['solo, Light automatically on, not driving', false, true, true, false],
+    // Always drive the wall on with no drive yet (no link): still a preview.
+    ['solo, Always drive the wall on, not driving', false, true, true, false],
     ['solo, not driving', false, false, true, false],
     ['in a crew', true, false, true, false],
     // #7113: driving the wall lights the tap, in a crew too.

@@ -30,8 +30,8 @@ function findRow(input: BoardLightingModelInput, key: string): MoreRow {
 }
 
 describe('buildBoardLightingSections', () => {
-  // Light automatically leads: it greys the rows under it, so the climber reads the switch first.
-  it('lists Light automatically, when Put on board stops driving, what happens then, then what a list tap does', () => {
+  // Always drive the wall leads: it greys the rows under it, so the climber reads the switch first.
+  it('lists Always drive the wall, when Put on board stops driving, what happens then, then what a list tap does', () => {
     const sections = buildBoardLightingSections(makeInput());
     expect(sections.map((section) => [section.key, section.rows.map((row) => row.key)])).toEqual([
       ['lightingAuto', ['alwaysDrive']],
@@ -41,9 +41,9 @@ describe('buildBoardLightingSections', () => {
     ]);
   });
 
-  // One switch (2026-11): Light automatically always drives the wall. It
+  // One switch (2026-11): Always drive the wall always drives the wall. It
   // replaced Light the board when I tap a climb and Light the board as I swipe.
-  it('offers one Light automatically switch, alone in its group, with its caption and no footer while off', () => {
+  it('offers one Always drive the wall switch, alone in its group, with its caption and no footer while off', () => {
     const [lighting, , , more] = buildBoardLightingSections(makeInput());
     expect(lighting.rows).toHaveLength(1);
     const [always] = lighting.rows;
@@ -160,7 +160,7 @@ describe('buildBoardLightingSections', () => {
     expect(input.alwaysDrive.onChange).not.toHaveBeenCalled();
   });
 
-  it('hands the Light automatically flip to its own handler', () => {
+  it('hands the Always drive the wall flip to its own handler', () => {
     const input = makeInput();
     const always = findRow(input, 'alwaysDrive');
     if (always.kind !== 'toggle') throw new Error('not a toggle');
@@ -170,11 +170,11 @@ describe('buildBoardLightingSections', () => {
   });
 });
 
-// Light automatically on: this phone always drives the wall while it holds the
+// Always drive the wall on: this phone always drives the wall while it holds the
 // board, so Stop driving after (and the MoonBoard's) doesn't apply. The rows
 // stay where they are, greyed, each saying why. In a session too still
 // decides a crew session, so it is never greyed then.
-describe('buildBoardLightingSections: Light automatically on', () => {
+describe('buildBoardLightingSections: Always drive the wall on', () => {
   const ON = { alwaysDrive: { enabled: true, onChange: vi.fn() } };
 
   it('greys Stop driving after, says why on the row, and drops the footer about Put on board', () => {
@@ -229,7 +229,7 @@ describe('buildBoardLightingSections: Light automatically on', () => {
   });
 });
 
-// Stop driving after (2.7, spec B4): the card under Light automatically.
+// Stop driving after (2.7, spec B4): the card under Always drive the wall.
 describe('buildBoardLightingSections: Stop driving after', () => {
   it('offers Right away, 30 s, 45 s, 1, 2 and 5 minutes, and Until I stop', () => {
     const row = findRow(makeInput(), 'putOnBoardKeepsLighting');

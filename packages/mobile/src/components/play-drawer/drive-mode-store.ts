@@ -26,7 +26,7 @@ import type { KeepLightingChoice, KeepLightingSettingKey } from '../../lib/keep-
  * one, and during a timed drive makes it open-ended. `DriveModeWatcher` ends it
  * (`window_ended`) once its time is up.
  *
- * Light automatically (Settings › Board, `alwaysDrive`) keeps an open-ended
+ * Always drive the wall (Settings › Board, `alwaysDrive`) keeps an open-ended
  * drive on whenever this phone's own link holds the board (`startAlwaysDrive`,
  * from `DriveModeWatcher`): it starts live, since the link is already up and
  * lights nothing of its own.
@@ -67,7 +67,7 @@ export type DriveModeState = {
   /** Lit climbs that renewed the window (the one that opened it not counted), for Drive Mode Ended. */
   windowRenewals: number;
   /**
-   * Light automatically opened this timed drive up (`makeDriveOpenEnded({
+   * Always drive the wall opened this timed drive up (`makeDriveOpenEnded({
    * byAlways: true })`): the switch turned on while it ran. Light
    * automatically then ends it where it stops driving (`always_off`), as its
    * own drive, so turning the switch back off never leaves an open-ended drive
@@ -103,7 +103,7 @@ export type DriveModeExitReason =
    */
   | 'window_ended'
   /**
-   * Light automatically's drive (or a timed drive it opened up), where it no
+   * Always drive the wall's drive (or a timed drive it opened up), where it no
    * longer drives: the switch went off, a crew formed (or In a session too
    * went off in one) on a board that needs it, or the swipe flag went off. The
    * link stays.
@@ -203,7 +203,7 @@ export function drivingAtPick(rendered: boolean, now = Date.now()): boolean {
 let driveMode: DriveModeState | null = null;
 /**
  * A press on the frosted button stopped driving while the link stays up. With
- * Light automatically on, nothing drives again until the link drops or the
+ * Always drive the wall on, nothing drives again until the link drops or the
  * climber's next Put on board, so the stop means something; the setting itself
  * never flips.
  */
@@ -487,8 +487,8 @@ export function retimeDriveWindow(windowMs: number, now = Date.now()): boolean {
  * A swipe or Light every climb during a timed drive: the drive goes on
  * with no end, the frost. Returns whether there was a window to open up.
  *
- * `byAlways`: Light automatically turned on during it, so the drive is now
- * Light automatically's to end (`openedByAlways`).
+ * `byAlways`: Always drive the wall turned on during it, so the drive is now
+ * Always drive the wall's to end (`openedByAlways`).
  */
 export function makeDriveOpenEnded({ byAlways = false }: { byAlways?: boolean } = {}): boolean {
   if (!driveMode || driveMode.windowMs === null) return false;
@@ -504,7 +504,7 @@ export function makeDriveOpenEnded({ byAlways = false }: { byAlways?: boolean } 
 }
 
 /**
- * Whether this drive is Light automatically's to end where it stops driving:
+ * Whether this drive is Always drive the wall's to end where it stops driving:
  * its own (`startedBy: 'always'`), or a timed drive it opened up. A swipe's,
  * Light every climb's or a running timed drive is left alone.
  */
@@ -513,7 +513,7 @@ export function isAlwaysDriveOwned(drive: DriveModeState | null): boolean {
 }
 
 /**
- * Whether Light automatically starts its drive now: it drives here
+ * Whether Always drive the wall starts its drive now: it drives here
  * (`alwaysDriveApplies`), this phone's own Bluetooth link holds the board (a
  * relay, a crewmate's link or a wall with no lights never does), nothing
  * drives yet, and no press on the frosted button stopped driving on this link.
@@ -538,7 +538,7 @@ export function shouldStartAlwaysDrive({
 }
 
 /**
- * Light automatically's drive: open-ended and live from the start, since this
+ * Always drive the wall's drive: open-ended and live from the start, since this
  * phone's link is already up. It lights nothing itself: the climb on the wall
  * is whatever connecting (or the last pick) put there, and every pick from now
  * on lights. Refuses (false) while a drive is on or a stop holds this link.
@@ -572,7 +572,7 @@ export function exitDriveMode(reason: DriveModeExitReason, options: DriveEndOpti
 
 /**
  * The press on the frosted button (or Turn off all lights during a drive):
- * stop driving and keep the link. Picks stay previews, and Light automatically
+ * stop driving and keep the link. Picks stay previews, and Always drive the wall
  * starts nothing, until the link drops or the next Put on board. Handed on as
  * a `stopped` end even when the drive had already gone, since the climber
  * stopped driving all the same; Disconnect Bluetooth when driving ends then
@@ -593,7 +593,7 @@ export function stopDrivingForLink(options: DriveEndOptions = {}): DriveModeStat
 
 /**
  * The link this stop belonged to dropped (or the climber signed out), or Put
- * on board resumed Light automatically: it may drive again.
+ * on board resumed Always drive the wall: it may drive again.
  */
 export function clearDrivingStopped(): void {
   if (!stoppedForLink) return;

@@ -301,9 +301,9 @@ describe('Drive Mode Started', () => {
   });
 });
 
-// Light automatically (2026-11): an open-ended drive whenever this phone's own
+// Always drive the wall (2026-11): an open-ended drive whenever this phone's own
 // link holds the board, live from the start since it lights nothing itself.
-describe("Light automatically's drive", () => {
+describe("Always drive the wall's drive", () => {
   it('starts live and open-ended, says so once, and lights nothing of its own', () => {
     expect(startAlwaysDrive({ sessionId: 'session-1', boardId: 7, boardType: 'tension' })).toBe(true);
     expect(getDriveMode()).toMatchObject({
@@ -534,8 +534,8 @@ describe('the timed drive', () => {
     expect(makeDriveOpenEnded()).toBe(false);
   });
 
-  // Light automatically turned on during it: the drive is now Light automatically's to end.
-  it('turns open-ended for Light automatically, which then owns its end', () => {
+  // Always drive the wall turned on during it: the drive is now Always drive the wall's to end.
+  it('turns open-ended for Always drive the wall, which then owns its end', () => {
     openWindow();
     markDriveLive({ now: 5_000 });
     expect(isAlwaysDriveOwned(getDriveMode())).toBe(false);

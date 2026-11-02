@@ -233,7 +233,7 @@ function captured(): UsePlaylistClimbActivationOptions {
 }
 
 beforeEach(() => {
-  // This phone drives the wall (Light automatically's drive): a tap lights.
+  // This phone drives the wall (Always drive the wall's drive): a tap lights.
   // Cases about a tap outside a drive, or in a crew that isn't driven, end it
   // first. Started before the mocks clear, so its Drive Mode Started is not
   // one of the case's events.
@@ -763,7 +763,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
   // Issue #6665: every list reads the same rule, not only search: outside a
   // drive a tap is a preview that still walks the list.
   describe('outside a drive', () => {
-    // Nothing drives the wall from this phone: no link yet, Light automatically
+    // Nothing drives the wall from this phone: no link yet, Always drive the wall
     // off, or a press stopped it.
     beforeEach(() => resetDriveModeForTests());
 
@@ -850,9 +850,9 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
   });
 
   // "Tapping a playlist loads it into my queue" outside a drive (the default:
-  // Light automatically off, or no link yet): the list goes into Up next, the
+  // Always drive the wall off, or no link yet): the list goes into Up next, the
   // wall keeps its climb, and the tapped climb's new slot opens as a preview.
-  // While driving (Light automatically's drive included) the tap lights as any
+  // While driving (Always drive the wall's drive included) the tap lights as any
   // driven tap does: the 'queue replacement' cases.
   describe('the playlist switch, preview-first', () => {
     const wallClimb = makeQueueItem('q-now', 'now');

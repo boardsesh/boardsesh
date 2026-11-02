@@ -264,7 +264,7 @@ export type PreviewFirstWindowLine =
 
 /**
  * Read by the same rule as the first-connect confirmation
- * (`resolveKeepLightingReach`): where Light automatically drives, every pick
+ * (`resolveKeepLightingReach`): where Always drive the wall drives, every pick
  * lights until the climber stops, on any board, whatever Stop driving after
  * says. A timed drive says how long it lasts after each climb, in whole
  * minutes from one minute up.
@@ -281,7 +281,7 @@ export function resolvePreviewFirstWindowLine({
    */
   plan: KeepLightingPlan | null;
   isMoonboard: boolean;
-  /** Light automatically drives here (`alwaysDriveApplies`). */
+  /** Always drive the wall drives here (`alwaysDriveApplies`). */
   alwaysDrive?: boolean;
 }): PreviewFirstWindowLine {
   const reach = resolveKeepLightingReach({ plan, alwaysDrive });

@@ -245,8 +245,8 @@ describe('PlayerPreviewTip', () => {
   });
 
   // The setting Put on board's plan does not take (`resolveKeepLightingReach`):
-  // where Light automatically drives, Put on board drives until you stop.
-  it('reads Light automatically the way the press does', () => {
+  // where Always drive the wall drives, Put on board drives until you stop.
+  it('reads Always drive the wall the way the press does', () => {
     renderTip({ alwaysDrive: true });
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.untilStop);
   });
@@ -257,7 +257,7 @@ describe('PlayerPreviewTip', () => {
     ['Until I stop', { keepLighting: UNTIL_STOPPED }],
     ['a MoonBoard until stopped', { boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED }],
     ['Right away, or no drive in a session', { keepLighting: null }],
-    ['Light automatically', { alwaysDrive: true }],
+    ['Always drive the wall', { alwaysDrive: true }],
   ] as const)('says the frost means driving until you stop, with no clock, for %s', (_case, props) => {
     renderTip(props);
     expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frostOpenEnded);

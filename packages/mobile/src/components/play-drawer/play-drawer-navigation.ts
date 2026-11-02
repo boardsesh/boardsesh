@@ -34,7 +34,7 @@ export function getViewOnlyPreviewNavigationTarget({
 /**
  * The wiring `handlePrev`/`handleNext` actually call: a change of climb lights
  * the wall only while this phone drives it (#7113), a swipe on the wall
- * button, Put on board or Light automatically (`alwaysDrive`), in a crew too.
+ * button, Put on board or Always drive the wall (`alwaysDrive`), in a crew too.
  * Otherwise it stays view-only (`forceViewOnly`), then delegates to
  * {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
  * (rather than inlining the translation at each call site) so it is directly

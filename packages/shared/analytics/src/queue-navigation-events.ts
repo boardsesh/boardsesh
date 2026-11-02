@@ -80,11 +80,11 @@ export type QueueNavigationInput = QueueNavigationBoard & {
   outcome: QueueNavigationOutcome;
   /** Someone else is in the session with this climber. */
   inSharedSession: boolean;
-  /** Light automatically (always drive the wall) at the time of the step. */
+  /** Always drive the wall (always drive the wall) at the time of the step. */
   alwaysDrive: boolean;
   /**
    * The climber was driving the wall (#7113): a swipe on the wall button, Put
-   * on board or Light automatically made every change of climb light it, in a
+   * on board or Always drive the wall made every change of climb light it, in a
    * crew too. Defaults to false.
    */
   driving?: boolean;
@@ -99,7 +99,7 @@ export type QueueNavigationProps = BoardTypeProperty & {
   outcome: QueueNavigationOutcome;
   /** www's name and values, kept so the two platforms read alike. */
   sessionMode: 'party' | 'solo';
-  /** Light automatically was on. Replaced `lightOnSwipe` (Light the board as I swipe) in 2026-11. */
+  /** Always drive the wall was on. Replaced `lightOnSwipe` (Light the board as I swipe) in 2026-11. */
   alwaysDrive: boolean;
   /** Driving the wall (#7113): the step lit the wall whatever the session said. */
   driving: boolean;
@@ -167,7 +167,7 @@ export function queueNavigation(
  * swipe (or Put on board) never reached the wall. `session_changed`,
  * `board_changed`, `signed_out`: the drive's session, board or account went away.
  * `window_ended`: Put on board's keep-lighting window ran out with no climb lit
- * in it, or its setting was turned off. `always_off`: Light automatically's
+ * in it, or its setting was turned off. `always_off`: Always drive the wall's
  * drive ended because the switch went off, or a crew formed (or In a session
  * too went off in one) where it doesn't drive; the link stays.
  */

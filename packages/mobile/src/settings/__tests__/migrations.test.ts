@@ -191,7 +191,7 @@ describe('migrateAutoDisconnect', () => {
   });
 });
 
-// The two Light automatically switches carried into one (alwaysDrive): either
+// The two Always drive the wall switches carried into one (alwaysDrive): either
 // one on turns it on; nothing else changes, and a second run writes nothing.
 describe('planAlwaysDriveMigration', () => {
   it.each([
@@ -200,7 +200,7 @@ describe('planAlwaysDriveMigration', () => {
     [true, true],
     [true, false],
     [false, true],
-  ] as const)('tap %s, swipe %s: Light automatically on', (lightOnClimbTap, lightOnSwipe) => {
+  ] as const)('tap %s, swipe %s: Always drive the wall on', (lightOnClimbTap, lightOnSwipe) => {
     expect(planAlwaysDriveMigration({ alwaysDriveSet: false, lightOnClimbTap, lightOnSwipe })).toEqual([
       { key: 'alwaysDrive', value: true },
     ]);
@@ -216,7 +216,7 @@ describe('planAlwaysDriveMigration', () => {
     expect(planAlwaysDriveMigration({ alwaysDriveSet: false, lightOnClimbTap, lightOnSwipe })).toEqual([]);
   });
 
-  it('writes nothing once Light automatically is stored, whatever the old switches say', () => {
+  it('writes nothing once Always drive the wall is stored, whatever the old switches say', () => {
     expect(planAlwaysDriveMigration({ alwaysDriveSet: true, lightOnClimbTap: true, lightOnSwipe: true })).toEqual([]);
   });
 });
@@ -227,7 +227,7 @@ describe('migrateLightAutomatically', () => {
     [{ [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
     [{ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true, [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
     [{ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: false, [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
-  ])('%o: Light automatically on, and nothing else written', (initial) => {
+  ])('%o: Always drive the wall on, and nothing else written', (initial) => {
     const store = memoryStore(initial);
     expect(migrateLightAutomatically(store)).toBe(true);
     expect(parsed(store, 'alwaysDrive')).toBe(true);
@@ -247,7 +247,7 @@ describe('migrateLightAutomatically', () => {
     }
   });
 
-  it('runs once: after the climber turns Light automatically off, a second run leaves it off', () => {
+  it('runs once: after the climber turns Always drive the wall off, a second run leaves it off', () => {
     const store = memoryStore({ [LEGACY_LIGHT_ON_SWIPE_KEY]: true });
     expect(migrateLightAutomatically(store)).toBe(true);
     store.set('alwaysDrive', false);
@@ -297,20 +297,20 @@ describe('at the settings store import', () => {
     expect([...mockStorage.keys()]).toEqual([LEGACY_AUTO_DISCONNECT_KEY]);
   });
 
-  it('turns Light automatically on for a climber who had Light the board as I swipe on', async () => {
+  it('turns Always drive the wall on for a climber who had Light the board as I swipe on', async () => {
     mockStorage.set(LEGACY_LIGHT_ON_SWIPE_KEY, 'true');
     const { getSetting } = await import('../hooks');
     expect(getSetting('alwaysDrive')).toBe(true);
   });
 
-  it('leaves Light automatically off with both switches off, and writes nothing', async () => {
+  it('leaves Always drive the wall off with both switches off, and writes nothing', async () => {
     mockStorage.set(LEGACY_LIGHT_ON_CLIMB_TAP_KEY, 'false');
     const { getSetting } = await import('../hooks');
     expect(getSetting('alwaysDrive')).toBe(false);
     expect([...mockStorage.keys()]).toEqual([LEGACY_LIGHT_ON_CLIMB_TAP_KEY]);
   });
 
-  it('does not turn Light automatically back on at the next launch', async () => {
+  it('does not turn Always drive the wall back on at the next launch', async () => {
     mockStorage.set(LEGACY_LIGHT_ON_CLIMB_TAP_KEY, 'true');
     await import('../hooks');
     mockStorage.set('alwaysDrive', 'false');

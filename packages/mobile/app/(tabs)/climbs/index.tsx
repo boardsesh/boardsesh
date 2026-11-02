@@ -1478,7 +1478,7 @@ function ClimbListInner() {
     screenshotPreviewOpenedRef.current = true;
     // The drawer only claims "Browsing" while a swipe genuinely stays view-only,
     // which for a preview with no suggestion source means nothing drives the
-    // wall: Light automatically off. The capture device is a throwaway
+    // wall: Always drive the wall off. The capture device is a throwaway
     // simulator, so writing the setting is the honest way to reach the state —
     // faking the chrome instead would ship a store screenshot of a promise the
     // app doesn't keep.

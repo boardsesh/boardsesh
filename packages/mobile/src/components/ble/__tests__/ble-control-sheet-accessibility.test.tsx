@@ -92,7 +92,7 @@ it('keeps expanded accessibility labels in a bounded scrollable sheet, with work
 
 // #7000: the player's sheet is just the board's actions (and the
 // MoonBoard-only switch, which lives nowhere else).
-it('drops auto-disconnect and Light automatically when asked, keeping the actions', () => {
+it('drops auto-disconnect and Always drive the wall when asked, keeping the actions', () => {
   const { queryByText, getByText } = render(
     <BleControlSheet
       visible

@@ -444,10 +444,10 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
 
   // [case, model input, control, drive runner called, light runner called, stopped after]
   it.each<[string, Partial<WallControlInput>, 'button' | 'bulb', boolean, boolean, boolean]>([
-    ['stopped, Light automatically on', { alwaysDrive: true }, 'button', false, true, false],
-    ['stopped, Light automatically on, the bulb', { alwaysDrive: true }, 'bulb', false, true, false],
-    ['Light automatically off', { alwaysDrive: false }, 'button', false, true, true],
-    ['Light automatically off, the bulb', { alwaysDrive: false }, 'bulb', false, true, true],
+    ['stopped, Always drive the wall on', { alwaysDrive: true }, 'button', false, true, false],
+    ['stopped, Always drive the wall on, the bulb', { alwaysDrive: true }, 'bulb', false, true, false],
+    ['Always drive the wall off', { alwaysDrive: false }, 'button', false, true, true],
+    ['Always drive the wall off, the bulb', { alwaysDrive: false }, 'bulb', false, true, true],
     [
       'a crew, In a session too off (it does not drive here)',
       { alwaysDrive: false, crewSession: true },
@@ -677,7 +677,7 @@ describe('useWallControl: Put on board keeps lighting', () => {
     expect(run.keepLighting).toHaveBeenCalledWith({ windowMs: 45_000, setting: 'putOnBoardKeepsLighting' });
   });
 
-  it('only drops a stop where Light automatically drives: its own drive lights the next climbs', () => {
+  it('only drops a stop where Always drive the wall drives: its own drive lights the next climbs', () => {
     stopDrivingForLink();
     const { hook, run } = setup(preview({ alwaysDrive: true, drivingStopped: true }));
     act(() => hook.result.current.press('button'));

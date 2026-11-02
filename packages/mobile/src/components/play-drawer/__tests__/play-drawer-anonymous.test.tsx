@@ -227,7 +227,7 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   AccessibilityInfo: { announceForAccessibility: announceMock },
 }));
-// The settings store backs the player's settings (Light automatically, Stop
+// The settings store backs the player's settings (Always drive the wall, Stop
 // driving after, In a session too). Kept in memory so each case can set them.
 vi.mock('react-native-mmkv', () => {
   const store = new Map<string, string>();
@@ -560,7 +560,7 @@ const { getDriveMode, resetDriveModeForTests, startAlwaysDrive, stopDrivingForLi
   await import('../drive-mode-store');
 
 /**
- * Light automatically's drive, as `DriveModeWatcher` starts it once this
+ * Always drive the wall's drive, as `DriveModeWatcher` starts it once this
  * phone's link is up: every change of climb lights the wall. The player reads
  * the drive store, so the watcher itself is not mounted here.
  */
@@ -1144,7 +1144,7 @@ describe('PlayDrawer — the shared-session browse latch', () => {
         act(() => {
           vi.advanceTimersByTime(SHARED_BROWSE_LATCH_RELEASE_MS);
         });
-        // Solo again, this phone starts driving (Light automatically's drive
+        // Solo again, this phone starts driving (Always drive the wall's drive
         // once the link is up): the next step lights.
         act(() => {
           driveTheWall();
@@ -1328,7 +1328,7 @@ describe('PlayDrawer — the shared-session browse latch', () => {
       expect.anything(),
     );
 
-    // Driving from here (Light automatically's drive), the climb its peek
+    // Driving from here (Always drive the wall's drive), the climb its peek
     // shows goes up, not the queue's next from the wall.
     act(() => {
       driveTheWall();
@@ -2242,7 +2242,7 @@ describe('PlayDrawer — reading the wall', () => {
 
   // #7017, Marco: the coloured lit look only while this climber drives the
   // board, i.e. the next swipe from this screen changes what the wall shows.
-  // Light automatically's drive goes on as a crew forms (In a session too on),
+  // Always drive the wall's drive goes on as a crew forms (In a session too on),
   // and a tap on the frosted button stops it.
   it('drives the board on its own lit climb while driving, a crew forming included, and not once it stops', () => {
     driveTheWall();
@@ -2303,15 +2303,15 @@ describe('PlayDrawer — reading the wall', () => {
     },
   );
 
-  // Light automatically on, a stop holding its drive off: the press drops the
-  // stop and Light automatically's open-ended drive comes back, whatever Stop
+  // Always drive the wall on, a stop holding its drive off: the press drops the
+  // stop and Always drive the wall's open-ended drive comes back, whatever Stop
   // driving after says. In a crew with In a session too off it doesn't drive,
   // so Put on board is its plain self there.
   it.each([
     ['solo', false, true, 'resume', null],
     ['a crew with In a session too off', true, false, null, null],
   ] as const)(
-    'with Light automatically on, %s, a press that lights a dark climb: %s',
+    'with Always drive the wall on, %s, a press that lights a dark climb: %s',
     (_case, crew, drivesInSession, tapDrive, plan) => {
       setSetting('alwaysDrive', true);
       setSetting('putOnBoardDrivesInSession', drivesInSession);

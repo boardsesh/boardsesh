@@ -6,7 +6,7 @@
  * the wall can't light.
  *
  * - `default`: a solo preview, the way every tap opens a climb since 2.7 unless
- *   this phone drives the wall (Light automatically included; Light the board
+ *   this phone drives the wall (Always drive the wall included; Light the board
  *   when I tap a climb before 2026-11).
  * - `session`: a browse in a party session (or its latch after the crew left),
  *   so a look never takes the crew's wall.

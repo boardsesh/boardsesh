@@ -2113,7 +2113,7 @@ describe('ClimbList shared-session row taps', () => {
     expect(mocks.activationOptions?.previewOnly).toBe(true);
   });
 
-  it('browses in a crew even when the climber has Light automatically ON', async () => {
+  it('browses in a crew even when the climber has Always drive the wall ON', async () => {
     mocks.isSharedSession = true;
     mocks.alwaysDrive = true;
     const { findByText } = render(<ClimbList />);
@@ -2134,7 +2134,7 @@ describe('ClimbList shared-session row taps', () => {
   });
 });
 
-describe('ClimbList Light automatically setting', () => {
+describe('ClimbList Always drive the wall setting', () => {
   // The activation hook reads the drive at the tap now, for every list (issue
   // #6665), so a preview carries the results as its track and swipes walk them
   // (#5157). The screen no longer opens a bare, trackless preview of its own.
