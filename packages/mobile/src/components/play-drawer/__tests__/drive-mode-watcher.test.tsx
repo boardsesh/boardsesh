@@ -125,6 +125,8 @@ vi.mock('react-native', () => ({
 const lockScreen = vi.hoisted(() => ({
   snapshot: null as LiveActivityLightingWindowSnapshot | null,
   navigateListeners: new Set<(event: WidgetQueueNavigateEvent) => void>(),
+  /** The iOS Lock Screen bulb's stop event (`lockScreenDriveStop`). */
+  stopListeners: new Set<() => void>(),
   android: false,
 }));
 vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
@@ -133,6 +135,12 @@ vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
     lockScreen.navigateListeners.add(listener);
     return () => {
       lockScreen.navigateListeners.delete(listener);
+    };
+  },
+  addLockScreenDriveStopListener: (listener: () => void) => {
+    lockScreen.stopListeners.add(listener);
+    return () => {
+      lockScreen.stopListeners.delete(listener);
     };
   },
   get isAndroidSessionPresence() {
@@ -1314,6 +1322,104 @@ describe('DriveModeWatcher: a timed drive started from the Lock Screen', () => {
     watcher.change({ isConnected: true });
     expect(getDriveMode()).toBeNull();
     expect(effects.track).not.toHaveBeenCalledWith('Drive Mode Started', expect.anything());
+  });
+});
+
+// The iOS Lock Screen / Dynamic Island bulb while this phone drives: native
+// stores the stop (StopDrivingIntent) and JS stops the drive the way the
+// frosted button does.
+describe('DriveModeWatcher: a stop from the Lock Screen bulb', () => {
+  function lockScreenStop(updatedAtMs = Date.now()): void {
+    lockScreen.snapshot = { sessionId: 'session-1', mode: 'off', source: 'lockScreen', updatedAtMs };
+  }
+
+  function stopEvent(): void {
+    act(() => {
+      for (const listener of lockScreen.stopListeners) listener();
+    });
+  }
+
+  function foreground(): void {
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+  }
+
+  it('stops a live drive on the stop event, keeping the link like the frosted button', () => {
+    vi.useFakeTimers();
+    mount();
+    driveLive();
+    vi.setSystemTime(Date.now() + 5_000);
+    lockScreenStop();
+    stopEvent();
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(isDrivingStoppedForLink()).toBe(true);
+    expect(effects.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'stopped', startedBy: 'swipe' }),
+    );
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  it('stops a timed drive when the app comes back after a tap it slept through', () => {
+    vi.useFakeTimers();
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        boardId: 7,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-a'));
+    vi.setSystemTime(Date.now() + 10_000);
+    // Tapped while JS slept: no event reached it.
+    lockScreenStop();
+    vi.setSystemTime(Date.now() + 5_000);
+    foreground();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(getDriveMode()).toBeNull();
+    // Adopted once: a drive started since survives the next foreground.
+    watcher.change({ isConnected: false });
+    watcher.change({ isConnected: true });
+    driveLive();
+    foreground();
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it('never stops a drive that started after the tap', () => {
+    vi.useFakeTimers();
+    mount();
+    lockScreenStop(Date.now() - 1_000);
+    driveLive();
+    stopEvent();
+    foreground();
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'swipe' });
+  });
+
+  it('ignores another session’s stop', () => {
+    mount();
+    driveLive();
+    lockScreen.snapshot = { sessionId: 'session-0', mode: 'off', source: 'lockScreen', updatedAtMs: Date.now() + 1 };
+    stopEvent();
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it('frees the board without forgetting it when Disconnect Bluetooth when driving ends is on', async () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    mount();
+    driveLive();
+    vi.setSystemTime(Date.now() + 5_000);
+    lockScreenStop();
+    await act(async () => {
+      for (const listener of lockScreen.stopListeners) listener();
+      await Promise.resolve();
+    });
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
   });
 });
 

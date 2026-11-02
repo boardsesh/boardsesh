@@ -512,7 +512,8 @@ way it looks like this:
   The Climbs header's board-held capsule uses the same `WallGlow` background, hold-role
   colours and mirrored geometry for its current climb. Its two-line label uses the glow's readable
   foreground and shadow, with a full-width readability fade because the text reaches the pill's edges.
-  That capsule's frost means this phone holds the board, including when a crew's swipes browse;
+  Its Hide × takes the same readable foreground. That capsule's frost means this phone holds the board,
+  including when a crew's swipes browse;
   read the Play drawer button's "You are driving the wall" label to identify driving.
   Missing hold data keeps the plain amber treatment. With no current climb, the held LED header uses just
   the frost base and grain without inventing hold colours; its words use the frost label colour and shadow.

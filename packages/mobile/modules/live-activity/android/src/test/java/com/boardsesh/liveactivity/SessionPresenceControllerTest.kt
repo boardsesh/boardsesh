@@ -512,5 +512,22 @@ class SessionPresenceControllerTest {
         val start = launchedIntents.single()
         assertEquals("Estás al mando del plafón", start.getStringExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL))
         assertEquals(null, LightingWindowStore.loadWindow(application))
+        // An older bundle sends no Stop driving label, so its lit bulb keeps re-lighting.
+        assertEquals(null, start.getStringExtra(BoardSessionService.EXTRA_STOP_DRIVING_LABEL))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `startSession carries the Stop driving label for the lit bulb`() {
+        val (controller, launchedIntents) = recordingController()
+
+        controller.startSession(StartSessionOptions().apply {
+            sessionId = "session-1"
+            androidNotification = AndroidNotificationStrings().apply {
+                stopDrivingLabel = "Dejar el mando"
+            }
+        })
+
+        assertEquals("Dejar el mando", launchedIntents.single().getStringExtra(BoardSessionService.EXTRA_STOP_DRIVING_LABEL))
     }
 }

@@ -907,6 +907,136 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(state.climbName, "Masquerade")
     }
 
+    // MARK: Stop driving from the Lock Screen bulb
+
+    private func stopAt(_ current: SharedLightingWindowState?, sessionId: String = "session") -> SharedLightingWindowState? {
+        SharedLightingWindowRuntime.afterStop(current: current, sessionId: sessionId, now: lightNow)
+    }
+
+    func testLockScreenStopTurnsATimedOrOpenEndedDriveOff() throws {
+        for drive in [
+            lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45),
+            lightingState(mode: SharedLightingWindowState.modeDriving, family: nil, source: SharedLightingWindowState.sourceLockScreen),
+        ] {
+            let stopped = try XCTUnwrap(stopAt(drive))
+            XCTAssertEqual(stopped.mode, SharedLightingWindowState.modeOff)
+            XCTAssertNil(stopped.endsAtMs)
+            XCTAssertNil(stopped.windowSeconds)
+            XCTAssertEqual(stopped.source, SharedLightingWindowState.sourceLockScreen)
+            XCTAssertEqual(stopped.updatedAtMs, lightNowMs)
+            XCTAssertEqual(stopped.sessionId, "session")
+            XCTAssertEqual(LightingRenderPhase.resolve(state: stopped, sessionId: "session", now: lightNow), .previews)
+        }
+    }
+
+    func testLockScreenStopFindsNothingToStopOnPreviewsAnEndedDriveOrAnotherSession() {
+        XCTAssertNil(stopAt(nil))
+        XCTAssertNil(stopAt(lightingState(mode: SharedLightingWindowState.modeOff)))
+        // A timed drive that ran out between the render and the tap.
+        XCTAssertNil(stopAt(lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: -1, windowSeconds: 45)))
+        XCTAssertNil(stopAt(lightingState(mode: SharedLightingWindowState.modeDriving), sessionId: "next-session"))
+    }
+
+    func testRecordStopStoresTheStopForTheStagedSessionOnly() throws {
+        SharedLightingWindowStore.save(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults)
+        // No session staged: no card, nothing stored.
+        XCTAssertNil(SharedLightingWindowRuntime.recordStop(in: defaults, now: lightNow))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults)?.mode, SharedLightingWindowState.modeDriving)
+
+        defaults.set("session", forKey: SharedConstants.sessionIdKey)
+        let stored = try XCTUnwrap(SharedLightingWindowRuntime.recordStop(in: defaults, now: lightNow))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults), stored)
+        // A second tap finds nothing driving.
+        XCTAssertNil(SharedLightingWindowRuntime.recordStop(in: defaults, now: lightNow))
+        // A press after the stop starts a drive from the settings again, as Put on board would.
+        SharedKeepLightingConfigStore.save(keepLightingConfig(), to: defaults)
+        XCTAssertEqual(SharedLightingWindowRuntime.recordPress(in: defaults, now: lightNow)?.mode, SharedLightingWindowState.modeWindow)
+    }
+
+    func testTheBulbOffersAStopOnlyToAnAppThatTakesOne() throws {
+        XCTAssertFalse(SharedLightingWindowRuntime.lockScreenStopSupported(in: defaults))
+        // A JS that predates the stop mirrors its settings without the field.
+        let legacy = """
+        {"v": 1, "keepLighting": "45", "moonboardKeepLighting": "until_stopped", "drivesInSession": true, "inCrew": false, "moonboard": false, "enabled": true}
+        """
+        defaults.set(Data(legacy.utf8), forKey: SharedConstants.keepLightingConfigKey)
+        XCTAssertNotNil(SharedKeepLightingConfigStore.load(from: defaults))
+        XCTAssertFalse(SharedLightingWindowRuntime.lockScreenStopSupported(in: defaults))
+
+        var config = keepLightingConfig(enabled: false)
+        config.lockScreenStop = true
+        SharedKeepLightingConfigStore.save(config, to: defaults)
+        // Whatever the press settings say: a swipe's drive is stoppable too.
+        XCTAssertTrue(SharedLightingWindowRuntime.lockScreenStopSupported(in: defaults))
+        XCTAssertEqual(SharedKeepLightingConfigStore.load(from: defaults), config)
+    }
+
+    func testTheStopWaitsForTheAppUntilItWritesItsOwn() {
+        let stop = lightingState(mode: SharedLightingWindowState.modeOff, family: nil, source: SharedLightingWindowState.sourceLockScreen)
+        XCTAssertFalse(StopDrivingIntent.appSettled(stop, current: stop))
+        // JS adopted it and wrote its own off.
+        XCTAssertTrue(StopDrivingIntent.appSettled(stop, current: lightingState(mode: SharedLightingWindowState.modeOff, family: nil)))
+        // Or a later press already replaced it.
+        let later = SharedLightingWindowState(
+            v: SharedLightingWindowState.currentVersion,
+            sessionId: "session",
+            mode: SharedLightingWindowState.modeWindow,
+            endsAtMs: lightNowMs + 45_000,
+            windowSeconds: 45,
+            family: SharedLightingWindowState.familyGeneral,
+            source: SharedLightingWindowState.sourceLockScreen,
+            updatedAtMs: stop.updatedAtMs + 1
+        )
+        XCTAssertTrue(StopDrivingIntent.appSettled(stop, current: later))
+        XCTAssertTrue(StopDrivingIntent.appSettled(stop, current: nil))
+    }
+
+    // MARK: The disconnected card's bulb
+
+    private func storePairing(bound: UUID?, configKey: String = "kilter::1::1::") {
+        var pairing: [String: Any] = [
+            "configKey": configKey,
+            "configuration": ["boardName": "kilter", "layoutId": 1, "sizeId": 1],
+        ]
+        if let bound { pairing["boundPeripheralUuid"] = bound.uuidString }
+        defaults.set(try? JSONSerialization.data(withJSONObject: pairing), forKey: SharedConstants.bleBoardConfigKey)
+    }
+
+    func testTheDisconnectedCardOffersReconnectOnlyForARememberedBoard() {
+        // Nothing paired yet, or an in-app Disconnect cleared the board.
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+        storePairing(bound: nil)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+        storePairing(bound: UUID(), configKey: "")
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+        // An older pairing format (a bare configuration) can't be reconnected either.
+        defaults.set(Data(#"{"boardName": "kilter", "layoutId": 1, "sizeId": 1}"#.utf8), forKey: SharedConstants.bleBoardConfigKey)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+
+        storePairing(bound: UUID())
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .reconnect)
+        // No App Group: today's button.
+        XCTAssertEqual(SharedBoardReconnect.footer(in: nil), .reconnect)
+    }
+
+    func testTheCardSaysWhyTheLastReconnectFailedUntilOneSucceeds() {
+        storePairing(bound: UUID())
+        SharedBoardReconnect.record(.unreachable, in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .retry(.unreachable))
+        SharedBoardReconnect.record(.bluetoothOff, in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .retry(.bluetoothOff))
+        // A forgotten board says open the app, whatever failed before.
+        storePairing(bound: nil)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+
+        storePairing(bound: UUID())
+        SharedWidgetWallControlState.saveBoardConnection("disconnected", holderDisplayName: nil, to: defaults)
+        SharedBoardReconnect.record(nil, in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .reconnect)
+        // The bulb lights at once, before the app adopts the link.
+        XCTAssertEqual(SharedWidgetWallControlState.loadBoardConnection(from: defaults).boardConnection, "connectedByMe")
+    }
+
     func testContentStateRoundTripsTheLightingRevision() throws {
         // What this binary's own redraw writes: the revision survives the trip,
         // so ActivityKit sees a changed state.

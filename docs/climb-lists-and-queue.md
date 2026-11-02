@@ -314,7 +314,10 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
   (`useSharedBrowseLatch`, 10 s). At the end of the pick's loaded list, Next opens the pick in
   the player, which pages the list or shows its end card.
 - **Not the wall's surfaces.** The Lock Screen and Live Activity keep showing the wall's
-  climb, as do the Climbs header's wall capsule and the board history sheet.
+  climb, as do the Climbs header's wall capsule and the board history sheet. The capsule
+  shows the wall's climb even when it is the pick or the queue's current, for an hour after it
+  was lit (or while a link says it's lit), until the climber hides it (owner decision,
+  2026-11-02; `climb-view-options.md`, "The Climbs header's wall capsule").
 - **In memory only**, like the player's own preview: a relaunch starts from the queue's
   current.
 - **The one-time tip** above the bar (`AccessoryOnboardingTip`, `mobile.onboarding.tips.accessory`)

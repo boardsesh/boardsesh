@@ -21,6 +21,20 @@ import android.content.Intent
  * its own write succeeds.)
  */
 class BoardSessionActionReceiver : BroadcastReceiver() {
+    companion object {
+        /** The `boardControl` action for a lightbulb tap. */
+        internal fun bulbAction(intent: Intent): String {
+            val connectedByMe =
+                intent.getStringExtra(BoardSessionService.EXTRA_BOARD_CONNECTION) ==
+                    BoardSessionService.CONNECTION_CONNECTED_BY_ME
+            return when {
+                !connectedByMe -> "reconnect"
+                intent.getBooleanExtra(BoardSessionService.EXTRA_STOPS_DRIVE, false) -> "stopDriving"
+                else -> "reassert"
+            }
+        }
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         val correlationId = intent.getStringExtra(BoardSessionService.EXTRA_CORRELATION_ID) ?: ""
         when (intent.action) {
@@ -46,13 +60,12 @@ class BoardSessionActionReceiver : BroadcastReceiver() {
             }
             // Lightbulb tap: the action depends on who held the board when the
             // notification was last built (carried on the PendingIntent extra).
-            // connectedByMe → re-light the current climb; otherwise reconnect
-            // (taking the board back from a peer / reconnecting after a drop).
+            // connectedByMe → stop driving when the bulb was drawn as Stop
+            // driving (JS checks the drive is still on), else re-light the
+            // current climb; otherwise reconnect (taking the board back from a
+            // peer / reconnecting after a drop).
             BoardSessionService.ACTION_BULB -> {
-                val connectedByMe =
-                    intent.getStringExtra(BoardSessionService.EXTRA_BOARD_CONNECTION) ==
-                        BoardSessionService.CONNECTION_CONNECTED_BY_ME
-                SessionPresenceModule.dispatchBoardControl(if (connectedByMe) "reassert" else "reconnect", correlationId)
+                SessionPresenceModule.dispatchBoardControl(bulbAction(intent), correlationId)
             }
         }
     }

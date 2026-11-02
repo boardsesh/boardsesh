@@ -183,6 +183,17 @@ public class BoardBleModule: Module {
             }
         }
 
+        // Disconnect Bluetooth when driving ends (2.7): free the board but keep
+        // the pairing, so the Live Activity bulb and the next Put on board can
+        // reconnect to it. Its own function, not an argument on `disconnect`:
+        // JS gates on its presence, since an OTA bundle can run on an older
+        // binary whose `disconnect` takes none.
+        AsyncFunction("disconnectKeepingBoard") { (promise: Promise) in
+            BoardBleManager.shared.disconnect(forgetBoard: false) {
+                promise.resolve(nil)
+            }
+        }
+
         AsyncFunction("write") { (value: String, promise: Promise) in
             guard !value.isEmpty else {
                 promise.reject("BLE_BAD_ARG", "Missing required parameter: value")

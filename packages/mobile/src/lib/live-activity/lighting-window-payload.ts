@@ -62,6 +62,8 @@ function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingF
  * `enabled` is `lockScreenPressKeepsLighting`: false where a press would not
  * start a drive in the app either, Always drive the wall's board and session
  * included (`alwaysDriveApplies`): every pick lights there already.
+ * `lockScreenStop` says this JS takes a stop from the Lock Screen bulb; a
+ * binary without one ignores it.
  */
 export function buildKeepLightingConfig({
   keepLighting,
@@ -99,5 +101,8 @@ export function buildKeepLightingConfig({
         inSession: isCrewSession,
       }),
     }),
+    // This JS adopts a lock-screen stop (`lock-screen-lighting.ts`), so the
+    // bulb may offer one while a drive is on the card.
+    lockScreenStop: true,
   };
 }

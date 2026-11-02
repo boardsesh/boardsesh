@@ -882,7 +882,8 @@
         "reconnect": "Conectar al plafón",
         "connecting": "Conectando…",
         "onWall": "{{name}} está en el muro",
-        "drivingTheWall": "Estás al mando del plafón"
+        "drivingTheWall": "Estás al mando del plafón",
+        "stopDriving": "Dejar el mando"
       },
       "inStatsFlashes": "Flashes",
       "inLeaderboardTitle": "Quién escala",

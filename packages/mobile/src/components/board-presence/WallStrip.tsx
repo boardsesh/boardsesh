@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
-import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
+import { useLiveWallClimb } from '../queue-control/use-wall-or-queue-climb';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
@@ -30,9 +30,8 @@ function WallStripComponent() {
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
-  // Pass `null`: the strip always mirrors whatever's lit on the wall, so it never
-  // hides the climb as a duplicate of the local queue head.
-  const litClimb = useWallClimbIfDistinct(null);
+  // The strip always mirrors whatever's lit on the wall.
+  const litClimb = useLiveWallClimb();
   const { openBoardSheet, boardPanelProps } = useDrawerHost();
   const boardConfig = boardPanelProps?.boardConfig ?? null;
 

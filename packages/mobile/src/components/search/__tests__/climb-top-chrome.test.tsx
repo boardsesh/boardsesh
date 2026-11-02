@@ -41,6 +41,7 @@ vi.mock('../../chrome/NativeRootHeader', async () => {
       nativeChrome.scrollEdge = scrollEdge;
       nativeChrome.centerActionWidths = centerActionWidths;
       nativeChrome.titleHidden = titleHidden;
+      nativeChrome.centerContent = centerContent;
       return createElement(
         'div',
         null,
@@ -108,6 +109,8 @@ const nativeChrome = vi.hoisted(() => ({
   scrollEdge: undefined as unknown,
   centerActionWidths: undefined as { leading: number; trailing: number } | undefined,
   titleHidden: undefined as boolean | undefined,
+  // The element handed to the header's title slot: a new one is a Stack.Screen options update.
+  centerContent: undefined as unknown,
   // The native stack's frame: an iPhone 17 Pro.
   frameWidth: 402,
 }));
@@ -122,10 +125,9 @@ const ctrl = vi.hoisted(() => ({
   isPad: false,
   widthClass: 'compact' as 'compact' | 'regular',
   wallClimb: null as { climbUuid: string; name: string; sentAt: string } | null,
+  // The queue head's climb uuid.
+  queueHead: null as string | null,
   boardId: 1 as number | null,
-  dismissed: false,
-  dismissalLoaded: true,
-  dismissWallCapsule: vi.fn(),
   focused: true,
   // The chrome's focus effects, kept so a test can run one and its cleanup: the
   // cleanup is what the screen losing focus does.
@@ -336,21 +338,17 @@ vi.mock('../../../providers/ble-control-sheet-provider', () => ({
 vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => ({ boardId: ctrl.boardId }),
 }));
-vi.mock('../../../lib/wall-capsule-dismissal-store', () => ({
-  wallCapsuleOccurrenceKey: (boardId: number, climb: { climbUuid: string; sentAt: string }) =>
-    JSON.stringify([boardId, climb.climbUuid, climb.sentAt]),
-  useWallCapsuleDismissed: () => ({ loaded: ctrl.dismissalLoaded, dismissed: ctrl.dismissed }),
-  dismissWallCapsule: ctrl.dismissWallCapsule,
-}));
+// The real Hide store, over the in-memory AsyncStorage stub, so these tests run
+// its "until a different climb goes up" rule and its persistence.
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionControls: () => ({ isSessionWallLit: false, sessionId: null }),
-  useActiveClimbUuid: () => null,
+  useActiveClimbUuid: () => ctrl.queueHead,
 }));
-// No distinct wall climb in these layout tests, so the centre capsule never mounts.
 vi.mock('../../../hooks/use-bottom-accessory', () => ({
   useTabChrome: () => ({ nativeAccessory: ctrl.nativeAccessory && ctrl.variant === 'liquidGlass' }),
 }));
-vi.mock('../../queue-control/use-wall-or-queue-climb', () => ({ useWallClimbIfDistinct: () => ctrl.wallClimb }));
+// The wall-climb tests set `ctrl.wallClimb`; layout tests leave it null.
+vi.mock('../../queue-control/use-wall-or-queue-climb', () => ({ useLiveWallClimb: () => ctrl.wallClimb }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -518,12 +516,27 @@ vi.mock('../../queue-control/WallStatusCapsule', () => ({
 }));
 // Same for "You have the board": board-held-capsule.test.tsx covers its body.
 vi.mock('../../queue-control/BoardHeldCapsule', () => ({
-  BoardHeldCapsule: ({ ledless }: { ledless: boolean }) =>
-    createElement('div', { 'data-board-held-capsule': ledless ? 'ledless' : 'lit' }),
+  BoardHeldCapsule: ({
+    ledless,
+    dismiss,
+  }: {
+    ledless: boolean;
+    dismiss?: { occurrenceKey: string; onDismiss: (occurrenceKey: string) => void };
+  }) =>
+    createElement('button', {
+      'data-board-held-capsule': ledless ? 'ledless' : 'lit',
+      'data-dismiss': dismiss?.occurrenceKey ?? '',
+      onClick: () => dismiss?.onDismiss(dismiss.occurrenceKey),
+    }),
 }));
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ClimbTopChrome } from '../ClimbTopChrome';
 import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
+import {
+  hydrateWallCapsuleDismissalsForTests,
+  resetWallCapsuleDismissalsForTests,
+} from '../../../lib/wall-capsule-dismissal-store';
 
 function makeProps(over: Partial<Parameters<typeof ClimbTopChrome>[0]> = {}) {
   return {
@@ -572,7 +585,7 @@ const namedBoard: BoardLabelFields = {
 };
 
 describe('ClimbTopChrome', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     ctrl.board = null;
     ctrl.bluetooth = null;
     ctrl.variant = 'liquidGlass';
@@ -580,10 +593,12 @@ describe('ClimbTopChrome', () => {
     ctrl.isPad = false;
     ctrl.widthClass = 'compact';
     ctrl.wallClimb = null;
+    ctrl.queueHead = null;
     ctrl.boardId = 1;
-    ctrl.dismissed = false;
-    ctrl.dismissalLoaded = true;
-    ctrl.dismissWallCapsule.mockClear();
+    // A running app read its stored Hides long ago; the hydration test resets this.
+    await AsyncStorage.clear();
+    resetWallCapsuleDismissalsForTests();
+    await hydrateWallCapsuleDismissalsForTests();
     ctrl.focused = true;
     ctrl.focusEffects.length = 0;
     routerPush.mockClear();
@@ -594,6 +609,7 @@ describe('ClimbTopChrome', () => {
     nativeChrome.scrollEdge = undefined;
     nativeChrome.centerActionWidths = undefined;
     nativeChrome.titleHidden = undefined;
+    nativeChrome.centerContent = undefined;
     haptics.light.mockClear();
     haptics.selection.mockClear();
   });
@@ -738,18 +754,13 @@ describe('ClimbTopChrome', () => {
     expect(container.querySelector('[data-wall-capsule]')).toBeNull();
   });
 
-  it('keeps the capsule hidden until dismissal hydration completes, and after dismissal', () => {
+  it('keeps the capsule hidden until dismissal hydration completes, and after dismissal', async () => {
     ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
-    ctrl.dismissalLoaded = false;
-    const props = makeProps();
-    const { container, rerender } = render(<ClimbTopChrome {...props} />);
+    resetWallCapsuleDismissalsForTests();
+    const { container } = render(<ClimbTopChrome {...makeProps()} />);
     expect(container.querySelector('[data-wall-capsule]')).toBeNull();
-    ctrl.dismissalLoaded = true;
-    rerender(<ClimbTopChrome {...makeProps()} />);
+    await act(async () => {});
     fireEvent.click(container.querySelector('[data-wall-capsule]')!);
-    expect(ctrl.dismissWallCapsule).toHaveBeenCalledWith(1, JSON.stringify([1, 'wall-9', ctrl.wallClimb.sentAt]));
-    ctrl.dismissed = true;
-    rerender(<ClimbTopChrome {...makeProps()} />);
     expect(container.querySelector('[data-wall-capsule]')).toBeNull();
   });
 
@@ -803,11 +814,151 @@ describe('ClimbTopChrome', () => {
     expect(linked.container.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
   });
 
-  it('omits the "On the wall" capsule when there is no distinct wall climb', () => {
+  it('omits the "On the wall" capsule when there is no wall climb', () => {
     ctrl.board = typedBoard;
     ctrl.wallClimb = null;
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
     expect(container.querySelector('[data-wall-capsule]')).toBeNull();
+  });
+
+  // Owner decision 2026-11-02: under the hour (or with a live link) the climb on
+  // the wall always shows, and only Hide takes it away.
+  describe('always shows the climb on the wall', () => {
+    const connectedBoard: BluetoothCtx = {
+      isConnected: true,
+      connect: vi.fn(),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      armUndoWallChangeToast: vi.fn(),
+    };
+    const lit = (climbUuid: string, minutesAgo = 5) => ({
+      climbUuid,
+      name: climbUuid,
+      sentAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    });
+    const wallCapsule = (root: HTMLElement) => root.querySelector('[data-wall-capsule]');
+    const heldCapsule = (root: HTMLElement) => root.querySelector('[data-board-held-capsule]');
+
+    it('shows the wall climb when it is your own queue head', () => {
+      ctrl.queueHead = 'wall-9';
+      ctrl.wallClimb = lit('wall-9');
+      const { container } = render(<ClimbTopChrome {...makeProps()} />);
+      expect(wallCapsule(container)?.getAttribute('data-wall-capsule')).toBe('wall-9');
+    });
+
+    it.each(['liquidGlass', 'material'] as const)(
+      'shows your own queue head on the wall with no link on %s (59 minutes old)',
+      (variant) => {
+        ctrl.variant = variant;
+        ctrl.queueHead = 'wall-9';
+        ctrl.wallClimb = lit('wall-9', 59);
+        const { container } = render(<ClimbTopChrome {...makeProps()} />);
+        expect(wallCapsule(container)?.getAttribute('data-presentation')).toBe('history');
+      },
+    );
+
+    it.each([
+      ['Material', { variant: 'material' as const }],
+      ['iOS 18', { nativeAccessory: false }],
+      ['a regular-width iPad', { isPad: true, widthClass: 'regular' as const }],
+    ])('shows it live while this phone holds the link on %s, where there is no held cue', (_layout, layout) => {
+      Object.assign(ctrl, layout);
+      ctrl.bluetooth = connectedBoard;
+      ctrl.queueHead = 'wall-9';
+      ctrl.wallClimb = lit('wall-9', 180);
+      const { container } = render(<ClimbTopChrome {...makeProps()} />);
+      expect(wallCapsule(container)?.getAttribute('data-presentation')).toBe('live');
+      expect(heldCapsule(container)).toBeNull();
+    });
+
+    it('draws it in the held skin with its Hide while you hold the board on iPhone', () => {
+      ctrl.bluetooth = connectedBoard;
+      ctrl.queueHead = 'wall-9';
+      ctrl.wallClimb = lit('wall-9');
+      const { container, rerender } = render(<ClimbTopChrome {...makeProps()} />);
+      expect(wallCapsule(container)).toBeNull();
+      const occurrenceKey = JSON.stringify([1, 'wall-9', ctrl.wallClimb.sentAt]);
+      expect(heldCapsule(container)?.getAttribute('data-dismiss')).toBe(occurrenceKey);
+      fireEvent.click(heldCapsule(container)!);
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      // Hidden means hidden: the bare "You have the board" cue does not stand in.
+      expect(heldCapsule(container)).toBeNull();
+      expect(wallCapsule(container)).toBeNull();
+    });
+
+    // Review: the held capsule draws the queue head without presence, so a feed
+    // drop (or "Turn off all lights") must not bring the hidden climb back in it.
+    it('keeps a hidden climb out of the held skin while the presence feed is down', () => {
+      ctrl.bluetooth = connectedBoard;
+      ctrl.queueHead = 'wall-9';
+      ctrl.wallClimb = lit('wall-9');
+      const { container, rerender } = render(<ClimbTopChrome {...makeProps()} />);
+      fireEvent.click(heldCapsule(container)!);
+      ctrl.wallClimb = null;
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      expect(heldCapsule(container)).toBeNull();
+      expect(wallCapsule(container)).toBeNull();
+      // The feed back with the same climb: still hidden.
+      ctrl.wallClimb = lit('wall-9', 0);
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      expect(heldCapsule(container)).toBeNull();
+      // The climber moves on: the next queue head is drawn, with no Hide while the feed is down.
+      ctrl.wallClimb = null;
+      ctrl.queueHead = 'queue-next';
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      expect(heldCapsule(container)?.getAttribute('data-dismiss')).toBe('');
+    });
+
+    it('keeps the Hide across a cold launch', async () => {
+      ctrl.wallClimb = lit('wall-9');
+      const first = render(<ClimbTopChrome {...makeProps()} />);
+      fireEvent.click(wallCapsule(first.container)!);
+      await act(async () => {});
+      first.unmount();
+      resetWallCapsuleDismissalsForTests();
+      const relaunched = render(<ClimbTopChrome {...makeProps()} />);
+      await act(async () => {});
+      expect(wallCapsule(relaunched.container)).toBeNull();
+    });
+
+    it('builds no new title view when only the queue head moves', () => {
+      nativeChrome.enabled = true;
+      ctrl.queueHead = 'queue-a';
+      ctrl.wallClimb = lit('wall-9');
+      const { rerender } = render(<ClimbTopChrome {...makeProps()} />);
+      const before = nativeChrome.centerContent;
+      expect(before).toBeDefined();
+      ctrl.queueHead = 'queue-b';
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      expect(nativeChrome.centerContent).toBe(before);
+    });
+
+    it('keeps the bare held cue without a Hide while nothing is lit', () => {
+      ctrl.bluetooth = connectedBoard;
+      ctrl.queueHead = 'queue-head';
+      const { container } = render(<ClimbTopChrome {...makeProps()} />);
+      expect(heldCapsule(container)?.getAttribute('data-dismiss')).toBe('');
+    });
+
+    it('stays hidden after Hide until a different climb goes up', () => {
+      const first = lit('wall-9', 3);
+      ctrl.wallClimb = first;
+      const { container, rerender } = render(<ClimbTopChrome {...makeProps()} />);
+      fireEvent.click(wallCapsule(container)!);
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      expect(wallCapsule(container)).toBeNull();
+      // The same climb reported again with a new lit time (a reconnect, the iPad
+      // taking the board, a mirror flip) stays hidden.
+      ctrl.wallClimb = lit('wall-9', 2);
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      expect(wallCapsule(container)).toBeNull();
+      ctrl.wallClimb = lit('wall-10', 1);
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      expect(wallCapsule(container)?.getAttribute('data-wall-capsule')).toBe('wall-10');
+      // Once a different climb went up, the first one coming back shows again.
+      ctrl.wallClimb = lit('wall-9', 0);
+      rerender(<ClimbTopChrome {...makeProps()} />);
+      expect(wallCapsule(container)?.getAttribute('data-wall-capsule')).toBe('wall-9');
+    });
   });
 
   describe('"You have the board" capsule', () => {

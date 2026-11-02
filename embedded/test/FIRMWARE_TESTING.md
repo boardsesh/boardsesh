@@ -349,6 +349,21 @@ Tests run automatically on GitHub Actions:
 - Workflow: `.github/workflows/firmware-tests.yml`
 - Environment: Ubuntu with PlatformIO native
 
+## Gym fixture suites
+
+`pio test` skips the `waveshare-amoled-gym` fixture suites (`test_fixture_*`, listed under `test_ignore` in `platformio.ini`). Each needs its own SDK mocks, so they run through one script from the repository root:
+
+```bash
+vp run controller:fixture:test             # all fixture suites
+vp run controller:fixture:test --sanitize  # what CI runs (ASan + UBSan)
+```
+
+The script needs Unity from the native PlatformIO environment; `test/test_fixture_ble/README.md` has the install command. The BLE suite itself does not link Unity.
+
+`test_fixture_ble` pins the fixture's connection policy, which copies stock controllers. A second phone on a Kilter or Tension board drops the first phone, and the board keeps advertising. A MoonBoard keeps several phones connected, as current Moon boxes do. A QA run makes the MoonBoard last-connection-wins too.
+
+Each board in the USB QA status reports this as `policy` (`last-connection-wins` or `concurrent`). A fixture whose boards report no `policy` was built before last-connection-wins and keeps a second phone connected to a Kilter or Tension board beside the first. Reflash `waveshare-amoled-gym` to fix it (`docs/local-board-qa.md`, step 3 of "Prepare once": back up the flash first and never erase it).
+
 ## Adding New Mock Headers
 
 When testing a module that requires new hardware mocks:

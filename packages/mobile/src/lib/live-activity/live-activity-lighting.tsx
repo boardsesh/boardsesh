@@ -25,7 +25,10 @@ import {
   getDriveMode,
   subscribeDriveMode,
 } from '../../components/play-drawer/drive-mode-store';
-import { isUnsettledLockScreenLighting } from '../../components/play-drawer/lock-screen-lighting';
+import {
+  isUnsettledLockScreenLighting,
+  isUnsettledLockScreenStop,
+} from '../../components/play-drawer/lock-screen-lighting';
 import {
   readLiveActivityLightingWindow,
   sessionPresenceMirrorsKeepLighting,
@@ -113,6 +116,16 @@ export function useLiveActivityLighting({
       // has not adopted yet is never covered with "off": DriveModeWatcher
       // adopts it the moment it can, or it runs out on its own.
       if (payload?.mode === 'off' && isUnsettledLockScreenLighting(readLiveActivityLightingWindow(), Date.now())) {
+        return;
+      }
+      // Nor is a drive the climber stopped from the Lock Screen put back on the
+      // card before the drive store adopted the stop: it ends the drive the
+      // moment it can, and this sends "off" then.
+      if (
+        payload !== null &&
+        payload.mode !== 'off' &&
+        isUnsettledLockScreenStop(readLiveActivityLightingWindow(), getDriveMode())
+      ) {
         return;
       }
       lastSent = serialized;

@@ -137,6 +137,10 @@ const TEST_SOURCE_FILES = [
     sourcePath: '../modules/live-activity/ios/ReconnectBoardIntent.swift',
     projectPath: 'BoardseshTests/LiveActivitySources/ReconnectBoardIntent.swift',
   },
+  {
+    sourcePath: '../modules/live-activity/ios/StopDrivingIntent.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/StopDrivingIntent.swift',
+  },
 ];
 
 const CONCURRENCY_GATE_SOURCE_FILES = [

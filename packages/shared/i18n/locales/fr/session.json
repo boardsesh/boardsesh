@@ -882,7 +882,8 @@
         "reconnect": "Se connecter à la board",
         "connecting": "Connexion…",
         "onWall": "{{name}} est sur le mur",
-        "drivingTheWall": "Tu pilotes la board"
+        "drivingTheWall": "Tu pilotes la board",
+        "stopDriving": "Arrêter de piloter"
       },
       "inStatsFlashes": "Flashs",
       "inLeaderboardTitle": "Qui grimpe",

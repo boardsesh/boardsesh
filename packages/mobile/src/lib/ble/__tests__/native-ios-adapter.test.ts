@@ -623,6 +623,33 @@ describe('NativeIosBleAdapter connect flow', () => {
     await expect(writePromise).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  // Disconnect Bluetooth when driving ends frees the board but keeps its
+  // pairing, so the Live Activity bulb can reconnect to it.
+  it('keeps the native pairing when asked, on a binary that can', async () => {
+    const native = nativeMock as typeof nativeMock & { disconnectKeepingBoard?: ReturnType<typeof vi.fn> };
+    native.disconnectKeepingBoard = vi.fn().mockResolvedValue(undefined);
+    try {
+      const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+      adapter.adoptConnection('adopted-dev');
+      await adapter.disconnect({ keepBoard: true });
+      expect(native.disconnectKeepingBoard).toHaveBeenCalledOnce();
+      expect(nativeMock.disconnect).not.toHaveBeenCalled();
+
+      adapter.adoptConnection('adopted-dev');
+      await adapter.disconnect();
+      expect(nativeMock.disconnect).toHaveBeenCalledOnce();
+    } finally {
+      delete native.disconnectKeepingBoard;
+    }
+  });
+
+  it('forgets the board as before on a binary without the keeping disconnect', async () => {
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+    adapter.adoptConnection('adopted-dev');
+    await adapter.disconnect({ keepBoard: true });
+    expect(nativeMock.disconnect).toHaveBeenCalledOnce();
+  });
+
   it('does not call native.disconnect on a never-connected adapter', async () => {
     const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
 

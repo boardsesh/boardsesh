@@ -294,6 +294,32 @@ preview's put-up, and the Climbs
 header's wall capsule hides (#7095, `trustedWallCapsuleClimb`). With a live link the link decides and freshness
 doesn't matter.
 
+**The Climbs header's wall capsule (owner decision, 2026-11-02).** Inside that hour, or while a live link says a
+climb is lit, the Climbs header always shows the climb on the wall of the board the list shows. Age is the only rule:
+the capsule no longer hides when the wall's climb is your own queue head or the MiniPlayer's pick, while this phone
+holds the link, in a crew, or on iPad, the Duo or Material (`resolveClimbsHeaderCapsule` in
+`climbs-header-capsule.ts`). One skin choice is left: while this phone holds the board where the iOS 26 accessory
+platter collapses (iPhone, or an iPad in a narrow Split View) and the wall shows your queue head, "You have the board"
+is that climb's capsule, with the hold-pattern frost and its tap to let go; anywhere else it is the "On the wall"
+capsule, live with a link and "Last on the wall · 20m" without one. Either can be hidden: the × at its trailing end
+(44 pt wide and the capsule's full 38 pt tall, with a 3 pt slop above and below toward 44 pt where UIKit's bar
+slot allows it, like the bar's own items; a 48 dp icon button in the Material band), a
+left swipe on the "On the wall" capsule, or the screen-reader action Hide on both. At an accessibility text size a
+long press on the Liquid Glass × shows "Hide" in the Large Content Viewer, like the bar's other glyph-only controls.
+The held capsule takes no swipe, because a swipe that ended as a tap would let go of the board.
+
+Hide lasts until a different climb goes up on that board, across relaunches (`wall-capsule-dismissal-store.ts`, one
+entry per board: the hidden climb and its lit time). The same climb reported again keeps it hidden: the server stamps a
+new lit time on every report outside its 10 s dedup, and the app clears its own dedup on every connect, so a reconnect
+after a Kilter box drops the link, another device taking the board and re-lighting it, a mirror flip, an angle change
+or a Live Activity re-light would otherwise bring it back. A different climb lit at or after the hidden one ends the
+Hide, so the hidden climb shows again if it comes back later; an older report never does. The held capsule draws the
+queue head without presence, so when the feed drops (a WebSocket drop, a backend deploy, weak gym signal) or "Turn
+off all lights" clears it, the slot stays empty while the queue head is the hidden climb: a hidden climb never comes
+back in the held skin, and never falls back to the bare "You have the board". In a title slot under 100 pt the "On the
+wall" capsule's × drops out with the face and the swipe and Hide stay; the held capsule keeps its ×, the only sighted
+way to hide it there.
+
 ### Swipe to drive (#7113)
 
 Swipe the wall button left to drive the wall: connect if needed, light the climb on screen, and light every climb

@@ -269,12 +269,15 @@ bool serialQa(const String& encoded) {
     if (fixtureBle.snapshotQa("", snapshot, snapshotError)) {
         response["ready"] = snapshot.ready;
         response["runId"] = snapshot.runId;
+        // The top-level schema 1 field reports the MoonBoard's policy, the
+        // only one a QA run changes; each board below reports its own.
         response["policy"] = snapshot.runId.isEmpty() ? "concurrent" : "last-connection-wins";
         response["leaseRemainingMs"] = snapshot.leaseRemainingMs;
         JsonArray boards = response["boards"].to<JsonArray>();
         for (gym_fixture::QaBoardSnapshot& board : snapshot.boards) {
             JsonObject target = boards.add<JsonObject>();
             target["uuid"] = board.uuid;
+            target["policy"] = board.lastConnectionWins ? "last-connection-wins" : "concurrent";
             target["connections"] = board.handles.size();
             JsonArray handles = target["handles"].to<JsonArray>();
             for (const uint16_t handle : board.handles)
