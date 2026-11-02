@@ -2,7 +2,7 @@ Boardsesh ya está disponible en italiano.
 
 SABE CUÁNDO ESTÁS ENCENDIENDO EL PLAFÓN
 
-Tocar un bloque lo muestra sin encenderlo. “Poner en el plafón” lo enciende, y los bloques que elijas en los siguientes 45 segundos también. Un MoonBoard sigue encendiendo hasta que pares. Desliza “Poner en el plafón” a la izquierda para encender cada bloque; toca “Estás al mando del plafón” para parar sin desconectarte.
+Tocar un bloque lo muestra sin encenderlo. “Poner en el plafón” lo enciende y tienes el mando: tus siguientes bloques se encienden hasta que acabe el tiempo de Ajustes (al principio, 45 s). Un MoonBoard, hasta que pares. Desliza el botón a la izquierda para el mando sin fin; toca “Estás al mando del plafón” para parar.
 
 iPad y iPhone Duo: más espacio para el plafón
 

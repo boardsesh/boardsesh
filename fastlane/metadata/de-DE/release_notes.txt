@@ -2,7 +2,7 @@ Boardsesh gibt es jetzt auch auf Italienisch.
 
 SIEH, WANN DU DAS BOARD BELEUCHTEST
 
-Antippen zeigt einen Boulder ohne Licht. „Am Board beleuchten“ beleuchtet ihn, und 45 Sekunden lang auch deine nächsten. Ein MoonBoard leuchtet, bis du stoppst. Wische die Taste „Am Board beleuchten“ nach links, damit jeder Boulder leuchtet; „Du steuerst das Board“ antippen stoppt.
+Antippen zeigt einen Boulder ohne Licht. „Am Board beleuchten“ beleuchtet ihn, und du steuerst das Board: Deine nächsten Boulder leuchten, bis die Zeit um ist (zuerst 45 s). Ein MoonBoard bis zum Stopp. Taste nach links wischen: ohne Ende; „Du steuerst das Board“ antippen stoppt.
 
 iPad und iPhone Duo: mehr Platz fürs Board
 
