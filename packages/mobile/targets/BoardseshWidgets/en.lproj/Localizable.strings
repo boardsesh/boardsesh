@@ -5,8 +5,6 @@
 "Next climb" = "Next climb";
 "Mirror climb" = "Mirror climb";
 "Unmirror climb" = "Unmirror climb";
-"Wall lit, you are driving" = "Wall lit, you are driving";
-"Wall control" = "Wall control";
 "Tap to reconnect" = "Tap to reconnect";
 "Board disconnected. Tap to reconnect" = "Board disconnected. Tap to reconnect";
 "On the wall" = "On the wall";
@@ -29,3 +27,10 @@
 "Queue's empty" = "Queue's empty";
 "Since your last climb" = "Since your last climb";
 "Log a climb to start" = "Log a climb to start";
+
+/* Driving the wall (2.7): what the wall does with the next pick */
+"Wall lit" = "Wall lit";
+"Picks are previews" = "Picks are previews";
+"Driving the wall" = "Driving the wall";
+"Every climb you pick lights up" = "Every climb you pick lights up";
+"Lights the climb again" = "Lights the climb again";

@@ -322,6 +322,12 @@ export type LiveActivityStartSessionOptions = {
     connectingLabel?: string;
     /** "{{name}} is on the wall" template; Kotlin substitutes holderDisplayName. */
     onWallTemplate: string;
+    /**
+     * The header's line while driving the wall (2.7), "Driving the wall". For
+     * Put on board's timed drive the system draws the countdown beside it; an
+     * open-ended drive has no clock. An older binary ignores it.
+     */
+    lightDrivingLabel?: string;
   };
 };
 
@@ -421,6 +427,66 @@ export type LiveActivityRestTimerOptions = {
   androidOverCaption?: string | null;
 };
 
+/**
+ * What the wall does with this phone's next pick (2.7), as the Lock Screen,
+ * the Dynamic Island and the Android notification draw it: `off` (previews),
+ * `window` (Put on board's timed drive, Stop driving after, until `endsAtMs`)
+ * or `driving` (an open-ended drive, until the climber stops). Both drives
+ * read "Driving the wall"; only the timed one has a clock.
+ */
+export type LiveActivityLightingMode = 'off' | 'window' | 'driving';
+
+/** Which Stop driving after choice started the timed drive: the general one or the MoonBoard one. */
+export type LiveActivityLightingFamily = 'general' | 'moonboard';
+
+/** JS's drive, sent through `updateLightingWindow`. */
+export type LiveActivityLightingWindowOptions = {
+  sessionId: string;
+  mode: LiveActivityLightingMode;
+  /** Epoch ms the timed drive ends. null outside one. */
+  endsAtMs: number | null;
+  /** The timed drive's length: the iOS ring drains from it, and an iOS lock-screen press renews the drive by it. null outside one. */
+  windowSeconds: number | null;
+  family: LiveActivityLightingFamily | null;
+};
+
+/**
+ * The stored drive as `getLightingWindow` reads it back. `source` says who
+ * wrote it: `app` (JS) or, on iOS only, `lockScreen` (a Lock Screen or Dynamic
+ * Island Next or Previous that lit the wall, written natively while JS may
+ * have been suspended). Optional fields are absent rather than null.
+ */
+export type LiveActivityLightingWindowSnapshot = {
+  sessionId: string;
+  mode: LiveActivityLightingMode;
+  endsAtMs?: number | null;
+  windowSeconds?: number | null;
+  family?: LiveActivityLightingFamily | null;
+  source: 'app' | 'lockScreen';
+  updatedAtMs: number;
+};
+
+/**
+ * Settings › Board's Stop driving after choices, mirrored for the iOS Lock
+ * Screen and Dynamic Island Next / Previous, which start or renew a drive
+ * natively the way `resolveKeepLightingPlan` (src/lib/keep-lighting.ts) would.
+ * Right away (`off`) starts none: the press lights its one climb. iOS only.
+ */
+export type LiveActivityKeepLightingConfig = {
+  /** The general `KeepLightingChoice` ('off' | '30' | '45' | '60' | '120' | '300' | 'until_stopped'). */
+  keepLighting: string;
+  /** The MoonBoard `KeepLightingChoice`. */
+  moonboardKeepLighting: string;
+  /** "In a session too". */
+  drivesInSession: boolean;
+  /** A crew is in the session (the roster's crew). */
+  inCrew: boolean;
+  /** The session's board is a MoonBoard. */
+  moonboard: boolean;
+  /** False where a press would not start a drive in the app either. */
+  enabled: boolean;
+};
+
 export type WidgetMirrorEvent = {
   sessionId: string;
   queueItemUuid: string;
@@ -510,6 +576,14 @@ type LiveActivityNativeModule = {
   supportsRestTimer?: boolean;
   /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
   updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
+  /** True on binaries that draw driving the wall (2.7). */
+  supportsLightingWindow?: boolean;
+  /** Optional for OTA compatibility with binaries predating 2.7; `null` clears it. */
+  updateLightingWindow?(options: LiveActivityLightingWindowOptions | null): Promise<void>;
+  /** Optional for OTA compatibility with binaries predating 2.7; `null` clears it. */
+  updateKeepLightingConfig?(config: LiveActivityKeepLightingConfig | null): Promise<void>;
+  /** Synchronous. Optional for OTA compatibility with binaries predating 2.7. */
+  getLightingWindow?(): LiveActivityLightingWindowSnapshot | null;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
 };
@@ -536,6 +610,16 @@ type SessionPresenceNativeModule = {
   supportsRestTimer?: boolean;
   /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
   updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
+  /** True on binaries that draw driving the wall (2.7). */
+  supportsLightingWindow?: boolean;
+  /**
+   * Optional for OTA compatibility with binaries predating 2.7; `null` clears
+   * it. JS is the only writer here: a notification Previous / Next writes no
+   * drive natively, so there are no settings to mirror either.
+   */
+  updateLightingWindow?(options: LiveActivityLightingWindowOptions | null): Promise<void>;
+  /** Synchronous. Optional for OTA compatibility with binaries predating 2.7. */
+  getLightingWindow?(): LiveActivityLightingWindowSnapshot | null;
   /**
    * Resolves after `ms` on a native clock that keeps running while the activity
    * is paused, when Android stops firing JS timers (#7038). Optional for OTA

@@ -7,6 +7,7 @@ import {
   KEEP_LIGHTING_CHOICES,
   driveLengthWords,
   keepLightingWindowMs,
+  lockScreenPressKeepsLighting,
   resolveKeepLightingPlan,
   resolveKeepLightingReach,
   sanitiseKeepLighting,
@@ -85,6 +86,23 @@ describe('resolveKeepLightingPlan', () => {
     ],
   )('%s', (_name, change, plan) => {
     expect(resolveKeepLightingPlan({ ...BASE, ...change })).toEqual(plan);
+  });
+});
+
+describe('lockScreenPressKeepsLighting', () => {
+  it.each([
+    ['keeps lighting with the swipe flag on and Light the board as I swipe off', true, false, false, true],
+    ['lights one climb with the swipe flag off (the kill switch)', false, false, false, false],
+    ['lights one climb solo with Light the board as I swipe on: every pick lights already', true, true, false, false],
+    [
+      'keeps lighting in a crew with Light the board as I swipe on, which a crew does not honour',
+      true,
+      true,
+      true,
+      true,
+    ],
+  ])('%s', (_name, swipeToDriveEnabled, lightOnSwipe, inSession, expected) => {
+    expect(lockScreenPressKeepsLighting({ swipeToDriveEnabled, lightOnSwipe, inSession })).toBe(expected);
   });
 });
 

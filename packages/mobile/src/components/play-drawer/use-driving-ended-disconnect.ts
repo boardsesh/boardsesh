@@ -16,7 +16,8 @@ import { getDriveMode, subscribeDriveEnded, type DriveEnded } from './drive-mode
  * the first light failed, arming timed out), that move this phone elsewhere
  * (another session or board, sign-out), or that Settings › Board caused
  * (`keepLink`: Right away picked mid-drive, or In a session too off as a crew
- * formed).
+ * formed), nor a timed drive a lock-screen press found over while it lights a
+ * climb of its own (`keepLink` too, `lock-screen-lighting.ts`).
  */
 export function shouldDisconnectWhenDrivingEnds(
   ended: Pick<DriveEnded, 'reason' | 'keepLink'>,

@@ -31,6 +31,8 @@ type AndroidNotificationStrings = {
   reconnectLabel: string;
   connectingLabel?: string;
   onWallTemplate: string;
+  /** The header line while driving the wall (2.7), timed or open-ended. */
+  lightDrivingLabel?: string;
 };
 
 export type UseLiveActivityResult = {

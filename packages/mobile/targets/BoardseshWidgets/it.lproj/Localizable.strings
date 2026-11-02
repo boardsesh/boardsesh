@@ -5,8 +5,6 @@
 "Next climb" = "Blocco successivo";
 "Mirror climb" = "Specchia il blocco";
 "Unmirror climb" = "Annulla specchiatura";
-"Wall lit, you are driving" = "Pannello illuminato, controlli tu";
-"Wall control" = "Controllo del pannello";
 "Tap to reconnect" = "Tocca per riconnettere";
 "Board disconnected. Tap to reconnect" = "Pannello disconnesso. Tocca per riconnettere";
 "On the wall" = "In parete";
@@ -30,3 +28,10 @@
 "Queue's empty" = "Coda vuota";
 "Since your last climb" = "Dal tuo ultimo blocco";
 "Log a climb to start" = "Registra una salita per iniziare";
+
+/* Driving the wall (2.7): what the wall does with the next pick */
+"Wall lit" = "Pannello illuminato";
+"Picks are previews" = "I blocchi si aprono in anteprima";
+"Driving the wall" = "Guidi tu il pannello";
+"Every climb you pick lights up" = "Ogni blocco che scegli si illumina in parete";
+"Lights the climb again" = "Illumina di nuovo il blocco";

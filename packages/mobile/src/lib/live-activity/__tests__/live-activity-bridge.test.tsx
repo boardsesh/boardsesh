@@ -156,6 +156,9 @@ vi.mock('../use-live-activity', () => ({
   useLiveActivity: (args: unknown) => widget.useLiveActivity(args),
 }));
 
+// The keep-lighting leaf has its own tests; keep it out of the bridge's.
+vi.mock('../live-activity-lighting', () => ({ LiveActivityLightingSync: () => null }));
+
 vi.mock('../live-activity-plugin', () => ({
   // The rest timer leaf has its own tests; keep it quiet here.
   sessionPresenceSupportsRestTimer: false,
@@ -504,6 +507,9 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
           relightLabel: 'mobile.session.notification.relight',
           reconnectLabel: 'mobile.session.notification.reconnect',
           onWallTemplate: 'mobile.session.notification.onWall',
+          // The header's line while driving the wall (2.7), timed or
+          // open-ended. Left out, Android falls back to English.
+          lightDrivingLabel: 'mobile.session.notification.drivingTheWall',
         }),
       }),
     );

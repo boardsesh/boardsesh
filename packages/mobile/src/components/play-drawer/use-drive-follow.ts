@@ -30,6 +30,13 @@ import { exitDriveMode, getDriveMode, markDriveLive, noteDriveClimbLit, type Dri
  * board is let go once their climb is on the wall (`waitForWallConfirm`, for
  * that climb only), so it isn't dropped before it lights.
  *
+ * A timed drive a Lock Screen press started while JS was suspended (2.7) is
+ * this phone's drive too, so `beforeCrewMove` adopts it first
+ * (`adoptLockScreenLighting`) and the put-up ends it like any other. Left
+ * unadopted, the next adoption (the app coming back) would bring it back after
+ * the put-up. The climber's own Lock Screen press is never a crewmate's move:
+ * the server names them as its mover (`currentChangedBy`).
+ *
  * It reads the current climb through `useActiveClimbUuid` (a change of climb)
  * and the queue snapshot, so the app-root watcher doesn't re-render on every
  * queue change.
@@ -76,7 +83,7 @@ export function climbUuidOfQueueItem(snapshot: QueueSnapshotRead, queueItemUuid:
   return snapshot.queue.find((item) => item.uuid === queueItemUuid)?.climb.uuid ?? null;
 }
 
-export function useDriveCrewPutUp(drivePhase: DriveModePhase | null): void {
+export function useDriveCrewPutUp(drivePhase: DriveModePhase | null, beforeCrewMove?: () => void): void {
   const { t } = useTranslation('session');
   const activeClimbUuid = useActiveClimbUuid();
   const { getQueueSnapshot } = useQueueActions();
@@ -84,10 +91,13 @@ export function useDriveCrewPutUp(drivePhase: DriveModePhase | null): void {
   getQueueSnapshotRef.current = getQueueSnapshot;
   // The crewmate's move, by the queue item it makes current, until it lands.
   const pendingRef = useRef<string | null>(null);
+  const beforeCrewMoveRef = useRef(beforeCrewMove);
+  beforeCrewMoveRef.current = beforeCrewMove;
 
   useEffect(
     () =>
       subscribeCrewMoves((queueItemUuid) => {
+        beforeCrewMoveRef.current?.();
         const drive = getDriveMode();
         if (drive?.windowMs != null) {
           exitDriveMode('window_ended', {

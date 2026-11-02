@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -393,5 +394,123 @@ class SessionPresenceControllerTest {
         controller.startSession(StartSessionOptions().apply { sessionId = "session-2" })
         controller.updateRestTimer(restOptions(sessionId = "session-1"))
         assertEquals(null, controller.restTimer)
+    }
+
+    // --- Driving the wall (2.7) ---
+
+    private fun windowOptions(
+        sessionId: String = "session-1",
+        mode: String = LightingWindowStore.MODE_WINDOW,
+        endsAtMs: Double? = 1_800_000_045_000.0,
+    ): LightingWindowOptions = LightingWindowOptions().apply {
+        this.sessionId = sessionId
+        this.mode = mode
+        this.endsAtMs = endsAtMs
+        windowSeconds = if (mode == LightingWindowStore.MODE_WINDOW) 45.0 else null
+        family = if (mode == LightingWindowStore.MODE_WINDOW) "general" else null
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `updateLightingWindow stores the window and shows it in the header`() {
+        val (controller, launchedIntents) = startedController()
+        controller.wallClockMs = { 1_800_000_000_000L }
+
+        controller.updateLightingWindow(windowOptions())
+
+        val intent = launchedIntents.single()
+        assertEquals(BoardSessionService.ACTION_LIGHTING, intent.action)
+        assertEquals("session-1", intent.getStringExtra(BoardSessionService.EXTRA_SESSION_ID))
+        assertEquals(BoardSessionService.LIGHT_STATE_WINDOW, intent.getStringExtra(BoardSessionService.EXTRA_LIGHT_STATE))
+        assertEquals(1_800_000_045_000L, intent.getLongExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_END_MS, -1))
+        val stored = LightingWindowStore.loadWindow(application)
+        assertEquals(LightingWindowStore.SOURCE_APP, stored?.source)
+        assertEquals(1_800_000_000_000L, stored?.updatedAtMs)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `re-sending the window the header already shows wakes no service`() {
+        val (controller, launchedIntents) = startedController()
+        controller.wallClockMs = { 1_800_000_000_000L }
+        controller.updateLightingWindow(windowOptions())
+        assertEquals(1, launchedIntents.size)
+
+        // JS re-sends the same window after every start.
+        controller.wallClockMs = { 1_800_000_010_000L }
+        controller.updateLightingWindow(windowOptions())
+
+        assertEquals(1, launchedIntents.size)
+        // It is still stored, with the new write time.
+        assertEquals(1_800_000_010_000L, LightingWindowStore.loadWindow(application)?.updatedAtMs)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `updateLightingWindow ignores another session and runs only inside one`() {
+        val (idle, idleIntents) = recordingController()
+        idle.updateLightingWindow(windowOptions())
+        assertTrue(idleIntents.isEmpty())
+
+        val (controller, launchedIntents) = startedController(sessionId = "session-1")
+        controller.updateLightingWindow(windowOptions(sessionId = "session-0"))
+        assertTrue(launchedIntents.isEmpty())
+        assertEquals(null, LightingWindowStore.loadWindow(application))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `off after a window turns the header back, and null with nothing stored sends nothing`() {
+        val (controller, launchedIntents) = startedController()
+        controller.updateLightingWindow(null)
+        assertTrue(launchedIntents.isEmpty())
+
+        controller.updateLightingWindow(windowOptions())
+        controller.updateLightingWindow(windowOptions(mode = LightingWindowStore.MODE_OFF, endsAtMs = null))
+
+        val off = launchedIntents.last()
+        assertEquals(BoardSessionService.LIGHT_STATE_OFF, off.getStringExtra(BoardSessionService.EXTRA_LIGHT_STATE))
+        assertFalse(off.hasExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_END_MS))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `ending the session clears the stored window`() {
+        val (controller, _) = startedController()
+        controller.updateLightingWindow(windowOptions())
+        assertNotNull(LightingWindowStore.loadWindow(application))
+
+        controller.endSession()
+
+        assertEquals(null, LightingWindowStore.loadWindow(application))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `startSession carries the header lines and drops another session's window`() {
+        LightingWindowStore.saveWindow(
+            application,
+            LightingWindowSnapshot(
+                sessionId = "session-0",
+                mode = LightingWindowStore.MODE_DRIVING,
+                endsAtMs = null,
+                windowSeconds = null,
+                family = null,
+                source = LightingWindowStore.SOURCE_APP,
+                updatedAtMs = 1_800_000_000_000L,
+            ),
+        )
+        val (controller, launchedIntents) = recordingController()
+
+        controller.startSession(StartSessionOptions().apply {
+            sessionId = "session-1"
+            androidNotification = AndroidNotificationStrings().apply {
+                lightDrivingLabel = "Estás al mando del plafón"
+            }
+        })
+
+        val start = launchedIntents.single()
+        assertEquals("Estás al mando del plafón", start.getStringExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL))
+        assertEquals(null, LightingWindowStore.loadWindow(application))
     }
 }

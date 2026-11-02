@@ -1223,4 +1223,214 @@ class BoardSessionServiceTest {
         assertEquals("00:00", BoardSessionService.formatSignedSeconds(0))
         assertEquals("−00:12", BoardSessionService.formatSignedSeconds(-12))
     }
+
+    // --- Driving the wall (2.7) ---
+
+    private fun lightingIntent(state: String?, endMs: Long? = null, sessionId: String = restSessionId): Intent =
+        Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_LIGHTING
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, sessionId)
+            state?.let { putExtra(BoardSessionService.EXTRA_LIGHT_STATE, it) }
+            endMs?.let { putExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_END_MS, it) }
+        }
+
+    // A started service for restSessionId with "now" pinned and every promotion's
+    // notification captured, so a test reads the header the latest post drew.
+    private fun startLightingService(
+        captured: CapturingSlot<Notification>,
+        scheduled: MutableList<Pair<Runnable, Long>> = mutableListOf(),
+        nowMs: () -> Long = { restNowMs },
+        start: Intent.() -> Unit = {},
+    ): BoardSessionService {
+        every { ServiceCompat.startForeground(any(), any(), capture(captured), any()) } just Runs
+        val intent = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
+            start()
+        }
+        val controller = Robolectric.buildService(BoardSessionService::class.java, intent).create()
+        val service = controller.get()
+        service.wallClockMs = nowMs
+        service.scheduleOnMain = { task, delayMs -> scheduled.add(task to delayMs) }
+        service.cancelOnMain = { task -> scheduled.removeAll { it.first === task } }
+        controller.startCommand(0, 1)
+        return service
+    }
+
+    private fun Notification.subText(): String? = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+
+    private fun Notification.showsChronometer(): Boolean = extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false)
+
+    private fun Notification.countsDown(): Boolean = extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN, false)
+
+    private fun Notification.showsWhen(): Boolean = extras.getBoolean(Notification.EXTRA_SHOW_WHEN, false)
+
+    private fun Notification.smallIconRes(): Int = smallIcon.resId
+
+    private fun assertTodaysHeader(notification: Notification) {
+        assertNull(notification.subText())
+        assertFalse(notification.showsChronometer())
+        assertFalse(notification.showsWhen())
+        assertEquals(R.drawable.ic_boardsesh_notification, notification.smallIconRes())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a timed drive says driving the wall in the header with the system countdown and the bulb icon`() {
+        val captured = slot<Notification>()
+        val service = startLightingService(captured) {
+            putExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL, "Du steuerst das Board")
+        }
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 2)
+
+        val notification = captured.captured
+        assertEquals("Du steuerst das Board", notification.subText())
+        assertTrue(notification.showsChronometer())
+        assertTrue(notification.countsDown())
+        assertTrue(notification.showsWhen())
+        assertEquals(restNowMs + 38_000, notification.`when`)
+        assertEquals(R.drawable.ic_lightbulb_filled, notification.smallIconRes())
+        // The controls are untouched.
+        assertEquals(listOf("Relight wall"), actionTitles(notification))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `an open-ended drive says driving the wall in the header with no clock`() {
+        val captured = slot<Notification>()
+        val service = startLightingService(captured)
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 2)
+
+        val notification = captured.captured
+        assertEquals("Driving the wall", notification.subText())
+        assertFalse(notification.showsChronometer())
+        assertFalse(notification.showsWhen())
+        assertEquals(R.drawable.ic_lightbulb_filled, notification.smallIconRes())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `off, an older bundle and a crewmate's card keep today's header`() {
+        val captured = slot<Notification>()
+        val service = startLightingService(captured)
+        assertTodaysHeader(captured.captured)
+
+        // An older bundle never sends the state: absent reads as off.
+        service.onStartCommand(lightingIntent(null, endMs = restNowMs + 38_000), 0, 2)
+        assertTodaysHeader(captured.captured)
+
+        // A window on a phone that doesn't hold the board shows nothing of it.
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 3)
+        service.onStartCommand(updateIntent("heldByPeer", holderName = "Ana").apply {
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
+        }, 0, 4)
+        assertTodaysHeader(captured.captured)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the header drops the clock just after the window ends`() {
+        val captured = slot<Notification>()
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startLightingService(captured, scheduled, nowMs = { nowMs })
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = nowMs + 45_000), 0, 2)
+
+        val (transition, delayMs) = scheduled.single()
+        assertEquals(45_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, delayMs)
+
+        nowMs += delayMs
+        transition.run()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val reposted = shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID)
+        assertNotNull(reposted)
+        assertTodaysHeader(reposted)
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a renewal re-arms the end and a drive arms nothing`() {
+        val captured = slot<Notification>()
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        val service = startLightingService(captured, scheduled)
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 10_000), 0, 2)
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 45_000), 0, 3)
+        assertEquals(45_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, scheduled.single().second)
+
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 4)
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `turning the screen on re-posts a window the phone slept through`() {
+        val captured = slot<Notification>()
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startLightingService(captured, scheduled, nowMs = { nowMs })
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = nowMs + 45_000), 0, 2)
+        assertEquals(1, scheduled.size)
+        nowMs += 120_000
+
+        context.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val reposted = shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID)
+        assertNotNull(reposted)
+        assertTodaysHeader(reposted)
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a window for another session is ignored and a new session starts without one`() {
+        val captured = slot<Notification>()
+        val service = startLightingService(captured)
+        service.onStartCommand(
+            lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING, sessionId = "session-0"),
+            0,
+            2,
+        )
+        assertTodaysHeader(captured.captured)
+
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 3)
+        assertEquals("Driving the wall", captured.captured.subText())
+        service.onStartCommand(Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, "session-2")
+        }, 0, 4)
+        assertTodaysHeader(captured.captured)
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `a lighting update reaching a service with no session stops it`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = Robolectric.buildService(
+            BoardSessionService::class.java,
+            lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = System.currentTimeMillis() + 45_000),
+        ).create().startCommand(0, 1).get()
+
+        assertTrue(shadowOf(service).isStoppedBySelf)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveLighting shows a window only before its end and only to the holder`() {
+        val now = restNowMs
+        val window = BoardSessionService.LIGHT_STATE_WINDOW
+        val me = BoardSessionService.CONNECTION_CONNECTED_BY_ME
+        assertEquals(LightingDisplay.Window(now + 1), BoardSessionService.resolveLighting(window, now + 1, now, me))
+        assertEquals(LightingDisplay.Off, BoardSessionService.resolveLighting(window, now, now, me))
+        assertEquals(LightingDisplay.Off, BoardSessionService.resolveLighting(window, null, now, me))
+        assertEquals(LightingDisplay.Driving, BoardSessionService.resolveLighting(BoardSessionService.LIGHT_STATE_DRIVING, null, now, me))
+        assertEquals(
+            LightingDisplay.Off,
+            BoardSessionService.resolveLighting(BoardSessionService.LIGHT_STATE_DRIVING, null, now, BoardSessionService.CONNECTION_DISCONNECTED),
+        )
+        assertEquals(LightingDisplay.Off, BoardSessionService.resolveLighting("sprinting", now + 1, now, me))
+    }
 }

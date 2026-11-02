@@ -106,6 +106,26 @@ export function resolveKeepLightingPlan({
 }
 
 /**
+ * Whether a Lock Screen, Dynamic Island or Android notification Next /
+ * Previous keeps lighting the way Put on board would (2.7). Not with the swipe
+ * flag (keep-lighting's kill switch) off, and not solo with Light the board as
+ * I swipe on: every pick lights there already, and a press in the app only
+ * drops a stop (`wall-control.ts`).
+ */
+export function lockScreenPressKeepsLighting({
+  swipeToDriveEnabled,
+  lightOnSwipe,
+  inSession,
+}: {
+  swipeToDriveEnabled: boolean;
+  lightOnSwipe: boolean;
+  /** A crew is in this session (the roster's `useIsCrewSession`). */
+  inSession: boolean;
+}): boolean {
+  return swipeToDriveEnabled && !(lightOnSwipe && !inSession);
+}
+
+/**
  * What a press on Put on board keeps lighting, as the climber will see it, for
  * the copy that promises it (the first-connect confirmation, the player's
  * preview-first card). It reads the plan against one setting the plan does not

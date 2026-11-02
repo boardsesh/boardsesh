@@ -6,6 +6,9 @@ import {
   type LiveActivityUpdateOptions,
   type LiveActivityClimbUpdateOptions,
   type LiveActivityRestTimerOptions,
+  type LiveActivityLightingWindowOptions,
+  type LiveActivityLightingWindowSnapshot,
+  type LiveActivityKeepLightingConfig,
   type WidgetQueueNavigateEvent,
   type WidgetMirrorEvent,
   type BoardControlEvent,
@@ -80,6 +83,72 @@ export async function updateLiveActivityRestTimer(options: LiveActivityRestTimer
 }
 
 /**
+ * Whether this binary draws driving the wall (2.7) on the Lock Screen,
+ * in the Dynamic Island and in the Android notification. False on an older
+ * binary running this JS over the air, where nothing is sent.
+ */
+export const sessionPresenceSupportsLightingWindow =
+  sessionModule?.supportsLightingWindow === true && typeof sessionModule.updateLightingWindow === 'function';
+
+/**
+ * Hands this phone's drive (timed, open-ended or none) to the Lock Screen, the Dynamic
+ * Island and the Android notification; `null` takes it off. A silent no-op on
+ * a binary that predates it, and a native failure never reaches the drive.
+ */
+export async function updateLiveActivityLightingWindow(
+  options: LiveActivityLightingWindowOptions | null,
+): Promise<void> {
+  if (!sessionPresenceSupportsLightingWindow) return;
+  try {
+    await sessionModule?.updateLightingWindow?.(options);
+  } catch (error) {
+    console.warn('[LiveActivity] updateLightingWindow failed:', error);
+  }
+}
+
+/**
+ * Whether native starts or renews a drive itself on a
+ * lock-screen Next / Previous, and so needs Settings › Board's Stop driving
+ * after choices mirrored. iOS only: its intent lights the wall without JS.
+ * Android's notification press reaches JS before anything lights, so JS starts the drive
+ * there at the wall's lit confirm (`armNotificationPressDrive`).
+ */
+export const sessionPresenceMirrorsKeepLighting =
+  Platform.OS === 'ios' &&
+  sessionPresenceSupportsLightingWindow &&
+  typeof liveActivityNative?.updateKeepLightingConfig === 'function';
+
+/**
+ * Mirrors Settings › Board's keep-lighting choices for the iOS lock-screen
+ * Next / Previous, which open or renew the window natively. `null` clears
+ * them. A silent no-op on Android and on a binary that predates it.
+ */
+export async function updateLiveActivityKeepLightingConfig(
+  config: LiveActivityKeepLightingConfig | null,
+): Promise<void> {
+  if (!sessionPresenceMirrorsKeepLighting) return;
+  try {
+    await liveActivityNative?.updateKeepLightingConfig?.(config);
+  } catch (error) {
+    console.warn('[LiveActivity] updateKeepLightingConfig failed:', error);
+  }
+}
+
+/**
+ * The stored drive, read synchronously so the drive store can adopt a
+ * lock-screen press before its own timed-drive end check runs. Null on an
+ * older binary, when nothing is stored, or when the read fails.
+ */
+export function readLiveActivityLightingWindow(): LiveActivityLightingWindowSnapshot | null {
+  if (!sessionPresenceSupportsLightingWindow) return null;
+  try {
+    return sessionModule?.getLightingWindow?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Explicitly marks that the actual React root committed in this process. This
  * is iOS-only and optional so an OTA bundle stays safe on an older binary.
  * Diagnostics must never affect app startup, so native bridge failures no-op.
@@ -131,6 +200,9 @@ export type {
   BoardControlEvent,
   InterruptedLiveActivityIntentDiagnostic,
   LiveActivityRestTimerOptions,
+  LiveActivityLightingWindowOptions,
+  LiveActivityLightingWindowSnapshot,
+  LiveActivityKeepLightingConfig,
 };
 
 /** New native binaries only; older OTA hosts do not declare this event. */

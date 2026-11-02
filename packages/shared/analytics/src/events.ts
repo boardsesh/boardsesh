@@ -134,7 +134,14 @@ export const SHARED_EVENTS = {
   // window, or an open-ended drive where the setting says Until I stop; before
   // 2.7 a solo press that put a climb up, #7113 QA) | 'action' (the
   // screen-reader action or the board sheet's row) | 'solo_carry' (a solo
-  // climber driving by Light the board as I swipe when a crew formed) }. A
+  // climber driving by Light the board as I swipe when a crew formed) |
+  // 'lock_screen' (2.7: a Lock Screen, Dynamic Island or Android notification
+  // Next / Previous opened the window, or a drive. iOS opens it natively once
+  // the press lit the wall and the app adopts it when it next runs: durationSec
+  // counts from that press, climbsLit only the climbs the app itself saw
+  // light. Android arms it in the app at the press, like Put on board, and an
+  // unlit press ends 'arming_timed_out'. A press after a window ran out ends
+  // that one 'window_ended' at its own end and starts its own) }. A
   // window that a swipe or Light every climb turned open-ended keeps
   // startedBy 'tap'. Fired once per drive by the drive-mode store.
   DriveModeEnded: 'Drive Mode Ended',

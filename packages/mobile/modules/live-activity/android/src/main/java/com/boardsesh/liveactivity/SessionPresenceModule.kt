@@ -25,6 +25,9 @@ class AndroidNotificationStrings : Record {
     @Field var reconnectLabel: String = "Connect to board"
     @Field var connectingLabel: String = "Connecting…"
     @Field var onWallTemplate: String = "{{name}} is on the wall"
+    // The header line while driving the wall (2.7), timed or open-ended. An
+    // older bundle leaves it out and gets the English.
+    @Field var lightDrivingLabel: String = "Driving the wall"
 }
 
 // boardConnection/holderDisplayName drive the lightbulb + Previous/Next
@@ -83,6 +86,15 @@ class RestTimerOptions : Record {
     @Field var androidOverCaption: String? = null
 }
 
+// Mirrors LiveActivityLightingWindowOptions (modules/live-activity/src/index.ts).
+class LightingWindowOptions : Record {
+    @Field var sessionId: String = ""
+    @Field var mode: String = LightingWindowStore.MODE_OFF
+    @Field var endsAtMs: Double? = null
+    @Field var windowSeconds: Double? = null
+    @Field var family: String? = null
+}
+
 /**
  * Android counterpart to the iOS LiveActivity module. Thin Expo adapter over
  * [SessionPresenceController] (which owns the BoardSessionService lifecycle and
@@ -119,7 +131,7 @@ class SessionPresenceModule : Module() {
         Name("SessionPresence")
 
         Events("queueNavigate", "boardControl", "queueMirror")
-        Constants("supportsMirrorControl" to true, "supportsRestTimer" to true)
+        Constants("supportsMirrorControl" to true, "supportsRestTimer" to true, "supportsLightingWindow" to true)
 
         OnCreate { instance = WeakReference(this@SessionPresenceModule) }
         OnDestroy {
@@ -157,6 +169,18 @@ class SessionPresenceModule : Module() {
         // The rest countdown in the ongoing notification. `null` clears it. Like the
         // climb updates, a no-op until a session has started.
         AsyncFunction("updateRestTimer") { options: RestTimerOptions? -> controller?.updateRestTimer(options) }
+
+        // Driving the wall (2.7) in the notification header. JS is its only
+        // writer: a notification Previous / Next starts or renews a timed drive
+        // in JS, at the wall's lit confirm, so no settings are mirrored here.
+        AsyncFunction("updateLightingWindow") { options: LightingWindowOptions? ->
+            controller?.updateLightingWindow(options)
+        }
+
+        // Synchronous, the same read as iOS's: what native holds for the card.
+        Function("getLightingWindow") {
+            appContext.reactContext?.applicationContext?.let { LightingWindowStore.loadWindow(it)?.toBridgeMap() }
+        }
 
         // No-op (not a throw) when no session was ever started: there's nothing to
         // tear down, and the JS hook has already cleared its own state. Kept

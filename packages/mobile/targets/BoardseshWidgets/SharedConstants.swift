@@ -117,6 +117,20 @@ enum SharedConstants {
     /// and intents construct fresh states, so a pushed field would be wiped on
     /// every one of those paths. The widget reads it at render time.
     static let restTimerKey = "bs_rest_timer"
+    /// This phone's drive (2.7) as a `SharedLightingWindowState` JSON blob:
+    /// off, Put on board's timed drive (with an end), or an open-ended drive. Lives only
+    /// here, never in the pushed `ContentState`, for the same reason as
+    /// `restTimerKey`: a crewmate's queue edit makes the backend re-send the
+    /// whole content state, which would wipe the countdown. JS writes it through
+    /// `updateLightingWindow`; a lock-screen Next or Previous writes it natively
+    /// (`SharedLightingWindowRuntime.recordPress`) while JS may be suspended,
+    /// and JS adopts that write when it next runs.
+    static let lightingWindowKey = "bs_lighting_window"
+    /// Settings › Board's Stop driving after choices as a `SharedKeepLightingConfig`
+    /// JSON blob, written by JS through `updateKeepLightingConfig` while a
+    /// session runs, so a lock-screen press can start or renew a drive the
+    /// way Put on board would without asking JS.
+    static let keepLightingConfigKey = "bs_keep_lighting_config"
 
     // MARK: Darwin Notification
 
@@ -685,5 +699,327 @@ enum RestTimerFormat {
     /// minus sign (U+2212) so it lines up with the widget's live overrun.
     static func signedClock(_ seconds: Int) -> String {
         seconds < 0 ? "\u{2212}\(clock(seconds))" : clock(seconds)
+    }
+}
+
+// MARK: - Shared Lighting Window (2.7 driving the wall)
+
+/// This phone's drive as the Lock Screen, the Dynamic Island and
+/// the lock-screen intents share it through the App Group. Epoch milliseconds
+/// as Doubles, like `SharedRestTimerState`, so JS and native speak one format.
+///
+/// Two writers: JS (`source == "app"`) on every change of its drive, and a
+/// lock-screen Next or Previous (`source == "lockScreen"`) that lit the wall
+/// while JS may have been suspended. JS adopts a lock-screen write once, by its
+/// `updatedAtMs`, and then writes its own.
+struct SharedLightingWindowState: Codable, Equatable {
+    static let currentVersion = 1
+
+    /// Nobody drives: a pick is a preview.
+    static let modeOff = "off"
+    /// Put on board's timed drive (Stop driving after): every pick lights
+    /// until `endsAtMs`, and each climb that lights renews it.
+    static let modeWindow = "window"
+    /// An open-ended drive (a swipe, Until I stop): every pick lights until
+    /// the climber stops it.
+    static let modeDriving = "driving"
+
+    static let sourceApp = "app"
+    static let sourceLockScreen = "lockScreen"
+
+    /// Settings › Board's general choice opened it.
+    static let familyGeneral = "general"
+    /// The MoonBoard choice opened it.
+    static let familyMoonboard = "moonboard"
+
+    let v: Int
+    let sessionId: String
+    let mode: String
+    /// When the timed drive ends. Nil outside one.
+    let endsAtMs: Double?
+    /// The timed drive's length, so a lock-screen press renews it by its own
+    /// length rather than whatever the setting says now. Nil outside one.
+    let windowSeconds: Double?
+    /// Which choice opened it (`familyGeneral` / `familyMoonboard`), nil when unknown.
+    let family: String?
+    let source: String
+    /// When this snapshot was written.
+    let updatedAtMs: Double
+
+    /// Whether every number is one the widget can draw: the epoch bounds and
+    /// the one-day cap the rest timer uses. A snapshot outside them renders as
+    /// previews, never as a guess.
+    var isWithinBounds: Bool {
+        let millis = [endsAtMs, updatedAtMs].compactMap { $0 }
+        let secondsOk = windowSeconds.map { $0.isFinite && $0 > 0 && $0 <= SharedRestTimerState.maxAbsSeconds } ?? true
+        return secondsOk && millis.allSatisfy {
+            $0.isFinite && $0 >= SharedRestTimerState.minEpochMs && $0 <= SharedRestTimerState.maxEpochMs
+        }
+    }
+
+    /// Same picture on the card: everything but who wrote it and when. A JS
+    /// write that only takes over a lock-screen drive it adopted needs no redraw.
+    func drawsLike(_ other: SharedLightingWindowState?) -> Bool {
+        guard let other else { return false }
+        return sessionId == other.sessionId && mode == other.mode
+            && endsAtMs == other.endsAtMs && windowSeconds == other.windowSeconds
+    }
+}
+
+enum SharedLightingWindowStore {
+    /// Nil for an absent key, unreadable bytes, an unknown version, or numbers
+    /// out of bounds.
+    static func load(from defaults: UserDefaults) -> SharedLightingWindowState? {
+        guard let data = defaults.data(forKey: SharedConstants.lightingWindowKey),
+              let state = try? JSONDecoder().decode(SharedLightingWindowState.self, from: data),
+              state.v == SharedLightingWindowState.currentVersion,
+              state.isWithinBounds
+        else { return nil }
+        return state
+    }
+
+    /// Stores the snapshot, or clears the key when it can't be stored: the old
+    /// one left in place would keep a drive on the card that has changed.
+    @discardableResult
+    static func save(_ state: SharedLightingWindowState, to defaults: UserDefaults) -> Bool {
+        guard state.isWithinBounds, let data = try? JSONEncoder().encode(state) else {
+            defaults.removeObject(forKey: SharedConstants.lightingWindowKey)
+            return false
+        }
+        defaults.set(data, forKey: SharedConstants.lightingWindowKey)
+        return true
+    }
+
+    /// Removes the snapshot. Returns whether there was one.
+    @discardableResult
+    static func clear(in defaults: UserDefaults) -> Bool {
+        let existed = defaults.object(forKey: SharedConstants.lightingWindowKey) != nil
+        defaults.removeObject(forKey: SharedConstants.lightingWindowKey)
+        return existed
+    }
+
+    /// A session starts: another session's drive (a killed app's leftover)
+    /// goes, this one's survives. JS sends its own again after every start.
+    static func clear(unlessSession sessionId: String, in defaults: UserDefaults) {
+        if let stored = load(from: defaults), stored.sessionId != sessionId {
+            clear(in: defaults)
+        }
+    }
+
+    /// Whether the card must redraw when the stored drive goes from
+    /// `previous` to `next` (nil: nothing stored). Not when nothing was there
+    /// and nothing is, and not when `next` draws like `previous`: JS taking over
+    /// a lock-screen drive it adopted, or re-sending its own after a start.
+    static func needsRedraw(previous: SharedLightingWindowState?, next: SharedLightingWindowState?) -> Bool {
+        guard let next else { return previous != nil }
+        return !next.drawsLike(previous)
+    }
+
+    /// Stores JS's drive, or with nil clears it, and returns whether the card
+    /// must redraw. A snapshot out of bounds is never stored: it reads as nil.
+    @discardableResult
+    static func write(_ next: SharedLightingWindowState?, to defaults: UserDefaults) -> Bool {
+        let previous = load(from: defaults)
+        guard let next else {
+            clear(in: defaults)
+            return needsRedraw(previous: previous, next: nil)
+        }
+        let stored = save(next, to: defaults)
+        return needsRedraw(previous: previous, next: stored ? next : nil)
+    }
+}
+
+/// Settings › Board's Stop driving after choices, as JS mirrors them for the
+/// lock-screen intents. The choices are the app's `KeepLightingChoice` strings
+/// (`off` for Right away, `30`, `45`, `60`, `120`, `300`, `until_stopped`);
+/// the rest are the inputs
+/// `resolveKeepLightingPlan` (src/lib/keep-lighting.ts) reads.
+struct SharedKeepLightingConfig: Codable, Equatable {
+    static let currentVersion = 1
+
+    let v: Int
+    /// The general choice, for every board but a MoonBoard.
+    let keepLighting: String
+    /// The MoonBoard choice. It applies in a crew session too.
+    let moonboardKeepLighting: String
+    /// "In a session too": the general choice applies with a crew.
+    let drivesInSession: Bool
+    /// A crew is in the session (the roster's crew, after its arrival dwell).
+    let inCrew: Bool
+    /// The session's board is a MoonBoard.
+    let moonboard: Bool
+    /// False where a press would not start a drive in the app either: the
+    /// swipe flag (the drive's kill switch) is off, or the climber lights
+    /// every pick solo with Light the board as I swipe.
+    let enabled: Bool
+}
+
+enum SharedKeepLightingConfigStore {
+    static func load(from defaults: UserDefaults) -> SharedKeepLightingConfig? {
+        guard let data = defaults.data(forKey: SharedConstants.keepLightingConfigKey),
+              let config = try? JSONDecoder().decode(SharedKeepLightingConfig.self, from: data),
+              config.v == SharedKeepLightingConfig.currentVersion
+        else { return nil }
+        return config
+    }
+
+    static func save(_ config: SharedKeepLightingConfig, to defaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(config) else {
+            defaults.removeObject(forKey: SharedConstants.keepLightingConfigKey)
+            return
+        }
+        defaults.set(data, forKey: SharedConstants.keepLightingConfigKey)
+    }
+
+    static func clear(in defaults: UserDefaults) {
+        defaults.removeObject(forKey: SharedConstants.keepLightingConfigKey)
+    }
+}
+
+/// The drive a lock-screen press starts once its climb is up: timed, or
+/// open-ended.
+enum SharedKeepLightingPlan: Equatable {
+    case window(seconds: Double, family: String)
+    case driving(family: String)
+}
+
+enum SharedKeepLighting {
+    static let untilStopped = "until_stopped"
+    /// The longest timed drive a choice may ask for. The app offers up to
+    /// 5 minutes (300 s); a newer bundle's longer choice still works up to this.
+    static let maxWindowSeconds: Double = 3_600
+
+    /// One choice's plan: Until I stop starts an open-ended drive, a number
+    /// of seconds a timed drive, and Right away (`off`, or a value this build
+    /// can't read) lights one climb and starts no drive.
+    static func plan(forChoice choice: String, family: String) -> SharedKeepLightingPlan? {
+        if choice == untilStopped { return .driving(family: family) }
+        guard let seconds = Double(choice), seconds.isFinite, seconds > 0, seconds <= maxWindowSeconds else {
+            return nil
+        }
+        return .window(seconds: seconds, family: family)
+    }
+
+    /// The plan for a press, as `resolveKeepLightingPlan` reads it: a MoonBoard
+    /// takes its own choice, in a crew too; every other board takes the general
+    /// choice, and with a crew only while "In a session too" is on.
+    static func plan(for config: SharedKeepLightingConfig?) -> SharedKeepLightingPlan? {
+        guard let config, config.enabled else { return nil }
+        if config.moonboard {
+            return plan(forChoice: config.moonboardKeepLighting, family: SharedLightingWindowState.familyMoonboard)
+        }
+        if config.inCrew && !config.drivesInSession { return nil }
+        return plan(forChoice: config.keepLighting, family: SharedLightingWindowState.familyGeneral)
+    }
+}
+
+enum SharedLightingWindowRuntime {
+    /// A session ended: no card to start a drive from, so the drive and the
+    /// mirrored settings both go. JS sends the settings again after the next start.
+    static func endSession(in defaults: UserDefaults) {
+        SharedLightingWindowStore.clear(in: defaults)
+        SharedKeepLightingConfigStore.clear(in: defaults)
+    }
+
+    /// The snapshot a lock-screen Next or Previous leaves once it lit the wall,
+    /// or nil when the press changes nothing.
+    ///
+    /// - An open-ended drive goes on as it is.
+    /// - A timed drive still running is renewed by its own length, like a
+    ///   climb that lights in the app.
+    /// - Otherwise the settings decide: a timed drive, an open-ended drive, or
+    ///   (Right away) one lit climb and no drive.
+    static func afterPress(
+        current: SharedLightingWindowState?,
+        config: SharedKeepLightingConfig?,
+        sessionId: String,
+        now: Date
+    ) -> SharedLightingWindowState? {
+        let nowMs = now.timeIntervalSince1970 * 1000
+        if let current, current.sessionId == sessionId, current.isWithinBounds {
+            if current.mode == SharedLightingWindowState.modeDriving { return nil }
+            if current.mode == SharedLightingWindowState.modeWindow,
+               let endsAtMs = current.endsAtMs, endsAtMs > nowMs,
+               let seconds = current.windowSeconds, seconds > 0 {
+                return window(sessionId: sessionId, seconds: seconds, family: current.family, nowMs: nowMs)
+            }
+        }
+        switch SharedKeepLighting.plan(for: config) {
+        case nil:
+            return nil
+        case let .window(seconds, family)?:
+            return window(sessionId: sessionId, seconds: seconds, family: family, nowMs: nowMs)
+        case let .driving(family)?:
+            return SharedLightingWindowState(
+                v: SharedLightingWindowState.currentVersion,
+                sessionId: sessionId,
+                mode: SharedLightingWindowState.modeDriving,
+                endsAtMs: nil,
+                windowSeconds: nil,
+                family: family,
+                source: SharedLightingWindowState.sourceLockScreen,
+                updatedAtMs: nowMs
+            )
+        }
+    }
+
+    /// Starts or renews the drive for a press on this session's card, and
+    /// stores it. Returns what it stored, or nil when nothing changed.
+    @discardableResult
+    static func recordPress(in defaults: UserDefaults, now: Date = Date()) -> SharedLightingWindowState? {
+        guard let sessionId = defaults.string(forKey: SharedConstants.sessionIdKey), !sessionId.isEmpty,
+              let next = afterPress(
+                  current: SharedLightingWindowStore.load(from: defaults),
+                  config: SharedKeepLightingConfigStore.load(from: defaults),
+                  sessionId: sessionId,
+                  now: now
+              ),
+              SharedLightingWindowStore.save(next, to: defaults)
+        else { return nil }
+        return next
+    }
+
+    private static func window(sessionId: String, seconds: Double, family: String?, nowMs: Double) -> SharedLightingWindowState {
+        SharedLightingWindowState(
+            v: SharedLightingWindowState.currentVersion,
+            sessionId: sessionId,
+            mode: SharedLightingWindowState.modeWindow,
+            endsAtMs: nowMs + seconds * 1000,
+            windowSeconds: seconds,
+            family: family,
+            source: SharedLightingWindowState.sourceLockScreen,
+            updatedAtMs: nowMs
+        )
+    }
+}
+
+/// What the card draws for the wall's lighting at one render instant.
+enum LightingRenderPhase: Equatable {
+    /// Nothing keeps lighting: the bulb alone. Picks are previews.
+    case previews
+    /// A timed drive: every pick lights until `end`. `start <= end` always:
+    /// `Text(timerInterval:)` and `ProgressView(timerInterval:)` trap on an
+    /// inverted range.
+    case window(start: Date, end: Date)
+    /// An open-ended drive: every pick lights until the climber stops.
+    case driving
+
+    /// The lighting at `now` for this session's card. A timed drive past its end
+    /// reads as previews: the widget runs no code at the deadline, so the next
+    /// render after it decides.
+    static func resolve(state: SharedLightingWindowState?, sessionId: String, now: Date) -> LightingRenderPhase {
+        guard let state, state.sessionId == sessionId, state.isWithinBounds else { return .previews }
+        switch state.mode {
+        case SharedLightingWindowState.modeDriving:
+            return .driving
+        case SharedLightingWindowState.modeWindow:
+            guard let endsAtMs = state.endsAtMs else { return .previews }
+            let end = Date(timeIntervalSince1970: endsAtMs / 1000)
+            guard end > now else { return .previews }
+            let start = state.windowSeconds.map { end.addingTimeInterval(-$0) } ?? now
+            return .window(start: min(start, end), end: end)
+        default:
+            return .previews
+        }
     }
 }

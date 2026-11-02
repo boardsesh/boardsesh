@@ -252,6 +252,73 @@ actor LiveActivityManager {
         logger.info("Re-rendered Live Activity for the rest timer (revision \(state.restRevision ?? 0, privacy: .public))")
     }
 
+    // MARK: - Lighting Window Re-render (2.7)
+
+    /// A beat past the window's end, so the redraw lands after it and the
+    /// widget's resolver reads the window as over.
+    private static let lightingWindowEndSlack: TimeInterval = 0.25
+
+    /// The one pending redraw at the end of the keep-lighting window.
+    private var lightingWindowEndTask: Task<Void, Never>?
+
+    /// Re-renders the card so the widget re-reads the keep-lighting window from
+    /// the App Group (`SharedConstants.lightingWindowKey`), bumping
+    /// `lightingRevision`, then arms one more redraw at the window's end so the
+    /// ring gives way to the bare bulb. The climb comes from the committed App
+    /// Group queue, as `rerenderForRestTimer` builds it.
+    ///
+    /// A lock-screen intent also calls this, in a process the system may have
+    /// launched in the background, where `currentActivity` was never set: it
+    /// then redraws the session's running activity directly. The redraw at the
+    /// end is best effort. The app usually stays alive on Bluetooth background
+    /// mode, but if it is suspended first the ring sits empty at 0:00 until the
+    /// next update, which still reads as over.
+    func rerenderForLightingWindow() async {
+        guard let defaults = SharedConstants.sharedDefaults,
+              let sessionId = defaults.string(forKey: SharedConstants.sessionIdKey)
+        else { return }
+        let tracked = currentActivity.flatMap { $0.attributes.sessionId == sessionId ? $0 : nil }
+        let running = Activity<ClimbSessionAttributes>.activities.first(where: {
+            $0.activityState == .active && $0.attributes.sessionId == sessionId
+        })
+        guard let activity = tracked ?? running else { return }
+        let (items, index) = SharedQueueState.load(from: defaults)
+        var state = Self.buildContentState(items: items, currentIndex: index) ?? activity.content.state
+        state.lightingRevision = (activity.content.state.lightingRevision ?? 0) &+ 1
+        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(staleInterval))
+        await activity.update(content)
+        lastUpdateTime = Date()
+        logger.info("Re-rendered Live Activity for the lighting window (revision \(state.lightingRevision ?? 0, privacy: .public))")
+        scheduleLightingWindowEnd(SharedLightingWindowStore.load(from: defaults))
+    }
+
+    /// Arms the redraw at `window`'s end, replacing any earlier one. Nothing is
+    /// armed for a drive, previews, or a window already over.
+    private func scheduleLightingWindowEnd(_ window: SharedLightingWindowState?) {
+        lightingWindowEndTask?.cancel()
+        lightingWindowEndTask = nil
+        guard let window,
+              window.mode == SharedLightingWindowState.modeWindow,
+              let endsAtMs = window.endsAtMs
+        else { return }
+        let delay = endsAtMs / 1000 - Date().timeIntervalSince1970 + Self.lightingWindowEndSlack
+        guard delay > 0 else { return }
+        lightingWindowEndTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.rerenderAtLightingWindowEnd(endsAtMs: endsAtMs)
+        }
+    }
+
+    /// Only the window this was armed for ends here: a renewal since then
+    /// re-armed its own redraw.
+    private func rerenderAtLightingWindowEnd(endsAtMs: Double) async {
+        guard let defaults = SharedConstants.sharedDefaults,
+              SharedLightingWindowStore.load(from: defaults)?.endsAtMs == endsAtMs
+        else { return }
+        await rerenderForLightingWindow()
+    }
+
     // MARK: - End
 
     /// Ends all Live Activities, including the tracked one and any stale

@@ -180,6 +180,16 @@ enum ClimbNavigationIntent {
             if !writeSucceeded {
                 completionClass = .bleFailure
             }
+            // The press lit the wall, so it starts or renews a drive (2.7)
+            // the way a climb that lights in the app would, from the Stop
+            // driving after settings JS mirrored into the App Group (Right
+            // away starts none: the press lit its one climb). Written before
+            // the Darwin post so JS, if it is running, adopts it with the
+            // move. The optimistic frame above went out before the drive
+            // existed, so redraw once more.
+            if writeSucceeded, SharedLightingWindowRuntime.recordPress(in: defaults) != nil {
+                await LiveActivityManager.shared.rerenderForLightingWindow()
+            }
         }
         #endif
 

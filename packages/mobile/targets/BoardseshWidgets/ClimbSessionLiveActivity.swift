@@ -266,6 +266,24 @@ private func resolveRestTimer(
     )
 }
 
+/// This phone's drive (2.7) at this render, read from the App Group like the
+/// rest timer (see `SharedConstants.lightingWindowKey`). Only the phone that
+/// holds the board draws it: a crewmate's card (heldByPeer) shows nothing
+/// about the holder's drive, and a dropped link has none.
+@available(iOS 17.0, *)
+private func resolveLighting(
+    context: ActivityViewContext<ClimbSessionAttributes>,
+    connection: BoardConnection,
+    now: Date = Date()
+) -> LightingRenderPhase {
+    guard connection == .connectedByMe, let defaults = SharedConstants.sharedDefaults else { return .previews }
+    return LightingRenderPhase.resolve(
+        state: SharedLightingWindowStore.load(from: defaults),
+        sessionId: context.attributes.sessionId,
+        now: now
+    )
+}
+
 // MARK: - Shared Subviews
 
 @available(iOS 17.0, *)
@@ -424,11 +442,74 @@ private struct NavigationButtonLabel: View {
     }
 }
 
+/// The lit bulb, wrapped by what the wall does with the next pick (2.7):
+/// an amber ring that drains as Put on board's timed drive runs out (the
+/// in-app frost shrinking toward the bulb), a full amber disc for an
+/// open-ended drive, or the bulb alone while picks are previews. Shape
+/// carries the state, so it survives greyscale and Differentiate Without
+/// Colour; the ring and the disc are decoration, hidden from VoiceOver.
+@available(iOS 17.0, *)
+private struct LightingBulbGlyph: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let lighting: LightingRenderPhase
+    /// The ring or disc's diameter.
+    let size: CGFloat
+    /// The bulb's point size inside the ring or disc.
+    let ringedGlyphSize: CGFloat
+    /// The bulb's point size with nothing around it.
+    let bareGlyphSize: CGFloat
+
+    var body: some View {
+        let palette = VelvetSend.Palette.resolve(colorScheme)
+        switch lighting {
+        case let .window(start, end):
+            ZStack {
+                ProgressView(timerInterval: start...end, countsDown: true) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.circular)
+                .tint(palette.warning)
+                .accessibilityHidden(true)
+                bulb(color: palette.warning, size: ringedGlyphSize)
+            }
+            .frame(width: size, height: size)
+        case .driving:
+            ZStack {
+                Circle()
+                    .fill(palette.warning)
+                    .accessibilityHidden(true)
+                // Dark on amber: the disc is the light, the bulb sits in it.
+                bulb(color: palette.onAccent, size: ringedGlyphSize)
+            }
+            .frame(width: size, height: size)
+        case .previews:
+            bulb(color: palette.warning, size: bareGlyphSize)
+        }
+    }
+
+    private func bulb(color: Color, size: CGFloat) -> some View {
+        Image(systemName: "lightbulb.fill")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundColor(color)
+    }
+}
+
+/// The time a timed drive has left, counting down on its own. Only a timed
+/// drive has it: an open-ended drive has no end to count.
+/// `Text(timerInterval:)` holds at 0:00 until the next render shows previews.
+@available(iOS 17.0, *)
+private func lightingWindowDigitsText(start: Date, end: Date) -> Text {
+    Text(timerInterval: start...end, countsDown: true)
+}
+
 @available(iOS 17.0, *)
 private struct WallControlStatus: View {
     @Environment(\.colorScheme) private var colorScheme
-    /// Lit when this device drives the board; out otherwise.
-    let lit: Bool
+    /// What the wall does with the next pick. This view only shows while this
+    /// device holds the board, so the bulb is always lit.
+    let lighting: LightingRenderPhase
 
     // Keep the glow readable on the light-mode surface (#F4F1FB).
     private var glowOpacity: Double {
@@ -437,33 +518,64 @@ private struct WallControlStatus: View {
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
-        Image(systemName: lit ? "lightbulb.fill" : "lightbulb")
-            .font(.title3.weight(.semibold))
-            // No container — just the glyph. Colour is the signal; the lit bulb's
-            // soft amber glow is the only warm accent on the card.
-            .foregroundColor(lit ? palette.warning : palette.secondaryLabel)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
-            .shadow(
-                color: lit ? palette.warning.opacity(glowOpacity) : .clear,
-                radius: lit ? 6 : 0
-            )
-            .accessibilityLabel(lit ? "Wall lit, you are driving" : "Wall control")
+        HStack(spacing: VelvetSend.Spacing.xs) {
+            LightingBulbGlyph(lighting: lighting, size: 30, ringedGlyphSize: 13, bareGlyphSize: 20)
+                // No container — just the glyph. Colour is the signal; the lit
+                // bulb's soft amber glow is the only warm accent on the card.
+                .frame(width: 44, height: 44)
+                .shadow(color: palette.warning.opacity(glowOpacity), radius: lighting == .previews ? 6 : 0)
+            if case let .window(start, end) = lighting {
+                lightingWindowDigitsText(start: start, end: end)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundColor(palette.warning)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    // Timer text claims every point it is offered; a fixed frame
+                    // keeps it from pushing Prev and Next around.
+                    .frame(width: 40, alignment: .leading)
+            }
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        // One element: the label names the state ("Driving the wall" for any
+        // drive), the value carries a timed drive's time left (read once by the
+        // system timer text, never as a percentage).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(lightingLabel)
+        .accessibilityValue(lightingValue)
+        .accessibilityHint(Text("Lights the climb again"))
+    }
+
+    private var lightingLabel: Text {
+        switch lighting {
+        case .window, .driving: return Text("Driving the wall")
+        case .previews: return Text("Wall lit")
+        }
+    }
+
+    private var lightingValue: Text {
+        switch lighting {
+        case let .window(start, end): return lightingWindowDigitsText(start: start, end: end)
+        case .driving: return Text("Every climb you pick lights up")
+        case .previews: return Text("Picks are previews")
+        }
     }
 }
 
 @available(iOS 17.0, *)
 private struct WallControlButton: View {
-    let lit: Bool
+    let lighting: LightingRenderPhase
 
     var body: some View {
         // The lightbulb is always a button: tapping it reconnects Bluetooth to
         // the last known board (and, in a party session where this device isn't
         // the driver, also claims wall control). When already connected and
         // driving, ReconnectBoardIntent just re-lights the wall — a harmless
-        // no-op grab.
+        // no-op grab. Nothing here stops a drive, timed or not, so a pocket tap
+        // can't drop the board.
         Button(intent: ReconnectBoardIntent()) {
-            WallControlStatus(lit: lit)
+            WallControlStatus(lighting: lighting)
         }
         .buttonStyle(.plain)
     }
@@ -478,6 +590,7 @@ private struct NavigationControlsView: View {
     let supportsMirroring: Bool
     let hasPrevious: Bool
     let hasNext: Bool
+    let lighting: LightingRenderPhase
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
@@ -500,8 +613,8 @@ private struct NavigationControlsView: View {
             .accessibilityLabel("Previous climb")
 
             // connectedByMe is the only state that renders this row, so the bulb
-            // is always lit here.
-            WallControlButton(lit: true)
+            // is always lit here; a timed drive's ring or an open-ended drive's disc wraps it.
+            WallControlButton(lighting: lighting)
             if supportsMirroring, let queueItemUuid {
                 Button(intent: MirrorClimbIntent(sessionId: sessionId, queueItemUuid: queueItemUuid, mirrored: !mirrored)) {
                     // Velvet tokens, not the system accent: with no asset
@@ -833,6 +946,7 @@ private struct SessionFooter: View {
     let state: ResolvedBoardState
     let hasPrevious: Bool
     let hasNext: Bool
+    let lighting: LightingRenderPhase
 
     var body: some View {
         switch state.connection {
@@ -841,7 +955,8 @@ private struct SessionFooter: View {
                 sessionId: sessionId, queueItemUuid: queueItemUuid,
                 mirrored: mirrored, supportsMirroring: supportsMirroring,
                 hasPrevious: hasPrevious,
-                hasNext: hasNext
+                hasNext: hasNext,
+                lighting: lighting
             )
         case .heldByPeer:
             HeldByPeerFooter(holderDisplayName: state.holderDisplayName)
@@ -874,6 +989,7 @@ struct ClimbSessionLiveActivity: Widget {
                 if case .waiting = resolved.phase { return nil }
                 return resolved
             }
+            let lighting = resolveLighting(context: context, connection: state.connection)
             return DynamicIsland {
                 // Expanded Dynamic Island
                 DynamicIslandExpandedRegion(.leading) {
@@ -912,18 +1028,19 @@ struct ClimbSessionLiveActivity: Widget {
                                 supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
                                 state: state,
                                 hasPrevious: context.state.hasPrevious,
-                                hasNext: context.state.hasNext
+                                hasNext: context.state.hasNext,
+                                lighting: lighting
                             )
                         }
                     }
                     .padding(.horizontal, VelvetSend.Spacing.xs)
                 }
             } compactLeading: {
-                CompactLeadingView(connection: state.connection, rest: rest)
+                CompactLeadingView(connection: state.connection, rest: rest, lighting: lighting)
             } compactTrailing: {
-                CompactTrailingView(text: context.state.climbDifficulty, rest: rest)
+                CompactTrailingView(text: context.state.climbDifficulty, rest: rest, lighting: lighting)
             } minimal: {
-                MinimalView(connection: state.connection, rest: rest)
+                MinimalView(connection: state.connection, rest: rest, lighting: lighting)
             }
         }
     }
@@ -983,12 +1100,19 @@ private struct ExpandedTrailingView: View {
 private struct CompactLeadingView: View {
     let connection: BoardConnection
     let rest: ResolvedRestTimer?
+    let lighting: LightingRenderPhase
 
     var body: some View {
         // Leading and trailing read as one piece: the ring here, the digits
-        // across the camera. Without a counting rest, just the bulb.
-        RestRingGlyph(rest: rest, size: 22) {
-            ConnectionGlyph(connection: connection, size: isRinged ? 9 : 14)
+        // across the camera. The rest timer wins whenever it runs; without
+        // one, a timed drive's ring or an open-ended drive's disc; otherwise
+        // just the bulb.
+        if rest == nil, lighting != .previews {
+            LightingBulbGlyph(lighting: lighting, size: 22, ringedGlyphSize: 9, bareGlyphSize: 14)
+        } else {
+            RestRingGlyph(rest: rest, size: 22) {
+                ConnectionGlyph(connection: connection, size: isRinged ? 9 : 14)
+            }
         }
     }
 
@@ -1005,6 +1129,7 @@ private struct CompactTrailingView: View {
     @Environment(\.colorScheme) private var colorScheme
     let text: String
     let rest: ResolvedRestTimer?
+    let lighting: LightingRenderPhase
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
@@ -1016,6 +1141,18 @@ private struct CompactTrailingView: View {
                 width: 46,
                 textAlignment: .center
             )
+        } else if case let .window(start, end) = lighting {
+            // A timed drive's time left, in the amber of its ring. An
+            // open-ended drive has no end to count, so it keeps the grade.
+            lightingWindowDigitsText(start: start, end: end)
+                .font(.system(size: 15, weight: .semibold))
+                .monospacedDigit()
+                .foregroundColor(palette.warning)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .multilineTextAlignment(.center)
+                .frame(width: 46, alignment: .center)
+                .accessibilityLabel(Text("Driving the wall"))
         } else {
             let grade = VGradeFormatter.displayGrade(text)
             Text(verbatim: grade)
@@ -1030,10 +1167,17 @@ private struct CompactTrailingView: View {
 private struct MinimalView: View {
     let connection: BoardConnection
     let rest: ResolvedRestTimer?
+    let lighting: LightingRenderPhase
 
     var body: some View {
-        RestRingGlyph(rest: rest, size: 22) {
-            ConnectionGlyph(connection: connection, size: isRinged ? 9 : 12)
+        // Rest first, as in the compact view; then a timed drive's ring or an
+        // open-ended drive's disc; otherwise the bulb.
+        if rest == nil, lighting != .previews {
+            LightingBulbGlyph(lighting: lighting, size: 22, ringedGlyphSize: 9, bareGlyphSize: 12)
+        } else {
+            RestRingGlyph(rest: rest, size: 22) {
+                ConnectionGlyph(connection: connection, size: isRinged ? 9 : 12)
+            }
         }
     }
 
@@ -1094,6 +1238,7 @@ private struct LockScreenView: View {
         let state = resolveBoardState(context: context)
         let mirrorState = resolveMirrorState(context: context)
         let rest = resolveRestTimer(context: context)
+        let lighting = resolveLighting(context: context, connection: state.connection)
         return HStack(alignment: .top, spacing: VelvetSend.Spacing.md) {
             // Thumbnail
             ThumbnailView(
@@ -1158,7 +1303,8 @@ private struct LockScreenView: View {
                         supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
                         state: state,
                         hasPrevious: context.state.hasPrevious,
-                        hasNext: context.state.hasNext
+                        hasNext: context.state.hasNext,
+                        lighting: lighting
                     )
                 }
             }

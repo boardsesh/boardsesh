@@ -209,8 +209,10 @@ export type DriveEnded = {
   /**
    * Settings › Board ended it, not the climber at the wall or the clock: Stop
    * driving after turned to Right away, or In a session too off as a crew
-   * formed. The link stays, whatever Disconnect Bluetooth when driving ends
-   * says: a settings change, or a crewmate joining, never frees the board.
+   * formed. Or a lock-screen press found a timed drive already over and is
+   * lighting a climb of its own (`lock-screen-lighting.ts`). The link stays,
+   * whatever Disconnect Bluetooth when driving ends says: a settings change,
+   * a crewmate joining, or a press that wants the wall never frees the board.
    */
   keepLink: boolean;
 };
@@ -372,6 +374,75 @@ export function noteDriveClimbLit({ now = Date.now() }: { now?: number } = {}): 
       : {}),
   };
   emit();
+}
+
+/**
+ * An iOS Lock Screen or Dynamic Island Next / Previous lit the wall and started
+ * Put on board's timed drive (or, for Until I stop, an open-ended drive)
+ * natively while this JS may have been suspended (2.7): adopt it as a live
+ * drive. (An Android notification press arms a drive in JS instead,
+ * `armNotificationPressDrive`.) The press already lit its climb, so there is
+ * no arming, and a timed drive ends where native said (`expiresAt`), not a
+ * full length from now. `startedAt` is the press. Refuses (false) while a
+ * drive is on.
+ *
+ * `climbsLit` starts at 0: the climb the press lit is counted when this
+ * phone's auto-sender confirms it, like every other.
+ */
+export function startLockScreenDrive({
+  sessionId,
+  boardId,
+  boardType = null,
+  windowMs,
+  windowSetting,
+  expiresAt,
+  startedAt,
+}: {
+  sessionId: string | null;
+  boardId: number | null;
+  boardType?: string | null;
+  /** The timed drive's length, or null for an open-ended drive. */
+  windowMs: number | null;
+  windowSetting: KeepLightingSettingKey | null;
+  /** When the native timed drive ends; null for an open-ended drive. */
+  expiresAt: number | null;
+  startedAt: number;
+}): boolean {
+  if (driveMode) return false;
+  const windowed = windowMs !== null && windowMs > 0 && expiresAt !== null;
+  driveMode = {
+    phase: 'live',
+    sessionId,
+    boardId,
+    boardType,
+    startedAt,
+    startedBy: 'lock_screen',
+    climbsLit: 0,
+    windowMs: windowed ? windowMs : null,
+    windowSetting: windowed ? windowSetting : null,
+    expiresAt: windowed ? expiresAt : null,
+    windowRenewals: 0,
+  };
+  stoppedForLink = false;
+  lastExitReason = null;
+  lastEnded = null;
+  claimedAnnouncements = null;
+  emit();
+  trackDriveModeStarted({ startedBy: 'lock_screen', inSession: sessionId !== null, boardType });
+  return true;
+}
+
+/**
+ * An iOS lock-screen press renewed the live timed drive past the end this
+ * JS knows (2.7): take the later end, counted as one renewal. Returns whether
+ * it moved.
+ */
+export function extendDriveWindow(expiresAt: number): boolean {
+  if (driveMode?.phase !== 'live' || driveMode.windowMs === null || driveMode.expiresAt === null) return false;
+  if (expiresAt <= driveMode.expiresAt) return false;
+  driveMode = { ...driveMode, expiresAt, windowRenewals: driveMode.windowRenewals + 1 };
+  emit();
+  return true;
 }
 
 /**

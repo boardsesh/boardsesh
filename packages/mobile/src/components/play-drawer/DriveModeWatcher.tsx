@@ -1,16 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
+import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
+import { useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
 import { useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
   DEFAULT_MOONBOARD_KEEP_LIGHTING,
   keepLightingWindowMs,
+  lockScreenPressKeepsLighting,
+  resolveKeepLightingPlan,
   sanitiseKeepLighting,
 } from '../../lib/keep-lighting';
-import { useIsCrewSession, useQueueSessionControls } from '../../providers/queue-provider';
+import { useIsCrewSession, useQueueActions, useQueueSessionControls } from '../../providers/queue-provider';
+import { addWidgetQueueNavigateListener, isAndroidSessionPresence } from '../../lib/live-activity/live-activity-plugin';
+import { adoptLockScreenLighting, armNotificationPressDrive, endTimedDriveOverAtPress } from './lock-screen-lighting';
 import {
   carryDriveIntoCrew,
   clearDrivingStopped,
@@ -56,6 +62,19 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * And with Disconnect Bluetooth when driving ends on, the ends the climber or
  * the clock caused let go of the board (`use-driving-ended-disconnect.ts`).
  *
+ * A Lock Screen or Dynamic Island Next / Previous starts or renews that drive
+ * natively on iOS, since JS may be suspended when the intent lights the wall
+ * (`lock-screen-lighting.ts`). This adopts that write: when the app comes back
+ * (before the catch-up, so a renewed timed drive isn't ended as overdue), on
+ * the press's own `queueNavigate` event, and when the link comes up. An
+ * Android notification Next / Previous writes nothing natively: JS lights the
+ * wall for it, so on its `queueNavigate` event this arms a drive the wall's
+ * lit confirm takes live, as Put on board does. Either way the drive reports
+ * `startedBy: 'lock_screen'`. Under Right away a press lights its one climb
+ * and starts no drive. On both platforms a press that finds a timed drive over
+ * ends it keeping the board (`endTimedDriveOverAtPress`); the catch-up with no
+ * press heard ends it at the clock, letting go when the setting says so.
+ *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
  */
@@ -67,7 +86,6 @@ export function DriveModeWatcher(): null {
   const { boardId } = useBoardPresenceControls();
   const { isAuthenticated } = useAuth();
   const drive = useDriveMode();
-  useDriveCrewPutUp(drive?.phase ?? null);
   // Goes live, and counts the climbs lit, at this phone's own link's confirms.
   useDriveWallConfirms(bluetooth?.isConnected ?? false);
   useDisconnectWhenDrivingEnds(bluetooth);
@@ -79,6 +97,69 @@ export function DriveModeWatcher(): null {
   const previousRef = useRef<DriveWatchSnapshot | null>(null);
   // The arming drive (by its start) whose connect was seen in flight.
   const connectSeenForRef = useRef<number | null>(null);
+
+  // Settings › Board's Stop driving after (2.7): the timed-drive end rule
+  // below, and the drive an Android notification press starts.
+  const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
+  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
+  const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
+  const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
+  const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
+  const swipeToDriveEnabled = useWallSwipeToDriveEnabled();
+  const { getQueueSnapshot } = useQueueActions();
+
+  // A lock-screen press's drive, adopted (iOS) or armed (Android) with the
+  // latest reads. Stable, so the listeners below subscribe once and the
+  // timed-drive end check can call it first.
+  const boardType = bluetooth?.boardName ?? null;
+  const pressPlan = lockScreenPressKeepsLighting({ swipeToDriveEnabled, lightOnSwipe, inSession: isCrewSession })
+    ? resolveKeepLightingPlan({
+        boardIsMoonboard: isMoonboardBoardName(boardType),
+        keepLighting,
+        moonboardKeepLighting,
+        drivesInSession,
+        inSession: isCrewSession,
+      })
+    : null;
+  const adoptionInputRef = useRef({ sessionId, linked, boardId, boardType, plan: pressPlan });
+  adoptionInputRef.current = { sessionId, linked, boardId, boardType, plan: pressPlan };
+  const adoptFromLockScreen = useCallback(() => {
+    adoptLockScreenLighting(adoptionInputRef.current);
+  }, []);
+  // A crewmate's put-up ends a timed drive a Lock Screen press started too: adopted
+  // first, so it ends now instead of coming back at the next adoption.
+  useDriveCrewPutUp(drive?.phase ?? null, adoptFromLockScreen);
+  useEffect(() => {
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') adoptFromLockScreen();
+    });
+    const removeNavigateListener = addWidgetQueueNavigateListener((event) => {
+      adoptFromLockScreen();
+      if (!isAndroidSessionPresence) {
+        // iOS: the intent lit the wall and wrote the press's own drive, adopted
+        // just above, unless Right away starts none. A timed drive still over
+        // then has nothing to replace it: it ends keeping the board, as
+        // Android's press does below.
+        endTimedDriveOverAtPress();
+        return;
+      }
+      // The bridge drops a press whose index the queue doesn't hold; nothing lights then.
+      const { queue } = getQueueSnapshot();
+      if (event.currentIndex < 0 || event.currentIndex >= queue.length) return;
+      armNotificationPressDrive(adoptionInputRef.current);
+    });
+    return () => {
+      appState.remove();
+      removeNavigateListener();
+    };
+  }, [adoptFromLockScreen, getQueueSnapshot]);
+  // On mount, and whenever the link or the session changes: a write left while
+  // the link was down can be judged now. One from before this JS started (a
+  // press before a kill or a reload) never is: a relaunch starts with nobody
+  // driving.
+  useEffect(() => {
+    adoptFromLockScreen();
+  }, [adoptFromLockScreen, linked, sessionId]);
 
   useEffect(() => {
     const current: DriveWatchSnapshot = { linked, pending, sessionId, boardId, signedIn: isAuthenticated };
@@ -139,12 +220,8 @@ export function DriveModeWatcher(): null {
   // Its own choice moved to another length (the board sheet's row, at the
   // wall, spec B4): the running drive takes it, counted from now, and Until I
   // stop makes it open-ended. Only a change does: a drive started from a plan
-  // keeps its length until its choice moves.
-  const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
-  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
-  const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
-  const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
-  const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
+  // (or adopted from the Lock Screen) keeps its length until its choice moves.
+  // The settings are read above, with what a lock-screen press keeps lighting.
   const choicesRef = useRef({ keepLighting, moonboardKeepLighting });
   const windowed = drive?.windowMs != null;
   useEffect(() => {
@@ -180,6 +257,8 @@ export function DriveModeWatcher(): null {
     if (windowEndsAt === null) return undefined;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const endIfDue = () => {
+      // A lock-screen press may have renewed it while JS was suspended.
+      adoptFromLockScreen();
       const latest = getDriveMode();
       if (latest?.expiresAt !== windowEndsAt) return;
       if (isDriveWindowDue(latest)) {
@@ -198,7 +277,7 @@ export function DriveModeWatcher(): null {
       if (timer !== null) clearTimeout(timer);
       subscription.remove();
     };
-  }, [windowEndsAt]);
+  }, [windowEndsAt, adoptFromLockScreen]);
 
   // A connect in flight holds the arming clock: the device picker stays open
   // while the climber reads the list, as long as they need (the tap's own

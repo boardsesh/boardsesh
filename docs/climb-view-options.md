@@ -148,6 +148,15 @@ flat amber fallback; the label still says what the next press does.
   Driver mode instead, which also ends a window's clock. Solo with **Light the board as I
   swipe** explicitly enabled, `tapDrive: 'resume'` clears a stop on this link so that saved
   opt-in applies again.
+- **Driving reaches the Lock Screen, the Dynamic Island and the Android notification (2.7).** iOS draws an amber
+  ring that drains around the bulb for a timed drive, and a full amber disc for an open-ended one; Android's header
+  says "Driving the wall", with the system countdown for a timed drive and no clock for an open-ended one. Both keep
+  showing the wall's climb, never the MiniPlayer's last pick. Lock-screen and notification **Next** / **Previous**
+  light the wall and start or renew a timed drive once it is lit; under **Right away** they light that one climb and
+  start no drive. On iOS the intent writes it natively from the settings JS mirrors, and `DriveModeWatcher` adopts
+  it when the app runs again; on Android JS lights the wall, so the press arms a drive that the lit confirm takes
+  live, as Put on board does. Either way `startedBy: 'lock_screen'`. Details:
+  `docs/live-activity-board-control.md`; QA steps: `docs/live-activity-push-testing.md`.
 - **The looks of the wall button.** Plain tonal: a preview, or a single lit climb. Frost, "You
   are driving the wall": any drive. Put on board's timed drive adds an m:ss clock beside the
   label, and its frost shrinks toward the bulb as the time runs out (`WallWindowFrost`: a
