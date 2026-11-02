@@ -182,12 +182,7 @@ export function useClimbMenu(target: ClimbActionsTarget | null) {
   const rows = useMemo(() => {
     if (!target || !runtime) return [];
     const items = buildClimbMenuItems(
-      {
-        ...target,
-        currentUserId: runtime.currentUserId,
-        isAuthenticated: runtime.isAuthenticated,
-        onSelectPlaylist: () => {},
-      },
+      { ...target, currentUserId: runtime.currentUserId, isAuthenticated: runtime.isAuthenticated },
       {
         t,
         actionColors,

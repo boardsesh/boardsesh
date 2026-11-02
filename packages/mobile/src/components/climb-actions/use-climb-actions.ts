@@ -18,9 +18,7 @@ import { getPendingFavoriteOverridesLocal } from '../../db/queries/get-favorite-
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { reportHandledError } from '../../lib/error-reporting';
 import * as WebBrowser from 'expo-web-browser';
-import type { AuroraBoardName, Climb } from '@boardsesh/shared-schema';
-import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
-import { canEditClimb } from '@boardsesh/create-climb-react';
+import type { Climb } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS, type AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
@@ -36,14 +34,12 @@ import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
-import { ownClimbIsReportable } from '../play-drawer/can-report-climb';
 import { track } from '../../lib/analytics';
 import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
-import { canDeleteClimb } from './delete-climb-rules';
 import { useDeleteClimbAction } from './use-delete-climb-action';
 
 import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
-import { buildClimbMenuItems } from './climb-menu-items';
+import { buildClimbMenuItems, climbAuroraAppUrl } from './climb-menu-items';
 import { useBluetoothConnectedStatus } from '../../lib/ble/bluetooth-status-store';
 
 export type ClimbActionId =
@@ -192,16 +188,6 @@ export type UseClimbActionsArgs = {
   resolveFavoriteOnAction?: boolean;
 };
 
-// Mirrors web's constructClimbInfoUrl: Kilter no longer has a public app URL.
-// Aurora-only by construction — the caller gates on the auroraAppLink capability
-// and narrows the board name before calling, so a code-driven board (MoonBoard,
-// Woods) never reaches this and never gets an invented domain.
-function buildAuroraAppUrl(boardName: AuroraBoardName, climbUuid: string): string | null {
-  if (boardName === 'kilter') return null;
-  const suffix = boardName === 'tension' ? '2' : '';
-  return `https://${boardName}boardapp${suffix}.com/climbs/${climbUuid}`;
-}
-
 export function useClimbActions({
   climb,
   boardConfig,
@@ -296,7 +282,6 @@ export function useClimbActions({
     },
   );
   const isFavorited = favoriteControl ? favoriteControl.isFavorited : serverFavorited;
-  const toggleFavoriteOverride = favoriteControl?.onToggle;
 
   const after = useCallback(() => onAfterAction?.(), [onAfterAction]);
 
@@ -304,271 +289,174 @@ export function useClimbActions({
     if (!climb || !boardConfig) return [];
 
     const { boardName, layoutId, sizeId, setIds, angle } = boardConfig;
-    const { success: successColor, favorite: favoriteColor, accent: accentColor } = actionColors;
-    // Only boards with an official app page get the row; the guard is what turns
-    // the loose board string into the AuroraBoardName the builder assumes.
-    const auroraBoardName = getBoardCapabilities(boardName).auroraAppLink ? toAuroraBoardName(boardName) : null;
-    const auroraAppUrl = auroraBoardName ? buildAuroraAppUrl(auroraBoardName, climb.uuid) : null;
-
-    // Who may edit is one shared rule (`canEditClimb`): the setter, a draft for
-    // good and a published climb for 24 hours, on every board a spray wall
-    // included. A hint only; the server decides.
-    const canEdit =
-      getBoardCapabilities(boardName).climbCreation &&
-      !wallArchived &&
-      canEditClimb({ climb, boardType: boardName, currentUserId });
-
-    const items: ClimbActionItem[] = [];
-
-    // "Play next" is meaningless on the climb already on the wall, so it is hidden
-    // there rather than shown as a no-op. It sits right above Play last: the two
-    // placements read as a pair, the way a music app offers them (#6772).
-    if (climb.uuid !== activeClimbUuid) {
-      items.push({
-        id: 'playNext',
-        title: t('mobile.climbActions.playNext'),
-        icon: 'queue.next',
-        color: accentColor,
-        run: () => {
-          // Fire-and-forget: the cross-board prompt (when it fires) sits above
-          // the dismissed sheet, so `after()` must not wait on it.
-          void playNext({ item: { uuid: randomUUID(), climb }, queueItemUuid });
-          after();
-        },
-      });
-    }
-
-    // Play last: the bottom of Up next, today's plain add.
-    items.push({
-      id: 'queue',
-      title: t('mobile.climbActions.playLast'),
-      icon: 'queue.last',
-      color: successColor,
-      run: () => {
-        // Same fire-and-forget shape as Play next above.
-        void addToQueue({ uuid: randomUUID(), climb });
-        after();
-      },
-    });
-
-    if (onOpenQueue) {
-      items.push({
-        id: 'openQueue',
-        title: t('mobile.climbActions.openQueue'),
-        icon: 'queue',
-        color: accentColor,
-        run: () => {
-          // Close the menu first, like share: the queue sheet opens from the
-          // play route, under an overlay that is already on its way out.
-          after();
-          onOpenQueue();
-        },
-      });
-    }
-
     // Replay from here (F3, decision 8): a History row's long-press, while a
     // climb is on the wall and only in now-slot mode. It puts that climb back on
     // the wall with `placement: STEP`, so the climbs after it are Up next again
     // in their old order and nothing is copied. The plain row tap is unchanged:
-    // it moves just that one climb into Now. Read at menu-build time; the menu
-    // mounts per long-press, so it can't go stale while open.
+    // it moves just that one climb into Now. Read at menu-build time; the
+    // command host mounts per selection, so it can't go stale while open.
     const replayItem = queueItemUuid ? findReplayFromHereItem(queueItemUuid) : null;
-    if (replayItem) {
-      items.push({
-        id: 'replayFromHere',
-        title: t('mobile.climbActions.replayFromHere'),
-        icon: 'history',
-        color: accentColor,
-        run: () => {
-          // Walking the queue again, like the row tap: drop any list source.
-          // Preview-first: unless automatic lighting is opted in (or this phone
-          // drives), open the History slot as a preview that carries the replay
-          // placement to Put on board. A History copy of the climb already up
-          // lands as a queue sheet tap does (`resolveQueuePickLanding`): it
-          // commits solo with no hold, in either orientation, and otherwise
-          // reopens the climb up, since its preview would have no Put on board.
-          const commitOptions = { placement: 'STEP' as const, playlistSuggestionSource: null };
-          const landing = readQueuePickLanding(replayItem, {
-            current: getQueueSnapshot().currentClimbQueueItem,
-            inSharedSession,
-          });
-          if (landing === 'commit') {
-            // The queue reorders in place, so the sheet stays up to show it.
-            setCurrentClimb(replayItem, commitOptions);
-          } else {
-            openPlayDrawer(
-              replayItem.climb as Climb,
-              landing === 'reopen'
-                ? { boardConfig, reopensCurrent: true }
-                : { boardConfig, previewQueueItem: replayItem, previewCommitOptions: commitOptions },
-            );
-            // Nothing in the queue changes, and the player sits under the queue
-            // sheet this menu opened over. Close that sheet the way its own row
-            // tap does, or the replay looks dead.
-            void dismissSourceSheet?.();
-          }
-          after();
-        },
+
+    // Pass the state the row rendered from: it flips the heart in the climb
+    // list optimistically, and it's what the offline local-first path needs to
+    // know which way to write. The toggle tracks the tap, in the direction it
+    // really goes (the heart's cache entry has the last word).
+    const toggleKnownFavorite = (currentlyFavorited: boolean | undefined) =>
+      toggleFavoriteMutate({
+        input: { boardName, climbUuid: climb.uuid, angle },
+        currentlyFavorited,
+        tracking: { source: analyticsSource ?? 'mobile_climb_actions', layoutId, connected: bluetoothConnected },
       });
-    }
-
-    if (mirrorControl) {
-      items.push({
-        id: 'mirror',
-        title: mirrorControl.isMirrored
-          ? t('session:playView.actionBar.unmirrorAria')
-          : t('session:playView.actionBar.mirrorAria'),
-        icon: 'mirror',
-        color: accentColor,
-        run: () => {
-          mirrorControl.onToggle();
-          after();
-        },
-      });
-    }
-
-    if (onOpenAngle) {
-      items.push({
-        id: 'angle',
-        title: t('session:playView.actionBar.changeAngle'),
-        icon: 'angle',
-        color: accentColor,
-        run: () => {
-          // Close the menu first, like the queue: the angle sheet opens from the
-          // play route, under an overlay that is already on its way out.
-          after();
-          onOpenAngle();
-        },
-      });
-    }
-
-    items.push({
-      id: 'playlist',
-      title: t('actions.playlist.popover.title'),
-      icon: 'playlist',
-      color: accentColor,
-      // The presenter belongs to this surface, above any player route.
-      run: () => {
-        onSelectPlaylist();
-      },
-    });
-
-    items.push({
-      id: 'favorite',
-      // A caller-owned favourite knows its state for certain, so the row can say
-      // which way it goes; the server read may still be loading here.
-      title: !toggleFavoriteOverride
-        ? t('mobile.climbRow.toggleFavorite')
-        : isFavorited
-          ? t('session:playView.actionBar.removeFavoriteAria')
-          : t('session:playView.actionBar.addFavoriteAria'),
-      icon: isFavorited ? 'favorite.fill' : 'favorite',
-      color: favoriteColor,
-      run: () => {
-        if (toggleFavoriteOverride) {
-          toggleFavoriteOverride();
-          after();
-          return;
+    // A row menu builds before its favourite is known (scrolling starts no
+    // per-climb reads), so the toggle resolves the exact state after selection.
+    const toggleResolvedFavorite = () => {
+      const credentialScope = getCredentialGeneration();
+      const queryKey = ['favoriteStatus', boardName, climb.uuid, angle];
+      // Warm state includes optimistic/outbox intent and remains authoritative.
+      const cachedFavoriteResponse = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
+      // A cold entry may already have an unguarded network read in flight.
+      // Replace that display read, without cancelling other menu actions'
+      // shared lookup under the separate transient key below.
+      if (cachedFavoriteResponse === undefined) {
+        void queryClient.cancelQueries({ queryKey, exact: true });
+      }
+      const assertCurrentCredentials = () => {
+        if (credentialScope !== getCredentialGeneration()) {
+          throw new Error('Favorite resolution interrupted by account change');
         }
-        // Pass the state the row just rendered from: it flips the heart in the
-        // climb list optimistically, and it's what the offline local-first path
-        // needs to know which way to write. The toggle tracks the tap, in the
-        // direction it really goes (the heart's cache entry has the last word).
-        const toggleKnownFavorite = (currentlyFavorited: boolean | undefined) =>
-          toggleFavoriteMutate({
-            input: { boardName, climbUuid: climb.uuid, angle },
-            currentlyFavorited,
-            tracking: { source: analyticsSource ?? 'mobile_climb_actions', layoutId, connected: bluetoothConnected },
-          });
-        if (resolveFavoriteOnAction) {
-          const credentialScope = getCredentialGeneration();
-          const queryKey = ['favoriteStatus', boardName, climb.uuid, angle];
-          // Warm state includes optimistic/outbox intent and remains authoritative.
-          const cachedFavoriteResponse = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
-          // A cold entry may already have an unguarded network read in flight.
-          // Replace that display read, without cancelling other menu actions'
-          // shared lookup under the separate transient key below.
-          if (cachedFavoriteResponse === undefined) {
-            void queryClient.cancelQueries({ queryKey, exact: true });
-          }
-          const assertCurrentCredentials = () => {
-            if (credentialScope !== getCredentialGeneration()) {
-              throw new Error('Favorite resolution interrupted by account change');
-            }
-          };
-          const favoriteResolution =
-            cachedFavoriteResponse !== undefined
-              ? Promise.resolve(cachedFavoriteResponse)
-              : queryClient.fetchQuery({
-                  // Coalesce cold menu lookups without joining a display query or
-                  // matching useToggleFavorite's per-heart cancellation prefix.
-                  // The private prefix still clears this data on account changes.
-                  queryKey: ['favoriteStatus', 'menu-resolution', boardName, climb.uuid, angle, credentialScope],
-                  staleTime: 0,
-                  gcTime: 0,
-                  retry: false,
-                  queryFn: async () => {
-                    assertCurrentCredentials();
-                    let pendingFavorite: boolean | undefined;
-                    const db = getDatabaseHandle();
-                    if (db && currentUserId) {
-                      try {
-                        const pendingOverrides = await getPendingFavoriteOverridesLocal(
-                          db,
-                          [climb.uuid],
-                          currentUserId,
-                        );
-                        pendingFavorite = pendingOverrides.get(climb.uuid);
-                      } catch {
-                        // An unavailable local outbox still permits the network read.
-                      }
-                      assertCurrentCredentials();
-                    }
-                    // Another heart can move while the outbox read is in flight.
-                    const cached = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
-                    if (cached) return cached;
-                    // This also preserves cold-start/dead-letter intent, even if the
-                    // drainer acknowledges its row before a server response arrives.
-                    if (pendingFavorite !== undefined) {
-                      return { favorites: pendingFavorite ? [climb.uuid] : [] };
-                    }
-                    const response = await offlineAwareRequest<FavoritesQueryResponse>(GET_FAVORITES, {
-                      boardName,
-                      climbUuids: [climb.uuid],
-                      angle,
-                    });
-                    assertCurrentCredentials();
-                    return queryClient.getQueryData<FavoritesQueryResponse>(queryKey) ?? response;
-                  },
+      };
+      const favoriteResolution =
+        cachedFavoriteResponse !== undefined
+          ? Promise.resolve(cachedFavoriteResponse)
+          : queryClient.fetchQuery({
+              // Coalesce cold menu lookups without joining a display query or
+              // matching useToggleFavorite's per-heart cancellation prefix.
+              // The private prefix still clears this data on account changes.
+              queryKey: ['favoriteStatus', 'menu-resolution', boardName, climb.uuid, angle, credentialScope],
+              staleTime: 0,
+              gcTime: 0,
+              retry: false,
+              queryFn: async () => {
+                assertCurrentCredentials();
+                let pendingFavorite: boolean | undefined;
+                const db = getDatabaseHandle();
+                if (db && currentUserId) {
+                  try {
+                    const pendingOverrides = await getPendingFavoriteOverridesLocal(db, [climb.uuid], currentUserId);
+                    pendingFavorite = pendingOverrides.get(climb.uuid);
+                  } catch {
+                    // An unavailable local outbox still permits the network read.
+                  }
+                  assertCurrentCredentials();
+                }
+                // Another heart can move while the outbox read is in flight.
+                const cached = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
+                if (cached) return cached;
+                // This also preserves cold-start/dead-letter intent, even if the
+                // drainer acknowledges its row before a server response arrives.
+                if (pendingFavorite !== undefined) {
+                  return { favorites: pendingFavorite ? [climb.uuid] : [] };
+                }
+                const response = await offlineAwareRequest<FavoritesQueryResponse>(GET_FAVORITES, {
+                  boardName,
+                  climbUuids: [climb.uuid],
+                  angle,
                 });
-          void favoriteResolution
-            .then((response) => {
-              assertCurrentCredentials();
-              // Two cold actions share the lookup but each keeps its toggle.
-              // The first toggle moves this primary entry synchronously, so
-              // the next continuation must read it again rather than restore
-              // their shared lookup's older answer.
-              const latestFavoriteResponse = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
-              if (latestFavoriteResponse === undefined) queryClient.setQueryData(queryKey, response);
-              assertCurrentCredentials();
-              toggleKnownFavorite((latestFavoriteResponse ?? response).favorites.includes(climb.uuid));
-            })
-            .catch((error: unknown) => {
-              if (credentialScope === getCredentialGeneration()) {
-                reportHandledError(error, { tags: { source: 'climb-menu', op: 'favorite' } });
-              }
+                assertCurrentCredentials();
+                return queryClient.getQueryData<FavoritesQueryResponse>(queryKey) ?? response;
+              },
             });
-        } else toggleKnownFavorite(isFavorited);
+      void favoriteResolution
+        .then((response) => {
+          assertCurrentCredentials();
+          // Two cold actions share the lookup but each keeps its toggle.
+          // The first toggle moves this primary entry synchronously, so
+          // the next continuation must read it again rather than restore
+          // their shared lookup's older answer.
+          const latestFavoriteResponse = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
+          if (latestFavoriteResponse === undefined) queryClient.setQueryData(queryKey, response);
+          assertCurrentCredentials();
+          toggleKnownFavorite((latestFavoriteResponse ?? response).favorites.includes(climb.uuid));
+        })
+        .catch((error: unknown) => {
+          if (credentialScope === getCredentialGeneration()) {
+            reportHandledError(error, { tags: { source: 'climb-menu', op: 'favorite' } });
+          }
+        });
+    };
+
+    // What each action does. Which of them a menu offers, in what order and
+    // under which label is `buildClimbMenuItems`'s call alone; this table never
+    // decides visibility, so the two can't drift apart. A command whose input a
+    // caller didn't pass (no queue opener, no History slot) is never offered.
+    const commands: Record<ClimbActionId, () => void> = {
+      playNext: () => {
+        // Fire-and-forget: the cross-board prompt (when it fires) sits above
+        // the dismissed sheet, so `after()` must not wait on it.
+        void playNext({ item: { uuid: randomUUID(), climb }, queueItemUuid });
         after();
       },
-    });
-
-    items.push({
-      id: 'tick',
-      title: t('mobile.climbActions.tick'),
-      icon: 'tick',
-      color: successColor,
-      run: () => {
+      queue: () => {
+        // Same fire-and-forget shape as Play next above.
+        void addToQueue({ uuid: randomUUID(), climb });
+        after();
+      },
+      openQueue: () => {
+        // Close the menu first, like share: the queue sheet opens from the
+        // play route, under a menu that is already on its way out.
+        after();
+        onOpenQueue?.();
+      },
+      replayFromHere: () => {
+        if (!replayItem) return;
+        // Walking the queue again, like the row tap: drop any list source.
+        // Preview-first: unless automatic lighting is opted in (or this phone
+        // drives), open the History slot as a preview that carries the replay
+        // placement to Put on board. A History copy of the climb already up
+        // lands as a queue sheet tap does (`resolveQueuePickLanding`): it
+        // commits solo with no hold, in either orientation, and otherwise
+        // reopens the climb up, since its preview would have no Put on board.
+        const commitOptions = { placement: 'STEP' as const, playlistSuggestionSource: null };
+        const landing = readQueuePickLanding(replayItem, {
+          current: getQueueSnapshot().currentClimbQueueItem,
+          inSharedSession,
+        });
+        if (landing === 'commit') {
+          // The queue reorders in place, so the sheet stays up to show it.
+          setCurrentClimb(replayItem, commitOptions);
+        } else {
+          openPlayDrawer(
+            replayItem.climb as Climb,
+            landing === 'reopen'
+              ? { boardConfig, reopensCurrent: true }
+              : { boardConfig, previewQueueItem: replayItem, previewCommitOptions: commitOptions },
+          );
+          // Nothing in the queue changes, and the player sits under the queue
+          // sheet this menu opened over. Close that sheet the way its own row
+          // tap does, or the replay looks dead.
+          void dismissSourceSheet?.();
+        }
+        after();
+      },
+      mirror: () => {
+        mirrorControl?.onToggle();
+        after();
+      },
+      angle: () => {
+        // Close the menu first, like the queue: the angle sheet opens from the
+        // play route, under a menu that is already on its way out.
+        after();
+        onOpenAngle?.();
+      },
+      // The presenter belongs to this surface, above any player route.
+      playlist: () => onSelectPlaylist(),
+      favorite: () => {
+        if (favoriteControl) favoriteControl.onToggle();
+        else if (resolveFavoriteOnAction) toggleResolvedFavorite();
+        else toggleKnownFavorite(isFavorited);
+        after();
+      },
+      tick: () => {
         track(SHARED_EVENTS.QuickTickOpened, {
           ...analyticsContext,
           climbUuid: climb.uuid,
@@ -605,182 +493,80 @@ export function useClimbActions({
         }
         after();
       },
-    });
+      editEntry: () => {
+        onEditEntry?.();
+        after();
+      },
+      betaVideo: () => {
+        // In-tree override (play drawer) stacks the sheet above the `/play` modal;
+        // the root sheet can't. Both take the climb/board snapshot so a live queue
+        // change can't retarget it. See #3505.
+        if (onAddBetaVideo) onAddBetaVideo(climb, boardConfig);
+        else openAddBetaVideo(climb, boardConfig);
+        after();
+      },
+      // `openEdit` claims the action before dismissing this menu, then owns
+      // the source-sheet → player-route → create ordering.
+      edit: () => openEdit(climb, boardConfig, after),
+      // Same serialized handoff as Edit.
+      fork: () => openRemix(climb, boardConfig, after),
+      viewOptions: () => {
+        // Close the menu first, like the queue: the sections sheet opens from
+        // the play route, under a menu that is already on its way out.
+        after();
+        onOpenViewOptions?.();
+      },
+      share: () => {
+        // Close the menu, then open the native share sheet (same as the play
+        // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
+        after();
+        track(SHARED_EVENTS.ClimbShared, {
+          ...analyticsContext,
+          method: 'share',
+          source: analyticsSource ?? 'climb_actions_menu',
+          climbUuid: climb.uuid,
+          boardName,
+          layoutId,
+        });
+        void shareClimb().catch(() => {});
+      },
+      openInApp: () => {
+        const auroraAppUrl = climbAuroraAppUrl(boardName, climb);
+        if (!auroraAppUrl) return;
+        // Close the menu first so it doesn't linger behind the in-app browser
+        // (openBrowserAsync only resolves when the browser is closed).
+        after();
+        track(SHARED_EVENTS.OpenInAuroraApp, { climbUuid: climb.uuid, boardName, layoutId });
+        // .catch so a browser-open rejection doesn't become an unhandled rejection.
+        void WebBrowser.openBrowserAsync(auroraAppUrl).catch(() => {});
+      },
+      report: () => {
+        // In-tree override (play drawer) stacks the sheet above the `/play`
+        // modal; the root sheet can't. Both take the climb/board snapshot so a
+        // live queue change can't retarget it. See #3505.
+        if (onReportClimb) onReportClimb(climb, boardConfig);
+        else openReportClimb(climb, boardConfig);
+        after();
+      },
+      delete: () => {
+        // Close the menu first: the confirm is a system dialog, and it must
+        // not open over a menu that is on its way out.
+        after();
+        // Opened from `/play`, the climb on screen is the one being deleted, so
+        // the player closes behind it. Everywhere else the list refetches.
+        void requestDeleteClimb(climb, boardName, () => {
+          if (dismissPlayerAndWait) void dismissPlayerAndWait();
+        });
+      },
+    };
 
-    if (onEditEntry) {
-      items.push({
-        id: 'editEntry',
-        title: t('mobile.climbActions.editEntry'),
-        icon: 'edit',
-        color: accentColor,
-        run: () => {
-          onEditEntry();
-          after();
-        },
-      });
-    }
-
-    if (isAuthenticated) {
-      items.push({
-        id: 'betaVideo',
-        title: t('mobile.climbActions.addBetaVideo'),
-        icon: 'video',
-        color: accentColor,
-        run: () => {
-          // In-tree override (play drawer) stacks the sheet above the `/play` modal;
-          // the root sheet can't. Both take the climb/board snapshot so a live queue
-          // change can't retarget it. See #3505.
-          if (onAddBetaVideo) onAddBetaVideo(climb, boardConfig);
-          else openAddBetaVideo(climb, boardConfig);
-          after();
-        },
-      });
-    }
-
-    if (canEdit) {
-      items.push({
-        id: 'edit',
-        title: t('mobile.climbActions.edit'),
-        icon: 'edit',
-        color: accentColor,
-        // `openEdit` claims the action before dismissing this overlay, then owns
-        // the source-sheet → player-route → create ordering.
-        run: () => {
-          openEdit(climb, boardConfig, after);
-        },
-      });
-    }
-
-    // Fork drops into the create-climb editor, so it only appears on boards that
-    // can have climbs set on them, and never on an archived wall.
-    if (getBoardCapabilities(boardName).climbCreation && !wallArchived) {
-      items.push({
-        id: 'fork',
-        title: t('mobile.climbActions.fork'),
-        icon: 'branch',
-        color: accentColor,
-        // Same serialized handoff as Edit.
-        run: () => {
-          openRemix(climb, boardConfig, after);
-        },
-      });
-    }
-
-    if (onOpenViewOptions) {
-      items.push({
-        id: 'viewOptions',
-        title: t('common:mobile.settings.climbDrawer.sheetTitle'),
-        icon: 'view.options',
-        color: accentColor,
-        run: () => {
-          // Close the menu first, like the queue: the sections sheet opens from
-          // the play route, under an overlay that is already on its way out.
-          after();
-          onOpenViewOptions();
-        },
-      });
-    }
-
-    // A draft is visible to its setter alone, so a link to it opens nowhere for
-    // anyone it is sent to (#5960).
-    const isDraft = climb.is_draft === true;
-    if (!isDraft) {
-      items.push({
-        id: 'share',
-        title: t('share.actionLabel'),
-        icon: 'share',
-        color: accentColor,
-        run: () => {
-          // Dismiss the overlay, then open the native share sheet (same as the play
-          // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
-          after();
-          track(SHARED_EVENTS.ClimbShared, {
-            ...analyticsContext,
-            method: 'share',
-            source: analyticsSource ?? 'climb_actions_menu',
-            climbUuid: climb.uuid,
-            boardName,
-            layoutId,
-          });
-          void shareClimb().catch(() => {});
-        },
-      });
-    }
-
-    if (auroraAppUrl) {
-      items.push({
-        id: 'openInApp',
-        title: t('mobile.climbActions.openInApp'),
-        icon: 'open.external',
-        color: accentColor,
-        run: () => {
-          // Dismiss the overlay first so it doesn't linger behind the in-app browser
-          // (openBrowserAsync only resolves when the browser is closed).
-          after();
-          track(SHARED_EVENTS.OpenInAuroraApp, { climbUuid: climb.uuid, boardName, layoutId });
-          // .catch so a browser-open rejection doesn't become an unhandled rejection.
-          void WebBrowser.openBrowserAsync(auroraAppUrl).catch(() => {});
-        },
-      });
-    }
-
-    // Last in the list, and last for a reason: it is the one action that acts
-    // AGAINST the climb, so it sits below everything a climber came here to do.
-    // Not on the viewer's own climb: reporting yourself to the crew has no
-    // outcome, and the setter already has Edit for anything they want changed.
-    // Except on a spray wall, where a grade proposal is how the setter changes
-    // their own climb's grade (#5971). A draft is never reported.
-    const isOwnClimb = !!currentUserId && climb.userId === currentUserId;
-    const reportable = climb.is_draft !== true && (!isOwnClimb || ownClimbIsReportable(boardName));
-    if (isAuthenticated && moderationEnabled && reportable) {
-      items.push({
-        id: 'report',
-        // Your own spray climb: the report is how you change its grade (#5971).
-        title: isOwnClimb ? t('mobile.climbActions.changeGrade') : t('mobile.climbActions.report'),
-        icon: 'flag',
-        color: accentColor,
-        run: () => {
-          // In-tree override (play drawer) stacks the sheet above the `/play`
-          // modal; the root sheet can't. Both take the climb/board snapshot so a
-          // live queue change can't retarget it. See #3505.
-          if (onReportClimb) onReportClimb(climb, boardConfig);
-          else openReportClimb(climb, boardConfig);
-          after();
-        },
-      });
-    }
-
-    // The setter's own published spray climb (#5960). Below Report, which the
-    // setter never sees on their own climb, so it is the last row either way.
-    if (canDeleteClimb({ climb, boardName, currentUserId, wallArchived })) {
-      items.push({
-        id: 'delete',
-        title: t('mobile.climbActions.deleteClimb.row'),
-        icon: 'delete',
-        color: accentColor,
-        run: () => {
-          // Close the menu first: the confirm is a system dialog, and it must
-          // not open over an overlay that is on its way out.
-          after();
-          // Opened from `/play`, the climb on screen is the one being deleted, so
-          // the player closes behind it. Everywhere else the list refetches.
-          void requestDeleteClimb(climb, boardName, () => {
-            if (dismissPlayerAndWait) void dismissPlayerAndWait();
-          });
-        },
-      });
-    }
-
-    const runners = new Map(items.map((item) => [item.id, item.run]));
     return buildClimbMenuItems(
       {
         climb,
         boardConfig,
-        queueItemUuid,
         currentUserId,
         isAuthenticated,
         onEditEntry,
-        onSelectPlaylist,
         onOpenQueue,
         onOpenViewOptions,
         mirrorControl,
@@ -788,7 +574,7 @@ export function useClimbActions({
         favoriteControl,
       },
       { t, actionColors, activeClimbUuid, wallArchived, moderationEnabled, isFavorited, canReplay: !!replayItem },
-      (id) => runners.get(id)?.(),
+      (id) => commands[id](),
     );
   }, [
     climb,
@@ -824,7 +610,6 @@ export function useClimbActions({
     toggleFavoriteMutate,
     bluetoothConnected,
     isFavorited,
-    toggleFavoriteOverride,
     favoriteControl,
     resolveFavoriteOnAction,
     queryClient,
