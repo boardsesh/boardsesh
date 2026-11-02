@@ -1,6 +1,43 @@
 {
-  "generatedAt": "2026-11-02T16:25:07.754Z",
+  "generatedAt": "2026-11-02T19:39:09.101Z",
   "entries": [
+    {
+      "prNumber": 7228,
+      "category": "improved",
+      "title": "Clear your queue from the ⋯ menu in the queue.",
+      "mergedAt": "2026-11-02T19:15:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7228"
+    },
+    {
+      "prNumber": 7222,
+      "category": "improved",
+      "title": "A climb you open from a link or notification while the app starts stays in the mini player.",
+      "mergedAt": "2026-11-02T19:14:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7222"
+    },
+    {
+      "prNumber": 7221,
+      "category": "improved",
+      "title": "In a crew session, your drive starts only once your own wall lights, not a crewmate's.",
+      "mergedAt": "2026-11-02T19:14:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7221"
+    },
+    {
+      "prNumber": 7224,
+      "category": "improved",
+      "title": "Hung up the board by mistake? Tap the bulb again within 10 minutes to reconnect, no board list.",
+      "mergedAt": "2026-11-02T19:13:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7224",
+      "body": "Kilter boxes that show up as plain \"Kilter Board\" are remembered now, so the next tap reconnects."
+    },
+    {
+      "prNumber": 7218,
+      "category": "improved",
+      "title": "Always drive the wall keeps you driving the wall: every climb you pick lights while you're connected.",
+      "mergedAt": "2026-11-02T17:02:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7218",
+      "body": "It replaces the two lighting switches. If you had either on, it's on for you.\nA MoonBoard now stops driving like any board: after your Stop driving after time (45 seconds to start with), and in a crew only with In a session too on.\nIf you had changed the MoonBoard's own timer, your Stop driving after choice applies now."
+    },
     {
       "prNumber": 7213,
       "category": "improved",
@@ -9126,6 +9163,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-02T16:01:29Z",
+      "sha": "1fdc3c6a219a1c565404871dc836ac0125cc8e94",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "93536c7b33d7e0855118b16333acdb64177cda8e",
+        "ios": "30a6350779dbd6c505f9177548fe9f80349f291c"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-02T15:05:55Z",
