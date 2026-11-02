@@ -37,7 +37,7 @@ import {
 } from '../../lib/boards/gym-board-for-climb';
 import { useSessionBoardPath } from '../../providers/queue/queue-contexts';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS, type DriveModeStartedBy } from '@boardsesh/analytics';
+import { SHARED_EVENTS, wallControlPreviewReason, type DriveModeStartedBy } from '@boardsesh/analytics';
 import { buildOpeningLayoutKey } from './opening-layout-cache';
 import { usePlayNavigationModel } from './use-play-navigation-model';
 import { usePlayLayoutMeasurements, usePlayOpeningLayout } from './use-play-opening-layout';
@@ -2296,6 +2296,13 @@ export function PlayCore({
     playerOpen: isPane ? displayedClimb != null : isSheetOpen,
     visible: wallControlDrawn,
     linked: bluetoothConnected,
+    // Why the climb on screen is a preview: how often a default preview gets
+    // lit is the 2.7 question.
+    previewReason: wallControlPreviewReason({
+      isPreview,
+      otherBoard: previewOnOtherBoard,
+      inSession: browseByDefault,
+    }),
   });
   // The board sheet's Light every climb row (#7113): the sheet closes itself.
   const { drive: driveWallControl } = wallControlHandlers;

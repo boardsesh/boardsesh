@@ -28,7 +28,17 @@ const mockBleControlSheet = vi.hoisted(() => ({
     showLightingSwitches?: boolean;
     linked?: boolean;
     onDrive?: () => void;
+    onToggleAutoDisconnect: (enabled: boolean) => void;
+    onToggleLightOnSwipe: (enabled: boolean) => void;
+    onToggleLightOnClimbTap: (enabled: boolean) => void;
   } | null,
+}));
+const settingsAnalytics = vi.hoisted(() => ({ trackSettingChanged: vi.fn() }));
+vi.mock('../../../lib/settings-analytics', () => settingsAnalytics);
+const settingSetters = vi.hoisted(() => ({
+  autoDisconnectBle: vi.fn(),
+  lightOnSwipe: vi.fn(),
+  lightOnClimbTap: vi.fn(),
 }));
 
 vi.mock('../../../providers/bluetooth-provider', () => ({
@@ -40,7 +50,7 @@ vi.mock('../../../lib/ble/bluetooth-status-store', () => ({
 }));
 
 vi.mock('../../../settings', () => ({
-  useSetting: () => [false, vi.fn()],
+  useSetting: (key: keyof typeof settingSetters) => [false, settingSetters[key] ?? vi.fn()],
 }));
 
 vi.mock('../use-auto-disconnect-timeout-labels', () => ({
@@ -48,12 +58,7 @@ vi.mock('../use-auto-disconnect-timeout-labels', () => ({
 }));
 
 vi.mock('../BleControlSheet', () => ({
-  BleControlSheet: (props: {
-    showLightAdjacentHolds: boolean;
-    onToggleLightAdjacentHolds: (enabled: boolean) => void;
-    onClearLights: () => void;
-    onReassert: () => void;
-  }) => {
+  BleControlSheet: (props: NonNullable<typeof mockBleControlSheet.props>) => {
     mockBleControlSheet.props = props;
     return createElement(
       'button',
@@ -98,6 +103,33 @@ describe('BleControlSheetHost', () => {
     expect(mockReassertWall).toHaveBeenCalledTimes(1);
     expect(mockSetMoonboardLightAdjacentHolds.mock.invocationCallOrder[0]).toBeLessThan(
       mockReassertWall.mock.invocationCallOrder[0],
+    );
+  });
+
+  // 2.7: the lightbulb's sheet is the quickest place to turn Light on tap
+  // back on, so its switches report like the Board page's rows.
+  it.each([
+    ['onToggleLightOnClimbTap', 'lightOnClimbTap'],
+    ['onToggleLightOnSwipe', 'lightOnSwipe'],
+    ['onToggleAutoDisconnect', 'autoDisconnectBle'],
+  ] as const)('%s reports Setting Changed and saves the setting', (handler, key) => {
+    render(<BleControlSheetHost visible onClose={vi.fn()} />);
+
+    mockBleControlSheet.props?.[handler](true);
+
+    expect(settingsAnalytics.trackSettingChanged).toHaveBeenCalledExactlyOnceWith('boardControls', key, true);
+    expect(settingSetters[key]).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('reports the MoonBoard adjacent-hold switch too', () => {
+    const { getByText } = render(<BleControlSheetHost visible onClose={vi.fn()} />);
+
+    fireEvent.click(getByText('toggle adjacent holds'));
+
+    expect(settingsAnalytics.trackSettingChanged).toHaveBeenCalledExactlyOnceWith(
+      'boardControls',
+      'moonboardLightAdjacentHolds',
+      true,
     );
   });
 

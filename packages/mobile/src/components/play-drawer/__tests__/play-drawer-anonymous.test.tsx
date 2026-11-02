@@ -284,12 +284,14 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => {
     boardSupportsMirroring: () => true,
   };
 });
-vi.mock('@boardsesh/analytics', () => ({
+vi.mock('@boardsesh/analytics', async (importOriginal) => ({
   SHARED_EVENTS: {
     ClimbShared: 'Climb Shared',
     FavoriteToggle: 'Favorite Toggle',
     QuickTickOpened: 'Quick Tick Opened',
   },
+  // Pure: the reason a preview reports is the real rule.
+  wallControlPreviewReason: (await importOriginal<typeof import('@boardsesh/analytics')>()).wallControlPreviewReason,
 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 // Queue Navigation's payloads have their own suites (use-play-selection-controller,

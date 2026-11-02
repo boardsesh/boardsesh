@@ -261,12 +261,14 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => ({
   countRemainingQueueItemsWithSuggestions: () => 0,
   boardSupportsMirroring: () => true,
 }));
-vi.mock('@boardsesh/analytics', () => ({
+vi.mock('@boardsesh/analytics', async (importOriginal) => ({
   SHARED_EVENTS: {
     ClimbShared: 'Climb Shared',
     FavoriteToggle: 'Favorite Toggle',
     QuickTickOpened: 'Quick Tick Opened',
   },
+  // Pure: the reason a preview reports is the real rule.
+  wallControlPreviewReason: (await importOriginal<typeof import('@boardsesh/analytics')>()).wallControlPreviewReason,
 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 const queueAnalytics = vi.hoisted(() => ({ navigation: vi.fn(), sheetOpened: vi.fn() }));
@@ -2115,6 +2117,32 @@ describe('PlayDrawer wall button taps', () => {
     onTestFinished(() => resetAllSettings());
     renderDrawer();
     expect(recorded.actionBar.at(-1)?.boardControl).toBe('lightbulb');
+  });
+
+  // 2.7: Wall Control Tapped says why the climb on screen is a preview.
+  it.each([
+    ['default', false],
+    ['session', true],
+  ] as const)('logs Put on board from a %s preview with its reason', (reason, shared) => {
+    crew.shared = shared;
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    linkedTo(linkedBluetooth(), true);
+    const other = climbOn('kilter', 1, 40, 'OTHER00000000000000000000000CCCC');
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: { climb: other, options: { previewQueueItem: queueItem(other, 'preview-other') }, nonce: 1 },
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    expect(recorded.actionBar.at(-1)?.wallControlState).toBe('put_on_wall');
+
+    tap('onWallControl');
+
+    expect(wallControlTapped).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ state: 'put_on_wall', action: 'put_on_wall', previewReason: reason }),
+    );
   });
 
   it("relays a tap on a crewmate's board to their phone, and never disconnects", () => {

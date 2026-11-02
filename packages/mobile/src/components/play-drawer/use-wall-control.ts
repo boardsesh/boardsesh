@@ -1,4 +1,4 @@
-import type { AnalyticsEventProperties } from '@boardsesh/analytics';
+import type { AnalyticsEventProperties, WallControlPreviewReason } from '@boardsesh/analytics';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
@@ -62,6 +62,8 @@ export type UseWallControlOptions = {
   visible: boolean;
   /** This phone holds the Bluetooth link: a tap-disconnect is announced when it drops. */
   linked: boolean;
+  /** For Wall Control Shown and Tapped: why the climb on screen is a preview, or null. */
+  previewReason?: WallControlPreviewReason | null;
 };
 
 /**
@@ -109,17 +111,18 @@ export function useWallControl({
   playerOpen,
   visible,
   linked,
+  previewReason = null,
 }: UseWallControlOptions): WallControlHandlers {
   const { t: tSettings } = useTranslation('settings');
   const { t } = useTranslation('session');
   const stoppedDrivingLabel = t('playView.wallControl.stoppedDriving');
-  const latest = useRef({ model, runners, stoppedDrivingLabel, analyticsContext });
-  latest.current = { model, runners, stoppedDrivingLabel, analyticsContext };
+  const latest = useRef({ model, runners, stoppedDrivingLabel, analyticsContext, previewReason });
+  latest.current = { model, runners, stoppedDrivingLabel, analyticsContext, previewReason };
   // The last tap-disconnect or stop (when, for the double-tap guard), and whether a drop still owes its announcement.
   const guardedTapAtRef = useRef<number | null>(null);
   const announceDropRef = useRef(false);
 
-  useWallControlShown({ state: model.state, climbUuid, playerOpen, visible });
+  useWallControlShown({ state: model.state, climbUuid, playerOpen, visible, previewReason });
 
   // "Board disconnected" when the link actually drops, not at the tap: a
   // disconnect that fails leaves the climber connected and says nothing.
@@ -147,6 +150,7 @@ export function useWallControl({
       state: current.state,
       action,
       control,
+      ...(latest.current.previewReason ? { previewReason: latest.current.previewReason } : {}),
       ...(latest.current.analyticsContext ? { analyticsContext: latest.current.analyticsContext } : {}),
     });
     // A tap lights this climb once. Only an existing swipe-lighting opt-in
