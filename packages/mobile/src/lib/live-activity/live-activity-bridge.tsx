@@ -12,6 +12,7 @@ import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { useLiveActivity } from './use-live-activity';
 import { LiveActivityRestTimerSync } from './live-activity-rest-timer';
 import { LiveActivityLightingSync } from './live-activity-lighting';
+import { getDriveMode, isDriveWindowDue, stopDrivingForLink } from '../../components/play-drawer/drive-mode-store';
 import {
   addWidgetMirrorListener,
   getPendingWidgetMirror,
@@ -22,6 +23,15 @@ import {
   addBoardControlListener,
   isAndroidSessionPresence,
 } from './live-activity-plugin';
+
+/**
+ * A notification Stop driving tap still has a drive to stop: one live now,
+ * its end read off the wall clock, since Android pauses JS timers (#7038).
+ */
+function isDriveStillOn(now = Date.now()): boolean {
+  const drive = getDriveMode();
+  return drive?.phase === 'live' && !isDriveWindowDue(drive, now);
+}
 
 type LiveActivityBridgeProps = {
   boardName: string;
@@ -127,6 +137,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       connectingLabel: t('mobile.session.notification.connecting'),
       onWallTemplate: t('mobile.session.notification.onWall'),
       lightDrivingLabel: t('mobile.session.notification.drivingTheWall'),
+      stopDrivingLabel: t('mobile.session.notification.stopDriving'),
     }),
     [t],
   );
@@ -215,7 +226,12 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   //    peer (Aurora is last-connection-wins). The BLE auto-sender then re-lights
   //    the current climb on connect.
   //  - reassert (bulb was lit): re-push the current climb to the wall.
-  // Mirrors the iOS ReconnectBoardIntent / take-control. A ref keeps the listener
+  //  - stopDriving (bulb was lit while this phone drove): stop driving, as the
+  //    frosted button does (`stopped`; Disconnect Bluetooth when driving ends
+  //    then decides about the board). The notification was drawn a while ago,
+  //    so the drive is read again here, its end off the wall clock (#7038):
+  //    one already over just re-lights.
+  // Mirrors the iOS ReconnectBoardIntent / StopDrivingIntent / take-control. A ref keeps the listener
   // subscribed once while reading the latest bluetooth context (its identity
   // changes when a board is (de)selected).
   const bluetoothRef = useRef(bluetooth);
@@ -239,7 +255,9 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
         bluetoothCtx.armUndoWallChangeToast();
         // By serial (Aurora) or device id (MoonBoard); neither → adapter picker.
         void bluetoothCtx.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
-      } else if (event.action === 'reassert') {
+      } else if (event.action === 'stopDriving' && isDriveStillOn()) {
+        stopDrivingForLink();
+      } else if (event.action === 'reassert' || event.action === 'stopDriving') {
         // A re-push of the current climb — no climb change to undo, so no toast.
         bluetoothCtx.reassertWall();
       }

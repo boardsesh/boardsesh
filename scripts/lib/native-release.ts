@@ -181,6 +181,11 @@ export function requireUnreleasedNativeVersion(version: string, tagNames: readon
     throw new Error(`Native ${version} is not above every public release anchor.`);
 }
 
+/**
+ * A changed native pair keeps main's marketing version while it is still open: at or above the
+ * previous native version, with no release anchor at that version and no higher reservation.
+ * Store approval cuts the anchor that closes it; only then does the next pair open a new patch.
+ */
 export function planNativeVersion(
   currentVersion: string,
   previousNativeVersion: string,
@@ -193,7 +198,7 @@ export function planNativeVersion(
     return parsed && compareNativeVersions(parsed.version, currentVersion) > 0;
   });
   const alreadyReleased = names.some((tag) => parseReleaseTag(tag)?.version === currentVersion);
-  if (compareNativeVersions(currentVersion, previousNativeVersion) > 0 && !higherReservation && !alreadyReleased)
+  if (compareNativeVersions(currentVersion, previousNativeVersion) >= 0 && !higherReservation && !alreadyReleased)
     return { kind: 'version-adoption', version: currentVersion };
   return { kind: 'version-bump', version: nextNativeVersion(currentVersion, names) };
 }

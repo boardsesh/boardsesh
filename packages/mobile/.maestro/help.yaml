@@ -318,8 +318,10 @@ name: help screenshots
 - takeScreenshot: 10-board-view
 
 # Board controls — hold the driving player's wall button. This is the connected
-# control sheet with Re-light / Turn off all lights / Disconnect, not the
-# separate board-history sheet opened from the list header. Rows depend on state.
+# control sheet: the status line, Stop driving after, then Re-light / Turn off
+# all lights / Disconnect (Light every climb shows only when a swipe could start
+# a drive), not the separate board-history sheet opened from the list header.
+# Rows depend on state.
 # Coordinates measured on iPhone 16 Pro Max, 1320 x 2868, dark appearance.
 - longPressOn:
     point: '50%,90%'
@@ -350,8 +352,12 @@ name: help screenshots
 # The play drawer IS a route, so it dismisses normally and can safely precede
 # anything. Keep the modal-backed shot last.
 
-# Preview — the player's back chip and Put on board button, without lighting the
-# wall. The helper turns lightOnSwipe off and marks the one-shot browse notice
+# Preview — the player's arrow + face back chip, Preview · not on the wall and a
+# plain Put on board, without lighting the wall. Unverified since 2.7:
+# screenshotOpenPreview opens visibleClimbs[0], likely the climb 10-board-view
+# just put up, and a preview of the climb up shows none of that chrome. Check the
+# PNG before shipping it; it may need to target another climb. The helper turns
+# lightOnSwipe off and marks the one-shot browse notice
 # seen. Driving was stopped above and screenshotDrive is absent here, so this
 # preview cannot silently inherit or restart the preceding still's live drive.
 # Clear whatever overlay the previous shot left up.

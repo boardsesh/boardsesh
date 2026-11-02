@@ -8,7 +8,7 @@ This page started as documentation only. The changes are the follow-ups at the b
 (F1 to F6), filed on 2026-10-23.
 
 The original audit's code references are to `main` at `1f9bc776a3` (2026-10-18).
-The driving and current player-state sections reflect `release/next` on 2026-10-31.
+The driving, player-state and MiniPlayer sections reflect `main` at `38eecfa2f0` (2026-11-02, #7188).
 Mobile paths are under `packages/mobile/`, shared paths under `packages/shared/`.
 Line numbers drift; the function names next to them don't.
 
@@ -61,7 +61,7 @@ remain internal state names for screen-reader announcements.
 | Preview                      | The player shows a climb without making it current.                                                                             | `previewQueueItem`                                   |
 | Browsing (back chip)         | A preview whose swipes are guaranteed not to touch the wall.                                                                    | `WallPillState 'browsing'`                           |
 | Live (internal status)      | Your next swipe changes the climb on the wall. No separate Live pill is drawn.                                                   | `WallPillState 'live'`                               |
-| On the wall (internal status) | The climb on screen is the one lit on the board. No separate status pill is drawn; the back chip can still say On the wall.    | `WallPillState 'onWall'`                             |
+| On the wall (internal status) | The climb on screen is the one lit on the board. No status pill is drawn. The back chip shows the wall lighter's face when back goes to the wall's climb, and its screen-reader label says "Back to the climb on the wall". | `WallPillState 'onWall'`                             |
 | Put on board / Set active    | The commit button under a preview (#7113 relabelled Put on the wall). It says Set active on a board with no lights, or when nothing can be lit. | `CommitButtonLabel`, `wall-state.ts:166`             |
 | Crew                         | A party session with at least one other person connected. A newly arrived peer counts after 3 s, and a peer whose phone drops stays counted while reconnecting. With `shared-session-browse` active at 100%, ordinary crew browsing previews; driving explicitly overrides it. | `shouldDefaultToBrowse`, `SHARED_SESSION_DWELL_MS`, `queue-provider.tsx` |
 
@@ -76,11 +76,12 @@ Right away, 30 s, 45 s, 1, 2 or 5 min, or Until I stop; in a crew only on the ph
 board, with **In a session too** on, and a crewmate's put-up ends it; Put on board from any other
 phone lights that one climb). Only Put on board's drive is timed: a swipe or **Light every climb**
 drives until you tap the button. With **Disconnect Bluetooth when driving ends** on (off by
-default; it replaced auto-disconnect in 2.7) the phone lets go of the board when you stop driving or
-the time runs out, without forgetting it, so the next Put on board reconnects. Where a swipe lights (driving, or solo with Light on swipe on), a swipe from a preview
+default; it replaced auto-disconnect in 2.7) the phone lets go of the board when you stop driving,
+turn off all lights during a drive, the time runs out or a crewmate's put-up ends a timed drive,
+without forgetting it, so the next Put on board reconnects. Where a swipe lights (driving, or solo with Light on swipe on), a swipe from a preview
 of a queue slot puts up the slot's neighbour the peek shows. Swipe the button, or use **Light every
-climb**, to start open-ended Driver mode. On a MoonBoard Put on board starts Driver mode by
-default, in a crew too, because most MoonBoard controllers don't like phones switching (its own
+climb**, to drive with no end (`Driver mode` in code). On a MoonBoard Put on board drives until
+you stop by default, in a crew too, because most MoonBoard controllers don't like phones switching (its own
 setting; still to be tested in the field). The top bar's second line says "Preview · not on the wall" for a preview while this
 phone holds the board, or while a climb lit in the last hour may still be on the wall. A playlist tap with **Tapping a playlist loads it into my queue** on
 depends on Light on tap: off, the list from the tapped climb becomes Up next, the wall keeps
@@ -89,7 +90,7 @@ tapped climb lights. A newcomer's first-connect confirmation and the Climbs list
 read the same settings, so neither promises that a tap lights a climb while Light on tap is off
 or in a shared session: the confirmation names Put on board's drive length (or Until I stop on a
 MoonBoard) instead.
-The two switches remain independent opt-ins to automatic lighting outside Driver mode.
+The two switches remain independent opt-ins to automatic lighting outside a drive.
 Changing the angle keeps a default preview and regrades it instead of restoring the
 committed climb underneath it.
 
@@ -223,8 +224,14 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   then the climber is solo. Joining a different session still ends a drive (`session_changed`).
 - **Ending it.** A drive also ends when the link drops, the swipe's climb can't go up, its
   connect fails or never comes (30 s), the session or the board changes, or the climber signs
-  out (`DriveModeWatcher`). Each end fires `Drive Mode Ended {reason, startedBy, durationSec,
-  climbsLit, inSession}` once; `startedBy` is `swipe`, `tap`, `action` or `solo_carry`.
+  out (`DriveModeWatcher`). A tap on the frosted button or Turn off all lights during a drive
+  ends it as `stopped`. Put on board's timed drive also ends as `window_ended` when its time
+  runs out, when a crewmate's put-up ends it, or when Settings › Board turns its choice to Right
+  away (or In a session too off as a crew forms). Each end fires `Drive Mode Ended {reason,
+  startedBy, durationSec, climbsLit, inSession, windowRenewals, windowSec, boardType}` once;
+  `startedBy` is `swipe`, `tap`, `action` or `solo_carry`, `windowSec` is null for an
+  open-ended drive, and `durationSec` stops at `expiresAt` for a window that ran out
+  (`DriveModeExitReason` in `drive-mode-store.ts` lists every reason).
 - **Not on a crewmate's board**, by design. Their phone holds it and Put on board relays the climb
   to it, so the swipe refuses there and nothing changes.
 
@@ -279,7 +286,10 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
   (`useSharedBrowseLatch`, 10 s). At the end of the pick's loaded list, Next opens the pick in
   the player, which pages the list or shows its end card.
 - **Not the wall's surfaces.** The Lock Screen and Live Activity keep showing the wall's
-  climb, as do the Climbs header's wall capsule and the board history sheet.
+  climb, as do the Climbs header's wall capsule and the board history sheet. The capsule
+  shows the wall's climb even when it is the pick or the queue's current, for an hour after it
+  was lit (or while a link says it's lit), until the climber hides it (owner decision,
+  2026-11-02; `climb-view-options.md`, "The Climbs header's wall capsule").
 - **In memory only**, like the player's own preview: a relaunch starts from the queue's
   current.
 - **The one-time tip** above the bar (`AccessoryOnboardingTip`, `mobile.onboarding.tips.accessory`)
@@ -311,10 +321,10 @@ with each climb that lights (in 5 s steps under Reduce Motion).
 
 | State | What you see | What happens next |
 | --- | --- | --- |
-| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb, then starts a timed drive (45 s by default; a MoonBoard drives until you stop). In a crew it is a one-off put unless In a session too is on, except on a MoonBoard. |
+| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb, then starts a timed drive (45 s by default; a MoonBoard drives until you stop). In a crew it drives too on the phone that holds the board (In a session too, on by default; a MoonBoard always). From a crewmate's phone it relays that one climb. |
 | Driving | The frosted full-width wall button says **You are driving the wall**; with no hold colours it uses amber | Every supported climb change lights the wall, in a crew too. A tap stops driving and keeps the link. The button becomes **Disconnect board**. |
 | Connected, lit, not driving | **Disconnect board**, a filled bulb and the holder's face on a plain tonal surface | A tap disconnects. Swiping the button left where chevrons appear starts driving. |
-| Browsing a list | A **My pick** or **On the wall** back chip, a preview caption and **Put on board** (or **Set active**) under the board | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |
+| Browsing a list | The back chip (an arrow, plus the face of whoever lit the wall when back goes to the wall's climb), the "Preview · not on the wall" caption, and **Put on board** (or **Set active**) under the board. Screen readers hear "Back to my pick: …" or "Back to the climb on the wall: …" | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |
 | Standalone preview | The same preview controls, with a back chip when there is a climb to return to | A deep link, Home new-climb card or workout preview may have no list to walk; Next and swipes then do nothing. |
 | A crewmate holds the board | **Put on board**, an outline bulb and their face | A tap relays the climb through their phone. There is no swipe-to-drive on that phone's connection. |
 | Another board | A switch-board overlay when it is unreachable, or **Put on {board}** for another reachable board at the gym | The reachable-board action moves to that board, connects and lights the climb. A crew already on that board relays through its holder instead. |
@@ -327,6 +337,8 @@ disconnects rather than stopping driving. See [the board-control rules](climb-vi
 
 _Browsing without lighting: the back chip returns to the prior pick or the climb on the wall.
 The full-width Put on board button lights the displayed climb when the climber chooses._
+This capture predates #7188: it shows the old worded chip, a frosted Put on board at rest and
+no "Preview · not on the wall" line. Re-capture pending (see `docs/help-screenshots.md`).
 
 ## Eleven inconsistencies
 

@@ -1,5 +1,5 @@
 // The Liquid Glass shell behind the Climbs header's status capsules: the "On the
-// wall" capsule (a teammate's climb on the wall) and the "You have the board"
+// wall" capsule (the climb lit on the wall) and the "You have the board"
 // capsule. One regular native-glass pill with a tint in the status tone; older
 // devices and Reduce Transparency keep an opaque pill with a tinted hairline.
 // The content row is the caller's; the shell owns the surface, the tap target,
@@ -8,6 +8,15 @@
 // byline, laid out like the tab-bar accessory platter.
 // A held climb can supply the wall button's opaque patterned surface in place
 // of glass, keeping the same native title host and tap target.
+// A capsule that can be hidden ends in an ×: its own button beside the main tap
+// target, 44 pt wide and the capsule's full 38 pt tall, with a 3 pt slop above
+// and below toward the 44 pt floor. The 38 pt is UIKit's bar slot, and UIKit
+// owns hit testing at the bar's edges, as for the bar's own items (`glassSize.bar`).
+// Like the bar's other glyph-only controls, a long press at an accessibility
+// text size shows "Hide" in the Large Content Viewer, and the lift hides.
+// In a too-narrow title slot it drops out with the leading face where a swipe
+// still hides the capsule; a capsule with no swipe keeps it (`keepWhenCompact`),
+// so a sighted climber can always hide it. The screen-reader Hide stays either way.
 
 import { useContext, useMemo, type ReactNode } from 'react';
 import {
@@ -29,10 +38,12 @@ import { glassSize } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { GlassSurface } from '../GlassSurface';
 import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../chrome/native-header-action-context';
 import { NATIVE_ACTION_SIZE } from '../chrome/GlassActionToolbar';
+import { iconMap } from '../icon-map';
 
 // The native header's bar height, so a name over a byline fits at the 1.2 font cap.
 const CAPSULE_HEIGHT = glassSize.bar;
@@ -44,6 +55,26 @@ const CAPSULE_PADDING_END = 10;
 // Under this title bound (a 320pt frame beside five bar slots leaves 58pt) a
 // leading avatar or glyph would squeeze the text to nothing, so it drops out.
 const CAPSULE_COMPACT_BELOW = 100;
+// The ×: a full touch-floor-wide button, reaching the 44 pt floor in height
+// with a slop above and below the 38 pt capsule. The glyph stays small.
+const DISMISS_TARGET = glassSize.inline;
+const DISMISS_SLOP = (DISMISS_TARGET - CAPSULE_HEIGHT) / 2;
+const DISMISS_HIT_SLOP = { top: DISMISS_SLOP, bottom: DISMISS_SLOP };
+const DISMISS_GLYPH = 12;
+
+/** The trailing × of a capsule the climber can hide. */
+export type HeaderCapsuleDismiss = {
+  /** Spoken label, and the screen-reader action's name on the capsule ("Hide"). */
+  label: string;
+  onPress: () => void;
+  /** The glyph colour on a patterned surface; the secondary label colour otherwise. */
+  color?: ColorValue;
+  /**
+   * The capsule has no swipe to hide it (the held capsule, whose swipe could end
+   * as the tap that lets go of the board), so the × stays in a too-narrow slot.
+   */
+  keepWhenCompact?: boolean;
+};
 
 /** True when UIKit's title slot is too narrow for the capsule's leading element. */
 export function useHeaderCapsuleCompact(): boolean {
@@ -67,6 +98,8 @@ type HeaderStatusCapsuleProps = {
   compact: boolean;
   /** An opaque decorative surface, clipped to the capsule instead of glass/tint. */
   background?: { content: ReactNode; color: string; borderColor: string };
+  /** A trailing × that hides the capsule. Pair it with a matching screen-reader action. */
+  dismiss?: HeaderCapsuleDismiss;
   onLayout?: (event: LayoutChangeEvent) => void;
   testID?: string;
   children: ReactNode;
@@ -83,6 +116,7 @@ export function HeaderStatusCapsule({
   accessibilityHint,
   compact,
   background,
+  dismiss,
   onLayout,
   testID,
   children,
@@ -106,7 +140,28 @@ export function HeaderStatusCapsule({
       borderColor: background?.borderColor ?? withAlpha(tintColor, 0.35),
     },
   ];
-  const rowStyle = [styles.row, compact && styles.rowCompact];
+  const showDismiss = dismiss !== undefined && (!compact || dismiss.keepWhenCompact === true);
+  const rowStyle = [styles.row, compact && styles.rowCompact, showDismiss && styles.rowBeforeDismiss];
+  const mainTarget = onPress ? (
+    <PressableSurface
+      onPress={onPress}
+      onLongPress={onLongPress}
+      feedback={nativeHeader ? 'none' : 'scale'}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
+      style={rowStyle}
+      testID={testID}
+    >
+      {children}
+    </PressableSurface>
+  ) : (
+    <View accessible accessibilityRole="text" accessibilityLabel={accessibilityLabel} style={rowStyle} testID={testID}>
+      {children}
+    </View>
+  );
   const capsuleContent = (
     <>
       {background ? (
@@ -121,31 +176,37 @@ export function HeaderStatusCapsule({
       ) : showsGlass ? null : (
         <View pointerEvents="none" style={glassTintStyle} />
       )}
-      {onPress ? (
-        <PressableSurface
-          onPress={onPress}
-          onLongPress={onLongPress}
-          feedback={nativeHeader ? 'none' : 'scale'}
-          accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel}
-          accessibilityHint={accessibilityHint}
-          accessibilityActions={accessibilityActions}
-          onAccessibilityAction={onAccessibilityAction}
-          style={rowStyle}
-          testID={testID}
-        >
-          {children}
-        </PressableSurface>
-      ) : (
-        <View
-          accessible
-          accessibilityRole="text"
-          accessibilityLabel={accessibilityLabel}
-          style={rowStyle}
-          testID={testID}
-        >
-          {children}
+      {showDismiss ? (
+        <View style={styles.dismissRow}>
+          {mainTarget}
+          {/* A sibling of the main target, not inside it: VoiceOver and TalkBack
+              reach it as its own button, and its press never opens the capsule. */}
+          <PressableSurface
+            onPress={dismiss.onPress}
+            feedback={nativeHeader ? 'none' : 'opacity'}
+            accessibilityRole="button"
+            accessibilityLabel={dismiss.label}
+            hitSlop={DISMISS_HIT_SLOP}
+            style={styles.dismissButton}
+            testID={testID ? `${testID}-dismiss` : undefined}
+          >
+            <LargeContentViewer
+              title={dismiss.label}
+              systemImage={iconMap.close.ios}
+              onActivate={dismiss.onPress}
+              style={styles.dismissGlyph}
+            >
+              <Icon
+                maxFontSizeMultiplier={1}
+                name="close"
+                size={DISMISS_GLYPH}
+                color={dismiss.color ?? systemColors.secondaryLabel}
+              />
+            </LargeContentViewer>
+          </PressableSurface>
         </View>
+      ) : (
+        mainTarget
       )}
     </>
   );
@@ -298,6 +359,31 @@ const styles = StyleSheet.create({
   // Without the leading element the text starts at the trailing inset, so it sits evenly.
   rowCompact: {
     paddingStart: CAPSULE_PADDING_END,
+  },
+  // The ×'s own width is the trailing inset.
+  rowBeforeDismiss: {
+    paddingEnd: 0,
+  },
+  dismissRow: {
+    flexShrink: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: '100%',
+  },
+  dismissButton: {
+    flexShrink: 0,
+    width: DISMISS_TARGET,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The viewer's long press covers the whole ×, not just its 12 pt glyph.
+  dismissGlyph: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   climbAvatar: {
     flexShrink: 0,

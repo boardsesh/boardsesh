@@ -12,6 +12,9 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- Help pages now explain browsing before lighting and how long Put on board keeps lighting. ([#7207](https://github.com/boardsesh/boardsesh/pull/7207))
+  Settings › Board links straight to how driving the wall works.
+  Replay walkthrough brings back the card about previews and the frosted button.
 - Hold a climb or tap ⋯ for the same menu, with the climb lifted above the list. ([#7205](https://github.com/boardsesh/boardsesh/pull/7205))
 - Your Lock Screen and notification show how long picks keep lighting the wall. ([#7203](https://github.com/boardsesh/boardsesh/pull/7203))
   Next and Previous on the Lock Screen keep the countdown going.
@@ -25,6 +28,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Swiping to the next climb works even while its holds are still loading. ([#7210](https://github.com/boardsesh/boardsesh/pull/7210))
 - Your MoonBoard and older Kilter boxes show up in the board list again. ([#7202](https://github.com/boardsesh/boardsesh/pull/7202))
   Boards you haven't connected to before are listed too.
 

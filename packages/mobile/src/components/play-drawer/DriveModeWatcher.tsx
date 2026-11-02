@@ -15,7 +15,11 @@ import {
   sanitiseKeepLighting,
 } from '../../lib/keep-lighting';
 import { useIsCrewSession, useQueueActions, useQueueSessionControls } from '../../providers/queue-provider';
-import { addWidgetQueueNavigateListener, isAndroidSessionPresence } from '../../lib/live-activity/live-activity-plugin';
+import {
+  addLockScreenDriveStopListener,
+  addWidgetQueueNavigateListener,
+  isAndroidSessionPresence,
+} from '../../lib/live-activity/live-activity-plugin';
 import { adoptLockScreenLighting, armNotificationPressDrive, endTimedDriveOverAtPress } from './lock-screen-lighting';
 import {
   carryDriveIntoCrew,
@@ -71,7 +75,10 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * wall for it, so on its `queueNavigate` event this arms a drive the wall's
  * lit confirm takes live, as Put on board does. Either way the drive reports
  * `startedBy: 'lock_screen'`. Under Right away a press lights its one climb
- * and starts no drive. On both platforms a press that finds a timed drive over
+ * and starts no drive. The iOS Lock Screen bulb stops a drive the same way:
+ * native stores the stop, and this adopts it on `lockScreenDriveStop` or when
+ * the app comes back (`stopped`, so Disconnect Bluetooth when driving ends
+ * applies as for the frosted button). On both platforms a press that finds a timed drive over
  * ends it keeping the board (`endTimedDriveOverAtPress`); the catch-up with no
  * press heard ends it at the clock, letting go when the setting says so.
  *
@@ -148,9 +155,13 @@ export function DriveModeWatcher(): null {
       if (event.currentIndex < 0 || event.currentIndex >= queue.length) return;
       armNotificationPressDrive(adoptionInputRef.current);
     });
+    // iOS: the Lock Screen bulb stopped the drive while this JS runs. A stop
+    // while it was suspended is adopted when the app comes back, above.
+    const removeStopListener = addLockScreenDriveStopListener(adoptFromLockScreen);
     return () => {
       appState.remove();
       removeNavigateListener();
+      removeStopListener();
     };
   }, [adoptFromLockScreen, getQueueSnapshot]);
   // On mount, and whenever the link or the session changes: a write left while

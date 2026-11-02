@@ -190,6 +190,52 @@ enum BoardBleError: LocalizedError {
     }
 }
 
+/// How a Live Activity bulb reconnect ended, as the card shows it
+/// (`SharedBoardReconnect`). Only an outcome the climber can act on reaches
+/// the card: one this tap did not decide records nothing, so a tap that a
+/// second tap took over does not flash "Board didn't answer" before the
+/// second one settles.
+enum BoardReconnectOutcome: Equatable {
+    /// This phone holds the board again: the bulb lights.
+    case reconnected
+    /// The tap could not reach the board: the card says why and offers it again.
+    case failed(SharedBoardReconnectFailure)
+    /// Something else decided: a newer tap or connect took over
+    /// (`superseded`, or `notConnected` from the scan it ended), or the board
+    /// was let go or forgotten meanwhile (`notConnected` from a disconnect,
+    /// `deviceNotFound` with no pairing), which the card reads from the
+    /// pairing itself.
+    case overtaken
+
+    init(_ result: Result<Void, Error>) {
+        guard case .failure(let error) = result else {
+            self = .reconnected
+            return
+        }
+        switch error as? BoardBleError {
+        case .bluetoothUnavailable?:
+            self = .failed(.bluetoothOff)
+        case .superseded?, .notConnected?, .deviceNotFound?:
+            self = .overtaken
+        default:
+            self = .failed(.unreachable)
+        }
+    }
+
+    /// Stores this outcome for the card's next render; `overtaken` leaves
+    /// whatever the card already says.
+    func record(in defaults: UserDefaults) {
+        switch self {
+        case .reconnected:
+            SharedBoardReconnect.record(nil, in: defaults)
+        case .failed(let failure):
+            SharedBoardReconnect.record(failure, in: defaults)
+        case .overtaken:
+            return
+        }
+    }
+}
+
 /// One-shot result for the specific display request issued by a Live Activity
 /// intent. Display callbacks settle on `bleQueue`; the awaiting task reads the
 /// result after the global drain waiter resumes. The lock makes that cross-task
@@ -279,6 +325,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // with-response via the stall fallback stay ack-only (no fixed delay).
     private let kilterBoxChunkDelay: TimeInterval = 0.100
     private let connectTimeout: TimeInterval = 8
+    // How long a Live Activity reconnect waits for a just-created central's
+    // first state before failing as Bluetooth off. That state normally comes
+    // in well under a second; the wait is short because it runs ahead of the
+    // reconnect scan and the connect (`connectTimeout` each), and the whole
+    // tap has to finish inside the time iOS gives a background-launched
+    // intent: 3 + 8 + 8 = 19 s at worst, not 24 s.
+    static let reconnectFirstCentralStateTimeout: TimeInterval = 3
     // How old a connect request may be before its success stops authorising an
     // implicit re-light of the wall (#4499). Deliberately WALL CLOCK, not
     // DispatchTime: every in-process deadline in this file is a GCD work item
@@ -362,6 +415,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var reconnectScanOrigin: BoardBleConnectOrigin?
     private var reconnectScanRequestedAt: Date?
     private var reconnectScanTimeoutWorkItem: DispatchWorkItem?
+    // A Live Activity reconnect that arrived before the central reported its
+    // first state: iOS launched the app in the background for the intent
+    // itself, so the central was created a moment ago and still reads
+    // `.unknown`, which would otherwise fail the tap as "Bluetooth off". It
+    // runs again on that first state, or fails at
+    // `reconnectFirstCentralStateTimeout`.
+    private var reconnectAwaitingCentralState: (
+        origin: BoardBleConnectOrigin,
+        requestedAt: Date,
+        completion: (Result<Void, Error>) -> Void
+    )?
+    private var reconnectAwaitingCentralStateWatchdog: BleOneShotTimer?
     private var intentionalDisconnectGenerations: [UUID: UInt64] = [:]
     // CoreBluetooth's terminal callback for a manager-initiated cancellation can
     // arrive after `cancelPeripheralConnection` returns. Because the callback has
@@ -935,9 +1000,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
-    func disconnect(completion: (() -> Void)? = nil) {
+    /// Let go of the board. `forgetBoard: false` (Disconnect Bluetooth when
+    /// driving ends, 2.7) frees it for the next climber but keeps the pairing,
+    /// so the Live Activity bulb and the next Put on board can reconnect to it
+    /// without the board list. Every other disconnect forgets it.
+    func disconnect(forgetBoard: Bool = true, completion: (() -> Void)? = nil) {
         runOnBleQueue { [weak self] in
-            self?.disconnectOnBleQueue(completion: completion)
+            self?.disconnectOnBleQueue(forgetBoard: forgetBoard, completion: completion)
         }
     }
 
@@ -1392,6 +1461,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private func reconnectToLastKnownBoardOnBleQueue(
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
+        waitedForCentralState: Bool = false,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         guard let uuid = association?.boundPeripheralUuid, hasBinding(for: uuid) else {
@@ -1415,6 +1485,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // Reads, never creates: an unanswered Bluetooth question means no
         // board was ever connected, so there is nothing to reconnect to, and a
         // Live Activity tap must not raise the system alert from the background.
+        // A central that has not reported its first state yet (a cold
+        // background launch for this very tap) is waited for, once.
+        if !waitedForCentralState, Self.awaitsFirstCentralState(centralStateOnBleQueue, authorization: authorizationProvider()) {
+            awaitCentralStateForReconnectOnBleQueue(origin: origin, requestedAt: requestedAt, completion: completion)
+            return
+        }
         guard centralStateOnBleQueue == .poweredOn else {
             completion(.failure(BoardBleError.bluetoothUnavailable))
             return
@@ -1446,12 +1522,64 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         )
     }
 
+    /// Whether a reconnect should wait for the central's first state rather
+    /// than fail: the central has not reported one yet (or is resetting), and
+    /// the Bluetooth question was answered, so no alert can come of it.
+    static func awaitsFirstCentralState(_ state: CBManagerState, authorization: CBManagerAuthorization) -> Bool {
+        guard state == .unknown || state == .resetting else { return false }
+        return authorization == .allowedAlways
+    }
+
+    private func awaitCentralStateForReconnectOnBleQueue(
+        origin: BoardBleConnectOrigin,
+        requestedAt: Date,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        // One at a time: a second tap supersedes the first, like connect.
+        failReconnectAwaitingCentralState(BoardBleError.superseded)
+        reconnectAwaitingCentralState = (origin: origin, requestedAt: requestedAt, completion: completion)
+        reconnectAwaitingCentralStateWatchdog = timerScheduler.scheduleOneShot(
+            after: Self.reconnectFirstCentralStateTimeout,
+            label: "reconnectAwaitingCentralStateWatchdog"
+        ) { [weak self] in
+            self?.failReconnectAwaitingCentralState(BoardBleError.bluetoothUnavailable)
+        }
+    }
+
+    /// The central reported a state: run the parked reconnect against it.
+    /// Still settling (`.unknown`, `.resetting`): keep waiting.
+    private func resumeReconnectAwaitingCentralStateOnBleQueue(_ state: CBManagerState) {
+        guard state != .unknown, state != .resetting, let parked = reconnectAwaitingCentralState else { return }
+        reconnectAwaitingCentralState = nil
+        reconnectAwaitingCentralStateWatchdog?.cancel()
+        reconnectAwaitingCentralStateWatchdog = nil
+        reconnectToLastKnownBoardOnBleQueue(
+            origin: parked.origin,
+            requestedAt: parked.requestedAt,
+            waitedForCentralState: true,
+            completion: parked.completion
+        )
+    }
+
+    private func failReconnectAwaitingCentralState(_ error: Error) {
+        guard let parked = reconnectAwaitingCentralState else { return }
+        reconnectAwaitingCentralState = nil
+        reconnectAwaitingCentralStateWatchdog?.cancel()
+        reconnectAwaitingCentralStateWatchdog = nil
+        parked.completion(.failure(error))
+    }
+
     private func beginReconnectScanOnBleQueue(
         targetUuid: UUID,
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        // One at a time: a second bulb tap while the first still looks for the
+        // board takes over. Settle the first now (its intent returns instead
+        // of hanging on a completion nobody would call) and cancel its
+        // timeout, which would otherwise fire against this scan.
+        failReconnectScan(BoardBleError.superseded)
         reconnectScanTargetUuid = targetUuid
         reconnectScanCompletion = completion
         // Carried through the scan so the eventual connect is attributed to the
@@ -1498,12 +1626,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         associationDefaults?.removeObject(forKey: SharedConstants.bleLastPeripheralUuidKey)
     }
 
-    private func disconnectOnBleQueue(completion: (() -> Void)? = nil) {
+    private func disconnectOnBleQueue(forgetBoard: Bool = true, completion: (() -> Void)? = nil) {
         preparationEpoch += 1
         activePreparationToken = nil
         connectingPreparation = nil
-        association?.boundPeripheralUuid = nil
-        _ = persistAssociation()
+        if forgetBoard {
+            association?.boundPeripheralUuid = nil
+            _ = persistAssociation()
+        }
         connectionGeneration += 1
         // A deliberate disconnect supersedes any in-flight write-stall recovery
         // (#3181): drop the recovery window and reset the budget.
@@ -1511,9 +1641,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         writeStallRecoveries = 0
         // Settle any in-flight reconnect-by-last-known scan before tearing down.
         failReconnectScan(BoardBleError.notConnected)
+        failReconnectAwaitingCentralState(BoardBleError.notConnected)
         // A deliberate disconnect forgets the board so the widget lightbulb won't
-        // silently reconnect to it later. An unexpected drop leaves it intact.
-        clearLastConnectedPeripheral()
+        // silently reconnect to it later. An unexpected drop leaves it intact,
+        // and so does freeing the board as a drive ends (`forgetBoard: false`):
+        // the climber still has it, the next climber can connect meanwhile.
+        if forgetBoard {
+            clearLastConnectedPeripheral()
+        }
         // Forget who asked, so a later restored or long-parked connect cannot
         // inherit this request's human provenance and re-light the wall (#4499).
         clearConnectProvenanceOnBleQueue()
@@ -1822,6 +1957,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // the same services and options. CoreBluetooth treats that as the same
         // scan with the same parameters, so the repeat is harmless.
         defer { settleAuthorizationAnswerWaitersOnBleQueue() }
+        // Runs before the waiters above (defers unwind in reverse), after this
+        // update's own work below.
+        defer { resumeReconnectAwaitingCentralStateOnBleQueue(state) }
         if state == .poweredOn {
             // Defensive: during state restoration after an intent-driven
             // background launch, `didDiscoverCharacteristicsFor` (which
@@ -2592,6 +2730,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // still avoids trusting a stale property bit as the live trigger. Shared
         // with the `setConnection` test seam so the two paths can't drift.
         reseedForceWriteWithResponse(peripheral: peripheral, characteristic: characteristic)
+        // Whatever the last Live Activity reconnect failed on, this phone holds
+        // the board now: the card must not keep saying it couldn't reach it.
+        if let defaults = associationDefaults {
+            SharedBoardReconnect.clearFailure(in: defaults)
+        }
         completePendingConnect(.success(()))
         logger.info("Connected to board BLE peripheral \(peripheral.identifier.uuidString, privacy: .public)")
         // One-time write diagnostics (#3181 follow-up): records what the UART RX

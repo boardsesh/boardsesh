@@ -356,6 +356,34 @@ describe('swipe selection callbacks', () => {
       });
     });
 
+    // The dead-swipe fix: a swipe that went before the climb's board had
+    // painted says so, whichever way the step lands.
+    it.each(['queue', 'crew preview', 'list preview', 'slot preview'] as const)(
+      'carries what the board was still doing on a %s step',
+      (kind) => {
+        const artWait = { artState: 'loading' as const, waitedMs: 700 };
+        const initialProps = inputs();
+        if (kind === 'crew preview') initialProps.navigation.browseByDefault = true;
+        if (kind === 'list preview') {
+          initialProps.navigation.driving = true;
+          initialProps.preview.drawerPreviewItem = item('preview');
+          initialProps.preview.drawerPreviewSuggestionSource = source([
+            item('preview'),
+            initialProps.navigation.navigationState.nextItem!,
+          ]);
+        }
+        if (kind === 'slot preview') initialProps.preview.drawerPreviewItem = item('slot');
+        const { result } = renderHook(usePlaySelectionController, { initialProps });
+        act(() => result.current.handleNext('swipe', artWait));
+        expect(initialProps.onNavigationStep).toHaveBeenCalledExactlyOnceWith({
+          direction: 'next',
+          method: 'swipe',
+          outcome: kind === 'crew preview' ? 'preview' : 'moved',
+          artWait,
+        });
+      },
+    );
+
     it('reports nothing when there is nowhere to go', () => {
       const initialProps = inputs();
       initialProps.navigation.navigationState.nextItem = null;

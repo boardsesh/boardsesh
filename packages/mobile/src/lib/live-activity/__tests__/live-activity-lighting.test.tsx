@@ -57,6 +57,7 @@ import {
   markDriveLive,
   noteDriveClimbLit,
   resetDriveModeForTests,
+  stopDrivingForLink,
 } from '../../../components/play-drawer/drive-mode-store';
 import { resetLockScreenLightingForTests } from '../../../components/play-drawer/lock-screen-lighting';
 import { LiveActivityLightingSync } from '../live-activity-lighting';
@@ -148,6 +149,7 @@ describe('LiveActivityLightingSync', () => {
         inCrew: false,
         moonboard: false,
         enabled: true,
+        lockScreenStop: true,
       },
     ]);
   });
@@ -244,5 +246,30 @@ describe('LiveActivityLightingSync', () => {
       exitDriveMode('stopped');
     });
     expect(harness.windows.at(-1)).toEqual(OFF);
+  });
+
+  it('never puts back a drive the Lock Screen bulb stopped before the drive store adopted the stop', () => {
+    renderSync();
+    openWindow(T0);
+    expect(harness.windows.at(-1)?.mode).toBe('window');
+    const sent = harness.windows.length;
+    // The bulb stopped it natively; JS has not heard yet.
+    harness.stored = { sessionId: SESSION, mode: 'off', source: 'lockScreen', updatedAtMs: T0 + 5_000 };
+    act(() => {
+      noteDriveClimbLit({ now: T0 + 6_000 });
+    });
+    expect(harness.windows).toHaveLength(sent);
+    // The adoption stops the drive: off goes out.
+    act(() => {
+      stopDrivingForLink();
+    });
+    expect(harness.windows.at(-1)).toEqual(OFF);
+  });
+
+  it('sends a drive started after a Lock Screen stop', () => {
+    renderSync();
+    harness.stored = { sessionId: SESSION, mode: 'off', source: 'lockScreen', updatedAtMs: T0 - 5_000 };
+    openWindow(T0);
+    expect(harness.windows.at(-1)?.mode).toBe('window');
   });
 });

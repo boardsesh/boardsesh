@@ -151,8 +151,9 @@ function validateStamp(
       )
         throw new Error('Native adoption must preserve its parent tree exactly.');
       const previous = latestStamp(metadata.sourceSha, directory, context) ?? baseline(metadata.sourceSha, directory);
-      if (compareNativeVersions(version, previous.version) <= 0 || sameNativeFingerprints(metadata, previous))
-        throw new Error('Native adoption requires an already-raised version and a changed native pair.');
+      // Only planning reads release tags, so a later store approval never invalidates this proof.
+      if (compareNativeVersions(version, previous.version) < 0 || sameNativeFingerprints(metadata, previous))
+        throw new Error('Native adoption requires the open or a raised version and a changed native pair.');
     } else {
       if (paths.length !== 1 || paths[0] !== APP_CONFIG_PATH)
         throw new Error('Native stamp must change only the app version.');
@@ -180,11 +181,11 @@ function validateStamp(
           readMarketingVersion(before) !== superseded.version ||
           version !== originalVersion ||
           compareNativeVersions(version, superseded.version) >= 0 ||
-          compareNativeVersions(version, originalAnchor.version) <= 0 ||
+          compareNativeVersions(version, originalAnchor.version) < 0 ||
           !sameNativeFingerprints(metadata, superseded)
         )
           throw new Error(
-            'Native restoration must undo the exact latest pre-bumped release without changing its native pair.',
+            'Native restoration must undo the exact latest bump of an open version without changing its native pair.',
           );
       }
     }
@@ -237,13 +238,16 @@ export function getSupersededNativeStampShas(directory = ROOT, mainSha?: string)
   return [...new Set(commits.map((commit) => validateStamp(commit, currentMain, directory, context).supersedes!))];
 }
 
-function tagReferences(): TaggedNativeBuild[] {
-  return git([
-    'for-each-ref',
-    '--format=%(refname:strip=2) %(objectname) %(*objectname)',
-    'refs/tags/build-*',
-    'refs/tags/release/*',
-  ])
+function tagReferences(directory = ROOT): TaggedNativeBuild[] {
+  return git(
+    [
+      'for-each-ref',
+      '--format=%(refname:strip=2) %(objectname) %(*objectname)',
+      'refs/tags/build-*',
+      'refs/tags/release/*',
+    ],
+    { cwd: directory },
+  )
     .split('\n')
     .filter(Boolean)
     .map((line) => {
@@ -456,7 +460,8 @@ function recoverLatest(stamp: NativeStamp, dryRun: boolean): void {
   }
 }
 
-function writeStamp(
+/** Builds the stamp commit object only; publishing it to main is a separate, verified push. */
+export function writeNativeStamp(
   directory: string,
   mainSha: string,
   fingerprints: NativeFingerprints,
@@ -500,10 +505,10 @@ export function prepareNativeVersionStamp(
 ): NativeStamp {
   const currentVersion = readMarketingVersion(git(['show', `${mainSha}:${APP_CONFIG_PATH}`], { cwd: directory }));
   const plan = planNativeVersion(currentVersion, previousNativeVersion, references, supersededStampShas);
-  return writeStamp(directory, mainSha, fingerprints, plan.version, plan.kind);
+  return writeNativeStamp(directory, mainSha, fingerprints, plan.version, plan.kind);
 }
 
-/** Prepare an explicit undo of one mistaken pre-bumped release; never mutate refs. */
+/** Prepare an explicit undo of one bump that should have kept the open version; never mutate refs. */
 export function prepareNativeVersionRestoration(
   directory: string,
   mainSha: string,
@@ -534,16 +539,21 @@ export function prepareNativeVersionRestoration(
   if (
     currentVersion !== latest.version ||
     targetVersion !== originalVersion ||
-    compareNativeVersions(targetVersion, latest.version) >= 0 ||
-    compareNativeVersions(targetVersion, previous.version) <= 0
+    compareNativeVersions(targetVersion, latest.version) >= 0
   )
-    throw new Error('Restoration must undo only the mistaken bump of an already-raised native version.');
+    throw new Error('Restoration must undo only the latest bump, back to the version its source had.');
   if (!sameNativeFingerprints(latest, fingerprints))
     throw new Error('Native fingerprints changed after the expected stamp; refusing version restoration.');
   const references = git(['tag', '--list'], { cwd: directory }).split('\n').filter(Boolean);
   requireUnreleasedNativeVersion(targetVersion, references);
+  // Restore only what the coordinator would keep today: the target is still open (no release
+  // anchor, no higher reservation once this bump's own tester builds are retired).
+  const retired = [...getSupersededNativeStampShas(directory, mainSha), expectedStampSha];
+  const plan = planNativeVersion(targetVersion, previous.version, tagReferences(directory), retired);
+  if (plan.kind !== 'version-adoption' || plan.version !== targetVersion)
+    throw new Error(`Native ${targetVersion} is not an open version the coordinator would keep; refusing restoration.`);
   return {
-    stamp: writeStamp(directory, mainSha, fingerprints, targetVersion, 'version-restoration', expectedStampSha),
+    stamp: writeNativeStamp(directory, mainSha, fingerprints, targetVersion, 'version-restoration', expectedStampSha),
     alreadyApplied: false,
   };
 }
@@ -566,7 +576,9 @@ function coordinate(dryRun: boolean): void {
             tagReferences(),
             getSupersededNativeStampShas(ROOT, mainSha),
           );
-          console.log(`Native change on ${mainSha}: prepared ${prepared.sha} (${prepared.kind}).`);
+          console.log(
+            `Native change on ${mainSha}: prepared ${prepared.sha} (${prepared.kind} v${prepared.version}; previous native v${previous.version}).`,
+          );
           return prepared;
         });
         return {

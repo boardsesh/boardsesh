@@ -47,7 +47,7 @@
     },
     "helpBoardAndBluetooth": {
       "title": "Connect to your board over Bluetooth",
-      "description": "Connect Boardsesh to a Kilter, Tension or MoonBoard controller, fix a failed connection, and drive it from the lock screen with Live Activity."
+      "description": "Connect Boardsesh to a Kilter, Tension or MoonBoard controller, choose how long Put on board drives the wall, fix a failed connection, and control it from the lock screen with Live Activity."
     },
     "helpClimbActions": {
       "title": "Tap to preview, hold to log a tick or add to a playlist",
@@ -415,7 +415,7 @@
       "title": "In the app",
       "intro": "Anything that touches the wall or your logbook happens in the app.",
       "item1": "Build a queue and work through it with your crew.",
-      "item2": "Run a live session so every phone drives one queue.",
+      "item2": "Run a live session so every phone works one queue.",
       "item3": "Light holds over Bluetooth on Kilter, Tension and MoonBoard walls.",
       "item4": "Log sends and attempts, and attach beta videos."
     },
@@ -473,7 +473,7 @@
       },
       "bluetooth": {
         "title": "Board and Bluetooth",
-        "body": "Connect to the board, fix a failed connection, and control it from the lock screen with Live Activity."
+        "body": "Connect to the board, choose how long Put on board keeps lighting, fix a failed connection, and use the lock screen."
       },
       "betaVideos": {
         "title": "Beta videos",
@@ -516,7 +516,7 @@
       "queue": {
         "title": "Climb the whole list",
         "intro": "Tap a climb in a playlist and you preview it, playing from that playlist. Your queue stays as it is.",
-        "p1": "Swipe to walk the list in order from the climb you tapped. The header’s play button starts from the top. Play next puts the whole list at the top of Up next, Play last at the bottom. To have a tap load the playlist into Up next instead, turn on Tapping a playlist loads it into my queue under Settings, then Board. The wall keeps its climb, and you preview the one you tapped.",
+        "p1": "Swipe to walk the list in order from the climb you tapped. The header’s play button does the same from the first climb. Play next puts the whole list at the top of Up next, Play last at the bottom. To have a tap or the play button load the playlist into Up next, turn on Tapping a playlist loads it into my queue under Settings, then Board. The wall keeps its climb, and you preview the one you tapped. If Light the board when I tap a climb is on as well, the tap replaces your whole queue with the playlist and lights the climb.",
         "p2": "In a session, tapping only opens the climb for you. The shared queue stays put.",
         "sessionsLink": "How a session shares one queue",
         "clipAlt": "The Start playlist? sheet",
@@ -572,7 +572,7 @@
       },
       "queue": {
         "title": "One queue, every phone",
-        "p1": "Anyone in the session can add, reorder or remove climbs. Your avatar marks your rows.",
+        "p1": "Anyone in the session can add, reorder or remove climbs. Your avatar marks your rows. Tap a climb in the queue to preview it; only you see it until you tap Put on board.",
         "p2": "Only the climber who started the session can end it. Everyone else taps Leave session."
       },
       "wall": {
@@ -583,8 +583,9 @@
       },
       "crowd": {
         "title": "Browsing without moving the wall",
-        "p1": "With someone else in your session, swipes browse without changing the wall unless your phone holds the board and you are driving or just put a climb up. Tap Put on board to put up a climb, or tap On the wall at the top to return to the climb on the wall.",
-        "p2": "If your phone holds the board, Put on board lights the climb and you drive the wall: the climbs you pick light too until the time you chose under Stop driving after has passed since the last one (45 seconds to start with), while In a session too is on. The button reads You are driving the wall, with a clock, and the frost shrinks as the time runs out. Tap it to stop early; your phone stays connected unless Disconnect Bluetooth when driving ends is on. A MoonBoard drives until you stop. A crewmate putting a climb up ends your drive too. On the other phones, Put on board lights that one climb. Otherwise a tap opens a preview, so browsing stays off the wall unless you turn on Light the board when I tap a climb or Light the board as I swipe under Settings, then Board.",
+        "p1": "With someone else in your session, swipes browse without changing the wall unless your phone holds the board and you are driving. Tap Put on board to put up a climb, or tap the back arrow at the top left, with the face of whoever lit the wall, to return to the climb on the wall.",
+        "p2": "If your phone holds the board and In a session too is on, Put on board lights the climb and you drive the wall: the climbs you pick light too until the time you chose under Stop driving after has passed since the last one (45 seconds to start with; Right away lights only that one). The button reads You are driving the wall with a clock, and the frost shrinks as the time runs out. Tap it to stop early; your phone stays connected unless Disconnect Bluetooth when driving ends is on. A MoonBoard drives until you stop by default, with no clock. A crewmate putting a climb up ends a drive with a clock; if you swiped to drive, you keep driving and their climb lights.",
+        "p3": "On the other phones, Put on board lights that one climb. When you aren’t driving, taps and swipes open previews, even with Light the board when I tap a climb or Light the board as I swipe on: those two switches only work without a crew.",
         "previewLink": "Tap a climb to preview it",
         "drivingLink": "How to start and stop driving the wall"
       },
@@ -668,7 +669,7 @@
       },
       "log": {
         "title": "Log it at the wall",
-        "p1": "Tap the big tick in the play drawer, or Log ascent on the queue bar. Date and Time are filled in as now, the rest is optional.",
+        "p1": "Tap the big tick in the play drawer, or ✓ on the bar at the bottom, which shows the last climb you opened. Date and Time are filled in as now, the rest is optional.",
         "p2": "Attempt logs a go that didn't stick. The other button reads Flash on your first logged go at this angle, otherwise Send.",
         "shotAlt": "The tick button",
         "shotCaption": "The tick opens the log sheet.",
@@ -714,28 +715,30 @@
       "breadcrumb": "Board and Bluetooth",
       "hero": {
         "title": "Connect your phone to the board",
-        "subtitle": "Read the wall button: Put on board lights this climb and the next ones you pick for a short time; on a MoonBoard, until you stop. A glowing You are driving the wall lights every climb until you stop."
+        "subtitle": "A tap opens a preview. Put on board lights it, and you drive the wall: the button reads You are driving the wall with a clock, and every climb you pick lights until the time runs out (45 seconds by default; on a MoonBoard, until you stop). No clock means it lasts until you tap it."
       },
       "connect": {
         "title": "Connect",
-        "p1": "In a climb, tap the large Put on board button. It connects if needed and lights the climb on screen. If Select Board opens, tap your board: the strongest signal comes first, with a serial on each row. The top bar’s lightbulb can connect too.",
+        "p1": "In a climb, tap the large Put on board button. It connects if needed and lights the climb on screen, and then you drive the wall: the next climbs you pick light too (see Know when you’re driving the wall). If Select Board opens, your board is listed first, then boards the app can’t identify, such as MoonBoards and boxes that show no serial. Don’t see yours? Tap Search for any board. The top bar’s lightbulb can connect too.",
         "p2": "The first time, iOS asks for Bluetooth. Android asks for nearby devices, or Location on Android 11 and older.",
         "litShotAlt": "The Play drawer with its large wall button",
-        "litShotCaption": "Read the wall button: You are driving the wall means the next climb you pick lights up too, until you stop.",
+        "litShotCaption": "Read the wall button: You are driving the wall means the climbs you pick light up too. With a clock it stops on its own; without one it runs until you tap it.",
         "p3": "At a different wall? Change board is the first row behind your avatar.",
-        "p4": "Prefer the lightbulb? In a climb, tap ⋯, then View options, Buttons, and set Board control to Lightbulb. It takes the top row’s right end. Both controls connect and light climbs; holding either opens board options while connected. The wall button also offers swipe-to-drive and tap-to-stop."
+        "p4": "Prefer the lightbulb? In a climb, tap ⋯, then View options, Buttons, and set Board control to Lightbulb. It takes the top row’s right end. Both controls connect and light climbs; holding either opens board options while connected. The wall button also offers swipe-to-drive and tap-to-stop. The lightbulb has no frost: when a drive has a time limit, a violet ring around it empties as the time runs out, and tapping the lightbulb while you drive disconnects."
       },
       "hidden": {
         "title": "Board controls",
-        "p1": "While connected, hold the wall button for Board controls. In a climb, ⋯, then Board controls opens them too, as does holding the top bar’s lightbulb. A short tap follows the button’s label: You are driving the wall stops driving and keeps the connection; Disconnect board disconnects.",
+        "p1": "While connected, hold the wall button for Board controls. In a climb, ⋯, then Board controls opens them too, as does holding the top bar’s lightbulb. In a climb the sheet starts with a line that says where you stand: a preview, lit on the wall, driving, or how long until the drive stops. A short tap on the wall button follows its label: You are driving the wall stops driving and keeps the connection, unless Disconnect Bluetooth when driving ends is on; then your phone lets go of the board and the button reads Put on board again. Disconnect board disconnects.",
+        "rowStopDriving": "Stop driving after. Change how long Put on board drives, or pick Right away, without leaving the wall. On a MoonBoard the row reads Stop driving this MoonBoard after.",
         "row1": "Re-light board. Sends the climb to the LEDs again.",
-        "row2": "Turn off all lights. Your phone stays connected.",
+        "row2": "Turn off all lights. This also stops driving. Your phone stays connected unless Disconnect Bluetooth when driving ends is on.",
         "row3": "Disconnect board. Use it when you connected to the wrong wall.",
         "row4": "Light the hold above. MoonBoard only.",
-        "p2": "Stop driving after, Disconnect Bluetooth when driving ends, Light the board when I tap a climb and Light the board as I swipe are under Settings, then Board, and in the sheet the top bar’s lightbulb opens. Stop driving after sets how long Put on board keeps the wall lit: Right away, 30 seconds up to 5 minutes, or Until I stop. Swiping the button left drives with no end. Disconnect Bluetooth when driving ends frees the board for the next climber when you stop or the time runs out; Put on board connects again. To browse without lighting, leave both lighting switches off and stop driving first (tap You are driving the wall). While you drive, every climb you pick lights even when those switches are off.",
-        "p3": "With no board connected, Put on board connects and lights the climb on screen. Then the next climbs you pick light until 45 seconds after the last lit climb (you can change the time); in a crew, only on the phone that holds the board, while In a session too is on. A MoonBoard drives until you stop, on that phone in a crew too. The top bar’s lightbulb can reconnect to the last board you used.",
+        "p2": "Settings, then Board holds the rest. Stop driving after sets how long your picks keep lighting after the last lit climb: Right away (Put on board lights only that climb), 30 seconds to 5 minutes (45 seconds by default), or Until I stop. With a MoonBoard saved or connected, On a MoonBoard sets its own time: Until I stop by default, in a session too. In a session too (on by default) lets Put on board drive in a crew. Disconnect Bluetooth when driving ends (off by default) frees the board for the next climber when a drive ends. It replaced Auto-disconnect: if you had that on, it is on, and your old timer, rounded up to the next choice (5 minutes at most), became your Stop driving after time, for a MoonBoard too.",
+        "autoLight": "Light the board when I tap a climb and Light the board as I swipe sit under Light automatically, are off by default, and only work without a crew. With the swipe switch on, your swipes light by themselves, so Put on board starts no drive. The sheet the top bar’s lightbulb opens has most of these too.",
+        "p3": "With no board connected, Put on board connects, lights the climb on screen and starts your drive; in a crew, only on the phone that holds the board, while In a session too is on. A MoonBoard drives until you stop by default (change it under On a MoonBoard), on that phone in a crew too. After Disconnect Bluetooth when driving ends, Put on board reconnects to the same board. After Disconnect board, the app forgets that board and the next connect searches again.",
         "shotAlt": "Board controls for a connected board",
-        "shotCaption": "Re-light, turn off all lights or disconnect. Light every climb starts driving when offered."
+        "shotCaption": "Re-light, turn off all lights or disconnect, and change Stop driving after without leaving the wall. Light every climb starts driving when offered."
       },
       "failed": {
         "title": "When it won't connect",
@@ -749,12 +752,12 @@
       },
       "twoBoards": {
         "title": "Two boards in range",
-        "p1": "Read the serial before you tap. The signal bars don't update while you stand there.",
+        "p1": "When you connect to a board you’ve used or a gym’s board, it is listed first, then boards the app can’t identify. Boards known to be another board stay hidden until you tap Search for any board. Read the serial before you tap. The signal bars don’t update while you stand there.",
         "p2": "A Board configuration doesn't match alert means the controller belongs to a different board setup. Pick Cancel, Connect anyway or Switch board setup."
       },
       "duplicate": {
         "title": "The same board listed twice",
-        "p1": "Two rows with different serials are two controllers. A row that reads only Kilter Board, with no serial, is a newer manufacturer-built LED box. Two of those in one gym show as two rows. The one with more signal bars is usually the wall you're standing at. If the wrong wall lights, open Board controls, tap Disconnect board and try again.",
+        "p1": "Two rows with different serials are two controllers. A row that reads only Kilter Board, with no serial, is a newer manufacturer-built LED box. Two of those in one gym show as two rows, listed after your own board. The one with more signal bars is usually the wall you're standing at. If the wrong wall lights, open Board controls, tap Disconnect board and try again.",
         "p2": "There is no forget-this-device list. The app only remembers your last board.",
         "p3": "A board showing twice under Your boards is different. Tap Edit next to Your boards, then Delete or Unfollow."
       },
@@ -767,8 +770,8 @@
       "liveActivity": {
         "title": "Control the board from the lock screen (Live Activity)",
         "intro": "Start or join a session first. A solo queue doesn't get one.",
-        "p1": "On iPhone, a session puts a Live Activity on the lock screen and in the Dynamic Island with the climb, its grade and your place in the queue. While your phone holds the board it also has Previous, Next, a lightbulb that re-lights the wall, and Mirror climb where supported.",
-        "p2": "Android shows the same controls in an ongoing notification called Active climbing session.",
+        "p1": "On iPhone, a session puts a Live Activity on the lock screen and in the Dynamic Island with the climb on the wall, its grade and your place in the queue. Previews you open in the app don’t change it. While your phone holds the board it also has Previous, Next, a lightbulb that re-lights the wall, and Mirror climb where supported. Next and Previous move the queue, light the climb, and start or renew a drive the way Put on board does. While you drive, an amber ring around the lightbulb empties as the time runs out, with the time left beside it; with no time limit, the bulb sits on a full amber disc.",
+        "p2": "Android shows the same controls in an ongoing notification called Active climbing session. While you drive, it says Driving the wall, with a countdown when the drive has a time limit.",
         "p3": "Locking the screen doesn't disconnect the board."
       },
       "next": {
@@ -778,18 +781,19 @@
       },
       "driving": {
         "title": "Know when you’re driving the wall",
-        "p1": "The wall button handles physical board controls. Read its label: Put on board connects if needed and lights the climb on screen, and the next climbs you pick light too for a short window. On a MoonBoard, Put on board starts driving until you stop. A frosted, glowing You are driving the wall means every climb you pick lights up until you stop, including in a crew. Swipe the button left, or hold it and pick Light every climb, to start; tap it to stop.",
-        "p2": "To start driving when the button shows ‹‹, swipe the wall button left. Let go when it says Let go to light every climb. This connects if needed, lights the climb on screen and lights the climbs you choose after it. Swiping across the board itself moves between climbs.",
-        "p3": "Tap You are driving the wall to stop driving and browse while staying connected. The label changes to Disconnect board; tapping that disconnects. You can also start driving with Light every climb in ⋯, then Board controls, or the button’s screen-reader actions.",
+        "p1": "A tap on a climb opens a preview, and the wall keeps its climb. Put on board lights it and you drive the wall: the button turns frosted and reads You are driving the wall, and every climb you pick lights too. If the drive has a time limit, a clock shows beside the label; each lit climb restarts it, and the frost shrinks toward the bulb as the time runs out. After that, your next pick opens as a preview again. Pick the time under Stop driving after in Settings, then Board: 45 seconds by default, Until I stop (no clock) on a MoonBoard, or Right away to light only that climb. Swipe the button left, or once connected hold it and pick Light every climb, to drive with no clock until you tap it. Frost always means you are driving.",
+        "p2": "To start driving when the button shows ‹‹, swipe the wall button left. Let go when it says Let go to light every climb. This connects if needed, lights the climb on screen and lights the climbs you choose after it. During a drive with a clock, the same swipe keeps it going until you stop. Swiping across the board itself moves between climbs.",
+        "p3": "Tap You are driving the wall to stop driving and browse. Your phone stays connected and the label changes to Disconnect board; tapping that disconnects. With Disconnect Bluetooth when driving ends on, the stop lets go of the board instead, and the button reads Put on board again. A drive from Put on board also ends by itself when its clock runs out; your next pick opens as a preview. You can also start driving with Light every climb in ⋯, then Board controls, or the button’s screen-reader actions.",
+        "p4": "The first time you open a preview on a board with lights, a card under the wall button explains previews and the frost. Its Lighting settings button opens Settings, then Board.",
         "clipAlt": "Swiping the wall button left to start driving, then tapping it to stop",
-        "clipCaption": "Swipe the button left and release to light every climb. Tap You are driving the wall to stop driving and keep the connection."
+        "clipCaption": "Swipe the button left and release to light every climb. Tap You are driving the wall to stop; your phone stays connected unless Disconnect Bluetooth when driving ends is on."
       }
     },
     "climbActions": {
       "breadcrumb": "Climb actions",
       "hero": {
         "title": "Press and hold a climb",
-        "subtitle": "Every action on a climb sits behind a long press on its row."
+        "subtitle": "Tap a climb to preview it. Press and hold its row for everything else."
       },
       "open": {
         "title": "Open the menu",
@@ -802,12 +806,13 @@
       },
       "preview": {
         "title": "Tap a climb to preview it",
-        "intro": "A tap on a climb in a list opens it as a preview, and the board stays as it is.",
-        "p1": "A preview opens the climb in the play drawer without touching your queue or the wall. When a preview comes with a list, swipes follow that list. A standalone preview may have no next climb to swipe to.",
-        "p2": "While browsing without lighting, the chip at the top takes you back: My pick for your own climb, On the wall for the climb on the wall. The line under the name says Only you see this in a session, or Preview · not on the wall when your phone holds a board or a climb was lit in the last hour. Tap Put on board when you want the climb: it lights and you drive the wall: by default the next climbs you pick light until 45 seconds after the last one (a MoonBoard drives until you stop). Set active picks it without lighting. If the player button says You are driving the wall, further climb changes light the wall; tap it to stop driving first.",
+        "intro": "A tap on a climb in any list or in your queue opens it as a preview, and so does a playlist’s play button. The wall keeps its climb.",
+        "p1": "A preview opens the climb in the play drawer without touching your queue or the wall. When a preview comes with a list, swipes follow that list. A standalone preview may have no next climb to swipe to. While you drive the wall, a tap lights the climb instead. Without a crew, you can make every tap light: turn on Light the board when I tap a climb under Settings, then Board. With a crew in your session, a tap stays a preview whatever that switch says.",
+        "p2": "While you preview, the back arrow at the top left ends the preview and takes you back: to your own pick, or, when it shows a face, to the climb on the wall. The line under the name says Only you see this in a session, or Preview · not on the wall when your phone holds a board or a climb was lit in the last hour. Tap Put on board when you want the climb. It lights, and you drive the wall: by default the next climbs you pick light until 45 seconds after the last one (a MoonBoard drives until you stop). Set active picks it without lighting. If the player button says You are driving the wall, further climb changes light the wall; tap it to stop driving first.",
+        "p3": "The bar at the bottom keeps the last climb you opened, preview included, until your queue moves on. Tap it to jump back in with its list. Its lightbulb puts that climb on the board, and ✓ logs it. Opening a preview never changes your queue or the wall. The top of Climbs, and the lock screen in a session, keep showing the climb on the wall.",
         "sessionsLink": "How a session keeps browsing off the wall",
         "clipAlt": "Browsing a list in the Play drawer without lighting its climbs",
-        "clipCaption": "Browse the list while the wall keeps its climb. Put on board lights the climb when you choose.",
+        "clipCaption": "Browse the list while the wall keeps its climb. Put on board lights it, and the climbs you pick next light too until your time runs out.",
         "drivingLink": "How to start and stop driving the wall"
       },
       "quick": {
@@ -820,6 +825,7 @@
       "rest": {
         "title": "The rest of the list",
         "queue": "Play next puts the climb at the top of Up next. Play last puts it at the bottom.",
+        "replay": "Replay from here, when it shows on a climb under History in your queue: opens that climb the way a tap on it does, as a preview by default. Put on board puts it back up, with the climbs after it next in line again.",
         "favorite": "Toggle favorite is the heart. Hearted climbs fill Liked Climbs.",
         "editEntry": "Edit logbook entry, when you came from your logbook.",
         "betaVideo": "Add beta video, when signed in.",

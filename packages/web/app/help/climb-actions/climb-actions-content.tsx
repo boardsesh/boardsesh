@@ -14,14 +14,18 @@ import { HelpScreenshot } from '../help-screenshot';
  * The least-found interaction in the app. `Climb Actions Opened` has fired for
  * 837 people since it started recording on 2026-07-21, against 3,936 who opened
  * a climb in the same window — about one in five. Most of what Discord asks for
- * is already a row in this menu, and a tap's preview answers the loudest request
- * of all: browsing a shared session without lighting the wall for everyone.
+ * is already a row in this menu. The loudest request of all, browsing a shared
+ * session without lighting the wall for everyone, is now what a plain tap does:
+ * since 2.7 (#7188) a tap opens a preview.
  *
  * The action list and every gate (signed in, own climb, moderation flag, Aurora
- * boards) come from packages/mobile/src/components/climb-actions/
- * climb-menu-items.ts; the list menu's groups from LIST_GROUPS in
- * ClimbActionsMenu.tsx; the Preview chrome from play-drawer/wall-state.ts. The
- * menu offers no Preview row: a tap on the row already opens one.
+ * boards, Replay from here on a History row) come from
+ * packages/mobile/src/components/climb-actions/climb-menu-items.ts; the list
+ * menu's groups from LIST_GROUPS in ClimbActionsMenu.tsx. The menu offers no
+ * Preview row: a tap on the row already opens one. The preview chrome comes from
+ * play-drawer/wall-state.ts (resolveBrowseCaption), track-label-text.ts and
+ * WallStatePill.tsx (the wordless back chip); the bar at the bottom from
+ * queue-control/use-bar-climb.ts (the last climb opened).
  */
 export default function ClimbActionsContent() {
   const { t } = useTranslation('marketing');
@@ -64,6 +68,7 @@ export default function ClimbActionsContent() {
             {t('help.climbActions.preview.sessionsLink')}
           </MuiLink>
         </Prose>
+        <Prose>{t('help.climbActions.preview.p3')}</Prose>
         <Prose>
           <MuiLink component={LocaleLink} href="/help/board-and-bluetooth#driving">
             {t('help.climbActions.preview.drivingLink')}
@@ -83,6 +88,7 @@ export default function ClimbActionsContent() {
       <PageSection title={t('help.climbActions.rest.title')}>
         <ProseList ordered>
           <li>{t('help.climbActions.rest.queue')}</li>
+          <li>{t('help.climbActions.rest.replay')}</li>
           <li>{t('help.climbActions.rest.favorite')}</li>
           <li>{t('help.climbActions.rest.editEntry')}</li>
           <li>{t('help.climbActions.rest.betaVideo')}</li>

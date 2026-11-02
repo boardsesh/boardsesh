@@ -37,6 +37,7 @@ const DUPLICATED_FILES = [
   'WidgetNetworking.swift',
   'SharedMirrorState.swift',
   'MirrorClimbIntent.swift',
+  'StopDrivingIntent.swift',
 ];
 
 function sha(path: string): string {
@@ -53,6 +54,7 @@ const TYPESCRIPT_DIAGNOSTIC_KINDS = {
   previousClimb: true,
   takeControl: true,
   reconnectBoard: true,
+  stopDriving: true,
 } as const satisfies Record<LiveActivityIntentDiagnosticKind, true>;
 
 const TYPESCRIPT_DIAGNOSTIC_STAGES = {
@@ -92,6 +94,7 @@ const TYPESCRIPT_COMPLETION_CLASSES = {
   alreadyAllowed: true,
   bleFailure: true,
   mirrorNotCommitted: true,
+  nothingDriving: true,
 } as const satisfies Record<LiveActivityIntentCompletionClass, true>;
 
 type SwiftConditionalBranch = {
@@ -247,6 +250,7 @@ describe('Widget target Swift drift', () => {
       'TakeControlIntent.swift',
       'ReconnectBoardIntent.swift',
       'MirrorClimbIntent.swift',
+      'StopDrivingIntent.swift',
     ];
 
     for (const file of instrumentedFiles) {
@@ -305,6 +309,7 @@ describe('Widget target Swift drift', () => {
       'NextClimbIntent',
       'PreviousClimbIntent',
       'ReconnectBoardIntent',
+      'StopDrivingIntent',
       'TakeControlIntent',
     ]);
     expect(diagnosticKinds).toEqual(Object.keys(TYPESCRIPT_DIAGNOSTIC_KINDS).sort());

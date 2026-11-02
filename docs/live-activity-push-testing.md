@@ -393,6 +393,10 @@ Driving the wall (2.7) on the Lock Screen, in the Dynamic Island and in the Andr
 13. From a second device, add or reorder climbs while the timed drive runs. The countdown survives the crew push.
 14. From the second device, put a climb up while the timed drive runs. The wall lights their climb, the ring goes, and this phone's next pick is a preview. Your own Lock Screen **Next** never does this: it renews the drive.
 15. On a crewmate's phone (`heldByPeer`), nothing about the holder's drive shows.
+16. Tap **Put on board**, lock the phone, then tap the ringed bulb. The ring goes, the wall keeps its climb, and the app shows previews when opened (Drive Mode Ended `stopped`). Same for the disc of an open-ended drive. On Android the lit bulb reads "Stop driving" while a drive runs.
+17. Turn **Disconnect Bluetooth when driving ends** on and repeat 16. The board is freed and the card reads "Tap to reconnect"; a tap relinks, lights the current climb and lights the bulb, and the app opens connected.
+18. Disconnect from the in-app bulb, then lock the phone. The card reads "Open Boardsesh to connect" and tapping it opens the app.
+19. With a board remembered, walk out of range (or switch it off) and tap "Tap to reconnect". After the connect timeout the card reads "Board didn't answer. Tap again". With Bluetooth off it reads "Turn on Bluetooth, then tap".
 
 Known gap: if the app is suspended before a timed drive's end, iOS has nothing to redraw the card at the deadline, so the ring sits empty at 0:00 until the next update (the next press, a push, or opening the app).
 

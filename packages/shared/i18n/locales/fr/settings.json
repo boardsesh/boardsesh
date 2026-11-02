@@ -495,8 +495,9 @@
       },
       "drivingEnds": {
         "label": "Déconnecter le Bluetooth quand le pilotage s’arrête",
-        "description": "Quand vous arrêtez de piloter ou que le temps est écoulé, votre téléphone libère la board pour que le grimpeur suivant puisse se connecter. Allumer sur la board la reconnecte."
+        "description": "Quand votre pilotage s’arrête, votre téléphone libère la board pour que le grimpeur suivant puisse se connecter : quand vous l’arrêtez ou éteignez tout, quand le temps est écoulé, ou quand quelqu’un de votre crew allume un bloc pendant un pilotage à durée limitée. Allumer sur la board la reconnecte."
       },
+      "drivingHelp": "Comment marche le pilotage de la board",
       "onSwipeLabel": "Allumer la board quand je fais défiler",
       "onSwipeDescription": "Seulement quand un bloc est déjà au mur. Un aperçu n'allume jamais la board quand vous faites défiler.",
       "onTapLabel": "Allumer la board quand je touche un bloc",
@@ -541,7 +542,7 @@
       "drivingValue": "Tu pilotes la board"
     },
     "relayToWall": "Allumer ton bloc au mur",
-    "peerDrivingBoard": "Quelqu’un d’autre pilote la board"
+    "peerDrivingBoard": "Quelqu’un d’autre a la board"
   },
   "integrations": {
     "title": "Applications connectées",

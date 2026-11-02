@@ -511,6 +511,8 @@ private struct WallControlStatus: View {
     /// What the wall does with the next pick. This view only shows while this
     /// device holds the board, so the bulb is always lit.
     let lighting: LightingRenderPhase
+    /// A tap stops the drive (`StopDrivingIntent`) rather than re-lighting.
+    var stopsDrive: Bool = false
 
     // Keep the glow readable on the light-mode surface (#F4F1FB).
     private var glowOpacity: Double {
@@ -534,7 +536,7 @@ private struct WallControlStatus: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(lightingLabel)
         .accessibilityValue(lightingValue)
-        .accessibilityHint(Text("Lights the climb again"))
+        .accessibilityHint(stopsDrive ? Text("Stops driving") : Text("Lights the climb again"))
     }
 
     private var lightingLabel: Text {
@@ -556,17 +558,33 @@ private struct WallControlStatus: View {
 private struct WallControlButton: View {
     let lighting: LightingRenderPhase
 
+    /// A drive is on the card (a timed drive's ring, an open-ended drive's
+    /// disc) and the app's JS takes a lock-screen stop. An app too old to take
+    /// one would put the drive straight back, so its bulb keeps re-lighting.
+    private var stopsDrive: Bool {
+        guard lighting != .previews, let defaults = SharedConstants.sharedDefaults else { return false }
+        return SharedLightingWindowRuntime.lockScreenStopSupported(in: defaults)
+    }
+
     var body: some View {
-        // The lightbulb is always a button: tapping it reconnects Bluetooth to
-        // the last known board (and, in a party session where this device isn't
-        // the driver, also claims wall control). When already connected and
-        // driving, ReconnectBoardIntent just re-lights the wall — a harmless
-        // no-op grab. Nothing here stops a drive, timed or not, so a pocket tap
-        // can't drop the board.
-        Button(intent: ReconnectBoardIntent()) {
-            WallControlStatus(lighting: lighting)
+        // While this phone drives, the bulb stops driving, as the frosted
+        // button does in the app: the wall keeps its climb, the link stays
+        // (unless Disconnect Bluetooth when driving ends frees the board, which
+        // it remembers), and the next pick is a preview. Otherwise the bulb
+        // re-lights the climb: ReconnectBoardIntent on a held link is a
+        // harmless grab (and, in a party session where this device isn't the
+        // driver, claims wall control).
+        if stopsDrive {
+            Button(intent: StopDrivingIntent()) {
+                WallControlStatus(lighting: lighting, stopsDrive: true)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button(intent: ReconnectBoardIntent()) {
+                WallControlStatus(lighting: lighting)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -853,21 +871,47 @@ private struct HeldByPeerFooter: View {
     }
 }
 
-/// Tappable reconnect row for the disconnected state — wired to
-/// ReconnectBoardIntent.
+/// The disconnected state's row. With a board this phone still remembers it
+/// is a button wired to ReconnectBoardIntent, which says so when its last tap
+/// could not reach the board. With none (an in-app Disconnect forgets the
+/// board on purpose, as does a connect that was cancelled or failed) a
+/// lock-screen tap can only fail, so the row says to open the app instead,
+/// and like StaleFooter it is no button: tapping the card opens the app.
 @available(iOS 17.0, *)
 private struct DisconnectedFooter: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        switch SharedBoardReconnect.footer(in: SharedConstants.sharedDefaults) {
+        case .reconnect:
+            reconnectButton(
+                message: Text("Tap to reconnect"),
+                accessibilityLabel: Text("Board disconnected. Tap to reconnect")
+            )
+        case .retry(.unreachable):
+            reconnectButton(
+                message: Text("Board didn't answer. Tap again"),
+                accessibilityLabel: Text("Board didn't answer. Tap to try again")
+            )
+        case .retry(.bluetoothOff):
+            reconnectButton(
+                message: Text("Turn on Bluetooth, then tap"),
+                accessibilityLabel: Text("Bluetooth is off. Turn it on, then tap to reconnect")
+            )
+        case .openApp:
+            openAppRow
+        }
+    }
+
+    private func reconnectButton(message: Text, accessibilityLabel: Text) -> some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
-        Button(intent: ReconnectBoardIntent()) {
+        return Button(intent: ReconnectBoardIntent()) {
             HStack(spacing: VelvetSend.Spacing.sm) {
                 Image(systemName: "lightbulb.slash")
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(palette.secondaryLabel)
 
-                Text("Tap to reconnect")
+                message
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(palette.tint)
                     .lineLimit(1)
@@ -880,7 +924,29 @@ private struct DisconnectedFooter: View {
         }
         .buttonStyle(.plain)
         .dynamicTypeSize(...DynamicTypeSize.xLarge)
-        .accessibilityLabel("Board disconnected. Tap to reconnect")
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var openAppRow: some View {
+        let palette = VelvetSend.Palette.resolve(colorScheme)
+        return HStack(spacing: VelvetSend.Spacing.sm) {
+            Image(systemName: "lightbulb.slash")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(palette.secondaryLabel)
+                .accessibilityHidden(true)
+
+            Text("Open Boardsesh to connect")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(palette.secondaryLabel)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 44)
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Board disconnected. Open Boardsesh to connect"))
     }
 }
 

@@ -583,7 +583,7 @@
           "label": "Board-Steuerung",
           "wallButton": "Wand-Button",
           "lightbulb": "Glühbirne",
-          "footer": "Beide Bedienelemente verbinden, beleuchten den Boulder und zeigen, wer das Board hält. Halten öffnet bei bestehender Verbindung die Optionen. Lies die Beschriftung des Wand-Buttons: Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird; tippe darauf, um das Steuern zu beenden und verbunden zu bleiben. Die Glühbirne sitzt oben rechts."
+          "footer": "Beide Bedienelemente verbinden, beleuchten den Boulder und zeigen, wer das Board hält. Halten öffnet bei bestehender Verbindung die Optionen. Lies die Beschriftung des Wand-Buttons: Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird; tippe darauf, um das Steuern zu beenden. Dein Handy bleibt verbunden, außer Bluetooth trennen, wenn das Steuern endet ist an. Hat das Steuern ein Zeitlimit, zeigen eine Uhr neben der Beschriftung und die schrumpfende Mattierung, wann es endet. Die Glühbirne sitzt oben rechts."
         }
       },
       "climbView": {
@@ -614,7 +614,7 @@
         "modeOnTheMinuteHint": "Feste Zeitfenster ab dem Einschalten. Versuche oder Begehungen setzen die Uhr nie zurück.",
         "autoAdvance": "Zum nächsten Boulder wechseln",
         "autoAdvanceHint": "Boardsesh beleuchtet ihn für dich am Board, nur solange Boardsesh offen ist.",
-        "autoAdvanceBlocked": "Nur wer das Board steuert, kann die Warteschlange weiterschalten.",
+        "autoAdvanceBlocked": "Nur wer das Board hält, kann die Warteschlange weiterschalten.",
         "autoAdvanceNeedsLength": "Wähl eine Pausenlänge, damit die Warteschlange automatisch weiterschaltet.",
         "cuesTitle": "Signale",
         "cuesFooter": "Wenn sie aus sind, bekommst du trotzdem eine Warn-Vibration, bevor das Board von selbst weiterschaltet.",
@@ -637,7 +637,7 @@
       },
       "miniPlayer": {
         "title": "Mini-Player",
-        "description": "Die Leiste über den Tabs. Tippe darauf, um den Boulder zu öffnen.",
+        "description": "Die Leiste über den Tabs behält den letzten Boulder, den du geöffnet hast. Tippe darauf, um ihn wieder zu öffnen; Board beleuchten bringt ihn ans Board.",
         "buttons": {
           "next": "Nächster Boulder",
           "previous": "Vorheriger Boulder",
@@ -753,7 +753,7 @@
         "workout": "Bau ein Workout: Volumen, Pyramide, Leiter oder Grad-Fokus. Grad setzen, Runs vorab ansehen, einen nach dem anderen toppen.",
         "crew": "Kletterst du mit anderen? Startet eine Session und teilt euch eine Warteschlange. Jede*r legt den nächsten Run auf, ohne das Handy weiterzureichen.",
         "record": "Deine Begehungen landen unter Fortschritt im Diagramm: Gradverteilung und schwerste Begehung. Importier dein Kilter- und Tension-Routenbuch aus Aurora und starte mit deiner Historie.",
-        "accessory": "Die Leiste unten behält den letzten Boulder, den du geöffnet hast, bis deine Warteschlange zu einem anderen Boulder weitergeht. Tipp darauf, um weiterzumachen.",
+        "accessory": "Die Leiste unten behält den letzten Boulder, den du geöffnet hast, bis deine Warteschlange weitergeht. Tipp darauf, um ihn wieder zu öffnen; ihre Glühbirne beleuchtet ihn am Board, und ✓ trägt ihn ein. Der Boulder am Board steht weiter oben im Tab Boulder.",
         "previewFirst": {
           "title": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten.",
           "windowSeconds": "Dann steuerst du das Board: {{seconds}} Sekunden lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet.",
@@ -761,8 +761,8 @@
           "windowMinutes": "Dann steuerst du das Board: {{minutes}} Minuten lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet.",
           "untilStop": "Dann steuerst du das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du aufhörst.",
           "moonboard": "An einem MoonBoard steuerst du danach das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du aufhörst.",
-          "frost": "Der mattierte Button heißt: Du steuerst das Board, und jeder Boulder, den du wählst, wird beleuchtet. Mit „Am Board beleuchten“ endet das nach der Zeit, die du in der Beleuchtung eingestellt hast, und die Mattierung schrumpft, während sie abläuft. Wische den Button nach links, um ohne Ende zu steuern (mit verbundenem Board kannst du ihn auch gedrückt halten und Jeden Boulder beleuchten wählen). Tippe ihn an, um aufzuhören.",
-          "frostScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst. Mit „Am Board beleuchten“ endet das nach der Zeit, die du in der Beleuchtung eingestellt hast. Nutze die Aktion Jeden Boulder beleuchten, um ohne Ende zu steuern. Tippe den Button an, um aufzuhören.",
+          "frost": "Der mattierte Button heißt: Du steuerst das Board, und jeder Boulder, den du wählst, wird beleuchtet. Mit „Am Board beleuchten“ endet das nach der Zeit unter Steuern beenden nach (Einstellungen › Board): Neben der Beschriftung läuft eine Uhr rückwärts, und die Mattierung schrumpft, während sie abläuft. Wische den Button nach links, um ohne Ende zu steuern (mit verbundenem Board kannst du ihn auch gedrückt halten und Jeden Boulder beleuchten wählen). Tippe ihn an, um aufzuhören.",
+          "frostScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst. Mit „Am Board beleuchten“ endet das nach der Zeit unter Steuern beenden nach, in Einstellungen › Board. Nutze die Aktion Jeden Boulder beleuchten, um ohne Ende zu steuern. Tippe den Button an, um aufzuhören.",
           "frostOpenEnded": "Der mattierte Button heißt: Du steuerst das Board, und jeder Boulder, den du wählst, wird beleuchtet, bis du ihn antippst, um aufzuhören. Wische den Button nach links, um das Board zu steuern (mit verbundenem Board kannst du ihn auch gedrückt halten und Jeden Boulder beleuchten wählen).",
           "frostOpenEndedScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst, bis du den Button antippst, um aufzuhören. Nutze die Aktion Jeden Boulder beleuchten, um das Board zu steuern.",
           "settings": "Beleuchtung einstellen",
@@ -840,9 +840,10 @@
       },
       "previewFirstSpotlight": {
         "title": "Boulder durchsehen, ohne das Board zu beleuchten",
-        "tap": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten, und dann steuerst du das Board: Die Boulder, die du wählst, werden auch beleuchtet, bis die gewählte Zeit um ist (standardmäßig 45 Sekunden).",
-        "swipe": "Wisch den Board-Button nach links, dann steuerst du das Board, bis du aufhörst. Solange er in den Farben des Boulders leuchtet, wird jeder Boulder beleuchtet, den du wählst.",
-        "moonboard": "Am MoonBoard steuerst du standardmäßig, bis du aufhörst. Eine Zeit wählst du unter Steuern beenden nach in Einstellungen › Board.",
+        "tap": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten, und dann steuerst du das Board: Die Boulder, die du wählst, werden auch beleuchtet, bis die gewählte Zeit um ist (standardmäßig 45 Sekunden). Die Zeit änderst du unter Steuern beenden nach in Einstellungen › Board.",
+        "swipe": "Wische den Wand-Button nach links, dann steuerst du das Board, bis du aufhörst. Solange er in den Farben des Boulders leuchtet, wird jeder Boulder beleuchtet, den du wählst. Tippe ihn an, um aufzuhören. Hat das Steuern ein Zeitlimit, steht eine Uhr neben der Beschriftung, und die Mattierung schrumpft, während die Zeit abläuft.",
+        "back": "Der Pfeil oben links beendet die Vorschau und bringt dich zurück zu deinem Boulder oder zum Boulder am Board. Die Leiste unten behält den letzten Boulder, den du geöffnet hast.",
+        "moonboard": "Am MoonBoard steuerst du standardmäßig, bis du aufhörst; seine Zeit wählst du unter An einem MoonBoard.",
         "cta": "So funktioniert's",
         "dismiss": "Alles klar"
       }

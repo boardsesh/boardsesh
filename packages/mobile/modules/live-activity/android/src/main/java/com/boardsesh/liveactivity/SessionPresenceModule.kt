@@ -28,6 +28,10 @@ class AndroidNotificationStrings : Record {
     // The header line while driving the wall (2.7), timed or open-ended. An
     // older bundle leaves it out and gets the English.
     @Field var lightDrivingLabel: String = "Driving the wall"
+    // The lit bulb's label while this phone drives: a tap stops driving. An
+    // older bundle leaves it out, and its lit bulb keeps re-lighting, since
+    // that bundle has no stop to take.
+    @Field var stopDrivingLabel: String? = null
 }
 
 // boardConnection/holderDisplayName drive the lightbulb + Previous/Next

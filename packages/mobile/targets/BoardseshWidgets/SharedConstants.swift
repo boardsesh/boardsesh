@@ -83,6 +83,11 @@ enum SharedConstants {
     /// the same board without a fresh device pick. Left intact on an unexpected
     /// drop precisely so that reconnect path stays available.
     static let bleLastPeripheralUuidKey = "bs_ble_last_peripheral_uuid"
+    /// Why the last Live Activity reconnect failed ("unreachable" |
+    /// "bluetoothOff"), so the card can say so instead of offering the same
+    /// dead tap. Written by ReconnectBoardIntent; cleared by its next success
+    /// and by BoardBleManager whenever any connect comes up.
+    static let bleReconnectFailureKey = "bs_ble_reconnect_failure"
     /// Learned Aurora write-with-response fallbacks keyed by board serial when
     /// available, otherwise by CoreBluetooth's app-install-scoped peripheral UUID.
     static let bleWriteWithResponseBoardsKey = "bs_ble_write_with_response_boards"
@@ -145,6 +150,10 @@ enum SharedConstants {
     /// runs that intent in the widget extension (which can't link BoardBleManager),
     /// it posts this so the live main app reconnects BLE to the last known board.
     static let bleReconnectNotification = "com.boardsesh.app.bleReconnect"
+
+    /// Posted by StopDrivingIntent once it stored a lock-screen stop, so the
+    /// live app's JS stops its drive now rather than at the next foreground.
+    static let driveStopNotification = "com.boardsesh.app.driveStop"
 
     // MARK: Live Activity
 
@@ -852,6 +861,10 @@ struct SharedKeepLightingConfig: Codable, Equatable {
     /// swipe flag (the drive's kill switch) is off, or the climber lights
     /// every pick solo with Light the board as I swipe.
     let enabled: Bool
+    /// This JS adopts a lock-screen stop (`StopDrivingIntent`), so the bulb may
+    /// offer one. Nil from a JS that predates it: the bulb keeps re-lighting,
+    /// because that JS would put the drive straight back on the card.
+    var lockScreenStop: Bool? = nil
 }
 
 enum SharedKeepLightingConfigStore {
@@ -979,6 +992,54 @@ enum SharedLightingWindowRuntime {
         return next
     }
 
+    /// Whether the bulb may offer Stop driving: JS said it adopts a lock-screen
+    /// stop (`SharedKeepLightingConfig.lockScreenStop`).
+    static func lockScreenStopSupported(in defaults: UserDefaults) -> Bool {
+        SharedKeepLightingConfigStore.load(from: defaults)?.lockScreenStop == true
+    }
+
+    /// The snapshot a lock-screen stop leaves: off, written by the lock screen,
+    /// or nil when nothing on this session's card is driving at `now` (a timed
+    /// drive that ran out between the render and the tap, another session's
+    /// drive, previews).
+    static func afterStop(
+        current: SharedLightingWindowState?,
+        sessionId: String,
+        now: Date
+    ) -> SharedLightingWindowState? {
+        switch LightingRenderPhase.resolve(state: current, sessionId: sessionId, now: now) {
+        case .previews:
+            return nil
+        case .window, .driving:
+            return SharedLightingWindowState(
+                v: SharedLightingWindowState.currentVersion,
+                sessionId: sessionId,
+                mode: SharedLightingWindowState.modeOff,
+                endsAtMs: nil,
+                windowSeconds: nil,
+                family: nil,
+                source: SharedLightingWindowState.sourceLockScreen,
+                updatedAtMs: now.timeIntervalSince1970 * 1000
+            )
+        }
+    }
+
+    /// Stops this session's drive from the Lock Screen and stores the stop,
+    /// which JS adopts like a press (`lock-screen-lighting.ts`). Returns what it
+    /// stored, or nil when nothing was driving.
+    @discardableResult
+    static func recordStop(in defaults: UserDefaults, now: Date = Date()) -> SharedLightingWindowState? {
+        guard let sessionId = defaults.string(forKey: SharedConstants.sessionIdKey), !sessionId.isEmpty,
+              let next = afterStop(
+                  current: SharedLightingWindowStore.load(from: defaults),
+                  sessionId: sessionId,
+                  now: now
+              ),
+              SharedLightingWindowStore.save(next, to: defaults)
+        else { return nil }
+        return next
+    }
+
     private static func window(sessionId: String, seconds: Double, family: String?, nowMs: Double) -> SharedLightingWindowState {
         SharedLightingWindowState(
             v: SharedLightingWindowState.currentVersion,
@@ -1021,5 +1082,84 @@ enum LightingRenderPhase: Equatable {
         default:
             return .previews
         }
+    }
+}
+
+// MARK: - Live Activity reconnect (the disconnected card's bulb)
+
+/// Why the last Live Activity reconnect could not reach the board.
+enum SharedBoardReconnectFailure: String {
+    /// Bluetooth is off, or the app may not use it.
+    case bluetoothOff
+    /// The board didn't answer in time: out of range, switched off, or busy
+    /// with another phone.
+    case unreachable
+}
+
+/// What the disconnected card's footer offers, read from the App Group at
+/// render. Only a board BoardBleManager still remembers can be reconnected
+/// from the Lock Screen: an in-app Disconnect forgets it on purpose, and so
+/// does a connect that was cancelled or failed, so for those the card says to
+/// open the app instead of offering a tap that can only fail.
+enum SharedBoardReconnectFooter: Equatable {
+    /// Tap to reconnect to the remembered board.
+    case reconnect
+    /// The last tap could not reach the remembered board: say why, offer it again.
+    case retry(SharedBoardReconnectFailure)
+    /// Nothing to reconnect to: the climber connects from the app.
+    case openApp
+}
+
+enum SharedBoardReconnect {
+    /// The slice of BoardBleManager's stored pairing (`bleBoardConfigKey`)
+    /// that ReconnectBoardIntent's guard reads: a configuration key and the
+    /// board bound to it. The manager owns the format; decoding only these two
+    /// fields keeps the card and the intent from disagreeing about whether a
+    /// board is remembered.
+    private struct StoredPairing: Decodable {
+        let configKey: String
+        let boundPeripheralUuid: UUID?
+    }
+
+    /// Whether a lock-screen reconnect has a board to reach.
+    static func hasRememberedBoard(in defaults: UserDefaults) -> Bool {
+        guard let data = defaults.data(forKey: SharedConstants.bleBoardConfigKey),
+              let pairing = try? JSONDecoder().decode(StoredPairing.self, from: data)
+        else { return false }
+        return !pairing.configKey.isEmpty && pairing.boundPeripheralUuid != nil
+    }
+
+    static func recordFailure(_ failure: SharedBoardReconnectFailure, in defaults: UserDefaults) {
+        defaults.set(failure.rawValue, forKey: SharedConstants.bleReconnectFailureKey)
+    }
+
+    static func clearFailure(in defaults: UserDefaults) {
+        defaults.removeObject(forKey: SharedConstants.bleReconnectFailureKey)
+    }
+
+    /// Stores how a lock-screen reconnect ended, for the card's next render.
+    /// Nil is success: this phone holds the board again, so the card lights
+    /// its bulb now instead of waiting for the app to adopt the link (which a
+    /// suspended app may not do until it is opened). A failure keeps the card
+    /// disconnected and says why.
+    static func record(_ failure: SharedBoardReconnectFailure?, in defaults: UserDefaults) {
+        guard let failure else {
+            clearFailure(in: defaults)
+            SharedWidgetWallControlState.saveBoardConnection("connectedByMe", holderDisplayName: nil, to: defaults)
+            return
+        }
+        recordFailure(failure, in: defaults)
+    }
+
+    /// The footer for this render. Without the App Group it keeps the plain
+    /// reconnect button, as before.
+    static func footer(in defaults: UserDefaults?) -> SharedBoardReconnectFooter {
+        guard let defaults else { return .reconnect }
+        guard hasRememberedBoard(in: defaults) else { return .openApp }
+        if let raw = defaults.string(forKey: SharedConstants.bleReconnectFailureKey),
+           let failure = SharedBoardReconnectFailure(rawValue: raw) {
+            return .retry(failure)
+        }
+        return .reconnect
     }
 }

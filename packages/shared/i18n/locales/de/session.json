@@ -455,7 +455,7 @@
       },
       "autoAdvance": "Zum nächsten Boulder wechseln",
       "autoAdvanceHint": "Boardsesh beleuchtet ihn für dich an der Wand.",
-      "autoAdvanceBlocked": "Nur wer die Wand steuert, kann die Warteschlange weiterschalten.",
+      "autoAdvanceBlocked": "Nur wer das Board hält, kann die Warteschlange weiterschalten.",
       "workoutPacingTitle": "Von deinem Workout vorgegeben",
       "workoutPacingRest": "{{stage}} · {{rest}} Pause nach jedem Boulder",
       "workoutPacingSets": "{{stage}} · {{reps}} Wiederholungen pro Satz, {{setRest}} zwischen den Sätzen",
@@ -646,7 +646,7 @@
       "turnOn": "Einschalten",
       "turnOnAccessibilityLabel": "Pausen-Timer einschalten",
       "turnOnHint": "Misst die Pausen deines Workouts und wechselt zum nächsten Boulder",
-      "turnOnPassengerHint": "Misst die Pausen deines Workouts. Wer die Wand steuert, wechselt zum nächsten Boulder.",
+      "turnOnPassengerHint": "Misst die Pausen deines Workouts. Wer das Board hält, wechselt zum nächsten Boulder.",
       "startWorkout": "Workout starten",
       "startHint": "Öffnet {{name}} und startet dein Workout",
       "startEmptyHint": "Füge einen Block hinzu, um dein Workout zu starten",
@@ -882,7 +882,8 @@
         "reconnect": "Mit Board verbinden",
         "connecting": "Verbinde…",
         "onWall": "{{name}} ist an der Wand",
-        "drivingTheWall": "Du steuerst das Board"
+        "drivingTheWall": "Du steuerst das Board",
+        "stopDriving": "Steuern beenden"
       },
       "inStatsFlashes": "Flashes",
       "inLeaderboardTitle": "Wer klettert",

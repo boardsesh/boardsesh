@@ -18,6 +18,10 @@ function makeInput(overrides: Partial<BoardLightingModelInput> = {}): BoardLight
   };
 }
 
+function findRowKeys(input: BoardLightingModelInput): string[] {
+  return buildBoardLightingSections(input).flatMap((section) => section.rows.map((row) => row.key));
+}
+
 function findRow(input: BoardLightingModelInput, key: string): MoreRow {
   const row = buildBoardLightingSections(input)
     .flatMap((section) => section.rows)
@@ -76,6 +80,20 @@ describe('buildBoardLightingSections', () => {
   ] as const)('footers Stop driving after set to %s with what it does', (choice, footer) => {
     const [keep] = buildBoardLightingSections(makeInput({ keepLighting: { choice, onChange: vi.fn() } }));
     expect(keep.footer).toBe(footer);
+  });
+
+  // The preview-first card and the What's New spotlight both retire; this row is
+  // the way back to the www help on driving the wall.
+  it('adds a help row under Disconnect Bluetooth when driving ends when the page can open the help', () => {
+    expect(findRowKeys(makeInput())).not.toContain('drivingHelp');
+    const onOpenDrivingHelp = vi.fn();
+    const [, drivingEnds] = buildBoardLightingSections(makeInput({ onOpenDrivingHelp }));
+    expect(drivingEnds.rows.map((row) => row.key)).toEqual(['disconnectWhenDrivingEnds', 'drivingHelp']);
+    const row = drivingEnds.rows[1];
+    if (row.kind !== 'nav') throw new Error('not a nav row');
+    expect(row).toMatchObject({ label: 'settings:ble.lighting.drivingHelp', external: true });
+    row.onPress();
+    expect(onOpenDrivingHelp).toHaveBeenCalledOnce();
   });
 
   // 2.7: auto-disconnect is gone; this switch is what frees the board now.

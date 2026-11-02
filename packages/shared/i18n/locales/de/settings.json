@@ -495,8 +495,9 @@
       },
       "drivingEnds": {
         "label": "Bluetooth trennen, wenn das Steuern endet",
-        "description": "Hörst du auf zu steuern oder ist die Zeit um, gibt dein Handy das Board frei, damit sich die nächste Person verbinden kann. „Am Board beleuchten“ verbindet wieder."
+        "description": "Endet dein Steuern, gibt dein Handy das Board frei, damit sich die nächste Person verbinden kann: wenn du stoppst oder alle Lichter ausschaltest, wenn die Zeit um ist oder wenn jemand aus deiner Crew einen Boulder beleuchtet, während dein Steuern ein Zeitlimit hat. „Am Board beleuchten“ verbindet wieder."
       },
+      "drivingHelp": "So funktioniert das Steuern des Boards",
       "onSwipeLabel": "Board beim Wischen beleuchten",
       "onSwipeDescription": "Nur wenn schon ein Boulder am Board leuchtet. Eine Vorschau beleuchtet beim Wischen nie das Board.",
       "onTapLabel": "Board beleuchten, wenn ich einen Boulder antippe",
@@ -541,7 +542,7 @@
       "drivingValue": "Du steuerst das Board"
     },
     "relayToWall": "Deinen Boulder am Board beleuchten",
-    "peerDrivingBoard": "Jemand anderes steuert das Board"
+    "peerDrivingBoard": "Jemand anderes hat das Board"
   },
   "integrations": {
     "title": "Verbundene Apps",

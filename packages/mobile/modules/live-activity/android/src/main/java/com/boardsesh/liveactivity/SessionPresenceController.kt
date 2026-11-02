@@ -94,6 +94,7 @@ internal class SessionPresenceController(
             putExtra(BoardSessionService.EXTRA_CONNECTING_LABEL, strings?.connectingLabel ?: "Connecting…")
             putExtra(BoardSessionService.EXTRA_ON_WALL_TEMPLATE, strings?.onWallTemplate ?: "{{name}} is on the wall")
             putExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL, strings?.lightDrivingLabel ?: "Driving the wall")
+            strings?.stopDrivingLabel?.let { putExtra(BoardSessionService.EXTRA_STOP_DRIVING_LABEL, it) }
             // Initial lightbulb / controls state before the first climb update.
             putExtra(
                 BoardSessionService.EXTRA_BOARD_CONNECTION,

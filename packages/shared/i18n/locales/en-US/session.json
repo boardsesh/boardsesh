@@ -455,7 +455,7 @@
       },
       "autoAdvance": "Move to the next climb",
       "autoAdvanceHint": "Lights it on the wall for you.",
-      "autoAdvanceBlocked": "Only the climber driving the wall can move the queue.",
+      "autoAdvanceBlocked": "Only the climber holding the board can move the queue.",
       "workoutPacingTitle": "Set by your workout",
       "workoutPacingRest": "{{stage}} · {{rest}} rest after each climb",
       "workoutPacingSets": "{{stage}} · {{reps}} reps a set, {{setRest}} between sets",
@@ -620,8 +620,8 @@
       "stripHistoryByline": "Last on the wall · {{age}} · {{grade}}",
       "stripHistoryA11yLabel": "Last on the wall · {{age}}: {{name}}, {{grade}}",
       "stripHistoryA11yLabelWithSender": "Last on the wall · {{age}}: {{name}}, {{grade}}, lit by {{sender}}",
-      "stripDismiss": "Dismiss",
-      "stripDismissHint": "Swipe left to dismiss. Opens the wall climb."
+      "stripDismiss": "Hide",
+      "stripDismissHint": "Swipe left to hide. Opens the wall climb."
     },
     "toast": {
       "sessionEnded": "Session ended",
@@ -646,7 +646,7 @@
       "turnOn": "Turn on",
       "turnOnAccessibilityLabel": "Turn on the rest timer",
       "turnOnHint": "Times your workout's rests and moves you to the next climb",
-      "turnOnPassengerHint": "Times your workout's rests. The climber driving the wall moves you on.",
+      "turnOnPassengerHint": "Times your workout's rests. The climber holding the board moves you on.",
       "startWorkout": "Start workout",
       "startHint": "Opens {{name}} and starts your workout",
       "startEmptyHint": "Add a block to start your workout",
@@ -882,7 +882,8 @@
         "reconnect": "Connect to board",
         "connecting": "Connecting…",
         "onWall": "{{name}} is on the wall",
-        "drivingTheWall": "Driving the wall"
+        "drivingTheWall": "Driving the wall",
+        "stopDriving": "Stop driving"
       },
       "inStatsFlashes": "Flashes",
       "inLeaderboardTitle": "Who's climbing",

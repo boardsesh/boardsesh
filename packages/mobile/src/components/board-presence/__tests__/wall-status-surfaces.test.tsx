@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const wallSelector = vi.hoisted(() => ({
   // BoardPresenceClimb shape: WallStrip and SidebarWallCell both read the raw wall
-  // climb (grade, name, frames, climbUuid) via useWallClimbIfDistinct. The extra
+  // climb (grade, name, frames, climbUuid) via useLiveWallClimb. The extra
   // difficulty/uuid/mirrored fields are a harmless superset for the one fixture.
   climb: null as null | {
     uuid: string;
@@ -59,8 +59,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../queue-control/use-wall-or-queue-climb', () => ({
-  // WallStrip and SidebarWallCell both consume the raw wall climb via useWallClimbIfDistinct.
-  useWallClimbIfDistinct: () => wallSelector.climb,
+  // WallStrip and SidebarWallCell both consume the raw wall climb via useLiveWallClimb.
+  useLiveWallClimb: () => wallSelector.climb,
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({

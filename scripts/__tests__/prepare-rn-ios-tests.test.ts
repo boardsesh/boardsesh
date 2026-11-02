@@ -47,6 +47,7 @@ const MODULE_SOURCE_NAMES = [
   'PreviousClimbIntent.swift',
   'TakeControlIntent.swift',
   'ReconnectBoardIntent.swift',
+  'StopDrivingIntent.swift',
 ];
 
 type PbxObject = Record<string, unknown>;

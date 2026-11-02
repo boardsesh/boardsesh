@@ -291,6 +291,28 @@ describe('useSwipePager', () => {
     expect(afterAnotherRender).toHaveBeenCalledTimes(1);
   });
 
+  it('hands a step that went before its board had painted what that board was doing, and no other step', async () => {
+    const onNext = vi.fn();
+    const onPrevious = vi.fn();
+    const { result } = renderPager({ previous: 'a', current: 'b', next: 'c', onNext, onPrevious });
+    const { pager } = result.current;
+    const painting = { artState: 'loading' as const, waitedMs: 700 };
+    const failed = { artState: 'failed' as const, waitedMs: 0 };
+
+    // The gesture notes the step at its fling, ahead of the step itself.
+    await act(async () => {
+      pager.noteStepArtWait(1, painting);
+      pager.noteStepArtWait(3, failed);
+      pager.requestStep(1, 1);
+      pager.requestStep(1, 2);
+      pager.requestStep(-1, 3);
+      pager.requestStep(-1, 4);
+    });
+
+    expect(onNext.mock.calls).toEqual([[painting], [undefined]]);
+    expect(onPrevious.mock.calls).toEqual([[failed], [undefined]]);
+  });
+
   it('reports a step as rendered even when nothing can change the climb yet', () => {
     const { result } = renderHook(() => {
       const { pager, stepSignal } = useSwipePager();

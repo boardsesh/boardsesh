@@ -7,6 +7,13 @@
 "Unmirror climb" = "Unmirror climb";
 "Tap to reconnect" = "Tap to reconnect";
 "Board disconnected. Tap to reconnect" = "Board disconnected. Tap to reconnect";
+/* Disconnected card: the last tap failed, or no board is remembered */
+"Board didn't answer. Tap again" = "Board didn't answer. Tap again";
+"Board didn't answer. Tap to try again" = "Board didn't answer. Tap to try again";
+"Turn on Bluetooth, then tap" = "Turn on Bluetooth, then tap";
+"Bluetooth is off. Turn it on, then tap to reconnect" = "Bluetooth is off. Turn it on, then tap to reconnect";
+"Open Boardsesh to connect" = "Open Boardsesh to connect";
+"Board disconnected. Open Boardsesh to connect" = "Board disconnected. Open Boardsesh to connect";
 "On the wall" = "On the wall";
 "%@ is on the wall" = "%@ is on the wall";
 "Wall held by another climber" = "Wall held by another climber";
@@ -34,3 +41,4 @@
 "Driving the wall" = "Driving the wall";
 "Every climb you pick lights up" = "Every climb you pick lights up";
 "Lights the climb again" = "Lights the climb again";
+"Stops driving" = "Stops driving";

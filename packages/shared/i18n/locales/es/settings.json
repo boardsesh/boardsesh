@@ -495,8 +495,9 @@
       },
       "drivingEnds": {
         "label": "Desconectar el Bluetooth al dejar el mando",
-        "description": "Cuando dejas el mando o se acaba el tiempo, tu teléfono suelta el plafón para que el siguiente escalador pueda conectarse. Poner en el plafón vuelve a conectar."
+        "description": "Cuando se acaba tu turno al mando, tu teléfono suelta el plafón para que el siguiente escalador pueda conectarse: al pararlo tú o apagar todas las luces, al acabarse el tiempo, o cuando alguien de tu crew pone un bloque mientras tu mando tiene límite de tiempo. Poner en el plafón vuelve a conectar."
       },
+      "drivingHelp": "Cómo funciona el mando del plafón",
       "onSwipeLabel": "Iluminar el plafón al deslizar",
       "onSwipeDescription": "Solo cuando ya hay un bloque en el muro. Una vista previa nunca enciende el plafón al deslizar.",
       "onTapLabel": "Iluminar el plafón al tocar un bloque",
@@ -541,7 +542,7 @@
       "drivingValue": "Estás al mando del plafón"
     },
     "relayToWall": "Poner tu bloque en el plafón",
-    "peerDrivingBoard": "Otra persona está controlando el plafón"
+    "peerDrivingBoard": "Otra persona tiene el plafón"
   },
   "integrations": {
     "title": "Aplicaciones conectadas",

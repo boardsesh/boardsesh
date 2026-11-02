@@ -855,7 +855,7 @@
           "label": "Control del plafón",
           "wallButton": "Botón del muro",
           "lightbulb": "Bombilla",
-          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. Lee la etiqueta del botón del muro: Estás al mando del plafón significa que cada bloque que elijas se enciende; toca esa etiqueta para dejar el mando sin desconectarte. La bombilla queda arriba a la derecha."
+          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. Lee la etiqueta del botón del muro: Estás al mando del plafón significa que cada bloque que elijas se enciende; tócala para dejar el mando. Tu móvil sigue conectado salvo que Desconectar el Bluetooth al dejar el mando esté activado. Si el mando tiene límite de tiempo, un reloj junto a la etiqueta y el esmerilado que se encoge muestran cuándo termina. La bombilla queda arriba a la derecha."
         }
       },
       "climbView": {
@@ -886,7 +886,7 @@
         "modeOnTheMinuteHint": "Ventanas fijas desde que lo activas. Registrar intentos o encadenes nunca reinicia el reloj.",
         "autoAdvance": "Pasar al siguiente bloque",
         "autoAdvanceHint": "Lo enciende en el plafón por ti, solo con Boardsesh abierto.",
-        "autoAdvanceBlocked": "Solo quien controla el plafón puede mover la cola.",
+        "autoAdvanceBlocked": "Solo quien tiene el plafón puede mover la cola.",
         "autoAdvanceNeedsLength": "Elige una duración de descanso para mover la cola automáticamente.",
         "cuesTitle": "Avisos",
         "cuesFooter": "Desactivados, sigues recibiendo una vibración de aviso antes de que el plafón avance solo.",
@@ -909,7 +909,7 @@
       },
       "miniPlayer": {
         "title": "Mini reproductor",
-        "description": "La barra sobre las pestañas. Tócala para abrir el bloque.",
+        "description": "La barra sobre las pestañas guarda el último bloque que abriste. Tócala para volver a abrirlo; Luz del plafón lo pone en el plafón.",
         "buttons": {
           "next": "Bloque siguiente",
           "previous": "Bloque anterior",
@@ -1025,7 +1025,7 @@
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
-        "accessory": "La barra de abajo guarda el último bloque que abriste, hasta que tu cola pase a otro bloque. Tócala para volver a él.",
+        "accessory": "La barra de abajo guarda el último bloque que abriste, hasta que tu cola pase a otro. Tócala para volver a abrirlo; su bombilla lo pone en el plafón y ✓ lo registra. El bloque del plafón sigue arriba en Bloques.",
         "previewFirst": {
           "title": "Un toque abre una vista previa. Poner en el plafón enciende el bloque.",
           "windowSeconds": "Luego quedas al mando del plafón: durante {{seconds}} segundos después de cada bloque encendido, cada bloque que elijas también se enciende.",
@@ -1033,8 +1033,8 @@
           "windowMinutes": "Luego quedas al mando del plafón: durante {{minutes}} minutos después de cada bloque encendido, cada bloque que elijas también se enciende.",
           "untilStop": "Luego quedas al mando del plafón: cada bloque que elijas se enciende hasta que pares.",
           "moonboard": "En un MoonBoard, luego quedas al mando del plafón: cada bloque que elijas se enciende hasta que pares.",
-          "frost": "El botón esmerilado significa que estás al mando del plafón: cada bloque que elijas se enciende. El mando que empieza con Poner en el plafón termina tras el tiempo que elegiste en los ajustes de iluminación, y el esmerilado se encoge a medida que pasa. Desliza el botón a la izquierda para tener el mando sin límite (con el plafón conectado, también puedes mantenerlo pulsado y elegir Encender cada bloque). Tócalo para parar.",
-          "frostScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende. El mando que empieza con Poner en el plafón termina tras el tiempo que elegiste en los ajustes de iluminación. Usa la acción Encender cada bloque para tener el mando sin límite. Toca el botón para parar.",
+          "frost": "El botón esmerilado significa que estás al mando del plafón: cada bloque que elijas se enciende. El mando que empieza con Poner en el plafón termina tras el tiempo de Dejar el mando tras (Ajustes › Plafón): un reloj cuenta atrás junto a la etiqueta y el esmerilado se encoge a medida que pasa. Desliza el botón a la izquierda para tener el mando sin límite (con el plafón conectado, también puedes mantenerlo pulsado y elegir Encender cada bloque). Tócalo para parar.",
+          "frostScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende. El mando que empieza con Poner en el plafón termina tras el tiempo de Dejar el mando tras, en Ajustes › Plafón. Usa la acción Encender cada bloque para tener el mando sin límite. Toca el botón para parar.",
           "frostOpenEnded": "El botón esmerilado significa que estás al mando del plafón: cada bloque que elijas se enciende hasta que lo toques para parar. Desliza el botón a la izquierda para tomar el mando (con el plafón conectado, también puedes mantenerlo pulsado y elegir Encender cada bloque).",
           "frostOpenEndedScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende hasta que toques el botón para parar. Usa la acción Encender cada bloque para tomar el mando.",
           "settings": "Ajustes de iluminación",
@@ -1112,9 +1112,10 @@
       },
       "previewFirstSpotlight": {
         "title": "Explora bloques sin encender el plafón",
-        "tap": "Un toque abre una vista previa. Poner en el plafón enciende el bloque, y luego quedas al mando del plafón: los bloques que elijas también se encienden hasta que se acabe el tiempo que elegiste (45 segundos por defecto).",
-        "swipe": "Desliza el botón del plafón a la izquierda para quedar al mando del plafón hasta que pares. Mientras brilla con los colores del bloque, cada bloque que elijas se enciende.",
-        "moonboard": "En un MoonBoard quedas al mando hasta que pares, por defecto. Elige un tiempo en Dejar el mando tras, en Ajustes › Plafón.",
+        "tap": "Un toque abre una vista previa. Poner en el plafón enciende el bloque, y luego quedas al mando del plafón: los bloques que elijas también se encienden hasta que se acabe el tiempo que elegiste (45 segundos por defecto). Cámbialo en Dejar el mando tras, en Ajustes › Plafón.",
+        "swipe": "Desliza el botón del muro a la izquierda para quedar al mando del plafón hasta que pares. Mientras brilla con los colores del bloque, cada bloque que elijas se enciende. Tócalo para parar. Si el mando tiene límite de tiempo, sale un reloj junto a la etiqueta y el esmerilado se encoge a medida que se acaba el tiempo.",
+        "back": "La flecha de arriba a la izquierda cierra la vista previa y te lleva de vuelta a tu bloque, o al bloque del plafón. La barra de abajo guarda el último bloque que abriste.",
+        "moonboard": "En un MoonBoard quedas al mando hasta que pares, por defecto; elige su tiempo en En un MoonBoard.",
         "cta": "Mira cómo funciona",
         "dismiss": "Entendido"
       }

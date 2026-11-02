@@ -83,14 +83,18 @@ older iPhone is the variant with the chrome degraded, not Material.
     minimize-on-scroll. Climbs stays an ordinary labelled tab, the rightmost one, like Apple
     Music's Search tab, not a separated `role="search"` tab. On an iOS 27 iPhone it is the
     prominent tab, so it stays on screen when the bar collapses.
-  - `nativeAccessory`: the `BottomAccessory` platter carries the current climb (iOS 26 only), on
-    iPhone and iPad alike.
+  - `nativeAccessory`: the `BottomAccessory` platter carries the bar's climb (iOS 26 only), on
+    iPhone and iPad alike: the climb you last opened, a preview included, or the queue's current
+    climb when that changed later (`useBarClimb`; see
+    [The MiniPlayer shows your last pick](climb-lists-and-queue.md#the-miniplayer-shows-your-last-pick-owner-decision-a-2026-11-02)).
+    The Lock Screen, the Climbs wall capsule and the board history sheet still show the wall's climb.
     Like Apple Music's platter, it shows a 32pt thumbnail and the climb name over a byline (grade ·
     sends, or grade · rating when nobody has sent it), and fills the frame UIKit gives it, with
     Music's insets (artwork 16pt in, last control ~30pt from the right edge). Open
     (`regular`), the lightbulb and the tick sit at the trailing edge. Collapsed (`inline`) there is
-    one 44pt control slot: the bulb while a board is bound and nobody holds it, otherwise the tick
-    (you hold it, a teammate does, or no board is bound). The bulb is drawn solid like Music's
+    one 44pt control slot: the pick's own bulb (Put on board for the pick) while the pick is unlit
+    on a board with lights; otherwise the bulb while a board is bound and nobody holds it, otherwise
+    the tick (you hold it, a teammate does, or no board is bound). The bulb is drawn solid like Music's
     controls, and outlined when off while Differentiate Without Color is on. Both placements put a
     connection mark on the thumbnail's top-trailing corner: a 14pt neutral disc (`CornerStatusDisc`,
     shared with `BoardDriverAvatar`'s badge) with a 9pt glyph. `lightbulb.fill` in amber
@@ -102,7 +106,7 @@ older iPhone is the variant with the chrome degraded, not Material.
     value, plus "Driving the wall" while this phone drives; the open one doesn't, because its bulb
     already does.
     Wherever it is false, including the native bar on iOS 18, the floating JS `PersistentQueueBar`
-    carries the current climb, positioned above whichever bar is on screen.
+    carries the same climb, positioned above whichever bar is on screen.
 - Surfaces degrade in `GlassSurface` via `useEffectiveSurfaceMode()`: `glass` (iOS 26) → `blur`
   (iOS < 26 frosted) → `material`/`solid` (Android, Reduce Transparency). `Button` uses native
   SwiftUI on iOS, native Compose on Android, and Paper on web; the iOS outlined/tonal tier explicitly
@@ -448,7 +452,8 @@ board art (#7000). A tester found the "Not on the wall" badge from #6939 distrac
 Live pill that said the opposite.
 
 New status goes beside the art instead: the header's back chip, the top bar's second line (the caption), or the
-action bar's rows, like the wall button's "Disconnect board" (`WallControlButton`).
+action bar's rows, like the wall button's "Disconnect board" (`WallControlButton`). The 2.7 preview-first card
+(`PlayerPreviewTip`) docks under the board as the first section above Logbook, never on it.
 
 Allowed over the board, and nothing else:
 
@@ -463,9 +468,9 @@ Allowed over the board, and nothing else:
 
 ![The wall button in each state](images/wall-button-states.png)
 
-The wall button on real phones (iPhone 13 Pro on a Tension board, Pixel 8 Pro on a MoonBoard): no board, lit, a preview, and a board that can't mirror, where the heart leads the top row. The lit shots still read "Lit on the wall"; that state now says "Disconnect board" (or "You are driving the wall" under the frost, #7113), same face.
+The wall button on real phones (iPhone 13 Pro on a Tension board, Pixel 8 Pro on a MoonBoard): no board, lit, a preview, and a board that can't mirror, where the heart leads the top row.
 
-These shots predate the wall button: they show round 2's "Lit on the wall" text.
+These shots are out of date and need replacing. They read "Connect board", "Lit on the wall" and "Put on the wall" (now Put on board, Disconnect board and You are driving the wall since #7113), draw a worded back chip (wordless since owner decision B), and have no "Preview · not on the wall" line. None shows a timed drive's clock and shrunk frost. `nothing-over-the-climb-after.png` also shows a "Lit on the wall" button.
 
 #### One place says "is it lit" (#7000)
 
@@ -506,7 +511,8 @@ way it looks like this:
   The Climbs header's board-held capsule uses the same `WallGlow` background, hold-role
   colours and mirrored geometry for its current climb. Its two-line label uses the glow's readable
   foreground and shadow, with a full-width readability fade because the text reaches the pill's edges.
-  That capsule's frost means this phone holds the board, including when a crew's swipes browse;
+  Its Hide × takes the same readable foreground. That capsule's frost means this phone holds the board,
+  including when a crew's swipes browse;
   read the Play drawer button's "You are driving the wall" label to identify driving.
   Missing hold data keeps the plain amber treatment. With no current climb, the held LED header uses just
   the frost base and grain without inventing hold colours; its words use the frost label colour and shadow.
@@ -529,11 +535,15 @@ way it looks like this:
   28 pt from the trailing edge over 250 ms, holds 150 ms and springs back (damping 20, stiffness 300), about 700 ms
   in all; under Reduce Motion the same strip fades in and out where it stands (200 + 300 + 200 ms). Shimmer was
   rejected (Liquid Glass already has a specular), and so was a draggable knob (it clashes with the face).
-  Shots: `docs/images/7113/`.
+  Shots: `docs/images/7113/`. The hint and drag shots there predate #7170 and still draw the peek and the drag as
+  frost; the flat amber described above is what ships. Re-capture pending, with a timed-drive frame added.
 
 A tap lights the climb, on Disconnect board disconnects (a warning buzz, and "Board disconnected" for screen
-readers), or on You are driving the wall stops driving and keeps the link; a hold opens the board sheet, a named "Board options" action for screen readers. The header keeps only the
-back chip, which names where back goes: "My pick" for the climber's own climb, "On the wall" for the wall's.
+readers), or on You are driving the wall stops driving and keeps the link (unless Disconnect Bluetooth when driving
+ends is on); a hold opens the board sheet, a named "Board options" action for screen readers. The header keeps only
+the back chip: the back arrow, plus the face of whoever lit the wall when back goes to the wall's climb. It has no
+words, so the climb name keeps its room. Screen readers and the Large Content Viewer get "Back to my pick: …" /
+"Back to the climb on the wall: …".
 
 - **On the wall, not yours (QA #147).** With no live link but presence saying the climb on screen was lit on the wall
   under an hour ago, the button reads "Put on board", with "On the wall" as its screen-reader status,
@@ -929,7 +939,8 @@ content column**; there is no player pane, wall column or wall strip beside it. 
 the bottom accessory, Music's MiniPlayer (HIG Tab bars: "tab bars with an attached accessory, like the
 MiniPlayer in Music"), and tapping it, or any climb, opens the full-screen `/play` player, as on iPhone
 (HIG: "Don't change your app's functionality based on the space it occupies"). The accessory zooms
-into the player. `resolveCurrentClimbSurface` (`src/hooks/current-climb-surface.ts`) is the one answer
+into the player. The accessory shows the bar's climb, the last one you opened, not always the
+current one (see `nativeAccessory` above). `resolveCurrentClimbSurface` (`src/hooks/current-climb-surface.ts`) is the one answer
 to "who shows the current climb": the floating JS bar, the bottom-chrome reserve, the rest pill and the
 drawer host's tap routing all read it, so the climb never shows twice. Tab content clears the
 accessory through the measured in-tab inset (`tabBarAtBottom: false`, the same path as the iPhone
@@ -1032,8 +1043,8 @@ through to the full `BoardSheet`. Rules when adding layout-sensitive iPad compon
   own: the `Sheet` / `ModalSheet` wrappers add `useWindowBottomInset()` for it (see
   `docs/mobile-sheets-vs-routes.md`, rule 5). When a strip is
   docked above the pane, the shell sets `PlayDrawer paneTopInset={false}` so the inset isn't doubled.
-- Status may **annotate** selection (the pane shows an "On the wall" chip when the selected climb is the
-  lit one) — but never replace it.
+- Status may **annotate** selection (the wall button says whether the selected climb is lit; the header's
+  back chip, arrow + face, goes back to the wall's climb) — but never replace it.
 
 **The detail pane is width-budgeted, like the wall column** — not gated on a raw breakpoint. The
 persistent detail (play) pane mounts only when, after the sidebar and a minimum pane width, the browse

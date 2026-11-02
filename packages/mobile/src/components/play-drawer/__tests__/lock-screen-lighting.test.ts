@@ -16,6 +16,7 @@ import {
   getDriveMode,
   getLastDriveEnded,
   getLastDriveModeExitReason,
+  isDrivingStoppedForLink,
   markDriveLive,
   resetDriveModeForTests,
   subscribeDriveEnded,
@@ -26,6 +27,7 @@ import {
   armNotificationPressDrive,
   endTimedDriveOverAtPress,
   isUnsettledLockScreenLighting,
+  isUnsettledLockScreenStop,
   resetLockScreenLightingForTests,
   resolveLockScreenAdoption,
 } from '../lock-screen-lighting';
@@ -209,6 +211,90 @@ describe('adoptLockScreenLighting', () => {
     expect(adoptLockScreenLighting({ ...context, read: () => snapshot({ updatedAtMs: NOW - 5_000 }) })?.kind).toBe(
       'start',
     );
+  });
+});
+
+// The Lock Screen bulb while this phone drives: StopDrivingIntent stores
+// "off" from the lock screen, and the drive stops the way the frosted button
+// stops it.
+describe('a Lock Screen stop', () => {
+  const stop = (overrides: Partial<LiveActivityLightingWindowSnapshot> = {}) =>
+    snapshot({
+      mode: 'off',
+      endsAtMs: null,
+      windowSeconds: null,
+      family: null,
+      updatedAtMs: NOW - 1_000,
+      ...overrides,
+    });
+  const context = { sessionId: 'session-1', linked: true, boardId: 7, boardType: 'kilter', now: NOW };
+
+  function driveStartedAt(startedAt: number): void {
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: 'session-1',
+      boardId: 7,
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      now: startedAt,
+    });
+    markDriveLive({ now: startedAt });
+  }
+
+  it('stops a drive that started before the tap, with or without a link', () => {
+    driveStartedAt(NOW - 20_000);
+    expect(resolve(stop())).toEqual({ kind: 'stop' });
+    expect(resolve(stop(), false)).toEqual({ kind: 'stop' });
+  });
+
+  it('leaves a drive that started after the tap, and settles with no drive', () => {
+    expect(resolve(stop())).toEqual({ kind: 'none' });
+    driveStartedAt(NOW - 500);
+    expect(resolve(stop())).toEqual({ kind: 'none' });
+  });
+
+  it('cannot judge another session’s stop', () => {
+    driveStartedAt(NOW - 20_000);
+    expect(resolve(stop({ sessionId: 'session-0' }))).toBeNull();
+  });
+
+  it('stops driving as the frosted button does, once', () => {
+    const ends: DriveEnded[] = [];
+    const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+    driveStartedAt(NOW - 20_000);
+    expect(adoptLockScreenLighting({ ...context, linked: false, read: () => stop() })).toEqual({ kind: 'stop' });
+    unsubscribe();
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(isDrivingStoppedForLink()).toBe(true);
+    // Disconnect Bluetooth when driving ends then decides about the board.
+    expect(ends).toEqual([expect.objectContaining({ reason: 'stopped', keepLink: false })]);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'stopped', startedBy: 'tap' }),
+    );
+    // Settled: a drive started since is not stopped by the same write.
+    driveStartedAt(NOW - 20_000);
+    expect(adoptLockScreenLighting({ ...context, read: () => stop() })).toBeNull();
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it('keeps the writer from putting the stopped drive back until it is adopted', () => {
+    driveStartedAt(NOW - 20_000);
+    expect(isUnsettledLockScreenStop(stop(), getDriveMode())).toBe(true);
+    expect(isUnsettledLockScreenStop(stop({ source: 'app' }), getDriveMode())).toBe(false);
+    expect(isUnsettledLockScreenStop(stop(), null)).toBe(false);
+    expect(isUnsettledLockScreenStop(null, getDriveMode())).toBe(false);
+    adoptLockScreenLighting({ ...context, read: () => stop() });
+    driveStartedAt(NOW - 20_000);
+    expect(isUnsettledLockScreenStop(stop(), getDriveMode())).toBe(false);
+  });
+
+  it('leaves a stop an earlier JS never adopted: a relaunch starts with nobody driving', () => {
+    resetLockScreenLightingForTests({ startedAt: NOW });
+    driveStartedAt(NOW - 20_000);
+    expect(isUnsettledLockScreenStop(stop(), getDriveMode())).toBe(false);
+    expect(adoptLockScreenLighting({ ...context, read: () => stop() })).toBeNull();
   });
 });
 

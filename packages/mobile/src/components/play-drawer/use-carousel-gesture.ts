@@ -2,26 +2,66 @@ import { useEffect, useMemo, type ComponentType, type RefObject } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import {
   cancelAnimation,
+  ReduceMotion,
   runOnJS,
   runOnUI,
   useAnimatedReaction,
   useSharedValue,
+  withDelay,
   withSpring,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { SWIPE_THRESHOLD, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO, SWIPE_OFFSCREEN_PAD } from '@boardsesh/play-view';
 import { carouselCommitDirection } from './carousel-commit';
-import type { SwipePager } from './use-swipe-pager';
+import type { SwipeArtWait, SwipePager } from './use-swipe-pager';
 import { springs } from '../../theme/animations';
 import { hapticMedium } from '../../lib/haptics';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 
 /**
- * How much of the finger's travel the board follows past the list's last climb
- * (issue #6664): enough to feel the end give, not so much that it reads as a
- * swipe that went somewhere.
+ * How much of the finger's travel the board follows where a release does not
+ * step at once: past the list's last climb (issue #6664), and toward a next or
+ * previous climb whose board is still painting. Enough to feel the board give
+ * and see the swipe heard, not so much that it reads as a swipe that went
+ * somewhere.
  */
-const TRACK_END_DRAG_RESISTANCE = 0.3;
+const DRAG_RESISTANCE = 0.3;
+
+/**
+ * How much faster than the finger the board may move to close a gap that opened
+ * under it, when the side it is on changes how much of the finger it follows (a
+ * page that paints mid-drag, or starts painting again). Twice the finger closes
+ * 100 points in 50 of travel, and the board never moves without the finger.
+ */
+const DRAG_CATCH_UP = 2;
+
+/**
+ * How long a released swipe waits for the board it goes to to paint, in ms,
+ * counted from when its page is mounted, before it goes anyway. A normal render
+ * takes 30 to 66 ms on an iPhone 13 Pro and a fresh page reveals its photo
+ * within 600 ms however slow its holds are, so this never cuts one short and the
+ * climber never sees a bare page for it (#6351). Without a limit, an overlay
+ * that never answered held the swipe for good, and the only way on was to close
+ * the player.
+ */
+export const RELEASE_ART_DEADLINE_MS = 700;
+
+/**
+ * The board on `page`: `ready` once its background and holds have displayed,
+ * `failed` when they never will, `loading` until one or the other. A page that
+ * has not reported yet is still loading. Without readiness to go on (the
+ * screenshot capture board), every page counts as ready.
+ */
+function pageArtState(
+  pageArt: Readonly<Record<number, BoardArtReadiness>> | undefined,
+  page: number,
+): BoardArtReadiness {
+  'worklet';
+  if (pageArt === undefined) return 'ready';
+  const art = pageArt[page];
+  return art === 'ready' || art === 'failed' ? art : 'loading';
+}
 
 type UseCarouselGestureOptions = {
   /**
@@ -54,7 +94,28 @@ type PendingSwipeRelease = {
   anchor: number;
   step: number;
   generation: number;
+  /** `Date.now()` at finger-up; for a swipe repeated toward the same climb, at the first one's. */
+  releasedAt: number;
+  /**
+   * `Date.now()` when the release first found its page mounted, null until it
+   * has. The deadline runs from here, so a page React mounts late still gets the
+   * whole `RELEASE_ART_DEADLINE_MS` to paint.
+   */
+  mountedAt: number | null;
+  /** `RELEASE_ART_DEADLINE_MS` has passed since `mountedAt`: the release goes, painted or not. */
+  expired: boolean;
 };
+
+/** Whether two releases go to the same climb: same page, same step, same direction. */
+function sameTarget(release: PendingSwipeRelease, other: PendingSwipeRelease): boolean {
+  'worklet';
+  return (
+    release.direction === other.direction &&
+    release.anchor === other.anchor &&
+    release.step === other.step &&
+    release.generation === other.generation
+  );
+}
 
 /**
  * The horizontal swipe between climbs.
@@ -93,12 +154,20 @@ export function useCarouselGesture({
     tellUntoldStep,
     trackEndAvailable,
     reachTrackEnd,
+    noteStepArtWait,
   } = pager;
   const hasTriggeredHaptic = useSharedValue(false);
   // Only a released swipe waits here. A drag still needs a mounted neighbour
   // before moving the board; catching up must never expose an empty page.
   const pendingRelease = useSharedValue<PendingSwipeRelease | null>(null);
   const touchCancelled = useSharedValue(false);
+  // The waiting release the last touch cancelled. A release toward the same
+  // climb keeps its clock, so swiping again does not start the wait over.
+  const cancelledRelease = useSharedValue<PendingSwipeRelease | null>(null);
+  // Runs out `RELEASE_ART_DEADLINE_MS` after a waiting release's page is
+  // mounted, and is cancelled the moment the release goes or is dropped. Its
+  // value is never read: it only carries the delay, on the UI thread.
+  const releaseDeadline = useSharedValue(0);
 
   // Mirror enabled into a shared value so the gesture useMemo doesn't rebuild
   // when it flips — recomposing mid-session left RNGH stuck on iOS.
@@ -132,13 +201,16 @@ export function useCarouselGesture({
     () => () => {
       runOnUI(() => {
         'worklet';
-        pendingRelease.value = null;
+        if (pendingRelease.value !== null) {
+          pendingRelease.value = null;
+          cancelAnimation(releaseDeadline);
+        }
         if (flingDirection.value !== 0) return;
         cancelAnimation(translateX);
         translateX.value = 0;
       })();
     },
-    [flingDirection, pendingRelease, translateX],
+    [flingDirection, pendingRelease, releaseDeadline, translateX],
   );
 
   // Captured ONCE by the gesture memo (it composes a single time per mount):
@@ -168,8 +240,11 @@ export function useCarouselGesture({
   // starts over from the finger's position rather than add to an offset that
   // belonged to the old page.
   const dragGeneration = useSharedValue(0);
+  // Where the finger put the page at the last update, before any side held it
+  // back: what the next update's finger movement is measured from.
+  const dragRaw = useSharedValue(0);
 
-  const { gesture, startFling } = useMemo(() => {
+  const { gesture, startFling, waitForArt, dropPendingRelease } = useMemo(() => {
     /** Whether the page one step that way is mounted. The JS thread mounts one each side of ITS middle page. */
     const hasMountedPage = (direction: 1 | -1) => {
       'worklet';
@@ -177,11 +252,87 @@ export function useCarouselGesture({
       const target = anchorPage.value + direction;
       return target >= state.center - (state.hasPrevious ? 1 : 0) && target <= state.center + (state.hasNext ? 1 : 0);
     };
+    /** The board on the page one step that way. */
+    const artOf = (direction: 1 | -1) => {
+      'worklet';
+      return pageArtState(pageArt?.value, anchorPage.value + direction);
+    };
+    /**
+     * Whether the board can go that way now. A page still painting holds a
+     * release for at most `RELEASE_ART_DEADLINE_MS`; a failed one is never
+     * coming, so waiting for it would hold the swipe for good.
+     */
     const canStep = (direction: 1 | -1) => {
       'worklet';
+      return hasMountedPage(direction) && artOf(direction) !== 'loading';
+    };
+    /** Whether React has rendered this very page, with the page one step that way beside it. */
+    const pageConfirmed = (direction: 1 | -1) => {
+      'worklet';
+      const state = jsState.value;
+      return state.processedStep === uiSteps.value && state.center === anchorPage.value && hasMountedPage(direction);
+    };
+    /** Past the list's last climb with the end card to show, and React agrees this is the end. */
+    const trackEndOpen = () => {
+      'worklet';
       return (
-        hasMountedPage(direction) && (pageArt === undefined || pageArt.value[anchorPage.value + direction] === 'ready')
+        !hasMountedPage(1) &&
+        trackEndAvailable.value &&
+        jsState.value.processedStep === uiSteps.value &&
+        jsState.value.center === anchorPage.value
       );
+    };
+    /**
+     * How much of the finger's travel the board follows on the side of the
+     * middle `offset` is on (left of it is the next climb's side): all of it
+     * toward a page it can step to, `DRAG_RESISTANCE` toward one still painting
+     * or the end card, none toward nothing.
+     */
+    const rateAt = (offset: number) => {
+      'worklet';
+      if (offset === 0) return 1;
+      const direction = offset < 0 ? 1 : -1;
+      if (canStep(direction)) return 1;
+      return hasMountedPage(direction) || (direction === 1 && trackEndOpen()) ? DRAG_RESISTANCE : 0;
+    };
+    /**
+     * Where the board goes when the finger, at `raw` in the page's terms, has
+     * just moved `fingerStep`. Normally that is `raw` at its side's rate. When a
+     * rate changes under the finger (a page paints, or starts painting again)
+     * the board does not jump: it closes the gap only while the finger moves its
+     * way, at most `DRAG_CATCH_UP` times as fast, and otherwise moves with the
+     * finger at its own side's rate, never across the middle from where it
+     * belongs. So it never moves against the finger, and never without it.
+     */
+    const followFinger = (shown: number, raw: number, fingerStep: number) => {
+      'worklet';
+      const rate = rateAt(raw);
+      // Nowhere to go that way: the board stays in the middle.
+      if (rate === 0) return 0;
+      const target = raw * rate;
+      // Nor does it stay on a side that has lost its page.
+      const from = rateAt(shown) === 0 ? 0 : shown;
+      const gap = target - from;
+      if (gap === 0) return target;
+      if (gap * fingerStep > 0) {
+        return from + Math.sign(gap) * Math.min(Math.abs(gap), DRAG_CATCH_UP * Math.abs(fingerStep));
+      }
+      const along = from + fingerStep * rateAt(from);
+      return along * target < 0 ? 0 : along;
+    };
+
+    /**
+     * The waiting release is gone: stepped, refused, or replaced by a touch. Its
+     * clock stops with it. A touch keeps it in `cancelledRelease`, so a release
+     * toward the same climb can carry on its wait.
+     */
+    const dropPendingRelease = (byTouch: boolean) => {
+      'worklet';
+      const pending = pendingRelease.value;
+      if (pending === null) return;
+      if (byTouch) cancelledRelease.value = pending;
+      pendingRelease.value = null;
+      cancelAnimation(releaseDeadline);
     };
 
     /**
@@ -224,10 +375,18 @@ export function useCarouselGesture({
       dragOrigin.value = translationX;
     };
 
-    const startFling = (direction: 1 | -1, velocity: number) => {
+    /**
+     * `artWait` is set only when the step goes onto a board that has not
+     * painted, or after its release waited past the deadline: the anomaly, for
+     * `Queue Navigation`. One hop to the JS thread for such a step, none for any
+     * other.
+     */
+    const startFling = (direction: 1 | -1, velocity: number, artWait: SwipeArtWait | null = null) => {
       'worklet';
       uiSteps.value += 1;
       untoldStep.value = uiSteps.value;
+      // Ahead of the step itself, which the pager hands over later in the fling.
+      if (artWait !== null) runOnJS(noteStepArtWait)(uiSteps.value, artWait);
       isAnimating.value = true;
       flingDirection.value = direction;
       // Clear the full viewport, including the board's letterbox margins.
@@ -241,12 +400,44 @@ export function useCarouselGesture({
       );
     };
 
+    /**
+     * Hold a release whose page is mounted until it paints, or until
+     * `RELEASE_ART_DEADLINE_MS` after `mountedAt`. Time a cancelled release
+     * toward the same climb already waited counts: a page past its deadline is
+     * stepped onto by the reaction below at once.
+     */
+    const waitForArt = (pending: PendingSwipeRelease, mountedAt: number) => {
+      'worklet';
+      const held: PendingSwipeRelease = { ...pending, mountedAt, expired: false };
+      const left = RELEASE_ART_DEADLINE_MS - (Date.now() - mountedAt);
+      if (left <= 0) {
+        cancelAnimation(releaseDeadline);
+        pendingRelease.value = { ...held, expired: true };
+        return;
+      }
+      pendingRelease.value = held;
+      // Assigning cancels any earlier clock; its callback then reports unfinished.
+      releaseDeadline.value = 0;
+      releaseDeadline.value = withDelay(
+        left,
+        withTiming(1, { duration: 0 }, (finished) => {
+          'worklet';
+          const current = pendingRelease.value;
+          if (!finished || current === null || !sameTarget(current, held)) return;
+          // The reaction below decides; this only tells it the time is up.
+          pendingRelease.value = { ...current, expired: true };
+        }),
+        // A clock, not motion: under Reduce Motion a delay is skipped.
+        ReduceMotion.Never,
+      );
+    };
+
     const pan = Gesture.Pan()
       .manualActivation(true)
       .maxPointers(1)
       .onTouchesDown((event, state) => {
         'worklet';
-        pendingRelease.value = null;
+        dropPendingRelease(true);
         touchCancelled.value = false;
         directionLock.value = 0;
         if (event.allTouches.length > 1) {
@@ -296,7 +487,7 @@ export function useCarouselGesture({
       })
       .onStart((event) => {
         'worklet';
-        pendingRelease.value = null;
+        dropPendingRelease(true);
         touchCancelled.value = false;
         hasTriggeredHaptic.value = false;
         dragGeneration.value = resetGeneration.value;
@@ -306,37 +497,36 @@ export function useCarouselGesture({
           dragBase.value = 0;
           dragOrigin.value = 0;
         }
+        dragRaw.value = dragBase.value;
       })
       .onUpdate((event) => {
         'worklet';
+        let shown = translateX.value;
         if (dragGeneration.value !== resetGeneration.value) {
           dragGeneration.value = resetGeneration.value;
           dragBase.value = 0;
           dragOrigin.value = event.translationX;
+          dragRaw.value = 0;
+          shown = 0;
         }
         // What the finger has done in THIS swipe, and where that puts the page.
         // They differ for a swipe that took over a fling: it starts with the
         // offset still on the far side of 0.
         const travel = event.translationX - dragOrigin.value;
-        let offset = dragBase.value + travel;
+        const raw = dragBase.value + travel;
 
-        // Past the list's last climb the board gives a little toward the end
-        // card; anywhere else with nowhere to go, it stays put.
-        const atTrackEnd =
-          offset < 0 &&
-          !hasMountedPage(1) &&
-          trackEndAvailable.value &&
-          jsState.value.processedStep === uiSteps.value &&
-          jsState.value.center === anchorPage.value;
-        if (offset < 0 && !canStep(1)) offset = atTrackEnd ? offset * TRACK_END_DRAG_RESISTANCE : 0;
-        if (offset > 0 && !canStep(-1)) offset = 0;
-
+        // Toward a climb whose board is still painting, or past the list's last
+        // climb toward the end card, the board gives a little: the swipe is
+        // heard, and its release will go. Anywhere else with nowhere to go, it
+        // stays put. See `followFinger`.
+        const offset = followFinger(shown, raw, raw - dragRaw.value);
+        dragRaw.value = raw;
         translateX.value = offset;
 
         if (
           Math.abs(travel) >= SWIPE_THRESHOLD &&
           !hasTriggeredHaptic.value &&
-          (canStep(travel < 0 ? 1 : -1) || (travel < 0 && atTrackEnd))
+          (hasMountedPage(travel < 0 ? 1 : -1) || (travel < 0 && offset < 0 && trackEndOpen()))
         ) {
           hasTriggeredHaptic.value = true;
           runOnJS(triggerHaptic)();
@@ -362,13 +552,21 @@ export function useCarouselGesture({
         const travel = event.translationX - dragOrigin.value;
         const commitDirection = carouselCommitDirection(travel, velocity, SWIPE_THRESHOLD);
         const direction = commitDirection === 'next' ? 1 : commitDirection === 'previous' ? -1 : 0;
+        // Only the release right after the touch that cancelled it carries it on.
+        const cancelled = cancelledRelease.value;
+        cancelledRelease.value = null;
 
         if (direction !== 0 && canStep(direction)) {
-          startFling(direction, velocity);
+          // Onto a board that failed: nothing to wait for, but worth counting.
+          startFling(direction, velocity, artOf(direction) === 'failed' ? { artState: 'failed', waitedMs: 0 } : null);
           return;
         }
-        // A fast second release can beat the render that mounts its neighbour.
-        // Keep its intent, but take no step until that render confirms the page.
+        // A fast second release can beat the render that mounts its neighbour,
+        // and a mounted neighbour can still be painting. Keep its intent, and
+        // step once that render confirms the page and its board has painted, or
+        // `RELEASE_ART_DEADLINE_MS` after the page is mounted, whichever comes
+        // first. A swipe repeated toward the same climb keeps the first one's
+        // clock: swiping again never makes the wait longer.
         if (
           direction !== 0 &&
           !touchCancelled.value &&
@@ -376,13 +574,27 @@ export function useCarouselGesture({
           !isZoomedSV?.value &&
           (jsState.value.processedStep !== uiSteps.value || hasMountedPage(direction))
         ) {
-          pendingRelease.value = {
+          const release: PendingSwipeRelease = {
             direction,
             velocity,
             anchor: anchorPage.value,
             step: uiSteps.value,
             generation: resetGeneration.value,
+            releasedAt: Date.now(),
+            mountedAt: null,
+            expired: false,
           };
+          const again = cancelled !== null && sameTarget(cancelled, release) ? cancelled : null;
+          if (again !== null) {
+            release.releasedAt = again.releasedAt;
+            release.mountedAt = again.mountedAt;
+          }
+          const mountedAt = release.mountedAt ?? (pageConfirmed(direction) ? Date.now() : null);
+          if (mountedAt === null) {
+            pendingRelease.value = release;
+          } else {
+            waitForArt(release, mountedAt);
+          }
           // A forward swipe past the list's last climb shows the end card only
           // once React has confirmed that this really is the end of the track.
         } else if (
@@ -404,7 +616,7 @@ export function useCarouselGesture({
       // simultaneous scroll still works (the "frozen, scroll-but-no-tap" bug).
       .onTouchesCancelled((_event, stateManager) => {
         'worklet';
-        pendingRelease.value = null;
+        dropPendingRelease(true);
         touchCancelled.value = true;
         stateManager.fail();
       })
@@ -414,7 +626,12 @@ export function useCarouselGesture({
         'worklet';
         directionLock.value = 0;
       });
-    return { gesture: scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan, startFling };
+    return {
+      gesture: scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan,
+      startFling,
+      waitForArt,
+      dropPendingRelease,
+    };
   }, [
     boardWidthSV,
     screenWidthSV,
@@ -435,12 +652,16 @@ export function useCarouselGesture({
     dragBase,
     dragOrigin,
     dragGeneration,
+    dragRaw,
     untoldStep,
     tellUntoldStep,
     trackEndAvailable,
     reachTrackEnd,
+    noteStepArtWait,
     pendingRelease,
+    cancelledRelease,
     touchCancelled,
+    releaseDeadline,
     scrollRef,
   ]);
 
@@ -470,31 +691,40 @@ export function useCarouselGesture({
         snapshot.step !== pending.step ||
         snapshot.generation !== pending.generation
       ) {
-        pendingRelease.value = null;
-        return;
-      }
-      // Failure cancels intent even before React acknowledges the previous
-      // swipe. A repaired image must not revive an already cancelled release.
-      const targetArt = snapshot.pageArt?.[pending.anchor + pending.direction];
-      if (targetArt === 'failed') {
-        pendingRelease.value = null;
+        dropPendingRelease(false);
         return;
       }
       if (state.processedStep !== pending.step) return;
       // A queue change or refused step may have put a different page in the
       // middle. A real queue boundary must still reject the retained release.
       if (state.center !== pending.anchor) {
-        pendingRelease.value = null;
+        dropPendingRelease(false);
         return;
       }
       if (!(pending.direction > 0 ? state.hasNext : state.hasPrevious)) {
-        pendingRelease.value = null;
+        dropPendingRelease(false);
         if (pending.direction > 0 && snapshot.trackEndAvailable) runOnJS(reachTrackEnd)();
         return;
       }
-      if (snapshot.pageArt && targetArt !== 'ready') return;
-      pendingRelease.value = null;
-      startFling(pending.direction, pending.velocity);
+      // The page is mounted. Its board has painted, or never will: go. Still
+      // painting: wait for it until the deadline, counted from now if this is
+      // the first the release has seen of the page, then go anyway, and the
+      // page shows what it has and paints when it can.
+      const artState = pageArtState(snapshot.pageArt, pending.anchor + pending.direction);
+      if (artState === 'loading' && !pending.expired) {
+        if (pending.mountedAt === null) waitForArt(pending, Date.now());
+        return;
+      }
+      dropPendingRelease(false);
+      // Counted only off the usual path: a board that failed, one still
+      // painting at its deadline, or a release that waited past the deadline in
+      // all (most of it for React).
+      const waitedMs = Math.max(0, Date.now() - pending.releasedAt);
+      startFling(
+        pending.direction,
+        pending.velocity,
+        artState !== 'ready' || pending.expired || waitedMs > RELEASE_ART_DEADLINE_MS ? { artState, waitedMs } : null,
+      );
     },
     [
       pendingRelease,
@@ -508,6 +738,8 @@ export function useCarouselGesture({
       trackEndAvailable,
       reachTrackEnd,
       startFling,
+      waitForArt,
+      dropPendingRelease,
     ],
   );
 

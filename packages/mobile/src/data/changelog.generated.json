@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-11-02T12:38:34.400Z",
+  "generatedAt": "2026-11-02T13:53:24.350Z",
   "entries": [
+    {
+      "prNumber": 7210,
+      "category": "fixed",
+      "title": "Swiping to the next climb works even while its holds are still loading.",
+      "mergedAt": "2026-11-02T13:24:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7210"
+    },
+    {
+      "prNumber": 7207,
+      "category": "improved",
+      "title": "Help pages now explain browsing before lighting and how long Put on board keeps lighting.",
+      "mergedAt": "2026-11-02T12:54:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7207",
+      "body": "Settings › Board links straight to how driving the wall works.\nReplay walkthrough brings back the card about previews and the frosted button."
+    },
     {
       "prNumber": 7205,
       "category": "improved",
