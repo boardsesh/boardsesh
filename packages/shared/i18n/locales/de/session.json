@@ -882,7 +882,8 @@
         "reconnect": "Mit Board verbinden",
         "connecting": "Verbinde…",
         "onWall": "{{name}} ist an der Wand",
-        "drivingTheWall": "Du steuerst das Board"
+        "drivingTheWall": "Du steuerst das Board",
+        "stopDriving": "Steuern beenden"
       },
       "inStatsFlashes": "Flashes",
       "inLeaderboardTitle": "Wer klettert",

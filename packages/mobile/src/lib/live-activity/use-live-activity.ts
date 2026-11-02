@@ -33,6 +33,8 @@ type AndroidNotificationStrings = {
   onWallTemplate: string;
   /** The header line while driving the wall (2.7), timed or open-ended. */
   lightDrivingLabel?: string;
+  /** The lit bulb's label while this phone drives: a tap stops driving. */
+  stopDrivingLabel?: string;
 };
 
 export type UseLiveActivityResult = {

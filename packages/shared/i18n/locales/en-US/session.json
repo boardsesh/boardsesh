@@ -882,7 +882,8 @@
         "reconnect": "Connect to board",
         "connecting": "Connecting…",
         "onWall": "{{name}} is on the wall",
-        "drivingTheWall": "Driving the wall"
+        "drivingTheWall": "Driving the wall",
+        "stopDriving": "Stop driving"
       },
       "inStatsFlashes": "Flashes",
       "inLeaderboardTitle": "Who's climbing",

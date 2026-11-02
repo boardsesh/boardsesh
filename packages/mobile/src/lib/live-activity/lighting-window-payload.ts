@@ -55,7 +55,8 @@ function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingF
  * starts the drive itself (`armNotificationPressDrive`).
  *
  * `enabled` is `lockScreenPressKeepsLighting`: false where a press would not
- * start a drive in the app either.
+ * start a drive in the app either. `lockScreenStop` says this JS takes a stop
+ * from the Lock Screen bulb; a binary without one ignores it.
  */
 export function buildKeepLightingConfig({
   keepLighting,
@@ -82,5 +83,8 @@ export function buildKeepLightingConfig({
     inCrew: isCrewSession,
     moonboard: isMoonboardBoardName(boardName),
     enabled: lockScreenPressKeepsLighting({ swipeToDriveEnabled, lightOnSwipe, inSession: isCrewSession }),
+    // This JS adopts a lock-screen stop (`lock-screen-lighting.ts`), so the
+    // bulb may offer one while a drive is on the card.
+    lockScreenStop: true,
   };
 }

@@ -753,6 +753,15 @@ export function useBoardBluetooth({
   // would otherwise race the in-flight native disconnect and re-establish the
   // connection the user just closed.
   const adoptionSuppressedRef = useRef(false);
+  // Set once a Disconnect Bluetooth when driving ends release has finished:
+  // its native disconnect settled, and no connect or teardown came since.
+  // That release keeps the board's native pairing, so the iOS Live Activity
+  // bulb can reconnect to it while the app sleeps. Such a reconnect (and only
+  // one the bulb started, `connectOrigin: 'liveActivityIntent'`) is adopted
+  // despite adoptionSuppressedRef, or the in-app bulb and the Live Activity
+  // would go on saying disconnected over a lit wall. An explicit Disconnect
+  // forgets the pairing and never sets this.
+  const drivingEndedReleaseSettledRef = useRef(false);
   // Full config identity the live connection was established for. Includes set
   // IDs so a set-only route switch ends the old attribution generation rather
   // than allowing its asynchronous board resolve to bleed into the new setup,
@@ -1616,6 +1625,7 @@ export function useBoardBluetooth({
       // A deliberate connect re-arms native-connection adoption after an
       // earlier explicit disconnect suppressed it.
       adoptionSuppressedRef.current = false;
+      drivingEndedReleaseSettledRef.current = false;
       // The user asked for this link, so the off-screen-adopt gate from any
       // previous connection must not survive into it (#4499).
       backgroundAdoptSendGateRef.current = false;
@@ -2120,7 +2130,9 @@ export function useBoardBluetooth({
       // app could otherwise see getConnectedDevice still report the device this
       // teardown is closing and silently re-adopt it.
       adoptionSuppressedRef.current = true;
+      drivingEndedReleaseSettledRef.current = false;
       nativeReconciliationGenerationRef.current += 1;
+      const teardownGeneration = nativeReconciliationGenerationRef.current;
       backgroundAdoptSendGateRef.current = false;
       unsubDisconnectRef.current?.();
       unsubDisconnectRef.current = null;
@@ -2142,7 +2154,17 @@ export function useBoardBluetooth({
       setIsConnected(false);
       onConnectionChange?.(false);
       clearBleDiagnosticsTags();
-      await adapter?.disconnect();
+      // Freeing the board as a drive ends keeps its pairing (the board stays
+      // remembered); every other teardown forgets it natively.
+      const keepBoard = disconnectTrigger === 'driving_ended';
+      await adapter?.disconnect({ keepBoard });
+      if (
+        keepBoard &&
+        adoptionSuppressedRef.current &&
+        nativeReconciliationGenerationRef.current === teardownGeneration
+      ) {
+        drivingEndedReleaseSettledRef.current = true;
+      }
     },
     [consumeConnectionLifetime, onConnectionChange, writeActivityStore],
   );
@@ -2205,7 +2227,12 @@ export function useBoardBluetooth({
     if (!lastConnectedBoardHydrated) return;
     let cancelled = false;
     const supportsPreparedConnections = nativeBleSupportsPreparedConnections();
-    const adopt = (deviceId: string, rawDeviceName?: string, nativeConfigKey?: string) => {
+    // A native connect the Live Activity bulb made after a settled
+    // driving-ends release: the one connection adoption takes back despite a
+    // deliberate teardown.
+    const adoptsBulbReconnect = (connectOrigin: string | undefined) =>
+      drivingEndedReleaseSettledRef.current && connectOrigin === 'liveActivityIntent';
+    const adopt = (deviceId: string, rawDeviceName?: string, nativeConfigKey?: string, connectOrigin?: string) => {
       if (cancelled) return;
       // The bridge sends '' for a missing name — normalise so name parsing
       // (board type, serial, API level) sees undefined instead.
@@ -2213,8 +2240,10 @@ export function useBoardBluetooth({
       // JS already has (or is establishing) its own adapter — nothing to adopt.
       if (adapterRef.current || connectInFlightRef.current) return;
       // The user explicitly disconnected; don't re-adopt the connection the
-      // (possibly still in-flight) native disconnect is tearing down.
-      if (adoptionSuppressedRef.current) return;
+      // (possibly still in-flight) native disconnect is tearing down. After a
+      // settled driving-ends release, the Live Activity bulb's own reconnect
+      // is the climber taking the board back, so that one is adopted.
+      if (adoptionSuppressedRef.current && !adoptsBulbReconnect(connectOrigin)) return;
       if (!boardName || layoutId === undefined || sizeId === undefined) return;
       // Only adopt a device positively identified as the active config's board
       // type, or a nameless native reconnect for the exact config we most
@@ -2271,6 +2300,9 @@ export function useBoardBluetooth({
       const connectionGeneration = nextConnectionGenerationRef.current + 1;
       nextConnectionGenerationRef.current = connectionGeneration;
       adapterRef.current = adapter;
+      // This phone holds a link JS owns again, as after a connect.
+      adoptionSuppressedRef.current = false;
+      drivingEndedReleaseSettledRef.current = false;
       connectedConfigIdentityRef.current = currentConnectionIdentity;
       unsubDisconnectRef.current = adapter.onDisconnect((info) => {
         handleDisconnection(adapter, connectionGeneration, info);
@@ -2344,11 +2376,12 @@ export function useBoardBluetooth({
     const checkNativeConnection = () => {
       // A query begun during permission/availability awaits could capture the
       // old pairing before preparation, then resolve after this attempt fails.
-      if (cancelled || connectInFlightRef.current || adoptionSuppressedRef.current) return;
+      if (cancelled || connectInFlightRef.current) return;
+      if (adoptionSuppressedRef.current && !drivingEndedReleaseSettledRef.current) return;
       const reconciliationGeneration = nativeReconciliationGenerationRef.current;
       void getNativeBleConnectedDevice().then((device) => {
         if (cancelled || reconciliationGeneration !== nativeReconciliationGenerationRef.current) return;
-        if (device) adopt(device.deviceId, device.name, device.configKey);
+        if (device) adopt(device.deviceId, device.name, device.configKey, device.connectOrigin);
       });
     };
     const connectedSubscription = subscribeNativeBleConnected((payload) => {

@@ -11,6 +11,7 @@ import {
   isDriveWindowDue,
   makeDriveOpenEnded,
   startLockScreenDrive,
+  stopDrivingForLink,
   type DriveModeState,
 } from './drive-mode-store';
 
@@ -48,6 +49,14 @@ import {
  * The Lock Screen and the notification keep showing the wall's climb (the
  * queue's current), never the MiniPlayer's last pick, and a press steps from
  * that climb.
+ *
+ * The bulb stops a drive too, as the frosted button does in the app
+ * (`stopDrivingForLink`: reason `stopped`, the link stays unless Disconnect
+ * Bluetooth when driving ends frees the board). iOS stores the stop natively
+ * (`StopDrivingIntent`: mode off, `source: 'lockScreen'`) and JS adopts it
+ * here like a press, by its `updatedAtMs`, and only for a drive that started
+ * before the tap. Android's bulb reaches JS directly (`boardControl`
+ * `stopDriving`, `live-activity-bridge.tsx`).
  */
 
 /** What adopting one lock-screen write does to the drive. */
@@ -69,6 +78,8 @@ export type LockScreenAdoption =
   | { kind: 'extend'; expiresAt: number }
   /** A timed drive here, an open-ended one on the lock screen (Until I stop): no end any more. */
   | { kind: 'open_ended' }
+  /** The Lock Screen bulb stopped the drive here: stop driving, as the frosted button does. */
+  | { kind: 'stop' }
   /** Read and settled: nothing to change (already driving, a later end here, or the timed drive is over). */
   | { kind: 'none' };
 
@@ -96,7 +107,10 @@ export function resolveLockScreenAdoption({
   now: number;
 }): LockScreenAdoption | null {
   if (snapshot?.source !== 'lockScreen') return null;
-  if (sessionId === null || snapshot.sessionId !== sessionId || !linked) return null;
+  if (sessionId === null || snapshot.sessionId !== sessionId) return null;
+  // A stop needs no link: the climber stopped driving whatever the radio does.
+  if (snapshot.mode === 'off') return isStopFor(snapshot, drive) ? { kind: 'stop' } : { kind: 'none' };
+  if (!linked) return null;
   if (drive?.phase === 'arming') return null;
   // A timed drive over by the press is not the one it renewed: the press's
   // own drive takes its place.
@@ -137,6 +151,15 @@ export function resolveLockScreenAdoption({
   return { kind: 'none' };
 }
 
+/**
+ * Whether a lock-screen "off" stops `drive`: only a drive that started before
+ * the tap. One started since (Put on board again, a swipe) is not the drive
+ * the climber stopped.
+ */
+function isStopFor(snapshot: LiveActivityLightingWindowSnapshot, drive: DriveModeState | null): boolean {
+  return snapshot.mode === 'off' && drive !== null && drive.startedAt <= snapshot.updatedAtMs;
+}
+
 /** The `updatedAtMs` of the last lock-screen write this JS settled. */
 let lastSettledUpdatedAtMs: number | null = null;
 
@@ -169,6 +192,20 @@ export function isUnsettledLockScreenLighting(
   return snapshot.mode === 'window' && (snapshot.endsAtMs ?? 0) > now;
 }
 
+/**
+ * Whether `snapshot` is a Lock Screen stop this JS has not adopted yet that
+ * stops `drive`. The Live Activity writer never covers one with the drive it
+ * stopped: the card would show the drive again, and the next adoption could
+ * not find the stop.
+ */
+export function isUnsettledLockScreenStop(
+  snapshot: LiveActivityLightingWindowSnapshot | null,
+  drive: DriveModeState | null,
+): boolean {
+  if (snapshot?.source !== 'lockScreen' || isSettled(snapshot)) return false;
+  return isStopFor(snapshot, drive);
+}
+
 /** Applies one adoption to the drive store. */
 function applyAdoption(
   adoption: LockScreenAdoption,
@@ -193,6 +230,9 @@ function applyAdoption(
       return;
     case 'open_ended':
       makeDriveOpenEnded();
+      return;
+    case 'stop':
+      stopDrivingForLink();
       return;
     case 'none':
       return;

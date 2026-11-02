@@ -78,6 +78,22 @@ class BoardSessionActionReceiverTest {
     }
 
     @Test
+    fun `connectedByMe lightbulb drawn as Stop driving dispatches stopDriving`() {
+        receiver.onReceive(context, bulbIntent("connectedByMe").apply {
+            putExtra(BoardSessionService.EXTRA_STOPS_DRIVE, true)
+        })
+        verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("stopDriving", "corr-1") }
+    }
+
+    @Test
+    fun `a stale Stop driving flag never stops a drive this phone no longer holds`() {
+        receiver.onReceive(context, bulbIntent("disconnected").apply {
+            putExtra(BoardSessionService.EXTRA_STOPS_DRIVE, true)
+        })
+        verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("reconnect", "corr-1") }
+    }
+
+    @Test
     fun `heldByPeer lightbulb dispatches reconnect`() {
         receiver.onReceive(context, bulbIntent("heldByPeer"))
         verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("reconnect", "corr-1") }

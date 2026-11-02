@@ -20,6 +20,7 @@ public class LiveActivityModule: Module {
     private var observingPushRegistrationStale = false
     private var observingForegroundNotification = false
     private var observingBleReconnect = false
+    private var observingDriveStop = false
 
     /// Serial queue protecting push token state accessed from both the JS-call
     /// thread and the LiveActivityManager push token callback.
@@ -77,14 +78,21 @@ public class LiveActivityModule: Module {
     public func definition() -> ModuleDefinition {
         Name("LiveActivity")
 
-        Events("queueNavigate", "queueMirror")
-        Constants(["supportsMirrorControl": true, "supportsRestTimer": true, "supportsLightingWindow": true])
+        Events("queueNavigate", "queueMirror", "lockScreenDriveStop")
+        Constants([
+            "supportsMirrorControl": true,
+            "supportsRestTimer": true,
+            "supportsLightingWindow": true,
+            // The Lock Screen bulb can stop a drive (StopDrivingIntent).
+            "supportsLockScreenDriveStop": true,
+        ])
 
         OnDestroy {
             self.stopDarwinObservation()
             self.stopPushRegistrationStaleObservation()
             self.stopForegroundObservation()
             self.stopBleReconnectObservation()
+            self.stopDriveStopObservation()
         }
 
         OnStartObserving {
@@ -345,8 +353,51 @@ public class LiveActivityModule: Module {
         guard #available(iOS 17.0, *) else { return }
 
         Task { @MainActor in
-            _ = await LiveActivityBleBridge.reconnectForIntent()
+            let outcome = await LiveActivityBleBridge.reconnectForIntent()
+            // Same outcome as the in-process intent: the card lights, or says why not.
+            if let defaults = SharedConstants.sharedDefaults {
+                outcome.record(in: defaults)
+            }
+            await LiveActivityManager.shared.rerenderForLightingWindow()
         }
+    }
+
+    // MARK: - Lock-screen stop (StopDrivingIntent)
+
+    /// Observe the Darwin notification StopDrivingIntent posts once it stored a
+    /// stop, and hand it to JS (`lockScreenDriveStop`), which adopts the stored
+    /// stop from the App Group. The event carries nothing: the App Group is the
+    /// record, so a missed event only delays the stop to the next foreground.
+    private func startDriveStopObservation() {
+        guard !observingDriveStop else { return }
+        observingDriveStop = true
+
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let name = CFNotificationName(SharedConstants.driveStopNotification as CFString)
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+
+        CFNotificationCenterAddObserver(
+            center,
+            observer,
+            { (_, observer, _, _, _) in
+                guard let observer = observer else { return }
+                let module = Unmanaged<LiveActivityModule>.fromOpaque(observer).takeUnretainedValue()
+                module.emitOrBuffer(name: "lockScreenDriveStop", body: [:])
+            },
+            name.rawValue,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    private func stopDriveStopObservation() {
+        guard observingDriveStop else { return }
+        observingDriveStop = false
+
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+        let name = CFNotificationName(SharedConstants.driveStopNotification as CFString)
+        CFNotificationCenterRemoveObserver(center, observer, name, nil)
     }
 
     // MARK: - App foreground
@@ -835,6 +886,7 @@ public class LiveActivityModule: Module {
         startPushRegistrationStaleObservation()
         startForegroundObservation()
         startBleReconnectObservation()
+        startDriveStopObservation()
 
         let initialState = ClimbSessionAttributes.ContentState(
             climbName: "Loading...",
@@ -891,6 +943,7 @@ public class LiveActivityModule: Module {
         stopPushRegistrationStaleObservation()
         stopForegroundObservation()
         stopBleReconnectObservation()
+        stopDriveStopObservation()
 
         let (token, sessionId, graphqlUrl) = tokenQueue.sync {
             (_currentPushToken, _currentSessionId, _currentGraphqlUrl)
@@ -1233,7 +1286,8 @@ extension LiveActivityModule {
                 drivesInSession: options.drivesInSession,
                 inCrew: options.inCrew,
                 moonboard: options.moonboard,
-                enabled: options.enabled
+                enabled: options.enabled,
+                lockScreenStop: options.lockScreenStop
             ),
             to: defaults
         )
@@ -1277,6 +1331,8 @@ struct KeepLightingConfigOptions: Record {
     @Field var inCrew: Bool = false
     @Field var moonboard: Bool = false
     @Field var enabled: Bool = false
+    /// The JS adopts a lock-screen stop. Absent from an older bundle: no stop on the bulb.
+    @Field var lockScreenStop: Bool = false
 }
 
 /// Mirrors `LiveActivityRestTimerOptions` in modules/live-activity/src/index.ts.
