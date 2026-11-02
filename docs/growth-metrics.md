@@ -499,8 +499,13 @@ their thresholds and their volume floor are in `docs/mobile-store-release.md`,
 
 On Android, a connect that fails with GATT status 133 or 147 (or with the
 status left out) retries once, inside the same 12 s budget. Both connect
-outcome events say what happened. These keys are Android only: native iOS and
-web send none of them.
+outcome events say what happened. `connectAttempts`, `retried` and
+`firstAttemptCode` are Android only: native iOS and web drop them
+(`firstAttemptCode` is also dropped when no retry ran). `retrySucceeded` is
+different: it is `false` on every `Bluetooth Connection Success` event without
+a retry, iOS and web included, and absent only on iOS and web failure events.
+So read the hit rate over `retried = true`, never over every event that
+carries `retrySucceeded`.
 
 | Prop               | Meaning                                                                             |
 | ------------------ | ----------------------------------------------------------------------------------- |
