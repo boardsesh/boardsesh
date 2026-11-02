@@ -19,6 +19,9 @@ const installTimeoutMs = 300_000;
 // `launchctl list` and `log show` only describe a launch the poll loop already judged.
 // On 2026-10-24 `log show` took about 28 s and `launchctl list` passed 30 s.
 const diagnosticTimeoutMs = 60_000;
+// Passing launches took 20-59 s on CI and about 5 of 14 recent ones hit the old 60 s limit
+// (iPhone Duo on iOS 27.1 boots and launches far slower than a single-screen iPhone).
+const launchTimeoutMs = 180_000;
 const simulatorUdidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -263,7 +266,7 @@ export async function runReleaseLaunchSmoke(
         options.device,
         bundleIdentifier,
       ],
-      60_000,
+      launchTimeoutMs,
     );
     const launchedPid = parseLaunchedPid(launchOutput, bundleIdentifier);
     summary.pid = launchedPid;
