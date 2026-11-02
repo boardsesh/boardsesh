@@ -572,6 +572,7 @@ const { _resetPreviewFirstTipForTests, getPreviewFirstTipState } =
   await import('../../../lib/onboarding/preview-first-tip');
 const { markWallCleared, resetWallCleared } = await import('../../ble/wall-cleared-store');
 const { BUSY_WALL_TAP_DEBOUNCE_MS } = await import('../busy-wall-question');
+const { clearLetsGo, showLetsGo } = await import('../board-lets-go-store');
 const { QueueSessionBoardPathContext } = await import('../../../providers/queue/queue-contexts');
 
 const BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
@@ -3860,6 +3861,37 @@ describe('PlayDrawer — the browse caption', () => {
     renderDrawer('anonymous');
 
     expect(lastCaption()).toBeNull();
+  });
+
+  // Board plan item 8: the board let go mid-drive. Its line is said beside the
+  // art, here, on any climb, ahead of the browse caption.
+  describe('when the board let go mid-drive', () => {
+    afterEach(() => act(() => clearLetsGo()));
+
+    it('puts the line over the browse caption', () => {
+      session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+      wall.uuid = SIMILAR_CLIMB.uuid;
+      wall.name = SIMILAR_CLIMB.name;
+      wall.sentAt = new Date(Date.now() - 10 * 60_000).toISOString();
+      act(() => showLetsGo({ kind: 'dropped' }));
+      render(drawerElement('member', openTargetFor(CLIMB)));
+
+      expect(lastCaption()).toBe('playView.wallControl.boardDropped');
+    });
+
+    it('shows it on the climb on screen too, and goes when it is cleared', () => {
+      session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+      const view = render(drawerElement('member', openTargetFor(CLIMB)));
+      const topBarContext = () => view.queryByTestId('play-drawer-track-label');
+      expect(topBarContext()).toBeNull();
+
+      act(() => showLetsGo({ kind: 'taken_named', name: 'Sam' }));
+      expect(lastCaption()).toBe('playView.wallControl.boardTakenBy');
+      expect(topBarContext()).not.toBeNull();
+      // Nothing else to say on this climb: the top bar's context goes with it.
+      act(() => clearLetsGo());
+      expect(topBarContext()).toBeNull();
+    });
   });
 });
 

@@ -181,6 +181,29 @@ describe('driveModeEnded', () => {
     });
   });
 
+  // Board plan item 8: who had the board after a drop the phone didn't cause.
+  it('carries who took the board only when the caller knows it', () => {
+    const base = {
+      reason: 'link_dropped' as const,
+      startedBy: 'always' as const,
+      startedAt: 0,
+      endedAt: 10_000,
+      climbsLit: 2,
+      inSession: true,
+      windowRenewals: 0,
+      windowMs: null,
+      boardType: 'kilter',
+    };
+    expect(driveModeEnded({ ...base, takenBy: 'named' }).properties.takenBy).toBe('named');
+    expect(driveModeEnded({ ...base, takenBy: 'anonymous' }).properties.takenBy).toBe('anonymous');
+    // A plain drop: set, and null.
+    const dropped = driveModeEnded({ ...base, takenBy: null }).properties;
+    expect('takenBy' in dropped).toBe(true);
+    expect(dropped.takenBy).toBeNull();
+    // A hang-up mid-drive, or any other end: no key at all.
+    expect('takenBy' in driveModeEnded(base).properties).toBe(false);
+  });
+
   it('never reports a negative duration or count', () => {
     const { properties } = driveModeEnded({
       reason: 'connect_failed',

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { DriveModeStartedBy } from '@boardsesh/analytics';
+import type { DriveModeStartedBy, DriveModeTakenBy } from '@boardsesh/analytics';
 import { trackDriveModeEnded, trackDriveModeStarted } from '../../lib/analytics-wall-control';
 import type { KeepLightingChoice, KeepLightingSettingKey } from '../../lib/keep-lighting';
 
@@ -34,6 +34,12 @@ import type { KeepLightingChoice, KeepLightingSettingKey } from '../../lib/keep-
  * Every end is handed on (`subscribeDriveEnded`), so Disconnect Bluetooth when
  * driving ends can let go of the board for the ends the climber or the clock
  * caused (`use-driving-ended-disconnect.ts`).
+ *
+ * A link that dropped on its own holds its Drive Mode Ended back (`holdReport`)
+ * for at most a few seconds, until `use-board-lets-go.ts` knows whether
+ * another phone took the board (`sendHeldDriveEndedReport`, `takenBy`). The
+ * next drive's start sends a report still held first, so Ended never follows
+ * the next Started.
  */
 export type DriveModePhase = 'arming' | 'live';
 
@@ -206,6 +212,8 @@ let driveMode: DriveModeState | null = null;
  */
 let stoppedForLink = false;
 let lastExitReason: DriveModeExitReason | null = null;
+/** A Drive Mode Ended held back for `takenBy` (`DriveEndOptions.holdReport`). */
+let heldReport: { ended: DriveModeState; reason: DriveModeExitReason; endedAt: number } | null = null;
 /** The last end handed on, so a player reading the end in render knows whether it lets go of the board. */
 let lastEnded: DriveEnded | null = null;
 const listeners = new Set<() => void>();
@@ -241,6 +249,12 @@ export type DriveEndOptions = {
   disconnectAfter?: () => Promise<void>;
   /** See `DriveEnded.keepLink`. */
   keepLink?: boolean;
+  /**
+   * Hold Drive Mode Ended back until `sendHeldDriveEndedReport` says who took
+   * the board (a link that dropped on its own, `use-board-lets-go.ts`). The
+   * end is handed on to `subscribeDriveEnded` at once all the same.
+   */
+  holdReport?: boolean;
 };
 
 const endedListeners = new Set<(ended: DriveEnded) => void>();
@@ -297,7 +311,12 @@ function emit(): void {
  * window that ran out ended at its end, not when a late timer (or the app
  * coming back) noticed it (#7038), so its duration is the climber's.
  */
-function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = Date.now()): void {
+function reportEnded(
+  ended: DriveModeState,
+  reason: DriveModeExitReason,
+  now = Date.now(),
+  extra: { takenBy?: DriveModeTakenBy | null } = {},
+): void {
   const endedAt = reason === 'window_ended' && ended.expiresAt !== null ? Math.min(now, ended.expiresAt) : now;
   trackDriveModeEnded({
     reason,
@@ -309,7 +328,20 @@ function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = D
     windowRenewals: ended.windowRenewals,
     windowMs: ended.windowMs,
     boardType: ended.boardType,
+    ...extra,
   });
+}
+
+/**
+ * Send the Drive Mode Ended held back for a link that dropped on its own, with
+ * who had the board after it (`takenBy`, null when no one took it). It keeps
+ * the drop's own end time. Does nothing when no report is held.
+ */
+export function sendHeldDriveEndedReport({ takenBy }: { takenBy: DriveModeTakenBy | null }): void {
+  const held = heldReport;
+  if (!held) return;
+  heldReport = null;
+  reportEnded(held.ended, held.reason, held.endedAt, { takenBy });
 }
 
 /**
@@ -336,6 +368,8 @@ export function enterDriveMode({
   now?: number;
 }): void {
   const windowed = windowMs !== null && windowMs > 0;
+  // A drop still waiting to hear who took the board is sent as it stands.
+  sendHeldDriveEndedReport({ takenBy: null });
   driveMode = {
     phase: 'arming',
     sessionId,
@@ -427,6 +461,7 @@ export function startLockScreenDrive({
   startedAt: number;
 }): boolean {
   if (driveMode) return false;
+  sendHeldDriveEndedReport({ takenBy: null });
   const windowed = windowMs !== null && windowMs > 0 && expiresAt !== null;
   driveMode = {
     phase: 'live',
@@ -562,7 +597,12 @@ export function exitDriveMode(reason: DriveModeExitReason, options: DriveEndOpti
   driveMode = null;
   lastExitReason = reason;
   emit();
-  reportEnded(ended, reason);
+  if (options.holdReport) {
+    sendHeldDriveEndedReport({ takenBy: null });
+    heldReport = { ended, reason, endedAt: Date.now() };
+  } else {
+    reportEnded(ended, reason);
+  }
   emitEnded(endedFor(reason, ended, options));
   return ended;
 }
@@ -657,6 +697,7 @@ export function resetDriveModeForTests(): void {
   driveMode = null;
   stoppedForLink = false;
   lastExitReason = null;
+  heldReport = null;
   lastEnded = null;
   claimedAnnouncements = null;
   endedListeners.clear();

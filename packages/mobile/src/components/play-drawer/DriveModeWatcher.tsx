@@ -39,6 +39,7 @@ import {
   useDrivingStoppedForLink,
   type DriveWatchSnapshot,
 } from './drive-mode-store';
+import { useBoardLetsGo } from './use-board-lets-go';
 import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
 import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
 
@@ -78,6 +79,12 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * And with Disconnect Bluetooth when driving ends on, the ends the climber or
  * the clock caused let go of the board (`use-driving-ended-disconnect.ts`).
  *
+ * A link that drops on its own mid-drive, or that another phone takes, is
+ * said once: a warning buzz, a screen-reader line and the player's top-bar
+ * caption, naming who took the board when presence knows
+ * (`use-board-lets-go.ts`). A hang-up or a board switch mid-drive ends it the
+ * same way and says nothing.
+ *
  * A Lock Screen or Dynamic Island Next / Previous starts or renews that drive
  * natively on iOS, since JS may be suspended when the intent lights the wall
  * (`lock-screen-lighting.ts`). This adopts that write: when the app comes back
@@ -105,6 +112,8 @@ export function DriveModeWatcher(): null {
   const { boardId } = useBoardPresenceControls();
   const { isAuthenticated } = useAuth();
   const drive = useDriveMode();
+  // Ends a drive whose link dropped, and says so when this phone didn't drop it.
+  const endDriveForLinkDrop = useBoardLetsGo({ linked, pending, boardId, drive, signedIn: isAuthenticated });
   // Goes live, and counts the climbs lit, at this phone's own link's confirms.
   useDriveWallConfirms(bluetooth?.isConnected ?? false);
   useDisconnectWhenDrivingEnds(bluetooth);
@@ -201,7 +210,8 @@ export function DriveModeWatcher(): null {
       connectSeen: connectSeenForRef.current === drive.startedAt,
     });
     if (reason) {
-      exitDriveMode(reason);
+      if (reason === 'link_dropped') endDriveForLinkDrop();
+      else exitDriveMode(reason);
       return;
     }
     // The player starts a drive without knowing the bound board: learn it once
@@ -209,7 +219,7 @@ export function DriveModeWatcher(): null {
     if (drive.phase === 'live' && drive.boardId === null && current.boardId !== null) {
       markDriveLive({ boardId: current.boardId });
     }
-  }, [linked, pending, sessionId, boardId, isAuthenticated, drive]);
+  }, [linked, pending, sessionId, boardId, isAuthenticated, drive, endDriveForLinkDrop]);
 
   // Always drive the wall. Where it no longer applies (the switch off, a crew
   // formed with In a session too off, or the swipe flag off) its own drive

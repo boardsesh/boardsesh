@@ -77,10 +77,18 @@ vi.mock('../../../providers/queue-provider', () => ({
 const effects = vi.hoisted(() => ({
   hapticLight: vi.fn(),
   hapticSuccess: vi.fn(),
+  hapticWarning: vi.fn(),
   announceQueued: vi.fn(),
   track: vi.fn(),
 }));
-vi.mock('../../../lib/haptics', () => ({ hapticLight: effects.hapticLight, hapticSuccess: effects.hapticSuccess }));
+vi.mock('../../../lib/haptics', () => ({
+  hapticLight: effects.hapticLight,
+  hapticSuccess: effects.hapticSuccess,
+  hapticWarning: effects.hapticWarning,
+}));
+// The board let go mid-drive (board plan item 8) reads who is signed in;
+// `board-lets-go.test.tsx` covers what it says.
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'user-me' }));
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued: effects.announceQueued }));
 vi.mock('../../../lib/analytics', () => ({ track: effects.track }));
 vi.mock('react-i18next', () => ({

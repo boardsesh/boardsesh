@@ -262,6 +262,18 @@ notification, a deep link), the MiniPlayer's ⏮ ⏭ (`useDrivingWall`), and eve
   `startedBy` is `swipe`, `tap`, `action`, `lock_screen` or `always` (`solo_carry` before 2026-11), `windowSec` is null for an
   open-ended drive, and `durationSec` stops at `expiresAt` for a window that ran out
   (`DriveModeExitReason` in `drive-mode-store.ts` lists every reason).
+- **When the board lets go mid-drive** (board plan item 8). A link that drops on its own while
+  a drive is on, or a wall with no lights another climber takes, is said once: a warning buzz,
+  one screen-reader line, and a caption on the player's top bar for 10 s, beside the board art.
+  It waits up to 5 s for board presence to say who has the board now, then says "Sam took the
+  board" (anyone not anonymous is named, crewmate or not), "Another phone has the board" (an
+  anonymous holder, or no name), or "Board disconnected · Put on board reconnects" when no one
+  took it. Only a holder that changed during the drive counts, and never the climber's own
+  account. Nothing is said for a hang-up or a board switch mid-drive, a stop the climber made,
+  a drop with nobody driving, or when the link comes back, a connect starts, a drive starts or
+  the board changes before the wait ends. The Bluetooth provider notes how each link ended
+  (`lib/ble/link-end-store.ts`); `use-board-lets-go.ts` does the rest, and that end's
+  `Drive Mode Ended` carries `takenBy` (`docs/growth-metrics.md`).
 - **Not on a crewmate's board**, by design. Their phone holds it and Put on board relays the climb
   to it, so the swipe refuses there and nothing changes.
 

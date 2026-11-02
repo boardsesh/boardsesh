@@ -197,6 +197,14 @@ export type DriveModeEndReason =
  */
 export type DriveModeStartedBy = 'swipe' | 'tap' | 'action' | 'lock_screen' | 'always';
 
+/**
+ * Who had the board after a drive's link dropped on its own (board plan item
+ * 8): `named`, a climber the app named ("Sam took the board"); `anonymous`,
+ * another phone it couldn't name ("Another phone has the board"). Null: no
+ * one took it, the board only disconnected.
+ */
+export type DriveModeTakenBy = 'named' | 'anonymous';
+
 export type DriveModeStartedInput = {
   startedBy: DriveModeStartedBy;
   /** The drive started in a party session. */
@@ -244,6 +252,14 @@ export type DriveModeEndedInput = {
   windowMs: number | null;
   /** The board type driven, as Drive Mode Started. */
   boardType: string | null;
+  /**
+   * Set only on a `link_dropped` end the phone didn't cause (a radio drop, or
+   * another climber taking the board): who had the board after it, or null
+   * when no one took it. Left off a link this phone let go of (a hang-up or a
+   * board switch mid-drive) and every other reason, so `takenBy` set splits
+   * the drops a climber heard about from the ones they made.
+   */
+  takenBy?: DriveModeTakenBy | null;
 };
 
 export type DriveModeEndedProps = {
@@ -257,6 +273,8 @@ export type DriveModeEndedProps = {
   /** The keep-lighting window's length in whole seconds (30, 45, 60); null for an open-ended drive. */
   windowSec: number | null;
   boardType: string | null;
+  /** As the input's: present only on a `link_dropped` end the phone didn't cause. */
+  takenBy?: DriveModeTakenBy | null;
 };
 
 /** A drive ended (#7113): how long it lasted and how many climbs it lit. */
@@ -274,6 +292,7 @@ export function driveModeEnded(
       windowRenewals: Math.max(0, input.windowRenewals),
       windowSec: input.windowMs === null ? null : Math.max(0, Math.round(input.windowMs / 1000)),
       boardType: input.boardType,
+      ...(input.takenBy !== undefined ? { takenBy: input.takenBy } : {}),
     },
   };
 }

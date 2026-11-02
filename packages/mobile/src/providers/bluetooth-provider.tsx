@@ -48,6 +48,7 @@ import {
 } from '../lib/ble/resolve-serials';
 import { advertisedBoardTypesBySerial } from '../lib/ble/advertised-board-type';
 import { classifyBleDisconnect } from '../lib/ble/disconnect-category';
+import { noteLinkEnded } from '../lib/ble/link-end-store';
 import {
   decideBlePickerSelection,
   type BleBoardConfig,
@@ -1492,6 +1493,10 @@ export function BluetoothProvider({
   // the time a config-switch teardown completes.
   const handleBluetoothConnectionEnded = useCallback(
     (connection: BleConnectionEnded) => {
+      // Before the hook drops `isConnected`: a drive this link carried ends as
+      // `link_dropped`, and only a drop this phone didn't make is said
+      // (`use-board-lets-go.ts`).
+      noteLinkEnded({ deliberate: connection.reason === 'user' });
       wallOperationEpochRef.current += 1;
       clearPendingWallReportAndUndoToastArm();
       connectedViaMismatchOverrideRef.current = false;
@@ -1662,6 +1667,12 @@ export function BluetoothProvider({
     (reason: 'user' | 'ble_connected' | 'board_changed' | 'taken_by_peer' | 'unmount' = 'user') => {
       const virtualHold = virtualWallHoldRef.current;
       if (!virtualHold) return;
+      // A transport handoff keeps this phone on the wall: no link ended. Only a
+      // later holder taking it ends one this phone didn't choose
+      // (`use-board-lets-go.ts` says so if a drive was on).
+      if (reason !== 'ble_connected') {
+        noteLinkEnded({ deliberate: reason !== 'taken_by_peer', takenByPeer: reason === 'taken_by_peer' });
+      }
       wallOperationEpochRef.current += 1;
       virtualWallHoldRef.current = null;
       virtualHold.controller.abort();
@@ -1675,7 +1686,9 @@ export function BluetoothProvider({
       // that value for as long as it is mounted, and clears it on unmount.
       // Only a deliberate hand-back is announced. An auto-release (BLE took
       // over, the board changed, a peer took the wall) is not something the user
-      // did, and a toast for it would read as an error.
+      // did, and a toast for it would read as an error. A peer taking it while
+      // this phone drove the wall is said once by the drive's watcher instead,
+      // beside the board art (`use-board-lets-go.ts`).
       if (reason === 'user') {
         hapticLight();
         showToast(tSession('mobile.boardPresence.wallReleasedToast'), 'info');

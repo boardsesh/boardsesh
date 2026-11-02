@@ -23,6 +23,7 @@ import {
   noteDriveClimbLit,
   resetDriveModeForTests,
   resolveDriveModeExit,
+  sendHeldDriveEndedReport,
   shouldEndWindowForSettings,
   shouldStartAlwaysDrive,
   startAlwaysDrive,
@@ -191,6 +192,71 @@ describe('Drive Mode Ended', () => {
       'Drive Mode Ended',
       expect.objectContaining({ reason: 'connect_failed', climbsLit: 0 }),
     );
+  });
+
+  // Board plan item 8: a link that dropped on its own waits to hear who took the board.
+  describe('held for who took the board', () => {
+    it('ends the drive at once and hands the end on, but sends the report later with the drop’s end time', () => {
+      const seen: DriveEnded[] = [];
+      subscribeDriveEnded((ended) => seen.push(ended));
+      const now = vi.spyOn(Date, 'now').mockReturnValue(31_400);
+      enterDriveMode({ startedBy: 'always', sessionId: 'session-1', boardId: 7, now: 1_000 });
+      markDriveLive();
+      exitDriveMode('link_dropped', { holdReport: true });
+      expect(getDriveMode()).toBeNull();
+      expect(seen.map((ended) => ended.reason)).toEqual(['link_dropped']);
+      expect(endedCalls()).toHaveLength(0);
+      // Who took it is known 4 s later; the drive still lasted 30 s.
+      now.mockReturnValue(35_400);
+      sendHeldDriveEndedReport({ takenBy: 'named' });
+      expect(endedCalls()).toEqual([
+        ['Drive Mode Ended', expect.objectContaining({ reason: 'link_dropped', durationSec: 30, takenBy: 'named' })],
+      ]);
+      // Once only.
+      sendHeldDriveEndedReport({ takenBy: null });
+      expect(endedCalls()).toHaveLength(1);
+      vi.restoreAllMocks();
+    });
+
+    it('sends nothing with no report held, and leaves takenBy off an end it never held', () => {
+      sendHeldDriveEndedReport({ takenBy: null });
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+      exitDriveMode('link_dropped');
+      sendHeldDriveEndedReport({ takenBy: 'anonymous' });
+      expect(endedCalls()).toHaveLength(1);
+      expect(endedCalls()[0]?.[1]).not.toHaveProperty('takenBy');
+    });
+
+    it.each([
+      ['a swipe', () => enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 })],
+      [
+        'a Lock Screen press',
+        () =>
+          startLockScreenDrive({
+            sessionId: null,
+            boardId: 7,
+            windowMs: null,
+            windowSetting: null,
+            expiresAt: null,
+            startedAt: Date.now(),
+          }),
+      ],
+    ])('sends a held report before the next drive’s start, from %s', (_case, start) => {
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+      exitDriveMode('link_dropped', { holdReport: true });
+      analytics.track.mockClear();
+      start();
+      expect(analytics.track.mock.calls.map(([name]) => name)).toEqual(['Drive Mode Ended', 'Drive Mode Started']);
+      expect(endedCalls()[0]?.[1]).toMatchObject({ reason: 'link_dropped', takenBy: null });
+    });
+
+    it('forgets a held report on reset', () => {
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+      exitDriveMode('link_dropped', { holdReport: true });
+      resetDriveModeForTests();
+      sendHeldDriveEndedReport({ takenBy: null });
+      expect(endedCalls()).toHaveLength(0);
+    });
   });
 });
 

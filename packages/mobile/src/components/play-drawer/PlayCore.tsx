@@ -205,6 +205,7 @@ import { useWallControl, type DriveStartOutcome } from './use-wall-control';
 import { useDriveLightingMode, useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
 import { startDrive, startKeepLighting } from './drive-runner';
 import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
+import { formatLetsGo, useLetsGo } from './board-lets-go-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
@@ -2195,7 +2196,14 @@ export function PlayCore({
   const crewPutUp = useCrewPutUp();
   const crewPutUpCaption =
     crewPutUp && displayedQueueItemUuid === crewPutUp.queueItemUuid ? formatCrewPutUp(crewPutUp, t) : null;
-  const topBarCaption = busyWall.model ? formatBusyWallCaption(busyWall.model, t) : (crewPutUpCaption ?? browseCaption);
+  // The board let go mid-drive (board plan item 8): "Sam took the board", or
+  // "Board disconnected · Put on board reconnects", for 10 s on any climb,
+  // beside the board art and never over it (`use-board-lets-go.ts`).
+  const letsGo = useLetsGo();
+  const letsGoCaption = letsGo ? formatLetsGo(letsGo, t, { short: true }) : null;
+  const topBarCaption = busyWall.model
+    ? formatBusyWallCaption(busyWall.model, t)
+    : (letsGoCaption ?? crewPutUpCaption ?? browseCaption);
   // The board sheet (Re-light / Turn off all lights / Disconnect). A hold on
   // the board control opens it through `useWallControl`, which logs Board
   // Controls Opened with the view; ⋯ › Board controls logs its own.
