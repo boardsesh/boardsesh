@@ -372,7 +372,7 @@ Lock your iPhone. The Live Activity widget should update within a few seconds sh
 3. Tap Next/Previous — the widget updates optimistically
 4. The HTTP request to `/api/widget/navigate` should appear in backend logs
 5. Other connected clients should see the queue change
-6. **The board will NOT repaint in this case.** iOS does not background-launch a user-killed app for `LiveActivityIntent`, so the intent falls back to the widget extension process, which cannot reach `BoardBleManager`. Re-opening the app on this device will re-sync the board via the foreground WS path.
+6. **The board will usually NOT repaint in this case.** iOS usually does not background-launch a user-killed app for `LiveActivityIntent`, so the intent falls back to the widget extension process, which cannot reach `BoardBleManager`. Re-opening the app on this device will re-sync the board via the foreground WS path. iOS may still launch the killed app in-process for the intent; the press then behaves as in the background case above (step 9 of "Test the keep-lighting window" covers what that means for the window).
 
 ### Test the keep-lighting window
 
@@ -386,9 +386,10 @@ Put on board's keep-lighting window (2.7) on the Lock Screen, in the Dynamic Isl
 6. Suspend the app (lock for 30 s or more), press **Next**, then open the app. The player shows the window still running, with the end the Lock Screen showed; Drive Mode Started reads `startedBy: 'lock_screen'` when nothing was driving before. On Android the header appears once the wall confirms the climb, not at the tap.
 7. Set Settings › Board's keep-lighting to **Off** and press **Next** with nothing driving. The wall lights that one climb; no ring, and no "Each pick lights" header.
 8. iOS: with the app suspended and nothing driving, press **Next** (the ring appears), swipe the app away in the app switcher, then open it. On relaunch the ring is gone and nothing is driving.
-9. From a second device, add or reorder climbs while the window runs. The countdown survives the crew push.
-10. From the second device, put a climb up while the window runs. The wall lights their climb, the ring goes, and this phone's next pick is a preview. Your own Lock Screen **Next** never does this: it renews the window.
-11. On a crewmate's phone (`heldByPeer`), nothing about the holder's window shows.
+9. iOS: swipe the app away first, then press **Next** on the Lock Screen, then open the app. Usually the press runs in the widget extension: the wall stays dark, no ring appears, and the app opens with nothing driving. iOS may instead launch the killed app in-process for the intent (the `LiveActivityIntent` Console.app category shows the App process): then the wall lights and the ring appears, and the app opens either with that window running to the Lock Screen's end (its JS started before the press was written) or with the ring cleared and nothing driving (its JS started after). Never a ring over a dark wall.
+10. From a second device, add or reorder climbs while the window runs. The countdown survives the crew push.
+11. From the second device, put a climb up while the window runs. The wall lights their climb, the ring goes, and this phone's next pick is a preview. Your own Lock Screen **Next** never does this: it renews the window.
+12. On a crewmate's phone (`heldByPeer`), nothing about the holder's window shows.
 
 Known gap: if the app is suspended before the window's end, iOS has nothing to redraw the card at the deadline, so the ring sits empty at 0:00 until the next update (the next press, a push, or opening the app).
 

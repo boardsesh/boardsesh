@@ -107,7 +107,6 @@ class BoardSessionActionReceiverTest {
             receiver.onReceive(context, Intent(action).apply {
                 putExtra(BoardSessionService.EXTRA_CURRENT_INDEX, 2)
                 putExtra(BoardSessionService.EXTRA_CORRELATION_ID, "corr-3")
-                putExtra(BoardSessionService.EXTRA_SESSION_ID, "session")
             })
         }
 
