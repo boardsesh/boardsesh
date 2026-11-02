@@ -417,6 +417,38 @@ excluded.
 Baseline from the 2026-09-20 audit (2026-08-23 to 2026-09-19 UTC): search to
 send 1,808/2,361 (76.6%); queue adoption 323/2,361 (13.7%).
 
+### Connect release watch (2.7)
+
+The 2.7 phased release is watched on props of two events that already fire,
+never on new events, so 2.6.x and 2.7.x read side by side and the event count
+per session stays the same. Every one of these is absent on 2.6.x.
+
+`BLE Picker Devices Resolved` (once per picker session that showed its list,
+built by `blePickerSessionProps` in `@boardsesh/analytics`):
+
+| Prop                  | Meaning                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `targetFiltered`      | The list first showed filtered to a known gym or saved board.                                             |
+| `searchedAnyBoard`    | The climber tapped Search for any board, in the search or on the filtered list.                          |
+| `listedCount`         | Boards the list showed at close: the target's own while filtered, every board found otherwise.           |
+| `targetNotListedSeen` | "Your board isn't in the list" was on screen: boards were found, none of them the target.                |
+| `tipsSeen`            | The troubleshooting tips (hardware, location permission, Location services) were on screen.               |
+| `secondsOpen`         | Whole seconds from the list showing to the session closing.                                               |
+| `phoneNeverConnected` | True until this phone's first connect; null while the phone's history hasn't loaded.                      |
+| `entrySurface`        | The `Board Connect Tapped` surface within 2 minutes before the list showed, or null.                      |
+
+The empty-or-not-listed share is sessions with `devicesTotal = 0` or
+`targetNotListedSeen = true` over all sessions. The per-group counts
+`targetMatchedDevices` / `targetUnknownDevices` / `targetOtherDevices` come
+from #7202.
+
+`Board Connect Tapped` gains `boardUuid` (the board the connect is for; the
+board moved to on a move to another gym board) and `phoneNeverConnected`, both
+absent when not known. A newcomer's first connect is `phoneNeverConnected =
+true`. `Drive Mode Ended` already carries `boardType` and `windowSec` for the
+MoonBoard keep-lighting field test, and a window that ran out reports
+`durationSec` to its end even when the app noticed late.
+
 ### Spray-wall activation
 
 A spray wall has no Bluetooth (`docs/spray-walls.md`, "No Bluetooth, and the

@@ -14,7 +14,7 @@ import {
   toBoardName,
   type ActiveBoardForCompatibility,
 } from '@boardsesh/board-config';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, blePickerSessionProps, type BlePickerSessionInput } from '@boardsesh/analytics';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
 import type { BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
@@ -26,6 +26,7 @@ import {
   type BleConnectionHandle,
   type BleConnectionEnded,
   type BluetoothDisconnectReason,
+  type PickerState,
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
 import { getBleEncodingSignature } from '../lib/ble/encoding-signature';
@@ -53,8 +54,14 @@ import {
   type PickerSelectionDecision,
 } from '../lib/ble/board-config-match';
 import { summarizePickerResolution, type PickerResolutionStats } from '../lib/ble/picker-resolution-stats';
+import { deviceMatchesPickerTarget } from '../lib/ble/picker-device-target';
 import { getAndroidLocationPermissionState } from '../lib/ble/android-location-permission';
-import { trackBoardConnectTapped } from '../lib/analytics-board-connect';
+import {
+  readPhoneNeverConnected,
+  readRecentBoardConnectSurface,
+  registerConnectBoardUuidReader,
+  trackBoardConnectTapped,
+} from '../lib/analytics-board-connect';
 import { useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { getHttpClient } from '../lib/graphql/client';
 import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
@@ -70,6 +77,7 @@ import { useToast } from './toast-provider';
 import { toClimbInput } from '../lib/climb-to-queue-item';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
+import type { DevicePickerSeen } from '../lib/ble/picker-seen';
 import { useAutoDisconnectTimeoutLabels } from '../components/ble/use-auto-disconnect-timeout-labels';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
@@ -285,6 +293,43 @@ type VirtualWallHold = {
   connectionSeqAtTake: number;
   controller: AbortController;
 };
+
+/**
+ * The release watch's running view of one picker session (2.7): what the list
+ * showed and where its tap came from. What the sheet showed the climber
+ * (`targetNotListedSeen`, `tipsSeen`) and the close time join it at the flush.
+ */
+type PickerSessionWatch = Omit<BlePickerSessionInput, 'targetNotListedSeen' | 'tipsSeen' | 'closedAt'>;
+
+/** The list just showed: when, filtered or not, and the tap and phone it came from. Synchronous reads only. */
+function openPickerSessionWatch(picker: PickerState): PickerSessionWatch {
+  return {
+    targetFiltered: Boolean(picker.targetBoard?.boardUuid) && !picker.showAllBoards,
+    searchedAnyBoard: picker.showAllBoards,
+    listedCount: 0,
+    openedAt: Date.now(),
+    phoneNeverConnected: readPhoneNeverConnected(),
+    entrySurface: readRecentBoardConnectSurface(),
+  };
+}
+
+/**
+ * Each scan push: whether Search for any board was tapped, and how many boards
+ * the list shows (the sheet's own filter, `deviceMatchesPickerTarget`).
+ */
+function updatePickerSessionWatch(
+  watch: PickerSessionWatch,
+  picker: PickerState,
+  resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>,
+): void {
+  if (picker.showAllBoards) watch.searchedAnyBoard = true;
+  const target = picker.targetBoard;
+  const filtering = Boolean(target?.boardUuid) && !picker.showAllBoards;
+  watch.listedCount =
+    filtering && target
+      ? picker.devices.filter((device) => deviceMatchesPickerTarget(device, resolvedBoards, target)).length
+      : picker.devices.length;
+}
 
 function formatPickerBoardConfig(t: TFunction<'settings'>, config: BleBoardConfig): string {
   return t('boardConfigMismatch.mobileConfigValue', {
@@ -1019,6 +1064,8 @@ export function BluetoothProvider({
   restampBoardMembershipByUuidRef.current = restampBoardMembershipByUuid;
   const boardUuidRef = useRef(boardUuid);
   boardUuidRef.current = boardUuid;
+  // Board Connect Tapped names the board a connect is for (2.7 release watch).
+  useEffect(() => registerConnectBoardUuidReader(() => boardUuidRef.current ?? null), []);
   const reachableBoardKeysRef = useRef(reachableBoardKeys);
   reachableBoardKeysRef.current = reachableBoardKeys;
   // One membership re-stamp per report signature. An anonymous emitter is keyed
@@ -1803,6 +1850,18 @@ export function BluetoothProvider({
   // both stream in), then flush ONE summary event when it closes — per-device
   // or per-render events would massively overcount repeat advertisements.
   const pickerResolutionStatsRef = useRef<PickerResolutionStats | null>(null);
+  // The 2.7 release watch's view of the same session (`blePickerSessionProps`):
+  // kept in refs, updated as the session moves, flushed on the one event. No
+  // await and no render of its own.
+  const pickerSessionWatchRef = useRef<PickerSessionWatch | null>(null);
+  // What the sheet showed the climber, from its one callback (`onSeen`). Set
+  // apart from the watch because the sheet's effect runs before this
+  // provider's in the commit the list first shows; cleared at each flush.
+  const pickerSeenRef = useRef<{ targetNotListed: boolean; tips: boolean }>({ targetNotListed: false, tips: false });
+  const handlePickerSeen = useCallback((seen: DevicePickerSeen) => {
+    if (seen === 'target_not_listed') pickerSeenRef.current.targetNotListed = true;
+    else pickerSeenRef.current.tips = true;
+  }, []);
   // Whether the app held a location permission when this picker session opened.
   // Read once per session (PermissionsAndroid.check never prompts) so a
   // devicesTotal=0 flush can be split into "the OS suppressed the results" vs
@@ -1826,26 +1885,46 @@ export function BluetoothProvider({
           if (pickerSessionIdRef.current !== sessionId) return;
           pickerLocationPermissionRef.current = granted;
         });
+        pickerSessionWatchRef.current = openPickerSessionWatch(pickerState);
       }
       pickerResolutionStatsRef.current = summarizePickerResolution(
         pickerState.devices,
         resolvedPickerBoards,
         currentBoardConfig,
       );
+      if (pickerSessionWatchRef.current) {
+        updatePickerSessionWatch(pickerSessionWatchRef.current, pickerState, resolvedPickerBoards);
+      }
       return;
     }
     const finalStats = pickerResolutionStatsRef.current;
-    if (!finalStats) return;
+    if (!finalStats) {
+      // No list showed this session: nothing the sheet saw belongs to the next.
+      pickerSeenRef.current = { targetNotListed: false, tips: false };
+      return;
+    }
     pickerResolutionStatsRef.current = null;
     const androidLocationPermissionGranted = pickerLocationPermissionRef.current;
     // Retire the session id as well as the value, so an in-flight check from the
     // session we are flushing right now can no longer land anywhere.
     pickerSessionIdRef.current += 1;
     pickerLocationPermissionRef.current = null;
+    const watch = pickerSessionWatchRef.current;
+    const seen = pickerSeenRef.current;
+    pickerSessionWatchRef.current = null;
+    pickerSeenRef.current = { targetNotListed: false, tips: false };
     track(SHARED_EVENTS.BlePickerDevicesResolved, {
       ...finalStats,
       boardName,
       androidLocationPermissionGranted,
+      ...(watch
+        ? blePickerSessionProps({
+            ...watch,
+            targetNotListedSeen: seen.targetNotListed,
+            tipsSeen: seen.tips,
+            closedAt: Date.now(),
+          })
+        : {}),
     });
   }, [pickerState, resolvedPickerBoards, currentBoardConfig, boardName]);
 
@@ -2809,6 +2888,7 @@ export function BluetoothProvider({
       activeExternalHostId,
       onNoLeds: takeVirtualWallAfterPickerDismiss,
       onScanAgain: handlePickerScanAgain,
+      onSeen: handlePickerSeen,
     }),
     [
       pickerState,
@@ -2818,6 +2898,7 @@ export function BluetoothProvider({
       activeExternalHostId,
       takeVirtualWallAfterPickerDismiss,
       handlePickerScanAgain,
+      handlePickerSeen,
     ],
   );
 
@@ -2877,6 +2958,7 @@ export function BluetoothProvider({
             onClosed={pickerState.handleClosed}
             onSearchAnyBoard={pickerState.handleSearchAnyBoard}
             onDisplaced={pickerState.handleDisplaced}
+            onSeen={handlePickerSeen}
           />
         )}
       </BluetoothWriteActivityProvider>

@@ -665,6 +665,8 @@ describe('useLightbulbControl connect follows the climb (#7001)', () => {
       surface: 'play_drawer',
       boardName: 'moonboard',
       reconnect: false,
+      // The board moved to, not the Kilter still selected (2.7 release watch).
+      boardUuid: 'gym-moon',
     });
   });
 
@@ -797,6 +799,7 @@ describe('useLightbulbControl moveToClimbBoard (#7076)', () => {
       surface: 'move_to_board',
       boardName: 'kilter',
       reconnect: true,
+      boardUuid: 'gym-kilter',
     });
   });
 
