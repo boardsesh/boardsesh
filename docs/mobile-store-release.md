@@ -606,6 +606,58 @@ Review contact details, credentials and signed upload operations are excluded
 from the artifacts. A concurrent upload can change the observed assets; repeat
 the audit after all upload jobs finish.
 
+### Phased release: hold at 5%
+
+A native release reaches climbers in phases, and it stops at 5% until connecting
+to a board on it looks no worse than on the store version.
+
+1. **Start in phases.** App Store: turn on phased release for automatic updates
+   on the version in App Store Connect before submitting it for review. The
+   submission workflow sets AFTER_APPROVAL, so the version goes live as soon as
+   Apple approves it, and nothing in this repo turns phased release on. Apple's
+   percentage covers automatic updates only; anyone can still update by hand.
+   Google Play: release with `rollout_percent=5` through Android Production
+   Release (above), not the combined submission, which releases at 100%.
+2. **Turn the connect alerts on.** They sit on the PostHog dashboard
+   [Boardsesh 2.7 connect release watch](https://us.posthog.com/project/412845/dashboard/2293063)
+   and were created switched off, so nobody gets paged outside a release.
+3. **Hold at 5%.** On the App Store that is day 3 of the phased release: pause
+   it there. On Play, leave `rollout_percent` at 5.
+4. **Go on once the connect alerts have been quiet for 48 hours.** Resume the
+   App Store phased release, and dispatch Android Production Release again with
+   a higher `rollout_percent`. If an alert fires, keep holding and find the
+   cause on the dashboard's charts first.
+5. **Turn the alerts off** once both stores reach 100%.
+
+The four alerts read the dashboard's "Connect alerts source" table. It compares
+the release (2.7.0 and up) with the store version (2.6.x) on each OS over the
+trailing 7 days, native production only, internal accounts left out. Each alert
+checks once a day.
+
+| Alert           | Fires when, on any OS                                                                                                                                            |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Empty picker    | The release's share of picker sessions with an empty list is more than 10 points above the store version's.                                                      |
+| Connect success | The release's connect success rate, cancels left out, is more than 5 points below the store version's.                                                           |
+| First light     | The release's share of connecting sessions that light a climb is more than 3 points below the store version's.                                                   |
+| Dropped link    | More than 30% of the release's drives end with `link_dropped`. The store version sends no `Drive Mode Ended`, so this one has no baseline: 30% is a first guess. |
+
+For scale, 2.6.0 from 19 October to 2 November 2026 read, in 48-hour windows: an
+empty list in 7–15% of picker sessions on iOS and 6–20% on Android, and connect
+success of 97–99% on iOS and 85–95% on Android. Over the whole two weeks, 99.8%
+of iOS and 98.2% of Android connecting sessions lit a climb.
+
+Quiet needs volume. Each column reads 0 until the release has 20 events (picker
+sessions, connect attempts, connecting sessions or drives) from 10 climbers on
+that OS, so one climber retrying can't fire an alert and a thin day can't clear
+one. Before calling the alerts quiet, check that the `release_*_climbers`
+columns read 10 or more for iOS and Android. If they don't after 48 hours, keep
+holding; Apple lets a phased release pause for up to 30 days in total.
+
+Before the next phased release, move the version floors: `2.7.0` and `2.6.0` in
+the alert source's SQL, and the `2.6.0` floor on the dashboard's charts. What
+each chart and prop means: `docs/growth-metrics.md`, "Connect release watch
+(2.7)".
+
 ### Submit reviewed Apple content
 
 The combined manual submission (above) runs these same helpers: the release control
@@ -715,6 +767,8 @@ after the shipped fingerprint moves on.
 4. Plan the explicit build pair, then deliberately submit it through the manual workflow.
 5. Confirm public availability and immutable accepted-build anchors after store approval.
    The anchor closes the version; the next native merge opens the next patch.
+6. Hold the phased release at 5% until the connect alerts stay quiet for 48 hours
+   (Phased release: hold at 5%, above).
 
 ## Notes
 

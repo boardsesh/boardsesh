@@ -450,6 +450,36 @@ MoonBoard keep-lighting field test; since 2026-11 a MoonBoard takes the same Sto
 driving after as every board), and a window that ran out reports `durationSec`
 to its end even when the app noticed late.
 
+#### Dashboard and alerts
+
+The watch has its own PostHog dashboard,
+[Boardsesh 2.7 connect release watch](https://us.posthog.com/project/412845/dashboard/2293063).
+Every chart is native production (`$lib = posthog-react-native`,
+`environment = production`), 2.6.0 and up, internal cohort excluded, daily for
+the last 14 days, and split by `$app_version` and `$os`.
+
+| Chart                     | Definition                                                                                                                                               |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Empty list share          | `BLE Picker Devices Resolved` with `devicesTotal = 0`, over all picker sessions.                                                                         |
+| Empty or not listed share | The empty-or-not-listed share above.                                                                                                                     |
+| Connect success rate      | `Bluetooth Connection Success` over Success plus `Bluetooth Connection Failed`, leaving out `failureReason = user_cancelled` (#3088).                    |
+| First light after connect | Sessions with a `Bluetooth Connection Success` followed by a `Climb Sent to Board Success`, over all sessions with a connect (counted by `$session_id`). |
+| Drive ends by reason      | `Drive Mode Ended` by `reason`: `window_ended`, `stopped`, `link_dropped`, `always_off`, `connect_failed` and the rest.                                  |
+| Dropped link share        | `Drive Mode Ended` with `reason = link_dropped`, over all drive ends.                                                                                    |
+| Lock Screen drives        | `Drive Mode Ended` with `startedBy = lock_screen`, by `reason`.                                                                                          |
+| Driving-ended disconnects | `Bluetooth Disconnected` with `disconnectTrigger = driving_ended`: Disconnect Bluetooth when driving ends let go of the board.                           |
+
+A Lock Screen stop has no reason of its own. The bulb stops the drive the way
+the frosted button does (`stopDrivingForLink`), so it reports
+`reason = stopped` and can't be told apart from an in-app stop. 2.6.x sends no
+`Drive Mode Ended`, so the drive charts have no store-version line.
+
+The table at the bottom of the dashboard, "Connect alerts source", compares
+the release under watch (2.7.0 and up) with the store version (2.6.x) on each
+OS over the trailing 7 days. Four alerts read it; they were created switched
+off. The hold rule that uses them, their thresholds and their volume floor are
+in `docs/mobile-store-release.md`, "Phased release: hold at 5%".
+
 ### Spray-wall activation
 
 A spray wall has no Bluetooth (`docs/spray-walls.md`, "No Bluetooth, and the
