@@ -120,6 +120,9 @@ describe('the preview note', () => {
     // The next swipe takes it away, and this open never shows it again.
     stepAndLand(hook, { ...props, displayedClimbUuid: 's6' }, swipeNext, 's7');
     expect(hook.result.current.previewNote).toBeNull();
+    // Not even back on the climb it was shown on.
+    stepAndLand(hook, { ...props, displayedClimbUuid: 's7' }, { ...swipeNext, direction: 'previous' }, 's6');
+    expect(hook.result.current.previewNote).toBeNull();
   });
 
   it('shows once per player open', () => {
@@ -315,9 +318,16 @@ describe("the board's spoken extras", () => {
   });
 
   it('adds nothing on a list climb, or in a workout', () => {
-    expect(renderHook(() => useThenSignposts(listPreview())).result.current.board).toEqual({});
+    const onListParts: TrackLabelParts = {
+      name: 'Search results',
+      count: '5 of 23',
+      accessibilityLabel: 'Playing from Search results, 5 of 23',
+    };
+    // The top bar already reads a list climb's place: the board says nothing new.
+    const listClimb = listPreview({ trackParts: onListParts, signposts: { ...quiet, nextCrosses: true } });
+    expect(renderHook(() => useThenSignposts(listClimb)).result.current.board).toStrictEqual({});
     const workout = listPreview({ enabled: false, trackLabel: lastUpNext, trackParts: lastUpNextParts });
-    expect(renderHook(() => useThenSignposts(workout)).result.current.board).toEqual({});
+    expect(renderHook(() => useThenSignposts(workout)).result.current.board).toStrictEqual({});
   });
 });
 

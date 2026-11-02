@@ -3812,13 +3812,13 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
       session.suggestionSource = projects;
       session.queue = [itemFirst, itemQueued];
       session.currentItem = itemFirst;
-      render(
+      const openSearch = (nonce: number) =>
         drawerElement('member', {
           climb: searchA,
           options: { previewQueueItem: { uuid: 'preview-a', climb: searchA }, playlistSuggestionSource: search },
-          nonce: 1,
-        } as unknown as Parameters<typeof drawerElement>[1]),
-      );
+          nonce,
+        } as unknown as Parameters<typeof drawerElement>[1]);
+      const view = render(openSearch(1));
       expect(lastCaption()).not.toBe('playView.track.previewUpNextWaiting');
       swipeNext();
       expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
@@ -3826,6 +3826,10 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
       expect(lastCaption()).not.toBe('playView.track.previewUpNextWaiting');
       // A look at a list never crosses anything: no tick.
       expect(haptics.selection).not.toHaveBeenCalled();
+      // Once per open: a new open of the list earns it once more.
+      view.rerender(openSearch(2));
+      swipeNext();
+      expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
     });
 
     it('stays silent on the Next button across', () => {

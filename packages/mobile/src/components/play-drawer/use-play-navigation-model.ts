@@ -292,7 +292,9 @@ export function usePlayNavigationModel({
   const previousTrack = resolveStepTrack(trackPosition, prevTrackResume);
   const nextCrosses = stepCrossesIntoList(trackPosition, nextTrackResume);
   const previousCrosses = stepCrossesIntoList(trackPosition, prevTrackResume);
-  const entersUpNext = trackPosition.kind === 'list' && nextTrack === 'upNext';
+  // Only worked out while Next plays Up next; from a climb already in it the
+  // count is null (`countUpNextBeforeList` counts from the list).
+  const entersUpNext = nextTrack === 'upNext';
   const upNextFirstCount = useMemo(
     () =>
       entersUpNext
