@@ -7,6 +7,7 @@ import {
   prepareQueueNavigation,
   findUpcomingQueueItemsWithSuggestions,
   resolveNavigationSuggestionSource,
+  resolvePreviewStepSource,
   resolveTrackLabel,
   resolveTrackListClimbUuid,
   resolveTrackPosition,
@@ -164,6 +165,20 @@ export function usePlayNavigationModel({
   const navigationState = useMemo(
     () => ({ ...navigationTargets, remainingCount }),
     [navigationTargets, remainingCount],
+  );
+  // The list a step that only looks carries into its preview (#7227): the
+  // track this walk is on, with the step's place in Up next. A look off the
+  // climb on the wall then goes on through Up next and down the list, as Next
+  // would, rather than stopping at the end of the queue. Null when the walk
+  // has no list: a preview opened without one never takes the committed track.
+  const { nextTrackResume, prevTrackResume } = navigationTargets;
+  const nextPreviewSource = useMemo(
+    () => resolvePreviewStepSource(navigationSuggestionSource, nextTrackResume),
+    [navigationSuggestionSource, nextTrackResume],
+  );
+  const previousPreviewSource = useMemo(
+    () => resolvePreviewStepSource(navigationSuggestionSource, prevTrackResume),
+    [navigationSuggestionSource, prevTrackResume],
   );
 
   // The neighbours' headers stay mounted beside the current one, like their
@@ -346,6 +361,8 @@ export function usePlayNavigationModel({
   return {
     navigationSuggestionSource,
     navigationState,
+    nextPreviewSource,
+    previousPreviewSource,
     currentTrackLabel,
     trackListClimbUuid,
     trackEndCard,

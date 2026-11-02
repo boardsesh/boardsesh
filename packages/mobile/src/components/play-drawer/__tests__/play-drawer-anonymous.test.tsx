@@ -1067,17 +1067,17 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   });
 
   // Before #5403's fix, a browse that walked onto a suggestion-track peek
-  // CAPTURED that track into `drawerPreviewSuggestionSource` on the first swipe
-  // (`crewCapturedSuggestionSourceRef`), so it kept going even after the
-  // provider's own committed track was cleared out from under it — a private
-  // copy of a list the climber's browse had no independent claim to. That
-  // capture is gone: a preview belongs to ONE lineage (the track it was opened
-  // with, or none), so once the committed track disappears there is nothing
-  // left to walk. A mid-browse peek is never in the real queue either (it is
-  // only inserted on commit), so the queue has no fallback successor for it —
-  // the swipe is a dead end, not a landing on `thirdClimb`.
+  // CAPTURED the provider's track into `drawerPreviewSuggestionSource`
+  // (`crewCapturedSuggestionSourceRef`), and #5403 took that capture out: a
+  // preview walked the track it was opened with, or none. That left a look off
+  // the climb on the wall with no list at all, so its swipes stopped after one
+  // list climb, or at the end of the queue (#7227). Now the step itself hands
+  // the look the list it walked, with its place in Up next: the climber's own
+  // list, the one they were already walking, not a leftover from an older tap.
+  // A crewmate moving the wall off it changes what is on the wall, not the
+  // list this phone is looking down, so the look keeps going, writing nothing.
   it.each(['next', 'previous'] as const)(
-    'stops at a dead end instead of continuing on a captured copy after a peer leaves the track',
+    'keeps walking the list it stepped onto after a peer moves the wall off it (%s)',
     (direction) => {
       CREW();
       session.useRealNavigation = true;
@@ -1099,13 +1099,13 @@ describe('PlayDrawer — the shared-session browse latch', () => {
       act(swipe);
       expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
 
-      // The provider clears its shared track when a peer commits outside it.
+      // A peer commits outside the list: the provider's track stops steering.
       session.currentItem = { uuid: 'peer-current', climb: { ...CLIMB, uuid: 'outside-list' } };
       session.suggestionSource = null;
       view.rerender(drawerElement('member', target));
       act(swipe);
 
-      expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
+      expect(lastDisplayedClimbUuid()).toBe(thirdClimb.uuid);
       expect(queueActions.nextClimb).not.toHaveBeenCalled();
       expect(queueActions.previousClimb).not.toHaveBeenCalled();
       expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
@@ -1114,7 +1114,7 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   );
 
   it.each([false, true])(
-    'releases only a crew-captured track after departure (explicit preview: %s)',
+    'keeps the list a look walks once the crew leaves and the wall is driven (explicit preview: %s)',
     (explicitPreview) => {
       vi.useFakeTimers();
       try {
@@ -1154,17 +1154,14 @@ describe('PlayDrawer — the shared-session browse latch', () => {
           (lastActionBarProps().onNextClick as () => void)();
         });
 
-        if (explicitPreview) {
-          // The climber's own list stays: its next climb goes up, from that list.
-          expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(
-            expect.objectContaining({ climb: expect.objectContaining({ uuid: thirdClimb.uuid }) }),
-            expect.objectContaining({ playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'list-1' }) }),
-          );
-          expect(queueActions.nextClimb).not.toHaveBeenCalled();
-        } else {
-          // The crew's list went with the crew: the queue moves on.
-          expect(queueActions.nextClimb).toHaveBeenCalledOnce();
-        }
+        // The climber's own list stays, whether the list tap opened the preview
+        // or a swipe off the climb on the wall handed it over (#7227): the
+        // climb the peek shows goes up, from that list.
+        expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(
+          expect.objectContaining({ climb: expect.objectContaining({ uuid: thirdClimb.uuid }) }),
+          expect.objectContaining({ playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'list-1' }) }),
+        );
+        expect(queueActions.nextClimb).not.toHaveBeenCalled();
       } finally {
         vi.useRealTimers();
       }
@@ -1624,6 +1621,145 @@ describe('PlayDrawer — source-less preview walks the queue (#5403)', () => {
       (lastActionBarProps().onNextClick as () => void)();
     });
     expect(lastDisplayedClimbUuid()).toBe(r.uuid);
+  });
+});
+
+// Issue #7227: since 2.7 nothing lights unless this phone drives the wall, so
+// every swipe off the climb on the wall is a look. The look used to carry no
+// list: it walked only the queue, so swipes stopped at the end of Up next, or
+// one climb past the wall's with Up next empty. The step now hands the look the
+// list it walked, with its place in Up next, and the look goes on as Next would.
+describe('PlayDrawer — a look off the climb on the wall keeps walking its list (#7227)', () => {
+  const climb = (uuid: string, name: string): Climb => ({ ...CLIMB, uuid, name }) as unknown as Climb;
+  const a = climb('climb-a', 'A');
+  const b = climb('climb-b', 'B');
+  const c = climb('climb-c', 'C');
+  const d = climb('climb-d', 'D');
+  const results = {
+    playlistUuid: 'search',
+    activatedClimbUuid: a.uuid,
+    boardKey: 'kilter:1:10:1,20',
+    label: 'Search results',
+    climbs: [a, b, c, d],
+  } as unknown as PlaylistSuggestionSource;
+  // The climb on the wall: a search tap committed it, flagged `suggested`.
+  const onWall = { uuid: 'queue-a', climb: a, suggested: true };
+  const playNext1 = { uuid: 'queue-u1', climb: climb('climb-u1', 'U1') };
+  const playNext2 = { uuid: 'queue-u2', climb: climb('climb-u2', 'U2') };
+
+  function onTheWall(queue: { uuid: string; climb: unknown }[]) {
+    session.useRealNavigation = true;
+    session.suggestionSource = results;
+    session.queue = queue;
+    session.currentItem = onWall;
+    return render(drawerElement('member', committedTargetFor(a)));
+  }
+
+  /** Presses Next `times` times and says which climb each press left on screen. */
+  function swipeNext(times: number): string[] {
+    const shown: string[] = [];
+    for (let press = 0; press < times; press += 1) {
+      act(() => {
+        (lastActionBarProps().onNextClick as () => void)();
+      });
+      shown.push(lastDisplayedClimbUuid());
+    }
+    return shown;
+  }
+
+  function expectNothingWritten() {
+    expect(queueActions.nextClimb).not.toHaveBeenCalled();
+    expect(queueActions.previousClimb).not.toHaveBeenCalled();
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(queueActions.addToQueue).not.toHaveBeenCalled();
+  }
+
+  it('with Up next empty, walks on down the list to its end card, not dead after one climb', () => {
+    onTheWall([onWall]);
+    expect(swipeNext(3)).toEqual([b.uuid, c.uuid, d.uuid]);
+    // The look still names the list it walks.
+    expect(recorded.listContext.at(-1)?.parts).toMatchObject({ name: 'Search results' });
+    expect(recorded.trackEndCard).toHaveLength(0);
+    // One more past the list's last climb opens its end card, as from the wall.
+    expect(swipeNext(1)).toEqual([d.uuid]);
+    expect(recorded.trackEndCard.length).toBeGreaterThan(0);
+    expectNothingWritten();
+  });
+
+  it('with Up next filled, plays Up next and then carries on into the list', () => {
+    onTheWall([onWall, playNext1, playNext2]);
+    expect(swipeNext(1)).toEqual([playNext1.climb.uuid]);
+    expect(recorded.listContext.at(-1)?.parts).toMatchObject({ name: 'playView.track.upNext' });
+    expect(swipeNext(4)).toEqual([playNext2.climb.uuid, b.uuid, c.uuid, d.uuid]);
+    expect(recorded.listContext.at(-1)?.parts).toMatchObject({ name: 'Search results' });
+    expectNothingWritten();
+  });
+
+  it('puts the look up with its list and its place in Up next', () => {
+    onTheWall([onWall, playNext1, playNext2]);
+    swipeNext(1);
+    act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ uuid: playNext1.uuid }),
+      {
+        playlistSuggestionSource: expect.objectContaining({
+          playlistUuid: 'search',
+          resume: { climbUuid: a.uuid, queueItemUuid: onWall.uuid },
+        }),
+        trigger: 'put_on_wall',
+      },
+    );
+  });
+
+  it('driving, still commits and lights each step', () => {
+    driveTheWall();
+    onTheWall([onWall, playNext1]);
+    swipeNext(2);
+    expect(queueActions.nextClimb).toHaveBeenCalledTimes(2);
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('in a crew, looks the same way and never writes the room’s queue', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    onTheWall([onWall, playNext1]);
+    expect(swipeNext(4)).toEqual([playNext1.climb.uuid, b.uuid, c.uuid, d.uuid]);
+    expectNothingWritten();
+  });
+
+  it('walks a workout queued with no list as before: its climbs, then nothing', () => {
+    session.useRealNavigation = true;
+    session.sessionId = 'session-1';
+    const warmUp = { uuid: 'queue-warm-up', climb: climb('climb-warm-up', 'Warm-up'), suggested: true };
+    const limit1 = { uuid: 'queue-limit-1', climb: climb('climb-limit-1', 'Limit 1'), suggested: true };
+    const limit2 = { uuid: 'queue-limit-2', climb: climb('climb-limit-2', 'Limit 2'), suggested: true };
+    session.queue = [warmUp, limit1, limit2];
+    session.currentItem = warmUp;
+    render(drawerElement('member', committedTargetFor(warmUp.climb)));
+    expect(swipeNext(3)).toEqual([limit1.climb.uuid, limit2.climb.uuid, limit2.climb.uuid]);
+    expect(recorded.listContext.at(-1)?.parts ?? null).toBeNull();
+    expect(recorded.trackEndCard).toHaveLength(0);
+    expectNothingWritten();
+  });
+
+  // #5403's stale list: a list tap that opens as a preview with no list of its
+  // own never walks a list from before, here the very list the look carried.
+  it('never hands a carried list to a preview opened later with none', () => {
+    const p = climb('climb-p', 'P');
+    const itemP = { uuid: 'queue-p', climb: p };
+    const itemC = { uuid: 'queue-c', climb: c };
+    const view = onTheWall([onWall, itemP, itemC]);
+    // The look carries the list: Up next first, from A.
+    expect(swipeNext(1)).toEqual([p.uuid]);
+
+    // A list tap pins C, which the carried list holds, with no list of its own.
+    view.rerender(drawerElement('member', { climb: c, options: { previewQueueItem: itemC }, nonce: 2 }));
+    expect(lastDisplayedClimbUuid()).toBe(c.uuid);
+    // Nothing queued after C: a dead end, never D off the old list.
+    expect(swipeNext(1)).toEqual([c.uuid]);
+    expectNothingWritten();
   });
 });
 
@@ -3330,9 +3466,10 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     return neighbour.props as Props;
   }
 
-  // The header sliding in once promised the list, and a crew's swipe opens a
-  // preview that walks none (#5403). The top bar doesn't swipe and names only
-  // the climb on screen, so no header, sliding in or not, carries a list.
+  // The header sliding in once promised the list, while a crew's swipe opened a
+  // preview that walked none (#5403, until #7227). The top bar doesn't swipe and
+  // names only the climb on screen, so no header, sliding in or not, carries a
+  // list.
   it('never promises a list on the header sliding in, even when the swipe opens a preview (crew)', () => {
     session.isShared = true;
     session.sessionId = 'session-1';

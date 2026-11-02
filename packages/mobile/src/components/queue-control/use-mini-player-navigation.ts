@@ -2,11 +2,17 @@ import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 import {
   computeNavigationTargetsWithSuggestions,
   resolveNavigationSuggestionSource,
+  resolvePreviewStepSource,
   resolveTrackListClimbUuid,
   resolveTrackPosition,
 } from '@boardsesh/play-view';
 import { toBoardName } from '@boardsesh/board-config';
-import { isClimbOnReachableBoard, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
+import {
+  isClimbOnReachableBoard,
+  type ClimbQueueItem,
+  type PlaylistSuggestionSource,
+  type PlaylistTrackResume,
+} from '@boardsesh/queue';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { QueueNavigationDirection } from '@boardsesh/analytics';
 import {
@@ -48,6 +54,8 @@ export type MiniPlayerNavigation = {
  * - Outside a drive, solo or in a crew, or after a press on "You are driving
  *   the wall" stopped it: the player opens on that climb as a preview, so one
  *   tap never moves anybody's wall (`useDrivingWall`, the player's own rule).
+ *   The preview carries the list the climb on the wall is on, with the step's
+ *   place in Up next (#7227), so the player's swipes go on from there.
  * - At the end of a list, Next opens the player on the climb, where Next opens
  *   the list's end card ("Keep going with your queue"): that choice needs the
  *   card, which the bar has no room for.
@@ -58,11 +66,11 @@ export type MiniPlayerNavigation = {
  * While the bar shows the climber's last pick (owner decision A) they step
  * from the PICK, along its own list, by the player's swipe rules for a preview
  * (`getSwipeNavigationTarget`): a step that stays a look opens the player on
- * the neighbour as a preview with the pick's list; a step that lights puts the
- * neighbour up the way the player's swipe does (`resolvePreviewStepCommit`),
- * and the queue's new current takes the bar. At the end of the pick's loaded
- * list, Next opens the pick in the player, which pages the list or shows its
- * end card.
+ * the neighbour as a preview with the pick's list and its place in Up next; a
+ * step that lights puts the neighbour up the way the player's swipe does
+ * (`resolvePreviewStepCommit`), and the queue's new current takes the bar. At
+ * the end of the pick's loaded list, Next opens the pick in the player, which
+ * pages the list or shows its end card.
  *
  * Each step that moves the wall or opens a preview fires `Queue Navigation`
  * with `surface: 'mini_player'`. The end-of-list open does not: it changes no
@@ -108,7 +116,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   }, [pick, boardConfig]);
 
   // The same targets the player's ⏮ ⏭ would offer from the climb it shows.
-  const { prevItem, nextItem, atTrackEnd } = useMemo(() => {
+  const { prevItem, nextItem, atTrackEnd, prevTrackResume, nextTrackResume } = useMemo(() => {
     const boardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
     const activeConfig = activeBoard && boardName ? { boardName, layoutId: activeBoard.layoutId } : undefined;
     const isReachable =
@@ -134,7 +142,12 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   const boardType = activeBoard?.boardType;
   const layoutId = activeBoard?.layoutId;
   const move = useCallback(
-    (targetItem: ClimbQueueItem | null, navigateQueue: () => void, direction: QueueNavigationDirection) => {
+    (
+      targetItem: ClimbQueueItem | null,
+      trackResume: PlaylistTrackResume | null | undefined,
+      navigateQueue: () => void,
+      direction: QueueNavigationDirection,
+    ) => {
       if (!targetItem) return;
       hapticSelection();
       // A keep-lighting window past its end lights nothing, even before the
@@ -171,9 +184,14 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         if (!target.targetItem) return;
         openPlayDrawer(target.targetItem.climb as Climb, {
           previewQueueItem: target.targetItem,
-          // A pick's step keeps the pick's own list, as the player's view-only
-          // swipe does, and the board it was drawn on.
-          playlistSuggestionSource: pick ? pick.suggestionSource : playlistSuggestionSource,
+          // The step keeps the list it walked (the pick's own, or the one the
+          // climb on the wall is on) with its place in Up next, as the player's
+          // view-only swipe does (#7227), so the player's swipes go on through
+          // Up next and down the list. A pick keeps the board it was drawn on.
+          playlistSuggestionSource: resolvePreviewStepSource(
+            pick ? pick.suggestionSource : playlistSuggestionSource,
+            trackResume,
+          ),
           ...(pick?.boardConfig ? { boardConfig: pick.boardConfig } : {}),
         });
         trackStep('preview');
@@ -206,7 +224,10 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       setCurrentClimb,
     ],
   );
-  const onPrevious = useCallback(() => move(prevItem, previousClimb, 'previous'), [move, prevItem, previousClimb]);
+  const onPrevious = useCallback(
+    () => move(prevItem, prevTrackResume, previousClimb, 'previous'),
+    [move, prevItem, prevTrackResume, previousClimb],
+  );
   const onNext = useCallback(() => {
     if (nextItem === null && listEnded && stepFrom) {
       hapticSelection();
@@ -215,8 +236,8 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       openPlayDrawer(stepFrom.climb as Climb, barOpenOptions(pick));
       return;
     }
-    move(nextItem, nextClimb, 'next');
-  }, [nextItem, listEnded, stepFrom, pick, openPlayDrawer, move, nextClimb]);
+    move(nextItem, nextTrackResume, nextClimb, 'next');
+  }, [nextItem, nextTrackResume, listEnded, stepFrom, pick, openPlayDrawer, move, nextClimb]);
 
   return { canPrevious: prevItem !== null, canNext: nextItem !== null || listEnded, onPrevious, onNext };
 }

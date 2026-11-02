@@ -261,6 +261,33 @@ describe('usePlayNavigationModel', () => {
       expect(result.current.navigationState.remainingCount).toBe(4);
     });
 
+    // #7227: a step that only looks keeps walking this list, holding its place.
+    it('hands a look the list it walks, with its place in Up next', () => {
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({ ...inputs(queue), playlistSuggestionSource: results }),
+      );
+      expect(result.current.nextPreviewSource).toEqual(walking);
+      // Nothing before the list's first climb: the list as it is.
+      expect(result.current.previousPreviewSource).toBe(results);
+    });
+
+    it('hands a look no list when the walk has none, or a preview was opened with none', () => {
+      const trackless = renderHook(() => usePlayNavigationModel(inputs(queue)));
+      expect(trackless.result.current.nextPreviewSource).toBeNull();
+      // #5403: a preview opened without a list never takes the committed one.
+      const preview = renderHook(() =>
+        usePlayNavigationModel({
+          ...inputs(queue),
+          playlistSuggestionSource: results,
+          drawerPreviewItem: queuedFirst,
+          displayedQueueItem: queuedFirst,
+          displayedClimb: queuedFirst.climb,
+        }),
+      );
+      expect(preview.result.current.nextPreviewSource).toBeNull();
+      expect(preview.result.current.previousPreviewSource).toBeNull();
+    });
+
     it('says "Up next · 1 of 2" while a queued climb plays, and comes back to the list after', () => {
       const { result, rerender } = renderHook(usePlayNavigationModel, { initialProps: playingUpNext(queuedFirst) });
       expect(result.current.currentTrackLabel).toEqual({

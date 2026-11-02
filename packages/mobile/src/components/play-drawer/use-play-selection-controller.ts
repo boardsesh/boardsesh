@@ -39,6 +39,13 @@ type SelectionChrome = {
 };
 type SelectionNavigation = {
   navigationState: Pick<NavigationState, 'prevItem' | 'nextItem'>;
+  /**
+   * The list a step to `nextItem` or `prevItem` that only looks keeps walking
+   * (`resolvePreviewStepSource`, #7227): the track navigation walks, with the
+   * step's place in Up next. Null when the walk has no list.
+   */
+  nextPreviewSource: PlaylistSuggestionSource | null;
+  previousPreviewSource: PlaylistSuggestionSource | null;
   browseByDefault: boolean;
   /**
    * Driving the wall (#7113): a live drive on this phone's link (a swipe on the
@@ -129,8 +136,10 @@ type PlaySelectionInputs = {
 };
 
 type SwipeSelectionInputs = PreviewSelection &
-  Omit<SelectionNavigation, 'navigationState' | 'browseByDefault'> & {
+  Omit<SelectionNavigation, 'navigationState' | 'nextPreviewSource' | 'previousPreviewSource' | 'browseByDefault'> & {
     targetItem: ClimbQueueItem | null;
+    /** The list the preview keeps walking when the step only looks. */
+    previewSource: PlaylistSuggestionSource | null;
     navigateQueue: () => void;
     setCurrentClimb: PlaySelectionInputs['queue']['setCurrentClimb'];
     clearMirror: () => void;
@@ -169,6 +178,7 @@ function useSwipeSelection({
   driving,
   previewOnOtherBoard,
   targetItem,
+  previewSource,
   navigateQueue,
   setCurrentClimb,
   clearMirror,
@@ -190,6 +200,12 @@ function useSwipeSelection({
         if (!previewTarget.targetItem) return;
         clearPreviewCommitOptions();
         setDrawerPreviewItem(previewTarget.targetItem);
+        // The look keeps the list this walk is on, with its place in Up next
+        // (#7227). A step off the climb on the wall used to leave it with no
+        // list, so it walked only the queue and stopped at its end, or one
+        // climb past the wall's with Up next empty. A preview's own list stays
+        // its own, and a preview opened without one gets none (#5403).
+        setDrawerPreviewSuggestionSource(previewSource);
         // The displayed climb moved; the wall did not.
         setDrawerPreviewIsWallClimb(false);
         clearMirror();
@@ -245,6 +261,7 @@ function useSwipeSelection({
       drawerPreviewSuggestionSource,
       drawerPreviewItem,
       targetItem,
+      previewSource,
       navigateQueue,
       setCurrentClimb,
       driving,
@@ -280,7 +297,14 @@ export function usePlaySelectionController({
   },
   queue: { currentClimbQueueItem, setCurrentClimb, previousClimb, nextClimb },
   similarTrack,
-  navigation: { navigationState, browseByDefault, driving, previewOnOtherBoard },
+  navigation: {
+    navigationState,
+    nextPreviewSource,
+    previousPreviewSource,
+    browseByDefault,
+    driving,
+    previewOnOtherBoard,
+  },
   chrome: { clearMirror, restoreMirror, setIsTickBarActive, setActiveSubDrawer },
   confirmation: {
     busyWallConfirmArmed,
@@ -457,6 +481,7 @@ export function usePlaySelectionController({
     driving,
     previewOnOtherBoard,
     targetItem: navigationState.prevItem,
+    previewSource: previousPreviewSource,
     navigateQueue: previousClimb,
     setCurrentClimb,
     clearMirror,
@@ -474,6 +499,7 @@ export function usePlaySelectionController({
     driving,
     previewOnOtherBoard,
     targetItem: navigationState.nextItem,
+    previewSource: nextPreviewSource,
     navigateQueue: nextClimb,
     setCurrentClimb,
     clearMirror,
@@ -526,38 +552,41 @@ export function usePlaySelectionController({
       const { item, converted } = resolveCommittableQueueItem(drawerPreviewItem);
       const deferredOptions = getPreviewCommitOptions();
       // Re-anchor the track on the climb actually going up. Browsing moves
-      // `drawerPreviewItem` swipe by swipe but never touches the source, so after a
-      // walk from A to Z the source still says the pass began at A — and committing
-      // that verbatim would aim next/previous and the remaining count at A's
-      // neighbours, several swipes behind where the climber is standing.
+      // `drawerPreviewItem` swipe by swipe and keeps the source's place in Up
+      // next, but never re-anchors it, so after a walk from A to Z the source
+      // still says the pass began at A — and committing that verbatim would aim
+      // next/previous and the remaining count at A's neighbours, several swipes
+      // behind where the climber is standing.
       //
       // No guard here for a climb the source does not contain. `drawerPreviewItem`
       // is by construction on this preview's own track, and the lineage rule lives
       // in `resolveNavigationSuggestionSource` — don't re-add a call-site check.
       //
-      // A trackless look (a swipe off the committed climb outside a drive:
-      // after a stop on this link, in a crew, or with nothing driving) is Next stepping onward
-      // once it goes up (#6777): the provider keeps the committed list and where
-      // it picks up when the climb is Up next on it, keeps the list when the climb
-      // is the walk's own peek of the list's next climb (`walkedPeek`: minted
-      // fresh here, #7113 QA, where Put on board used to drop "Search results ·
-      // 4 of 23" and leave swipes nowhere to go), and clears it as before
-      // otherwise. Only the walk's own peek: a crew browse open of a list climb
-      // (a peer's tick, a logbook row, a deep link, the Home new-climb card) is a
-      // fresh item, not a peek, and never borrows the track (#5403). The peek
-      // goes up as Next places a list step: a fresh copy at the Now slot, never
-      // an older entry pulled out of History.
+      // A look off the climb on the wall carries the list the walk is on, with
+      // its place in Up next (#7227), so it goes up with that list, as Next would
+      // leave it. A look with no list of its own (a queue slot walked along the
+      // queue, or a crew browse open of a list climb: a peer's tick, a logbook
+      // row, a deep link, the Home new-climb card) is handed to the provider
+      // (`keepWalkedTrack`, #6777), which keeps the committed list and where it
+      // picks up when the climb is Up next on it, and clears it otherwise. A
+      // fresh item never borrows the track (#5403); only a peek of the list's
+      // next climb (`walkedPeek`, #7113 QA) keeps it.
+      //
+      // Either way a peek is a list climb the walk reached, minted fresh here.
+      // It goes up as Next places a list step: a fresh copy at the Now slot,
+      // never an older entry pulled out of History.
       const keepWalkedTrack = !drawerPreviewSuggestionSource;
-      const walkedPeek = keepWalkedTrack && converted;
+      const listStep = converted ? { historyCopy: 'fresh' as const } : {};
       setCurrentClimb(item, {
         ...(deferredOptions ??
           (keepWalkedTrack
-            ? { keepWalkedTrack, ...(walkedPeek ? { walkedPeek, historyCopy: 'fresh' as const } : {}) }
+            ? { keepWalkedTrack, ...(converted ? { walkedPeek: true } : {}), ...listStep }
             : {
                 playlistSuggestionSource: reanchorPlaylistSuggestionSource(
                   drawerPreviewSuggestionSource,
                   item.climb?.uuid,
                 ),
+                ...listStep,
               })),
         // Put on the wall: the deliberate commit at the end of a browse, told apart
         // from a plain list or queue pick so the crew ramp can be measured.

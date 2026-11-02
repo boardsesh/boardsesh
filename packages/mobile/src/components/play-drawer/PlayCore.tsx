@@ -906,6 +906,8 @@ export function PlayCore({
   const {
     navigationSuggestionSource,
     navigationState,
+    nextPreviewSource,
+    previousPreviewSource,
     currentTrackLabel,
     trackListClimbUuid,
     trackEndCard,
@@ -1918,6 +1920,8 @@ export function PlayCore({
     similarTrack,
     navigation: {
       navigationState,
+      nextPreviewSource,
+      previousPreviewSource,
       browseByDefault,
       driving: drivingLive,
       previewOnOtherBoard,

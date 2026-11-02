@@ -67,6 +67,9 @@ function inputs(): SelectionInputs {
     similarTrack: { boardKey: 'kilter:1:10:1,2', committedBoardKey: 'kilter:1:10:1,2', label: 'Similar climbs' },
     navigation: {
       navigationState: { prevItem: item('previous'), nextItem: item('next') },
+      // The walk off the climb on the wall has no list unless a case gives it one.
+      nextPreviewSource: null,
+      previousPreviewSource: null,
       browseByDefault: false,
       // Preview-first: nothing drives the wall until a test says so.
       driving: false,
@@ -275,11 +278,15 @@ describe('swipe selection callbacks', () => {
   it.each(['handlePrev', 'handleNext'] as const)('%s preserves the live queue path while driving', (handler) => {
     const initialProps = inputs();
     initialProps.navigation.driving = true;
+    initialProps.navigation.nextPreviewSource = source([item('current'), item('next')]);
+    initialProps.navigation.previousPreviewSource = source([item('previous'), item('current')]);
     const { result } = renderHook(usePlaySelectionController, { initialProps });
     act(() => result.current[handler]('button'));
     expect(
       handler === 'handlePrev' ? initialProps.queue.previousClimb : initialProps.queue.nextClimb,
     ).toHaveBeenCalledOnce();
+    // Driving commits and lights each step: no look, so no list handed to one.
+    expect(initialProps.preview.setDrawerPreviewSuggestionSource).not.toHaveBeenCalled();
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(null);
     expect(initialProps.preview.setDrawerPreviewIsWallClimb).toHaveBeenCalledWith(false);
     expect(initialProps.chrome.clearMirror).toHaveBeenCalledOnce();
@@ -292,11 +299,16 @@ describe('swipe selection callbacks', () => {
       initialProps.preview.drawerPreviewItem = item('preview');
       initialProps.preview.drawerPreviewSuggestionSource = source([item('preview'), item('next')]);
     }
+    // The track this walk is on (the preview's own, or the committed climb's).
+    const walked = initialProps.preview.drawerPreviewSuggestionSource ?? source([item('current'), item('next')]);
+    initialProps.navigation.nextPreviewSource = walked;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
     act(() => result.current.handleNext('swipe'));
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
       initialProps.navigation.navigationState.nextItem,
     );
+    // The look keeps walking that list, in a crew too (#7227).
+    expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(walked);
     expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
     expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
     expect(initialProps.preview.setDrawerPreviewIsWallClimb).toHaveBeenCalledWith(false);
@@ -508,31 +520,90 @@ describe('explicit wall commitment', () => {
         suggested: true,
         climb: expect.objectContaining({ uuid: 'preview' }),
       }),
-      { playlistSuggestionSource: expect.objectContaining({ activatedClimbUuid: 'preview' }), trigger: 'put_on_wall' },
+      {
+        playlistSuggestionSource: expect.objectContaining({ activatedClimbUuid: 'preview' }),
+        // A peek is a step along the list: a fresh copy, as Next places one.
+        historyCopy: 'fresh',
+        trigger: 'put_on_wall',
+      },
     );
   });
 
-  // #7113 QA: stopped driving on a list, a swipe off the climb on the wall is a
-  // trackless look at the list's next climb (a peek). Put on board used to send
-  // `playlistSuggestionSource: null`, dropping "Search results · 4 of 23".
-  it('hands a trackless look at a list peek to the provider to keep the list', () => {
-    // Not driving: the stop ended the drive.
+  // A list tap's own climb is not a peek: it goes up as a tap does.
+  it('puts a tapped list climb up without the step rule', () => {
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = item('preview');
+    initialProps.preview.drawerPreviewSuggestionSource = source([item('preview'), item('end')]);
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => {
+      result.current.handleSetActive();
+    });
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(expect.anything(), {
+      playlistSuggestionSource: expect.objectContaining({ activatedClimbUuid: 'preview' }),
+      trigger: 'put_on_wall',
+    });
+  });
+
+  // #7227: outside a drive, a swipe off the climb on the wall is a look that
+  // carries the list the walk is on. It used to carry none, so the look walked
+  // only the queue and stopped at its end, or one climb past the wall's.
+  it.each([
+    ['handleNext', 'nextItem', 'nextPreviewSource'],
+    ['handlePrev', 'prevItem', 'previousPreviewSource'],
+  ] as const)('%s off the climb on the wall keeps walking its list', (handler, target, stepSource) => {
+    const initialProps = inputs();
+    const peek = { ...item('step'), uuid: 'playlist-peek:step', suggested: true };
+    const list = {
+      ...source([item('current'), peek]),
+      resume: { climbUuid: 'current', queueItemUuid: 'queue-current' },
+    };
+    initialProps.navigation.navigationState = { ...initialProps.navigation.navigationState, [target]: peek };
+    initialProps.navigation[stepSource] = list;
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current[handler]('swipe'));
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(peek);
+    expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledExactlyOnceWith(list);
+    // A look: nothing written, nothing lit.
+    expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
+    expect(initialProps.queue.previousClimb).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('puts the look up with the list it walked, as Next would leave it', () => {
     const initialProps = inputs();
     const peek = { ...item('next'), uuid: 'playlist-peek:next', suggested: true };
-    initialProps.navigation.navigationState.nextItem = peek;
-    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
-    act(() => result.current.handleNext('swipe'));
-    // The look: a preview of the peek, with no track of its own (#5403).
-    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(peek);
-    expect(initialProps.preview.setDrawerPreviewSuggestionSource).not.toHaveBeenCalled();
-    rerender({ ...initialProps, preview: { ...initialProps.preview, drawerPreviewItem: peek } });
+    const list = source([item('current'), peek]);
+    initialProps.preview.drawerPreviewItem = peek;
+    initialProps.preview.drawerPreviewSuggestionSource = list;
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
     act(() => {
       result.current.handleSetActive();
     });
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
       expect.objectContaining({ uuid: 'selection-1', climb: expect.objectContaining({ uuid: 'next' }) }),
-      // A step along the list, placed as Next places one: a fresh copy, never
-      // an older entry of the climb pulled out of History.
+      {
+        playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'playlist', activatedClimbUuid: 'next' }),
+        // A step along the list, placed as Next places one: a fresh copy, never
+        // an older entry of the climb pulled out of History.
+        historyCopy: 'fresh',
+        trigger: 'put_on_wall',
+      },
+    );
+  });
+
+  // #7113 QA: a peek on screen with no list of its own (a MiniPlayer pick
+  // reopened from an older look). Put on board used to send
+  // `playlistSuggestionSource: null`, dropping "Search results · 4 of 23".
+  it('hands a peek with no list of its own to the provider to keep the list', () => {
+    const initialProps = inputs();
+    const peek = { ...item('next'), uuid: 'playlist-peek:next', suggested: true };
+    initialProps.preview.drawerPreviewItem = peek;
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => {
+      result.current.handleSetActive();
+    });
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'selection-1', climb: expect.objectContaining({ uuid: 'next' }) }),
       { keepWalkedTrack: true, walkedPeek: true, historyCopy: 'fresh', trigger: 'put_on_wall' },
     );
   });

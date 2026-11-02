@@ -173,7 +173,8 @@ live. Untouched settings take each surface's preview path instead.
 Since #6777, every "Walks …" in the Next column plays Up next first: the queue after the
 climb on the wall, Play next climbs at the top of it, then Play last ones. The list picks up
 again after the last list climb played, and its end card comes once both are done (rule 2).
-A preview walks only its list.
+A preview opened from a list walks only that list. A look off the climb on the wall, a swipe
+outside a drive, plays Up next and then the list, as Next does (#7227).
 
 ### Crew, swipes and long-press
 
@@ -309,9 +310,9 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
   queue slot's. **Mirror** flips the pick's own flip, never the queue.
 - **⏮ ⏭** step from the pick along its own list by the player's swipe rules for a preview
   (`getSwipeNavigationTarget`), on the board the pick was opened on: a look opens the player on
-  the neighbour as a preview with the pick's list; a step that lights puts the neighbour up as
-  the player's swipe does (`resolvePreviewStepCommit`), and the queue's new current takes the
-  bar. A crew that just left keeps a step a look for the player's dwell too
+  the neighbour as a preview with the pick's list and its place in Up next (#7227); a step
+  that lights puts the neighbour up as the player's swipe does (`resolvePreviewStepCommit`),
+  and the queue's new current takes the bar. A crew that just left keeps a step a look for the player's dwell too
   (`useSharedBrowseLatch`, 10 s). At the end of the pick's loaded list, Next opens the pick in
   the player, which pages the list or shows its end card.
 - **Not the wall's surfaces.** The Lock Screen and Live Activity keep showing the wall's
@@ -637,22 +638,27 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    are done; it still offers the queue when the walk passed queued climbs over (ones this wall
    can't draw), "Keep going with your queue (1)" with "First up: Crimp Ladder" under it. The
    queue button's badge counts Up next all the way. In a crew the room's Up next plays before
-   this phone's list goes on. A preview (a crew browse, a wrong-board look, a tap outside a drive)
-   walks only its list, so a look never uses up anybody's Up next; committing it (Put on the
-   wall) starts the walk from there. Outside a drive, solo or in a crew, a swipe off the
-   climb on the wall is a look that walks the queue with no list of its own (#5403); Put on
-   the wall on a queued climb ahead of it keeps this phone's list and its place, as Next
-   would (`resolveUpNextCommitResume`), keeps the list when the look landed on the list's own
-   next climb (the walk's peek, not queued yet: after a stop on this link a swipe off a Search
-   results climb lands there, and Put on board used to drop "Search results · 4 of 23" and
-   leave swipes nowhere to go, #7113 QA), and leaves the list for anything else. The look itself
-   never borrows or captures this phone's list, even when it starts from a list climb: only Put
-   on the wall keeps the list (owner decision, 2026-10-25, keeping the #5403 rule). If the list
-   climb's own queue entry is removed while Up next plays, Previous goes back to that list
-   climb instead of into History. From the list climb the walk picked up after Up next,
-   Previous goes back to the last queued climb played, then to the list climb the walk left
-   for the queue. The track keeps that stretch once the walk is back on the list
-   (`PlaylistSuggestionSource.detour`), so Previous follows it even when older entries of list
+   this phone's list goes on. A preview opened from a list (a crew browse, a wrong-board look, a
+   tap outside a drive) walks only that list, so a look never uses up anybody's Up next;
+   committing it (Put on board) starts the walk from there. Outside a drive, solo or in a crew,
+   a swipe off the climb on the wall is a look that carries the list the walk is on, with its
+   place in Up next (#7227, `resolvePreviewStepSource`): it plays Up next, then goes on down
+   the list to its end card, as Next would, and lights nothing. Put on board puts up the climb
+   on screen with that list and its place, and a list climb the look reached goes up as a fresh
+   entry, as Next places one. The MiniPlayer's ⏮ ⏭ hand the player the same list. Until #7227
+   the look walked the queue with no list of its own (owner decision, 2026-10-25, keeping the
+   #5403 rule), so its swipes stopped at the end of Up next, or one climb past the wall's with
+   Up next empty; once 2.7 made every pick a preview (#7188), every solo climber hit that. A
+   look carries only the list its own step walked: a preview opened with no list never picks
+   one up, from the climb on the wall or from an earlier look. That stale list is what #5403
+   guards against. A look with no list of its own (a queue slot walked along the queue) still
+   leaves the list to Put on board, which keeps this phone's list and its place for a queued
+   climb ahead of the wall's, as Next would (`resolveUpNextCommitResume`), and leaves the list
+   for anything else. If the list climb's own queue entry is removed while Up next plays,
+   Previous goes back to that list climb instead of into History. From the list climb the
+   walk picked up after Up next, Previous goes back to the last queued climb played, then to
+   the list climb the walk left for the queue. The track keeps that stretch once the walk is
+   back on the list (`PlaylistSuggestionSource.detour`), so Previous follows it even when older entries of list
    climbs sit between them in the queue (a swipe down the list and back leaves them there, and
    a crew keeps every one). Without it, Previous reads the stretch from the queue, and an older
    entry of the same climb ends it. Owner decision, 2026-10-25 (#6777), reversing the

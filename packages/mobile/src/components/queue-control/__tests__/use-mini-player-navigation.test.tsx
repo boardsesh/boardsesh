@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackResume } from '@boardsesh/queue';
 
 const queue = vi.hoisted(() => ({
   current: null as ClimbQueueItem | null,
@@ -17,6 +17,9 @@ const targets = vi.hoisted(() => ({
   nextItem: null as ClimbQueueItem | null,
   atTrackEnd: false,
   canLoadMore: false,
+  // Where each step leaves the list's place in Up next (absent: it stays put).
+  nextTrackResume: undefined as PlaylistTrackResume | null | undefined,
+  prevTrackResume: undefined as PlaylistTrackResume | null | undefined,
   // What the walk was asked to start from, and along which list.
   from: null as ClimbQueueItem | null,
   along: null as PlaylistSuggestionSource | null,
@@ -50,7 +53,9 @@ vi.mock('../../../settings/hooks', () => ({
 }));
 vi.mock('../../play-drawer/use-track-paging', () => ({ useTrackPaging: vi.fn() }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'fresh-uuid' }));
-vi.mock('@boardsesh/play-view', () => ({
+vi.mock('@boardsesh/play-view', async (importOriginal) => ({
+  // Real: the list a look carries is what these cases check (#7227).
+  resolvePreviewStepSource: (await importOriginal<typeof import('@boardsesh/play-view')>()).resolvePreviewStepSource,
   computeNavigationTargetsWithSuggestions: (
     _queue: unknown,
     from: ClimbQueueItem | null,
@@ -64,6 +69,8 @@ vi.mock('@boardsesh/play-view', () => ({
       canPrevious: targets.prevItem !== null,
       canNext: targets.nextItem !== null,
       atTrackEnd: targets.atTrackEnd,
+      nextTrackResume: targets.nextTrackResume,
+      prevTrackResume: targets.prevTrackResume,
     };
   },
   // The preview's own list when it has one, as the player resolves it.
@@ -124,6 +131,8 @@ describe('useMiniPlayerNavigation', () => {
     targets.nextItem = makeItem('after');
     targets.atTrackEnd = false;
     targets.canLoadMore = false;
+    targets.nextTrackResume = undefined;
+    targets.prevTrackResume = undefined;
     settings.alwaysDrive = false;
     resetDriveModeForTests();
     drawer.openPlayDrawer.mockClear();
@@ -288,6 +297,37 @@ describe('useMiniPlayerNavigation', () => {
     );
   });
 
+  // #7227: the look carries the list the climb on the wall is on, with the
+  // step's place in Up next, so the player's swipes go on down the list after
+  // Up next instead of stopping at the end of the queue.
+  it.each([
+    ['in a crew', () => (queue.inSharedSession = true)],
+    ['solo, outside a drive', () => {}],
+  ])('hands the preview the list and its place in Up next %s', (_label, arrange) => {
+    arrange();
+    const list: PlaylistSuggestionSource = {
+      playlistUuid: 'playlist',
+      activatedClimbUuid: 'climb-current',
+      boardKey: 'kilter:1',
+      climbs: [makeItem('current').climb, makeItem('list-next').climb],
+    };
+    queue.source = list;
+    targets.nextTrackResume = { climbUuid: 'climb-current', queueItemUuid: 'current' };
+    targets.prevTrackResume = null;
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    act(() => result.current.onPrevious());
+    expect(queue.nextClimb).not.toHaveBeenCalled();
+    expect(queue.previousClimb).not.toHaveBeenCalled();
+    const [[, nextOpen], [, previousOpen]] = drawer.openPlayDrawer.mock.calls;
+    expect(nextOpen).toEqual({
+      previewQueueItem: targets.nextItem,
+      playlistSuggestionSource: { ...list, resume: { climbUuid: 'climb-current', queueItemUuid: 'current' } },
+    });
+    // A step that stays on the list leaves the list as it is.
+    expect(previousOpen).toEqual({ previewQueueItem: targets.prevItem, playlistSuggestionSource: list });
+  });
+
   it('reads disabled with nowhere to go, and a tap does nothing', () => {
     targets.prevItem = null;
     targets.nextItem = null;
@@ -354,6 +394,8 @@ describe('useMiniPlayerNavigation from the last pick', () => {
     targets.nextItem = makeItem('after');
     targets.atTrackEnd = false;
     targets.canLoadMore = false;
+    targets.nextTrackResume = undefined;
+    targets.prevTrackResume = undefined;
     settings.alwaysDrive = false;
     resetDriveModeForTests();
     drawer.openPlayDrawer.mockClear();
@@ -386,6 +428,17 @@ describe('useMiniPlayerNavigation from the last pick', () => {
     expect(drawer.openPlayDrawer).toHaveBeenCalledWith(targets.nextItem?.climb, {
       previewQueueItem: targets.nextItem,
       playlistSuggestionSource: track,
+    });
+  });
+
+  it('keeps the pick’s place in Up next for a step into it', () => {
+    pickWith(track);
+    targets.nextTrackResume = { climbUuid: 'climb-pick', queueItemUuid: 'pick' };
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(targets.nextItem?.climb, {
+      previewQueueItem: targets.nextItem,
+      playlistSuggestionSource: { ...track, resume: { climbUuid: 'climb-pick', queueItemUuid: 'pick' } },
     });
   });
 
