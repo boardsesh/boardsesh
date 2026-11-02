@@ -18,7 +18,7 @@ vi.mock('../../PressableSurface', async () => {
 // (56pt with the face, 44pt without), and the tap it invites is reachable. Narration is the host's job now — see
 // use-wall-state-announcer.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; style?: unknown };
@@ -303,6 +303,25 @@ describe('WallStatePill', () => {
     const unlatched = renderPill({ backTarget: 'current', latched: false });
     expect(pill(unlatched.container).getAttribute('data-hint')).toBeNull();
     expect(pill(unlatched.container).getAttribute('data-label')).toBe('playView.wallState.backToCurrent');
+  });
+
+  // The words left the chip, so a low-vision climber at an accessibility text
+  // size gets them from the Large Content Viewer, as on every other icon-only
+  // chrome control: "back to my pick" and "back to the wall" still read apart.
+  it('shows where back goes in the Large Content Viewer, and a lift there goes back', () => {
+    const onPress = vi.fn();
+    const { container } = render(
+      createElement(WallStatePill, { state: 'browsing', backTarget: 'current', targetName: 'The Eyes', onPress }),
+    );
+    const viewer = container.querySelector('[data-viewer-title]') as HTMLElement;
+    expect(viewer.getAttribute('data-viewer-title')).toBe('playView.wallState.backToMyPickNamed:{"name":"The Eyes"}');
+    fireEvent.contextMenu(viewer);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the reserve-only copy no Large Content Viewer', () => {
+    const { container } = renderPill({ reserveOnly: true });
+    expect(container.querySelector('[data-viewer-title]')).toBeNull();
   });
 
   it('hands a tap to the host, once', () => {

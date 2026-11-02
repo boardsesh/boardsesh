@@ -960,6 +960,8 @@
       "lightAgainHint": "Le rallume sur la board",
       "putOnGymBoard": "Allumer sur la {{board}}",
       "moveToGymBoardHint": "Passe sur la {{board}} et allume ce bloc",
+      "pickLightHint": "Ouvre ce bloc et l'allume",
+      "pickMoveToGymBoardHint": "Ouvre ce bloc, passe sur la {{board}} et l'allume",
       "stopsInSeconds_one": "S'arrête dans {{count}} seconde",
       "stopsInSeconds_other": "S'arrête dans {{count}} secondes",
       "stopsInUnderTen": "S'arrête dans moins de 10 secondes",

@@ -164,4 +164,24 @@ describe('what the bar draws and how the player reopens it', () => {
       previewLatchStart: { wallClimbUuid: 'wall', at: 10 },
     });
   });
+
+  // A logbook row's pick reopens on its own board and angle, not the active one.
+  it('reopens on the board it was opened on, when that was not the active board', () => {
+    const atThirty = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 30 };
+    setLastPick(input({ boardConfig: atThirty }));
+    expect(lastPickOpenOptions(getLastPick()!)).toMatchObject({ boardConfig: atThirty });
+    setLastPick(input({ boardConfig: null }));
+    expect(lastPickOpenOptions(getLastPick()!)).not.toHaveProperty('boardConfig');
+  });
+
+  it('counts the same board again as the same pick, and another angle as a new one', () => {
+    const board = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 30 };
+    const pick = input({ boardConfig: board });
+    setLastPick(pick);
+    const first = getLastPick();
+    setLastPick({ ...pick, boardConfig: { ...board } });
+    expect(getLastPick()).toBe(first);
+    setLastPick({ ...pick, boardConfig: { ...board, angle: 35 } });
+    expect(getLastPick()).not.toBe(first);
+  });
 });

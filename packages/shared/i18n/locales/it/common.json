@@ -753,7 +753,7 @@
         "workout": "Crea un allenamento: Volume, Piramide, Scala o Grado fisso. Imposta un grado, guarda in anteprima i blocchi e chiudili uno alla volta.",
         "crew": "Arrampichi con altre persone? Avvia una session e condividete una sola coda. Chiunque può illuminare il blocco successivo, senza passarsi il telefono.",
         "record": "Le tue ripetizioni finiscono nei grafici qui, in Progressi: distribuzione dei gradi e blocco più duro chiuso. Importa il tuo diario Kilter e Tension da Aurora per partire con la tua storia.",
-        "accessory": "La barra in basso tiene l'ultimo blocco che hai aperto, finché non ne viene illuminato un altro in parete. Toccala per riprendere da lì.",
+        "accessory": "La barra in basso tiene l'ultimo blocco che hai aperto, finché la tua coda non passa a un altro blocco. Toccala per riprendere da lì.",
         "previewFirst": {
           "title": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete.",
           "windowSeconds": "Poi guidi tu il pannello: per {{seconds}} secondi dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli.",

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { ClimbQueueItem, PlaylistSuggestionSource, SetCurrentClimbOptions } from '@boardsesh/queue';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { clearLastPick, setLastPick } from '../../lib/last-pick-store';
 import type { AppliedPlayerOpen } from './use-play-selection-controller';
+import type { BoardConfig } from './play-drawer-types';
 
 /** What the player shows, as far as the last pick goes. */
 type ShownPick = {
@@ -12,6 +14,31 @@ type ShownPick = {
 
 /** The wall as it was when the climber started looking, and when. */
 export type PickLatchStart = { wallClimbUuid: string | null; at: number };
+
+/**
+ * The board the player draws on, when it isn't the stored active board: a
+ * logbook, session or profile row opens a climb on its own board and angle
+ * (the drawer host's override). Null on the active board, so a pick made there
+ * follows the board's angle when the climber changes it. With the active board
+ * still loading, the board drawn on is kept; the drawer host drops an override
+ * that matches the stored board on reopen.
+ */
+export function pickBoardOverride(
+  shown: BoardConfig,
+  activeBoard: Pick<UserBoard, 'boardType' | 'layoutId' | 'sizeId' | 'setIds' | 'angle'> | null | undefined,
+): BoardConfig | null {
+  if (
+    activeBoard &&
+    shown.boardName === activeBoard.boardType &&
+    shown.layoutId === activeBoard.layoutId &&
+    shown.sizeId === activeBoard.sizeId &&
+    shown.setIds === activeBoard.setIds &&
+    shown.angle === activeBoard.angle
+  ) {
+    return null;
+  }
+  return shown;
+}
 
 export type LastPickWriterInputs = {
   /** False for the signed-out reader: there is no bar to show it. */
@@ -27,6 +54,8 @@ export type LastPickWriterInputs = {
   getCurrentItemUuid: () => string | null;
   /** The busy-wall snapshot to keep with the pick: the latch's start while one holds, else the wall now. */
   getLatchStart: () => PickLatchStart;
+  /** The board the player draws on when it isn't the active board (`pickBoardOverride`). */
+  getBoardOverride?: () => BoardConfig | null;
 };
 
 function sameShown(left: ShownPick, right: ShownPick): boolean {
@@ -60,6 +89,7 @@ export function useLastPickWriter({
   getCommitOptions,
   getCurrentItemUuid,
   getLatchStart,
+  getBoardOverride,
 }: LastPickWriterInputs): { noteOpenApplied: (applied: AppliedPlayerOpen) => void } {
   const shown: ShownPick = {
     item: previewItem,
@@ -69,8 +99,8 @@ export function useLastPickWriter({
   const seenRef = useRef<ShownPick>(shown);
   // The last state written (or, for a replay, deliberately not written).
   const writtenRef = useRef<ShownPick | null>(null);
-  const latest = useRef({ enabled, getCommitOptions, getCurrentItemUuid, getLatchStart });
-  latest.current = { enabled, getCommitOptions, getCurrentItemUuid, getLatchStart };
+  const latest = useRef({ enabled, getCommitOptions, getCurrentItemUuid, getLatchStart, getBoardOverride });
+  latest.current = { enabled, getCommitOptions, getCurrentItemUuid, getLatchStart, getBoardOverride };
 
   const write = useCallback(
     (state: ShownPick, commitOptions: SetCurrentClimbOptions | undefined, latchStart: PickLatchStart) => {
@@ -83,6 +113,7 @@ export function useLastPickWriter({
         suggestionSource: state.source,
         commitOptions,
         mirrored: state.mirrored,
+        boardConfig: latest.current.getBoardOverride?.() ?? null,
         currentAtPick: latest.current.getCurrentItemUuid(),
         wallAtPick: latchStart.wallClimbUuid,
         pickedAt: latchStart.at,

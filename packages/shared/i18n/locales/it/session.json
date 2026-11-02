@@ -960,6 +960,8 @@
       "lightAgainHint": "Lo illumina di nuovo in parete",
       "putOnGymBoard": "Metti sul {{board}}",
       "moveToGymBoardHint": "Passa al {{board}} e illumina questo blocco",
+      "pickLightHint": "Apre questo blocco e lo illumina",
+      "pickMoveToGymBoardHint": "Apre questo blocco, passa al {{board}} e lo illumina",
       "stopsInSeconds_one": "Finisce tra {{count}} secondo",
       "stopsInSeconds_other": "Finisce tra {{count}} secondi",
       "stopsInUnderTen": "Finisce tra meno di 10 secondi",

@@ -960,6 +960,8 @@
       "lightAgainHint": "Beleuchtet ihn noch mal am Board",
       "putOnGymBoard": "Am {{board}} beleuchten",
       "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder",
+      "pickLightHint": "Öffnet diesen Boulder und beleuchtet ihn",
+      "pickMoveToGymBoardHint": "Öffnet diesen Boulder, wechselt zum {{board}} und beleuchtet ihn",
       "stopsInSeconds_one": "Endet in {{count}} Sekunde",
       "stopsInSeconds_other": "Endet in {{count}} Sekunden",
       "stopsInUnderTen": "Endet in weniger als 10 Sekunden",

@@ -9,7 +9,7 @@ import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue'
 vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => 7 }));
 
 import { getLastPick, resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
-import { useLastPickWriter, type LastPickWriterInputs } from '../use-last-pick-writer';
+import { pickBoardOverride, useLastPickWriter, type LastPickWriterInputs } from '../use-last-pick-writer';
 import type { AppliedPlayerOpen } from '../use-play-selection-controller';
 
 function item(uuid: string): ClimbQueueItem {
@@ -185,5 +185,36 @@ describe('useLastPickWriter', () => {
     act(() => result.current.noteOpenApplied(applied({ previewItem: item('a') })));
     rerender(writerInputs({ enabled: false, previewItem: item('b') }));
     expect(getLastPick()).toBeNull();
+  });
+});
+
+// A logbook, session or profile row opens on its own board and angle; the
+// pick keeps that board, so the bar reopens it there and not at the active
+// board's angle (`lastPickOpenOptions`).
+describe('the board a pick was opened on', () => {
+  const KILTER = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
+  const ACTIVE = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
+
+  it.each([
+    ['the active board', KILTER, ACTIVE, null],
+    ['the active board at another angle', { ...KILTER, angle: 30 }, ACTIVE, { ...KILTER, angle: 30 }],
+    [
+      'another board',
+      { ...KILTER, boardName: 'tension', layoutId: 9 },
+      ACTIVE,
+      { ...KILTER, boardName: 'tension', layoutId: 9 },
+    ],
+    ['no active board yet', KILTER, null, KILTER],
+  ] as const)('is %s', (_label, shown, active, expected) => {
+    expect(pickBoardOverride(shown, active)).toEqual(expected);
+  });
+
+  it('stores the override with the pick', () => {
+    const atThirty = { ...KILTER, angle: 30 };
+    const { result } = renderHook((props: LastPickWriterInputs) => useLastPickWriter(props), {
+      initialProps: writerInputs({ getBoardOverride: () => atThirty }),
+    });
+    act(() => result.current.noteOpenApplied(applied({ previewItem: item('a') })));
+    expect(getLastPick()?.boardConfig).toEqual(atThirty);
   });
 });

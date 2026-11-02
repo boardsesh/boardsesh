@@ -12,6 +12,8 @@ import { useTheme } from '../../providers/theme-provider';
 type LogAscentToolbarButtonProps = {
   climb: Climb;
   queueItemUuid?: string;
+  /** The flip to log, when the bar shows the climber's last pick: the pick's own (`useLogAscentAction`). */
+  isMirror?: boolean;
   size?: number;
   iconSize?: number;
   /** The accessory platter's placement, when this tick sits on the platter (analytics). */
@@ -33,6 +35,7 @@ type LogAscentToolbarButtonProps = {
 export function LogAscentToolbarButton({
   climb,
   queueItemUuid,
+  isMirror,
   size = glassSize.standard,
   iconSize = 26,
   placement,
@@ -43,6 +46,7 @@ export function LogAscentToolbarButton({
     climb,
     placement,
     queueItemUuid,
+    isMirror,
   );
 
   return (

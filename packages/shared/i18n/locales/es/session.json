@@ -960,6 +960,8 @@
       "lightAgainHint": "Lo vuelve a encender en el plafón",
       "putOnGymBoard": "Ponerlo en el {{board}}",
       "moveToGymBoardHint": "Te lleva al {{board}} y enciende este bloque",
+      "pickLightHint": "Abre este bloque y lo enciende",
+      "pickMoveToGymBoardHint": "Abre este bloque, te lleva al {{board}} y lo enciende",
       "stopsInSeconds_one": "Termina en {{count}} segundo",
       "stopsInSeconds_other": "Termina en {{count}} segundos",
       "stopsInUnderTen": "Termina en menos de 10 segundos",

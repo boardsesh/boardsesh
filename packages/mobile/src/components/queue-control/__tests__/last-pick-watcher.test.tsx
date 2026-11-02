@@ -25,7 +25,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 }));
 
 import { LastPickWatcher, lastPickEnds } from '../LastPickWatcher';
-import { getLastPick, resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
+import { getLastPick, hasStoredLastPick, resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 function pickItem(): ClimbQueueItem {
@@ -97,8 +97,11 @@ describe('LastPickWatcher', () => {
     render(createElement(LastPickWatcher));
     pick();
     act(() => invalidateCredentialSnapshots());
+    // Cleared from the store, not just hidden: `getLastPick` already hides
+    // another account's pick by itself, so only the raw read can tell that the
+    // watcher dropped it (a hidden one would keep an empty accessory mounted).
+    expect(hasStoredLastPick()).toBe(false);
     expect(getLastPick()).toBeNull();
-    // Cleared for good, not just hidden: a pick made after is a new one.
     pick();
     expect(getLastPick()).not.toBeNull();
   });

@@ -86,6 +86,7 @@ import {
   stopDrivingForLink,
 } from '../../play-drawer/drive-mode-store';
 import { useMiniPlayerNavigation } from '../use-mini-player-navigation';
+import { SHARED_BROWSE_LATCH_RELEASE_MS } from '../../play-drawer/shared-browse-latch';
 import { resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 
 function makeItem(uuid: string): ClimbQueueItem {
@@ -424,6 +425,51 @@ describe('useMiniPlayerNavigation from the last pick', () => {
     expect(drawer.openPlayDrawer).toHaveBeenCalledWith(
       targets.nextItem?.climb,
       expect.objectContaining({ previewQueueItem: targets.nextItem }),
+    );
+  });
+
+  // The player's crew latch: a step from the pick stays a look for the same
+  // dwell after the last crewmate leaves as the player's swipe does
+  // (SHARED_BROWSE_LATCH_RELEASE_MS), then lights again.
+  it('keeps a step from the pick a look through the crew dwell, as the player does', () => {
+    vi.useFakeTimers();
+    try {
+      pickWith(null);
+      queue.inSharedSession = true;
+      const { result, rerender } = renderHook(() => useMiniPlayerNavigation());
+      queue.inSharedSession = false;
+      rerender();
+      act(() => result.current.onNext());
+      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+      expect(drawer.openPlayDrawer).toHaveBeenCalledTimes(1);
+      act(() => {
+        vi.advanceTimersByTime(SHARED_BROWSE_LATCH_RELEASE_MS);
+      });
+      act(() => result.current.onNext());
+      expect(queue.setCurrentClimb).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A pick opened on its own board (a logbook row) steps on that board.
+  it('keeps the board a pick was opened on for a step that stays a look', () => {
+    const atThirty = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 30 };
+    setLastPick({
+      item: pickItem,
+      suggestionSource: track,
+      commitOptions: undefined,
+      mirrored: false,
+      boardConfig: atThirty,
+      currentAtPick: 'current',
+      wallAtPick: null,
+      pickedAt: 0,
+    });
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(
+      targets.nextItem?.climb,
+      expect.objectContaining({ previewQueueItem: targets.nextItem, boardConfig: atThirty }),
     );
   });
 

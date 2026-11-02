@@ -210,7 +210,8 @@ import { useWallHolderIdentity } from './use-wall-holder-name';
 import { track } from '../../lib/analytics';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
-import { useLastPickWriter, type PickLatchStart } from './use-last-pick-writer';
+import { pickBoardOverride, useLastPickWriter, type PickLatchStart } from './use-last-pick-writer';
+import { useSharedBrowseLatch } from './shared-browse-latch';
 import { usePutOnBoardIntent } from './use-put-on-board-intent';
 import type { AppliedPlayerOpen } from './use-play-selection-controller';
 export type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
@@ -243,17 +244,8 @@ const MENU_ANCHOR_SIZE =
 // A collapsed section header is a single row (title + summary + chevron).
 const DEFAULT_SECTION_HEADER_HEIGHT = 52;
 
-/**
- * How long the session must stay solo before an armed browse latch lets go.
- *
- * Longer than the provider's arming dwell, and deliberately so: arming late is a
- * mild inconvenience, but releasing early re-arms wall control under a climber
- * who is still mid-browse with a crew that is merely reconnecting. Ten seconds
- * outlasts a wifi handover and a backgrounded peer's socket teardown, which are
- * the flaps worth surviving, while still guaranteeing that a climber left alone
- * gets their board back without having to find a button.
- */
-export const SHARED_BROWSE_LATCH_RELEASE_MS = 10_000;
+// How long the session must stay solo before an armed browse latch lets go.
+export { SHARED_BROWSE_LATCH_RELEASE_MS } from './shared-browse-latch';
 
 /** A typical switch-board card at the default text size, until the real one is measured. */
 const SWITCH_BOARD_CARD_HEIGHT_ESTIMATE = 184;
@@ -1042,17 +1034,7 @@ export function PlayCore({
   // once the session has genuinely been solo for a dwell, ordinary wall control
   // comes back on its own. The exits still fire instantly — this only covers the
   // case where nobody ever took one.
-  const [sharedBrowseLatched, setSharedBrowseLatched] = useState(false);
-  useEffect(() => {
-    if (isSharedSession && isPreview) setSharedBrowseLatched(true);
-  }, [isSharedSession, isPreview]);
-  useEffect(() => {
-    if (isSharedSession) return;
-    const timer = setTimeout(() => {
-      setSharedBrowseLatched(false);
-    }, SHARED_BROWSE_LATCH_RELEASE_MS);
-    return () => clearTimeout(timer);
-  }, [isSharedSession]);
+  const [sharedBrowseLatched, setSharedBrowseLatched] = useSharedBrowseLatch(isSharedSession, isPreview);
   // What the gestures and the chrome both read. Live crew OR a latch that armed
   // while there was one.
   const browseByDefault = isSharedSession || sharedBrowseLatched;
@@ -1909,13 +1891,23 @@ export function PlayCore({
   const noteOpenAppliedRef = useRef<(applied: AppliedPlayerOpen) => void>(() => {});
   const handleOpenApplied = useCallback((applied: AppliedPlayerOpen) => {
     const item = applied.previewItem;
-    if (item && applied.latchStart) {
-      latchSeedRef.current = { itemUuid: item.uuid, start: applied.latchStart };
-      // A latch already up (a crew) took its snapshot on mount: correct it now.
+    const latchStart = item ? applied.latchStart : undefined;
+    if (item && latchStart) {
       if (browseLatchActiveRef.current) {
-        wallUuidAtLatchStartRef.current = applied.latchStart.wallClimbUuid;
-        latchStartedAtRef.current = applied.latchStart.at;
+        // A latch already up (a crew) took its snapshot on mount: correct it
+        // now and spend the seed, so a later rise on this preview (Back and the
+        // same slot again, a drive that starts and ends) reads the wall as it
+        // is then, never this old snapshot.
+        wallUuidAtLatchStartRef.current = latchStart.wallClimbUuid;
+        latchStartedAtRef.current = latchStart.at;
+        latchSeedRef.current = null;
+      } else {
+        // The latch rises once the preview lands, and takes the seed then.
+        latchSeedRef.current = { itemUuid: item.uuid, start: latchStart };
       }
+    } else {
+      // Any other open is a look of its own: an older seed never applies to it.
+      latchSeedRef.current = null;
     }
     setPutOnBoardFor(applied.putOnBoard && item ? item.uuid : null);
     noteOpenAppliedRef.current(applied);
@@ -1980,6 +1972,11 @@ export function PlayCore({
         : { wallClimbUuid: wallClimbUuidRef.current, at: Date.now() },
     [],
   );
+  // A logbook, session or profile row opens on its own board and angle: the
+  // pick keeps that board, so the bar reopens it there, at its own angle.
+  const pickBoardOverrideRef = useRef<BoardConfig | null>(null);
+  pickBoardOverrideRef.current = pickBoardOverride(boardConfig, activeBoardForNavigation);
+  const getPickBoardOverride = useCallback(() => pickBoardOverrideRef.current, []);
   const { noteOpenApplied } = useLastPickWriter({
     enabled: !isAnonymous,
     previewItem: drawerPreviewItem,
@@ -1988,6 +1985,7 @@ export function PlayCore({
     getCommitOptions: getPreviewCommitOptions,
     getCurrentItemUuid: getCurrentQueueItemUuid,
     getLatchStart: getPickLatchStart,
+    getBoardOverride: getPickBoardOverride,
   });
   noteOpenAppliedRef.current = noteOpenApplied;
   // The same step, told apart by how it was asked for.
@@ -2599,7 +2597,14 @@ export function PlayCore({
   // the busy-wall question compares against the wall at the pick; a drive
   // never asks. Analytics count it as the bar's control (`mini_bar`).
   const pressWallControl = wallControlHandlers.press;
-  const pressWallControlForBar = useCallback(() => pressWallControl('mini_bar'), [pressWallControl]);
+  const barWallControlActionRef = useRef(wallControl.bulbTapAction);
+  barWallControlActionRef.current = wallControl.bulbTapAction;
+  const pressWallControlForBar = useCallback(() => {
+    // A climb this wall can't light (another board, with no board at this gym
+    // to walk to): nothing to press, and no bar tap to count.
+    if (barWallControlActionRef.current === 'noop') return;
+    pressWallControl('mini_bar');
+  }, [pressWallControl]);
   const clearPutOnBoard = useCallback(() => setPutOnBoardFor(null), []);
   usePutOnBoardIntent({
     intendedFor: putOnBoardFor,

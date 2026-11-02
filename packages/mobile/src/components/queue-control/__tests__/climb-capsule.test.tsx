@@ -153,6 +153,9 @@ vi.mock('../../../providers/queue-provider', () => ({
 vi.mock('../PickPutOnBoardBulb', () => ({
   PickBulbSlot: () => createElement('span', { 'data-testid': 'pick-bulb-slot' }),
 }));
+vi.mock('../use-pick-bulb', () => ({
+  usePickBulb: (pick: unknown) => (pick ? { kind: 'putOnBoard', gymBoardName: null } : null),
+}));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: drawer.openPlayDrawer, boardConfig: null }),

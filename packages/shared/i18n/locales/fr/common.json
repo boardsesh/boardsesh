@@ -753,7 +753,7 @@
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas garde le dernier bloc que tu as ouvert, jusqu'à ce qu'un autre s'allume sur la board. Touche-la pour y revenir.",
+        "accessory": "La barre du bas garde le dernier bloc que tu as ouvert, jusqu'à ce que ta file passe à un autre bloc. Touche-la pour y revenir.",
         "previewFirst": {
           "title": "Toucher un bloc ouvre un aperçu. Touche Allumer sur la board pour l'allumer.",
           "windowSeconds": "Ensuite, tu pilotes la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",

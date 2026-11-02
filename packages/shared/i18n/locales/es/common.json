@@ -1025,7 +1025,7 @@
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
-        "accessory": "La barra de abajo guarda el último bloque que abriste, hasta que se ilumine otro en el plafón. Tócala para volver a él.",
+        "accessory": "La barra de abajo guarda el último bloque que abriste, hasta que tu cola pase a otro bloque. Tócala para volver a él.",
         "previewFirst": {
           "title": "Un toque abre una vista previa. Poner en el plafón enciende el bloque.",
           "windowSeconds": "Luego quedas al mando del plafón: durante {{seconds}} segundos después de cada bloque encendido, cada bloque que elijas también se enciende.",

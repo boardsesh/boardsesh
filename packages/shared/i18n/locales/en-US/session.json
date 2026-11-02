@@ -960,6 +960,8 @@
       "lightAgainHint": "Lights it again on the board",
       "putOnGymBoard": "Put on {{board}}",
       "moveToGymBoardHint": "Moves you to {{board}} and lights this climb",
+      "pickLightHint": "Opens this climb and lights it",
+      "pickMoveToGymBoardHint": "Opens this climb, moves you to {{board}} and lights it",
       "stopsInSeconds_one": "Stops in {{count}} second",
       "stopsInSeconds_other": "Stops in {{count}} seconds",
       "stopsInUnderTen": "Stops in under 10 seconds",

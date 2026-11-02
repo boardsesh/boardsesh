@@ -27,7 +27,8 @@ import { readClimbChangeLights, useClimbChangeLights } from '../play-drawer/use-
 import { drivingAtPick, isDrivingStoppedForLink, useDriveModePhase } from '../play-drawer/drive-mode-store';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 import { resolvePreviewStepCommit } from '../play-drawer/preview-step-commit';
-import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
+import { resolvePickBoard } from './pick-board';
+import { useSharedBrowseLatch } from '../play-drawer/shared-browse-latch';
 import { barOpenOptions, useBarClimb } from './use-bar-climb';
 
 export type MiniPlayerNavigation = {
@@ -78,6 +79,11 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   // The climber's last pick on the bar, or null while it shows the queue's current.
   const { pick } = useBarClimb();
   const inSharedSession = useIsSharedSession();
+  // The player's crew latch, for a step from a pick: a crew that just left
+  // (or flapped) keeps a step a look for the same dwell the player's swipe
+  // does, so the bar never lights what the player wouldn't.
+  const [sharedBrowseLatched] = useSharedBrowseLatch(inSharedSession, pick !== null);
+  const pickBrowseByDefault = inSharedSession || sharedBrowseLatched;
   // The setting, for Queue Navigation; whether a step lights reads the one rule.
   const [lightOnSwipe] = useSetting('lightOnSwipe');
   const stepLights = useClimbChangeLights('swipe');
@@ -102,11 +108,13 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         : playlistSuggestionSource,
     [pick, currentClimbQueueItem, playlistSuggestionSource],
   );
-  // A pick on another board: driving leaves its steps previews, as in the player.
-  const pickOnOtherBoard = useMemo(
-    () => (pick ? resolveClimbRenderBoard(pick.item.climb, boardConfig)?.fit === 'incompatible' : false),
-    [pick, boardConfig],
-  );
+  // A pick on another board: driving leaves its steps previews, as in the
+  // player (`previewOnOtherBoard`), the board it was opened on included.
+  const pickOnOtherBoard = useMemo(() => {
+    if (!pick) return false;
+    const { boardMismatch, climbBoardMismatch } = resolvePickBoard(pick, boardConfig);
+    return boardMismatch || climbBoardMismatch;
+  }, [pick, boardConfig]);
 
   // The same targets the player's ⏮ ⏭ would offer from the climb it shows.
   const { prevItem, nextItem, atTrackEnd } = useMemo(() => {
@@ -149,7 +157,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
             previewSuggestionSource: pick.suggestionSource,
             targetItem,
             lightOnSwipe,
-            inSharedSession,
+            inSharedSession: pickBrowseByDefault,
             driving: drivingAtPick(driving),
             stoppedForLink: isDrivingStoppedForLink(),
             previewOnOtherBoard: pickOnOtherBoard,
@@ -176,8 +184,10 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         if (!target.targetItem) return;
         openPlayDrawer(target.targetItem.climb as Climb, {
           previewQueueItem: target.targetItem,
-          // A pick's step keeps the pick's own list, as the player's view-only swipe does.
+          // A pick's step keeps the pick's own list, as the player's view-only
+          // swipe does, and the board it was drawn on.
           playlistSuggestionSource: pick ? pick.suggestionSource : playlistSuggestionSource,
+          ...(pick?.boardConfig ? { boardConfig: pick.boardConfig } : {}),
         });
         trackStep('preview');
         return;
@@ -201,6 +211,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       lightOnSwipe,
       driving,
       inSharedSession,
+      pickBrowseByDefault,
       openPlayDrawer,
       playlistSuggestionSource,
       boardType,

@@ -240,27 +240,47 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
   `LastPickWatcher` then drops it for good, so an Undo that brings the old current back does
   not bring the pick back.
 - **Tapping the bar** reopens the pick as the same preview: its list, the slot's deferred
-  commit (Replay from here, a History row), its mirror flip, and the wall as it was when you
-  started looking, so the busy-wall question still compares against that wall.
-- **The bulb** on a pick that isn't lit is Put on board for it: the player opens on the pick
-  and presses Put on board through the wall button's own handler (`putOnBoard`,
-  `usePutOnBoardIntent`), so the busy-wall question asks first in a crew and the timed drive
-  starts per Stop driving after. Lit, it is the bar's usual bulb. In the collapsed platter the
-  pick's bulb keeps the one slot, so putting it up stays one tap away.
-- **✓** logs the climb the bar shows. **Mirror** flips the pick's own flip, never the queue.
+  commit (Replay from here, a History row), its mirror flip, the board it was opened on when
+  that wasn't the active board (a logbook, session or profile row's own board and angle,
+  `pickBoardOverride`), and the wall as it was when you started looking, so the busy-wall
+  question still compares against that wall. That snapshot is for the open it came with: a
+  later open of the same slot reads the wall afresh.
+- **The bulb** (`resolvePickBulb`) on a pick that isn't lit is Put on board for it: the player
+  opens on the pick and presses Put on board through the wall button's own handler
+  (`putOnBoard`, `usePutOnBoardIntent`), so the busy-wall question asks first in a crew, the
+  timed drive starts per Stop driving after, a pick on another board at this gym moves there
+  (the bulb then says "Put on MoonBoard"), and a pick presence says is still up with no link
+  lights again. Its hint says the player opens first, its value keeps saying the board's
+  connection, and its long press opens the board controls over a real link, as the usual
+  bulb's does. The pick counts as lit only when the wall shows it through a live link (this
+  phone's, a crewmate's, or a wall with no lights held here); presence alone is not enough,
+  because the usual bulb would then connect, and a connect lights the queue's current climb,
+  not the pick (QA #147). Lit, it is the bar's usual bulb. A pick this wall can't light, with
+  no board at the gym to walk to, gets no bulb, as the player offers no board control for it.
+  In the collapsed platter the pick's bulb takes the one slot only while the pick is unlit on a
+  board with lights; otherwise ✓ keeps it.
+- **✓** logs the climb the bar shows, in the flip the bar draws: the pick's own, never its
+  queue slot's. **Mirror** flips the pick's own flip, never the queue.
 - **⏮ ⏭** step from the pick along its own list by the player's swipe rules for a preview
-  (`getSwipeNavigationTarget`): a look opens the player on the neighbour as a preview with the
-  pick's list; a step that lights puts the neighbour up as the player's swipe does
-  (`resolvePreviewStepCommit`), and the queue's new current takes the bar. At the end of the
-  pick's loaded list, Next opens the pick in the player, which pages the list or shows its end
-  card.
+  (`getSwipeNavigationTarget`), on the board the pick was opened on: a look opens the player on
+  the neighbour as a preview with the pick's list; a step that lights puts the neighbour up as
+  the player's swipe does (`resolvePreviewStepCommit`), and the queue's new current takes the
+  bar. A crew that just left keeps a step a look for the player's dwell too
+  (`useSharedBrowseLatch`, 10 s). At the end of the pick's loaded list, Next opens the pick in
+  the player, which pages the list or shows its end card.
 - **Not the wall's surfaces.** The Lock Screen and Live Activity keep showing the wall's
   climb, as do the Climbs header's wall capsule and the board history sheet.
 - **In memory only**, like the player's own preview: a relaunch starts from the queue's
   current.
 - **The one-time tip** above the bar (`AccessoryOnboardingTip`, `mobile.onboarding.tips.accessory`)
-  says so: the bar keeps the last climb you opened, until another one goes up on the board. It
-  used to say the bar is always what's on the board.
+  says so: the bar keeps the last climb you opened, until your queue moves on to another climb.
+  It used to say the bar is always what's on the board. "Until another one goes up on the
+  board" was close but not exact: with no board linked, Lock Screen Next or the rest timer
+  moves the queue without lighting anything, and a climb lit from another phone or app moves
+  the wall but not the queue.
+- **Known gap.** A pick made before the queue restores at cold start (a notification or a
+  deep link) ends when the restore sets the queue's current, so the bar shows the restored
+  climb. The queue has no public "restored" signal to tell a restore from a real change.
 
 ## Player states today
 

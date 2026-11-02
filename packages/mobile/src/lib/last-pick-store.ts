@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, SetCurrentClimbOptions } from '@boardsesh/queue';
+import type { BoardConfig } from '../components/play-drawer/play-drawer-types';
 import { getCredentialGeneration } from './privacy/privacy-cache';
 
 /**
@@ -34,6 +35,12 @@ export type LastPick = {
   commitOptions: SetCurrentClimbOptions | undefined;
   /** The player's own mirror flip on the preview. */
   mirrored: boolean;
+  /**
+   * The board the player drew it on, when that wasn't the stored active board
+   * (a logbook, session or profile row opens on its own board and angle), so
+   * the bar reopens it there. Absent or null on the active board.
+   */
+  boardConfig?: BoardConfig | null;
   /** The queue's current item (its uuid) when the pick was made: another one ends the pick. */
   currentAtPick: string | null;
   /**
@@ -56,6 +63,17 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
+function sameBoard(left: BoardConfig | null | undefined, right: BoardConfig | null | undefined): boolean {
+  if (!left || !right) return !left && !right;
+  return (
+    left.boardName === right.boardName &&
+    left.layoutId === right.layoutId &&
+    left.sizeId === right.sizeId &&
+    left.setIds === right.setIds &&
+    left.angle === right.angle
+  );
+}
+
 function samePick(left: LastPick | null, right: LastPick | null): boolean {
   if (left === right) return true;
   if (!left || !right) return false;
@@ -64,6 +82,7 @@ function samePick(left: LastPick | null, right: LastPick | null): boolean {
     left.suggestionSource === right.suggestionSource &&
     left.commitOptions === right.commitOptions &&
     left.mirrored === right.mirrored &&
+    sameBoard(left.boardConfig, right.boardConfig) &&
     left.currentAtPick === right.currentAtPick &&
     left.wallAtPick === right.wallAtPick &&
     left.pickedAt === right.pickedAt &&
@@ -98,7 +117,8 @@ export function getLastPick(): LastPick | null {
   return pick && pick.generation === getCredentialGeneration() ? pick : null;
 }
 
-function subscribe(listener: () => void): () => void {
+/** Listen for any change of the stored pick (`useSyncExternalStore`'s subscribe). */
+export function subscribeToLastPick(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -106,16 +126,24 @@ function subscribe(listener: () => void): () => void {
 }
 
 const readPick = (): LastPick | null => pick;
-const readHasPick = (): boolean => pick !== null;
+
+/**
+ * Whether a pick is stored at all, whoever's it is. The account watcher
+ * (`LastPickWatcher`) clears another account's pick, so this is what tells a
+ * cleared store from a hidden one.
+ */
+export function hasStoredLastPick(): boolean {
+  return pick !== null;
+}
 
 /** The stored pick. Re-renders only when it changes (a new pick, its mirror, or its end). */
 export function useLastPick(): LastPick | null {
-  return useSyncExternalStore(subscribe, readPick, readPick);
+  return useSyncExternalStore(subscribeToLastPick, readPick, readPick);
 }
 
 /** Presence only: flips when a pick starts or ends, never from one pick to the next. */
 export function useHasLastPick(): boolean {
-  return useSyncExternalStore(subscribe, readHasPick, readHasPick);
+  return useSyncExternalStore(subscribeToLastPick, hasStoredLastPick, hasStoredLastPick);
 }
 
 /**
@@ -138,8 +166,9 @@ export function resolveBarPick(
 
 /**
  * What the player needs to reopen a pick as the same preview: its item, its
- * list, the slot's deferred commit, the mirror flip, and the wall as it was
- * when the climber started looking (for the busy-wall question).
+ * list, the slot's deferred commit, the mirror flip, the board it was drawn on
+ * (when that wasn't the active board), and the wall as it was when the climber
+ * started looking (for the busy-wall question).
  */
 export function lastPickOpenOptions(stored: LastPick): {
   previewQueueItem: ClimbQueueItem;
@@ -147,11 +176,13 @@ export function lastPickOpenOptions(stored: LastPick): {
   previewCommitOptions?: SetCurrentClimbOptions;
   previewMirrored: boolean;
   previewLatchStart: { wallClimbUuid: string | null; at: number };
+  boardConfig?: BoardConfig;
 } {
   return {
     previewQueueItem: stored.item,
     playlistSuggestionSource: stored.suggestionSource,
     ...(stored.commitOptions ? { previewCommitOptions: stored.commitOptions } : {}),
+    ...(stored.boardConfig ? { boardConfig: stored.boardConfig } : {}),
     previewMirrored: stored.mirrored,
     previewLatchStart: { wallClimbUuid: stored.wallAtPick, at: stored.pickedAt },
   };

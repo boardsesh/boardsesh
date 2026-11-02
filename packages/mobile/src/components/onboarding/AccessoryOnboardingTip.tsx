@@ -10,8 +10,8 @@ import { spacing } from '../../theme/tokens';
 
 /**
  * One-time tip teaching what the bottom accessory bar (the MiniPlayer) holds:
- * the last climb the climber opened, a preview included, until another climb
- * goes up on the board (owner decision A, `useBarClimb`). It fires the first
+ * the last climb the climber opened, a preview included, until the queue
+ * moves on to another climb (owner decision A, `useBarClimb`). It fires the first
  * time the accessory bar is on screen and never again.
  *
  * On iOS 26 Liquid Glass the accessory is a UIKit-hosted native platter

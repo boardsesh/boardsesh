@@ -1,5 +1,6 @@
+import { useCallback, useSyncExternalStore } from 'react';
 import { useHasActiveClimb } from '../providers/queue-provider';
-import { useHasLastPick } from '../lib/last-pick-store';
+import { hasStoredLastPick, subscribeToLastPick } from '../lib/last-pick-store';
 
 /**
  * Presence-only signal for "the bottom accessory has a climb to show": the local
@@ -24,9 +25,10 @@ import { useHasLastPick } from '../lib/last-pick-store';
 export function useHasAccessoryClimb(): boolean {
   // Owner decision A: the bar also shows the climber's last pick, so a preview
   // opened on an empty queue (every tap previews since 2.7) keeps a bar too.
-  // Both reads are presence-only booleans, so the mount still never churns
-  // from one climb to the next.
+  // One snapshot of the OR, so a pick starting or ending re-renders the host
+  // (the whole tab tree, for TabLayout) only when the answer flips: with a
+  // queue climb present, opening a preview or Back changes nothing here.
   const hasActiveClimb = useHasActiveClimb();
-  const hasLastPick = useHasLastPick();
-  return hasActiveClimb || hasLastPick;
+  const readHasAccessoryClimb = useCallback(() => hasActiveClimb || hasStoredLastPick(), [hasActiveClimb]);
+  return useSyncExternalStore(subscribeToLastPick, readHasAccessoryClimb, readHasAccessoryClimb);
 }

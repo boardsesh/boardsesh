@@ -44,12 +44,18 @@ export function useBarClimb(): BarClimb {
     getCredentialGeneration,
     getCredentialGeneration,
   );
+  // The drawn copy follows the pick alone: a mirrored pick's `{ ...climb }`
+  // is not rebuilt when the queue's current item changes identity under it.
+  const pickClimb = useMemo(() => (stored ? lastPickClimb(stored) : null), [stored]);
+  const pick = resolveBarPick(stored, currentClimbQueueItem?.uuid ?? null, generation);
+  // While the pick shows, the queue's current is not read, so the bar's object
+  // keeps its identity through a queue change that leaves the pick standing.
+  const shownCurrent = pick ? null : currentClimbQueueItem;
   return useMemo(() => {
-    const pick = resolveBarPick(stored, currentClimbQueueItem?.uuid ?? null, generation);
-    if (pick) return { item: pick.item, climb: lastPickClimb(pick), pick };
-    if (!currentClimbQueueItem) return NO_CLIMB;
-    return { item: currentClimbQueueItem, climb: currentClimbQueueItem.climb, pick: null };
-  }, [stored, currentClimbQueueItem, generation]);
+    if (pick && pickClimb) return { item: pick.item, climb: pickClimb, pick };
+    if (!shownCurrent) return NO_CLIMB;
+    return { item: shownCurrent, climb: shownCurrent.climb, pick: null };
+  }, [pick, pickClimb, shownCurrent]);
 }
 
 /** How the player reopens what the bar shows. */

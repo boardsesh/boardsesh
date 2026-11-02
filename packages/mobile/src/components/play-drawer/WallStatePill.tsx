@@ -27,6 +27,8 @@ import { spacing, borderRadius, androidRipple } from '../../theme/tokens';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { glassSize, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { Icon } from '../Icon';
+import { iconMap } from '../icon-map';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useWallDriver } from './use-wall-driver';
 
@@ -152,6 +154,32 @@ function WallStatePillImpl({
   // taller touch box around it, in the M3 on-surface state layer.
   const rippleColor = m3.onSurface;
 
+  const chip = (
+    <Animated.View
+      // Keyed so a chip that gains or loses its face re-enters rather than
+      // cross-mutating styles.
+      key={`${state}-${showFace ? 'face' : 'arrow'}`}
+      entering={reduceMotion || reserveOnly ? undefined : FadeIn.duration(180)}
+      style={[styles.pill, showFace ? styles.pillWithFace : styles.pillArrowOnly, containerStyle]}
+    >
+      {/* Where back goes (QA #147: your own climb, or the wall's) is the
+          label's to say, with the climb's name; the arrow and the face are
+          all a sighted climber needs beside the name. */}
+      <Icon name="undo" size={BROWSING_GLYPH_SIZE} color={labelColor} maxFontSizeMultiplier={1} />
+      {showFace ? (
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <BoardDriverAvatar
+            size={BROWSING_AVATAR_SIZE}
+            userId={null}
+            uri={driver.avatarUrl ?? null}
+            name={driverName}
+            status="none"
+          />
+        </View>
+      ) : null}
+    </Animated.View>
+  );
+
   return (
     <PressableSurface
       onPress={reserveOnly ? undefined : onPress}
@@ -169,29 +197,17 @@ function WallStatePillImpl({
         pressed && !reserveOnly && !isMaterial && styles.touchTargetPressed,
       ]}
     >
-      <Animated.View
-        // Keyed so a chip that gains or loses its face re-enters rather than
-        // cross-mutating styles.
-        key={`${state}-${showFace ? 'face' : 'arrow'}`}
-        entering={reduceMotion || reserveOnly ? undefined : FadeIn.duration(180)}
-        style={[styles.pill, showFace ? styles.pillWithFace : styles.pillArrowOnly, containerStyle]}
-      >
-        {/* Where back goes (QA #147: your own climb, or the wall's) is the
-            label's to say, with the climb's name; the arrow and the face are
-            all a sighted climber needs beside the name. */}
-        <Icon name="undo" size={BROWSING_GLYPH_SIZE} color={labelColor} maxFontSizeMultiplier={1} />
-        {showFace ? (
-          <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <BoardDriverAvatar
-              size={BROWSING_AVATAR_SIZE}
-              userId={null}
-              uri={driver.avatarUrl ?? null}
-              name={driverName}
-              status="none"
-            />
-          </View>
-        ) : null}
-      </Animated.View>
+      {reserveOnly ? (
+        chip
+      ) : (
+        // The words left the chip for the climb name's room, so at an
+        // accessibility text size a long press shows them in the Large Content
+        // Viewer: "Back to my pick" and "back to the wall" still read apart
+        // without a screen reader, as on the other icon-only chrome.
+        <LargeContentViewer title={accessibilityLabel} systemImage={iconMap.undo.ios} onActivate={onPress}>
+          {chip}
+        </LargeContentViewer>
+      )}
     </PressableSurface>
   );
 }

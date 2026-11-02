@@ -237,7 +237,9 @@ point of the chip came off the climb name twice; since owner decision B (2026-11
 the face and 44 pt without (`BACK_CHIP_WIDTH_WITH_FACE`, `BACK_CHIP_WIDTH_ARROW_ONLY` in `WallStatePill.tsx`), its
 tap target 44 pt tall and never narrower than 44 pt. It doesn't grow under Large Text: no text is left, the arrow
 keeps its point size and the face its 20 pt. Screen readers still hear where back goes, with the climb's name: "Back
-to my pick: The Eyes" or "Back to the climb on the wall: The Eyes". It shows only when going back lands somewhere.
+to my pick: The Eyes" or "Back to the climb on the wall: The Eyes". At an accessibility text size a long press on
+the chip shows the same words in the Large Content Viewer, as on the other icon-only chrome, so a low-vision climber
+not using a screen reader can still tell the two apart. It shows only when going back lands somewhere.
 
 **Trusting board presence without a link (QA #147).** Aurora and MoonBoard boxes keep their LEDs after a phone
 disconnects, so with no live link (this phone's or a crewmate's) presence's wall climb is trusted for an hour after it
@@ -591,7 +593,9 @@ when that changed after it, whichever happened last (owner decision A, 2026-11-0
 as the same preview with its list. On a pick its controls act on the pick: ✓ logs it, Mirror flips its own flip,
 ⏮ ⏭ step along its list by the player's swipe rules, and the bulb, while the pick isn't lit, is Put on board for it
 (the player opens on the pick and presses Put on board through the wall button's handler: the busy-wall question in a
-crew, the timed drive per Stop driving after). The Lock Screen, the Climbs header's wall capsule and the board history
+crew, the timed drive per Stop driving after, Put on {board} for a pick on another board at this gym). A pick counts as
+lit only through a live link, and one this wall can't light gets no bulb; in the collapsed platter the pick's bulb takes
+the one slot only while the pick is unlit on a board with lights, otherwise ✓ keeps it. The Lock Screen, the Climbs header's wall capsule and the board history
 sheet keep showing the wall.
 
 The tab and the Settings section show only where that bar is the native bottom accessory (`useTabChrome().nativeAccessory`:

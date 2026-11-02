@@ -48,7 +48,9 @@ export function PersistentQueueBar() {
   // The climber's last pick, or the queue's current when THAT changed after it
   // (owner decision A). Never the wall's lit climb: that lives in the top "On
   // the wall" strip. ✓ logs the climb the bar shows.
-  const currentClimb = useBarClimb().climb;
+  const { climb: currentClimb, pick } = useBarClimb();
+  // A pick logs the flip the bar draws, its own; the queue's current, its slot's.
+  const pickMirrored = pick ? pick.mirrored : undefined;
 
   // One climb, one surface: the JS tablet shell's pane (IpadPlayPane) or the
   // native accessory (iPhone, iPad, and the iPhone Duo's split) already show it,
@@ -74,7 +76,7 @@ export function PersistentQueueBar() {
             fillWidth
             height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
             surfaceTreatment="docked"
-            endAction={<LogAscentToolbarButton climb={currentClimb} size={glassSize.inline} />}
+            endAction={<LogAscentToolbarButton climb={currentClimb} isMirror={pickMirrored} size={glassSize.inline} />}
             endActionSize={glassSize.inline}
           />
         }
@@ -96,7 +98,7 @@ export function PersistentQueueBar() {
           endActionSize={showReturnToSession ? glassSize.inline : undefined}
         />
       }
-      trailing={<LogAscentFab climb={currentClimb} />}
+      trailing={<LogAscentFab climb={currentClimb} isMirror={pickMirrored} />}
     />
   );
 }

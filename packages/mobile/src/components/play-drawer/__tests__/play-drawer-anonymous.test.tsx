@@ -3452,3 +3452,109 @@ describe('PlayDrawer — the browse caption', () => {
     expect(lastCaption()).toBeNull();
   });
 });
+
+// Owner decision A: the MiniPlayer's bulb on an unlit last pick opens the
+// player on the pick (`putOnBoard`) and presses Put on board once the preview
+// lands, through the wall button's own handler. The hook's suites mock each
+// side; these drive the PlayCore wiring end to end: the open, the
+// `usePutOnBoardIntent` readiness gate and the busy-wall seed.
+describe('PlayDrawer — the MiniPlayer bulb on a last pick', () => {
+  const PICK_ITEM = { uuid: 'queue-item-uuid', climb: CLIMB };
+
+  const linkThisPhone = () => {
+    lightbulb.lit = true;
+    lightbulb.localConnected = true;
+    ble.current = { isConnected: true, sendFramesToBoard: vi.fn(async () => true) };
+  };
+
+  function bulbTarget(latchStart?: { wallClimbUuid: string | null; at: number }) {
+    return {
+      climb: CLIMB,
+      options: {
+        previewQueueItem: PICK_ITEM,
+        putOnBoard: true,
+        ...(latchStart ? { previewLatchStart: latchStart } : {}),
+      },
+      nonce: 1,
+    } as unknown as ReturnType<typeof openTargetFor>;
+  }
+
+  it('puts the pick up once the preview lands, solo, with no question', () => {
+    linkThisPhone();
+    render(drawerElement('member', bulbTarget()));
+
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+    expect(queueActions.setCurrentClimb.mock.calls[0][0].climb.uuid).toBe(CLIMB.uuid);
+    expect(lastActionBarProps().commitButton).not.toBe('confirm');
+  });
+
+  // The wall moved while the player was closed: a crewmate lit "Their
+  // Project" after the climber started looking at the pick (the seed says the
+  // wall showed A then). The press asks first, exactly as the wall button does.
+  it('asks the busy-wall question in a crew when the wall moved since the pick', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    linkThisPhone();
+    wall.uuid = 'wall-climb-b';
+    wall.name = 'Their Project';
+    render(drawerElement('member', bulbTarget({ wallClimbUuid: 'wall-climb-a', at: Date.now() - 60_000 })));
+
+    expect(lastActionBarProps().commitButton).toBe('confirm');
+    expect(lastActionBarProps().busyWall).toMatchObject({ wallClimbName: 'Their Project' });
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+
+    afterBusyWallDebounce(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks nothing in a crew when the wall still shows what it did at the pick', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    linkThisPhone();
+    wall.uuid = 'wall-climb-b';
+    wall.name = 'Their Project';
+    render(drawerElement('member', bulbTarget({ wallClimbUuid: 'wall-climb-b', at: Date.now() - 60_000 })));
+
+    expect(lastActionBarProps().commitButton).not.toBe('confirm');
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+  });
+
+  // The seed is for the open it came with. The phone's player mounts with the
+  // preview already up, so a crew's latch is up before the open applies and the
+  // seed corrects it at once; a later open of the same slot with no seed (from
+  // the queue sheet, after a committed climb in between) reads the wall as it
+  // is then, never the old snapshot.
+  it('spends the seed: a later open of the same slot reads the wall afresh', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    wall.uuid = 'wall-climb-b';
+    wall.name = 'Their Project';
+    const target = (nonce: number, options: Record<string, unknown>) =>
+      ({ climb: CLIMB, options, nonce }) as unknown as ReturnType<typeof openTargetFor>;
+    const view = render(
+      drawerElement(
+        'member',
+        target(1, { previewQueueItem: PICK_ITEM, previewLatchStart: { wallClimbUuid: 'wall-climb-a', at: 1 } }),
+        undefined,
+        'route',
+      ),
+    );
+    view.rerender(
+      drawerElement(
+        'member',
+        { climb: SIMILAR_CLIMB, options: { committedExternally: true }, nonce: 2 },
+        undefined,
+        'route',
+      ),
+    );
+    view.rerender(drawerElement('member', target(3, { previewQueueItem: PICK_ITEM }), undefined, 'route'));
+    act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+    expect(lastActionBarProps().commitButton).not.toBe('confirm');
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+  });
+});
