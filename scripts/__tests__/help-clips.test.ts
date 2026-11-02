@@ -43,6 +43,7 @@ describe('help clip table', () => {
       'grade-range-tap',
       'preview-browsing',
       'wall-swipe-to-drive',
+      'put-on-board-timed-drive',
       'start-playlist-queue',
     ]);
   });

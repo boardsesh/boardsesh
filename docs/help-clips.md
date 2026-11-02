@@ -51,7 +51,7 @@ Use a dedicated iPhone 16 Pro Max simulator in dark appearance, at 1320 × 2868,
 with the release checkout's cached dev-client and local backend:
 
 ```sh
-BOARDSESH_METRO_PORT=8191 vp run mobile:ios-shots -- --backend local --device "Boardsesh Release Help 20261031" --app-path <cached dev-client .app>
+BOARDSESH_METRO_PORT=8191 vp run mobile:ios-shots -- --backend local --device "Boardsesh Help 7208" --app-path <cached dev-client .app>
 ```
 
 This command uses the store-capture environment even without `--flow`, setting
@@ -83,26 +83,90 @@ when the swipe lights the climb.
 gesture and would skip the lesson this clip teaches.
 
 For `preview-browsing`, stop any drive first (tap You are driving the wall; a
-timed one shows a clock), and leave both tap and swipe lighting off in Settings →
-Board (the 2.7 default). Tap a row to establish its list track, then swipe the
+timed one shows a clock), and leave Always drive the wall off in Settings →
+Board (the default since #7218). Tap a row to establish its list track, then swipe the
 board once. Check for the arrow + face back chip, Preview · not on the wall in
 the top bar and a plain Put on board, without pressing it. Close the player and
 hold on the MiniPlayer, which keeps the previewed climb while the Climbs header
 capsule keeps the wall's. A standalone preview (a deep link or the Home
 new-climb card) can have no swipe track; do not use one for this take.
 
-The release wall-control captures use source `3c4fd3702d` on 2026-10-31, in the
-dedicated simulator `Boardsesh Release Help 20261031`, with Metro on port 8191.
-They are stale since #7170 (frost only while driving) and #7188 (wordless back
-chip, timed drive, last-look MiniPlayer); re-record pending on a build at or
-after `38eecfa2f0`. `start-playlist-queue` predates the three-way prompt, and
-`long-press-climb-actions` and `remove-from-playlist` still show the old reaction
-card with Preview and Add to queue. #7205 (`2315895fb5`) replaced that card with
-the lifted native menu, so re-record those two on a build at or after it.
-Record the source commit
-and capture date again when replacing these takes. Review the button label,
-frost, back chip and unchanged/changed wall climb against each caption before
-converting or publishing the assets.
+For `put-on-board-timed-drive`, open a tracked preview with no drive active,
+then tap **Put on board**. Hold long enough to show its clock and shrinking
+frost, swipe the board once to refill the timed window, then tap the driving
+button to stop. Do not use `screenshotDrive=1`: it starts the drive before the
+take and skips the tap being taught.
+
+### Refresh provenance: 2 November 2026 (#7208)
+
+The refreshed takes use application source
+`3b1d9be90cf99517947b5622618df7533864708c` from `main`, captured on
+2026-11-02 (Athens) in `Boardsesh Help 7208`: iPhone 16 Pro Max, iOS 27.0,
+dark appearance, 1320 × 2868. A cached Debug dev-client loaded current Metro
+JavaScript against the local Docker database's seeded test user. The existing
+fake Bluetooth adapter exercises the actual controls; it does not verify
+physical Bluetooth delivery.
+
+The refreshed takes are `long-press-climb-actions` (hold and ⋯),
+`swipe-row-queue-playlist`, `remove-from-playlist`, `preview-browsing`
+(including the last-look MiniPlayer ending), `wall-swipe-to-drive`, and the new
+`put-on-board-timed-drive`. The playlist removal take restores the local
+membership it changed. `start-playlist-queue` uses the compatible local
+Aurora Circuit 5 list with Up next already filled and the playlist-loading
+switch verified on. Its header **Play** uses the same first-climb activation
+callback as a row tap, opens the three-way prompt, and **Cancel** opens the
+preview. Repeated coordinate row taps did not activate on this cached client;
+the native header worked. Five Stars can select a MoonBoard list while
+Tension is active, so use a list compatible with the active board. The setup
+flow targets the native switch itself: matching its text label had left it off.
+
+All seven refreshed clips are converted with posters. Each final clip is
+12.0 seconds; the largest encoding is 717 KB, below the 1.5 MB file budget.
+The original movies were normalized to constant frame rate before editing.
+Every retained segment plays at 1×; gaps between segments are cuts, not
+speed changes. The timed-drive clip cuts idle countdown time without speeding
+up the clock. The playlist-start clip ends with a 1.5-second hold of its actual
+final preview frame, with no UI compositing or speedup; its poster is taken at
+5 seconds into the edited clip. Final visual QA passed, including the timed stop and Cancel opening the fully painted preview.
+
+`preview-browsing` verifies the last-look MiniPlayer ending but does not show
+a simultaneous comparison with the wall-header capsule. That comparison is
+deliberately omitted; the preview still's back chip provides the wall reference.
+There is no duplicate standalone MiniPlayer clip.
+
+#### Source cut log
+
+These reviewed source windows are copied from the local
+`.boardsesh/help-clips/edited/cuts.json`. Times are seconds into each original
+constant-frame-rate movie, before these cuts. Normalized edited inputs are
+copied into `.boardsesh/help-clips/raw/`, so the default conversion command
+can be rerun. Original recordings remain locally under
+`.boardsesh/help-clips/uncut/`, their CFR originals under
+`.boardsesh/help-clips/cfr/`, and the working edits under
+`.boardsesh/help-clips/edited/`. The source commit, date and simulator for every
+row are the refresh provenance above.
+
+| Clip | Retained original-CFR windows (seconds, 1×) |
+| --- | --- |
+| `long-press-climb-actions` | 8–16.5; 19.5–23 |
+| `swipe-row-queue-playlist` | 7–13; 13.7–19.7 |
+| `remove-from-playlist` | 7.5–19.5 |
+| `preview-browsing` | 6.5–18.5 |
+| `wall-swipe-to-drive` | 4–13; 15–18 |
+| `put-on-board-timed-drive` | 4.5–9.5; 24–31 |
+| `start-playlist-queue` | 6.5–8.5; 11–19.5; 1.5-second hold of the actual final preview frame |
+
+The [capture disposition table](help-screenshots.md#help-refresh-2-november-2026-7208)
+records all requested media and deliberate omissions.
+
+The previous wall-control takes used `3c4fd3702d` on 2026-10-31 in
+`Boardsesh Release Help 20261031`, with Metro on port 8191. They predated #7170
+and #7188. The previous long-press and playlist-removal takes showed the old
+reaction card replaced by #7205 (`2315895fb5`); the previous playlist-start
+take predated the three-way prompt. These are historical provenance, not the
+source of the refreshed takes. Review each replacement's button label, frost,
+back chip and unchanged/changed wall climb against its caption before
+converting or publishing.
 
 ## Converting
 

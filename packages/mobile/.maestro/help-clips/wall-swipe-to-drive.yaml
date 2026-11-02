@@ -27,10 +27,8 @@ name: help clip - swipe the wall button to drive
 # records the app's actual state changes using its simulated board adapter,
 # not physical BLE delivery. The automatic frost peek stays suppressed.
 #
-# Measured on Boardsesh Release Help 20261031, iPhone 16 Pro Max, dark,
-# 1320 x 2868, source 3c4fd3702d, captured 2026-10-31. That take is stale
-# since #7170/#7188 (frost at rest); re-record pending on a build at or after
-# 38eecfa2f0:
+# Captured on Boardsesh Help 7208, iPhone 16 Pro Max, iOS 27.0, dark,
+# 1320 x 2868, main source 3b1d9be90c, 2026-11-02:
 #   86%,90% -> 15%,90%  swipe the wall button left past its commit point
 #   85%,50% -> 18%,50%  swipe the board to the next climb
 #   50%,90%             tap the driving button to stop, retaining the link

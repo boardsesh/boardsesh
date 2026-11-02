@@ -78,25 +78,20 @@ export const HELP_CLIPS = [
   {
     name: 'long-press-climb-actions',
     source: 'long-press-climb-actions',
-    // Recorded 2026-09-20: the old reaction card, still listing Preview (removed
-    // in #7188) and Add to queue (Play next / Play last since #6772). #7205
-    // (2315895fb5) replaced it with the lifted native menu: re-record on a build
-    // at or after it.
+    poster: 4,
+    // Recorded from main 3b1d9be90c, 2026-11-02; hold and row more button.
     description: 'Press and hold a climb row until the actions sheet rises.',
   },
   {
     name: 'swipe-row-queue-playlist',
     source: 'swipe-row-queue-playlist',
-    // The first frame is the same climbs list the long-press clip opens on; 3 s
-    // in, the first swipe has landed and its toast is up. The take predates
-    // #6772 (it still shows "Climb added to queue") and needs a macOS re-record.
-    poster: 3,
+    poster: 4,
     description: 'Swipe a climb row to reveal queue and playlist actions.',
   },
   {
     name: 'remove-from-playlist',
     source: 'remove-from-playlist',
-    // Same stale card rows as long-press-climb-actions: re-record with it.
+    poster: 7,
     description: 'Take a climb back out of a playlist.',
   },
   {
@@ -122,29 +117,27 @@ export const HELP_CLIPS = [
   {
     name: 'preview-browsing',
     source: 'preview-browsing',
-    trim: { start: 6.5, end: 18.5 },
     poster: 8,
-    // Captured at 3c4fd3702d, before #7170 and #7188: it shows the worded back
-    // chip, a frosted Put on board at rest and a MiniPlayer that follows the
-    // wall. Re-record pending (docs/help-clips.md).
     description: 'Browse the next climb without losing the one on the wall.',
   },
   {
     name: 'wall-swipe-to-drive',
     source: 'wall-swipe-to-drive',
-    trim: { start: 18.5, end: 30.5 },
-    poster: 4,
-    // Captured at 3c4fd3702d, before #7170: Put on board and the stopped
-    // Disconnect board are frosted at rest. Re-record pending.
+    poster: 5,
     description: 'Swipe the wall button left to drive, change climbs, then tap to stop driving.',
+  },
+  {
+    name: 'put-on-board-timed-drive',
+    source: 'put-on-board-timed-drive',
+    poster: 8,
+    description: 'Tap Put on board, watch the timed drive, change climbs, then tap to stop.',
   },
   {
     name: 'start-playlist-queue',
     source: 'start-playlist-queue',
-    // The take cancels the three-way Start playlist? prompt, which (since 2.7)
-    // opens the tapped climb as a preview; Start playlist would load Up next and
-    // keep the wall's climb. Recorded before both changed: re-record pending.
-    description: 'Tap a playlist climb with Up next filled: the Start playlist? prompt, then Cancel opens a preview.',
+    poster: 5,
+    // Header Play on the compatible local list, then Cancel opens its preview.
+    description: 'Press playlist Play with Up next filled: Start playlist? appears, then Cancel opens a preview.',
   },
 ] as const satisfies readonly HelpClipEntry[];
 
