@@ -143,7 +143,7 @@ whole visible window. Inline closures (`onPress={() => …}`) passed to a memoiz
 
 - `keyExtractor` is a module-scope function (line 893), not an inline `(item) => item.uuid`.
 - `renderClimbItem` is a `useCallback` (lines 699–727) whose deps are the board identity tuple plus
-  the **stable** `handleClimbPress` / `openClimbActions` / `handleAddToQueue` callbacks and the
+  the **stable** `handleClimbPress` / `handleOpenClimbActions` / `handleAddToQueue` callbacks and the
   scalar `activeClimbUuid`. No `visibleClimbs.length`, no inline arrows.
 - The handlers it closes over (`handleClimbPress`, `handleAddToQueue`) are themselves `useCallback`s.
 - `ClimbListRow` (`packages/mobile/src/components/ClimbListRow.tsx`) is `React.memo`'d and keeps its

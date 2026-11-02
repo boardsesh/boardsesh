@@ -898,7 +898,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const closeAddToPlaylist = closePlaylistSheet;
 
   // Single parameterized beta-video opener (mirrors openAddToPlaylist), used both by
-  // the reaction menu's shared action list (useClimbActions) and by PlayDrawer.
+  // the climb menus' shared commands (useClimbActions) and by PlayDrawer.
   // Falls back to the stored active board, not the override-inclusive one, so a
   // temporary drawer board override can't leak into the beta-video surface.
   const openAddBetaVideo = useCallback(
@@ -913,7 +913,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const closeAddBetaVideo = closeBetaVideoSheet;
 
   // Single parameterized report opener (mirrors openAddBetaVideo), used by the
-  // reaction menu's shared action list (useClimbActions). Falls back to the
+  // climb menus' shared commands (useClimbActions). Falls back to the
   // stored active board, not the override-inclusive one, so a temporary drawer
   // board override can't leak into the report.
   // The kill switch gates every entry point that reaches this opener; keep the

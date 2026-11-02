@@ -751,7 +751,7 @@ export function LogbookTab({
   // resolve (no frames / MoonBoard) — nothing to render in the actions sheet.
   const handleOpenActions = useCallback(
     (ascent: AscentFeedItem) => {
-      // Fall back to the consensus grade so the reaction menu shows a grade even when
+      // Fall back to the consensus grade so the climb menu has a grade even when
       // the climber didn't log a personal one (tickToClimb only reads difficultyName).
       const climb = tickToClimb({
         ...ascent,

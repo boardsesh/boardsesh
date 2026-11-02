@@ -107,7 +107,7 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
     loadMore: loadMoreClimbs,
   });
 
-  // Long press → reaction menu. Resolves the same per-climb board config handlePress
+  // Long press → climb menu. Resolves the same per-climb board config handlePress
   // uses (the userClimbs payload carries no size/sets).
   const handleOpenActions = useCallback(
     (climb: Climb) => {

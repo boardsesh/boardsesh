@@ -55,7 +55,7 @@ type QueueSheetHandlers = {
  * The four QueueSheet row handlers, shared by the two QueueSheet instances: the
  * host's (snackbar / closed-player) and the play-route's (open-player, so the
  * sheet stacks above the player VC). Extracted so the two can't drift — both
- * present the same climb in the play drawer, open the same reaction menu, and
+ * present the same climb in the play drawer, resolve the same climb menu, and
  * file the same tick. The only difference is `requestCloseQueueSheet`, which
  * dismisses whichever instance the caller owns.
  */
@@ -110,9 +110,9 @@ export function useQueueSheetHandlers({
     [landingOf, setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
   );
 
-  // Long-press a queue row → open the climb reaction menu over the queue sheet.
-  // The queue renders against the active board, so the default boardConfig is
-  // correct.
+  // A queue row's climb menu: the target a hold resolves, bound to that exact
+  // slot. The queue renders against the active board, so the default
+  // boardConfig is correct.
   const handleOpenActions = useCallback(
     (item: ClimbQueueItem) => {
       // `queueItemUuid` names the exact row that was long-pressed, so "Play next"

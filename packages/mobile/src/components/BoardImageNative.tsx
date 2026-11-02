@@ -54,7 +54,7 @@ type BoardImageNativeProps = {
    * This is THE board the climber is looking at — the play drawer's current
    * card. Sets `surface: 'play'` on render-failure telemetry and turns on the
    * overlay paint watchdog. Every other call site (preview cards and rails, the
-   * preview sheet, the reaction menu, the wall kiosk hero, the carousel's
+   * preview sheet, the wall kiosk hero, the carousel's
    * off-screen peek) leaves it off: pooling those into one rate would describe
    * nothing anybody experienced.
    */

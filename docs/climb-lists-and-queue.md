@@ -152,7 +152,8 @@ Long-press and the list/player ellipsis share grouped core actions. On the main 
 list, holding a row or tapping its ellipsis opens the same lifted row and menu above the
 dimmed list. Other surfaces keep their native menus. Logbook Edit entry and player controls
 stay contextual; the player omits actions already shown as buttons. Menu descriptors stay
-bound to the climb and exact queue slot. The old enlarged-board reaction overlay is removed.
+bound to the climb and exact queue slot. No menu offers Preview: a list tap already opens one.
+The old enlarged-board reaction overlay is removed.
 
 | Surface | Legacy fallback (browse flag off) | In a crew (browse flag on) | Driving the wall (#7113), crew or solo | Row swipes | Long-press |
 | --- | --- | --- | --- | --- | --- |

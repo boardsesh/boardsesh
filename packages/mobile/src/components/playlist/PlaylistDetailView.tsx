@@ -573,7 +573,7 @@ export function PlaylistDetailView({
     return targets;
   }, [resolvedRowsByClimbUuid]);
 
-  // Long press → reaction menu, using the row's resolved render board (a playlist can
+  // Long press → climb menu, using the row's resolved render board (a playlist can
   // mix boards, so this isn't always the active board).
   const handleOpenActions = useCallback(
     (tapped: SchemaClimb) => {

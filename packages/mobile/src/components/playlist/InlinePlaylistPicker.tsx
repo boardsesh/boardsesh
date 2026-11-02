@@ -42,8 +42,7 @@ import { NAME_MAX } from './playlist-form-values';
 
 // One-tap emoji shortcuts for the compact inline create form. The full emoji
 // picker (system keyboard + description field) lives on the playlist edit
-// screen; the inline form stays lightweight so it fits the reaction overlay's
-// floating card.
+// screen; the inline form stays lightweight so it fits a sheet or a popover.
 const QUICK_EMOJI = ['🔥', '💪', '🎯', '⭐', '🧗', '🪨', '🏆'] as const;
 
 // The subset of TextInput props the create form actually drives. Typing the
