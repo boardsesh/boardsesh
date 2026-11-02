@@ -39,7 +39,7 @@ const storeCtrl = vi.hoisted(() => ({
     cardDismissedThisLaunch: false,
   },
 }));
-const flagsCtrl = vi.hoisted(() => ({ enabled: true }));
+const flagsCtrl = vi.hoisted(() => ({ enabled: true, swipeToDrive: true }));
 const settingsCtrl = vi.hoisted(() => ({ alwaysDrive: false, drivesInSession: true }));
 const sessionCtrl = vi.hoisted(() => ({ crew: false }));
 const bluetoothMocks = vi.hoisted(() => ({
@@ -143,6 +143,7 @@ vi.mock('../../../lib/onboarding/first-connect-store', () => ({
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFirstConnectCtaEnabled: () => flagsCtrl.enabled,
+  useWallSwipeToDriveEnabled: () => flagsCtrl.swipeToDrive,
 }));
 vi.mock('../../../settings', () => ({
   useSetting: (key: string) => {
@@ -193,6 +194,7 @@ describe('FirstConnectCard', () => {
       cardDismissedThisLaunch: false,
     };
     flagsCtrl.enabled = true;
+    flagsCtrl.swipeToDrive = true;
     settingsCtrl.alwaysDrive = false;
     settingsCtrl.drivesInSession = true;
     sessionCtrl.crew = false;
@@ -238,6 +240,17 @@ describe('FirstConnectCard', () => {
       screen.getByText('Connect this phone to the board and you drive the wall: every climb you pick lights.'),
     ).toBeTruthy();
     expect(screen.queryByText(/Put on board/)).toBeNull();
+  });
+
+  // The swipe flag is driving's kill switch: off, nothing drives, so the card names Put on board.
+  it('names Put on board with the swipe flag off, Light automatically on or not', () => {
+    settingsCtrl.alwaysDrive = true;
+    flagsCtrl.swipeToDrive = false;
+    renderCard();
+
+    expect(
+      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
+    ).toBeTruthy();
   });
 
   // In a crew Light automatically drives only with In a session too on.

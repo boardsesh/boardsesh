@@ -21,7 +21,8 @@ export type BoardLightingModelInput = {
   /**
    * Light automatically: always drive the wall while this phone holds the
    * board. On, Stop driving after (and the MoonBoard's) shows greyed with its
-   * reason, and In a session too applies whatever Stop driving after says.
+   * reason on the row, and In a session too applies whatever Stop driving
+   * after says.
    */
   alwaysDrive: Toggle;
   /**
@@ -112,30 +113,37 @@ function keepLightingRow(
 }
 
 /**
- * The Board page's lighting half (spec B4). First how long Put on board's
- * drive lasts (2.7, Stop driving after): the general choice, the MoonBoard's
- * own right under it (only where a MoonBoard is in view), and In a session
- * too, greyed with its reason while the general choice is Right away (its
- * state follows only the general choice; a MoonBoard's applies in a session
- * anyway). Under that card, what happens when a drive ends: Disconnect
- * Bluetooth when driving ends, which frees the board for the next climber (it
- * replaced auto-disconnect). Then Light automatically, then what a list tap
- * does (and the MoonBoard's extra LEDs).
+ * The Board page's lighting half (spec B4). First Light automatically, one
+ * switch (it replaced Light the board when I tap a climb and Light the board
+ * as I swipe): on, this phone always drives the wall while it holds the board.
+ * It leads because it greys the rows under it: a climber reads the switch
+ * before the rows it turns off. Its footer, only while it is on, says how to
+ * stop and what a stop holds.
  *
- * Light automatically is one switch (it replaced Light the board when I tap a
- * climb and Light the board as I swipe): on, this phone always drives the
- * wall while it holds the board, so Stop driving after and the MoonBoard's
- * choice don't apply. They stay in place, greyed, and the card's footer says
- * why; In a session too still decides a crew session, so it is never greyed
- * then.
+ * Then how long Put on board's drive lasts (2.7, Stop driving after): the
+ * general choice, the MoonBoard's own right under it (only where a MoonBoard
+ * is in view), and In a session too, greyed with its reason while the general
+ * choice is Right away (its state follows only the general choice; a
+ * MoonBoard's applies in a session anyway). Under Light automatically the two
+ * choices don't apply: they stay in place, greyed, each saying why on the row
+ * itself (where a screen reader lands), and the card drops its footer, which
+ * describes Put on board's drive. In a session too still decides a crew
+ * session for Light automatically, so it is never greyed then.
+ *
+ * Under that card, what happens when a drive ends: Disconnect Bluetooth when
+ * driving ends, which frees the board for the next climber (it replaced
+ * auto-disconnect). Then what a list tap does (and the MoonBoard's extra LEDs).
  */
 export function buildBoardLightingSections(input: BoardLightingModelInput): MoreSection[] {
   const { t } = input;
 
   const alwaysDrive = input.alwaysDrive.enabled;
   const keepOff = input.keepLighting.choice === 'off';
+  // Greyed under Light automatically, each row says why where a screen reader lands on it.
+  const alwaysDriveReason = t('settings:ble.lighting.keep.alwaysDriveReason');
   const keepRows: MoreRow[] = [
     keepLightingRow(t, 'putOnBoardKeepsLighting', t('settings:ble.lighting.keep.label'), input.keepLighting, {
+      ...(alwaysDrive ? { subtitle: alwaysDriveReason } : {}),
       disabled: alwaysDrive,
     }),
   ];
@@ -147,10 +155,7 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
         t('settings:ble.lighting.keep.moonboardLabel'),
         input.moonboardKeepLighting,
         {
-          // Greyed, the row says why where a screen reader lands on it.
-          subtitle: alwaysDrive
-            ? t('settings:ble.lighting.keep.alwaysDriveReason')
-            : t('settings:ble.lighting.keep.moonboardDescription'),
+          subtitle: alwaysDrive ? alwaysDriveReason : t('settings:ble.lighting.keep.moonboardDescription'),
           // Named on its own (spec B4): the rotor and Voice Control read it without the row above.
           accessibilityLabel: t('settings:ble.lighting.keep.moonboardAccessibilityLabel'),
           disabled: alwaysDrive,
@@ -226,12 +231,17 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
 
   return [
     {
-      key: 'keepLighting',
+      key: 'lightingAuto',
       title: t('settings:ble.lighting.title'),
-      // Greyed under Light automatically: the footer says why instead.
-      footer: alwaysDrive
-        ? t('settings:ble.lighting.keep.alwaysDriveReason')
-        : keepLightingFooter(t, input.keepLighting.choice),
+      // How to stop, and what a stop holds: only true while it is on.
+      ...(alwaysDrive ? { footer: t('settings:ble.lighting.alwaysDriveFooter') } : {}),
+      rows: lightingRows,
+    },
+    {
+      // Untitled: the same lighting page. Under Light automatically the rows
+      // say why they are greyed, and the footer (Put on board's drive) goes.
+      key: 'keepLighting',
+      ...(alwaysDrive ? {} : { footer: keepLightingFooter(t, input.keepLighting.choice) }),
       rows: keepRows,
     },
     {
@@ -241,12 +251,7 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       rows: drivingEndsRows,
     },
     {
-      key: 'lightingAuto',
-      footer: t('settings:ble.lighting.alwaysDriveFooter'),
-      rows: lightingRows,
-    },
-    {
-      // Untitled: Light automatically's second card, so its footer stays with it.
+      // Untitled: what a list tap does, and the MoonBoard's extra LEDs.
       key: 'lightingMore',
       rows: moreLightingRows,
     },

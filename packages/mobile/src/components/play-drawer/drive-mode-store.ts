@@ -66,6 +66,14 @@ export type DriveModeState = {
   expiresAt: number | null;
   /** Lit climbs that renewed the window (the one that opened it not counted), for Drive Mode Ended. */
   windowRenewals: number;
+  /**
+   * Light automatically opened this timed drive up (`makeDriveOpenEnded({
+   * byAlways: true })`): the switch turned on while it ran. Light
+   * automatically then ends it where it stops driving (`always_off`), as its
+   * own drive, so turning the switch back off never leaves an open-ended drive
+   * the climber didn't choose. Absent on every other drive.
+   */
+  openedByAlways?: true;
 };
 
 /**
@@ -95,9 +103,10 @@ export type DriveModeExitReason =
    */
   | 'window_ended'
   /**
-   * Light automatically's drive, where it no longer drives: the switch went
-   * off, or a crew formed (or In a session too went off in one) on a board
-   * that needs it. The link stays.
+   * Light automatically's drive (or a timed drive it opened up), where it no
+   * longer drives: the switch went off, a crew formed (or In a session too
+   * went off in one) on a board that needs it, or the swipe flag went off. The
+   * link stays.
    */
   | 'always_off';
 
@@ -477,12 +486,30 @@ export function retimeDriveWindow(windowMs: number, now = Date.now()): boolean {
 /**
  * A swipe or Light every climb during a timed drive: the drive goes on
  * with no end, the frost. Returns whether there was a window to open up.
+ *
+ * `byAlways`: Light automatically turned on during it, so the drive is now
+ * Light automatically's to end (`openedByAlways`).
  */
-export function makeDriveOpenEnded(): boolean {
+export function makeDriveOpenEnded({ byAlways = false }: { byAlways?: boolean } = {}): boolean {
   if (!driveMode || driveMode.windowMs === null) return false;
-  driveMode = { ...driveMode, windowMs: null, windowSetting: null, expiresAt: null };
+  driveMode = {
+    ...driveMode,
+    windowMs: null,
+    windowSetting: null,
+    expiresAt: null,
+    ...(byAlways ? { openedByAlways: true as const } : {}),
+  };
   emit();
   return true;
+}
+
+/**
+ * Whether this drive is Light automatically's to end where it stops driving:
+ * its own (`startedBy: 'always'`), or a timed drive it opened up. A swipe's,
+ * Light every climb's or a running timed drive is left alone.
+ */
+export function isAlwaysDriveOwned(drive: DriveModeState | null): boolean {
+  return drive !== null && (drive.startedBy === 'always' || drive.openedByAlways === true);
 }
 
 /**

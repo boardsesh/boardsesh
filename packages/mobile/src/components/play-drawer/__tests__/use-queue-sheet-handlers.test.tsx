@@ -260,7 +260,7 @@ describe('preview-first queue selections', () => {
   });
 });
 
-// Light on tap is off (the 2.7 default). A pick that previews carries its
+// Nothing drives the wall (Light automatically off is the default). A pick that previews carries its
 // selection to Put on board. A pick of the climb already up can't: its
 // preview would have no Put on board, so it commits when the wall keeps its
 // climb, and otherwise reopens the climb up as it is.

@@ -650,7 +650,63 @@ describe('DriveModeWatcher: Light automatically', () => {
     watcher.change({});
     expect(getDriveMode()?.windowMs).toBe(45_000);
     watcher.change({ alwaysDrive: true });
-    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap', windowMs: null, expiresAt: null });
+    expect(getDriveMode()).toMatchObject({
+      phase: 'live',
+      startedBy: 'tap',
+      windowMs: null,
+      expiresAt: null,
+      openedByAlways: true,
+    });
+  });
+
+  // The climber's 45 s window went when the switch opened it up: turning the
+  // switch off again ends it rather than leaving a drive with no end.
+  it('ends a timed drive it opened up when the switch goes off again, keeping the link', () => {
+    reads.current = { ...reads.current, alwaysDrive: false, disconnectWhenDrivingEnds: true };
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        boardId: 7,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+      markDriveLive();
+    });
+    watcher.change({ alwaysDrive: true });
+    expect(getDriveMode()?.openedByAlways).toBe(true);
+    watcher.change({ alwaysDrive: false });
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('always_off');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  // Driving's kill switch: Light automatically's drive is a drive like any other.
+  it('starts nothing with the swipe flag off, and ends its drive keeping the link when the flag goes off', () => {
+    reads.current = { ...reads.current, swipeToDrive: false };
+    const watcher = mount();
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ swipeToDrive: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+    watcher.change({ swipeToDrive: false });
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('always_off');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  // Signing out drops no link, and Light automatically drives signed out too
+  // (as the switches it replaced lit): one drive ends, the next starts at once.
+  it('drives on after a sign-out with the link still up, as a new drive', () => {
+    const watcher = mount();
+    expect(getDriveMode()?.startedBy).toBe('always');
+    effects.track.mockClear();
+    watcher.change({ isAuthenticated: false });
+    expect(effects.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'signed_out', startedBy: 'always' }),
+    );
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
   });
 
   describe('in a crew', () => {

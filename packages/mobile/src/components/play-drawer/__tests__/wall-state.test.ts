@@ -640,7 +640,7 @@ describe('resolveBrowseCaption', () => {
   /** No link here, no wall driven anywhere. */
   const unlinked: Partial<BrowseCaptionInput> = { holdsLink: false, wallDriven: false };
   const cases: Array<[string, Partial<BrowseCaptionInput>, BrowseCaption]> = [
-    // Confusion 1: Light on tap off opened a preview, and nothing said it was not lit.
+    // Confusion 1: a tap outside a drive opened a preview, and nothing said it was not lit.
     ['solo preview while a board is connected', {}, { kind: 'preview' }],
     ['solo preview, board connected, wall dark', { wallClimbUuid: null }, { kind: 'preview' }],
     // B1: the commonest 2.7 state, a linked phone with a dark wall, even before

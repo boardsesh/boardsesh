@@ -812,7 +812,7 @@ function findUpNextBehind(
 
 /**
  * What the track's `resume` becomes when a queue entry reached outside the walk
- * goes up on the wall (issue #6777): with Light on swipe off, or in a crew, a
+ * goes up on the wall (issue #6777): outside a drive, solo or in a crew, a
  * swipe off the committed climb is a look that walks the queue, and Put on the
  * wall commits the queued climb it landed on.
  *

@@ -15,6 +15,7 @@ import {
   getDriveLightingSnapshot,
   getDriveMode,
   getLastDriveModeExitReason,
+  isAlwaysDriveOwned,
   isDriveWindowDue,
   isDrivingStoppedForLink,
   makeDriveOpenEnded,
@@ -111,8 +112,8 @@ describe('drive-mode store', () => {
     expect(isDrivingStoppedForLink()).toBe(false);
   });
 
-  // Solo with Light the board as I swipe on, nothing is in the store: the stop is what matters.
-  it('records a stop with no drive in the store (solo, lighting on swipes)', () => {
+  // A press after the drive had already gone (Turn off all lights, say): the stop is what matters.
+  it('records a stop with no drive in the store', () => {
     expect(stopDrivingForLink()).toBeNull();
     expect(isDrivingStoppedForLink()).toBe(true);
     expect(getLastDriveModeExitReason()).toBeNull();
@@ -350,6 +351,15 @@ describe("Light automatically's drive", () => {
     ]);
   });
 
+  it("owns its own drive's end, never a swipe's, and nothing with no drive", () => {
+    expect(isAlwaysDriveOwned(null)).toBe(false);
+    startAlwaysDrive({ sessionId: null, boardId: 7 });
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(true);
+    resetDriveModeForTests();
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(false);
+  });
+
   describe('shouldStartAlwaysDrive', () => {
     const DRIVE: DriveModeState = {
       phase: 'live',
@@ -524,6 +534,24 @@ describe('the timed drive', () => {
     expect(makeDriveOpenEnded()).toBe(false);
   });
 
+  // Light automatically turned on during it: the drive is now Light automatically's to end.
+  it('turns open-ended for Light automatically, which then owns its end', () => {
+    openWindow();
+    markDriveLive({ now: 5_000 });
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(false);
+    expect(makeDriveOpenEnded({ byAlways: true })).toBe(true);
+    expect(getDriveMode()).toMatchObject({ startedBy: 'tap', windowMs: null, openedByAlways: true });
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(true);
+  });
+
+  it('leaves a swipe-opened window to its climber', () => {
+    openWindow();
+    markDriveLive({ now: 5_000 });
+    makeDriveOpenEnded();
+    expect(getDriveMode()?.openedByAlways).toBeUndefined();
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(false);
+  });
+
   it('ignores a zero-length window: the drive is open-ended', () => {
     openWindow(0);
     markDriveLive({ now: 5_000 });
@@ -605,7 +633,7 @@ describe('the timed drive', () => {
     it('hands on a press on the frosted button as stopped, with no drive in the store too', () => {
       const ends: DriveEnded[] = [];
       const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
-      // Solo with Light the board as I swipe on: driving, nothing in the store.
+      // Nothing in the store (the drive already gone): still a stop.
       stopDrivingForLink();
       enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
       stopDrivingForLink();

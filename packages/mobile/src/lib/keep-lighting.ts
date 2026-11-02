@@ -114,6 +114,10 @@ export function resolveKeepLightingPlan({
  * Stop driving after choice does: most MoonBoard controllers don't like phones
  * switching, so the phone that has the board keeps it.
  *
+ * Never with the `wall-swipe-to-drive` flag off: it is driving's kill switch
+ * (docs/feature-flags.md), and Light automatically's drive is a drive like any
+ * other, so turned off nothing drives the wall and every pick is a preview.
+ *
  * Whether this phone holds the board (its own Bluetooth link, never a relay)
  * is the caller's to add: `DriveModeWatcher` starts the drive only then.
  * While this is true Put on board starts no drive of its own: it resumes this
@@ -121,19 +125,22 @@ export function resolveKeepLightingPlan({
  */
 export function alwaysDriveApplies({
   alwaysDrive,
+  swipeToDriveEnabled,
   boardIsMoonboard,
   drivesInSession,
   inSession,
 }: {
   /** Settings › Board's Light automatically. */
   alwaysDrive: boolean;
+  /** The `wall-swipe-to-drive` flag (`useWallSwipeToDriveEnabled`), driving's kill switch. */
+  swipeToDriveEnabled: boolean;
   boardIsMoonboard: boolean;
   /** Settings › Board's In a session too. */
   drivesInSession: boolean;
   /** A crew is in this session (the roster's `useIsCrewSession`). */
   inSession: boolean;
 }): boolean {
-  if (!alwaysDrive) return false;
+  if (!alwaysDrive || !swipeToDriveEnabled) return false;
   return boardIsMoonboard || !inSession || drivesInSession;
 }
 

@@ -779,6 +779,7 @@ export function PlayCore({
   // stop, and the copy promises driving until the climber stops.
   const alwaysDriveHere = alwaysDriveApplies({
     alwaysDrive,
+    swipeToDriveEnabled,
     boardIsMoonboard: isMoonboardBoardName(boardName),
     drivesInSession: putOnBoardDrivesInSession,
     inSession: isCrewSession,

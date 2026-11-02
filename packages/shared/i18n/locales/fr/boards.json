@@ -125,7 +125,7 @@
       "confirm": {
         "title": "Connecté à {{board}}",
         "titleNoName": "Connecté à ta board",
-        "bodyAlwaysDrive": "Allumer automatiquement est activé, donc tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter.",
+        "bodyAlwaysDrive": "Allumer automatiquement est activé, donc tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu touches Tu pilotes la board pour arrêter.",
         "bodyWindow": "Allumer sur la board te fait piloter la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
         "bodyWindowMinute": "Allumer sur la board te fait piloter la board : pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
         "bodyWindowMinutes": "Allumer sur la board te fait piloter la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",

@@ -24,7 +24,7 @@ import {
   useFirstConnectSnapshot,
 } from '../../lib/onboarding/first-connect-store';
 import { useSetting } from '../../settings';
-import { useFirstConnectCtaEnabled } from '../../providers/feature-flags-provider';
+import { useFirstConnectCtaEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
 import { useIsCrewSession } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
@@ -117,7 +117,14 @@ function FirstConnectCardBody({ boardName, boardType = null, boardHasLights, sty
   const [alwaysDrive] = useSetting('alwaysDrive');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
   const inSession = useIsCrewSession();
-  const alwaysDrives = firstConnectAlwaysDrives({ alwaysDrive, boardType, drivesInSession, inSession });
+  const swipeToDriveEnabled = useWallSwipeToDriveEnabled();
+  const alwaysDrives = firstConnectAlwaysDrives({
+    alwaysDrive,
+    swipeToDriveEnabled,
+    boardType,
+    drivesInSession,
+    inSession,
+  });
   const { bluetooth, pressAction, pending, holderIsAuthoritative, onPress, connect } = useLightbulbControl({
     surface: 'first_connect_card',
   });

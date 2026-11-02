@@ -266,17 +266,20 @@ export function shouldConfirmFirstConnect(input: {
  * Whether this phone drives the wall once it connects, as the Climbs card and
  * the confirmation promise it: Light automatically on, for this board and
  * session (`alwaysDriveApplies`: in a crew only with In a session too on,
- * except on a MoonBoard). Then every climb picked lights, from a list or a
+ * except on a MoonBoard, and never with the swipe flag off). Then every climb picked lights, from a list or a
  * swipe. Nothing drives the wall before a first connect.
  */
 export function firstConnectAlwaysDrives({
   alwaysDrive,
+  swipeToDriveEnabled,
   boardType,
   drivesInSession,
   inSession,
 }: {
   /** Settings › Board's Light automatically. */
   alwaysDrive: boolean;
+  /** The `wall-swipe-to-drive` flag: off, nothing drives the wall. */
+  swipeToDriveEnabled: boolean;
   /** The board type (`kilter`, `moonboard`, …), or null while it isn't known. */
   boardType: string | null;
   /** Settings › Board's In a session too. */
@@ -286,6 +289,7 @@ export function firstConnectAlwaysDrives({
 }): boolean {
   return alwaysDriveApplies({
     alwaysDrive,
+    swipeToDriveEnabled,
     boardIsMoonboard: isMoonboardBoardName(boardType),
     drivesInSession,
     inSession,

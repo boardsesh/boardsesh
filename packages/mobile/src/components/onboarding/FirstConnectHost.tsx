@@ -96,7 +96,13 @@ export function FirstConnectHost() {
   const keepLightingEnabled = useWallSwipeToDriveEnabled();
   const boardType = activeBoard?.boardType ?? null;
   const copyInput: ConfirmationCopyInput = {
-    alwaysDrive: firstConnectAlwaysDrives({ alwaysDrive, boardType, drivesInSession, inSession }),
+    alwaysDrive: firstConnectAlwaysDrives({
+      alwaysDrive,
+      swipeToDriveEnabled: keepLightingEnabled,
+      boardType,
+      drivesInSession,
+      inSession,
+    }),
     boardName: boardType,
     keepLighting: keepLightingEnabled
       ? {

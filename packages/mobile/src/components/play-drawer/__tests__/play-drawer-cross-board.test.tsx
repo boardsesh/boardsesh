@@ -1751,7 +1751,7 @@ describe('PlayDrawer queue analytics', () => {
     [1, 'next'],
     [-1, 'previous'],
   ] as const)('says when a board swipe toward %s went before the climb had painted', async (step, direction) => {
-    setSetting('lightOnSwipe', true);
+    driveTheWall();
     arrangeNeighbours();
     renderDrawer();
     const pager = lastBoardProps().pager as SwipePager;

@@ -66,27 +66,30 @@ window in code); on a MoonBoard the tap drives until you stop by default, in a c
 
 **Settings › Board**, in order:
 
-1. **Board lighting** card: **Stop driving after** (Right away, 30 s, 45 s, 1, 2 or 5 min, Until
-   I stop; 45 s by default); **On a MoonBoard**, its own choice (Until I stop by default), shown
-   only when a MoonBoard is connected, active or saved; **In a session too** (on by default),
-   greyed with "Change Stop driving after from Right away to use this." while the general choice is
-   Right away. Its footer follows the general choice (`settings.json` `ble.lighting.keep.footer`,
+1. **Board lighting** card: **Light automatically** (off by default; `alwaysDrive`). It leads
+   because it greys the rows under it. Its footer, only while it is on, says how to stop
+   (`ble.lighting.alwaysDriveFooter`). It replaced Light the board when I tap a climb and Light
+   the board as I swipe in 2026-11; a climber who had either on gets it on
+   (`settings/migrations.ts`). On, this phone always drives the wall while its own link holds the
+   board: an open-ended drive (`startedBy: 'always'`) that `DriveModeWatcher` starts at link-up,
+   at the switch, or when another drive ends with the link up (a change of session or board, or
+   a sign-out, included), lighting nothing itself. In a crew only with In a session too on (a
+   MoonBoard whatever it says), and never with the `wall-swipe-to-drive` flag off. A tap on You
+   are driving the wall stops it until the link drops, the next Put on board or a flip of the
+   switch; turning it off ends it keeping the link (`always_off`), and so does a timed drive it
+   opened up when it turned on. The board sheet shows the same switch and leaves its Stop
+   driving after row out while it is on.
+2. An untitled card: **Stop driving after** (Right away, 30 s, 45 s, 1, 2 or 5 min, Until I stop;
+   45 s by default); **On a MoonBoard**, its own choice (Until I stop by default), shown only when
+   a MoonBoard is connected, active or saved; **In a session too** (on by default), greyed with
+   "Change Stop driving after from Right away to use this." while the general choice is Right
+   away. Its footer follows the general choice (`settings.json` `ble.lighting.keep.footer`,
    `footerUntilStopped`, `footerOff`). With Light automatically on, both Stop driving after rows
-   are greyed (the MoonBoard's says why on the row) and the footer says "Light automatically
-   keeps you driving until you stop." (`keep.alwaysDriveReason`); In a session too stays live,
-   since it still decides a crew session.
-2. An untitled card: **Disconnect Bluetooth when driving ends** (off by default), then **How
+   are greyed, each saying "Light automatically is on, so this doesn't apply."
+   (`keep.alwaysDriveReason`) on the row, and the card drops its footer; In a session too stays
+   live, since it still decides a crew session.
+3. An untitled card: **Disconnect Bluetooth when driving ends** (off by default), then **How
    driving the wall works**, which opens `/help/board-and-bluetooth#driving` in the browser.
-3. An untitled card: **Light automatically** (off by default; `alwaysDrive`), with its footer on
-   stopping. It replaced Light the board when I tap a climb and Light the board as I swipe in
-   2026-11; a climber who had either on gets it on (`settings/migrations.ts`). On, this phone
-   always drives the wall while its own link holds the board: an open-ended drive
-   (`startedBy: 'always'`) that `DriveModeWatcher` starts at link-up, at the switch, or when
-   another drive ends with the link up, lighting nothing itself. In a crew only with In a session
-   too on (a MoonBoard whatever it says). A tap on You are driving the wall stops it until the
-   link drops, the next Put on board or a flip of the switch; turning it off ends it keeping the link
-   (`always_off`). The board sheet shows the same switch and leaves its Stop driving after row
-   out while it is on.
 4. An untitled card: **Tapping a playlist loads it into my queue** (off by default), plus the
    MoonBoard's Light the hold above on a connected MoonBoard.
 

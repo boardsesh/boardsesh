@@ -535,8 +535,8 @@ export function usePlaySelectionController({
       // is by construction on this preview's own track, and the lineage rule lives
       // in `resolveNavigationSuggestionSource` — don't re-add a call-site check.
       //
-      // A trackless look (a swipe off the committed climb with Light on swipe
-      // off, after a stop on this link, or in a crew) is Next stepping onward
+      // A trackless look (a swipe off the committed climb outside a drive:
+      // after a stop on this link, in a crew, or with nothing driving) is Next stepping onward
       // once it goes up (#6777): the provider keeps the committed list and where
       // it picks up when the climb is Up next on it, keeps the list when the climb
       // is the walk's own peek of the list's next climb (`walkedPeek`: minted

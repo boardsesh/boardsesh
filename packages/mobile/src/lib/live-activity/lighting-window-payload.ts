@@ -93,6 +93,7 @@ export function buildKeepLightingConfig({
       swipeToDriveEnabled,
       alwaysDrive: alwaysDriveApplies({
         alwaysDrive,
+        swipeToDriveEnabled,
         boardIsMoonboard: moonboard,
         drivesInSession,
         inSession: isCrewSession,

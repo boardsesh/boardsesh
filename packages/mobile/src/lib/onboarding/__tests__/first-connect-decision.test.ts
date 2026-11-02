@@ -292,6 +292,7 @@ describe('firstConnectConfirmationCopy', () => {
         ...base,
         alwaysDrive: firstConnectAlwaysDrives({
           alwaysDrive: true,
+          swipeToDriveEnabled: true,
           boardType: 'kilter',
           drivesInSession: false,
           inSession: true,
@@ -302,9 +303,17 @@ describe('firstConnectConfirmationCopy', () => {
   });
 
   it('agrees with the rule the Climbs card and the watcher read', () => {
-    const solo = { alwaysDrive: true, boardType: 'kilter', drivesInSession: false, inSession: false };
+    const solo = {
+      alwaysDrive: true,
+      swipeToDriveEnabled: true,
+      boardType: 'kilter',
+      drivesInSession: false,
+      inSession: false,
+    };
     expect(firstConnectAlwaysDrives(solo)).toBe(true);
     expect(firstConnectAlwaysDrives({ ...solo, alwaysDrive: false })).toBe(false);
+    // The swipe flag is driving's kill switch.
+    expect(firstConnectAlwaysDrives({ ...solo, swipeToDriveEnabled: false })).toBe(false);
     // In a crew only with In a session too on, except on a MoonBoard.
     expect(firstConnectAlwaysDrives({ ...solo, inSession: true })).toBe(false);
     expect(firstConnectAlwaysDrives({ ...solo, inSession: true, drivesInSession: true })).toBe(true);

@@ -367,9 +367,10 @@ describe('swipe selection callbacks', () => {
       (kind) => {
         const artWait = { artState: 'loading' as const, waitedMs: 700 };
         const initialProps = inputs();
+        // A step lights (moves) only while driving; the crew's look previews.
         if (kind === 'crew preview') initialProps.navigation.browseByDefault = true;
+        else initialProps.navigation.driving = true;
         if (kind === 'list preview') {
-          initialProps.navigation.driving = true;
           initialProps.preview.drawerPreviewItem = item('preview');
           initialProps.preview.drawerPreviewSuggestionSource = source([
             item('preview'),
@@ -1068,9 +1069,9 @@ describe('preview-first host selections and deferred commits', () => {
     });
   });
 
-  // A queue-sheet row (or Replay from here) opens its slot as a preview. With
-  // Light the board as I swipe on, solo, a swipe from it commits the slot's own
-  // neighbour, the one the peek showed, never the queue's next from the wall.
+  // A queue-sheet row (or Replay from here) opens its slot as a preview. While
+  // driving, solo, a swipe from it commits the slot's own neighbour, the one
+  // the peek showed, never the queue's next from the wall.
   it.each([
     ['handleNext', 'nextItem', 'next'],
     ['handlePrev', 'prevItem', 'previous'],

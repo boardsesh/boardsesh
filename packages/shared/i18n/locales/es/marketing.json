@@ -517,7 +517,7 @@
         "title": "Escalar la lista entera",
         "intro": "Toca un bloque de una playlist y lo ves en vista previa, recorriendo esa playlist. Tu cola se queda como está.",
         "p1": "Desliza para recorrer la lista en orden desde el bloque que tocaste. El botón de play de la cabecera hace lo mismo desde el primer bloque. Poner a continuación pone la lista entera al principio de tu cola, y Poner al final, al final. Si prefieres que un toque o el botón de play carguen la playlist en tu cola, activa Al tocar una playlist, cargarla en mi cola en Ajustes, en Plafón. El plafón conserva su bloque y ves en vista previa el que tocaste. Si estás al mando del plafón, el toque sustituye toda tu cola por la playlist y enciende el bloque.",
-        "p2": "En una sesión, tocar solo abre el bloque para ti. La cola compartida no se mueve.",
+        "p2": "En una sesión, tocar solo abre el bloque para ti y la cola compartida no se mueve, salvo que estés al mando del plafón: entonces el bloque que tocaste se enciende y pasa a ser el de todos.",
         "sessionsLink": "Cómo una sesión comparte una sola cola",
         "clipAlt": "La hoja ¿Iniciar playlist?",
         "clipCaption": "Con ese ajuste activado y bloques ya en cola, ¿Iniciar playlist? pregunta primero."
@@ -585,7 +585,7 @@
         "title": "Cotillear sin mover el muro",
         "p1": "Con alguien más en tu sesión, deslizar permite explorar sin cambiar el plafón, salvo que tu teléfono tenga el plafón y estés al mando. Toca Poner en el plafón para encender un bloque, o la flecha de arriba a la izquierda, con la cara de quien encendió el plafón, para volver al bloque encendido.",
         "p2": "Si tu teléfono tiene el plafón y También en una sesión está activado, Poner en el plafón enciende el bloque y tú tienes el mando: los bloques que elijas después también se encienden hasta que pase el tiempo de Dejar el mando tras desde el último (al principio, 45 segundos; con Enseguida solo se enciende ese bloque). El botón dice Estás al mando del plafón con un reloj, y el esmerilado se encoge a medida que se acaba el tiempo. Tócalo para parar antes; tu teléfono sigue conectado salvo que Desconectar el Bluetooth al dejar el mando esté activado. En un MoonBoard tienes el mando hasta que pares, por defecto, sin reloj. Si alguien de tu crew pone un bloque, se acaba el mando con reloj; si deslizaste para tomar el mando, lo sigues teniendo y su bloque se enciende.",
-        "p3": "En los demás teléfonos, Poner en el plafón enciende solo ese bloque. Si no tienes el mando, tocar y deslizar abren vistas previas. Encender automáticamente solo te da el mando en el teléfono que tiene el plafón y, en una sesión, solo con También en una sesión activado.",
+        "p3": "En los demás teléfonos, Poner en el plafón enciende solo ese bloque. Si no tienes el mando, tocar y deslizar abren vistas previas. Encender automáticamente solo te da el mando en el teléfono que tiene el plafón y, en una sesión, solo con También en una sesión activado, salvo en un MoonBoard.",
         "previewLink": "Toca un bloque para verlo en vista previa",
         "drivingLink": "Cómo tomar y dejar el mando del plafón"
       },

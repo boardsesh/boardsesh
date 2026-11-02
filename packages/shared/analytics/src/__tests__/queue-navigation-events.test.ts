@@ -83,7 +83,7 @@ describe('queueNavigation for a swipe that went before its board had painted', (
     surface: 'player',
     outcome: 'moved',
     inSharedSession: false,
-    lightOnSwipe: true,
+    alwaysDrive: true,
     boardType: 'moonboard',
     layoutId: 2,
   } as const;

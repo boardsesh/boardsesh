@@ -302,7 +302,7 @@ function CurrentClimbRow({ readout, item }: { readout: WorkoutRunnerReadout; ite
         hapticSelection();
         // It is already the current climb: reopen the committed slot, like the mini
         // player does. A plain open would become a preview copy with a fresh uuid
-        // while Light the board when I tap a climb is off, and the stage label and
+        // while nothing drives the wall, and the stage label and
         // the timed block's Fell / Sent row both key on the committed uuid.
         openPlayDrawer(climb, { reopensCurrent: true });
       }}

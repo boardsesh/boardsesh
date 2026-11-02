@@ -181,7 +181,7 @@ describe('FirstConnectHost', () => {
     expect(chooseMock).toHaveBeenCalledWith({
       title: 'Connected to Kilter at Blocs',
       message:
-        'Light automatically is on, so you drive the wall: every climb you pick lights until you tap the button to stop.',
+        'Light automatically is on, so you drive the wall: every climb you pick lights until you tap You are driving the wall to stop.',
       options: [{ value: 'got_it', label: 'Got it' }],
       cancelValue: 'got_it',
     });
@@ -286,11 +286,11 @@ describe('FirstConnectHost', () => {
     expect(await confirmFirstConnect()).toMatch(/^Light automatically is on, so you drive the wall/);
   });
 
-  // Light automatically isn't Put on board's drive: its kill switch doesn't apply.
-  it('says every pick lights with the swipe flag off too', async () => {
+  // The swipe flag is driving's kill switch: off, Light automatically drives nothing either.
+  it('promises one climb with the swipe flag off, Light automatically on or not', async () => {
     flagsCtrl.keepLighting = false;
 
-    expect(await confirmFirstConnect()).toMatch(/^Light automatically is on, so you drive the wall/);
+    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
   });
 
   it('names a 5 minute drive in minutes', async () => {

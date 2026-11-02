@@ -695,9 +695,9 @@ describe('resolveWallControl: driving the board', () => {
       { state: 'put_on_wall', driving: false },
     ],
     ['your link, the climb on screen dark', { ...MINE }, { state: 'dark', driving: false }],
-    // Solo with Light the board as I swipe off: a swipe browses, so no frost (#7017 review).
+    // Not driving: a swipe browses, so no frost (#7017 review).
     [
-      'solo with lighting on swipes off, lit on your link: no frost',
+      'not driving, lit on your link: no frost',
       { ...MINE, ...LIT, navigationCommits: false },
       { state: 'lit', holder: 'self', driving: false, labelKey: 'disconnectBoard' },
     ],

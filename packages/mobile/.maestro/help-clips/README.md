@@ -119,7 +119,7 @@ prompt, so check the switch by eye before recording.
   playlist? prompt only appears when Up next already has climbs. Seed the queue
   first by swiping two or three climb rows left-to-right, or the tap loads the
   list and opens a preview with no prompt. Turn on Tapping a playlist loads it
-  into my queue and leave Light the board when I tap a climb off. Cancel then
+  into my queue and leave Light automatically off, so nothing drives the wall. Cancel then
   opens the tapped climb as a preview; Start playlist would load Up next and keep
   the wall's climb.
 - **The lifted climb menu is a full-window overlay above the navigator.**

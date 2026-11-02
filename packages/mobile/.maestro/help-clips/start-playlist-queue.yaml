@@ -17,8 +17,8 @@ name: help clip - Start playlist? confirm
 #
 # Switches this take needs: run start-playlist-queue-setup.yaml first (or by hand,
 # Settings > Board): turn ON Tapping a playlist loads
-# it into my queue, and leave Light the board when I tap a climb OFF (the 2.7
-# default). The tap then loads the list into Up next, keeps the wall's climb and
+# it into my queue, and leave Light automatically OFF (the default), so
+# nothing drives the wall. The tap then loads the list into Up next, keeps the wall's climb and
 # previews the tapped one. With the playlist switch off the tap just previews and
 # the sheet never appears.
 #

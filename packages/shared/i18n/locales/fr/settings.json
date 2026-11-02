@@ -484,10 +484,10 @@
         "moonboardDescription": "La plupart des contrôleurs MoonBoard supportent mal qu'on change de téléphone, donc ce réglage s'applique aussi en session.",
         "sheetMoonboardLabel": "Arrêter de piloter ce MoonBoard après",
         "inSessionLabel": "Aussi en session",
-        "inSessionAccessibilityLabel": "Allumer sur la board pilote aussi en session",
+        "inSessionAccessibilityLabel": "Allumer sur la board et Allumer automatiquement pilotent aussi en session",
         "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
         "inSessionOffReason": "Choisissez autre chose que Tout de suite dans Arrêter de piloter après pour utiliser ce réglage.",
-        "alwaysDriveReason": "Avec Allumer automatiquement, vous pilotez jusqu'à ce que vous arrêtiez.",
+        "alwaysDriveReason": "Allumer automatiquement est activé, donc ce réglage ne s'applique pas.",
         "footer": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi, et chacun relance le chrono. Quand le temps est écoulé, le bloc suivant s'ouvre en aperçu.",
         "footerUntilStopped": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi, jusqu'à ce que vous touchiez le bouton Tu pilotes la board.",
         "footerOff": "Allumer sur la board allume le bloc affiché. Le bloc suivant que vous choisissez s'ouvre en aperçu."
@@ -498,10 +498,10 @@
       },
       "drivingHelp": "Comment marche le pilotage de la board",
       "alwaysDriveLabel": "Allumer automatiquement",
-      "alwaysDriveDescription": "Vous pilotez toujours la board : chaque bloc que vous choisissez s'allume tant que ce téléphone a la board.",
+      "alwaysDriveDescription": "Vous pilotez toujours la board : chaque bloc que vous choisissez s'allume tant que ce téléphone a la board. En session, il faut Aussi en session, sauf sur un MoonBoard.",
       "alwaysDriveFooter": "Touchez le bouton Tu pilotes la board pour arrêter. Les blocs que vous choisissez s'ouvrent ensuite en aperçu jusqu'à ce que vous vous déconnectiez ou touchiez Allumer sur la board.",
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
-      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste. Si vous pilotez la board, la liste remplace votre file et le bloc touché s'allume. Sinon, la liste à partir du bloc touché passe dans À suivre et ce bloc s'ouvre en aperçu, tandis que la board garde son bloc jusqu'à Allumer sur la board."
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste. Si vous pilotez la board, la liste remplace votre file et le bloc touché s'allume. Sinon, la liste à partir du bloc touché passe dans À suivre et ce bloc s'ouvre en aperçu, tandis que la board garde son bloc jusqu'à Allumer sur la board. En session, la liste n'entre jamais dans la file partagée."
     },
     "holdForControls": "Maintenir pour les commandes",
     "boardControls": "Commandes de la board",

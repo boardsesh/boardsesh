@@ -125,7 +125,7 @@
       "confirm": {
         "title": "Mit {{board}} verbunden",
         "titleNoName": "Mit deinem Board verbunden",
-        "bodyAlwaysDrive": "„Automatisch beleuchten“ ist an, also steuerst du das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf den Button tippst, um aufzuhören.",
+        "bodyAlwaysDrive": "„Automatisch beleuchten“ ist an, also steuerst du das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf „Du steuerst das Board“ tippst, um aufzuhören.",
         "bodyWindow": "Mit „Am Board beleuchten“ steuerst du das Board: {{seconds}} Sekunden lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
         "bodyWindowMinute": "Mit „Am Board beleuchten“ steuerst du das Board: 1 Minute lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
         "bodyWindowMinutes": "Mit „Am Board beleuchten“ steuerst du das Board: {{minutes}} Minuten lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",

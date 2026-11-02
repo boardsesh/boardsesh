@@ -30,20 +30,21 @@ function findRow(input: BoardLightingModelInput, key: string): MoreRow {
 }
 
 describe('buildBoardLightingSections', () => {
-  it('lists when Put on board stops driving, what happens then, what lights the board on its own, then what a list tap does', () => {
+  // Light automatically leads: it greys the rows under it, so the climber reads the switch first.
+  it('lists Light automatically, when Put on board stops driving, what happens then, then what a list tap does', () => {
     const sections = buildBoardLightingSections(makeInput());
     expect(sections.map((section) => [section.key, section.rows.map((row) => row.key)])).toEqual([
+      ['lightingAuto', ['alwaysDrive']],
       ['keepLighting', ['putOnBoardKeepsLighting', 'putOnBoardDrivesInSession']],
       ['drivingEnds', ['disconnectWhenDrivingEnds']],
-      ['lightingAuto', ['alwaysDrive']],
       ['lightingMore', ['playlistTapLoadsQueue']],
     ]);
   });
 
   // One switch (2026-11): Light automatically always drives the wall. It
   // replaced Light the board when I tap a climb and Light the board as I swipe.
-  it('offers one Light automatically switch, alone in its group, with its caption and footer', () => {
-    const [, , lighting, more] = buildBoardLightingSections(makeInput());
+  it('offers one Light automatically switch, alone in its group, with its caption and no footer while off', () => {
+    const [lighting, , , more] = buildBoardLightingSections(makeInput());
     expect(lighting.rows).toHaveLength(1);
     const [always] = lighting.rows;
     if (always.kind !== 'toggle') throw new Error('not a toggle');
@@ -53,18 +54,22 @@ describe('buildBoardLightingSections', () => {
       subtitle: 'settings:ble.lighting.alwaysDriveDescription',
       value: false,
     });
-    // The switch is its own label: no card title saying it again.
-    expect(lighting.title).toBeUndefined();
-    expect(lighting.footer).toBe('settings:ble.lighting.alwaysDriveFooter');
-    // The second card has no header, so it reads as the same lighting page.
+    // The page's lighting title sits on the first card.
+    expect(lighting.title).toBe('settings:ble.lighting.title');
+    // How to stop (and that a stop holds until a disconnect) is only true with it on.
+    expect(lighting.footer).toBeUndefined();
+    expect(buildBoardLightingSections(makeInput({ alwaysDrive: { enabled: true, onChange: vi.fn() } }))[0].footer).toBe(
+      'settings:ble.lighting.alwaysDriveFooter',
+    );
+    // The last card has no header, so it reads as the same lighting page.
     expect(more.title).toBeUndefined();
     expect(findRowKeys(makeInput())).not.toContain('lightOnClimbTap');
     expect(findRowKeys(makeInput())).not.toContain('lightOnSwipe');
   });
 
-  it('titles the first group, since it sits on the Board page under the look, and keeps its description as a footer', () => {
-    const [keep, drivingEnds] = buildBoardLightingSections(makeInput());
-    expect(keep.title).toBe('settings:ble.lighting.title');
+  it('keeps Stop driving after untitled under the lighting title, with its description as a footer', () => {
+    const [, keep, drivingEnds] = buildBoardLightingSections(makeInput());
+    expect(keep.title).toBeUndefined();
     expect(keep.footer).toBe('settings:ble.lighting.keep.footer');
     // Stop driving after's second card: no header of its own.
     expect(drivingEnds.title).toBeUndefined();
@@ -81,7 +86,7 @@ describe('buildBoardLightingSections', () => {
     ['until_stopped', 'settings:ble.lighting.keep.footerUntilStopped'],
     ['off', 'settings:ble.lighting.keep.footerOff'],
   ] as const)('footers Stop driving after set to %s with what it does', (choice, footer) => {
-    const [keep] = buildBoardLightingSections(makeInput({ keepLighting: { choice, onChange: vi.fn() } }));
+    const [, keep] = buildBoardLightingSections(makeInput({ keepLighting: { choice, onChange: vi.fn() } }));
     expect(keep.footer).toBe(footer);
   });
 
@@ -90,7 +95,7 @@ describe('buildBoardLightingSections', () => {
   it('adds a help row under Disconnect Bluetooth when driving ends when the page can open the help', () => {
     expect(findRowKeys(makeInput())).not.toContain('drivingHelp');
     const onOpenDrivingHelp = vi.fn();
-    const [, drivingEnds] = buildBoardLightingSections(makeInput({ onOpenDrivingHelp }));
+    const [, , drivingEnds] = buildBoardLightingSections(makeInput({ onOpenDrivingHelp }));
     expect(drivingEnds.rows.map((row) => row.key)).toEqual(['disconnectWhenDrivingEnds', 'drivingHelp']);
     const row = drivingEnds.rows[1];
     if (row.kind !== 'nav') throw new Error('not a nav row');
@@ -167,19 +172,22 @@ describe('buildBoardLightingSections', () => {
 
 // Light automatically on: this phone always drives the wall while it holds the
 // board, so Stop driving after (and the MoonBoard's) doesn't apply. The rows
-// stay where they are, greyed, and the card says why. In a session too still
+// stay where they are, greyed, each saying why. In a session too still
 // decides a crew session, so it is never greyed then.
 describe('buildBoardLightingSections: Light automatically on', () => {
   const ON = { alwaysDrive: { enabled: true, onChange: vi.fn() } };
 
-  it('greys Stop driving after and says why in its footer', () => {
+  it('greys Stop driving after, says why on the row, and drops the footer about Put on board', () => {
     const sections = buildBoardLightingSections(makeInput(ON));
     const row = findRow(makeInput(ON), 'putOnBoardKeepsLighting');
     if (row.kind !== 'select') throw new Error('not a select');
     expect(row.disabled).toBe(true);
+    // Where a screen reader lands on it, as the MoonBoard row does.
+    expect(row.subtitle).toBe('settings:ble.lighting.keep.alwaysDriveReason');
     // Still shows the climber's choice, for when they turn it off again.
     expect(row.selectedKey).toBe('45');
-    expect(sections[0].footer).toBe('settings:ble.lighting.keep.alwaysDriveReason');
+    expect(sections[1].key).toBe('keepLighting');
+    expect(sections[1].footer).toBeUndefined();
   });
 
   it('greys the MoonBoard row and puts the reason on it', () => {
@@ -208,17 +216,20 @@ describe('buildBoardLightingSections: Light automatically on', () => {
     });
   });
 
-  it('leaves every row live with it off', () => {
+  it('leaves every row live with it off, the general row with no caption', () => {
     const input = makeInput({ moonboardKeepLighting: { choice: 'until_stopped', onChange: vi.fn() } });
     for (const key of ['putOnBoardKeepsLighting', 'moonboardPutOnBoardKeepsLighting'] as const) {
       const row = findRow(input, key);
       if (row.kind !== 'select') throw new Error('not a select');
       expect(row.disabled).toBeFalsy();
     }
+    const general = findRow(input, 'putOnBoardKeepsLighting');
+    if (general.kind !== 'select') throw new Error('not a select');
+    expect(general.subtitle).toBeUndefined();
   });
 });
 
-// Stop driving after (2.7, spec B4): the first card.
+// Stop driving after (2.7, spec B4): the card under Light automatically.
 describe('buildBoardLightingSections: Stop driving after', () => {
   it('offers Right away, 30 s, 45 s, 1, 2 and 5 minutes, and Until I stop', () => {
     const row = findRow(makeInput(), 'putOnBoardKeepsLighting');
@@ -250,7 +261,7 @@ describe('buildBoardLightingSections: Stop driving after', () => {
   it("puts the MoonBoard's own choice right under it, with its reason on the row, only where a MoonBoard is in view", () => {
     const onChange = vi.fn();
     const input = makeInput({ moonboardKeepLighting: { choice: 'until_stopped', onChange } });
-    expect(buildBoardLightingSections(input)[0].rows.map((row) => row.key)).toEqual([
+    expect(buildBoardLightingSections(input)[1].rows.map((row) => row.key)).toEqual([
       'putOnBoardKeepsLighting',
       'moonboardPutOnBoardKeepsLighting',
       'putOnBoardDrivesInSession',

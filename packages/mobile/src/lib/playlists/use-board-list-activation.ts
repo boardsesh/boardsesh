@@ -6,11 +6,11 @@
 // What a tap does, by the hook's rules:
 // - The row is on another board model than the one the climber is at (or none
 //   is picked): a preview on the row's board, the list as its track.
-// - A crew is here, or "Light the board when I tap a climb" is off: a preview
-//   on the active board, the list as its track. The wall stays where it is.
-//   Driving the wall (#7113) overrides both: the climb goes up, in a crew too.
-// - Otherwise the climb goes up, inserted after the current climb and flagged
-//   `suggested` like every list play, with the list as its track.
+// - Nothing drives the wall: a preview on the active board, the list as its
+//   track. The wall stays where it is, solo and in a crew alike.
+// - Driving the wall (#7113: a swipe, Put on board or Light automatically),
+//   in a crew too: the climb goes up, inserted after the current climb and
+//   flagged `suggested` like every list play, with the list as its track.
 //
 // The tapped row is drawn on its own board config, so a tick opens at the
 // angle it was climbed at, as it always has. The drawer only keeps that

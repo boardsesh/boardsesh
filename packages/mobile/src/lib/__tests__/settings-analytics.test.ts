@@ -15,7 +15,7 @@ function buildModel(handlers: { toggle: (next: boolean) => void; select: (key: s
           {
             kind: 'toggle',
             key: 'alwaysDrive',
-            label: 'Light on swipe',
+            label: 'Light automatically',
             value: false,
             onValueChange: handlers.toggle,
           },

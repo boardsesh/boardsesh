@@ -1102,7 +1102,7 @@ describe('PlaylistDetailView', () => {
       expect(playAction).not.toBeNull();
       fireEvent.click(playAction as HTMLElement);
       // The Play button selects the first row through the row-tap callback, so
-      // Light the board when I tap a climb decides whether it previews.
+      // driving the wall decides whether it previews, as for a row.
       expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
       expect(playAction?.getAttribute('aria-label')).toBe('detail.activateAll');
     });

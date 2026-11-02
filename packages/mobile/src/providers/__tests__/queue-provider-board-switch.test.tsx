@@ -1194,7 +1194,7 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     expect(latest().playlistSuggestionSource?.resume).toBeUndefined();
   });
 
-  // Light on swipe off, or a crew: the swipe into Up next was a look that
+  // Not driving (solo or in a crew): the swipe into Up next was a look that
   // walked the queue, and Put on the wall commits the queued entry it reached.
   it('keeps the list place when a looked-at Up next climb goes up on the wall', async () => {
     await renderOnTheTappedClimb();

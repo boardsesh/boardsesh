@@ -1324,9 +1324,9 @@ function ClimbListInner() {
       // mount and measure, and this render fits inside that.
       requestPlayBoardPrewarm({ boardName: boardName as BoardName, layoutId, sizeId, setIds }, climb.frames);
       // This tap IS the selection, so it is the one moment the swipe track may be
-      // re-derived. Every tap re-captures it, previews included: in a crew, or
-      // with "Light the board when I tap a climb" off, the activation hook
-      // opens a preview seeded with these results, so swipes walk them (#5157).
+      // re-derived. Every tap re-captures it, previews included: outside a
+      // drive, the activation hook opens a preview seeded with these results,
+      // so swipes walk them (#5157).
       searchBasis.capture();
       void activateClimbListClimb.activate(toQueueClimb(climb), readyBoardArt);
     },

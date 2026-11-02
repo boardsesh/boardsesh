@@ -92,7 +92,13 @@ describe('resolveKeepLightingPlan', () => {
 
 // Light automatically (2026-11): where it drives, and where it leaves a crew alone.
 describe('alwaysDriveApplies', () => {
-  const ON = { alwaysDrive: true, boardIsMoonboard: false, drivesInSession: false, inSession: false };
+  const ON = {
+    alwaysDrive: true,
+    swipeToDriveEnabled: true,
+    boardIsMoonboard: false,
+    drivesInSession: false,
+    inSession: false,
+  };
 
   it.each<[string, Partial<Parameters<typeof alwaysDriveApplies>[0]>, boolean]>([
     ['solo', {}, true],
@@ -101,6 +107,12 @@ describe('alwaysDriveApplies', () => {
     ['in a crew with In a session too off', { inSession: true }, false],
     ['a MoonBoard in a crew with In a session too off', { inSession: true, boardIsMoonboard: true }, true],
     ['switched off', { alwaysDrive: false }, false],
+    ["the swipe flag off (driving's kill switch)", { swipeToDriveEnabled: false }, false],
+    [
+      'the swipe flag off, on a MoonBoard in a crew',
+      { swipeToDriveEnabled: false, inSession: true, boardIsMoonboard: true },
+      false,
+    ],
     [
       'switched off, in a crew with In a session too on',
       { alwaysDrive: false, inSession: true, drivesInSession: true },

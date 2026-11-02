@@ -196,10 +196,12 @@ diagnostic) applies on native. The whole surface lives in three files:
   `wallSwipeToDriveOffered`: unresolved or off means off in a store build; dev
   builds read it as on unless it is set to off; screenshot mode ignores it). It
   gates more than the swipe: the ‹‹ chevrons and the one-time peek, the Light
-  every climb action and sheet row, and since 2.7 Put on board's timed drive.
+  every climb action and sheet row, since 2.7 Put on board's timed drive, and
+  since 2026-11 **Light automatically**'s always-on drive (`alwaysDriveApplies`).
   The first-connect confirmation and the player's preview-first card read it
   too. Turned off, Put on board lights one climb and starts no drive, and
-  nothing drives the wall. Check its rollout in PostHog before reading any
+  nothing drives the wall: Light automatically's running drive ends keeping the
+  link (`always_off`), and every pick is a preview until the flag is back. Check its rollout in PostHog before reading any
   driving metric.
   `shared-session-browse` is a POSITIVE flag (read `=== true`, unresolved =
   off) that decides whether a crew's swipes and list taps preview instead of

@@ -484,10 +484,10 @@
         "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
         "sheetMoonboardLabel": "Smetti di guidare questa MoonBoard dopo",
         "inSessionLabel": "Anche in una session",
-        "inSessionAccessibilityLabel": "Illumina il pannello guida anche in una session",
+        "inSessionAccessibilityLabel": "Illumina il pannello e Illumina in automatico guidano anche in una session",
         "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
         "inSessionOffReason": "Scegli qualcosa di diverso da Subito in Smetti di guidare dopo per usarlo.",
-        "alwaysDriveReason": "Con Illumina in automatico guidi finché non smetti.",
+        "alwaysDriveReason": "Illumina in automatico è attivo, quindi questa opzione non si applica.",
         "footer": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, e ognuno fa ripartire il timer. Quando il tempo finisce, il prossimo blocco che scegli si apre in anteprima.",
         "footerUntilStopped": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, finché non tocchi Guidi tu il pannello.",
         "footerOff": "Illumina il pannello illumina in parete il blocco che hai aperto. Il prossimo blocco che scegli si apre in anteprima."
@@ -498,10 +498,10 @@
       },
       "drivingHelp": "Come funziona la guida del pannello",
       "alwaysDriveLabel": "Illumina in automatico",
-      "alwaysDriveDescription": "Guidi sempre tu il pannello: ogni blocco che scegli si illumina in parete finché questo telefono ha il pannello.",
+      "alwaysDriveDescription": "Guidi sempre tu il pannello: ogni blocco che scegli si illumina in parete finché questo telefono ha il pannello. In una session serve Anche in una session, tranne su una MoonBoard.",
       "alwaysDriveFooter": "Tocca Guidi tu il pannello per smettere. Poi i blocchi che scegli si aprono in anteprima finché non ti disconnetti o tocchi Illumina il pannello.",
       "playlistTapLoadsQueueLabel": "Toccare una playlist la carica nella mia coda",
-      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista. Se guidi tu il pannello, la lista sostituisce la tua coda e il blocco toccato si illumina in parete. Altrimenti, la lista dal blocco toccato finisce in Prossimi e quel blocco si apre in anteprima, mentre il pannello tiene il suo blocco finché non scegli Illumina il pannello."
+      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista. Se guidi tu il pannello, la lista sostituisce la tua coda e il blocco toccato si illumina in parete. Altrimenti, la lista dal blocco toccato finisce in Prossimi e quel blocco si apre in anteprima, mentre il pannello tiene il suo blocco finché non scegli Illumina il pannello. In una session la lista non entra mai nella coda condivisa."
     },
     "holdForControls": "Tieni premuto per i controlli del pannello",
     "boardControls": "Controlli del pannello",

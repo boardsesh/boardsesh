@@ -95,18 +95,26 @@ lights), `DriveModeWatcher` keeps an open-ended drive on (`startAlwaysDrive`,
 another drive ends with the link still up. It lights nothing as it starts: the wall shows
 whatever connecting lit. From then on every pick lights, exactly as after a swipe on the wall
 button. In a crew it drives only with **In a session too** on (a MoonBoard drives whatever that
-says, as its Stop driving after choice does; `alwaysDriveApplies` in `lib/keep-lighting.ts`).
+says, as its Stop driving after choice does; `alwaysDriveApplies` in `lib/keep-lighting.ts`),
+and never with the `wall-swipe-to-drive` flag off: that flag is driving's kill switch, so turned
+off every pick is a preview (`docs/feature-flags.md`). A change of session or board, or a
+sign-out, ends the drive and starts the next one at once with the link still up (signed out
+too, as the two switches lit), so Drive Mode Ended / Started pair up per session, board and
+account.
 A tap on **You are driving the wall** stops it and keeps the link; it stays stopped until the
 link drops, the climber's next Put on board (the wall control's `tapDrive: 'resume'`) or a flip
 of the switch, and the switch never flips by itself. Disconnect Bluetooth when driving ends applies to that stop as to
 any. Turning the switch off, or a crew forming with In a session too off, ends its drive keeping
-the link (`always_off`). While it is on, Stop driving after and the MoonBoard's choice don't
-apply: Settings › Board shows them greyed with that reason, and the board sheet leaves its
-timer row out. A Lock Screen Next or Previous lights its climb and starts no drive of its own.
+the link (`always_off`). A Put on board timed drive running when the switch turns on goes
+open-ended and becomes the switch's to end (`openedByAlways`): turning it off again ends that
+drive too, rather than leaving one with no end. While it is on, Stop driving after and the
+MoonBoard's choice don't apply: Settings › Board shows them greyed with that reason, and the
+board sheet leaves its timer row out. A Lock Screen Next or Previous lights its climb and starts no drive of its own.
 A playlist tap with **Tapping a playlist loads it into my queue** on depends on driving: outside
 a drive, the list from the tapped climb becomes Up next, the wall keeps its climb and the tapped
-climb opens as a preview; while driving (Light automatically's drive included), the list
-replaces the queue and the tapped climb lights. A newcomer's first-connect confirmation and the
+climb opens as a preview; while driving (Light automatically's drive included), the tapped
+climb lights, and solo the list replaces the queue (a crew's queue is never replaced: the
+tapped climb plays from the list in the shared queue). A newcomer's first-connect confirmation and the
 Climbs list's connect card read the same rule (`firstConnectAlwaysDrives`), so neither promises
 that a pick lights a climb unless Light automatically drives there: otherwise the confirmation
 names Put on board's drive length (or Until I stop on a MoonBoard) instead.
@@ -246,8 +254,9 @@ notification, a deep link), the MiniPlayer's ⏮ ⏭ (`useDrivingWall`), and eve
   out (`DriveModeWatcher`). A tap on the frosted button or Turn off all lights during a drive
   ends it as `stopped`. Put on board's timed drive also ends as `window_ended` when its time
   runs out, when a crewmate's put-up ends it, or when Settings › Board turns its choice to Right
-  away (or In a session too off as a crew forms). Light automatically's drive ends as `always_off`
-  when the switch goes off or it stops applying in a crew. Each end fires `Drive Mode Ended {reason,
+  away (or In a session too off as a crew forms). Light automatically's drive (and a timed drive
+  it opened up) ends as `always_off` when the switch goes off, it stops applying in a crew, or the
+  `wall-swipe-to-drive` flag goes off. Each end fires `Drive Mode Ended {reason,
   startedBy, durationSec, climbsLit, inSession, windowRenewals, windowSec, boardType}` once;
   `startedBy` is `swipe`, `tap`, `action`, `lock_screen` or `always` (`solo_carry` before 2026-11), `windowSec` is null for an
   open-ended drive, and `durationSec` stops at `expiresAt` for a window that ran out

@@ -517,7 +517,7 @@
         "title": "Grimper toute la liste",
         "intro": "Touche un bloc dans une playlist et tu le vois en aperçu, en parcourant cette playlist. Ta file reste telle quelle.",
         "p1": "Fais défiler pour parcourir la liste dans l'ordre à partir du bloc touché. Le bouton lecture de l'en-tête fait pareil depuis le premier bloc. Mettre juste après place toute la liste en tête de ta file, Mettre à la fin la place en bas. Pour qu'un toucher ou le bouton lecture charge plutôt la playlist dans ta file, active Toucher une playlist la charge dans ma file dans Paramètres, puis Board. La board garde son bloc et tu vois en aperçu celui que tu as touché. Quand tu pilotes la board, le toucher remplace plutôt toute ta file par la playlist et allume le bloc.",
-        "p2": "En session, toucher n'ouvre le bloc que pour toi. La file partagée ne bouge pas.",
+        "p2": "En session, toucher n'ouvre le bloc que pour toi et la file partagée ne bouge pas, sauf si tu pilotes la board : le bloc touché s'allume alors pour tout le monde.",
         "sessionsLink": "Comment une session partage une seule file",
         "clipAlt": "La fiche Lancer la playlist ?",
         "clipCaption": "Avec ce réglage activé et des blocs déjà en file, Lancer la playlist ? demande d'abord."
@@ -585,7 +585,7 @@
         "title": "Explorer sans bouger le mur",
         "p1": "Avec quelqu’un d’autre dans ta session, faire défiler permet d’explorer sans changer le mur, sauf si ton téléphone tient la board et que tu pilotes. Touche Allumer sur la board pour allumer un bloc, ou la flèche en haut à gauche, avec le visage de qui a allumé le mur, pour revenir au bloc allumé.",
         "p2": "Si ton téléphone tient la board et qu’Aussi en session est activé, Allumer sur la board allume le bloc et tu pilotes la board : les blocs que tu choisis ensuite s’allument aussi, jusqu’à la fin du temps réglé dans Arrêter de piloter après, compté depuis le dernier bloc (45 secondes au départ ; avec Tout de suite, seul ce bloc s’allume). Le bouton affiche Tu pilotes la board avec un chrono, et le givre rétrécit à mesure que le temps passe. Touche-le pour arrêter plus tôt ; ton téléphone reste connecté, sauf si Déconnecter le Bluetooth quand le pilotage s’arrête est activé. Sur un MoonBoard, tu pilotes par défaut jusqu’à ce que tu arrêtes, sans chrono. Un bloc allumé par quelqu’un de ta crew met fin à un pilotage avec chrono ; si tu as glissé pour piloter, tu continues et son bloc s’allume.",
-        "p3": "Sur les autres téléphones, Allumer sur la board allume ce seul bloc. Quand tu ne pilotes pas, toucher et faire défiler ouvrent des aperçus. Allumer automatiquement ne fait piloter que le téléphone qui a la board et, en session, seulement si Aussi en session est activé.",
+        "p3": "Sur les autres téléphones, Allumer sur la board allume ce seul bloc. Quand tu ne pilotes pas, toucher et faire défiler ouvrent des aperçus. Allumer automatiquement ne fait piloter que le téléphone qui a la board et, en session, seulement si Aussi en session est activé, sauf sur un MoonBoard.",
         "previewLink": "Toucher un bloc pour le voir en aperçu",
         "drivingLink": "Comment commencer et arrêter de piloter la board"
       },

@@ -517,7 +517,7 @@
         "title": "Climb the whole list",
         "intro": "Tap a climb in a playlist and you preview it, playing from that playlist. Your queue stays as it is.",
         "p1": "Swipe to walk the list in order from the climb you tapped. The header’s play button does the same from the first climb. Play next puts the whole list at the top of Up next, Play last at the bottom. To have a tap or the play button load the playlist into Up next, turn on Tapping a playlist loads it into my queue under Settings, then Board. The wall keeps its climb, and you preview the one you tapped. While you drive the wall, the tap replaces your whole queue with the playlist and lights the climb instead.",
-        "p2": "In a session, tapping only opens the climb for you. The shared queue stays put.",
+        "p2": "In a session, tapping only opens the climb for you and the shared queue stays put, unless you drive the wall: then the climb you tapped lights and goes up for everyone.",
         "sessionsLink": "How a session shares one queue",
         "clipAlt": "The Start playlist? sheet",
         "clipCaption": "With that switch on and climbs already queued, Start playlist? asks first."
@@ -585,7 +585,7 @@
         "title": "Browsing without moving the wall",
         "p1": "With someone else in your session, swipes browse without changing the wall unless your phone holds the board and you are driving. Tap Put on board to put up a climb, or tap the back arrow at the top left, with the face of whoever lit the wall, to return to the climb on the wall.",
         "p2": "If your phone holds the board and In a session too is on, Put on board lights the climb and you drive the wall: the climbs you pick light too until the time you chose under Stop driving after has passed since the last one (45 seconds to start with; Right away lights only that one). The button reads You are driving the wall with a clock, and the frost shrinks as the time runs out. Tap it to stop early; your phone stays connected unless Disconnect Bluetooth when driving ends is on. A MoonBoard drives until you stop by default, with no clock. A crewmate putting a climb up ends a drive with a clock; if you swiped to drive, you keep driving and their climb lights.",
-        "p3": "On the other phones, Put on board lights that one climb. When you aren’t driving, taps and swipes open previews. Light automatically drives only on the phone that holds the board, and in a session only while In a session too is on.",
+        "p3": "On the other phones, Put on board lights that one climb. When you aren’t driving, taps and swipes open previews. Light automatically drives only on the phone that holds the board, and in a session only while In a session too is on, except on a MoonBoard.",
         "previewLink": "Tap a climb to preview it",
         "drivingLink": "How to start and stop driving the wall"
       },

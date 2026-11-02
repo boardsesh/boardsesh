@@ -484,10 +484,10 @@
         "moonboardDescription": "Most MoonBoard controllers don't like phones switching, so this applies in a session too.",
         "sheetMoonboardLabel": "Stop driving this MoonBoard after",
         "inSessionLabel": "In a session too",
-        "inSessionAccessibilityLabel": "Put on board drives in a session too",
+        "inSessionAccessibilityLabel": "Put on board and Light automatically drive in a session too",
         "inSessionDescription": "When your phone has the crew's board. Off, your picks in a session stay previews.",
         "inSessionOffReason": "Change Stop driving after from Right away to use this.",
-        "alwaysDriveReason": "Light automatically keeps you driving until you stop.",
+        "alwaysDriveReason": "Light automatically is on, so this doesn't apply.",
         "footer": "Put on board lights the climb and you drive the wall: every climb you pick lights too, and each one restarts the clock. When the time runs out, your next pick opens as a preview.",
         "footerUntilStopped": "Put on board lights the climb and you drive the wall: every climb you pick lights too, until you tap You are driving the wall.",
         "footerOff": "Put on board lights the climb you are on. Your next pick opens as a preview."
@@ -498,10 +498,10 @@
       },
       "drivingHelp": "How driving the wall works",
       "alwaysDriveLabel": "Light automatically",
-      "alwaysDriveDescription": "Always drive the wall: every climb you pick lights while this phone holds the board.",
+      "alwaysDriveDescription": "Always drive the wall: every climb you pick lights while this phone holds the board. In a session it needs In a session too, except on a MoonBoard.",
       "alwaysDriveFooter": "Tap You are driving the wall to stop. Your picks then open as previews until you disconnect or tap Put on board.",
       "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
-      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter’s page loads that list. While you drive the wall, the list replaces your queue and the climb you tapped lights. Otherwise the list from the climb you tapped becomes Up next, and that climb opens as a preview while the wall keeps its climb until you Put on board."
+      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter’s page loads that list. While you drive the wall, the list replaces your queue and the climb you tapped lights. Otherwise the list from the climb you tapped becomes Up next, and that climb opens as a preview while the wall keeps its climb until you Put on board. In a session the list never goes into the shared queue."
     },
     "holdForControls": "Hold for board controls",
     "boardControls": "Board controls",

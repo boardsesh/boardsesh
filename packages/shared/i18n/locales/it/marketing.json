@@ -517,7 +517,7 @@
         "title": "Scala tutta la lista",
         "intro": "Tocca un blocco in una playlist e ne vedi l'anteprima, partendo da quella playlist. La tua coda resta com'è.",
         "p1": "Scorri per percorrere la lista in ordine dal blocco che hai toccato. Il pulsante play in testata fa lo stesso dal primo blocco. Metti subito dopo mette tutta la lista in cima a Prossimi, Metti in fondo la mette in fondo. Per far sì che un tocco o il pulsante play carichino la playlist nella tua coda, attiva Toccare una playlist la carica nella mia coda in Impostazioni, poi Pannello. Il pannello tiene il suo blocco e vedi in anteprima quello che hai toccato. Mentre guidi tu il pannello, il tocco sostituisce invece tutta la tua coda con la playlist e illumina il blocco.",
-        "p2": "In una session, un tocco apre il blocco solo per te. La coda condivisa resta com'è.",
+        "p2": "In una session, un tocco apre il blocco solo per te e la coda condivisa resta com'è, a meno che non guidi tu il pannello: allora il blocco toccato si illumina in parete per tutti.",
         "sessionsLink": "Come una session condivide una coda",
         "clipAlt": "La finestra Avviare la playlist?",
         "clipCaption": "Con quell'interruttore attivo e dei blocchi già in coda, Avviare la playlist? chiede prima conferma."
@@ -585,7 +585,7 @@
         "title": "Sfogliare senza cambiare il blocco in parete",
         "p1": "Con qualcun altro nella tua session, scorrere ti fa sfogliare senza cambiare il blocco in parete, a meno che il tuo telefono tenga il pannello e tu stia guidando. Tocca Illumina il pannello per un blocco, oppure la freccia in alto a sinistra, con il volto di chi ha illuminato il pannello, per tornare al blocco illuminato.",
         "p2": "Se il tuo telefono tiene il pannello e Anche in una session è attivo, Illumina il pannello illumina il blocco e guidi tu il pannello: anche i blocchi che scegli dopo si illuminano, finché non passa il tempo impostato in Smetti di guidare dopo dall’ultimo blocco (all’inizio 45 secondi; con Subito si illumina solo quel blocco). Il pulsante dice Guidi tu il pannello con un cronometro, e lo smerigliato si restringe man mano che il tempo scade. Toccalo per fermarti prima; il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo. Su una MoonBoard guidi finché non smetti, per impostazione predefinita, senza cronometro. Se qualcuno della crew illumina un blocco, una guida con il cronometro finisce; se hai fatto scorrere il pulsante per guidare, continui a guidare e il suo blocco si illumina.",
-        "p3": "Sugli altri telefoni, Illumina il pannello illumina solo quel blocco. Quando non guidi, tocchi e scorrimenti aprono anteprime. Illumina in automatico fa guidare solo il telefono che ha il pannello e, in una session, solo con Anche in una session attivo.",
+        "p3": "Sugli altri telefoni, Illumina il pannello illumina solo quel blocco. Quando non guidi, tocchi e scorrimenti aprono anteprime. Illumina in automatico fa guidare solo il telefono che ha il pannello e, in una session, solo con Anche in una session attivo, tranne su una MoonBoard.",
         "previewLink": "Tocca un blocco per vederne l’anteprima",
         "drivingLink": "Come iniziare e smettere di guidare il pannello"
       },
