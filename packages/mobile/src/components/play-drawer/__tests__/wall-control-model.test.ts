@@ -1218,6 +1218,17 @@ describe('resolveWallControl: Put on board’s timed drive', () => {
     expect(resolveWallControl({ ...FREE, ...WINDOW, confirmArmed: true }).tapAction).toBe('noop');
   });
 
+  // The drive itself drives: not only the player's read of it.
+  it('drives on the live timed drive alone, whatever the player reads as committing', () => {
+    expect(resolveWallControl({ ...FREE, ...WINDOW, navigationCommits: false })).toMatchObject({
+      lightWindow: true,
+      driving: true,
+      labelKey: 'youAreDriving',
+      tapAction: 'stop_window',
+      look: 'driving',
+    });
+  });
+
   it('is a timed drive only on a lit climb this phone holds', () => {
     // The climb on screen went dark under the window: Put on board relights it.
     expect(resolveWallControl({ ...FREE, ...WINDOW, displayedLit: false })).toMatchObject({

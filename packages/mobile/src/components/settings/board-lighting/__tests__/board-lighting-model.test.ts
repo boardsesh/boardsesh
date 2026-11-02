@@ -76,6 +76,12 @@ describe('buildBoardLightingSections', () => {
     row.onValueChange(true);
     expect(input.disconnectWhenDrivingEnds.onChange).toHaveBeenCalledExactlyOnceWith(true);
     expect(input.drivesInSession.onChange).not.toHaveBeenCalled();
+    const on = findRow(
+      makeInput({ disconnectWhenDrivingEnds: { enabled: true, onChange: vi.fn() } }),
+      'disconnectWhenDrivingEnds',
+    );
+    if (on.kind !== 'toggle') throw new Error('not a toggle');
+    expect(on.value).toBe(true);
     const sectionKeys = buildBoardLightingSections(input).flatMap((section) => section.rows.map((r) => r.key));
     expect(sectionKeys).not.toContain('autoDisconnectBle');
     expect(sectionKeys).not.toContain('autoDisconnectTimeoutSeconds');
