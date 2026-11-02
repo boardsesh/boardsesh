@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { WallControlPreviewReason } from '@boardsesh/analytics';
 import { trackWallControlShown } from '../../lib/analytics-wall-control';
 import { isActionableWallControlState, type WallControlState } from './wall-control';
 
@@ -9,6 +10,8 @@ type UseWallControlShownOptions = {
   playerOpen: boolean;
   /** The control is drawn right now: nothing (a card, the busy-wall question) has taken its place. */
   visible: boolean;
+  /** Why the climb on screen is a preview, or null. Rides along; it never decides when the event fires. */
+  previewReason?: WallControlPreviewReason | null;
 };
 
 /**
@@ -19,8 +22,18 @@ type UseWallControlShownOptions = {
  * a state that flickers back never sends it twice; closing the player starts a
  * fresh count.
  */
-export function useWallControlShown({ state, climbUuid, playerOpen, visible }: UseWallControlShownOptions): void {
+export function useWallControlShown({
+  state,
+  climbUuid,
+  playerOpen,
+  visible,
+  previewReason = null,
+}: UseWallControlShownOptions): void {
   const sentRef = useRef(new Set<string>());
+  // Read when the event fires, so a reason that settles a render later (the
+  // crew latch arming) neither re-sends nor is missed.
+  const previewReasonRef = useRef(previewReason);
+  previewReasonRef.current = previewReason;
   useEffect(() => {
     if (!playerOpen) sentRef.current.clear();
   }, [playerOpen]);
@@ -29,6 +42,7 @@ export function useWallControlShown({ state, climbUuid, playerOpen, visible }: U
     const key = state === 'connect' ? state : `${climbUuid}|${state}`;
     if (sentRef.current.has(key)) return;
     sentRef.current.add(key);
-    trackWallControlShown({ state, climbUuid });
+    const reason = previewReasonRef.current;
+    trackWallControlShown({ state, climbUuid, ...(reason ? { previewReason: reason } : {}) });
   }, [playerOpen, visible, climbUuid, state]);
 }

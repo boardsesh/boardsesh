@@ -207,14 +207,16 @@ export function resolveHeaderPillState({
  * being looked at (#6667 panel, confusions 1 and 4; #6745 moved it off the
  * header's stats line):
  *
- * - `preview` — solo: "Preview, not lit". A tap with Light on tap off, or the
- *   Preview action, shows the climb without lighting it, and nothing else on
- *   screen said so.
+ * - `preview` — solo: "Preview · not on the wall". Every tap opens a preview
+ *   since 2.7, and the board art draws the same glowing holds lit or not, so
+ *   this says the wall didn't change. Shown while this phone holds the board,
+ *   while a wall is driven, or while presence names a climb lit under an hour
+ *   ago (#6939).
  * - `crew` — "Only you see this", plus the climb the room has on the wall when
  *   one is lit, so a crewmate can tell a private look from taking the wall.
  * - `null` — nothing to say: the climb on screen is lit, or is the climber's
- *   own current climb, or (solo) no board is connected and nothing is lit, the
- *   same case the commit button falls back to Set active for.
+ *   own current climb, or (solo) nothing could light it: no link and no climb
+ *   lit within the hour, the case the commit button falls back to Set active for.
  */
 export type BrowseCaption = { kind: 'preview' } | { kind: 'crew'; wallClimbName: string | null } | null;
 
@@ -235,6 +237,16 @@ export type BrowseCaptionInput = {
   inCrew: boolean;
   /** A wall is genuinely being driven — see {@link WallPillStateInput.wallDriven}. */
   wallDriven: boolean;
+  /**
+   * This phone holds the board's Bluetooth link. A linked phone with a dark
+   * wall is the commonest 2.7 state, and a preview there must still say so.
+   */
+  holdsLink: boolean;
+  /**
+   * Presence's wall climb can be believed: a live link, or lit under an hour
+   * ago (`isWallPresenceTrusted`). An older one says nothing about the wall.
+   */
+  wallPresenceTrusted: boolean;
 };
 
 export function resolveBrowseCaption({
@@ -246,11 +258,30 @@ export function resolveBrowseCaption({
   wallClimbName,
   inCrew,
   wallDriven,
+  holdsLink,
+  wallPresenceTrusted,
 }: BrowseCaptionInput): BrowseCaption {
   if (isAnonymous || !isPreview || climbUuid === null) return null;
   if (climbUuid === wallClimbUuid || climbUuid === committedHeadUuid) return null;
   if (inCrew) return { kind: 'crew', wallClimbName: wallClimbUuid !== null ? wallClimbName : null };
-  return wallClimbUuid !== null || wallDriven ? { kind: 'preview' } : null;
+  const wallCouldLight = holdsLink || wallDriven || (wallClimbUuid !== null && wallPresenceTrusted);
+  return wallCouldLight ? { kind: 'preview' } : null;
+}
+
+/**
+ * Whether the commit bar reads the climb on screen as the climber's own
+ * committed climb, with nothing to commit (`resolveCommitBarModel`). It compares
+ * CLIMBS, not queue slots: a preview of another slot that holds the current
+ * climb (a History or Up next copy, Replay from here on one) shows no Put on
+ * board.
+ *
+ * So a queue pick of such a slot commits at once instead of previewing: a
+ * deferred commit (`previewCommitOptions`) would have no button to wait for,
+ * and the wall's climb doesn't change. The queue sheet's row tap and Replay
+ * from here both read this rule, so the two can't drift from the bar.
+ */
+export function isCommittedHeadClimb(displayedClimbUuid: string | null, committedHeadUuid: string | null): boolean {
+  return displayedClimbUuid != null && displayedClimbUuid === committedHeadUuid;
 }
 
 /** What the action bar's secondary row is doing. */
@@ -342,7 +373,7 @@ export function resolveCommitBarModel({
   const connectsOnCommit = tapConnects && !wallDriven && !isAnonymous && !boardMismatch;
   const commitLabel: CommitButtonLabel =
     wallClimbUuid != null || wallDriven || connectsOnCommit ? 'putOnWall' : 'setActive';
-  const displayedIsCommittedHead = displayedClimbUuid != null && displayedClimbUuid === committedHeadUuid;
+  const displayedIsCommittedHead = isCommittedHeadClimb(displayedClimbUuid, committedHeadUuid);
   // With no link, presence can name a climb lit hours ago and nobody can see
   // the LEDs (#7000), so a tap that connects never counts it as already lit.
   const displayedIsWallClimb = wallClimbUuid != null && displayedClimbUuid === wallClimbUuid && !connectsOnCommit;

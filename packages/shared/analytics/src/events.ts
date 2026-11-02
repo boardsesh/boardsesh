@@ -259,6 +259,10 @@ export const SHARED_EVENTS = {
   // Props: { page, key, value } — `value` is the boolean or the option key, never
   // free text. Fired by `withSettingTracking` (mobile settings-analytics.ts) so
   // every settings row reports the same way; it is what ranks the Settings root.
+  // From 2.7 the lightbulb's board sheet reports its switches too, under page
+  // 'boardControls' (keys as on the Board page: lightOnClimbTap, lightOnSwipe,
+  // autoDisconnectBle, moonboardLightAdjacentHolds). Leave that page out when
+  // ranking the Settings root.
   SettingChanged: 'Setting Changed',
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',
@@ -498,6 +502,10 @@ export const SHARED_EVENTS = {
   // a preview per time it was offered". Roughly 10-20k per 28 days at today's
   // ~10.6k player sessions. Events from the QA builds of PR #7017 also carry a
   // `variant` ('current' | 'bulb' | 'button'); store builds never sent one.
+  // From 2.7, `previewReason` ('default' | 'session' | 'other_board', see
+  // wall-control-events.ts) says why the climb on screen is a preview, and is
+  // absent while it is the committed climb. 'default' is a solo tap now that
+  // taps preview by default; read it to see how often a preview gets lit.
   WallControlShown: 'Wall Control Shown',
   // Mobile-only (#7000): a tap on any view of the player's board control (one
   // handler, so one event per tap). Props: { state, action, control }. `state`:
@@ -520,6 +528,8 @@ export const SHARED_EVENTS = {
   // 'mini_bar' (the MiniPlayer's bulb standing in for a tablet or open-Duo player's).
   // QA builds before the one-model refactor sent 'wall_control' for the
   // button. A tap while the busy-wall question is up is a 'noop'. Roughly 15-25k per 28 days.
+  // From 2.7 it carries `previewReason` too, as Wall Control Shown does: only
+  // while the climb on screen is a preview.
   WallControlTapped: 'Wall Control Tapped',
   // Mobile-only (#7113): a swipe left on the player's wall button, once per
   // gesture that got going (a drag past 10 pt; a tap never fires it). Props: {

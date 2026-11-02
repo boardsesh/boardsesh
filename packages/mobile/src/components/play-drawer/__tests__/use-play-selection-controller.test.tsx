@@ -809,6 +809,66 @@ describe('preview-first host selections and deferred commits', () => {
     expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
   });
 
+  // The iPad host keeps its pane target, and each tab mounts its own pane: the
+  // later pane shows what the first did, without a second pick.
+  describe('a pane that mounts after the tap', () => {
+    function sharedTarget(selected: ClimbQueueItem, options?: PlayDrawerOpenOptions) {
+      let applied = false;
+      return {
+        ...open(selected, options),
+        claimFirstApply: () => {
+          if (applied) return false;
+          applied = true;
+          return true;
+        },
+      };
+    }
+
+    it.each([
+      ['Light on tap is off', () => setSetting('lightOnClimbTap', false), {}],
+      ['the climb is on another board', () => {}, { showBoardMismatch: true }],
+    ])('shows the same browse preview when %s', (_label, arrange, patch) => {
+      arrange();
+      const target = sharedTarget(item('new'));
+      const first = { ...inputs(), ...patch, openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: first });
+      expect(first.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+      );
+
+      const later = { ...inputs(), ...patch, openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: later });
+      expect(later.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+      );
+      expect(later.queue.setCurrentClimb).not.toHaveBeenCalled();
+    });
+
+    it('keeps the workout row reopening the committed slot', () => {
+      setSetting('lightOnClimbTap', false);
+      const current = inputs().queue.currentClimbQueueItem!;
+      const target = sharedTarget(current, { reopensCurrent: true });
+      renderHook(usePlaySelectionController, { initialProps: { ...inputs(), openTarget: target } });
+      const later = { ...inputs(), openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: later });
+      expect(later.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(null);
+      expect(later.queue.setCurrentClimb).not.toHaveBeenCalled();
+    });
+
+    it('never puts the tapped climb up again after the climber moved on', () => {
+      const target = sharedTarget(item('new'));
+      const first = { ...inputs(), openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: first });
+      expect(first.queue.setCurrentClimb).toHaveBeenCalledOnce();
+
+      // The current climb is still `current` here: the climber swiped on.
+      const later = { ...inputs(), openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: later });
+      expect(later.queue.setCurrentClimb).not.toHaveBeenCalled();
+      expect(later.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(null);
+    });
+  });
+
   it('does not relight an already-current held climb when it opens as preview', () => {
     setSetting('lightOnClimbTap', false);
     const initialProps = inputs();

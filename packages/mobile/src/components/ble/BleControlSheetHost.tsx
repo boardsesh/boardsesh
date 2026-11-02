@@ -15,9 +15,16 @@ import { markWallCleared, resetWallCleared } from './wall-cleared-store';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
 import { useSetting } from '../../settings';
+import { trackSettingChanged } from '../../lib/settings-analytics';
 import { useAutoDisconnectTimeoutLabels } from './use-auto-disconnect-timeout-labels';
 import { keepLightingLabel } from '../settings/board-lighting/board-lighting-model';
 import type { BleKeepLightingRowModel } from './BleKeepLightingRow';
+
+/**
+ * `Setting Changed`'s page for the switches on this sheet. Not a Settings page,
+ * so the Settings root's ranking leaves it out; the keys are the Board page's.
+ */
+export const BOARD_CONTROLS_SETTINGS_PAGE = 'boardControls';
 
 type BleControlSheetHostProps = {
   visible: boolean;
@@ -89,6 +96,12 @@ export function BleControlSheetHost({
       options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
       onChange: (choice: KeepLightingChoice) => {
         hapticSelection();
+        // Reported like the Board page's row of the same key.
+        trackSettingChanged(
+          BOARD_CONTROLS_SETTINGS_PAGE,
+          onMoonboard ? 'moonboardPutOnBoardKeepsLighting' : 'putOnBoardKeepsLighting',
+          choice,
+        );
         setKeepLightingChoice(choice);
       },
     }),
@@ -120,10 +133,35 @@ export function BleControlSheetHost({
 
   const handleToggleLightAdjacentHolds = useCallback(
     (enabled: boolean) => {
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'moonboardLightAdjacentHolds', enabled);
       bluetooth?.setMoonboardLightAdjacentHolds(enabled);
       bluetooth?.reassertWall();
     },
     [bluetooth],
+  );
+
+  // The same `Setting Changed` the Board page's rows send, so a switch flipped
+  // here (the lightbulb's long press) is counted too.
+  const handleToggleAutoDisconnect = useCallback(
+    (enabled: boolean) => {
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'autoDisconnectBle', enabled);
+      setAutoDisconnectEnabled(enabled);
+    },
+    [setAutoDisconnectEnabled],
+  );
+  const handleToggleLightOnSwipe = useCallback(
+    (enabled: boolean) => {
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'lightOnSwipe', enabled);
+      setLightOnSwipe(enabled);
+    },
+    [setLightOnSwipe],
+  );
+  const handleToggleLightOnClimbTap = useCallback(
+    (enabled: boolean) => {
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'lightOnClimbTap', enabled);
+      setLightOnClimbTap(enabled);
+    },
+    [setLightOnClimbTap],
   );
 
   if (!bluetooth) return null;
@@ -136,14 +174,14 @@ export function BleControlSheetHost({
       onDisconnect={disconnectAllBluetooth}
       autoDisconnectEnabled={autoDisconnectEnabled}
       autoDisconnectTimeoutLabel={autoDisconnectTimeoutLabel}
-      onToggleAutoDisconnect={setAutoDisconnectEnabled}
+      onToggleAutoDisconnect={handleToggleAutoDisconnect}
       showLightAdjacentHolds={showLightAdjacentHolds}
       lightAdjacentHoldsEnabled={bluetooth.moonboardLightAdjacentHolds}
       onToggleLightAdjacentHolds={handleToggleLightAdjacentHolds}
       lightOnSwipe={lightOnSwipe}
-      onToggleLightOnSwipe={setLightOnSwipe}
+      onToggleLightOnSwipe={handleToggleLightOnSwipe}
       lightOnClimbTap={lightOnClimbTap}
-      onToggleLightOnClimbTap={setLightOnClimbTap}
+      onToggleLightOnClimbTap={handleToggleLightOnClimbTap}
       showLightingSwitches={showLightingSwitches}
       linked={isConnected}
       onDrive={onDrive}

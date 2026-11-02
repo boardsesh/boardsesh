@@ -16,7 +16,7 @@ import type {
   OpenPlayDrawerOptions,
 } from '../../providers/drawer-host-provider';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
-import { readClimbChangeLights } from './use-climb-change-lights';
+import { readQueuePickLanding } from './queue-pick-landing';
 
 type QueueSheetHandlerDeps = {
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
@@ -68,15 +68,32 @@ export function useQueueSheetHandlers({
   const inSharedSession = useIsSharedSession();
   const inSharedSessionRef = useRef(inSharedSession);
   inSharedSessionRef.current = inSharedSession;
+  // Where a pick lands, read at the tap (`resolveQueuePickLanding`): it
+  // commits once automatic lighting is opted in or this phone is driving, and
+  // previews otherwise. A pick of the climb already up never previews, since
+  // that preview would offer no Put on board: it commits when nothing on the
+  // wall would change, and reopens the climb up as it is when a commit would
+  // light the wall or write a crew's queue.
+  const landingOf = useCallback(
+    (item: ClimbQueueItem) =>
+      readQueuePickLanding(item, {
+        current: getQueueSnapshot().currentClimbQueueItem,
+        inSharedSession: inSharedSessionRef.current,
+      }),
+    [getQueueSnapshot],
+  );
   // Selecting a queue slot previews it until automatic lighting is opted in
   // or this phone is driving. Keep the slot's identity for the later commit.
   const handleClimbPress = useCallback(
     (item: ClimbQueueItem) => {
       // Opening from the queue sheet means "walk the queue" — drop any list
       // source so next/previous follow the queue again, not a stale list.
-      if (readClimbChangeLights('tap', { inSharedSession: inSharedSessionRef.current })) {
+      const landing = landingOf(item);
+      if (landing === 'commit') {
         setCurrentClimb(item, { playlistSuggestionSource: null });
         openPlayDrawer(item.climb, { committedExternally: true });
+      } else if (landing === 'reopen') {
+        openPlayDrawer(item.climb, { reopensCurrent: true });
       } else {
         openPlayDrawer(item.climb, {
           previewQueueItem: item,
@@ -85,7 +102,7 @@ export function useQueueSheetHandlers({
       }
       requestCloseQueueSheet();
     },
-    [setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
+    [landingOf, setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
   );
 
   // Long-press a queue row → open the climb reaction menu over the queue sheet.
@@ -110,15 +127,20 @@ export function useQueueSheetHandlers({
     (climb: QueueClimb, source: PlaylistSuggestionSource) => {
       const item = climbToQueueItem(climb, { suggested: true });
       const schemaClimb = item.climb as Climb;
-      if (readClimbChangeLights('tap', { inSharedSession: inSharedSessionRef.current })) {
+      // The suggestion's list is what the pick carries, on a commit of the
+      // climb already up too. A reopen keeps the climb up as it is, track and all.
+      const landing = landingOf(item);
+      if (landing === 'commit') {
         setCurrentClimb(item, { playlistSuggestionSource: source });
         openPlayDrawer(schemaClimb, { committedExternally: true });
+      } else if (landing === 'reopen') {
+        openPlayDrawer(schemaClimb, { reopensCurrent: true });
       } else {
         openPlayDrawer(schemaClimb, { previewQueueItem: item, playlistSuggestionSource: source });
       }
       requestCloseQueueSheet();
     },
-    [setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
+    [landingOf, setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
   );
 
   // Tick a history climb → open the log-ascent sheet (stacks above the queue

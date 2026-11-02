@@ -777,3 +777,49 @@ describe('useWallControl: the keep-lighting window', () => {
     expect(announceQueued).not.toHaveBeenCalled();
   });
 });
+
+// 2.7: Wall Control Tapped says why the climb on screen is a preview.
+describe('useWallControl preview reason', () => {
+  beforeEach(() => analytics.tapped.mockClear());
+
+  it.each([
+    ['default', { previewReason: 'default' }],
+    ['session', { previewReason: 'session' }],
+    ['other_board', { previewReason: 'other_board' }],
+  ] as const)('logs a tap on a %s preview with its reason', (_label, extra) => {
+    const hook = renderHook(() =>
+      useWallControl({
+        model: modelFor('put_on_wall', 'put_on_wall'),
+        runners: runners(),
+        climbUuid: 'climb-1',
+        playerOpen: true,
+        visible: true,
+        linked: true,
+        previewReason: extra.previewReason,
+      }),
+    );
+    act(() => hook.result.current.press('button'));
+    expect(analytics.tapped).toHaveBeenCalledExactlyOnceWith({
+      state: 'put_on_wall',
+      action: 'put_on_wall',
+      control: 'button',
+      previewReason: extra.previewReason,
+    });
+  });
+
+  it('sends no reason for the committed climb', () => {
+    const hook = renderHook(() =>
+      useWallControl({
+        model: modelFor('dark', 'relight'),
+        runners: runners(),
+        climbUuid: 'climb-1',
+        playerOpen: true,
+        visible: true,
+        linked: true,
+        previewReason: null,
+      }),
+    );
+    act(() => hook.result.current.press('button'));
+    expect(analytics.tapped).toHaveBeenCalledExactlyOnceWith({ state: 'dark', action: 'relight', control: 'button' });
+  });
+});

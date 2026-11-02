@@ -908,7 +908,7 @@
       "backToWall": "Revenir au bloc au mur",
       "backToCurrent": "Revenir à mon choix",
       "joinedBrowseNotice": "Tu explores. Le mur ne change pas tant que tu n'allumes pas un bloc.",
-      "previewNotLit": "Aperçu, pas allumé",
+      "previewNotOnWall": "Aperçu · pas au mur",
       "onlyYouSeeThis": "Toi seul le vois",
       "onlyYouSeeThisWallOn": "Toi seul le vois · au mur : {{name}}",
       "commitOverride": {

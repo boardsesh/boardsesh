@@ -5,6 +5,7 @@ import {
   type AnalyticsEventProperties,
   type DriveModeEndedInput,
   type DriveModeStartedInput,
+  type WallControlPreviewReason,
 } from '@boardsesh/analytics';
 import { track } from './analytics';
 import type { WallControlAction, WallControlState } from '../components/play-drawer/wall-control';
@@ -16,15 +17,23 @@ import type { WallControlAction, WallControlState } from '../components/play-dra
  */
 export type WallControlSurface = 'button' | 'bulb' | 'mini_bar';
 
+/** `previewReason` only while the climb on screen is a preview: absent, not null, otherwise. */
+function previewReasonProperty(previewReason: WallControlPreviewReason | null | undefined) {
+  return previewReason ? { previewReason } : {};
+}
+
 /** The player's wall button asked the climber to act (see `WallControlShown` in events.ts). */
 export function trackWallControlShown({
   state,
   climbUuid,
+  previewReason,
 }: {
   state: 'connect' | 'put_on_wall';
   climbUuid: string;
+  /** Why the climb on screen is a preview (`wallControlPreviewReason`); null when it is not one. */
+  previewReason?: WallControlPreviewReason | null;
 }): void {
-  track(SHARED_EVENTS.WallControlShown, { state, climbUuid });
+  track(SHARED_EVENTS.WallControlShown, { state, climbUuid, ...previewReasonProperty(previewReason) });
 }
 
 /** A tap on the player's wall button or bulb (see `WallControlTapped` in events.ts). */
@@ -33,13 +42,22 @@ export function trackWallControlTapped({
   action,
   control,
   analyticsContext,
+  previewReason,
 }: {
   analyticsContext?: AnalyticsEventProperties;
   state: WallControlState;
   action: WallControlAction;
   control: WallControlSurface;
+  /** Why the climb on screen is a preview (`wallControlPreviewReason`); null when it is not one. */
+  previewReason?: WallControlPreviewReason | null;
 }): void {
-  track(SHARED_EVENTS.WallControlTapped, { ...analyticsContext, state: state ?? 'none', action, control });
+  track(SHARED_EVENTS.WallControlTapped, {
+    ...analyticsContext,
+    state: state ?? 'none',
+    action,
+    control,
+    ...previewReasonProperty(previewReason),
+  });
 }
 
 /**

@@ -2220,12 +2220,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // forgot from sending a payload the server refuses. The session seed and
   // re-seed push the live queue themselves and clamp it the same way.
   const setQueue = useCallback(
-    (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => {
+    (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null, historyCount = 0) => {
       if (credentialGeneration !== getCredentialGeneration()) return;
-      // A replace's payload is all Up next when nothing is current (line 0); the
+      // A replace's payload is all Up next when nothing is current (line 0)
+      // unless the caller keeps History (a playlist loaded into Up next); the
       // clamp follows the server probe (now-slot mode keeps the climb on the
       // wall out of the count, legacy keeps 500 entries in all).
-      const syncable = clampSyncedQueue(queue, currentClimbQueueItem, 0, nowSlotModeRef.current);
+      const syncable = clampSyncedQueue(queue, currentClimbQueueItem, historyCount, nowSlotModeRef.current);
       invalidateQueuedQueueMutations();
       applyQueueSnapshot(
         syncable.queue,

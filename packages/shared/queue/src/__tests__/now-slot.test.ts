@@ -18,6 +18,7 @@ import {
   placeOnWall,
   historyCopyRuleFor,
   reorderAcrossLine,
+  replaceUpNext,
   upNextOf,
   upNextStart,
 } from '../now-slot';
@@ -1092,6 +1093,56 @@ describe('package exports', () => {
     expect(queuePackage.reorderAcrossLine).toBe(reorderAcrossLine);
     expect(queuePackage.QUEUE_FULL).toBe(QUEUE_FULL);
     expect(queuePackage.clampNowSlotPayload).toBe(clampNowSlotPayload);
+    expect(queuePackage.replaceUpNext).toBe(replaceUpNext);
+  });
+});
+
+// "Tapping a playlist loads it into my queue" while a tap only previews: the
+// list becomes Up next and the wall keeps its climb.
+describe('replaceUpNext', () => {
+  const [h0, h1, now, u0, u1] = ['H0', 'H1', 'NOW', 'U0', 'U1'].map((uuid) => makeItem(uuid));
+  const [p0, p1, p2] = ['P0', 'P1', 'P2'].map((uuid) => makeItem(uuid));
+
+  it('keeps History and the Now slot, and swaps Up next for the list', () => {
+    const result = replaceUpNext(state([h0, h1, now, u0, u1], now), [p0, p1, p2]);
+    expect(uuids(result.queue)).toEqual(['H0', 'H1', 'NOW', 'P0', 'P1', 'P2']);
+    expect(result.currentClimbQueueItem).toBe(now);
+    expect(result.historyCount).toBe(2);
+    expect(uuids(upNextOf(result))).toEqual(['P0', 'P1', 'P2']);
+  });
+
+  it('keeps the line with nothing current', () => {
+    const result = replaceUpNext(state([h0, h1, u0], null, 2), [p0]);
+    expect(uuids(result.queue)).toEqual(['H0', 'H1', 'P0']);
+    expect(result.currentClimbQueueItem).toBeNull();
+    expect(result.historyCount).toBe(2);
+    expect(uuids(historyOf(result))).toEqual(['H0', 'H1']);
+  });
+
+  it('keeps an orphan current climb an orphan, History where it was', () => {
+    const orphan = makeItem('X');
+    const result = replaceUpNext(state([h0, u0], orphan, 1), [p0]);
+    expect(uuids(result.queue)).toEqual(['H0', 'P0']);
+    expect(result.currentClimbQueueItem).toBe(orphan);
+    expect(result.historyCount).toBe(1);
+  });
+
+  it('never stores a slot twice: a kept slot or a repeat in the list is left out', () => {
+    const result = replaceUpNext(state([h0, now, u0], now), [now, p0, h0, p0, u0]);
+    expect(uuids(result.queue)).toEqual(['H0', 'NOW', 'P0', 'U0']);
+  });
+
+  it('keeps another copy of the climb on the wall: it is a slot of its own', () => {
+    const copy = freshCopyOf(now, 'NOW-COPY');
+    const result = replaceUpNext(state([now], now), [p0, copy]);
+    expect(uuids(result.queue)).toEqual(['NOW', 'P0', 'NOW-COPY']);
+  });
+
+  it('clears Up next with an empty list and leaves the input untouched', () => {
+    const queue = [h0, now, u0, u1];
+    const result = replaceUpNext(state(queue, now), []);
+    expect(uuids(result.queue)).toEqual(['H0', 'NOW']);
+    expect(uuids(queue)).toEqual(['H0', 'NOW', 'U0', 'U1']);
   });
 });
 

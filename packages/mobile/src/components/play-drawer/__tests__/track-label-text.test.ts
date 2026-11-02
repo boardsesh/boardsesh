@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import { formatBrowseCaption, formatTrackLabelParts, MAX_CAPTION_NAME_LENGTH } from '../track-label-text';
+import enSession from '@boardsesh/i18n/locales/en-US/session.json';
+import esSession from '@boardsesh/i18n/locales/es/session.json';
+import frSession from '@boardsesh/i18n/locales/fr/session.json';
+import deSession from '@boardsesh/i18n/locales/de/session.json';
+import itSession from '@boardsesh/i18n/locales/it/session.json';
+import {
+  formatBrowseCaption,
+  formatTrackLabelParts,
+  MAX_CAPTION_NAME_LENGTH,
+  spokenCaption,
+} from '../track-label-text';
 
 // Interpolates like the real catalog, so the assertions read as the top bar does.
 const STRINGS: Record<string, string> = {
@@ -9,7 +19,7 @@ const STRINGS: Record<string, string> = {
   'playView.track.playingFromPositionAria': 'Playing from {{name}}, {{position}} of {{total}}',
   'playView.track.upNext': 'Up next',
   'playView.track.upNextPositionAria': 'Up next, {{position}} of {{total}}',
-  'playView.wallState.previewNotLit': 'Preview, not lit',
+  'playView.wallState.previewNotOnWall': 'Preview · not on the wall',
   'playView.wallState.onlyYouSeeThis': 'Only you see this',
   'playView.wallState.onlyYouSeeThisWallOn': 'Only you see this · the wall is on {{name}}',
 };
@@ -76,8 +86,8 @@ describe('formatBrowseCaption', () => {
     expect(formatBrowseCaption(null, t)).toBeNull();
   });
 
-  it('tells a solo climber the preview is not lit', () => {
-    expect(formatBrowseCaption({ kind: 'preview' }, t)).toBe('Preview, not lit');
+  it('tells a solo climber the preview is not on the wall', () => {
+    expect(formatBrowseCaption({ kind: 'preview' }, t)).toBe('Preview · not on the wall');
   });
 
   it('tells a crew the look is private, and names the climb on the wall', () => {
@@ -103,6 +113,33 @@ describe('formatBrowseCaption', () => {
   });
 
   it('keeps the solo preview words under a list or a workout stage', () => {
-    expect(formatBrowseCaption({ kind: 'preview' }, t, { sharesLine: true })).toBe('Preview, not lit');
+    expect(formatBrowseCaption({ kind: 'preview' }, t, { sharesLine: true })).toBe('Preview · not on the wall');
+  });
+});
+
+// The "·" is for the eye: a screen reader would say "middle dot".
+describe('spokenCaption', () => {
+  it('reads the separator as a comma', () => {
+    expect(spokenCaption('Preview · not on the wall')).toBe('Preview, not on the wall');
+    expect(spokenCaption('Only you see this · the wall is on Crimp Ladder')).toBe(
+      'Only you see this, the wall is on Crimp Ladder',
+    );
+  });
+
+  it('leaves a caption with no separator, and a dot inside a word, alone', () => {
+    expect(spokenCaption('Only you see this')).toBe('Only you see this');
+    expect(spokenCaption('Only you see this · the wall is on A·B')).toBe('Only you see this, the wall is on A·B');
+  });
+
+  it.each([
+    ['en-US', enSession],
+    ['es', esSession],
+    ['fr', frSession],
+    ['de', deSession],
+    ['it', itSession],
+  ])('reads the %s preview caption with no dot', (_locale, catalog) => {
+    const caption = catalog.playView.wallState.previewNotOnWall;
+    expect(caption).toContain(' · ');
+    expect(spokenCaption(caption)).not.toContain('·');
   });
 });

@@ -55,10 +55,12 @@ export type PlayDrawerOpenOptions = {
    */
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
   /**
-   * The accessory bar or the mini player reopening the current climb. Every
-   * other open of the current climb is a pick, which lights a climb the #4979
-   * hold kept dark (docs/current-climb-outside-queue.md, section 6); this one
-   * only shows the climb, so a hold stays and the player offers Put on the wall.
+   * The accessory bar or the mini player reopening the current climb, or a
+   * preview-first pick of the climb already up (a queue sheet row, Replay from
+   * here, the playlist switch). Every other open of the current climb is a
+   * pick, which lights a climb the #4979 hold kept dark
+   * (docs/current-climb-outside-queue.md, section 6); this one only shows the
+   * climb, so a hold stays and the player offers Put on the wall.
    */
   reopensCurrent?: boolean;
 };

@@ -8,7 +8,13 @@ vi.mock('../../../lib/analytics-wall-control', () => ({ trackWallControlShown: t
 import { useWallControlShown } from '../use-wall-control-shown';
 import type { WallControlState } from '../wall-control';
 
-type Props = { state: WallControlState; climbUuid: string | null; playerOpen: boolean; visible: boolean };
+type Props = {
+  state: WallControlState;
+  climbUuid: string | null;
+  playerOpen: boolean;
+  visible: boolean;
+  previewReason?: 'default' | 'session' | 'other_board' | null;
+};
 
 function setup(initial: Props) {
   return renderHook((props: Props) => useWallControlShown(props), { initialProps: initial });
@@ -50,5 +56,30 @@ describe('useWallControlShown', () => {
     hook.rerender({ state: 'connect', climbUuid: 'a', playerOpen: false, visible: true });
     hook.rerender({ state: 'connect', climbUuid: 'a', playerOpen: true, visible: true });
     expect(trackMock).toHaveBeenCalledTimes(2);
+  });
+
+  // 2.7: why the climb on screen is a preview rides along, read when the event
+  // fires; the committed climb sends none.
+  it('says why the climb on screen is a preview, and only for a preview', () => {
+    const hook = setup({
+      state: 'put_on_wall',
+      climbUuid: 'a',
+      playerOpen: true,
+      visible: true,
+      previewReason: 'default',
+    });
+    hook.rerender({ state: 'put_on_wall', climbUuid: 'b', playerOpen: true, visible: true, previewReason: 'session' });
+    hook.rerender({ state: 'connect', climbUuid: 'c', playerOpen: true, visible: true, previewReason: null });
+    expect(trackMock.mock.calls.map(([props]) => props)).toEqual([
+      { state: 'put_on_wall', climbUuid: 'a', previewReason: 'default' },
+      { state: 'put_on_wall', climbUuid: 'b', previewReason: 'session' },
+      { state: 'connect', climbUuid: 'c' },
+    ]);
+  });
+
+  it('never sends twice when only the reason changes', () => {
+    const hook = setup({ state: 'put_on_wall', climbUuid: 'a', playerOpen: true, visible: true, previewReason: null });
+    hook.rerender({ state: 'put_on_wall', climbUuid: 'a', playerOpen: true, visible: true, previewReason: 'session' });
+    expect(trackMock).toHaveBeenCalledOnce();
   });
 });

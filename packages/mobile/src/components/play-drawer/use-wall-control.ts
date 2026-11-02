@@ -1,4 +1,4 @@
-import type { AnalyticsEventProperties } from '@boardsesh/analytics';
+import type { AnalyticsEventProperties, WallControlPreviewReason } from '@boardsesh/analytics';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
@@ -81,6 +81,8 @@ export type UseWallControlOptions = {
   visible: boolean;
   /** This phone holds the Bluetooth link: a tap-disconnect is announced when it drops. */
   linked: boolean;
+  /** For Wall Control Shown and Tapped: why the climb on screen is a preview, or null. */
+  previewReason?: WallControlPreviewReason | null;
 };
 
 /**
@@ -151,13 +153,30 @@ export function useWallControl({
   playerOpen,
   visible,
   linked,
+  previewReason = null,
 }: UseWallControlOptions): WallControlHandlers {
   const { t: tSettings } = useTranslation('settings');
   const { t } = useTranslation('session');
   const stoppedDrivingLabel = t('playView.wallControl.stoppedDriving');
   const stoppedWindowLabel = t('playView.wallControl.stoppedWindow');
-  const latest = useRef({ model, runners, stoppedDrivingLabel, stoppedWindowLabel, analyticsContext, climbUuid });
-  latest.current = { model, runners, stoppedDrivingLabel, stoppedWindowLabel, analyticsContext, climbUuid };
+  const latest = useRef({
+    model,
+    runners,
+    stoppedDrivingLabel,
+    stoppedWindowLabel,
+    analyticsContext,
+    climbUuid,
+    previewReason,
+  });
+  latest.current = {
+    model,
+    runners,
+    stoppedDrivingLabel,
+    stoppedWindowLabel,
+    analyticsContext,
+    climbUuid,
+    previewReason,
+  };
   // The last tap-disconnect or stop (when, for the double-tap guard), and whether a drop still owes its announcement.
   const guardedTapAtRef = useRef<number | null>(null);
   const announceDropRef = useRef(false);
@@ -166,7 +185,7 @@ export function useWallControl({
   // A press whose keep-lighting waits on the busy-wall question, for the climb it asked about.
   const pendingKeepLightingRef = useRef<{ plan: KeepLightingPlan; climbUuid: string | null } | null>(null);
 
-  useWallControlShown({ state: model.state, climbUuid, playerOpen, visible });
+  useWallControlShown({ state: model.state, climbUuid, playerOpen, visible, previewReason });
 
   // The question was about the climb on screen: another climb drops the wait.
   useEffect(() => {
@@ -230,6 +249,7 @@ export function useWallControl({
       state: current.state,
       action,
       control,
+      ...(latest.current.previewReason ? { previewReason: latest.current.previewReason } : {}),
       ...(latest.current.analyticsContext ? { analyticsContext: latest.current.analyticsContext } : {}),
     });
     // A fresh press: whatever an earlier one left waiting on the question goes.

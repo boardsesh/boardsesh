@@ -207,6 +207,7 @@ type Snapshot = Pick<
   | 'playNext'
   | 'removeQueueItems'
   | 'restoreQueueItems'
+  | 'setQueue'
   | 'getQueueSnapshot'
 > & { undoScope: string };
 
@@ -224,6 +225,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       playNext: queue.playNext,
       removeQueueItems: queue.removeQueueItems,
       restoreQueueItems: queue.restoreQueueItems,
+      setQueue: queue.setQueue,
       getQueueSnapshot: queue.getQueueSnapshot,
       undoScope,
     });
@@ -633,6 +635,22 @@ describe('QueueProvider now-slot mode (F3)', () => {
         expect(uuidsOf(latest())).toEqual(['b', 'a']);
         expect(latest().state.historyCount).toBe(1);
         expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
+      });
+
+      // A playlist loaded into Up next while nothing is up (preview-first):
+      // History stays behind the line, here and on the wire.
+      it('setQueue keeps the line it is given, and a replace without one is all Up next', async () => {
+        const latest = await renderSolo([A, B, C], null, 2);
+        act(() => latest().setQueue([A, B, D], null, 2));
+        expect(uuidsOf(latest())).toEqual(['a', 'b', 'd']);
+        expect(latest().state.historyCount).toBe(2);
+        await waitFor(() => expect(queueMutations.setQueue).toHaveBeenCalled());
+        expect(queueMutations.setQueue.mock.calls.at(-1)?.[2]).toBe(2);
+        act(() => latest().nextClimb());
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('d');
+
+        act(() => latest().setQueue([A, B], null));
+        expect(latest().state.historyCount).toBe(0);
       });
 
       it('Undo of an Up next removal keeps History as History', async () => {

@@ -37,7 +37,7 @@ import {
 } from '../../lib/boards/gym-board-for-climb';
 import { useSessionBoardPath } from '../../providers/queue/queue-contexts';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS, type DriveModeStartedBy } from '@boardsesh/analytics';
+import { SHARED_EVENTS, wallControlPreviewReason, type DriveModeStartedBy } from '@boardsesh/analytics';
 import { buildOpeningLayoutKey } from './opening-layout-cache';
 import { usePlayNavigationModel } from './use-play-navigation-model';
 import { usePlayLayoutMeasurements, usePlayOpeningLayout } from './use-play-opening-layout';
@@ -1593,12 +1593,14 @@ export function PlayCore({
   const headerBackTargetName = currentClimbQueueItem?.climb.name ?? null;
 
   // What looking at this climb does to the wall, while it is only a preview
-  // (`resolveBrowseCaption`): "Preview, not lit", or in a crew "Only you see
-  // this · the wall is on Crimp Ladder". It rides the top bar's second line
-  // (#6745), not the stats line, so it never pushes the sends and stars off;
-  // the top bar does not swipe, so the peeks carry none of their own. Under a
-  // list or a workout stage it takes the short crew form, which fits there.
-  // With the lit label resolved, the solo "Preview, not lit" steps aside; the crew form stays, since it names the climb on the wall.
+  // (`resolveBrowseCaption`): "Preview · not on the wall", or in a crew "Only
+  // you see this · the wall is on Crimp Ladder". It rides the top bar's second
+  // line (#6745), not the stats line, so it never pushes the sends and stars
+  // off; the top bar does not swipe, so the peeks carry none of their own.
+  // Under a list or a workout stage it takes the short crew form, which fits
+  // there. The board art draws the same glowing holds whether they are lit or
+  // not, so on a linked phone this line is what says a preview isn't up (B1);
+  // only a lit climb on screen leaves the saying to the wall button.
   const browseCaptionModel = resolveBrowseCaption({
     isAnonymous,
     isPreview,
@@ -1608,9 +1610,11 @@ export function PlayCore({
     wallClimbName: wallClimb.name,
     inCrew: isSharedSession,
     wallDriven: lightbulbActive,
+    holdsLink: bluetoothConnected,
+    wallPresenceTrusted,
   });
   const browseCaption = formatBrowseCaption(
-    wallLit !== null && browseCaptionModel?.kind === 'preview' ? null : browseCaptionModel,
+    displayedLit && browseCaptionModel?.kind === 'preview' ? null : browseCaptionModel,
     t,
     { sharesLine: topBarParts !== null },
   );
@@ -2366,6 +2370,13 @@ export function PlayCore({
     playerOpen: isPane ? displayedClimb != null : isSheetOpen,
     visible: wallControlDrawn,
     linked: bluetoothConnected,
+    // Why the climb on screen is a preview: how often a default preview gets
+    // lit is the 2.7 question.
+    previewReason: wallControlPreviewReason({
+      isPreview,
+      otherBoard: previewOnOtherBoard,
+      inSession: browseByDefault,
+    }),
   });
   wallControlAnswersRef.current = wallControlHandlers;
   // The board sheet's Light every climb row (#7113): the sheet closes itself.

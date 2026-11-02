@@ -137,6 +137,11 @@ export {
   type QueueSheetOpenedProps,
 } from './queue-navigation-events';
 export {
+  wallControlPreviewReason,
+  type WallControlPreviewReason,
+  type WallControlPreviewReasonInput,
+} from './wall-control-events';
+export {
   buildCohortPersonProperties,
   type CohortProfileInput,
   type CohortPersonProperties,
