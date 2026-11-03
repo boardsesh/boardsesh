@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   hapticLight: vi.fn(),
   announceQueued: vi.fn(),
   driveEnded: vi.fn(),
+  wallControlTapped: vi.fn(),
 }));
 
 vi.mock('react-native', () => ({
@@ -89,6 +90,7 @@ vi.mock('../../../lib/announce-queued', () => ({ announceQueued: state.announceQ
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackDriveModeStarted: vi.fn(),
   trackDriveModeEnded: state.driveEnded,
+  trackWallControlTapped: state.wallControlTapped,
 }));
 // The ring itself (drain, refill, Reduce Motion) has its own suites; here, which one the bulb asks for.
 vi.mock('../../play-drawer/WallWindowRing', () => ({
@@ -172,6 +174,7 @@ beforeEach(() => {
   state.hapticLight.mockClear();
   state.announceQueued.mockClear();
   state.driveEnded.mockClear();
+  state.wallControlTapped.mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -281,8 +284,8 @@ describe('PickBulbSlot tapped while this phone drives the wall', () => {
   });
 
   it.each([
-    ["Put on board's timed drive", () => startDrive(45_000)],
-    ['an open-ended drive', () => startDrive(null)],
+    ["Put on board's timed drive", () => startDrive(45_000), 'stop_window'],
+    ['an open-ended drive', () => startDrive(null), 'stop_driving'],
     [
       "Always drive the wall's drive",
       () => {
@@ -290,8 +293,9 @@ describe('PickBulbSlot tapped while this phone drives the wall', () => {
           startAlwaysDrive({ sessionId: null, boardId: null });
         });
       },
+      'stop_driving',
     ],
-  ] as const)('stops %s and keeps the link: no Put on board', (_drive, start) => {
+  ] as const)('stops %s and keeps the link: no Put on board', (_drive, start, action) => {
     start();
     const view = renderSlot();
     const bulb = view.getByTestId('mini-player-pick-put-on-board');
@@ -305,6 +309,9 @@ describe('PickBulbSlot tapped while this phone drives the wall', () => {
     expect(state.driveEnded).toHaveBeenCalledWith(expect.objectContaining({ reason: 'stopped' }));
     expect(state.hapticLight).toHaveBeenCalledOnce();
     expect(state.announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    // Counted as the tablet's bar bulb counts its stop.
+    expect(state.wallControlTapped).toHaveBeenCalledOnce();
+    expect(state.wallControlTapped).toHaveBeenCalledWith({ state: 'lit', action, control: 'mini_bar' });
     // Not driving any more: the bulb is Put on board for the pick again.
     expect(bulb.getAttribute('aria-label')).toBe('playView.wallControl.putOnBoard');
     expect(bulb.getAttribute('data-hint')).toBe('playView.wallControl.pickLightHint');
@@ -318,6 +325,8 @@ describe('PickBulbSlot tapped while this phone drives the wall', () => {
     fireEvent.click(view.getByTestId('mini-player-pick-put-on-board'));
     expect(state.openPlayDrawer).toHaveBeenCalledOnce();
     expect(getDriveMode()?.phase).toBe('arming');
+    // The put-up is the player's to count (as `mini_bar`, once its press runs).
+    expect(state.wallControlTapped).not.toHaveBeenCalled();
   });
 
   it('drops the second tap of a double tap: one stop, no Put on board and fresh drive', () => {

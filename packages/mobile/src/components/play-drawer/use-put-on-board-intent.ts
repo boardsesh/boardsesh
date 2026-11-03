@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import type { WallControlSurface } from '../../lib/analytics-wall-control';
 import type { WallControlAction } from './wall-control';
 
 /**
@@ -12,6 +13,26 @@ import type { WallControlAction } from './wall-control';
  */
 export function putOnBoardIntentPresses(action: WallControlAction): boolean {
   return action !== 'noop' && action !== 'stop_driving' && action !== 'stop_window';
+}
+
+/**
+ * The press behind the bar's Put on board request (`usePutOnBoardIntent`'s
+ * `press`): the wall control's own handler as the bar's control (`mini_bar`,
+ * the button's `tapAction`), skipped where that tap would do nothing or stop a
+ * drive (`putOnBoardIntentPresses`). It reads `tapAction` as it is at the
+ * press, and keeps its identity across renders so the request's effect doesn't
+ * re-run for it.
+ */
+export function usePutOnBoardIntentPress(
+  tapAction: WallControlAction,
+  press: (control: WallControlSurface) => void,
+): () => void {
+  const tapActionRef = useRef(tapAction);
+  tapActionRef.current = tapAction;
+  return useCallback(() => {
+    if (!putOnBoardIntentPresses(tapActionRef.current)) return;
+    press('mini_bar');
+  }, [press]);
 }
 
 export type PutOnBoardIntentInputs = {

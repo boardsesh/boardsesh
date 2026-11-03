@@ -29,6 +29,7 @@ const signals = vi.hoisted(() => ({
   },
   openPlay: vi.fn(),
   driveEnded: vi.fn(),
+  wallControlTapped: vi.fn(),
   hapticLight: vi.fn(),
   hapticMedium: vi.fn(),
   announceQueued: vi.fn(),
@@ -37,6 +38,7 @@ const signals = vi.hoisted(() => ({
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackDriveModeStarted: vi.fn(),
   trackDriveModeEnded: signals.driveEnded,
+  trackWallControlTapped: signals.wallControlTapped,
 }));
 vi.mock('../../../lib/analytics-board-connect', () => ({ trackBoardConnectTapped: vi.fn() }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => null }));
@@ -118,6 +120,7 @@ import {
   startAlwaysDrive,
 } from '../../play-drawer/drive-mode-store';
 import { DISCONNECT_TAP_GUARD_MS, WINDOW_END_TAP_GRACE_MS } from '../../play-drawer/drive-tap-guards';
+import { resetAllSettings, setSetting } from '../../../settings';
 
 function startTapDrive(windowMs: number | null) {
   act(() => {
@@ -132,9 +135,10 @@ function startTapDrive(windowMs: number | null) {
   });
 }
 
+// Each drive, and the stop Wall Control Tapped logs for it (as the tablet's bulb).
 const DRIVES = [
-  ["Put on board's timed drive (45 s)", () => startTapDrive(45_000)],
-  ['an open-ended swipe drive', () => startTapDrive(null)],
+  ["Put on board's timed drive (45 s)", () => startTapDrive(45_000), 'stop_window'],
+  ['an open-ended swipe drive', () => startTapDrive(null), 'stop_driving'],
   [
     "Always drive the wall's drive",
     () => {
@@ -142,6 +146,7 @@ const DRIVES = [
         startAlwaysDrive({ sessionId: null, boardId: 7 });
       });
     },
+    'stop_driving',
   ],
 ] as const;
 
@@ -165,6 +170,7 @@ beforeEach(() => {
     signals.bluetooth.connect,
     signals.openPlay,
     signals.driveEnded,
+    signals.wallControlTapped,
     signals.hapticLight,
     signals.hapticMedium,
     signals.announceQueued,
@@ -175,6 +181,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   resetDriveModeForTests();
+  resetAllSettings();
   vi.useRealTimers();
 });
 
@@ -184,7 +191,7 @@ describe.each(BARS)("%s: the bar's bulb", (_bar, props) => {
     return { ...view, bulb: () => view.getByRole('button') };
   };
 
-  it.each(DRIVES)('stops %s on a tap and keeps the link: no disconnect', (_drive, start) => {
+  it.each(DRIVES)('stops %s on a tap and keeps the link: no disconnect', (_drive, start, action) => {
     start();
     const view = renderBulb();
     fireEvent.click(view.bulb());
@@ -201,6 +208,9 @@ describe.each(BARS)("%s: the bar's bulb", (_bar, props) => {
     // A light buzz (nothing was let go), and a screen reader hears the stop.
     expect(signals.hapticLight).toHaveBeenCalledOnce();
     expect(signals.announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    // Wall Control Tapped, once, as the tablet's bar bulb logs its stop.
+    expect(signals.wallControlTapped).toHaveBeenCalledOnce();
+    expect(signals.wallControlTapped).toHaveBeenCalledWith({ state: 'lit', action, control: 'mini_bar' });
   });
 
   it('says "Stop driving" while a drive runs, and what it said before once it ends', () => {
@@ -223,6 +233,8 @@ describe.each(BARS)("%s: the bar's bulb", (_bar, props) => {
     expect(signals.bluetooth.disconnect).toHaveBeenCalledOnce();
     expect(signals.hapticLight).not.toHaveBeenCalled();
     expect(signals.announceQueued).not.toHaveBeenCalled();
+    // Only a stop is a Wall Control Tapped from a phone's bar.
+    expect(signals.wallControlTapped).not.toHaveBeenCalled();
   });
 
   it('hangs up while a drive is still arming: the bulb shows no drive yet', () => {
@@ -287,5 +299,35 @@ describe.each(BARS)("%s: the bar's bulb", (_bar, props) => {
     });
     fireEvent.click(view.bulb());
     expect(signals.bluetooth.disconnect).toHaveBeenCalledOnce();
+  });
+  // Disconnect Bluetooth when driving ends: the stop lets go of the board too
+  // (DriveModeWatcher), so a screen reader hears it once the link drops, as
+  // after the frosted button's stop.
+  const linkDrops = (view: ReturnType<typeof renderBulb>) => {
+    signals.board = { localConnected: false, inAppBoardConnection: 'disconnected' };
+    signals.bluetooth.isConnected = false;
+    view.rerender(createElement(BoardControlIndicator, props));
+  };
+
+  it('says Board disconnected once the link drops after a stop, with Disconnect Bluetooth when driving ends on', () => {
+    setSetting('disconnectWhenDrivingEnds', true);
+    startTapDrive(45_000);
+    const view = renderBulb();
+    fireEvent.click(view.bulb());
+    expect(signals.announceQueued).toHaveBeenLastCalledWith('playView.wallControl.stoppedDriving');
+    // Not at the tap: a disconnect that never comes says nothing.
+    expect(signals.announceQueued).not.toHaveBeenCalledWith('ble.barControl.disconnectedLabel');
+    linkDrops(view);
+    expect(signals.announceQueued).toHaveBeenLastCalledWith('ble.barControl.disconnectedLabel');
+    expect(signals.announceQueued).toHaveBeenCalledTimes(2);
+  });
+
+  it('says nothing more when the link drops later with the setting off', () => {
+    startTapDrive(45_000);
+    const view = renderBulb();
+    fireEvent.click(view.bulb());
+    signals.announceQueued.mockClear();
+    linkDrops(view);
+    expect(signals.announceQueued).not.toHaveBeenCalled();
   });
 });

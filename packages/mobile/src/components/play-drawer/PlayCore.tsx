@@ -223,7 +223,7 @@ import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
 import { pickBoardOverride, useLastPickWriter, type PickLatchStart } from './use-last-pick-writer';
 import { useSharedBrowseLatch } from './shared-browse-latch';
-import { putOnBoardIntentPresses, usePutOnBoardIntent } from './use-put-on-board-intent';
+import { usePutOnBoardIntent, usePutOnBoardIntentPress } from './use-put-on-board-intent';
 import type { AppliedPlayerOpen } from './use-play-selection-controller';
 export type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
 
@@ -2692,15 +2692,9 @@ export function PlayCore({
   // the wall button's own path. In a crew it waits for the browse latch, so
   // the busy-wall question compares against the wall at the pick; a drive
   // never asks. Analytics count it as the bar's control (`mini_bar`).
-  const pressWallControl = wallControlHandlers.press;
-  // `mini_bar` runs the button's tap (`tapAction`), a stop included.
-  const barWallControlActionRef = useRef(wallControl.tapAction);
-  barWallControlActionRef.current = wallControl.tapAction;
-  const pressWallControlForBar = useCallback(() => {
-    // Nothing to light, or a stop where the pick is already lit: no press.
-    if (!putOnBoardIntentPresses(barWallControlActionRef.current)) return;
-    pressWallControl('mini_bar');
-  }, [pressWallControl]);
+  // `mini_bar` runs the button's tap (`tapAction`): nothing to light, or a stop
+  // where the pick is already lit, presses nothing.
+  const pressWallControlForBar = usePutOnBoardIntentPress(wallControl.tapAction, wallControlHandlers.press);
   const clearPutOnBoard = useCallback(() => setPutOnBoardFor(null), []);
   usePutOnBoardIntent({
     intendedFor: putOnBoardFor,

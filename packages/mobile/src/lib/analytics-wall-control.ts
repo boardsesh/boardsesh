@@ -14,6 +14,8 @@ import type { WallControlAction, WallControlState } from '../components/play-dra
  * Which view of the board control was tapped or held: the wall button (full
  * width, or narrower in a workout's top row), the first row's bulb, or the open
  * MiniPlayer's bulb, standing in for a tablet or open-Duo player's (#7000).
+ * A phone's bar bulbs log `mini_bar` too, only for a tap that stopped a drive
+ * (owner, 2026-11-03; `queue-control/bar-bulb-tap.ts`).
  */
 export type WallControlSurface = 'button' | 'bulb' | 'mini_bar';
 

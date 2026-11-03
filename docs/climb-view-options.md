@@ -223,8 +223,9 @@ flat amber fallback; the label still says what the next press does.
   press, not from the last render, and drop a tap the frosted button would drop: the second tap of a double tap
   within 600 ms of a stop (`DISCONNECT_TAP_GUARD_MS`), and any tap within 2 s of a timed drive running out on its own
   (`WINDOW_END_TAP_GRACE_MS`), which was aimed at the ring and must not hang up, reconnect, or put the pick up and
-  start a fresh drive. Screen readers hear "Stop driving" as the label and "Your next picks open as previews" as the
-  hint while the bulb shows a drive (`ble.barControl.stopDrivingLabel` / `stopDrivingHint`; "Driving the wall"
+  start a fresh drive. With Disconnect Bluetooth when driving ends on, a screen reader hears "Board disconnected" once
+  the link actually drops after a bar stop, as after the frosted button's. Screen readers hear "Stop driving" as the
+  label and "Your next picks open as previews" as the hint while the bulb shows a drive (`ble.barControl.stopDrivingLabel` / `stopDrivingHint`; "Driving the wall"
   stays the bar bulb's value); the tablet bulb keeps the wall button's "You are driving the wall" and "Tap to stop
   driving". The player's own first-row bulb still disconnects on a tap during a drive.
 - **Driving reaches the Lock Screen, the Dynamic Island and the Android notification (2.7).** iOS draws an amber
@@ -453,8 +454,10 @@ player's card back (`forgetPreviewFirstTip`).
   You are driving the wall logs `{state: 'lit', action: 'stop_driving'}`, or `stop_window` during Put on board's
   timed drive, so a query on `stop_driving` alone misses most 2.7 stops. From 2026-11-03 `mini_bar` logs those
   stops too (before, a `mini_bar` tap during a drive logged `disconnect`). A stop from a phone's bar bulb
-  (`BoardControlIndicator`, `PickPutOnBoardBulb`) fires no Wall Control Tapped: it shows only as `Drive Mode
-  Ended {reason: 'stopped'}`, which carries no surface, so it can't be told apart from the frosted button's.
+  (`BoardControlIndicator`, `PickPutOnBoardBulb`) logs the same `{state: 'lit', action: 'stop_driving' |
+  'stop_window', control: 'mini_bar'}` (`useBarBulbStopDriving`), so bar stops count alike on a phone and a tablet
+  and read apart from the frosted button's (`button`); `Drive Mode Ended {reason: 'stopped'}` carries no surface.
+  A phone bar's other taps (hang up, connect, a crewmate's climb) still log no Wall Control Tapped.
 - `Wall Control Swiped {state, outcome, control}` (#7113): once per swipe that got going (a drag past 10 pt), with
   the state it began in. `outcome`: `drive` (let go past the commit point and a drive started), `cancelled` (let go
   short of it), `refused` (past it, but nothing could start: presence says another account holds the board). Whether the

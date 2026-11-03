@@ -1,7 +1,9 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
+import { trackWallControlTapped } from '../../lib/analytics-wall-control';
 import { hapticLight } from '../../lib/haptics';
+import { getSetting } from '../../settings';
 import {
   getDriveLightingSnapshot,
   getLastDriveEnded,
@@ -80,10 +82,34 @@ export function readBarBulbTap(drivesTheWall: boolean, now = Date.now()): BarBul
 /**
  * A bar bulb's stop, as the frosted button's: a light buzz (nothing was let
  * go), the stop, and "Stopped driving the wall" for a screen reader.
+ *
+ * It logs Wall Control Tapped as the tablet's bulb does (`control: 'mini_bar'`,
+ * `state: 'lit'`, `stop_window` during Put on board's timed drive, otherwise
+ * `stop_driving`), so a bar stop counts the same on a phone and a tablet and
+ * reads apart from the frosted button's (`button`).
+ *
+ * With Disconnect Bluetooth when driving ends on, the stop lets go of the board
+ * too (`DriveModeWatcher`): a screen reader hears "Board disconnected" once the
+ * link actually drops, as after the frosted button's stop, not at the tap.
+ * `linked` is this phone's own Bluetooth link (`localConnected`).
  */
-export function useBarBulbStopDriving(): () => void {
+export function useBarBulbStopDriving(linked: boolean): () => void {
   const { t } = useTranslation('session');
+  const { t: tSettings } = useTranslation('settings');
+  const wasLinkedRef = useRef(linked);
+  const announceDropRef = useRef(false);
+  useEffect(() => {
+    const dropped = wasLinkedRef.current && !linked;
+    wasLinkedRef.current = linked;
+    if (!dropped || !announceDropRef.current) return;
+    announceDropRef.current = false;
+    announceQueued(tSettings('ble.barControl.disconnectedLabel'));
+  }, [linked, tSettings]);
   return useCallback(() => {
+    // Read before the stop: the drive it ends says which stop this was.
+    const action = getDriveLightingSnapshot().mode === 'window' ? 'stop_window' : 'stop_driving';
+    trackWallControlTapped({ state: 'lit', action, control: 'mini_bar' });
+    if (wasLinkedRef.current && getSetting('disconnectWhenDrivingEnds') === true) announceDropRef.current = true;
     hapticLight();
     stopDrivingForLink();
     announceQueued(t('playView.wallControl.stoppedDriving'));

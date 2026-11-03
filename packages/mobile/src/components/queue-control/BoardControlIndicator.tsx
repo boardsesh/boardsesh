@@ -99,7 +99,7 @@ export function BoardControlIndicator({
   // connect. (Connect outcome telemetry is emitted inside bluetooth.connect().)
   const { onPress: lightbulbPress } = useLightbulbControl({ surface: 'board_control_indicator', placement });
   const { openPlay } = useAccessoryClimbTap();
-  const stopDriving = useBarBulbStopDriving();
+  const stopDriving = useBarBulbStopDriving(localConnected);
   // This phone drives the wall over its own link, on a board with lights: the
   // only time the bulb draws a drive (`resolveBulbDriveCue` below).
   const drivesTheWall = phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless });

@@ -38,6 +38,7 @@ vi.mock('react-i18next', () => ({
 
 import { DISCONNECT_TAP_GUARD_MS, WINDOW_END_TAP_GRACE_MS } from '../drive-tap-guards';
 import { useWallControl, type DriveStartOutcome, type WallControlRunners } from '../use-wall-control';
+import { usePutOnBoardIntent, usePutOnBoardIntentPress } from '../use-put-on-board-intent';
 import type { KeepLightingPlan } from '../../../lib/keep-lighting';
 import * as wallSwipeHint from '../../../lib/wall-swipe-hint';
 import { resetAllSettings, setSetting } from '../../../settings';
@@ -1138,5 +1139,87 @@ describe('useWallControl preview reason', () => {
     );
     act(() => hook.result.current.press('button'));
     expect(analytics.tapped).toHaveBeenCalledExactlyOnceWith({ state: 'dark', action: 'relight', control: 'button' });
+  });
+});
+
+// The MiniPlayer's bulb on an unlit last pick (owner decision A) asks the
+// player to press Put on board for it, through this handler as the bar's
+// control (`mini_bar`), which runs the button's tap, a stop included (owner,
+// 2026-11-03). A request that lands on You are driving the wall must not stop
+// the drive the climber never asked to end: the climb on screen is lit already.
+describe("useWallControl: the bar's Put on board request", () => {
+  beforeEach(() => {
+    resetDriveModeForTests();
+    for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
+  });
+  afterEach(() => {
+    resetDriveModeForTests();
+  });
+
+  function setupRequest(model: WallControlModel) {
+    const run = runners();
+    const clear = vi.fn();
+    const hook = renderHook(
+      ({ intendedFor }: { intendedFor: string | null }) => {
+        const handlers = useWallControl({
+          model,
+          runners: run,
+          climbUuid: 'climb-1',
+          playerOpen: true,
+          visible: true,
+          linked: true,
+        });
+        const press = usePutOnBoardIntentPress(model.tapAction, handlers.press);
+        usePutOnBoardIntent({ intendedFor, clear, previewItemUuid: 'queue-pick', ready: true, press });
+      },
+      { initialProps: { intendedFor: null } as { intendedFor: string | null } },
+    );
+    return { hook, run, clear };
+  }
+
+  it.each([
+    ['an open-ended drive', null, 'stop_driving'],
+    ["Put on board's timed drive", 45_000, 'stop_window'],
+  ] as const)('leaves %s running: no stop, no runner, no tap counted', (_drive, windowMs, action) => {
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs,
+        windowSetting: windowMs === null ? null : 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => markDriveLive());
+    const { hook, run, clear } = setupRequest(
+      modelFor('lit', action, { driving: true, lightWindow: windowMs !== null, labelKey: 'youAreDriving' }),
+    );
+    act(() => hook.rerender({ intendedFor: 'queue-pick' }));
+    // The request ran (and was dropped), but pressed nothing.
+    expect(clear).toHaveBeenCalledOnce();
+    expect(getDriveMode()?.phase).toBe('live');
+    expect(isDrivingStoppedForLink()).toBe(false);
+    for (const runner of Object.values(run)) expect(runner).not.toHaveBeenCalled();
+    expect(analytics.tapped).not.toHaveBeenCalled();
+    expect(analytics.ended).not.toHaveBeenCalled();
+    expect(haptics.hapticLight).not.toHaveBeenCalled();
+  });
+
+  it('presses Put on board for the pick, counted as the bar', () => {
+    const { hook, run } = setupRequest(modelFor('put_on_wall', 'put_on_wall'));
+    act(() => hook.rerender({ intendedFor: 'queue-pick' }));
+    expect(run.light).toHaveBeenCalledOnce();
+    expect(analytics.tapped).toHaveBeenCalledExactlyOnceWith({
+      state: 'put_on_wall',
+      action: 'put_on_wall',
+      control: 'mini_bar',
+    });
+  });
+
+  it('presses nothing for a climb this wall cannot light', () => {
+    const { hook, run } = setupRequest(modelFor(null, 'noop'));
+    act(() => hook.rerender({ intendedFor: 'queue-pick' }));
+    for (const runner of Object.values(run)) expect(runner).not.toHaveBeenCalled();
+    expect(analytics.tapped).not.toHaveBeenCalled();
   });
 });

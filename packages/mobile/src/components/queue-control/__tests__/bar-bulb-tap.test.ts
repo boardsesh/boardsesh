@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackDriveModeStarted: vi.fn(),
   trackDriveModeEnded: vi.fn(),
+  trackWallControlTapped: vi.fn(),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
