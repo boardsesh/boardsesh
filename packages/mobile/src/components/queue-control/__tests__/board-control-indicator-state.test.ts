@@ -5,6 +5,7 @@ import {
   getBoardConnectionLabel,
   getBoardControlIndicatorVisual,
   getPaneWallControlVisual,
+  showsWallHoldLook,
 } from '../board-control-indicator-state';
 import { resolveWallBulbLook } from '../../play-drawer/wall-control';
 
@@ -215,5 +216,82 @@ describe('the driving bulb', () => {
     expect(resolveWallBulbLook('lit', true, true, false)).toBe('lit');
     expect(resolveWallBulbLook(null, false, true, true)).toBe('off');
     expect(resolveWallBulbLook('crew', false, true, true)).toBe('ready');
+  });
+});
+
+// A wall-device board is `ledless` (driven without Bluetooth) but has LEDs, and
+// this phone can still hold a live link to them: then it reads as any LED board.
+describe('a board driven without Bluetooth, with this phone’s live link', () => {
+  const t = ((key: string) => key) as unknown as Parameters<typeof getBoardConnectionLabel>[0];
+
+  it('draws the wall-hold look only without a live link', () => {
+    expect(showsWallHoldLook({ ledless: true, localConnected: false })).toBe(true);
+    expect(showsWallHoldLook({ ledless: true, localConnected: true })).toBe(false);
+    expect(showsWallHoldLook({ ledless: false, localConnected: false })).toBe(false);
+  });
+
+  it('lights the bulb with its halo instead of the pin', () => {
+    const linked = getBoardControlIndicatorVisual({
+      boardConnection: 'connectedByMe',
+      ...colors,
+      ledless: true,
+      localConnected: true,
+      wallHeldColor: '#7C3AED',
+    });
+    expect(linked.iconName).toBe('lightbulb.fill');
+    expect(linked.iconColor).toBe(colors.connectedColor);
+    const virtual = getBoardControlIndicatorVisual({
+      boardConnection: 'connectedByMe',
+      ...colors,
+      ledless: true,
+      localConnected: false,
+      wallHeldColor: '#7C3AED',
+    });
+    expect(virtual.iconName).toBe('pin.fill');
+  });
+
+  it('draws the driving bulb', () => {
+    const driving = { fillColor: '#F59E0B', iconColor: '#000000' };
+    expect(
+      getBoardControlIndicatorVisual({
+        boardConnection: 'connectedByMe',
+        ...colors,
+        ledless: true,
+        localConnected: true,
+        driving,
+      }),
+    ).toEqual({ iconName: 'lightbulb.fill', iconColor: driving.iconColor, haloColor: driving.fillColor });
+  });
+
+  it('marks the platter thumbnail with the bulb', () => {
+    expect(
+      getBoardConnectionBadgeVisual({
+        boardConnection: 'connectedByMe',
+        connectedColor: colors.connectedColor,
+        peerColor: colors.peerColor,
+        ledless: true,
+        localConnected: true,
+        wallHeldColor: '#7C3AED',
+      }),
+    ).toEqual({ iconName: 'lightbulb.fill', iconColor: colors.connectedColor });
+  });
+
+  it('says Connected, not You have the wall', () => {
+    expect(
+      getBoardConnectionLabel(t, {
+        boardConnection: 'connectedByMe',
+        ledless: true,
+        localConnected: true,
+        holderDisplayName: null,
+      }),
+    ).toBe('ble.barControl.connectedLabel');
+    expect(
+      getBoardConnectionLabel(t, {
+        boardConnection: 'connectedByMe',
+        ledless: true,
+        localConnected: false,
+        holderDisplayName: null,
+      }),
+    ).toBe('ble.barControl.wallHeldLabel');
   });
 });

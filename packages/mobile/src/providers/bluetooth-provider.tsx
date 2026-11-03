@@ -966,12 +966,13 @@ function BluetoothAutoSender({
  * with any party-session row at all, so a session gate would miss the case this
  * feature exists for.
  *
- * On a wall with no light kit it also carries the peer signal for a BYSTANDER
- * who never took the wall: `deriveBoardConnection` only reports a holder who is
- * a member of your party session, and the observed sharing pattern here is same
- * board, no session.
+ * On a board driven without Bluetooth (no light kit, or lit by a wall device) it
+ * also carries the peer signal for a BYSTANDER who never took the wall:
+ * `deriveBoardConnection` only reports a holder who is a member of your party
+ * session, and the observed sharing pattern here is same board, no session.
  *
- * Mounted only on a ledless board, or while the wall is held virtually, which
+ * Mounted only on a board driven without Bluetooth (`ledless`: no light kit, or
+ * lit by a wall device), or while the wall is held virtually, which
  * keeps the profile read (and the holder subscription's re-renders) entirely off
  * the ordinary Bluetooth path. Anonymous holders carry no userId and cannot be
  * compared — accepted, not guessed at.
@@ -1089,9 +1090,11 @@ export function BluetoothProvider({
   const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
   const lastConnectionSeqRef = useRef(lastConnectionSeq);
   lastConnectionSeqRef.current = lastConnectionSeq;
-  // Set by VirtualWallHolderWatch, which mounts only on a wall with no light kit
-  // or while this device holds one virtually — so the profile read it needs never
-  // runs on the ordinary Bluetooth path.
+  // Set by VirtualWallHolderWatch, which mounts only on a board driven without
+  // Bluetooth (no light kit, or lit by a wall device) or while this device holds
+  // the wall virtually — so the profile read it needs never runs on the ordinary
+  // Bluetooth path. Consumers read it through `visibleWallHeldByOtherUser`, which
+  // hides it from the phone holding a live link.
   const [wallHeldByOtherUser, setWallHeldByOtherUser] = useState(false);
   const { showUndoWallChangeSnackbar } = useQueueSnackbar();
   // Queue actions (no state subscription, so the provider doesn't re-render on

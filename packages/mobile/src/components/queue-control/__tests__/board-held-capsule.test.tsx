@@ -398,6 +398,8 @@ describe('BoardHeldCapsule', () => {
     });
 
     it('on a board with no lights, pins in the brand tone and never claims lit LEDs', () => {
+      // A hold with no link: the only way a board with no lights is held.
+      spies.localConnected = false;
       const { container } = render(<BoardHeldCapsule ledless />);
       expect(container.textContent).toContain('ble.barControl.wallHeldLabel');
       expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
@@ -405,6 +407,15 @@ describe('BoardHeldCapsule', () => {
       expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-tint')).toBe(
         'rgba(109, 40, 217, 0.14)',
       );
+    });
+  });
+
+  describe("on a wall-device board over this phone's live link", () => {
+    it('reads as any LED board: You have the board, no pin', () => {
+      spies.localConnected = true;
+      const { container } = render(<BoardHeldCapsule ledless />);
+      expect(container.textContent).toContain('ble.barControl.youHaveBoard');
+      expect(container.querySelector('[data-icon="pin.fill"]')).toBeNull();
     });
   });
 
@@ -444,6 +455,8 @@ describe('BoardHeldCapsule', () => {
     });
 
     it('says "You have the wall" on a board with no lights', () => {
+      // A hold with no link: the only way a board with no lights is held.
+      spies.localConnected = false;
       const { container } = render(<BoardHeldCapsule ledless />);
       const button = container.querySelector('[data-pressable="true"]') as HTMLElement;
       expect(button.getAttribute('data-label')).toBe(
@@ -510,6 +523,8 @@ describe('BoardHeldCapsule', () => {
 
     it('keeps the LED-less climb in its existing brand surface without starting glow reads', () => {
       spies.glowInput = TEST_GLOW;
+      // A hold with no link: the only way a board with no lights is held.
+      spies.localConnected = false;
       const { container } = render(<BoardHeldCapsule ledless />);
       fireEvent.doubleClick(container.firstElementChild!);
       expect(spies.glowEnabled).toBe(false);

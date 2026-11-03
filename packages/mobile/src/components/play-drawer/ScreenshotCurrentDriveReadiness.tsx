@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { boardHasLights } from '../../lib/boards/board-lighting';
 import { getScreenshotDriveRequest, subscribeScreenshotDriveRequest } from '../../lib/screenshot-driving';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useBluetoothWriteInProgress } from '../../providers/bluetooth-write-activity';
@@ -32,9 +33,9 @@ export function ScreenshotCurrentDriveReadiness({ surface = 'current' }: { surfa
     request !== null &&
     !boardPending &&
     board?.uuid === request.boardUuid &&
-    board.boardType !== 'spray' &&
-    board.hasLeds !== false &&
-    !connection.ledless &&
+    // Lights on the wall (an LED kit, or a wall device's) and a live link, which
+    // writes them whatever the board's no-Bluetooth flag says.
+    boardHasLights(board) &&
     connection.sessionId === null &&
     connection.localConnected &&
     !connection.pending &&

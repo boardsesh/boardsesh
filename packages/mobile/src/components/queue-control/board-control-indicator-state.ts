@@ -29,6 +29,13 @@ type BoardControlIndicatorVisualInput = {
    */
   ledless?: boolean;
   /**
+   * This phone holds a live Bluetooth link. A board driven without Bluetooth
+   * (`ledless`: no light kit, or lit by a wall device) can still have one, and
+   * then the LEDs are on: the look is a lit bulb, never the pin
+   * (`showsWallHoldLook`).
+   */
+  localConnected?: boolean;
+  /**
    * Tone for "you have the wall" on a board with no lights (brandColors.primary).
    * Deliberately NOT the warm `connectedColor`: amber means the LEDs are on, and
    * it must stay exclusive to a real write.
@@ -48,6 +55,16 @@ type BoardControlIndicatorVisualInput = {
    */
   driving?: DrivingBulbColors | null;
 };
+
+/**
+ * Draw the wall-hold look (pin, "You have the wall", "Wall's open"): the board
+ * is driven without Bluetooth (`ledless`) and this phone has no live link. A
+ * live link writes real LEDs (a wall-device board has them too), so it reads
+ * as any LED board's: a lit bulb, Connected, the drive cue.
+ */
+export function showsWallHoldLook({ ledless, localConnected }: { ledless: boolean; localConnected: boolean }): boolean {
+  return ledless && !localConnected;
+}
 
 /** The wall button's live look, for the bulb of a driver (#7113). */
 export type DrivingBulbColors = {
@@ -81,11 +98,13 @@ export function getBoardControlIndicatorVisual({
   connectedColor,
   peerColor,
   disconnectedColor,
-  ledless = false,
+  ledless: ledlessBoard = false,
+  localConnected = false,
   wallHeldColor,
   solidGlyphs = false,
   driving = null,
 }: BoardControlIndicatorVisualInput): BoardControlIndicatorVisual {
+  const ledless = showsWallHoldLook({ ledless: ledlessBoard, localConnected });
   if (driving && !ledless && boardConnection === 'connectedByMe') {
     return { iconName: 'lightbulb.fill', iconColor: driving.iconColor, haloColor: driving.fillColor };
   }
@@ -164,7 +183,7 @@ export type BoardConnectionBadgeVisual = {
 
 type BoardConnectionBadgeVisualInput = Pick<
   BoardControlIndicatorVisualInput,
-  'boardConnection' | 'connectedColor' | 'peerColor' | 'ledless'
+  'boardConnection' | 'connectedColor' | 'peerColor' | 'ledless' | 'localConnected'
 > & {
   /** "You have the wall" on a board with no lights. Required: falling back to amber would claim lit LEDs. */
   wallHeldColor: string;
@@ -183,11 +202,12 @@ export function getBoardConnectionBadgeVisual({
   connectedColor,
   peerColor,
   ledless = false,
+  localConnected = false,
   wallHeldColor,
 }: BoardConnectionBadgeVisualInput): BoardConnectionBadgeVisual | null {
   switch (boardConnection) {
     case 'connectedByMe':
-      return ledless
+      return showsWallHoldLook({ ledless, localConnected })
         ? { iconName: 'pin.fill', iconColor: wallHeldColor }
         : { iconName: 'lightbulb.fill', iconColor: connectedColor };
     case 'heldByPeer':
@@ -200,6 +220,8 @@ export function getBoardConnectionBadgeVisual({
 type BoardConnectionLabelInput = {
   boardConnection: BoardConnection;
   ledless: boolean;
+  /** This phone holds a live Bluetooth link (`showsWallHoldLook`). */
+  localConnected?: boolean;
   holderDisplayName: string | null;
 };
 
@@ -209,8 +231,9 @@ type BoardConnectionLabelInput = {
  */
 export function getBoardConnectionLabel(
   t: TFunction<'settings'>,
-  { boardConnection, ledless, holderDisplayName }: BoardConnectionLabelInput,
+  { boardConnection, ledless: ledlessBoard, localConnected = false, holderDisplayName }: BoardConnectionLabelInput,
 ): string {
+  const ledless = showsWallHoldLook({ ledless: ledlessBoard, localConnected });
   switch (boardConnection) {
     case 'connectedByMe':
       return t(ledless ? 'ble.barControl.wallHeldLabel' : 'ble.barControl.connectedLabel');

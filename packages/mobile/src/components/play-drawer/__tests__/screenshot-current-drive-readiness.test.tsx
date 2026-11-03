@@ -6,7 +6,7 @@ import { ScreenshotCurrentDriveReadiness } from '../ScreenshotCurrentDriveReadin
 import { clearScreenshotDriveRequest, requestScreenshotDrive } from '../../../lib/screenshot-driving';
 
 const state = vi.hoisted(() => ({
-  board: { uuid: 'board-a', boardType: 'kilter', hasLeds: true },
+  board: { uuid: 'board-a', boardType: 'kilter', hasLeds: true, litByWallDevice: false },
   boardPending: false,
   boardAvailable: true,
   headAvailable: true,
@@ -54,7 +54,7 @@ beforeEach(() => {
   ])
     vi.stubEnv(name, '1');
   Object.assign(state, {
-    board: { uuid: 'board-a', boardType: 'kilter', hasLeds: true },
+    board: { uuid: 'board-a', boardType: 'kilter', hasLeds: true, litByWallDevice: false },
     boardPending: false,
     boardAvailable: true,
     headAvailable: true,
@@ -151,12 +151,6 @@ describe('current driving screenshot proof', () => {
       },
     ],
     [
-      'ledless connection',
-      () => {
-        state.connection.ledless = true;
-      },
-    ],
-    [
       'link dropped',
       () => {
         state.connection.localConnected = false;
@@ -241,6 +235,14 @@ describe('current driving screenshot proof', () => {
     change();
     view.rerender(<ScreenshotCurrentDriveReadiness />);
     expect(view.queryByTestId(readyId)).toBeNull();
+  });
+
+  it("stays ready on a wall-device board over this phone's live link, which writes its LEDs", () => {
+    state.board.litByWallDevice = true;
+    state.connection.ledless = true;
+    act(() => requestScreenshotDrive('board-a', 'climb-a'));
+    const view = render(<ScreenshotCurrentDriveReadiness />);
+    expect(view.getByTestId(readyId)).toBeTruthy();
   });
 
   it('uses a distinct kiosk marker with the same live-state guards', () => {

@@ -298,7 +298,8 @@ describe('BoardControlIndicator while this phone drives the wall', () => {
     });
     for (const board of [
       { inAppBoardConnection: 'heldByPeer' as const },
-      { ledless: true },
+      // A wall with no lights, held with no link: nothing drives the LEDs.
+      { ledless: true, localConnected: false },
       { localConnected: false },
     ]) {
       signals.board = { ...signals.board, inAppBoardConnection: 'connectedByMe', ledless: false, localConnected: true };

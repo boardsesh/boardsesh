@@ -24,6 +24,7 @@ import { AccessoryConnectionBadge } from './AccessoryConnectionBadge';
 import {
   getBoardConnectionBadgeVisual,
   getBoardConnectionLabel,
+  showsWallHoldLook,
   type BoardConnectionBadgeVisual,
 } from './board-control-indicator-state';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
@@ -306,6 +307,7 @@ export function NativeAccessoryClimbRow({
     connectedColor: brandColors.warning,
     peerColor: systemColors.secondaryLabel,
     ledless,
+    localConnected,
     wallHeldColor: brandColors.primary,
   });
   // The last pick's bulb (owner decision A): lit, unlit (Put on board), or
@@ -331,7 +333,9 @@ export function NativeAccessoryClimbRow({
   const collapsedSlotShowsBulb =
     bulbAvailable &&
     (driveCue === 'drain' ||
-      (pickBulb !== null ? pickBulb.kind === 'putOnBoard' && !ledless : inAppBoardConnection === 'disconnected'));
+      (pickBulb !== null
+        ? pickBulb.kind === 'putOnBoard' && !showsWallHoldLook({ ledless, localConnected })
+        : inAppBoardConnection === 'disconnected'));
   const isDraft = climb.is_draft === true;
   const climbBoardName = climbBoard?.boardName ?? null;
   const climbLayoutId = climbBoard?.layoutId ?? null;
@@ -386,7 +390,12 @@ export function NativeAccessoryClimbRow({
   const bulbSpeaks = controls.trailing.includes('lightbulb') && bulbAvailable;
   const connectionLabel =
     !bulbSpeaks && inAppBoardConnection !== 'disconnected'
-      ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })
+      ? getBoardConnectionLabel(t, {
+          boardConnection: inAppBoardConnection,
+          ledless,
+          localConnected,
+          holderDisplayName,
+        })
       : undefined;
   const connectionValue =
     connectionLabel !== undefined && driveCue !== null
