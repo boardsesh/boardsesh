@@ -59,12 +59,23 @@ export function selectNativeNotesPullRequests(
   return [...selected.values()];
 }
 
-/** The label is cross-platform; only the bot's final-head iOS row proves relevance. */
+/**
+ * The label is cross-platform; only the bot's final-head iOS row proves an
+ * Android-only change. When that proof is missing, stale or unreadable, keep the
+ * PR in the iOS notes and warn. Notes are advisory: on 2026-11-02 a strict check
+ * here blocked 2.7.0 build 10 from Discord Users because #7203 merged main into
+ * its branch after the OTA check last commented.
+ */
 export function hasIosNativeChange(
   pullRequest: NativeNotesPullRequest,
   comments: readonly OtaComment[],
   resolveCommit?: (reportedSha: string) => OtaCommit,
+  warn: (message: string) => void = (message) => console.warn(`::warning::${message}`),
 ): boolean {
+  const unproven = (reason: string): true => {
+    warn(`PR #${pullRequest.number} ${reason}; its test plan stays in the iOS notes.`);
+    return true;
+  };
   const comment = comments
     .filter(
       (candidate) =>
@@ -79,20 +90,23 @@ export function hasIosNativeChange(
   // Before the producer was corrected, pull_request runs reported their synthetic
   // merge ref. Recover only that exact form, with GitHub proving its final head.
   if (!finalHead && reportedHead && reported?.[1] === `${pullRequest.number}/merge` && resolveCommit) {
-    const commit = resolveCommit(reportedHead);
+    let commit: OtaCommit;
+    try {
+      commit = resolveCommit(reportedHead);
+    } catch (error) {
+      return unproven(`has unreadable OTA commit evidence (${error instanceof Error ? error.message : String(error)})`);
+    }
     finalHead =
       /^[0-9a-f]{40}$/.test(commit.sha) &&
       commit.sha.startsWith(reportedHead) &&
       commit.parents.length === 2 &&
       commit.parents[1] === pullRequest.headRefOid;
   }
-  if (!finalHead || !comment) {
-    throw new Error(`PR #${pullRequest.number} needs an OTA compatibility comment for its final head.`);
-  }
+  if (!finalHead || !comment) return unproven('has no OTA compatibility comment for its final head');
   const iosRows = comment.body.split('\n').filter((line) => line.startsWith('| iOS |'));
   if (iosRows.length === 1 && iosRows[0].startsWith('| iOS | ⚠️ Native change |')) return true;
   if (iosRows.length === 1 && iosRows[0].startsWith('| iOS | ✅ Compatible |')) return false;
-  throw new Error(`PR #${pullRequest.number} has an unknown or unreadable iOS native verdict.`);
+  return unproven('has an unknown or unreadable iOS native verdict');
 }
 
 function plainText(text: string): string {
