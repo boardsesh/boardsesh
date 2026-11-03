@@ -122,6 +122,10 @@ vi.mock('../../../src/lib/graphql/use-active-board', () => ({
 }));
 
 vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
+vi.mock('../../../src/lib/graphql/use-board-link-mode', () => ({
+  useBoardLinkMode: () => ({ linkMode: { moonboardLinkMode: null, moonboardLinkDetected: null }, settled: true }),
+}));
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true }),

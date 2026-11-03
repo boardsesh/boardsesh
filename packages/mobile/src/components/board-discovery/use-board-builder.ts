@@ -37,6 +37,8 @@ export type BoardBuilderSeed = {
   hideLocation?: boolean;
   isAngleAdjustable?: boolean;
   hasLeds?: boolean;
+  /** MoonBoard only (#7220); null = no choice, so the app's detection applies. */
+  moonboardLinkMode?: 'relay' | 'multi' | null;
   locationName?: string;
   latitude?: number | null;
   longitude?: number | null;
@@ -129,6 +131,8 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // common case needs no thought. Turning it off is what unlocks the no-LED
   // "active climb" flow (#4585).
   const [hasLeds, setHasLeds] = useState(seed?.hasLeds ?? true);
+  // MoonBoard link mode (#7220). null = Detect automatically.
+  const [moonboardLinkMode, setMoonboardLinkMode] = useState<'relay' | 'multi' | null>(seed?.moonboardLinkMode ?? null);
   const [locationName, setLocationName] = useState(seed?.locationName ?? '');
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(
     seed?.latitude != null && seed?.longitude != null ? { latitude: seed.latitude, longitude: seed.longitude } : null,
@@ -294,6 +298,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       hideLocation,
       isAngleAdjustable,
       hasLeds,
+      ...(boardName === 'moonboard' && moonboardLinkMode ? { moonboardLinkMode } : {}),
       serialNumber: serialNumber.trim() || undefined,
       timerName: timerName.trim() || undefined,
       locationName: locationName.trim() || undefined,
@@ -339,6 +344,8 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       hideLocation,
       isAngleAdjustable,
       hasLeds,
+      // null clears a stored choice back to detection.
+      ...(boardName === 'moonboard' ? { moonboardLinkMode } : {}),
       // null (not undefined) so emptying a previously-set field clears it on the
       // server — undefined would leave the old value in place (see UpdateBoardInput).
       serialNumber: serialNumber.trim() || null,
@@ -381,6 +388,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     hideLocation,
     isAngleAdjustable,
     hasLeds,
+    moonboardLinkMode,
     locationName,
     coords,
     serialNumber,
@@ -407,6 +415,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     setHideLocation,
     setIsAngleAdjustable,
     setHasLeds,
+    setMoonboardLinkMode,
     setLocationName,
     setCoords,
     setSerialNumber,

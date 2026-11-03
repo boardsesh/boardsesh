@@ -87,7 +87,9 @@ import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
 import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
 import { SHEET_SETTLE_MS } from './sheet-presentation-provider';
-import { useStaleCurrentHoldEnabled } from './feature-flags-provider';
+import { useMoonboardRelayModeEnabled, useStaleCurrentHoldEnabled } from './feature-flags-provider';
+import type { ResolvedMoonboardLinkMode } from '@boardsesh/board-config';
+import { reportMoonboardLinkDetection } from '../lib/ble/moonboard-link-detection';
 
 export type ReassertWallOptions = {
   /** A press whose own connect brought the link up: carry the ask to that link. */
@@ -1018,6 +1020,8 @@ type BluetoothProviderProps = {
    * behaviour.
    */
   hasLeds?: boolean;
+  /** MoonBoard link mode (#7220): choice, else detection, else relay. Null on other boards. */
+  moonboardLinkMode?: ResolvedMoonboardLinkMode | null;
   children: React.ReactNode;
 };
 
@@ -1030,6 +1034,7 @@ export function BluetoothProvider({
   boardSerialNumber,
   reachableBoardKeys,
   hasLeds,
+  moonboardLinkMode,
   children,
 }: BluetoothProviderProps) {
   const ledless = hasLeds === false;
@@ -1569,6 +1574,27 @@ export function BluetoothProvider({
   // captured when that exact generation opened. Release and analytics must use
   // that snapshot: the provider may already be rendering a different route by
   // the time a config-switch teardown completes.
+  // MoonBoard link mode (#7220): analytics on every connection event, and
+  // detection from the controller's write characteristic on an iOS connect.
+  const relayModeEnabled = useMoonboardRelayModeEnabled();
+  const linkModeAnalytics = useMemo(
+    () => (moonboardLinkMode ? { linkMode: moonboardLinkMode.mode, linkModeSource: moonboardLinkMode.source } : null),
+    [moonboardLinkMode],
+  );
+  const linkModeAnalyticsRef = useRef(linkModeAnalytics);
+  linkModeAnalyticsRef.current = linkModeAnalytics;
+  const linkDetectionContextRef = useRef({ relayModeEnabled, boardName, presenceBoardId });
+  linkDetectionContextRef.current = { relayModeEnabled, boardName, presenceBoardId };
+  const handleConnectionDiagnostics = useCallback((diagnostics: { characteristicProperties?: number } | null) => {
+    const context = linkDetectionContextRef.current;
+    reportMoonboardLinkDetection({
+      enabled: context.relayModeEnabled,
+      boardType: context.boardName,
+      boardId: context.presenceBoardId,
+      characteristicProperties: diagnostics?.characteristicProperties,
+    });
+  }, []);
+
   const handleBluetoothConnectionEnded = useCallback(
     (connection: BleConnectionEnded) => {
       // Before the hook drops `isConnected`: a drive this link carried ends as
@@ -1602,6 +1628,7 @@ export function BluetoothProvider({
         disconnectTrigger: connection.disconnectTrigger,
         inSession: connection.inSession,
         connectionDurationSec: connection.connectionDurationSec,
+        ...linkModeAnalyticsRef.current,
       };
 
       if (connection.reason === 'unexpected') {
@@ -1648,6 +1675,8 @@ export function BluetoothProvider({
     holdsData,
     analyticsBoardId: presenceBoardId,
     analyticsInSession: sessionId != null,
+    analyticsLinkMode: linkModeAnalytics,
+    onConnectionDiagnostics: handleConnectionDiagnostics,
     ledColorOverrides: bluetoothColorOverrides,
     moonboardLightAdjacentHolds,
     encodingSignature,

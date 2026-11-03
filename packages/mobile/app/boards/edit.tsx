@@ -14,6 +14,8 @@ import {
   useUpdateSprayWall,
 } from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
+import { useBoardLinkMode } from '../../src/lib/graphql/use-board-link-mode';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   extractGraphqlMessage,
   isBoardLimitError,
@@ -51,10 +53,20 @@ export default function EditBoard() {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
 
-  const { data: board, isLoading } = useBoard(boardUuid ?? null);
+  const { data: fetchedBoard, isLoading } = useBoard(boardUuid ?? null);
+  // MoonBoard link mode (#7220) comes from its own query; wait for it so the
+  // builder seeds the stored choice, not "Detect automatically".
+  const { linkMode, settled: linkModeSettled } = useBoardLinkMode(
+    fetchedBoard?.uuid,
+    fetchedBoard?.boardType === 'moonboard',
+  );
+  const board = useMemo(
+    () => (fetchedBoard && fetchedBoard.boardType === 'moonboard' ? { ...fetchedBoard, ...linkMode } : fetchedBoard),
+    [fetchedBoard, linkMode],
+  );
   const boardName = board ? toBoardName(board.boardType) : null;
 
-  if (isLoading) {
+  if (isLoading || !linkModeSettled) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />
@@ -116,6 +128,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   const { data: activeBoard } = useActiveBoard();
   const setActiveBoard = useSetActiveBoard();
   const updateBoard = useUpdateBoard();
+  const queryClient = useQueryClient();
   const linkBoardToGym = useLinkBoardToGym();
   const updateSprayWall = useUpdateSprayWall();
 
@@ -199,6 +212,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       hideLocation: board.hideLocation,
       isAngleAdjustable: board.isAngleAdjustable,
       hasLeds: board.hasLeds,
+      moonboardLinkMode: board.moonboardLinkMode ?? null,
       locationName: board.locationName ?? undefined,
       latitude: board.latitude ?? undefined,
       longitude: board.longitude ?? undefined,
@@ -273,6 +287,8 @@ function EditBoardForm({ board }: { board: UserBoard }) {
           ...input,
           allowDuplicateConfig: options?.allowDuplicateConfig,
         });
+        // The link mode rides its own query (#7220); refresh it with the save.
+        void queryClient.invalidateQueries({ queryKey: ['boardLinkMode', board.uuid] });
 
         // The wall's own mutation, reported on its own terms like the gym link
         // below: the name and the gym DID save, and a moderator who may edit the
@@ -424,6 +440,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       lockedConfig,
       defaultName,
       updateBoard,
+      queryClient,
       linkBoardToGym,
       activeBoard?.uuid,
       setActiveBoard,

@@ -1,6 +1,9 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
+import { resolveMoonboardLinkMode } from '@boardsesh/board-config';
 import { BluetoothProvider } from './bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
+import { useBoardLinkMode } from '../lib/graphql/use-board-link-mode';
+import { useMoonboardRelayModeEnabled } from './feature-flags-provider';
 
 /**
  * Web twin of the native BluetoothProviderWrapper. Web Bluetooth
@@ -17,6 +20,14 @@ import { useActiveBoard } from '../lib/graphql/use-active-board';
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
+  // MoonBoard link mode (#7220): only fetched while Relay mode is on.
+  const relayModeEnabled = useMoonboardRelayModeEnabled();
+  const { linkMode } = useBoardLinkMode(activeBoard?.uuid, relayModeEnabled && activeBoard?.boardType === 'moonboard');
+  const boardType = activeBoard?.boardType;
+  const moonboardLinkMode = useMemo(
+    () => (boardType ? resolveMoonboardLinkMode({ boardType, ...linkMode }) : null),
+    [boardType, linkMode],
+  );
 
   return (
     <BluetoothProvider
@@ -26,6 +37,7 @@ export function BluetoothProviderWrapper({ children }: { children: ReactNode }) 
       setIds={activeBoard?.setIds}
       boardUuid={activeBoard?.uuid}
       hasLeds={activeBoard?.hasLeds}
+      moonboardLinkMode={moonboardLinkMode}
     >
       {children}
     </BluetoothProvider>

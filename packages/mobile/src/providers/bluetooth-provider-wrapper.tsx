@@ -1,6 +1,9 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
+import { resolveMoonboardLinkMode } from '@boardsesh/board-config';
 import { BluetoothProvider } from './bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
+import { useBoardLinkMode } from '../lib/graphql/use-board-link-mode';
+import { useMoonboardRelayModeEnabled } from './feature-flags-provider';
 import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
 
@@ -26,6 +29,14 @@ import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
+  // MoonBoard link mode (#7220): only fetched while Relay mode is on.
+  const relayModeEnabled = useMoonboardRelayModeEnabled();
+  const { linkMode } = useBoardLinkMode(activeBoard?.uuid, relayModeEnabled && activeBoard?.boardType === 'moonboard');
+  const boardType = activeBoard?.boardType;
+  const moonboardLinkMode = useMemo(
+    () => (boardType ? resolveMoonboardLinkMode({ boardType, ...linkMode }) : null),
+    [boardType, linkMode],
+  );
   // The auto-sender must not treat a climb on the board across the room the same
   // way it treats one on a board in another city. It still refuses to WRITE
   // either — this wall can't draw them — but it may not advance the queue past
@@ -42,6 +53,7 @@ export function BluetoothProviderWrapper({ children }: { children: ReactNode }) 
       boardUuid={activeBoard?.uuid}
       boardSerialNumber={activeBoard?.serialNumber}
       hasLeds={activeBoard?.hasLeds}
+      moonboardLinkMode={moonboardLinkMode}
     >
       {activeBoard ? (
         <LiveActivityBridge

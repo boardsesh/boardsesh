@@ -40,6 +40,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetAngles',
   'GetBetaLinks',
   'GetBoardBySlug',
+  // MoonBoard link mode (#7220): useBoardLinkMode never asks in screenshot mode.
+  'GetBoardLinkMode',
   'GetBoardsBySerialNumbers',
   'GetClimbLogs',
   'GetClimbLostHolds',

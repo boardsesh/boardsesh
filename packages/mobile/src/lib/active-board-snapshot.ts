@@ -15,6 +15,10 @@ export function sanitizeActiveBoard(board: UserBoard): UserBoard {
     angle: board.angle,
     isAngleAdjustable: board.isAngleAdjustable,
     hasLeds: board.hasLeds,
+    // Relay mode (#7220) reads the effective link mode offline too.
+    moonboardLinkMode: board.moonboardLinkMode,
+    moonboardLinkDetected: board.moonboardLinkDetected,
+    moonboardLinkModeEffective: board.moonboardLinkModeEffective,
     // Existing local hardware associations remain usable without a connection.
     serialNumber: board.serialNumber,
     timerName: board.timerName,
