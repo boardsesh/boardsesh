@@ -254,6 +254,10 @@ describe('line 2 for the note', () => {
   it.each([
     ['the busy-wall question', { busyWallUp: true, crewPutUpCaption: null }],
     ["a crewmate's put-up", { busyWallUp: false, crewPutUpCaption: 'Your crew put up Crimp Ladder' }],
+    [
+      'the board letting go mid-drive',
+      { busyWallUp: false, letsGoCaption: 'Sam took the board', crewPutUpCaption: null },
+    ],
   ])('gives line 2 to %s', (_case, outranking) => {
     expect(resolvePreviewNoteOnLine({ previewNote: note, ...outranking })).toBeNull();
   });

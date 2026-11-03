@@ -198,6 +198,7 @@ vi.mock('../../lib/board-details', () => ({
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { clearRelayReceipt, noteRelayReceipt } from '../../lib/relay-receipt';
+import { resetLinkEndForTests, takeLinkEnd } from '../../lib/ble/link-end-store';
 
 // Must match VIRTUAL_WALL_SETTLE_MS in the provider.
 const SETTLE_MS = 600;
@@ -449,6 +450,8 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     expect(queue.reportWallDisconnect).toHaveBeenCalled();
     expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(42);
     expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+    // A hand-back is the climber's own: a drive it ends says nothing (board plan item 8).
+    expect(takeLinkEnd()).toMatchObject({ deliberate: true, takenByPeer: false });
 
     queue.currentClimbQueueItem = makeQueueItem('climb-after-release');
     await act(async () => {
@@ -589,12 +592,15 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
     const { rerender } = renderProvider();
     await takeTheWall();
     expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+    resetLinkEndForTests();
 
     bluetooth.state.isConnected = true;
     await rerenderWith(rerender);
 
     expect(capturedBluetooth?.virtualWallHeld).toBe(false);
     expect(capturedBluetooth?.canDriveWall).toBe(true);
+    // A handoff to the radio ends no link: nothing is noted.
+    expect(takeLinkEnd()).toBeNull();
   });
 
   it('gives the wall up when another signed-in climber takes the holder slot', async () => {
@@ -610,6 +616,8 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
 
     expect(capturedBluetooth?.virtualWallHeld).toBe(false);
     expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(42);
+    // Not the climber's doing: a drive it ends is said (board plan item 8).
+    expect(takeLinkEnd()).toMatchObject({ deliberate: false, takenByPeer: true });
   });
 
   it('watches the holder on a ledless board even when nothing is held here', async () => {

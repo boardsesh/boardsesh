@@ -122,13 +122,16 @@ export function formatPreviewNote(upNextCount: number, t: TFunction<'session'>):
 export function resolvePreviewNoteOnLine({
   previewNote,
   busyWallUp,
+  letsGoCaption = null,
   crewPutUpCaption,
 }: {
   previewNote: string | null;
   busyWallUp: boolean;
+  /** The board let go mid-drive (`use-board-lets-go.ts`): it outranks the note on line 2. */
+  letsGoCaption?: string | null;
   crewPutUpCaption: string | null;
 }): string | null {
-  return busyWallUp || crewPutUpCaption !== null ? null : previewNote;
+  return busyWallUp || letsGoCaption !== null || crewPutUpCaption !== null ? null : previewNote;
 }
 
 /** What the step did to the walk, for `Queue Navigation`'s `track`, `from`, `upNextBucket` and `crossed`. */

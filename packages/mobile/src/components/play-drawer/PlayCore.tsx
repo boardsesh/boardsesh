@@ -208,6 +208,7 @@ import { useWallControl, type DriveStartOutcome } from './use-wall-control';
 import { useDriveLightingMode, useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
 import { startDrive, startKeepLighting } from './drive-runner';
 import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
+import { formatLetsGo, useLetsGo } from './board-lets-go-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
@@ -2247,18 +2248,28 @@ export function PlayCore({
   const crewPutUp = useCrewPutUp();
   const crewPutUpCaption =
     crewPutUp && displayedQueueItemUuid === crewPutUp.queueItemUuid ? formatCrewPutUp(crewPutUp, t) : null;
-  // Line 2's order: the busy wall, a crewmate's put-up, the preview note
+  // The board let go mid-drive (board plan item 8): "Sam took the board", or
+  // "Board disconnected · Put on board reconnects", for 10 s on any climb,
+  // beside the board art and never over it (`use-board-lets-go.ts`).
+  const letsGo = useLetsGo();
+  const letsGoCaption = letsGo ? formatLetsGo(letsGo, t, { short: true }) : null;
+  // Line 2's order: the busy wall, the board letting go, a crewmate's put-up, the preview note
   // ("Preview · Up next: 4 waiting", in place of "not on the wall"), the browse
   // caption, then on the climber's own climb "Up next first · 4 climbs".
   const topBarCaption = busyWall.model
     ? formatBusyWallCaption(busyWall.model, t)
-    : (crewPutUpCaption ?? thenSignposts.previewNote ?? browseCaption ?? thenSignposts.upNextFirstCaption);
+    : (letsGoCaption ??
+      crewPutUpCaption ??
+      thenSignposts.previewNote ??
+      browseCaption ??
+      thenSignposts.upNextFirstCaption);
   // The note on line 2 now: only then does it spend its caps (once per open,
   // three per run), and a screen reader hears it as the board's value, which
   // VoiceOver and TalkBack read after the adjust action that earned it.
   const previewNoteOnLine = resolvePreviewNoteOnLine({
     previewNote: thenSignposts.previewNote,
     busyWallUp: busyWall.model != null,
+    letsGoCaption,
     crewPutUpCaption,
   });
   const { markPreviewNoteShown } = thenSignposts;

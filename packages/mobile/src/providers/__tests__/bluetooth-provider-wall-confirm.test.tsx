@@ -308,6 +308,7 @@ import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
 import { noteRelayReceipt, clearRelayReceipt } from '../../lib/relay-receipt';
 import { readHeldQueueItemUuid } from '../../lib/held-climb-reader';
+import { resetLinkEndForTests, takeLinkEnd } from '../../lib/ble/link-end-store';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -3690,6 +3691,52 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
 
       expect(queue.reportWallDisconnect).toHaveBeenCalled();
+    });
+
+    // Board plan item 8: the drive's watcher says only a drop this phone didn't make.
+    it.each([
+      ['an unexpected drop', 'unexpected', 'link_drop', undefined, false],
+      [
+        'the board closing the link',
+        'unexpected',
+        'link_drop',
+        { source: 'native-ios', iosErrorCode: 7, errorDomain: 'CBErrorDomain' },
+        false,
+      ],
+      [
+        'switching Bluetooth off',
+        'unexpected',
+        'link_drop',
+        { source: 'native-ios', context: 'bluetooth_unavailable', description: 'central state 4' },
+        true,
+      ],
+      [
+        'the Bluetooth stack restarting',
+        'unexpected',
+        'link_drop',
+        { source: 'native-ios', context: 'bluetooth_unavailable', description: 'central state 1' },
+        false,
+      ],
+      ['a hang-up', 'user', 'explicit_user', undefined, true],
+      ['a board switch', 'user', 'config_switch', undefined, true],
+      ['freeing the board as a drive ends', 'user', 'driving_ended', undefined, true],
+    ] as const)('notes %s as the link’s end', (_case, reason, disconnectTrigger, disconnectInfo, deliberate) => {
+      resetLinkEndForTests();
+      renderProvider();
+      act(() => {
+        bluetooth.options?.onConnectionEnded?.({
+          reason,
+          disconnectTrigger,
+          connectionDurationSec: 4,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          inSession: true,
+          ...(disconnectInfo ? { disconnectInfo } : {}),
+        });
+      });
+      expect(takeLinkEnd()).toMatchObject({ deliberate, takenByPeer: false });
     });
 
     it('reports wall disconnect to the session on an unexpected BLE drop', async () => {

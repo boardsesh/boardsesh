@@ -121,6 +121,7 @@ export {
   driveModeStarted,
   type DriveModeEndReason,
   type DriveModeStartedBy,
+  type DriveModeTakenBy,
   type DriveModeEndedInput,
   type DriveModeEndedProps,
   type DriveModeStartedInput,
