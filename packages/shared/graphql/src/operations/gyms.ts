@@ -240,9 +240,6 @@ const GYM_BOARD_FIELDS = `
   angle
   isAngleAdjustable
   hasLeds
-  moonboardLinkMode
-  moonboardLinkDetected
-  moonboardLinkModeEffective
   isPublic
   isUnlisted
   locationName

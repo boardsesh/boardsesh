@@ -597,7 +597,9 @@
       "ownerOnlyCredentials": "Only the board owner can see or change controller credentials.",
       "moonboardLinkModeAuto": "Boardsesh checks the controller the first time an iPhone connects. Until then it uses Relay mode.",
       "moonboardLinkModeRelay": "The first phone to connect keeps the board. Others light climbs through it.",
-      "moonboardLinkModeMulti": "Every phone can connect and light climbs."
+      "moonboardLinkModeMulti": "Every phone can connect and light climbs.",
+      "moonboardLinkModeDetectedRelay": "Detected: one phone at a time. Boardsesh uses Relay mode.",
+      "moonboardLinkModeDetectedMulti": "Detected: every phone can connect."
     },
     "alerts": {
       "configEditable": "You can change the layout, size, and hold sets. Climbs already logged stay put."

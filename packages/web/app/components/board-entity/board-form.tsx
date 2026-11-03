@@ -101,6 +101,8 @@ type BoardFormProps = {
   saving?: boolean;
   /** Show the MoonBoard "Phones on this MoonBoard" choice (#7220). */
   showMoonboardLinkMode?: boolean;
+  /** What the app detected from the controller, phrased under "Detect automatically". */
+  moonboardLinkDetected?: 'relay' | 'multi' | null;
 };
 
 const NAME_MAX_LENGTH = 100;
@@ -131,6 +133,7 @@ export default function BoardForm({
   permissions,
   saving = false,
   showMoonboardLinkMode = false,
+  moonboardLinkDetected = null,
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const resolvedDescriptionPlaceholder = descriptionPlaceholder ?? t('boardForm.placeholders.description');
@@ -494,7 +497,11 @@ export default function BoardForm({
                     ? t('boardForm.helperText.moonboardLinkModeRelay')
                     : moonboardLinkMode === 'multi'
                       ? t('boardForm.helperText.moonboardLinkModeMulti')
-                      : t('boardForm.helperText.moonboardLinkModeAuto')
+                      : moonboardLinkDetected === 'relay'
+                        ? t('boardForm.helperText.moonboardLinkModeDetectedRelay')
+                        : moonboardLinkDetected === 'multi'
+                          ? t('boardForm.helperText.moonboardLinkModeDetectedMulti')
+                          : t('boardForm.helperText.moonboardLinkModeAuto')
                 }
               >
                 {(field) => (

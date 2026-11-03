@@ -597,7 +597,9 @@
       "ownerOnlyCredentials": "Seul le propriétaire de la board peut consulter ou modifier les identifiants du contrôleur.",
       "moonboardLinkModeAuto": "Boardsesh vérifie le boîtier la première fois qu'un iPhone se connecte. D'ici là, le mode relais s'applique.",
       "moonboardLinkModeRelay": "Le premier téléphone connecté garde la board. Les autres allument les blocs à travers lui.",
-      "moonboardLinkModeMulti": "Tous les téléphones peuvent se connecter et allumer les blocs."
+      "moonboardLinkModeMulti": "Tous les téléphones peuvent se connecter et allumer les blocs.",
+      "moonboardLinkModeDetectedRelay": "Détecté : un téléphone à la fois. Boardsesh utilise le mode relais.",
+      "moonboardLinkModeDetectedMulti": "Détecté : tous les téléphones peuvent se connecter."
     },
     "alerts": {
       "configEditable": "Vous pouvez modifier le layout, la taille et les jeux de prises. Les blocs déjà enregistrés restent intacts."

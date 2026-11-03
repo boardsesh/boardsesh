@@ -27,6 +27,7 @@ import { ANGLES } from '@/app/lib/board-data';
 import { getBoardSelectorOptions } from '@/app/lib/board-constants';
 import BoardForm, { type BoardFormFieldValues, type BoardFormSubmitState } from './board-form';
 import { boardEditPermissions, buildBoardUpdateInput } from './board-edit-input';
+import { useBoardLinkMode } from '@/app/hooks/use-board-link-mode';
 
 type EditBoardFormProps = {
   onDirtyChange?: (isDirty: boolean) => void;
@@ -46,7 +47,15 @@ type EditBoardFormProps = {
 );
 
 export default function EditBoardForm(props: EditBoardFormProps) {
-  const { board, onCancel, formId, onSubmitStateChange, onDirtyChange, onSavingChange } = props;
+  const { onCancel, formId, onSubmitStateChange, onDirtyChange, onSavingChange } = props;
+  // MoonBoard link mode (#7220): the admin projection carries it; an ordinary
+  // board read does not (see GET_BOARD_LINK_MODE), so fetch it for MoonBoards.
+  const fetchLinkMode = props.mode !== 'admin' && props.board.boardType === 'moonboard';
+  const { linkMode, settled: linkModeSettled } = useBoardLinkMode(props.board.uuid, fetchLinkMode);
+  const board = useMemo(
+    () => (fetchLinkMode ? { ...props.board, ...linkMode } : props.board),
+    [fetchLinkMode, props.board, linkMode],
+  );
   const { t } = useTranslation('boards');
   const { showMessage } = useSnackbar();
   const { data: session } = useSession();
@@ -171,44 +180,47 @@ export default function EditBoardForm(props: EditBoardFormProps) {
 
   return (
     <>
-      <BoardForm
-        // The host drawer titles the surface + hosts the action bar when it asks
-        // for submit-state reporting; drop the in-form title so it isn't doubled.
-        title={onSubmitStateChange ? '' : t('editBoard.title')}
-        submitLabel={t('editBoard.submitLabel')}
-        initialValues={{
-          name: board.name,
-          slug: board.slug,
-          description: board.description ?? '',
-          locationName: board.locationName ?? '',
-          latitude: board.latitude ?? null,
-          longitude: board.longitude ?? null,
-          isPublic: board.isPublic,
-          isUnlisted: board.isUnlisted,
-          hideLocation: board.hideLocation,
-          isOwned: board.isOwned,
-          angle: board.angle,
-          isAngleAdjustable: board.isAngleAdjustable,
-          hasLeds: board.hasLeds,
-          moonboardLinkMode: board.moonboardLinkMode ?? null,
-          layoutId: board.layoutId,
-          sizeId: board.sizeId,
-          setIds: board.setIds,
-          serialNumber: board.serialNumber ?? '',
-        }}
-        showSlugField
-        showMoonboardLinkMode={board.boardType === 'moonboard'}
-        availableAngles={availableAngles}
-        configEditable={configEditable}
-        onSubmit={handleSubmit}
-        onCancel={onCancel}
-        formId={formId}
-        onSubmitStateChange={onSubmitStateChange}
-        onDirtyChange={onDirtyChange}
-        requireChanges
-        permissions={permissions}
-        saving={isSaving}
-      />
+      {linkModeSettled ? (
+        <BoardForm
+          // The host drawer titles the surface + hosts the action bar when it asks
+          // for submit-state reporting; drop the in-form title so it isn't doubled.
+          title={onSubmitStateChange ? '' : t('editBoard.title')}
+          submitLabel={t('editBoard.submitLabel')}
+          initialValues={{
+            name: board.name,
+            slug: board.slug,
+            description: board.description ?? '',
+            locationName: board.locationName ?? '',
+            latitude: board.latitude ?? null,
+            longitude: board.longitude ?? null,
+            isPublic: board.isPublic,
+            isUnlisted: board.isUnlisted,
+            hideLocation: board.hideLocation,
+            isOwned: board.isOwned,
+            angle: board.angle,
+            isAngleAdjustable: board.isAngleAdjustable,
+            hasLeds: board.hasLeds,
+            moonboardLinkMode: board.moonboardLinkMode ?? null,
+            layoutId: board.layoutId,
+            sizeId: board.sizeId,
+            setIds: board.setIds,
+            serialNumber: board.serialNumber ?? '',
+          }}
+          showSlugField
+          showMoonboardLinkMode={board.boardType === 'moonboard'}
+          moonboardLinkDetected={board.moonboardLinkDetected ?? null}
+          availableAngles={availableAngles}
+          configEditable={configEditable}
+          onSubmit={handleSubmit}
+          onCancel={onCancel}
+          formId={formId}
+          onSubmitStateChange={onSubmitStateChange}
+          onDirtyChange={onDirtyChange}
+          requireChanges
+          permissions={permissions}
+          saving={isSaving}
+        />
+      ) : null}
       {/* A dialog, not a snackbar: this is a choice, and the snackbar's single
           action slot can't carry one. Before this the guard was a flat
           "Failed to update board" with no way past it. */}

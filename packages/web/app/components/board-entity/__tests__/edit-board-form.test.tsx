@@ -33,6 +33,9 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
 
 const mockTrack = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/analytics', () => ({ track: mockTrack }));
+vi.mock('@/app/hooks/use-board-link-mode', () => ({
+  useBoardLinkMode: () => ({ linkMode: { moonboardLinkMode: null, moonboardLinkDetected: null }, settled: true }),
+}));
 
 const mockExecute = vi.hoisted(() => vi.fn());
 const errorHolder = vi.hoisted(() => ({

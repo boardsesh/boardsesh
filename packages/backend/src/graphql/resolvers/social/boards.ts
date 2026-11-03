@@ -1984,11 +1984,22 @@ export async function updateBoardRecord(
   if (validatedInput.angle !== undefined) updateValues.angle = validatedInput.angle;
   if (validatedInput.isAngleAdjustable !== undefined) updateValues.isAngleAdjustable = validatedInput.isAngleAdjustable;
   if (validatedInput.hasLeds !== undefined) updateValues.hasLeds = validatedInput.hasLeds;
-  if (validatedInput.moonboardLinkMode !== undefined) {
-    if (board.boardType !== 'moonboard') {
-      throw new GraphQLError('Only a MoonBoard has a link mode', { extensions: { code: 'BAD_USER_INPUT' } });
-    }
+  // A null echoed back on another board type is "no choice", not a change:
+  // refuse only a real value, like the hardware fields above.
+  if (validatedInput.moonboardLinkMode != null && board.boardType !== 'moonboard') {
+    throw new GraphQLError('Only a MoonBoard has a link mode', { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  if (validatedInput.moonboardLinkMode !== undefined && board.boardType === 'moonboard') {
     updateValues.moonboardLinkMode = validatedInput.moonboardLinkMode;
+  }
+  // A new controller serial is a new box: forget what the old one looked like,
+  // so the next iOS connect detects it afresh (detection only moves toward relay).
+  if (
+    board.boardType === 'moonboard' &&
+    validatedInput.serialNumber !== undefined &&
+    (validatedInput.serialNumber ?? null) !== (board.serialNumber ?? null)
+  ) {
+    updateValues.moonboardLinkDetected = null;
   }
   if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
   if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;

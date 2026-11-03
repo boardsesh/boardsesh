@@ -597,7 +597,9 @@
       "ownerOnlyCredentials": "Solo il proprietario del pannello può vedere o modificare le credenziali del controller.",
       "moonboardLinkModeAuto": "Boardsesh controlla la centralina la prima volta che si collega un iPhone. Fino ad allora usa la modalità relay.",
       "moonboardLinkModeRelay": "Il primo telefono che si collega tiene il pannello. Gli altri illuminano i blocchi tramite lui.",
-      "moonboardLinkModeMulti": "Ogni telefono può collegarsi e illuminare i blocchi."
+      "moonboardLinkModeMulti": "Ogni telefono può collegarsi e illuminare i blocchi.",
+      "moonboardLinkModeDetectedRelay": "Rilevato: un telefono alla volta. Boardsesh usa la modalità relay.",
+      "moonboardLinkModeDetectedMulti": "Rilevato: ogni telefono può collegarsi."
     },
     "alerts": {
       "configEditable": "Puoi cambiare layout, dimensione e set di prese. I blocchi già registrati restano dove sono."

@@ -88,9 +88,6 @@ export const BOARD_FIELDS = `
   angle
   isAngleAdjustable
   hasLeds
-  moonboardLinkMode
-  moonboardLinkDetected
-  moonboardLinkModeEffective
   createdAt
   layoutName
   sizeName
@@ -118,6 +115,32 @@ export const BOARD_FIELDS = `
  */
 const BOARD_FIELDS_WITH_BOARD_ID = `${BOARD_FIELDS}  boardId
 `;
+
+/**
+ * MoonBoard link mode (#7220), on its own operation on purpose: adding these
+ * fields to `BOARD_FIELDS` would change the recorded `GetBoard` / `GetMyBoards`
+ * / gym-switcher documents (screenshot fixtures) and break those whole lists on
+ * any client that meets a backend without the fields. Only MoonBoard surfaces
+ * ask for it, and a failure degrades to "no choice stored".
+ */
+export const GET_BOARD_LINK_MODE = gql`
+  query GetBoardLinkMode($boardUuid: ID!) {
+    board(boardUuid: $boardUuid) {
+      uuid
+      boardType
+      moonboardLinkMode
+      moonboardLinkDetected
+      moonboardLinkModeEffective
+    }
+  }
+`;
+
+export type GetBoardLinkModeQueryResponse = {
+  board: Pick<
+    UserBoard,
+    'uuid' | 'boardType' | 'moonboardLinkMode' | 'moonboardLinkDetected' | 'moonboardLinkModeEffective'
+  > | null;
+};
 
 export const GET_BOARD = gql`
   query GetBoard($boardUuid: ID!) {

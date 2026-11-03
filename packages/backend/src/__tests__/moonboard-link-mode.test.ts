@@ -125,6 +125,29 @@ describe('moonboard link mode: the person’s choice', () => {
   });
 });
 
+describe('moonboard link mode: edits that are not a choice', () => {
+  it('accepts an echoed null on a board that is not a MoonBoard', async () => {
+    const board = await createBoard();
+    await db.execute(sql`UPDATE user_boards SET board_type = 'kilter' WHERE uuid = ${board.uuid}`);
+    await expect(
+      updateBoard({ boardUuid: board.uuid, name: 'Renamed', moonboardLinkMode: null }),
+    ).resolves.toBeTruthy();
+    await expect(updateBoard({ boardUuid: board.uuid, moonboardLinkMode: 'multi' })).rejects.toThrow(
+      /Only a MoonBoard has a link mode/,
+    );
+  });
+
+  it('forgets the detected mode when the controller serial changes', async () => {
+    const { board, boardId } = await memberBoard();
+    await detect(boardId, 'relay');
+    await updateBoard({ boardUuid: board.uuid, name: 'Same box, renamed' });
+    expect((await rawRow(board.uuid)).moonboard_link_detected).toBe('relay');
+
+    await updateBoard({ boardUuid: board.uuid, serialNumber: 'NEWBOX1' });
+    expect((await rawRow(board.uuid)).moonboard_link_detected).toBeNull();
+  });
+});
+
 describe('reportMoonboardLinkDetected', () => {
   it('fills the detected column without freezing sync or touching updated_at', async () => {
     const { board, boardId } = await memberBoard();

@@ -597,7 +597,9 @@
       "ownerOnlyCredentials": "Solo el propietario del plafón puede ver o cambiar las credenciales del controlador.",
       "moonboardLinkModeAuto": "Boardsesh revisa el controlador la primera vez que se conecta un iPhone. Hasta entonces usa el modo relevo.",
       "moonboardLinkModeRelay": "El primer móvil que se conecta se queda con el plafón. Los demás encienden bloques a través de él.",
-      "moonboardLinkModeMulti": "Todos los móviles pueden conectarse y encender bloques."
+      "moonboardLinkModeMulti": "Todos los móviles pueden conectarse y encender bloques.",
+      "moonboardLinkModeDetectedRelay": "Detectado: un móvil a la vez. Boardsesh usa el modo relevo.",
+      "moonboardLinkModeDetectedMulti": "Detectado: todos los móviles pueden conectarse."
     },
     "alerts": {
       "configEditable": "Puedes cambiar la disposición, el tamaño y los conjuntos de presas. Los bloques ya registrados se mantienen igual."

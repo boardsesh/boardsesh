@@ -597,7 +597,9 @@
       "ownerOnlyCredentials": "Nur der*die Eigentümer*in des Boards kann Controller-Zugangsdaten sehen oder ändern.",
       "moonboardLinkModeAuto": "Boardsesh prüft den Controller, wenn sich zum ersten Mal ein iPhone verbindet. Bis dahin gilt die Weiterleitung.",
       "moonboardLinkModeRelay": "Das erste verbundene Handy behält das Board. Die anderen beleuchten das Board über dieses Handy.",
-      "moonboardLinkModeMulti": "Jedes Handy kann sich verbinden und das Board beleuchten."
+      "moonboardLinkModeMulti": "Jedes Handy kann sich verbinden und das Board beleuchten.",
+      "moonboardLinkModeDetectedRelay": "Erkannt: ein Handy zur Zeit. Boardsesh nutzt die Weiterleitung.",
+      "moonboardLinkModeDetectedMulti": "Erkannt: Jedes Handy kann sich verbinden."
     },
     "alerts": {
       "configEditable": "Du kannst Layout, Größe und Hold-Sets ändern. Schon eingetragene Begehungen bleiben erhalten."

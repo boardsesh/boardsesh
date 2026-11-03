@@ -1166,7 +1166,9 @@ export const boardPresenceMutations = {
     { boardId, detected }: { boardId: number; detected: string },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
-    await applyRateLimit(ctx, 10, 'reportMoonboardLinkDetected');
+    // Anonymous callers share one bucket per IP (#2863), so a gym behind one NAT
+    // needs headroom: every iOS connect at that gym may report.
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 10 : 60, 'reportMoonboardLinkDetected');
     assertValidBoardId(boardId);
     const validatedDetected = validateInput(MoonboardLinkModeSchema, detected, 'detected');
     const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
