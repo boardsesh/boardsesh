@@ -117,10 +117,18 @@ describe('isAdPixelPath', () => {
   it.each(['/', '/gyms', '/es', '/es/gyms', '/kilter', '/kiosks-are-not-kiosk', '/authors'])('allows %s', (path) => {
     expect(isAdPixelPath(path)).toBe(true);
   });
-  it.each(['/kiosk', '/kiosk/x', '/embed', '/embed/x', '/auth', '/auth/error', '/de/kiosk/x', '/fr/embed/x'])(
-    'excludes %s',
-    (path) => {
-      expect(isAdPixelPath(path)).toBe(false);
-    },
-  );
+  it.each([
+    '/kiosk',
+    '/kiosk/x',
+    '/embed',
+    '/embed/x',
+    '/auth',
+    '/auth/error',
+    '/de/kiosk/x',
+    '/fr/embed/x',
+    '/DE/auth/x',
+    '/Es/Embed/x',
+  ])('excludes %s', (path) => {
+    expect(isAdPixelPath(path)).toBe(false);
+  });
 });

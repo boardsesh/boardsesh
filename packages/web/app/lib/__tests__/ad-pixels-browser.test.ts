@@ -205,6 +205,7 @@ describe('ad pixels in the browser', () => {
     // Cleared on the host and on the parent domain the pixels write to.
     expect(cookieWrites).toContain('_fbp=; Max-Age=0; Path=/; Domain=boardsesh.com');
     expect(cookieWrites).toContain('_rdt_uuid=; Max-Age=0; Path=/');
+    expect(cookieWrites).toContain('_rdt_uuid=; Max-Age=0; Path=/; Domain=www.boardsesh.com');
   });
 
   it('withdraws when Global Privacy Control turns up on a region default', async () => {
@@ -217,19 +218,49 @@ describe('ad pixels in the browser', () => {
     expect(cookieJar.has('_rdt_uuid')).toBe(false);
   });
 
-  it('grants Meta again after a withdrawal and a new Allow', async () => {
+  it('stays off for the rest of the page load after a withdrawal, even on a new Allow', async () => {
     grant();
     const pixels = await loadModule();
     pixels.syncAdPixels('/');
     harness.record = null;
     pixels.syncAdPixels('/');
     grant();
-    pixels.syncAdPixels('/');
+    pixels.syncAdPixels('/gyms');
+    pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
     const metaQueue = testWindow().fbq?.queue ?? [];
-    expect(metaQueue.slice(-3)).toEqual([
-      ['consent', 'revoke'],
-      ['consent', 'grant'],
-      ['track', 'PageView'],
-    ]);
+    expect(metaQueue.at(-1)).toEqual(['consent', 'revoke']);
+    expect((testWindow().rdt?.callQueue ?? []).at(-1)).toEqual(['track', 'PageVisit']);
+    expect(testWindow().rdt?.callQueue).toHaveLength(2);
+  });
+
+  it('never loads inside the Capacitor app', async () => {
+    grant();
+    (window as unknown as { Capacitor?: unknown }).Capacitor = { isNativePlatform: () => true };
+    try {
+      const pixels = await loadModule();
+      pixels.syncAdPixels('/');
+      pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
+      expect(pixelScripts()).toEqual([]);
+    } finally {
+      delete (window as unknown as { Capacitor?: unknown }).Capacitor;
+    }
+  });
+
+  it('waits for the Capacitor bridge on a WebView user agent before the first event', async () => {
+    vi.useFakeTimers();
+    const userAgent = vi
+      .spyOn(navigator, 'userAgent', 'get')
+      .mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148');
+    try {
+      grant();
+      const pixels = await loadModule();
+      pixels.syncAdPixels('/');
+      expect(pixelScripts()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((testWindow().fbq?.queue ?? []).at(-1)).toEqual(['track', 'PageView']);
+    } finally {
+      userAgent.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

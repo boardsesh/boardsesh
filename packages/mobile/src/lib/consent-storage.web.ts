@@ -1,4 +1,5 @@
 import {
+  adPixelCookieExpiries,
   CONSENT_COOKIE_MAX_AGE_SECONDS,
   CONSENT_COOKIE_NAME,
   parseConsentCookieValue,
@@ -51,6 +52,11 @@ export async function persistLocalConsent(record: DeviceConsentRecord | null): P
   const sharedDomain = ['boardsesh.com', 'www.boardsesh.com', 'app.boardsesh.com'].includes(location.hostname);
   document.cookie = `${CONSENT_COOKIE_NAME}=${record ? serializeConsentCookieValue(record) : ''}; Path=/; Max-Age=${record ? CONSENT_COOKIE_MAX_AGE_SECONDS : 0}; SameSite=Lax${sharedDomain ? '; Domain=.boardsesh.com' : ''}${location.protocol === 'https:' ? '; Secure' : ''}`;
   observedCookie = record ? serializeConsentCookieValue(record) : undefined;
+  // www's Meta and Reddit pixels share `.boardsesh.com`. A No here must clear
+  // their cookies too, not wait for the next www visit (analytics-consent.md#ad-pixels).
+  if (record === null || record.analytics === 'denied') {
+    for (const expiry of adPixelCookieExpiries(location.hostname)) document.cookie = expiry;
+  }
 }
 
 export function readPendingConsent(accountId: string): Promise<PendingConsentDecision | null> {

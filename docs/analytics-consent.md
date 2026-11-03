@@ -849,12 +849,20 @@ the browser asking not to share for advertising, which is what a pixel does.
 On top of the record rule, the live gate needs `hasAnalyticsConsent()` (account
 resolved, region default confirmed), a production host (`boardsesh.com`,
 `www.boardsesh.com`) and a page outside `/kiosk`, `/embed`, `/auth` and
-`/admin` (any locale, any case).
+`/admin` (any locale, any case), and a page that is not the retired Capacitor
+app (tracking in its WebView would be app tracking without Apple's ATT prompt).
+The Capacitor bridge appears slightly after page JS, so a WebView-like user
+agent (which includes Instagram's and Reddit's in-app browsers) waits up to
+3 seconds for it before the first event.
 
 **`AD_MEASUREMENT_COPY_SINCE`** (`@boardsesh/consent`) replaces a
 `CONSENT_VERSION` bump, so nobody is asked again. It must be no earlier than
-the production deploy that shipped the banner copy (`consent:adMeasurement`).
-A later date only means a few Allows get no pixels; never move it earlier.
+the production deploys that shipped the copy (`consent:adMeasurement`) on both
+www and the browser app (a separate Cloudflare Pages build). A later date only
+means a few Allows get no pixels; never move it earlier. Nothing checks it
+automatically: set it at merge time. Known edge: a signed-in Allow whose
+account write is retried after the date gets the server's later stamp, so other
+browsers that adopt it count it.
 
 **Ids.** `NEXT_PUBLIC_META_PIXEL_ID` (digits) and `NEXT_PUBLIC_REDDIT_PIXEL_ID`
 (`a2_…`) are build-time GitHub Production-environment variables passed as
@@ -868,7 +876,10 @@ click, `trackAppInstallClick` (`packages/web/app/lib/track-app-install-click.ts`
 sends PostHog's `App Install Click` and then `reportAdLead`, which sends `Lead`
 to both with `platform` and `placement` only. No email, no account id, no
 hashed identifiers. Meta's `autoConfig` (automatic button and metadata events)
-and its own history-change page views are switched off.
+and its own history-change page views are switched off. **Automatic advanced
+matching** is a remote setting fbevents.js loads, not a code switch: keep it off
+in Meta Events Manager and in Reddit Ads' pixel settings, or the pixels could
+read an email typed into the sign-in modal.
 
 **Withdrawal.** On any definitive no (record above says off) `syncAdPixels`
 calls `fbq('consent', 'revoke')` and expires `_fbp`, `_fbc`, `_rdt_uuid` and
@@ -876,7 +887,12 @@ calls `fbq('consent', 'revoke')` and expires `_fbp`, `_fbc`, `_rdt_uuid` and
 cookie first, so a No thanks in Privacy choices, another tab or
 app.boardsesh.com stops the next event. A transient hold (account still
 resolving, region lookup pending) only pauses: clearing the browser id there
-would reset it on every page load.
+would reset it on every page load. A withdrawal is final for the page load:
+fbevents.js keeps the old browser id in memory after its cookie goes, so a new
+Allow starts the pixels on the next page load, with a fresh id. The browser
+app's cookie writer (`packages/mobile/src/lib/consent-storage.web.ts`) expires
+the same cookies on its own No (`adPixelCookieExpiries` in `@boardsesh/consent`),
+so a No given there does not wait for the next www visit.
 
 **Copy.** The banner, Privacy choices and the Analytics settings card show
 `consent:adMeasurement`; the privacy policy lists Meta and Reddit under What we

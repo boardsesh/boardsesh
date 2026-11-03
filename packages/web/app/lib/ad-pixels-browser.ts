@@ -8,9 +8,20 @@
 // identifiers. Meta's automatic events (button-click scraping, page metadata)
 // and its own history-change page views are switched off, so the only events
 // that leave are the ones this file sends.
+//
+// Never inside the retired Capacitor app's WebView: tracking there would be
+// app tracking without Apple's ATT prompt, and the policy says pixels never
+// run in the app. Its bridge appears slightly after page JS, so a WebView-like
+// user agent waits for it (up to 3 s) before the first event.
+//
+// A withdrawal is final for the page load: fbevents.js keeps the old browser
+// id in memory after its cookie is deleted, so a later Allow takes effect on
+// the next page load with a fresh id.
 
 import { getWebConsentRecord, hasAnalyticsConsent, isGlobalPrivacyControlEnabled, refreshWebConsent } from './consent';
-import { AD_PIXEL_COOKIE_NAMES, isAdMeasurementPermitted, resolveAdPixels, type AdPixelIds } from './ad-pixels';
+import { AD_PIXEL_COOKIE_NAMES, adPixelCookieExpiries } from '@boardsesh/consent';
+import { isAdMeasurementPermitted, resolveAdPixels, type AdPixelIds } from './ad-pixels';
+import { isCapacitor, isCapacitorWebView, waitForCapacitor } from './ble/capacitor-utils';
 import type { AppInstallPlacement, AppInstallPlatform } from './app-install-event';
 
 type PixelCommand = (...args: unknown[]) => void;
@@ -37,8 +48,35 @@ const REDDIT_SCRIPT_SRC = 'https://www.redditstatic.com/ads/pixel.js';
 
 let metaInitialized: string | null = null;
 let redditInitialized: string | null = null;
-let metaRevoked = false;
+let withdrawnThisPage = false;
 let lastPageViewPath: string | null = null;
+let latestSyncPath: string | null = null;
+/** `pending` while a WebView-like browser waits to see whether the Capacitor bridge appears. */
+let nativeShell: 'unknown' | 'pending' | 'absent' | 'present' = 'unknown';
+
+const NO_PIXELS: AdPixelIds = { meta: null, reddit: null };
+
+/**
+ * True once we know this page is not the Capacitor app. Starts the bridge wait
+ * the first time a WebView-like user agent asks, then re-syncs when it ends.
+ */
+function nativeShellCleared(): boolean {
+  if (isCapacitor()) nativeShell = 'present';
+  if (nativeShell === 'present') return false;
+  if (nativeShell === 'absent') return true;
+  if (!isCapacitorWebView()) {
+    nativeShell = 'absent';
+    return true;
+  }
+  if (nativeShell === 'unknown') {
+    nativeShell = 'pending';
+    void waitForCapacitor().then((appeared) => {
+      nativeShell = appeared ? 'present' : 'absent';
+      if (!appeared && latestSyncPath !== null) syncAdPixels(latestSyncPath);
+    });
+  }
+  return false;
+}
 
 function readBuildIds(): { metaPixelId: string | undefined; redditPixelId: string | undefined } {
   // Literal property reads, so Next inlines them at build time.
@@ -50,10 +88,11 @@ function readBuildIds(): { metaPixelId: string | undefined; redditPixelId: strin
 
 /** The pixels allowed right now, read from the live cookie. Both null on the server. */
 export function currentAdPixels(pathname?: string): AdPixelIds {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return { meta: null, reddit: null };
+  if (typeof window === 'undefined' || typeof document === 'undefined') return NO_PIXELS;
   const { metaPixelId, redditPixelId } = readBuildIds();
   // Unset ids: a complete no-op, without even reading consent.
-  if (!metaPixelId && !redditPixelId) return { meta: null, reddit: null };
+  if (!metaPixelId && !redditPixelId) return NO_PIXELS;
+  if (withdrawnThisPage || !nativeShellCleared()) return NO_PIXELS;
   return resolveAdPixels({
     metaPixelId,
     redditPixelId,
@@ -101,10 +140,6 @@ function ensureMeta(pixelId: string): MetaPixelStub {
     fbq('init', pixelId);
     metaInitialized = pixelId;
   }
-  if (metaRevoked) {
-    fbq('consent', 'grant');
-    metaRevoked = false;
-  }
   return fbq;
 }
 
@@ -127,17 +162,6 @@ function ensureReddit(pixelId: string): RedditPixelStub {
   return rdt;
 }
 
-/** Expire a cookie on this host and on every parent domain it could have been set for. */
-function expireCookie(name: string): void {
-  const hostname = window.location.hostname;
-  const labels = hostname.split('.');
-  const domains: Array<string | null> = [null];
-  for (let index = 0; index < labels.length - 1; index += 1) domains.push(labels.slice(index).join('.'));
-  for (const domain of domains) {
-    document.cookie = `${name}=; Max-Age=0; Path=/${domain ? `; Domain=${domain}` : ''}`;
-  }
-}
-
 function hasAnyPixelCookie(): boolean {
   const names = document.cookie.split(';').map((entry) => entry.trim().split('=', 1)[0]);
   return AD_PIXEL_COOKIE_NAMES.some((name) => names.includes(name));
@@ -150,12 +174,14 @@ function hasAnyPixelCookie(): boolean {
  */
 function withdrawAdPixels(): void {
   const pixelWindow = window as PixelWindow;
-  if (pixelWindow.fbq && metaInitialized !== null && !metaRevoked) {
-    pixelWindow.fbq('consent', 'revoke');
-    metaRevoked = true;
+  if (metaInitialized !== null || redditInitialized !== null) {
+    if (pixelWindow.fbq && metaInitialized !== null) pixelWindow.fbq('consent', 'revoke');
+    withdrawnThisPage = true;
   }
   lastPageViewPath = null;
-  if (hasAnyPixelCookie()) AD_PIXEL_COOKIE_NAMES.forEach(expireCookie);
+  if (hasAnyPixelCookie()) {
+    for (const expiry of adPixelCookieExpiries(window.location.hostname)) document.cookie = expiry;
+  }
 }
 
 /**
@@ -167,6 +193,7 @@ export function syncAdPixels(pathname: string): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   const { metaPixelId, redditPixelId } = readBuildIds();
   if (!metaPixelId && !redditPixelId) return;
+  latestSyncPath = pathname;
   // Pick up a cookie another origin or tab wrote before judging it.
   refreshWebConsent();
 
@@ -207,6 +234,8 @@ export function reportAdLead({ platform, placement }: AdLeadInput): void {
 export function resetAdPixelsForTests(): void {
   metaInitialized = null;
   redditInitialized = null;
-  metaRevoked = false;
+  withdrawnThisPage = false;
   lastPageViewPath = null;
+  latestSyncPath = null;
+  nativeShell = 'unknown';
 }

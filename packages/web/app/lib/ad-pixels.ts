@@ -36,9 +36,6 @@ import { isProductionHost } from './production-hosts';
 
 const AD_MEASUREMENT_COPY_SINCE_MS = Date.parse(AD_MEASUREMENT_COPY_SINCE);
 
-/** First-party cookies the two pixels write. Cleared when ad measurement is withdrawn. */
-export const AD_PIXEL_COOKIE_NAMES = ['_fbp', '_fbc', '_rdt_uuid', '_rdt_cid'] as const;
-
 /** Route trees that never load or fire a pixel, compared locale-stripped and lowercased. */
 const EXCLUDED_PATH_PREFIXES = ['/kiosk', '/embed', '/auth', '/admin'] as const;
 
@@ -71,7 +68,8 @@ export function isAdMeasurementPermitted(record: ConsentRecord | null, globalPri
 
 /** False for kiosk, embed, auth and admin pages, in every locale and letter case. */
 export function isAdPixelPath(pathnameOrUrl: string): boolean {
-  const pathname = stripAnalyticsLocalePrefix(analyticsPathname(pathnameOrUrl)).toLowerCase();
+  // Lowercase first: the locale strip is case-sensitive, and /DE/auth must not slip through.
+  const pathname = stripAnalyticsLocalePrefix(analyticsPathname(pathnameOrUrl).toLowerCase());
   return !EXCLUDED_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 

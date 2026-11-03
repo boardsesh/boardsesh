@@ -54,3 +54,5 @@ export {
 } from './consent-sync';
 
 export { createConsentRegionLookup } from './consent-region-lookup';
+
+export { AD_PIXEL_COOKIE_NAMES, adPixelCookieExpiries } from './ad-pixel-cookies';
