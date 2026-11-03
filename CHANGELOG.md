@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-11-03
 
+### App update
+
+A new version shipped to the App Store.
+
 ### Improved
 
 - When someone takes the board while you drive, your phone tells you who ([#7234](https://github.com/boardsesh/boardsesh/pull/7234))
@@ -23,6 +27,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Tap Next or Previous on your Lock Screen as your drive runs out, and the board stays connected. ([#7242](https://github.com/boardsesh/boardsesh/pull/7242))
 - Climbs opened from your Logbook, the home feed, or a notification now show their real matching and feet rules on Woods. Tapping a notification for a no-match climb shows its ⊘ again, and Logbook and session rows now show campus, any-feet and no-kickboard badges. ([#5257](https://github.com/boardsesh/boardsesh/pull/5257))
 
 ## 2026-11-02
