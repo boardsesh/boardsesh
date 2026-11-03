@@ -234,13 +234,14 @@ flat amber fallback; the label still says what the next press does.
   stop and must not hang up, reconnect, or put the pick up and start a fresh drive. With Disconnect Bluetooth when
   driving ends on, a screen reader hears "Board disconnected" once the link actually drops after a stop, as after the
   frosted button's. The header pill shows only while this phone holds the board, so it usually goes in the same render
-  as that drop; the Climbs header (`ClimbTopChrome`, `useOwedDropAnnouncement`) says it for the pill then. Screen
-  readers hear what the tap does while a bulb shows a drive: a bulb whose label is its action (the MiniPlayer's, the
-  last pick's, the toolbar's, the app bar's, the editor's) says "Stop driving" with the hint "Your next picks open as
-  previews" (`ble.barControl.stopDrivingLabel` / `stopDrivingHint`; "Driving the wall" stays the MiniPlayer bulb's
-  value). The header pill keeps the words drawn on it as its label (Voice Control says them) and takes the frosted
-  button's hint, "Tap to stop driving. Hold for board controls." The first-row bulb keeps "Board lights" and takes the
-  same hint; the tablet bulb keeps the wall button's "You are driving the wall" and that hint.
+  as that drop; the Climbs header (`ClimbTopChrome`, `useOwedDropAnnouncement`) says it for the pill then, once. A
+  header that missed the drop never says it later: once the header or any bulb sees the link come back, the line is
+  forgotten. Screen readers hear what the tap does while a bulb shows a drive: a bulb whose label is its action (the
+  MiniPlayer's, the last pick's, the toolbar's, the app bar's, the editor's) says "Stop driving" with the hint "Your
+  next picks open as previews" (`ble.barControl.stopDrivingLabel` / `stopDrivingHint`; "Driving the wall" stays the
+  MiniPlayer bulb's value). The header pill keeps the words drawn on it as its label (Voice Control says them) and takes
+  the frosted button's hint, "Tap to stop driving. Hold for board controls." The first-row bulb keeps "Board lights" and
+  takes the same hint; the tablet bulb keeps the wall button's "You are driving the wall" and that hint.
 - **Driving reaches the Lock Screen, the Dynamic Island and the Android notification (2.7).** iOS draws an amber
   ring that drains around the bulb for a timed drive, with no digits, and a full amber disc for an open-ended one; Android's header
   says "Driving the wall", with the system countdown for a timed drive and no clock for an open-ended one. Both keep
