@@ -748,6 +748,7 @@
     },
     "climbActions": {
       "playNext": "Play next",
+      "playNextActiveHint": "This climb is already active. Browse another climb to put it next.",
       "playLast": "Play last",
       "replayFromHere": "Replay from here",
       "nameCopied": "Name copied",

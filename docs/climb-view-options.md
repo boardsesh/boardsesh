@@ -9,13 +9,16 @@ this page covers the buttons, the MiniPlayer and what they share.
 
 ## What the climber gets
 
-- **Buttons**: a switch and ↑/↓ arrows each for Mirror, Favorite, Queue, Share and Angle; one switch for
+- **Buttons**: a switch and ↑/↓ arrows each for Mirror, Angle, Play next, Favorite, Share and Queue; one switch for
   **Previous and next**; a **Board control**, Wall button (the default) or Lightbulb; and a **Position**, Below the
   board (the default) or Above the board. A pinned preview draws the bar for the board on screen as the climber
   changes it. Settings › Climb view has the same Board control picker.
-- **Defaults**: Mirror, Angle, Favorite, Share, Queue in that order, all on, with Previous and next off. The first
+- **Defaults**: Mirror, Angle, Play next, Favorite, Share, Queue in that order, all on, with Previous and next off. The first
   candidate and last three fill the four positions around Log: `⇄ ♡ ✓ Share ☰` on a board that mirrors,
-  `Angle ♡ ✓ Share ☰` on an adjustable board that doesn't. Angle waits in ⋯ while Mirror takes its place.
+  `Angle ♡ ✓ Share ☰` on an adjustable board that doesn't, and `Play next ♡ ✓ Share ☰` when neither Mirror nor
+  Angle applies. Hide Angle or move Play next first to put it in the row on an adjustable board. Play next stays
+  visible but disabled on the active climb; on another climb it moves or adds that climb to the front of Up next.
+  Queue still opens the queue. Actions outside the row remain in ⋯.
 - **Restore defaults** on the Buttons tab brings back that bar, with the wall button below the board and Previous
   and next off. The Below the climb tab has its own Restore defaults for the sections.
 - Existing customized button choices, position and board control survive the upgrade. An untouched layout adopts
@@ -742,21 +745,21 @@ bar: no jump from today's bar to theirs.
 
 | Key                     | Type                          | Default   | Notes                                                                                         |
 | ----------------------- | ----------------------------- | --------- | --------------------------------------------------------------------------------------------- |
-| `playerButtonsV3`       | `SectionLayoutRecord & { boardControl? } \| null` | `null`    | Order and switches for Mirror, Angle, Favorite, Share and Queue, plus `boardControl: 'lightbulb'` when chosen. Read and written only by `playerButtonsStore` and `setPlayerBoardControl`. Unknown ids and boolean switches survive writes. A non-v1 or malformed record uses the new defaults. |
-| `playerButtonsV2`       | Legacy layout record          | `null`    | Imported once when V3 is physically absent, then left untouched for rollback. |
+| `playerButtonsV4`       | `SectionLayoutRecord & { boardControl? } \| null` | `null`    | Order and switches for Mirror, Angle, Play next, Favorite, Share and Queue, plus `boardControl: 'lightbulb'` when chosen. Read and written only by `playerButtonsStore` and `setPlayerBoardControl`. Unknown ids and boolean switches survive writes. A non-v1 or malformed record uses the new defaults. |
+| `playerButtonsV3`       | Legacy layout record          | `null`    | Imported once when V4 is physically absent, then left untouched for rollback. |
+| `playerButtonsV2`       | Legacy layout record          | `null`    | Used when both V4 and V3 are physically absent; left untouched for rollback. |
 | `playerPreviousNext`    | `boolean`                     | `false`   | Stored booleans survive; missing or malformed values use the new default. |
 | `playerButtonsPosition` | `'below' \| 'above'`          | `'below'` | Anything else reads as `'below'`. |
 
 - `null` means the defaults, so a later release's default order reaches a climber who never changed it. Restore
-  defaults writes V3's default state; an explicit V3 `null` blocks re-importing V2, including after a relaunch.
-- **V2 migration** runs before the first snapshot. A valid customized V2 record keeps its full old order,
-  switches and board-control choice, with missing switches filled from frozen V2 defaults (Share and Angle off).
-  An unchanged V2 layout gets the new defaults. A record saved only to choose Lightbulb gets the new buttons
-  and keeps Lightbulb. Unknown ids and boolean switches are retained rather than collapsed into a default record.
-- **Rollback**: a V2 bundle still reads its untouched V2 layout. V3 writes do not overwrite it. Both generations
-  share the Previous and next switch and position, so explicit choices there remain available to either bundle.
-- **Why V3.** The old first/last-only row and the four-action row give order different placement semantics. The
-  new key makes that change explicit while preserving customized V2 choices through a one-time migration.
+  defaults writes V4's default state; an explicit V4 `null` blocks re-importing older versions after a relaunch.
+- **Migration** runs before the first snapshot. Default layouts and records saved only to choose Lightbulb adopt
+  Play next enabled in the new default order. A customized V3 or V2 layout keeps its order, switches and board
+  control, with Play next initially hidden. Missing V2 switches use frozen V2 defaults (Share and Angle off).
+  Unknown ids and boolean switches survive migration. Position and explicit Previous and next choices remain.
+- **Rollback**: V2 and V3 bundles still read their untouched records. V4 writes never overwrite them.
+- **Why V4.** Adding an enabled button can displace a customized button. The new key preserves customized
+  arrangements while filling the fixed-angle default's empty position.
 - `resetAllSettings` clears current and legacy keys. A fresh launch then uses the new defaults.
 
 The sections below the climb keep their own AsyncStorage record (`playDrawerSections`); see
@@ -1102,7 +1105,7 @@ context on `Wall Control Tapped`. Never add those two event counts together.
 3. Add its label (and a subtitle if it only shows on some boards) to `use-player-button-controls.ts`, in every
    locale.
 4. Extend the "the climber's buttons" table in `resolve-action-bar-layout.test.ts`. If the change would move an
-   existing climber's buttons, start a new key (next: `playerButtonsV4`) rather than reading the old record differently.
+   existing climber's buttons, start a new key (next: `playerButtonsV5`) rather than reading the old record differently.
 
 ## Adding a section
 

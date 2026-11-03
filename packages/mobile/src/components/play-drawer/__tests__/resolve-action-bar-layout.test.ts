@@ -5,7 +5,7 @@ import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonId, type PlayerButtonsLayout }
 // A saved V2 layout remains usable with explicit navigation enabled.
 const LEGACY_BUTTONS: PlayerButtonsLayout = {
   order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
-  visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
+  visible: { playNext: false, mirror: true, favorite: true, queue: true, share: false, angle: false },
 };
 
 const MEMBER: ActionBarLayoutInput = {
@@ -20,7 +20,15 @@ const MEMBER: ActionBarLayoutInput = {
   previousNext: true,
 };
 const MIRROR: ActionBarLayoutInput = { ...MEMBER, supportsMirroring: true };
-const NOTHING_HIDDEN = { tick: false, favorite: false, share: false, queue: false, mirror: false, angle: false };
+const NOTHING_HIDDEN = {
+  playNext: true,
+  tick: false,
+  favorite: false,
+  share: false,
+  queue: false,
+  mirror: false,
+  angle: false,
+};
 const BULB: Partial<ActionBarLayoutInput> = { boardControl: 'lightbulb' };
 
 function sideSlots(resolved: ReturnType<typeof resolveActionBarLayout>) {
@@ -41,6 +49,17 @@ describe('resolveActionBarLayout: four actions around Log', () => {
       expect(resolved.hidden).toEqual({ ...NOTHING_HIDDEN, angle: supportsMirroring });
     },
   );
+
+  it('fills the fixed-angle gap with Play next and supports replacing Angle', () => {
+    const fixed = resolveActionBarLayout({ ...CURRENT, angleAvailable: false });
+    expect(sideSlots(fixed)).toEqual(['playNext', 'favorite', 'share', 'queue']);
+    expect(fixed.hidden.playNext).toBe(false);
+    const chosen = resolveActionBarLayout({
+      ...CURRENT,
+      buttons: { ...DEFAULT_PLAYER_BUTTONS, visible: { ...DEFAULT_PLAYER_BUTTONS.visible, angle: false } },
+    });
+    expect(sideSlots(chosen)).toEqual(['playNext', 'favorite', 'share', 'queue']);
+  });
 
   it('restores the first and last positions when navigation is enabled', () => {
     const resolved = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true, previousNext: true });
@@ -90,8 +109,8 @@ describe('resolveActionBarLayout: four actions around Log', () => {
   it('places the bulb last and moves only unused actions into the second row', () => {
     const resolved = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true, ...BULB });
     expect(sideSlots(resolved)).toEqual(['mirror', 'favorite', 'share', 'lightbulb']);
-    expect(resolved.secondaryRow).toEqual(['angle', 'spacer', 'queue']);
-    expect(resolved.hidden).toEqual(NOTHING_HIDDEN);
+    expect(resolved.secondaryRow).toEqual(['angle', 'playNext', 'spacer', 'queue']);
+    expect(resolved.hidden).toEqual({ ...NOTHING_HIDDEN, playNext: false });
     const busy = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true, ...BULB, commitButton: 'confirm' });
     expect(sideSlots(busy)).toEqual(sideSlots(resolved));
     expect(busy.hidden).toMatchObject({ angle: true, queue: true, favorite: false, share: false });
@@ -102,6 +121,7 @@ describe('resolveActionBarLayout: four actions around Log', () => {
     expect(sideSlots(resolved)).toEqual([null, null, null, null]);
     expect(resolved.hidden).toEqual({
       tick: true,
+      playNext: true,
       mirror: true,
       angle: true,
       favorite: true,
@@ -205,7 +225,7 @@ const PLAYER_ORDER = ['mirror', 'favorite', 'queue', 'share', 'angle'] as const;
 
 /** A layout in the given order, with the listed buttons switched on and the rest off. */
 function layout(order: readonly PlayerButtonId[], on: readonly PlayerButtonId[]): PlayerButtonsLayout {
-  const visible = { mirror: false, favorite: false, queue: false, share: false, angle: false };
+  const visible = { playNext: false, mirror: false, favorite: false, queue: false, share: false, angle: false };
   for (const buttonId of on) visible[buttonId] = true;
   return { order, visible };
 }
@@ -308,9 +328,10 @@ describe('resolveActionBarLayout: the climber’s buttons', () => {
     expect(draft.hidden.share).toBe(false);
   });
 
-  it('enables the five actions in fallback-first priority order', () => {
-    expect(DEFAULT_PLAYER_BUTTONS.order).toEqual(['mirror', 'angle', 'favorite', 'share', 'queue']);
+  it('enables the six actions in fallback-first priority order', () => {
+    expect(DEFAULT_PLAYER_BUTTONS.order).toEqual(['mirror', 'angle', 'playNext', 'favorite', 'share', 'queue']);
     expect(DEFAULT_PLAYER_BUTTONS.visible).toEqual({
+      playNext: true,
       mirror: true,
       favorite: true,
       queue: true,
@@ -507,7 +528,7 @@ describe('resolveActionBarLayout: the signed-out reader', () => {
       trailingSlot: null,
       showPreviousNext: true,
       secondaryRow: ['angle', 'spacer', 'share'],
-      hidden: NOTHING_HIDDEN,
+      hidden: { ...NOTHING_HIDDEN, playNext: false },
     });
     expect(resolveActionBarLayout({ ...MIRROR, isAnonymous: true }).leadingSlot).toBe('mirror');
   });

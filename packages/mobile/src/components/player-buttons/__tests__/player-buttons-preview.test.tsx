@@ -117,6 +117,14 @@ describe('PlayerButtonsPreview', () => {
     expect(icons(screen.container)).toEqual(['mirror', 'favorite', 'tick.fill', 'share', 'queue', 'lightbulb']);
   });
 
+  it('fills the fixed-angle preview with Play next and announces its label', () => {
+    const screen = preview({ board: { ...FALLBACK_PREVIEW_BOARD, angleAvailable: false } });
+    expect(icons(screen.container)).toEqual(['queue.next', 'favorite', 'tick.fill', 'share', 'queue', 'lightbulb']);
+    expect(screen.getByTestId('player-buttons-preview').getAttribute('aria-label')).toContain(
+      'mobile.settings.playerButtons.buttons.playNext',
+    );
+  });
+
   it('shows the composite hero Tick in proportion to the neighboring icons', () => {
     const screen = preview();
     const tick = screen.container.querySelector('[data-icon="tick.fill"]');
@@ -161,7 +169,7 @@ describe('PlayerButtonsPreview', () => {
   it('leaves empty slots for buttons switched off, and for ⏮ ⏭ with Previous and next off, and keeps the wall button', () => {
     const allOff = {
       order: DEFAULT_PLAYER_BUTTONS.order,
-      visible: { mirror: false, favorite: false, angle: false, share: false, queue: false },
+      visible: { mirror: false, favorite: false, angle: false, share: false, queue: false, playNext: false },
     };
     const screen = preview({ buttons: allOff, previousNext: false });
     expect(icons(screen.container)).toEqual(['tick.fill', 'lightbulb']);

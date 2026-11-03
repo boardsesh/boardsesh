@@ -6,10 +6,10 @@ import type { SectionLayout, SectionLayoutSpec } from './section-layout';
 // Log and the wall button are not here. They are the loop the player exists
 // for, so they never move and never hide. Previous and next is one switch of
 // its own, not an entry in this list: the pair keeps its two slots either side
-// of Log when shown. With the pair hidden, these five share four positions
+// of Log when shown. With the pair hidden, these six share four positions
 // around Log; with it shown, they share the two ends. The rest live in ⋯.
 
-export const PLAYER_BUTTON_IDS = ['mirror', 'angle', 'favorite', 'share', 'queue'] as const;
+export const PLAYER_BUTTON_IDS = ['mirror', 'angle', 'playNext', 'favorite', 'share', 'queue'] as const;
 export type PlayerButtonId = (typeof PLAYER_BUTTON_IDS)[number];
 export type PlayerButtonsLayout = SectionLayout<PlayerButtonId>;
 
@@ -36,7 +36,7 @@ export function sanitisePlayerBoardControl(stored: unknown): PlayerBoardControl 
  */
 export const DEFAULT_PLAYER_BUTTONS: PlayerButtonsLayout = Object.freeze({
   order: PLAYER_BUTTON_IDS,
-  visible: Object.freeze({ mirror: true, angle: true, favorite: true, share: true, queue: true }),
+  visible: Object.freeze({ mirror: true, angle: true, playNext: true, favorite: true, share: true, queue: true }),
 });
 
 export const PLAYER_BUTTONS_LAYOUT: SectionLayoutSpec<PlayerButtonId> = {

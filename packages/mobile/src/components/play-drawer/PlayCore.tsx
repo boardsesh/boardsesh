@@ -1,3 +1,4 @@
+import { randomUUID } from 'expo-crypto';
 import { registerClimbActionPresenters } from '../climb-actions/climb-action-presenters';
 import {
   useCallback,
@@ -498,6 +499,7 @@ export function PlayCore({
   const { queue, currentClimbQueueItem, currentClimbMover, historyCount } = useQueueData();
   const {
     setCurrentClimb,
+    playNext,
     nextClimb,
     previousClimb,
     mirrorCurrentClimb,
@@ -1893,6 +1895,21 @@ export function PlayCore({
       noteSignpostStep,
     ],
   );
+  const handlePlayNext = useCallback(() => {
+    const snapshot = getQueueSnapshot();
+    if (
+      !displayedClimb ||
+      isAnonymous ||
+      showBoardMismatch ||
+      displayedClimb.uuid === snapshot.currentClimbQueueItem?.climb.uuid
+    )
+      return;
+    void playNext({
+      item: { uuid: randomUUID(), climb: displayedClimb },
+      queueItemUuid: resolveQueuedSlotUuid(snapshot.queue, displayedQueueSlotUuid),
+    });
+  }, [displayedClimb, isAnonymous, showBoardMismatch, getQueueSnapshot, playNext, displayedQueueSlotUuid]);
+
   // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
   // Both also say what the player showed and how full Up next was (Then-signposts).
   const handleOpenQueueFromBar = useCallback(() => {
@@ -3066,6 +3083,8 @@ export function PlayCore({
       onMirror={handleMirror}
       onToggleFavorite={handleToggleFavorite}
       onOpenQueue={handleOpenQueueFromBar}
+      onPlayNext={handlePlayNext}
+      playNextDisabled={displayedClimbUuid === currentClimbQueueItem?.climb.uuid}
       onShare={displayedClimbIsDraft ? undefined : handleShare}
       onTickPress={handleTickFabPress}
       onTickLongPress={handleTickFabLongPress}

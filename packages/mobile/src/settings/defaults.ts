@@ -50,6 +50,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   climbListLayout: 'two',
   playerButtonsV2: null,
   playerButtonsV3: null,
+  playerButtonsV4: null,
   miniPlayerButtonsV1: null,
   playerPreviousNext: false,
   playerButtonsPosition: 'below',

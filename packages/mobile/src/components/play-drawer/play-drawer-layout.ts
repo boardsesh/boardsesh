@@ -126,6 +126,7 @@ function isPlainSecondaryRowItem(item: ActionBarSecondaryItem): boolean {
     case 'favorite':
     case 'queue':
     case 'share':
+    case 'playNext':
     case 'angle':
     case 'spacer':
       return true;

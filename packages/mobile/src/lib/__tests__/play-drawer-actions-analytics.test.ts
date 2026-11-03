@@ -78,14 +78,14 @@ describe('play drawer action exposure context', () => {
   it('does not count secondary actions until the secondary row is visible', () => {
     const context = contextFor({ boardControl: 'lightbulb' }, { secondaryVisible: false });
     expect(context.player_primary_slots).toBe('mirror,favorite,tick,share,lightbulb');
-    expect(context.player_secondary_actions).toBe('angle,queue');
+    expect(context.player_secondary_actions).toBe('angle,playNext,queue');
     expect(context.player_visible_actions).toBe('mirror,favorite,tick,share,lightbulb');
     expect(context.player_visible_actions.split(',')).not.toContain('queue');
   });
 
   it('can report only a visible secondary row without exposing hidden primary actions', () => {
     const context = contextFor({ boardControl: 'lightbulb' }, { primaryVisible: false });
-    expect(context.player_visible_actions).toBe('angle,queue');
+    expect(context.player_visible_actions).toBe('angle,playNext,queue');
     expect(context.player_tick_visible).toBe(false);
     expect(context.player_share_visible).toBe(false);
   });
@@ -120,7 +120,7 @@ describe('play drawer action exposure context', () => {
     expect(wall.player_visible_actions).toBe('mirror,favorite,tick,share,queue');
     const bulb = contextFor({ boardControl: 'lightbulb' }, { wallControlVisible: false });
     expect(bulb.player_primary_slots).toBe('mirror,favorite,tick,share,-');
-    expect(bulb.player_visible_actions).toBe('mirror,favorite,tick,share,angle,queue');
+    expect(bulb.player_visible_actions).toBe('mirror,favorite,tick,share,angle,playNext,queue');
   });
 
   it('reports navigation arrows and excludes the actions they displace', () => {
