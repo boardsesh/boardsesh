@@ -9,6 +9,8 @@ describe('blePickerSessionProps', () => {
     listedCount: 1,
     targetNotListedSeen: false,
     tipsSeen: false,
+    tipsSeenAt: null,
+    browsedForNow: false,
     openedAt: 10_000,
     closedAt: 22_400,
     phoneNeverConnected: true,
@@ -22,6 +24,8 @@ describe('blePickerSessionProps', () => {
       listedCount: 1,
       targetNotListedSeen: false,
       tipsSeen: false,
+      tipsShownAtMs: null,
+      browsedForNow: false,
       secondsOpen: 12,
       phoneNeverConnected: true,
       entrySurface: 'play_drawer',
@@ -32,6 +36,17 @@ describe('blePickerSessionProps', () => {
     const props = blePickerSessionProps({ ...session, closedAt: 9_000, listedCount: -2 });
     expect(props.secondsOpen).toBe(0);
     expect(props.listedCount).toBe(0);
+  });
+
+  it('says how long into the list the tips showed, and that the climber browsed on', () => {
+    const props = blePickerSessionProps({ ...session, tipsSeen: true, tipsSeenAt: 15_000, browsedForNow: true });
+    expect(props.tipsShownAtMs).toBe(5_000);
+    expect(props.browsedForNow).toBe(true);
+  });
+
+  it('reads tips that showed in the commit before the list opened as 0, never negative', () => {
+    const props = blePickerSessionProps({ ...session, tipsSeen: true, tipsSeenAt: 9_999 });
+    expect(props.tipsShownAtMs).toBe(0);
   });
 
   it('keeps an unknown phone history and a picker with no tap before it as null', () => {
