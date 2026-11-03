@@ -565,6 +565,7 @@
       "wallEmptyBody": "Verbinde dich per Bluetooth mit deinem Board und sieh, was beleuchtet ist, wer abliefert und was die schwerste Begehung der Session ist.",
       "wallEmptyCta": "Board verbinden",
       "wallEmptyBodyNoLeds": "Diese Wand hat kein Licht. Übernimm die Wand und alle hier sehen den Boulder, an dem du bist, auf ihren Handys und auf dem Hallen-Bildschirm.",
+      "wallEmptyBodyWallDevice": "Ein Wandgerät beleuchtet diese Wand. Übernimm die Wand, dann leuchtet dein Boulder dort auf, und alle hier sehen ihn auf ihren Handys und auf dem Hallen-Bildschirm.",
       "wallEmptyCtaNoLeds": "Wand übernehmen",
       "wallTakenToast": "Du hast die Wand",
       "wallReleasedToast": "Die Wand ist wieder frei",

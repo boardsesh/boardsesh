@@ -8,6 +8,7 @@ import { Button } from '../Button';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { boardHasLights, drivesWithoutBluetooth } from '../../lib/boards/board-lighting';
 import { hapticSelection } from '../../lib/haptics';
 import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { spacing } from '../../theme/tokens';
@@ -21,19 +22,27 @@ import { spacing } from '../../theme/tokens';
  * Climber voice, a board-shaped bulb glyph (no AI art), and a single CTA. On a
  * wall WITH lights it opens the device picker via the Bluetooth context's
  * `connect()` (hidden when no context is mounted — nothing to connect to). On a
- * wall flagged as having no light kit there is nothing to connect to at all, so
- * the CTA takes the wall instead; that branch reads `hasLeds` straight off the
- * active board so it doesn't depend on the BLE provider being mounted.
+ * wall flagged as having no light kit, or lit by a wall device that follows the
+ * board feed, there is nothing to connect to, so the CTA takes the wall instead;
+ * that branch reads the active board's flags (`drivesWithoutBluetooth`) so it
+ * doesn't depend on the BLE provider being mounted.
  */
 function WallEmptyStateComponent() {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const bluetooth = useOptionalBluetoothContext();
-  // Optional-field contract: only an explicit `hasLeds: false` is ledless, so a
-  // missing/stale flag keeps the Bluetooth connect CTA.
+  // Optional-field contract: only an explicit `hasLeds: false` or
+  // `litByWallDevice: true` takes the wall, so a missing/stale flag keeps the
+  // Bluetooth connect CTA.
   const { data: activeBoard } = useActiveBoard();
-  const ledless = activeBoard?.hasLeds === false;
+  const ledless = drivesWithoutBluetooth(activeBoard);
+  // A wall device lights the wall, so "this wall has no lights" would be wrong.
+  const body = !ledless
+    ? t('mobile.boardPresence.wallEmptyBody')
+    : boardHasLights(activeBoard)
+      ? t('mobile.boardPresence.wallEmptyBodyWallDevice')
+      : t('mobile.boardPresence.wallEmptyBodyNoLeds');
   const takeVirtualWall = bluetooth?.takeVirtualWall;
 
   const handleConnect = useCallback(() => {
@@ -57,7 +66,7 @@ function WallEmptyStateComponent() {
         {t('mobile.boardPresence.wallEmptyTitle')}
       </Text>
       <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.body}>
-        {ledless ? t('mobile.boardPresence.wallEmptyBodyNoLeds') : t('mobile.boardPresence.wallEmptyBody')}
+        {body}
       </Text>
       {/* `ledless` comes from the stored board rather than the Bluetooth context,
           so the COPY is right even before the provider mounts. The button still

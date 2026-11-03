@@ -98,6 +98,7 @@ const SPRAY_WALL_FIELDS = `
     isPublic
     isUnlisted
     hasLeds
+    litByWallDevice
     isAngleAdjustable
     ownerId
     ownerDisplayName

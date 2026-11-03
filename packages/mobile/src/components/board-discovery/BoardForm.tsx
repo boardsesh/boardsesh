@@ -476,17 +476,34 @@ export function BoardForm({
                 LED hardware on the wall. Nothing below is hidden when the toggle
                 goes off: buildUpdateInput submits the serial and timer from
                 retained state either way, so hiding a field would be a silent
-                submit trap, and the Rogue workout timer isn't an LED device. */}
+                submit trap, and the Rogue workout timer isn't an LED device. The
+                wall device switch is the exception: it hides with the lights,
+                and the builder leaves it out of the save while it is hidden. */}
+            <SectionLabel>{t('mobile.create.lights')}</SectionLabel>
+            {isSprayWall ? null : (
+              <SwitchRow
+                label={t('mobile.create.hasLeds')}
+                description={t('mobile.create.hasLedsHint')}
+                value={builder.hasLeds}
+                onValueChange={builder.setHasLeds}
+              />
+            )}
+            {/* A wall device (a laser projector, an LED controller on the
+                internet) follows the board feed, so every climber takes the
+                wall with no Bluetooth. Offered under LED lights on a catalogue
+                board, and on its own on a spray wall, which a projector can
+                light too. */}
+            {builder.litByWallDeviceShown ? (
+              <SwitchRow
+                label={t('mobile.create.litByWallDevice')}
+                description={t('mobile.create.litByWallDeviceHint')}
+                value={builder.litByWallDevice}
+                onValueChange={builder.setLitByWallDevice}
+              />
+            ) : null}
+
             {isSprayWall ? null : (
               <>
-                <SectionLabel>{t('mobile.create.lights')}</SectionLabel>
-                <SwitchRow
-                  label={t('mobile.create.hasLeds')}
-                  description={t('mobile.create.hasLedsHint')}
-                  value={builder.hasLeds}
-                  onValueChange={builder.setHasLeds}
-                />
-
                 <SectionLabel>{t('mobile.create.serial')}</SectionLabel>
                 <BuilderTextInput
                   value={builder.serialNumber}

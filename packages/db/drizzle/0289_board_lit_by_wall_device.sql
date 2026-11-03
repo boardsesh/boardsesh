@@ -1,0 +1,1 @@
+ALTER TABLE "user_boards" ADD COLUMN "lit_by_wall_device" boolean DEFAULT false NOT NULL;

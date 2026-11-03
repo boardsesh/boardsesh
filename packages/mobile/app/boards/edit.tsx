@@ -199,6 +199,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       hideLocation: board.hideLocation,
       isAngleAdjustable: board.isAngleAdjustable,
       hasLeds: board.hasLeds,
+      litByWallDevice: board.litByWallDevice,
       locationName: board.locationName ?? undefined,
       latitude: board.latitude ?? undefined,
       longitude: board.longitude ?? undefined,

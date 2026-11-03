@@ -194,6 +194,8 @@
       "lights": "Beleuchtung",
       "hasLeds": "Board hat LED-Licht",
       "hasLedsHint": "Schalt es aus, wenn dein Board kein LED-Kit hat. Deine Crew wechselt sich trotzdem ab, und der Hallen-Bildschirm zeigt weiter den aktuellen Boulder. Bluetooth brauchst du dafür nicht.",
+      "litByWallDevice": "Von einem Wandgerät beleuchtet",
+      "litByWallDeviceHint": "Boulder gehen über das Internet an deinen Laser oder dein LED-Gerät. Bluetooth brauchst du dafür nicht.",
       "duplicate": {
         "title": "Dieses Setup hast du schon",
         "body": "Du hast „{{name}}“ schon — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
@@ -575,6 +577,7 @@
       "defaultAngle": "Standardwinkel",
       "angleAdjustable": "Winkel ist verstellbar",
       "hasLeds": "Board hat LED-Licht",
+      "litByWallDevice": "Von einem Wandgerät beleuchtet",
       "isPublic": "Öffentliches Board",
       "unlisted": "Nicht gelistet",
       "hideLocation": "Aus Boards in der Nähe ausblenden",
@@ -592,6 +595,7 @@
       "unlisted": "Taucht nicht in der Suche auf, ist aber über den direkten Link erreichbar",
       "hideLocation": "Taucht nicht in der Umkreissuche auf, außer du folgst der suchenden Person",
       "hasLeds": "Aus heißt: kein LED-Kit. Ihr wechselt euch trotzdem ab, und der Hallen-Bildschirm zeigt weiter den aktuellen Boulder.",
+      "litByWallDevice": "Boulder gehen über das Internet an deinen Laser oder dein LED-Gerät. Bluetooth brauchst du dafür nicht.",
       "ownerOnlyPrivacy": "Nur der*die Eigentümer*in des Boards kann Sichtbarkeit und Standortfreigabe ändern.",
       "ownerOnlyCredentials": "Nur der*die Eigentümer*in des Boards kann Controller-Zugangsdaten sehen oder ändern."
     },

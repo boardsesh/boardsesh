@@ -194,6 +194,8 @@
       "lights": "Luci",
       "hasLeds": "Il pannello ha luci LED",
       "hasLedsHint": "Disattivalo per un pannello senza kit di luci. La tua crew si alterna comunque e lo schermo della palestra mostra sempre il blocco attivo. Non serve il Bluetooth.",
+      "litByWallDevice": "Illuminato da un dispositivo a parete",
+      "litByWallDeviceHint": "I blocchi arrivano al tuo laser o dispositivo LED via internet. Non serve il Bluetooth.",
       "duplicate": {
         "title": "Hai già questa configurazione",
         "body": "Hai già \"{{name}}\" con lo stesso layout, la stessa dimensione e gli stessi set di prese.",
@@ -575,6 +577,7 @@
       "defaultAngle": "Inclinazione predefinita",
       "angleAdjustable": "L'inclinazione è regolabile",
       "hasLeds": "Il pannello ha luci LED",
+      "litByWallDevice": "Illuminato da un dispositivo a parete",
       "isPublic": "Pannello pubblico",
       "unlisted": "Non in elenco",
       "hideLocation": "Nascondi dai pannelli vicini",
@@ -592,6 +595,7 @@
       "unlisted": "Nascosto dai risultati di ricerca ma raggiungibile con il link diretto",
       "hideLocation": "Nascosto dalle ricerche di pannelli vicini, a meno che tu non segua chi cerca",
       "hasLeds": "Disattivato significa nessun kit di luci. I turni funzionano comunque e lo schermo della palestra mostra sempre il blocco attivo.",
+      "litByWallDevice": "I blocchi arrivano al tuo laser o dispositivo LED via internet. Non serve il Bluetooth.",
       "ownerOnlyPrivacy": "Solo il proprietario del pannello può modificare la visibilità e la privacy della posizione.",
       "ownerOnlyCredentials": "Solo il proprietario del pannello può vedere o modificare le credenziali del controller."
     },

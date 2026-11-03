@@ -205,6 +205,14 @@ permanent. A null session, a non-boolean value, no `JoinSession` evidence,
 evidence that disagrees, and every other document change still miss and fail
 the drift check.
 
+`GetBoard`, `GetMyBoards` and `GetGymBoardsForSwitcher` accept the exact
+addition of `litByWallDevice` straight after every `hasLeds`, and replay it as
+`false` on every board. The field is non-null, and `false` is not made up: the
+column (`NOT NULL DEFAULT false`) gave that value to every board row that existed
+when these sets were recorded. It composes with the `sprayImport` adapter above.
+A recording that already holds the field, a copy anywhere but after `hasLeds`,
+and every other document change still fail the drift check.
+
 Recordings still go to ignored `packages/mobile/screenshot-fixtures/`, or an explicit
 `--fixtures-dir`. Downloads never touch that directory. Publish a sanitized merged
 recording with `vp run mobile:screenshot-fixtures-publish -- [recording-directory]`,

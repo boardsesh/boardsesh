@@ -194,6 +194,8 @@
       "lights": "Luces",
       "hasLeds": "El plafón tiene luces LED",
       "hasLedsHint": "Desactívalo si el plafón no tiene kit de luces. Tu gente sigue turnándose y la pantalla del rocódromo sigue mostrando el bloque activo. No hace falta Bluetooth.",
+      "litByWallDevice": "Iluminado por un dispositivo de pared",
+      "litByWallDeviceHint": "Los bloques llegan a tu láser o dispositivo LED por internet. No hace falta Bluetooth.",
       "duplicate": {
         "title": "Ya tienes esta configuración",
         "body": "Ya tienes «{{name}}» con el mismo layout, tamaño y sets de presas.",
@@ -575,6 +577,7 @@
       "defaultAngle": "Ángulo por defecto",
       "angleAdjustable": "Ángulo ajustable",
       "hasLeds": "El plafón tiene luces LED",
+      "litByWallDevice": "Iluminado por un dispositivo de pared",
       "isPublic": "Plafón público",
       "unlisted": "No listado",
       "hideLocation": "Ocultar de plafones cercanos",
@@ -592,6 +595,7 @@
       "unlisted": "Oculto de los resultados de búsqueda pero accesible por enlace directo",
       "hideLocation": "Oculto de las búsquedas de plafones cercanos a menos que sigas al buscador",
       "hasLeds": "Desactivado significa que no hay kit de luces. Los turnos siguen funcionando y la pantalla del rocódromo sigue mostrando el bloque activo.",
+      "litByWallDevice": "Los bloques llegan a tu láser o dispositivo LED por internet. No hace falta Bluetooth.",
       "ownerOnlyPrivacy": "Solo el propietario del plafón puede cambiar la visibilidad y la privacidad de la ubicación.",
       "ownerOnlyCredentials": "Solo el propietario del plafón puede ver o cambiar las credenciales del controlador."
     },

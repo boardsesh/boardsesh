@@ -1,4 +1,5 @@
 import { buildBoardPath } from '@boardsesh/board-config';
+import { drivesWithoutBluetooth } from './board-lighting';
 
 /** The board fields a session path needs. Everything else on `UserBoard` is irrelevant here. */
 export type SessionBoardPathSource = {
@@ -10,6 +11,7 @@ export type SessionBoardPathSource = {
   slug?: string | null;
   gymId?: number | null;
   hasLeds?: boolean;
+  litByWallDevice?: boolean;
 };
 
 /**
@@ -26,8 +28,11 @@ export type SessionBoardPathSource = {
  * wall with no light kit there is no such event, so the path is the only thing
  * holding the two climbers on one feed.
  *
- * `gymId != null` marks a shared gym wall; `hasLeds === false` also preserves a
- * personal wall's capability when friends join it. `isPublic` defaults to true
+ * `gymId != null` marks a shared gym wall; a wall driven without Bluetooth (no
+ * light kit, or lit by a wall device, `drivesWithoutBluetooth`) also keeps a
+ * personal wall's identity when friends join it. For a wall device that is the
+ * whole point: it follows this board's feed, so a joiner on a minted copy would
+ * put climbs up on a feed nothing reads. `isPublic` defaults to true
  * even on the private rows joiners mint for themselves. An empty slug would
  * emit `/b//40`, which `parseNamedBoardPath` reads as the slug `"40"`.
  *
@@ -37,6 +42,6 @@ export type SessionBoardPathSource = {
  */
 export function buildSessionBoardPath(board: SessionBoardPathSource, angleOverride?: number): string {
   const angle = angleOverride ?? board.angle;
-  if ((board.gymId != null || board.hasLeds === false) && board.slug) return `/b/${board.slug}/${angle}`;
+  if ((board.gymId != null || drivesWithoutBluetooth(board)) && board.slug) return `/b/${board.slug}/${angle}`;
   return buildBoardPath(board.boardType, board.layoutId, board.sizeId, board.setIds, angle);
 }

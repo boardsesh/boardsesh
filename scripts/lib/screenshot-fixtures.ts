@@ -186,6 +186,17 @@ const TICK_CHARACTERISTICS_OPERATIONS = new Set([
 ]);
 const TICK_CHARACTERISTICS_SELECTION = 'isNoMatch characteristics';
 
+/**
+ * The operations whose pinned recordings predate each board's
+ * `litByWallDevice`, selected straight after `hasLeds` on every board object.
+ * The field is non-null, so it replays as `false`, never null: that is the
+ * value the column (`NOT NULL DEFAULT false`) gave every board row that existed
+ * when these sets were recorded, so it is a fact about the recorded boards, not
+ * an invented one. A recording that already holds the field is not this case.
+ */
+const BOARD_WALL_DEVICE_OPERATIONS = new Set(['GetBoard', 'GetMyBoards', 'GetGymBoardsForSwitcher']);
+const BOARD_WALL_DEVICE_SELECTION = 'hasLeds litByWallDevice';
+
 /** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
 const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardNowPlaying',
@@ -218,6 +229,9 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  *   (`replayGetSessionWithPermanence`), never defaulted.
  * - GetSessionDetail / GetSessionGroupedFeed / GetUserGroupedAscentsFeed: each
  *   tick's `characteristics`.
+ * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's non-null
+ *   `litByWallDevice`, as `false` (`replayBoardsWithoutWallDevice`). It
+ *   composes with the `sprayImport` adapter above.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
@@ -227,6 +241,10 @@ export function replayCompatibleFixtureResponse(
   const operationName = resolveOperationName({ query: requestQuery });
   if (operationName !== fixture.operationName) return null;
   if (operationName === 'GetSession') return replayGetSessionWithPermanence(requestQuery, fixture, evidence);
+  if (BOARD_WALL_DEVICE_OPERATIONS.has(operationName ?? '')) {
+    const adapted = replayBoardsWithoutWallDevice(requestQuery, fixture, evidence);
+    if (adapted) return adapted;
+  }
   if (PRESENCE_CAPABILITY_OPERATIONS.has(operationName ?? '')) {
     const normalized = normalizeDocument(requestQuery);
     const declaration = ', $boardUuid: ID';
@@ -411,6 +429,46 @@ function replayTicksWithoutCharacteristics(
   // A recording that already carries the field was made with it, so it is not this case.
   if (containsKey(fixture.response.data, 'characteristics')) return null;
   return { response: { ...fixture.response, data: withNullCharacteristics(fixture.response.data) } };
+}
+
+/**
+ * A board document recorded before `litByWallDevice`: the request is the
+ * recorded one with the field straight after every `hasLeds`, plus any change
+ * another adapter accepts (GetBoard's `sprayImport`). Every board in the
+ * response gets `litByWallDevice: false` beside its `hasLeds`.
+ */
+function replayBoardsWithoutWallDevice(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence,
+): { response: unknown } | null {
+  const normalized = normalizeDocument(requestQuery);
+  const pieces = normalized.split(BOARD_WALL_DEVICE_SELECTION);
+  // Every board selects it after `hasLeds`, so a stray copy anywhere else means
+  // some other change.
+  if (pieces.length < 2 || normalized.split('litByWallDevice').length !== pieces.length) return null;
+  if (!isRecord(fixture.response) || fixture.response.data === undefined) return null;
+  if (containsKey(fixture.response.data, 'litByWallDevice')) return null;
+  const withoutWallDevice = pieces.join('hasLeds');
+  // The request minus the field has no `litByWallDevice` left, so this cannot
+  // come back here: it is the recorded document, or another adapter's change.
+  const base =
+    withoutWallDevice === normalizeDocument(fixture.query)
+      ? { response: fixture.response }
+      : replayCompatibleFixtureResponse(withoutWallDevice, fixture, evidence);
+  if (!base || !isRecord(base.response)) return null;
+  return { response: { ...base.response, data: withWallDeviceOff(base.response.data) } };
+}
+
+function withWallDeviceOff(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withWallDeviceOff);
+  if (!isRecord(value)) return value;
+  const adapted: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    adapted[key] = withWallDeviceOff(child);
+    if (key === 'hasLeds') adapted.litByWallDevice = false;
+  }
+  return adapted;
 }
 
 function containsKey(value: unknown, key: string): boolean {

@@ -565,6 +565,7 @@
       "wallEmptyBody": "Connettiti al tuo pannello via Bluetooth per vedere cosa è illuminato, chi sta spaccando e il blocco più duro chiuso della session.",
       "wallEmptyCta": "Connetti un pannello",
       "wallEmptyBodyNoLeds": "Questo pannello non ha luci. Prendi il pannello e tutti qui vedono il blocco che stai facendo, sui loro telefoni e sullo schermo della palestra.",
+      "wallEmptyBodyWallDevice": "Un dispositivo a parete illumina questo pannello. Prendi il pannello e il blocco che stai facendo si illumina in parete, e tutti qui lo vedono sui loro telefoni e sullo schermo della palestra.",
       "wallEmptyCtaNoLeds": "Prendi il pannello",
       "wallTakenToast": "Il pannello è tuo",
       "wallReleasedToast": "La parete è di nuovo libera",

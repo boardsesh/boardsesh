@@ -156,6 +156,7 @@ describe('EditBoardForm — duplicate config', () => {
       latitude: null,
       longitude: null,
       hasLeds: true,
+      litByWallDevice: false,
       serialNumber: null,
       timerName: null,
       gymUuid: null,

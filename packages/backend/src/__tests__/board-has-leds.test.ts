@@ -30,7 +30,7 @@ const insertUser = (id: string) =>
     ON CONFLICT (id) DO NOTHING
   `);
 
-type CreatedBoard = { uuid: string; name: string; hasLeds: boolean };
+type CreatedBoard = { uuid: string; name: string; hasLeds: boolean; litByWallDevice: boolean };
 
 /** A real catalogue configuration — createBoard validates it against the board data. */
 const CONFIG = { boardType: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10' };
@@ -125,5 +125,49 @@ describe('user_boards.has_leds', () => {
     const read = await readBoard(board.uuid);
     expect(read?.uuid).toBe(board.uuid);
     expect(read?.hasLeds).toBe(false);
+  });
+});
+
+const rawLitByWallDevice = async (uuid: string): Promise<boolean> => {
+  const result = await db.execute(sql`SELECT lit_by_wall_device FROM user_boards WHERE uuid = ${uuid}`);
+  return Array.from(result as Iterable<{ lit_by_wall_device: boolean }>)[0].lit_by_wall_device;
+};
+
+/**
+ * `user_boards.lit_by_wall_device` — an internet-connected wall device (a laser
+ * projector, an LED controller) lights the wall from the board feed, so every
+ * climber takes the wall with no Bluetooth. Off unless an editor turns it on.
+ */
+describe('user_boards.lit_by_wall_device', () => {
+  it('defaults to false, so every existing wall keeps connecting over Bluetooth', async () => {
+    const board = await createBoard();
+    expect(board.litByWallDevice).toBe(false);
+    expect(await rawLitByWallDevice(board.uuid)).toBe(false);
+  });
+
+  it('honours an explicit true at create time', async () => {
+    const board = await createBoard({ litByWallDevice: true });
+    expect(board.litByWallDevice).toBe(true);
+    expect(await rawLitByWallDevice(board.uuid)).toBe(true);
+  });
+
+  it('flips through updateBoard, round-trips through the projection, and survives an edit that omits it', async () => {
+    const board = await createBoard();
+    await updateBoard({ boardUuid: board.uuid, litByWallDevice: true });
+    expect((await readBoard(board.uuid))?.litByWallDevice).toBe(true);
+
+    await updateBoard({ boardUuid: board.uuid, name: 'Renamed wall' });
+    expect(await rawLitByWallDevice(board.uuid)).toBe(true);
+
+    await updateBoard({ boardUuid: board.uuid, litByWallDevice: false });
+    expect(await rawLitByWallDevice(board.uuid)).toBe(false);
+  });
+
+  it('refuses a climber with no edit access, the same gate as has_leds', async () => {
+    const board = await createBoard();
+    await expect(updateBoard({ boardUuid: board.uuid, litByWallDevice: true }, STRANGER)).rejects.toThrow(
+      /Not authorized to update this board/,
+    );
+    expect(await rawLitByWallDevice(board.uuid)).toBe(false);
   });
 });

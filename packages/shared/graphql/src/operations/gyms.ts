@@ -240,6 +240,7 @@ const GYM_BOARD_FIELDS = `
   angle
   isAngleAdjustable
   hasLeds
+  litByWallDevice
   isPublic
   isUnlisted
   locationName

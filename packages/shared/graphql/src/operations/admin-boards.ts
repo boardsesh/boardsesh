@@ -4,7 +4,7 @@ import type { AdminBoard, AdminBoardConnection, AdminBoardsInput, UpdateBoardInp
 const ADMIN_BOARD_FIELDS = `
   uuid slug ownerId ownerDisplayName boardType layoutId sizeId setIds name
   description locationName latitude longitude isPublic isUnlisted hideLocation
-  isOwned angle isAngleAdjustable hasLeds serialNumber timerName createdAt updatedAt
+  isOwned angle isAngleAdjustable hasLeds litByWallDevice serialNumber timerName createdAt updatedAt
   gymUuid gymName gymSlug canEdit
 `;
 

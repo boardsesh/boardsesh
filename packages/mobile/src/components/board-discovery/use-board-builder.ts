@@ -37,6 +37,7 @@ export type BoardBuilderSeed = {
   hideLocation?: boolean;
   isAngleAdjustable?: boolean;
   hasLeds?: boolean;
+  litByWallDevice?: boolean;
   locationName?: string;
   latitude?: number | null;
   longitude?: number | null;
@@ -129,6 +130,15 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // common case needs no thought. Turning it off is what unlocks the no-LED
   // "active climb" flow (#4585).
   const [hasLeds, setHasLeds] = useState(seed?.hasLeds ?? true);
+  // An internet-connected wall device (a laser projector, an LED controller)
+  // lights the wall from the board feed, so climbers take the wall with no
+  // Bluetooth. Off by default: nearly every wall is driven over Bluetooth.
+  const [litByWallDevice, setLitByWallDevice] = useState(seed?.litByWallDevice ?? false);
+  // The form shows the switch under LED lights on a catalogue board, and on its
+  // own on a spray wall. While it is hidden the input leaves the field out, so a
+  // value set elsewhere (the API, the web) is never reset by a save from here.
+  const litByWallDeviceShown = boardName === 'spray' || hasLeds;
+  const savedLitByWallDevice = litByWallDeviceShown ? litByWallDevice : undefined;
   const [locationName, setLocationName] = useState(seed?.locationName ?? '');
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(
     seed?.latitude != null && seed?.longitude != null ? { latitude: seed.latitude, longitude: seed.longitude } : null,
@@ -294,6 +304,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       hideLocation,
       isAngleAdjustable,
       hasLeds,
+      litByWallDevice: savedLitByWallDevice,
       serialNumber: serialNumber.trim() || undefined,
       timerName: timerName.trim() || undefined,
       locationName: locationName.trim() || undefined,
@@ -339,6 +350,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       hideLocation,
       isAngleAdjustable,
       hasLeds,
+      litByWallDevice: savedLitByWallDevice,
       // null (not undefined) so emptying a previously-set field clears it on the
       // server — undefined would leave the old value in place (see UpdateBoardInput).
       serialNumber: serialNumber.trim() || null,
@@ -381,6 +393,8 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     hideLocation,
     isAngleAdjustable,
     hasLeds,
+    litByWallDevice,
+    litByWallDeviceShown,
     locationName,
     coords,
     serialNumber,
@@ -407,6 +421,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     setHideLocation,
     setIsAngleAdjustable,
     setHasLeds,
+    setLitByWallDevice,
     setLocationName,
     setCoords,
     setSerialNumber,

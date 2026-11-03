@@ -38,6 +38,11 @@ describe('buildSessionBoardPath', () => {
     expect(buildSessionBoardPath({ ...homeWall, hasLeds: false })).toBe('/b/marcos-garage/30');
   });
 
+  it('names a personal LED board lit by a wall device, so joiners report to the feed it follows', () => {
+    expect(buildSessionBoardPath({ ...homeWall, hasLeds: true, litByWallDevice: true })).toBe('/b/marcos-garage/30');
+    expect(buildSessionBoardPath({ ...homeWall, litByWallDevice: false })).toBe('kilter/1/10/1,20/30');
+  });
+
   it('carries an angle override, so an angle change keeps a gym wall named', () => {
     // The regression that would otherwise land: the play drawer rebuilds the
     // session path on every angle change, and a tuple there un-converges

@@ -1,4 +1,5 @@
 import type { WallControlModel } from './wall-control';
+import { boardHasLights, type BoardLightingSource } from '../../lib/boards/board-lighting';
 
 /**
  * Frost marks confirmed physical driving; actions, labels and bulbs keep their
@@ -16,11 +17,10 @@ export function wallControlUsesFrost(model: Pick<WallControlModel, 'state' | 'la
   return model.driving;
 }
 
-/** Undefined LED metadata stays LED-capable, as it does throughout board control. */
-export function wallControlFrostHasLeds(
-  active: { boardType: string | undefined; hasLeds?: boolean },
-  target?: { boardType: string; hasLeds?: boolean } | null,
-): boolean {
-  const board = target ?? active;
-  return board.boardType !== 'spray' && board.hasLeds !== false;
+/**
+ * Undefined LED metadata stays LED-capable, as it does throughout board control.
+ * A wall device lights the wall too (`boardHasLights`).
+ */
+export function wallControlFrostHasLeds(active: BoardLightingSource, target?: BoardLightingSource | null): boolean {
+  return boardHasLights(target ?? active);
 }

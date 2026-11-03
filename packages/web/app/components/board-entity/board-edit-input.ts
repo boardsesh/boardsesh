@@ -20,6 +20,7 @@ export type EditableBoard = Pick<
   | 'angle'
   | 'isAngleAdjustable'
   | 'hasLeds'
+  | 'litByWallDevice'
   | 'layoutId'
   | 'sizeId'
   | 'setIds'
@@ -84,6 +85,8 @@ export function buildBoardUpdateInput(
   if (permissions.angle && fields.angle !== undefined && fields.angle !== board.angle) input.angle = fields.angle;
   if (permissions.setup) {
     if (fields.hasLeds !== undefined && fields.hasLeds !== (board.hasLeds ?? true)) input.hasLeds = fields.hasLeds;
+    if (fields.litByWallDevice !== undefined && fields.litByWallDevice !== (board.litByWallDevice ?? false))
+      input.litByWallDevice = fields.litByWallDevice;
     if (fields.isAngleAdjustable !== undefined && fields.isAngleAdjustable !== board.isAngleAdjustable)
       input.isAngleAdjustable = fields.isAngleAdjustable;
     if (fields.layoutId !== undefined && fields.layoutId !== board.layoutId) input.layoutId = fields.layoutId;

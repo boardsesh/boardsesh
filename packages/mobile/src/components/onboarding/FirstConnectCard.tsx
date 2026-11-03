@@ -36,7 +36,10 @@ type FirstRunCardAction = 'connect' | 'no_lights' | 'dismiss' | 'retry';
 type FirstConnectCardProps = {
   /** The bound board's name, or null when there is none to show. */
   boardName: string | null;
-  /** A board is bound and not flagged as having no lights (`hasLeds !== false`). */
+  /**
+   * A board is bound and climbs reach it over Bluetooth: not flagged as having
+   * no lights, and not lit by a wall device (`drivesWithoutBluetooth`).
+   */
   boardHasLights: boolean;
   /** Layout (margins) from the host list. */
   style?: StyleProp<ViewStyle>;

@@ -278,6 +278,35 @@ describe('useBoardBuilder', () => {
     expect(result.current.buildUpdateInput('board-uuid-1')?.hasLeds).toBe(false);
   });
 
+  it('saves the wall device flag only while the board has LED lights', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '20,1', litByWallDevice: true }),
+    );
+    expect(result.current.litByWallDevice).toBe(true);
+    expect(result.current.buildCreateInput()?.litByWallDevice).toBe(true);
+    expect(result.current.buildUpdateInput('board-uuid-1')?.litByWallDevice).toBe(true);
+
+    // The switch hides with the lights, and a hidden switch is left out of the
+    // save, so a value set elsewhere is never reset from here...
+    act(() => result.current.setHasLeds(false));
+    expect(result.current.litByWallDeviceShown).toBe(false);
+    expect(result.current.buildUpdateInput('board-uuid-1')?.litByWallDevice).toBeUndefined();
+    expect(result.current.buildCreateInput()?.litByWallDevice).toBeUndefined();
+
+    // ...and comes back with them.
+    act(() => result.current.setHasLeds(true));
+    expect(result.current.buildUpdateInput('board-uuid-1')?.litByWallDevice).toBe(true);
+  });
+
+  it('defaults the wall device flag off', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '20,1' }),
+    );
+    expect(result.current.buildUpdateInput('board-uuid-1')?.litByWallDevice).toBe(false);
+    act(() => result.current.setLitByWallDevice(true));
+    expect(result.current.buildUpdateInput('board-uuid-1')?.litByWallDevice).toBe(true);
+  });
+
   it('keeps a seeded hasLeds=false across re-renders', () => {
     // A fresh seed object every render, like an unmemoised prop: the meta seeds
     // run once in the useState initialisers, so a re-render can't reset the flag.

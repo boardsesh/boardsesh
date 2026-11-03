@@ -50,6 +50,7 @@ function projectAdminBoard(row: AdminBoardRow, viewerId: string): AdminBoard {
     angle: board.angle,
     isAngleAdjustable: board.isAngleAdjustable,
     hasLeds: board.hasLeds,
+    litByWallDevice: board.litByWallDevice,
     serialNumber: board.ownerId === viewerId ? board.serialNumber : null,
     timerName: board.ownerId === viewerId ? board.timerName : null,
     createdAt: board.createdAt.toISOString(),

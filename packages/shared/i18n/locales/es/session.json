@@ -565,6 +565,7 @@
       "wallEmptyBody": "Conéctate a tu plafón por Bluetooth para ver qué está encendido, quién está reventando y el encadene más duro de la sesión.",
       "wallEmptyCta": "Conectar un plafón",
       "wallEmptyBodyNoLeds": "Este muro no tiene luces. Toma el muro y todos los que están aquí verán el bloque que estás haciendo, en sus teléfonos y en la pantalla del rocódromo.",
+      "wallEmptyBodyWallDevice": "Un dispositivo de pared ilumina este muro. Toma el muro y el bloque que estás haciendo se ilumina en él, y todos los que están aquí lo ven en sus teléfonos y en la pantalla del rocódromo.",
       "wallEmptyCtaNoLeds": "Tomar el muro",
       "wallTakenToast": "Tienes el muro",
       "wallReleasedToast": "El muro vuelve a estar libre",
