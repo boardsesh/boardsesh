@@ -235,9 +235,9 @@ notification, a deep link), the MiniPlayer's ⏮ ⏭ (`useDrivingWall`), and eve
   the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`). During
   Put on board's timed drive it is the amber bulb in an amber ring that drains to the
   drive's end instead, as on the Live Activity (`BulbDriveCue`).
-- **Stopping it.** Press **You are driving the wall** to stop and keep the link, or tap the
-  MiniPlayer's bulb, which stops it the same way (owner, 2026-11-03) and never hangs up
-  while a drive runs. With the
+- **Stopping it.** Press **You are driving the wall** to stop and keep the link, or tap any
+  lightbulb (the MiniPlayer's, the player's, the toolbar's, the header pill), which stops it
+  the same way (owner, 2026-11-03: "Yes, every bulb") and never hangs up while a drive runs. With the
   default settings, later taps and swipes preview. A board-button tap (Put on board) lights
   that climb and opens the keep-lighting window (`startedBy: 'tap'`: 45 s by default, renewed
   by each lit climb), on a MoonBoard too; Until I stop starts an open-ended drive instead. With Always drive the wall
@@ -438,8 +438,8 @@ with each climb that lights (in 5 s steps under Reduce Motion).
 | Another board | A switch-board overlay when it is unreachable, or **Put on {board}** for another reachable board at the gym | The reachable-board action moves to that board, connects and lights the climb. A crew already on that board relays through its holder instead. |
 
 The default wall button sits full width under the board. View options can move it,
-or replace it with a lightbulb; that bulb has no swipe-to-drive gesture and its tap
-disconnects rather than stopping driving (the MiniPlayer's bulbs stop driving instead). See [the board-control rules](climb-view-options.md#the-board-control-7000).
+or replace it with a lightbulb; that bulb has no swipe-to-drive gesture, and during a drive
+its tap stops driving, as every bulb's does (owner, 2026-11-03). See [the board-control rules](climb-view-options.md#the-board-control-7000).
 
 <img src="images/list-model/player-browsing.png" alt="The player in a preview, with a back chip above the climb and the full-width Put on board button below it" width="300">
 

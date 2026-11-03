@@ -726,7 +726,7 @@
         "timedClipAlt": "Un tocco su Illumina il pannello avvia una guida a tempo, con cronometro e sfondo smerigliato che si riduce",
         "timedClipCaption": "Tocca Illumina il pannello per iniziare a guidare. Il cronometro e lo sfondo smerigliato si riducono; cambiare blocco li riempie. Tocca di nuovo per smettere.",
         "p3": "Davanti a un altro pannello? Cambia pannello è la prima riga dietro il tuo avatar.",
-        "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. Occupa l’estremo destro della riga in alto. Entrambi i controlli connettono e illuminano i blocchi; tienili premuti per le opzioni quando il pannello è connesso. Il pulsante parete permette anche di scorrere per guidare e toccare per smettere. La lampadina non è smerigliata: quando la guida ha un limite di tempo, un anello viola intorno a lei si svuota man mano che il tempo passa, e toccare la lampadina mentre guidi disconnette."
+        "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. Occupa l’estremo destro della riga in alto. Entrambi i controlli connettono e illuminano i blocchi; tienili premuti per le opzioni quando il pannello è connesso. Il pulsante parete permette anche di scorrere per guidare e toccare per smettere. La lampadina non è smerigliata: quando la guida ha un limite di tempo, un anello ambra intorno a lei si svuota man mano che il tempo passa. Se tocchi la lampadina mentre guidi, smetti di guidare, come con il pulsante parete."
       },
       "hidden": {
         "title": "Controlli del pannello",

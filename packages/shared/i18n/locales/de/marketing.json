@@ -726,7 +726,7 @@
         "timedClipAlt": "Ein Tippen auf Am Board beleuchten startet zeitbegrenztes Steuern mit Uhr und schwindendem Frost",
         "timedClipCaption": "Tippe auf Am Board beleuchten, um das Steuern zu starten. Uhr und Frost nehmen ab; ein Boulderwechsel füllt sie wieder auf. Tippe erneut, um aufzuhören.",
         "p3": "An einer anderen Wand? Board wechseln ist die erste Zeile hinter deinem Avatar.",
-        "p4": "Lieber die Glühbirne? Tippe in einem Boulder auf ⋯, dann Ansichtsoptionen, Buttons, und stell Board-Steuerung auf Glühbirne. Sie sitzt rechts außen in der oberen Reihe. Beide Bedienelemente verbinden und beleuchten Boulder; Halten öffnet bei bestehender Verbindung die Board-Optionen. Der Wand-Button bietet zusätzlich Wischen zum Steuern und Tippen zum Beenden. Die Glühbirne hat keine Mattierung: Hat das Steuern ein Zeitlimit, leert sich ein violetter Ring um sie, während die Zeit abläuft, und ein Tipp auf die Glühbirne beim Steuern trennt die Verbindung."
+        "p4": "Lieber die Glühbirne? Tippe in einem Boulder auf ⋯, dann Ansichtsoptionen, Buttons, und stell Board-Steuerung auf Glühbirne. Sie sitzt rechts außen in der oberen Reihe. Beide Bedienelemente verbinden und beleuchten Boulder; Halten öffnet bei bestehender Verbindung die Board-Optionen. Der Wand-Button bietet zusätzlich Wischen zum Steuern und Tippen zum Beenden. Die Glühbirne hat keine Mattierung: Hat das Steuern ein Zeitlimit, leert sich ein bernsteinfarbener Ring um sie, während die Zeit abläuft. Ein Tipp auf die Glühbirne beim Steuern beendet das Steuern, wie beim Wand-Button."
       },
       "hidden": {
         "title": "Board-Steuerung",

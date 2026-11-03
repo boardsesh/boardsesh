@@ -487,18 +487,13 @@ export type WallControlModel = {
   /** The gym board a tap moves to, for `move_to_board`. */
   gymBoardName: string | null;
   /**
-   * What a tap on the wall button (full width or compact) does, and on the
-   * MiniPlayer's bulb standing in for the player's (`PaneWallControlBulb`):
-   * every bar bulb stops a drive on a tap (owner, 2026-11-03), as its drive
-   * cue shows the drive.
+   * What a tap on any view of the board control does: the wall button (full
+   * width or compact), the player's first-row bulb, and the MiniPlayer's bulb
+   * standing in for the player's (`PaneWallControlBulb`). During a drive every
+   * bulb stops driving and keeps the link, as the frosted button does (owner,
+   * 2026-11-03: "Yes, every bulb"); the first-row bulb used to disconnect.
    */
   tapAction: WallControlAction;
-  /**
-   * What a tap on the player's first-row bulb does. While driving it
-   * disconnects, as it always has: `tapAction` with a stop turned into
-   * `disconnect`.
-   */
-  bulbTapAction: WallControlAction;
   /**
    * A swipe on the wall button: `drive` wherever a press puts the climb on
    * this phone's board (no link, a preview, a dark climb, on the wall with no
@@ -521,10 +516,8 @@ export type WallControlModel = {
   longPress: 'sheet' | null;
   labelKey: WallControlLabelKey | null;
   a11yValueKey: WallControlA11yValueKey | null;
-  /** The hint for `tapAction`: the wall button's, and the MiniPlayer's bulb's. */
+  /** The hint for `tapAction`, on every view: the wall button, the first-row bulb, the MiniPlayer's bulb. */
   a11yHintKey: WallControlA11yHintKey | null;
-  /** The hint for the first-row bulb's tap (`bulbTapAction`). */
-  bulbA11yHintKey: WallControlA11yHintKey | null;
   bulbValueKey: WallControlBulbValueKey;
   /** The bulb's look; the wall button reads `lit` as its amber fill. */
   look: WallBulbLook;
@@ -689,8 +682,6 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     swipeable && (!driving || windowLit) && !input.confirmArmed && !input.pending && driveMode !== 'arming'
       ? 'drive'
       : null;
-  const bulbTapAction: WallControlAction =
-    tapAction === 'stop_driving' || tapAction === 'stop_window' ? 'disconnect' : tapAction;
   // A press puts one climb up. Where Always drive the wall drives, its own
   // open-ended drive lights the next ones, so the press only drops a stop.
   // Otherwise the Stop driving after choice (2.7) starts a timed
@@ -751,8 +742,6 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     labelKey,
     a11yValueKey,
     a11yHintKey,
-    bulbTapAction,
-    bulbA11yHintKey: bulbTapAction === tapAction ? a11yHintKey : hintKeyOf(bulbTapAction, holderName, onOtherPhone),
     bulbValueKey,
     // The live fill only for a live drive (#7113): then a tap on any climb, in
     // any list, lights the wall. Solo swipes that light it say nothing about taps.
@@ -773,7 +762,6 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   holderFace: null,
   gymBoardName: null,
   tapAction: 'noop',
-  bulbTapAction: 'noop',
   swipeAction: null,
   tapDrive: null,
   tapKeepLighting: null,
@@ -782,7 +770,6 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   labelKey: null,
   a11yValueKey: null,
   a11yHintKey: null,
-  bulbA11yHintKey: null,
   bulbValueKey: 'valueOff',
   look: 'off',
   selected: false,

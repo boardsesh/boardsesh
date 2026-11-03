@@ -76,8 +76,6 @@ const LIT: WallControlModel = {
   labelKey: 'disconnectBoard',
   a11yValueKey: 'youHaveBoardLit',
   a11yHintKey: 'litHint',
-  bulbTapAction: 'disconnect',
-  bulbA11yHintKey: 'litHint',
   look: 'lit',
   selected: true,
 };
@@ -104,8 +102,8 @@ describe('PaneWallControlBulb', () => {
     expect(longPress).toHaveBeenCalledOnce();
   });
 
-  // Owner, 2026-11-03: a bar bulb's tap during a drive only stops driving, so
-  // this bulb says the button's stop hint, never the first-row bulb's disconnect.
+  // Owner, 2026-11-03: a bulb's tap during a drive only stops driving, so this
+  // bulb says the button's stop hint, never that it disconnects.
   it.each([
     ['an open-ended drive', { tapAction: 'stop_driving' }],
     ["Put on board's timed drive", { tapAction: 'stop_window', lightWindow: true, look: 'driving' }],
@@ -115,9 +113,6 @@ describe('PaneWallControlBulb', () => {
       driving: true,
       labelKey: 'youAreDriving',
       a11yHintKey: 'stopDrivingHint',
-      // The first-row bulb's own hint while driving: never spoken here.
-      bulbTapAction: 'disconnect',
-      bulbA11yHintKey: 'litHint',
       ...drive,
     });
     const bulb = getByRole('button');

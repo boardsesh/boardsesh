@@ -32,6 +32,7 @@ import { GradeRangeRail, type GradeRailChange } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
 import { BoardHeldCapsule } from '../queue-control/BoardHeldCapsule';
+import { useOwedDropAnnouncement } from '../queue-control/bar-bulb-tap';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useTabChrome } from '../../hooks/use-bottom-accessory';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
@@ -153,7 +154,10 @@ function ClimbTopChromeComponent({
   // animation (#6619).
   const queueHeadUuid = useActiveClimbUuid();
   const wallClimb = useLiveWallClimb();
-  const { inAppBoardConnection, ledless: liveLedless } = useBoardConnectionState();
+  const { inAppBoardConnection, ledless: liveLedless, localConnected } = useBoardConnectionState();
+  // The pill's tap during a drive can let go of the board (Disconnect Bluetooth
+  // when driving ends), and the pill goes with the hold: this header says it.
+  useOwedDropAnnouncement(localConnected);
   // Presence follows the board the Climbs list shows (the drawer host binds it
   // to the selected board), so this is that board's wall.
   const { boardId } = useBoardPresenceControls();

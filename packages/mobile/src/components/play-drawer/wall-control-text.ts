@@ -21,13 +21,11 @@ export type WallControlText = {
   /** The wall button's screen-reader label: the label, then where things stand ("Put on board, Sam has the board"). */
   accessibilityLabel: string;
   /**
-   * What a tap on the wall button does, and on the MiniPlayer's bulb standing
-   * in for the player's (it stops a drive too); the scanning and writing hints
-   * win while they apply.
+   * What a tap does, on every view: the wall button, the first-row bulb and
+   * the MiniPlayer's bulb standing in for the player's (each stops a drive);
+   * the scanning and writing hints win while they apply.
    */
   accessibilityHint: string | undefined;
-  /** What a tap on the player's first-row bulb does (it never stops driving). */
-  bulbAccessibilityHint: string | undefined;
   /** The bulb's own label ("Board lights"); its state rides `bulbValue`. */
   bulbAccessibilityLabel: string;
   bulbValue: string;
@@ -139,13 +137,10 @@ export function wallControlText(model: WallControlModel, t: TFunction, tSettings
   const spokenValue = model.a11yValueKey ? valueText(t, model.a11yValueKey, name) : null;
   const busyHint = model.pending ? tSettings('ble.scanning') : model.writing ? tSettings('ble.writing') : null;
   const accessibilityHint = busyHint ?? (model.a11yHintKey ? hintText(t, model.a11yHintKey, name, board) : undefined);
-  const bulbAccessibilityHint =
-    busyHint ?? (model.bulbA11yHintKey ? hintText(t, model.bulbA11yHintKey, name, board) : undefined);
   return {
     label,
     accessibilityLabel: spokenValue ? `${label}, ${spokenValue}` : label,
     accessibilityHint,
-    bulbAccessibilityHint,
     bulbAccessibilityLabel: t('playView.wallControl.bulbAria'),
     bulbValue: bulbValueText(t, model.bulbValueKey, name),
     longPressActionLabel: t('playView.wallControl.boardOptions'),

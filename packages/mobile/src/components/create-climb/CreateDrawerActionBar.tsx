@@ -1,5 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
-import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
@@ -7,8 +7,11 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ActionButton, SIZES, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
 import { BleLightbulbButton } from '../ble/BleLightbulbButton';
+import { useBoardConnectionState } from '../ble/use-board-connection-state';
+import { useBulbDriveTap } from '../queue-control/bar-bulb-tap';
+import { phoneDrivesTheWall } from '../queue-control/bulb-drive-cue';
 import { useTheme } from '../../providers/theme-provider';
-import { hapticSelection } from '../../lib/haptics';
+import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { useHoldColorOverrides } from '../../lib/hold-color-overrides';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { brushRoleColor, getPaintRoles, useBrushRoleLabels, type BrushRole } from './brush-roles';
@@ -22,6 +25,13 @@ import type { DraftStatusView } from './draft-status-view';
 // i18n-keep climbs.mobile.create.brush.hand
 // i18n-keep climbs.mobile.create.brush.finish
 // i18n-keep climbs.mobile.create.brush.foot
+
+/** The editor's Bluetooth toggle: connect lights the draft, a tap again disconnects. */
+type CreateLightbulb = {
+  connected: boolean;
+  connecting: boolean;
+  onToggle: () => void;
+};
 
 type CreateDrawerActionBarProps = {
   boardName: BoardName;
@@ -47,11 +57,7 @@ type CreateDrawerActionBarProps = {
    * The wall's Bluetooth lightbulb. Omitted on a board with no lights to
    * connect to (a spray wall, #5960), where it could only ever start a connect.
    */
-  lightbulb?: {
-    connected: boolean;
-    connecting: boolean;
-    onToggle: () => void;
-  };
+  lightbulb?: CreateLightbulb;
   /** The persistent "is my work safe?" line, or null for an empty editor. */
   draftStatus: DraftStatusView | null;
   /** The hold heatmap toggle; omitted → no button. */
@@ -116,8 +122,6 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   saveBlockedLine = null,
 }: CreateDrawerActionBarProps) {
   const { t } = useTranslation('climbs');
-  const { t: tSettings } = useTranslation('settings');
-  const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors: schemeBrandColors } = useTheme();
   const roleLabels = useBrushRoleLabels();
   const { overrides: holdColorOverrides } = useHoldColorOverrides();
@@ -276,21 +280,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
         />
         {/* Last, beside Set Active: both are about the wall. A stateful toggle
             climbers reach for often, so a tool here rather than a ••• row. */}
-        {lightbulb ? (
-          <BleLightbulbButton
-            isConnected={lightbulb.connected}
-            isScanning={lightbulb.connecting}
-            onPress={lightbulb.onToggle}
-            accessibilityLabel={
-              lightbulb.connected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')
-            }
-            scanningAccessibilityHint={tSettings('ble.scanning')}
-            writingAccessibilityHint={tSettings('ble.writing')}
-            haptic="medium"
-            size={SIZES.sm.icon}
-            containerSize={SIZES.sm.dim}
-          />
-        ) : null}
+        {lightbulb ? <CreateBoardLightbulb lightbulb={lightbulb} /> : null}
       </View>
 
       {/* Always rendered, even with nothing to say — see CreateDraftStatusRow.
@@ -322,6 +312,46 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
     </View>
   );
 });
+
+/**
+ * The editor's lightbulb. While this phone drives the wall (a timed drive left
+ * running, or Always drive the wall's) a tap stops driving and keeps the link,
+ * as every bulb does (owner, 2026-11-03; `useBulbDriveTap`), and the bulb says
+ * "Stop driving". With no drive it connects or hangs up, as before.
+ */
+function CreateBoardLightbulb({ lightbulb }: { lightbulb: CreateLightbulb }) {
+  const { t: tSettings } = useTranslation('settings');
+  const { t: tCommon } = useTranslation('common');
+  const { inAppBoardConnection, localConnected, ledless } = useBoardConnectionState();
+  const { driving, takeTap } = useBulbDriveTap({
+    drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),
+    linked: localConnected,
+    control: 'create_climb',
+  });
+  const { onToggle } = lightbulb;
+  const handlePress = useCallback(() => {
+    // A stop buzzes light on its own; a dropped tap (just after a stop) does nothing.
+    if (takeTap()) return;
+    hapticMedium();
+    onToggle();
+  }, [takeTap, onToggle]);
+  let accessibilityLabel = lightbulb.connected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard');
+  if (driving) accessibilityLabel = tSettings('ble.barControl.stopDrivingLabel');
+  return (
+    <BleLightbulbButton
+      isConnected={lightbulb.connected}
+      isScanning={lightbulb.connecting}
+      onPress={handlePress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityTapHint={driving ? tSettings('ble.barControl.stopDrivingHint') : undefined}
+      scanningAccessibilityHint={tSettings('ble.scanning')}
+      writingAccessibilityHint={tSettings('ble.writing')}
+      haptic="none"
+      size={SIZES.sm.icon}
+      containerSize={SIZES.sm.dim}
+    />
+  );
+}
 
 /** A failed save or "nothing is being stored" beats the heat line; a publish hint does not. */
 function statusOutranksHeatmap(status: DraftStatusView | null): boolean {

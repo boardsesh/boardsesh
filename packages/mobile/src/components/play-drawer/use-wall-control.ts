@@ -250,11 +250,10 @@ export function useWallControl({
     // the wall (it now reads Disconnect board). Drop it.
     const tappedAt = guardedTapAtRef.current;
     if (tappedAt !== null && Date.now() - tappedAt < DISCONNECT_TAP_GUARD_MS) return;
-    // The player's first-row bulb never stops driving (`bulbTapAction`). The
-    // MiniPlayer's bulb standing in for it does, as every bar bulb does
-    // (owner, 2026-11-03): during a drive its tap stops driving, as the
-    // button's does.
-    const action = control === 'bulb' ? current.bulbTapAction : current.tapAction;
+    // Every view runs the one tap (owner, 2026-11-03: "Yes, every bulb"):
+    // during a drive the first-row bulb and the MiniPlayer's bulb standing in
+    // for it stop driving and keep the link, as the button does.
+    const action = current.tapAction;
     // A timed drive just ran out under the climber's thumb: a stop aimed at it
     // now reads Disconnect board, or Put on board once that end let go of the
     // board. Only that is dropped; with the link kept, a Put on board on

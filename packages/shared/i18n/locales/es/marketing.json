@@ -726,7 +726,7 @@
         "timedClipAlt": "Un toque en Poner en el plafón inicia un mando con tiempo, un reloj y un fondo esmerilado que se reduce",
         "timedClipCaption": "Toca Poner en el plafón para tomar el mando. El reloj y el esmerilado se reducen; cambiar de bloque los rellena. Toca otra vez el botón para dejar el mando.",
         "p3": "¿Estás en otro muro? Cambiar de plafón es la primera fila detrás de tu avatar.",
-        "p4": "¿Prefieres la bombilla? En un bloque, toca ⋯, luego Opciones de vista, Botones, y pon Control del plafón en Bombilla. Ocupa el extremo derecho de la fila superior. Los dos controles conectan y encienden bloques; mantenlos pulsados para las opciones del plafón mientras estás conectado. El botón del muro también permite deslizar para tomar el mando y tocar para dejarlo. La bombilla no se esmerila: si el mando tiene límite de tiempo, un anillo violeta a su alrededor se vacía a medida que pasa el tiempo, y tocar la bombilla mientras tienes el mando desconecta."
+        "p4": "¿Prefieres la bombilla? En un bloque, toca ⋯, luego Opciones de vista, Botones, y pon Control del plafón en Bombilla. Ocupa el extremo derecho de la fila superior. Los dos controles conectan y encienden bloques; mantenlos pulsados para las opciones del plafón mientras estás conectado. El botón del muro también permite deslizar para tomar el mando y tocar para dejarlo. La bombilla no se esmerila: si el mando tiene límite de tiempo, un anillo ámbar a su alrededor se vacía a medida que pasa el tiempo. Si tocas la bombilla mientras tienes el mando, dejas el mando, igual que con el botón del muro."
       },
       "hidden": {
         "title": "Controles del plafón",

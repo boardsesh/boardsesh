@@ -726,7 +726,7 @@
         "timedClipAlt": "Appuyer sur Allumer sur la board lance un pilotage chronométré, avec une horloge et un fond givré qui diminue",
         "timedClipCaption": "Appuie sur Allumer sur la board pour piloter la board. L’horloge et le givre diminuent ; changer de bloc les remplit. Appuie à nouveau pour arrêter.",
         "p3": "Sur un autre mur ? Changer de board est la première ligne derrière ton avatar.",
-        "p4": "Tu préfères l’ampoule ? Dans un bloc, touche ⋯, puis Options d’affichage, Boutons, et mets Commande de la board sur Ampoule. Elle prend le bout droit de la rangée du haut. Les deux commandes connectent et allument les blocs ; maintiens-les pour les options quand la board est connectée. Le bouton du mur permet aussi de glisser pour piloter et de toucher pour arrêter. L’ampoule n’a pas de givre : quand le pilotage a une durée limite, un anneau violet autour d’elle se vide à mesure que le temps passe, et toucher l’ampoule pendant que tu pilotes déconnecte."
+        "p4": "Tu préfères l’ampoule ? Dans un bloc, touche ⋯, puis Options d’affichage, Boutons, et mets Commande de la board sur Ampoule. Elle prend le bout droit de la rangée du haut. Les deux commandes connectent et allument les blocs ; maintiens-les pour les options quand la board est connectée. Le bouton du mur permet aussi de glisser pour piloter et de toucher pour arrêter. L’ampoule n’a pas de givre : quand le pilotage a une durée limite, un anneau ambre autour d’elle se vide à mesure que le temps passe. Toucher l’ampoule pendant que tu pilotes arrête le pilotage, comme le bouton du mur."
       },
       "hidden": {
         "title": "Commandes de la board",

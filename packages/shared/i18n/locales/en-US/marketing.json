@@ -726,7 +726,7 @@
         "timedClipAlt": "Tapping Put on board starts a timed drive, shown by a clock and shrinking frost",
         "timedClipCaption": "Tap Put on board to start driving. The clock and frost shrink; changing climbs refills them. Tap the button again to stop.",
         "p3": "At a different wall? Change board is the first row behind your avatar.",
-        "p4": "Prefer the lightbulb? In a climb, tap ⋯, then View options, Buttons, and set Board control to Lightbulb. It takes the top row’s right end. Both controls connect and light climbs; holding either opens board options while connected. The wall button also offers swipe-to-drive and tap-to-stop. The lightbulb has no frost: when a drive has a time limit, a violet ring around it empties as the time runs out, and tapping the lightbulb while you drive disconnects."
+        "p4": "Prefer the lightbulb? In a climb, tap ⋯, then View options, Buttons, and set Board control to Lightbulb. It takes the top row’s right end. Both controls connect and light climbs; holding either opens board options while connected. The wall button also offers swipe-to-drive and tap-to-stop. The lightbulb has no frost: when a drive has a time limit, an amber ring around it empties as the time runs out. Tapping the lightbulb while you drive stops driving, as the wall button does."
       },
       "hidden": {
         "title": "Board controls",

@@ -34,9 +34,9 @@ type PaneWallControlBulbProps = {
  * the amber disc. Its label is already the button's "You are driving the
  * wall", so no value: a live number would re-render the bar on every step.
  *
- * Its tap is the wall button's (`tapAction`), as on every bar bulb (owner,
- * 2026-11-03): during any drive it stops driving and keeps the link, never
- * the first-row bulb's disconnect, and its hint says so.
+ * Its tap is the wall button's (`tapAction`), as on every bulb (owner,
+ * 2026-11-03): during any drive it stops driving and keeps the link, and its
+ * hint says so.
  */
 export function PaneWallControlBulb({
   control,

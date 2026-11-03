@@ -15,7 +15,9 @@
 // a held LED board uses just the frost base and grain. A board with no lights
 // keeps the brand tone and "You have the wall".
 // A tap lets go, like the lightbulbs' short press: it disconnects, or releases a
-// wall with no lights. A long-press opens the Bluetooth controls sheet
+// wall with no lights. While this phone drives the wall it stops driving and
+// keeps the link instead, as every bulb does (owner, 2026-11-03;
+// `useBulbDriveTap`), and its hint says so. A long-press opens the Bluetooth controls sheet
 // (Re-light / Turn off / Disconnect) while this device holds the radio link.
 // While it draws the climb on the wall it carries the wall capsule's Hide: the ×
 // and the screen-reader action, never a swipe, because a swipe that ends as a tap
@@ -35,6 +37,8 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { hapticMedium } from '../../lib/haptics';
 import { useSettledHeaderValue } from '../chrome/use-settled-header-value';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
+import { useBulbDriveTap } from './bar-bulb-tap';
+import { phoneDrivesTheWall } from './bulb-drive-cue';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -104,17 +108,25 @@ function BoardHeldCapsuleImpl({ ledless, dismiss }: BoardHeldCapsuleProps) {
     onLongPress: openControlsIfLocal,
     localConnected,
     pressAction,
+    inAppBoardConnection,
   } = useLightbulbControl({
     surface: 'header_pill',
     onOpenControls: openControls,
   });
+  // Any drive this phone runs: the tap stops it and keeps the link.
+  const { driving, takeTap } = useBulbDriveTap({
+    drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),
+    linked: localConnected,
+    control: 'header_pill',
+  });
   // The capsule mounts on a settled "you hold the board", so for a moment after
   // the player closes it can outlive the hold. A tap then must not connect or
-  // take the wall: it only ever lets go.
+  // take the wall: it only ever lets go (or stops a drive).
   const onPress = useCallback(() => {
+    if (takeTap()) return;
     if (pressAction !== 'disconnect' && pressAction !== 'releaseWall') return;
     lightbulbPress();
-  }, [pressAction, lightbulbPress]);
+  }, [takeTap, pressAction, lightbulbPress]);
 
   const plainGlow = !ledless && localConnected ? emptyGlow : null;
   const toneColor = ledless ? brandColors.primary : brandColors.warning;
@@ -144,7 +156,11 @@ function BoardHeldCapsuleImpl({ ledless, dismiss }: BoardHeldCapsuleProps) {
   const accessibilityActions = actionList.length > 0 ? actionList : undefined;
   // No swipe here, so the × is the only sighted Hide: it stays in a narrow slot.
   const dismissButton = handleDismiss ? { label: hideLabel, onPress: handleDismiss, keepWhenCompact: true } : undefined;
-  const accessibilityHint = t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint');
+  // The label stays the words on the pill (Voice Control says them); while
+  // driving the hint is the frosted button's own.
+  const accessibilityHint = driving
+    ? tSession('playView.wallControl.stopDrivingHint')
+    : t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint');
 
   if (climb) {
     return (

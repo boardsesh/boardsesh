@@ -118,7 +118,7 @@ function PickPutOnBoardBulb({
   const lightingMode = useDriveLightingMode();
   const { open: openBoardControls } = useBleControlSheet();
   const putOnBoard = usePickPutOnBoard(pick);
-  const stopDriving = useBarBulbStopDriving(localConnected);
+  const stopDriving = useBarBulbStopDriving(localConnected, 'mini_bar');
   const drivesTheWall = phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless });
   const handlePress = useCallback(() => {
     const tap = readBarBulbTap(drivesTheWall);
