@@ -103,6 +103,32 @@ export function sprayShareTarget(board: SprayShareBoard | null | undefined): Spr
   return url ? { url, visibility, posterUrl: buildSprayWallPosterUrl(wall) } : null;
 }
 
+/** What Edit board can offer under "Who can see it", when it offers anything. */
+export type SprayEditShareState = { kind: 'ready'; target: SprayShareTarget } | { kind: 'saveFirst' };
+
+/**
+ * The share button on Edit board, or `null` when the wall has no link to offer.
+ *
+ * The form holds visibility as a draft until Save, and a link is only as good as
+ * what is saved: a wall still private on the server refuses whoever opens a link
+ * built from the draft, and Link only and Public are different links. So the link
+ * always comes from `savedBoard`, and while the draft disagrees with it the button
+ * waits for Save. A draft of Private has nothing to wait for, so it offers nothing.
+ */
+export function sprayEditShareState(
+  savedBoard: SprayShareBoard,
+  draft: { isPublic: boolean; isUnlisted: boolean },
+): SprayEditShareState | null {
+  if (toBoardName(savedBoard.boardType) !== 'spray') return null;
+
+  const draftVisibility = sprayWallVisibility(draft);
+  if (draftVisibility === 'private') return null;
+  if (draftVisibility !== sprayWallVisibility(savedBoard)) return { kind: 'saveFirst' };
+
+  const target = sprayShareTarget(savedBoard);
+  return target ? { kind: 'ready', target } : null;
+}
+
 /**
  * - `editHolds`: open the hold editor.
  * - `resetWall`: the owner's reset, behind a confirm.

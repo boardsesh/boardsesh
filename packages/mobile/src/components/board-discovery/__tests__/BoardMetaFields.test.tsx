@@ -95,8 +95,17 @@ vi.mock('../../SwitchRow', () => ({
     ]),
 }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, loading }: { title: string; loading?: boolean }) =>
-    createElement('button', { 'data-loading': String(!!loading) }, title),
+  Button: ({
+    title,
+    loading,
+    disabled,
+    onPress,
+  }: {
+    title: string;
+    loading?: boolean;
+    disabled?: boolean;
+    onPress?: () => void;
+  }) => createElement('button', { 'data-loading': String(!!loading), disabled, onClick: onPress }, title),
 }));
 vi.mock('../GymPickerSheet', () => ({}));
 vi.mock('../../SegmentedControl', () => ({
@@ -141,6 +150,7 @@ import {
   BoardIdentityFields,
   BoardVisibilityFields,
   SprayTrainingConsentField,
+  SprayWallShareField,
   SprayWallVisibilityField,
 } from '../BoardMetaFields';
 
@@ -233,6 +243,35 @@ describe('SprayWallVisibilityField', () => {
   it('reads both flags on as Public', () => {
     const { getByTestId } = renderField({ isPublic: true, isUnlisted: true });
     expect(getByTestId('segment-public').getAttribute('data-selected')).toBe('true');
+  });
+});
+
+describe('SprayWallShareField', () => {
+  const shareLabel = 'mobile.boardDetail.spray.shareLink';
+  const saveFirstHint = 'mobile.sprayVisibility.shareAfterSave';
+
+  it('shares straight away when the saved wall has a link', () => {
+    const onShare = vi.fn();
+    const { getByText, queryByText } = render(<SprayWallShareField saveFirst={false} onShare={onShare} />);
+    fireEvent.click(getByText(shareLabel));
+    expect(onShare).toHaveBeenCalledTimes(1);
+    expect(queryByText(saveFirstHint)).toBeNull();
+  });
+
+  it('waits for Save and says why', () => {
+    const onShare = vi.fn();
+    const { getByText } = render(<SprayWallShareField saveFirst onShare={onShare} />);
+    fireEvent.click(getByText(shareLabel));
+    expect(onShare).not.toHaveBeenCalled();
+    expect(getByText(saveFirstHint)).toBeTruthy();
+  });
+
+  it('stays off while a save is running, with nothing to explain', () => {
+    const onShare = vi.fn();
+    const { getByText, queryByText } = render(<SprayWallShareField saveFirst={false} disabled onShare={onShare} />);
+    fireEvent.click(getByText(shareLabel));
+    expect(onShare).not.toHaveBeenCalled();
+    expect(queryByText(saveFirstHint)).toBeNull();
   });
 });
 

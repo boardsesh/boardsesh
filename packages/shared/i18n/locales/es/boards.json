@@ -506,6 +506,7 @@
       "privateHint": "Solo tú puedes verlo, y los miembros de su rocódromo si tiene uno. Con «Ayuda a entrenar la detección de presas» activado, el equipo de Boardsesh puede usar la foto para mejorar la detección de presas.",
       "unlistedHint": "Cualquiera con el enlace entra. El Spraywall no aparece en la página del rocódromo y su foto no sale a la web abierta.",
       "publicHint": "Cualquiera puede encontrar el Spraywall. Aparece en la página del rocódromo, sus bloques salen en el feed y su foto se publica en la web abierta.",
+      "shareAfterSave": "Guarda para obtener tu enlace.",
       "ownerOnlyError": "Solo quien montó este Spraywall puede cambiar quién lo ve. El resto de tus cambios se han guardado.",
       "updateError": "No se pudo cambiar quién ve este Spraywall. Inténtalo de nuevo."
     },

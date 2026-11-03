@@ -4734,6 +4734,14 @@ the owner) registers with no share fields at all, because hidden means exactly
 what private means. The wall-level share row (`sprayShareTarget`) reads a
 `UserBoard`, which carries no `hiddenAt`, so it does not apply that rule yet.
 
+Edit board draws the same link as a Share link button directly under "Who can see
+it" (`sprayEditShareState`). It always reads the saved board, never the form's
+draft: a wall going from Private to Link only has no working link until Save, and
+Link only and Public are different links. While the draft disagrees with the saved
+wall the button stays off and says "Save to get your link"; a draft of Private
+hides it. The board sheet's row stays too, because anyone who can open a wall may
+share it and only editors reach this screen.
+
 ### The card and the sitemap
 
 `GET /og/climb?board_name=spray` composes the card from the public copy and the

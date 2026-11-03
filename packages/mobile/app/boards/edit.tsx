@@ -39,7 +39,13 @@ import { confirmSprayWallReset } from '../../src/lib/spray/confirm-spray-wall-re
 import { trackSprayEvent } from '../../src/lib/spray/spray-telemetry';
 import { useSprayWallIsArchived } from '../../src/lib/spray/use-spray-wall-archive';
 import { useViewerUserId } from '../../src/hooks/use-viewer-user-id';
-import { viewerOwnsSprayWall } from '../../src/components/board-discovery/spray-detail-rows';
+import {
+  sprayEditShareState,
+  viewerOwnsSprayWall,
+  type SprayShareTarget,
+} from '../../src/components/board-discovery/spray-detail-rows';
+import { SprayWallShareField } from '../../src/components/board-discovery/BoardMetaFields';
+import { BoardShareSheet } from '../../src/components/board-discovery/BoardShareSheet';
 import { SprayWallBackgroundPicker } from '../../src/components/spray-wall/SprayWallBackgroundPicker';
 import { SprayWallTrainingConsentRow } from '../../src/components/spray-wall/SprayWallTrainingConsentRow';
 import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
@@ -210,6 +216,22 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   }, [board]);
 
   const builder = useBoardBuilder(seed);
+
+  // With the privacy rollout on, the audience control saves itself and the
+  // builder's flags stop following it, so the saved wall is the only answer there.
+  const shareState = useMemo(
+    () =>
+      sprayEditShareState(
+        board,
+        privacySettings?.enabled ? board : { isPublic: builder.isPublic, isUnlisted: builder.isUnlisted },
+      ),
+    [board, privacySettings?.enabled, builder.isPublic, builder.isUnlisted],
+  );
+  const [shareSnapshot, setShareSnapshot] = useState<{ target: SprayShareTarget; wallName: string } | null>(null);
+  const openShare = useCallback(() => {
+    if (shareState?.kind === 'ready') setShareSnapshot({ target: shareState.target, wallName: board.name });
+  }, [shareState, board.name]);
+  const closeShare = useCallback(() => setShareSnapshot(null), []);
 
   const selectedSize = useMemo(
     () => builder.sizes.find((size) => size.id === builder.sizeId) ?? null,
@@ -436,31 +458,59 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   handleUpdateRef.current = handleUpdate;
 
   return (
-    <BoardForm
-      builder={builder}
-      defaultName={defaultName}
-      submitting={submitting}
-      errorMessage={updateError}
-      onSubmit={() => void handleUpdate()}
-      submitLabel={t('mobile.edit.save')}
-      lockedConfig={lockedConfig}
-      lockedConfigReason={configLock ?? undefined}
-      currentBoardUuid={board.uuid}
-      sprayTrainingSection={viewerOwnsWall ? <SprayWallTrainingConsentRow wallUuid={board.uuid} isOwner /> : undefined}
-      sprayBackgroundSection={
-        isSprayWall ? (
-          <SprayWallBackgroundPicker
-            gate={backgroundEditor.gate}
-            art={backgroundEditor.art}
-            value={backgroundEditor.value}
-            onChange={backgroundEditor.onChange}
-            disabled={submitting}
-            onRetakePhoto={canResetWall ? openRetake : undefined}
-            previewSource={backgroundEditor.previewSource}
-          />
-        ) : undefined
-      }
-    />
+    <>
+      <BoardForm
+        builder={builder}
+        defaultName={defaultName}
+        submitting={submitting}
+        errorMessage={updateError}
+        onSubmit={() => void handleUpdate()}
+        submitLabel={t('mobile.edit.save')}
+        lockedConfig={lockedConfig}
+        lockedConfigReason={configLock ?? undefined}
+        currentBoardUuid={board.uuid}
+        sprayTrainingSection={
+          viewerOwnsWall ? <SprayWallTrainingConsentRow wallUuid={board.uuid} isOwner /> : undefined
+        }
+        sprayShareSection={
+          shareState ? (
+            // Off during a save: Save pops this route, and a sheet presenting
+            // while the route leaves would overlap two native transitions.
+            <SprayWallShareField
+              saveFirst={shareState.kind === 'saveFirst'}
+              disabled={submitting}
+              onShare={openShare}
+            />
+          ) : undefined
+        }
+        sprayBackgroundSection={
+          isSprayWall ? (
+            <SprayWallBackgroundPicker
+              gate={backgroundEditor.gate}
+              art={backgroundEditor.art}
+              value={backgroundEditor.value}
+              onChange={backgroundEditor.onChange}
+              disabled={submitting}
+              onRetakePhoto={canResetWall ? openRetake : undefined}
+              previewSource={backgroundEditor.previewSource}
+            />
+          ) : undefined
+        }
+      />
+      {/* Inside this modal route so it presents above it, and a sibling of the
+          form, never inside its ScrollView. The snapshot keeps the sheet steady
+          if the board refetches while it is open. */}
+      {shareSnapshot ? (
+        <BoardShareSheet
+          visible
+          onDismiss={closeShare}
+          shareUrl={shareSnapshot.target.url}
+          wallName={shareSnapshot.wallName}
+          visibility={shareSnapshot.target.visibility}
+          posterUrl={shareSnapshot.target.posterUrl}
+        />
+      ) : null}
+    </>
   );
 }
 

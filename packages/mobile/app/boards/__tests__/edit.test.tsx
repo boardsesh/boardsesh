@@ -51,11 +51,15 @@ const state = vi.hoisted(() => ({
   // The "Reset wall with a new photo" gate: who is looking, and the archive.
   profileId: 'owner-id' as string | null,
   wallArchived: false,
+  // The server privacy rollout, which takes visibility off the builder.
+  privacyEnabled: false,
 }));
 
 const board = {
   uuid: 'board-uuid',
   ownerId: 'owner-id',
+  slug: 'klimmuur',
+  angle: 40,
   layoutId: 3,
   sizeId: 1,
   setIds: '5,6,7',
@@ -154,18 +158,67 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     errorMessage,
     sprayBackgroundSection,
     sprayTrainingSection,
+    sprayShareSection,
   }: {
     onSubmit: () => void;
     errorMessage?: string | null;
     sprayBackgroundSection?: ReactNode;
     sprayTrainingSection?: ReactNode;
+    sprayShareSection?: ReactNode;
   }) =>
     createElement('div', null, [
       createElement('button', { key: 'submit', type: 'button', onClick: onSubmit }, 'submit'),
       errorMessage ? createElement('span', { key: 'error', 'data-testid': 'error' }, errorMessage) : null,
       createElement('div', { key: 'training' }, sprayTrainingSection),
+      createElement('div', { key: 'share' }, sprayShareSection),
       createElement('div', { key: 'background' }, sprayBackgroundSection),
     ]),
+}));
+
+vi.mock('../../../src/components/board-discovery/BoardMetaFields', () => ({
+  SprayWallShareField: ({
+    saveFirst,
+    disabled,
+    onShare,
+  }: {
+    saveFirst: boolean;
+    disabled?: boolean;
+    onShare: () => void;
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', 'data-testid': 'share-button', disabled: saveFirst || !!disabled, onClick: onShare },
+      saveFirst ? 'save first' : 'share',
+    ),
+}));
+
+vi.mock('../../../src/components/board-discovery/BoardShareSheet', () => ({
+  BoardShareSheet: ({
+    shareUrl,
+    wallName,
+    visibility,
+    posterUrl,
+    onDismiss,
+  }: {
+    shareUrl: string;
+    wallName: string;
+    visibility: string;
+    posterUrl: string | null;
+    onDismiss: () => void;
+  }) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        'data-testid': 'share-sheet',
+        'data-url': shareUrl,
+        'data-wall-name': wallName,
+        'data-visibility': visibility,
+        'data-poster-url': posterUrl,
+        onClick: onDismiss,
+      },
+      'close sheet',
+    ),
 }));
 
 vi.mock('../../../src/components/spray-wall/SprayWallTrainingConsentRow', () => ({
@@ -243,6 +296,7 @@ beforeEach(() => {
   state.ownerDisplayName = undefined;
   state.profileId = 'owner-id';
   state.wallArchived = false;
+  state.privacyEnabled = false;
   picker.props = null;
   background.changed = false;
   background.save.mockResolvedValue({ outcome: 'saved' });
@@ -707,8 +761,11 @@ describe('EditBoard — reset wall with a new photo', () => {
   });
 });
 
-// This suite exercises the existing flow before the server privacy rollout.
-vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({ usePrivacySettings: () => ({ data: undefined }) }));
+// This suite exercises the existing flow before the server privacy rollout,
+// unless a test says otherwise.
+vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({
+  usePrivacySettings: () => ({ data: state.privacyEnabled ? { enabled: true, isPrivate: false } : undefined }),
+}));
 vi.mock('../../../src/components/privacy/PublicationAudiencePicker', () => ({
   PublicationAudiencePicker: () => null,
   SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
@@ -734,6 +791,91 @@ vi.mock('../../../src/components/privacy/use-publication-audience', () => ({
     chooseAudience: () => {},
   }),
 }));
+
+describe('EditBoard — Share link', () => {
+  beforeEach(() => {
+    state.boardType = 'spray';
+  });
+
+  function saveVisibility(flags: { isPublic: boolean; isUnlisted: boolean }) {
+    state.boardIsPublic = flags.isPublic;
+    state.boardIsUnlisted = flags.isUnlisted;
+    state.builderIsPublic = flags.isPublic;
+    state.builderIsUnlisted = flags.isUnlisted;
+  }
+
+  it('opens the sheet on the saved link, and closes it again', () => {
+    saveVisibility({ isPublic: false, isUnlisted: true });
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('share-sheet')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('share-button'));
+    const sheet = screen.getByTestId('share-sheet');
+    expect(sheet.getAttribute('data-url')).toContain('/b/klimmuur/40/list?wall=board-uuid');
+    expect(sheet.getAttribute('data-poster-url')).toContain('/poster/b/klimmuur?wall=board-uuid');
+    expect(sheet.getAttribute('data-visibility')).toBe('unlisted');
+    expect(sheet.getAttribute('data-wall-name')).toBe('Klimmuur MoonBoard');
+
+    fireEvent.click(sheet);
+    expect(screen.queryByTestId('share-sheet')).toBeNull();
+  });
+
+  it('waits for Save on a wall the form made shareable but the server has not', () => {
+    state.builderIsUnlisted = true;
+    render(createElement(EditBoard));
+
+    const button = screen.getByTestId('share-button') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe('save first');
+    fireEvent.click(button);
+    expect(screen.queryByTestId('share-sheet')).toBeNull();
+  });
+
+  it('offers nothing on a private wall', () => {
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('share-button')).toBeNull();
+  });
+
+  it('takes the button away as soon as the form says Private', () => {
+    state.boardIsPublic = true;
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('share-button')).toBeNull();
+  });
+
+  it('offers nothing on a catalogue board', () => {
+    state.boardType = 'moonboard';
+    saveVisibility({ isPublic: true, isUnlisted: false });
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('share-button')).toBeNull();
+  });
+
+  // Save pops this route, so a sheet must not start presenting underneath it.
+  it('turns off while a save is running', async () => {
+    saveVisibility({ isPublic: true, isUnlisted: false });
+    updateBoardMock.mockReturnValue(new Promise(() => {}));
+    render(createElement(EditBoard));
+    const button = screen.getByTestId('share-button') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(button.disabled).toBe(true));
+  });
+
+  // With the rollout on, the audience control saves itself and the builder keeps
+  // its first seed, so reading the builder would answer from a stale draft.
+  it('reads the saved wall alone once the privacy rollout owns visibility', () => {
+    state.privacyEnabled = true;
+    state.boardIsUnlisted = true;
+    const { unmount } = render(createElement(EditBoard));
+    expect((screen.getByTestId('share-button') as HTMLButtonElement).disabled).toBe(false);
+    unmount();
+
+    state.boardIsUnlisted = false;
+    state.builderIsUnlisted = true;
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('share-button')).toBeNull();
+  });
+});
 
 describe('EditBoard — Help train hold finding', () => {
   beforeEach(() => {

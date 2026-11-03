@@ -93,6 +93,11 @@ type BoardFormProps = {
    * audience control once the privacy rollout has replaced it. Owner only.
    */
   sprayTrainingSection?: ReactNode;
+  /**
+   * A spray wall's share button. Drawn directly under whichever control says who
+   * sees the wall, because that control decides who the link works for.
+   */
+  sprayShareSection?: ReactNode;
 };
 
 /**
@@ -114,6 +119,7 @@ export function BoardForm({
   currentBoardUuid,
   sprayBackgroundSection,
   sprayTrainingSection,
+  sprayShareSection,
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
@@ -401,6 +407,7 @@ export function BoardForm({
               ) : (
                 <>
                   <SprayWallVisibilityField builder={builder} />
+                  {sprayShareSection}
                   {sprayTrainingSection}
                   {sprayBackgroundSection}
                 </>
@@ -412,6 +419,7 @@ export function BoardForm({
         {privacySettings?.enabled && currentBoardUuid ? (
           <ResourcePrivacyControl kind="board" resourceId={currentBoardUuid} gymUuid={builder.selectedGym?.uuid} />
         ) : null}
+        {privacySettings?.enabled && isSprayWall ? sprayShareSection : null}
 
         {privacySettings?.enabled && !currentBoardUuid ? (
           <View style={{ gap: spacing[3] }}>

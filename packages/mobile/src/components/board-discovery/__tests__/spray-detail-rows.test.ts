@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   sprayDetailRows,
+  sprayEditShareState,
   sprayShareTarget,
   viewerOwnsSprayWall,
   type SprayDetailRowContext,
@@ -125,5 +126,42 @@ describe('sprayShareTarget', () => {
   it('has neither for a private wall or a catalogue board', () => {
     expect(sprayShareTarget(shareable)).toBeNull();
     expect(sprayShareTarget({ ...shareable, boardType: 'kilter', isPublic: true })).toBeNull();
+  });
+});
+
+describe('sprayEditShareState', () => {
+  const savedWall = { ...wall, slug: 'garage-spray', angle: 40, name: 'Garage', isPublic: false, isUnlisted: false };
+  const privateDraft = { isPublic: false, isUnlisted: false };
+  const unlistedDraft = { isPublic: false, isUnlisted: true };
+  const publicDraft = { isPublic: true, isUnlisted: false };
+
+  it('offers the saved link while the draft agrees with it', () => {
+    const saved = { ...savedWall, isUnlisted: true };
+    expect(sprayEditShareState(saved, unlistedDraft)).toEqual({ kind: 'ready', target: sprayShareTarget(saved) });
+  });
+
+  // The link would answer "not found" to whoever opened it before the Save.
+  it('waits for Save on a wall still private on the server', () => {
+    expect(sprayEditShareState(savedWall, unlistedDraft)).toEqual({ kind: 'saveFirst' });
+    expect(sprayEditShareState(savedWall, publicDraft)).toEqual({ kind: 'saveFirst' });
+  });
+
+  it('waits for Save between Link only and Public, which are different links', () => {
+    expect(sprayEditShareState({ ...savedWall, isUnlisted: true }, publicDraft)).toEqual({ kind: 'saveFirst' });
+    expect(sprayEditShareState({ ...savedWall, isPublic: true }, unlistedDraft)).toEqual({ kind: 'saveFirst' });
+  });
+
+  it('offers nothing for a draft of Private, saved or not', () => {
+    expect(sprayEditShareState(savedWall, privateDraft)).toBeNull();
+    expect(sprayEditShareState({ ...savedWall, isPublic: true }, privateDraft)).toBeNull();
+  });
+
+  it('compares what the flags mean, so a wall with both on reads as Public', () => {
+    const both = { ...savedWall, isPublic: true, isUnlisted: true };
+    expect(sprayEditShareState(both, publicDraft)?.kind).toBe('ready');
+  });
+
+  it('offers nothing on a catalogue board', () => {
+    expect(sprayEditShareState({ ...savedWall, boardType: 'kilter', isPublic: true }, publicDraft)).toBeNull();
   });
 });

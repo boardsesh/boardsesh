@@ -506,6 +506,7 @@
       "privateHint": "Nur du kannst sie sehen, dazu die Mitglieder der Halle, falls sie zu einer gehört. Ist „Hilf beim Training der Grifferkennung“ an, darf das Boardsesh-Team das Foto nutzen, um die Grifferkennung zu verbessern.",
       "unlistedHint": "Wer den Link hat, kommt rein. Die Spraywall steht nicht auf der Seite der Halle und ihr Foto bleibt aus dem offenen Web.",
       "publicHint": "Jede*r kann die Spraywall finden. Sie steht auf der Seite der Halle, ihre Boulder landen im Feed, und das Foto von der Spraywall geht ins offene Web.",
+      "shareAfterSave": "Speichere, um deinen Link zu bekommen.",
       "ownerOnlyError": "Nur wer diese Spraywall aufgebaut hat, kann ändern, wer sie sieht. Deine anderen Änderungen sind gespeichert.",
       "updateError": "Konnte nicht ändern, wer diese Spraywall sieht. Versuch es nochmal."
     },

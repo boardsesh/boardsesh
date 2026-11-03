@@ -96,7 +96,7 @@ function builderFor(boardName: string): BoardFormProps['builder'] {
   } as unknown as BoardFormProps['builder'];
 }
 
-function renderForm(boardName: string) {
+function renderForm(boardName: string, sprayShareSection?: ReactNode) {
   return render(
     <BoardForm
       builder={builderFor(boardName)}
@@ -107,6 +107,7 @@ function renderForm(boardName: string) {
       currentBoardUuid="board-uuid"
       sprayTrainingSection={<div data-testid="training" />}
       sprayBackgroundSection={<div data-testid="background" />}
+      sprayShareSection={sprayShareSection}
     />,
   );
 }
@@ -136,6 +137,31 @@ describe('BoardForm on a spray wall: Help train hold finding', () => {
     privacy.settings = { enabled: true, isPrivate: false };
     const { container } = renderForm('spray');
     expect(drawnSections(container)).toEqual(['identity', 'background', 'training', 'privacy-control']);
+  });
+});
+
+describe('BoardForm on a spray wall: Share link', () => {
+  const shareButton = <div data-testid="share" />;
+
+  it('draws the button right under the three-way visibility control', () => {
+    const { container } = renderForm('spray', shareButton);
+    expect(drawnSections(container)).toEqual(['identity', 'spray-visibility', 'share', 'training', 'background']);
+  });
+
+  it('follows the audience control once the privacy rollout replaces that control', () => {
+    privacy.settings = { enabled: true, isPrivate: false };
+    const { container } = renderForm('spray', shareButton);
+    expect(drawnSections(container)).toEqual(['identity', 'background', 'training', 'privacy-control', 'share']);
+  });
+
+  it('never draws it on a catalogue board, whichever way the rollout stands', () => {
+    const off = renderForm('kilter', shareButton);
+    expect(drawnSections(off.container)).toEqual(['identity']);
+    off.unmount();
+
+    privacy.settings = { enabled: true, isPrivate: false };
+    const on = renderForm('kilter', shareButton);
+    expect(drawnSections(on.container)).toEqual(['identity', 'privacy-control']);
   });
 });
 

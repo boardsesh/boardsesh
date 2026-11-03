@@ -251,6 +251,43 @@ export function SprayWallVisibilityField({
 }
 
 /**
+ * Share the wall from under the control that decides who the link works for, so
+ * nobody has to leave Edit board for the board sheet's row. While the form holds a
+ * visibility that is not saved yet the button waits and says why
+ * (`sprayEditShareState`).
+ */
+export function SprayWallShareField({
+  saveFirst,
+  disabled = false,
+  onShare,
+}: {
+  saveFirst: boolean;
+  disabled?: boolean;
+  onShare: () => void;
+}) {
+  const styles = useTypographyStyles(createStyles);
+  const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
+  return (
+    <>
+      <Button
+        title={t('mobile.boardDetail.spray.shareLink')}
+        icon="share"
+        variant="outlined"
+        onPress={onShare}
+        disabled={saveFirst || disabled}
+        style={styles.shareButton}
+      />
+      {saveFirst ? (
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
+          {t('mobile.sprayVisibility.shareAfterSave')}
+        </Text>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * The owner's "Help train hold finding" switch (SW-20, #5471), drawn beside the
  * control that says who sees the wall because it is the other answer to "who
  * sees my photo": under the three-way visibility control, or directly above the
@@ -445,5 +482,9 @@ const createStyles = (textStyles: TypographyScale) =>
     visibilityHint: {
       marginTop: spacing[2],
       lineHeight: 18,
+    },
+    shareButton: {
+      alignSelf: 'stretch',
+      marginTop: spacing[2],
     },
   });
