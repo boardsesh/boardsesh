@@ -489,8 +489,9 @@ export type LiveActivityKeepLightingConfig = {
   /** The general `KeepLightingChoice` ('off' | '30' | '45' | '60' | '120' | '300' | 'until_stopped'). */
   keepLighting: string;
   /**
-   * The MoonBoard `KeepLightingChoice`. A MoonBoard takes the general choice
-   * now, so JS sends `keepLighting` here too; the binary still reads it.
+   * The retired MoonBoard `KeepLightingChoice`. A MoonBoard takes the general
+   * choice, so JS sends `keepLighting` here too. Only a binary from before the
+   * lock-screen press stamp reads it; a later one drops it.
    */
   moonboardKeepLighting: string;
   /** "In a session too". */
@@ -498,8 +499,9 @@ export type LiveActivityKeepLightingConfig = {
   /** A crew is in the session (the roster's crew). */
   inCrew: boolean;
   /**
-   * The session's board is a MoonBoard, for the binary's MoonBoard rule. JS
-   * sends false on every board, so a press follows the general rule.
+   * The session's board is a MoonBoard, for an older binary's MoonBoard rule.
+   * JS sends false on every board, so a press follows the general rule. A
+   * later binary drops it and treats `true` from an older bundle the same way.
    */
   moonboard: boolean;
   /** False where a press would not start a drive in the app either. */
@@ -509,6 +511,22 @@ export type LiveActivityKeepLightingConfig = {
    * while a drive is on the card. An older binary ignores it.
    */
   lockScreenStop?: boolean;
+};
+
+/**
+ * The last iOS Lock Screen or Dynamic Island Next / Previous, as
+ * `getLockScreenPress` reads it. The intent stamps it in flight before its
+ * server request and board write, and settles it just before the Darwin post
+ * that becomes `queueNavigate`. A press the party server turns down settles
+ * too, with no `queueNavigate` after: its stamp may cover an earlier press
+ * still writing the board. Epoch ms.
+ */
+export type LiveActivityLockScreenPress = {
+  pressId: string;
+  /** An unsettled press stops counting as in flight here: iOS ended the intent first. */
+  expiresAtMs: number;
+  /** When the press settled; absent while it is in flight. */
+  settledAtMs?: number | null;
 };
 
 export type WidgetMirrorEvent = {
@@ -614,6 +632,8 @@ type LiveActivityNativeModule = {
   updateKeepLightingConfig?(config: LiveActivityKeepLightingConfig | null): Promise<void>;
   /** Synchronous. Optional for OTA compatibility with binaries predating 2.7. */
   getLightingWindow?(): LiveActivityLightingWindowSnapshot | null;
+  /** Synchronous. Optional: binaries before the press stamp have none. */
+  getLockScreenPress?(): LiveActivityLockScreenPress | null;
   /**
    * True on binaries whose Lock Screen bulb can stop a drive
    * (`StopDrivingIntent`), which then emit `lockScreenDriveStop`.

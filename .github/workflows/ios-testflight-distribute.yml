@@ -1,17 +1,18 @@
 name: Distribute iOS TestFlight to Discord Users
-run-name: TestFlight distribution (${{ github.event.workflow_run.id || inputs.source_run_id || 'deferred retry' }})
+run-name: TestFlight distribution (${{ inputs.source_run_id || 'hourly check' }})
 
+# The native build dispatches this with its own run ID after a successful
+# upload. Not workflow_run: GitHub sends no workflow_run event for a run that
+# GITHUB_TOKEN started, and Main Native Release starts recovery builds that way,
+# so 2.7.0 builds 11 and 12 never reached Discord Users. The hourly check
+# delivers any newest upload that no run has attempted, and retries deferrals.
 on:
-  workflow_run:
-    workflows: [iOS TestFlight Deploy (React Native)]
-    types: [completed]
-    branches: [main]
   schedule:
     - cron: '23 * * * *'
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: 'Successful native TestFlight build run to distribute (no rebuild)'
+        description: 'Native TestFlight build run to distribute (no rebuild); waits for it to finish'
         required: true
         type: string
 
@@ -38,9 +39,7 @@ jobs:
           exit 1
 
   distribute:
-    if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      ((github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Preparation has 65 minutes, leaving Pilot 45 minutes plus setup and cleanup.
     timeout-minutes: 120
@@ -49,9 +48,27 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FASTLANE_SKIP_UPDATE_CHECK: '1'
       FASTLANE_DISABLE_ANIMATION: '1'
-      SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
-      SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || '' }}
     steps:
+      # The native build dispatches this from one of its last steps, so its run
+      # is usually still finishing. resolve only trusts a completed run. Waiting
+      # comes before the preparation deadline so it never eats the read budget.
+      - name: Wait for the native build run to finish
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::error::source_run_id must be a positive integer.'
+            exit 1
+          fi
+          for _ in $(seq 1 60); do
+            status="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq .status)"
+            if [ "$status" = completed ]; then exit 0; fi
+            sleep 30
+          done
+          echo "::error::Native build run $SOURCE_RUN_ID did not finish within 30 minutes; the hourly check will pick its upload up."
+          exit 1
       - name: Bound TestFlight preparation across GitHub reads
         run: echo "TESTFLIGHT_PREPARATION_DEADLINE_MS=$(( $(date +%s) * 1000 + 65 * 60 * 1000 ))" >> "$GITHUB_ENV"
       # Execute this workflow's trusted tooling, never code extracted from the
@@ -67,7 +84,7 @@ jobs:
           cache: false
       - name: Install workspace dependencies
         run: vp install --frozen-lockfile
-      - name: Select only a deferred delivery of the newest uploaded binary
+      - name: Select the newest uploaded binary if it was never delivered or was deferred
         if: github.event_name == 'schedule'
         id: selection
         run: vp exec tsx scripts/testflight-distribution.ts select
@@ -75,8 +92,8 @@ jobs:
         if: github.event_name != 'schedule' || steps.selection.outputs.selected == 'true'
         id: source
         env:
-          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id || steps.selection.outputs.source_run_id }}
-          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || steps.selection.outputs.source_run_attempt || '' }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id || steps.selection.outputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ steps.selection.outputs.source_run_attempt || '' }}
         run: vp exec tsx scripts/testflight-build.ts resolve --run-id "$SOURCE_RUN_ID"
       - name: Download exact native build receipt
         if: steps.source.outputs.should_distribute == 'true'

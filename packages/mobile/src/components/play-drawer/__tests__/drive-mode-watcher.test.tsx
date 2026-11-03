@@ -6,6 +6,7 @@ import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   LiveActivityLightingWindowSnapshot,
+  LiveActivityLockScreenPress,
   WidgetQueueNavigateEvent,
 } from '../../../../modules/live-activity/src/index';
 
@@ -130,6 +131,8 @@ vi.mock('react-native', () => ({
 // (2.7), the press's queueNavigate event, and which platform hears it.
 const lockScreen = vi.hoisted(() => ({
   snapshot: null as LiveActivityLightingWindowSnapshot | null,
+  /** The iOS intent's press stamp: in flight from before its board write until it settles. */
+  press: null as LiveActivityLockScreenPress | null,
   navigateListeners: new Set<(event: WidgetQueueNavigateEvent) => void>(),
   /** The iOS Lock Screen bulb's stop event (`lockScreenDriveStop`). */
   stopListeners: new Set<() => void>(),
@@ -137,6 +140,7 @@ const lockScreen = vi.hoisted(() => ({
 }));
 vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
   readLiveActivityLightingWindow: () => lockScreen.snapshot,
+  readLiveActivityLockScreenPress: () => lockScreen.press,
   addWidgetQueueNavigateListener: (listener: (event: WidgetQueueNavigateEvent) => void) => {
     lockScreen.navigateListeners.add(listener);
     return () => {
@@ -161,7 +165,7 @@ import { emitWallConfirm } from '@boardsesh/play-view';
 import { DriveModeWatcher } from '../DriveModeWatcher';
 import { noteOwnMove, noteRelayReceipt, clearRelayReceipt } from '../../../lib/relay-receipt';
 import { CREW_PUT_UP_NOTICE_MS, clearCrewPutUp, getCrewPutUp } from '../crew-put-up-store';
-import { resetLockScreenLightingForTests } from '../lock-screen-lighting';
+import { LOCK_SCREEN_PRESS_RECHECK_MS, resetLockScreenLightingForTests } from '../lock-screen-lighting';
 import {
   DRIVE_ARMING_TIMEOUT_MS,
   clearDrivingStopped,
@@ -212,6 +216,7 @@ beforeEach(() => {
   reads.current = { ...DEFAULT_READS };
   resetDriveModeForTests();
   lockScreen.snapshot = null;
+  lockScreen.press = null;
   lockScreen.android = false;
   resetLockScreenLightingForTests();
   clearRelayReceipt();
@@ -1953,6 +1958,150 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
     });
     expect(getLastDriveModeExitReason()).toBe('window_ended');
     expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  // iOS: native writes a press's drive only after its board write, and JS
+  // hears the press later still. The intent stamps the press in flight first,
+  // so a catch-up in that gap waits instead of ending the drive at the clock
+  // and letting go of the board under the press.
+  describe('an iOS Lock Screen press in flight', () => {
+    function pressInFlight(expiresInMs = 8_000): void {
+      lockScreen.press = { pressId: 'press-1', expiresAtMs: Date.now() + expiresInMs };
+    }
+
+    function settlePress(): void {
+      if (lockScreen.press) lockScreen.press = { ...lockScreen.press, settledAtMs: Date.now() };
+    }
+
+    function foreground(): void {
+      act(() => {
+        for (const listener of appState.listeners) listener('active');
+      });
+    }
+
+    function lapsedTimedDrive(): void {
+      vi.useFakeTimers();
+      reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+      mount();
+      openTimedDrive();
+      // Suspended past its end: the timer never fired.
+      vi.setSystemTime(Date.now() + 60_000);
+    }
+
+    it('keeps the timed drive and the board while the press is on its way', () => {
+      lapsedTimedDrive();
+      pressInFlight();
+      foreground();
+      expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap' });
+      expect(bluetoothDisconnect).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(LOCK_SCREEN_PRESS_RECHECK_MS * 4);
+      });
+      expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap' });
+      expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    });
+
+    it('under Right away, ends it keeping the board once the press settles, before its queueNavigate', () => {
+      lapsedTimedDrive();
+      pressInFlight();
+      foreground();
+      // The board write is done; the intent wrote no drive (Right away).
+      settlePress();
+      act(() => {
+        vi.advanceTimersByTime(LOCK_SCREEN_PRESS_RECHECK_MS);
+      });
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true });
+      // Its queueNavigate lands after: nothing more to end, nothing let go.
+      act(() => {
+        for (const listener of lockScreen.navigateListeners) {
+          listener({ action: 'next', currentIndex: 1, correlationId: 'corr-1' });
+        }
+      });
+      expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    });
+
+    it('takes on the drive the press started once it settles, keeping the board', () => {
+      lapsedTimedDrive();
+      pressInFlight();
+      foreground();
+      lockScreen.snapshot = {
+        sessionId: 'session-1',
+        mode: 'window',
+        endsAtMs: Date.now() + 45_000,
+        windowSeconds: 45,
+        family: 'general',
+        source: 'lockScreen',
+        updatedAtMs: Date.now(),
+      };
+      settlePress();
+      act(() => {
+        vi.advanceTimersByTime(LOCK_SCREEN_PRESS_RECHECK_MS);
+      });
+      // The old drive ended at its end, and the press's own took its place.
+      expect(effects.track).toHaveBeenCalledWith(
+        'Drive Mode Ended',
+        expect.objectContaining({ reason: 'window_ended', startedBy: 'tap' }),
+      );
+      expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'lock_screen' });
+      expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    });
+
+    it('holds the timer at the end too, while the app runs in the background', () => {
+      vi.useFakeTimers();
+      reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+      mount();
+      openTimedDrive();
+      act(() => {
+        vi.advanceTimersByTime(45_000 - 100);
+      });
+      pressInFlight();
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(getDriveMode()?.phase).toBe('live');
+      expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    });
+
+    it('ends at the clock and lets go once the stamp runs out with no press landing', () => {
+      lapsedTimedDrive();
+      pressInFlight(1_000);
+      foreground();
+      expect(getDriveMode()?.phase).toBe('live');
+      act(() => {
+        vi.advanceTimersByTime(1_000 - 1);
+      });
+      expect(getDriveMode()?.phase).toBe('live');
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: false });
+      expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+    });
+
+    it('keeps the board when the party server turned the press down after the end', () => {
+      lapsedTimedDrive();
+      pressInFlight();
+      foreground();
+      // The intent settles a turned-down press's stamp rather than removing it,
+      // since it may cover an earlier press still writing. No queueNavigate follows.
+      settlePress();
+      act(() => {
+        vi.advanceTimersByTime(LOCK_SCREEN_PRESS_RECHECK_MS);
+      });
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true });
+      expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    });
+
+    it('lets go as before when the last press settled before the drive ended', () => {
+      lapsedTimedDrive();
+      lockScreen.press = { pressId: 'press-0', expiresAtMs: Date.now() - 100_000, settledAtMs: Date.now() - 110_000 };
+      foreground();
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: false });
+      expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+    });
   });
 
   it('keeps the board when an Android notification press finds the timed drive over', () => {

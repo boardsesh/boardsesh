@@ -186,6 +186,12 @@ public class LiveActivityModule: Module {
         Function("getLightingWindow") { () -> [String: Any]? in
             SharedConstants.sharedDefaults.flatMap { SharedLightingWindowStore.load(from: $0)?.bridgeBody }
         }
+
+        // Synchronous for the same check: a timed drive found over waits for a
+        // lock-screen press still on its way to the wall (`SharedLockScreenPress`).
+        Function("getLockScreenPress") { () -> [String: Any]? in
+            SharedConstants.sharedDefaults.flatMap { SharedLockScreenPress.load(from: $0)?.bridgeBody }
+        }
     }
 
     // MARK: - Event emission
@@ -1282,10 +1288,8 @@ extension LiveActivityModule {
             SharedKeepLightingConfig(
                 v: SharedKeepLightingConfig.currentVersion,
                 keepLighting: options.keepLighting,
-                moonboardKeepLighting: options.moonboardKeepLighting,
                 drivesInSession: options.drivesInSession,
                 inCrew: options.inCrew,
-                moonboard: options.moonboard,
                 enabled: options.enabled,
                 lockScreenStop: options.lockScreenStop
             ),
@@ -1311,6 +1315,19 @@ extension SharedLightingWindowState {
     }
 }
 
+extension SharedLockScreenPressState {
+    /// The stamp as `getLockScreenPress` hands it to JS
+    /// (`LiveActivityLockScreenPress`). An absent `settledAtMs` is left out.
+    var bridgeBody: [String: Any] {
+        var body: [String: Any] = [
+            "pressId": pressId,
+            "expiresAtMs": expiresAtMs,
+        ]
+        if let settledAtMs { body["settledAtMs"] = settledAtMs }
+        return body
+    }
+}
+
 // MARK: - Argument Records
 
 /// Mirrors `LiveActivityLightingWindowOptions` in modules/live-activity/src/index.ts.
@@ -1323,13 +1340,13 @@ struct UpdateLightingWindowOptions: Record {
 }
 
 /// Mirrors `LiveActivityKeepLightingConfig` in modules/live-activity/src/index.ts.
-/// The defaults are what an absent field means: one climb, no window.
+/// The defaults are what an absent field means: one climb, no window. JS's
+/// `moonboardKeepLighting` and `moonboard` have no field here, so they are
+/// dropped: every board takes the one choice (`SharedKeepLightingConfig`).
 struct KeepLightingConfigOptions: Record {
     @Field var keepLighting: String = "off"
-    @Field var moonboardKeepLighting: String = "off"
     @Field var drivesInSession: Bool = false
     @Field var inCrew: Bool = false
-    @Field var moonboard: Bool = false
     @Field var enabled: Bool = false
     /// The JS adopts a lock-screen stop. Absent from an older bundle: no stop on the bulb.
     @Field var lockScreenStop: Bool = false

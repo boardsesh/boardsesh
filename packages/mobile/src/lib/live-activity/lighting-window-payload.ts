@@ -62,11 +62,12 @@ function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingF
  * `lockScreenStop` says this JS takes a stop from the Lock Screen bulb; a
  * binary without one ignores it.
  *
- * A MoonBoard takes the one choice like every board. The binary still reads a
- * MoonBoard choice and a MoonBoard flag (`SharedKeepLightingConfig`), so this
- * sends the general choice in that slot too and never says MoonBoard: a press
- * on a MoonBoard's card then follows the general rule, In a session too
- * included, on every binary.
+ * A MoonBoard takes the one choice like every board. A binary from before the
+ * Lock Screen press stamp still reads a MoonBoard choice and a MoonBoard flag
+ * (`SharedKeepLightingConfig`); a later one drops both. So this sends the
+ * general choice in that slot too and never says MoonBoard: a press on a
+ * MoonBoard's card then follows the general rule, In a session too included,
+ * on every binary.
  */
 export function buildKeepLightingConfig({
   keepLighting,

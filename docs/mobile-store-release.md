@@ -157,6 +157,17 @@ processing, submits beta review when needed, and enables tester notifications.
 Pending beta review means submitted, not yet installable. This separate workflow
 never holds the native build lock or blocks store drafts and screenshots.
 
+The native build starts it. After the upload and its receipt succeed, the build
+job dispatches the distribution with its own run ID. The distribution waits up
+to 30 minutes for that run to finish, because it only trusts completed runs.
+It does not listen for `workflow_run`. GitHub sends no `workflow_run` event for
+a run that `GITHUB_TOKEN` started, and Main Native Release starts its recovery
+builds that way. Under the old trigger, 2.7.0 builds 11 and 12 never reached
+testers. A failed dispatch does not fail the build. The hourly check also
+delivers the newest uploaded build when no distribution has tried it yet. It
+finds the build's run by the title `ios:<source sha>`, then checks the receipt
+before trusting it.
+
 Receipt and native-test-note GitHub reads retry rate limits within one 65-minute
 preparation deadline shared across the workflow. They honor GitHub's retry/reset
 headers; secondary limits without a reset retry after 60, 120, then 240 seconds.
@@ -172,7 +183,11 @@ supported; an earlier build of the same commit produces no new test steps.
 TestFlight's **What to Test** contains up to five native test scenarios, ordered
 by PR risk. Only merged PRs entering this binary since the frozen baseline and
 confirmed native on **iOS** by the OTA compatibility check are eligible. JS-only
-and Android-only changes are excluded. Plans come from **Test plan**, even when
+and Android-only changes are excluded. If a `native-fingerprint` PR has no
+readable iOS verdict for its final head, its plan stays in the notes and the run
+logs a warning. This happens, for example, when main was merged into the branch
+after the last OTA comment. Notes never block delivery. That exact case held
+back 2.7.0 build 10. Plans come from **Test plan**, even when
 **Release Notes** is `none`. Complete steps retain prerequisites and expected
 results; CI-only steps are omitted. Full plans and the submitted notes remain in
 the distribution workflow's artifacts for 90 days.
@@ -181,8 +196,8 @@ After a tooling fix, dispatch the corrected workflow from `main` with the newest
 uploaded build's **source_run_id**; rerunning an old workflow uses its old tooling.
 For transient failures, rerun failed jobs in the distribution workflow, or dispatch it from
 `main` with the original native build's **source_run_id**. It never rebuilds or
-uploads an IPA. Missing groups, stale/unknown iOS verdicts, unreadable history,
-or missing receipts fail this follow-up with the affected reference. Correct the
+uploads an IPA. Missing groups, unreadable history, or missing receipts fail
+this follow-up with the affected reference. Correct the
 reported metadata and rerun. Builds predating receipt capture cannot be selected;
 a first-ever build without a predecessor needs an explicit baseline before notes
 can be generated. App Store Connect must already have the beta-review details
@@ -229,7 +244,9 @@ build rather than assuming the configuration change delivered it.
 Manual dispatch runs from main. Forced hotfix builds remain available; recovery
 of an existing stamped version uses `source_sha` and `force_native=false`. Recognized
 Apple processing/review delays receive hourly retries of the same uploaded binary.
-Other failures require explicit `source_run_id` recovery after their cause is fixed.
+A newest upload that no distribution has attempted is delivered by the same
+hourly check. Other failures require explicit `source_run_id` recovery after
+their cause is fixed.
 Newer actual uploads supersede old deferred deliveries; a version bump alone does not.
 
 ## 3. Listing material

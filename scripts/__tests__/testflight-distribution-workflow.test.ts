@@ -4,6 +4,7 @@ import { parse } from 'yaml';
 
 type WorkflowStep = {
   name?: string;
+  'continue-on-error'?: boolean;
   id?: string;
   uses?: string;
   run?: string;
@@ -28,22 +29,50 @@ describe('external TestFlight distribution workflow', () => {
   const nativeSteps = native.jobs['build-and-upload'].steps;
   const steps = followup.jobs.distribute.steps;
 
-  it('runs independently after either trusted native build source, without holding the build lock', () => {
-    expect(followup.on.workflow_run).toEqual({
-      workflows: [native.name],
-      types: ['completed'],
-      branches: ['main'],
-    });
+  it('is handed each upload by dispatch, without holding the build lock', () => {
+    // GitHub sends no workflow_run for a run GITHUB_TOKEN started, and Main Native
+    // Release dispatches recovery builds that way.
+    expect(followup.on).not.toHaveProperty('workflow_run');
     expect(followup.concurrency).toMatchObject({ 'cancel-in-progress': false, queue: 'max' });
     expect(followup.concurrency.group).not.toBe(native.concurrency.group);
     expect(followup.jobs.distribute['runs-on']).toBe('ubuntu-latest');
     expect(followup.jobs.distribute['timeout-minutes']).toBeGreaterThanOrEqual(75);
-    expect(followup.jobs.distribute.if).toContain("github.event.workflow_run.conclusion == 'success'");
-    expect(followup.jobs.distribute.if).toContain("github.ref == 'refs/heads/main'");
+    expect(followup.jobs.distribute.if).toBe(
+      "(github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'",
+    );
     expect(nativeSteps.some((step) => step.run?.includes('distribute_testflight'))).toBe(false);
   });
 
-  it('reconciles only deferred uploaded binaries and retains terminal outcomes', () => {
+  it('dispatches distribution only after the exact receipt is published, and never fails the build', () => {
+    const receipt = nativeSteps.findIndex(
+      (step) => step.with?.name === 'ios-testflight-build-${{ github.run_attempt }}',
+    );
+    const handOff = nativeSteps.findIndex((step) => step.run?.includes('ios-testflight-distribute.yml'));
+    expect(handOff).toBeGreaterThan(receipt);
+    expect(nativeSteps[handOff]).toMatchObject({
+      if: "steps.testflight_upload.outcome == 'success' && steps.testflight_receipt.outcome == 'success'",
+      'continue-on-error': true,
+      env: { GH_TOKEN: '${{ github.token }}' },
+    });
+    expect(nativeSteps[handOff].run).toContain('--ref main');
+    expect(nativeSteps[handOff].run).toContain('source_run_id="$GITHUB_RUN_ID"');
+  });
+
+  it('waits for a dispatched source run to finish before resolving it', () => {
+    const wait = steps.findIndex((step) => step.name === 'Wait for the native build run to finish');
+    const resolve = steps.findIndex((step) => step.id === 'source');
+    expect(wait).toBeGreaterThan(-1);
+    expect(wait).toBeLessThan(resolve);
+    expect(steps[wait].if).toBe("github.event_name == 'workflow_dispatch'");
+    expect(steps[wait].env?.SOURCE_RUN_ID).toBe('${{ inputs.source_run_id }}');
+    expect(steps[wait].run).toContain('^[1-9][0-9]*$');
+    expect(steps[wait].run).toContain('if [ "$status" = completed ]; then exit 0; fi');
+    expect(steps[resolve].env?.SOURCE_RUN_ID).toBe(
+      '${{ inputs.source_run_id || steps.selection.outputs.source_run_id }}',
+    );
+  });
+
+  it('reconciles never-attempted or deferred uploaded binaries and retains terminal outcomes', () => {
     expect(followup.on.schedule).toEqual([{ cron: '23 * * * *' }]);
     const selection = steps.find((step) => step.id === 'selection');
     expect(selection).toMatchObject({
@@ -81,7 +110,8 @@ describe('external TestFlight distribution workflow', () => {
 
   it('shares one preparation deadline while reserving time for Apple processing', () => {
     const deadline = steps.findIndex((step) => step.name === 'Bound TestFlight preparation across GitHub reads');
-    expect(deadline).toBe(0);
+    expect(deadline).toBe(1);
+    expect(steps[0].name).toBe('Wait for the native build run to finish');
     expect(steps[deadline].run).toContain('TESTFLIGHT_PREPARATION_DEADLINE_MS=');
     expect(steps[deadline].run).toContain('65 * 60 * 1000');
     expect(steps[deadline].run).toContain('"$GITHUB_ENV"');

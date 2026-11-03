@@ -2,13 +2,17 @@
 // board's timed drive natively on iOS (2.7); this is how the drive store takes
 // it on. An Android notification press arms the drive from JS instead.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LiveActivityLightingWindowSnapshot } from '../../../../modules/live-activity/src/index';
+import type {
+  LiveActivityLightingWindowSnapshot,
+  LiveActivityLockScreenPress,
+} from '../../../../modules/live-activity/src/index';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 // The native read is injected per call; the plugin never loads here.
 vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
   readLiveActivityLightingWindow: () => null,
+  readLiveActivityLockScreenPress: () => null,
 }));
 
 import {
@@ -25,11 +29,15 @@ import {
 import {
   adoptLockScreenLighting,
   armNotificationPressDrive,
+  endTimedDriveAtClock,
   endTimedDriveOverAtPress,
   isUnsettledLockScreenLighting,
   isUnsettledLockScreenStop,
+  LOCK_SCREEN_PRESS_MAX_IN_FLIGHT_MS,
+  LOCK_SCREEN_PRESS_RECHECK_MS,
   resetLockScreenLightingForTests,
   resolveLockScreenAdoption,
+  resolveTimedDriveEndAtClock,
 } from '../lock-screen-lighting';
 
 const NOW = 100_000;
@@ -349,6 +357,98 @@ describe('endTimedDriveOverAtPress', () => {
     markDriveLive({ now: NOW - 600_000 });
     expect(endTimedDriveOverAtPress(NOW)).toBe(false);
     expect(getDriveMode()).toMatchObject({ phase: 'live', expiresAt: null });
+  });
+});
+
+// iOS: the intent stamps a press in flight before its board write and settles
+// it before JS hears it. The clock finding a timed drive over in that gap must
+// not end it under the press (Disconnect Bluetooth when driving ends would let
+// go of the board mid-press).
+describe('resolveTimedDriveEndAtClock', () => {
+  const END = NOW - 60_000;
+  const inFlight = (expiresInMs: number): LiveActivityLockScreenPress => ({
+    pressId: 'press-1',
+    expiresAtMs: NOW + expiresInMs,
+  });
+  const at = (press: LiveActivityLockScreenPress | null) =>
+    resolveTimedDriveEndAtClock({ press, expiresAt: END, now: NOW });
+
+  it('ends at the clock with no press stamped', () => {
+    expect(at(null)).toEqual({ kind: 'end' });
+  });
+
+  it('waits for a press in flight, looking again shortly or at its expiry, whichever is first', () => {
+    expect(at(inFlight(8_000))).toEqual({ kind: 'wait', recheckInMs: LOCK_SCREEN_PRESS_RECHECK_MS });
+    expect(at(inFlight(18_000))).toEqual({ kind: 'wait', recheckInMs: LOCK_SCREEN_PRESS_RECHECK_MS });
+    expect(at(inFlight(100))).toEqual({ kind: 'wait', recheckInMs: 100 });
+    expect(at({ ...inFlight(8_000), settledAtMs: null })).toMatchObject({ kind: 'wait' });
+  });
+
+  it('ends at the clock once an unsettled press expired: iOS ended the intent first', () => {
+    expect(at(inFlight(0))).toEqual({ kind: 'end' });
+    expect(at(inFlight(-1))).toEqual({ kind: 'end' });
+  });
+
+  it('never waits on a stamp claiming more than a press can take, or on garbage', () => {
+    expect(at(inFlight(LOCK_SCREEN_PRESS_MAX_IN_FLIGHT_MS))).toMatchObject({ kind: 'wait' });
+    // The clock moved back since the stamp: it would hold the end for an hour.
+    expect(at(inFlight(LOCK_SCREEN_PRESS_MAX_IN_FLIGHT_MS + 1))).toEqual({ kind: 'end' });
+    expect(at({ pressId: 'press-1', expiresAtMs: Number.NaN })).toEqual({ kind: 'end' });
+  });
+
+  it('ends keeping the board for a press that landed once the drive was over', () => {
+    expect(at({ ...inFlight(8_000), settledAtMs: END })).toEqual({ kind: 'end_keeping_board' });
+    expect(at({ ...inFlight(8_000), settledAtMs: NOW - 10 })).toEqual({ kind: 'end_keeping_board' });
+    // Native stamps fractions of a millisecond; JS reads whole ones.
+    expect(at({ ...inFlight(8_000), settledAtMs: NOW + 0.4 })).toEqual({ kind: 'end_keeping_board' });
+  });
+
+  it('ends at the clock for a press that landed before the end, or claims to land in the future', () => {
+    // It renewed the drive natively; adoption already had its chance.
+    expect(at({ ...inFlight(8_000), settledAtMs: END - 1 })).toEqual({ kind: 'end' });
+    expect(at({ ...inFlight(8_000), settledAtMs: NOW + 60_000 })).toEqual({ kind: 'end' });
+    expect(at({ ...inFlight(8_000), settledAtMs: Number.NaN })).toEqual({ kind: 'end' });
+  });
+});
+
+describe('endTimedDriveAtClock', () => {
+  it('leaves a timed drive alone while a press is in flight, and says when to look again', () => {
+    liveWindow(-1_000);
+    const readPress = () => ({ pressId: 'press-1', expiresAtMs: NOW + 8_000 });
+    expect(endTimedDriveAtClock({ now: NOW, readPress })).toBe(LOCK_SCREEN_PRESS_RECHECK_MS);
+    expect(getDriveMode()).toMatchObject({ phase: 'live', expiresAt: NOW - 1_000 });
+  });
+
+  it('ends it keeping the link once the press landed past its end', () => {
+    liveWindow(-1_000);
+    const readPress = () => ({ pressId: 'press-1', expiresAtMs: NOW + 8_000, settledAtMs: NOW - 200 });
+    expect(endTimedDriveAtClock({ now: NOW, readPress })).toBeNull();
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true });
+  });
+
+  it('ends it at the clock, free to let go of the board, with no press or one that expired', () => {
+    for (const press of [null, { pressId: 'press-1', expiresAtMs: NOW - 1 }]) {
+      resetDriveModeForTests();
+      liveWindow(-1_000);
+      expect(endTimedDriveAtClock({ now: NOW, readPress: () => press })).toBeNull();
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: false });
+    }
+  });
+
+  it('touches no drive with time left, no open-ended drive and no drive at all', () => {
+    const readPress = vi.fn(() => null);
+    expect(endTimedDriveAtClock({ now: NOW, readPress })).toBeNull();
+    liveWindow(1_000);
+    expect(endTimedDriveAtClock({ now: NOW, readPress })).toBeNull();
+    expect(getDriveMode()).toMatchObject({ phase: 'live', expiresAt: NOW + 1_000 });
+    resetDriveModeForTests();
+    enterDriveMode({ startedBy: 'tap', sessionId: 'session-1', boardId: 7, windowMs: null, windowSetting: null });
+    markDriveLive({ now: NOW - 600_000 });
+    expect(endTimedDriveAtClock({ now: NOW, readPress })).toBeNull();
+    expect(getDriveMode()).toMatchObject({ phase: 'live', expiresAt: null });
+    expect(readPress).not.toHaveBeenCalled();
   });
 });
 

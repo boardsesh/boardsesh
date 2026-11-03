@@ -4,6 +4,32 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-03
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### Improved
+
+- When someone takes the board while you drive, your phone tells you who ([#7234](https://github.com/boardsesh/boardsesh/pull/7234))
+  A board that drops mid-drive now says so, beside the climb
+- With a queue going, the player tells you where your next swipe goes: "Up next · 2 of 4 · then Projects". ([#7239](https://github.com/boardsesh/boardsesh/pull/7239))
+  Your first swipe through search results or a playlist says how many climbs wait in Up next.
+  A light tick when a swipe leaves your queue and picks your list back up.
+  At the end of a list, "Back to your queue" names the climb it takes you back to.
+  Screen readers hear which list Next and Previous walk, in the player and the mini player.
+- Can't find your board? Tips show 5 seconds into the scan while it keeps looking. ([#7233](https://github.com/boardsesh/boardsesh/pull/7233))
+  Browse for now closes the board picker so you can keep picking climbs.
+  The Bluetooth scan on the Boards tab shows the same tips.
+- Your queue now shows what's on, what's up next, and the list your swipes carry on with ([#7238](https://github.com/boardsesh/boardsesh/pull/7238))
+  Popular climbs on your board sit in their own section, apart from your list
+
+### Fixed
+
+- Tap Next or Previous on your Lock Screen as your drive runs out, and the board stays connected. ([#7242](https://github.com/boardsesh/boardsesh/pull/7242))
+- Climbs opened from your Logbook, the home feed, or a notification now show their real matching and feet rules on Woods. Tapping a notification for a no-match climb shows its ⊘ again, and Logbook and session rows now show campus, any-feet and no-kickboard badges. ([#5257](https://github.com/boardsesh/boardsesh/pull/5257))
+
 ## 2026-11-02
 
 ### App update

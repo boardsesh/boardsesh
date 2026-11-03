@@ -137,3 +137,37 @@ describe('lighting window bridge (driving the wall)', () => {
     warn.mockRestore();
   });
 });
+
+// The iOS intent's press stamp: read synchronously by the timed-drive end check.
+describe('lock-screen press stamp read', () => {
+  const PRESS = { pressId: 'press-1', expiresAtMs: 9_000 };
+
+  it('reads the stamp on iOS', async () => {
+    native.liveActivity = { getLockScreenPress: () => PRESS };
+    const plugin = await loadPlugin();
+    expect(plugin.readLiveActivityLockScreenPress()).toEqual(PRESS);
+  });
+
+  it('is null on a binary without it, on a failed read, and on Android', async () => {
+    native.liveActivity = { supportsLightingWindow: true };
+    let plugin = await loadPlugin();
+    expect(plugin.readLiveActivityLockScreenPress()).toBeNull();
+
+    native.liveActivity = {
+      getLockScreenPress: () => {
+        throw new Error('boom');
+      },
+    };
+    plugin = await loadPlugin();
+    expect(plugin.readLiveActivityLockScreenPress()).toBeNull();
+
+    // Android's press reaches JS before anything lights: no stamp to read.
+    native.platform = 'android';
+    const getLockScreenPress = vi.fn(() => PRESS);
+    native.liveActivity = { getLockScreenPress };
+    native.sessionPresence = { getLockScreenPress };
+    plugin = await loadPlugin();
+    expect(plugin.readLiveActivityLockScreenPress()).toBeNull();
+    expect(getLockScreenPress).not.toHaveBeenCalled();
+  });
+});
