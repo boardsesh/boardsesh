@@ -299,7 +299,7 @@ describe('Meta client', () => {
               creative: {
                 id: 'cr1',
                 name: 'Boardsesh Managed homewalls-ad-1 abc',
-                url_tags: 'utm_source=instagram&utm_content={{ad.name}}',
+                url_tags: 'utm_source=instagram&utm_content=homewalls-ad-1',
                 object_story_spec: { link_data: { link: 'https://www.boardsesh.com/' } },
               },
             },
@@ -313,7 +313,7 @@ describe('Meta client', () => {
         name: 'homewalls-ad-1',
         adGroupId: 'g1',
         status: 'ACTIVE',
-        destination: 'https://www.boardsesh.com/?utm_source=instagram&utm_content={{ad.name}}',
+        destination: 'https://www.boardsesh.com/?utm_source=instagram&utm_content=homewalls-ad-1',
         creativeId: 'cr1',
         creativeName: 'Boardsesh Managed homewalls-ad-1 abc',
       },
@@ -337,6 +337,7 @@ describe('Meta client', () => {
       communities: [],
       ageMin: 18,
       ageMax: 45,
+      advantageAudience: false,
       unmanaged: ['geo_locations.regions'],
     });
   });
@@ -412,7 +413,7 @@ describe('Meta client', () => {
       body: 'Body',
       callToAction: 'LEARN_MORE',
       link: 'https://www.boardsesh.com/',
-      urlTags: 'utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content={{ad.name}}',
+      urlTags: 'utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content=homewalls-ad-1',
       pageId: '111',
       instagramUserId: '222',
     });
@@ -431,7 +432,7 @@ describe('Meta client', () => {
           call_to_action: { type: 'LEARN_MORE', value: { link: 'https://www.boardsesh.com/' } },
         },
       },
-      url_tags: 'utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content={{ad.name}}',
+      url_tags: 'utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content=homewalls-ad-1',
     });
   });
 

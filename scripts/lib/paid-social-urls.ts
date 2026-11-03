@@ -9,8 +9,6 @@ export type PaidSocialSource = 'reddit' | 'instagram';
 
 export const PAID_SOCIAL_LANDING = 'https://www.boardsesh.com/';
 export const PAID_SOCIAL_MEDIUM = 'paid-social';
-/** Meta replaces this macro with the ad's name when it serves the click. */
-export const META_AD_NAME_MACRO = '{{ad.name}}';
 
 /** The App Store `ct` token is `<source>-<code>` cut to 30 characters; `instagram-` is the longest prefix. */
 export const MAX_CAMPAIGN_CODE_LENGTH = 18;
@@ -20,7 +18,10 @@ const MAX_AD_ID_LENGTH = 40;
 export interface PaidSocialUrlInput {
   source: PaidSocialSource;
   campaignCode: string;
-  /** A literal ad id, or {@link META_AD_NAME_MACRO} for Instagram ads. */
+  /**
+   * Always the literal ad name, on both platforms. Meta's {{ad.name}} macro is not used: Instagram-app boosts
+   * never expand it, and one literal rule works for boosts and Ads Manager ads alike.
+   */
   adId: string;
 }
 
@@ -47,11 +48,8 @@ export function assertAdId(adId: string): string {
 export function paidSocialUrlTags({ source, campaignCode, adId }: PaidSocialUrlInput): string {
   if (source !== 'reddit' && source !== 'instagram') throw new Error(`Unknown paid-social source "${String(source)}"`);
   assertCampaignCode(campaignCode);
-  if (adId === META_AD_NAME_MACRO) {
-    if (source !== 'instagram') throw new Error('The {{ad.name}} macro only works on Meta (Instagram) ads');
-  } else assertAdId(adId);
-  // Every value is [a-z0-9-] or the literal macro, so nothing needs percent-encoding;
-  // encoding the macro's braces would stop Meta from substituting it.
+  assertAdId(adId);
+  // Every value is [a-z0-9-], so nothing needs percent-encoding.
   return `utm_source=${source}&utm_medium=${PAID_SOCIAL_MEDIUM}&utm_campaign=${campaignCode}&utm_content=${adId}`;
 }
 

@@ -100,6 +100,7 @@ export function metaTargetingOf(input: unknown): Targeting {
     communities: [],
     ageMin: typeof targeting.age_min === 'number' ? targeting.age_min : null,
     ageMax: typeof targeting.age_max === 'number' ? targeting.age_max : null,
+    advantageAudience: row(targeting.targeting_automation).advantage_audience === 1,
     unmanaged,
   };
 }
@@ -113,7 +114,7 @@ export function metaTargetingBody(targeting: Targeting): Row {
     ...(targeting.interests.length
       ? { flexible_spec: [{ interests: targeting.interests.map((id) => ({ id })) }] }
       : {}),
-    targeting_automation: { advantage_audience: 0 },
+    targeting_automation: { advantage_audience: targeting.advantageAudience ? 1 : 0 },
   };
 }
 function destinationOf(creative: Row): string | null {

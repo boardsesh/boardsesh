@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { META_AD_NAME_MACRO, assertCampaignCode, buildPaidSocialUrl, paidSocialUrlTags } from '../lib/paid-social-urls';
+import { assertCampaignCode, buildPaidSocialUrl, paidSocialUrlTags } from '../lib/paid-social-urls';
 
 describe('buildPaidSocialUrl', () => {
   it('builds the live Reddit ad URL exactly', () => {
@@ -8,16 +8,15 @@ describe('buildPaidSocialUrl', () => {
     );
   });
 
-  it('keeps the Meta ad-name macro unencoded for Instagram', () => {
-    expect(buildPaidSocialUrl({ source: 'instagram', campaignCode: 'nov26-launch', adId: META_AD_NAME_MACRO })).toBe(
-      'https://www.boardsesh.com/?utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content={{ad.name}}',
+  it('builds the live Instagram boost URL exactly, with a literal ad name', () => {
+    expect(buildPaidSocialUrl({ source: 'instagram', campaignCode: 'nov26-launch', adId: 'ig-boost-1' })).toBe(
+      'https://www.boardsesh.com/?utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content=ig-boost-1',
     );
   });
 
-  it('refuses the macro on Reddit, where nothing substitutes it', () => {
-    expect(() =>
-      paidSocialUrlTags({ source: 'reddit', campaignCode: 'nov26-launch', adId: META_AD_NAME_MACRO }),
-    ).toThrow(/only works on Meta/);
+  it('refuses the {{ad.name}} macro on every platform: boosts never expand it', () => {
+    for (const source of ['instagram', 'reddit'] as const)
+      expect(() => paidSocialUrlTags({ source, campaignCode: 'nov26-launch', adId: '{{ad.name}}' })).toThrow(/Ad id/);
   });
 
   it('accepts an 18-character code and refuses 19, so instagram-<code> fits the 30-character ct', () => {

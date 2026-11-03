@@ -17,7 +17,6 @@
  */
 import { createHash } from 'node:crypto';
 import {
-  META_AD_NAME_MACRO,
   PAID_SOCIAL_LANDING,
   assertAdId,
   assertCampaignCode,
@@ -45,7 +44,8 @@ export const MAX_BUDGET_MULTIPLIER = 2;
 export const MANAGED_NAMESPACE = 'Boardsesh Managed';
 
 export interface MetaInterest {
-  id: string;
+  /** null until looked up with Meta's Targeting Search; an ad group with an unresolved interest is left alone. */
+  id: string | null;
   name: string;
 }
 export interface TargetingConfig {
@@ -58,6 +58,8 @@ export interface TargetingConfig {
   /** Meta only. */
   ageMin?: number;
   ageMax?: number;
+  /** Meta only: Advantage+ audience, which lets Meta reach beyond the interests. Default off. */
+  advantageAudience?: boolean;
 }
 export interface MetaFileCreative {
   image: string;
@@ -168,7 +170,7 @@ function validateTargeting(platform: Platform, input: unknown, where: string): T
   onlyKeys(
     targeting,
     platform === 'meta'
-      ? ['countries', 'placements', 'interests', 'ageMin', 'ageMax']
+      ? ['countries', 'placements', 'interests', 'ageMin', 'ageMax', 'advantageAudience']
       : ['countries', 'placements', 'interests', 'communities'],
     where,
   );
@@ -181,10 +183,16 @@ function validateTargeting(platform: Platform, input: unknown, where: string): T
     const interestIds = targeting.interests.map((interest, index) => {
       const entry = asRow(interest, `${where}.interests[${index}]`);
       onlyKeys(entry, ['id', 'name'], `${where}.interests[${index}]`);
-      if (typeof entry.id !== 'string' || !/^\d{1,20}$/.test(entry.id) || typeof entry.name !== 'string')
-        throw new Error(`${where}.interests[${index}] needs a numeric id and a name`);
-      return entry.id;
+      if (
+        (entry.id !== null && (typeof entry.id !== 'string' || !/^\d{1,20}$/.test(entry.id))) ||
+        typeof entry.name !== 'string' ||
+        !entry.name.trim()
+      )
+        throw new Error(`${where}.interests[${index}] needs a name and a numeric id (or null until looked up)`);
+      return entry.id ?? `name:${entry.name}`;
     });
+    if (targeting.advantageAudience !== undefined && typeof targeting.advantageAudience !== 'boolean')
+      throw new Error(`${where}.advantageAudience must be true or false`);
     if (new Set(interestIds).size !== interestIds.length) throw new Error(`${where}.interests has duplicates`);
     for (const key of ['ageMin', 'ageMax'] as const) {
       const age = targeting[key];
@@ -390,16 +398,16 @@ export function campaignName(config: PaidSocialConfig, campaign: CampaignConfig)
 export function isManagedName(config: PaidSocialConfig, name: string): boolean {
   return name.startsWith(`${config.namespace} `);
 }
-/** Reddit carries a literal ad id; Meta carries the {{ad.name}} macro in url_tags. */
+/** Both platforms carry the literal ad name as utm_content: Reddit in click_url, Meta in the creative's url_tags. */
 export function adDestination(config: PaidSocialConfig, campaign: CampaignConfig, ad: AdConfig): string {
   return buildPaidSocialUrl({
     source: PLATFORM_SOURCE[config.platform],
     campaignCode: campaign.code,
-    adId: config.platform === 'meta' ? META_AD_NAME_MACRO : ad.name,
+    adId: ad.name,
   });
 }
-export function metaUrlTags(campaign: CampaignConfig): string {
-  return paidSocialUrlTags({ source: 'instagram', campaignCode: campaign.code, adId: META_AD_NAME_MACRO });
+export function metaUrlTags(campaign: CampaignConfig, ad: AdConfig): string {
+  return paidSocialUrlTags({ source: 'instagram', campaignCode: campaign.code, adId: ad.name });
 }
 export function isFileCreative(creative: CreativeConfig): creative is MetaFileCreative {
   return 'image' in creative;
@@ -435,7 +443,7 @@ export function fileCreativeName(
         body: creative.body,
         callToAction: creative.callToAction,
         link: PAID_SOCIAL_LANDING,
-        urlTags: metaUrlTags(campaign),
+        urlTags: metaUrlTags(campaign, ad),
         pageId: config.meta?.pageId,
         instagramUserId: config.meta?.instagramUserId,
       }),
@@ -455,6 +463,8 @@ export interface Targeting {
   communities: string[];
   ageMin: number | null;
   ageMax: number | null;
+  /** Meta Advantage+ audience; always false on Reddit. */
+  advantageAudience?: boolean;
   /** Live targeting fields the config cannot express (custom audiences, regions, exclusions...). A rewrite would drop them, so they block. */
   unmanaged?: string[];
 }
@@ -555,11 +565,20 @@ export function desiredTargeting(targeting: TargetingConfig, platform: Platform)
   return normalizeTargeting({
     countries: targeting.countries,
     placements: targeting.placements,
-    interests: targeting.interests.map((interest) => (typeof interest === 'string' ? interest : interest.id)),
+    interests: targeting.interests.flatMap((interest) =>
+      typeof interest === 'string' ? [interest] : interest.id === null ? [] : [interest.id],
+    ),
     communities: targeting.communities ?? [],
     ageMin: targeting.ageMin ?? (platform === 'meta' ? 18 : null),
     ageMax: targeting.ageMax ?? (platform === 'meta' ? 65 : null),
+    advantageAudience: targeting.advantageAudience ?? false,
   });
+}
+/** Meta interests whose id has not been looked up yet. */
+export function unresolvedInterests(targeting: TargetingConfig): string[] {
+  return targeting.interests.flatMap((interest) =>
+    typeof interest !== 'string' && interest.id === null ? [interest.name] : [],
+  );
 }
 export function normalizeTargeting(targeting: Targeting): Targeting {
   const sorted = (values: string[]) => [...new Set(values)].sort();
@@ -570,6 +589,7 @@ export function normalizeTargeting(targeting: Targeting): Targeting {
     communities: sorted(targeting.communities.map((community) => community.toLowerCase())),
     ageMin: targeting.ageMin,
     ageMax: targeting.ageMax,
+    advantageAudience: targeting.advantageAudience ?? false,
   };
 }
 function sameTargeting(left: Targeting, right: Targeting) {
@@ -665,6 +685,12 @@ export function liveSpendCents(
   return activeGroups.reduce((sum, group) => sum + (group.dailyBudgetCents ?? 0), 0);
 }
 
+/** Boosts and lifetime campaigns: the budget sits on the campaign or on any of its ad groups (Meta boosts use the ad set). */
+async function usesLifetimeBudget(client: PaidSocialClient, campaign: LiveCampaign): Promise<boolean> {
+  if (campaign.lifetimeBudget) return true;
+  return present(await client.listAdGroups(campaign.id)).some((group) => group.lifetimeBudget);
+}
+
 function uniqueByName<T extends { name: string }>(entities: T[], name: string, what: string): T | undefined {
   const matches = entities.filter((entity) => entity.name === name);
   if (matches.length > 1) throw new Error(`Ambiguous ${what} "${name}": rename or pause the duplicate by hand`);
@@ -710,9 +736,17 @@ export async function buildPlan(
       continue;
     }
     if (!live) {
-      const lookalikes = liveCampaigns.filter(
-        (candidate) => !isManagedName(config, candidate.name) && candidate.name.toLowerCase().includes(campaign.code),
-      );
+      const lookalikes: LiveCampaign[] = [];
+      for (const candidate of liveCampaigns) {
+        if (isManagedName(config, candidate.name) || !candidate.name.toLowerCase().includes(campaign.code)) continue;
+        // A lifetime-budget campaign (an Instagram boost, say) cannot be adopted, so it does not block a managed
+        // replacement; it keeps spending on its own and the plan says so.
+        if (await usesLifetimeBudget(client, candidate))
+          result.warnings.push(
+            `${campaign.code}: live campaign ${candidate.id} carries this code but has a lifetime budget and stays unmanaged; it spends outside the cap`,
+          );
+        else lookalikes.push(candidate);
+      }
       if (lookalikes.length) {
         result.blocked.push(
           `${campaign.code}: live campaign ${lookalikes.map((candidate) => candidate.id).join(', ')} already carries this code; adopt it (adoptCampaignIds) instead of creating a duplicate`,
@@ -818,7 +852,7 @@ export async function buildPlan(
                 body: spec.body,
                 callToAction: spec.callToAction,
                 link: PAID_SOCIAL_LANDING,
-                urlTags: metaUrlTags(campaign),
+                urlTags: metaUrlTags(campaign, ad),
                 pageId,
                 instagramUserId,
               },
@@ -899,6 +933,24 @@ export async function buildPlan(
       const desired = desiredTargeting(group.targeting, config.platform);
       const budgetCents = usesCampaignBudget ? null : toCents(group.dailyBudget);
       const live = existing ? uniqueByName(existing.groups, group.name, 'ad group') : undefined;
+      const unresolved = unresolvedInterests(group.targeting);
+      if (unresolved.length) {
+        result.pending.push(
+          `${path}: look up the Meta interest id for ${unresolved.map((name) => `"${name}"`).join(', ')}`,
+        );
+        // Nothing is created or edited until the targeting is complete; a pause still goes through.
+        if (live && group.status === 'PAUSED' && live.status !== 'PAUSED')
+          result.operations.push({
+            phase: 1,
+            kind: 'adGroup',
+            action: 'update',
+            path,
+            target: { id: live.id },
+            patch: { status: 'PAUSED' },
+            liveDailyBudgetCents: live.dailyBudgetCents,
+          });
+        continue;
+      }
       if (!live) {
         if (config.platform === 'reddit' && !config.reddit?.pixelId) {
           result.pending.push(`${path}: reddit.pixelId is needed to create an ad group`);
@@ -1277,10 +1329,18 @@ export async function audit(
           creativeName: ad.creativeName,
         })),
       });
+    const lifetime = campaign.lifetimeBudget || groups.some((group) => group.lifetimeBudget);
+    if (managed && lifetime)
+      report.warnings.push(
+        `${campaign.name}: managed or adopted but uses a lifetime budget; plan and apply will refuse it`,
+      );
     report.campaigns.push({
       id: campaign.id,
       name: campaign.name,
       managed,
+      ...(!managed && lifetime
+        ? { unmanagedReason: 'lifetime budget (an Instagram boost or a lifetime campaign): cannot be adopted' }
+        : {}),
       status: campaign.status,
       objective: campaign.objective,
       dailyBudget: campaign.dailyBudgetCents === null ? null : formatCents(campaign.dailyBudgetCents),
@@ -1336,7 +1396,7 @@ export async function offlinePlan(config: PaidSocialConfig, readCreativeFile: Re
           name: ad.name,
           status: ad.status,
           destination: adDestination(config, campaign, ad),
-          ...(config.platform === 'meta' ? { link: PAID_SOCIAL_LANDING, urlTags: metaUrlTags(campaign) } : {}),
+          ...(config.platform === 'meta' ? { link: PAID_SOCIAL_LANDING, urlTags: metaUrlTags(campaign, ad) } : {}),
           creative: creativeRow,
         });
       }

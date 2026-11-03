@@ -92,7 +92,7 @@ describe('validateConfig', () => {
       '"destination":"https://www.boardsesh.com/?utm_source=reddit&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content=homewalls-ad-1"',
     );
     expect(metaPlan).toContain(
-      '"destination":"https://www.boardsesh.com/?utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content={{ad.name}}"',
+      '"destination":"https://www.boardsesh.com/?utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content=ig-boost-1"',
     );
   });
 
@@ -686,7 +686,7 @@ describe('Meta creatives', () => {
     expect(creativeCalls).toHaveLength(1);
     expect(creativeCalls[0].payload).toMatchObject({
       link: 'https://www.boardsesh.com/',
-      urlTags: 'utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content={{ad.name}}',
+      urlTags: 'utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content=homewalls-ad-1',
     });
     const before = state.calls.length;
     const report = await reconcile(config, fakeClient('meta', state), 'apply', options);

@@ -92,8 +92,12 @@ the credentials in your environment.
   date is refused; do it by hand.
 - **Targeting**: `countries` (ISO codes), `placements` and `interests` on both
   platforms. Reddit adds `communities` (values as the audit prints them;
-  Reddit has no age targeting). Meta adds `ageMin` / `ageMax` (18 to 65) and
-  takes interests as `{ "id", "name" }` from the Targeting Search API. Meta ad
+  Reddit has no age targeting). Meta adds `ageMin` / `ageMax` (18 to 65),
+  `advantageAudience` (Advantage+ audience, which lets Meta reach past the
+  interests; off unless set) and takes interests as `{ "id", "name" }` from the
+  Targeting Search API. An interest with `"id": null` is a name not looked up
+  yet: its ad group is reported as pending and nothing in it is created or
+  edited (a pause still goes through). Meta ad
   sets are always Instagram-only: `placements` is the Instagram position list
   (`stream`, `story`, `reels`, `explore`, `explore_home`, `profile_feed`,
   `ig_search`). Reddit placements are `FEED` and `COMMENTS_PAGE`.
@@ -109,14 +113,21 @@ the credentials in your environment.
 https://www.boardsesh.com/?utm_source=<reddit|instagram>&utm_medium=paid-social&utm_campaign=<code>&utm_content=<ad>
 ```
 
-- **Reddit** ads get the full URL as `click_url`, with the ad's name as a literal
-  `utm_content`.
+`utm_content` is always the literal ad name, on both platforms.
+
+- **Reddit** ads get the full URL as `click_url`.
 - **Meta** ads link to `https://www.boardsesh.com/` and carry the tags in the
-  creative's `url_tags`, with `utm_content={{ad.name}}`. Meta fills the macro
-  from the ad's name when it serves the click. We chose the macro over the
-  literal ad name because `url_tags` live on the creative, and the macro keeps
-  the tagging rule in one shape for every ad. Since the config's ad name is the
-  platform ad name, the value Meta fills in is the same `<ad>` you wrote.
+  creative's `url_tags`, written out in full. We do not use Meta's
+  `{{ad.name}}` macro: Instagram-app boosts never expand it (the live boost
+  would have reported a literal `{{ad.name}}`), and one literal rule works for
+  boosts and Ads Manager ads alike. The helper refuses the macro.
+
+The live ads use exactly these URLs:
+
+```
+https://www.boardsesh.com/?utm_source=reddit&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content=homewalls-ad-1
+https://www.boardsesh.com/?utm_source=instagram&utm_medium=paid-social&utm_campaign=nov26-launch&utm_content=ig-boost-1
+```
 
 The code length rule comes from the App Store `ct` token
 ([growth-metrics.md, "Paid social URLs"](growth-metrics.md#paid-social-urls-reddit-instagram)).
@@ -191,6 +202,27 @@ with any violation makes no write at all.
 
 Both configs ship with one campaign, `nov26-launch`, in `ADOPT_PENDING`, and
 everything under it `PAUSED`, so merging them starts nothing.
+
+### Instagram boosts cannot be adopted
+
+The live Instagram ad is a boost made in the Instagram app (A$600 over 30
+days), not an Ads Manager campaign. A boost has a lifetime budget and objects
+only the Instagram app can edit, so it stays unmanaged:
+
+- `audit` lists it with `managed: false` and `unmanagedReason: "lifetime budget
+  (an Instagram boost or a lifetime campaign): cannot be adopted"`.
+- Adopting its id is refused (the lifetime-budget guardrail).
+- A managed campaign whose code appears in the boost's name is not blocked by
+  it; the plan warns that the boost spends on its own, outside the cap.
+- The managed equivalent is a new Ads Manager campaign in the config with a
+  daily budget. `app-stores/meta/ads.json` already holds it as a mirror of the
+  boost (US, JP, NL; 18+; Advantage+ audience on Indoor climbing and
+  Bouldering; about A$20 a day; ad `ig-boost-1`). To run it: look up the two
+  interest ids, set `meta.pageId`, `meta.instagramUserId` and a creative, set
+  the status, and let the boost end (or stop it in the app) so the two do not
+  overlap.
+
+### Adopting an Ads Manager campaign
 
 1. Fill `adAccountId` (and Meta's `currency` if it is not AUD) in the config.
 2. Dispatch the workflow with `action: audit`. The `<platform>-ads-result`
