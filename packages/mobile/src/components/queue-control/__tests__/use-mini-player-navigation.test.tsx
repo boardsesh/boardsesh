@@ -2,9 +2,12 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackResume } from '@boardsesh/queue';
+import type { TrackPosition } from '@boardsesh/play-view';
 
 const queue = vi.hoisted(() => ({
+  items: [] as ClimbQueueItem[],
   current: null as ClimbQueueItem | null,
+  historyCount: 0 as number | null,
   source: null as PlaylistSuggestionSource | null,
   inSharedSession: false,
   nextClimb: vi.fn(),
@@ -23,6 +26,8 @@ const targets = vi.hoisted(() => ({
   // What the walk was asked to start from, and along which list.
   from: null as ClimbQueueItem | null,
   along: null as PlaylistSuggestionSource | null,
+  // Where the climb it steps from stands on the list.
+  position: { kind: 'off' } as TrackPosition,
 }));
 const settings = vi.hoisted(() => ({ alwaysDrive: false }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
@@ -34,7 +39,11 @@ vi.mock('../../../providers/queue-provider', () => ({
     previousClimb: queue.previousClimb,
     setCurrentClimb: queue.setCurrentClimb,
   }),
-  useQueueData: () => ({ queue: [], currentClimbQueueItem: queue.current, historyCount: 0 }),
+  useQueueData: () => ({
+    queue: queue.items,
+    currentClimbQueueItem: queue.current,
+    historyCount: queue.historyCount,
+  }),
   usePlaylistSuggestionSource: () => queue.source,
   useIsSharedSession: () => queue.inSharedSession,
 }));
@@ -53,37 +62,43 @@ vi.mock('../../../settings/hooks', () => ({
 }));
 vi.mock('../../play-drawer/use-track-paging', () => ({ useTrackPaging: vi.fn() }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'fresh-uuid' }));
-vi.mock('@boardsesh/play-view', async (importOriginal) => ({
-  // Real: the list a look carries is what these cases check (#7227).
-  resolvePreviewStepSource: (await importOriginal<typeof import('@boardsesh/play-view')>()).resolvePreviewStepSource,
-  computeNavigationTargetsWithSuggestions: (
-    _queue: unknown,
-    from: ClimbQueueItem | null,
-    along: PlaylistSuggestionSource | null,
-  ) => {
-    targets.from = from;
-    targets.along = along;
-    return {
-      prevItem: targets.prevItem,
-      nextItem: targets.nextItem,
-      canPrevious: targets.prevItem !== null,
-      canNext: targets.nextItem !== null,
-      atTrackEnd: targets.atTrackEnd,
-      nextTrackResume: targets.nextTrackResume,
-      prevTrackResume: targets.prevTrackResume,
-    };
-  },
-  // The preview's own list when it has one, as the player resolves it.
-  resolveNavigationSuggestionSource: ({
-    previewSource,
-    committedSource,
-  }: {
-    previewSource: PlaylistSuggestionSource | null;
-    committedSource: PlaylistSuggestionSource | null;
-  }) => previewSource ?? committedSource,
-  resolveTrackListClimbUuid: () => null,
-  resolveTrackPosition: () => null,
-}));
+vi.mock('@boardsesh/play-view', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/play-view')>();
+  return {
+    // Real: the list a look carries is what these cases check (#7227).
+    resolvePreviewStepSource: actual.resolvePreviewStepSource,
+    // Real: which walk a step takes, read off its place and its `trackResume`.
+    resolveStepTrack: actual.resolveStepTrack,
+    stepCrossesIntoList: actual.stepCrossesIntoList,
+    computeNavigationTargetsWithSuggestions: (
+      _queue: unknown,
+      from: ClimbQueueItem | null,
+      along: PlaylistSuggestionSource | null,
+    ) => {
+      targets.from = from;
+      targets.along = along;
+      return {
+        prevItem: targets.prevItem,
+        nextItem: targets.nextItem,
+        canPrevious: targets.prevItem !== null,
+        canNext: targets.nextItem !== null,
+        atTrackEnd: targets.atTrackEnd,
+        nextTrackResume: targets.nextTrackResume,
+        prevTrackResume: targets.prevTrackResume,
+      };
+    },
+    // The preview's own list when it has one, as the player resolves it.
+    resolveNavigationSuggestionSource: ({
+      previewSource,
+      committedSource,
+    }: {
+      previewSource: PlaylistSuggestionSource | null;
+      committedSource: PlaylistSuggestionSource | null;
+    }) => previewSource ?? committedSource,
+    resolveTrackListClimbUuid: () => null,
+    resolveTrackPosition: () => targets.position,
+  };
+});
 
 import {
   enterDriveMode,
@@ -120,6 +135,9 @@ function makeItem(uuid: string): ClimbQueueItem {
 
 describe('useMiniPlayerNavigation', () => {
   beforeEach(() => {
+    queue.items = [];
+    queue.historyCount = 0;
+    targets.position = { kind: 'off' };
     queue.current = makeItem('current');
     queue.source = null;
     queue.inSharedSession = false;
@@ -394,6 +412,9 @@ describe('useMiniPlayerNavigation from the last pick', () => {
   }
 
   beforeEach(() => {
+    queue.items = [];
+    queue.historyCount = 0;
+    targets.position = { kind: 'off' };
     queue.current = makeItem('current');
     queue.source = null;
     queue.inSharedSession = false;
@@ -572,5 +593,102 @@ describe('useMiniPlayerNavigation from the last pick', () => {
       expect.objectContaining({ previewQueueItem: pickItem, playlistSuggestionSource: track }),
     );
     expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+});
+
+// Owner answer 2 on the then-signposts: ⏮ and ⏭ tell a screen reader which
+// list they walk, and each step says which walk it took for Queue Navigation.
+describe('useMiniPlayerNavigation names the walk each button takes', () => {
+  const search: PlaylistSuggestionSource = {
+    playlistUuid: 'search',
+    activatedClimbUuid: 'climb-current',
+    boardKey: 'kilter:1',
+    climbs: [makeItem('current').climb, makeItem('after').climb],
+    label: 'Search results',
+  };
+  const leftFrom: PlaylistTrackResume = { climbUuid: 'climb-current', queueItemUuid: 'current' };
+
+  beforeEach(() => {
+    resetLastPickForTests();
+    resetDriveModeForTests();
+    analytics.track.mockClear();
+    queue.items = [];
+    queue.current = makeItem('current');
+    queue.source = search;
+    targets.prevItem = makeItem('before');
+    targets.nextItem = makeItem('after');
+    targets.atTrackEnd = false;
+    targets.canLoadMore = false;
+    targets.nextTrackResume = null;
+    targets.prevTrackResume = null;
+    targets.position = { kind: 'list', trackIndex: 0 };
+  });
+
+  it('names the list a step stays on', () => {
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    expect(result.current.nextWalk).toEqual({ kind: 'list', name: 'Search results' });
+    expect(result.current.previousWalk).toEqual({ kind: 'list', name: 'Search results' });
+  });
+
+  it('says Up next for a step into it, never the list it leaves', () => {
+    targets.nextTrackResume = leftFrom;
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    expect(result.current.nextWalk).toEqual({ kind: 'upNext' });
+  });
+
+  it('keeps the plain label with no list, a list nobody named, or nowhere to go', () => {
+    targets.position = { kind: 'off' };
+    expect(renderHook(() => useMiniPlayerNavigation()).result.current.nextWalk).toBeNull();
+    targets.position = { kind: 'list', trackIndex: 0 };
+    queue.source = { ...search, label: undefined };
+    expect(renderHook(() => useMiniPlayerNavigation()).result.current.nextWalk).toBeNull();
+    queue.source = search;
+    targets.nextItem = null;
+    targets.atTrackEnd = true;
+    expect(renderHook(() => useMiniPlayerNavigation()).result.current.nextWalk).toBeNull();
+  });
+
+  it('reports the walk with the step: the track, from your own climb, Up next bucketed, the crossing', () => {
+    // The climb on the wall plays the last of Up next; Next crosses onto the list.
+    targets.position = { kind: 'upNext', resume: leftFrom, resumeIndex: 0 };
+    queue.items = [makeItem('history'), makeItem('current'), makeItem('q1'), makeItem('q2')];
+    driveAlways();
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Queue Navigation',
+      expect.objectContaining({ track: 'list', from: 'current', upNextBucket: '1-3', crossed: true }),
+    );
+  });
+
+  // F3 now-slot mode: with nothing current, History stays in the array and is
+  // not Up next. The bucket counts from the line, as the queue sheet does.
+  it('never buckets History as Up next with nothing current', () => {
+    queue.current = null;
+    // 4 History climbs, so counting them (5) would land in '4-10', not '1-3'.
+    queue.historyCount = 4;
+    queue.items = [makeItem('h1'), makeItem('h2'), makeItem('h3'), makeItem('h4'), makeItem('u1')];
+    targets.nextItem = makeItem('u1');
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(analytics.track).toHaveBeenCalledWith('Queue Navigation', expect.objectContaining({ upNextBucket: '1-3' }));
+  });
+
+  it('reports a step from the last pick as from a preview', () => {
+    setLastPick({
+      item: makeItem('pick'),
+      suggestionSource: search,
+      commitOptions: undefined,
+      mirrored: false,
+      currentAtPick: 'current',
+      wallAtPick: null,
+      pickedAt: 0,
+    });
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Queue Navigation',
+      expect.objectContaining({ track: 'list', from: 'preview', upNextBucket: '0', crossed: false }),
+    );
   });
 });

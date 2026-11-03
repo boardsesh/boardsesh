@@ -913,7 +913,7 @@
       "onWall": "In parete",
       "browsingHint": "Stai solo guardando. La parete resta com'è.",
       "backToWall": "Torna al blocco in parete",
-      "backToCurrent": "Torna alla mia scelta",
+      "backToCurrent": "Torna al tuo blocco",
       "joinedBrowseNotice": "Stai sfogliando. La parete resta ferma finché non metti in parete un blocco.",
       "previewNotOnWall": "Anteprima · non in parete",
       "onlyYouSeeThis": "Lo vedi solo tu",
@@ -933,7 +933,7 @@
         "committed": "{{name}} è in parete",
         "previewFirstAnnounce": "Anteprima, non in parete. Illumina il pannello mette il blocco in parete."
       },
-      "backToMyPickNamed": "Torna alla mia scelta: {{name}}",
+      "backToCurrentNamed": "Torna al tuo blocco: {{name}}",
       "backToWallNamed": "Torna al blocco in parete: {{name}}"
     },
     "wallControl": {
@@ -1027,6 +1027,19 @@
       "playingFromPositionAria": "In riproduzione da {{name}}, {{position}} di {{total}}",
       "upNext": "Prossimi",
       "upNextPositionAria": "Prossimi, {{position}} di {{total}}",
+      "then": "poi {{name}}",
+      "upNextThenAria": "Prossimi, poi {{name}}",
+      "upNextPositionThenAria": "Prossimi, {{position}} di {{total}}, poi {{name}}",
+      "upNextFirst_one": "Prima {{count}} blocco tra i prossimi",
+      "upNextFirst_other": "Prima {{count}} blocchi tra i prossimi",
+      "previewUpNextWaiting_one": "Anteprima · {{count}} blocco tra i prossimi",
+      "previewUpNextWaiting_other": "Anteprima · {{count}} blocchi tra i prossimi",
+      "nextIn": "Successivo nella lista {{name}}",
+      "previousIn": "Precedente nella lista {{name}}",
+      "nextInQueue": "Successivo nella tua coda",
+      "previousInQueue": "Precedente nella tua coda",
+      "nowIn": "Ora nella lista {{name}}",
+      "nowInPosition": "Ora nella lista {{name}}, {{position}} di {{total}}",
       "searchResults": "Risultati della ricerca",
       "setterClimbs": "Blocchi di {{name}}",
       "logbook": "Diario",
@@ -1040,6 +1053,9 @@
         "titleUnnamed": "Fine della lista",
         "finished": "Hai finito tutta la lista e non c'è niente in coda dopo questo blocco.",
         "keepGoing": "Continua con la tua coda ({{upNextCount}})",
+        "backToQueue": "Torna alla tua coda ({{upNextCount}})",
+        "onTheWall": "In parete: {{name}}",
+        "yourClimb": "Il tuo blocco: {{name}}",
         "firstUpNext": "Si parte con: {{name}}",
         "stay": "Resta qui"
       }

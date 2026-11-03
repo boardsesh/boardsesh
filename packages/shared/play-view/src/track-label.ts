@@ -14,13 +14,20 @@ import { findPlaylistClimbIndex, type PlaylistSuggestionSource } from '@boardses
  *   the player says "Up next · 1 of 3" until the list picks up again. `count`
  *   is where it sits in that stretch of Up next, null when it can't be counted.
  *   `listName` is the list the walk returns to, null for a list nobody named:
- *   the end card names it when the queue ran out at the list's end.
+ *   the end card names it when the queue ran out at the list's end. `thenListName` is
+ *   that name again while the list carries on after Up next ("Up next · 2 of 4
+ *   · then Projects"), null when the list ends with Up next or nobody named it.
  */
 export type TrackLabelModel =
   | { kind: 'hidden' }
   | { kind: 'named'; name: string }
   | { kind: 'counted'; name: string; position: number; total: number }
-  | { kind: 'upNext'; listName: string | null; count: { position: number; total: number } | null };
+  | {
+      kind: 'upNext';
+      listName: string | null;
+      count: { position: number; total: number } | null;
+      thenListName: string | null;
+    };
 
 const HIDDEN: TrackLabelModel = { kind: 'hidden' };
 
@@ -54,12 +61,19 @@ export function resolveTrackLabel(
  * The label while the walk plays Up next in the middle of `source` (issue
  * #6777). `progress` is `resolveUpNextProgress` for the climb on screen. Shown
  * for a list with no name too: the climber is in their queue either way.
+ *
+ * `carriesOn` says the list picks up again once Up next is played
+ * (`upNextHandsBackToList`, or a list still loading its next page): the label
+ * then names it as what comes after, "then Projects". A list nobody named has
+ * nothing to say there.
  */
 export function resolveUpNextTrackLabel(
   source: PlaylistSuggestionSource | null,
   progress: { position: number; total: number } | null,
+  carriesOn = false,
 ): TrackLabelModel {
-  return { kind: 'upNext', listName: source?.label?.trim() || null, count: progress };
+  const listName = source?.label?.trim() || null;
+  return { kind: 'upNext', listName, count: progress, thenListName: carriesOn ? listName : null };
 }
 
 /** The list's name as a label carries it, or null: nothing named, or a list nobody named. */

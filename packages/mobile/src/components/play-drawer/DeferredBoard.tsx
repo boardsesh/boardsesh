@@ -38,6 +38,10 @@ type DeferredBoardProps = {
   canSwipePrevious: boolean;
   onSwipeNext: () => void;
   onSwipePrevious: () => void;
+  /** The then-signposts' spoken value and action names for the board. */
+  accessibilityValueText?: string;
+  nextActionLabel?: string;
+  previousActionLabel?: string;
   onResetZoomReady?: (resetZoom: () => void) => void;
   enabled?: boolean;
   scrollRef?: RefObject<ComponentType | undefined | null>;

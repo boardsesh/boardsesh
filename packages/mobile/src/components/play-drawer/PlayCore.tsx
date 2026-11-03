@@ -72,7 +72,9 @@ import {
   type SwipeArtWait,
 } from './use-swipe-pager';
 import { useTrackPaging } from './use-track-paging';
-import { formatBrowseCaption, formatTrackLabelParts } from './track-label-text';
+import { formatBrowseCaption, formatTrackLabelParts, spokenCaption } from './track-label-text';
+import { useThenSignposts } from './use-then-signposts';
+import { resolvePreviewNoteOnLine } from './then-signposts';
 import { PlayListContext } from './PlayListContext';
 import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
@@ -913,6 +915,7 @@ export function PlayCore({
     trackListClimbUuid,
     trackEndCard,
     listWalkUpNextCount,
+    signposts,
     nextHeaderClimb,
     previousHeaderClimb,
     nextHeaderBoard,
@@ -947,6 +950,23 @@ export function PlayCore({
     [currentTrackLabel, t, trackLocale],
   );
   const topBarParts = workoutStageParts ?? currentTrackParts;
+  // The then-signposts: "then Projects" rides `currentTrackParts`; these are
+  // the second line's words, the board's spoken extras and the crossing cue.
+  // A workout's stage label keeps the top bar, so a workout shows none of them.
+  const thenSignposts = useThenSignposts({
+    enabled: !isAnonymous && workoutStageParts === null,
+    isPreview,
+    previewSource: drawerPreviewSuggestionSource,
+    trackLabel: currentTrackLabel,
+    trackParts: currentTrackParts,
+    signposts,
+    displayedClimbUuid: displayedClimb?.uuid ?? null,
+    nextClimbUuid: navigationState.nextItem?.climb?.uuid ?? null,
+    previousClimbUuid: navigationState.prevItem?.climb?.uuid ?? null,
+    t,
+    locale: trackLocale,
+  });
+  const { onStep: noteSignpostStep, resetForOpen: resetSignpostsForOpen, board: boardSignposts } = thenSignposts;
   // The list label sits between ⌄ and the timer + ⋯ cluster, so it needs the
   // cluster's width, which grows when the rest timer comes up. Null until the
   // cluster has laid out (see `resolveTopListContextFrame`).
@@ -1711,6 +1731,10 @@ export function PlayCore({
         : null;
   const headerPillState = headerPill?.state ?? null;
   const headerBackTarget = headerPill?.backTarget ?? null;
+  // The wall shows the climber's own climb, by trusted presence: the end card
+  // may then call it "On the wall" (the back chip's 'wall' rule, without its
+  // preview gate). Anything else and the card calls it "Your climb".
+  const committedOnWall = wallPresenceTrusted && wallClimbUuid !== null && wallClimbUuid === committedHeadUuid;
   // Back always lands on the climber's committed climb (the wall's too, when
   // back is to the wall), so the chip names that one to a screen reader.
   const headerBackTargetName = currentClimbQueueItem?.climb.name ?? null;
@@ -1840,6 +1864,8 @@ export function PlayCore({
   // `sessionMode` says whether a crew decides how navigation behaves, so it reads
   // the latch the preview decision reads (`browseByDefault`), not the live
   // roster: after a peer leaves mid-browse the latch still makes a step a preview.
+  // Each step also runs the then-signposts (the note, the crossing tick), which
+  // say which walk it took for the event.
   const handleNavigationStep = useCallback(
     (step: PlayNavigationStep) =>
       trackQueueNavigation(
@@ -1852,10 +1878,19 @@ export function PlayCore({
           driving: drivingLive,
           boardType: navigationBoardType,
           layoutId: navigationLayoutId,
+          walk: noteSignpostStep(step),
         },
         actionsAnalytics,
       ),
-    [browseByDefault, alwaysDrive, drivingLive, navigationBoardType, navigationLayoutId, actionsAnalytics],
+    [
+      browseByDefault,
+      alwaysDrive,
+      drivingLive,
+      navigationBoardType,
+      navigationLayoutId,
+      actionsAnalytics,
+      noteSignpostStep,
+    ],
   );
   // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
   // Both also say what the player showed and how full Up next was (Then-signposts).
@@ -1885,29 +1920,34 @@ export function PlayCore({
   // busy-wall snapshot, and the bulb's Put on board. The writer is built after
   // the controller (its effect must follow the target effect), so this forwards.
   const noteOpenAppliedRef = useRef<(applied: AppliedPlayerOpen) => void>(() => {});
-  const handleOpenApplied = useCallback((applied: AppliedPlayerOpen) => {
-    const item = applied.previewItem;
-    const latchStart = item ? applied.latchStart : undefined;
-    if (item && latchStart) {
-      if (browseLatchActiveRef.current) {
-        // A latch already up (a crew) took its snapshot on mount: correct it
-        // now and spend the seed, so a later rise on this preview (Back and the
-        // same slot again, a drive that starts and ends) reads the wall as it
-        // is then, never this old snapshot.
-        wallUuidAtLatchStartRef.current = latchStart.wallClimbUuid;
-        latchStartedAtRef.current = latchStart.at;
-        latchSeedRef.current = null;
+  const handleOpenApplied = useCallback(
+    (applied: AppliedPlayerOpen) => {
+      const item = applied.previewItem;
+      const latchStart = item ? applied.latchStart : undefined;
+      if (item && latchStart) {
+        if (browseLatchActiveRef.current) {
+          // A latch already up (a crew) took its snapshot on mount: correct it
+          // now and spend the seed, so a later rise on this preview (Back and the
+          // same slot again, a drive that starts and ends) reads the wall as it
+          // is then, never this old snapshot.
+          wallUuidAtLatchStartRef.current = latchStart.wallClimbUuid;
+          latchStartedAtRef.current = latchStart.at;
+          latchSeedRef.current = null;
+        } else {
+          // The latch rises once the preview lands, and takes the seed then.
+          latchSeedRef.current = { itemUuid: item.uuid, start: latchStart };
+        }
       } else {
-        // The latch rises once the preview lands, and takes the seed then.
-        latchSeedRef.current = { itemUuid: item.uuid, start: latchStart };
+        // Any other open is a look of its own: an older seed never applies to it.
+        latchSeedRef.current = null;
       }
-    } else {
-      // Any other open is a look of its own: an older seed never applies to it.
-      latchSeedRef.current = null;
-    }
-    setPutOnBoardFor(applied.putOnBoard && item ? item.uuid : null);
-    noteOpenAppliedRef.current(applied);
-  }, []);
+      setPutOnBoardFor(applied.putOnBoard && item ? item.uuid : null);
+      // A new open: the preview note may show once more in it.
+      resetSignpostsForOpen();
+      noteOpenAppliedRef.current(applied);
+    },
+    [resetSignpostsForOpen],
+  );
   const {
     handlePrev,
     handleNext,
@@ -2207,7 +2247,25 @@ export function PlayCore({
   const crewPutUp = useCrewPutUp();
   const crewPutUpCaption =
     crewPutUp && displayedQueueItemUuid === crewPutUp.queueItemUuid ? formatCrewPutUp(crewPutUp, t) : null;
-  const topBarCaption = busyWall.model ? formatBusyWallCaption(busyWall.model, t) : (crewPutUpCaption ?? browseCaption);
+  // Line 2's order: the busy wall, a crewmate's put-up, the preview note
+  // ("Preview · Up next: 4 waiting", in place of "not on the wall"), the browse
+  // caption, then on the climber's own climb "Up next first · 4 climbs".
+  const topBarCaption = busyWall.model
+    ? formatBusyWallCaption(busyWall.model, t)
+    : (crewPutUpCaption ?? thenSignposts.previewNote ?? browseCaption ?? thenSignposts.upNextFirstCaption);
+  // The note on line 2 now: only then does it spend its caps (once per open,
+  // three per run), and a screen reader hears it as the board's value, which
+  // VoiceOver and TalkBack read after the adjust action that earned it.
+  const previewNoteOnLine = resolvePreviewNoteOnLine({
+    previewNote: thenSignposts.previewNote,
+    busyWallUp: busyWall.model != null,
+    crewPutUpCaption,
+  });
+  const { markPreviewNoteShown } = thenSignposts;
+  useEffect(() => {
+    if (previewNoteOnLine !== null) markPreviewNoteShown();
+  }, [previewNoteOnLine, markPreviewNoteShown]);
+  const boardValueText = previewNoteOnLine !== null ? spokenCaption(previewNoteOnLine) : boardSignposts.valueText;
   // The board sheet (Re-light / Turn off all lights / Disconnect). A hold on
   // the board control opens it through `useWallControl`, which logs Board
   // Controls Opened with the view; ⋯ › Board controls logs its own.
@@ -3374,6 +3432,9 @@ export function PlayCore({
                               canSwipePrevious={navigationState.canPrevious}
                               onSwipeNext={handleNextAdjust}
                               onSwipePrevious={handlePrevSwipe}
+                              accessibilityValueText={boardValueText}
+                              nextActionLabel={boardSignposts.nextActionLabel}
+                              previousActionLabel={boardSignposts.previousActionLabel}
                               onResetZoomReady={handleResetZoomReady}
                               enabled={!isTickBarActive}
                               scrollRef={scrollGestureRef}
@@ -3408,6 +3469,7 @@ export function PlayCore({
                           {trackEndCardVisible && trackEndCard ? (
                             <TrackEndCard
                               model={trackEndCard}
+                              committedOnWall={committedOnWall}
                               onKeepGoing={handleTrackEndKeepGoing}
                               onDismiss={closeTrackEndCard}
                             />

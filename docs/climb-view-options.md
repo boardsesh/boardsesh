@@ -653,6 +653,45 @@ is measured while it sits above, and the wall-state callout hangs below it inste
 notice never covers Log. The opening-layout cache keys on the resolved small row and the position, since both move
 the board. The tablet-shell and phone-split panes render the same `PlayCore`, so all of this applies there too.
 
+### The top bar (the then-signposts)
+
+The top bar sits between ⌄ and the rest timer + ⋯ cluster, under the grabber (`PlayListContext`,
+`resolveTopListContextFrame`). Line 1 says where the player is: the workout stage, or the list it walks. Line 2 is a
+caption. Its text is capped at 1.2x like the rest of the chrome; on iOS a long press at an accessibility size shows both
+lines in the Large Content Viewer. Full rules and the walk they read: `climb-lists-and-queue.md`, "The then-signposts".
+
+```
+Your climb, Up next waiting      |   Projects · 7 of 20           |
+                                 |   Up next first · 4 climbs     |
+An Up next climb, list goes on   | Up next · 2 of 4 · then Proj…  |   the list name is cut first
+Fewer than 6 letters of the name |   Up next · 2 of 4             |
+would fit (timer up, de/es)      |   then Projects                |   line 2's size, while it is free
+A list preview, first swipe      |  Search results · 5 of 23      |
+                                 | Preview · Up next: 4 waiting   |   until the next swipe
+```
+
+- **Line 1.** A workout stage, or the list: "Projects · 7 of 20", and on an Up next climb whose list carries on,
+  "Up next · 2 of 4 · then Projects". The name and the count are separate texts and only the name may shrink; with
+  a "then", "Up next" stays whole too, and the list's name after "then" is the one text that shrinks
+  (`styles.thenName`). "then {{name}}" is split around the name in every locale (`formatThenParts`), so a language
+  that puts the name first keeps its words whole as well. Where it goes is measured, not guessed from the text size
+  (`resolveThenPlacement`): two invisible texts, hidden from screen readers, lay the never-cut words out across the
+  frame the bar has now, once with six letters of the name and once with "…". When six letters don't fit, "then
+  Projects" moves to line 2 at caption size while line 2 is free; with line 2 taken it stays as "then …" if that
+  fits, and otherwise it is only spoken (the top bar's label and the board's value keep it). The line never runs
+  under ⌄ or the timer.
+- **Line 2**, in this order: the busy-wall question, a crewmate's put-up (4 s), the preview note ("Preview · Up next:
+  4 waiting"), the browse caption ("Preview · not on the wall", or a crew's "Only you see this"), then on your own
+  climb "Up next first · 4 climbs". The "·" is read as a comma (`spokenCaption`). The note only spends its caps once
+  it is on line 2, so one hidden behind the busy wall or a crewmate's put-up costs nothing.
+- **One element for VoiceOver and TalkBack**, never a live region. The board below carries the walk's spoken extras
+  (its value "Up next, 4 of 4, then Projects" on an Up next climb, or the preview note while line 2 shows it, an
+  increment action named "Next in Projects" when Next crosses into the list), and a step that crosses announces "Now
+  in Projects, 8 of 20" on landing.
+- **Workouts**: the stage keeps line 1, with no "then", no note and no "Up next first".
+- **Nothing over the climb**: every sign is text in the top bar or spoken; the one non-text cue is a single
+  `hapticSelection` tick on a swipe that crosses from Up next into the list (Next and Previous buttons stay silent).
+
 ## Storage
 
 All device-local, in the synchronous settings store (MMKV), so the player's first frame already has the climber's
@@ -730,7 +769,9 @@ climb).
 - Defaults: Next, Previous, Mirror, Favorite and Wall display on; Queue, Share and Angle off. On iPhone the one extra slot goes to Next, so Mirror and Favorite only show on iPad and the open Duo by default. Each switch drives a real button:
   - **Next / Previous**: step the list. Driving (Always drive the wall's drive included) lights each supported
     climb change, including in a crew. Otherwise, or after stopping driving, they open the player on a
-    preview. Next at the end of a list opens the player.
+    preview. Next at the end of a list opens the player. A screen reader hears which walk each takes, with no
+    visual change (the then-signposts, owner answer 2): "Next in Search results", "Next in your queue" for a step
+    into Up next, or the plain "Next climb" with no named list (`describeMiniPlayerStep`).
   - **Mirror**: boards that mirror (Tension, Decoy, Woods). On a pick it flips only the pick; otherwise in a
     crew it sets the shared orientation and solo it flips what the wall lights.
   - **Favorite** and **Queue**: signed in only.
@@ -927,7 +968,10 @@ The defaults above were picked without data. Two events (#6940) let them be revi
   `layoutId` (null on a spray wall). Only a swipe that went before the next climb's board had painted adds
   `heldArtState` (`loading`: still painting 700 ms after its page was mounted; `failed`: it never will; `ready`:
   painted, but the swipe waited over 700 ms in all) and `heldMs` (finger-up to the step); every other step sends
-  neither. The rest
+  neither. Every step also says which walk it took (the then-signposts, 2026-11-02): `track` (`list`, `upNext` or
+  `queue`: where it landed), `from` (`preview`, or `current` for the climber's own climb; a MiniPlayer step from
+  the last pick is `preview`), `upNextBucket` (`0`, `1-3`, `4-10`, `11+`, the buckets `Queue Sheet Opened` uses) and `crossed` (it left Up next for the
+  list). A Previous right after a `crossed` Next is a crossing that surprised the climber. The rest
   timer's auto-advance and the workout runner don't fire it, and neither does Next opening the player at the end
   of a list. www fired the same name before W-16 with other `method` values and no `surface`, so filter on
   `surface`.

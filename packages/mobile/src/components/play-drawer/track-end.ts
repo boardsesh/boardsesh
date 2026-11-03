@@ -1,4 +1,4 @@
-import type { ClimbQueueItem } from '@boardsesh/queue';
+import { upNextStart, type ClimbQueueItem } from '@boardsesh/queue';
 import { trackLabelListName, type NavigationState, type TrackLabelModel } from '@boardsesh/play-view';
 
 /**
@@ -25,6 +25,14 @@ export type TrackEndCardModel = {
    * no name: the card then reads as it did before.
    */
   firstUpNextName: string | null;
+  /**
+   * From a preview, the climb its action goes back to, the queue's Now:
+   * "Back to your queue (4)", then "On the wall: modern love" while the wall
+   * shows it, "Your climb: modern love" otherwise (the then-signposts; the card
+   * reads the wall, see `TrackEndCard`). Capped like `firstUpNextName`; null on
+   * every other card, and for a Now with no name.
+   */
+  backToName: string | null;
   /** Null when nothing is queued after Now: the card then only says the list is finished. */
   action: TrackEndAction | null;
 };
@@ -34,13 +42,30 @@ export const MAX_FIRST_UP_NEXT_NAME_LENGTH = 32;
 const ELLIPSIS = '\u2026';
 
 /**
- * How many climbs are Up next: everything queued after the queue's Now
- * (`committedQueueIndex`), or the whole queue when Now is not in it (-1). The
- * end card's number, the queue button's badge and the queue sheet's "Up next"
- * header all count this way, so they always agree.
+ * Where Up next begins: after the queue's Now (`committedQueueIndex`), or with
+ * Now not in the queue (-1), at the History line (`upNextStart`): History
+ * stays in the array in F3 now-slot mode, and is never Up next. Legacy mode
+ * (`historyCount` null) starts at the top of the queue.
  */
-export function countUpNext(queueLength: number, committedQueueIndex: number): number {
-  return Math.max(0, queueLength - committedQueueIndex - 1);
+export function upNextStartAt(
+  queue: readonly ClimbQueueItem[],
+  committedQueueIndex: number,
+  historyCount?: number | null,
+): number {
+  return committedQueueIndex >= 0 ? committedQueueIndex + 1 : upNextStart(queue, null, historyCount);
+}
+
+/**
+ * How many climbs are Up next: everything queued from {@link upNextStartAt}
+ * on. The end card's number, the queue button's badge, the then-signposts and
+ * the queue sheet's "Up next" header all count this way, so they always agree.
+ */
+export function countUpNext(
+  queue: readonly ClimbQueueItem[],
+  committedQueueIndex: number,
+  historyCount?: number | null,
+): number {
+  return Math.max(0, queue.length - upNextStartAt(queue, committedQueueIndex, historyCount));
 }
 
 /**
@@ -73,8 +98,13 @@ export function truncateClimbName(name: string, maxLength = MAX_FIRST_UP_NEXT_NA
 
 function firstUpNextNameOf(target: ClimbQueueItem): string | null {
   // The wire boundary is untyped: a peer's item can land before its climb does.
-  const name = truncateClimbName(target.climb?.name ?? '');
-  return name.length > 0 ? name : null;
+  return cardClimbName(target.climb?.name);
+}
+
+/** A climb's name as the card prints it, or null for none. */
+function cardClimbName(name: string | null | undefined): string | null {
+  const truncated = truncateClimbName(name ?? '');
+  return truncated.length > 0 ? truncated : null;
 }
 
 /**
@@ -96,8 +126,9 @@ function firstUpNextNameOf(target: ClimbQueueItem): string | null {
  * board: the number on the button counts it.
  *
  * `previewOverNow` is a preview pinned while the queue has a Now: the action
- * goes back to that Now. A preview with no Now to go back to carries on into
- * the queue like a committed climb would.
+ * goes back to that Now, "Back to your queue (4)", and the card names it,
+ * `committedClimbName`. A preview with no Now to go
+ * back to carries on into the queue like a committed climb would.
  */
 export function resolveTrackEndCard({
   navigationState,
@@ -105,25 +136,35 @@ export function resolveTrackEndCard({
   trackLabel,
   queue,
   committedQueueIndex,
+  historyCount = null,
   queueSuccessor,
   previewOverNow,
+  committedClimbName = null,
 }: {
   navigationState: Pick<NavigationState, 'atTrackEnd'>;
   moreToLoad: boolean;
   trackLabel: TrackLabelModel;
   queue: readonly ClimbQueueItem[];
   committedQueueIndex: number;
+  /** F3 now-slot mode: where Up next begins with nothing current. */
+  historyCount?: number | null;
   queueSuccessor: ClimbQueueItem | null;
   previewOverNow: boolean;
+  /** The queue's Now, by name: what a preview's action goes back to. */
+  committedClimbName?: string | null;
 }): TrackEndCardModel | null {
   if (!navigationState.atTrackEnd || moreToLoad) return null;
   // Up next can run out at the list's end too (#6777): the card still names the list.
   const listName = trackLabelListName(trackLabel);
-  const upNextCount = countUpNext(queue.length, committedQueueIndex);
-  if (upNextCount <= 0) return { listName, upNextCount: 0, firstUpNextName: null, action: null };
-  // A preview's action goes back to Now, which is not Up next: no name to promise.
-  if (previewOverNow) return { listName, upNextCount, firstUpNextName: null, action: { kind: 'backToCommitted' } };
-  const target = queueSuccessor ?? queue[committedQueueIndex + 1];
-  if (!target) return { listName, upNextCount, firstUpNextName: null, action: null };
-  return { listName, upNextCount, firstUpNextName: firstUpNextNameOf(target), action: { kind: 'nextInQueue', target } };
+  const upNextCount = countUpNext(queue, committedQueueIndex, historyCount);
+  const finished = { listName, upNextCount, firstUpNextName: null, backToName: null, action: null };
+  if (upNextCount <= 0) return { ...finished, upNextCount: 0 };
+  // A preview's action goes back to Now, which is not Up next: it names Now
+  // rather than promising the first of Up next.
+  if (previewOverNow) {
+    return { ...finished, backToName: cardClimbName(committedClimbName), action: { kind: 'backToCommitted' } };
+  }
+  const target = queueSuccessor ?? queue[upNextStartAt(queue, committedQueueIndex, historyCount)];
+  if (!target) return finished;
+  return { ...finished, firstUpNextName: firstUpNextNameOf(target), action: { kind: 'nextInQueue', target } };
 }

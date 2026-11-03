@@ -913,7 +913,7 @@
       "onWall": "On the wall",
       "browsingHint": "You're just looking. The wall stays where it is.",
       "backToWall": "Back to the climb on the wall",
-      "backToCurrent": "Back to my pick",
+      "backToCurrent": "Back to your climb",
       "joinedBrowseNotice": "You're browsing. The wall stays put until you put a climb up.",
       "previewNotOnWall": "Preview · not on the wall",
       "onlyYouSeeThis": "Only you see this",
@@ -933,7 +933,7 @@
         "committed": "{{name}} is on the wall",
         "previewFirstAnnounce": "Preview, not on the wall. Put on board lights it."
       },
-      "backToMyPickNamed": "Back to my pick: {{name}}",
+      "backToCurrentNamed": "Back to your climb: {{name}}",
       "backToWallNamed": "Back to the climb on the wall: {{name}}"
     },
     "wallControl": {
@@ -1027,6 +1027,19 @@
       "playingFromPositionAria": "Playing from {{name}}, {{position}} of {{total}}",
       "upNext": "Up next",
       "upNextPositionAria": "Up next, {{position}} of {{total}}",
+      "then": "then {{name}}",
+      "upNextThenAria": "Up next, then {{name}}",
+      "upNextPositionThenAria": "Up next, {{position}} of {{total}}, then {{name}}",
+      "upNextFirst_one": "Up next first · {{count}} climb",
+      "upNextFirst_other": "Up next first · {{count}} climbs",
+      "previewUpNextWaiting_one": "Preview · Up next: {{count}} waiting",
+      "previewUpNextWaiting_other": "Preview · Up next: {{count}} waiting",
+      "nextIn": "Next in {{name}}",
+      "previousIn": "Previous in {{name}}",
+      "nextInQueue": "Next in your queue",
+      "previousInQueue": "Previous in your queue",
+      "nowIn": "Now in {{name}}",
+      "nowInPosition": "Now in {{name}}, {{position}} of {{total}}",
       "searchResults": "Search results",
       "setterClimbs": "{{name}}'s climbs",
       "logbook": "Logbook",
@@ -1040,6 +1053,9 @@
         "titleUnnamed": "End of the list",
         "finished": "That's the whole list, and nothing's queued after this climb.",
         "keepGoing": "Keep going with your queue ({{upNextCount}})",
+        "backToQueue": "Back to your queue ({{upNextCount}})",
+        "onTheWall": "On the wall: {{name}}",
+        "yourClimb": "Your climb: {{name}}",
         "firstUpNext": "First up: {{name}}",
         "stay": "Stay here"
       }

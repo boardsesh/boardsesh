@@ -5,7 +5,11 @@ import {
   queueNavigation,
   queueSheetOpened,
   upNextBucket,
+  type QueueNavigationWalk,
 } from '../queue-navigation-events';
+
+/** A plain list step with nothing Up next: what most steps are. */
+const listWalk: QueueNavigationWalk = { track: 'list', from: 'current', upNextCount: 0, crossed: false };
 
 describe('queueNavigation', () => {
   it('names the event www fired and carries the step, the session and the board', () => {
@@ -19,6 +23,7 @@ describe('queueNavigation', () => {
         alwaysDrive: true,
         boardType: 'kilter',
         layoutId: 1,
+        walk: listWalk,
       }),
     ).toEqual({
       name: 'Queue Navigation',
@@ -32,6 +37,10 @@ describe('queueNavigation', () => {
         driving: false,
         boardType: 'kilter',
         layoutId: 1,
+        track: 'list',
+        from: 'current',
+        upNextBucket: '0',
+        crossed: false,
       },
     });
   });
@@ -46,6 +55,7 @@ describe('queueNavigation', () => {
       alwaysDrive: false,
       boardType: 'tension',
       layoutId: 9,
+      walk: listWalk,
     });
     expect(properties.sessionMode).toBe('solo');
     expect(properties.alwaysDrive).toBe(false);
@@ -61,6 +71,7 @@ describe('queueNavigation', () => {
       alwaysDrive: true,
       boardType: 'spray',
       layoutId: 123456,
+      walk: listWalk,
     });
     expect(properties.boardType).toBe('spray');
     expect(properties.layoutId).toBeNull();
@@ -76,6 +87,7 @@ describe('queueNavigation', () => {
       alwaysDrive: true,
       boardType: 'my-home-wall',
       layoutId: undefined,
+      walk: listWalk,
     });
     expect(properties.boardType).toBeNull();
     expect(properties.layoutId).toBeNull();
@@ -92,6 +104,7 @@ describe('queueNavigation for a swipe that went before its board had painted', (
     alwaysDrive: true,
     boardType: 'moonboard',
     layoutId: 2,
+    walk: listWalk,
   } as const;
 
   it('says what the board was doing and how long the release waited, in whole milliseconds', () => {
@@ -163,8 +176,42 @@ describe('queueNavigation while driving the wall (#7113)', () => {
       driving: true,
       boardType: 'kilter',
       layoutId: 1,
+      walk: listWalk,
     });
     expect(properties).toMatchObject({ outcome: 'moved', sessionMode: 'party', driving: true });
+  });
+});
+
+// The then-signposts (2026-11-02): which walk each step took. A Previous right
+// after a `crossed` Next reads as a crossing that surprised the climber.
+describe('queueNavigation says which walk the step took', () => {
+  const step = {
+    direction: 'next',
+    method: 'swipe',
+    surface: 'player',
+    outcome: 'moved',
+    inSharedSession: false,
+    alwaysDrive: false,
+    boardType: 'kilter',
+    layoutId: 1,
+  } as const;
+
+  it('carries the track, where it was taken from, Up next in a bucket, and the crossing', () => {
+    const { properties } = queueNavigation({
+      ...step,
+      walk: { track: 'list', from: 'current', upNextCount: 4, crossed: true },
+    });
+    expect(properties).toMatchObject({ track: 'list', from: 'current', upNextBucket: '4-10', crossed: true });
+    expect(properties).not.toHaveProperty('upNextCount');
+  });
+
+  it('carries a preview stepping through Up next', () => {
+    const { properties } = queueNavigation({
+      ...step,
+      outcome: 'preview',
+      walk: { track: 'upNext', from: 'preview', upNextCount: 2, crossed: false },
+    });
+    expect(properties).toMatchObject({ track: 'upNext', from: 'preview', upNextBucket: '1-3', crossed: false });
   });
 });
 

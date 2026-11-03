@@ -110,7 +110,16 @@ describe('resolveUpNextTrackLabel', () => {
       kind: 'upNext',
       listName: 'Search results',
       count: { position: 1, total: 3 },
+      thenListName: null,
     });
+  });
+
+  // The then-signposts: "Up next · 1 of 3 · then Search results".
+  it('names the list as what comes after only while it carries on', () => {
+    expect(resolveUpNextTrackLabel(named, { position: 1, total: 3 }, true)).toMatchObject({
+      thenListName: 'Search results',
+    });
+    expect(resolveUpNextTrackLabel(named, { position: 3, total: 3 }, false)).toMatchObject({ thenListName: null });
   });
 
   it('still says Up next for a list nobody named, and without a count', () => {
@@ -120,7 +129,14 @@ describe('resolveUpNextTrackLabel', () => {
       climbs,
       boardKey: 'k',
     });
-    expect(resolveUpNextTrackLabel(unnamed, null)).toEqual({ kind: 'upNext', listName: null, count: null });
+    expect(resolveUpNextTrackLabel(unnamed, null)).toEqual({
+      kind: 'upNext',
+      listName: null,
+      count: null,
+      thenListName: null,
+    });
+    // A list nobody named has nothing to say after "then".
+    expect(resolveUpNextTrackLabel(unnamed, null, true)).toMatchObject({ thenListName: null });
   });
 });
 
@@ -129,7 +145,9 @@ describe('trackLabelListName', () => {
     expect(trackLabelListName({ kind: 'hidden' })).toBeNull();
     expect(trackLabelListName({ kind: 'named', name: 'Projects' })).toBe('Projects');
     expect(trackLabelListName({ kind: 'counted', name: 'Projects', position: 1, total: 2 })).toBe('Projects');
-    expect(trackLabelListName({ kind: 'upNext', listName: 'Projects', count: null })).toBe('Projects');
-    expect(trackLabelListName({ kind: 'upNext', listName: null, count: null })).toBeNull();
+    expect(trackLabelListName({ kind: 'upNext', listName: 'Projects', count: null, thenListName: null })).toBe(
+      'Projects',
+    );
+    expect(trackLabelListName({ kind: 'upNext', listName: null, count: null, thenListName: null })).toBeNull();
   });
 });

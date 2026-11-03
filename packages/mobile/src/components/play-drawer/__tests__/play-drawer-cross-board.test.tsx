@@ -72,6 +72,8 @@ const announceQueued = vi.hoisted(() => vi.fn());
 const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
   currentClimbQueueItem: null as unknown,
+  // The list the climb on the wall walks: none unless a case hands one.
+  suggestionSource: null as unknown,
 }));
 // What the prefetch walk hands back, per case. Empty by default: most cases here
 // assert on the displayed board, not on what is warmed ahead of it.
@@ -465,7 +467,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   // the crew gate is off, so gestures commit as they always have.
   useIsSharedSession: () => crew.shared,
   useIsCrewSession: () => crew.crew ?? crew.shared,
-  usePlaylistSuggestionSource: () => null,
+  usePlaylistSuggestionSource: () => queueState.suggestionSource,
 }));
 // Null (no Bluetooth transport) unless a case hands the player a context, as
 // the #4979 stale-climb hold cases do.
@@ -550,11 +552,13 @@ vi.mock('../../../lib/analytics-wall-control', () => ({
   trackDriveModeStarted: vi.fn(),
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
+const selectionHaptic = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/haptics', () => ({
   hapticSuccess: vi.fn(),
   hapticMedium: wallHaptics.hapticMedium,
   hapticWarning: wallHaptics.hapticWarning,
   hapticLight: wallHaptics.hapticLight,
+  hapticSelection: selectionHaptic,
 }));
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued }));
 
@@ -681,6 +685,7 @@ beforeEach(() => {
   drawerSections.ready = true;
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
+  queueState.suggestionSource = null;
   bluetoothContext.value = null;
   lightbulbState.lit = false;
   lightbulbState.ledless = false;
@@ -978,6 +983,48 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     renderDrawer(vi.fn());
 
     expect(recorded.topBar.at(-1)?.parts).toMatchObject({ name: 'stage:queue-twelve', count: '2 of 5' });
+  });
+
+  // The then-signposts: in a workout the stage label keeps the top bar, so
+  // nothing new shows there, on the board or under the thumb, even on the last
+  // Up next climb before the list picks up.
+  it('shows no signposts in a workout', () => {
+    const listClimb = { ...TWELVE_CLIMB, uuid: 'twelve-on-list' };
+    const nextOnList = { ...TWELVE_CLIMB, uuid: 'twelve-next-on-list' };
+    const onList = queueItem(listClimb, 'queue-on-list');
+    const queued = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    queueState.queue = [onList, queued];
+    queueState.currentClimbQueueItem = queued;
+    queueState.suggestionSource = {
+      playlistUuid: 'smart:projects',
+      activatedClimbUuid: listClimb.uuid,
+      boardKey: 'kilter:1',
+      climbs: [listClimb, nextOnList],
+      label: 'Projects',
+      resume: { climbUuid: listClimb.uuid, queueItemUuid: onList.uuid },
+    };
+    navigation.state = {
+      nextItem: queueItem(nextOnList, 'queue-next-on-list'),
+      prevItem: onList,
+      canNext: true,
+      canPrevious: true,
+      // The step back onto the list: the crossing.
+      nextTrackResume: null,
+    } as typeof navigation.state;
+    renderDrawer(vi.fn());
+
+    expect(recorded.topBar.at(-1)?.parts).toMatchObject({ name: 'stage:queue-twelve' });
+    expect(recorded.topBar.at(-1)?.parts).not.toHaveProperty('thenTail');
+    expect(recorded.topBar.at(-1)?.caption ?? null).toBeNull();
+    const board = recorded.board.at(-1);
+    expect(board?.accessibilityValueText).toBeUndefined();
+    expect(board?.nextActionLabel).toBeUndefined();
+    act(() => (board?.onSwipeNext as () => void)());
+    expect(selectionHaptic).not.toHaveBeenCalled();
+    expect(queueAnalytics.navigation).toHaveBeenCalledWith(
+      expect.objectContaining({ walk: expect.objectContaining({ track: 'list', crossed: true }) }),
+      expect.anything(),
+    );
   });
 
   it('withholds a peek whose climb lives on another board', () => {
