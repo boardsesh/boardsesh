@@ -63,6 +63,8 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
   }),
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({ useWallSwipeToDriveEnabled: () => true }));
+// Relay mode (#7220) has its own tests; no phone here relays.
+vi.mock('../../ble/use-relay-holder', () => ({ useRelayHolder: () => null }));
 const getQueueSnapshot = () => ({ queue: [], currentClimbQueueItem: null });
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionControls: () => ({ sessionId: reads.current.sessionId }),
