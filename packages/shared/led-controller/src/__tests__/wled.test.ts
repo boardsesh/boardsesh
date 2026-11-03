@@ -20,9 +20,24 @@ describe('WLED driver', () => {
     expect(fetchController.mock.calls[0][1]?.body).toBeUndefined();
   });
 
+  it.each(['WLED', 'www.athom.tech', 'Custom manufacturer', undefined])(
+    'accepts WLED firmware with manufacturer brand %s over local HTTP',
+    async (brand) => {
+      const fetchController = vi.fn<typeof fetch>().mockResolvedValue(json({ ...deviceInfo, brand }));
+      const info = await createWledDriver({ fetch: fetchController }).probe('http://192.168.1.50');
+      expect(info).toEqual({ name: 'Garage wall', version: '0.15.0', ledCount: 180 });
+      expect(fetchController).toHaveBeenCalledTimes(1);
+      expect(fetchController).toHaveBeenCalledWith(
+        'http://192.168.1.50/json/info',
+        expect.objectContaining({ method: 'GET' }),
+      );
+    },
+  );
+
   it.each([
     {},
-    { ...deviceInfo, brand: 'Another device' },
+    { ...deviceInfo, brand: 123 },
+    { ...deviceInfo, name: ' ' },
     { ...deviceInfo, ver: '' },
     { ...deviceInfo, leds: { count: 0 } },
     { ...deviceInfo, leds: { count: -1 } },

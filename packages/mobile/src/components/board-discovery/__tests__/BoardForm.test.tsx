@@ -6,8 +6,8 @@
 // (SW-20, #5471) could be dropped from it, or left reachable in only one of the
 // two visibility modes, with every other test still green.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
-import { createElement, type ComponentProps, type ReactNode } from 'react';
+import { fireEvent, render } from '@testing-library/react';
+import { createElement, useImperativeHandle, type ComponentProps, type ReactNode, type Ref } from 'react';
 
 type Children = { children?: ReactNode };
 
@@ -15,20 +15,49 @@ type Children = { children?: ReactNode };
 const privacy = vi.hoisted(() => ({
   settings: undefined as { enabled: boolean; isPrivate: boolean } | undefined,
 }));
+const platform = vi.hoisted(() => ({ OS: 'ios' }));
+const keyboard = vi.hoisted(() => ({ height: 0 }));
+const scroll = vi.hoisted(() => ({
+  revealInput: vi.fn(),
+  focusedInput: undefined as object | undefined,
+  contentSizeChanged: undefined as (() => void) | undefined,
+}));
 
-vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 0 }));
+vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 56 }));
 vi.mock('expo-router', () => ({
   useRouter: () => ({ back: vi.fn() }),
   useNavigation: () => ({ getState: () => ({ index: 1 }) }),
 }));
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
-  Platform: { OS: 'ios' },
+  Platform: platform,
+  TextInput: { State: { currentlyFocusedInput: () => scroll.focusedInput } },
   // `src/theme/colors` resolves the iOS palette at import time.
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   KeyboardAvoidingView: ({ children }: Children) => createElement('div', null, children),
-  ScrollView: ({ children }: Children) => createElement('div', null, children),
+  ScrollView: ({
+    children,
+    contentContainerStyle,
+    ref,
+    onFocus,
+    onBlur,
+    onContentSizeChange,
+  }: Children & {
+    contentContainerStyle: { paddingBottom?: number }[];
+    ref: Ref<{ scrollResponderScrollNativeHandleToKeyboard: typeof scroll.revealInput }>;
+    onFocus?: () => void;
+    onBlur?: () => void;
+    onContentSizeChange?: () => void;
+  }) => {
+    useImperativeHandle(ref, () => ({ scrollResponderScrollNativeHandleToKeyboard: scroll.revealInput }));
+    scroll.contentSizeChanged = onContentSizeChange;
+    return createElement(
+      'div',
+      { 'data-padding-bottom': Object.assign({}, ...contentContainerStyle).paddingBottom, onFocus, onBlur },
+      children,
+    );
+  },
   View: ({ children }: Children) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 400, height: 800 }),
@@ -41,7 +70,10 @@ vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({
   usePrivacySettings: () => ({ data: privacy.settings }),
 }));
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
-  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 48 }),
+}));
+vi.mock('../../../hooks/use-keyboard-height', () => ({
+  useKeyboardHeight: (enabled: boolean) => (enabled ? keyboard.height : 0),
 }));
 vi.mock('../../../hooks/use-header-actions', () => ({ useHeaderActions: () => {} }));
 vi.mock('../../../hooks/use-transparent-header-inset', () => ({ useTransparentHeaderInset: () => 0 }));
@@ -96,8 +128,8 @@ function builderFor(boardName: string): BoardFormProps['builder'] {
   } as unknown as BoardFormProps['builder'];
 }
 
-function renderForm(boardName: string, withLedSection = false) {
-  return render(
+function formFor(boardName: string, withLedSection = false) {
+  return (
     <BoardForm
       builder={builderFor(boardName)}
       defaultName="Garage wall"
@@ -107,9 +139,20 @@ function renderForm(boardName: string, withLedSection = false) {
       currentBoardUuid="board-uuid"
       sprayTrainingSection={<div data-testid="training" />}
       sprayBackgroundSection={<div data-testid="background" />}
-      sprayLedSection={withLedSection ? <div data-testid="led-settings" /> : undefined}
-    />,
+      sprayLedSection={
+        withLedSection ? (
+          <div data-testid="led-settings">
+            <input aria-label="WLED URL" />
+            <input aria-label="Other field" />
+          </div>
+        ) : undefined
+      }
+    />
   );
+}
+
+function renderForm(boardName: string, withLedSection = false) {
+  return render(formFor(boardName, withLedSection));
 }
 
 /** The marked sections, in the order the form draws them. */
@@ -119,6 +162,48 @@ function drawnSections(container: HTMLElement): string[] {
 
 beforeEach(() => {
   privacy.settings = undefined;
+  platform.OS = 'ios';
+  keyboard.height = 0;
+  scroll.focusedInput = undefined;
+  scroll.revealInput.mockClear();
+});
+
+describe('BoardForm keyboard clearance', () => {
+  it('reveals the focused URL after keyboard padding is laid out and follows focus changes', () => {
+    platform.OS = 'android';
+    const view = renderForm('spray', true);
+    const urlInput = view.getByLabelText('WLED URL');
+    scroll.focusedInput = urlInput;
+    fireEvent.focus(urlInput);
+    expect(scroll.revealInput).not.toHaveBeenCalled();
+
+    keyboard.height = 300;
+    view.rerender(formFor('spray', true));
+    scroll.contentSizeChanged?.();
+    expect(scroll.revealInput).toHaveBeenLastCalledWith(urlInput, 72, true);
+
+    const otherInput = view.getByLabelText('Other field');
+    fireEvent.blur(urlInput);
+    scroll.focusedInput = otherInput;
+    fireEvent.focus(otherInput);
+    expect(scroll.revealInput).toHaveBeenLastCalledWith(otherInput, 72, true);
+
+    fireEvent.blur(otherInput);
+    scroll.revealInput.mockClear();
+    scroll.contentSizeChanged?.();
+    expect(scroll.revealInput).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['android', 300, 348],
+    ['android', 0, 48],
+    ['ios', 300, 48],
+  ])('keeps the LED field scrollable on %s with keyboard height %i', (os, height, padding) => {
+    platform.OS = os;
+    keyboard.height = height;
+    const { container } = renderForm('spray', true);
+    expect(container.querySelector('[data-padding-bottom]')?.getAttribute('data-padding-bottom')).toBe(String(padding));
+  });
 });
 
 describe('BoardForm on a spray wall: Help train hold finding', () => {

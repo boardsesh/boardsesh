@@ -35,6 +35,8 @@ The WLED implementation uses the official
 [JSON API](https://kno.wled.ge/interfaces/json-api/): read-only `GET /json/info`
 for checks and `POST /json/state` for explicit lighting commands. Requests are
 bounded by timeouts and cancelled on edits, collapse, disable and unmount.
+Manufacturer-branded WLED firmware, including Athom, is supported; the connection
+check validates the API fields rather than requiring the default WLED brand name.
 Success requires a valid WLED response or command acknowledgement. A physical
 light change still needs device QA.
 

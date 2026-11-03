@@ -12,6 +12,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  TextInput,
   useWindowDimensions,
   type ViewStyle,
   type ScrollViewInstance,
@@ -22,6 +23,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { useNavigation, useRouter } from 'expo-router';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
 import { useHeaderActions } from '../../hooks/use-header-actions';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
@@ -141,6 +143,9 @@ export function BoardForm({
   const foreignSerialBoard = useForeignSerialBoard(builder.serialNumber, currentBoardUuid, serialConflictConfig);
   const foreignSerialDisclosure = foreignSerialBoard ? serialReuseDisclosure(foreignSerialBoard) : null;
   const bottomChrome = useBottomChromeMetrics();
+  // Android draws the keyboard over edge-to-edge routes instead of resizing
+  // them. Keep the lower fields scrollable above it, as on the profile form.
+  const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
   const { width: windowWidth } = useWindowDimensions();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
@@ -236,11 +241,27 @@ export function BoardForm({
     clearOnUnmount: true,
   });
 
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const focusedInputRef = useRef<ReturnType<typeof TextInput.State.currentlyFocusedInput>>(undefined);
+  const keepFocusedInputVisible = useCallback(() => {
+    if (keyboardHeight === 0 || !focusedInputRef.current) return;
+    scrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+      focusedInputRef.current,
+      headerHeight + spacing[4],
+      true,
+    );
+  }, [keyboardHeight, headerHeight]);
+  const handleInputFocus = useCallback(() => {
+    focusedInputRef.current = TextInput.State.currentlyFocusedInput();
+    keepFocusedInputVisible();
+  }, [keepFocusedInputVisible]);
+  const handleInputBlur = useCallback(() => {
+    focusedInputRef.current = undefined;
+  }, []);
   // A submit failure shows at the top of the form, so the form scrolls back up
   // to it from wherever the climber was, and a screen reader hears it. The
   // header inset is the rest offset under `automatic` on a glass header. Runs
   // once per attempt, when the save has settled with an error.
-  const scrollRef = useRef<ScrollViewInstance>(null);
   const headerInset = useTransparentHeaderInset();
   const headerInsetRef = useRef(headerInset);
   headerInsetRef.current = headerInset;
@@ -259,9 +280,14 @@ export function BoardForm({
       <ScrollView
         ref={scrollRef}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding + keyboardHeight }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        onFocus={Platform.OS === 'android' ? handleInputFocus : undefined}
+        onBlur={Platform.OS === 'android' ? handleInputBlur : undefined}
+        // Wait until the keyboard padding has reached native layout before
+        // revealing the field; focus also handles moving between open inputs.
+        onContentSizeChange={Platform.OS === 'android' ? keepFocusedInputVisible : undefined}
       >
         {/* Above everything, so it never pushes a control the climber is
             looking at; the scroll above brings it into view. */}

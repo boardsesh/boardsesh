@@ -11,13 +11,15 @@ function isRecord(candidate: unknown): candidate is Record<string, unknown> {
 }
 
 function readInfo(payload: unknown): LedControllerInfo {
+  // WLED manufacturers can customize the brand (for example, Athom).
+  // Validate the API fields we use rather than a specific manufacturer name.
   if (
     !isRecord(payload) ||
     typeof payload.name !== 'string' ||
     !payload.name.trim() ||
     typeof payload.ver !== 'string' ||
     !payload.ver.trim() ||
-    (payload.brand !== undefined && payload.brand !== 'WLED') ||
+    (payload.brand !== undefined && typeof payload.brand !== 'string') ||
     !isRecord(payload.leds) ||
     typeof payload.leds.count !== 'number' ||
     !Number.isSafeInteger(payload.leds.count) ||
