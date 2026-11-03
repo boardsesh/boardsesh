@@ -6,13 +6,13 @@ import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import { useAutoplayVideo } from '@/app/hooks/use-autoplay-video';
 import { helpClip, helpWalkthrough, type HelpClipName, type HelpWalkthroughName } from '@/app/lib/help-clips';
-import frame from '@/app/components/marketing/marketing-screenshot.module.css';
+import shot from './help-screenshot.module.css';
 import styles from './help-clip.module.css';
 
 /**
  * A short silent screen recording with its caption.
  *
- * Same frame, measure and caption as `HelpScreenshot`, because the two land in
+ * Same bezel, measure and caption as `HelpScreenshot`, because the two land in
  * the same rows: a clip is only used where the thing being taught is a gesture
  * — a long press, a swipe, a drag — that a still cannot hold.
  *
@@ -26,10 +26,10 @@ export function HelpClip({ name, alt, caption }: { name: HelpClipName; alt: stri
 
   return (
     <Box component="figure" className={styles.figure}>
-      <Box className={frame.frame}>
+      <Box className={shot.bezel}>
         <video
           ref={videoRef}
-          className={styles.video}
+          className={`${shot.screen} ${styles.video}`}
           poster={clip.poster}
           width={clip.width}
           height={clip.height}
@@ -66,9 +66,9 @@ export function HelpWalkthrough({ name, alt }: { name: HelpWalkthroughName; alt:
 
   return (
     <Box component="figure" className={`${styles.figure} ${styles.walkthroughFigure}`}>
-      <Box className={`${frame.frame} ${styles.landscapeFrame}`}>
+      <Box className={`${shot.bezel} ${styles.landscapeFrame}`}>
         <video
-          className={`${styles.video} ${styles.landscapeVideo}`}
+          className={`${shot.screen} ${styles.video} ${styles.landscapeVideo}`}
           poster={landscape.poster}
           width={landscape.width}
           height={landscape.height}
@@ -83,9 +83,9 @@ export function HelpWalkthrough({ name, alt }: { name: HelpWalkthroughName; alt:
           {t('help.clip.unsupported')}
         </video>
       </Box>
-      <Box className={`${frame.frame} ${styles.portraitFrame}`}>
+      <Box className={`${shot.bezel} ${styles.portraitFrame}`}>
         <video
-          className={`${styles.video} ${styles.portraitVideo}`}
+          className={`${shot.screen} ${styles.video} ${styles.portraitVideo}`}
           poster={portrait.poster}
           width={portrait.width}
           height={portrait.height}

@@ -4,16 +4,15 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { helpScreenshot, type HelpShot } from '@/app/lib/help-screenshots';
-import frame from '@/app/components/marketing/marketing-screenshot.module.css';
 import styles from './help-screenshot.module.css';
 
 /**
- * A help capture with its caption.
+ * A help capture with its caption, in a bezel that gives the near-black app UI
+ * an edge against the near-black page.
  *
- * It borrows the marketing screenshot's frame so a phone shot looks the same
- * wherever it lands, but resolves its own `/images/help/*` source: these shots
- * follow one flow rather than selling a platform, so there is no iOS/Android
- * switch to honour and nothing here reads the preview context.
+ * It resolves its own `/images/help/*` source: these shots follow one flow
+ * rather than selling a platform, so there is no iOS/Android switch to honour
+ * and nothing here reads the preview context.
  *
  * Strings arrive already resolved by the caller's `t()`, like PageShell's do.
  */
@@ -21,14 +20,14 @@ export function HelpScreenshot({ shot, alt, caption }: { shot: HelpShot; alt: st
   const capture = helpScreenshot(shot);
   return (
     <Box component="figure" className={styles.figure}>
-      <Box className={frame.frame}>
+      <Box className={styles.bezel}>
         <Image
           src={resolveStaticAssetUrl(capture.src)}
           alt={alt}
           width={capture.width}
           height={capture.height}
-          sizes="(max-width: 760px) 80vw, 320px"
-          className={frame.image}
+          sizes="280px"
+          className={styles.screen}
         />
       </Box>
       <Typography component="figcaption" variant="body2" className={styles.caption}>
@@ -38,7 +37,7 @@ export function HelpScreenshot({ shot, alt, caption }: { shot: HelpShot; alt: st
   );
 }
 
-/** A row of captures: two across a desktop measure, one across a phone. */
+/** A row of captures: side by side on a desktop measure, one per row on a phone. */
 export function HelpShots({ children }: { children: React.ReactNode }) {
   return <Box className={styles.shots}>{children}</Box>;
 }

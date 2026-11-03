@@ -1,20 +1,60 @@
+/* A capture of the app is near-black UI on a near-black page, so it needs an
+   edge of its own. The bezel is the elevated surface (one step up the ladder)
+   with a hairline, and the capture sits inset inside it like a phone screen in
+   its case. `.bezel` and `.screen` are shared with help-clip.tsx so a clip and a
+   still that share a row look like the same object. */
 .figure {
   min-width: 0;
-  max-width: 320px;
+  max-width: 280px;
   margin: 0;
 }
 
+.bezel {
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--spacing-2);
+  border: 1px solid var(--separator);
+  border-radius: calc(var(--border-radius-xl) + var(--spacing-2));
+  background: var(--semantic-surface-elevated);
+}
+
+/* The capture itself: its own corner and a hairline, so the black status bar
+   reads as the top of a screen and not as a hole in the bezel. */
+.screen {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-background);
+}
+
 .caption {
-  margin-top: var(--spacing-2);
-  color: var(--neutral-500);
+  margin-top: var(--spacing-3);
+  padding-inline: var(--spacing-1);
+  color: var(--neutral-600);
   line-height: 1.5;
 }
 
-/* A row of captures. Two fit a desktop measure; one fits a phone. */
+/* A row of captures: side by side on a desktop measure, one per row on a
+   phone. Columns stop at the figure's own cap so a single shot does not
+   stretch, and the row sits at the start of the measure like the prose. */
 .shots {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 280px));
   align-items: start;
   gap: var(--spacing-6);
-  margin-block: var(--spacing-6);
+  margin-block: var(--spacing-6) var(--spacing-8);
+}
+
+@media (max-width: 600px) {
+  .figure {
+    max-width: 240px;
+  }
+
+  .shots {
+    grid-template-columns: minmax(0, 240px);
+    justify-content: center;
+    gap: var(--spacing-8);
+  }
 }

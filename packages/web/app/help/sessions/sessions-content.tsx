@@ -4,7 +4,8 @@ import React from 'react';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import { PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import HelpPageShell from '../help-page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
 import HelpInstallSection from '../help-install-section';
 import { HelpScreenshot, HelpShots } from '../help-screenshot';
@@ -23,7 +24,7 @@ export default function SessionsContent() {
   const { t } = useTranslation('marketing');
 
   return (
-    <PageShell
+    <HelpPageShell
       title={t('help.sessions.hero.title')}
       lead={t('help.sessions.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.sessions.breadcrumb')} />}
@@ -109,6 +110,6 @@ export default function SessionsContent() {
           </li>
         </ProseList>
       </PageSection>
-    </PageShell>
+    </HelpPageShell>
   );
 }

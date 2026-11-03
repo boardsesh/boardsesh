@@ -4,8 +4,10 @@ import React from 'react';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import { PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import HelpPageShell from '../help-page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
+import HelpCallout from '../help-callout';
 import HelpInstallSection from '../help-install-section';
 import { HelpScreenshot } from '../help-screenshot';
 import { HelpClip, HelpShots } from '../help-clip';
@@ -31,7 +33,7 @@ export default function BoardAndBluetoothContent() {
   const { t } = useTranslation('marketing');
 
   return (
-    <PageShell
+    <HelpPageShell
       title={t('help.bluetooth.hero.title')}
       lead={t('help.bluetooth.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.bluetooth.breadcrumb')} />}
@@ -50,7 +52,7 @@ export default function BoardAndBluetoothContent() {
           />
         </HelpShots>
         <Prose>{t('help.bluetooth.connect.p1')}</Prose>
-        <Prose>{t('help.bluetooth.connect.p2')}</Prose>
+        <HelpCallout>{t('help.bluetooth.connect.p2')}</HelpCallout>
         <Prose>{t('help.bluetooth.connect.p3')}</Prose>
         <Prose>{t('help.bluetooth.connect.p4')}</Prose>
       </PageSection>
@@ -153,6 +155,6 @@ export default function BoardAndBluetoothContent() {
           </li>
         </ProseList>
       </PageSection>
-    </PageShell>
+    </HelpPageShell>
   );
 }
