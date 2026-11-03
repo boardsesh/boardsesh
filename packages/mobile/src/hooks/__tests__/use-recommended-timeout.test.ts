@@ -71,7 +71,8 @@ describe('useRecommendedTimeout', () => {
     const hook = renderHook(({ baseMs }) => useRecommendedTimeout(baseMs, true), { initialProps: { baseMs: 80000 } });
     await act(async () => {});
     native.getRecommendedTimeoutMillis.mockReturnValue(new Promise(() => {}));
-    hook.rerender({ baseMs: 200000 });
-    expect(hook.result.current).toBe(200000);
+    // The 120 s answered for 80 s says nothing about 100 s until Android answers.
+    hook.rerender({ baseMs: 100000 });
+    expect(hook.result.current).toBe(100000);
   });
 });

@@ -68,7 +68,9 @@ export function UndoSnackbar(props: UndoSnackbarProps) {
     const timer = setTimeout(() => setFocusDueKey(focusKey), UNDO_FOCUS_DELAY_MS);
     return () => clearTimeout(timer);
   }, [visible, focusUndoOnShow, focusKey]);
-  const focusUndo = visible && focusUndoOnShow && focusDueKey === focusKey;
+  // Only a visible show arms the timer, and each show brings a new nonce, so a
+  // matching key is always this show's.
+  const focusUndo = focusUndoOnShow && focusDueKey === focusKey;
   // Runs before the announcement below, so VoiceOver lands on Undo and the
   // queued message follows it instead of being cut off by the focus move.
   useAnnounceBodyFocus(undoRef, focusUndo);
