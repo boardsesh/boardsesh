@@ -45,10 +45,11 @@ export function usePlayerButtonControls() {
   const queueLabel = t('mobile.settings.playerButtons.buttons.queue');
   const shareLabel = t('mobile.settings.playerButtons.buttons.share');
   const angleLabel = t('mobile.settings.playerButtons.buttons.angle');
+  const playNextLabel = t('mobile.settings.playerButtons.buttons.playNext');
   const mirrorDescription = t('mobile.settings.playerButtons.mirrorDescription');
   const angleDescription = t('mobile.settings.playerButtons.angleDescription');
 
-  // The five buttons that share four places around Log (two ends when ⏮ ⏭
+  // The six buttons that share four places around Log (two ends when ⏮ ⏭
   // are on), in the climber's order. The resolver chooses which fit; all other
   // applicable actions remain in ⋯. Log and the wall button are fixed.
   const controls = useMemo<PlayerButtonControl[]>(() => {
@@ -58,6 +59,7 @@ export function usePlayerButtonControls() {
       queue: queueLabel,
       share: shareLabel,
       angle: angleLabel,
+      playNext: playNextLabel,
     };
     // Two buttons only appear on some boards; their rows say which.
     const descriptions: Partial<Record<PlayerButtonId, string>> = {
@@ -71,7 +73,17 @@ export function usePlayerButtonControls() {
       visible: buttons.visible[id],
       movable: true,
     }));
-  }, [buttons, mirrorLabel, favoriteLabel, queueLabel, shareLabel, angleLabel, mirrorDescription, angleDescription]);
+  }, [
+    buttons,
+    mirrorLabel,
+    favoriteLabel,
+    queueLabel,
+    shareLabel,
+    angleLabel,
+    playNextLabel,
+    mirrorDescription,
+    angleDescription,
+  ]);
 
   const positionOptions = useMemo<{ key: PlayerButtonsPosition; label: string }[]>(
     () => [

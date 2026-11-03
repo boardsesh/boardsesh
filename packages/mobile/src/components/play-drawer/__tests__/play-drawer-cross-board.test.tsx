@@ -55,6 +55,7 @@ const viewport = vi.hoisted(() => ({ width: 390, height: 844, fontScale: 1 }));
 // Web: the content gesture skips the native scroll-intent composition.
 const platform = vi.hoisted(() => ({ OS: 'web' as 'web' | 'ios' }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
+const playNext = vi.hoisted(() => vi.fn(async () => 'added'));
 const toggleFavorite = vi.hoisted(() => vi.fn());
 const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
 // `crew` is the roster's crew (`useIsCrewSession`); null reads `shared`. The two
@@ -458,6 +459,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({
     getQueueSnapshot: () => queueState,
     setCurrentClimb,
+    playNext,
     nextClimb: vi.fn(),
     previousClimb: vi.fn(),
     addToQueue: vi.fn(async () => 'added'),
@@ -1501,9 +1503,43 @@ describe('PlayDrawer ⋯ menu', () => {
     });
   });
 
+  it('queues the displayed preview slot next without changing the active climb', () => {
+    const current = queueItem({ ...TWELVE_CLIMB, uuid: 'current-other' }, 'current-slot');
+    const previewQueueItem = queueItem(TWELVE_CLIMB, 'preview-slot');
+    queueState.currentClimbQueueItem = current;
+    queueState.queue = [current, previewQueueItem];
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: { climb: TWELVE_CLIMB, options: { previewQueueItem }, nonce: 1 },
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    expect(recorded.actionBar.at(-1)?.playNextDisabled).toBe(false);
+    const onPlayNext = recorded.actionBar.at(-1)?.onPlayNext;
+    if (typeof onPlayNext !== 'function') throw new Error('Play next handler missing');
+    act(() => onPlayNext());
+    expect(playNext).toHaveBeenCalledWith({
+      item: expect.objectContaining({ climb: TWELVE_CLIMB }),
+      queueItemUuid: 'preview-slot',
+    });
+    expect(setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('keeps Play next disabled and guards its handler for the active climb', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'current-slot');
+    renderDrawer();
+    expect(recorded.actionBar.at(-1)?.playNextDisabled).toBe(true);
+    const onPlayNext = recorded.actionBar.at(-1)?.onPlayNext;
+    if (typeof onPlayNext !== 'function') throw new Error('Play next handler missing');
+    act(() => onPlayNext());
+    expect(playNext).not.toHaveBeenCalled();
+  });
+
   it('hands ⋯ a button the climber switched off, and the bar the same buttons', () => {
     onTestFinished(() => resetAllSettings());
-    setSetting('playerButtonsV3', {
+    setSetting('playerButtonsV4', {
       version: 1,
       order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
       visible: { queue: false },
@@ -1550,7 +1586,7 @@ describe('PlayDrawer controls position (#6229)', () => {
   // (below it), and they would take the taps meant for Switch board.
   it('holds the whole switch-board card inside the controls, above the board with every small button off', () => {
     setSetting('playerButtonsPosition', 'above');
-    setSetting('playerButtonsV3', {
+    setSetting('playerButtonsV4', {
       version: 1,
       order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
       visible: { mirror: false, favorite: false, angle: false, share: false, queue: false },
@@ -2209,7 +2245,7 @@ describe('PlayDrawer wall button taps', () => {
 
   it('hands the bar the climber’s board control choice', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    setSetting('playerButtonsV3', {
+    setSetting('playerButtonsV4', {
       version: 1,
       order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
       visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },

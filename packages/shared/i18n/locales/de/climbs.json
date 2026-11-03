@@ -748,6 +748,7 @@
     },
     "climbActions": {
       "playNext": "Als Nächstes dran",
+      "playNextActiveHint": "Dieser Boulder ist bereits aktiv. Wähle einen anderen Boulder, um ihn als Nächstes einzureihen.",
       "playLast": "Als Letztes dran",
       "replayFromHere": "Ab hier wiederholen",
       "nameCopied": "Name kopiert",

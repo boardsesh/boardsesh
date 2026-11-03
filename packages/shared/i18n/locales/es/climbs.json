@@ -748,6 +748,7 @@
     },
     "climbActions": {
       "playNext": "Poner a continuación",
+      "playNextActiveHint": "Este bloque ya está activo. Busca otro bloque para ponerlo a continuación.",
       "playLast": "Poner al final",
       "replayFromHere": "Repetir desde aquí",
       "nameCopied": "Nombre copiado",

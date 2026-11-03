@@ -748,6 +748,7 @@
     },
     "climbActions": {
       "playNext": "Metti subito dopo",
+      "playNextActiveHint": "Questo blocco è già attivo. Apri un altro blocco per metterlo subito dopo.",
       "playLast": "Metti in fondo",
       "replayFromHere": "Riparti da qui",
       "nameCopied": "Nome copiato",

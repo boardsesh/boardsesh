@@ -128,6 +128,7 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     size,
     onPress,
     badge,
+    disabled,
   }: {
     iconName?: string;
     iconColor?: string;
@@ -138,11 +139,13 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     size?: string;
     onPress?: () => void;
     badge?: ReactNode;
+    disabled?: boolean;
   }) =>
     createElement(
       'div',
       {
-        onClick: onPress,
+        onClick: disabled ? undefined : onPress,
+        'data-disabled': disabled,
         'data-action': iconName,
         'data-testid': testID,
         'data-size': size,
@@ -267,7 +270,7 @@ const baseProps = {
   previousNext: true,
   buttons: {
     order: ['mirror', 'favorite', 'queue', 'share', 'angle'] as const,
-    visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
+    visible: { playNext: false, mirror: true, favorite: true, queue: true, share: false, angle: false },
   },
   canSwipePrevious: true,
   canSwipeNext: true,
@@ -339,6 +342,20 @@ describe('PlayDrawerActionBar current defaults', () => {
       expect(row?.children[2].querySelector('[data-testid="play-drawer-tick"]')).not.toBeNull();
     },
   );
+
+  it('queues the displayed preview next and disables the action for the active climb', () => {
+    const onPlayNext = vi.fn();
+    const props = { ...currentProps, supportsMirroring: false, onOpenAngleSelector: undefined, onPlayNext };
+    const view = render(createElement(PlayDrawerActionBar, props));
+    const next = () => view.container.querySelector('[data-action="queue.next"]') as HTMLElement;
+    expect(next()).not.toBeNull();
+    fireEvent.click(next());
+    expect(onPlayNext).toHaveBeenCalledOnce();
+    view.rerender(createElement(PlayDrawerActionBar, { ...props, playNextDisabled: true }));
+    expect(next().getAttribute('data-disabled')).toBe('true');
+    fireEvent.click(next());
+    expect(onPlayNext).toHaveBeenCalledOnce();
+  });
 
   it('keeps the draft Share position empty and neighboring controls in place', () => {
     const { container } = render(createElement(PlayDrawerActionBar, { ...currentProps, onShare: undefined }));
@@ -504,7 +521,7 @@ describe('PlayDrawerActionBar', () => {
 
 describe("PlayDrawerActionBar (the climber's buttons)", () => {
   const order = ['mirror', 'favorite', 'queue', 'share', 'angle'] as const;
-  const visibleAll = { mirror: true, favorite: true, angle: true, share: true, queue: true };
+  const visibleAll = { playNext: false, mirror: true, favorite: true, angle: true, share: true, queue: true };
 
   it('leaves both ⏮ ⏭ slots empty with Previous and next off, keeping the tick in the middle slot', () => {
     const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, previousNext: false }));
@@ -533,7 +550,10 @@ describe("PlayDrawerActionBar (the climber's buttons)", () => {
   });
 
   it('draws one button at the leading end alone', () => {
-    const buttons = { order, visible: { mirror: false, favorite: false, queue: true, share: false, angle: false } };
+    const buttons = {
+      order,
+      visible: { playNext: false, mirror: false, favorite: false, queue: true, share: false, angle: false },
+    };
     const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, buttons }));
     expect(labels(container)[0]).toBe(QUEUE_LABEL);
     expect(labels(container).filter((label) => label === QUEUE_LABEL)).toHaveLength(1);
@@ -546,14 +566,20 @@ describe("PlayDrawerActionBar (the climber's buttons)", () => {
   });
 
   it('keeps the wall button with every button switched off', () => {
-    const allOff = { order, visible: { mirror: false, favorite: false, angle: false, share: false, queue: false } };
+    const allOff = {
+      order,
+      visible: { playNext: false, mirror: false, favorite: false, angle: false, share: false, queue: false },
+    };
     const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, buttons: allOff }));
     expect(container.querySelector('[data-wall-control]')).not.toBeNull();
     expect(labels(container)).not.toContain(QUEUE_LABEL);
   });
 
   it("ignores the climber's buttons for a signed-out reader", () => {
-    const allOff = { order, visible: { mirror: false, favorite: false, angle: false, share: false, queue: false } };
+    const allOff = {
+      order,
+      visible: { playNext: false, mirror: false, favorite: false, angle: false, share: false, queue: false },
+    };
     const { container } = render(
       createElement(PlayDrawerActionBar, { ...baseProps, viewer: 'anonymous', buttons: allOff, previousNext: false }),
     );
@@ -1256,7 +1282,7 @@ describe('PlayDrawerActionBar: where the wall button spans its row', () => {
   it('counts what draws: beside a Share with nothing to share it spans the row', () => {
     const favoriteAndShare = {
       order,
-      visible: { mirror: false, favorite: true, angle: false, share: true, queue: false },
+      visible: { playNext: false, mirror: false, favorite: true, angle: false, share: true, queue: false },
     };
     const sharing = render(createElement(PlayDrawerActionBar, { ...bulbPreview, buttons: favoriteAndShare }));
     expect(spansRow(sharing.container)).toBe('false');

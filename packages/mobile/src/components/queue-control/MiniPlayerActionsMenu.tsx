@@ -50,11 +50,12 @@ export function miniPlayerMenuHiddenButtons(
   shown: readonly MiniPlayerButtonId[],
   isAvailable: (buttonId: MiniPlayerButtonId) => boolean,
 ): PlayDrawerHiddenButtons {
-  const hidden = (buttonId: Exclude<keyof PlayDrawerHiddenButtons, 'tick'>) =>
+  const hidden = (buttonId: Exclude<keyof PlayDrawerHiddenButtons, 'tick' | 'playNext'>) =>
     isAvailable(buttonId) && !shown.includes(buttonId);
   return {
     // The MiniPlayer always has its own Log, so ⋯ never stands in for it.
     tick: false,
+    playNext: true,
     favorite: hidden('favorite'),
     share: hidden('share'),
     queue: hidden('queue'),

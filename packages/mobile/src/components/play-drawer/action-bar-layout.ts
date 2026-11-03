@@ -103,6 +103,7 @@ const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({
   favorite: false,
   share: false,
   queue: false,
+  playNext: false,
   mirror: false,
   angle: false,
 });
@@ -182,6 +183,7 @@ export function resolveActionBarLayout({
         favorite: true,
         share: hasShare,
         queue: true,
+        playNext: true,
         mirror: supportsMirroring,
         angle: angleAvailable,
       },
@@ -278,6 +280,7 @@ export function resolveActionBarLayout({
       favorite: !drawn('favorite'),
       share: hasShare && !drawn('share'),
       queue: !drawn('queue'),
+      playNext: !drawn('playNext'),
       mirror: supportsMirroring && !drawn('mirror'),
       angle: angleAvailable && !drawn('angle'),
     },

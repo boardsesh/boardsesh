@@ -317,6 +317,8 @@ export type AppSettings = {
    * buttons preference store reads or writes this record.
    */
   playerButtonsV3: (SectionLayoutRecord & { readonly boardControl?: string }) | null;
+  /** Player buttons including Play next. V3/V2 are imported once and retained for rollback. */
+  playerButtonsV4: (SectionLayoutRecord & { readonly boardControl?: string }) | null;
   /**
    * The MiniPlayer's buttons (#6940): their order and switches, `null` while they
    * match the defaults. Read and written ONLY through `miniPlayerButtonsStore`

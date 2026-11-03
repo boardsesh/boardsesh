@@ -152,6 +152,8 @@ type PlayDrawerActionBarProps = {
   onMirror: () => void;
   onToggleFavorite: () => void;
   onOpenQueue: () => void;
+  onPlayNext?: () => void;
+  playNextDisabled?: boolean;
   /** Absent on a draft: only its setter can open it, so a link goes nowhere (#5960). */
   onShare?: () => void;
   onTickPress: () => void;
@@ -210,6 +212,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onMirror,
   onToggleFavorite,
   onOpenQueue,
+  onPlayNext,
+  playNextDisabled = false,
   onShare,
   onTickPress,
   onTickLongPress,
@@ -310,6 +314,17 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
         );
       case 'favorite':
         return <FavoriteButton size="lg" isFavorited={isFavorited} onPress={handleFavorite} />;
+      case 'playNext':
+        return (
+          <ActionButton
+            size="lg"
+            iconName="queue.next"
+            onPress={() => onPlayNext?.()}
+            disabled={playNextDisabled || !onPlayNext}
+            accessibilityLabel={tClimbs('mobile.climbActions.playNext')}
+            accessibilityHint={playNextDisabled ? tClimbs('mobile.climbActions.playNextActiveHint') : undefined}
+          />
+        );
       case 'queue':
         return (
           <QueueButton
@@ -573,6 +588,20 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                   );
                 case 'favorite':
                   return <FavoriteButton key={item} size="sm" isFavorited={isFavorited} onPress={handleFavorite} />;
+                case 'playNext':
+                  return (
+                    <ActionButton
+                      key={item}
+                      size="sm"
+                      iconName="queue.next"
+                      onPress={() => onPlayNext?.()}
+                      disabled={playNextDisabled || !onPlayNext}
+                      accessibilityLabel={tClimbs('mobile.climbActions.playNext')}
+                      accessibilityHint={
+                        playNextDisabled ? tClimbs('mobile.climbActions.playNextActiveHint') : undefined
+                      }
+                    />
+                  );
                 case 'queue':
                   return (
                     <QueueButton

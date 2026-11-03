@@ -116,7 +116,15 @@ const CLIMB = { uuid: 'climb-1', name: 'Crimp Line', frames: 'p1r12', userId: 's
 // The board the climb is DRAWN on, which here is not the selected one.
 const TENSION = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13', angle: 35 };
 // Log is in the bar for a member; ⋯ stands in for it only in a timed block with the wall button (#7000).
-const EVERYTHING_HIDDEN = { tick: false, favorite: true, share: true, queue: true, mirror: true, angle: true };
+const EVERYTHING_HIDDEN = {
+  playNext: true,
+  tick: false,
+  favorite: true,
+  share: true,
+  queue: true,
+  mirror: true,
+  angle: true,
+};
 
 function makeProps(overrides: Partial<PlayDrawerActionsMenuProps> = {}): PlayDrawerActionsMenuProps {
   return {

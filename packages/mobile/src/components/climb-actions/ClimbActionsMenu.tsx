@@ -37,7 +37,15 @@ const LIST_GROUPS: ClimbMenuGroups = [
   ['betaVideo', 'edit', 'fork', 'openInApp'],
   ['report', 'delete'],
 ];
-const ALL_BUTTONS_HIDDEN = { tick: true, favorite: true, share: true, queue: true, mirror: true, angle: true };
+const ALL_BUTTONS_HIDDEN = {
+  playNext: true,
+  tick: true,
+  favorite: true,
+  share: true,
+  queue: true,
+  mirror: true,
+  angle: true,
+};
 
 type Selection = { target: ClimbActionsTarget; id: ClimbActionId; nonce: number; credentialGeneration: number };
 

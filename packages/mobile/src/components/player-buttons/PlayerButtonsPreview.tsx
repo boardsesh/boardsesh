@@ -41,6 +41,7 @@ const BUTTON_ICONS: Record<PlayerButtonId, IconName> = {
   queue: 'queue',
   share: 'share',
   angle: 'angle',
+  playNext: 'queue.next',
 };
 const BIG_ICON = 20;
 const SMALL_ICON = 16;
@@ -101,6 +102,8 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
         return t('mobile.settings.playerButtons.buttons.share');
       case 'angle':
         return t('mobile.settings.playerButtons.buttons.angle');
+      case 'playNext':
+        return t('mobile.settings.playerButtons.buttons.playNext');
     }
   };
   // Reading order: the big row left to right, then the wall button under it.
