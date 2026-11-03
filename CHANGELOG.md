@@ -10,8 +10,16 @@ manual changes). See docs/mobile-ota-updates.md.
 
 A new version shipped to the App Store and Play Store.
 
+### New
+
+- Privacy choices on the website now covers ad measurement with Meta and Reddit, and you can switch it off there anytime. ([#7258](https://github.com/boardsesh/boardsesh/pull/7258))
+
 ### Improved
 
+- Put a climb Up next straight from the player, including on fixed-angle walls. ([#7255](https://github.com/boardsesh/boardsesh/pull/7255))
+  Choose Play next instead of Angle in the player's button settings.
+- The help pages are easier to read, with clearer guide cards and framed app screenshots ([#7262](https://github.com/boardsesh/boardsesh/pull/7262))
+- The support banner on boardsesh.com now says every contribution helps, once off or monthly. ([#7267](https://github.com/boardsesh/boardsesh/pull/7267))
 - With VoiceOver or TalkBack on, Undo after clearing your queue waits 80 seconds and your screen reader lands right on it. ([#7244](https://github.com/boardsesh/boardsesh/pull/7244))
 - When someone takes the board while you drive, your phone tells you who ([#7234](https://github.com/boardsesh/boardsesh/pull/7234))
   A board that drops mid-drive now says so, beside the climb

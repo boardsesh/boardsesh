@@ -1,6 +1,35 @@
 {
-  "generatedAt": "2026-11-03T12:00:58.374Z",
+  "generatedAt": "2026-11-03T14:52:35.030Z",
   "entries": [
+    {
+      "prNumber": 7255,
+      "category": "improved",
+      "title": "Put a climb Up next straight from the player, including on fixed-angle walls.",
+      "mergedAt": "2026-11-03T14:34:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7255",
+      "body": "Choose Play next instead of Angle in the player's button settings."
+    },
+    {
+      "prNumber": 7262,
+      "category": "improved",
+      "title": "The help pages are easier to read, with clearer guide cards and framed app screenshots",
+      "mergedAt": "2026-11-03T14:06:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7262"
+    },
+    {
+      "prNumber": 7267,
+      "category": "improved",
+      "title": "The support banner on boardsesh.com now says every contribution helps, once off or monthly.",
+      "mergedAt": "2026-11-03T14:05:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7267"
+    },
+    {
+      "prNumber": 7258,
+      "category": "new",
+      "title": "Privacy choices on the website now covers ad measurement with Meta and Reddit, and you can switch it off there anytime.",
+      "mergedAt": "2026-11-03T13:06:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7258"
+    },
     {
       "prNumber": 7244,
       "category": "improved",
