@@ -16,6 +16,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- Laser and LED add-ons can now light your private spray walls using your controller key ([#7263](https://github.com/boardsesh/boardsesh/pull/7263))
 - Put a climb Up next straight from the player, including on fixed-angle walls. ([#7255](https://github.com/boardsesh/boardsesh/pull/7255))
   Choose Play next instead of Angle in the player's button settings.
 - The help pages are easier to read, with clearer guide cards and framed app screenshots ([#7262](https://github.com/boardsesh/boardsesh/pull/7262))
