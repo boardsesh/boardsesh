@@ -59,7 +59,7 @@ describe('HomeSupportBanner', () => {
     vi.useRealTimers();
   });
 
-  it('asks to go monthly and links to /support tagged with its src', async () => {
+  it('asks for support and links to /support tagged with its src', async () => {
     await renderBanner();
 
     expect(screen.getByText(tFromCatalog('marketing', 'home.supportBanner.text'))).toBeTruthy();
