@@ -133,6 +133,16 @@ export const MarqueeText = memo(function MarqueeText({
         </Text>
       </View>
 
+      {/* With shrink-to-fit on, the copy shown is picked from the clip's width,
+          so the clip's width must not depend on the copy. Where the clip hugs
+          its content (the play-drawer header) each copy sizes it differently:
+          the shrunk copy lays out a few points inside the room it was fitted
+          to, the plain copy at its unrounded width. Either switch flips the
+          pick back, every frame: the name flickers and never scrolls (#7253).
+          This strut claims the whole name's width under every copy, so the
+          clip is always min(room, name width). */}
+      {shrinkToFitScale !== undefined ? <View style={[styles.widthStrut, { width: contentWidth }]} /> : null}
+
       {shouldScroll ? (
         <MarqueeScroller overflow={overflow}>
           {/* Pin to the full measured width and clip (don't ellipsize): otherwise
@@ -226,6 +236,10 @@ const styles = StyleSheet.create({
     // Unclamp the measurer so the single-line text reports its true width (see
     // MEASURE_MAX_WIDTH). It's opacity-0 and clipped, so the width is inert.
     width: MEASURE_MAX_WIDTH,
+  },
+  // In flow but zero-height: it sets the clip's content width and nothing else.
+  widthStrut: {
+    height: 0,
   },
   scrollRow: {
     flexDirection: 'row',
