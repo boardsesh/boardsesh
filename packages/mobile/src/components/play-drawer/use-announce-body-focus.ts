@@ -14,19 +14,12 @@ import { AccessibilityInfo, findNodeHandle, type ViewInstance } from 'react-nati
  *
  * `enabled` is false for the notice variant, which asked for nothing and so
  * never yanks focus off whatever the climber was already reading.
- *
- * `refocusKey` lands focus again whenever it changes, for a target that stays
- * mounted across shows (the Undo snackbar's `nonce`).
  */
-export function useAnnounceBodyFocus(
-  bodyRef: RefObject<ViewInstance | null>,
-  enabled: boolean,
-  refocusKey?: number,
-): void {
+export function useAnnounceBodyFocus(bodyRef: RefObject<ViewInstance | null>, enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return;
     const nodeHandle = findNodeHandle(bodyRef.current);
     if (nodeHandle == null) return;
     AccessibilityInfo.setAccessibilityFocus(nodeHandle);
-  }, [bodyRef, enabled, refocusKey]);
+  }, [bodyRef, enabled]);
 }

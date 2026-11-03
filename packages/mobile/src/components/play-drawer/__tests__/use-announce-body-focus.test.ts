@@ -29,17 +29,6 @@ describe('useAnnounceBodyFocus (native)', () => {
     expect(setAccessibilityFocus).toHaveBeenCalledWith(7);
   });
 
-  it('lands focus again when the refocus key changes, and not on a plain re-render', () => {
-    const bodyRef: RefObject<ViewInstance | null> = { current: {} as ViewInstance };
-    const hook = renderHook(({ refocusKey }) => useAnnounceBodyFocus(bodyRef, true, refocusKey), {
-      initialProps: { refocusKey: 1 },
-    });
-    hook.rerender({ refocusKey: 1 });
-    expect(setAccessibilityFocus).toHaveBeenCalledTimes(1);
-    hook.rerender({ refocusKey: 2 });
-    expect(setAccessibilityFocus).toHaveBeenCalledTimes(2);
-  });
-
   it('does nothing when the ref has not mounted', () => {
     findNodeHandle.mockReturnValue(null);
     const bodyRef: RefObject<ViewInstance | null> = { current: null };

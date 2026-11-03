@@ -4,9 +4,10 @@ import { createElement, useEffect, type ReactNode, type Ref, type RefObject } fr
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The shared Undo body's screen-reader contract: with `focusUndoOnShow` it lands
-// VoiceOver / TalkBack on the Undo control itself (both variants) on every show,
-// before the iOS announcement; and a duration change mid-show re-arms the
-// dismiss timer on both variants.
+// VoiceOver / TalkBack on the Undo control itself (both variants) half a second
+// into every show, after a native menu has closed and the entrance fade is done,
+// and holds the iOS announcement until then; and a duration change mid-show
+// re-arms the dismiss timer on both variants.
 
 const native = vi.hoisted(() => ({
   os: 'ios',
@@ -119,31 +120,72 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// What the component waits before moving focus: past a native menu closing and
+// the 220 ms / 200 ms entrance fades.
+const FOCUS_DELAY_MS = 500;
+
+function advance(ms: number) {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+
 describe.each(['liquidGlass', 'material'] as const)('UndoSnackbar focus (%s)', (variant) => {
   beforeEach(() => {
     native.variant = variant;
+    vi.useFakeTimers();
   });
 
-  it('lands the screen reader on the Undo control when it shows', () => {
+  it('lands the screen reader on the Undo control half a second after it shows', () => {
     render(createElement(UndoSnackbar, { ...baseProps, focusUndoOnShow: true }));
+    advance(FOCUS_DELAY_MS - 1);
+    expect(native.setAccessibilityFocus).not.toHaveBeenCalled();
+    advance(1);
     expect(native.setAccessibilityFocus).toHaveBeenCalledTimes(1);
     expect(native.setAccessibilityFocus).toHaveBeenCalledWith(UNDO_ID[variant]);
   });
 
   it('lands it again on the next show while the snackbar is still up', () => {
     const view = render(createElement(UndoSnackbar, { ...baseProps, focusUndoOnShow: true }));
+    advance(FOCUS_DELAY_MS);
     view.rerender(createElement(UndoSnackbar, { ...baseProps, nonce: 2, focusUndoOnShow: true }));
+    expect(native.setAccessibilityFocus).toHaveBeenCalledTimes(1);
+    advance(FOCUS_DELAY_MS);
     expect(native.setAccessibilityFocus).toHaveBeenCalledTimes(2);
     expect(native.setAccessibilityFocus).toHaveBeenLastCalledWith(UNDO_ID[variant]);
   });
 
-  it('leaves focus alone without the flag, so callers without a screen reader are untouched', () => {
-    render(createElement(UndoSnackbar, baseProps));
-    expect(native.setAccessibilityFocus).not.toHaveBeenCalled();
+  it('lands it again after a duration change, which remounts the Paper button', () => {
+    const view = render(createElement(UndoSnackbar, { ...baseProps, focusUndoOnShow: true }));
+    advance(FOCUS_DELAY_MS);
+    view.rerender(createElement(UndoSnackbar, { ...baseProps, duration: 80000, focusUndoOnShow: true }));
+    advance(FOCUS_DELAY_MS);
+    expect(native.setAccessibilityFocus).toHaveBeenCalledTimes(2);
+    expect(native.setAccessibilityFocus).toHaveBeenLastCalledWith(UNDO_ID[variant]);
   });
 
-  it('moves focus before the queued VoiceOver announcement, so the message is not cut off', () => {
+  it('does not move focus or announce when the snackbar hides before the delay', () => {
+    const view = render(createElement(UndoSnackbar, { ...baseProps, focusUndoOnShow: true }));
+    advance(FOCUS_DELAY_MS - 1);
+    view.rerender(createElement(UndoSnackbar, { ...baseProps, visible: false, focusUndoOnShow: true }));
+    advance(FOCUS_DELAY_MS);
+    expect(native.setAccessibilityFocus).not.toHaveBeenCalled();
+    expect(native.announceForAccessibilityWithOptions).not.toHaveBeenCalled();
+  });
+
+  it('leaves focus alone without the flag and announces straight away, as before', () => {
+    render(createElement(UndoSnackbar, baseProps));
+    expect(native.announceForAccessibilityWithOptions).toHaveBeenCalledWith('Queue cleared', { queue: true });
+    advance(FOCUS_DELAY_MS * 2);
+    expect(native.setAccessibilityFocus).not.toHaveBeenCalled();
+    expect(native.announceForAccessibilityWithOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the queued VoiceOver announcement until focus lands, so the message follows "Undo"', () => {
     render(createElement(UndoSnackbar, { ...baseProps, focusUndoOnShow: true }));
+    expect(native.announceForAccessibilityWithOptions).not.toHaveBeenCalled();
+    advance(FOCUS_DELAY_MS);
+    expect(native.announceForAccessibilityWithOptions).toHaveBeenCalledTimes(1);
     expect(native.announceForAccessibilityWithOptions).toHaveBeenCalledWith('Queue cleared', { queue: true });
     expect(native.setAccessibilityFocus.mock.invocationCallOrder[0]).toBeLessThan(
       native.announceForAccessibilityWithOptions.mock.invocationCallOrder[0],

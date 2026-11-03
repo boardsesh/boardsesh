@@ -35,11 +35,15 @@ const live = vi.hoisted(() => ({
 }));
 
 // VoiceOver / TalkBack as the real useScreenReaderEnabled hook reads it: the
-// first query, then `screenReaderChanged` events.
+// first query, then `screenReaderChanged` events. `timeToTakeActionMs` is
+// Android's accessibility setting, answered the way Android does: the larger of
+// it and the timeout the app asks about.
 const screenReader = vi.hoisted(() => ({
   enabled: false,
   os: 'ios',
   listeners: new Set<(enabled: boolean) => void>(),
+  timeToTakeActionMs: 0,
+  recommendedTimeoutQueries: 0,
 }));
 
 type ViewProps = { children?: ReactNode; testID?: string; onPress?: () => void; accessibilityLabel?: string };
@@ -52,6 +56,10 @@ vi.mock('react-native', () => ({
     addEventListener: (_event: string, listener: (enabled: boolean) => void) => {
       screenReader.listeners.add(listener);
       return { remove: () => screenReader.listeners.delete(listener) };
+    },
+    getRecommendedTimeoutMillis: (originalTimeout: number) => {
+      screenReader.recommendedTimeoutQueries += 1;
+      return Promise.resolve(Math.max(originalTimeout, screenReader.timeToTakeActionMs));
     },
   },
   Platform: {
@@ -240,6 +248,8 @@ beforeEach(() => {
   screenReader.enabled = false;
   screenReader.os = 'ios';
   screenReader.listeners.clear();
+  screenReader.timeToTakeActionMs = 0;
+  screenReader.recommendedTimeoutQueries = 0;
   const queue = ['a', 'b', 'c'].map(item);
   live.current = { queue, currentClimbQueueItem: queue[1] };
   live.sessionId = 'session-1';
@@ -488,11 +498,23 @@ describe('QueueSheet undo with a screen reader', () => {
     ['row Remove', (view) => fireEvent.click(view.getByTestId('remove-a'))],
   ];
 
+  // Let the first isScreenReaderEnabled() read land, then Android's
+  // getRecommendedTimeoutMillis() answer that it triggers.
+  async function settle() {
+    await act(async () => {});
+    await act(async () => {});
+  }
+
   async function renderSettledSheet() {
     const view = renderSheet();
-    // Let the hook's first isScreenReaderEnabled() read land.
-    await act(async () => {});
+    await settle();
     return view;
+  }
+
+  function setScreenReader(enabled: boolean) {
+    act(() => {
+      for (const listener of screenReader.listeners) listener(enabled);
+    });
   }
 
   it.each(removals)('holds the Undo after %s for 8 s and leaves focus alone without one', async (_name, remove) => {
@@ -517,17 +539,54 @@ describe('QueueSheet undo with a screen reader', () => {
     fireEvent.click(view.getByTestId('menu-clear'));
     expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('8000');
 
-    act(() => {
-      for (const listener of screenReader.listeners) listener(true);
-    });
+    setScreenReader(true);
     expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('80000');
     expect(view.getByTestId('undo-snackbar').getAttribute('data-focus-undo')).toBe('true');
 
-    act(() => {
-      for (const listener of screenReader.listeners) listener(false);
-    });
+    setScreenReader(false);
     expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('8000');
     expect(view.getByTestId('undo-snackbar').getAttribute('data-focus-undo')).toBe('false');
+  });
+
+  it('stretches to the climber\'s longer Android "Time to take action" with TalkBack on', async () => {
+    screenReader.os = 'android';
+    screenReader.enabled = true;
+    screenReader.timeToTakeActionMs = 120000;
+    const view = await renderSettledSheet();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('120000');
+  });
+
+  it('keeps 80 s on Android when "Time to take action" is shorter', async () => {
+    screenReader.os = 'android';
+    screenReader.enabled = true;
+    screenReader.timeToTakeActionMs = 30000;
+    const view = await renderSettledSheet();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('80000');
+  });
+
+  it('keeps the sighted 8 s on Android without TalkBack, whatever "Time to take action" says', async () => {
+    screenReader.os = 'android';
+    screenReader.timeToTakeActionMs = 120000;
+    const view = await renderSettledSheet();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('8000');
+    expect(screenReader.recommendedTimeoutQueries).toBe(0);
+  });
+
+  it('asks Android again each time TalkBack turns on, since the setting sends no event', async () => {
+    screenReader.os = 'android';
+    screenReader.enabled = true;
+    screenReader.timeToTakeActionMs = 60000;
+    const view = await renderSettledSheet();
+    setScreenReader(false);
+    screenReader.timeToTakeActionMs = 120000;
+    setScreenReader(true);
+    await settle();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('120000');
+    expect(screenReader.recommendedTimeoutQueries).toBe(2);
   });
 
   it('keeps the sighted 8 s in the browser app, where react-native-web always reports a screen reader', async () => {

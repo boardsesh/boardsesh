@@ -23,16 +23,19 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useScreenReaderEnabled } from '../../hooks/use-screen-reader-enabled';
+import { useRecommendedTimeout } from '../../hooks/use-recommended-timeout';
 import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 
 // Long enough to notice and reach for the button; the removal is already live
 // for the crew, so it isn't held open forever.
 const QUEUE_UNDO_DURATION = 8000;
-// With VoiceOver or TalkBack on: ten times as long, the WCAG 2.2.1 (Timing
-// Adjustable) floor for stretching a time limit. Swiping to the snackbar,
-// hearing it and double-tapping takes far longer than a glance. Still bounded:
-// the iPad side panel never closes, and an hour-old offer would restore a queue
-// the crew has moved past.
+// With VoiceOver or TalkBack on: ten times as long, the ratio WCAG 2.2.1
+// (Timing Adjustable) uses for extending a time limit. That borrows the number
+// only; it is not 2.2.1 conformance, since nobody else can adjust the 8 s.
+// Swiping to the snackbar, hearing it and double-tapping takes far longer than
+// a glance. Still bounded: the iPad side panel never closes, and an hour-old
+// offer would restore a queue the crew has moved past. Android raises it to the
+// climber's "Time to take action" when that is longer.
 const QUEUE_UNDO_SCREEN_READER_DURATION = QUEUE_UNDO_DURATION * 10;
 
 /** What one Undo would put back: the queue as it was, and what was taken out. */
@@ -116,6 +119,7 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
   // react-native-web resolves `isScreenReaderEnabled` true for everyone (a
   // browser can't tell), so the browser app keeps the sighted timing.
   const screenReaderEnabled = useScreenReaderEnabled() && Platform.OS !== 'web';
+  const screenReaderUndoDuration = useRecommendedTimeout(QUEUE_UNDO_SCREEN_READER_DURATION, screenReaderEnabled);
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
@@ -314,7 +318,7 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
           undoAccessibilityLabel={t('mobile.queueSheet.undoAria')}
           onUndo={handleUndo}
           onDismiss={handleUndoDismiss}
-          duration={screenReaderEnabled ? QUEUE_UNDO_SCREEN_READER_DURATION : QUEUE_UNDO_DURATION}
+          duration={screenReaderEnabled ? screenReaderUndoDuration : QUEUE_UNDO_DURATION}
           // Every queue removal unmounts the control the climber was on: the ⋯
           // and Edit once the queue is empty, the Remove bar, the removed row.
           focusUndoOnShow={screenReaderEnabled}
