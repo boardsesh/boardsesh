@@ -1,64 +1,181 @@
 .layout {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   align-items: start;
   gap: var(--spacing-12);
 }
 
+/* ---- topics: a quiet sticky list, not a card ---- */
+
 .topics {
   position: sticky;
   top: calc(var(--global-header-height) + var(--spacing-6));
-  display: grid;
-  gap: var(--spacing-2);
-  padding: var(--spacing-3);
-  border: 1px solid var(--separator);
-  border-radius: var(--border-radius-lg);
-  background: var(--semantic-surface);
+  padding-top: var(--spacing-2);
 }
 
-.topics a {
+/* Doubled: MUI's Typography class is a single class and would otherwise tie. */
+.topicsLabel.topicsLabel {
+  margin: 0 0 var(--spacing-2);
+  padding-left: var(--spacing-4);
+  color: var(--neutral-500);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The 1px rail is decoration; the 2px violet mark on the current topic is the
+   signal, and it is backed by aria-current, not colour alone. */
+.topicList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 1px solid var(--separator);
+}
+
+.topics .topicLink {
   display: flex;
   align-items: center;
-  min-height: 44px;
-  padding-inline: var(--spacing-2);
-  color: var(--neutral-900);
-  line-height: 1.5;
+  min-height: 36px;
+  margin-left: -1px;
+  padding: var(--spacing-1) var(--spacing-3) var(--spacing-1) var(--spacing-4);
+  border-left: 2px solid transparent;
+  color: var(--neutral-600);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  transition: color var(--motion-fast) var(--ease-standard);
 }
 
-.topics a:hover,
-.topics a:focus-visible {
-  color: var(--color-primary);
+.topics .topicLink:hover {
+  color: var(--neutral-900);
+}
+
+.topics .topicLink:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  border-radius: var(--border-radius-sm);
+}
+
+.topics .topicLink[aria-current] {
+  border-left-color: var(--color-primary);
+  color: var(--neutral-900);
+  font-weight: 600;
 }
 
 .content {
   min-width: 0;
 }
 
+/* ---- guide cards: the whole card is one link ---- */
+
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--spacing-4);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--spacing-3);
   padding: 0;
   margin: 0;
   list-style: none;
 }
 
 .card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: start;
+  align-items: center;
+  column-gap: var(--spacing-3);
+  row-gap: var(--spacing-2);
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.card:hover {
+  border-color: var(--control-border);
+  background: var(--semantic-surface-elevated);
+}
+
+.cardIcon {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-}
-
-.cardTitle {
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--border-radius-md);
+  background: var(--home-accent-brand-surface);
+  color: var(--color-primary);
   font-size: var(--font-size-xl);
-  font-weight: 600;
-  line-height: 1.3;
 }
 
-.cardBody {
-  color: var(--neutral-500);
-  font-size: var(--font-size-base);
-  line-height: 1.6;
+/* Doubled: MUI's Typography class is a single class and would otherwise tie. */
+.cardTitle.cardTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+  margin: 0;
+  color: var(--neutral-900);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.cards .cardLink {
+  display: inline;
+  min-height: 0;
+  color: inherit;
+  outline: none;
+}
+
+/* Stretches the title's link over the whole card. */
+.cardLink::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--border-radius-xl);
+}
+
+.cardLink:focus-visible::after {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.cardArrow.cardArrow {
+  flex-shrink: 0;
+  color: var(--color-primary);
+  font-size: var(--font-size-xl);
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.card:hover .cardArrow,
+.card:focus-within .cardArrow {
+  color: var(--color-primary-hover);
+  transform: translateX(3px);
+}
+
+.cardBody.cardBody {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--neutral-600);
+  font-size: var(--font-size-sm);
+  line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .cardArrow.cardArrow,
+  .topics .topicLink {
+    transition: none;
+  }
+
+  .card:hover .cardArrow,
+  .card:focus-within .cardArrow {
+    transform: none;
+  }
 }
 
 /* Prose keeps its reading measure; the card grid above does not. */
@@ -73,8 +190,9 @@
 
 .using {
   scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
-  padding-bottom: var(--spacing-8);
-  margin-bottom: var(--spacing-8);
+  margin-top: var(--spacing-12);
+  padding-bottom: var(--spacing-10);
+  margin-bottom: var(--spacing-10);
   border-bottom: 1px solid var(--separator);
 }
 
@@ -92,6 +210,35 @@
 
   .topics {
     position: static;
+    padding-block: 0 var(--spacing-4);
+    border-bottom: 1px solid var(--separator);
+  }
+
+  .topicsLabel.topicsLabel {
+    padding-left: 0;
+  }
+
+  .topicList {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--spacing-4);
+    border-left: 0;
+  }
+
+  .topics .topicLink {
+    min-height: 44px;
+    margin-left: 0;
+    padding-inline: 0;
+    border-left: 0;
+    font-size: var(--font-size-base);
+  }
+
+  /* Static on a phone, so a "you are here" mark would only ever say the top. */
+  .topics .topicLink[aria-current] {
+    color: var(--neutral-600);
+    font-weight: 400;
+  }
+
+  .using {
+    margin-top: var(--spacing-10);
   }
 }

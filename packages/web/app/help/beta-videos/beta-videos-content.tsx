@@ -4,8 +4,10 @@ import React from 'react';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import { PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import HelpPageShell from '../help-page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
+import HelpSteps from '../help-steps';
 import HelpInstallSection from '../help-install-section';
 
 /**
@@ -25,17 +27,15 @@ export default function BetaVideosContent() {
   const { t } = useTranslation('marketing');
 
   return (
-    <PageShell
+    <HelpPageShell
       title={t('help.betaVideos.hero.title')}
       lead={t('help.betaVideos.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.betaVideos.breadcrumb')} />}
     >
       <PageSection id="share" title={t('help.betaVideos.share.title')}>
-        <ProseList ordered>
-          <li>{t('help.betaVideos.share.step1')}</li>
-          <li>{t('help.betaVideos.share.step2')}</li>
-          <li>{t('help.betaVideos.share.step3')}</li>
-        </ProseList>
+        <HelpSteps
+          steps={[t('help.betaVideos.share.step1'), t('help.betaVideos.share.step2'), t('help.betaVideos.share.step3')]}
+        />
         <Prose>{t('help.betaVideos.share.p1')}</Prose>
         <Prose>{t('help.betaVideos.share.p2')}</Prose>
       </PageSection>
@@ -87,6 +87,6 @@ export default function BetaVideosContent() {
           </li>
         </ProseList>
       </PageSection>
-    </PageShell>
+    </HelpPageShell>
   );
 }

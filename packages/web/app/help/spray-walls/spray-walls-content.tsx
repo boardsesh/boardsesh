@@ -8,7 +8,8 @@ import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
-import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import { PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import HelpPageShell from '../help-page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
 import { HelpWalkthrough } from '../help-clip';
 import { HelpScreenshot, HelpShots } from '../help-screenshot';
@@ -19,7 +20,7 @@ export default function SprayWallsContent() {
   const { t } = useTranslation('marketing');
 
   return (
-    <PageShell
+    <HelpPageShell
       title={t('help.sprayWalls.hero.title')}
       lead={t('help.sprayWalls.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.sprayWalls.breadcrumb')} />}
@@ -151,6 +152,6 @@ export default function SprayWallsContent() {
           </li>
         </ProseList>
       </PageSection>
-    </PageShell>
+    </HelpPageShell>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -9,7 +9,18 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import MarketingInstallLinks from '@/app/components/marketing/marketing-install-links';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
-import { PageShell, PageSection, PageCard, Prose, ProseList } from '@/app/components/ui/page-shell';
+import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
+import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
+import FilterListOutlined from '@mui/icons-material/FilterListOutlined';
+import GroupsOutlined from '@mui/icons-material/GroupsOutlined';
+import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
+import OndemandVideoOutlined from '@mui/icons-material/OndemandVideoOutlined';
+import PhotoCameraOutlined from '@mui/icons-material/PhotoCameraOutlined';
+import PlaylistPlayOutlined from '@mui/icons-material/PlaylistPlayOutlined';
+import TouchAppOutlined from '@mui/icons-material/TouchAppOutlined';
+import { PageSection, PageCard, Prose, ProseList } from '@/app/components/ui/page-shell';
+import HelpPageShell from './help-page-shell';
+import HelpTopicsNav from './help-topics-nav';
 import styles from './help.module.css';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
@@ -19,16 +30,20 @@ const CLIMB_COUNTS_SECTION_ID = 'climb-counts';
 
 const CTA_SX = brandCtaSx();
 
-/** One card per guide page. Card copy lives under `help.guides.<key>`. */
+/**
+ * One card per guide page. Card copy lives under `help.guides.<key>`. The icon
+ * names what the page is about at a glance; it is decorative, the title is the
+ * card's only accessible name.
+ */
 const TOPICS = [
-  { key: 'playlists', href: '/help/playlists' },
-  { key: 'climbActions', href: '/help/climb-actions' },
-  { key: 'sessions', href: '/help/sessions' },
-  { key: 'findingClimbs', href: '/help/finding-climbs' },
-  { key: 'logbook', href: '/help/logbook' },
-  { key: 'betaVideos', href: '/help/beta-videos' },
-  { key: 'bluetooth', href: '/help/board-and-bluetooth' },
-  { key: 'sprayWalls', href: '/help/spray-walls' },
+  { key: 'playlists', href: '/help/playlists', Icon: PlaylistPlayOutlined },
+  { key: 'climbActions', href: '/help/climb-actions', Icon: TouchAppOutlined },
+  { key: 'sessions', href: '/help/sessions', Icon: GroupsOutlined },
+  { key: 'findingClimbs', href: '/help/finding-climbs', Icon: FilterListOutlined },
+  { key: 'logbook', href: '/help/logbook', Icon: MenuBookOutlined },
+  { key: 'betaVideos', href: '/help/beta-videos', Icon: OndemandVideoOutlined },
+  { key: 'bluetooth', href: '/help/board-and-bluetooth', Icon: BluetoothOutlined },
+  { key: 'sprayWalls', href: '/help/spray-walls', Icon: PhotoCameraOutlined },
 ] as const;
 
 /**
@@ -45,29 +60,42 @@ const TOPICS = [
  */
 export default function HelpContent() {
   const { t } = useTranslation('marketing');
+  // Memoised: HelpTopicsNav rebuilds its IntersectionObserver whenever this
+  // array's identity changes, so it must only change with the language.
+  const sectionTopics = useMemo(
+    () => [
+      { id: 'guides', label: t('help.topics.guides') },
+      { id: 'using-boardsesh', label: t('help.topics.using') },
+      { id: 'bring-your-logbook', label: t('help.topics.logbook') },
+      { id: CLIMB_COUNTS_SECTION_ID, label: t('help.topics.counts') },
+      { id: 'get-help', label: t('help.topics.ask') },
+    ],
+    [t],
+  );
 
   return (
-    <PageShell title={t('help.hero.title')} lead={t('help.hero.subtitle')} width="wide">
+    <HelpPageShell title={t('help.hero.title')} lead={t('help.hero.subtitle')} width="wide">
       <Box className={styles.layout}>
-        <Box component="nav" aria-label={t('help.topics.label')} className={styles.topics}>
-          <MuiLink href="#guides">{t('help.topics.guides')}</MuiLink>
-          <MuiLink href="#using-boardsesh">{t('help.topics.using')}</MuiLink>
-          <MuiLink href="#bring-your-logbook">{t('help.topics.logbook')}</MuiLink>
-          <MuiLink href="#climb-counts">{t('help.topics.counts')}</MuiLink>
-          <MuiLink href="#get-help">{t('help.topics.ask')}</MuiLink>
-        </Box>
+        <HelpTopicsNav label={t('help.topics.label')} topics={sectionTopics} />
         <Box className={styles.content}>
           <PageSection id="guides" title={t('help.guides.title')} lead={t('help.guides.intro')}>
+            {/* The whole card is the link target: the title's link stretches over
+                the card with ::after, so there is one link per card, named by its
+                title alone. */}
             <Box component="ul" className={styles.cards}>
-              {TOPICS.map((topic) => (
-                <PageCard component="li" key={topic.key} padding="lg" radius="xl" className={styles.card}>
+              {TOPICS.map(({ key, href, Icon }) => (
+                <PageCard component="li" key={key} padding="md" radius="xl" className={styles.card}>
+                  <Box component="span" aria-hidden="true" className={styles.cardIcon}>
+                    <Icon fontSize="inherit" />
+                  </Box>
                   <Typography component="h3" className={styles.cardTitle}>
-                    <MuiLink component={LocaleLink} href={topic.href} underline="hover">
-                      {t(`help.guides.${topic.key}.title`)}
+                    <MuiLink component={LocaleLink} href={href} underline="none" className={styles.cardLink}>
+                      {t(`help.guides.${key}.title`)}
                     </MuiLink>
+                    <ArrowForwardOutlined aria-hidden="true" className={styles.cardArrow} />
                   </Typography>
                   <Typography component="p" className={styles.cardBody}>
-                    {t(`help.guides.${topic.key}.body`)}
+                    {t(`help.guides.${key}.body`)}
                   </Typography>
                 </PageCard>
               ))}
@@ -161,6 +189,6 @@ export default function HelpContent() {
           </PageSection>
         </Box>
       </Box>
-    </PageShell>
+    </HelpPageShell>
   );
 }

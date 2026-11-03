@@ -1,0 +1,89 @@
+/* HelpCallout and HelpSteps. Both sit in a PageSection's prose column. */
+
+/* ---- callout: one fact the reader must not miss ---- */
+
+.callout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--spacing-3);
+  max-width: 68ch;
+  margin-block: var(--spacing-5);
+  padding: var(--spacing-4) var(--spacing-5) var(--spacing-4) var(--spacing-4);
+  border: 1px solid var(--separator);
+  border-left: 3px solid var(--color-info);
+  border-radius: var(--border-radius-lg);
+  background: var(--home-accent-info-surface);
+}
+
+.calloutIcon.calloutIcon {
+  margin-top: 2px;
+  color: var(--color-info);
+  font-size: var(--font-size-xl);
+}
+
+.calloutTitle.calloutTitle {
+  margin: 0 0 var(--spacing-1);
+  color: var(--neutral-900);
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.calloutBody {
+  color: var(--neutral-800);
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+}
+
+.calloutBody > :first-child {
+  margin-top: 0;
+}
+
+.calloutBody > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- steps: numbered actions in order ---- */
+
+.steps {
+  display: grid;
+  gap: var(--spacing-4);
+  max-width: 68ch;
+  margin: var(--spacing-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: var(--spacing-3);
+  align-items: start;
+}
+
+/* The numeral is drawn, not announced: the <ol> already tells a screen reader
+   the position, so this span is aria-hidden. */
+.stepNumber {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--border-radius-full);
+  background: var(--semantic-surface-elevated);
+  color: var(--neutral-900);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stepBody.stepBody {
+  padding-top: var(--spacing-1);
+  color: var(--neutral-800);
+  line-height: 1.6;
+}
+
+.steps + p {
+  margin-top: var(--spacing-5);
+}

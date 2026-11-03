@@ -4,7 +4,8 @@ import React from 'react';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import { PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import HelpPageShell from '../help-page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
 import HelpInstallSection from '../help-install-section';
 import { HelpClip, HelpShots } from '../help-clip';
@@ -28,7 +29,7 @@ export default function PlaylistsContent() {
   const { t } = useTranslation('marketing');
 
   return (
-    <PageShell
+    <HelpPageShell
       title={t('help.playlists.hero.title')}
       lead={t('help.playlists.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.playlists.breadcrumb')} />}
@@ -132,6 +133,6 @@ export default function PlaylistsContent() {
           </li>
         </ProseList>
       </PageSection>
-    </PageShell>
+    </HelpPageShell>
   );
 }

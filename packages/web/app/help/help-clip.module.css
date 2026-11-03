@@ -2,23 +2,22 @@
    have to sit in one row without either one setting a different measure. */
 .figure {
   min-width: 0;
-  max-width: 320px;
+  max-width: 280px;
   margin: 0;
 }
 
+/* Box, corner and backdrop come from help-screenshot's `.screen`; this only
+   reserves the frame. */
 .video {
-  display: block;
-  width: 100%;
-  height: auto;
   /* Reserves the frame before the poster decodes, so a row of clips does not
      reflow the prose under it. Matches the converter's 736 x 1600 output. */
   aspect-ratio: 736 / 1600;
-  background: var(--semantic-surface);
 }
 
 .caption {
-  margin-top: var(--spacing-2);
-  color: var(--neutral-500);
+  margin-top: var(--spacing-3);
+  padding-inline: var(--spacing-1);
+  color: var(--neutral-600);
   line-height: 1.5;
 }
 
@@ -26,6 +25,7 @@
    waits on the poster until they press play. */
 .hint {
   margin-top: var(--spacing-1);
+  padding-inline: var(--spacing-1);
   color: var(--neutral-500);
   line-height: 1.5;
 }
@@ -35,6 +35,7 @@
 .walkthroughFigure {
   max-width: none;
   width: min(900px, calc(100vw - var(--spacing-8) - var(--spacing-8)));
+  margin-block: var(--spacing-4) var(--spacing-6);
   margin-left: 50%;
   transform: translateX(-50%);
 }
@@ -49,6 +50,12 @@
 
 .portraitVideo {
   aspect-ratio: 720 / 1280;
+}
+
+@media (max-width: 600px) {
+  .figure {
+    max-width: 240px;
+  }
 }
 
 @media (max-width: 760px), (max-width: 1000px) and (max-height: 500px) and (pointer: coarse) {
