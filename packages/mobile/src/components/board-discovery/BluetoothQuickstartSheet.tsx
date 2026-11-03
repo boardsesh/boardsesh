@@ -8,6 +8,7 @@ import { boardRowSubtitle, formatBoardDisplayName, type BoardLabelOptions } from
 import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { useBoardScan } from '../../lib/ble/use-board-scan';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
+import { useScanTipsDue } from '../../lib/ble/scan-tips';
 import { bluetoothBlockedBody } from '../../lib/ble/bluetooth-unavailable-alert';
 import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
@@ -20,6 +21,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { ScanTips } from '../ble/ScanTips';
 import { MEDIUM_SNAP_POINTS } from '../sheet-snap-points';
 import { buildQuickstartRows, quickstartLookupState, type QuickstartRow } from './quickstart-scan-rows';
 
@@ -90,10 +92,15 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     // serials into boards. Without it, a scan that found plenty of boards spends
     // the resolution window looking exactly like a scan that found none.
     const scanFinishedEmpty = status === 'done' && rows.length === 0 && lookup !== 'pending';
+    // The device picker's tips, at the same moment: 5 s into a scan that has
+    // heard no board, while it goes on. They used to wait for the 15 s scan to
+    // end empty.
+    const tipsDue = useScanTipsDue(status === 'scanning');
+    const nothingHeardYet = tipsDue && devices.length === 0;
     // Same Android 12+ scan-result suppression the device picker guards against —
     // this sheet runs its own scan through use-board-scan, so it needs its own
     // hint. See lib/ble/android-scan-location-gate.ts.
-    const locationHint = useAndroidScanLocationHint(scanFinishedEmpty);
+    const locationHint = useAndroidScanLocationHint(scanFinishedEmpty || nothingHeardYet);
     const { requestLocationPermission, promptEnableLocationServices } = locationHint;
     const handleGrantLocation = useCallback(() => {
       // Rescan straight away on a grant — unlike the picker (whose scan is owned
@@ -165,6 +172,53 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
         reset();
       }
     }, [active, status, start, reset]);
+
+    // Android is withholding the results — say so instead of leaving a bare
+    // "none in range" the user can't act on. No "granted/enabled" follow-up copy
+    // on either branch: a successful grant restarts the scan immediately, so the
+    // branch is gone by the time it would render. Otherwise the tips.
+    const renderTroubleshooting = () => {
+      if (locationHint.shouldOfferLocationGrant) {
+        return (
+          <>
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
+              {t('settings:ble.locationHintTitle')}
+            </Text>
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
+              {t('settings:ble.locationHintBody')}
+            </Text>
+            <Button
+              title={t('settings:ble.locationHintGrant')}
+              onPress={handleGrantLocation}
+              variant="text"
+              size="medium"
+              loading={locationHint.isRequesting}
+            />
+          </>
+        );
+      }
+      if (locationHint.shouldOfferLocationServicesEnable) {
+        return (
+          <>
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
+              {t('settings:ble.locationServicesHintTitle')}
+            </Text>
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
+              {t('settings:ble.locationServicesHintBody')}
+            </Text>
+            <Button
+              title={t('settings:ble.locationServicesHintEnable')}
+              onPress={handleEnableLocationServices}
+              variant="text"
+              size="medium"
+              loading={locationHint.isPromptingServices}
+            />
+          </>
+        );
+      }
+      // The zero-result state used to end at "none in range", with nothing to try next.
+      return <ScanTips />;
+    };
 
     const renderBody = () => {
       if (status === 'unavailable') {
@@ -259,49 +313,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
             <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
               {t('mobile.bluetooth.noResults')}
             </Text>
-            {/* Android is withholding the results — say so instead of leaving a
-                bare "none in range" the user can't act on. No "granted/enabled"
-                follow-up copy on either branch: a successful grant restarts the
-                scan immediately, so the branch is gone by the time it would
-                render. */}
-            {locationHint.shouldOfferLocationGrant ? (
-              <>
-                <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
-                  {t('settings:ble.locationHintTitle')}
-                </Text>
-                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
-                  {t('settings:ble.locationHintBody')}
-                </Text>
-                <Button
-                  title={t('settings:ble.locationHintGrant')}
-                  onPress={handleGrantLocation}
-                  variant="text"
-                  size="medium"
-                  loading={locationHint.isRequesting}
-                />
-              </>
-            ) : locationHint.shouldOfferLocationServicesEnable ? (
-              <>
-                <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
-                  {t('settings:ble.locationServicesHintTitle')}
-                </Text>
-                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
-                  {t('settings:ble.locationServicesHintBody')}
-                </Text>
-                <Button
-                  title={t('settings:ble.locationServicesHintEnable')}
-                  onPress={handleEnableLocationServices}
-                  variant="text"
-                  size="medium"
-                  loading={locationHint.isPromptingServices}
-                />
-              </>
-            ) : (
-              // The zero-result state used to end here, with nothing to try next.
-              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
-                {t('settings:ble.troubleshootTips')}
-              </Text>
-            )}
+            {renderTroubleshooting()}
             {/* A board that was asleep or out of range a moment ago is the usual
                 reason for an empty scan; the tips above say to fix that, this
                 runs the scan again once they have. */}
@@ -323,6 +335,8 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
             {lookup === 'pending' ? t('mobile.bluetooth.resolving') : t('mobile.bluetooth.scanning')}
           </Text>
+          {/* 5 s in with nothing heard: what to try while the scan goes on. */}
+          {nothingHeardYet && renderTroubleshooting()}
         </View>
       );
     };

@@ -82,6 +82,16 @@ describe('sessionTickToClimb', () => {
     expect(climb?.is_no_match).toBe(true);
   });
 
+  // #5245 review: the session row's attribute cluster reads characteristics for
+  // the campus / any-feet / no-kickboard badges, so the mapper must carry it.
+  it('carries characteristics onto the row, and null (not []) when the tick has none', () => {
+    const withRules = sessionTickToClimb(makeTick({ frames: 'p1', characteristics: ['campus', 'no_kickboard'] }));
+    expect(withRules?.characteristics).toEqual(['campus', 'no_kickboard']);
+
+    const unrecorded = sessionTickToClimb(makeTick({ frames: 'p1' }));
+    expect(unrecorded?.characteristics).toBeNull();
+  });
+
   it('keeps the community star average hidden by defaulting quality_average to "0"', () => {
     const climb = sessionTickToClimb(makeTick({ frames: 'p1', quality: 3 }));
     expect(climb?.quality_average).toBe('0');

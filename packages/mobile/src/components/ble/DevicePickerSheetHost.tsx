@@ -38,6 +38,7 @@ export function DevicePickerSheetHost({ registerExternal = false }: DevicePicker
     activeExternalHostId,
     onNoLeds,
     onScanAgain,
+    onBrowseForNow,
     onSeen,
   } = useBlePickerHost();
   const resolvedBoards = useResolvedBleDeviceBoards(pickerState?.devices ?? EMPTY_DEVICES);
@@ -63,6 +64,7 @@ export function DevicePickerSheetHost({ registerExternal = false }: DevicePicker
       showAllBoards={pickerState.showAllBoards}
       onNoLeds={onNoLeds}
       onScanAgain={onScanAgain}
+      onBrowseForNow={onBrowseForNow}
       mode={pickerState.mode}
       open={pickerState.presented}
       closing={pickerState.closing}

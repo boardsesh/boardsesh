@@ -4,13 +4,13 @@ import { FlatList, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { createPlaylistSuggestionSource, getQueueBoardKey, reanchorPlaylistSuggestionSource } from '@boardsesh/queue';
 import {
-  getPlaylistSuggestedClimbs,
-  createPlaylistSuggestionSource,
-  getQueueBoardKey,
-  reanchorPlaylistSuggestionSource,
-} from '@boardsesh/queue';
-import { buildQueueListModel, type QueueFlatRow } from '@boardsesh/play-view';
+  buildQueueListModel,
+  resolveThenFromListItems,
+  type QueueFlatRow,
+  type QueueWalkBoard,
+} from '@boardsesh/play-view';
 import { withSheetBottomInset } from '../sheet-content-inset';
 import { QueueItemRow, type QueueItemRowBoard, POSITION_SLOT_WIDTH, QUEUE_ROW_LEADING_INSET } from '../QueueItemRow';
 import { climbRowSeparatorInset, climbRowReorderHeight, DEFAULT_CLIMB_ROW_SURFACE } from '../climb-row-layout';
@@ -32,21 +32,36 @@ import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 
 // Synthetic suggestion-source id for tapping a climb from the queue sheet's
-// suggestion feed — distinct from real playlist activations. This is a plain
-// string identifier (PlaylistSuggestionSource.playlistUuid is typed `string`
-// and nothing validates UUID format — the climbs list likewise uses 'climblist').
+// "Popular on this board" rows — distinct from real playlist activations. This
+// is a plain string identifier (PlaylistSuggestionSource.playlistUuid is typed
+// `string` and nothing validates UUID format — the climbs list likewise uses
+// 'climblist').
 const QUEUE_SUGGESTION_SOURCE_ID = 'queue-suggestions';
 
-type SuggestionRow = { type: 'suggestion'; climb: Climb };
-type SectionKey = 'history' | 'upNext' | 'suggestions';
-// A label row above a section. Suggestions also gets a divider so they stop
-// reading as queued climbs.
-type SectionHeaderRow = { type: 'section-header'; section: SectionKey };
-type QueueListRow = QueueFlatRow | SuggestionRow | SectionHeaderRow;
+/**
+ * A climb below the queue: `thenFrom`, one a swipe reaches after Up next (the
+ * list part of the walk); `popular`, one from the board's popular feed that no
+ * swipe reaches (#5403).
+ */
+type OffQueueSection = 'thenFrom' | 'popular';
+type OffQueueRow = { type: 'off-queue'; section: OffQueueSection; climb: Climb; key: string };
+type SectionKey = 'history' | 'now' | 'upNext' | OffQueueSection;
+// A label row above a section. The first section below the queue also gets a
+// divider, so its climbs stop reading as queued ones.
+type SectionHeaderRow = { type: 'section-header'; section: SectionKey; divider: boolean };
+type QueueListRow = QueueFlatRow | OffQueueRow | SectionHeaderRow;
+
+const NO_ITEMS: readonly ClimbQueueItem[] = [];
 
 type QueueListProps = {
   queue: ClimbQueueItem[];
-  currentItemUuid: string | null;
+  /**
+   * The queue's current climb (`currentClimbQueueItem`), the object the player
+   * and `nextClimb` walk from. The "Then from" walk starts here too, so a
+   * current climb the queue doesn't hold yet (a commit before the server's
+   * echo) walks as the swipe does, not from the line.
+   */
+  currentItem: ClimbQueueItem | null;
   /** F3 now-slot mode: the History / Up next line with nothing current; null in legacy mode. */
   historyCount?: number | null;
   board: QueueItemRowBoard;
@@ -55,10 +70,15 @@ type QueueListProps = {
   showFullHistory: boolean;
   selectedItems: Set<string>;
   playlistSuggestionSource: PlaylistSuggestionSource | null;
-  /** True while the queue sheet is presented. Gates the suggestion feed query
-   *  so it only runs while the sheet is open — the sheet stays mounted (for the
-   *  imperative present()), so without this the feed would fetch continuously
-   *  for the whole session. */
+  /**
+   * The board the swipe walk is filtered against (`useQueueWalkBoard`), so the
+   * "Then from" rows walk past the queued climbs a swipe does. Absent: board-blind.
+   */
+  walkBoard?: QueueWalkBoard;
+  /** True while the queue sheet is presented. Gates the popular feed query and
+   *  the "Then from" walk so they only run while the sheet is open — the sheet
+   *  stays mounted (for the imperative present()), so without this the feed
+   *  would fetch continuously for the whole session. */
   active: boolean;
   autoScrollOnMount?: boolean;
   onToggleSelect: (uuid: string) => void;
@@ -81,7 +101,7 @@ type QueueListProps = {
 
 function QueueListComponent({
   queue,
-  currentItemUuid,
+  currentItem,
   historyCount = null,
   board,
   isEditMode,
@@ -89,6 +109,7 @@ function QueueListComponent({
   showFullHistory,
   selectedItems,
   playlistSuggestionSource,
+  walkBoard,
   active,
   autoScrollOnMount,
   onToggleSelect,
@@ -143,6 +164,7 @@ function QueueListComponent({
     [listBottomInset],
   );
 
+  const currentItemUuid = currentItem?.uuid ?? null;
   const { flatRows, currentItemFlatIndex } = useMemo(
     () =>
       buildQueueListModel(queue, currentItemUuid, {
@@ -153,18 +175,24 @@ function QueueListComponent({
     [queue, currentItemUuid, showHistory, showFullHistory, historyCount],
   );
 
-  // Suggested climbs follow the queue rows under a "Suggestions" header with a
-  // divider above it. Playlist suggestions (when a playlist
-  // is active) come first, then a popular (by-ascents) feed for the board tops
-  // the list up. The feed query is gated on `active` (sheet presented), not on
-  // the playlist source: the sheet stays mounted for the imperative present(),
-  // so without this gate the feed would fetch for the whole session. Fetching
-  // regardless of the source means suggestions never vanish when the source
-  // flips or its climbs go empty; they fall back to the feed. Everything already
-  // in the queue is excluded.
-  const playlistSuggestions = useMemo(
-    () => getPlaylistSuggestedClimbs(playlistSuggestionSource, queue),
-    [playlistSuggestionSource, queue],
+  // Below the queue, two sections (Then-signposts, 2026-11-02). "Then from
+  // Projects": the climbs swipes from the current climb reach after Up next, in
+  // the order they reach them, under the list name the player's top bar uses.
+  // It is the walk itself (`resolveThenFromListItems`, the selection every
+  // swipe, Next and `nextClimb` make), so the rows can't drift from the swipe:
+  // the parity test in play-view's queue-sheet-walk.test.ts holds them to it.
+  // "Popular on this board": the board's feed, minus anything queued or in
+  // Then from. No swipe reaches those (#5403), and the label says so.
+  //
+  // Both are gated on `active` (sheet presented), not on the list: the sheet
+  // stays mounted for the imperative present(), so without the gate the feed
+  // would fetch, and the walk run, for the whole session.
+  const thenFromItems = useMemo(
+    () =>
+      active
+        ? resolveThenFromListItems(queue, currentItem, playlistSuggestionSource, { ...walkBoard, historyCount })
+        : NO_ITEMS,
+    [active, queue, currentItem, playlistSuggestionSource, walkBoard, historyCount],
   );
 
   // Page 0 of the board's popular-by-ascents list, unfiltered on purpose: these
@@ -174,56 +202,68 @@ function QueueListComponent({
   // the climber's own list rather than walking into it (issue #5403).
   const { climbs: boardContinuationClimbs } = useBoardContinuationFeed(board, active);
 
-  // The ROWS may mix provenances; a swipe TRACK may not (issue #5403). The rows
-  // are a labelled discovery surface — topping a short playlist up with the
-  // board's own feed is the point of them — but a tap used to mint one track
-  // spanning both, so swiping off a filtered playlist walked silently into
-  // climbs the climber had filtered out. Keep the two segments separable, and
-  // let `handleSuggestionPress` pick the one the tapped climb came from.
-  const { suggestions, feedSuggestions } = useMemo(() => {
-    const queued = new Set(queue.map((item) => item.climb?.uuid).filter((uuid): uuid is string => !!uuid));
-    const seen = new Set<string>();
-    const merged: Climb[] = [];
-    const fromFeed: Climb[] = [];
-    const add = (climbs: readonly Climb[], isFeed: boolean) => {
-      for (const climb of climbs) {
-        if (!climb?.uuid || queued.has(climb.uuid) || seen.has(climb.uuid)) continue;
-        seen.add(climb.uuid);
-        merged.push(climb);
-        if (isFeed) fromFeed.push(climb);
-      }
-    };
-    add(playlistSuggestions, false);
-    add(boardContinuationClimbs, true);
-    return { suggestions: merged, feedSuggestions: fromFeed };
-  }, [playlistSuggestions, boardContinuationClimbs, queue]);
+  // A swipe TRACK has one provenance (issue #5403). A tap on a Then from row
+  // re-enters the list it came from; a tap on a popular row gets a track of the
+  // popular rows only, so swiping off a filtered list never walks into climbs
+  // the climber filtered out.
+  const popularClimbs = useMemo(() => {
+    const excluded = new Set<string>();
+    for (const queueItem of queue) if (queueItem.climb?.uuid) excluded.add(queueItem.climb.uuid);
+    for (const { climb } of thenFromItems) if (climb?.uuid) excluded.add(climb.uuid);
+    const popular: Climb[] = [];
+    for (const climb of boardContinuationClimbs) {
+      if (!climb?.uuid || excluded.has(climb.uuid)) continue;
+      excluded.add(climb.uuid);
+      popular.push(climb);
+    }
+    return popular;
+  }, [queue, thenFromItems, boardContinuationClimbs]);
+
+  // What the top bar calls the list ("Projects"). A list nobody named, the
+  // board feed a popular row's tap started among them, has no name up there
+  // either, so the sheet doesn't invent one: "Then from the list".
+  const trackLabel = playlistSuggestionSource?.label?.trim();
+  const thenFromTitle = trackLabel
+    ? t('queueList.sectionThenFrom', { list: trackLabel })
+    : t('queueList.sectionThenFromUnnamed');
 
   // Section labels are inserted here rather than in the shared model: they are a
   // presentation choice of this sheet. A header exists only when its section has
-  // rows. History's header sits above the "show all" row; Up next's above the
-  // first upcoming climb (the current climb has its own row and no label).
+  // rows. History's header sits above the "show all" row, Now's above the
+  // current climb, Up next's above the first upcoming climb.
   const { rows, currentRowIndex } = useMemo(() => {
     const labelled: QueueListRow[] = [];
     let scrollIndex = -1;
     let upNextLabelled = false;
     flatRows.forEach((row, index) => {
       if (index === 0 && (row.type === 'history-show-all' || row.type === 'history-item')) {
-        labelled.push({ type: 'section-header', section: 'history' });
+        labelled.push({ type: 'section-header', section: 'history', divider: false });
+      }
+      if (row.type === 'current-item') {
+        labelled.push({ type: 'section-header', section: 'now', divider: false });
       }
       if (row.type === 'future-item' && !upNextLabelled) {
-        labelled.push({ type: 'section-header', section: 'upNext' });
+        labelled.push({ type: 'section-header', section: 'upNext', divider: false });
         upNextLabelled = true;
       }
       // The model's index counts rows without headers; re-find it in this list.
       if (index === currentItemFlatIndex) scrollIndex = labelled.length;
       labelled.push(row);
     });
-    if (suggestions.length > 0) {
-      labelled.push({ type: 'section-header', section: 'suggestions' });
-      for (const climb of suggestions) labelled.push({ type: 'suggestion', climb });
+    if (thenFromItems.length > 0) {
+      labelled.push({ type: 'section-header', section: 'thenFrom', divider: true });
+      for (const { uuid, climb } of thenFromItems) {
+        labelled.push({ type: 'off-queue', section: 'thenFrom', climb, key: uuid });
+      }
+    }
+    if (popularClimbs.length > 0) {
+      labelled.push({ type: 'section-header', section: 'popular', divider: thenFromItems.length === 0 });
+      for (const climb of popularClimbs) {
+        labelled.push({ type: 'off-queue', section: 'popular', climb, key: climb.uuid });
+      }
     }
     return { rows: labelled, currentRowIndex: scrollIndex };
-  }, [flatRows, currentItemFlatIndex, suggestions]);
+  }, [flatRows, currentItemFlatIndex, thenFromItems, popularClimbs]);
 
   const reorderRowHeight = useMemo(() => {
     const futureRows = [];
@@ -312,25 +352,29 @@ function QueueListComponent({
         return `current-${row.item.uuid}`;
       case 'future-item':
         return `future-${row.item.uuid}`;
-      case 'suggestion':
-        return `suggestion-${row.climb.uuid}`;
+      case 'off-queue':
+        return `${row.section}-${row.key}`;
       default:
         return `row-${String(index)}`;
     }
   }, []);
 
-  const handleSuggestionPress = useCallback(
-    (climb: Climb) => {
+  // Read at the tap through refs, so a feed page or a step along the list
+  // doesn't hand every off-queue row a new handler.
+  const popularClimbsRef = useRef(popularClimbs);
+  popularClimbsRef.current = popularClimbs;
+  const playlistSuggestionSourceRef = useRef(playlistSuggestionSource);
+  playlistSuggestionSourceRef.current = playlistSuggestionSource;
+  const handleOffQueuePress = useCallback(
+    (climb: Climb, section: OffQueueSection) => {
       hapticSelection();
-      // One provenance per track (issue #5403). A tap on a row from the climber's
-      // own playlist re-enters THAT track, re-anchored on the tapped climb, and
-      // nothing from the board feed joins it. A tap on a feed row gets a track of
-      // feed climbs only. The rows may interleave the two; the track never does.
-      const fromFeed = feedSuggestions.some(({ uuid }) => uuid === climb.uuid);
-      if (!fromFeed) {
-        // A playlist row only exists while a playlist source does, so this cannot
-        // come back null in practice; the guard keeps the tap from being dropped.
-        const reanchored = reanchorPlaylistSuggestionSource(playlistSuggestionSource, climb.uuid);
+      // One provenance per track (issue #5403). A Then from row re-enters the
+      // list it is on, re-anchored on the tapped climb, and nothing from the
+      // board feed joins it. A popular row gets a track of popular climbs only.
+      if (section === 'thenFrom') {
+        // A Then from row only exists while the list does, so this cannot come
+        // back null in practice; the guard keeps the tap from being dropped.
+        const reanchored = reanchorPlaylistSuggestionSource(playlistSuggestionSourceRef.current, climb.uuid);
         if (reanchored) onSuggestionPress(climb, reanchored);
         return;
       }
@@ -339,7 +383,7 @@ function QueueListComponent({
         createPlaylistSuggestionSource({
           playlistUuid: QUEUE_SUGGESTION_SOURCE_ID,
           activatedClimb: climb,
-          climbs: feedSuggestions,
+          climbs: popularClimbsRef.current,
           boardKey: getQueueBoardKey({
             board_name: board.boardName,
             layout_id: board.layoutId,
@@ -349,7 +393,7 @@ function QueueListComponent({
         }),
       );
     },
-    [onSuggestionPress, feedSuggestions, playlistSuggestionSource, board],
+    [onSuggestionPress, board],
   );
 
   const renderRow = useCallback(
@@ -372,9 +416,9 @@ function QueueListComponent({
         case 'section-header':
           return (
             <View>
-              {row.section === 'suggestions' ? (
+              {row.divider ? (
                 <View
-                  testID="queue-suggestions-divider"
+                  testID="queue-off-queue-divider"
                   style={[styles.sectionDivider, { backgroundColor: systemColors.separator }]}
                 />
               ) : null}
@@ -383,9 +427,13 @@ function QueueListComponent({
                 title={
                   row.section === 'history'
                     ? t('queueList.sectionHistory')
-                    : row.section === 'upNext'
-                      ? t('queueList.sectionUpNext')
-                      : t('queueList.sectionSuggestions')
+                    : row.section === 'now'
+                      ? t('queueList.sectionNow')
+                      : row.section === 'upNext'
+                        ? t('queueList.sectionUpNext')
+                        : row.section === 'thenFrom'
+                          ? thenFromTitle
+                          : t('queueList.sectionPopular')
                 }
               />
             </View>
@@ -456,35 +504,15 @@ function QueueListComponent({
             />
           );
 
-        case 'suggestion':
+        case 'off-queue':
           return (
-            <View>
-              <PressableSurface
-                onPress={() => handleSuggestionPress(row.climb)}
-                accessibilityRole="button"
-                accessibilityLabel={row.climb.name}
-                style={[styles.suggestionRow, { backgroundColor: systemColors.secondaryBackground }]}
-              >
-                <View style={styles.suggestionSpacer} />
-                <ClimbListItemContent
-                  climb={row.climb}
-                  boardName={board.boardName}
-                  layoutId={board.layoutId}
-                  sizeId={board.sizeId}
-                  setIds={board.setIds}
-                  angle={board.angle}
-                />
-              </PressableSurface>
-              <View
-                style={[
-                  styles.separator,
-                  {
-                    marginStart: climbRowSeparatorInset(hasThumbnail, QUEUE_ROW_LEADING_INSET),
-                    backgroundColor: systemColors.separator,
-                  },
-                ]}
-              />
-            </View>
+            <OffQueueClimbRow
+              climb={row.climb}
+              section={row.section}
+              board={board}
+              hasThumbnail={hasThumbnail}
+              onPress={handleOffQueuePress}
+            />
           );
 
         default:
@@ -504,12 +532,12 @@ function QueueListComponent({
       onToggleSelect,
       onTickHistory,
       onShowFullHistory,
-      handleSuggestionPress,
+      handleOffQueuePress,
+      thenFromTitle,
       showAddedBy,
       viewerUserId,
       hasThumbnail,
       systemColors.separator,
-      systemColors.secondaryBackground,
       brandColors.primary,
       t,
     ],
@@ -543,6 +571,59 @@ function QueueListComponent({
     />
   );
 }
+
+type OffQueueClimbRowProps = {
+  climb: Climb;
+  section: OffQueueSection;
+  board: QueueItemRowBoard;
+  hasThumbnail: boolean;
+  onPress: (climb: Climb, section: OffQueueSection) => void;
+};
+
+/**
+ * One climb below the queue (Then from, or Popular on this board). Memoized so
+ * a page of the feed landing, or a queue change elsewhere, re-renders only the
+ * rows whose climb changed: a long list puts a few hundred of these in the sheet.
+ */
+const OffQueueClimbRow = memo(function OffQueueClimbRow({
+  climb,
+  section,
+  board,
+  hasThumbnail,
+  onPress,
+}: OffQueueClimbRowProps) {
+  const { systemColors } = useTheme();
+  const handlePress = useCallback(() => onPress(climb, section), [onPress, climb, section]);
+  return (
+    <View>
+      <PressableSurface
+        onPress={handlePress}
+        accessibilityRole="button"
+        accessibilityLabel={climb.name}
+        style={[styles.suggestionRow, { backgroundColor: systemColors.secondaryBackground }]}
+      >
+        <View style={styles.suggestionSpacer} />
+        <ClimbListItemContent
+          climb={climb}
+          boardName={board.boardName}
+          layoutId={board.layoutId}
+          sizeId={board.sizeId}
+          setIds={board.setIds}
+          angle={board.angle}
+        />
+      </PressableSurface>
+      <View
+        style={[
+          styles.separator,
+          {
+            marginStart: climbRowSeparatorInset(hasThumbnail, QUEUE_ROW_LEADING_INSET),
+            backgroundColor: systemColors.separator,
+          },
+        ]}
+      />
+    </View>
+  );
+});
 
 // Memoized so a hidden, always-mounted QueueSheet (which freezes its queue
 // snapshot) skips reconciling the list — and buildQueueListModel — on every

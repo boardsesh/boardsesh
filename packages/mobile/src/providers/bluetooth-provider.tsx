@@ -311,9 +311,23 @@ type VirtualWallHold = {
 /**
  * The release watch's running view of one picker session (2.7): what the list
  * showed and where its tap came from. What the sheet showed the climber
- * (`targetNotListedSeen`, `tipsSeen`) and the close time join it at the flush.
+ * (`targetNotListedSeen`, `tipsSeen`, `tipsSeenAt`), whether they left by
+ * "Browse for now", and the close time join it at the flush.
  */
-type PickerSessionWatch = Omit<BlePickerSessionInput, 'targetNotListedSeen' | 'tipsSeen' | 'closedAt'>;
+type PickerSessionWatch = Omit<
+  BlePickerSessionInput,
+  'targetNotListedSeen' | 'tipsSeen' | 'tipsSeenAt' | 'browsedForNow' | 'closedAt'
+>;
+
+/**
+ * What the sheet showed in one picker session, and how the climber left it:
+ * `tipsAt` is `Date.now()` when the tips first showed, null while they haven't.
+ */
+type PickerSeen = { targetNotListed: boolean; tipsAt: number | null; browsedForNow: boolean };
+
+function emptyPickerSeen(): PickerSeen {
+  return { targetNotListed: false, tipsAt: null, browsedForNow: false };
+}
 
 /** The list just showed: when, filtered or not, and the tap and phone it came from. Synchronous reads only. */
 function openPickerSessionWatch(picker: PickerState): PickerSessionWatch {
@@ -1836,13 +1850,23 @@ export function BluetoothProvider({
   // kept in refs, updated as the session moves, flushed on the one event. No
   // await and no render of its own.
   const pickerSessionWatchRef = useRef<PickerSessionWatch | null>(null);
-  // What the sheet showed the climber, from its one callback (`onSeen`). Set
-  // apart from the watch because the sheet's effect runs before this
-  // provider's in the commit the list first shows; cleared at each flush.
-  const pickerSeenRef = useRef<{ targetNotListed: boolean; tips: boolean }>({ targetNotListed: false, tips: false });
+  // What the sheet showed the climber, from its one callback (`onSeen`), and
+  // whether the climber left by "Browse for now". Set apart from the watch
+  // because the sheet's effect runs before this provider's in the commit the
+  // list first shows; cleared at each flush.
+  const pickerSeenRef = useRef<PickerSeen>(emptyPickerSeen());
   const handlePickerSeen = useCallback((seen: DevicePickerSeen) => {
-    if (seen === 'target_not_listed') pickerSeenRef.current.targetNotListed = true;
-    else pickerSeenRef.current.tips = true;
+    if (seen === 'target_not_listed') {
+      pickerSeenRef.current.targetNotListed = true;
+      return;
+    }
+    // The first time only: the tips can leave (a board turns up) and come back.
+    pickerSeenRef.current.tipsAt ??= Date.now();
+  }, []);
+  // The sheet calls this, then its own cancel, so the flush that cancel
+  // triggers carries it.
+  const handlePickerBrowseForNow = useCallback(() => {
+    pickerSeenRef.current.browsedForNow = true;
   }, []);
   // Whether the app held a location permission when this picker session opened.
   // Read once per session (PermissionsAndroid.check never prompts) so a
@@ -1883,7 +1907,7 @@ export function BluetoothProvider({
     const finalStats = pickerResolutionStatsRef.current;
     if (!finalStats) {
       // No list showed this session: nothing the sheet saw belongs to the next.
-      pickerSeenRef.current = { targetNotListed: false, tips: false };
+      pickerSeenRef.current = emptyPickerSeen();
       return;
     }
     pickerResolutionStatsRef.current = null;
@@ -1895,7 +1919,7 @@ export function BluetoothProvider({
     const watch = pickerSessionWatchRef.current;
     const seen = pickerSeenRef.current;
     pickerSessionWatchRef.current = null;
-    pickerSeenRef.current = { targetNotListed: false, tips: false };
+    pickerSeenRef.current = emptyPickerSeen();
     track(SHARED_EVENTS.BlePickerDevicesResolved, {
       ...finalStats,
       boardName,
@@ -1904,7 +1928,9 @@ export function BluetoothProvider({
         ? blePickerSessionProps({
             ...watch,
             targetNotListedSeen: seen.targetNotListed,
-            tipsSeen: seen.tips,
+            tipsSeen: seen.tipsAt !== null,
+            tipsSeenAt: seen.tipsAt,
+            browsedForNow: seen.browsedForNow,
             closedAt: Date.now(),
           })
         : {}),
@@ -2833,6 +2859,7 @@ export function BluetoothProvider({
       activeExternalHostId,
       onNoLeds: takeVirtualWallAfterPickerDismiss,
       onScanAgain: handlePickerScanAgain,
+      onBrowseForNow: handlePickerBrowseForNow,
       onSeen: handlePickerSeen,
     }),
     [
@@ -2843,6 +2870,7 @@ export function BluetoothProvider({
       activeExternalHostId,
       takeVirtualWallAfterPickerDismiss,
       handlePickerScanAgain,
+      handlePickerBrowseForNow,
       handlePickerSeen,
     ],
   );
@@ -2897,6 +2925,7 @@ export function BluetoothProvider({
             showAllBoards={pickerState.showAllBoards}
             onNoLeds={takeVirtualWallAfterPickerDismiss}
             onScanAgain={handlePickerScanAgain}
+            onBrowseForNow={handlePickerBrowseForNow}
             mode={pickerState.mode}
             open={pickerState.presented}
             closing={pickerState.closing}

@@ -73,6 +73,34 @@ no-lights advice. `BLE Picker Devices Resolved` counts the three groups as
 counts by serial resolution alone, so a box the sheet lists in the target group
 because this phone remembers it by id still counts where its serial puts it.
 
+**Tips while the scan runs.** "Don't see your board?" and its tips come in 5 s
+into the scan (`SCAN_TIPS_DELAY_MS` in `lib/ble/scan-tips.ts`), while the scan
+goes on, instead of after the 30 s scan ends empty. They show while nothing is
+there to pick: no board heard at all, or for a known board nothing listed. Every
+listed box may be the climber's, the unknown group included: a MoonBoard or a
+Kilter-built box has nothing but its BLE id to tell it apart, a serial is
+recorded only on a connect (so the first Boardsesh connect at a board lists its
+box as unknown), and a box whose serial lookup is still out is unknown until the
+reply lands. A same-type neighbour with an unrecorded serial therefore keeps the
+tips off too; that is the rarer case. They stay once the scan ends and go as
+soon as a board is there. A `searching` picker shows none; it hands over to the
+list at 10 s, where they are already due. One line per tip, in this order:
+power, distance, Bluetooth, then another phone. On a MoonBoard (the target's
+board, or the active board) another phone comes second, in its own wording: an
+older box can keep the first phone until it is switched off and on. The Android
+location hints replace the tips from the same 5 s, but only when nothing at all
+was heard; once location is sorted their copy asks for a fresh connect, so Scan
+again comes with it while the scan still runs. "Browse for now" sits under the
+tips: it closes the picker without connecting, so the climber keeps picking
+climbs as previews. It is not "This wall has no lights", which still shows only
+after an empty scan and takes the wall with no Bluetooth. `BLE Picker Devices
+Resolved` carries `tipsShownAtMs` and `browsedForNow`. The sheet opens at a
+medium detent, so the hints never sit pinned under the rest: with boards listed
+they are the list's footer, and with none the state above them ("No boards
+found", "not found", the spinner) scrolls with them. The `/boards` Bluetooth
+quickstart (`BluetoothQuickstartSheet`) shows the same tips 5 s into its 15 s
+scan while it has heard no board, with no Browse for now.
+
 **Remembered boards.** A connect remembers the box for the board in view: by
 serial for Aurora boxes, by BLE device id for a MoonBoard or a serial-less
 Kilter-built box named for that board type (`Kilter Board`, `isKilterBuiltBox`).

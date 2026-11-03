@@ -12,8 +12,8 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, waitFor } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
 import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-device';
@@ -218,7 +218,7 @@ describe('BluetoothQuickstartSheet', () => {
     const { container } = renderSheet();
 
     expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(true);
-    expect(hasText(container, 'settings:ble.troubleshootTips')).toBe(true);
+    expect(hasText(container, 'ble.scanTipPower')).toBe(true);
   });
 
   // The scan lists MoonBoards and boxes with no serial now, so the caveat that
@@ -244,7 +244,7 @@ describe('BluetoothQuickstartSheet', () => {
 
     expect(hasText(container, 'settings:ble.locationHintTitle')).toBe(true);
     expect(hasText(container, 'settings:ble.locationHintBody')).toBe(true);
-    expect(hasText(container, 'settings:ble.troubleshootTips')).toBe(false);
+    expect(hasText(container, 'ble.scanTipPower')).toBe(false);
   });
 
   it('restarts the scan after the user grants location', async () => {
@@ -320,7 +320,7 @@ describe('BluetoothQuickstartSheet', () => {
 
     expect(locationHint.lastActive).toBe(false);
     expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(false);
-    expect(hasText(container, 'settings:ble.troubleshootTips')).toBe(false);
+    expect(hasText(container, 'ble.scanTipPower')).toBe(false);
     expect(hasText(container, 'mobile.bluetooth.resolving')).toBe(true);
   });
 
@@ -330,7 +330,7 @@ describe('BluetoothQuickstartSheet', () => {
 
     expect(hasText(container, 'settings:ble.locationServicesHintTitle')).toBe(true);
     expect(hasText(container, 'settings:ble.locationServicesHintBody')).toBe(true);
-    expect(hasText(container, 'settings:ble.troubleshootTips')).toBe(false);
+    expect(hasText(container, 'ble.scanTipPower')).toBe(false);
   });
 
   it('restarts the scan after the user enables Location services', async () => {
@@ -935,5 +935,94 @@ describe('BluetoothQuickstartSheet boards it cannot name', () => {
 
     expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(true);
     expect(locationHint.lastActive).toBe(true);
+  });
+});
+
+// Plan item 6: the device picker's tips, at the same moment, on /boards.
+describe('BluetoothQuickstartSheet tips while the scan runs', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    scan.status = 'scanning';
+    scan.unavailableReason = null;
+    scan.serials = [];
+    scan.advertisedTypes = new Map();
+    scan.devices = [];
+    boards.data = [];
+    boards.isLoading = false;
+    boards.isError = false;
+    boards.fetchStatus = 'idle';
+    serialConfigs.data = [];
+    serialConfigs.isResolving = false;
+    locationHint.shouldOfferLocationGrant = false;
+    locationHint.wasGranted = false;
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.servicesWereEnabled = false;
+    locationHint.lastActive = null;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('shows the tips 5 s into a scan that has heard nothing, not before, and keeps scanning', () => {
+    const { container } = renderSheet();
+    act(() => {
+      vi.advanceTimersByTime(4_999);
+    });
+    expect(hasText(container, 'ble.troubleshootTitle')).toBe(false);
+    expect(locationHint.lastActive).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(hasText(container, 'ble.troubleshootTitle')).toBe(true);
+    expect(hasText(container, 'ble.scanTipPower')).toBe(true);
+    // Still the scanning state: no "none in range" and no Scan again yet.
+    expect(hasText(container, 'mobile.bluetooth.scanning')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(false);
+    expect(container.querySelector('[data-button="ble.scanAgain"]')).toBeNull();
+    // From the same moment, Android may be hiding the results.
+    expect(locationHint.lastActive).toBe(true);
+  });
+
+  it('orders them power, distance, Bluetooth, then another phone', () => {
+    const { container } = renderSheet();
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    const text = container.textContent ?? '';
+    const at = (key: string) => text.indexOf(key);
+    expect(at('ble.scanTipPower')).toBeLessThan(at('ble.scanTipCloser'));
+    expect(at('ble.scanTipCloser')).toBeLessThan(at('ble.scanTipBluetooth'));
+    expect(at('ble.scanTipBluetooth')).toBeLessThan(at('ble.scanTipOtherPhone'));
+  });
+
+  it('shows the location hint instead of the tips when Android is hiding the results', () => {
+    locationHint.shouldOfferLocationGrant = true;
+    const { container } = renderSheet();
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(hasText(container, 'settings:ble.locationHintTitle')).toBe(true);
+    expect(hasText(container, 'ble.scanTipPower')).toBe(false);
+  });
+
+  it('shows no tips once a board is heard', () => {
+    scan.devices = [
+      {
+        kind: 'moonboard',
+        key: 'moon',
+        deviceId: 'moon',
+        name: 'MoonBoard',
+        boardType: 'moonboard',
+        serial: null,
+        rssi: -60,
+      },
+    ];
+    const { container } = renderSheet();
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(hasText(container, 'ble.troubleshootTitle')).toBe(false);
+    expect(locationHint.lastActive).toBe(false);
   });
 });

@@ -23,6 +23,10 @@ export type BlePickerSessionInput = {
   targetNotListedSeen: boolean;
   /** The picker's troubleshooting tips (hardware, location permission or Location services) showed. */
   tipsSeen: boolean;
+  /** `Date.now()` when the tips first showed; null when they never did. */
+  tipsSeenAt: number | null;
+  /** The climber closed the picker with "Browse for now" (no board; picks open as previews). */
+  browsedForNow: boolean;
   /** `Date.now()` when the list first showed. */
   openedAt: number;
   /** `Date.now()` when the session closed. */
@@ -39,6 +43,14 @@ export type BlePickerSessionProps = {
   listedCount: number;
   targetNotListedSeen: boolean;
   tipsSeen: boolean;
+  /**
+   * Milliseconds from the list showing to the tips first showing, never
+   * negative; null when the tips never showed. From 2026-11 the tips come in 5 s
+   * into the scan, so a list that came up straight from the tap reads about
+   * 5,000, and one that took over from a saved-board search reads near 0.
+   */
+  tipsShownAtMs: number | null;
+  browsedForNow: boolean;
   /** Whole seconds from the list showing to the session closing, never negative. */
   secondsOpen: number;
   phoneNeverConnected: boolean | null;
@@ -53,6 +65,8 @@ export function blePickerSessionProps(input: BlePickerSessionInput): BlePickerSe
     listedCount: Math.max(0, Math.floor(input.listedCount)),
     targetNotListedSeen: input.targetNotListedSeen,
     tipsSeen: input.tipsSeen,
+    tipsShownAtMs: input.tipsSeenAt === null ? null : Math.max(0, Math.round(input.tipsSeenAt - input.openedAt)),
+    browsedForNow: input.browsedForNow,
     secondsOpen: Math.max(0, Math.round((input.closedAt - input.openedAt) / 1000)),
     phoneNeverConnected: input.phoneNeverConnected,
     entrySurface: input.entrySurface,

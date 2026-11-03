@@ -294,6 +294,7 @@ type AscentFeedRow = {
   qualityAverage: number | null;
   isBenchmark: boolean;
   isNoMatch: boolean;
+  characteristics: string[] | null;
   comment: string;
   climbedAt: string;
   frames: string | null;
@@ -960,6 +961,7 @@ export const tickQueries = {
           boardseshConfidence: toConfidenceTier(boardseshConfidence),
           isBenchmark: Boolean(resolvedIsBenchmark),
           isNoMatch: resolveClimbNoMatch(tick.boardType, climbCharacteristics, climbDescription),
+          characteristics: climbCharacteristics ?? null,
           qualityAverage: qualityAverage != null ? Number(qualityAverage) : null,
           comment: tick.comment || '',
           climbedAt: tick.climbedAt,
@@ -1320,6 +1322,7 @@ export const tickQueries = {
       qualityAverage: number | null;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics: string[] | null;
       comment: string;
       climbedAt: string;
       frames: string | null;
@@ -1342,6 +1345,7 @@ export const tickQueries = {
       difficultyName: string | null;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics: string[] | null;
       date: string;
       items: AscentItem[];
       flashCount: number;
@@ -1438,6 +1442,7 @@ export const tickQueries = {
         qualityAverage: qualityAverage != null ? Number(qualityAverage) : null,
         isBenchmark: Boolean(resolvedIsBenchmark),
         isNoMatch,
+        characteristics: climbCharacteristics ?? null,
         comment: tick.comment || '',
         climbedAt: tick.climbedAt,
         frames,
@@ -1469,6 +1474,7 @@ export const tickQueries = {
           difficultyName,
           isBenchmark: Boolean(resolvedIsBenchmark),
           isNoMatch,
+          characteristics: climbCharacteristics ?? null,
           date: day,
           items: [],
           flashCount: 0,

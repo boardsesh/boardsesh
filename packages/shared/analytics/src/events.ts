@@ -165,9 +165,15 @@ export const SHARED_EVENTS = {
   DriveModeStarted: 'Drive Mode Started',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by
   // `queueSheetOpened`): { surface: 'player' | 'player_menu' | 'mini_player' |
-  // 'mini_player_menu' | 'snackbar', boardType }. On a side-by-side iPad player the queue button
+  // 'mini_player_menu' | 'snackbar', boardType, from, upNextBucket }. On a side-by-side iPad player the queue button
   // shows Up next in the side panel instead of a sheet; it still fires, as
-  // `player`, because the climber asked for the same thing.
+  // `player`, because the climber asked for the same thing. Since
+  // Then-signposts (2026-11-02): `from` is 'preview' when the player (or the
+  // MiniPlayer's last pick) showed a climb that isn't the queue's current one,
+  // else 'current'; `upNextBucket` is Up next's size as '0' | '1-3' | '4-10' |
+  // '11+' (`upNextBucket`, the buckets `Queue Navigation` sends too).
+  // `from: 'preview'` with Up next filled is a climber looking for their
+  // queue; that share should fall.
   QueueSheetOpened: 'Queue Sheet Opened',
   // A held swipe track stopped steering next/prev, so swipes fall back to the
   // queue. The climber still HAS a track; it just no longer anchors the climb
@@ -604,8 +610,10 @@ export const SHARED_EVENTS = {
   // `targetFiltered` (the list first showed filtered to a known gym or saved
   // board), `searchedAnyBoard` (Search for any board tapped), `listedCount`
   // (boards the list showed at close), `targetNotListedSeen` ("your board isn't
-  // in the list" showed), `tipsSeen` (the troubleshooting tips showed),
-  // `secondsOpen` (list shown to close), `phoneNeverConnected` (null while the
+  // in the list" showed), `tipsSeen` (the troubleshooting tips showed; from
+  // 2026-11 they show 5 s into the scan, and for a known board while nothing
+  // listed may be the climber's, so the rate is not comparable with earlier
+  // events), `secondsOpen` (list shown to close), `phoneNeverConnected` (null while the
   // phone's history isn't loaded) and `entrySurface` (the last Board Connect
   // Tapped surface within 2 minutes before the list, or null). Older events have
   // none of them.
@@ -615,6 +623,10 @@ export const SHARED_EVENTS = {
   // unrecorded one), and were positively another board (hidden until "Search
   // for any board"). All three are null when the picker had no board identity;
   // older events have none of them.
+  // `tipsShownAtMs` (2026-11): milliseconds from the list showing to the tips
+  // first showing, null when they never did. The tips now come in 5 s into the
+  // scan instead of at its end. `browsedForNow` (2026-11): the climber closed the
+  // picker with "Browse for now". Older events have neither.
   BlePickerDevicesResolved: 'BLE Picker Devices Resolved',
   // Consent-driven scan recon: fired once per discovered board when a user
   // submits a bug report with the "Bluetooth trouble" toggle on. Carries the raw
