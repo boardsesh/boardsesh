@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-03T08:50:02.013Z",
+  "generatedAt": "2026-11-03T08:57:10.670Z",
   "entries": [
     {
       "prNumber": 7242,
@@ -9237,9 +9237,11 @@
       "date": "2026-11-03T08:06:20Z",
       "sha": "7b8b3ffef6cbea8f211b43e5ab768ac4d8dd3ba7",
       "platforms": [
+        "android",
         "ios"
       ],
       "fingerprints": {
+        "android": "150446bcfb84ecc366353bfd596306caf5d4f17f",
         "ios": "e171c5f7e69ad32d3915a5ae23155914015b5092"
       }
     },
