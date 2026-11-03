@@ -443,6 +443,30 @@ describe('QueueProvider play next', () => {
     expect(queueMutations.replaceQueueItem).not.toHaveBeenCalled();
   });
 
+  // A climb this phone has not loaded yet is a placeholder, and a placeholder
+  // never goes to the crew (#2527): only the local slot drops the flag.
+  it('sends no swap for a walked climb still loading', async () => {
+    const loadingA: ClimbQueueItem = {
+      ...makeQueueItem('a'),
+      climb: { ...makeQueueItem('a').climb, frames: '' },
+      suggested: true,
+    };
+    const queued = [loadingA, makeQueueItem('b'), makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[2]);
+
+    await act(async () => {
+      await latest().playNext({ item: makeQueueItem('fresh', 'climb-a') });
+    });
+
+    await waitFor(() => expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('a', 0, 2));
+    // Let the lane drain past the reorder, where the swap would go.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(queueMutations.replaceQueueItem).not.toHaveBeenCalled();
+    expect(latest().queue[2].suggested).toBeUndefined();
+  });
+
   // A failed swap goes to the same reconcile as a failed add or remove, which
   // is a no-op solo: the queue the climber made stands, and nothing throws.
   it('keeps the solo queue as the climber made it when the swap fails', async () => {
