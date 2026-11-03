@@ -8,7 +8,7 @@ import {
   providerSyncControls,
   userBoardMappings,
 } from '@boardsesh/db/schema';
-import { rotateLinkGeneration, setPendingProviderSyncRun } from '@boardsesh/db/queries';
+import { clearDeletedUpstreamPlaylists, rotateLinkGeneration, setPendingProviderSyncRun } from '@boardsesh/db/queries';
 import type { BackgroundJobFamily } from '@boardsesh/db/background-jobs';
 import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
 import {
@@ -732,6 +732,10 @@ export async function deleteAuroraCredential(
     await tx
       .delete(userBoardMappings)
       .where(and(eq(userBoardMappings.userId, userId), eq(userBoardMappings.boardType, boardType)));
+    // The circuits the climber deleted in Boardsesh stay skipped while the
+    // account is linked (#7240). Unlinking is the deliberate reset: a later
+    // re-link imports every circuit the account has, the deleted ones too.
+    await clearDeletedUpstreamPlaylists(tx, userId, boardType);
     return encryptedRefreshToken;
   });
   // After the commit: the link is gone locally whatever Keycloak answers, and a

@@ -141,7 +141,7 @@ the grant.
 | Grant | Tables |
 | --- | --- |
 | SELECT, UPDATE | `aurora_credentials`, `provider_sync_controls` |
-| SELECT | `users (id, name)`, `user_profiles (user_id, display_name)`, `user_board_mappings`, `board_climb_aliases`, `climb_community_status (board_type, climb_uuid, angle, community_grade)`, `board_difficulty_grades (board_type, difficulty, boulder_name)` |
+| SELECT | `users (id, name)`, `user_profiles (user_id, display_name)`, `user_board_mappings`, `board_climb_aliases`, `climb_community_status (board_type, climb_uuid, angle, community_grade)`, `board_difficulty_grades (board_type, difficulty, boulder_name)`, `user_deleted_upstream_playlists` |
 | SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership`, `climb_stats_recompute_pending` |
 | INSERT | `sync_deletions` (the `boardsesh_ticks` and `playlist*` delete triggers write it as the caller) |
 

@@ -12,6 +12,7 @@ export * from './ascents';
 export * from './board-climb-events';
 export * from './playlists';
 export * from './playlist-grade-summaries';
+export * from './deleted-upstream-playlists';
 export * from './hold-classifications';
 export * from './controllers';
 export * from './follows';
