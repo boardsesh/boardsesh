@@ -6,7 +6,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type { BoardConnectionHolder, ResolvedBoard } from '@boardsesh/shared-schema';
-import { normaliseSetIds } from '@boardsesh/board-config';
+import { normaliseSetIds, SHARED_CONFIG_FEED_SLUG_PREFIX } from '@boardsesh/board-config';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -1020,7 +1020,7 @@ export function defaultBoardName(boardType: string): string {
  * `resolveSharedBoardForConfig`. Exported so `isSharedConfigFeedBoard` tests the
  * same prefix the builder below writes — the two cannot drift.
  */
-export const BOARD_CONFIG_PRESENCE_SLUG_PREFIX = 'presence-';
+export const BOARD_CONFIG_PRESENCE_SLUG_PREFIX = SHARED_CONFIG_FEED_SLUG_PREFIX;
 
 function boardConfigPresenceSlug(boardType: string, layoutId: number, sizeId: number, setIds: string): string {
   const digest = createHash('sha256').update(`${boardType}:${layoutId}:${sizeId}:${setIds}`).digest('hex').slice(0, 20);
