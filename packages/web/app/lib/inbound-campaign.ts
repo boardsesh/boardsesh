@@ -1,5 +1,5 @@
-// The campaign a visitor arrived with: the `utm_*` params and the Google Ads
-// click id on the URL they landed on (#6027).
+// The campaign a visitor arrived with: the `utm_*` params and the ad click
+// ids (Google `gclid`, Meta `fbclid`, Reddit `rdt_cid`) on the URL they landed on (#6027).
 //
 // www runs posthog-js-lite, which sends `$referrer` and `$current_url` but never
 // parses campaign params (the full posthog-js does). Over the 28 days to
@@ -19,6 +19,8 @@ export const INBOUND_CAMPAIGN_PARAMS = [
   'utm_content',
   'utm_term',
   'gclid',
+  'fbclid',
+  'rdt_cid',
 ] as const;
 
 export type InboundCampaignParam = (typeof INBOUND_CAMPAIGN_PARAMS)[number];

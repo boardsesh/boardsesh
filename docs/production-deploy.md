@@ -706,6 +706,7 @@ web deploy targets:
 | `RAILWAY_TOKEN`             | secret | Production-environment Railway project token used by both verified deploy paths. |
 | `NEXT_PUBLIC_WS_URL`        | var    | Backend WS URL baked into the web image.                                        |
 | `NEXT_PUBLIC_POSTHOG_KEY`   | var    | Public PostHog key baked into the web image. Client analytics goes dark without it. |
+| `NEXT_PUBLIC_APP_STORE_PROVIDER_ID` | var | App Store provider id (digits) baked into the web image for the `pt` param on App Store links. Empty is harmless: links carry `ct` and `mt` only. |
 | `SENTRY_AUTH_TOKEN`         | secret | Source-map upload during the web image build.                                    |
 | `SMOKE_KIOSK_GYM_SLUG`      | var    | Fixture the post-deploy smoke reads.                                             |
 | `SMOKE_EMBED_BOARD_UUID`    | var    | Fixture the post-deploy smoke reads.                                             |

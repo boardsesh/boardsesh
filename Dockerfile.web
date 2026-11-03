@@ -85,6 +85,10 @@ ARG NEXT_PUBLIC_POSTHOG_KEY
 # it does not degrade to relative URLs — it fails. Vercel builds pass it at
 # `vercel build`; this is the same value for the container build.
 ARG NEXT_PUBLIC_STATIC_ASSET_BASE_URL
+# App Store provider id (digits) for the `pt` param on App Store campaign links.
+# Optional: empty or non-numeric is ignored by store-links.ts, which then emits
+# `ct` and `mt` with no `pt`. Build-time like every NEXT_PUBLIC_ value.
+ARG NEXT_PUBLIC_APP_STORE_PROVIDER_ID
 # The Docker context carries no .git, so the Sentry plugin cannot derive a
 # release name on its own and would upload maps under a generated one that
 # matches no deploy. The workflow passes github.sha.

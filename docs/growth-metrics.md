@@ -1159,7 +1159,7 @@ event or person had a `utm_*` property: 0 of 6,661 sessions in the 28 days to
 an Instagram bio).
 
 `packages/web/app/lib/inbound-campaign.ts` now reads `utm_source`, `utm_medium`,
-`utm_campaign`, `utm_content`, `utm_term` and `gclid` off the landing URL, and
+`utm_campaign`, `utm_content`, `utm_term`, `gclid` (Google Ads), `fbclid` (Meta) and `rdt_cid` (Reddit Ads) off the landing URL, and
 `analytics.ts` sends whichever were present as plain event properties on
 `$pageview` and on every `track()` event (`App Install Click`, `Climb Handoff
 Clicked`, the gym funnel). PostHog derives the session's `$entry_utm_source`
@@ -1216,7 +1216,17 @@ Every store button on www builds its URL with `buildStoreUrl` in
 The visitor's tags win field by field. A gym that links its page from Instagram
 with a source and medium but no campaign still reports `gym-<slug>`. A landing
 URL with a `gclid` and no `utm_source` reads as `google` / `cpc`; the click id
-itself is not copied into the store link.
+itself is not copied into the store link. The same fallback exists for the other
+two click ids, only when there is no `utm_source`:
+
+| Bare click id | source   | medium        | Why                                                         |
+| ------------- | -------- | ------------- | ----------------------------------------------------------- |
+| `gclid`       | `google` | `cpc`         | Google Ads only                                             |
+| `rdt_cid`     | `reddit` | `paid-social` | Reddit appends it to ad clicks only                         |
+| `fbclid`      | `meta`   | `social`      | Meta also adds it to organic Facebook and Instagram taps, so it cannot be called paid |
+
+With several click ids the order is `gclid`, `rdt_cid`, `fbclid`. The visitor's
+own `utm_*` still win field by field.
 
 A visitor's `utm_medium` of `organic` (any case) or `(not set)` is not carried;
 the link keeps `web` or `qr`. Play writes those two values itself, and the app
@@ -1256,6 +1266,23 @@ installs in the 28 days before the change are gym-page clicks of unknown kind.
 
 The Capacitor retirement screen keeps its bare store URLs. It sends someone who
 already has the app to update it, which is not an install.
+
+### Paid social URLs (Reddit, Instagram)
+
+Tag every ad URL by hand; the bare click ids above are only the fallback.
+
+```
+https://www.boardsesh.com/?utm_source=reddit|instagram&utm_medium=paid-social&utm_campaign=<code>&utm_content=<ad>
+```
+
+- Only source, medium and campaign reach the stores. `utm_content` is replaced by
+  our placement link id (`hero`, `gym-page`, ...); the ad name stays on the www
+  events only.
+- The App Store `ct` is `<source>-<campaign>` cut to 30 characters, so keep
+  `<code>` at 18 characters or fewer (`instagram-` is 10, `reddit-` is 7).
+- iOS installs from these ads are aggregate-only in App Store Connect (5 or more
+  first-time downloads per `ct`) and need `NEXT_PUBLIC_APP_STORE_PROVIDER_ID`.
+  Android installs carry the tags into `install_referrer_raw`.
 
 ### The iOS Smart App Banner
 
@@ -1308,13 +1335,14 @@ reaches the app, so nothing reaches PostHog.
 - A single gym never appears in `ct`. App Analytics hides a campaign until it
   has at least 5 first-time downloads, which no one gym's page reaches, so all
   gyms share `gym-page` and `gym-page.poster`.
-- **`pt` comes from `NEXT_PUBLIC_APP_STORE_PROVIDER_ID`**, a build-time variable
-  of the web service. It must be digits only; anything else is ignored. **It is
+- **`pt` comes from `NEXT_PUBLIC_APP_STORE_PROVIDER_ID`**, a build-time variable.
+  It is a GitHub Actions variable in the Production environment, passed as a
+  build-arg by `production-deploy.yml` (not a Railway service variable). It must be digits only; anything else is ignored. **It is
   not set yet**: the provider id has to be read out of App Store Connect (it is
   the `pt` value in a campaign link generated there). Until it is set, links
   carry `ct` and `mt` with no `pt`, and App Analytics attributes nothing.
-  Setting it needs a rebuild of the web service, like every `NEXT_PUBLIC_`
-  variable.
+  Setting it needs a new web build (the next push to main), like every
+  `NEXT_PUBLIC_` variable.
 
 ## Retention
 
