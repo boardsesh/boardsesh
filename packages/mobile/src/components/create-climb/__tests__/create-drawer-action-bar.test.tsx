@@ -94,7 +94,16 @@ vi.mock('../brush-roles', () => ({
   getPaintRoles: () => ['STARTING', 'HAND', 'FINISH', 'FOOT'],
   useBrushRoleLabels: () => ({ STARTING: 'Start', HAND: 'Hand', FINISH: 'Finish', FOOT: 'Foot' }),
 }));
-vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn(), hapticMedium: vi.fn(), hapticLight: vi.fn() }));
+// The bulb's drive reading; its taps are create-bulb-stops-drive.test.tsx's.
+vi.mock('../../ble/use-board-connection-state', () => ({
+  useBoardConnectionState: () => ({ inAppBoardConnection: 'disconnected', localConnected: false, ledless: false }),
+}));
+vi.mock('../../../lib/analytics-wall-control', () => ({
+  trackDriveModeStarted: vi.fn(),
+  trackDriveModeEnded: vi.fn(),
+  trackWallControlTapped: vi.fn(),
+}));
 vi.mock('../../../lib/hold-color-overrides', () => ({ useHoldColorOverrides: () => ({ overrides: {} }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,

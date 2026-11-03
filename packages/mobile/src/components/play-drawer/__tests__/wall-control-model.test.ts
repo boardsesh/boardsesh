@@ -393,9 +393,8 @@ describe('wallControlText', () => {
     expect(text).toMatchObject({
       label: 'playView.wallControl.youAreDriving',
       accessibilityLabel: 'playView.wallControl.youAreDriving',
+      // One hint for every view: the first-row bulb stops the drive too (owner, 2026-11-03).
       accessibilityHint: 'playView.wallControl.stopDrivingHint',
-      // A bulb draws no window: its tap lets go of the board.
-      bulbAccessibilityHint: 'playView.wallControl.litHint',
       driveActionLabel: 'playView.wallControl.lightEveryClimb',
     });
   });
@@ -838,21 +837,17 @@ describe('resolveWallControl: driving the wall', () => {
           ? {
               driving: true,
               tapAction: 'stop_driving',
-              bulbTapAction: 'disconnect',
               labelKey: 'youAreDriving',
               a11yValueKey: 'drivingEveryClimb',
               a11yHintKey: 'stopDrivingHint',
-              bulbA11yHintKey: 'litHint',
               swipeAction: null,
             }
           : {
               driving: false,
               tapAction: 'disconnect',
-              bulbTapAction: 'disconnect',
               labelKey: 'disconnectBoard',
               a11yValueKey: 'youHaveBoardLit',
               a11yHintKey: 'litHint',
-              bulbA11yHintKey: 'litHint',
               swipeAction: driveMode === 'arming' ? null : 'drive',
             },
       );
@@ -865,7 +860,6 @@ describe('resolveWallControl: driving the wall', () => {
     expect(resolveWallControl({ ...FREE, ...SAMS, pressAction: 'noop', displayedLit: true })).toMatchObject({
       state: 'crew',
       tapAction: 'noop',
-      bulbTapAction: 'noop',
       labelKey: 'onBoard',
       a11yValueKey: 'holderHasBoard',
       swipeAction: null,
@@ -1178,8 +1172,6 @@ describe('resolveWallControl: Put on board’s timed drive', () => {
       selected: true,
       look: 'driving',
     });
-    // A bulb draws no window: its tap disconnects, as while driving.
-    expect(model.bulbTapAction).toBe('disconnect');
   });
 
   it('waits on the busy-wall question', () => {

@@ -15,6 +15,10 @@ const state = vi.hoisted(() => ({
   inAppBoardConnection: 'disconnected' as 'connectedByMe' | 'heldByPeer' | 'disconnected',
   openPlayDrawer: vi.fn(),
   openBoardControls: vi.fn(),
+  hapticLight: vi.fn(),
+  announceQueued: vi.fn(),
+  driveEnded: vi.fn(),
+  wallControlTapped: vi.fn(),
 }));
 
 vi.mock('react-native', () => ({
@@ -81,7 +85,13 @@ vi.mock('../../ble/use-board-connection-state', () => ({
 vi.mock('../../../providers/ble-control-sheet-provider', () => ({
   useBleControlSheet: () => ({ open: state.openBoardControls }),
 }));
-vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
+vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn(), hapticLight: state.hapticLight }));
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: state.announceQueued }));
+vi.mock('../../../lib/analytics-wall-control', () => ({
+  trackDriveModeStarted: vi.fn(),
+  trackDriveModeEnded: state.driveEnded,
+  trackWallControlTapped: state.wallControlTapped,
+}));
 // The ring itself (drain, refill, Reduce Motion) has its own suites; here, which one the bulb asks for.
 vi.mock('../../play-drawer/WallWindowRing', () => ({
   WallWindowRing: ({ kind = 'drain' }: { kind?: string }) => createElement('s', { 'data-ring': kind }),
@@ -90,10 +100,16 @@ vi.mock('../../play-drawer/WallWindowRing', () => ({
 import { PickBulbSlot } from '../PickPutOnBoardBulb';
 import {
   enterDriveMode,
+  exitDriveMode,
+  getDriveMode,
+  getLastDriveModeExitReason,
+  isDrivingStoppedForLink,
   makeDriveOpenEnded,
   markDriveLive,
   resetDriveModeForTests,
+  startAlwaysDrive,
 } from '../../play-drawer/drive-mode-store';
+import { DISCONNECT_TAP_GUARD_MS, WINDOW_END_TAP_GRACE_MS } from '../../play-drawer/drive-tap-guards';
 import type { PickBulb } from '../use-pick-bulb';
 import { getLastPick, resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 
@@ -155,6 +171,10 @@ beforeEach(() => {
   state.inAppBoardConnection = 'disconnected';
   state.openPlayDrawer.mockClear();
   state.openBoardControls.mockClear();
+  state.hapticLight.mockClear();
+  state.announceQueued.mockClear();
+  state.driveEnded.mockClear();
+  state.wallControlTapped.mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -251,6 +271,118 @@ describe('PickBulbSlot while this phone drives the wall', () => {
     });
     expect(ringOf(view)).toBeNull();
     expect(valueOf(view)).toBe('ble.barControl.connectedLabel');
+  });
+});
+
+// Owner, 2026-11-03: a bar bulb's tap during a drive only stops driving. The
+// unlit pick's bulb shows the drive (its ring), so a tap there stops it too,
+// keeping the link, and never opens the player to put the pick up.
+describe('PickBulbSlot tapped while this phone drives the wall', () => {
+  beforeEach(() => {
+    state.localConnected = true;
+    state.inAppBoardConnection = 'connectedByMe';
+  });
+
+  it.each([
+    ["Put on board's timed drive", () => startDrive(45_000), 'stop_window'],
+    ['an open-ended drive', () => startDrive(null), 'stop_driving'],
+    [
+      "Always drive the wall's drive",
+      () => {
+        act(() => {
+          startAlwaysDrive({ sessionId: null, boardId: null });
+        });
+      },
+      'stop_driving',
+    ],
+  ] as const)('stops %s and keeps the link: no Put on board', (_drive, start, action) => {
+    start();
+    const view = renderSlot();
+    const bulb = view.getByTestId('mini-player-pick-put-on-board');
+    expect(bulb.getAttribute('aria-label')).toBe('ble.barControl.stopDrivingLabel');
+    expect(bulb.getAttribute('data-hint')).toBe('ble.barControl.stopDrivingHint');
+    fireEvent.click(bulb);
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(isDrivingStoppedForLink()).toBe(true);
+    expect(state.openPlayDrawer).not.toHaveBeenCalled();
+    expect(state.driveEnded).toHaveBeenCalledWith(expect.objectContaining({ reason: 'stopped' }));
+    expect(state.hapticLight).toHaveBeenCalledOnce();
+    expect(state.announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    // Counted as the tablet's bar bulb counts its stop.
+    expect(state.wallControlTapped).toHaveBeenCalledOnce();
+    expect(state.wallControlTapped).toHaveBeenCalledWith({ state: 'lit', action, control: 'mini_bar' });
+    // Not driving any more: the bulb is Put on board for the pick again.
+    expect(bulb.getAttribute('aria-label')).toBe('playView.wallControl.putOnBoard');
+    expect(bulb.getAttribute('data-hint')).toBe('playView.wallControl.pickLightHint');
+  });
+
+  it('puts the pick up while the drive is still arming: the bulb shows no drive yet', () => {
+    act(() => {
+      enterDriveMode({ startedBy: 'tap', sessionId: null, boardId: null, windowMs: 45_000 });
+    });
+    const view = renderSlot();
+    fireEvent.click(view.getByTestId('mini-player-pick-put-on-board'));
+    expect(state.openPlayDrawer).toHaveBeenCalledOnce();
+    expect(getDriveMode()?.phase).toBe('arming');
+    // The put-up is the player's to count (as `mini_bar`, once its press runs).
+    expect(state.wallControlTapped).not.toHaveBeenCalled();
+  });
+
+  it('drops the second tap of a double tap: one stop, no Put on board and fresh drive', () => {
+    vi.useFakeTimers();
+    try {
+      startDrive(45_000);
+      const view = renderSlot();
+      const bulb = view.getByTestId('mini-player-pick-put-on-board');
+      fireEvent.click(bulb);
+      act(() => {
+        vi.advanceTimersByTime(DISCONNECT_TAP_GUARD_MS - 1);
+      });
+      fireEvent.click(bulb);
+      expect(state.openPlayDrawer).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      fireEvent.click(bulb);
+      expect(state.openPlayDrawer).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops a tap that lands just after the timed drive ran out', () => {
+    vi.useFakeTimers();
+    try {
+      startDrive(45_000);
+      const view = renderSlot();
+      act(() => {
+        exitDriveMode('window_ended');
+      });
+      act(() => {
+        vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS - 1);
+      });
+      const bulb = view.getByTestId('mini-player-pick-put-on-board');
+      fireEvent.click(bulb);
+      expect(state.openPlayDrawer).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      fireEvent.click(bulb);
+      expect(state.openPlayDrawer).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("puts the pick up on a crewmate's board: their drive is not this bulb's to stop", () => {
+    startDrive(45_000);
+    state.localConnected = false;
+    state.inAppBoardConnection = 'heldByPeer';
+    const view = renderSlot();
+    fireEvent.click(view.getByTestId('mini-player-pick-put-on-board'));
+    expect(state.openPlayDrawer).toHaveBeenCalledOnce();
+    expect(getDriveMode()).not.toBeNull();
   });
 });
 

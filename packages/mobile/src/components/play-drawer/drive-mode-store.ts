@@ -216,6 +216,8 @@ let lastExitReason: DriveModeExitReason | null = null;
 let heldReport: { ended: DriveModeState; reason: DriveModeExitReason; endedAt: number } | null = null;
 /** The last end handed on, so a player reading the end in render knows whether it lets go of the board. */
 let lastEnded: DriveEnded | null = null;
+/** When `lastEnded` was handed on (`Date.now()`), for a bar bulb's tap guard (`bar-bulb-tap.ts`). */
+let lastEndedAt: number | null = null;
 const listeners = new Set<() => void>();
 
 /** How a drive ended, as `subscribeDriveEnded` hands it on. */
@@ -261,6 +263,7 @@ const endedListeners = new Set<(ended: DriveEnded) => void>();
 
 function emitEnded(ended: DriveEnded): void {
   lastEnded = ended;
+  lastEndedAt = Date.now();
   for (const listener of endedListeners) listener(ended);
 }
 
@@ -386,6 +389,7 @@ export function enterDriveMode({
   stoppedForLink = false;
   lastExitReason = null;
   lastEnded = null;
+  lastEndedAt = null;
   claimedAnnouncements = null;
   emit();
   trackDriveModeStarted({ startedBy, inSession: sessionId !== null, boardType });
@@ -479,6 +483,7 @@ export function startLockScreenDrive({
   stoppedForLink = false;
   lastExitReason = null;
   lastEnded = null;
+  lastEndedAt = null;
   claimedAnnouncements = null;
   emit();
   trackDriveModeStarted({ startedBy: 'lock_screen', inSession: sessionId !== null, boardType });
@@ -692,6 +697,11 @@ export function getLastDriveEnded(): DriveEnded | null {
   return lastEnded;
 }
 
+/** When the last end was handed on (`Date.now()`), or null since a drive started. */
+export function getLastDriveEndedAt(): number | null {
+  return lastEndedAt;
+}
+
 /** Tests only: back to nobody driving, nothing stopped, no end listeners. */
 export function resetDriveModeForTests(): void {
   driveMode = null;
@@ -699,6 +709,7 @@ export function resetDriveModeForTests(): void {
   lastExitReason = null;
   heldReport = null;
   lastEnded = null;
+  lastEndedAt = null;
   claimedAnnouncements = null;
   endedListeners.clear();
   emit();

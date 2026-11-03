@@ -496,8 +496,9 @@ export function NativeAccessoryClimbRow({
       {/* The controls sit beside the climb gesture, never inside it, so their
           44pt tap targets are never stolen by the row's tap. Long-press on the
           bulb opens the controls sheet, as on the other lightbulbs now that a
-          short press disconnects. The row stays mounted as controls appear and
-          disappear: UIKit snapshots the platter between placements. */}
+          short press disconnects (during a drive it only stops driving). The
+          row stays mounted as controls appear and disappear: UIKit snapshots
+          the platter between placements. */}
       {wideLayout ? null : buttonCluster}
       <View
         pointerEvents="box-none"

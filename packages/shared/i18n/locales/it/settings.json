@@ -538,7 +538,9 @@
       "wallHeldHint": "Libera il pannello",
       "wallOpenLabel": "Il pannello è libero",
       "wallOpenHint": "Prende la parete",
-      "drivingValue": "Guidi tu il pannello"
+      "drivingValue": "Guidi tu il pannello",
+      "stopDrivingLabel": "Smetti di guidare",
+      "stopDrivingHint": "I prossimi blocchi che scegli si aprono in anteprima"
     },
     "relayToWall": "Metti il tuo blocco in parete",
     "peerDrivingBoard": "Qualcun altro ha il pannello"

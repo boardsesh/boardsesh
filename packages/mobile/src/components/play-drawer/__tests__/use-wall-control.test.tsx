@@ -36,13 +36,9 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-import {
-  DISCONNECT_TAP_GUARD_MS,
-  WINDOW_END_TAP_GRACE_MS,
-  useWallControl,
-  type DriveStartOutcome,
-  type WallControlRunners,
-} from '../use-wall-control';
+import { DISCONNECT_TAP_GUARD_MS, WINDOW_END_TAP_GRACE_MS } from '../drive-tap-guards';
+import { useWallControl, type DriveStartOutcome, type WallControlRunners } from '../use-wall-control';
+import { usePutOnBoardIntent, usePutOnBoardIntentPress } from '../use-put-on-board-intent';
 import type { KeepLightingPlan } from '../../../lib/keep-lighting';
 import * as wallSwipeHint from '../../../lib/wall-swipe-hint';
 import { resetAllSettings, setSetting } from '../../../settings';
@@ -64,6 +60,7 @@ import {
   markDriveLive,
   noteDriveClimbLit,
   resetDriveModeForTests,
+  startAlwaysDrive,
   stopDrivingForLink,
 } from '../drive-mode-store';
 
@@ -118,8 +115,6 @@ const modelFor = (
     ...EMPTY_WALL_CONTROL,
     state,
     tapAction,
-    // The resolver's rule: a bulb never stops driving.
-    bulbTapAction: tapAction === 'stop_driving' ? 'disconnect' : tapAction,
     ...extra,
   }) as WallControlModel;
 
@@ -183,15 +178,58 @@ describe('useWallControl', () => {
     resetDriveModeForTests();
   });
 
-  // Review: a bulb draws no frost, so a tap there disconnects, as it always has.
-  it.each(['bulb', 'mini_bar'] as const)('lets go of the board from the %s while driving', (control) => {
+  // Owner, 2026-11-03: a bulb's tap during a drive only stops driving ("Yes,
+  // every bulb"). The tablet and open-Duo bulb stands in for the player's, so
+  // it runs the button's tap; the player's own first-row bulb has its own
+  // block below, through the real resolver.
+  const startTapDrive = (windowMs: number | null) => {
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: null,
+      boardId: 7,
+      windowMs,
+      windowSetting: windowMs === null ? null : 'putOnBoardKeepsLighting',
+    });
+    markDriveLive();
+  };
+  it.each([
+    ["Put on board's timed drive", 'stop_window', () => startTapDrive(45_000)],
+    ['an open-ended drive', 'stop_driving', () => startTapDrive(null)],
+    ["Always drive the wall's drive", 'stop_driving', () => startAlwaysDrive({ sessionId: null, boardId: 7 })],
+  ] as const)("stops %s from the MiniPlayer's bulb and keeps the link: no disconnect", (_drive, action, start) => {
     resetDriveModeForTests();
-    const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
-    act(() => hook.result.current.press(control));
-    expect(run.disconnect).toHaveBeenCalledOnce();
-    expect(isDrivingStoppedForLink()).toBe(false);
-    expect(haptics.hapticWarning).toHaveBeenCalledOnce();
-    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'disconnect', control });
+    start();
+    expect(getDriveMode()?.phase).toBe('live');
+    const { hook, run } = setup(modelFor('lit', action, { driving: true, lightWindow: action === 'stop_window' }));
+    act(() => hook.result.current.press('mini_bar'));
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(isDrivingStoppedForLink()).toBe(true);
+    for (const runner of ['light', 'toggle', 'disconnect', 'openSheet', 'lightAgain', 'moveToBoard'] as const) {
+      expect(run[runner]).not.toHaveBeenCalled();
+    }
+    expect(haptics.hapticLight).toHaveBeenCalledOnce();
+    expect(haptics.hapticWarning).not.toHaveBeenCalled();
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action, control: 'mini_bar' });
+    resetDriveModeForTests();
+  });
+
+  it("drops the second tap of a double tap on the MiniPlayer's bulb: one stop, no disconnect", () => {
+    vi.useFakeTimers();
+    try {
+      const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+      act(() => hook.result.current.press('mini_bar'));
+      hook.rerender({ model: modelFor('lit', 'disconnect') });
+      act(() => hook.result.current.press('mini_bar'));
+      expect(run.disconnect).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(DISCONNECT_TAP_GUARD_MS);
+      act(() => hook.result.current.press('mini_bar'));
+      expect(run.disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      resetDriveModeForTests();
+    }
   });
 
   // A double tap on the frost must not stop driving and then let go of a crew's board.
@@ -303,6 +341,152 @@ describe('useWallControl', () => {
 });
 
 // #7113: the wall button's swipe and its "Light every climb" action share one runner.
+// Owner, 2026-11-03: "Yes, every bulb". The player's first-row bulb used to
+// disconnect on a tap during a drive (`bulbTapAction`); now it runs the wall
+// button's tap, so it stops driving and keeps the link, through the real
+// resolver and the real drive store. With no drive it lets go, as before.
+describe("useWallControl: the player's first-row bulb during a drive", () => {
+  beforeEach(() => {
+    resetDriveModeForTests();
+    for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    resetDriveModeForTests();
+    resetAllSettings();
+    // The blocks after this one count their own taps from zero.
+    for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
+  });
+
+  /** This phone's link lights the climb on screen, its own committed climb. */
+  const LIT_MINE: WallControlInput = {
+    commitButton: null,
+    pressAction: 'disconnect',
+    holderIsAuthoritative: false,
+    localConnected: true,
+    pending: false,
+    displayedLit: true,
+    offWall: false,
+    wallHeldLocally: false,
+    holderIsSelfAccount: false,
+    selfFace: null,
+    crewFace: null,
+    confirmArmed: false,
+    commitLabel: 'putOnWall',
+    otherClimbLit: false,
+    writing: false,
+    navigationCommits: false,
+  };
+  const litMine = (input: Partial<WallControlInput> = {}) => resolveWallControl({ ...LIT_MINE, ...input });
+  const startTapDrive = (windowMs: number | null) => {
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: null,
+      boardId: 7,
+      windowMs,
+      windowSetting: windowMs === null ? null : 'putOnBoardKeepsLighting',
+    });
+    markDriveLive();
+  };
+  // [drive, what the model reads, Wall Control Tapped's action, start it]
+  const DRIVES = [
+    [
+      "Put on board's timed drive",
+      { driveMode: 'live', lightWindow: true },
+      'stop_window',
+      () => startTapDrive(45_000),
+    ],
+    ['an open-ended drive', { driveMode: 'live' }, 'stop_driving', () => startTapDrive(null)],
+    [
+      "Always drive the wall's drive",
+      { driveMode: 'live', alwaysDrive: true },
+      'stop_driving',
+      () => startAlwaysDrive({ sessionId: null, boardId: 7 }),
+    ],
+  ] as const;
+
+  it.each(DRIVES)('stops %s on a tap and keeps the link: no disconnect', (_drive, input, action, start) => {
+    start();
+    expect(getDriveMode()?.phase).toBe('live');
+    const model = litMine(input);
+    expect(model).toMatchObject({ state: 'lit', driving: true, tapAction: action, a11yHintKey: 'stopDrivingHint' });
+    const { hook, run } = setup(model);
+    act(() => hook.result.current.press('bulb'));
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    // Always drive the wall waits for the link to drop or the next Put on board.
+    expect(isDrivingStoppedForLink()).toBe(true);
+    for (const runner of ['light', 'toggle', 'disconnect', 'openSheet', 'lightAgain', 'moveToBoard'] as const) {
+      expect(run[runner]).not.toHaveBeenCalled();
+    }
+    // Drive Mode Ended once, as the frosted button's stop.
+    expect(analytics.ended).toHaveBeenCalledOnce();
+    expect(analytics.ended).toHaveBeenCalledWith(expect.objectContaining({ reason: 'stopped' }));
+    expect(haptics.hapticLight).toHaveBeenCalledOnce();
+    expect(haptics.hapticWarning).not.toHaveBeenCalled();
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    expect(analytics.tapped).toHaveBeenCalledOnce();
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action, control: 'bulb' });
+  });
+
+  it('lets go of the board with no drive, as before', () => {
+    const model = litMine({ driveMode: 'off' });
+    expect(model).toMatchObject({ state: 'lit', driving: false, tapAction: 'disconnect', a11yHintKey: 'litHint' });
+    const { hook, run } = setup(model);
+    act(() => hook.result.current.press('bulb'));
+    expect(run.disconnect).toHaveBeenCalledOnce();
+    expect(isDrivingStoppedForLink()).toBe(false);
+    expect(haptics.hapticWarning).toHaveBeenCalledOnce();
+    expect(haptics.hapticLight).not.toHaveBeenCalled();
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'disconnect', control: 'bulb' });
+  });
+
+  it('lets go while a drive is still arming: nothing drives yet', () => {
+    act(() => {
+      enterDriveMode({ startedBy: 'tap', sessionId: null, boardId: 7, windowMs: 45_000 });
+    });
+    const { hook, run } = setup(litMine({ driveMode: 'arming' }));
+    act(() => hook.result.current.press('bulb'));
+    expect(run.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('drops the second tap of a double tap: one stop, never a hang-up', () => {
+    vi.useFakeTimers();
+    startTapDrive(45_000);
+    const { hook, run } = setup(litMine({ driveMode: 'live', lightWindow: true }));
+    act(() => hook.result.current.press('bulb'));
+    // The stop landed: the bulb now reads the plain lit board, a tap that disconnects.
+    hook.rerender({ model: litMine({ driveMode: 'off', drivingStopped: true }) });
+    act(() => hook.result.current.press('bulb'));
+    expect(run.disconnect).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(DISCONNECT_TAP_GUARD_MS);
+    });
+    act(() => hook.result.current.press('bulb'));
+    expect(run.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('says Board disconnected once the link drops after its stop, with Disconnect Bluetooth when driving ends on', () => {
+    setSetting('disconnectWhenDrivingEnds', true);
+    startTapDrive(null);
+    const { hook } = setup(litMine({ driveMode: 'live' }));
+    act(() => hook.result.current.press('bulb'));
+    expect(announceQueued).toHaveBeenLastCalledWith('playView.wallControl.stoppedDriving');
+    expect(announceQueued).not.toHaveBeenCalledWith('ble.barControl.disconnectedLabel');
+    hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
+    expect(announceQueued).toHaveBeenLastCalledWith('ble.barControl.disconnectedLabel');
+  });
+
+  it('says nothing more when the link drops later with the setting off', () => {
+    startTapDrive(null);
+    const { hook } = setup(litMine({ driveMode: 'live' }));
+    act(() => hook.result.current.press('bulb'));
+    announceQueued.mockClear();
+    hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
+    expect(announceQueued).not.toHaveBeenCalled();
+  });
+});
+
 describe('useWallControl drive', () => {
   it('starts a drive where the model offers the swipe, and passes the outcome back', () => {
     const { hook, run } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive' }));
@@ -612,7 +796,7 @@ describe('useWallControl: Put on board keeps lighting', () => {
     act(() => hook.result.current.press('button'));
     // The question holds the second row: the first-row bulb and the MiniPlayer's do nothing.
     const asking = preview({ crewSession: true, confirmArmed: true });
-    expect(asking.bulbTapAction).toBe('noop');
+    expect(asking.tapAction).toBe('noop');
     hook.rerender({ model: asking });
     act(() => hook.result.current.press('bulb'));
     act(() => hook.result.current.press('mini_bar'));
@@ -711,7 +895,6 @@ describe('useWallControl: Put on board’s timed drive', () => {
       lightWindow: true,
       driving: true,
       labelKey: 'youAreDriving',
-      bulbTapAction: 'disconnect',
     });
   function openWindow(windowMs = 45_000) {
     act(() => {
@@ -1090,5 +1273,87 @@ describe('useWallControl preview reason', () => {
     );
     act(() => hook.result.current.press('button'));
     expect(analytics.tapped).toHaveBeenCalledExactlyOnceWith({ state: 'dark', action: 'relight', control: 'button' });
+  });
+});
+
+// The MiniPlayer's bulb on an unlit last pick (owner decision A) asks the
+// player to press Put on board for it, through this handler as the bar's
+// control (`mini_bar`), which runs the button's tap, a stop included (owner,
+// 2026-11-03). A request that lands on You are driving the wall must not stop
+// the drive the climber never asked to end: the climb on screen is lit already.
+describe("useWallControl: the bar's Put on board request", () => {
+  beforeEach(() => {
+    resetDriveModeForTests();
+    for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
+  });
+  afterEach(() => {
+    resetDriveModeForTests();
+  });
+
+  function setupRequest(model: WallControlModel) {
+    const run = runners();
+    const clear = vi.fn();
+    const hook = renderHook(
+      ({ intendedFor }: { intendedFor: string | null }) => {
+        const handlers = useWallControl({
+          model,
+          runners: run,
+          climbUuid: 'climb-1',
+          playerOpen: true,
+          visible: true,
+          linked: true,
+        });
+        const press = usePutOnBoardIntentPress(model.tapAction, handlers.press);
+        usePutOnBoardIntent({ intendedFor, clear, previewItemUuid: 'queue-pick', ready: true, press });
+      },
+      { initialProps: { intendedFor: null } as { intendedFor: string | null } },
+    );
+    return { hook, run, clear };
+  }
+
+  it.each([
+    ['an open-ended drive', null, 'stop_driving'],
+    ["Put on board's timed drive", 45_000, 'stop_window'],
+  ] as const)('leaves %s running: no stop, no runner, no tap counted', (_drive, windowMs, action) => {
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs,
+        windowSetting: windowMs === null ? null : 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => markDriveLive());
+    const { hook, run, clear } = setupRequest(
+      modelFor('lit', action, { driving: true, lightWindow: windowMs !== null, labelKey: 'youAreDriving' }),
+    );
+    act(() => hook.rerender({ intendedFor: 'queue-pick' }));
+    // The request ran (and was dropped), but pressed nothing.
+    expect(clear).toHaveBeenCalledOnce();
+    expect(getDriveMode()?.phase).toBe('live');
+    expect(isDrivingStoppedForLink()).toBe(false);
+    for (const runner of Object.values(run)) expect(runner).not.toHaveBeenCalled();
+    expect(analytics.tapped).not.toHaveBeenCalled();
+    expect(analytics.ended).not.toHaveBeenCalled();
+    expect(haptics.hapticLight).not.toHaveBeenCalled();
+  });
+
+  it('presses Put on board for the pick, counted as the bar', () => {
+    const { hook, run } = setupRequest(modelFor('put_on_wall', 'put_on_wall'));
+    act(() => hook.rerender({ intendedFor: 'queue-pick' }));
+    expect(run.light).toHaveBeenCalledOnce();
+    expect(analytics.tapped).toHaveBeenCalledExactlyOnceWith({
+      state: 'put_on_wall',
+      action: 'put_on_wall',
+      control: 'mini_bar',
+    });
+  });
+
+  it('presses nothing for a climb this wall cannot light', () => {
+    const { hook, run } = setupRequest(modelFor(null, 'noop'));
+    act(() => hook.rerender({ intendedFor: 'queue-pick' }));
+    for (const runner of Object.values(run)) expect(runner).not.toHaveBeenCalled();
+    expect(analytics.tapped).not.toHaveBeenCalled();
   });
 });

@@ -117,8 +117,11 @@ Every view of it draws one model and runs one handler:
   tap-disconnect; that pip (`LightbulbHolderBadge`) is gone.
 
 The wall button is the default; View options › Buttons › **Board control** picks **Wall button** or **Lightbulb**
-(see [Board control setting](#board-control-setting)). Both use the same model. The wall button's
-"You are driving the wall" tap stops driving while keeping the link; the bulb's tap disconnects instead.
+(see [Board control setting](#board-control-setting)). Both use the same model and run the same tap (`tapAction`):
+the wall button's "You are driving the wall" tap stops driving while keeping the link, and so does the player's
+first-row bulb during any drive, with the button's hint ("Tap to stop driving"). Until 2026-11-03 the first-row bulb
+disconnected instead (`bulbTapAction`, gone). The MiniPlayer's bulb standing in for it runs the same tap, as every bulb
+does (see "A tap on any bulb during a drive only stops driving" below).
 Holding either opens the board sheet while this phone holds the link.
 
 **The label says what a press does** (#7113, Marco). The bulb's fill, outline or spinner already shows the
@@ -199,13 +202,46 @@ flat amber fallback; the label still says what the next press does.
   a tick. A screen reader hears "Driving the wall" as the bulb's value, with no number: a value stepping every
   10 s would re-render the bar and could be read again while focus rests there, and the drive's start
   announcement already says how long it lasts. The open Duo's bulb is already labelled "You are driving the
-  wall", so it adds no value. Taps and holds are unchanged. A one-slot bar (the collapsed iOS platter, the closed
+  wall", so it adds no value. Holds are unchanged. A one-slot bar (the collapsed iOS platter, the closed
   Duo, a 320 pt Display Zoom iPhone) keeps the bulb in its slot for the whole timed drive, even with the board held,
   so the ring stays in sight while you scroll the Climbs list; ✓ takes the slot back when the drive ends. An
   open-ended drive has no end to show, so ✓ keeps the slot then (an unlit last pick's bulb keeps it as before), and
   a timed workout block's one slot stays Sent. Wherever the bulb is hidden, the climb link adds "Driving the wall"
   to its spoken value. The first row's bulb in the player draws the same amber ring, drops its halo for the timed
   drive as the bar's bulbs do, and keeps its 10 s spoken value.
+- **A tap on any bulb during a drive only stops driving (owner, 2026-11-03).** "When I press the accessory bar
+  lightbulb while I'm in the 45 s driving period, we should only stop driving, not also immediately disconnect", then,
+  asked about the other bulbs, "Yes, every bulb". While this phone drives the wall (Put on board's timed drive, an
+  open-ended drive, Always drive the wall's), a tap on any lightbulb stops driving and keeps the link, the frosted
+  button's own stop (`stopDrivingForLink`, `Drive Mode Ended` `stopped`) and the Lock Screen bulb's (#7214). Under
+  Always drive the wall the stop holds until the link drops or the next Put on board; with Disconnect Bluetooth when
+  driving ends on, the board is let go of all the same, since that is the climber's setting. A light buzz, and screen
+  readers hear "Stopped driving the wall". With no drive (none, or one still arming), the tap does what it did: hang up,
+  connect, take or release a wall with no lights, open the wall's climb on a crewmate's board, or Put on board for the
+  last pick. The bulbs:
+  - The player's first-row bulb and the tablet or open-Duo bulb (`PaneWallControlBulb`, as `mini_bar`) run the player's
+    handler, whose `tapAction` is the stop during a drive.
+  - The MiniPlayer's own bulb (`BoardControlIndicator`) and the last pick's Put on board bulb (`PickPutOnBoardBulb`), on
+    the iOS 26 accessory and the floating Material / JS bar (`queue-control/bar-bulb-tap.ts`).
+  - The toolbar's bulb on Climbs and Discover (`LightbulbToolbarAction`, and the rail's native item through
+    `useToolbarLightbulb`), the Android app bar's (`MaterialLightbulbAction`), the Climbs header's You have the board
+    pill (`BoardHeldCapsule`) and the create-climb editor's (`CreateDrawerActionBar`), through `useBulbDriveTap` in the
+    same file.
+
+  Every bulb outside the player reads the drive from the store at the press, not from the last render, and drops a tap
+  the frosted button would drop: the second tap of a double tap within 600 ms of a stop (`DISCONNECT_TAP_GUARD_MS`),
+  and any tap within 2 s of a timed drive running out on its own (`WINDOW_END_TAP_GRACE_MS`), which was aimed at the
+  stop and must not hang up, reconnect, or put the pick up and start a fresh drive. With Disconnect Bluetooth when
+  driving ends on, a screen reader hears "Board disconnected" once the link actually drops after a stop, as after the
+  frosted button's. The header pill shows only while this phone holds the board, so it usually goes in the same render
+  as that drop; the Climbs header (`ClimbTopChrome`, `useOwedDropAnnouncement`) says it for the pill then, once. A
+  header that missed the drop never says it later: once the header or any bulb sees the link come back, the line is
+  forgotten. Screen readers hear what the tap does while a bulb shows a drive: a bulb whose label is its action (the
+  MiniPlayer's, the last pick's, the toolbar's, the app bar's, the editor's) says "Stop driving" with the hint "Your
+  next picks open as previews" (`ble.barControl.stopDrivingLabel` / `stopDrivingHint`; "Driving the wall" stays the
+  MiniPlayer bulb's value). The header pill keeps the words drawn on it as its label (Voice Control says them) and takes
+  the frosted button's hint, "Tap to stop driving. Hold for board controls." The first-row bulb keeps "Board lights" and
+  takes the same hint; the tablet bulb keeps the wall button's "You are driving the wall" and that hint.
 - **Driving reaches the Lock Screen, the Dynamic Island and the Android notification (2.7).** iOS draws an amber
   ring that drains around the bulb for a timed drive, with no digits, and a full amber disc for an open-ended one; Android's header
   says "Driving the wall", with the system countdown for a timed drive and no clock for an open-ended one. Both keep
@@ -430,7 +466,14 @@ player's card back (`forgetPreviewFirstTip`).
   button, full width or in a workout's top row), `bulb`, or `mini_bar` (the MiniPlayer's bulb standing in for a
   tablet or open-Duo player's). A tap on Disconnect board logs `{state: 'lit', action: 'disconnect'}`; a tap on
   You are driving the wall logs `{state: 'lit', action: 'stop_driving'}`, or `stop_window` during Put on board's
-  timed drive, so a query on `stop_driving` alone misses most 2.7 stops.
+  timed drive, so a query on `stop_driving` alone misses most 2.7 stops. From 2026-11-03 `mini_bar` and `bulb` log
+  those stops too (before, a tap on either during a drive logged `disconnect`). A stop from a phone's bar bulb
+  (`BoardControlIndicator`, `PickPutOnBoardBulb`) logs the same `{state: 'lit', action: 'stop_driving' |
+  'stop_window', control: 'mini_bar'}` (`useBarBulbStopDriving`), so bar stops count alike on a phone and a tablet
+  and read apart from the frosted button's (`button`). A stop from the other bulbs logs the same with their Board
+  Connect Tapped surface as `control`: `toolbar` (glass, or the rail's native item), `app_bar`, `header_pill` and
+  `create_climb`. `Drive Mode Ended {reason: 'stopped'}` carries no surface. Those bulbs' other taps (hang up,
+  connect, a crewmate's climb) still log no Wall Control Tapped.
 - `Wall Control Swiped {state, outcome, control}` (#7113): once per swipe that got going (a drag past 10 pt), with
   the state it began in. `outcome`: `drive` (let go past the commit point and a drive started), `cancelled` (let go
   short of it), `refused` (past it, but nothing could start: presence says another account holds the board). Whether the
@@ -750,7 +793,9 @@ when that changed after it, whichever happened last (owner decision A, 2026-11-0
 as the same preview with its list. On a pick its controls act on the pick: ✓ logs it, Mirror flips its own flip,
 ⏮ ⏭ step along its list by the player's swipe rules, and the bulb, while the pick isn't lit, is Put on board for it
 (the player opens on the pick and presses Put on board through the wall button's handler: the busy-wall question in a
-crew, the timed drive per Stop driving after, Put on {board} for a pick on another board at this gym). A pick counts as
+crew, the timed drive per Stop driving after, Put on {board} for a pick on another board at this gym). While this
+phone drives the wall, a tap on any bulb stops driving instead and keeps the link (owner, 2026-11-03; see
+"A tap on any bulb during a drive only stops driving" above). A pick counts as
 lit only through a live link, and one this wall can't light gets no bulb; in the collapsed platter the pick's bulb takes
 the one slot only while the pick is unlit on a board with lights or this phone's timed drive runs, otherwise ✓ keeps it. The Lock Screen, the Climbs header's wall capsule and the board history
 sheet keep showing the wall.

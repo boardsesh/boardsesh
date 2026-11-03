@@ -4,7 +4,8 @@
 // once, through the wall button's own handler.
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { usePutOnBoardIntent, type PutOnBoardIntentInputs } from '../use-put-on-board-intent';
+import { putOnBoardIntentPresses, usePutOnBoardIntent, type PutOnBoardIntentInputs } from '../use-put-on-board-intent';
+import type { WallControlAction } from '../wall-control';
 
 function inputs(over: Partial<PutOnBoardIntentInputs> = {}): PutOnBoardIntentInputs {
   return {
@@ -46,5 +47,21 @@ describe('usePutOnBoardIntent', () => {
     renderHook(usePutOnBoardIntent, { initialProps: props });
     expect(props.press).not.toHaveBeenCalled();
     expect(props.clear).not.toHaveBeenCalled();
+  });
+});
+
+// The bar's bulb runs the button's tap (owner, 2026-11-03), stops included, so
+// a Put on board request that lands on You are driving the wall must not stop
+// the drive: the climb on screen is lit already.
+describe('putOnBoardIntentPresses', () => {
+  it.each(['put_on_wall', 'connect', 'relight', 'move_to_board', 'relay', 'disconnect'] as WallControlAction[])(
+    'presses for %s, as before',
+    (action) => {
+      expect(putOnBoardIntentPresses(action)).toBe(true);
+    },
+  );
+
+  it.each(['noop', 'stop_driving', 'stop_window'] as WallControlAction[])('never presses for %s', (action) => {
+    expect(putOnBoardIntentPresses(action)).toBe(false);
   });
 });
