@@ -352,6 +352,9 @@ describe('Widget target Swift drift', () => {
     expect(occurrences('SharedLockScreenPress.begin(')).toBe(1);
     expect(occurrences('SharedLockScreenPress.cancel(pressId')).toBe(1);
     expect(occurrences('SharedLockScreenPress.settle(pressId')).toBe(1);
+    // The call, not the helper's own declaration further down.
+    const darwinPostCall = '\n        postQueueNavigateDarwinNotification()\n';
+    expect(occurrences(darwinPostCall)).toBe(1);
 
     const begin = navigationSource.indexOf('SharedLockScreenPress.begin(');
     const network = navigationSource.indexOf('await WidgetNetworking.sendNavigation(');
@@ -361,7 +364,7 @@ describe('Widget target Swift drift', () => {
     const bleWrite = navigationSource.indexOf('LiveActivityBleBridge.writeBoardForIntent(');
     const recordPress = navigationSource.indexOf('SharedLightingWindowRuntime.recordPress(');
     const settle = navigationSource.indexOf('SharedLockScreenPress.settle(pressId');
-    const darwinPost = navigationSource.indexOf('postQueueNavigateDarwinNotification()', settle);
+    const darwinPost = navigationSource.indexOf(darwinPostCall);
 
     expect(begin).toBeGreaterThanOrEqual(0);
     expect(network).toBeGreaterThan(begin);
