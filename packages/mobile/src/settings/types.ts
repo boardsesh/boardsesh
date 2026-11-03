@@ -155,6 +155,14 @@ export type AppSettings = {
    */
   disconnectWhenDrivingEnds: boolean;
   /**
+   * Relay mode (#7220): "Let others on this board light climbs through my
+   * phone". While this phone holds a Relay mode MoonBoard (an original
+   * controller that takes one phone), other climbers' climbs light through its
+   * link. On by default on every MoonBoard, home boards as well as gyms
+   * (owner, 2026-11-03). Sent to the server with `setBoardRelayAccepting`.
+   */
+  acceptRelayedClimbs: boolean;
+  /**
    * One-shot: auto-disconnect's choices (the retired `autoDisconnectBle` and
    * `autoDisconnectTimeoutSeconds` keys) were carried into Stop driving after
    * and `disconnectWhenDrivingEnds`. Written once by `migrateAutoDisconnect`;

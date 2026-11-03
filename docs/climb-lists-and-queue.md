@@ -230,6 +230,11 @@ notification, a deep link), the MiniPlayer's ⏮ ⏭ (`useDrivingWall`), and eve
   announcement. It names nobody: the queue item says who added the climb, not who put it up,
   and the event doesn't say who moved the wall. A crewmate's move that the driver's own swipe
   overtakes is never said. The driver never sees the busy-wall question; crewmates still do.
+- **A relayed drive (#7220, behind `moonboard-relay-mode`).** On an original MoonBoard that
+  another phone holds, every rule above holds, but each climb that would light goes to the
+  holder's phone as a relay request instead of over this phone's link. The queue, history and
+  previews stay this phone's own; outside a crew nothing joins the holder's queue. Details:
+  `docs/board-connection-holder.md`, "Relay mode (#7220): the relaying phone".
 - **Going live and counting.** The drive goes live at the first wall confirm on this phone's
   link (the auto-sender's write, read off the wall-confirm bus at the app root, so closing the
   player mid-connect still goes live). `climbsLit` counts each new climb confirmed while

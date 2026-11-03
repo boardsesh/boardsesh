@@ -90,6 +90,8 @@ import { SHEET_SETTLE_MS } from './sheet-presentation-provider';
 import { useMoonboardRelayModeEnabled, useStaleCurrentHoldEnabled } from './feature-flags-provider';
 import type { ResolvedMoonboardLinkMode } from '@boardsesh/board-config';
 import { reportMoonboardLinkDetection } from '../lib/ble/moonboard-link-detection';
+import { subscribeRelayRequests } from '../lib/board-relay/relay-bus';
+import { createRelayRequestHandler, type RelayRequestHandlerDeps } from '../lib/board-relay/relay-request-handler';
 
 export type ReassertWallOptions = {
   /** A press whose own connect brought the link up: carry the ask to that link. */
@@ -98,6 +100,8 @@ export type ReassertWallOptions = {
 
 type BluetoothContextValue = {
   isConnected: boolean;
+  /** MoonBoard link mode (#7220), null off a MoonBoard. Optional for test doubles. */
+  moonboardLinkMode?: ResolvedMoonboardLinkMode | null;
   /** Account observed holding this board during our BLE connection, scoped to the session. */
   lastLocalHolderUserId: string | null;
   loading: boolean;
@@ -1067,6 +1071,7 @@ export function BluetoothProvider({
     reportDisconnectForBoard,
     reportClearForBoard,
     restampBoardMembershipByUuid,
+    setRelayAcceptingForBoard,
   } = useBoardPresenceControls();
   const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
   const lastConnectionSeqRef = useRef(lastConnectionSeq);
@@ -1075,6 +1080,9 @@ export function BluetoothProvider({
   // or while this device holds one virtually — so the profile read it needs never
   // runs on the ordinary Bluetooth path.
   const [wallHeldByOtherUser, setWallHeldByOtherUser] = useState(false);
+  // Relay mode (#7220): the board this phone's own link last reported a climb
+  // on as its holder, so it can tell the server whether others may relay.
+  const [heldAsReporterBoardId, setHeldAsReporterBoardId] = useState<number | null>(null);
   const { showUndoWallChangeSnackbar } = useQueueSnackbar();
   // Queue actions (no state subscription, so the provider doesn't re-render on
   // queue changes) + toast, for advancing past a spill climb and telling the user.
@@ -1378,6 +1386,8 @@ export function BluetoothProvider({
 
       lastAcceptedReportSignatureRef.current = reportSignature;
       lastAcceptedWallSignatureRef.current = presenceClimbReportSignature(wallCurrentClimbRef.current);
+      // Relay mode (#7220): this phone now holds the board through its link.
+      if (bleConnectedRef.current) setHeldAsReporterBoardId(boardId);
       if (!isOrientationOnlyChange) undoWallChangeTargetRef.current = undoTarget;
       const showUndoToast = consumeUndoWallChangeToastArm(undoToastArmId);
       if (showUndoToast && !isOrientationOnlyChange && undoTarget?.frames) {
@@ -2561,6 +2571,71 @@ export function BluetoothProvider({
     [commitWallFrames, queueMirrorFor, sendFencedClimbReport],
   );
 
+  // Relay mode (#7220), the holder's side: another phone on this board asked
+  // this one to light a climb (`BoardClimbRelayRequested`, which only the
+  // holder's subscription receives). With this phone's own link up on a Relay
+  // mode MoonBoard and "Let others on this board light climbs through my
+  // phone" on, it writes the climb over Bluetooth the way the wall kiosk's
+  // relight does (fenced against a clear or a reconnect, BLE first, then the
+  // report) and reports it with the request's id, which the relaying phone
+  // matches. Anything else ignores the request: the relaying phone's timeout
+  // says it didn't land. One "{name} is driving" line per relayer per run of
+  // relays (`createRelayRequestHandler`).
+  const [acceptRelayedClimbs] = useSetting('acceptRelayedClimbs');
+  const isRelayMoonboard = boardName === 'moonboard' && moonboardLinkMode?.mode === 'relay';
+  const relayRequestDepsRef = useRef<RelayRequestHandlerDeps | null>(null);
+  relayRequestDepsRef.current = {
+    canLight: () =>
+      relayModeEnabled && acceptRelayedClimbs && isRelayMoonboard && isConnected && !pendingPresenceResolveRef.current,
+    boardId: () => presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current,
+    write: async (frames, mirrored, climbUuid) => {
+      const written = await sendFramesToBoard(frames, mirrored, undefined, { sendSource: 'relay', climbUuid });
+      if (written === true) lastPhysicalFramesRef.current = physicalFramesSignature(frames, mirrored);
+      return written === true;
+    },
+    fence: () => {
+      const operationEpoch = wallOperationEpochRef.current;
+      const operationBoardUuid = boardUuidRef.current;
+      return () => operationEpoch === wallOperationEpochRef.current && operationBoardUuid === boardUuidRef.current;
+    },
+    report: (boardId, climb, angle, relayRequestId, isCurrentOperation) => {
+      lastAcceptedReportSignatureRef.current = null;
+      return sendFencedClimbReport(isCurrentOperation, () =>
+        reportClimbForBoardRef.current(boardId, climb, angle, { relayRequestId }).catch((error: unknown) => {
+          console.warn('[board-presence] relayed report failed', error);
+          return false;
+        }),
+      );
+    },
+    showRelayerLine: (name) =>
+      showToast(
+        name === null
+          ? tSession('mobile.boardPresence.relayerDrivingAnonymous')
+          : tSession('mobile.boardPresence.relayerDriving', { name }),
+        'info',
+      ),
+  };
+  useEffect(() => {
+    const handler = createRelayRequestHandler(() => relayRequestDepsRef.current);
+    return subscribeRelayRequests((request) => {
+      void handler(request);
+    });
+  }, []);
+
+  // The holder tells the server whether others may relay through it: right
+  // after this phone's first accepted report on a Relay mode MoonBoard (a new
+  // holder starts with relay on, so this only matters when it's off) and
+  // whenever the setting changes while it holds the board.
+  useEffect(() => {
+    if (!isConnected) setHeldAsReporterBoardId(null);
+  }, [isConnected]);
+  const setRelayAcceptingForBoardRef = useRef(setRelayAcceptingForBoard);
+  setRelayAcceptingForBoardRef.current = setRelayAcceptingForBoard;
+  useEffect(() => {
+    if (!relayModeEnabled || !isRelayMoonboard || heldAsReporterBoardId === null) return;
+    void setRelayAcceptingForBoardRef.current(heldAsReporterBoardId, acceptRelayedClimbs);
+  }, [relayModeEnabled, isRelayMoonboard, heldAsReporterBoardId, acceptRelayedClimbs]);
+
   const clearBoard = useCallback(
     () => sendFramesToBoard('', false, undefined, { sendSource: 'clear' }),
     [sendFramesToBoard],
@@ -2893,6 +2968,7 @@ export function BluetoothProvider({
   const value = useMemo<BluetoothContextValue>(
     () => ({
       isConnected,
+      moonboardLinkMode: moonboardLinkMode ?? null,
       lastLocalHolderUserId,
       loading,
       connect,
@@ -2925,6 +3001,7 @@ export function BluetoothProvider({
     }),
     [
       isConnected,
+      moonboardLinkMode,
       lastLocalHolderUserId,
       loading,
       connect,

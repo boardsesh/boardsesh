@@ -11,11 +11,12 @@ import {
   type BoardConnection,
   type PlayDrawerLightbulbPressAction,
 } from '../play-drawer/lightbulb-control';
-import { useBoardConnectionState } from './use-board-connection-state';
+import { useBoardConnectionState, type BoardConnectionState } from './use-board-connection-state';
 import { useCrewHolderUnconfirmed } from './use-crew-holder-unconfirmed';
 import { useClimbBoardConnect } from '../../lib/boards/climb-board-connect-context';
 import type { ClimbBoardModel } from '../../lib/boards/gym-board-for-climb';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { relayClimbThroughHolder } from '../../lib/board-relay/relay-path-store';
 
 /** Which bulb was tapped, for Board Connect Tapped. */
 export type LightbulbSurface = Extract<
@@ -128,6 +129,8 @@ export type LightbulbControl = {
    * label the difference between "nothing to do" and "someone else is driving".
    */
   holderIsAuthoritative: boolean;
+  /** Relay mode (#7220): the holder this phone relays through (`useBoardConnectionState`). */
+  boardRelayHolder: BoardConnectionState['boardRelayHolder'];
   /**
    * Long-press: opens the BLE controls sheet when this device holds the link.
    * No-op when disconnected (short press connects) or when no `onOpenControls`
@@ -171,7 +174,10 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     wallHeldLocally,
     inAppBoardConnection,
     holderIsAuthoritative: holderConfirmed,
+    boardRelayHolder,
   } = useBoardConnectionState();
+  // Relay mode (#7220): never while a crewmate's hold (confirmed or not) makes the session queue the relay.
+  const boardRelay = (boardRelayHolder ?? null) !== null;
   // A crewmate's board that presence hasn't confirmed yet reads as theirs: a
   // tap relays and never connects, so it can't both move the crew's climb and
   // open the picker (#7017 QA). Its owner confirms it, or lets it go in 10 s.
@@ -193,8 +199,9 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
         wallHeld: wallHeldLocally,
         holderIsAuthoritative,
         canRelay,
+        boardRelay,
       }),
-    [bluetooth, holderIsAuthoritative, canRelay, ledless, wallHeldLocally],
+    [bluetooth, holderIsAuthoritative, canRelay, ledless, wallHeldLocally, boardRelay],
   );
 
   // Bluetooth Connection Success / Failed record the outcome a few hundred ms
@@ -291,6 +298,12 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // A peer is driving: light the climb through their link instead of opening
     // a second one the board will not accept. No BLE is touched here.
     if (pressAction === 'relay') {
+      // Relay mode (#7220) with no climb of the surface's own (a toolbar or
+      // app-bar bulb): the current climb goes to the holder's phone.
+      if (!holderIsAuthoritative && boardRelay && !onRelayToHolder) {
+        relayClimbThroughHolder(null);
+        return;
+      }
       onRelayToHolder?.();
       return;
     }
@@ -300,7 +313,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // and makes this device the holder; on disconnect the bluetooth provider
     // fires the release itself, so we don't report here.
     void connect();
-  }, [bluetooth, pressAction, onRelayToHolder, connect]);
+  }, [bluetooth, pressAction, onRelayToHolder, connect, holderIsAuthoritative, boardRelay]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful
@@ -323,6 +336,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     wallHeldLocally,
     pressAction,
     holderIsAuthoritative,
+    boardRelayHolder,
     inAppBoardConnection,
   };
 }

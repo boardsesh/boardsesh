@@ -32,8 +32,15 @@ import {
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
-import { BoardPresenceProvider, useBoardPresenceActions } from '@boardsesh/board-presence-react';
-import type { BoardCandidate, ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
+import { BoardPresenceProvider, useBoardPresenceActions, type RelayClimbArgs } from '@boardsesh/board-presence-react';
+import type {
+  BoardCandidate,
+  ClimbQueueItemInput,
+  RelayBoardClimbResult,
+  ResolvedBoard,
+} from '@boardsesh/shared-schema';
+import { publishRelayRequest } from '../lib/board-relay/relay-bus';
+import { useMoonboardRelayModeEnabled } from './feature-flags-provider';
 import {
   createMobileBoardPresenceClient,
   type MobileBoardPresenceClient,
@@ -192,7 +199,24 @@ type BoardPresenceControlsValue = {
    * Report directly to a specific board id. Used immediately after a connect
    * resolve when the React boardId context has not re-rendered yet.
    */
-  reportClimbForBoard: (boardId: number, climb: ClimbQueueItemInput, angle: number | null) => Promise<boolean>;
+  reportClimbForBoard: (
+    boardId: number,
+    climb: ClimbQueueItemInput,
+    angle: number | null,
+    /** Relay mode (#7220): the id of the relay request this light answers, exactly as received. */
+    options?: { relayRequestId?: string | null },
+  ) => Promise<boolean>;
+  /**
+   * Relay mode (#7220): ask the phone holding a Relay mode MoonBoard to light
+   * a climb. Rejects when no transport is available or the request fails.
+   */
+  relayClimbForBoard: (args: RelayClimbArgs) => Promise<RelayBoardClimbResult>;
+  /**
+   * Relay mode (#7220): as the board's holder, turn others' relayed climbs on
+   * or off. Resolves false when no transport is available or this connection
+   * doesn't hold the board.
+   */
+  setRelayAcceptingForBoard: (boardId: number, accepting: boolean) => Promise<boolean>;
   /**
    * Tell the backend this client released its board hold (explicit lightbulb-off
    * or a detected BLE drop) so the "who's connected" indicator frees. No-op when
@@ -332,9 +356,18 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
 
   // The injected transport, built once. `USES_SEED_TRANSPORT` is a module
   // constant, so the empty dep list is exact rather than a lint exception.
+  // Relay mode (#7220): with the flag on, every phone subscribes with the relay
+  // document, the holder for its requests and a relaying phone for the echo of
+  // each `relayRequestId`. Off (and in screenshot mode, where the flag is
+  // always off and the seed transport answers), the recorded document stays.
+  // A flip makes a new client, which re-subscribes once.
+  const relayModeEnabled = useMoonboardRelayModeEnabled();
   const client = useMemo<MobileBoardPresenceClient | null>(
-    () => (USES_SEED_TRANSPORT ? createScreenshotBoardPresenceClient() : createMobileBoardPresenceClient(getWsClient)),
-    [],
+    () =>
+      USES_SEED_TRANSPORT
+        ? createScreenshotBoardPresenceClient()
+        : createMobileBoardPresenceClient(getWsClient, { relayMode: relayModeEnabled }),
+    [relayModeEnabled],
   );
   const clientRef = useRef(client);
   clientRef.current = client;
@@ -687,13 +720,20 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   );
 
   const reportClimbForBoard = useCallback(
-    async (targetBoardId: number, climb: ClimbQueueItemInput, angle: number | null): Promise<boolean> => {
+    async (
+      targetBoardId: number,
+      climb: ClimbQueueItemInput,
+      angle: number | null,
+      options?: { relayRequestId?: string | null },
+    ): Promise<boolean> => {
       const activeClient = clientRef.current;
       if (!enabledRef.current || activeClient === null) {
         return false;
       }
       try {
-        return await activeClient.reportClimb(targetBoardId, climb, angle);
+        return await (options?.relayRequestId
+          ? activeClient.reportClimb(targetBoardId, climb, angle, { relayRequestId: options.relayRequestId })
+          : activeClient.reportClimb(targetBoardId, climb, angle));
       } catch (error) {
         console.warn('[board-presence] reportBoardClimb failed', error);
         return false;
@@ -701,6 +741,23 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     },
     [],
   );
+
+  const relayClimbForBoard = useCallback(async (args: RelayClimbArgs): Promise<RelayBoardClimbResult> => {
+    const activeClient = clientRef.current;
+    if (!enabledRef.current || activeClient === null) throw new Error('board presence unavailable');
+    return activeClient.relayClimb(args);
+  }, []);
+
+  const setRelayAcceptingForBoard = useCallback(async (targetBoardId: number, accepting: boolean): Promise<boolean> => {
+    const activeClient = clientRef.current;
+    if (!enabledRef.current || activeClient === null) return false;
+    try {
+      return await activeClient.setRelayAccepting(targetBoardId, accepting);
+    } catch (error) {
+      console.warn('[board-presence] setBoardRelayAccepting failed', error);
+      return false;
+    }
+  }, []);
 
   const reportDisconnectForBoard = useCallback(async (targetBoardId: number): Promise<boolean> => {
     const activeClient = clientRef.current;
@@ -837,11 +894,15 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       resolveAndBindBoardByUuid,
       restampBoardMembershipByUuid,
       reportClimbForBoard,
+      relayClimbForBoard,
+      setRelayAcceptingForBoard,
       reportDisconnectForBoard,
       reportClearForBoard,
       resetPresence,
     }),
     [
+      relayClimbForBoard,
+      setRelayAcceptingForBoard,
       enabled,
       visibleBoardId,
       visibleBoardUuid,
@@ -858,7 +919,12 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
 
   return (
     <BoardPresenceControlsContext.Provider value={controls}>
-      <BoardPresenceProvider boardId={visibleBoardId} boardUuid={readerBoardUuid} client={liveClient}>
+      <BoardPresenceProvider
+        boardId={visibleBoardId}
+        boardUuid={readerBoardUuid}
+        client={liveClient}
+        onRelayRequested={relayModeEnabled ? publishRelayRequest : undefined}
+      >
         <BoardPresenceForegroundSync />
         {/* Dev builds only: a story can fake a live value (a crew in the session)
             for everything below. A pass-through in production. docs/mobile-stories.md */}
@@ -916,6 +982,10 @@ const DISABLED_CONTROLS: BoardPresenceControlsValue = {
   resolveAndBindBoardByUuid: async () => null,
   restampBoardMembershipByUuid: async () => false,
   reportClimbForBoard: async () => false,
+  relayClimbForBoard: async () => {
+    throw new Error('board presence unavailable');
+  },
+  setRelayAcceptingForBoard: async () => false,
   reportDisconnectForBoard: async () => false,
   reportClearForBoard: async () => false,
   resetPresence: () => {},

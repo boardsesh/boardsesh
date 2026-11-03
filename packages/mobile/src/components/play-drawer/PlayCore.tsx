@@ -209,6 +209,8 @@ import { useDriveLightingMode, useDriveModePhase, useDrivingStoppedForLink } fro
 import { startDrive, startKeepLighting } from './drive-runner';
 import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
 import { formatLetsGo, useLetsGo } from './board-lets-go-store';
+import { formatRelayLost, useRelayLost } from './relay-lost-store';
+import { relayClimbThroughHolder } from '../../lib/board-relay/relay-path-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
@@ -847,6 +849,10 @@ export function PlayCore({
   // the hook's press callback doesn't re-create on every preview change.
   const relayToHolderRef = useRef<(() => void) | null>(null);
   const handleRelayToHolder = useCallback(() => relayToHolderRef.current?.(), []);
+  // Relay mode (#7220): the same relay as a runner that says whether it went,
+  // for the wall control's Put on board timed drive. Set below with the relay.
+  const boardRelayRunnerRef = useRef<(() => boolean) | null>(null);
+  const handleBoardRelay = useCallback(() => boardRelayRunnerRef.current?.() ?? false, []);
   // Only a PINNED PREVIEW is relayable. With none, the displayed climb is
   // already the queue's current one, so there is nothing to put up and the tap
   // resolves to 'noop' — reported honestly rather than claiming a 'relay' that
@@ -864,6 +870,7 @@ export function PlayCore({
     moveToClimbBoard: moveLightbulbToClimbBoard,
     pressAction: lightbulbPressAction,
     holderIsAuthoritative: lightbulbHolderIsAuthoritative,
+    boardRelayHolder,
     wallHeldLocally,
     ledless: boardIsLedless,
   } = useLightbulbControl({
@@ -871,6 +878,9 @@ export function PlayCore({
     onRelayToHolder: handleRelayToHolder,
     canRelay: canRelayToHolder,
   });
+  // Relay mode (#7220): this phone lights the wall through the phone holding
+  // this Relay mode MoonBoard, outside a crew session too.
+  const boardRelay = (boardRelayHolder ?? null) !== null;
   const { data: activeBoardForNavigation } = useActiveBoard();
   // The board at this gym that draws the climb on screen, when it isn't the
   // active one (#7076): what Put on {board} names and moves to. The same lookup
@@ -1428,7 +1438,11 @@ export function PlayCore({
       resolveWallControl({
         commitButton,
         pressAction: lightbulbPressAction,
-        holderIsAuthoritative: lightbulbHolderIsAuthoritative,
+        // Relay mode (#7220): the Relay mode MoonBoard's holder reads as the
+        // board's holder (their face, Put on board relays), with the swipe
+        // and drives a crewmate's board doesn't offer (`boardRelay`).
+        holderIsAuthoritative: lightbulbHolderIsAuthoritative || boardRelay,
+        boardRelay,
         localConnected: wallLinked,
         pending: lightbulbPending,
         displayedLit,
@@ -1474,6 +1488,7 @@ export function PlayCore({
       commitButton,
       lightbulbPressAction,
       lightbulbHolderIsAuthoritative,
+      boardRelay,
       wallLinked,
       lightbulbPending,
       displayedLit,
@@ -2163,6 +2178,7 @@ export function PlayCore({
         startedBy,
         committing,
         commit: () => handleSetActive({ skipBusyWall: true }),
+        relayed: boardRelay,
         connected: bluetoothConnected,
         connect: () => connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb),
         // A press, so after its connect the ask carries to the link it brought
@@ -2181,6 +2197,7 @@ export function PlayCore({
       commitBarModel.mode,
       handleSetActive,
       displayedClimb,
+      boardRelay,
       bluetoothConnected,
       connectLightbulb,
     ],
@@ -2197,9 +2214,10 @@ export function PlayCore({
         sessionId,
         boardType: boardName,
         wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
+        relayed: boardRelay,
       });
     },
-    [sessionId, boardName],
+    [sessionId, boardName, boardRelay],
   );
   // Put on {board} (#7076): the climb on screen is on another board at this gym.
   // A preview goes up first (the busy-wall question can take the tap instead),
@@ -2252,7 +2270,14 @@ export function PlayCore({
   // "Board disconnected · Put on board reconnects", for 10 s on any climb,
   // beside the board art and never over it (`use-board-lets-go.ts`).
   const letsGo = useLetsGo();
-  const letsGoCaption = letsGo ? formatLetsGo(letsGo, t, { short: true }) : null;
+  // Relay mode (#7220): the path through the holder's phone was lost, in the
+  // same place and for the same 10 s (`use-relayed-drive.ts`).
+  const relayLost = useRelayLost();
+  const letsGoCaption = letsGo
+    ? formatLetsGo(letsGo, t, { short: true })
+    : relayLost
+      ? formatRelayLost(relayLost, t, { short: true })
+      : null;
   // Line 2's order: the busy wall, the board letting go, a crewmate's put-up, the preview note
   // ("Preview · Up next: 4 waiting", in place of "not on the wall"), the browse
   // caption, then on the climber's own climb "Up next first · 4 climbs".
@@ -2309,8 +2334,10 @@ export function PlayCore({
       moveToBoard: handleMoveToGymBoard,
       drive: startDriving,
       keepLighting: handleKeepLighting,
+      relay: handleBoardRelay,
     }),
     [
+      handleBoardRelay,
       handleLightThisClimb,
       climbOnCrewGymBoard,
       handleRelayToHolder,
@@ -2361,9 +2388,22 @@ export function PlayCore({
   //
   // With no preview pinned, leave the session current climb alone. This is not
   // a remote re-light: recovering a failed holder write needs a reassert path.
+  //
+  // Relay mode (#7220) on a Relay mode MoonBoard: a preview goes up first (as
+  // Put on board does with a link), then the climb on screen goes to the
+  // holder's phone as a relay request. This phone's queue is its own; nothing
+  // joins the holder's.
+  const displayedQueueItemForRelay = drawerPreviewItem ?? currentClimbQueueItem;
+  const relayDisplayedThroughHolder = useCallback((): boolean => {
+    const item = displayedQueueItemForRelay;
+    if (!item || showBoardMismatch) return false;
+    if (drawerPreviewItem && !handleSetActive()) return false;
+    return relayClimbThroughHolder(item);
+  }, [displayedQueueItemForRelay, drawerPreviewItem, showBoardMismatch, handleSetActive]);
   useEffect(() => {
-    relayToHolderRef.current = commitDisplayedToWall;
-  }, [commitDisplayedToWall]);
+    relayToHolderRef.current = boardRelay ? relayDisplayedThroughHolder : commitDisplayedToWall;
+    boardRelayRunnerRef.current = boardRelay ? relayDisplayedThroughHolder : null;
+  }, [boardRelay, relayDisplayedThroughHolder, commitDisplayedToWall]);
 
   const handleMirror = useCallback(() => {
     if (!displayedClimbUuid) return;

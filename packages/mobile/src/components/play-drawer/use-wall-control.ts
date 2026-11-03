@@ -73,6 +73,13 @@ export type WallControlRunners = {
    * lit confirm.
    */
   keepLighting: (plan: KeepLightingPlan) => void;
+  /**
+   * Relay mode (#7220): send the climb on screen to the phone holding this
+   * Relay mode MoonBoard (a preview goes up first). False when nothing went,
+   * so Put on board's timed drive isn't armed for a relay that never left.
+   * Absent where there is no board relay.
+   */
+  relay?: () => boolean;
 };
 
 export type UseWallControlOptions = {
@@ -273,7 +280,9 @@ export function useWallControl({
     // on the question goes. A noop (a bulb while the question holds the second
     // row) leaves it, so Put mine up still keeps lighting.
     if (action !== 'noop') pendingKeepLightingRef.current = null;
-    const putsUp = isPutUpAction(action);
+    // A relay on a Relay mode MoonBoard (#7220) is the only relay with a
+    // `tapDrive`: it puts the climb up through the holder's phone.
+    const putsUp = isPutUpAction(action) || (action === 'relay' && current.tapDrive !== null);
     // The swipe peek's replay: a third Put on board within 5 minutes (spec B3).
     if (putsUp && control === 'button') noteWallPutOnBoardPress();
     // Where Always drive the wall drives, a press drops a stop and its
@@ -324,6 +333,13 @@ export function useWallControl({
         putUp(run.light);
         return;
       case 'relay':
+        if (putsUp && run.relay) {
+          putUp(run.relay);
+          return;
+        }
+        hapticMedium();
+        run.toggle();
+        return;
       case 'take_wall':
       case 'release_wall':
         hapticMedium();

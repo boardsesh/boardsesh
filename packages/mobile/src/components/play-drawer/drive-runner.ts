@@ -29,6 +29,14 @@ export type StartDriveInput = {
   connect: () => Promise<boolean>;
   /** Light the current climb: a reassert, clearing a Turn off all lights and the #4979 hold. */
   relight: () => void;
+  /**
+   * Relay mode (#7220): another phone holds this Relay mode MoonBoard and this
+   * one drives through it. The drive arms as `relayed`, commits a preview,
+   * and connects nothing: the relay engine (`use-relayed-drive.ts`) sends the
+   * current climb and every later pick to the holder, and the holder's echo
+   * takes it live.
+   */
+  relayed?: boolean;
 };
 
 /**
@@ -65,12 +73,14 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
     if (input.connected && input.model.state !== 'lit') input.relight();
     return 'started';
   }
-  if (input.model.holder === 'crew' || input.wallHeldByOtherUser) return 'held_by_crew';
+  const relayed = input.relayed === true;
+  if (!relayed && (input.model.holder === 'crew' || input.wallHeldByOtherUser)) return 'held_by_crew';
   enterDriveMode({
     sessionId: input.sessionId,
     boardId: null,
     boardType: input.boardType ?? null,
     startedBy: input.startedBy,
+    relayed,
   });
   const startedAt = getDriveMode()?.startedAt ?? null;
   const endThisDrive = (reason: 'connect_failed' | 'commit_failed') => {
@@ -80,6 +90,8 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
     endThisDrive('commit_failed');
     return 'unavailable';
   }
+  // The relay engine sends the climb now current to the holder's phone.
+  if (relayed) return 'started';
   if (input.connected) {
     input.relight();
     return 'started';
@@ -109,15 +121,19 @@ export function startKeepLighting({
   sessionId,
   boardType = null,
   wallHeldByOtherUser,
+  relayed = false,
 }: {
   plan: KeepLightingPlan;
   sessionId: string | null;
   /** The board type on screen, for Drive Mode Started / Ended. */
   boardType?: string | null;
   wallHeldByOtherUser: boolean;
+  /** Relay mode (#7220): Put on board relayed its climb; the drive goes on through the holder's phone. */
+  relayed?: boolean;
 }): boolean {
   if (getDriveMode() || wallHeldByOtherUser) return false;
   enterDriveMode({
+    relayed,
     sessionId,
     boardId: null,
     boardType,

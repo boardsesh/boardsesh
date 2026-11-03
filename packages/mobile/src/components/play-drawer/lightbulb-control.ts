@@ -23,6 +23,14 @@ export function derivePlayDrawerLightbulbPressAction(args: {
    * displayed climb to relay — the toolbar and app-bar bulbs — pass `false`.
    */
   canRelay: boolean;
+  /**
+   * Relay mode (#7220): another phone holds this Relay mode MoonBoard and this
+   * one relays through it (`relayHolderFor`). The original controller takes
+   * one phone and stops advertising, so a connect from here could only scan
+   * and fail. A tap relays the climb instead, outside a session too: Put on
+   * board sends the climb on screen (or the current one) to the holder.
+   */
+  boardRelay?: boolean;
 }): PlayDrawerLightbulbPressAction {
   // No board selected yet, or a connect/disconnect already in flight — ignore.
   if (!args.hasBluetooth || args.isBluetoothLoading) return 'noop';
@@ -48,6 +56,7 @@ export function derivePlayDrawerLightbulbPressAction(args: {
   // nothing tells the truth ("it's on, someone else is driving") where the
   // alert actively lied.
   if (args.holderIsAuthoritative) return args.canRelay ? 'relay' : 'noop';
+  if (args.boardRelay) return 'relay';
   return 'connect';
 }
 

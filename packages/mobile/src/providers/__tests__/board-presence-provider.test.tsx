@@ -71,6 +71,7 @@ vi.mock('../../lib/analytics', () => ({ track: trackMock }));
 // real PostHog-backed provider in jsdom.
 vi.mock('../feature-flags-provider', () => ({
   useFeatureFlag: () => undefined,
+  useMoonboardRelayModeEnabled: () => false,
 }));
 
 vi.mock('../../lib/board-presence/board-presence-client', () => ({

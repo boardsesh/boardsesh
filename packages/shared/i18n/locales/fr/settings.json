@@ -497,6 +497,10 @@
         "label": "Déconnecter le Bluetooth quand le pilotage s’arrête",
         "description": "Quand votre pilotage s’arrête, votre téléphone libère la board pour que le grimpeur suivant puisse se connecter : quand vous l’arrêtez ou éteignez tout, quand le temps est écoulé, ou quand quelqu’un de votre crew allume un bloc pendant un pilotage à durée limitée. Allumer sur la board la reconnecte."
       },
+      "relayAccepting": {
+        "label": "Laisser les autres sur cette board allumer des blocs via mon téléphone",
+        "description": "Sur une MoonBoard d’origine, le premier téléphone garde la board. Tant que le vôtre l’a, les blocs des autres grimpeurs s’allument via lui. Activé par défaut."
+      },
       "drivingHelp": "Comment marche le pilotage de la board",
       "alwaysDriveLabel": "Toujours piloter la board",
       "alwaysDriveDescription": "Chaque bloc que vous choisissez s'allume tant que ce téléphone a la board. En session, il faut Aussi en session.",

@@ -80,6 +80,15 @@ export type DriveModeState = {
    * the climber didn't choose. Absent on every other drive.
    */
   openedByAlways?: true;
+  /**
+   * Relay mode (#7220): this phone lights the wall through another phone's
+   * link (an original MoonBoard that takes one phone). Each pick goes to the
+   * holder as a relay request; the drive goes live, and counts a climb, at
+   * the holder's echo (`use-relayed-drive.ts`). It ends when the holder lets go
+   * (`holder_left`), another phone takes the board (`holder_changed`) or a
+   * relayed climb never lights (`relay_unconfirmed`). Absent on every other drive.
+   */
+  relayed?: true;
 };
 
 /**
@@ -114,7 +123,13 @@ export type DriveModeExitReason =
    * went off in one) on a board that needs it, or the swipe flag went off. The
    * link stays.
    */
-  | 'always_off';
+  | 'always_off'
+  /** Relay mode (#7220): the holder's phone let go of the board (or the server says no one holds it). */
+  | 'holder_left'
+  /** Relay mode (#7220): another phone took the board during the relayed drive. */
+  | 'holder_changed'
+  /** Relay mode (#7220): a relayed climb never lit: no echo from the holder in time, or the relay was refused. */
+  | 'relay_unconfirmed';
 
 /**
  * How long arming may wait for the wall before it gives up. The Bluetooth scan
@@ -331,6 +346,7 @@ function reportEnded(
     windowRenewals: ended.windowRenewals,
     windowMs: ended.windowMs,
     boardType: ended.boardType,
+    ...(ended.relayed ? { relayed: true } : {}),
     ...extra,
   });
 }
@@ -359,6 +375,7 @@ export function enterDriveMode({
   startedBy,
   windowMs = null,
   windowSetting = null,
+  relayed = false,
   now = Date.now(),
 }: {
   sessionId: string | null;
@@ -368,6 +385,8 @@ export function enterDriveMode({
   startedBy: DriveModeStartedBy;
   windowMs?: number | null;
   windowSetting?: KeepLightingSettingKey | null;
+  /** Relay mode (#7220): the drive lights the wall through the holder's phone. */
+  relayed?: boolean;
   now?: number;
 }): void {
   const windowed = windowMs !== null && windowMs > 0;
@@ -385,6 +404,7 @@ export function enterDriveMode({
     windowSetting: windowed ? windowSetting : null,
     expiresAt: null,
     windowRenewals: 0,
+    ...(relayed ? { relayed: true as const } : {}),
   };
   stoppedForLink = false;
   lastExitReason = null;
@@ -392,7 +412,7 @@ export function enterDriveMode({
   lastEndedAt = null;
   claimedAnnouncements = null;
   emit();
-  trackDriveModeStarted({ startedBy, inSession: sessionId !== null, boardType });
+  trackDriveModeStarted({ startedBy, inSession: sessionId !== null, boardType, ...(relayed ? { relayed } : {}) });
 }
 
 /**
@@ -551,15 +571,18 @@ export function isAlwaysDriveOwned(drive: DriveModeState | null): boolean {
 
 /**
  * Whether Always drive the wall starts its drive now: it drives here
- * (`alwaysDriveApplies`), this phone's own Bluetooth link holds the board (a
- * relay, a crewmate's link or a wall with no lights never does), nothing
+ * (`alwaysDriveApplies`), this phone's own Bluetooth link holds the board, or
+ * (Relay mode, #7220) this phone's relay path to the holder of an original
+ * MoonBoard is up (`relayEngaged`: a relay of its own already lit), nothing
  * drives yet, and no press on the frosted button stopped driving on this link.
- * A crew forming under a live drive leaves it going (only a change of session
- * ends one), so this is only about starting.
+ * A crewmate's link or a wall with no lights never starts it. A crew forming
+ * under a live drive leaves it going (only a change of session ends one), so
+ * this is only about starting.
  */
 export function shouldStartAlwaysDrive({
   applies,
   ownLink,
+  relayEngaged = false,
   drive,
   stopped,
 }: {
@@ -567,11 +590,13 @@ export function shouldStartAlwaysDrive({
   applies: boolean;
   /** This phone's own Bluetooth link is up. */
   ownLink: boolean;
+  /** Relay mode (#7220): a relay of this phone's lit through the holder, and the holder is still there. */
+  relayEngaged?: boolean;
   drive: DriveModeState | null;
   /** A press on the frosted button stopped driving on this link. */
   stopped: boolean;
 }): boolean {
-  return applies && ownLink && drive === null && !stopped;
+  return applies && (ownLink || relayEngaged) && drive === null && !stopped;
 }
 
 /**
@@ -584,13 +609,16 @@ export function startAlwaysDrive({
   sessionId,
   boardId,
   boardType = null,
+  relayed = false,
 }: {
   sessionId: string | null;
   boardId: number | null;
   boardType?: string | null;
+  /** Relay mode (#7220): driven through the holder's phone. */
+  relayed?: boolean;
 }): boolean {
   if (driveMode || stoppedForLink) return false;
-  enterDriveMode({ sessionId, boardId, boardType, startedBy: 'always' });
+  enterDriveMode({ sessionId, boardId, boardType, startedBy: 'always', relayed });
   markDriveLive({ boardId });
   return true;
 }

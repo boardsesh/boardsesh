@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   putOnBoardKeepsLighting: DEFAULT_KEEP_LIGHTING,
   putOnBoardDrivesInSession: true,
   disconnectWhenDrivingEnds: false,
+  acceptRelayedClimbs: true,
   autoDisconnectMigrated: false,
   playlistTapLoadsQueue: false,
   gradeRowShown: false,
