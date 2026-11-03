@@ -1,6 +1,7 @@
 {
   "title": "¿Nos ayudas a mejorar Boardsesh?",
   "body": "Permite la analítica de producto y la grabación opcional de sesiones para ayudarnos a ver qué funciona. «No, gracias» las mantiene desactivadas. Los diagnósticos básicos de errores y rendimiento siguen activos. Tu elección se aplica donde hayas iniciado sesión y puedes cambiarla cuando quieras.",
+  "adMeasurement": "En boardsesh.com, la analítica también incluye la medición de anuncios con Meta y Reddit. Ven qué páginas nuestras visitas y cuándo tocas un botón de tienda de apps, para que sepamos qué anuncios traen escaladores hasta aquí.",
   "allow": "Permitir",
   "deny": "No, gracias",
   "privacyLink": "Lee nuestra política de privacidad",

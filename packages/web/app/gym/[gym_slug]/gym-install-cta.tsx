@@ -4,8 +4,7 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
-import { track } from '@/app/lib/analytics';
-import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
+import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
 import { buildStoreUrl, type StoreLinkInput } from '@/app/lib/store-links';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
 import type { GymQrMedium } from '@boardsesh/analytics';
@@ -78,29 +77,23 @@ export default function GymInstallCta({ gymSlug, qrMedium, googlePlayLabel, appS
   const scanProperties = qrMedium ? { qrMedium } : {};
 
   const handlePlayClick = () => {
-    track(
-      APP_INSTALL_CLICK_EVENT,
-      buildAppInstallClickProperties({
-        platform: 'android',
-        source: 'google-play',
-        placement: 'gym-page',
-        gymSlug,
-        ...scanProperties,
-      }),
-    );
+    trackAppInstallClick({
+      platform: 'android',
+      source: 'google-play',
+      placement: 'gym-page',
+      gymSlug,
+      ...scanProperties,
+    });
   };
 
   const handleAppStoreClick = () => {
-    track(
-      APP_INSTALL_CLICK_EVENT,
-      buildAppInstallClickProperties({
-        platform: 'ios',
-        source: 'app-store',
-        placement: 'gym-page',
-        gymSlug,
-        ...scanProperties,
-      }),
-    );
+    trackAppInstallClick({
+      platform: 'ios',
+      source: 'app-store',
+      placement: 'gym-page',
+      gymSlug,
+      ...scanProperties,
+    });
   };
 
   return (

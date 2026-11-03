@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import AppThemeProvider from './components/providers/app-theme-provider';
 import AnalyticsClient from './components/analytics-client';
+import AdPixelsClient from './components/ad-pixels-client';
 import { ConsentProvider } from './components/consent/consent-provider';
 import { CONSENT_PREPAINT_SCRIPT } from './lib/consent';
 import AnalyticsIdentity from './components/providers/analytics-identity';
@@ -128,6 +129,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <Suspense fallback={null}>
                       <AnalyticsIdentity />
                       <AnalyticsClient />
+                      <AdPixelsClient />
                     </Suspense>
                     <SnackbarProvider>
                       {/* Everything below is torn down inside the retired

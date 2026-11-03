@@ -1,4 +1,5 @@
 export {
+  AD_MEASUREMENT_COPY_SINCE,
   ANALYTICS_CONSENT_CHOICES,
   CONSENT_BASES,
   CONSENT_SOURCES,
@@ -53,3 +54,5 @@ export {
 } from './consent-sync';
 
 export { createConsentRegionLookup } from './consent-region-lookup';
+
+export { AD_PIXEL_COOKIE_NAMES, adPixelCookieExpiries } from './ad-pixel-cookies';

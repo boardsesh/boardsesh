@@ -1,6 +1,7 @@
 {
   "title": "Ci aiuti a migliorare Boardsesh?",
   "body": "Consenti analisi del prodotto e, se vuoi, la registrazione delle sessioni per aiutarci a capire cosa funziona. Con No, grazie restano disattivate. La diagnostica di base su arresti anomali e prestazioni resta attiva. La tua scelta vale ovunque tu abbia effettuato l'accesso e puoi cambiarla quando vuoi.",
+  "adMeasurement": "Su boardsesh.com, l'analisi include anche la misurazione degli annunci con Meta e Reddit. Vedono quali nostre pagine visiti e quando tocchi un pulsante di uno store, così capiamo quali annunci portano qui chi arrampica.",
   "allow": "Consenti",
   "deny": "No, grazie",
   "privacyLink": "Leggi la nostra informativa sulla privacy",

@@ -9,12 +9,8 @@ import { useBoardQrLandingMedium } from '@/app/hooks/use-board-qr-landing-medium
 import { resolveHeroInstall, type HeroInstall } from '@/app/lib/hero-install';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
-import { track } from '@/app/lib/analytics';
-import {
-  APP_INSTALL_CLICK_EVENT,
-  buildAppInstallClickProperties,
-  type AppInstallPlacement,
-} from '@/app/lib/app-install-event';
+import { type AppInstallPlacement } from '@/app/lib/app-install-event';
+import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
 
 /**
  * The three things a store button can say, already translated by whoever
@@ -134,16 +130,13 @@ export default function StoreInstallButtons({
             size={appearance === 'brand' ? undefined : 'large'}
             sx={appearance === 'brand' ? brandSx : PLAIN_SX}
             onClick={() => {
-              track(
-                APP_INSTALL_CLICK_EVENT,
-                buildAppInstallClickProperties({
-                  platform: store,
-                  source: store === 'ios' ? 'app-store' : 'google-play',
-                  placement,
-                  mode,
-                  ...(qrMedium ? { qrMedium } : {}),
-                }),
-              );
+              trackAppInstallClick({
+                platform: store,
+                source: store === 'ios' ? 'app-store' : 'google-play',
+                placement,
+                mode,
+                ...(qrMedium ? { qrMedium } : {}),
+              });
             }}
           >
             {mode === 'update' ? labels.update : labels[store]}

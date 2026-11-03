@@ -1,6 +1,7 @@
 {
   "title": "Nous aider à améliorer Boardsesh ?",
   "body": "Autorise les statistiques d’utilisation et l’enregistrement facultatif des sessions pour nous aider à comprendre ce qui fonctionne. « Non merci » les désactive. Les diagnostics de base sur les erreurs et les performances restent activés. Ton choix s’applique partout où tu es connecté et tu peux le modifier à tout moment.",
+  "adMeasurement": "Sur boardsesh.com, les statistiques incluent aussi la mesure publicitaire avec Meta et Reddit. Ils voient quelles pages du site tu visites et quand tu touches un bouton de store, pour qu’on sache quelles pubs amènent des grimpeurs ici.",
   "allow": "Autoriser",
   "deny": "Non merci",
   "privacyLink": "Lire notre politique de confidentialité",

@@ -254,6 +254,7 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | --- | --- | --- |
 | PostHog capture and identify (web, app) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Only after "Allow" in the prompt regions; on by default elsewhere (region default). Feature flags still resolve without consent. A signed-in No thanks or switch-off (unless the account already said No), and account deletion, erase the PostHog person ([Erasure](#erasure)). |
 | Feature-flag bucketing id (web, app) | Strictly necessary (ePrivacy Art. 5(3) exemption), not asked | One random UUID per browser (IndexedDB) or app install (app preferences). Why it is necessary: kill switches and staged rollouts are how we keep the service a climber asked for working, and both need a stable bucket. Without one a 20% rollout re-rolls every launch, so a climber flips between the old and new screen from one launch to the next, and a kill switch scoped to a percentage cannot hold anyone out. It carries no account, no person and no GeoIP, and is never sent next to an account id or beside the SDK's own anonymous id. Lifetime: replaced 13 months after it was minted (CNIL's ceiling for an exempt tracker), and in the app also when the platform reports a different install time (an Android Auto Backup restore). On www it is only the distinct id of signed-out flag requests. In the app it is also the distinct id of the anonymous `OTA Update Status` event (`ota-install:<uuid>`, row below), which is stored. See [feature-flags.md](./feature-flags.md#anonymous-bucketing). |
+| Meta Pixel and Reddit Pixel (www only) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Ad measurement for our Reddit and Instagram ads: page views and a `Lead` on store-button clicks. Prompt regions need a website Allow given on or after `AD_MEASUREMENT_COPY_SINCE`; elsewhere the region default runs them. Global Privacy Control, No thanks, an older Allow and an app Allow all keep them off. Never on kiosk, embed, auth or admin pages, never in the app, no advanced matching. See [Ad pixels](#ad-pixels). |
 | PostHog session replay | Consent | Off unless analytics is on and the climber also switches replay on; never on by default. |
 | Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
 | Android install-referrer attribution | Consent, everywhere | The Play referrer is not even read before the climber's own Allow: reading it is access to information on the device for attribution (ePrivacy Art. 5(3)). Play keeps it for 90 days after install, and the first Allow triggers the read. `Install Attributed` and the install person properties are sent only after the climber's own Allow (`isAttributionPublicationGranted`). The region default does not enable them. |
@@ -818,3 +819,86 @@ A confirmed region default can seed a product-conversion handoff, but cannot
 authorize Apple attribution. No pending conversion is persisted or backfilled.
 
 Consent copy and equal-choice controls follow the [EDPB consent guidelines](https://www.edpb.europa.eu/sites/default/files/files/file1/edpb_guidelines_202005_consent_en.pdf). Declining does not limit the app, and withdrawal uses the same two-choice controls.
+
+## Ad pixels
+
+We run paid ads on Reddit and Instagram that land on www. To see which ads
+bring climbers, www loads the Meta Pixel and the Reddit Pixel behind the same
+analytics consent as PostHog, with one extra rule. Code:
+`packages/web/app/lib/ad-pixels.ts` (pure decision, unit-tested) and
+`ad-pixels-browser.ts` (script injection, events, withdrawal), driven by
+`AdPixelsClient` in the root layout.
+
+**The rule.** `isAdMeasurementPermitted(record, gpc)`:
+
+| Consent record | Pixels |
+| --- | --- |
+| no answer, No thanks, outdated version | off |
+| region default (confirmed this page load) | on |
+| explicit Allow, `source: 'web'`, `decidedAt` ≥ `AD_MEASUREMENT_COPY_SINCE` | on |
+| explicit Allow before that date, or from the iOS/Android app | off (PostHog stays on) |
+| anything, with Global Privacy Control on | off |
+
+No region lookup is needed for the explicit case: a region default can never
+exist in a prompt region, so the only "on" a prompt-region visitor can hold is
+an explicit Allow, and the date proves they saw the copy that names Meta and
+Reddit. Outside the prompt regions the same test applies, which is stricter
+than needed and never wrong. An app Allow does not count because the app's
+prompt never names the pixels. GPC turns them off even after an Allow: it is
+the browser asking not to share for advertising, which is what a pixel does.
+On top of the record rule, the live gate needs `hasAnalyticsConsent()` (account
+resolved, region default confirmed), a production host (`boardsesh.com`,
+`www.boardsesh.com`) and a page outside `/kiosk`, `/embed`, `/auth` and
+`/admin` (any locale, any case), and a page that is not the retired Capacitor
+app (tracking in its WebView would be app tracking without Apple's ATT prompt).
+The Capacitor bridge appears slightly after page JS, so a WebView-like user
+agent (which includes Instagram's and Reddit's in-app browsers) waits up to
+3 seconds for it before the first event.
+
+**`AD_MEASUREMENT_COPY_SINCE`** (`@boardsesh/consent`) replaces a
+`CONSENT_VERSION` bump, so nobody is asked again. It must be no earlier than
+the production deploys that shipped the copy (`consent:adMeasurement`) on both
+www and the browser app (a separate Cloudflare Pages build). A later date only
+means a few Allows get no pixels; never move it earlier. Nothing checks it
+automatically: set it at merge time. Known edge: a signed-in Allow whose
+account write is retried after the date gets the server's later stamp, so other
+browsers that adopt it count it.
+
+**Ids.** `NEXT_PUBLIC_META_PIXEL_ID` (digits) and `NEXT_PUBLIC_REDDIT_PIXEL_ID`
+(`a2_…`) are build-time GitHub Production-environment variables passed as
+build-args (see [production-deploy.md](./production-deploy.md)); setting them on
+the Railway service does nothing. Unset or malformed means a complete no-op: no
+script, no consent read.
+
+**Events.** `PageView` (Meta) and `PageVisit` (Reddit) on the first allowed
+page and on each client-side navigation to a new path. On every store-button
+click, `trackAppInstallClick` (`packages/web/app/lib/track-app-install-click.ts`)
+sends PostHog's `App Install Click` and then `reportAdLead`, which sends `Lead`
+to both with `platform` and `placement` only. No email, no account id, no
+hashed identifiers. Meta's `autoConfig` (automatic button and metadata events)
+and its own history-change page views are switched off. **Automatic advanced
+matching** is a remote setting fbevents.js loads, not a code switch: keep it off
+in Meta Events Manager and in Reddit Ads' pixel settings, or the pixels could
+read an email typed into the sign-in modal.
+
+**Withdrawal.** On any definitive no (record above says off) `syncAdPixels`
+calls `fbq('consent', 'revoke')` and expires `_fbp`, `_fbc`, `_rdt_uuid` and
+`_rdt_cid` on the host and every parent domain. Every event re-checks the live
+cookie first, so a No thanks in Privacy choices, another tab or
+app.boardsesh.com stops the next event. A transient hold (account still
+resolving, region lookup pending) only pauses: clearing the browser id there
+would reset it on every page load. A withdrawal is final for the page load:
+fbevents.js keeps the old browser id in memory after its cookie goes, so a new
+Allow starts the pixels on the next page load, with a fresh id. The browser
+app's cookie writer (`packages/mobile/src/lib/consent-storage.web.ts`) expires
+the same cookies on its own No (`adPixelCookieExpiries` in `@boardsesh/consent`),
+so a No given there does not wait for the next www visit.
+
+**Copy.** The banner, Privacy choices and the Analytics settings card show
+`consent:adMeasurement`; the privacy policy lists Meta and Reddit under What we
+collect, Third-party services and Cookies. The browser app at app.boardsesh.com
+records its answers with `source: 'web'` in the same shared cookie, so its
+prompt and Settings → Privacy footer add the same sentence when
+`Platform.OS === 'web'`; otherwise its Allow would switch on pixels on www
+without naming them. The native app's copy is unchanged: it loads no pixels,
+and its Allows (`source: 'ios' | 'android'`) never count.

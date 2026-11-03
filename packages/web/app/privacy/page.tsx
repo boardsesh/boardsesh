@@ -37,6 +37,9 @@ export default async function PrivacyPolicyPage() {
           <strong>{t('privacy.collect.productAnalyticsLabel')}</strong> {t('privacy.collect.productAnalyticsBody')}
         </Prose>
         <Prose>
+          <strong>{t('privacy.collect.adMeasurementLabel')}</strong> {t('privacy.collect.adMeasurementBody')}
+        </Prose>
+        <Prose>
           <strong>{t('privacy.collect.serviceStatsLabel')}</strong> {t('privacy.collect.serviceStatsBody')}
         </Prose>
       </PageSection>
@@ -78,6 +81,17 @@ export default async function PrivacyPolicyPage() {
           .
         </Prose>
         <Prose>
+          <strong>{t('privacy.thirdParty.adPixelsLabel')}</strong> {t('privacy.thirdParty.adPixelsBody')}
+          <Link href="https://www.facebook.com/privacy/policy/" target="_blank" rel="noopener">
+            {t('privacy.thirdParty.metaLink')}
+          </Link>
+          {t('privacy.thirdParty.adPixelsJoin')}
+          <Link href="https://www.reddit.com/policies/privacy-policy" target="_blank" rel="noopener">
+            {t('privacy.thirdParty.redditLink')}
+          </Link>
+          {t('privacy.thirdParty.adPixelsBodyEnd')}
+        </Prose>
+        <Prose>
           <strong>{t('privacy.thirdParty.sentryLabel')}</strong> {t('privacy.thirdParty.sentryBody')}
           <Link href="https://sentry.io/privacy/" target="_blank" rel="noopener">
             {t('privacy.thirdParty.sentryLink')}
@@ -109,6 +123,7 @@ export default async function PrivacyPolicyPage() {
 
       <PageSection title={t('privacy.choices.title')}>
         <Prose>{t('privacy.choices.storageBody')}</Prose>
+        <Prose>{t('privacy.choices.adCookiesBody')}</Prose>
         <Prose>{t('privacy.choices.changeBody')}</Prose>
       </PageSection>
 

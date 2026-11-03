@@ -240,7 +240,11 @@ export function PrivacySettingsScreen() {
         sessionAudience: confirmingAudience ?? undefined,
       },
       pendingRequestCount: requests.data?.length ?? 0,
-      analytics: { preference: analyticsPreference, regionDefault: analyticsRegionDefault },
+      analytics: {
+        preference: analyticsPreference,
+        regionDefault: analyticsRegionDefault,
+        adMeasurement: Platform.OS === 'web',
+      },
       sessionRecording,
       onRetry: () => {
         // A recovered profile starts the settings read on its own.
