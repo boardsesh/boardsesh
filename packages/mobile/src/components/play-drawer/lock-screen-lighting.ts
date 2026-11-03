@@ -330,7 +330,9 @@ export type TimedDriveEndAtClock =
  *   the drive (adopted at the next look) or settles.
  * - Settled at or after the drive's end: the press found the drive over, so it
  *   ends keeping the board, as `endTimedDriveOverAtPress` ends it when the
- *   press's `queueNavigate` arrives. That event may still be on its way.
+ *   press's `queueNavigate` arrives. That event may still be on its way. A
+ *   press the party server turned down settles too and never sends one: its
+ *   stamp may cover an earlier press still writing, so it keeps the board too.
  * - Anything else (no stamp, one that expired unsettled, a press that landed
  *   before the end and so renewed the drive): the clock ends it.
  */

@@ -337,7 +337,11 @@ describe('Widget target Swift drift', () => {
 
     const bleAwait = navigationSource.indexOf('let writeSucceeded = await bleWriteTask.value');
     const bleDiagnostic = navigationSource.indexOf('diagnosticRun.mark(writeSucceeded ?', bleAwait);
-    const darwinPost = navigationSource.indexOf('postQueueNavigateDarwinNotification()', bleDiagnostic);
+    // The call, not the helper's own declaration further down, which would
+    // match even with the call moved above the write.
+    const darwinPostCall = '\n        postQueueNavigateDarwinNotification()\n';
+    expect(navigationSource.split(darwinPostCall)).toHaveLength(2);
+    const darwinPost = navigationSource.indexOf(darwinPostCall);
     expect(bleAwait).toBeGreaterThanOrEqual(0);
     expect(bleDiagnostic).toBeGreaterThan(bleAwait);
     expect(darwinPost).toBeGreaterThan(bleDiagnostic);
@@ -349,9 +353,14 @@ describe('Widget target Swift drift', () => {
   it('stamps a lock-screen press before its server request and board write, and settles it before the Darwin post', () => {
     const navigationSource = readFileSync(join(MODULE_IOS, 'ClimbNavigationIntent.swift'), 'utf8');
     const occurrences = (needle: string) => navigationSource.split(needle).length - 1;
+    const settleCall = 'SharedLockScreenPress.settle(pressId';
     expect(occurrences('SharedLockScreenPress.begin(')).toBe(1);
-    expect(occurrences('SharedLockScreenPress.cancel(pressId')).toBe(1);
-    expect(occurrences('SharedLockScreenPress.settle(pressId')).toBe(1);
+    // Never removed: a turned-down press's stamp may cover an earlier press
+    // still writing the board.
+    expect(navigationSource).not.toContain('SharedLockScreenPress.clear(');
+    expect(navigationSource).not.toContain('lockScreenPressKey');
+    // Once where the party server turns the press down, once after the write.
+    expect(occurrences(settleCall)).toBe(2);
     // The call, not the helper's own declaration further down.
     const darwinPostCall = '\n        postQueueNavigateDarwinNotification()\n';
     expect(occurrences(darwinPostCall)).toBe(1);
@@ -359,19 +368,19 @@ describe('Widget target Swift drift', () => {
     const begin = navigationSource.indexOf('SharedLockScreenPress.begin(');
     const network = navigationSource.indexOf('await WidgetNetworking.sendNavigation(');
     const rejectedGuard = navigationSource.indexOf('guard navigationResult != .serverRejected else {');
-    const cancel = navigationSource.indexOf('SharedLockScreenPress.cancel(pressId');
+    const settleTurnedDown = navigationSource.indexOf(settleCall);
     const indexSaved = navigationSource.indexOf('SharedQueueState.saveCurrentIndex(');
     const bleWrite = navigationSource.indexOf('LiveActivityBleBridge.writeBoardForIntent(');
     const recordPress = navigationSource.indexOf('SharedLightingWindowRuntime.recordPress(');
-    const settle = navigationSource.indexOf('SharedLockScreenPress.settle(pressId');
+    const settle = navigationSource.lastIndexOf(settleCall);
     const darwinPost = navigationSource.indexOf(darwinPostCall);
 
     expect(begin).toBeGreaterThanOrEqual(0);
     expect(network).toBeGreaterThan(begin);
     expect(bleWrite).toBeGreaterThan(begin);
-    // A press the party server turns down never posts: its stamp goes with it.
-    expect(cancel).toBeGreaterThan(rejectedGuard);
-    expect(cancel).toBeLessThan(indexSaved);
+    // A press the party server turns down never posts: it settles there.
+    expect(settleTurnedDown).toBeGreaterThan(rejectedGuard);
+    expect(settleTurnedDown).toBeLessThan(indexSaved);
     expect(settle).toBeGreaterThan(recordPress);
     expect(recordPress).toBeGreaterThan(bleWrite);
     expect(darwinPost).toBeGreaterThan(settle);

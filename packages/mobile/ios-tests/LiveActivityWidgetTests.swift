@@ -841,16 +841,21 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
     }
 
-    func testLightingEndSessionClearsTheWindowAndTheSettings() {
+    func testLightingEndSessionClearsTheWindowTheSettingsAndThePressStamp() {
         SharedLightingWindowStore.save(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults)
         SharedKeepLightingConfigStore.save(keepLightingConfig(), to: defaults)
+        SharedLockScreenPress.begin(in: defaults, asksServer: false, now: lightNow, pressId: "press-1")
+        SharedLockScreenPress.settle("press-1", in: defaults, now: lightNow)
         XCTAssertNotNil(SharedLightingWindowStore.load(from: defaults))
         XCTAssertNotNil(SharedKeepLightingConfigStore.load(from: defaults))
+        XCTAssertNotNil(SharedLockScreenPress.load(from: defaults))
 
         SharedLightingWindowRuntime.endSession(in: defaults)
 
         XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
         XCTAssertNil(defaults.data(forKey: SharedConstants.keepLightingConfigKey))
+        // A settled stamp outlives nothing: the session it belonged to is gone.
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lockScreenPressKey))
     }
 
     func testLightingWriteRedrawsOnlyWhenTheCardChanges() {
@@ -1044,27 +1049,29 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(settled.expiresAtMs, lightNowMs + 8_000)
     }
 
-    // Two quick presses: the first one settling or being turned down leaves the
-    // second in flight.
-    func testAPressOnlySettlesOrCancelsItsOwnStamp() throws {
+    // Two quick presses: the first one settling leaves the second in flight.
+    func testAPressOnlySettlesItsOwnStamp() throws {
         SharedLockScreenPress.begin(in: defaults, asksServer: true, now: lightNow, pressId: "press-1")
         SharedLockScreenPress.begin(in: defaults, asksServer: true, now: lightNow, pressId: "press-2")
 
         SharedLockScreenPress.settle("press-1", in: defaults, now: lightNow)
-        SharedLockScreenPress.cancel("press-1", in: defaults)
         let inFlight = try XCTUnwrap(SharedLockScreenPress.load(from: defaults))
         XCTAssertEqual(inFlight.pressId, "press-2")
         XCTAssertNil(inFlight.settledAtMs)
 
-        // The party server turned press 2 down: no queueNavigate follows, so
-        // nothing is left for JS to count.
-        SharedLockScreenPress.cancel("press-2", in: defaults)
-        XCTAssertNil(SharedLockScreenPress.load(from: defaults))
-        XCTAssertNil(defaults.data(forKey: SharedConstants.lockScreenPressKey))
+        // The party server turned press 2 down. It settles rather than removing
+        // the stamp, which covered press 1 and press 1 may still be writing, so
+        // JS ends a lapsed drive keeping the board instead of letting go.
+        let turnedDownAt = lightNow.addingTimeInterval(1)
+        SharedLockScreenPress.settle("press-2", in: defaults, now: turnedDownAt)
+        let settled = try XCTUnwrap(SharedLockScreenPress.load(from: defaults))
+        XCTAssertEqual(settled.pressId, "press-2")
+        XCTAssertEqual(settled.settledAtMs, turnedDownAt.timeIntervalSince1970 * 1000)
 
-        // Nothing stored: settling or cancelling writes nothing.
+        // Nothing stored: settling writes nothing.
+        SharedLockScreenPress.clear(in: defaults)
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lockScreenPressKey))
         SharedLockScreenPress.settle("press-2", in: defaults, now: lightNow)
-        SharedLockScreenPress.cancel("press-2", in: defaults)
         XCTAssertNil(defaults.data(forKey: SharedConstants.lockScreenPressKey))
     }
 

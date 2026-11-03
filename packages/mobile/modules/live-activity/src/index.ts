@@ -517,8 +517,9 @@ export type LiveActivityKeepLightingConfig = {
  * The last iOS Lock Screen or Dynamic Island Next / Previous, as
  * `getLockScreenPress` reads it. The intent stamps it in flight before its
  * server request and board write, and settles it just before the Darwin post
- * that becomes `queueNavigate`; a press the party server turns down is
- * removed. Epoch ms.
+ * that becomes `queueNavigate`. A press the party server turns down settles
+ * too, with no `queueNavigate` after: its stamp may cover an earlier press
+ * still writing the board. Epoch ms.
  */
 export type LiveActivityLockScreenPress = {
   pressId: string;

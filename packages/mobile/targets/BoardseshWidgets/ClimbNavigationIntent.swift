@@ -104,8 +104,10 @@ enum ClimbNavigationIntent {
         guard navigationResult != .serverRejected else {
             #if !WIDGET_EXTENSION
             completionClass = .serverRejected
-            // No write and no Darwin post: JS never hears this press.
-            SharedLockScreenPress.cancel(pressId, in: defaults)
+            // No write and no Darwin post: JS never hears this press. Settled,
+            // not removed: an earlier press whose stamp this one covered may
+            // still be writing the board.
+            SharedLockScreenPress.settle(pressId, in: defaults)
             #endif
             logger.notice("\(label).perform() rejected by server; skipping local widget, BLE, and JS fallback updates")
             return

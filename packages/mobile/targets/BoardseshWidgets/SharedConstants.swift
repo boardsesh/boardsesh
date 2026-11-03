@@ -138,7 +138,8 @@ enum SharedConstants {
     static let keepLightingConfigKey = "bs_keep_lighting_config"
     /// The last lock-screen Next or Previous as a `SharedLockScreenPressState`
     /// JSON blob: in flight from before its server request and board write
-    /// until just before its Darwin post, then settled. JS reads it
+    /// until just before its Darwin post (or until the party server turns it
+    /// down), then settled. JS reads it
     /// (`getLockScreenPress`) before it ends a timed drive at the clock, so it
     /// never lets go of the board under a press on its way to the wall.
     static let lockScreenPressKey = "bs_lock_screen_press"
@@ -933,11 +934,13 @@ enum SharedKeepLighting {
 }
 
 enum SharedLightingWindowRuntime {
-    /// A session ended: no card to start a drive from, so the drive and the
-    /// mirrored settings both go. JS sends the settings again after the next start.
+    /// A session ended: no card to start a drive from, so the drive, the
+    /// mirrored settings and the last press's stamp all go. JS sends the
+    /// settings again after the next start.
     static func endSession(in defaults: UserDefaults) {
         SharedLightingWindowStore.clear(in: defaults)
         SharedKeepLightingConfigStore.clear(in: defaults)
+        SharedLockScreenPress.clear(in: defaults)
     }
 
     /// The snapshot a lock-screen Next or Previous leaves once it lit the wall,
@@ -1097,7 +1100,8 @@ enum LightingRenderPhase: Equatable {
 /// (`resolveTimedDriveEndAtClock` in lock-screen-lighting.ts).
 ///
 /// `ClimbNavigationIntent` stamps a press in flight before its server request
-/// and board write, and settles it just before the Darwin post that wakes JS.
+/// and board write, and settles it just before the Darwin post that wakes JS,
+/// or as soon as the party server turns it down.
 /// Native writes a press's drive (`recordPress`) only after the board write,
 /// and under Right away writes none, so until JS hears the press it cannot
 /// tell a timed drive the press is about to renew, or end keeping the board,
@@ -1115,7 +1119,8 @@ struct SharedLockScreenPressState: Codable, Equatable {
     /// intent before it could settle.
     let expiresAtMs: Double
     /// When the press settled: its board write finished, any drive it starts
-    /// is stored, and its `queueNavigate` is on its way to JS. Nil in flight.
+    /// is stored, and its `queueNavigate` is on its way to JS; or the party
+    /// server turned it down. Nil in flight.
     let settledAtMs: Double?
 }
 
@@ -1144,7 +1149,7 @@ enum SharedLockScreenPress {
     }
 
     /// Stamps a press in flight, over any earlier press's stamp. Returns the
-    /// press's id, for `settle` and `cancel`.
+    /// press's id, for `settle`.
     @discardableResult
     static func begin(
         in defaults: UserDefaults,
@@ -1165,8 +1170,11 @@ enum SharedLockScreenPress {
         return pressId
     }
 
-    /// The press reached the wall, or failed to: its `queueNavigate` goes out
-    /// next. Only this press's stamp; a later press's stays in flight.
+    /// The press goes no further: it reached the wall, failed to, or the party
+    /// server turned it down. Only this press's stamp; a later press's stays in
+    /// flight. A turned-down press settles rather than removing its stamp, which
+    /// may have covered an earlier press still writing: JS then ends a lapsed
+    /// drive keeping the board, never letting go under that write.
     static func settle(_ pressId: String, in defaults: UserDefaults, now: Date = Date()) {
         guard let current = load(from: defaults), current.pressId == pressId else { return }
         save(
@@ -1180,10 +1188,8 @@ enum SharedLockScreenPress {
         )
     }
 
-    /// The press goes no further (the party server turned it down): no
-    /// `queueNavigate` follows, so JS must not count it. Only this press's stamp.
-    static func cancel(_ pressId: String, in defaults: UserDefaults) {
-        guard load(from: defaults)?.pressId == pressId else { return }
+    /// A session ended: no drive left for a stamp to hold.
+    static func clear(in defaults: UserDefaults) {
         defaults.removeObject(forKey: SharedConstants.lockScreenPressKey)
     }
 

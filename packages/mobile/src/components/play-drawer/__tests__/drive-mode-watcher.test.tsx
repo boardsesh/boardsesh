@@ -2072,17 +2072,19 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
       expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
     });
 
-    it('ends at the clock and lets go when the party server turned the press down', () => {
+    it('keeps the board when the party server turned the press down after the end', () => {
       lapsedTimedDrive();
       pressInFlight();
       foreground();
-      // The intent removes a rejected press's stamp: no queueNavigate follows.
-      lockScreen.press = null;
+      // The intent settles a turned-down press's stamp rather than removing it,
+      // since it may cover an earlier press still writing. No queueNavigate follows.
+      settlePress();
       act(() => {
         vi.advanceTimersByTime(LOCK_SCREEN_PRESS_RECHECK_MS);
       });
-      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: false });
-      expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true });
+      expect(bluetoothDisconnect).not.toHaveBeenCalled();
     });
 
     it('lets go as before when the last press settled before the drive ended', () => {
