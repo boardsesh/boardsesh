@@ -567,8 +567,9 @@ export const SHARED_EVENTS = {
   // 'app_bar' (the Android app bar's bulb) | 'header_pill' (the Climbs header's
   // You have the board pill) | 'create_climb' (the create-climb editor's bulb):
   // from 2026-11-03 every bulb stops a drive on a tap, and these four log only
-  // that stop, with the same state and actions as a phone's bar bulb. From then 'bulb' logs 'stop_driving' / 'stop_window' too
-  // (before, its tap during a drive logged 'disconnect').
+  // that stop, with the same state and actions as a phone's bar bulb. From then
+  // 'bulb' logs 'stop_driving' / 'stop_window' too (before, its tap during a
+  // drive logged 'disconnect').
   // QA builds before the one-model refactor sent 'wall_control' for the
   // button. A tap while the busy-wall question is up is a 'noop'. Roughly 15-25k per 28 days.
   // From 2.7 it carries `previewReason` too, as Wall Control Shown does: only

@@ -369,6 +369,89 @@ describe.each(PILLS)("%s: the header's You have the board pill", (_pill, climb, 
     view.drop();
     expect(signals.announceQueued).not.toHaveBeenCalled();
   });
+
+  // The owed drop is said once, and only for the link the stop let go of.
+  const relinkSignals = () => {
+    signals.board = {
+      localConnected: true,
+      ledless: false,
+      wallHeldLocally: false,
+      inAppBoardConnection: 'connectedByMe',
+    };
+    signals.bluetooth.isConnected = true;
+  };
+  // A stop on a pill that goes while the link is still up: the drop it owes is
+  // left for the header.
+  const stopThenLeave = () => {
+    setSetting('disconnectWhenDrivingEnds', true);
+    startTapDrive(null);
+    signals.currentClimb = climb;
+    const pill = render(createElement(BoardHeldCapsule, { ledless: false }));
+    fireEvent.click(pill.getByRole('button'));
+    pill.unmount();
+  };
+  const renderLinkedHeader = () => {
+    signals.currentClimb = climb;
+    const view = render(createElement(Header, { linked: true, keepPill: false }));
+    return {
+      drop: () => {
+        dropLink();
+        view.rerender(createElement(Header, { linked: false, keepPill: false }));
+      },
+    };
+  };
+
+  it('says the owed drop once: a header that comes back for a later drop says nothing', () => {
+    setSetting('disconnectWhenDrivingEnds', true);
+    startTapDrive(null);
+    const first = renderHeader(false);
+    fireEvent.click(first.pill());
+    first.drop();
+    expect(signals.announceQueued).toHaveBeenLastCalledWith('ble.barControl.disconnectedLabel');
+    first.unmount();
+    // Relinked while no header or bulb was there to see it.
+    relinkSignals();
+    signals.announceQueued.mockClear();
+    renderLinkedHeader().drop();
+    expect(signals.announceQueued).not.toHaveBeenCalled();
+  });
+
+  it('forgets an owed drop the header missed once it sees the link come back', () => {
+    stopThenLeave();
+    // The drop came while no header was there.
+    dropLink();
+    const view = render(createElement(Header, { linked: false, keepPill: false }));
+    relinkSignals();
+    view.rerender(createElement(Header, { linked: true, keepPill: false }));
+    signals.announceQueued.mockClear();
+    dropLink();
+    view.rerender(createElement(Header, { linked: false, keepPill: false }));
+    expect(signals.announceQueued).not.toHaveBeenCalled();
+  });
+
+  it('forgets an owed drop the header missed once any bulb sees the link come back', () => {
+    stopThenLeave();
+    // The drop came while no header was there; a bulb saw the link come back.
+    dropLink();
+    // A fresh prop each render: the capsule is memoised.
+    const bulbAt = (key: string) =>
+      createElement(BoardHeldCapsule, { ledless: false, dismiss: { occurrenceKey: key, onDismiss: vi.fn() } });
+    const bulb = render(bulbAt('unlinked'));
+    relinkSignals();
+    bulb.rerender(bulbAt('relinked'));
+    bulb.unmount();
+    signals.announceQueued.mockClear();
+    renderLinkedHeader().drop();
+    expect(signals.announceQueued).not.toHaveBeenCalled();
+  });
+
+  it('still says an owed drop the header was not there for, when it is there for the drop', () => {
+    stopThenLeave();
+    signals.announceQueued.mockClear();
+    renderLinkedHeader().drop();
+    expect(signals.announceQueued).toHaveBeenCalledOnce();
+    expect(signals.announceQueued).toHaveBeenCalledWith('ble.barControl.disconnectedLabel');
+  });
 });
 
 describe('a held wall with no lights', () => {

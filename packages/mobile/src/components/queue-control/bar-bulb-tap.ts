@@ -22,9 +22,9 @@ import { resolveBulbDriveCue } from './bulb-drive-cue';
  * (`BoardControlIndicator`) and the last pick's Put on board bulb
  * (`PickPutOnBoardBulb`) read it, on the iOS 26 accessory and the floating bar
  * alike, and so do the toolbar's, the Android app bar's, the header pill's and
- * the create-climb editor's (`useBulbDriveTap`). The tablet and open-Duo bulb, and the player's own
- * first-row bulb, run the player's handler instead, whose `tapAction` stops a
- * drive the same way.
+ * the create-climb editor's (`useBulbDriveTap`). The tablet and open-Duo bulb,
+ * and the player's own first-row bulb, run the player's handler instead, whose
+ * `tapAction` stops a drive the same way.
  *
  * - `stop_driving` — the bulb draws this phone's drive (`BulbDriveCue`: Put on
  *   board's timed drive, an open-ended drive, Always drive the wall's): stop
@@ -91,9 +91,20 @@ export type BulbStopSurface = 'mini_bar' | StandaloneBulbSurface;
  * went. The header pill shows only while this phone holds the board, so it goes
  * in the same render as the link drops and never sees the drop it asked to
  * have said; the Climbs header that drew it says it instead
- * (`useOwedDropAnnouncement`).
+ * (`useOwedDropAnnouncement`). A new link forgets it (`forgetOwedDropOnRelink`):
+ * the drop it was owed for came and went unsaid, and a later one is not its.
  */
 let owedDrop = false;
+
+/**
+ * A link that came back since the last render: whatever drop was owed has
+ * already happened, so a later drop is not that stop's to say. Read by the
+ * Climbs header and every bulb, so the first one there to see the relink
+ * clears it.
+ */
+function forgetOwedDropOnRelink(wasLinked: boolean, linked: boolean): void {
+  if (!wasLinked && linked) owedDrop = false;
+}
 
 /** Tests only: nothing owed. */
 export function resetOwedDropForTests(): void {
@@ -109,9 +120,10 @@ export function useOwedDropAnnouncement(linked: boolean): void {
   const { t } = useTranslation('settings');
   const wasLinkedRef = useRef(linked);
   useEffect(() => {
-    const dropped = wasLinkedRef.current && !linked;
+    const wasLinked = wasLinkedRef.current;
     wasLinkedRef.current = linked;
-    if (!dropped || !owedDrop) return;
+    forgetOwedDropOnRelink(wasLinked, linked);
+    if (!wasLinked || linked || !owedDrop) return;
     owedDrop = false;
     announceQueued(t('ble.barControl.disconnectedLabel'));
   }, [linked, t]);
@@ -139,8 +151,10 @@ export function useBarBulbStopDriving(linked: boolean, control: BulbStopSurface)
   const wasLinkedRef = useRef(linked);
   const announceDropRef = useRef(false);
   useEffect(() => {
-    const dropped = wasLinkedRef.current && !linked;
+    const wasLinked = wasLinkedRef.current;
     wasLinkedRef.current = linked;
+    forgetOwedDropOnRelink(wasLinked, linked);
+    const dropped = wasLinked && !linked;
     if (!dropped || !announceDropRef.current) return;
     announceDropRef.current = false;
     announceQueued(tSettings('ble.barControl.disconnectedLabel'));

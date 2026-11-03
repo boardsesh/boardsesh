@@ -17,8 +17,9 @@
 // A tap lets go, like the lightbulbs' short press: it disconnects, or releases a
 // wall with no lights. While this phone drives the wall it stops driving and
 // keeps the link instead, as every bulb does (owner, 2026-11-03;
-// `useBulbDriveTap`), and its hint says so. A long-press opens the Bluetooth controls sheet
-// (Re-light / Turn off / Disconnect) while this device holds the radio link.
+// `useBulbDriveTap`), and its hint says so. A long-press opens the Bluetooth
+// controls sheet (Re-light / Turn off / Disconnect) while this device holds the
+// radio link.
 // While it draws the climb on the wall it carries the wall capsule's Hide: the ×
 // and the screen-reader action, never a swipe, because a swipe that ends as a tap
 // here would let go of the board. With no swipe, the × stays in a narrow slot.
