@@ -1,0 +1,71 @@
+{
+  "projectId": 412845,
+  "executedAt": "2026-11-03",
+  "window": "2026-10-06T00:00:00Z to 2026-11-03T00:00:00Z",
+  "note": "Exact queries from `export-paid-social-dashboard.ts --validation`, executed with PostHog execute-sql. Probe runs use sources that already had traffic. Totals are column sums over all returned rows.",
+  "runs": {
+    "landing": {
+      "querySha256": "bbe77332e2b0f71e44419784ef222fc9ab6a115da4082fc226405187e637c71c",
+      "rowCount": 1,
+      "totals": { "landing_sessions": 1 }
+    },
+    "storeClicks": {
+      "querySha256": "35aba2f4f6df0ae4d1e7bb994c0328c54c54a3234ac50b95ba60c487452ba7b1",
+      "rowCount": 1,
+      "totals": { "landing_sessions": 1, "clicking_sessions": 0, "store_clicks": 0 }
+    },
+    "ads": {
+      "querySha256": "9e14adf99ce55b12433dbcdb21e2bc85ee831dc87ebfb5cdd2bef7f06d71e2d9",
+      "rowCount": 1,
+      "totals": { "landing_sessions": 1, "store_clicks": 0 }
+    },
+    "androidInstalls": {
+      "querySha256": "9b3d1b383f42c3409c215ebd777b96b32e274b2db920b6fc5f9d4a0f8606006f",
+      "rowCount": 0,
+      "totals": { "people": 0 }
+    },
+    "androidOutcomes": {
+      "querySha256": "fe3cd2ddddb5e762475de83c1682fcfa2b2cd237963d43c8c373cfa0522e3d9a",
+      "rowCount": 0,
+      "totals": { "new_installs": 0 }
+    },
+    "probeLanding": {
+      "querySha256": "5628e8cb868f125fc8c103f5e405a80405e5b8db98c6cd5690b13803a28aa53c",
+      "rowCount": 15,
+      "totals": { "landing_sessions": 23, "crawler_sessions_removed": 1, "arm2_sessions_removed": 0 }
+    },
+    "probeStoreClicks": {
+      "querySha256": "d0cfec64dd7e9503467a8b39a92df62dcd38c01336af239ff90f4d42e4a1adc8",
+      "rowCount": 15,
+      "totals": {
+        "landing_sessions": 23,
+        "clicking_sessions": 6,
+        "store_clicks": 7,
+        "ios_clicks": 6,
+        "android_clicks": 1
+      }
+    },
+    "probeAds": {
+      "querySha256": "039f9a98ab9588564b457f47a64bdbd50e6c162066f41741aa3be0d42eac8105",
+      "rowCount": 2,
+      "totals": { "landing_sessions": 23, "clicking_sessions": 6, "store_clicks": 7 }
+    },
+    "probeAndroidInstalls": {
+      "querySha256": "fc695fc242eca297b250cd6eb0ed0fa37fe9000ee966bda697951406fcaa4e8b",
+      "rowCount": 24,
+      "totals": { "people": 35 }
+    },
+    "probeAndroidOutcomes": {
+      "querySha256": "4ff42c50faeb786065ec968559732a52d764da40ad9267858f08e19f16fdfe3f",
+      "rowCount": 9,
+      "totals": {
+        "new_installs": 35,
+        "signup_people_so_far": 0,
+        "signup_eligible_7d": 31,
+        "clean_newcomers": 26,
+        "eligible_7d": 26,
+        "board_active_7d": 1
+      }
+    }
+  }
+}

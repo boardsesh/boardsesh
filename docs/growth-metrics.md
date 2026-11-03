@@ -1002,6 +1002,52 @@ confirm App Store privacy disclosures describe advertising measurement and
 product analytics. Simulator, mocked and TestFlight dummy responses prove
 code paths only; they do not prove real campaign attribution.
 
+### Paid social (Reddit, Instagram)
+
+Dashboard: [Paid social: Reddit and Instagram](https://us.posthog.com/project/412845/dashboard/2297251).
+
+Reddit and Instagram ads link to www tagged
+`?utm_source=reddit|instagram&utm_medium=paid-social&utm_campaign=<code>&utm_content=<ad>`.
+The dashboard counts sources `reddit`, `instagram` and `meta`, lower-cased. A
+landing with a bare `rdt_cid` and no `utm_source` reads as `reddit` /
+`paid-social`; one with a bare `fbclid` reads as `meta` / `social`, the same
+fallback the store links use. The click ids are read from the event property
+when www sends one and from the landing URL otherwise. Instagram adds `fbclid` to unpaid links too (a bio
+link), so `meta` is not all paid: read the medium column.
+
+| Tile | Population | What it counts |
+| ---- | ---------- | -------------- |
+| Landing sessions by day | www (`$lib = js`) | Sessions whose first `$pageview` URL carried a paid-social tag. A later session of the same page load replays the tags but not the URL, so it is not a second landing. Crawler rule applied per person over the same window; arm 2 removals are a column of their own so the count can be quoted as a range. |
+| Store clicks and click-through by day | www | `App Install Click` in those sessions. Click-through is sessions with a click over landing sessions. The iOS and Android columns split the same sessions and can overlap. |
+| By ad (`utm_content`) | www | The same sessions and clicks per ad over the whole range. |
+| Android installs by install day | persons | `install_source` in the list, dated by `install_begin_timestamp`. People without an install time are one all-time row. `link_id` is our button's `placement`, never the ad. |
+| Android sign-ups and 7-day activation | persons + native Android events | Installs that began in the range. Sign-up is native `Signup Completed` from an hour before the install on: observed so far, and a 7-day rate over installs at least 7 days old. Activation is the Apple Ads definition: clean Android newcomers (`growth_native_newcomers`) with a `Climb Sent to Board Success` within 7 days of their first screen, maturity capped at the registry's cutoff. |
+
+- Every tile excludes cohort 295337 and uses the dashboard date range. Days are
+  UTC.
+- www tiles key on the session, not the person: landing visitors are anonymous
+  ("Campaign params on www").
+- Store clicks from the browser app at `/app` carry no landing tags and are not
+  counted.
+- The ad (`utm_content`) is known on www only. It never reaches an install: the
+  store link's `utm_content` is our link id.
+- **iOS installs from these ads can't be joined to a person.** App Store Connect →
+  App Analytics → Acquisition → Campaigns lists them under the campaign token
+  `reddit-<code>` / `instagram-<code>` (a bare `fbclid` visit is `meta`), after
+  5 first-time downloads, and only once `NEXT_PUBLIC_APP_STORE_PROVIDER_ID` is
+  set ("App Store" below).
+
+Definitions are in `scripts/posthog/paid-social-queries.ts`; the dashboard layout
+and copy are in `scripts/posthog/paid-social-dashboard.ts`. Print both with
+`vp exec node --import tsx scripts/posthog/export-paid-social-dashboard.ts`.
+Add `--validation` to print the exact queries that were run live for
+`paid-social-validation.json`: the five tiles over a fixed window, and the same
+SQL against sources that already had traffic (`ig`, `chatgpt.com`,
+`boardsesh`). The adjacent test checks each query's SHA-256, so editing a
+definition means running it again and recording the new hash and totals.
+`paid-social-deployment.json` records the dashboard, insight and tile IDs:
+update those insights in place rather than creating new ones.
+
 ### Link ids on Android installs
 
 A store link can carry a link id in `utm_content` (#6027). The app's referrer
