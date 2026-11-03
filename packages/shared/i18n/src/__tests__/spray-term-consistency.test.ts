@@ -143,8 +143,8 @@ const RULES: TermRule[] = [
       'climbs.json:spray.gymsLink',
       // General board list/navigation also includes spray walls.
       'marketing.json:home.showcase.videoLabel',
-      'marketing.json:help.sprayWalls.add.step1',
-      'marketing.json:help.sprayWalls.later.p1',
+      'marketing.json:help.spray.add.step1',
+      'marketing.json:help.spray.edit.p1',
     ]),
     requiredTerm: /\bSpraywalls?\b/,
     requiredTermFloor: 99,
@@ -175,8 +175,8 @@ const RULES: TermRule[] = [
       'climbs.json:spray.gymsLink',
       // General board list/navigation also includes spray walls.
       'marketing.json:home.showcase.videoLabel',
-      'marketing.json:help.sprayWalls.add.step1',
-      'marketing.json:help.sprayWalls.later.p1',
+      'marketing.json:help.spray.add.step1',
+      'marketing.json:help.spray.edit.p1',
     ]),
     requiredTerm: /\bSpraywalls?\b/,
     requiredTermFloor: 97,

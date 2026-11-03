@@ -29,37 +29,25 @@
       "title": "Informativa sulla privacy",
       "description": "Informativa sulla privacy di Boardsesh: come trattiamo i tuoi dati."
     },
-    "helpPlaylists": {
-      "title": "Crea una playlist per il pannello e scala i blocchi in ordine",
-      "description": "Crea una playlist per Kilter, Tension o MoonBoard, aggiungi e togli blocchi, caricala in coda e usa le otto liste che Boardsesh costruisce."
-    },
     "helpSessions": {
-      "title": "Avvia una session live o unisciti a una e condividete la coda",
-      "description": "Avvia una session dalla scheda Session, invita la tua crew con un QR code o un link e condividi una coda e un pannello senza pestarvi i piedi sui blocchi illuminati."
+      "title": "Avvia o unisciti a una session live con la tua crew",
+      "description": "Avvia una session nella scheda Session, invita la crew con un codice QR o un link e condividi un pannello senza illuminarvi i blocchi a vicenda."
     },
     "helpFindingClimbs": {
-      "title": "Filtra i blocchi per presa, zona del pannello e tracciatore",
-      "description": "Intervallo di gradi, tipi di presa, zona del pannello, tracciatori che segui, azioni di scorrimento su una riga di blocco e filtri fissati nell'app Boardsesh."
+      "title": "Trova blocchi, tieni premuto per le azioni, crea playlist",
+      "description": "Filtra i blocchi Kilter, Tension e MoonBoard per grado, presa, zona e tracciatore, scorri una lista, tieni premuto un blocco per il suo menu e crea playlist nell'app Boardsesh."
     },
     "helpLogbook": {
-      "title": "Registra, modifica ed elimina le ripetizioni nel diario",
-      "description": "Registra una salita dal pannello nell'app Boardsesh, cambia dopo grado, stelle, tentativi o stato, elimina una voce e ritrova una vecchia ripetizione."
+      "title": "Registra, modifica ed elimina salite, e allega video della beta",
+      "description": "Registra una spunta nell'app Boardsesh, modificala o eliminala dopo, porta qui il tuo diario Kilter o Tension e allega un video della beta di Instagram o TikTok a un blocco."
     },
     "helpBoardAndBluetooth": {
-      "title": "Connettiti al tuo pannello via Bluetooth",
-      "description": "Connetti Boardsesh al controller di un Kilter Board, di un Tension Board o di una MoonBoard, scegli per quanto guidi il pannello dopo Illumina il pannello, risolvi una connessione fallita e controllalo dalla schermata di blocco con Live Activity."
-    },
-    "helpClimbActions": {
-      "title": "Tocca per l'anteprima, tieni premuto per registrare o aggiungere a una playlist",
-      "description": "Come un tocco su una riga di blocco nell'app Boardsesh apre un'anteprima senza illuminare il pannello, e cosa fa il menu a pressione prolungata: registrare una salita o aggiungerlo a una playlist."
-    },
-    "helpBetaVideos": {
-      "title": "Condividi un reel di Instagram o TikTok come beta",
-      "description": "Condividi un reel di Instagram o TikTok in Boardsesh dal suo menu di condivisione, allegalo a un blocco, gira nuove beta e trova quelle pubblicate dagli altri."
+      "title": "Metti un blocco sul tuo pannello: Bluetooth e guida del pannello",
+      "description": "Connetti Boardsesh a un Kilter, Tension o MoonBoard, scopri cosa vuol dire guidare il pannello, scorri il pulsante del pannello per continuare a illuminare i blocchi e risolvi un pannello che non si connette."
     },
     "helpSprayWalls": {
-      "title": "Come fotografare e configurare la tua Spraywall",
-      "description": "Fotografa la tua Spraywall di fronte, in verticale e con il telefono inclinato come la Spraywall, poi aggiungila a Boardsesh, correggi le prese che trova e modificale dopo un reset."
+      "title": "Come fotografare e preparare la tua Spraywall",
+      "description": "Fotografa la tua Spraywall di fronte e in verticale, aggiungila a Boardsesh, correggi le prese che trova e modificale dopo o dopo un reset."
     }
   },
   "home": {
@@ -397,597 +385,465 @@
       "unsupported": "Il tuo browser non può riprodurre questa clip.",
       "playHint": "Premi play per vedere il gesto."
     },
-    "hero": {
-      "title": "Aiuto",
-      "subtitle": "Guide per l'app, come portare qui il tuo diario Kilter o Tension e dove fare domande."
-    },
-    "web": {
-      "title": "Su questo sito",
-      "intro": "Tutto quello che c'è su boardsesh.com funziona nel browser, anche senza accedere.",
-      "item1": "Cerca grado, tracciatore, salite e video della beta di un blocco.",
-      "item2": "Sfoglia il catalogo di un pannello per layout, dimensione e inclinazione.",
-      "item3": "Condividi un blocco, una playlist o un profilo con un link.",
-      "item4": "Trova palestre con pannelli vicino a te.",
-      "playlistsLink": "Sfoglia le playlist",
-      "aboutLink": "Informazioni su Boardsesh"
-    },
-    "app": {
-      "title": "Nell'app",
-      "intro": "Tutto ciò che riguarda il pannello o il tuo diario si fa nell'app.",
-      "item1": "Crea una coda e percorrila con la tua crew.",
-      "item2": "Avvia una session live così ogni telefono gestisce una sola coda.",
-      "item3": "Illumina le prese via Bluetooth su pannelli Kilter, Tension e MoonBoard.",
-      "item4": "Registra ripetizioni e tentativi e allega video della beta."
-    },
-    "aurora": {
-      "title": "Porta qui il tuo diario Kilter o Tension",
-      "intro": "Collega il tuo account del pannello una volta e le tue ripetizioni arrivano qui.",
-      "item1": "Tocca il tuo avatar, poi Impostazioni, poi App collegate. In Account dei pannelli, tocca Collega sulla scheda Tension o Accedi a Kilter sulla scheda Kilter, e inserisci nome utente e password di quel pannello.",
-      "item2": "Usavi la vecchia app Kilter? La scheda Kilter (Aurora) accetta invece un'esportazione JSON.",
-      "link": "Leggi la guida alla migrazione",
-      "item3": "La sincronizzazione va in una sola direzione, dalle loro app a Boardsesh, circa ogni 12 ore. Niente torna indietro."
-    },
-    "climbCounts": {
-      "title": "Perché l'app di Kilter mostra più blocchi?",
-      "intro": "Le due app hanno gli stessi blocchi e li contano in modo diverso.",
-      "item1": "Boardsesh conta ogni blocco una volta.",
-      "item2": "L'app di Kilter sembra contare un blocco una volta per ogni inclinazione a cui qualcuno l'ha salito.",
-      "item3": "Su un Kilter Homewall 8x12 sono circa 18.000 blocchi in Boardsesh e circa 36.000 nell'app di Kilter."
-    },
-    "ask": {
-      "title": "Fai una domanda",
-      "intro": "Discord è il posto più veloce per avere una risposta.",
-      "discord": "Chiedi su Discord",
-      "github": "Apri una issue su GitHub",
-      "docs": "Leggi la documentazione per sviluppatori",
-      "bugLead": "Hai trovato un bug?",
-      "devLead": "Stai costruendo qualcosa con l'API?"
-    },
     "nav": {
       "label": "Percorso di navigazione",
       "home": "Home",
       "help": "Aiuto"
     },
-    "guides": {
-      "title": "Guide",
-      "intro": "Otto brevi pagine con screenshot dell'app.",
-      "playlists": {
-        "title": "Playlist",
-        "body": "Crea una playlist, togli un blocco, metti in coda tutta la lista e usa le otto liste integrate."
-      },
-      "climbActions": {
-        "title": "Azioni sul blocco",
-        "body": "Tocca un blocco per vederne l'anteprima senza illuminare il pannello. Tienilo premuto per registrare una salita o aggiungerlo a una playlist."
-      },
-      "sessions": {
-        "title": "Session live",
-        "body": "Avvia una session, invita la tua crew con un QR code o un link e sfoglia senza cambiare il blocco in parete."
-      },
-      "findingClimbs": {
-        "title": "Trovare blocchi",
-        "body": "Filtra i blocchi per grado, presa, zona del pannello o tracciatore e fissa i filtri che usi."
-      },
-      "logbook": {
-        "title": "Il tuo diario",
-        "body": "Registra una ripetizione al pannello, poi cambia dopo grado, stelle, tentativi o stato."
-      },
-      "bluetooth": {
-        "title": "Pannello e Bluetooth",
-        "body": "Connettiti al pannello, scegli per quanto Illumina il pannello continua a illuminare, risolvi una connessione fallita e usa la schermata di blocco."
-      },
-      "betaVideos": {
-        "title": "Video della beta",
-        "body": "Condividi un reel di Instagram o TikTok in Boardsesh, allegalo a un blocco e trova le beta degli altri."
-      },
-      "sprayWalls": {
-        "title": "Spraywall",
-        "body": "Fotografa la tua Spraywall in modo che le prese vengano riconosciute bene, aggiungila e correggi le sue prese quando vuoi."
-      }
+    "install": {
+      "title": "Scarica l'app",
+      "intro": "Illuminare il pannello, registrare le ripetizioni e le session in crew si fanno nell'app."
     },
-    "playlists": {
-      "breadcrumb": "Playlist",
+    "board": {
+      "breadcrumb": "Pannello e Bluetooth",
       "hero": {
-        "title": "Crea una playlist e scala i blocchi in ordine",
-        "subtitle": "Salva i blocchi per dopo e scala la lista in ordine."
+        "title": "Metti un blocco sul tuo pannello",
+        "subtitle": "Un tocco mostra il blocco. Illumina il pannello lo accende, e il pannello segue le tue scelte per un po'."
       },
-      "build": {
-        "title": "Crea una playlist",
-        "intro": "Ogni playlist appartiene a un solo pannello.",
-        "step1": "Apri Scopri. Controlla il pannello indicato in alto.",
-        "step2": "Tocca +. Dai un nome, scegli un colore, tocca Crea.",
-        "step3": "Compare sotto Le mie playlist.",
-        "p1": "Per aggiungere un blocco, scorri la sua riga verso sinistra, oppure tienila premuta e tocca Aggiungi alla playlist.",
-        "p2": "Il selettore mostra solo le playlist del pannello e del layout di quel blocco.",
-        "clipAlt": "Scorrere a sinistra la riga di un blocco per aggiungerlo a una playlist",
-        "clipCaption": "Scorri a sinistra per metterlo in una playlist. Scorri a destra per metterlo subito dopo.",
-        "shotAlt": "La scheda Scopri",
-        "shotCaption": "Fissate, poi Le mie playlist, poi Per te.",
-        "playlistShotAlt": "La tua playlist",
-        "playlistShotCaption": "Fissa, modifica, riordina o rimuovi."
+      "connect": {
+        "title": "Metti un blocco sul pannello",
+        "lead": "Un tocco ti mostra il blocco. Illumina il pannello si connette se serve e lo accende.",
+        "clipAlt": "Toccando Illumina il pannello parte una guida a tempo, con un timer e un ghiaccio che si restringe",
+        "clipCaption": "Tocca Illumina il pannello. Il timer parte e ogni nuovo blocco che scegli lo ricarica.",
+        "step1": "In un blocco, tocca il grande pulsante Illumina il pannello.",
+        "step2": "Solo la prima volta, scegli il tuo pannello dall'elenco. Non lo vedi? Tocca Cerca qualsiasi pannello.",
+        "step3": "Consenti il Bluetooth quando richiesto. Android chiede Dispositivi nelle vicinanze, o Posizione su Android 11 e precedenti.",
+        "otherBoard": "Un blocco di un altro pannello della tua palestra mostra Metti sul Tension, o il nome di quel pannello. Toccalo per spostarti lì e accendere il blocco.",
+        "changeBoard": "Su un altro pannello? Cambia pannello è la prima riga dietro il tuo avatar."
       },
-      "remove": {
-        "title": "Togli un blocco",
-        "p1": "Dal blocco, apri Aggiungi alla playlist e tocca la playlist spuntata.",
-        "p2": "Dalla playlist, tocca la matita, oppure scegli Riordina e rimuovi blocchi dal menu ⋯. Tocca il meno rosso e conferma. Trascina la maniglia per riordinare.",
-        "p3": "Le liste Per te non hanno la modalità di modifica. Togli il cuore a un blocco o registra la ripetizione.",
-        "clipAlt": "Togliere la spunta a una playlist",
-        "clipCaption": "Tocca una playlist spuntata e il blocco esce."
+      "driving": {
+        "title": "Guidare il pannello",
+        "lead": "Quando guidi il pannello, ogni blocco che scegli si accende subito.",
+        "looking": "Altrimenti un tocco apre un'anteprima e il pannello tiene il suo blocco.",
+        "waysIntro": "Tre modi per iniziare a guidare:",
+        "way1": "Illumina il pannello accende il blocco, poi guidi per un tempo fisso: 45 secondi se non lo cambi. Ogni scelta riavvia il timer.",
+        "way2": "Scorri a sinistra il pulsante del pannello finché non dice Rilascia per illuminare ogni blocco, poi rilascia. Oppure, una volta connesso, tienilo premuto e scegli Illumina ogni blocco. Guidi finché non tocchi Guidi tu il pannello.",
+        "way3": "Attiva Guida sempre il pannello in Impostazioni, poi Pannello. Finché il tuo telefono ha il pannello, guidi tu. Un tocco mette in pausa finché il pannello non si disconnette o tocchi Illumina il pannello.",
+        "tell": "Un pulsante del pannello smerigliato con scritto Guidi tu il pannello vuol dire che stai guidando.",
+        "tellClock": "Un timer accanto all'etichetta indica una guida a tempo, e il ghiaccio si restringe man mano che scade. Senza timer, dura finché non tocchi. Sul mini player, la lampadina diventa ambra mentre guidi.",
+        "clipAlt": "Scorrere a sinistra il pulsante del pannello per iniziare a guidare, poi toccarlo per fermarsi",
+        "clipCaption": "Scorri a sinistra e rilascia per illuminare ogni blocco. Tocca Guidi tu il pannello per fermarti.",
+        "endsIntro": "Una guida finisce quando:",
+        "end1": "Tocchi Guidi tu il pannello.",
+        "end2": "Il timer scade. Solo guide a tempo.",
+        "end3": "Un compagno mette un blocco. Solo guide a tempo.",
+        "end4": "Tocchi Spegni tutte le luci, la connessione cade o cambi pannello o session.",
+        "after": "Dopo una guida, la tua prossima scelta si apre di nuovo come anteprima.",
+        "states": {
+          "lookingAlt": "Il player con un'anteprima: la barra in alto dice Anteprima · non in parete e il pulsante dice Illumina il pannello",
+          "lookingCaption": "Stai guardando: Illumina il pannello. Non si accende nulla finché non lo tocchi.",
+          "timedAlt": "Il player mentre guidi con un timer: il pulsante dice Guidi tu il pannello · 0:28",
+          "timedCaption": "Guida a tempo: il timer scende dopo Illumina il pannello.",
+          "openAlt": "Il player mentre guidi senza timer: il pulsante dice Guidi tu il pannello",
+          "openCaption": "Scorri per guidare: niente timer, resta acceso finché non tocchi."
+        }
       },
-      "queue": {
-        "title": "Scala tutta la lista",
-        "intro": "Tocca un blocco in una playlist e ne vedi l'anteprima, partendo da quella playlist. La tua coda resta com'è.",
-        "p1": "Scorri per percorrere la lista in ordine dal blocco che hai toccato. Il pulsante play in testata fa lo stesso dal primo blocco. Metti subito dopo mette tutta la lista in cima a Prossimi, Metti in fondo la mette in fondo. Per far sì che un tocco o il pulsante play carichino la playlist nella tua coda, attiva Toccare una playlist la carica nella mia coda in Impostazioni, poi Pannello. Il pannello tiene il suo blocco e vedi in anteprima quello che hai toccato. Mentre guidi tu il pannello, il tocco sostituisce invece tutta la tua coda con la playlist e illumina il blocco.",
-        "p2": "In una session, un tocco apre il blocco solo per te e la coda condivisa resta com'è, a meno che non guidi tu il pannello: allora il blocco toccato si illumina in parete per tutti.",
-        "sessionsLink": "Come una session condivide una coda",
-        "clipAlt": "La finestra Avviare la playlist?",
-        "clipCaption": "Con quell'interruttore attivo e dei blocchi già in coda, Avviare la playlist? chiede prima conferma."
+      "history": {
+        "title": "Cosa c'è ora in parete",
+        "lead": "Cronologia del pannello elenca ogni blocco acceso su questo pannello, da chiunque, dal più recente.",
+        "p1": "Tocca l'orologio nell'intestazione Blocchi per aprirla. Tocca un blocco per vederlo in anteprima. La cronologia della tua coda è un'altra lista.",
+        "p2": "La capsula nell'intestazione Blocchi mostra il blocco in parete finché un telefono connesso lo tiene acceso, o per un'ora dopo che è stato acceso. Puoi nasconderla fino a quando ne viene acceso un altro."
       },
-      "smart": {
-        "title": "Le otto liste che Boardsesh crea per te",
-        "crowdFavorites": "Preferiti dalla community. Blocchi ben votati e molto ripetuti che non hai ancora fatto.",
-        "hiddenGems": "Perle nascoste. Votati 4,5 stelle o più, ripetuti da pochi.",
-        "atYourLevel": "Al tuo livello. Blocchi popolari intorno al grado che chiudi di solito.",
-        "fresh": "Novità. Nuovi sul tuo pannello, prima quelli dei tracciatori che segui.",
-        "fiveStars": "Cinque stelle. Blocchi a cui hai dato cinque stelle.",
-        "mostRepeated": "Più ripetuti. Blocchi con più di un tentativo registrato.",
-        "projects": "Progetti. Blocchi che hai registrato ma non hai mai chiuso.",
-        "likedClimbs": "Blocchi che ti piacciono. Ogni blocco a cui hai messo il cuore.",
-        "p1": "Stanno sotto Per te in Scopri. Le prime quattro leggono il tuo pannello alla tua inclinazione e saltano i blocchi che hai chiuso. Le ultime quattro vengono dalle tue salite e dai tuoi cuori.",
-        "p2": "Tocca la puntina di una scheda per spostarla in Fissate. Le liste Per te fissate restano su questo telefono."
+      "controls": {
+        "title": "Controlli e impostazioni del pannello",
+        "lead": "Da connesso, tieni premuto il pulsante del pannello per aprire Controlli del pannello.",
+        "shotAlt": "Controlli del pannello per un pannello connesso",
+        "shotCaption": "Illumina di nuovo, spegni tutte le luci o disconnetti.",
+        "lightingShotAlt": "Impostazioni di illuminazione con durata della guida e accensione automatica",
+        "lightingShotCaption": "Impostazioni, poi Pannello: quando smette la guida.",
+        "row1": "Smetti di guidare dopo. Cambia il tempo o scegli Subito.",
+        "row2": "Illumina di nuovo il pannello. Rimanda il blocco ai LED.",
+        "row3": "Spegni tutte le luci. Ferma anche la guida.",
+        "row4": "Disconnetti il pannello. Usalo se ti sei connesso al pannello sbagliato.",
+        "row5": "Illumina la presa sopra. Solo MoonBoard.",
+        "settingsIntro": "Il resto sta in Impostazioni, poi Pannello:",
+        "setting1": "Smetti di guidare dopo: Subito, da 30 secondi a 5 minuti, o Finché non mi fermo.",
+        "setting2": "Guida sempre il pannello: spento di default.",
+        "setting3": "Disconnetti il Bluetooth quando smetti di guidare: spento di default. Libera il pannello per il prossimo.",
+        "setting4": "Anche in una session: acceso di default. Ti lascia guidare in una crew.",
+        "bulb": "Preferisci una lampadina? Imposta Controllo del pannello su Lampadina in ⋯, Opzioni di visualizzazione, Pulsanti."
       },
-      "tags": {
-        "title": "Vedi in quali playlist si trova un blocco",
-        "p1": "In Impostazioni, poi Blocchi e gradi, poi Elenco dei blocchi, attiva Mostra i tag delle playlist. Le righe che sono in una playlist mostrano dei chip. Toccare un chip non apre la playlist."
+      "control": {
+        "title": "Quando un altro telefono ha il pannello",
+        "lead": "Un pannello Kilter o Tension parla con un solo telefono alla volta, e una nuova connessione butta giù la vecchia.",
+        "p1": "MoonBoard V3+ accetta più telefoni. La scatola della MoonBoard originale tiene il primo e potrebbe servire riavviare il controller.",
+        "p2": "In una crew si connette solo il telefono che ha il pannello. Il tuo Illumina il pannello passa da quel telefono, e la sua faccia compare sul tuo pulsante del pannello.",
+        "sessionsLink": "Altro sulla condivisione del pannello"
+      },
+      "liveActivity": {
+        "title": "Schermata di blocco e Dynamic Island",
+        "lead": "Avvia una session, anche da solo, e la schermata di blocco ottiene i controlli del pannello.",
+        "p1": "Su iPhone, una Live Activity mostra il blocco in parete e il suo grado. Finché il tuo telefono ha il pannello, aggiunge Precedente, Successivo e una lampadina che illumina di nuovo il pannello.",
+        "p2": "Successivo avanza nella tua coda, non nella lista che stavi scorrendo, e accende subito quel blocco. Come Illumina il pannello, avvia o allunga una guida.",
+        "p3": "Android mostra gli stessi controlli in una notifica. Bloccare lo schermo non disconnette mai il pannello."
+      },
+      "failed": {
+        "title": "Il pannello non si connette?",
+        "lead": "L'avviso Impossibile connettersi indica il problema.",
+        "fix1": "Pannello non trovato. Controlla che sia acceso e che tu sia vicino. Se un altro telefono è connesso, disconnettilo prima da lì.",
+        "fix2": "Impossibile connettersi. Avvicinati e riprova.",
+        "fix3": "Connesso, ma il pannello non risponde. Spegnilo e riaccendilo.",
+        "fix4": "Il Bluetooth è spento. Accendilo.",
+        "fix5": "Su Android, se non trovi nulla, tocca Consenti posizione o Attiva posizione in fondo al foglio.",
+        "twoBoards": "Due pannelli nel raggio? Il tuo è in cima. Leggi il numero di serie prima di toccare. Un avviso di configurazione del pannello non corrispondente vuol dire che il controller ha un'altra configurazione. Scegli Annulla, Connetti comunque o Cambia configurazione del pannello.",
+        "duplicate": "Lo stesso pannello due volte? Due numeri di serie sono due controller. Una riga con solo Kilter Board è una scatola LED più recente, e più tacche di segnale di solito indicano il tuo pannello. Se si accende il pannello sbagliato, tocca Disconnetti il pannello in Controlli del pannello.",
+        "duplicateYourBoards": "Un pannello doppio sotto I tuoi pannelli è un'altra cosa. Tocca Modifica, poi Elimina o Smetti di seguire."
       },
       "next": {
         "title": "Continua",
-        "climbActions": "Cosa può fare una pressione prolungata",
-        "browse": "Sfoglia le playlist pubbliche sul web",
-        "hub": "Tutti gli argomenti di aiuto"
+        "findingClimbs": "Trova qualcosa da mettere sul pannello",
+        "hub": "Tutti gli argomenti dell'aiuto"
       }
     },
-    "sessions": {
+    "climbs": {
+      "breadcrumb": "Trova, riproduci e salva blocchi",
+      "hero": {
+        "title": "Trova, riproduci e salva blocchi",
+        "subtitle": "Filtra la lista, scorrila, tieni premuto per altro e salva i blocchi nelle playlist."
+      },
+      "player": {
+        "title": "Scorri una lista",
+        "lead": "Un tocco mostra un blocco, e scorrere percorre la lista da cui l'hai toccato.",
+        "p1": "La barra in alto dice Anteprima · non in parete e nomina la lista, tipo Risultati della ricerca · 4 di 23. Il pannello, la tua coda e i telefoni degli altri restano come sono.",
+        "p2": "Dal blocco in parete, gli scorrimenti vanno prima a Prossimi. Poi continuano nella lista da cui veniva quel blocco, che il foglio della coda mostra sotto Poi da e il nome della lista. A fine lista compare una scheda finale.",
+        "p3": "Il chip indietro ti porta al blocco in parete. Il mini player è la tua ultima occhiata: toccalo per riaprire quell'anteprima con la sua lista.",
+        "p4": "In una crew la barra in alto dice Lo vedi solo tu, e ogni telefono percorre la propria lista.",
+        "callout": "Illumina il pannello fa diventare un blocco in anteprima il blocco in parete. Mentre guidi il pannello non c'è anteprima: ogni scelta si accende subito.",
+        "drivingLink": "Come funziona la guida",
+        "clipAlt": "Scorrere una lista nel player",
+        "clipCaption": "Scorri la lista. Il pannello tiene il suo blocco."
+      },
+      "menu": {
+        "title": "Tieni premuto un blocco",
+        "lead": "Tieni premuta la riga di un blocco per tutte le sue azioni.",
+        "p1": "Tocca un'azione, o tocca fuori per chiudere. Registra una salita, Aggiungi alla playlist e Condividi sono quelle che userai di più.",
+        "playNext": "Metti subito dopo mette il blocco in cima a Prossimi. Metti in fondo lo mette in fondo.",
+        "favorite": "Attiva o disattiva il preferito salva il blocco in Blocchi che ti piacciono. Una volta lì, la riga dice Rimuovi dai preferiti.",
+        "remix": "Remixa questo blocco crea un nuovo blocco da queste prese.",
+        "edit": "Modifica il blocco funziona sui tuoi blocchi, come bozza o entro 24 ore dalla pubblicazione.",
+        "others": "Aggiungi un video della beta, Modifica la salita, Apri nell'app Aurora e Segnala il blocco compaiono quando servono.",
+        "p2": "Preferisci un tocco? Attiva Mostra il pulsante azioni rapide in Impostazioni, poi Blocchi e gradi, poi Elenco dei blocchi. Ogni riga ottiene un ⋮ che apre lo stesso menu.",
+        "betaLink": "Allega un video della beta",
+        "clipAlt": "Tenere premuta la riga di un blocco",
+        "clipCaption": "Tieni premuta la riga e il menu si apre da solo."
+      },
+      "filters": {
+        "title": "Filtra per grado, presa, zona o tracciatore",
+        "lead": "Apri Filtri nella scheda Blocchi. Una puntina accanto al nome di un filtro lo trasforma in chip sopra la lista.",
+        "grade": "Tocca Grado, poi un grado. Tocca un secondo grado entro tre secondi per un intervallo, o di nuovo il grado scelto per cancellarlo.",
+        "angle": "Gradi e conteggi delle ripetizioni usano l'inclinazione del pannello. Tocca il chip dei gradi per cambiarla.",
+        "progress": "Da connesso, i chip Progressi usano il tuo storico. Non chiusi nasconde le tue ripetizioni, Progetti tiene i blocchi provati ma non chiusi e Non provati tiene quelli mai registrati.",
+        "gradeClipAlt": "Creare un intervallo di gradi",
+        "gradeClipCaption": "Due tocchi veloci creano un intervallo.",
+        "holdsIntro": "Per filtrare per presa, scorri fino a Il blocco in Filtri e tocca Tipi di presa.",
+        "holdStep1": "Scegli Includi o Escludi.",
+        "holdStep2": "Scegli un tipo di presa.",
+        "holdStep3": "Pizzica per ingrandire, poi tocca le prese. Tocca di nuovo con lo stesso pennello per cancellare un segno.",
+        "holdNote": "Cancella tutto svuota il pannello. La MoonBoard non ha il pennello per i piedi.",
+        "holdClipAlt": "Segnare le prese",
+        "holdClipCaption": "Scegli prima un pennello, poi tocca le prese.",
+        "region": "Per delimitare una parte del pannello, tocca Zona del pannello, poi Aggiungi una zona. Trascina il centro per spostare il riquadro e un angolo per ridimensionarlo.",
+        "regionModes": "Tutte le prese tiene i blocchi interamente dentro il riquadro. Una presa qualsiasi tiene i blocchi che lo toccano.",
+        "regionClipAlt": "Spostare e ridimensionare la zona",
+        "regionClipCaption": "Trascina il centro per spostare il riquadro, un angolo per ridimensionarlo.",
+        "setters": "Tocca Segui sulla pagina di un tracciatore o nella schermata Tracciatori. Poi attiva Blocchi delle persone che seguo, subito sotto Tracciatori.",
+        "settersPicker": "Nella schermata Tracciatori, spunta una casella per filtrare o tocca un nome per sfogliare i suoi blocchi.",
+        "shotAlt": "La schermata Tracciatori",
+        "shotCaption": "Spunta una casella per filtrare. Tocca un nome per sfogliare.",
+        "count": "Il pulsante in basso mostra quanti blocchi corrispondono. Reimposta cancella tutti i filtri."
+      },
+      "rows": {
+        "title": "Scorri la riga di un blocco",
+        "lead": "Scorri a destra per mettere un blocco subito dopo, o a sinistra per aggiungerlo a una playlist.",
+        "p1": "Nessuno dei due scorrimenti illumina il pannello.",
+        "p2": "Il piccolo simbolo è il tuo storico: un fulmine per flash, una spunta cerchiata per chiuso, una croce cerchiata per provato, una C cerchiata per benchmark.",
+        "clipAlt": "Scorrere una riga nei due versi",
+        "clipCaption": "A destra la mette subito dopo. A sinistra apre il selettore di playlist."
+      },
+      "playlists": {
+        "title": "Playlist",
+        "lead": "Una playlist è una lista salvata di blocchi per un pannello, e la percorri scorrendo.",
+        "step1": "Apri Scopri e controlla la pillola del pannello in alto.",
+        "step2": "Tocca il più, dagli un nome, scegli un colore e tocca Crea.",
+        "step3": "Aggiungi blocchi: scorri una riga a sinistra, oppure tienila premuta e tocca Aggiungi alla playlist.",
+        "p1": "La tua playlist compare sotto Le mie playlist. Il selettore mostra solo le playlist del pannello e del layout del blocco.",
+        "play": "Per riprodurre una playlist, tocca un blocco al suo interno e scorri. Il pulsante play nell'intestazione parte dal primo blocco.",
+        "remove": "Per togliere un blocco, apri Aggiungi alla playlist su di esso e tocca la playlist spuntata. Oppure tocca la matita sulla playlist, il meno rosso e conferma.",
+        "reorder": "Trascina la maniglia per riordinare. Le liste Per te non hanno la modalità modifica: togli il cuore al blocco o registra la ripetizione.",
+        "removeClipAlt": "Togliere la spunta a una playlist",
+        "removeClipCaption": "Tocca una playlist spuntata e il blocco esce.",
+        "forYou": "Scopri crea otto liste Per te: Preferiti dalla community, Perle nascoste, Al tuo livello, Novità, Cinque stelle, Più ripetuti, Progetti e Blocchi che ti piacciono.",
+        "forYouHow": "Le prime quattro leggono il tuo pannello alla tua inclinazione e saltano le tue ripetizioni. Le ultime quattro vengono dalle tue spunte e dai tuoi cuori.",
+        "tags": "Per vedere in quali playlist si trova un blocco, attiva Mostra i tag delle playlist in Impostazioni, poi Blocchi e gradi, poi Elenco dei blocchi.",
+        "browse": "Sfoglia le playlist pubbliche sul web",
+        "discoverShotAlt": "La scheda Scopri",
+        "discoverShotCaption": "Fissate, poi Le mie playlist, poi Per te.",
+        "detailShotAlt": "La tua playlist",
+        "detailShotCaption": "Fissa, modifica, riordina o rimuovi."
+      },
+      "diagram": {
+        "description": "Dove porta uno scorrimento nel player. Apri un blocco da una lista e scorrere mostra il blocco prima o dopo in quella lista, senza accendere nulla. Illumina il pannello accende un'anteprima. Dal blocco in parete, scorrere va prima a Prossimi, poi alla lista di origine, poi a una scheda finale.",
+        "listCaption": "Tocca un blocco in una lista: gli scorrimenti percorrono quella lista. Non si accende nulla.",
+        "listName": "Risultati della ricerca",
+        "listCurrent": "{{list}} · 4 di 23",
+        "listPrevious": "Blocco 3",
+        "listNext": "Blocco 5",
+        "wallCaption": "Dal blocco in parete: prima Prossimi, poi la lista di origine.",
+        "preview": "Anteprima · non in parete",
+        "putOnBoard": "Illumina il pannello",
+        "onWall": "In parete",
+        "upNext": "Prossimi",
+        "thenFrom": "Poi da {{list}}",
+        "endCard": "Fine della lista"
+      }
+    },
+    "hub": {
+      "hero": {
+        "title": "Aiuto",
+        "subtitle": "Guide brevi per l'app, come portare qui il tuo diario Kilter o Tension e dove fare domande."
+      },
+      "guides": {
+        "title": "Guide",
+        "lead": "Scegli la guida che fa per quello che stai facendo.",
+        "start": {
+          "title": "Pannello e Bluetooth",
+          "body": "Metti un blocco in parete, guidalo e risolvi un pannello che non si connette."
+        },
+        "browse": {
+          "title": "Trova, riproduci e salva blocchi",
+          "body": "Scorri le liste, filtra per grado o presa e crea playlist."
+        },
+        "crew": {
+          "title": "Arrampica con la tua crew",
+          "body": "Avvia una session e invita la crew con un codice QR."
+        },
+        "logbook": {
+          "title": "Il tuo diario",
+          "body": "Registra e modifica le salite e allega video della beta."
+        },
+        "spray": {
+          "title": "Spraywall",
+          "body": "Fotografa la tua Spraywall e correggi le prese che trova Boardsesh."
+        }
+      },
+      "bring": {
+        "title": "Porta qui il tuo diario Kilter o Tension",
+        "lead": "Collega il tuo account del pannello una volta e le tue ripetizioni arrivano qui.",
+        "link": "Vedi i passaggi"
+      },
+      "counts": {
+        "title": "Perché l'app Kilter mostra più blocchi?",
+        "lead": "Le due app hanno gli stessi blocchi e li contano in modo diverso.",
+        "item1": "Boardsesh conta ogni blocco una volta. L'app Kilter sembra contare un blocco una volta per ogni inclinazione a cui è stato scalato.",
+        "item2": "Su un Kilter casalingo 8x12 sono circa 18.000 blocchi in Boardsesh e circa 36.000 nell'app Kilter."
+      },
+      "ask": {
+        "title": "Fai una domanda",
+        "lead": "Discord è il posto più veloce per avere una risposta.",
+        "discord": "Chiedi su Discord",
+        "bugLead": "Hai trovato un bug?",
+        "github": "Apri una issue su GitHub",
+        "devLead": "Sviluppi sull'API?",
+        "docs": "Leggi la documentazione per sviluppatori"
+      },
+      "topics": {
+        "label": "Argomenti dell'aiuto",
+        "guides": "Guide",
+        "app": "Scarica l'app",
+        "logbook": "Porta qui il tuo diario",
+        "counts": "Conteggio dei blocchi",
+        "ask": "Chiedi aiuto"
+      }
+    },
+    "log": {
+      "breadcrumb": "Il tuo diario",
+      "hero": {
+        "title": "Il tuo diario e i video della beta",
+        "subtitle": "Registra un blocco in parete, correggilo dopo e allega il tuo video della beta."
+      },
+      "log": {
+        "title": "Registralo in parete",
+        "lead": "Tocca la spunta, compila quello che vuoi e salva.",
+        "shotAlt": "Il pulsante della spunta",
+        "shotCaption": "La spunta apre il foglio di registrazione.",
+        "logbookShotAlt": "Il diario",
+        "logbookShotCaption": "Scorri a destra per modificare, a sinistra per eliminare.",
+        "p1": "Tocca la grande spunta nel player, o ✓ nella barra in basso. Data e Ora sono già compilate, il resto è facoltativo.",
+        "p2": "Tentativo registra un tentativo non riuscito. L'altro pulsante dice Flash al tuo primo tentativo a questa inclinazione, altrimenti Chiuso. Le spunte si salvano offline e si sincronizzano dopo."
+      },
+      "edit": {
+        "title": "Modifica o elimina una voce",
+        "lead": "Scorri a destra una riga del diario per modificarla, o a sinistra per eliminarla.",
+        "clipAlt": "Scorrere una riga del diario",
+        "clipCaption": "Uno scorrimento breve mostra la matita o il cestino.",
+        "p1": "Apri la scheda Profilo, poi Diario. Anche tenere premuta una riga offre Modifica la salita.",
+        "p2": "Puoi cambiare Stato, Inclinazione, Tentativi, Grado, Stelle e Nota. Le modifiche richiedono connessione.",
+        "p3": "Per eliminare, scorri la riga a sinistra, o tocca Elimina questa salita nel foglio di modifica. Chiede conferma e non si può annullare. Anche commenti e voti su quella salita vanno via."
+      },
+      "repeats": {
+        "title": "Una riga per blocco, giorno e inclinazione",
+        "lead": "Il tuo diario tiene una riga per blocco, per giorno, per inclinazione.",
+        "p1": "Quattro tentativi stasera sono una riga, con i tentativi sommati e il tuo risultato migliore in vista. I tentativi in specchio hanno una riga a parte.",
+        "p2": "Filtro ordina per Più recenti o Più dure e restringe per stato, grado, inclinazione, data e Solo benchmark."
+      },
+      "bring": {
+        "title": "Porta qui il tuo diario Kilter o Tension",
+        "lead": "Collega il tuo account del pannello una volta e le tue ripetizioni arrivano qui.",
+        "step1": "Tocca il tuo avatar, poi Impostazioni, poi App collegate.",
+        "step2": "In Account dei pannelli, tocca Collega sulla scheda Tension o Accedi a Kilter sulla scheda Kilter.",
+        "step3": "Inserisci nome utente e password di quel pannello.",
+        "p1": "Usavi la vecchia app Kilter? La scheda Kilter (Aurora) accetta un'esportazione JSON.",
+        "p2": "La sincronizzazione va in una sola direzione, dalle loro app a Boardsesh, circa ogni 12 ore. Niente torna indietro.",
+        "link": "Leggi la guida alla migrazione"
+      },
+      "beta": {
+        "title": "Allega un video della beta",
+        "lead": "Boardsesh collega reel di Instagram e TikTok ai blocchi.",
+        "step1": "Sul tuo reel o TikTok, tocca Condividi e scegli Boardsesh. In Instagram può stare sotto Altro.",
+        "step2": "Boardsesh apre Allega la tua beta, con i tuoi blocchi registrati sotto il post.",
+        "step3": "Tocca il blocco mostrato nel video.",
+        "callout": "Non c'è un passaggio di conferma né modo di rimuovere un video, quindi controlla prima il nome del blocco.",
+        "p1": "Il blocco deve essere nel tuo diario come ripetizione o tentativo. Funzionano solo link pubblici di Instagram e TikTok.",
+        "p2": "Per filmare una nuova beta, tieni premuto un blocco e scegli Aggiungi un video della beta. Tocca Copia didascalia, poi Apri Instagram, e pubblica con quella didascalia.",
+        "p3": "Lascia il nome del blocco tra virgolette, perché è ciò che lo collega al reel. Le didascalie MoonBoard non hanno virgolette, quindi scegli tu il blocco."
+      },
+      "findBeta": {
+        "title": "Guarda la beta degli altri",
+        "lead": "Apri un blocco e scorri fino a Video della beta.",
+        "p1": "Tocca una scheda per aprirla in Instagram o TikTok. Per elencare solo i blocchi con beta, attiva Solo con video della beta in Filtri.",
+        "filtersLink": "Altro sui filtri",
+        "p2": "La tua beta sta in fondo a Progressi nella scheda Profilo."
+      },
+      "next": {
+        "title": "Continua",
+        "climbMenu": "Registra una spunta da qualsiasi lista"
+      }
+    },
+    "crew": {
       "breadcrumb": "Session live",
       "hero": {
-        "title": "Session live con la tua crew",
-        "subtitle": "Avvia una session, condividi il link e ogni telefono lavora su una sola coda."
+        "title": "Arrampica con la tua crew",
+        "subtitle": "Avvia una session, condividi il link e arrampicate insieme su un pannello."
       },
       "start": {
         "title": "Avvia una session",
-        "intro": "Ogni session parte dalla scheda Session.",
+        "lead": "Ogni session parte dalla scheda Session.",
         "step1": "Apri la scheda Session. Controlla il pannello in alto.",
-        "step2": "Mostra questa session in diretta fa sì che la tua crew possa vederla e unirsi. Se è spento, funziona solo il tuo link d'invito.",
-        "step3": "Tocca Inizia, poi Invita climber per un QR code, Copia link e Condividi.",
+        "step2": "Mostra questa session in diretta fa trovare e unire la tua crew. Spento, funziona solo il tuo link d'invito.",
+        "step3": "Tocca Inizia, poi Invita climber per un codice QR, Copia il link e Condividi.",
         "shotAlt": "Una session live",
-        "shotCaption": "Chi si è unito, cosa c'è in coda e cosa è illuminato.",
-        "liveShotAlt": "La fascia In arrampicata ora",
+        "shotCaption": "Chi si è unito e cosa è acceso.",
+        "liveShotAlt": "Il carosello In arrampicata ora",
         "liveShotCaption": "In arrampicata ora, nella scheda Home, elenca le session a cui puoi unirti."
       },
       "join": {
         "title": "Unisciti a una session",
-        "way1": "Scansiona il QR code dell'host o apri il suo link.",
+        "lead": "Scansiona il codice di chi la organizza, o trova una session vicina.",
+        "way1": "Scansiona il codice QR di chi la organizza o apri il suo link.",
         "way2": "Nella scheda Home, guarda sotto In arrampicata ora.",
         "way3": "Tocca il pannello in alto nella scheda Blocchi, poi In arrampicata qui ora.",
-        "p1": "Ognuno apre una scheda Unirti alla session di Sam? Tocca Unisciti alla session."
-      },
-      "queue": {
-        "title": "Una coda, ogni telefono",
-        "p1": "Chiunque sia nella session può aggiungere, riordinare o rimuovere blocchi. Il tuo avatar segna le tue righe. Tocca un blocco in coda per vederne l’anteprima; lo vedi solo tu finché non tocchi Illumina il pannello.",
-        "p2": "Solo il climber che ha avviato la session può terminarla. Tutti gli altri toccano Esci dalla session."
+        "p1": "Ognuno apre una scheda Vuoi unirti alla session di Sam? Tocca Unisciti alla session."
       },
       "wall": {
         "title": "Chi illumina il pannello",
-        "p1": "Un pannello accetta una sola connessione Bluetooth alla volta. Sugli altri telefoni, apri l’anteprima di un blocco e tocca Illumina il pannello: il telefono connesso lo illumina per te.",
-        "p2": "Su un pannello senza luci il pulsante sotto il pannello dice Prendi il pannello.",
-        "bluetoothLink": "Connettersi a un pannello"
+        "lead": "Un telefono ha il pannello e tutti gli altri illuminano i blocchi tramite lui.",
+        "p1": "Tocca Illumina il pannello. Il telefono che lo ha lo accende, e la sua faccia compare sul tuo pulsante del pannello.",
+        "busy": "Se un compagno ha messo un blocco mentre guardavi, Illumina il pannello chiede prima. Lascia il suo lo lascia acceso. Metti il mio lo sostituisce.",
+        "queue": "Chiunque può aggiungere, riordinare o rimuovere blocchi in coda. Solo chi ha avviato la session può chiuderla. Gli altri toccano Esci dalla session."
       },
-      "crowd": {
-        "title": "Sfogliare senza cambiare il blocco in parete",
-        "p1": "Con qualcun altro nella tua session, scorrere ti fa sfogliare senza cambiare il blocco in parete, a meno che il tuo telefono tenga il pannello e tu stia guidando. Tocca Illumina il pannello per un blocco, oppure la freccia in alto a sinistra, con il volto di chi ha illuminato il pannello, per tornare al blocco illuminato.",
-        "p2": "Se il tuo telefono tiene il pannello e Anche in una session è attivo, Illumina il pannello illumina il blocco e guidi tu il pannello: anche i blocchi che scegli dopo si illuminano, finché non passa il tempo impostato in Smetti di guidare dopo dall’ultimo blocco (all’inizio 45 secondi; con Subito si illumina solo quel blocco). Il pulsante dice Guidi tu il pannello con un cronometro, e lo smerigliato si restringe man mano che il tempo scade. Toccalo per fermarti prima; il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo. Se qualcuno della crew illumina un blocco, una guida con il cronometro finisce; se hai fatto scorrere il pulsante per guidare, continui a guidare e il suo blocco si illumina.",
-        "p3": "Sugli altri telefoni, Illumina il pannello illumina solo quel blocco. Quando non guidi, tocchi e scorrimenti aprono anteprime. Guida sempre il pannello vale solo per il telefono che ha il pannello e, in una session, solo con Anche in una session attivo.",
-        "previewLink": "Tocca un blocco per vederne l’anteprima",
-        "drivingLink": "Come iniziare e smettere di guidare il pannello"
+      "browsing": {
+        "title": "Sfoglia senza muovere il pannello",
+        "lead": "In una crew ogni tocco è un'anteprima che vedi solo tu.",
+        "p1": "Gli scorrimenti percorrono la tua lista e non muovono mai il pannello. Il chip indietro, con la faccia di chi ha acceso il pannello, ti riporta al suo blocco.",
+        "drivingLink": "Solo il telefono che ha il pannello può guidarlo. Vedi come funziona la guida."
       },
       "history": {
-        "title": "Le session nel tuo profilo",
-        "p1": "La scheda Session del tuo profilo elenca ogni session con i suoi blocchi e le sue ripetizioni.",
-        "p2": "Il riepilogo di fine session ha Salva su Apple Health e Condividi su Strava. App collegate, in Impostazioni, lo automatizza."
+        "title": "Dopo la session",
+        "lead": "La scheda Session del tuo profilo elenca ogni session con i suoi blocchi e le sue ripetizioni.",
+        "p1": "Il riepilogo di fine session ha Salva su Apple Health e Condividi su Strava. App collegate in Impostazioni lo automatizza."
       },
       "next": {
         "title": "Continua",
-        "playlists": "Carica una playlist nella coda",
-        "hub": "Tutti gli argomenti di aiuto"
+        "playlists": "Riproduci una playlist",
+        "hub": "Tutti gli argomenti dell'aiuto"
       }
     },
-    "findingClimbs": {
-      "breadcrumb": "Trovare blocchi",
-      "hero": {
-        "title": "Trova blocchi per presa, zona o tracciatore",
-        "subtitle": "Dove si trova ogni filtro della scheda Blocchi."
-      },
-      "start": {
-        "title": "Prima grado e inclinazione",
-        "p1": "Tocca Grado per aprire la riga dei gradi. Tocca un grado per mostrare solo quello, un secondo grado entro tre secondi per un intervallo, e il grado selezionato di nuovo per cancellare. Puoi anche tenere premuto un secondo grado per creare un intervallo.",
-        "p2": "Ogni grado e ogni conteggio di ripetizioni è letto all'inclinazione del pannello. Tocca il chip dei gradi per cambiarla.",
-        "p3": "Se hai effettuato l'accesso, i chip Progressi filtrano in base alla tua cronologia. Non chiusi nasconde i blocchi che hai chiuso, Progetti tiene i blocchi provati ma non chiusi, Non provati tiene i blocchi mai registrati.",
-        "clipAlt": "Creare un intervallo di gradi",
-        "clipCaption": "Due tocchi veloci creano un intervallo. Tocca di nuovo lo stesso grado per cancellarlo."
-      },
-      "holds": {
-        "title": "Filtra per presa",
-        "intro": "Apri Filtri, scorri fino a Il blocco e tocca Tipi di presa.",
-        "step1": "Scegli Includi o Escludi.",
-        "step2": "Scegli un tipo di presa.",
-        "step3": "Pizzica per ingrandire, poi tocca le prese. Tocca di nuovo con lo stesso pennello per cancellare un segno.",
-        "p2": "Una presa può avere più di un segno. Cancella tutto pulisce il pannello.",
-        "p3": "La MoonBoard non ha il pennello Piede.",
-        "clipAlt": "Segnare le prese",
-        "clipCaption": "Scegli prima un pennello, poi tocca le prese."
-      },
-      "zone": {
-        "title": "Delimita una parte del pannello",
-        "intro": "Apri Filtri, scorri fino a Il blocco e tocca Zona del pannello.",
-        "p1": "Tocca Aggiungi una zona. Trascina il centro per spostare il riquadro, un angolo per ridimensionarlo. Tutte le prese tiene i blocchi interamente al suo interno, Una presa qualsiasi tiene i blocchi che ci arrivano.",
-        "p2": "Cancella la zona rimuove il riquadro. I filtri per prese e zona richiedono una connessione.",
-        "clipAlt": "Spostare e ridimensionare la zona",
-        "clipCaption": "Trascina il centro per spostare il riquadro, un angolo per ridimensionarlo."
-      },
-      "setters": {
-        "title": "Segui dei tracciatori, poi cerca solo tra loro",
-        "p1": "Segui sta nella pagina di un tracciatore e nella schermata Tracciatori, sotto Filtri. Poi attiva Blocchi delle persone che seguo, subito sotto Tracciatori.",
-        "p2": "La schermata Tracciatori è anche un selettore. Spunta una casella per filtrare, o tocca un nome per sfogliare i suoi blocchi.",
-        "shotAlt": "La schermata Tracciatori",
-        "shotCaption": "Spunta una casella per filtrare. Tocca un nome per sfogliare."
-      },
-      "rows": {
-        "title": "Cosa può fare una riga di blocco",
-        "p1": "Scorri a destra per mettere il blocco subito dopo, in cima a Prossimi. Scorri a sinistra per il selettore di playlist. Nessuno dei due illumina il pannello.",
-        "p2": "Il piccolo simbolo è la tua cronologia. Un fulmine significa flash, una spunta cerchiata chiuso, una croce cerchiata provato, una C cerchiata benchmark.",
-        "actionsLink": "Tutto quello che c'è nel menu a pressione prolungata",
-        "p3": "Tieni premuta una riga per il menu completo delle azioni.",
-        "clipAlt": "Scorrere una riga nei due sensi",
-        "clipCaption": "A destra la mette subito dopo, a sinistra apre il selettore di playlist."
-      },
-      "keep": {
-        "title": "Tieni i filtri che usi",
-        "p1": "La maggior parte dei filtri ha una puntina accanto al nome. Toccala e il filtro diventa un chip sopra la lista.",
-        "p2": "Il pulsante in basso mostra quanti blocchi corrispondono. Reimposta cancella tutto."
-      },
-      "next": {
-        "title": "Continua",
-        "climbActions": "Cosa ti dà una pressione prolungata",
-        "playlists": "Salva le scoperte in una playlist",
-        "hub": "Tutti gli argomenti di aiuto"
-      }
-    },
-    "logbook": {
-      "breadcrumb": "Il tuo diario",
-      "hero": {
-        "title": "Registra una ripetizione, poi cambiala dopo",
-        "subtitle": "Segna un blocco dal pannello in due tocchi e cambialo quando vuoi."
-      },
-      "log": {
-        "title": "Registrala al pannello",
-        "p1": "Tocca la grande spunta nel cassetto di riproduzione, o ✓ sulla barra in basso, che mostra l’ultimo blocco che hai aperto. Data e Ora sono già impostate su adesso, il resto è facoltativo.",
-        "p2": "Tentativo registra un giro che non è riuscito. L'altro pulsante dice Flash al tuo primo giro registrato a questa inclinazione, altrimenti Chiuso.",
-        "shotAlt": "Il pulsante della spunta",
-        "shotCaption": "La spunta apre il foglio di registrazione.",
-        "logbookShotAlt": "Il diario",
-        "logbookShotCaption": "Scorri a destra per modificare, a sinistra per eliminare."
-      },
-      "edit": {
-        "title": "Cambia una voce già registrata",
-        "p1": "Apri la scheda Profilo, poi Diario. Scorri una riga a destra, oppure tienila premuta e scegli Modifica la salita.",
-        "field1": "Stato. Flash, Chiuso o Tentativo.",
-        "field2": "Inclinazione e Tentativi. Data e ora restano come registrate.",
-        "field3": "Grado, Stelle e Nota.",
-        "p2": "Se una riga raggruppa più giri dello stesso giorno, l'app chiede Quale salita vuoi modificare?",
-        "p3": "Le modifiche richiedono una connessione. Una nuova spunta si salva offline e si sincronizza dopo.",
-        "clipAlt": "Scorrere una riga del diario",
-        "clipCaption": "Uno scorrimento corto mostra la matita o il cestino. Uno scorrimento completo a sinistra chiede conferma prima di eliminare."
-      },
-      "delete": {
-        "title": "Elimina una voce",
-        "p1": "Scorri la riga a sinistra, oppure tocca Elimina questa salita in fondo al foglio di modifica. Entrambi chiedono conferma. Non si può annullare.",
-        "p2": "Eliminare rimuove commenti e voti della salita e ricalcola le tue statistiche."
-      },
-      "repeats": {
-        "title": "Tentativi, blocchi chiusi e ripetizioni",
-        "p1": "Una riga per blocco, per giorno, per inclinazione. Quattro giri stasera sono una riga con i tentativi sommati e il risultato migliore in vista. I giri specchiati hanno la loro riga.",
-        "p2": "I giri della prossima settimana sono una nuova riga."
-      },
-      "find": {
-        "title": "Trova una vecchia voce",
-        "p1": "La ricerca cerca nei nomi dei blocchi. Il filtro ordina per Più recenti o Più dure e restringe per stato, Solo flash, grado, inclinazione, data e Solo benchmark. Non c'è un filtro per pannello.",
-        "p2": "Arrivano anche le ripetizioni da un account Kilter o Tension collegato. Tocca il tuo avatar, poi Impostazioni, poi App collegate.",
-        "auroraLink": "Leggi la guida alla migrazione"
-      },
-      "next": {
-        "title": "Continua",
-        "climbActions": "Registra una salita da qualsiasi lista",
-        "findingClimbs": "Ritrova il blocco",
-        "hub": "Tutti gli argomenti di aiuto",
-        "betaVideos": "Allega un video della beta"
-      }
-    },
-    "bluetooth": {
-      "breadcrumb": "Pannello e Bluetooth",
-      "hero": {
-        "title": "Connetti il telefono al pannello",
-        "subtitle": "Un tocco apre un’anteprima. Illumina il pannello lo illumina e guidi tu il pannello: il pulsante dice Guidi tu il pannello con un cronometro, e ogni blocco che scegli si illumina finché il tempo non finisce (45 secondi per impostazione predefinita). Senza cronometro, dura finché non lo tocchi."
-      },
-      "connect": {
-        "title": "Connetti",
-        "p1": "In un blocco, tocca il grande pulsante Illumina il pannello. Si connette se serve, illumina il blocco sullo schermo e poi guidi tu il pannello: anche i blocchi che scegli dopo si illuminano (vedi Riconosci quando guidi il pannello). Se si apre Seleziona pannello, il tuo pannello è in cima, poi quelli che l’app non sa riconoscere, come le MoonBoard e le scatole senza numero di serie. Non vedi il tuo? Tocca Cerca qualsiasi pannello. Anche la lampadina della barra in alto può connettere.",
-        "p2": "La prima volta, iOS chiede il Bluetooth. Android chiede i dispositivi nelle vicinanze, o la posizione su Android 11 e precedenti.",
-        "litShotAlt": "Il lettore con il grande pulsante parete",
-        "litShotCaption": "Leggi il pulsante parete: Guidi tu il pannello significa che anche i blocchi che scegli si illuminano. Con il cronometro finisce da solo; senza, continua finché non lo tocchi.",
-        "timedClipAlt": "Un tocco su Illumina il pannello avvia una guida a tempo, con cronometro e sfondo smerigliato che si riduce",
-        "timedClipCaption": "Tocca Illumina il pannello per iniziare a guidare. Il cronometro e lo sfondo smerigliato si riducono; cambiare blocco li riempie. Tocca di nuovo per smettere.",
-        "p3": "Davanti a un altro pannello? Cambia pannello è la prima riga dietro il tuo avatar.",
-        "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. Occupa l’estremo destro della riga in alto. Entrambi i controlli connettono e illuminano i blocchi; tienili premuti per le opzioni quando il pannello è connesso. Il pulsante parete permette anche di scorrere per guidare e toccare per smettere. La lampadina non è smerigliata: quando la guida ha un limite di tempo, un anello ambra intorno a lei si svuota man mano che il tempo passa. Se tocchi la lampadina mentre guidi, smetti di guidare, come con il pulsante parete."
-      },
-      "hidden": {
-        "title": "Controlli del pannello",
-        "p1": "Quando sei connesso, tieni premuto il pulsante parete per i Controlli del pannello. In un blocco li apri anche da ⋯, poi Controlli del pannello, o tenendo premuta la lampadina in alto. In un blocco il menu inizia con una riga che dice dove sei: anteprima, illuminato in parete, alla guida, o quanto manca alla fine della guida. Un tocco breve sul pulsante parete segue la sua etichetta: Guidi tu il pannello smette di guidare mantenendo la connessione, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo; allora il telefono libera il pannello e il pulsante torna a dire Illumina il pannello. Disconnetti pannello disconnette.",
-        "rowStopDriving": "Smetti di guidare dopo. Cambia quanto dura la guida di Illumina il pannello, o scegli Subito, senza lasciare la parete.",
-        "row1": "Illumina di nuovo il pannello. Riaccende il blocco sui LED.",
-        "row2": "Spegni tutte le luci. Ferma anche la guida. Il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo.",
-        "row3": "Disconnetti il pannello. Usalo se ti sei connesso al pannello sbagliato.",
-        "row4": "Illumina la presa sopra. Solo MoonBoard.",
-        "p2": "Il resto è in Impostazioni, poi Pannello. Smetti di guidare dopo sceglie per quanto i blocchi che scegli continuano a illuminarsi dopo l’ultimo blocco illuminato: Subito (Illumina il pannello illumina solo quel blocco), da 30 secondi a 5 minuti (45 secondi per impostazione predefinita), oppure Finché non mi fermo. Anche in una session (attivo per impostazione predefinita) ti fa guidare con Illumina il pannello anche in una crew. Disconnetti il Bluetooth quando smetti di guidare (disattivato per impostazione predefinita) libera il pannello per il prossimo climber quando la guida finisce. Ha preso il posto di Disconnessione automatica: se l’avevi attiva, questa è attiva, e il tuo vecchio tempo, arrotondato per eccesso alla scelta successiva (al massimo 5 minuti), è diventato il tuo tempo in Smetti di guidare dopo.",
-        "autoLight": "Guida sempre il pannello (disattivato per impostazione predefinita) ti tiene alla guida ogni volta che il tuo telefono ha il pannello: ogni blocco che scegli si illumina in parete, senza cronometro, quindi Smetti di guidare dopo non si applica. In una session serve Anche in una session. Tocca Guidi tu il pannello per smettere; i blocchi che scegli si aprono in anteprima finché non ti disconnetti o tocchi Illumina il pannello. Il menu della lampadina in alto ha quasi tutte queste opzioni.",
-        "p3": "Senza pannello connesso, Illumina il pannello connette, illumina il blocco sullo schermo e ti fa guidare; in una crew, solo sul telefono che tiene il pannello e con Anche in una session attivo. Dopo Disconnetti il Bluetooth quando smetti di guidare, Illumina il pannello si riconnette allo stesso pannello. Dopo Disconnetti il pannello, l’app dimentica quel pannello e la connessione successiva lo cerca di nuovo.",
-        "shotAlt": "I controlli di un pannello connesso",
-        "shotCaption": "Illumina di nuovo, spegni tutte le luci o disconnetti, e cambia Smetti di guidare dopo senza lasciare la parete. Illumina ogni blocco avvia la guida quando disponibile.",
-        "lightingShotAlt": "Impostazioni di illuminazione del pannello con durata della guida e illuminazione automatica",
-        "lightingShotCaption": "Scegli quando smettere di guidare, se vale anche in una session e se al termine si disconnette il Bluetooth."
-      },
-      "failed": {
-        "title": "Quando non si connette",
-        "intro": "L'avviso Impossibile connettersi indica il problema.",
-        "fix1": "Impossibile trovare il tuo pannello. Controlla che sia acceso e di essere vicino. Se è connesso un altro telefono, disconnettilo prima.",
-        "fix2": "Impossibile connettersi. Avvicinati e riprova.",
-        "fix3": "Connesso, ma il pannello non ha risposto. Spegni e riaccendi il pannello.",
-        "fix4": "Il Bluetooth è spento. Accendilo.",
-        "fix5": "Impossibile connettersi al tuo pannello. Riprova. Se continua, spegni e riaccendi il Bluetooth.",
-        "p1": "Su Android, se non viene trovato niente, tocca Consenti posizione o Attiva posizione in fondo al foglio."
-      },
-      "twoBoards": {
-        "title": "Due pannelli nel raggio",
-        "p1": "Quando ti connetti a un pannello che hai già usato o a quello di una palestra, è in cima, poi quelli che l’app non sa riconoscere. I pannelli che l’app sa essere un altro restano nascosti finché non tocchi Cerca qualsiasi pannello. Leggi il numero di serie prima di toccare. Le barre del segnale non si aggiornano mentre stai fermo lì.",
-        "p2": "Un avviso La configurazione del pannello non corrisponde significa che il controller appartiene a un'altra configurazione. Scegli Annulla, Connetti comunque o Cambia configurazione del pannello."
-      },
-      "duplicate": {
-        "title": "Lo stesso pannello elencato due volte",
-        "p1": "Due righe con numeri di serie diversi sono due controller. Una riga che dice solo Kilter Board, senza numero di serie, è una scatola LED più recente costruita dal produttore. Due di queste nella stessa palestra compaiono come due righe, dopo il tuo pannello. Quella con più barre di segnale di solito è il pannello davanti a cui ti trovi. Se si illumina il pannello sbagliato, apri Controlli del pannello, tocca Disconnetti il pannello e riprova.",
-        "p2": "Non esiste una lista per dimenticare un dispositivo. L'app ricorda solo l'ultimo pannello.",
-        "p3": "Un pannello che compare due volte sotto I tuoi pannelli è un'altra cosa. Tocca Modifica accanto a I tuoi pannelli, poi Elimina o Smetti di seguire."
-      },
-      "control": {
-        "title": "Quando il pannello ce l'ha qualcun altro",
-        "p1": "In una session, un telefono tiene il pannello. Sugli altri, apri l’anteprima di un blocco e tocca Illumina il pannello: il telefono connesso lo illumina. Il suo avatar indica chi tiene la connessione. Questo pulsante di inoltro non permette di scorrere per guidare.",
-        "p2": "Sui pannelli senza luci il pulsante dice Prendi il pannello.",
-        "sessionsLink": "Altro sulla condivisione di un pannello"
-      },
-      "liveActivity": {
-        "title": "Controlla il pannello dalla schermata di blocco (Live Activity)",
-        "intro": "Prima avvia una session o unisciti a una. Una coda personale non ce l'ha.",
-        "p1": "Su iPhone, una session mette una Live Activity nella schermata di blocco e nella Dynamic Island con il blocco in parete, il suo grado e il tuo posto in coda. Le anteprime che apri nell’app non la cambiano. Mentre il tuo telefono gestisce il pannello ha anche Precedente, Successivo, una lampadina che illumina di nuovo il pannello e Specchia il blocco dove supportato. Precedente e Successivo spostano la coda, illuminano il blocco e avviano o rinnovano la guida come Illumina il pannello. Mentre guidi, un anello ambra intorno alla lampadina si svuota man mano che il tempo passa, con il tempo rimasto accanto; senza limite di tempo, la lampadina sta su un disco ambra pieno.",
-        "p2": "Android mostra gli stessi controlli in una notifica persistente chiamata Session di arrampicata attiva. Mentre guidi, dice Guidi tu il pannello, con un conto alla rovescia se la guida ha un limite di tempo.",
-        "p3": "Bloccare lo schermo non disconnette il pannello."
-      },
-      "next": {
-        "title": "Continua",
-        "findingClimbs": "Trova qualcosa da mettere in parete",
-        "hub": "Tutti gli argomenti di aiuto"
-      },
-      "driving": {
-        "title": "Riconosci quando guidi il pannello",
-        "p1": "Un tocco su un blocco apre un’anteprima, e il blocco in parete resta lo stesso. Illumina il pannello lo illumina e guidi tu il pannello: il pulsante diventa smerigliato e dice Guidi tu il pannello, e anche ogni blocco che scegli si illumina. Se la guida ha un limite di tempo, accanto all’etichetta compare un cronometro; ogni blocco illuminato lo fa ripartire, e lo smerigliato si restringe verso la lampadina man mano che il tempo finisce. Dopo, il prossimo blocco che scegli si apre di nuovo in anteprima. Scegli il tempo in Smetti di guidare dopo, in Impostazioni, poi Pannello: 45 secondi per impostazione predefinita, Finché non mi fermo (senza cronometro) oppure Subito per illuminare solo quel blocco. Scorri il pulsante a sinistra, o con il pannello connesso tienilo premuto e scegli Illumina ogni blocco, per guidare senza cronometro finché non lo tocchi. Smerigliato vuol sempre dire che stai guidando.",
-        "p2": "Per guidare quando il pulsante mostra ‹‹, scorri il pulsante parete verso sinistra. Rilascia quando dice Rilascia per illuminare ogni blocco. Si connette se serve, illumina il blocco sullo schermo e quelli che scegli dopo. Se stai già guidando con il cronometro, lo stesso scorrimento ti fa guidare finché non smetti. Scorrere sul disegno del pannello cambia blocco.",
-        "p3": "Tocca Guidi tu il pannello per smettere di guidare e sfogliare. Il telefono resta connesso e l’etichetta cambia in Disconnetti pannello; toccarla disconnette. Con Disconnetti il Bluetooth quando smetti di guidare attivo, quando ti fermi il telefono libera il pannello e il pulsante torna a dire Illumina il pannello. La guida avviata da Illumina il pannello finisce anche da sola quando scade il cronometro; il prossimo blocco che scegli si apre in anteprima. Puoi iniziare anche con Illumina ogni blocco in ⋯, poi Controlli del pannello, o nelle azioni del lettore di schermo del pulsante.",
-        "p4": "La prima volta che apri un’anteprima su un pannello con le luci, una scheda sotto il pulsante parete spiega l’anteprima e lo smerigliato. Il suo pulsante Impostazioni di illuminazione apre Impostazioni, poi Pannello.",
-        "clipAlt": "Scorrere il pulsante parete a sinistra per guidare, poi toccarlo per smettere",
-        "clipCaption": "Scorri il pulsante a sinistra e rilascia per illuminare ogni blocco. Tocca Guidi tu il pannello per fermarti; il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo."
-      }
-    },
-    "climbActions": {
-      "breadcrumb": "Azioni sul blocco",
-      "hero": {
-        "title": "Tieni premuto un blocco",
-        "subtitle": "Tocca un blocco per vederne l’anteprima. Tieni premuta la sua riga per tutto il resto."
-      },
-      "open": {
-        "title": "Apri il menu",
-        "p1": "Tieni premuta la riga di un blocco e le sue azioni si aprono in un menu. Su iPhone la riga si solleva sopra la lista oscurata, con il menu sotto. Tocca un'azione, o tocca fuori per chiuderlo.",
-        "p2": "Preferisci un tocco? In Impostazioni, poi Blocchi e gradi, poi Elenco dei blocchi, attiva Mostra il pulsante azioni rapide per avere un ⋮ su ogni riga dei Blocchi. Apre lo stesso menu.",
-        "shotAlt": "La riga di un blocco sollevata sopra la lista, con le sue azioni sotto",
-        "shotCaption": "La riga in alto, le sue azioni a gruppi sotto.",
-        "clipAlt": "Tenere premuta la riga di un blocco",
-        "clipCaption": "Tieni premuta la riga e il menu si apre da solo."
-      },
-      "preview": {
-        "title": "Tocca un blocco per vederne l'anteprima",
-        "intro": "Un tocco su un blocco in qualsiasi lista o nella tua coda lo apre in anteprima, come il pulsante play di una playlist. Il blocco in parete resta lo stesso.",
-        "p1": "L’anteprima apre il blocco nel lettore senza toccare la tua coda né il blocco in parete. Gli scorrimenti seguono la lista indicata in alto. La tua coda parte dal tuo blocco, poi riprende la sua lista. Un’anteprima singola potrebbe non avere un blocco successivo da raggiungere. Mentre guidi tu il pannello, un tocco illumina invece il blocco. Per guidare ogni volta che il tuo telefono ha il pannello, attiva Guida sempre il pannello in Impostazioni, poi Pannello.",
-        "p2": "Durante l’anteprima, la freccia in alto a sinistra la chiude e ti riporta indietro: al tuo blocco o, quando mostra un volto, al blocco in parete. Sotto il nome leggi Lo vedi solo tu in una session, oppure Anteprima · non in parete quando il tuo telefono tiene un pannello o un blocco è stato illuminato nell’ultima ora. Tocca Illumina il pannello quando vuoi il blocco. Si illumina e guidi tu il pannello: per impostazione predefinita, i blocchi che scegli dopo si illuminano fino a 45 secondi dopo l’ultimo. Imposta attivo lo sceglie senza illuminarlo. Se il pulsante del lettore dice Guidi tu il pannello, i cambi di blocco successivi illuminano il pannello; toccalo prima per smettere di guidare.",
-        "p3": "La barra in basso tiene l’ultimo blocco che hai aperto, anteprima compresa, finché la tua coda non va avanti. Toccala per riprendere con la sua lista. La sua lampadina illumina quel blocco in parete, e ✓ lo registra. Mentre guidi tu il pannello, tocca la lampadina per smettere di guidare. Aprire un’anteprima non cambia mai la tua coda né il blocco in parete. La parte alta di Blocchi, e in una session la schermata di blocco, continuano a mostrare il blocco in parete.",
-        "sessionsLink": "Come una session ti fa sfogliare senza cambiare il blocco in parete",
-        "clipAlt": "Sfogliare una lista nel lettore senza illuminare i suoi blocchi",
-        "clipCaption": "Sfoglia la lista mentre il blocco in parete resta lo stesso. Illumina il pannello lo illumina, e anche i blocchi che scegli dopo si illuminano finché il tuo tempo non finisce.",
-        "shotAlt": "Anteprima di un blocco con il pulsante indietro, Anteprima · non in parete e un pulsante per illuminare senza smerigliatura",
-        "shotCaption": "L’anteprima resta sul tuo telefono. Il pulsante indietro torna al blocco in parete; il pulsante per illuminare accende questo.",
-        "drivingLink": "Come iniziare e smettere di guidare il pannello"
-      },
-      "quick": {
-        "title": "Le azioni che userai di più",
-        "tick": "Registra una salita apre il foglio della salita.",
-        "playlist": "Aggiungi alla playlist apre una checklist delle tue playlist. Spunta per aggiungere, togli la spunta per rimuovere.",
-        "share": "Condividi passa un link al foglio di condivisione del telefono.",
-        "p1": "Il menu si chiude appena scegli un'azione."
-      },
-      "rest": {
-        "title": "Il resto della lista",
-        "queue": "Metti subito dopo mette il blocco in cima a Prossimi. Metti in fondo lo mette in fondo.",
-        "replay": "Riparti da qui, quando compare su un blocco in Cronologia nella tua coda: apre quel blocco come un tocco, in anteprima per impostazione predefinita. Illumina il pannello lo rimette in parete, con i blocchi che venivano dopo di nuovo in Prossimi.",
-        "favorite": "Attiva o disattiva il preferito è il cuore. I blocchi con il cuore riempiono Blocchi che ti piacciono.",
-        "editEntry": "Modifica la salita, quando arrivi dal tuo diario.",
-        "betaVideo": "Aggiungi un video della beta, se hai effettuato l'accesso.",
-        "edit": "Modifica il blocco, per i tuoi blocchi come bozza o entro 24 ore dalla pubblicazione.",
-        "remix": "Remixa questo blocco avvia un nuovo blocco da queste prese.",
-        "openInAurora": "Apri nell'app Aurora, per Tension e altri pannelli Aurora. Kilter non ce l'ha.",
-        "report": "Segnala il blocco, se hai effettuato l'accesso e la moderazione è attiva."
-      },
-      "next": {
-        "title": "Continua",
-        "logbook": "Modifica quello che hai registrato",
-        "playlists": "Playlist",
-        "hub": "Tutti gli argomenti di aiuto",
-        "betaVideos": "Video della beta"
-      }
-    },
-    "betaVideos": {
-      "breadcrumb": "Video della beta",
-      "hero": {
-        "title": "Allega un video della beta a un blocco",
-        "subtitle": "Boardsesh collega reel di Instagram e TikTok ai blocchi."
-      },
-      "share": {
-        "title": "Condividi un reel da Instagram o TikTok",
-        "step1": "Sul reel o sul TikTok, tocca Condividi. Scegli Boardsesh. In Instagram può nascondersi sotto Altro.",
-        "step2": "Boardsesh apre Allega la tua beta, con il post in alto e i tuoi blocchi registrati sotto.",
-        "step3": "Tocca il blocco che mostra il video. Un messaggio Video della beta allegato lo conferma.",
-        "p1": "Non c'è un passaggio di conferma e non c'è modo di rimuovere un video una volta allegato, quindi controlla prima il nome del blocco.",
-        "p2": "Serve un account, e il blocco deve essere nel tuo diario come ripetizione o tentativo. Non hai effettuato l'accesso? Accedi e il link ti aspetta. Funzionano solo link pubblici di Instagram e TikTok."
-      },
-      "find": {
-        "title": "Trova la beta su un blocco",
-        "p1": "Apri un blocco e scorri fino a Video della beta. Tocca una scheda e si apre in Instagram o TikTok.",
-        "p2": "Se hai effettuato l'accesso, il più nell'intestazione della sezione apre Condividi la tua beta, descritto sotto.",
-        "p3": "Per elencare solo i blocchi con beta, apri Filtri e attiva Solo con video della beta.",
-        "filtersLink": "Altro sui filtri"
-      },
-      "add": {
-        "title": "Gira una nuova beta da un blocco",
-        "step1": "Tieni premuto un blocco e scegli Aggiungi un video della beta, oppure tocca il più nella sua sezione Video della beta.",
-        "step2": "Tocca Copia didascalia. Contiene nome del blocco, inclinazione e pannello.",
-        "step3": "Tocca Apri Instagram e pubblica il tuo video con quella didascalia.",
-        "step4": "Condividi il reel pubblicato in Boardsesh come sopra, oppure incolla il suo link sotto Hai già un link? e tocca Allega.",
-        "p1": "Tieni il nome del blocco tra virgolette nella didascalia. È così che Boardsesh abbina il reel. Le didascalie della MoonBoard non hanno virgolette, quindi scegli tu il blocco."
-      },
-      "shelf": {
-        "title": "Le tue beta nel profilo",
-        "p1": "Apri la scheda Profilo e scorri in fondo a Progressi. Lo scaffale Video della beta mostra i più recenti, e Vedi tutti apre l'insieme completo.",
-        "p2": "Chiunque può guardare. Il link di un blocco mostra le sue beta su boardsesh.com senza accedere."
-      },
-      "next": {
-        "title": "Continua",
-        "climbActions": "Tutto il resto dietro la pressione prolungata",
-        "logbook": "Registra prima il blocco",
-        "hub": "Tutti gli argomenti di aiuto"
-      }
-    },
-    "topics": {
-      "label": "Argomenti di aiuto",
-      "guides": "Guide",
-      "using": "Usare Boardsesh",
-      "logbook": "Porta qui il tuo diario",
-      "counts": "Conteggio dei blocchi",
-      "ask": "Chiedi aiuto"
-    },
-    "install": {
-      "title": "Scarica l'app",
-      "intro": "Tutto quello che c'è in questa pagina succede nell'app."
-    },
-    "sprayWalls": {
+    "spray": {
       "breadcrumb": "Spraywall",
       "hero": {
-        "title": "Configurare la Spraywall",
-        "subtitle": "Ogni presa e ogni blocco sono tracciati su una sola foto della tua Spraywall, quindi lo scatto conta."
+        "title": "Prepara la tua Spraywall",
+        "subtitle": "Ogni presa e ogni blocco sono tracciati su una foto della tua Spraywall, quindi lo scatto conta."
       },
       "watch": {
         "title": "Guarda il tutorial",
-        "videoAlt": "Tutorial su come aggiungere una Spraywall e modificarne le prese nell'app Boardsesh",
-        "p1": "Boardsesh trova le prese nella tua foto, e ogni blocco sulla Spraywall è tracciato su quella stessa foto. Uno scatto fatto bene significa meno prese da correggere a mano."
+        "lead": "Boardsesh trova le prese nella tua foto, quindi uno scatto buono vuol dire meno da correggere.",
+        "videoAlt": "Aggiungere una Spraywall e modificarne le prese nell'app Boardsesh"
       },
       "photo": {
-        "title": "Fare la foto",
-        "p1": "Prima di scegliere o scattare la foto della tua Spraywall, tieni a mente questi consigli:",
-        "square": "Mettiti di fronte alla Spraywall, in linea con il suo centro. Da un lato, le prese lontane si rimpiccioliscono e si ammassano.",
-        "portrait": "Tieni il telefono in verticale. Arrampichi con il telefono dritto, e una foto in orizzontale si riduce a una striscia in cui le prese sono troppo piccole da toccare.",
-        "tilt": "Inclina il telefono come l'inclinazione della Spraywall, così che stia parallelo alla sua superficie. Su uno strapiombo, un telefono tenuto dritto fa sembrare enorme la parte alta della Spraywall e rimpicciolisce quella bassa.",
-        "frame": "Inquadra tutta la Spraywall, dall'alto al basso e da un lato all'altro.",
-        "zoom": "Scatta a 1x. Se la Spraywall non ci sta, fai qualche passo indietro invece di passare al grandangolo.",
-        "lighting": "Usa una luce forte e uniforme così le prese risaltano sulla Spraywall. Un buon contrasto aiuta Boardsesh a trovarle.",
-        "why": "Perché conta: il rilevatore di prese legge la tua foto così com'è. Le prese riprese di sbieco vengono piccole e stirate, quindi ne sfuggono di più e finisci per aggiungerle tu.",
-        "exampleAlt": "La foto frontale di una Spraywall indoor piena di prese, con tutta la superficie di arrampicata visibile",
-        "exampleCaption": "Tieni tutta la Spraywall in inquadratura così le sue prese sono facili da trovare e segnare."
+        "title": "Scattare la foto",
+        "lead": "Cinque abitudini danno al rilevatore di prese una foto pulita.",
+        "square": "Mettiti di fronte, in linea con il centro della Spraywall. Di lato, le prese lontane si rimpiccioliscono.",
+        "portrait": "Tieni il telefono in verticale e scatta a 1x. In orizzontale le prese diventano una striscia.",
+        "tilt": "Inclina il telefono come la Spraywall, parallelo alla sua superficie.",
+        "frame": "Inquadra tutta la Spraywall. Se non ci sta, allontanati invece di usare il grandangolo.",
+        "lighting": "Usa una luce forte e uniforme così le prese risaltano.",
+        "exampleAlt": "Una Spraywall al coperto fotografata di fronte, con tutte le prese inquadrate",
+        "exampleCaption": "Tutta la Spraywall inquadrata, scattata di fronte."
       },
       "add": {
-        "title": "Aggiungere la Spraywall",
+        "title": "Aggiungi la Spraywall",
+        "lead": "Scatta una foto, lascia che Boardsesh cerchi le prese, poi dalle un nome.",
         "step1": "Apri Pannelli e tocca Spraywall.",
-        "step2": "Dai un nome alla Spraywall e imposta la sua inclinazione. L'inclinazione è fissa una volta pubblicata.",
-        "step3": "Scegli o scatta una foto. Usa Ritaglia o ruota se i bordi vanno sistemati.",
-        "step4": "Fissa i quattro angoli della Spraywall per sbloccare altri sfondi se la foto lo permette; salta per tenere la foto.",
-        "step5": "Lascia che Boardsesh scansioni la foto, poi controlla gli anelli delle prese."
+        "step2": "Scatta o scegli una foto. Usa Ritaglia o ruota per sistemarne i bordi.",
+        "step3": "Fissa i quattro angoli per sbloccare altri sfondi, o salta per tenere la foto.",
+        "step4": "Lascia che Boardsesh scansioni la foto, poi controlla gli anelli delle prese.",
+        "step5": "Scorri per scegliere uno sfondo e come si illuminano le prese. Senza angoli fissati, Foto è l'unico sfondo.",
+        "p1": "Infine, dai un nome alla Spraywall, imposta la sua inclinazione e pubblica. L'inclinazione non si cambia dopo la pubblicazione."
       },
       "fix": {
-        "title": "Correggere le prese prima di pubblicare",
-        "p1": "Le prese trovate da Boardsesh compaiono come anelli sulla tua foto. Controllale prima che qualcuno ci arrampichi.",
-        "maybe": "Gli anelli tratteggiati sono rilevamenti incerti. Toccane uno, poi tocca Mantieni.",
-        "toggle": "Tocca un anello per selezionarlo. Toccalo di nuovo per spegnerlo; il fantasma può essere riacceso o eliminato.",
-        "longPress": "Tieni premuto un anello per spostarlo. Tieni premuta la Spraywall vuota per mettere una nuova presa.",
-        "p2": "Tocca Scegli un aspetto. Scegli uno sfondo disponibile, poi come si illuminano le tue prese. Senza gli angoli fissati, Foto è l'unico sfondo. Pubblica la Spraywall.",
-        "select": "Seleziona: tocca una presa per sceglierla, spostarla, ridimensionarla o accenderla e spegnerla.",
+        "title": "Correggi le prese prima di pubblicare",
+        "lead": "Boardsesh mostra le prese trovate come anelli. Controllali prima che qualcuno arrampichi.",
+        "select": "Seleziona: tocca una presa per spostarla, ridimensionarla o spegnerla.",
         "add": "Aggiungi: segna una presa mancata con Disegna o Angoli.",
         "trace": "Contorna: ridisegna il contorno della presa selezionata in un solo giro.",
-        "refine": "Rifinisci: passa il pennello lungo il contorno per ingrandirlo o rimpicciolirlo.",
-        "join": "Unisci: seleziona una presa, poi toccane un'altra per trasformare i due contorni in una sola presa.",
-        "imageAlt": "Editor della Spraywall con una presa selezionata e gli strumenti Seleziona, Aggiungi, Contorna, Rifinisci e Unisci",
-        "imageCaption": "Seleziona un anello per vedere i suoi controlli. Usa i cinque strumenti per correggere le prese sulla tua foto.",
-        "gestures": "Usa due dita per spostarti o pizzica per ingrandire. Annulla e Ripeti ti fanno andare avanti e indietro tra le modifiche."
+        "refine": "Rifinisci: passa il pennello lungo il contorno per allargarlo o stringerlo.",
+        "join": "Unisci: seleziona una presa, poi tocca un'altra per fondere i contorni.",
+        "imageAlt": "L'editor della Spraywall con una presa selezionata e i cinque strumenti",
+        "imageCaption": "Seleziona un anello per vedere i suoi controlli.",
+        "maybe": "Gli anelli tratteggiati sono incerti. Toccane uno, poi tocca Mantieni.",
+        "toggle": "Tocca un anello per selezionarlo e tocca di nuovo per spegnerlo. Puoi riaccenderlo o eliminarlo.",
+        "longPress": "Tieni premuto un anello per spostarlo, o la Spraywall vuota per mettere una nuova presa.",
+        "gestures": "Sposta con due dita e pizzica per ingrandire. Annulla e Ripeti ripercorrono le tue modifiche.",
+        "missedTitle": "Una presa senza anello?",
+        "videoAlt": "Aggiungere prese mancate, correggere i contorni e pubblicare le modifiche alle prese",
+        "missed1": "Pizzica per ingrandire sulla presa mancata.",
+        "missed2": "Scegli Aggiungi, poi Disegna. Disegna un contorno chiuso attorno alla presa, o tocca per un cerchio.",
+        "missed3": "Ripeti per le altre prese mancate. Annulla se sbagli.",
+        "corners": "Per i bordi dritti, scegli Aggiungi, poi Angoli. Tocca almeno tre punti attorno alla presa, poi tocca Fine.",
+        "drawAlt": "Lo strumento Aggiungi in modalità Disegna con una presa contornata",
+        "drawCaption": "Aggiungi, Disegna: contorna una presa mancata.",
+        "cornersAlt": "Lo strumento Aggiungi in modalità Angoli con punti attorno a una presa",
+        "cornersCaption": "Aggiungi, Angoli: tre o più punti, poi Fine."
       },
-      "later": {
-        "title": "Modificare le prese in seguito",
-        "p1": "In Pannelli, tocca la tua Spraywall per renderla attiva. Tocca la scheda Blocchi con la lente, poi il nome della Spraywall in alto. Tocca Modifica le prese; finisci con Pubblica le prese.",
-        "p2": "Se le prese sono cambiate su tutta la Spraywall, tocca Reimposta questa Spraywall nello stesso foglio. Aggiungi una nuova foto e segna le prese da zero. Quando pubblichi quella nuova, la vecchia Spraywall viene archiviata insieme ai suoi blocchi.",
-        "missed": "Ti è sfuggita qualche presa al primo passaggio? Torna qui e aggiungile quando vuoi. Aggiungere nuove prese non cambia i blocchi esistenti; pubblica quando vuoi che tutti possano usarle."
+      "edit": {
+        "title": "Modifica le prese più tardi",
+        "lead": "Puoi aggiungere o correggere prese quando vuoi. Aggiungere prese non cambia i blocchi esistenti.",
+        "p1": "In Pannelli, tocca la tua Spraywall per renderla attiva. Tocca la scheda Blocchi con la lente, poi il nome della Spraywall in alto. Tocca Modifica le prese e finisci con Pubblica le prese.",
+        "p2": "Se le tue modifiche tolgono una presa usata da blocchi pubblicati, Boardsesh ti chiede conferma. Tieni le prese annulla. Rimuovi comunque pubblica.",
+        "p3": "Quei blocchi restano, con un avviso di presa mancante, e restano anche le salite registrate. Spostare, ridimensionare, rimodellare o unire una presa fa lo stesso.",
+        "p4": "Tocca Remix su un blocco interessato per tracciarne una copia aggiornata. Non ripara l'originale.",
+        "p5": "Se le prese sono cambiate su tutta la Spraywall, tocca Reimposta questa Spraywall nello stesso foglio e ricomincia da una nuova foto. Pubblicare archivia la vecchia Spraywall con i suoi blocchi."
+      },
+      "pencil": {
+        "title": "Apple Pencil su iPad",
+        "lead": "Nell'editor a tutta larghezza su iPad, Apple Pencil disegna e attiva le prese.",
+        "p1": "Disegna attorno a una presa non segnata per aggiungerne il contorno, o tocca un punto non segnato per un cerchio. Tocca una presa segnata per accenderla o spegnerla.",
+        "p2": "Pencil si attiva quando tocca o si avvicina all'editor per la prima volta, a meno che tu non abbia scelto un'impostazione. Con Solo Pencil attivo, le dita continuano a selezionare, spostare e scorrere."
       },
       "next": {
         "title": "Continua",
         "logbook": "Registra le tue ripetizioni",
-        "sessions": "Arrampicaci con la tua crew",
-        "hub": "Tutti gli argomenti di aiuto"
-      },
-      "editor": {
-        "title": "Segnare le prese che la scansione ha mancato",
-        "p1": "La scansione è un punto di partenza. Usa l'editor per segnare le prese vere che non hanno un anello, prima di pubblicare o ogni volta che le noti più tardi.",
-        "videoAlt": "Guida per aggiungere le prese mancate, correggere i contorni, tornare all'editor e pubblicare le modifiche alle prese",
-        "step1": "Pizzica per ingrandire finché la presa mancata si vede bene.",
-        "step2": "Scegli Aggiungi, poi Disegna.",
-        "step3": "Disegna un contorno chiuso attorno alla presa. Per una presa piccola e tonda, tocca per mettere un cerchio.",
-        "step4": "Ripeti per le altre prese mancate. Spostati con due dita e usa Annulla se sbagli.",
-        "step5": "Finisci con Scegli un aspetto durante la configurazione, oppure Pubblica le prese quando modifichi una Spraywall esistente.",
-        "corners": "Preferisci i bordi dritti? Scegli Aggiungi → Angoli. Tocca almeno tre punti attorno a una presa, poi tocca Fine per chiudere il contorno. Ripeti per la presa successiva.",
-        "drawAlt": "Strumento Aggiungi in modalità Disegna con una presa contornata a mano sulla foto della Spraywall",
-        "drawCaption": "Aggiungi → Disegna: contorna una presa mancata alla volta, oppure tocca per un cerchio.",
-        "cornersAlt": "Strumento Aggiungi in modalità Angoli con dei punti attorno a una presa e il controllo Fine",
-        "cornersCaption": "Aggiungi → Angoli: metti almeno tre punti, poi tocca Fine."
-      },
-      "used": {
-        "title": "Cosa succede ai blocchi quando cambi le prese?",
-        "removal": "Se rimuovi o spegni una presa usata da un blocco pubblicato, dopo la pubblicazione il blocco resta disponibile con un avviso di presa mancante. Restano anche le sue salite registrate.",
-        "confirm": "Quando tocchi Pubblica le prese, Boardsesh ti chiede conferma se le tue modifiche rimuovono prese usate da blocchi pubblicati. Tieni le prese annulla la pubblicazione così puoi rivedere le modifiche. Rimuovi comunque le pubblica.",
-        "changes": "Anche spostare, ridimensionare, rimodellare o unire una presa pubblicata segna come privi di una presa i blocchi che usano il suo vecchio segno, dopo la pubblicazione. Le loro salite registrate restano.",
-        "remix": "Usa Remixa su un blocco interessato per tracciare una versione aggiornata con le prese disponibili. Crea un nuovo blocco; non ripara automaticamente l'originale."
-      },
-      "pencil": {
-        "title": "Usare Apple Pencil su iPad",
-        "layout": "Questi gesti con la Pencil sono disponibili nell'editor iPad a tutta larghezza. Una finestra compatta usa il layout del telefono.",
-        "draw": "Con Apple Pencil, disegna attorno a una presa non segnata per aggiungere il suo contorno, oppure tocca un punto non segnato per aggiungere un cerchio. Tocca una presa segnata con la Pencil per accenderla o spegnerla.",
-        "setting": "Solo Pencil si attiva quando Apple Pencil tocca o passa sopra l'editor per la prima volta, a meno che tu non abbia già scelto un'impostazione. La tua scelta viene ricordata. Con Solo Pencil attivo, le dita possono ancora selezionare prese, spostare una presa scelta e muoversi o zoomare sulla Spraywall; la Pencil gestisce il disegno e l'accensione delle prese."
+        "sessions": "Arrampicala con la tua crew"
       }
     }
   },

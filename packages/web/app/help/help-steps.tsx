@@ -19,7 +19,7 @@ export type HelpStepsProps = {
  * markers are hidden), so screen readers still hear "1 of 3". Server-safe.
  *
  * @example
- * <HelpSteps steps={[t('help.betaVideos.share.step1'), t('help.betaVideos.share.step2')]} />
+ * <HelpSteps steps={[t('help.log.beta.step1'), t('help.log.beta.step2')]} />
  */
 export default function HelpSteps({ steps }: HelpStepsProps) {
   return (

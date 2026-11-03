@@ -7,7 +7,7 @@
  *  1. **Locale twins.** `redirects()` runs before `middleware.ts`, and its
  *     sources are matched literally against the incoming path. This repo has no
  *     Next i18n routing — locales are a middleware prefix — so `source: '/x'`
- *     never matches `/es/x`. A rule without its three twins silently 404s three
+ *     never matches `/es/x`. A rule without its locale twins silently 404s all
  *     quarters of the audience.
  *  2. **`permanent: false` for cross-origin destinations.** A permanent
  *     cross-origin redirect is cached by the browser indefinitely, and there is
@@ -38,7 +38,7 @@ const redirects = (await nextConfig.redirects?.()) ?? [];
  */
 const configuredAppOrigin = configModule.APP_ORIGIN;
 
-const LOCALE_PREFIXES = ['/es', '/fr', '/de'];
+const LOCALE_PREFIXES = ['/es', '/fr', '/de', '/it'];
 
 function isLocalePrefixed(source: string): boolean {
   return LOCALE_PREFIXES.some((prefix) => source === prefix || source.startsWith(`${prefix}/`));
@@ -55,7 +55,7 @@ describe('next.config redirects', () => {
     expect(baseRedirects.length).toBeGreaterThan(0);
   });
 
-  it('gives every rule an /es, /fr and /de twin', () => {
+  it('gives every rule an /es, /fr, /de and /it twin', () => {
     const sources = new Set(redirects.map((redirect) => redirect.source));
     const missing = baseRedirects.flatMap((redirect) =>
       LOCALE_PREFIXES.filter((prefix) => !sources.has(`${prefix}${redirect.source}`)).map(
@@ -264,6 +264,26 @@ describe('next.config redirects', () => {
     const moonBoardImportRule = baseRedirects.find((redirect) => redirect.source.startsWith('/moonboard/'));
 
     expect(moonBoardImportRule?.destination).toContain('sets=:set');
+  });
+
+  it('folds the merged help pages into their parent guides, fragment included', () => {
+    const expected = {
+      '/help/climb-actions': '/help/finding-climbs#climb-menu',
+      '/help/playlists': '/help/finding-climbs#playlists',
+      '/help/beta-videos': '/help/logbook#beta-videos',
+    };
+
+    for (const [source, destination] of Object.entries(expected)) {
+      const rule = redirects.find((candidate) => candidate.source === source);
+      expect(rule?.destination, source).toBe(destination);
+      expect(rule?.permanent, source).toBe(true);
+
+      // /it is a supported locale; the twin keeps the `#` after the prefix.
+      for (const prefix of LOCALE_PREFIXES) {
+        const twin = redirects.find((candidate) => candidate.source === `${prefix}${source}`);
+        expect(twin?.destination, `${prefix}${source}`).toBe(`${prefix}${destination}`);
+      }
+    }
   });
 
   it('leaves the /play routes alone — their pages redirect with the climb name', () => {
