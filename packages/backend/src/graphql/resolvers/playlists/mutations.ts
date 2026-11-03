@@ -23,7 +23,11 @@ import { verifyPlaylistAccess } from './helpers/enrichment';
 import { computePlaylistReorderWrites } from './helpers/reorder';
 import { logger } from '../../../utils/logger';
 import { lockSprayClimbAgainstDelete } from '../climbs/spray-climb-lock';
-import { refreshPlaylistGradeSummariesFor } from '@boardsesh/db/queries';
+import {
+  acquireUpstreamPlaylistLock,
+  recordDeletedUpstreamPlaylist,
+  refreshPlaylistGradeSummariesFor,
+} from '@boardsesh/db/queries';
 
 type ClimbBoardScope = { boardType: string; layoutId: number };
 
@@ -383,7 +387,11 @@ export const playlistMutations = {
 
     // Check ownership
     const ownership = await db
-      .select({ id: dbSchema.playlists.id })
+      .select({
+        id: dbSchema.playlists.id,
+        kilterId: dbSchema.playlists.kilterId,
+        auroraId: dbSchema.playlists.auroraId,
+      })
       .from(dbSchema.playlistOwnership)
       .innerJoin(dbSchema.playlists, eq(dbSchema.playlists.id, dbSchema.playlistOwnership.playlistId))
       .where(
@@ -399,8 +407,51 @@ export const playlistMutations = {
       throw new Error('Playlist not found or you do not have permission to delete it');
     }
 
-    // Delete playlist (cascade will handle ownership and climbs)
-    await db.delete(dbSchema.playlists).where(eq(dbSchema.playlists.id, ownership[0].id));
+    const target = ownership[0];
+
+    // A playlist built in Boardsesh has no upstream circuit to come back from,
+    // and no pull can give it one (Kilter adoption needs an aurora_id already).
+    // Circuit push-back (#3525) would stamp a kilter_id onto these rows; when
+    // it ships, this shortcut has to take the locked path below instead.
+    // Cascade handles ownership and climbs.
+    if (target.kilterId === null && target.auroraId === null) {
+      await db.delete(dbSchema.playlists).where(eq(dbSchema.playlists.id, target.id));
+      return true;
+    }
+
+    // A mirrored circuit (#7240): the Kilter stream re-sends every circuit
+    // every 5 minutes and an Aurora circuit comes back when it changes, so a
+    // bare delete is undone by the next sync. Record the upstream ids in the
+    // same transaction as the delete, so there is never a moment where the
+    // row is gone and the circuit writers don't know to skip it.
+    await db.transaction(async (tx) => {
+      // The circuit writers' per-user lock: a sync mid-batch finishes before
+      // this delete, or starts after it and sees the recorded ids.
+      await acquireUpstreamPlaylistLock(tx, userId);
+
+      // Re-read under the lock. Kilter adoption may have stamped a kilter_id
+      // onto a legacy aurora_id row since the read above, and recording only
+      // the aurora_id would let the Kilter circuit insert a fresh twin.
+      const [current] = await tx
+        .select({
+          boardType: dbSchema.playlists.boardType,
+          kilterId: dbSchema.playlists.kilterId,
+          auroraId: dbSchema.playlists.auroraId,
+        })
+        .from(dbSchema.playlists)
+        .where(eq(dbSchema.playlists.id, target.id))
+        .for('update');
+      // Gone already (a Kilter REMOVE for this circuit landed first).
+      if (!current) return;
+
+      await recordDeletedUpstreamPlaylist(tx, {
+        userId,
+        boardType: current.boardType,
+        kilterId: current.kilterId,
+        auroraId: current.auroraId,
+      });
+      await tx.delete(dbSchema.playlists).where(eq(dbSchema.playlists.id, target.id));
+    });
 
     return true;
   },

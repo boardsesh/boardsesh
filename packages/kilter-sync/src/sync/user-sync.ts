@@ -19,6 +19,8 @@ import {
   foreignPlaylistOwnerGuard,
   myPlaylistOwnerEdge,
   selectUpstreamPlaylistOwners,
+  selectDeletedUpstreamPlaylistIds,
+  acquireUpstreamPlaylistLock,
   acquireUserTickMutationLock,
   isSyncFenceError,
   DeferredClimbStatsRecompute,
@@ -2052,6 +2054,13 @@ export type ApplyCircuitsResult = {
   skippedForeignCircuits: number;
 };
 
+/** The circuit uuid a PUT op carries in its payload, if any. */
+function putCircuitUuid(op: PowerSyncOp): string | undefined {
+  if (op.op === 'REMOVE') return undefined;
+  const raw = op.data as RawCircuit | undefined;
+  return raw?.circuit_uuid || undefined;
+}
+
 /** Every circuit uuid this batch references, PUT (payload) or REMOVE (object_id). */
 function collectCircuitUuids(circuitOps: PowerSyncOp[]): string[] {
   const uuids = new Set<string>();
@@ -2069,11 +2078,40 @@ function collectCircuitUuids(circuitOps: PowerSyncOp[]): string[] {
 export async function applyCircuits(
   tx: DrizzleDb,
   userId: string,
-  circuitOps: PowerSyncOp[],
+  snapshotCircuitOps: PowerSyncOp[],
   circuitClimbOps: PowerSyncOp[],
   aliasCache: Map<string, string>,
   log: (message: string) => void = (msg) => console.warn(msg),
 ): Promise<ApplyCircuitsResult> {
+  // ---- Circuits the climber deleted in Boardsesh (#7240) -------------------
+  //
+  // PowerSync re-sends every circuit every cycle, so a playlist deleted in
+  // Boardsesh used to come straight back: no row carried its kilter_id, so the
+  // upsert below inserted a fresh one. deletePlaylist now records the circuit
+  // uuid, and its PUTs are dropped here, before the owner lookup and the
+  // adoption step, so the circuit is neither inserted nor adopted onto a
+  // same-named legacy playlist. The circuit stays on Kilter.
+  //
+  // The lock comes first: a delete committing between this read and the
+  // upsert would otherwise be re-inserted by this very batch. It is held to
+  // the end of the phase transaction. REMOVEs (upstream deleted the circuit)
+  // pass through unchanged.
+  const snapshotPutUuids = Array.from(
+    new Set(snapshotCircuitOps.map(putCircuitUuid).filter((uuid): uuid is string => uuid !== undefined)),
+  );
+  let deletedCircuitUuids = new Set<string>();
+  if (snapshotPutUuids.length > 0) {
+    await acquireUpstreamPlaylistLock(tx, userId);
+    deletedCircuitUuids = await selectDeletedUpstreamPlaylistIds(tx, userId, 'kilter', snapshotPutUuids);
+  }
+  const circuitOps =
+    deletedCircuitUuids.size === 0
+      ? snapshotCircuitOps
+      : snapshotCircuitOps.filter((op) => {
+          const circuitUuid = putCircuitUuid(op);
+          return circuitUuid === undefined || !deletedCircuitUuids.has(circuitUuid);
+        });
+
   // Group circuit_climbs by their parent circuit_uuid so we can diff
   // against the current playlist contents. REMOVE ops on circuit_climbs
   // are ignored — the full-snapshot diff below replaces the
