@@ -27,7 +27,9 @@ export type PickerBoardTarget = { boardUuid: string; boardName: string; remember
  * climber asks for every board (#7125). Nothing resolved in 2,521 of 2,522
  * MoonBoard pickers and half of Android Kilter pickers (30 days to 2026-10-31),
  * so hiding `unknown` as well opened those gym connects on "Your selected board
- * was not found" with nothing listed.
+ * was not found" with nothing listed. For the same reason the picker's tips
+ * treat a listed `unknown` box as possibly the climber's: a serial is recorded
+ * only on a connect, and a lookup still out leaves its box `unknown`.
  */
 export type PickerTargetMatch = 'target' | 'unknown' | 'other';
 

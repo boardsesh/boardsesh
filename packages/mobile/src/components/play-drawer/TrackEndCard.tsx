@@ -3,7 +3,8 @@
 // Swipes and Next walk the list a climb was tapped in, and at its last climb
 // they stop. This card is what Next, or one more forward swipe, shows there:
 // the list's name, and one way to carry on with the queue instead, naming the
-// climb that comes first (#6238). It used to
+// climb that comes first (#6238); from a preview, the way back to the queue's
+// Now, naming the climb on the wall (the then-signposts). It used to
 // be that Next fell silently into whatever older climb sat in the queue.
 //
 // An anchored transient card over the board, NOT a sheet — the same reasoning
@@ -36,12 +37,19 @@ const CARD_FADE_MS = 150;
 
 type TrackEndCardProps = {
   model: TrackEndCardModel;
+  /**
+   * The wall shows the climb a preview's action goes back to (trusted presence
+   * names the queue's Now), so the card may say "On the wall: modern love".
+   * Otherwise (no board, nothing lit, a crewmate's climb up) it says "Your
+   * climb: modern love": the card never claims what is lit.
+   */
+  committedOnWall: boolean;
   /** Run the card's action: carry on with the queue. Only called when there is one. */
   onKeepGoing: () => void;
   onDismiss: () => void;
 };
 
-function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) {
+function TrackEndCardImpl({ model, committedOnWall, onKeepGoing, onDismiss }: TrackEndCardProps) {
   const { t } = useTranslation('session');
   const { variant, systemColors, m3SurfaceContainers, materialElevation } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -73,6 +81,22 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
   const title = model.listName
     ? t('playView.track.end.title', { name: model.listName })
     : t('playView.track.end.titleUnnamed');
+  // From a preview the action goes BACK to the queue's Now (the then-signposts):
+  // "Back to your queue (4)", naming that climb, as the one on the wall only
+  // while the wall shows it. From the climber's own climb it carries on into
+  // Up next, naming the climb that comes first.
+  const goesBack = model.action?.kind === 'backToCommitted';
+  const actionTitle = goesBack
+    ? t('playView.track.end.backToQueue', { upNextCount: model.upNextCount })
+    : t('playView.track.end.keepGoing', { upNextCount: model.upNextCount });
+  let actionDetail: string | null = null;
+  if (goesBack && model.backToName) {
+    actionDetail = committedOnWall
+      ? t('playView.track.end.onTheWall', { name: model.backToName })
+      : t('playView.track.end.yourClimb', { name: model.backToName });
+  } else if (!goesBack && model.firstUpNextName) {
+    actionDetail = t('playView.track.end.firstUpNext', { name: model.firstUpNextName });
+  }
 
   return (
     <View accessibilityViewIsModal style={styles.modalRegion} testID="play-drawer-track-end">
@@ -104,17 +128,17 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
         {model.action ? (
           <View style={styles.primaryGroup}>
             <Button
-              title={t('playView.track.end.keepGoing', { upNextCount: model.upNextCount })}
+              title={actionTitle}
               variant="filled"
               size="medium"
               onPress={onKeepGoing}
               testID="play-drawer-track-end-keep-going"
               style={styles.fullWidth}
             />
-            {/* What "Keep going" opens (#6238), on its own line rather than in
+            {/* What the action opens (#6238), on its own line rather than in
                 the button: a native button label does not wrap, and a German
                 label plus a climb name outgrows the card. */}
-            {model.firstUpNextName ? (
+            {actionDetail ? (
               <Text
                 variant="footnote"
                 color={systemColors.secondaryLabel}
@@ -122,7 +146,7 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
                 style={styles.centered}
                 testID="play-drawer-track-end-first-up-next"
               >
-                {t('playView.track.end.firstUpNext', { name: model.firstUpNextName })}
+                {actionDetail}
               </Text>
             ) : null}
           </View>

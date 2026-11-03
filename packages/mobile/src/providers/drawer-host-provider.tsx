@@ -38,6 +38,7 @@ import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
 import { trackQueueSheetOpened } from '../lib/queue-navigation-analytics';
+import { queueSheetOpenContext } from '../lib/queue-sheet-open-context';
 import { addErrorBreadcrumb } from '../lib/error-reporting';
 import { ClimbMenusProvider } from '../components/climb-actions/ClimbActionsMenu';
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
@@ -964,9 +965,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const snackbarBoardType = storedActiveBoardConfig?.boardName;
   const handleSnackbarOpen = useCallback(() => {
     dismissSnackbar();
-    trackQueueSheetOpened({ surface: 'snackbar', boardType: snackbarBoardType });
+    trackQueueSheetOpened({
+      surface: 'snackbar',
+      boardType: snackbarBoardType,
+      ...queueSheetOpenContext(getQueueSnapshot()),
+    });
     openQueueSheet();
-  }, [dismissSnackbar, openQueueSheet, snackbarBoardType]);
+  }, [dismissSnackbar, openQueueSheet, snackbarBoardType, getQueueSnapshot]);
 
   // The queue sheet renders climbs against the active board (thumbnails + tick).
   const queueBoard = useMemo<QueueItemRowBoard | null>(() => {

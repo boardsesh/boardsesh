@@ -72,7 +72,7 @@ type BackChipProps = {
    * the wall shows something else (or nothing).
    */
   backTarget?: 'wall' | 'current' | null;
-  /** The climb back goes to, named to a screen reader ("Back to my pick: The Eyes"). */
+  /** The climb back goes to, named to a screen reader ("Back to your climb: The Eyes"). */
   targetName?: string | null;
   /**
    * A browse latch is up, so swipes really don't move the wall and the hint may
@@ -99,7 +99,7 @@ function describeWallStatePill(
   if (backTarget === 'wall') {
     label = name ? t('playView.wallState.backToWallNamed', { name }) : t('playView.wallState.backToWall');
   } else {
-    label = name ? t('playView.wallState.backToMyPickNamed', { name }) : t('playView.wallState.backToCurrent');
+    label = name ? t('playView.wallState.backToCurrentNamed', { name }) : t('playView.wallState.backToCurrent');
   }
   return { label, hint: latched ? t('playView.wallState.browsingHint') : undefined };
 }
@@ -202,7 +202,7 @@ function WallStatePillImpl({
       ) : (
         // The words left the chip for the climb name's room, so at an
         // accessibility text size a long press shows them in the Large Content
-        // Viewer: "Back to my pick" and "back to the wall" still read apart
+        // Viewer: "Back to your climb" and "back to the wall" still read apart
         // without a screen reader, as on the other icon-only chrome.
         <LargeContentViewer title={accessibilityLabel} systemImage={iconMap.undo.ios} onActivate={onPress}>
           {chip}

@@ -11,7 +11,7 @@
  * when they represent a real older wall state that has not been recorded yet.
  */
 
-import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardConnectionHolder, BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { compareBoardDisplayTimes, mergeBoardHistory } from './history';
 import type { BoardPresenceState, BoardPresenceAction } from './types';
 
@@ -29,7 +29,17 @@ export const initialBoardPresenceState: BoardPresenceState = {
   lastStatsSeq: 0,
   holder: null,
   lastConnectionSeq: 0,
+  lastHolderChangeSeq: 0,
 };
+
+/**
+ * Whether a catch-up read back the holder presence already had: both free, or
+ * both held by the same account, or both anonymous (which can't be told apart).
+ */
+function isSameHolder(previous: BoardConnectionHolder | null, next: BoardConnectionHolder | null): boolean {
+  if (previous === null || next === null) return previous === next;
+  return (previous.userId ?? null) === (next.userId ?? null);
+}
 
 /** True when an entry with the same `(climbUuid, seq)` is already in history. */
 function historyHasEntry(history: BoardPresenceClimb[], climb: BoardPresenceClimb): boolean {
@@ -207,6 +217,7 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
         ...state,
         holder: action.payload.holder,
         lastConnectionSeq: action.payload.seq,
+        lastHolderChangeSeq: action.payload.seq,
       };
     }
 
@@ -228,10 +239,15 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
       if (action.payload.upToSeq < state.lastConnectionSeq) {
         return state;
       }
+      // A snapshot, not an event: it only says the holder changed when it reads
+      // a different one (`lastHolderChangeSeq`).
       return {
         ...state,
         holder: action.payload.holder,
         lastConnectionSeq: action.payload.upToSeq,
+        lastHolderChangeSeq: isSameHolder(state.holder, action.payload.holder)
+          ? state.lastHolderChangeSeq
+          : action.payload.upToSeq,
       };
     }
 

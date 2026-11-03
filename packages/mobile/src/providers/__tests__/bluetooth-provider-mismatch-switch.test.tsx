@@ -84,6 +84,7 @@ type PickerSheetProps = {
   showAllBoards?: boolean;
   onSearchAnyBoard?: () => void;
   onSeen?: (seen: 'target_not_listed' | 'tips') => void;
+  onBrowseForNow?: () => void;
 };
 
 const pickerSheet = vi.hoisted(() => ({
@@ -1089,6 +1090,8 @@ describe('BluetoothProvider mismatch switch', () => {
         listedCount: 1,
         targetNotListedSeen: true,
         tipsSeen: false,
+        tipsShownAtMs: null,
+        browsedForNow: false,
         secondsOpen: 12,
         entrySurface: 'put_on_wall',
         // The phone's history hasn't loaded in this test.
@@ -1124,6 +1127,28 @@ describe('BluetoothProvider mismatch switch', () => {
         targetNotListedSeen: false,
         tipsSeen: false,
       });
+    });
+
+    it('times the tips from the list showing, and says the climber browsed on', () => {
+      bluetooth.state.pickerState = makeMismatchingPickerState();
+      const { rerender } = renderProvider(KILTER_PROPS);
+      vi.setSystemTime(NOW + 5_000);
+      act(() => pickerSheet.props?.onSeen?.('tips'));
+      // The tips went (a board turned up) and came back: the first time counts.
+      vi.setSystemTime(NOW + 9_000);
+      act(() => pickerSheet.props?.onSeen?.('tips'));
+      // The sheet records Browse for now, then cancels the picker.
+      act(() => pickerSheet.props?.onBrowseForNow?.());
+      closePicker(rerender);
+
+      expect(resolvedCalls()).toHaveLength(1);
+      expect(resolvedCalls()[0]?.[1]).toMatchObject({ tipsSeen: true, tipsShownAtMs: 5_000, browsedForNow: true });
+
+      // The next session starts clean.
+      bluetooth.state.pickerState = { ...makeMismatchingPickerState(), sessionId: 2 };
+      rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+      closePicker(rerender);
+      expect(resolvedCalls()[1]?.[1]).toMatchObject({ tipsSeen: false, tipsShownAtMs: null, browsedForNow: false });
     });
 
     it('forgets what a picker that never listed anything saw', () => {
@@ -1304,6 +1329,15 @@ describe('BluetoothProvider external picker host stacking (#5868)', () => {
       showAllBoards: true,
       onSearchAnyBoard: handleSearchAnyBoard,
     });
+  });
+
+  it('hands both the root and a route-hosted sheet the same Browse for now', () => {
+    bluetooth.state.pickerState = makeMismatchingPickerState();
+    const { rerender } = render(renderHosts([]));
+    const rootBrowse = pickerSheet.props?.onBrowseForNow;
+    expect(rootBrowse).toBeTypeOf('function');
+    rerender(renderHosts(['play']));
+    expect(pickerSheet.props?.onBrowseForNow).toBe(rootBrowse);
   });
 });
 

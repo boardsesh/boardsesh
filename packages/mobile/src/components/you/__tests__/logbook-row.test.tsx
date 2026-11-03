@@ -229,7 +229,11 @@ vi.mock('../../Text', () => ({
 vi.mock('../../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }),
 }));
-vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => null }));
+// Renders the characteristics it was handed so a test can see what the row passed.
+vi.mock('../../ClimbAttributeIcons', () => ({
+  ClimbAttributeIcons: ({ characteristics }: { characteristics?: string[] | null }) =>
+    createElement('span', { 'data-attribute-characteristics': JSON.stringify(characteristics ?? null) }),
+}));
 vi.mock('../../../theme/colors', () => ({
   brandColors: { primary: '#6D28D9', error: '#C81E1E' },
   withAlpha: (color: string) => color,
@@ -657,5 +661,24 @@ describe('LogbookRow — accessibility actions', () => {
     onAction({ nativeEvent: { actionName: 'share' } });
     expect(menuState.onAction).toHaveBeenCalledWith({ nativeEvent: { actionName: 'share' } });
     expect(onDeleteRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #5245 review: the Logbook row's attribute cluster must get characteristics,
+// or a campus / any-feet / no-kickboard climb shows no badge in the list.
+describe('LogbookRow — climb attribute badges', () => {
+  function passedCharacteristics(container: HTMLElement): unknown {
+    const attributeEl = container.querySelector('[data-attribute-characteristics]');
+    return JSON.parse(attributeEl?.getAttribute('data-attribute-characteristics') ?? '"missing"');
+  }
+
+  it('passes the ascent characteristics to ClimbAttributeIcons', () => {
+    const { container } = renderRow(ascent({ characteristics: ['campus', 'no_kickboard'] }));
+    expect(passedCharacteristics(container)).toEqual(['campus', 'no_kickboard']);
+  });
+
+  it('passes null when the ascent records no characteristics', () => {
+    const { container } = renderRow(ascent({ characteristics: null }));
+    expect(passedCharacteristics(container)).toBeNull();
   });
 });

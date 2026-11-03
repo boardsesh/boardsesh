@@ -67,6 +67,7 @@ export const GET_GROUPED_NOTIFICATIONS = gql`
         climbAngle
         climbFrames
         climbCompatibleSizeIds
+        climbCharacteristics
         threadEntityType
         threadEntityId
         proposalUuid

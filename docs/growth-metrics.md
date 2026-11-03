@@ -432,7 +432,9 @@ built by `blePickerSessionProps` in `@boardsesh/analytics`):
 | `searchedAnyBoard`    | The climber tapped Search for any board, in the search or on the filtered list.                          |
 | `listedCount`         | Boards the list showed at close: while filtered, the target's own plus the unidentified ones of its type (#7202); every board found otherwise. |
 | `targetNotListedSeen` | "Your board isn't in the list" was on screen: boards were found, none of them the target.                |
-| `tipsSeen`            | The troubleshooting tips (hardware, location permission, Location services) were on screen.               |
+| `tipsSeen`            | The troubleshooting tips (hardware, location permission, Location services) were on screen. From 2026-11 the tips show 5 s into the scan (and for a known board while nothing listed may be the climber's), so the rate is not comparable with earlier events. |
+| `tipsShownAtMs`       | Milliseconds from the list showing to the tips first showing; null when they never did. From 2026-11 the tips come in 5 s into the scan, not at its end. |
+| `browsedForNow`       | The climber closed the picker with "Browse for now" (2026-11).                                            |
 | `secondsOpen`         | Whole seconds from the list showing to the session closing.                                               |
 | `phoneNeverConnected` | True until this phone's first connect; null while the phone's history hasn't loaded.                      |
 | `entrySurface`        | The `Board Connect Tapped` surface within 2 minutes before the list showed, or null.                      |
@@ -481,6 +483,23 @@ stop (`resolveDriveModeExit` checks it before `board_changed`): a radio drop,
 a switch to another board mid-drive, a connection replaced by a new one, or
 another phone taking the box. The dropped link share and its alert count all of
 these, deliberate switches included.
+
+Since board plan item 8 (week 2 OTA), a `link_dropped` end the phone didn't
+cause carries `takenBy`: `named` (the climber heard "Sam took the board"),
+`anonymous` ("Another phone has the board") or null (no one took it: "Board
+disconnected"). It is left off a link the phone let go of itself, a hang-up on
+a bulb, a board switch or a replaced connection, so `takenBy` set is the drops
+a climber heard about, and `takenBy` not set on `link_dropped` is the ones they
+made. That end is sent once it is settled, up to 5 s after the drop, still
+with the drop's own `durationSec`. Before the OTA no end carries the key.
+A `link_dropped` end the phone didn't cause is lost if the app is killed
+inside that 5 s wait, so the dropped link share reads slightly low from this
+OTA on. Switching Bluetooth off mid-drive (iOS reports it as
+`bluetooth_unavailable` with `central state 4`; 3 is a revoked permission and
+2 a phone without Bluetooth LE) counts as the climber's own end and carries no `takenBy`.
+A Bluetooth stack reset (`central state 1`, or 0) is not theirs: that end
+carries `takenBy` like any other drop. On Android switching Bluetooth off still
+reads as a plain drop.
 
 An OTA keeps `$app_version`, so items that ship by OTA onto the release can't be
 told apart by version. To read one, split a chart by `ota_update_id` (a super
@@ -1333,6 +1352,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | Next / Previous telemetry OTA (fill in the date when it ships) | `Set Active Climb` starts firing on every Next and Previous, with `trigger` `next`, `previous` or `rest_timer`. Its volume jumps by about one event per step. A count of climbs picked must keep only `trigger` null or `put_on_wall`; a filter on `trigger != 'climb_saved'` alone counts the steps too from this date |
 | #4415 web deploy (fill in the date when it ships) | `Board QR Scanned` starts on `/b/{slug}/{angle}/list`: kiosk and board-poster scans had no count before it. `Gym QR Scanned` starts waiting for consent to settle; before this it fired too early and was dropped, so its earlier counts are near zero for that reason, not for lack of scans. Store buttons on a Spraywall page start sending `placement: 'spray-wall'`, and a `/b` list page reached by a scan adds the medium to the link id (`spray-wall.board`, `climb-list.kiosk`) |
 | Dead-swipe fix OTA (fill in the date when it ships) | A swipe in the player no longer waits for good on a next climb whose board never paints: it goes 700 ms after the page is mounted, or at once onto a board that failed. Such swipes add `heldArtState` and `heldMs` to `Queue Navigation`; earlier events have neither, and before this date those swipes did not step at all, so `Queue Navigation` swipe counts per player session rise slightly from here |
+| Then-signposts queue sheet OTA (fill in the date when it ships) | `Queue Sheet Opened` gains `from` (`preview` or `current`) and `upNextBucket` (`0`, `1-3`, `4-10`, `11+`). Earlier events have neither; read the share of `from = 'preview'` opens with Up next filled only from this date |
 | #6940 OTA (fill in the date when it ships) | Mobile starts firing `Queue Navigation` (Next and Previous in the player and the MiniPlayer, with `method`, `surface` and `outcome`) and `Queue Sheet Opened`. www's `Queue Navigation` stopped with W-16; read mobile's on `surface`, which www never sent |
 
 None of these repairs past data. Annotate them; do not backfill.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetFlatList, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
@@ -13,12 +13,14 @@ import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { groupPickerDevices, type PickerBoardTarget } from '../../lib/ble/picker-device-target';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import type { DevicePickerSeen } from '../../lib/ble/picker-seen';
+import { useScanTipsDue } from '../../lib/ble/scan-tips';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
 import { hapticSelection } from '../../lib/haptics';
 import { recordDevicePickerNoLights } from '../../lib/onboarding/device-picker-no-lights';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
+import { ScanTips } from './ScanTips';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
@@ -54,6 +56,14 @@ type DevicePickerSheetProps = {
    * the button is then not rendered.
    */
   onScanAgain?: () => void;
+  /**
+   * "Browse for now", beside the tips: the climber stops waiting for the board
+   * and keeps picking climbs, which open as previews with no board. The sheet
+   * calls this, then `onDismiss` (the same cancel as the top bar's), so the host
+   * only records it. Omitted where no host wires it; the button is then not
+   * rendered.
+   */
+  onBrowseForNow?: () => void;
   isScanning: boolean;
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
   currentBoardConfig?: BleBoardConfig;
@@ -97,6 +107,7 @@ export function DevicePickerSheet({
   showAllBoards = false,
   onNoLeds,
   onScanAgain,
+  onBrowseForNow,
   mode = 'list',
   open = true,
   closing = false,
@@ -198,16 +209,34 @@ export function DevicePickerSheet({
   const showScanningState = !searching && isScanning && devices.length === 0;
   const showEmptyState = !searching && !isScanning && devices.length === 0;
 
+  // The tips used to wait for the 30 s scan to end empty. They now come in 5 s
+  // into the scan (the sheet mounts per session, at the tap) while the scan goes
+  // on, and stay once it ends. Not while `searching`: that has no list, and it
+  // hands over to the list at 10 s, where the tips are already due.
+  const tipsDue = useScanTipsDue(isScanning);
+  const tipsTime = !searching && (tipsDue || !isScanning);
+  // Nothing to pick yet: nothing listed. For a known board every listed box may
+  // be theirs: the target group, and every unknown box. On a first Boardsesh
+  // connect at a board (serials are recorded on connect) or while the serial
+  // lookup is still out, the climber's own box is one of the unknown ones.
+  const boardNotHeard = listedDevices.length === 0;
+
   // On a binary whose manifest declares `BLUETOOTH_SCAN` without
   // `neverForLocation` (before Android versionCode 2000761), an empty list on
   // Android 12+ with location denied is the OS hiding scan results, not a board
   // problem — so replace the hardware troubleshooting with copy that is
-  // actually actionable. See lib/ble/android-scan-location-gate.ts.
-  const locationHint = useAndroidScanLocationHint(showEmptyState);
+  // actually actionable. See lib/ble/android-scan-location-gate.ts. Asked from
+  // the same 5 s as the tips, and only with nothing heard at all: a scan that
+  // heard any board is not being hidden.
+  const locationHint = useAndroidScanLocationHint(tipsTime && devices.length === 0);
   const showLocationHint = locationHint.shouldOfferLocationGrant || locationHint.wasGranted;
   // Same idea, but for Android 11 and below: the permission is fine, the
   // system-wide Location toggle is off. See android-scan-location-gate.ts.
   const showLocationServicesHint = locationHint.shouldOfferLocationServicesEnable || locationHint.servicesWereEnabled;
+  // The hint on screen says location is sorted and asks for a fresh connect.
+  // From 5 s that can land while the scan still runs, so Scan again comes with
+  // it then too, not only once the scan ends.
+  const locationFixedCopyShown = showLocationHint ? locationHint.wasGranted : locationHint.servicesWereEnabled;
   const { requestLocationPermission, promptEnableLocationServices } = locationHint;
   const handleGrantLocation = useCallback(() => {
     void requestLocationPermission();
@@ -240,12 +269,25 @@ export function DevicePickerSheet({
     recordDevicePickerNoLights();
   }, [onDismiss, onNoLeds]);
 
+  const handleBrowseForNow = useCallback(() => {
+    // Recorded before the cancel: the host flushes the session when the cancel
+    // clears its picker state.
+    onBrowseForNow?.();
+    onDismiss();
+  }, [onBrowseForNow, onDismiss]);
+
   // The hardware tips only when the board they want may be missing: not when
-  // it's clearly listed, and not while the initial scan is still running
-  // (showEmptyState gates the zero-device path on the scan having finished empty).
+  // any box that may be theirs is listed, and not in the first
+  // 5 s of the scan. Boards of another type listed with no known board in view
+  // say so at once, as before. Never while `searching` (`tipsTime`; its device
+  // list is held back empty, so no type can mismatch).
   const showHardwareTips =
-    !showLocationHint && !showLocationServicesHint && (showEmptyState || (!filteringTarget && noneMatchedSelectedType));
+    !showLocationHint &&
+    !showLocationServicesHint &&
+    ((tipsTime && boardNotHeard) || (!filteringTarget && noneMatchedSelectedType));
   const showHints = showLocationHint || showLocationServicesHint || showHardwareTips;
+  // A MoonBoard moves "another phone" up the tips.
+  const tipsBoardName = targetBoard?.boardName ?? currentBoardConfig?.boardName;
 
   // Report what the climber saw, while the sheet is on screen. Read through a
   // ref so a host's new callback never re-reports.
@@ -260,9 +302,113 @@ export function DevicePickerSheet({
     if (hintsShown) onSeenRef.current?.('tips');
   }, [hintsShown]);
 
+  // Shared by both bodies below. For a known board: "Search for any board",
+  // and while every box heard is another board, "not found" above it.
+  const targetRow =
+    !searching && filteringTarget ? (
+      <View style={targetNotListed ? styles.scanningContainer : styles.searchAnyBoardRow}>
+        {targetNotListed && (
+          <>
+            {isScanning && <ActivityIndicator size="small" color={theme.brandColors.primary} />}
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {isScanning ? t('ble.searchingForSavedBoard') : t('ble.selectedBoardNotFound')}
+            </Text>
+          </>
+        )}
+        {onSearchAnyBoard && (
+          <Button title={t('ble.searchAnyBoard')} onPress={onSearchAnyBoard} variant="tonal" size="medium" />
+        )}
+      </View>
+    ) : null;
+
+  const hints = showHints ? (
+    <View style={styles.hints}>
+      {/* The OS is withholding results — say so instead of blaming the board. */}
+      {showLocationHint && (
+        <View style={styles.troubleshoot}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {t('ble.locationHintTitle')}
+          </Text>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
+            {locationHint.wasGranted ? t('ble.locationHintGranted') : t('ble.locationHintBody')}
+          </Text>
+          {locationHint.shouldOfferLocationGrant && (
+            <Button
+              title={t('ble.locationHintGrant')}
+              onPress={handleGrantLocation}
+              variant="text"
+              size="medium"
+              loading={locationHint.isRequesting}
+            />
+          )}
+        </View>
+      )}
+
+      {/* Android 11 and below: the permission is granted, but the system
+          Location toggle is off, so AOSP withholds every scan result. */}
+      {!showLocationHint && showLocationServicesHint && (
+        <View style={styles.troubleshoot}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {t('ble.locationServicesHintTitle')}
+          </Text>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
+            {locationHint.servicesWereEnabled
+              ? t('ble.locationServicesHintEnabled')
+              : t('ble.locationServicesHintBody')}
+          </Text>
+          {locationHint.shouldOfferLocationServicesEnable && (
+            <Button
+              title={t('ble.locationServicesHintEnable')}
+              onPress={handleEnableLocationServices}
+              variant="text"
+              size="medium"
+              loading={locationHint.isPromptingServices}
+            />
+          )}
+        </View>
+      )}
+
+      {showHardwareTips && (
+        <View style={styles.troubleshoot}>
+          <ScanTips boardName={tipsBoardName} />
+          {/* The wall may simply have no light kit. Offer to drive it anyway:
+              everyone on the board feed (and the gym screen) still sees the
+              climb. Session-local — nothing is written to the board record. */}
+          {showNoLedsOffer && (
+            <View style={styles.noLedsOffer}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
+                {t('ble.noLedsBody')}
+              </Text>
+              <Button
+                title={t('ble.noLedsCta')}
+                onPress={handleNoLeds}
+                variant="text"
+                size="medium"
+                icon="pin"
+                // The handler fires hapticSelection itself so the tap keeps one
+                // haptic; takeVirtualWall's own hapticLight lands after the
+                // dismissal, alongside the "You've got the wall" toast.
+                haptic={false}
+              />
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* The way on without a board: close the picker and keep picking
+          climbs, which open as previews. Not "This wall has no lights",
+          which takes the wall with no Bluetooth. */}
+      {onBrowseForNow && (
+        <Button title={t('ble.browseForNow')} onPress={handleBrowseForNow} variant="text" size="medium" />
+      )}
+    </View>
+  ) : undefined;
+
   // ModalSheet hands the native sheet a single flex child and pads the body for
-  // the window bottom inset. Cancel sits in the top bar; the hints that used to
-  // share the pinned footer with it are body content now, under the list.
+  // the window bottom inset. Cancel sits in the top bar. The body is always one
+  // scroller, so the hints never squeeze the rest out of a medium detent: with
+  // boards listed they ride at the foot of the list, and with none the state
+  // and the hints scroll together.
   return (
     <ModalSheet
       ref={sheetRef}
@@ -278,161 +424,84 @@ export function DevicePickerSheet({
         />
       }
     >
-      {searching && (
-        <View style={styles.scanningContainer}>
-          <ActivityIndicator size="small" color={theme.brandColors.primary} />
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {currentBoardConfig
-              ? t('ble.searchingForBoard', {
-                  board: savedBoardProductName(currentBoardConfig.boardName, t('aurora.card.boardSuffix')),
-                })
-              : t('ble.searchingForSavedBoard')}
-          </Text>
-          {onSearchAnyBoard && (
-            <Button title={t('ble.searchAnyBoard')} onPress={onSearchAnyBoard} variant="tonal" size="medium" />
-          )}
-        </View>
-      )}
+      {listedDevices.length > 0 ? (
+        <>
+          {targetRow}
 
-      {showScanningState && (
-        <View style={styles.scanningContainer}>
-          <ActivityIndicator size="small" color={theme.brandColors.primary} />
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {t('ble.scanning')}
-          </Text>
-        </View>
-      )}
-
-      {showEmptyState && (
-        <View style={styles.scanningContainer}>
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {t('ble.noDevicesFound')}
-          </Text>
-          {/* An empty scan used to end in an OK-only "Couldn't find your board"
-              alert, then finding the bulb again. The adapters now leave the
-              picker up when the scan window closes empty (#5654), so this state
-              is where that climber lands. Shown next to the location hints too:
-              their "granted" copy asks for exactly this. */}
-          {onScanAgain && (
-            <Button title={t('ble.scanAgain')} onPress={onScanAgain} variant="tonal" size="medium" icon="refresh" />
-          )}
-        </View>
-      )}
-
-      {!searching && filteringTarget && (
-        <View style={targetNotListed ? styles.scanningContainer : styles.searchAnyBoardRow}>
-          {targetNotListed && (
-            <>
-              {isScanning && <ActivityIndicator size="small" color={theme.brandColors.primary} />}
-              <Text variant="subheadline" color={systemColors.secondaryLabel}>
-                {isScanning ? t('ble.searchingForSavedBoard') : t('ble.selectedBoardNotFound')}
+          {!filteringTarget && noneMatchedSelectedType && currentBoardConfig && (
+            <View style={styles.typeHint}>
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('ble.differentBoardType', { board: formatBoardDisplayName(currentBoardConfig.boardName) })}
               </Text>
-            </>
+            </View>
           )}
-          {onSearchAnyBoard && (
-            <Button title={t('ble.searchAnyBoard')} onPress={onSearchAnyBoard} variant="tonal" size="medium" />
-          )}
-        </View>
-      )}
 
-      {!filteringTarget && devices.length > 0 && noneMatchedSelectedType && currentBoardConfig && (
-        <View style={styles.typeHint}>
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('ble.differentBoardType', { board: formatBoardDisplayName(currentBoardConfig.boardName) })}
-          </Text>
-        </View>
-      )}
-
-      {listedDevices.length > 0 && (
-        <BottomSheetFlatList
-          style={styles.list}
-          data={listedDevices}
-          keyExtractor={keyExtractor}
-          renderItem={renderDeviceItem}
-          contentContainerStyle={styles.listContent}
+          <BottomSheetFlatList
+            style={styles.body}
+            data={listedDevices}
+            keyExtractor={keyExtractor}
+            renderItem={renderDeviceItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            ListFooterComponent={hints}
+          />
+        </>
+      ) : (
+        <BottomSheetScrollView
+          style={styles.body}
+          contentContainerStyle={styles.stateContent}
           showsVerticalScrollIndicator={false}
-        />
-      )}
-
-      {showHints && (
-        <View style={styles.hints}>
-          {/* The OS is withholding results — say so instead of blaming the board. */}
-          {showLocationHint && (
-            <View style={styles.troubleshoot}>
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('ble.locationHintTitle')}
+        >
+          {searching && (
+            <View style={styles.scanningContainer}>
+              <ActivityIndicator size="small" color={theme.brandColors.primary} />
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {currentBoardConfig
+                  ? t('ble.searchingForBoard', {
+                      board: savedBoardProductName(currentBoardConfig.boardName, t('aurora.card.boardSuffix')),
+                    })
+                  : t('ble.searchingForSavedBoard')}
               </Text>
-              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
-                {locationHint.wasGranted ? t('ble.locationHintGranted') : t('ble.locationHintBody')}
-              </Text>
-              {locationHint.shouldOfferLocationGrant && (
-                <Button
-                  title={t('ble.locationHintGrant')}
-                  onPress={handleGrantLocation}
-                  variant="text"
-                  size="medium"
-                  loading={locationHint.isRequesting}
-                />
+              {onSearchAnyBoard && (
+                <Button title={t('ble.searchAnyBoard')} onPress={onSearchAnyBoard} variant="tonal" size="medium" />
               )}
             </View>
           )}
 
-          {/* Android 11 and below: the permission is granted, but the system
-              Location toggle is off, so AOSP withholds every scan result. */}
-          {!showLocationHint && showLocationServicesHint && (
-            <View style={styles.troubleshoot}>
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('ble.locationServicesHintTitle')}
+          {showScanningState && (
+            <View style={styles.scanningContainer}>
+              <ActivityIndicator size="small" color={theme.brandColors.primary} />
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {t('ble.scanning')}
               </Text>
-              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
-                {locationHint.servicesWereEnabled
-                  ? t('ble.locationServicesHintEnabled')
-                  : t('ble.locationServicesHintBody')}
-              </Text>
-              {locationHint.shouldOfferLocationServicesEnable && (
-                <Button
-                  title={t('ble.locationServicesHintEnable')}
-                  onPress={handleEnableLocationServices}
-                  variant="text"
-                  size="medium"
-                  loading={locationHint.isPromptingServices}
-                />
+              {/* The location hint below says location is sorted and asks for
+                  a fresh connect; from 5 s that can come mid-scan. */}
+              {onScanAgain && locationFixedCopyShown && (
+                <Button title={t('ble.scanAgain')} onPress={onScanAgain} variant="tonal" size="medium" icon="refresh" />
               )}
             </View>
           )}
 
-          {showHardwareTips && (
-            <View style={styles.troubleshoot}>
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('ble.troubleshootTitle')}
+          {showEmptyState && (
+            <View style={styles.scanningContainer}>
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {t('ble.noDevicesFound')}
               </Text>
-              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
-                {t('ble.troubleshootTips')}
-              </Text>
-              {/* The wall may simply have no light kit. Offer to drive it anyway:
-                  everyone on the board feed (and the gym screen) still sees the
-                  climb. Session-local — nothing is written to the board record. */}
-              {showNoLedsOffer && (
-                <View style={styles.noLedsOffer}>
-                  <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
-                    {t('ble.noLedsBody')}
-                  </Text>
-                  <Button
-                    title={t('ble.noLedsCta')}
-                    onPress={handleNoLeds}
-                    variant="text"
-                    size="medium"
-                    icon="pin"
-                    // The handler fires hapticSelection itself so the tap keeps one
-                    // haptic; takeVirtualWall's own hapticLight lands after the
-                    // dismissal, alongside the "You've got the wall" toast.
-                    haptic={false}
-                  />
-                </View>
+              {/* An empty scan used to end in an OK-only "Couldn't find your board"
+                  alert, then finding the bulb again. The adapters now leave the
+                  picker up when the scan window closes empty (#5654), so this state
+                  is where that climber lands. Shown next to the location hints too:
+                  their "granted" copy asks for exactly this. */}
+              {onScanAgain && (
+                <Button title={t('ble.scanAgain')} onPress={onScanAgain} variant="tonal" size="medium" icon="refresh" />
               )}
             </View>
           )}
-        </View>
+
+          {targetRow}
+
+          {hints}
+        </BottomSheetScrollView>
       )}
     </ModalSheet>
   );
@@ -443,15 +512,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing[3],
   },
+  // Grows into the space the hints leave, centred, but never below its own
+  // height: a squeezed `flex: 1` box let "No boards found" and Scan again spill
+  // into the tips at a medium detent.
   scanningContainer: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing[3],
-    paddingVertical: spacing[10],
+    paddingVertical: spacing[4],
   },
-  list: {
+  body: {
     flex: 1,
+  },
+  stateContent: {
+    flexGrow: 1,
+    paddingBottom: spacing[4],
   },
   listContent: {
     paddingTop: spacing[2],

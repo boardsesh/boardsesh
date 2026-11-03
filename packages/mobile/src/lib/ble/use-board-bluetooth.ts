@@ -1287,6 +1287,10 @@ export function useBoardBluetooth({
       connectedConfigIdentityRef.current = null;
       hangUpKeepsBoardRef.current = null;
       backgroundAdoptSendGateRef.current = false;
+      // The seed describes what THIS link physically wrote. Left behind, the
+      // next generation's first drain could consume it and record a climb as
+      // already lit on a wall this app never wrote to.
+      connectInitialSendRef.current = null;
       writeAbortRef.current?.abort();
       writeAbortRef.current = null;
       writeChainRef.current = Promise.resolve();
@@ -2408,6 +2412,9 @@ export function useBoardBluetooth({
       configuredDeviceIdRef.current = undefined;
       connectedConfigIdentityRef.current = null;
       hangUpKeepsBoardRef.current = null;
+      // Same reason as clearConnectionAfterDrop: a seed set by this generation
+      // must never be consumed by the next one's first drain.
+      connectInitialSendRef.current = null;
       // Cancel every in-flight and queued write of this connection generation,
       // and unblock the write chain for the next connect.
       writeAbortRef.current?.abort();

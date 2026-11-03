@@ -17,6 +17,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticWarning } from '../../lib/haptics';
 import type { QueueContentSnapshot } from '../../lib/queue-undo';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
+import { useQueueWalkBoard } from '../../providers/queue/use-queue-walk-board';
 import { UndoSnackbar } from '../UndoSnackbar';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -106,6 +107,9 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
   } = useQueueActions();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const { undoScope } = useQueueSessionId();
+  // The board the swipe walk is filtered against, so the sheet's Then from
+  // rows agree with where a swipe lands.
+  const walkBoard = useQueueWalkBoard();
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
@@ -120,8 +124,6 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
   useEffect(() => {
     setPendingUndo((pending) => (pending && pending.scope !== undoScope ? null : pending));
   }, [undoScope]);
-
-  const currentItemUuid = currentClimbQueueItem?.uuid ?? null;
 
   useImperativeHandle(
     ref,
@@ -269,7 +271,7 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
 
       <QueueList
         queue={queue}
-        currentItemUuid={currentItemUuid}
+        currentItem={currentClimbQueueItem}
         historyCount={historyCount ?? null}
         board={board}
         isEditMode={isEditMode}
@@ -277,6 +279,7 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
         showFullHistory={showFullHistory}
         selectedItems={selectedItems}
         playlistSuggestionSource={playlistSuggestionSource}
+        walkBoard={walkBoard}
         active={active}
         autoScrollOnMount={active}
         onToggleSelect={handleToggleSelect}

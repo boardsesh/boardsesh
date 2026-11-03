@@ -65,6 +65,18 @@ export type BoardPresenceState = {
    * stats cursors (and vice versa).
    */
   lastConnectionSeq: number;
+  /**
+   * Sequence of the latest event that changed who holds the board: every live
+   * connection push (the server only sends one when a different emitter takes
+   * the wall, or the holder lets go), and a catch-up that reads a different
+   * holder (another account, signed in vs anonymous, held vs free). A catch-up
+   * that reads back the same holder moves `lastConnectionSeq` up to the newest
+   * sequence it repaired through but leaves this alone, so "the holder changed
+   * after sequence N" never fires on a re-read. Two anonymous holders can't be
+   * told apart, so a catch-up never counts one replacing another. Zero until the
+   * first push or changed catch-up; the initial seed keeps it there.
+   */
+  lastHolderChangeSeq: number;
 };
 
 export type BoardPresenceAction =

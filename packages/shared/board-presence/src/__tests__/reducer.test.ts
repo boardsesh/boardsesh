@@ -60,6 +60,7 @@ describe('initialBoardPresenceState', () => {
       lastStatsSeq: 0,
       holder: null,
       lastConnectionSeq: 0,
+      lastHolderChangeSeq: 0,
     });
   });
 });
@@ -556,6 +557,8 @@ describe('APPLY_CONNECTION_CHANGED', () => {
 
     expect(result.holder).toEqual(holder);
     expect(result.lastConnectionSeq).toBe(3);
+    // The server only pushes one when the holder changed.
+    expect(result.lastHolderChangeSeq).toBe(3);
   });
 
   it('a higher seq replaces the current holder', () => {
@@ -625,6 +628,7 @@ describe('SEED_CONNECTION', () => {
     const afterSeed = boardPresenceReducer(initialBoardPresenceState, { type: 'SEED_CONNECTION', payload: seeded });
     expect(afterSeed.holder).toEqual(seeded);
     expect(afterSeed.lastConnectionSeq).toBe(0);
+    expect(afterSeed.lastHolderChangeSeq).toBe(0);
 
     // A subsequent live push (any seq > 0) overrides the seed.
     const live = makeHolder({ userId: 'bob' });
@@ -663,6 +667,71 @@ describe('REFRESH_CONNECTION', () => {
 
     expect(result.holder).toEqual(refreshed);
     expect(result.lastConnectionSeq).toBe(9);
+    expect(result.lastHolderChangeSeq).toBe(9);
+  });
+
+  // Board plan item 8: a catch-up moves `lastConnectionSeq` through every stats
+  // and history event it repaired, so only `lastHolderChangeSeq` says whether
+  // someone took the board after a given sequence.
+  it('keeps lastHolderChangeSeq when it reads back the same account', () => {
+    const state = makeState({
+      holder: makeHolder({ userId: 'sam', displayName: 'Sam' }),
+      lastConnectionSeq: 4,
+      lastHolderChangeSeq: 4,
+    });
+
+    const result = boardPresenceReducer(state, {
+      type: 'REFRESH_CONNECTION',
+      payload: { holder: makeHolder({ userId: 'sam', displayName: 'Sam R.' }), upToSeq: 13 },
+    });
+
+    expect(result.holder?.displayName).toBe('Sam R.');
+    expect(result.lastConnectionSeq).toBe(13);
+    expect(result.lastHolderChangeSeq).toBe(4);
+  });
+
+  it('keeps lastHolderChangeSeq when it reads back an anonymous hold or a free board', () => {
+    const anonymous = makeState({
+      holder: makeHolder({ userId: null, displayName: null, lastSentAt: '2026-11-01T10:00:00Z' }),
+      lastConnectionSeq: 5,
+      lastHolderChangeSeq: 5,
+    });
+    // The read path carries no send time for an anonymous holder: still the same hold.
+    const rereadAnonymous = boardPresenceReducer(anonymous, {
+      type: 'REFRESH_CONNECTION',
+      payload: { holder: makeHolder({ userId: null, displayName: null, lastSentAt: null }), upToSeq: 10 },
+    });
+    expect(rereadAnonymous.lastConnectionSeq).toBe(10);
+    expect(rereadAnonymous.lastHolderChangeSeq).toBe(5);
+
+    const free = makeState({ holder: null, lastConnectionSeq: 6, lastHolderChangeSeq: 6 });
+    const rereadFree = boardPresenceReducer(free, {
+      type: 'REFRESH_CONNECTION',
+      payload: { holder: null, upToSeq: 11 },
+    });
+    expect(rereadFree.lastConnectionSeq).toBe(11);
+    expect(rereadFree.lastHolderChangeSeq).toBe(6);
+  });
+
+  it.each([
+    ['another account', { userId: 'sam' }, { userId: 'alex' }],
+    ['an account after an anonymous hold', { userId: null }, { userId: 'sam' }],
+    ['an anonymous hold after an account', { userId: 'sam' }, { userId: null }],
+    ['a hold on a free board', null, { userId: 'sam' }],
+    ['a free board after a hold', { userId: 'sam' }, null],
+  ] as const)('moves lastHolderChangeSeq when it reads %s', (_case, before, after) => {
+    const state = makeState({
+      holder: before === null ? null : makeHolder(before),
+      lastConnectionSeq: 4,
+      lastHolderChangeSeq: 4,
+    });
+
+    const result = boardPresenceReducer(state, {
+      type: 'REFRESH_CONNECTION',
+      payload: { holder: after === null ? null : makeHolder(after), upToSeq: 9 },
+    });
+
+    expect(result.lastHolderChangeSeq).toBe(9);
   });
 
   it('ignores an older catch-up snapshot so neither holder nor lastConnectionSeq regress', () => {
