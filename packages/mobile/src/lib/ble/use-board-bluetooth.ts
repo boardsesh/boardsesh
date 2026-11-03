@@ -43,7 +43,7 @@ import {
 } from './adapter-factory';
 import { requestBleRuntimePermissionStatus, requestOptionalNotificationPermission } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
-import { alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
+import { alertBluetoothPermissionDenied, alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
 import { manufacturerCompanyId } from './advertisement';
 import type {
   BleAdapterOptions,
@@ -815,6 +815,30 @@ export function useBoardBluetooth({
   // A native snapshot requested before a deliberate connect/disconnect must
   // not be adopted after that attempt settles, even for the same board key.
   const nativeReconciliationGenerationRef = useRef(0);
+  // The "Try again" button on the permission-denied alert starts a second
+  // connect long after the first one returned. These three refs let it do that
+  // safely:
+  //  - connectRef: the current connect, or null once the hook has unmounted, so
+  //    a button left on screen can't drive a dead hook.
+  //  - activeConfigIdentityRef: the board config in view right now. A retry for
+  //    a config the climber has since left is dropped, because its frames and
+  //    reconnect handle belong to the other board.
+  //  - nextPermissionAttemptRef: the `attempt` the next connect reports on
+  //    Bluetooth Permission Denied. A retry sets it; every connect reads it and
+  //    puts it back to 1, so an ordinary bulb tap always counts as a first ask.
+  const connectRef = useRef<
+    | ((
+        initialFrames?: string,
+        mirrored?: boolean,
+        targetSerial?: string,
+        targetDeviceId?: string,
+        options?: BoardConnectOptions,
+      ) => Promise<boolean>)
+    | null
+  >(null);
+  const activeConfigIdentityRef = useRef('');
+  activeConfigIdentityRef.current = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
+  const nextPermissionAttemptRef = useRef(1);
   // True after an explicit user disconnect, false again on the next deliberate
   // connect. While set, the native-connection adoption path is ignored — it
   // would otherwise race the in-flight native disconnect and re-establish the
@@ -1818,6 +1842,11 @@ export function useBoardBluetooth({
       targetDeviceId?: string,
       { afterBoardSwitch = false }: BoardConnectOptions = {},
     ) => {
+      // Read and reset before any early return, so a retry's count can't leak
+      // into a later, unrelated connect.
+      const permissionAttempt = nextPermissionAttemptRef.current;
+      nextPermissionAttemptRef.current = 1;
+
       if (!boardName) {
         console.error('Cannot connect to Bluetooth without board name');
         return false;
@@ -1866,6 +1895,10 @@ export function useBoardBluetooth({
         connectPickerSessionId ??= pickerSessionCounterRef.current;
         return pickerPromise;
       };
+      // Set when Android answered "Don't allow" but will still show its dialog.
+      // The alert that offers the retry waits for the `finally` below, so its
+      // button can never land while connectInFlightRef still swallows connects.
+      let offerPermissionRetry = false;
 
       try {
         // Bluetooth only: the Android 13+ notifications prompt waits until the
@@ -1882,13 +1915,19 @@ export function useBoardBluetooth({
           // The Alert is the only trace this path used to leave — an entire
           // class of "Bluetooth doesn't work" was invisible in telemetry.
           void describeBlePermissionDenial().then((denialContext) => {
-            track(SHARED_EVENTS.BluetoothPermissionDenied, { ...denialContext, surface: 'connect', boardName });
+            track(SHARED_EVENTS.BluetoothPermissionDenied, {
+              ...denialContext,
+              surface: 'connect',
+              boardName,
+              attempt: permissionAttempt,
+              permission_status: permissionStatus,
+            });
           });
           if (permissionStatus === 'blocked') {
             // Android stopped showing the dialog, so re-asking is a dead tap.
             await alertBluetoothUnavailable({ reason: 'unauthorized', boardName, t, tCommon });
           } else {
-            Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'));
+            offerPermissionRetry = true;
           }
           return false;
         }
@@ -2355,6 +2394,26 @@ export function useBoardBluetooth({
       } finally {
         connectInFlightRef.current = false;
         setLoading(false);
+        if (offerPermissionRetry) {
+          // Android shows its dialog again for a plain "Don't allow", so the
+          // retry is a real second ask rather than a dead end (#6003). A second
+          // refusal comes back as 'blocked' on the tap after it and gets the
+          // Open Settings alert above.
+          const deniedConfigIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
+          alertBluetoothPermissionDenied({
+            t,
+            onRetry: () => {
+              const retryConnect = connectRef.current;
+              if (!retryConnect || activeConfigIdentityRef.current !== deniedConfigIdentity) return;
+              // A link came up behind the alert (another connect, or a grant in
+              // Settings followed by native adoption). Connecting again would
+              // drop it and re-scan.
+              if (adapterRef.current) return;
+              nextPermissionAttemptRef.current = permissionAttempt + 1;
+              void retryConnect(initialFrames, mirrored, targetSerial, targetDeviceId, { afterBoardSwitch });
+            },
+          });
+        }
       }
 
       return false;
@@ -2385,6 +2444,15 @@ export function useBoardBluetooth({
       tCommon,
     ],
   );
+
+  // Keep the permission-denied alert's "Try again" pointed at the current
+  // connect, and at nothing once this hook is gone.
+  useEffect(() => {
+    connectRef.current = connect;
+    return () => {
+      connectRef.current = null;
+    };
+  }, [connect]);
 
   const teardownConnection = useCallback(
     async (
