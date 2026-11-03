@@ -32,6 +32,12 @@ import {
 } from '../../lib/graphql/operations';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../../lib/connectivity/connectivity-store';
 import { getStoredActiveBoard } from '../../lib/active-board-store';
+import {
+  clearSessionBoardAdoption,
+  fetchNamedSessionBoard,
+  mayAdoptNamedSessionBoard,
+  takeNamedSessionBoardAdoption,
+} from '../../lib/boards/session-board-adoption';
 import { clearStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
 import { toClimbQueueItem, type SubscriptionQueueItem } from '../../lib/queue-conversion';
 import { toMobileSessionRuntimeEvent } from '../../lib/session-runtime-event';
@@ -406,6 +412,27 @@ export function useSessionRealtime({
       // — the angle table differs per board, so never cross boards.
       const named = parseNamedBoardPath(boardPath);
       if (named) {
+        // A crewmate who joined a home wall on its geometry moves onto the wall
+        // the moment the session names it to them (#7220). Only right after that
+        // join; see session-board-adoption.ts for the limits.
+        void (async () => {
+          const stored = await getStoredActiveBoard();
+          if (!isCurrent() || sessionIdRef.current !== sessionId) return;
+          if (!stored || !mayAdoptNamedSessionBoard(sessionId, stored)) return;
+          if (stored.slug === named.slug) {
+            clearSessionBoardAdoption(sessionId);
+            return;
+          }
+          const namedBoard = await fetchNamedSessionBoard(named.slug).catch((error: unknown) => {
+            reportHandledError(error, { tags: { source: 'queue-sync', op: 'adopt-session-board' } });
+            return null;
+          });
+          if (!isCurrent() || sessionIdRef.current !== sessionId) return;
+          const current = await getStoredActiveBoard();
+          if (!isCurrent() || !current || current.uuid !== stored.uuid) return;
+          const adopted = takeNamedSessionBoardAdoption(sessionId, current, namedBoard, named.angle);
+          if (adopted) await setActiveBoardRef.current(adopted);
+        })();
         if (named.angle == null) return;
         const nextNamedAngle = named.angle;
         void (async () => {
@@ -418,6 +445,8 @@ export function useSessionRealtime({
         })();
         return;
       }
+      // The session's first path after a join names no wall: nothing to move onto.
+      clearSessionBoardAdoption(sessionId);
       const parsed = parseBoardPath(boardPath);
       if (!parsed || parsed.angle == null) return;
       const nextAngle = parsed.angle;

@@ -23,6 +23,7 @@ import { useSessionPreview, useCreateBoard, useBoardBySlug, fetchBoardBySlug } f
 import { fetchAllMyOwnedBoards } from '../../src/lib/graphql/hooks/fetch-all-my-owned-boards';
 import { createBoardOrAdoptDuplicate } from '../../src/lib/graphql/create-board-or-adopt-duplicate';
 import { resolveBoardForSession } from '../../src/lib/board-path-to-user-board';
+import { clearSessionBoardAdoption, expectSessionBoardAdoption } from '../../src/lib/boards/session-board-adoption';
 import { spacing, cardCorners } from '../../src/theme/tokens';
 import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
 
@@ -159,6 +160,11 @@ function JoinSessionScreen() {
           fetchBoardBySlug,
         });
         if (!isCurrent()) return;
+        // A geometry path can stand for a home wall the session names only to
+        // its crew. Once joined, the roster snapshot names it and moves us onto
+        // the owner's board (#7220).
+        if (!parseNamedBoardPath(operation.boardPath))
+          expectSessionBoardAdoption(operation.sessionId, userBoard, fetchBoardBySlug);
         // joinSession returns early when we're already in this session, and that
         // isn't a join the live-sessions funnel should count.
         const joined = await joinSession(operation.sessionId, {
@@ -166,7 +172,10 @@ function JoinSessionScreen() {
           userBoard,
           isOperationCurrent: isCurrent,
         });
-        if (!joined || !isCurrent()) return;
+        if (!joined || !isCurrent()) {
+          clearSessionBoardAdoption(operation.sessionId);
+          return;
+        }
         // Web fires `Session Joined` on a genuine new-session entry (board-session-
         // bridge). The mobile equivalent is a successful deep-link join — the
         // queue provider only emits Session Started/Ended, never Joined. Mirror
@@ -188,6 +197,7 @@ function JoinSessionScreen() {
         // Land on the Record tab so the user drops straight into the joined session.
         router.replace('/(tabs)/record');
       } catch (error) {
+        clearSessionBoardAdoption(operation.sessionId);
         if (!isCurrent()) return;
         if (__DEV__) console.warn('[join] failed to join session', error);
         // Resolving the session's board needs the network, so a join attempted with

@@ -20,7 +20,7 @@ import { isTabsRoute } from '../lib/route-segments';
 import { useWallDisplayOpen } from '../lib/wall-display-presence';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
-import { buildSessionBoardPath } from '../lib/boards/session-board-path';
+import { buildAngleChangeSessionBoardPath, buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS, type AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget } from '../components/play-drawer';
 import { LogAscentSheet } from '../components/LogAscentSheet';
@@ -63,6 +63,7 @@ import { useSprayWallSheetActions } from '../lib/spray/use-spray-wall-sheet-acti
 import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
+import { useSessionBoardPath } from './queue/queue-contexts';
 import { isDrivingWall } from '../components/play-drawer/use-climb-change-lights';
 import { usePhoneSplit } from '../hooks/use-phone-split';
 import {
@@ -509,6 +510,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
   const { playNext, setSessionBoardPath, setCurrentClimb, getQueueSnapshot } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
+  // Read at angle-change time only, so a path change never re-creates the handler.
+  const sessionBoardPath = useSessionBoardPath();
+  const sessionBoardPathRef = useRef(sessionBoardPath);
+  sessionBoardPathRef.current = sessionBoardPath;
   const setActiveBoard = useSetActiveBoard();
   const setBoardAngle = useSetBoardAngle();
   const {
@@ -840,7 +845,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       if (cfg) {
         void setSessionBoardPath(
           !boardConfigOverride && activeBoard
-            ? buildSessionBoardPath(activeBoard, newAngle)
+            ? buildAngleChangeSessionBoardPath(activeBoard, newAngle, sessionBoardPathRef.current)
             : buildBoardPath(cfg.boardName, cfg.layoutId, cfg.sizeId, cfg.setIds, newAngle),
         );
       }

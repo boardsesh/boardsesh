@@ -134,8 +134,19 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     expect(lastCreatedBoardPath()).toBe('/b/boiler-room-kilter-c937dad5/40');
   });
 
-  it('keeps the positional tuple for a board that belongs to no gym', async () => {
+  it('names a home board too, so the crew lands on the owner’s board (#7220)', async () => {
     mocks.storedActiveBoard = homeBoard();
+    const { result } = renderSessionCommands();
+
+    await act(async () => {
+      await result.current.createSessionWithConfig();
+    });
+
+    expect(lastCreatedBoardPath()).toBe('/b/marcos-kilter-1f2e3d4c/40');
+  });
+
+  it('keeps the positional tuple for a board with no slug', async () => {
+    mocks.storedActiveBoard = { ...homeBoard(), slug: '' };
     const { result } = renderSessionCommands();
 
     await act(async () => {
