@@ -804,7 +804,7 @@ export async function redactBoardEvent(
       // here the relayer is named under the same rule as a board holder, the
       // climb's content under the same rule as history, and the server-only
       // routing key never leaves.
-      const { holderEmitterId: _routingKey, ...deliverable } = event;
+      const { holderConnectionId: _routingKey, ...deliverable } = event;
       const relayer = await redactBoardHolder(
         { userId: event.relayer.userId, displayName: event.relayer.displayName, avatarUrl: event.relayer.avatarUrl },
         viewerId,

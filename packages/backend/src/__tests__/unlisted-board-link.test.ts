@@ -744,6 +744,7 @@ describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlis
       firstSeenMs: Date.now() - 120_000,
       lastReport: null,
       currentWriter: null,
+      currentWriterConnectionId: null,
     });
     const commit = vi.spyOn(pubsub, 'commitBoardClimb');
     await db

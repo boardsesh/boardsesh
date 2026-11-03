@@ -113,11 +113,11 @@ export type BoardClimbRelayRequested = {
   relayer: BoardRelayRequester;
   requestedAt: string;
   /**
-   * Server-only routing key: the emitter id (user id or `conn:{id}`) the request
-   * is addressed to. Not in the SDL; the subscription delivers the event only to
-   * the subscriber with this emitter id, and redaction strips it.
+   * Server-only routing key: the connection holding the board. Not in the SDL;
+   * the subscription delivers the event only to a relay subscription on this
+   * connection, and redaction strips it.
    */
-  holderEmitterId?: string;
+  holderConnectionId?: string;
 };
 
 export type BoardPresenceEvent =
@@ -128,7 +128,14 @@ export type BoardPresenceEvent =
   | BoardHistoryUpdated
   | BoardClimbRelayRequested;
 
-export type RelayBoardClimbStatus = 'SENT' | 'NO_HOLDER' | 'SELF_HOLDER' | 'HOLDER_OPTED_OUT' | 'NOT_RELAY_BOARD';
+export type RelayBoardClimbStatus =
+  | 'SENT'
+  | 'NO_HOLDER'
+  | 'SELF_HOLDER'
+  | 'HOLDER_UNREACHABLE'
+  | 'HOLDER_OPTED_OUT'
+  | 'CLIMB_UNAVAILABLE'
+  | 'NOT_RELAY_BOARD';
 
 export type RelayBoardClimbResult = {
   status: RelayBoardClimbStatus;

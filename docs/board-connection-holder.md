@@ -145,47 +145,70 @@ An original MoonBoard controller takes one phone and stops advertising while con
 wall lights climbs through the holder's phone. Backend and shared client only so far; the mobile UI ships later
 behind a flag.
 
+**The holder is a connection.** `commitBoardClimb` stores the reporting connection in `board:{id}:writer-conn`
+beside `board:{id}:writer`, with the same 12 h TTL. `clearBoardWriterIf` deletes both (and the opt-out) together. A
+deduplicated re-send from another phone on the same account re-points `writer-conn` (compare-and-set on the
+writer). The account (emitter) id still names the holder; everything relay routes by connection, so the holder's
+second phone is an ordinary relayer.
+
+**Who is listening.** `boardNowPlaying` takes `relay: Boolean`. Only `BOARD_NOW_PLAYING_RELAY` passes `relay: true`.
+While any `boardNowPlaying` stream is open its connection keeps `board:{id}:viewer:{conn}`, and a relay stream also
+keeps `board:{id}:relay-listener:{conn}`. Both have a 90 s TTL, are refreshed every 30 s and are deleted on close, so a
+crashed instance's keys lapse within 90 s. Two streams of one connection on one board share the keys: closing one
+can drop them until the other's next refresh (30 s at most).
+
 **`relayBoardClimb(boardId, climb, angle, mirrored, relayRequestId)`** returns a `RelayBoardClimbStatus` and the
 holder, named under the same rule as `boardConnection` (`redactBoardHolder`, with the caller as viewer). Gates in
 order:
 
-1. Rate limits: the caller's own bucket (`applyRateLimit`, 60/min signed in, 240/min anonymous per IP), then 20 a
-   minute per caller and board (`ratelimit:relay:{emitter}:board:{id}:…`).
-2. Board membership (the same stamp `reportBoardClimb` needs), else the `Not connected to this board` error. The
-   spray-wall read check runs too. The climb, angle and request id are validated next.
+1. Rate limits: the caller's own bucket (`applyRateLimit`), then 20 a minute per caller and board (account id, or
+   `ip:{clientIp}` for an anonymous caller so reconnecting doesn't reset it), then 60 a minute per board across every
+   relayer.
+2. The board-presence stamp AND a live viewer key on this connection, else `Not connected to this board`. The
+   spray-wall read check runs too; then the climb, angle and request id are validated.
 3. `NOT_RELAY_BOARD` unless the board is a MoonBoard whose effective link mode (`resolveMoonboardLinkMode`) is
    `relay` and it is not a shared per-config feed.
-4. `NO_HOLDER` when the writer slot is empty, `SELF_HOLDER` when the caller holds it.
-5. `HOLDER_OPTED_OUT` when the holder turned relay off.
-6. Otherwise `SENT`: a `BoardClimbRelayRequested` goes out on the board's presence channel. The climb's name,
-   frames, setter and grade come from the board's catalog, never from the relaying phone.
+4. One Lua read (`getBoardRelayGate`) returns writer, writer-conn, opt-out and listener; it decides every holder
+   gate and names the holder. `NO_HOLDER` when the writer slot is empty; `SELF_HOLDER` when writer-conn is the
+   caller's connection; `HOLDER_UNREACHABLE` when writer-conn is unknown or has no relay-listener key (an app
+   without relay, a closed app, a stale holder); `HOLDER_OPTED_OUT` when that connection turned relay off.
+5. `CLIMB_UNAVAILABLE` when the climb is not in this board's catalog, the angle is not one of its catalog angles
+   (`board_climbs.angle` plus every `board_climb_stats` angle), or the holder may not read it
+   (`canReadClimbContent`, the redaction rule).
+6. Otherwise `SENT`: `board:{id}:relay:{relayRequestId}` = the holder connection for 60 s, then a
+   `BoardClimbRelayRequested` on the board's presence channel. Name, frames, setter and grade come from the catalog.
+   `mirrored` is always false: a MoonBoard is never lit mirrored, whatever the caller sends.
 
-**Holder-only delivery.** The event carries a server-only `holderEmitterId` (not in the SDL). `boardNowPlaying`
-drops it for every subscriber whose emitter id (`userId`, or `conn:{connectionId}`) is not that holder, before any
-other work: crewmates, kiosks and anonymous viewers of a public board never receive it. `redactBoardEvent` strips
-the routing key, names the relayer under the holder rule (`anonymous: true` whenever no name is shown) and blanks
-the climb's content if the holder may not read it. The event has no seq and is never stored: no history, stats,
-Live Activity push or queue preview carries it. The shared reducer ignores it; `useBoardPresence` hands it to its
-`onRelayRequested` callback (also a `BoardPresenceProvider` prop).
+**Holder-only delivery.** The event carries a server-only `holderConnectionId` (not in the SDL). `boardNowPlaying`
+drops it, before any other work, unless the stream is `relay: true` AND its connection is that holder connection:
+crewmates, the holder's other phone, kiosks, anonymous viewers and apps without relay never receive it.
+`redactBoardEvent` strips the routing key, names the relayer under the holder rule (`anonymous: true` whenever no
+name is shown) and blanks the climb's content if the holder may not read it. The event has no seq and is never
+stored: no history, stats, Live Activity push or queue preview carries it. The shared reducer ignores it;
+`useBoardPresence` hands it to its `onRelayRequested` callback (also a `BoardPresenceProvider` prop).
 
-**Opt-out.** `setBoardRelayAccepting(boardId, accepting)` is a compare-and-set against the writer slot, so only the
-current holder can change it (it returns `false` otherwise). Off stores `board:{id}:relay-off` = the holder's
-emitter id with the writer's 12 h TTL. It counts only while that value equals the current writer, so a new holder
-starts with relay on and nothing needs clearing on hand-off.
+**Opt-out.** `setBoardRelayAccepting(boardId, accepting)` is a compare-and-set against `writer-conn`, so only the
+holding connection can change it (`false` otherwise). Off stores `board:{id}:relay-off` = that connection with
+writer-conn's remaining lifetime; `commitBoardClimb` refreshes it with the writer, and `clearBoardWriterIf` deletes
+it with the writer. It counts only while it names the current writer-conn. We store it per connection, not per
+account, on purpose: the choice belongs to the phone with the link, it ends when that phone lets go, and it never
+carries to the next holder, including another phone on the same account.
 
-**Confirmation.** The holder lights the climb and calls `reportBoardClimb(..., relayRequestId)`. The published
-`BoardClimbSet` carries `relayRequestId`, which the relaying phone matches. A report with a `relayRequestId` skips
-the 10 s same-climb dedup, so a relay of the climb already on the wall still publishes its echo (one extra history
-row).
+**Confirmation.** The holder lights the climb and calls `reportBoardClimb(..., relayRequestId)`. The id is
+honoured only when a compare-and-delete of `board:{id}:relay:{relayRequestId}` finds the caller's connection: then
+the report skips the 10 s same-climb dedup (a relay of the climb already lit still publishes, one extra history row)
+and the `BoardClimbSet` carries `relayRequestId`. Claiming consumes it, so it echoes once. Any other id is ignored and
+the report dedups as usual. A caller that replays another connection's id neither claims nor burns it.
 
 **Documents.** The recorded `BOARD_NOW_PLAYING` and `REPORT_BOARD_CLIMB` are unchanged. A client opts in with
-`createBoardPresenceClient(transport, { relayMode: true })`, which subscribes with `BOARD_NOW_PLAYING_RELAY`;
-`reportClimb(..., { relayRequestId })` sends `REPORT_BOARD_CLIMB_RELAYED`. `relayClimb` and `setRelayAccepting`
-send `RELAY_BOARD_CLIMB` and `SET_BOARD_RELAY_ACCEPTING`.
+`createBoardPresenceClient(transport, { relayMode: true })`, which subscribes with `BOARD_NOW_PLAYING_RELAY`
+(`relay: true`); `reportClimb(..., { relayRequestId })` sends `REPORT_BOARD_CLIMB_RELAYED`. `relayClimb` and
+`setRelayAccepting` send `RELAY_BOARD_CLIMB` and `SET_BOARD_RELAY_ACCEPTING`.
 
-**Not covered yet.** A holder that lost its socket or switched boards still owns the writer slot, so a request can
-be `SENT` to a phone that never sees it; the relaying phone needs a timeout on the echo. A retried relayed report
-publishes twice.
+**Not covered yet.** A holder whose socket dropped keeps its listener key for up to 90 s, so a request in that window
+is `SENT` to nobody; the relaying phone still needs a timeout on the echo. The WS-close backstop clears the writer by
+account, so if the same account holds from two connections, either one closing frees the board (the known
+same-user limitation below).
 
 ## Known limitations
 

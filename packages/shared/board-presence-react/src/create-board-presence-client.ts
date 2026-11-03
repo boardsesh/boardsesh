@@ -70,6 +70,7 @@ export type RelayClimbArgs = {
   boardId: number;
   climb: ClimbQueueItemInput;
   angle: number | null;
+  /** Sent as asked; the server always lights a MoonBoard un-mirrored. */
   mirrored?: boolean | null;
   /** Client-minted id; the holder's `BoardClimbSet` echoes it as confirmation. */
   relayRequestId: string;

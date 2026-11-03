@@ -45,6 +45,13 @@ export const subscriptionsTypeDefs = /* GraphQL */ `
       boardId: Int!
       "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
       boardUuid: ID
+      """
+      Relay mode (#7220): true when this client can light relayed climbs. Only a
+      relay subscription on the holder's own connection ever receives
+      \`BoardClimbRelayRequested\`; while one is open the server counts the
+      holder as reachable. Omitted or false never delivers a relay request.
+      """
+      relay: Boolean
     ): BoardPresenceEvent!
 
     """

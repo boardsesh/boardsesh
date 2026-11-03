@@ -185,7 +185,8 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   """
   Event (#7220, Relay mode for single-phone MoonBoard controllers): another
   climber asked the phone holding the board to light a climb. Delivered ONLY to
-  the holder's own subscription; every other viewer never receives it. Carries
+  a \`relay: true\` subscription on the connection that holds the board; every
+  other subscriber never receives it. Carries
   no sequence number and changes no presence state: the holder lights the climb
   and confirms it with \`reportBoardClimb(relayRequestId:)\`.
   """
@@ -199,7 +200,7 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
     climb: BoardRelayClimb!
     "Board angle in degrees the climb should be lit at"
     angle: Int!
-    "Whether to light the climb mirrored"
+    "Whether to light the climb mirrored. Always false on a MoonBoard."
     mirrored: Boolean!
     "Who asked"
     relayer: BoardRelayRequester!
@@ -215,8 +216,12 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
     NO_HOLDER
     "The caller holds the board; light the climb directly."
     SELF_HOLDER
+    "The holder's connection has no relay-capable subscription open (gone, or an app without relay)."
+    HOLDER_UNREACHABLE
     "The holder turned off relayed climbs."
     HOLDER_OPTED_OUT
+    "The climb isn't in this board's catalog at that angle, or the holder can't read it."
+    CLIMB_UNAVAILABLE
     "This board is not in Relay mode (not a MoonBoard, a shared per-config feed, or set to multi)."
     NOT_RELAY_BOARD
   }
@@ -224,7 +229,7 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   type RelayBoardClimbResult {
     status: RelayBoardClimbStatus!
     """
-    The holder the request went to (or who opted out), named under the same
+    The holder the request went to (or who can't take it), named under the same
     privacy rule as \`boardConnection\`. Null for NO_HOLDER, SELF_HOLDER and
     NOT_RELAY_BOARD.
     """

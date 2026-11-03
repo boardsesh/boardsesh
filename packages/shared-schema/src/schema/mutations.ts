@@ -268,7 +268,9 @@ export const mutationsTypeDefs = /* GraphQL */ `
     "who's connected" indicator). Fire-and-forget after the BLE write succeeded —
     no confirm/timeout handshake. \`angle\` is the wall angle (null = unspecified).
     \`relayRequestId\` (Relay mode, #7220) is set by a holder lighting a relayed
-    climb; it is echoed on the published \`BoardClimbSet\`.
+    climb. It is honoured (echoed on the published \`BoardClimbSet\`, and the
+    same-climb dedup skipped) only when it names a live request sent to this
+    connection; otherwise it is ignored.
     """
     reportBoardClimb(boardId: Int!, climb: ClimbQueueItemInput!, angle: Int, relayRequestId: ID): Boolean!
 
@@ -277,9 +279,12 @@ export const mutationsTypeDefs = /* GraphQL */ `
     \`climb\`. The request reaches only the holder's \`boardNowPlaying\`
     subscription as \`BoardClimbRelayRequested\`; the holder lights it and calls
     \`reportBoardClimb\` with the same \`relayRequestId\`, which the caller sees
-    echoed on \`BoardClimbSet\`. Requires board membership, and the board must be
-    a MoonBoard whose effective link mode is relay and that is not a shared
-    per-config feed. Auth-optional. Rate limited per caller and per board.
+    echoed on \`BoardClimbSet\`. Requires board membership AND an open
+    \`boardNowPlaying\` subscription on this connection, and the board must be a
+    MoonBoard whose effective link mode is relay and that is not a shared
+    per-config feed. The holder is a connection: another phone on the caller's
+    account gets SENT. \`mirrored\` is ignored (a MoonBoard is never mirrored).
+    Auth-optional. Rate limited per caller and board, and per board.
     """
     relayBoardClimb(
       boardId: Int!
@@ -290,9 +295,9 @@ export const mutationsTypeDefs = /* GraphQL */ `
     ): RelayBoardClimbResult!
 
     """
-    Relay mode (#7220): the holder turns relayed climbs on or off for the board
-    they hold. Only the current holder may set it; the setting lapses when
-    anyone else takes the board. Returns whether it was stored.
+    Relay mode (#7220): the holding connection turns relayed climbs on or off for
+    the board it holds. Only that connection may set it; the setting ends when
+    the board is let go or anyone else takes it. Returns whether it was stored.
     """
     setBoardRelayAccepting(boardId: Int!, accepting: Boolean!): Boolean!
 

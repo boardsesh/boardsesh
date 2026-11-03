@@ -103,7 +103,7 @@ export const BOARD_NOW_PLAYING = `
 // its climb landed.
 export const BOARD_NOW_PLAYING_RELAY = `
   subscription BoardNowPlayingRelay($boardId: Int!, $boardUuid: ID) {
-    boardNowPlaying(boardId: $boardId, boardUuid: $boardUuid) {
+    boardNowPlaying(boardId: $boardId, boardUuid: $boardUuid, relay: true) {
       __typename
       ... on BoardHistoryUpdated {
         seq

@@ -719,7 +719,8 @@ export type BoardClimbRecentSender = {
 /**
  * Event (#7220, Relay mode for single-phone MoonBoard controllers): another
  * climber asked the phone holding the board to light a climb. Delivered ONLY to
- * the holder's own subscription; every other viewer never receives it. Carries
+ * a `relay: true` subscription on the connection that holds the board; every
+ * other subscriber never receives it. Carries
  * no sequence number and changes no presence state: the holder lights the climb
  * and confirms it with `reportBoardClimb(relayRequestId:)`.
  */
@@ -729,7 +730,7 @@ export type BoardClimbRelayRequested = {
   angle: Scalars['Int']['output'];
   /** The climb to light */
   climb: BoardRelayClimb;
-  /** Whether to light the climb mirrored */
+  /** Whether to light the climb mirrored. Always false on a MoonBoard. */
   mirrored: Scalars['Boolean']['output'];
   /**
    * Client-minted id the holder echoes back on reportBoardClimb. Always set; typed
@@ -4695,9 +4696,12 @@ export type Mutation = {
    * `climb`. The request reaches only the holder's `boardNowPlaying`
    * subscription as `BoardClimbRelayRequested`; the holder lights it and calls
    * `reportBoardClimb` with the same `relayRequestId`, which the caller sees
-   * echoed on `BoardClimbSet`. Requires board membership, and the board must be
-   * a MoonBoard whose effective link mode is relay and that is not a shared
-   * per-config feed. Auth-optional. Rate limited per caller and per board.
+   * echoed on `BoardClimbSet`. Requires board membership AND an open
+   * `boardNowPlaying` subscription on this connection, and the board must be a
+   * MoonBoard whose effective link mode is relay and that is not a shared
+   * per-config feed. The holder is a connection: another phone on the caller's
+   * account gets SENT. `mirrored` is ignored (a MoonBoard is never mirrored).
+   * Auth-optional. Rate limited per caller and board, and per board.
    */
   relayBoardClimb: RelayBoardClimbResult;
   /** Remove a climb from a playlist. */
@@ -4744,7 +4748,9 @@ export type Mutation = {
    * "who's connected" indicator). Fire-and-forget after the BLE write succeeded —
    * no confirm/timeout handshake. `angle` is the wall angle (null = unspecified).
    * `relayRequestId` (Relay mode, #7220) is set by a holder lighting a relayed
-   * climb; it is echoed on the published `BoardClimbSet`.
+   * climb. It is honoured (echoed on the published `BoardClimbSet`, and the
+   * same-climb dedup skipped) only when it names a live request sent to this
+   * connection; otherwise it is ignored.
    */
   reportBoardClimb: Scalars['Boolean']['output'];
   /**
@@ -4911,9 +4917,9 @@ export type Mutation = {
    */
   setAnonymousOnForeignBoards: PrivacySettings;
   /**
-   * Relay mode (#7220): the holder turns relayed climbs on or off for the board
-   * they hold. Only the current holder may set it; the setting lapses when
-   * anyone else takes the board. Returns whether it was stored.
+   * Relay mode (#7220): the holding connection turns relayed climbs on or off for
+   * the board it holds. Only that connection may set it; the setting ends when
+   * the board is let go or anyone else takes it. Returns whether it was stored.
    */
   setBoardRelayAccepting: Scalars['Boolean']['output'];
   setClimbFromLedPositions: ClimbMatchResult;
@@ -9020,7 +9026,7 @@ export type RegisterNotificationDeviceInput = {
 export type RelayBoardClimbResult = {
   __typename?: 'RelayBoardClimbResult';
   /**
-   * The holder the request went to (or who opted out), named under the same
+   * The holder the request went to (or who can't take it), named under the same
    * privacy rule as `boardConnection`. Null for NO_HOLDER, SELF_HOLDER and
    * NOT_RELAY_BOARD.
    */
@@ -9030,8 +9036,12 @@ export type RelayBoardClimbResult = {
 
 /** Outcome of `relayBoardClimb` (#7220). */
 export type RelayBoardClimbStatus =
+  /** The climb isn't in this board's catalog at that angle, or the holder can't read it. */
+  | 'CLIMB_UNAVAILABLE'
   /** The holder turned off relayed climbs. */
   | 'HOLDER_OPTED_OUT'
+  /** The holder's connection has no relay-capable subscription open (gone, or an app without relay). */
+  | 'HOLDER_UNREACHABLE'
   /** This board is not in Relay mode (not a MoonBoard, a shared per-config feed, or set to multi). */
   | 'NOT_RELAY_BOARD'
   /** Nobody holds the board, so there is no phone to relay through. */
@@ -11724,6 +11734,7 @@ export type Subscription = {
 export type SubscriptionBoardNowPlayingArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  relay?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root subscription type for real-time updates. */
