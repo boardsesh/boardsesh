@@ -182,6 +182,10 @@ const PROVIDER_SYNC_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'playlists', privileges: PROVIDER_SYNC_WRITE },
   { table: 'playlist_climbs', privileges: PROVIDER_SYNC_WRITE },
   { table: 'playlist_ownership', privileges: PROVIDER_SYNC_WRITE },
+  // The circuits the climber deleted in Boardsesh, which both circuit writers
+  // skip (#7240). Read only: the backend records them on delete and clears
+  // them on unlink.
+  { table: 'user_deleted_upstream_playlists', privileges: ['SELECT'] },
   // Written by the boardsesh_ticks and playlist* delete triggers (offline sync tombstones).
   { table: 'sync_deletions', privileges: ['INSERT'] },
   // The stats keys a page or flush still owes a recompute: marked (upsert) in

@@ -56,8 +56,10 @@ const queueMutations = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(async () => {}),
   mirrorCurrentClimb: vi.fn(async () => {}),
   publishPlaybackState: vi.fn(async () => {}),
-  setQueue: vi.fn(async () => {}),
-  replaceQueueItem: vi.fn(async () => {}),
+  setQueue: vi.fn(
+    async (_queue: ClimbQueueItem[], _current?: ClimbQueueItem | null, _historyCount?: number | null) => {},
+  ),
+  replaceQueueItem: vi.fn(async (_uuid: string, _item: ClimbQueueItem) => {}),
   reportWallDisconnect: vi.fn(async () => {}),
   confirmClimbOnWall: vi.fn(async () => {}),
   setSessionBoardSerial: vi.fn(async () => {}),
@@ -145,6 +147,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFee
 import { QueueProvider, useQueue } from '../queue-provider';
 
 type Snapshot = {
+  queue: ClimbQueueItem[];
   queueUuids: string[];
   currentUuid: string | null;
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
@@ -155,6 +158,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
   const queue = useQueue();
   useEffect(() => {
     onSnapshot({
+      queue: queue.state.queue,
       queueUuids: queue.state.queue.map((item) => item.uuid),
       currentUuid: queue.state.currentClimbQueueItem?.uuid ?? null,
       addToQueue: queue.addToQueue,
@@ -375,5 +379,109 @@ describe('QueueProvider play next', () => {
       SHARED_EVENTS.QueueReordered,
       expect.objectContaining({ source: 'play-next' }),
     );
+  });
+
+  // #7247: a climb walked from a list carries the walk's `suggested` flag into
+  // History, and the walk reads a flagged climb on its list as the list, never
+  // as Up next. A reorder carries no flag, so Play next also swaps the slot for
+  // its unflagged self, by uuid, and never as a whole-queue setQueue.
+  it('pulls a walked History climb forward with one reorder, and drops the list walk flag by uuid', async () => {
+    const walkedA = { ...makeQueueItem('a'), suggested: true };
+    const queued = [walkedA, makeQueueItem('b'), makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[2]);
+
+    await act(async () => {
+      const outcome = await latest().playNext({ item: makeQueueItem('fresh', 'climb-a') });
+      expect(outcome).toBe('moved');
+    });
+
+    expect(latest().queueUuids).toEqual(['b', 'c', 'a']);
+    expect(latest().queue[2].suggested).toBeUndefined();
+    await waitFor(() => expect(queueMutations.replaceQueueItem).toHaveBeenCalledTimes(1));
+    expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('a', 0, 2);
+    const [swappedUuid, swappedItem] = queueMutations.replaceQueueItem.mock.calls[0];
+    expect(swappedUuid).toBe('a');
+    expect(swappedItem).toEqual({ uuid: 'a', climb: walkedA.climb });
+    expect(queueMutations.setQueue).not.toHaveBeenCalled();
+    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
+    expect(analytics.track).toHaveBeenCalledWith(
+      SHARED_EVENTS.QueueReordered,
+      expect.objectContaining({ oldIndex: 0, newIndex: 2, source: 'play-next' }),
+    );
+    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext' });
+  });
+
+  it('mends a walked climb already up next with its flag: the swap alone, no reorder', async () => {
+    const walkedB = { ...makeQueueItem('b'), suggested: true };
+    const queued = [makeQueueItem('a'), walkedB, makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[0]);
+
+    await act(async () => {
+      const outcome = await latest().playNext({ item: makeQueueItem('fresh', 'climb-b'), queueItemUuid: 'b' });
+      expect(outcome).toBe('moved');
+    });
+
+    expect(latest().queueUuids).toEqual(['a', 'b', 'c']);
+    expect(latest().queue[1].suggested).toBeUndefined();
+    await waitFor(() => expect(queueMutations.replaceQueueItem).toHaveBeenCalledTimes(1));
+    expect(queueMutations.replaceQueueItem.mock.calls[0]).toEqual(['b', { uuid: 'b', climb: walkedB.climb }]);
+    expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
+    expect(queueMutations.setQueue).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.QueueReordered, expect.anything());
+    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext' });
+  });
+
+  it('sends no swap for a climb queued on purpose', async () => {
+    const queued = [makeQueueItem('a'), makeQueueItem('b'), makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[2]);
+
+    await act(async () => {
+      await latest().playNext({ item: makeQueueItem('fresh', 'climb-a') });
+    });
+
+    await waitFor(() => expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('a', 0, 2));
+    expect(queueMutations.replaceQueueItem).not.toHaveBeenCalled();
+  });
+
+  // A climb this phone has not loaded yet is a placeholder, and a placeholder
+  // never goes to the crew (#2527): only the local slot drops the flag.
+  it('sends no swap for a walked climb still loading', async () => {
+    const loadingA: ClimbQueueItem = {
+      ...makeQueueItem('a'),
+      climb: { ...makeQueueItem('a').climb, frames: '' },
+      suggested: true,
+    };
+    const queued = [loadingA, makeQueueItem('b'), makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[2]);
+
+    await act(async () => {
+      await latest().playNext({ item: makeQueueItem('fresh', 'climb-a') });
+    });
+
+    await waitFor(() => expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('a', 0, 2));
+    // Let the lane drain past the reorder, where the swap would go.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(queueMutations.replaceQueueItem).not.toHaveBeenCalled();
+    expect(latest().queue[2].suggested).toBeUndefined();
+  });
+
+  // A failed swap goes to the same reconcile as a failed add or remove, which
+  // is a no-op solo: the queue the climber made stands, and nothing throws.
+  it('keeps the solo queue as the climber made it when the swap fails', async () => {
+    const walkedA = { ...makeQueueItem('a'), suggested: true };
+    const queued = [walkedA, makeQueueItem('b'), makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[2]);
+    queueMutations.replaceQueueItem.mockRejectedValueOnce(new Error('network down'));
+
+    await act(async () => {
+      await latest().playNext({ item: makeQueueItem('fresh', 'climb-a') });
+    });
+
+    await waitFor(() => expect(queueMutations.replaceQueueItem).toHaveBeenCalledTimes(1));
+    // Solo: the local queue is the truth, so nothing rolls back.
+    expect(latest().queueUuids).toEqual(['b', 'c', 'a']);
+    expect(latest().queue[2].suggested).toBeUndefined();
   });
 });
