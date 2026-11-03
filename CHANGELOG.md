@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- With VoiceOver or TalkBack on, Undo after clearing your queue waits 80 seconds and your screen reader lands right on it. ([#7244](https://github.com/boardsesh/boardsesh/pull/7244))
 - When someone takes the board while you drive, your phone tells you who ([#7234](https://github.com/boardsesh/boardsesh/pull/7234))
   A board that drops mid-drive now says so, beside the climb
 - With a queue going, the player tells you where your next swipe goes: "Up next · 2 of 4 · then Projects". ([#7239](https://github.com/boardsesh/boardsesh/pull/7239))
@@ -27,6 +28,9 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Long climb names scroll again in the player. ([#7254](https://github.com/boardsesh/boardsesh/pull/7254))
+- Said no to Bluetooth by mistake on Android? Tap Try again and get asked once more. ([#6073](https://github.com/boardsesh/boardsesh/pull/6073))
+- Grade charts on your profile and session pages show full grades like V10, never "V…" ([#7231](https://github.com/boardsesh/boardsesh/pull/7231))
 - Tap any lightbulb while you drive the wall and it just stops driving. Your board stays connected; tap again to disconnect. ([#7252](https://github.com/boardsesh/boardsesh/pull/7252))
 - Playlists you delete stay deleted, even ones synced from Kilter. ([#7249](https://github.com/boardsesh/boardsesh/pull/7249))
 - Play next on a climb you already did now really comes up next, even mid-list. ([#7251](https://github.com/boardsesh/boardsesh/pull/7251))
