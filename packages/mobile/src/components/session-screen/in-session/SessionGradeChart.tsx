@@ -27,5 +27,5 @@ export function SessionGradeChart({ distribution, boardName }: SessionGradeChart
 
   if (!bars) return null;
 
-  return <StackedBarChart bars={bars} colorBy="grade" height={120} fitYAxisToData />;
+  return <StackedBarChart bars={bars} colorBy="grade" gradeAxis height={120} fitYAxisToData />;
 }

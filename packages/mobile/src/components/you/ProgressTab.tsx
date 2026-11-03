@@ -334,6 +334,7 @@ export const ProgressTab = memo(function ProgressTab({
                 <StackedBarChart
                   bars={data.aggregatedStackedBars?.bars ?? null}
                   colorBy="layout"
+                  gradeAxis
                   emptyLabel={noAscentData}
                   legend={gradeDistLegend}
                   showYAxisScale
