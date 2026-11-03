@@ -11,6 +11,8 @@ type MarketingInstallLinksProps = {
    * the link id in the store URL, so each surface has to pass its own.
    */
   placement: AppInstallPlacement;
+  /** Centred by default; `start` lines the pair up with left-aligned copy. */
+  align?: 'center' | 'start';
 };
 
 /**
@@ -18,11 +20,12 @@ type MarketingInstallLinksProps = {
  * namespace (/help and its sub-pages). A server-rendered page passes the labels
  * in instead: see `getStoreButtonLabels`.
  */
-export default function MarketingInstallLinks({ placement }: MarketingInstallLinksProps) {
+export default function MarketingInstallLinks({ placement, align }: MarketingInstallLinksProps) {
   const { t } = useTranslation('marketing');
   return (
     <StoreInstallButtons
       placement={placement}
+      align={align}
       labels={{
         ios: t('home.hero.ctaInstallIos'),
         android: t('home.hero.ctaInstallAndroid'),

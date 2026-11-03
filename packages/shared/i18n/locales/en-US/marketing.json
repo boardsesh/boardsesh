@@ -389,7 +389,8 @@
     "nav": {
       "label": "Breadcrumb",
       "home": "Home",
-      "help": "Help"
+      "help": "Help",
+      "jump": "On this page"
     },
     "install": {
       "title": "Get the app",
@@ -424,7 +425,6 @@
         "tellClock": "A clock beside the label means a timed drive, and the frost shrinks as time runs out. No clock means it lasts until you tap. On the mini player, the bulb turns amber while you drive.",
         "clipAlt": "Swiping the wall button left to start driving, then tapping it to stop",
         "clipCaption": "Swipe left and let go to light every climb. Tap You are driving the wall to stop.",
-        "endsIntro": "A drive ends when:",
         "end1": "You tap You are driving the wall.",
         "end2": "The clock runs out. Timed drives only.",
         "end3": "A crewmate puts a climb up. Timed drives only.",
@@ -432,12 +432,21 @@
         "after": "After a drive, your next pick opens as a preview again.",
         "states": {
           "lookingAlt": "Player showing a preview: the top bar reads Preview · not on the wall and the button reads Put on board",
-          "lookingCaption": "Looking: Put on board. Nothing lights until you tap it.",
           "timedAlt": "Player while driving with a clock: the button reads You are driving the wall · 0:28",
-          "timedCaption": "Timed drive: the clock counts down after Put on board.",
           "openAlt": "Player while driving with no clock: the button reads You are driving the wall",
-          "openCaption": "Swipe to drive: no clock, it lights until you tap."
-        }
+          "lookingLabel": "Looking",
+          "lookingTitle": "Put on board",
+          "lookingBody": "Nothing lights until you tap it.",
+          "timedLabel": "Timed drive",
+          "timedTitle": "Clock counts down",
+          "timedBody": "The clock counts down after Put on board.",
+          "openLabel": "Swipe to drive",
+          "openTitle": "No clock",
+          "openBody": "It lights until you tap."
+        },
+        "statesEyebrow": "Read the wall button",
+        "statesTitle": "Three states of the wall button",
+        "endsTitle": "A drive ends when"
       },
       "history": {
         "title": "What's on the wall now",
@@ -625,7 +634,8 @@
         "spray": {
           "title": "Spraywalls",
           "body": "Photograph your Spraywall and fix the holds Boardsesh finds."
-        }
+        },
+        "read": "Read the guide"
       },
       "bring": {
         "title": "Bring your Kilter or Tension logbook",
@@ -635,20 +645,25 @@
       "counts": {
         "title": "Why does Kilter's app show more climbs?",
         "lead": "Both apps have the same climbs and count them differently.",
-        "item1": "Boardsesh counts each climb once. Kilter's app appears to count a climb once per angle it has been climbed at.",
-        "item2": "On an 8x12 Kilter home wall that is about 18,000 climbs in Boardsesh and about 36,000 in Kilter's app."
+        "boardseshCount": "18,000",
+        "boardseshLabel": "About this many in Boardsesh on an 8x12 Kilter home wall. Each climb counted once.",
+        "kilterCount": "36,000",
+        "kilterLabel": "About this many in Kilter's app, same wall. It appears to count a climb once per angle it has been climbed at."
       },
       "ask": {
         "title": "Ask a question",
         "lead": "Discord is the fastest place to get an answer.",
         "discord": "Ask on Discord",
         "bugLead": "Found a bug?",
-        "github": "Open an issue on GitHub",
+        "github": "Have a GitHub account? Open an issue",
         "devLead": "Building on the API?",
-        "docs": "Read the developer docs"
+        "docs": "Read the developer docs",
+        "discordTitle": "Discord",
+        "discordBody": "Climbers and the team answer most questions the same day.",
+        "bugBody": "In the app, tap your avatar, then Report a bug. Say what happened and on which phone.",
+        "devBody": "Logbook sync, workouts and webhooks."
       },
       "topics": {
-        "label": "Help topics",
         "guides": "Guides",
         "app": "Get the app",
         "logbook": "Bring your logbook",
@@ -668,7 +683,6 @@
         "shotAlt": "The tick button",
         "shotCaption": "The tick opens the log sheet.",
         "logbookShotAlt": "The logbook",
-        "logbookShotCaption": "Swipe right to edit, left to delete.",
         "p1": "Tap the big tick in the play drawer, or ✓ on the bar at the bottom. Date and Time are filled in, and the rest is optional.",
         "p2": "Attempt logs a go that didn't stick. The other button reads Flash on your first go at this angle, otherwise Send. Ticks save offline and sync later."
       },

@@ -1,15 +1,23 @@
+/* The example wall photo: a band's media, framed like the phone captures. */
 .photoFigure {
-  margin: var(--spacing-6) 0;
+  width: 100%;
+  max-width: 340px;
+  margin: 0;
 }
 
 .photo {
   display: block;
-  max-width: 100%;
+  width: 100%;
   height: auto;
+  border: 1px solid var(--read-line);
+  border-radius: var(--border-radius-xl);
+  box-shadow: 0 30px 80px var(--overlay-light);
 }
 
-.photoCaption {
-  margin-top: var(--spacing-2);
-  color: var(--neutral-500);
+/* --read-text-muted on --read-surface: 8.0:1. */
+.photoCaption.photoCaption {
+  margin: var(--spacing-4) var(--spacing-1) 0;
+  color: var(--read-text-muted);
+  font-size: 15px;
   line-height: 1.5;
 }

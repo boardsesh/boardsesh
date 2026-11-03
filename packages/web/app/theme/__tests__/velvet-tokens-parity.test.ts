@@ -95,6 +95,11 @@ describe('index.css ↔ theme-config parity', () => {
     ['--neutral-900', themeTokens.neutral[900]],
     ['--bs-text-brand-primary', themeTokens.text.brandPrimary],
     ['--bs-text-brand-muted', themeTokens.text.brandMuted],
+    ['--read-surface', themeTokens.read.surface],
+    ['--read-surface-raised', themeTokens.read.surfaceRaised],
+    ['--read-text', themeTokens.read.text],
+    ['--read-text-muted', themeTokens.read.textMuted],
+    ['--read-line', themeTokens.read.line],
   ];
 
   it.each(rows)('%s matches theme-config', (cssVar, value) => {
@@ -265,6 +270,16 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
   it('secondary text clears AA on its surface', () => {
     expect(contrast(themeTokens.neutral[500], themeTokens.semantic.background)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(themeTokens.neutral[500], themeTokens.semantic.surface)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(['surface', 'surfaceRaised'] as const)('every text colour on the help reading %s clears AA', (ground) => {
+    const backdrop = themeTokens.read[ground];
+    expect(contrast(themeTokens.read.text, backdrop)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(themeTokens.read.textMuted, backdrop)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(themeTokens.colors.primary, backdrop)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(themeTokens.colors.info, backdrop)).toBeGreaterThanOrEqual(4.5);
+    // Outlined controls on the reading surface use --control-border.
+    expect(contrast(themeTokens.semantic.controlBorder, backdrop)).toBeGreaterThanOrEqual(3);
   });
 
   it('--control-border clears the 3:1 UI-component floor on page, card and elevated surface', () => {

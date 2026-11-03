@@ -389,7 +389,8 @@
     "nav": {
       "label": "Brotkrumen-Navigation",
       "home": "Start",
-      "help": "Hilfe"
+      "help": "Hilfe",
+      "jump": "Auf dieser Seite"
     },
     "install": {
       "title": "Hol dir die App",
@@ -424,7 +425,6 @@
         "tellClock": "Eine Uhr neben dem Text steht für Steuern mit Zeit, und der Frost schrumpft, wenn die Zeit abläuft. Ohne Uhr dauert es, bis du tippst. Im Mini-Player wird die Glühbirne bernsteinfarben, solange du steuerst.",
         "clipAlt": "Den Wand-Button nach links wischen, um zu steuern, und dann antippen, um zu stoppen",
         "clipCaption": "Nach links wischen und loslassen, um jeden Boulder zu beleuchten. Tipp auf Du steuerst das Board, um zu stoppen.",
-        "endsIntro": "Das Steuern endet, wenn:",
         "end1": "Du auf Du steuerst das Board tippst.",
         "end2": "Die Uhr abläuft. Nur beim Steuern mit Zeit.",
         "end3": "Jemand aus deiner Crew einen Boulder an die Wand bringt. Nur beim Steuern mit Zeit.",
@@ -432,12 +432,21 @@
         "after": "Nach dem Steuern öffnet sich deine nächste Auswahl wieder als Vorschau.",
         "states": {
           "lookingAlt": "Der Player mit einer Vorschau: Die obere Leiste zeigt Vorschau · nicht am Board und der Button zeigt Am Board beleuchten",
-          "lookingCaption": "Vorschau: Am Board beleuchten. Nichts leuchtet, bis du darauf tippst.",
           "timedAlt": "Der Player beim Steuern mit Uhr: Der Button zeigt Du steuerst das Board · 0:28",
-          "timedCaption": "Steuern mit Zeit: Nach Am Board beleuchten läuft die Uhr runter.",
           "openAlt": "Der Player beim Steuern ohne Uhr: Der Button zeigt Du steuerst das Board",
-          "openCaption": "Wischen zum Steuern: keine Uhr, es leuchtet, bis du tippst."
-        }
+          "lookingLabel": "Vorschau",
+          "lookingTitle": "Am Board beleuchten",
+          "lookingBody": "Nichts leuchtet, bis du darauf tippst.",
+          "timedLabel": "Steuern mit Zeit",
+          "timedTitle": "Die Uhr läuft runter",
+          "timedBody": "Nach Am Board beleuchten läuft die Uhr runter.",
+          "openLabel": "Wischen zum Steuern",
+          "openTitle": "Keine Uhr",
+          "openBody": "Es leuchtet, bis du tippst."
+        },
+        "statesEyebrow": "Den Wand-Button lesen",
+        "statesTitle": "Drei Zustände des Wand-Buttons",
+        "endsTitle": "Das Steuern endet, wenn"
       },
       "history": {
         "title": "Was gerade an der Wand ist",
@@ -625,7 +634,8 @@
         "spray": {
           "title": "Spraywalls",
           "body": "Fotografier deine Spraywall und korrigier die Griffe, die Boardsesh findet."
-        }
+        },
+        "read": "Zur Anleitung"
       },
       "bring": {
         "title": "Dein Kilter- oder Tension-Routenbuch übernehmen",
@@ -635,20 +645,25 @@
       "counts": {
         "title": "Warum zeigt die Kilter-App mehr Boulder?",
         "lead": "Beide Apps haben dieselben Boulder und zählen sie unterschiedlich.",
-        "item1": "Boardsesh zählt jeden Boulder einmal. Die Kilter-App zählt einen Boulder offenbar einmal pro Winkel, in dem er geklettert wurde.",
-        "item2": "Bei einer 8x12 Kilter Homewall sind das etwa 18.000 Boulder in Boardsesh und etwa 36.000 in der Kilter-App."
+        "boardseshCount": "18.000",
+        "boardseshLabel": "Ungefähr so viele in Boardsesh auf einer 8x12 Kilter Homewall. Jeder Boulder zählt einmal.",
+        "kilterCount": "36.000",
+        "kilterLabel": "Ungefähr so viele in der Kilter-App, dasselbe Board. Sie zählt einen Boulder offenbar einmal pro Winkel, in dem er geklettert wurde."
       },
       "ask": {
         "title": "Eine Frage stellen",
         "lead": "Auf Discord bekommst du am schnellsten eine Antwort.",
         "discord": "Auf Discord fragen",
         "bugLead": "Einen Bug gefunden?",
-        "github": "Auf GitHub ein Issue öffnen",
+        "github": "Du hast ein GitHub-Konto? Öffne ein Issue",
         "devLead": "Du baust auf der API?",
-        "docs": "Die Entwickler-Doku lesen"
+        "docs": "Die Entwickler-Doku lesen",
+        "discordTitle": "Discord",
+        "discordBody": "Kletterer*innen und das Team beantworten die meisten Fragen am selben Tag.",
+        "bugBody": "Tipp in der App auf deinen Avatar, dann auf Bug melden. Schreib uns, was passiert ist und auf welchem Handy.",
+        "devBody": "Routenbuch-Sync, Workouts und Webhooks."
       },
       "topics": {
-        "label": "Hilfethemen",
         "guides": "Anleitungen",
         "app": "App holen",
         "logbook": "Routenbuch übernehmen",
@@ -668,7 +683,6 @@
         "shotAlt": "Der Haken-Button",
         "shotCaption": "Der Haken öffnet das Eintrags-Sheet.",
         "logbookShotAlt": "Das Routenbuch",
-        "logbookShotCaption": "Nach rechts wischen bearbeitet, nach links löscht.",
         "p1": "Tipp auf den großen Haken im Player oder auf ✓ in der Leiste unten. Datum und Zeit sind schon ausgefüllt, der Rest ist freiwillig.",
         "p2": "Versuch trägt einen Versuch ein, der nicht gehalten hat. Der andere Button heißt Flash beim ersten Eintrag in diesem Winkel, sonst Getoppt. Einträge werden offline gespeichert und später synchronisiert."
       },

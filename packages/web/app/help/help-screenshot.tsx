@@ -7,8 +7,8 @@ import { helpScreenshot, type HelpShot } from '@/app/lib/help-screenshots';
 import styles from './help-screenshot.module.css';
 
 /**
- * A help capture with its caption, in a bezel that gives the near-black app UI
- * an edge against the near-black page.
+ * A help capture with its caption, framed as a phone so the near-black app UI
+ * has an edge against the reading surface.
  *
  * It resolves its own `/images/help/*` source: these shots follow one flow
  * rather than selling a platform, so there is no iOS/Android switch to honour
@@ -16,28 +16,41 @@ import styles from './help-screenshot.module.css';
  *
  * Strings arrive already resolved by the caller's `t()`, like PageShell's do.
  */
-export function HelpScreenshot({ shot, alt, caption }: { shot: HelpShot; alt: string; caption: string }) {
+export function HelpScreenshot({
+  shot,
+  alt,
+  caption,
+  cropped = false,
+}: {
+  shot: HelpShot;
+  alt: string;
+  caption?: string;
+  /** Shows the top 440px of the phone only: enough to say "this is the app" beside a short band. */
+  cropped?: boolean;
+}) {
   const capture = helpScreenshot(shot);
   return (
     <Box component="figure" className={styles.figure}>
-      <Box className={styles.bezel}>
+      <Box className={cropped ? `${styles.bezel} ${styles.cropped}` : styles.bezel}>
         <Image
           src={resolveStaticAssetUrl(capture.src)}
           alt={alt}
           width={capture.width}
           height={capture.height}
-          sizes="280px"
+          sizes="340px"
           className={styles.screen}
         />
       </Box>
-      <Typography component="figcaption" variant="body2" className={styles.caption}>
-        {caption}
-      </Typography>
+      {caption ? (
+        <Typography component="figcaption" variant="body2" className={styles.caption}>
+          {caption}
+        </Typography>
+      ) : null}
     </Box>
   );
 }
 
-/** A row of captures: side by side on a desktop measure, one per row on a phone. */
+/** Two captures side by side inside a band's body; one per row on a phone. */
 export function HelpShots({ children }: { children: React.ReactNode }) {
   return <Box className={styles.shots}>{children}</Box>;
 }

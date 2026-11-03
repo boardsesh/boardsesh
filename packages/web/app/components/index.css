@@ -103,6 +103,15 @@
   --home-accent-spark-surface: rgba(255, 138, 61, 0.12);
   --home-accent-info-surface: rgba(165, 171, 214, 0.12);
 
+  /* Reading surface for the /help guides (mirrors `themeTokens.read`). Neutral
+     grey under long how-to copy and app captures; the chrome around it stays
+     violet. `--read-line` is decorative only, like `--separator`. */
+  --read-surface: #18171c;
+  --read-surface-raised: #222127;
+  --read-text: #ecebef;
+  --read-text-muted: #aeacb6;
+  --read-line: #2e2d34;
+
   /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.1);
 

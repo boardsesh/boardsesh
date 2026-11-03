@@ -1,16 +1,17 @@
 /* HelpSwipeDiagram: two rows of pills and arrows. Mobile-first: each row is a
    centred vertical stack with down-pointing arrows; from 640px the rows run
-   left to right. Nodes are not controls, so their edges use --separator. */
+   left to right. Nodes are not controls, so their edges use --read-line. The
+   figure is raised off the reading surface; solid nodes sink back to it. */
 
 .figure {
   display: grid;
   gap: var(--spacing-5);
-  max-width: 68ch;
-  margin: var(--spacing-5) 0;
-  padding: var(--spacing-4);
-  border: 1px solid var(--separator);
-  border-radius: var(--border-radius-lg);
-  background: var(--semantic-surface);
+  max-width: 900px;
+  margin: var(--spacing-2) 0 0;
+  padding: var(--spacing-6);
+  border: 1px solid var(--read-line);
+  border-radius: var(--border-radius-xl);
+  background: var(--read-surface-raised);
 }
 
 .row {
@@ -20,12 +21,12 @@
 
 .row + .row {
   padding-top: var(--spacing-5);
-  border-top: 1px solid var(--separator);
+  border-top: 1px solid var(--read-line);
 }
 
 .caption.caption {
   margin: 0;
-  color: var(--neutral-800);
+  color: var(--read-text);
   font-size: var(--font-size-sm);
   line-height: 1.5;
 }
@@ -52,10 +53,10 @@
   max-width: 260px;
   min-height: 40px;
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--separator);
+  border: 1px solid var(--read-line);
   border-radius: var(--border-radius-md);
-  background: var(--semantic-surface-elevated);
-  color: var(--neutral-900);
+  background: var(--read-surface);
+  color: var(--read-text);
   font-size: var(--font-size-sm);
   font-weight: 600;
   line-height: 1.3;
@@ -85,22 +86,23 @@
 .preview {
   border-style: dashed;
   border-color: var(--control-border);
-  background: var(--semantic-background);
-  color: var(--neutral-700);
+  background: transparent;
+  color: var(--read-text-muted);
   font-weight: 500;
 }
 
 .end {
   border-style: dashed;
-  background: var(--semantic-background);
-  color: var(--neutral-700);
+  border-color: var(--control-border);
+  background: transparent;
+  color: var(--read-text-muted);
   font-weight: 500;
 }
 
 /* ---- arrows: one icon, rotated. Down on mobile, sideways from 640px. ---- */
 
 .arrow.arrow {
-  color: var(--neutral-600);
+  color: var(--read-text-muted);
   font-size: var(--font-size-xl);
 }
 
