@@ -88,6 +88,9 @@ export const BOARD_FIELDS = `
   angle
   isAngleAdjustable
   hasLeds
+  moonboardLinkMode
+  moonboardLinkDetected
+  moonboardLinkModeEffective
   createdAt
   layoutName
   sizeName

@@ -146,3 +146,35 @@ describe('buildBoardUpdateInput', () => {
     ).toEqual({ boardUuid: board.uuid });
   });
 });
+
+describe('buildBoardUpdateInput: MoonBoard link mode (#7220)', () => {
+  const permissions = boardEditPermissions(board, 'owner');
+
+  it('sends a new choice', () => {
+    expect(buildBoardUpdateInput(board, { ...formFields(), moonboardLinkMode: 'multi' }, permissions)).toEqual({
+      boardUuid: board.uuid,
+      moonboardLinkMode: 'multi',
+    });
+  });
+
+  it('sends null to clear a stored choice back to detection', () => {
+    const chosen = { ...board, moonboardLinkMode: 'relay' as const };
+    expect(buildBoardUpdateInput(chosen, { ...formFields(chosen), moonboardLinkMode: null }, permissions)).toEqual({
+      boardUuid: board.uuid,
+      moonboardLinkMode: null,
+    });
+  });
+
+  it('omits an unchanged choice, including a board read without the field', () => {
+    expect(buildBoardUpdateInput(board, { ...formFields(), moonboardLinkMode: null }, permissions)).toEqual({
+      boardUuid: board.uuid,
+    });
+  });
+
+  it('never sends a link mode for another board type', () => {
+    const kilter = { ...board, boardType: 'kilter' };
+    expect(buildBoardUpdateInput(kilter, { ...formFields(kilter), moonboardLinkMode: 'multi' }, permissions)).toEqual({
+      boardUuid: board.uuid,
+    });
+  });
+});

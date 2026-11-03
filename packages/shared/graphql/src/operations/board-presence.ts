@@ -315,6 +315,10 @@ export const BOARD_CONNECTION = `query BoardConnection($boardId: Int!, $boardUui
 // Returns Boolean! (accepted).
 export const REPORT_BOARD_DISCONNECT = `mutation ReportBoardDisconnect($boardId: Int!) { reportBoardDisconnect(boardId: $boardId) }`;
 
+// Mutation — MoonBoard link-mode detection (#7220). Returns Boolean! (whether
+// the stored detected value changed). Only ever moves a board toward relay.
+export const REPORT_MOONBOARD_LINK_DETECTED = `mutation ReportMoonboardLinkDetected($boardId: Int!, $detected: MoonboardLinkMode!) { reportMoonboardLinkDetected(boardId: $boardId, detected: $detected) }`;
+
 // Mutation — this client turned off all the wall's lights but kept its link
 // (#7015). Publishes BoardClimbCleared to every viewer. Returns Boolean!
 // (accepted; false when another emitter holds the board).

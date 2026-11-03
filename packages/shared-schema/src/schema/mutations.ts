@@ -279,6 +279,16 @@ export const mutationsTypeDefs = /* GraphQL */ `
     reportBoardDisconnect(boardId: Int!): Boolean!
 
     """
+    MoonBoard only (#7220): report the link mode this phone detected from the
+    controller's write characteristic on connect. Fills only the detected column,
+    only ever moves a board toward relay, never overrides a person's choice (the
+    effective mode reads that first) and never freezes location sync. Refused on
+    shared per-config feed boards and without board membership. Auth-optional.
+    Returns whether the stored value changed.
+    """
+    reportMoonboardLinkDetected(boardId: Int!, detected: MoonboardLinkMode!): Boolean!
+
+    """
     Report that this client turned off every light on \`boardId\` while keeping its
     BLE link (the "Turn off all lights" action). Publishes \`BoardClimbCleared\` so
     every viewer stops showing the cleared climb as lit, and keeps the clear for a

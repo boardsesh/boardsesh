@@ -5,7 +5,7 @@ import { db } from '../../../db/client';
 import { AdminBoardsInputSchema } from '../../../validation/schemas/admin-boards';
 import { UUIDSchema } from '../../../validation/schemas/primitives';
 import { applyRateLimit, validateInput } from '../shared/helpers';
-import { updateBoardRecord } from './boards';
+import { moonboardLinkFields, updateBoardRecord } from './boards';
 import { requireAdmin } from './roles';
 
 function adminBoardSelection() {
@@ -50,6 +50,7 @@ function projectAdminBoard(row: AdminBoardRow, viewerId: string): AdminBoard {
     angle: board.angle,
     isAngleAdjustable: board.isAngleAdjustable,
     hasLeds: board.hasLeds,
+    ...moonboardLinkFields(board),
     serialNumber: board.ownerId === viewerId ? board.serialNumber : null,
     timerName: board.ownerId === viewerId ? board.timerName : null,
     createdAt: board.createdAt.toISOString(),

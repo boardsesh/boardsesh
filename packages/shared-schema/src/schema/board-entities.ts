@@ -64,6 +64,16 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   # ============================================
 
   """
+  How many phones a MoonBoard controller box accepts (#7220).
+  relay: one phone holds the board and others light climbs through it.
+  multi: every phone can connect.
+  """
+  enum MoonboardLinkMode {
+    relay
+    multi
+  }
+
+  """
   A named physical board installation (board type + layout + size + hold sets).
   """
   type UserBoard {
@@ -110,6 +120,12 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     isAngleAdjustable: Boolean!
     "Whether this wall has an LED light kit"
     hasLeds: Boolean!
+    "MoonBoard only: the link mode a person chose on the board edit screen"
+    moonboardLinkMode: MoonboardLinkMode
+    "MoonBoard only: the link mode the app detected from the controller"
+    moonboardLinkDetected: MoonboardLinkMode
+    "MoonBoard only: the chosen mode, else the detected one, else relay. Null for other boards."
+    moonboardLinkModeEffective: MoonboardLinkMode
     "When created"
     createdAt: String!
     "Human-readable layout name"
@@ -270,6 +286,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     isAngleAdjustable: Boolean
     "Whether this wall has an LED light kit (default true)"
     hasLeds: Boolean
+    "MoonBoard only: how many phones the controller takes (null = let the app detect it)"
+    moonboardLinkMode: MoonboardLinkMode
     "Controller box serial number"
     serialNumber: String
     "Paired Rogue Fitness timer's advertised BLE name"
@@ -316,6 +334,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     isAngleAdjustable: Boolean
     "New LED light kit flag"
     hasLeds: Boolean
+    "MoonBoard only: new link mode; null clears the choice so detection applies again"
+    moonboardLinkMode: MoonboardLinkMode
     "New layout ID (authorized editors only; existing ticks are preserved untouched)"
     layoutId: Int
     "New size ID (authorized editors only; existing ticks are preserved untouched)"

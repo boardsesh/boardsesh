@@ -581,7 +581,8 @@
       "isOwned": "I own this board",
       "layout": "Layout",
       "size": "Size",
-      "holdSets": "Hold Sets"
+      "holdSets": "Hold Sets",
+      "moonboardLinkMode": "Phones on this MoonBoard"
     },
     "placeholders": {
       "description": "Optional description",
@@ -593,7 +594,10 @@
       "hideLocation": "Hidden from nearby board searches unless you follow the searcher",
       "hasLeds": "Off means no light kit. Turns still work, and the gym screen still shows the active climb.",
       "ownerOnlyPrivacy": "Only the board owner can change visibility and location privacy.",
-      "ownerOnlyCredentials": "Only the board owner can see or change controller credentials."
+      "ownerOnlyCredentials": "Only the board owner can see or change controller credentials.",
+      "moonboardLinkModeAuto": "Boardsesh checks the controller the first time an iPhone connects. Until then it uses Relay mode.",
+      "moonboardLinkModeRelay": "The first phone to connect keeps the board. Others light climbs through it.",
+      "moonboardLinkModeMulti": "Every phone can connect and light climbs."
     },
     "alerts": {
       "configEditable": "You can change the layout, size, and hold sets. Climbs already logged stay put."
@@ -624,6 +628,11 @@
       "dialogBodyPrivate": "Serial number {{serial}} is already registered to another climber's private board. If this really is a different wall, you can still create yours.",
       "useExisting": "Use the existing board",
       "createAnyway": "Create a duplicate anyway"
+    },
+    "linkModes": {
+      "auto": "Detect automatically",
+      "relay": "Relay mode (one phone at a time)",
+      "multi": "Several phones"
     }
   },
   "editBoard": {

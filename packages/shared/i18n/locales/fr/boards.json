@@ -581,7 +581,8 @@
       "isOwned": "Je possède cette board",
       "layout": "Layout",
       "size": "Taille",
-      "holdSets": "Jeux de prises"
+      "holdSets": "Jeux de prises",
+      "moonboardLinkMode": "Téléphones sur cette MoonBoard"
     },
     "placeholders": {
       "description": "Description facultative",
@@ -593,7 +594,10 @@
       "hideLocation": "Masqué des recherches de boards à proximité, sauf pour les personnes que vous suivez",
       "hasLeds": "Désactivé : pas de kit LED. Le tour de rôle fonctionne toujours, et l'écran de la salle affiche toujours le bloc en cours.",
       "ownerOnlyPrivacy": "Seul le propriétaire de la board peut modifier sa visibilité et la confidentialité de sa position.",
-      "ownerOnlyCredentials": "Seul le propriétaire de la board peut consulter ou modifier les identifiants du contrôleur."
+      "ownerOnlyCredentials": "Seul le propriétaire de la board peut consulter ou modifier les identifiants du contrôleur.",
+      "moonboardLinkModeAuto": "Boardsesh vérifie le boîtier la première fois qu'un iPhone se connecte. D'ici là, le mode relais s'applique.",
+      "moonboardLinkModeRelay": "Le premier téléphone connecté garde la board. Les autres allument les blocs à travers lui.",
+      "moonboardLinkModeMulti": "Tous les téléphones peuvent se connecter et allumer les blocs."
     },
     "alerts": {
       "configEditable": "Vous pouvez modifier le layout, la taille et les jeux de prises. Les blocs déjà enregistrés restent intacts."
@@ -624,6 +628,11 @@
       "dialogBodyPrivate": "Le numéro de série {{serial}} est déjà enregistré pour la board privée d'un autre grimpeur. Si c'est vraiment un mur différent, vous pouvez quand même créer le vôtre.",
       "useExisting": "Utiliser la board existante",
       "createAnyway": "Créer quand même un doublon"
+    },
+    "linkModes": {
+      "auto": "Détecter automatiquement",
+      "relay": "Mode relais (un téléphone à la fois)",
+      "multi": "Plusieurs téléphones"
     }
   },
   "editBoard": {
