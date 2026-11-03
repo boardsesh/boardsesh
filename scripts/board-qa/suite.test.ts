@@ -87,6 +87,9 @@ function soloHarness(initiallyDriving: boolean, deliverNext: boolean) {
     ],
   };
   let driving = false;
+  let lastLookIndex = 0;
+  let displayedIndex = 0;
+  let queuedNextIndex: number | null = null;
   const presence: Snapshot = { holder: null, recent: [], history: [] };
   const timeline: string[] = [];
   const phones = {
@@ -131,24 +134,39 @@ function soloHarness(initiallyDriving: boolean, deliverNext: boolean) {
     }
   };
   const finished = new Error('Stop after the independently confirmed Next');
-  phones.ios.flow.mockImplementation(async (name) => {
+  phones.ios.flow.mockImplementation(async (name, variables) => {
     timeline.push(`flow:${name}`);
-    if (name === 'connect') {
+    if (name === 'open-climb') {
+      lastLookIndex = board.catalog.findIndex((climb) => variables?.CLIMB_URL.endsWith(`/play/${climb.uuid}`));
+      if (lastLookIndex < 0) throw new Error('The preview route did not select a pinned climb');
+      displayedIndex = lastLookIndex;
+      timeline.push(`last-look:${lastLookIndex}`);
+    } else if (name === 'queue-next') {
+      queuedNextIndex = lastLookIndex;
+      timeline.push(`queued-preview:${lastLookIndex}`);
+    } else if (name === 'return-current') {
+      displayedIndex = 0;
+      timeline.push(`committed-player:${displayedIndex}:last-look:${lastLookIndex}`);
+    } else if (name === 'connect') {
       deliver(0, true);
       driving = initiallyDriving;
     } else if (name === 'drive') {
+      if (displayedIndex !== 0) throw new Error('Drive would commit the last-look preview instead of current');
       // Production can deduplicate this same-climb history report for 10s.
       deliver(0, false);
       driving = true;
     } else if (name === 'next') {
       if (!driving) throw new Error('Next ran without driving');
+      if (displayedIndex !== 0 || queuedNextIndex !== 1)
+        throw new Error('Next did not start from the committed climb with the pinned successor');
       if (deliverNext) deliver(1, true);
     } else if (name === 'put') {
       deliver(0, true);
     } else if (name === 'stop-driving') throw finished;
   });
   phones.ios.hierarchy.mockImplementation(
-    async () => `app-runtime-release-test-runtime-embedded wall-control-lit-self-${driving ? 'driving' : 'idle'}`,
+    async () =>
+      `app-runtime-release-test-runtime-embedded wall-control-lit-self-${driving ? 'driving' : 'idle'} <hidden name="wall-control-lit-self-driving"/>`,
   );
   return {
     suite: new Suite(EXAMPLE_CONFIG, phones, fixture, backend, [board], evidence),
@@ -164,7 +182,7 @@ function soloHarness(initiallyDriving: boolean, deliverNext: boolean) {
 
 describe('physical suite solo driving action order', () => {
   it.each([false, true])(
-    'queues privately, reopens current, then takes a fresh Next baseline (driving=%s)',
+    'queues privately, reopens current and starts a fresh drive despite hidden old driving (visible driving=%s)',
     async (driving) => {
       vi.useFakeTimers();
       const harness = soloHarness(driving, true);
@@ -184,18 +202,35 @@ describe('physical suite solo driving action order', () => {
         'open-climb',
         'queue-next',
         'return-current',
-        ...(driving ? [] : ['drive']),
+        'drive',
         'next',
         'stop-driving',
       ]);
       expect(harness.phones.ios.flow).toHaveBeenCalledWith('return-current', {
-        CURRENT_CLIMB_UUID: harness.board.catalog[0].uuid,
         CURRENT_CLIMB_LABEL_PATTERN: '.*Climb 0.*',
       });
+      expect(harness.timeline).toContain('queued-preview:1');
+      expect(harness.timeline).toContain('committed-player:0:last-look:1');
       const nextAt = harness.timeline.indexOf('flow:next');
-      expect(harness.timeline.slice(nextAt - 2, nextAt)).toEqual([`fixture:${driving ? 1 : 2}`, 'presence:1']);
+      expect(harness.timeline.slice(nextAt - 2, nextAt)).toEqual(['fixture:2', 'presence:1']);
     },
   );
+
+  it('rejects a reconnect during drive normalization before attempting Next', async () => {
+    vi.useFakeTimers();
+    const harness = soloHarness(true, true);
+    const originalFlow = harness.phones.ios.flow.getMockImplementation()!;
+    harness.phones.ios.flow.mockImplementation(async (name, variables) => {
+      await originalFlow(name, variables);
+      if (name === 'drive') harness.status.boards[0].connectionGeneration++;
+    });
+    const completed = harness.suite.solo().catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(35_000);
+    expect(await completed).toMatchObject({
+      message: 'Confirmed command came from an unexpected BLE connection generation',
+    });
+    expect(harness.phones.ios.flow.mock.calls.some(([name]) => name === 'next')).toBe(false);
+  });
 
   it('rejects the Drive setup write when Next produces no fresh decoded delivery', async () => {
     vi.useFakeTimers();

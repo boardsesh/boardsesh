@@ -249,22 +249,22 @@ export class SimulatorPeerSuite {
   }
   private async ensureDriving(board: Board, climb: CatalogClimb): Promise<void> {
     await this.assertId('ios', 'wall-control-.*-self-(idle|driving)');
-    if (!/wall-control-[a-z_]+-self-driving/.test(await this.phones.ios.hierarchy())) {
-      const before = await this.fixture.request('status');
-      await this.phones.ios.flow('drive');
-      const after = await until(
-        () => this.fixture.request('status'),
-        (snapshot) => this.device(snapshot, board).sequence > this.device(before, board).sequence,
-        30_000,
-        'physical Drive setup',
-      );
-      requirePhysicalDelivery(this.device(before, board), this.device(after, board), climb, false, false);
-      this.unrelated(before, after, board);
-      this.evidence.event('physical-drive-setup', {
-        boardUuid: board.uuid,
-        note: 'Same-climb history may be deduplicated; Next separately requires the full chain.',
-      });
-    }
+    // Use the real controls to establish an open-ended drive; retained hidden
+    // routes and expiring timed drives cannot establish that prerequisite.
+    const before = await this.fixture.request('status');
+    await this.phones.ios.flow('drive');
+    const after = await until(
+      () => this.fixture.request('status'),
+      (snapshot) => this.device(snapshot, board).sequence > this.device(before, board).sequence,
+      30_000,
+      'physical Drive setup',
+    );
+    requirePhysicalDelivery(this.device(before, board), this.device(after, board), climb, false, false);
+    this.unrelated(before, after, board);
+    this.evidence.event('physical-drive-setup', {
+      boardUuid: board.uuid,
+      note: 'Same-climb history may be deduplicated; Next separately requires the full chain.',
+    });
     await this.assertId('ios', 'wall-control-.*-self-driving');
   }
   private async disconnect(board: Board): Promise<void> {
@@ -323,7 +323,6 @@ export class SimulatorPeerSuite {
             PLAY_NEXT_LABEL: 'Play next',
           });
           await this.phones.ios.flow('return-current', {
-            CURRENT_CLIMB_UUID: board.catalog[0].uuid,
             CURRENT_CLIMB_LABEL_PATTERN: label(board.catalog[0]),
           });
         });
