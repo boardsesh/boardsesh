@@ -10,9 +10,10 @@
  * Play next on a climb History holds moves that History entry to the head of
  * Up next (`planPlayNext`). A climb walked from a list carries the walk's
  * `suggested` flag, and the walk reads a flagged climb on its own list as the
- * list itself, never as Up next (#6777), so the climb the climber queued on
- * purpose was walked past. These tests replay the owner's queue through the
- * real Play next plan, in now-slot mode and in legacy mode.
+ * list itself, never as Up next (#6777). The move kept the flag, so the climb
+ * the climber queued on purpose was walked past. These tests replay the
+ * owner's queue through the real Play next plan, in now-slot mode and in
+ * legacy mode.
  */
 import { describe, expect, it } from 'vitest';
 import type { Climb, ClimbQueue, ClimbQueueItem } from '@boardsesh/queue';
@@ -21,6 +22,7 @@ import {
   getPlaylistPeekQueueItemUuid,
   planPlayNext,
   upNextStart,
+  withoutListWalkFlag,
   withPlaylistTrackResume,
 } from '@boardsesh/queue';
 import {
@@ -91,17 +93,21 @@ function ownersQueue(): { queue: ClimbQueue; current: ClimbQueueItem } {
 /**
  * Play next on MacroDre from a list row (by climb, so the plan picks the queue
  * entry), committed the way the queue provider commits each plan: a `move` is
- * one reorder, which the reducer and the resolver apply as a splice, and a
- * `replace` is the plan's queue in one write.
+ * one reorder, which the reducer and the resolver apply as a splice, plus the
+ * flag dropped by uuid when the plan says so; an `unflag` is that drop alone;
+ * a `replace` is the plan's queue in one write.
  */
 function playNextMacroDre(queue: ClimbQueue, current: ClimbQueueItem, historyCount: number | null): ClimbQueue {
   const plan = planPlayNext(queue, current, { climbUuid: MACRO_DRE.uuid }, historyCount);
+  const dropFlag = (entries: ClimbQueue, uuid: string) =>
+    entries.map((item) => (item.uuid === uuid ? withoutListWalkFlag(item) : item));
   if (plan.kind === 'replace') return plan.queue;
+  if (plan.kind === 'unflag') return dropFlag(queue, plan.uuid);
   if (plan.kind === 'move') {
     const next = [...queue];
     const [moved] = next.splice(plan.oldIndex, 1);
     next.splice(plan.newIndex, 0, moved);
-    return next;
+    return plan.dropListWalkFlag ? dropFlag(next, plan.uuid) : next;
   }
   throw new Error(`Play next MacroDre planned ${plan.kind}`);
 }
@@ -217,7 +223,7 @@ describe.each(MODES)(
 
 describe('the queue 2.7.0 left on the phone (#7247)', () => {
   // Play next already moved MacroDre's History entry, flag and all: the walk
-  // passes it. Play next on it again rewrites it as queued on purpose, so the
+  // passes it. Play next on it again drops the flag where it stands, so the
   // owner's own queue mends on the next tap.
   it('mends on the next Play next, in either mode', () => {
     for (const { historyCountOf } of MODES) {

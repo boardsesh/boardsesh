@@ -28,23 +28,29 @@ import { upNextStart } from './now-slot';
 export type PlayNextPlan =
   /** The climb is not in the queue: insert it at `position`. */
   | { kind: 'insert'; position: number }
-  /** The climb is already queued elsewhere: move that slot, never duplicate it. */
-  | { kind: 'move'; uuid: string; oldIndex: number; newIndex: number }
   /**
-   * A reorder can't do it, so the caller replaces the whole queue in one write
-   * (`setQueue` with `historyCount`). `queue` has the entry at the head of Up
-   * next, queued on purpose. Two cases (see {@link planPlayNext}):
-   *
-   * - F3, nothing current, the climb is in History: no single reorder can make
-   *   it the head of Up next. `historyCount` is the new line, one lower, which
-   *   is also the index the entry lands at.
-   * - The entry is a list walk's own (`suggested`, issue #7247): a reorder
-   *   keeps the flag, and the walk then reads the climb as its list rather
-   *   than Up next. The entry goes without it, moved or left where it already
-   *   is. `historyCount` is the line in the new queue: the current climb's
-   *   index, or with nothing current the History count.
+   * The climb is already queued elsewhere: move that slot, never duplicate it.
+   * `dropListWalkFlag` is set when the slot is a list walk's own (`suggested`,
+   * issue #7247): a reorder keeps the flag, so the caller also rewrites the
+   * slot as queued on purpose ({@link withoutListWalkFlag}), by uuid.
+   */
+  | { kind: 'move'; uuid: string; oldIndex: number; newIndex: number; dropListWalkFlag?: true }
+  /**
+   * F3, nothing current, the climb is in History: no single reorder can make it
+   * the head of Up next (see {@link planPlayNext}), so the caller replaces the
+   * whole queue in one write (`setQueue` with `historyCount`). `queue` has the
+   * entry pulled out of History and put at the head of Up next, queued on
+   * purpose; `historyCount` is the new line, one lower, which is also the index
+   * the entry lands at.
    */
   | { kind: 'replace'; uuid: string; oldIndex: number; queue: ClimbQueue; historyCount: number }
+  /**
+   * Already at the head of Up next, but as a list walk's own slot (`suggested`,
+   * issue #7247), which the walk reads as its list and passes: nothing moves,
+   * the caller rewrites the slot as queued on purpose, by uuid. This mends a
+   * queue an older build moved with the flag on.
+   */
+  | { kind: 'unflag'; uuid: string }
   /** Nothing to do — but the caller still confirms to the climber. */
   | { kind: 'unchanged'; reason: 'already-next' | 'is-current' };
 
@@ -136,14 +142,16 @@ export function playNextInsertPosition(
  * a `replace` plan instead: the queue with that entry at the head of Up next and
  * the line one lower, sent as one `setQueue`.
  *
- * Play next is the climber queueing the climb on purpose, so the entry it
+ * Play next is the climber queueing the climb on purpose, so the slot it
  * places never keeps a list walk's `suggested` flag (issue #7247). A climb
  * walked from a list (a list tap, a swipe) sits in History flagged, and a
  * reorder carries no flag: moved as it was, the walk reads it as its own list
  * climb, never as Up next, and swipes walk past it while the queue sheet lists
- * it under Up next. A flagged entry therefore gets a `replace` plan too, with
- * the flag dropped: moved to the head of Up next, or left there when it already
- * is, which mends a queue an older build moved with the flag on.
+ * it under Up next. So a flagged slot's `move` says `dropListWalkFlag`, a
+ * flagged slot already at the head of Up next gets an `unflag` plan, and the
+ * `replace` queue carries the slot unflagged. The flag goes by uuid rather
+ * than in a whole-queue write: in a crew, a `setQueue` built now would undo
+ * whatever a crewmate did to the queue or the wall before it lands.
  */
 export function planPlayNext(
   queue: ClimbQueue,
@@ -167,7 +175,11 @@ export function planPlayNext(
   }
 
   if (currentIndex === -1 && existingIndex < firstUpNextIndex) {
-    return replaceWithEntryNext(queue, existingIndex, firstUpNextIndex - 1, currentIndex, firstUpNextIndex - 1);
+    const nextQueue = [...queue];
+    const [movedItem] = nextQueue.splice(existingIndex, 1);
+    const nextLine = firstUpNextIndex - 1;
+    nextQueue.splice(nextLine, 0, withoutListWalkFlag(movedItem));
+    return { kind: 'replace', uuid: movedItem.uuid, oldIndex: existingIndex, queue: nextQueue, historyCount: nextLine };
   }
 
   // With a climb current, both arms are `playNextInsertPosition` by
@@ -177,42 +189,23 @@ export function planPlayNext(
   // test pins them together.
   const newIndex =
     currentIndex === -1 ? firstUpNextIndex : existingIndex > currentIndex ? currentIndex + 1 : currentIndex;
-
-  if (queue[existingIndex].suggested === true) {
-    return replaceWithEntryNext(queue, existingIndex, newIndex, currentIndex, firstUpNextIndex);
-  }
+  const { uuid, suggested } = queue[existingIndex];
 
   if (newIndex === existingIndex) {
-    return { kind: 'unchanged', reason: 'already-next' };
+    return suggested === true ? { kind: 'unflag', uuid } : { kind: 'unchanged', reason: 'already-next' };
   }
 
-  return { kind: 'move', uuid: queue[existingIndex].uuid, oldIndex: existingIndex, newIndex };
+  return suggested === true
+    ? { kind: 'move', uuid, oldIndex: existingIndex, newIndex, dropListWalkFlag: true }
+    : { kind: 'move', uuid, oldIndex: existingIndex, newIndex };
 }
 
 /**
- * The `replace` plan: `queue` with the entry at `oldIndex` taken out and put
- * back at `newIndex` (an index after the removal, as a reorder reads it),
- * queued on purpose. `currentIndex` is the current climb's index before the
- * move, -1 with nothing current, when `lineWithNothingCurrent` is the line.
+ * `item` without a list walk's `suggested` flag: a climb the climber queued
+ * themselves. The same object when it carries no flag.
  */
-function replaceWithEntryNext(
-  queue: ClimbQueue,
-  oldIndex: number,
-  newIndex: number,
-  currentIndex: number,
-  lineWithNothingCurrent: number,
-): PlayNextPlan {
-  const nextQueue = [...queue];
-  const [entry] = nextQueue.splice(oldIndex, 1);
-  nextQueue.splice(newIndex, 0, queuedOnPurpose(entry));
-  // The current climb slides down one when the entry came from behind it.
-  const line = currentIndex === -1 ? lineWithNothingCurrent : oldIndex < currentIndex ? currentIndex - 1 : currentIndex;
-  return { kind: 'replace', uuid: entry.uuid, oldIndex, queue: nextQueue, historyCount: line };
-}
-
-/** `item` without the list walk's `suggested` flag: a climb the climber queued themselves. */
-function queuedOnPurpose(item: ClimbQueueItem): ClimbQueueItem {
-  if (item.suggested === undefined) return item;
+export function withoutListWalkFlag(item: ClimbQueueItem): ClimbQueueItem {
+  if (item.suggested !== true) return item;
   const { suggested: _listWalkFlag, ...queued } = item;
   return queued;
 }

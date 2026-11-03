@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { planPlayNext } from '@boardsesh/queue';
+import { planPlayNext, withoutListWalkFlag } from '@boardsesh/queue';
 import enSession from '@boardsesh/i18n/locales/en-US/session.json';
 import { getBoardConfigForPlaylist } from '../../../lib/playlists/board-details-for-playlist';
 import { registerTrackPageLoader } from '../../../lib/playlists/track-pager';
@@ -577,12 +577,12 @@ describe('usePlayNavigationModel', () => {
       const secondPass = results.slice(4, 10).map((_, index) => walked(`second-${index}`, index + 4));
       const before = [...older, ...firstPass, ...secondPass, debaser];
       const plan = planPlayNext(before, debaser, { climbUuid: 'r5' }, historyCountOf(before));
-      if (plan.kind === 'replace') return plan.queue;
       if (plan.kind !== 'move') throw new Error(`Play next planned ${plan.kind}`);
-      // A move is one reorder, a splice out and back in.
+      // A move is one reorder, a splice out and back in, and the queue provider
+      // drops the list walk's flag by uuid when the plan says so.
       const after = [...before];
       const [moved] = after.splice(plan.oldIndex, 1);
-      after.splice(plan.newIndex, 0, moved);
+      after.splice(plan.newIndex, 0, plan.dropListWalkFlag ? withoutListWalkFlag(moved) : moved);
       return after;
     }
 
