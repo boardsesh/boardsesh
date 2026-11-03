@@ -307,12 +307,36 @@ relay through `relayHolderFor` and need no gate.
 **Not covered yet.** Every native path (Lock Screen Next / Previous, iOS `ReconnectBoardIntent`, the Android
 notification's drawing) still connects; a later PR gates them.
 
-**Home crews land on different board ids.** A crew session on a home MoonBoard (no gym, with lights) broadcasts the
-positional tuple path (`buildSessionBoardPath`), so a joiner binds presence to their own `user_boards` row, not the
-owner's. The holder's `board:{id}:writer` is then invisible to crewmates, and neither the relay nor this gate sees
-it. Sending `/b/{slug}/{angle}` for every slugged board fixes the id, but a private home board then fails the join
-(`fetchBoardBySlug`) and the presence bind (`canAccessBoard`) for crewmates. It needs session membership to grant
-read access to the session's board first; tracked on #7220.
+**Home crews share the owner's board id.** A session names every board with a slug: `buildSessionBoardPath` sends
+`/b/{slug}/{angle}` for home boards as well as gym walls, and keeps the positional tuple only for a board with no slug
+or a shared per-config feed (`SHARED_CONFIG_FEED_SLUG_PREFIX`). Crewmates then bind presence to the owner's
+`user_boards` row, so the holder's `board:{id}:writer` is the one they see, and the relay and this gate work for a
+home crew.
+
+A private or unlisted home wall opens to the crew through session membership ("Joining a session counts as holding
+its wall's link", `isLiveSessionMemberOnHomeWall`, see `docs/privacy.md`): read only, only while they are in the
+live roster of a session the owner started on it, never its place. Leaving, or the session ending, ends it at the
+next read: the presence feed rechecks per event, and `relayBoardClimb` rechecks the board's policy on every relay,
+because the 12-hour membership stamp alone would outlive the session.
+
+The join screen reads the session before the climber is in it, so a private wall arrives as geometry and the
+crewmate joins on their own board. The roster snapshot after the join names the wall, and the app moves them onto it
+once (`session-board-adoption.ts`): only after that join, only while they are still on the board it set, only onto a
+board with the same configuration, never onto a shared feed. The first path the session sends after the join spends
+it, whether it moves them or not, and it lapses after 2 minutes.
+
+An angle change keeps the session on its wall (`buildAngleChangeSessionBoardPath`): a home board is named only when
+the session already names it. A crewmate still on a board of their own sends its tuple, as before, so their angle
+change never binds the host's session to their board. Gym and ledless walls are always named, as before.
+
+An Unlisted home wall's slug is its link, so a crewmate who was handed it keeps it after leaving, by that audience's
+rule; `relayBoardClimb` takes the link reading and still accepts them. Followers, Invite-only and Only-me walls end at
+the next read.
+
+Mixed versions: a crewmate on an app without this change joins on their own board, as before, and their angle change
+sends their own board's tuple, which moves the session off the owner's wall (`board_sessions.board_id` becomes null)
+and ends the crew's read of a private wall until the owner changes the angle again. Old apps already resolve a named
+path for a board they may read, so a public home board names correctly for them.
 
 ## Known limitations
 

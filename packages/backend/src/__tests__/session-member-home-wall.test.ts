@@ -19,6 +19,10 @@ import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { updateSessionBoardPathIfChanged } from '../services/room-manager/session-discovery';
 import { roomManager } from '../services/room-manager';
 import { buildSessionPayload } from '../graphql/resolvers/sessions/helpers';
+import { sessionQueries } from '../graphql/resolvers/sessions/queries';
+import { handleSessionJoin } from '../handlers/join';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { findReachableActiveBoardByUuid, requireAnonReadableBoard } from '../graphql/resolvers/board-presence/shared';
 
 const HOST = 'home-wall-host';
 const GRANTEE = 'home-wall-grantee';
@@ -57,10 +61,16 @@ beforeAll(async () => {
   const rows = await db
     .insert(schema.userBoards)
     .values([
-      board('private-home-wall', { isPublic: false }),
+      board('private-home-wall', {
+        isPublic: false,
+        locationName: 'Sam’s garage, 12 Example Road',
+        latitude: -33.86,
+        longitude: 151.2,
+      }),
       board('unlisted-home-wall', { isPublic: true, isUnlisted: true }),
       board('invite-only-home-wall', { isPublic: false }),
       board('other-home-wall', { isPublic: true }),
+      board('member-private-wall', { isPublic: false, ownerId: MEMBER }),
       board('private-gym-wall', { isPublic: false, gymId: Number(gym.id) }),
       board('private-spray-wall', {
         isPublic: false,
@@ -274,5 +284,68 @@ describe('a session member on a home wall', () => {
       .from(schema.boardSessions)
       .where(eq(schema.boardSessions.id, sessionId));
     expect(session.boardId).toBe(boardIds.get('other-home-wall'));
+  });
+
+  // #7220: the crew of a Relay mode MoonBoard binds presence to the owner's
+  // board, so the reads a crewmate needs at the wall go through the same rule.
+  it('lets the crew read the wall, but never its place, its edit rights or its listing', async () => {
+    await sessionOn('private-home-wall');
+    const page = await boardBySlug('private-home-wall', MEMBER);
+    expect(page).toMatchObject({ uuid: boardUuid('private-home-wall'), canEdit: false });
+    expect(page).toMatchObject({ locationName: null, latitude: null, longitude: null, distanceMeters: null });
+    // The owner still sees the place.
+    expect(await boardBySlug('private-home-wall', HOST)).toMatchObject({ latitude: -33.86, longitude: 151.2 });
+    // Search and the member's own board list never carry it.
+    const search = await socialBoardQueries.searchBoards(
+      null,
+      { input: { query: 'private-home-wall' } },
+      viewer(MEMBER),
+    );
+    expect(search.boards.map((listed: { uuid: string }) => listed.uuid)).not.toContain(boardUuid('private-home-wall'));
+    const mine = await socialBoardQueries.myBoards(null, {}, viewer(MEMBER));
+    expect(mine.boards.map((listed: { uuid: string }) => listed.uuid)).not.toContain(boardUuid('private-home-wall'));
+  });
+
+  it('binds the crew’s presence to the wall and opens its feed, until they leave', async () => {
+    const memberConnection = await sessionOn('private-home-wall');
+    const wallId = boardIds.get('private-home-wall')!;
+    expect((await findReachableActiveBoardByUuid(MEMBER, boardUuid('private-home-wall')))?.id).toBe(wallId);
+    await expect(requireAnonReadableBoard(wallId, MEMBER, boardUuid('private-home-wall'))).resolves.toBeUndefined();
+    await expect(requireAnonReadableBoard(wallId, MEMBER)).resolves.toBeUndefined();
+    // A stranger gets neither.
+    expect(await findReachableActiveBoardByUuid(STRANGER, boardUuid('private-home-wall'))).toBeUndefined();
+    await expect(requireAnonReadableBoard(wallId, STRANGER, boardUuid('private-home-wall'))).rejects.toThrow();
+
+    await roomManager.leaveSession(memberConnection);
+    expect(await findReachableActiveBoardByUuid(MEMBER, boardUuid('private-home-wall'))).toBeUndefined();
+    await expect(requireAnonReadableBoard(wallId, MEMBER, boardUuid('private-home-wall'))).rejects.toThrow();
+  });
+
+  it('redirects a signed-out session link to the wall’s geometry, never its slug', async () => {
+    await sessionOn('private-home-wall');
+    let location = '';
+    const response = {
+      setHeader: () => {},
+      writeHead: (_status: number, headers?: Record<string, string>) => {
+        location = headers?.Location ?? '';
+      },
+      end: () => {},
+    } as unknown as ServerResponse;
+    const request = { headers: { host: 'api.test' } } as unknown as IncomingMessage;
+    await handleSessionJoin(request, response, sessionId, 4000, 'https://boardsesh.test');
+    expect(location.startsWith(`https://boardsesh.test${GEOMETRY}?`)).toBe(true);
+    expect(location).not.toContain('private-home-wall');
+  });
+
+  it('names a crewmate’s private wall in the host’s session list only to people who may read it', async () => {
+    await sessionOn('private-home-wall');
+    // A crewmate moved the session onto a private wall of their own.
+    await db
+      .update(schema.boardSessions)
+      .set({ boardPath: named('member-private-wall'), boardId: boardIds.get('member-private-wall') })
+      .where(eq(schema.boardSessions.id, sessionId));
+    const listed = await sessionQueries.mySessions(null, null, viewer(HOST));
+    const hostSession = listed.find((session) => session.id === sessionId);
+    expect(hostSession?.boardPath).toBe(GEOMETRY);
   });
 });

@@ -1813,7 +1813,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // rarer pre-send failure — ensureJoined rejecting. Report that too
           // rather than dropping it, or a party that silently never followed
           // the switch leaves no trace at all.
-          // Gym and ledless walls keep their identity when the queue switches.
+          // A slugged wall keeps its identity when the queue switches.
           void setSessionBoardPath(buildSessionBoardPath(result.board)).catch((error) => {
             if (__DEV__) console.warn('[queue] setSessionBoardPath after board switch failed', error);
             reportHandledError(error, { tags: { source: 'queue-sync', op: 'set-board-path-switch' } });

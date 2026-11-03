@@ -2,7 +2,6 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildBoardPath } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 
@@ -339,7 +338,7 @@ describe('QueueProvider cross-board add gate', () => {
 
     expect(setActiveBoard).toHaveBeenCalledWith(boards.tension);
     // Its stored 25°, never a synthesised 0.
-    expect(queueMutations.setSessionBoardPath).toHaveBeenCalledWith(buildBoardPath('tension', 8, 12, '3,4', 25));
+    expect(queueMutations.setSessionBoardPath).toHaveBeenCalledWith('/b/board-tension/25');
     // The add is the SAME synced body, not a local-only dispatch.
     expect(queueUuids(provider.latest())).toEqual(['foreign']);
     expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);

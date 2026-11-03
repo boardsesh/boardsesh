@@ -6,6 +6,7 @@
 import { and, eq, exists, inArray, lt, or } from 'drizzle-orm';
 import { QueryBuilder } from 'drizzle-orm/pg-core';
 import type { SessionSummary, SessionParticipant, IntegrationExportResult } from '@boardsesh/shared-schema';
+import { parseNamedBoardPath } from '@boardsesh/board-config';
 import { db } from '../db/client';
 import { boardseshTicks, integrationCredentials, integrationExports } from '@boardsesh/db/schema';
 import { generateSessionSummary } from '../graphql/resolvers/sessions/session-summary';
@@ -39,7 +40,8 @@ function buildActivityName(
 
 /** "Kilter Board session" from a board path; "Board session" when unknown. */
 function boardLabel(boardPath: string | null | undefined): string {
-  if (!boardPath) return 'Board session';
+  // A named wall (`/b/<slug>/<angle>`) says nothing about its board type here.
+  if (!boardPath || parseNamedBoardPath(boardPath)) return 'Board session';
   const firstSegment = boardPath.split('/').filter(Boolean)[0];
   if (!firstSegment) return 'Board session';
   const capitalized = firstSegment.charAt(0).toUpperCase() + firstSegment.slice(1);

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { applyCorsHeaders } from './cors';
 import { roomManager } from '../services/room-manager';
+import { projectSessionBoardPath } from '../services/board-session-privacy';
 
 /**
  * Determine WebSocket protocol based on request headers and environment
@@ -53,7 +54,10 @@ export async function handleSessionJoin(
   const host = req.headers.host || `localhost:${port}`;
   const wsProtocol = getWebSocketProtocol(req);
   const backendUrl = `${wsProtocol}://${host}/graphql`;
-  const redirectUrl = `${boardseshUrl}${sessionInfo.boardPath}?backendUrl=${encodeURIComponent(backendUrl)}&sessionId=${encodeURIComponent(sessionId)}`;
+  // Signed out, so the path a stranger may see: a home wall's `/b/<slug>` (an
+  // Unlisted wall's link) is named only to people who may read it (#7220).
+  const visibleBoardPath = await projectSessionBoardPath(sessionInfo.boardPath ?? '', null);
+  const redirectUrl = `${boardseshUrl}${visibleBoardPath}?backendUrl=${encodeURIComponent(backendUrl)}&sessionId=${encodeURIComponent(sessionId)}`;
 
   res.writeHead(302, { Location: redirectUrl });
   res.end();

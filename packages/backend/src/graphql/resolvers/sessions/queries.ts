@@ -1,5 +1,6 @@
 import { redactQueueEvents } from '../../../services/privacy-queue-events';
 import { canAccessResource } from '../../../services/privacy';
+import { projectSessionBoardPath } from '../../../services/board-session-privacy';
 import type {
   ConnectionContext,
   EventsReplayResponse,
@@ -140,7 +141,8 @@ export const sessionQueries = {
         return {
           id: s.id,
           name: s.name,
-          boardPath: s.boardPath,
+          // A crewmate's switch can put their own home wall on the host's session (#7220).
+          boardPath: await projectSessionBoardPath(s.boardPath, ctx.userId),
           latitude: s.latitude || 0,
           longitude: s.longitude || 0,
           createdAt: s.createdAt,

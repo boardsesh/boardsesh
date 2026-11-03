@@ -11,6 +11,7 @@ import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { getRestTimerState, resetRestTimerStoreForTests } from '../../lib/rest-timer-store';
 import { resetCrewCadenceForTests } from '../../lib/crew-rest-cadence';
 import { clearRelayReceipt, takeRelayReceipt } from '../../lib/relay-receipt';
+import { clearSessionBoardAdoption, expectSessionBoardAdoption } from '../../lib/boards/session-board-adoption';
 
 // The preview-first gate is flagged. Default it ON here so these tests exercise
 // the roster logic rather than the rollout switch; one test below flips it off
@@ -2187,6 +2188,72 @@ describe('QueueProvider session update subscription', () => {
     await waitFor(() => {
       expect(activeBoard.setActiveBoard).toHaveBeenCalledWith({ ...activeBoard.stored, angle: 30 });
     });
+  });
+
+  it('moves a crewmate who joined on geometry onto the home wall the snapshot names, once (#7220)', async () => {
+    const hostWall: UserBoard = { ...activeBoard.stored, uuid: 'host-wall', slug: 'sams-garage', ownerId: 'host' };
+    const lookup = vi.fn(async (slug: string) => (slug === 'sams-garage' ? hostWall : null));
+    expectSessionBoardAdoption('session-1', activeBoard.stored, lookup);
+    try {
+      renderProvider(() => {});
+      await waitFor(() => {
+        expect(ws.getSessionUpdatesSink()).not.toBeNull();
+      });
+      const sessionUpdatesSink = ws.getSessionUpdatesSink();
+      if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+      const snapshot = (boardPath: string) =>
+        act(() => {
+          sessionUpdatesSink.next({
+            data: {
+              sessionUpdates: {
+                __typename: 'SessionRosterSnapshot',
+                users: [user({ id: 'participant-self' })],
+                boardPath,
+              },
+            },
+          });
+        });
+
+      snapshot('/b/sams-garage/30');
+      await waitFor(() => {
+        expect(activeBoard.setActiveBoard).toHaveBeenCalledWith({ ...hostWall, angle: 30 });
+      });
+      expect(lookup).toHaveBeenCalledTimes(1);
+
+      // Spent: a later snapshot naming the wall looks nothing up again.
+      snapshot('/b/sams-garage/30');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(lookup).toHaveBeenCalledTimes(1);
+    } finally {
+      clearSessionBoardAdoption();
+    }
+  });
+
+  it('leaves a climber on their board when no join on geometry expects a move', async () => {
+    clearSessionBoardAdoption();
+    renderProvider(() => {});
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'SessionRosterSnapshot',
+            users: [user({ id: 'participant-self' })],
+            boardPath: '/b/someone-elses-wall/30',
+          },
+        },
+      });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
   });
 
   it('suppresses the snapshot angle-follow while a local board-path change is in flight', async () => {

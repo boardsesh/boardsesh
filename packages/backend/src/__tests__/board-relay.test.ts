@@ -10,7 +10,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { MoonboardLinkMode } from '@boardsesh/board-config';
 import type {
@@ -77,6 +77,7 @@ type BoardOptions = {
   ownerId?: string;
   slug?: string;
   moonboardLinkMode?: MoonboardLinkMode | null;
+  isPublic?: boolean;
 };
 
 const createdBoardIds: number[] = [];
@@ -95,7 +96,7 @@ async function insertBoard(options: BoardOptions = {}): Promise<{ id: number; uu
       sizeId: 1,
       setIds: '1',
       angle: 40,
-      isPublic: true,
+      isPublic: options.isPublic ?? true,
       moonboardLinkMode: options.moonboardLinkMode ?? null,
     })
     .returning({ id: dbSchema.userBoards.id, uuid: dbSchema.userBoards.uuid });
@@ -335,6 +336,29 @@ describe('relayBoardClimb gates', () => {
     const relayerCtx = ctxFor(RELAYER);
     await openFeed(board.id, relayerCtx);
     await expect(relay(board.id, relayerCtx)).rejects.toThrow('Not connected to this board');
+  });
+
+  it('refuses a stamped viewer who lost read access to a private wall since the feed opened', async () => {
+    // A crewmate reads a private home wall only while in the owner's live session
+    // (#7220); the stamp outlives that by up to 12 hours. A revoked grant ends
+    // access the same way, through the same policy read.
+    const board = await insertBoard({ isPublic: false });
+    await db
+      .insert(dbSchema.resourcePrivacy)
+      .values({ kind: 'board', resourceId: board.uuid, ownerId: OWNER, audience: 'invite_only' });
+    await db
+      .insert(dbSchema.resourceGrants)
+      .values({ kind: 'board', resourceId: board.uuid, userId: RELAYER, status: 'approved' });
+    const relayerCtx = ctxFor(RELAYER);
+    await joinAsRelayer(board.id, relayerCtx);
+    await expect(relay(board.id, relayerCtx)).resolves.toMatchObject({ status: 'NO_HOLDER' });
+    await db
+      .update(dbSchema.resourceGrants)
+      .set({ status: 'revoked' })
+      .where(and(eq(dbSchema.resourceGrants.resourceId, board.uuid), eq(dbSchema.resourceGrants.userId, RELAYER)));
+    await expect(relay(board.id, relayerCtx)).rejects.toThrow('Board not found');
+    await db.delete(dbSchema.resourceGrants).where(eq(dbSchema.resourceGrants.resourceId, board.uuid));
+    await db.delete(dbSchema.resourcePrivacy).where(eq(dbSchema.resourcePrivacy.resourceId, board.uuid));
   });
 
   it('refuses a stamped caller with no boardNowPlaying open on this connection', async () => {

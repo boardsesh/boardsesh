@@ -30,7 +30,7 @@ import { assertBoardCapNotReached } from '../social/board-limits';
 import { assertKnownBoardConfig } from './board-catalog';
 import { lockBoardSerialWrite } from '../board-serial-write-lock';
 import { logger } from '../../../utils/logger';
-import { canAccessResourceWithoutLink, canViewResourceLocation } from '../../../services/privacy';
+import { canAccessBoard, canAccessResourceWithoutLink, canViewResourceLocation } from '../../../services/privacy';
 import { projectBoardLocation } from '../../../services/board-location-projection';
 import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { boardReportDedupMarker, pubsub } from '../../../pubsub/index';
@@ -1304,6 +1304,15 @@ export const boardPresenceMutations = {
     if (!isMember || !isViewer) throw new GraphQLError('Not connected to this board');
     // Same current-policy check reportBoardClimb runs on a stamped membership.
     await assertSprayBoardIsReadable(board, ctx.userId, board.uuid, db);
+    // The stamp lives 12 hours and the feed re-checks only when an event
+    // arrives, so read the board's policy now. A crewmate reads the owner's
+    // Followers, Invite-only or Only-me home wall only while in the owner's live
+    // session on it (`isLiveSessionMemberOnHomeWall`), so leaving or the session
+    // ending stops their relays here. This is the link reading, as for anyone
+    // holding the board's uuid: an Unlisted wall stays open to whoever holds its
+    // link, a former crewmate included, by that audience's own rule.
+    if (!(await canAccessBoard(board.uuid, ctx.userId, board.uuid)))
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
 
     const validatedClimb = validateInput(ReportBoardClimbInputSchema, climb, 'climb');
     const validatedAngle = validateInput(BoardPresenceAngleSchema, angle, 'angle');

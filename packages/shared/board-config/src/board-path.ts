@@ -89,3 +89,14 @@ export function parseNamedBoardPath(path: string): ParsedNamedBoardPath | null {
   const angle = angleRaw !== undefined && /^-?\d+$/.test(angleRaw) ? Number(angleRaw) : null;
   return { slug, angle };
 }
+
+/**
+ * Slug namespace of the system-owned per-config shared feed boards the backend
+ * mints for walls with no Bluetooth serial (`resolveSharedBoardForConfig`). Such
+ * a row means "some wall with this configuration", grouping climbers across
+ * gyms, so nothing may key on it as one physical wall: not a session path, not
+ * Relay mode. The backend also checks the system owner; a client only sees the
+ * slug, so a personal board whose name happens to start "presence" reads as a
+ * shared feed too. That only costs it the named session path.
+ */
+export const SHARED_CONFIG_FEED_SLUG_PREFIX = 'presence-';
