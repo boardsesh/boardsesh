@@ -27,6 +27,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Play next on a climb you already did now really comes up next, even mid-list. ([#7251](https://github.com/boardsesh/boardsesh/pull/7251))
+  Climb still skipped from an older version? Tap Play next on it once more.
 - Tap Next or Previous on your Lock Screen as your drive runs out, and the board stays connected. ([#7242](https://github.com/boardsesh/boardsesh/pull/7242))
 - Climbs opened from your Logbook, the home feed, or a notification now show their real matching and feet rules on Woods. Tapping a notification for a no-match climb shows its ⊘ again, and Logbook and session rows now show campus, any-feet and no-kickboard badges. ([#5257](https://github.com/boardsesh/boardsesh/pull/5257))
 

@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-11-03T08:57:10.670Z",
+  "generatedAt": "2026-11-03T10:41:14.292Z",
   "entries": [
+    {
+      "prNumber": 7251,
+      "category": "fixed",
+      "title": "Play next on a climb you already did now really comes up next, even mid-list.",
+      "mergedAt": "2026-11-03T10:23:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7251",
+      "body": "Climb still skipped from an older version? Tap Play next on it once more."
+    },
     {
       "prNumber": 7242,
       "category": "fixed",
