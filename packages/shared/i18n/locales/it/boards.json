@@ -581,7 +581,8 @@
       "isOwned": "Questo pannello è mio",
       "layout": "Layout",
       "size": "Dimensione",
-      "holdSets": "Set di prese"
+      "holdSets": "Set di prese",
+      "moonboardLinkMode": "Telefoni su questa MoonBoard"
     },
     "placeholders": {
       "description": "Descrizione facoltativa",
@@ -593,7 +594,12 @@
       "hideLocation": "Nascosto dalle ricerche di pannelli vicini, a meno che tu non segua chi cerca",
       "hasLeds": "Disattivato significa nessun kit di luci. I turni funzionano comunque e lo schermo della palestra mostra sempre il blocco attivo.",
       "ownerOnlyPrivacy": "Solo il proprietario del pannello può modificare la visibilità e la privacy della posizione.",
-      "ownerOnlyCredentials": "Solo il proprietario del pannello può vedere o modificare le credenziali del controller."
+      "ownerOnlyCredentials": "Solo il proprietario del pannello può vedere o modificare le credenziali del controller.",
+      "moonboardLinkModeAuto": "Boardsesh controlla la centralina la prima volta che si collega un iPhone. Fino ad allora usa la modalità relay.",
+      "moonboardLinkModeRelay": "Il primo telefono che si collega tiene il pannello. Gli altri illuminano i blocchi tramite lui.",
+      "moonboardLinkModeMulti": "Ogni telefono può collegarsi e illuminare i blocchi.",
+      "moonboardLinkModeDetectedRelay": "Rilevato: un telefono alla volta. Boardsesh usa la modalità relay.",
+      "moonboardLinkModeDetectedMulti": "Rilevato: ogni telefono può collegarsi."
     },
     "alerts": {
       "configEditable": "Puoi cambiare layout, dimensione e set di prese. I blocchi già registrati restano dove sono."
@@ -624,6 +630,11 @@
       "dialogBodyPrivate": "Il numero di serie {{serial}} è già registrato sul pannello privato di un altro climber. Se è davvero un pannello diverso, puoi comunque creare il tuo.",
       "useExisting": "Usa il pannello esistente",
       "createAnyway": "Crea comunque un duplicato"
+    },
+    "linkModes": {
+      "auto": "Rileva automaticamente",
+      "relay": "Modalità relay (un telefono alla volta)",
+      "multi": "Più telefoni"
     }
   },
   "editBoard": {

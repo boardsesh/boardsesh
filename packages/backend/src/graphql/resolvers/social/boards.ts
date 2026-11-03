@@ -19,7 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { normaliseSetIds } from '@boardsesh/board-config';
+import { normaliseSetIds, resolveMoonboardLinkMode, isMoonboardLinkMode } from '@boardsesh/board-config';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { readSprayWallImportProgress } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
@@ -434,6 +434,22 @@ async function resolveBoardFollowingMerges(
 /**
  * Enrich a board row with computed fields (counts, names, follow status).
  */
+
+/** The MoonBoard link-mode fields (#7220) every UserBoard mapper returns. Null on other boards. */
+export function moonboardLinkFields(board: {
+  boardType: string;
+  moonboardLinkMode: string | null;
+  moonboardLinkDetected: string | null;
+}) {
+  const isMoonboard = board.boardType === 'moonboard';
+  return {
+    moonboardLinkMode: isMoonboard && isMoonboardLinkMode(board.moonboardLinkMode) ? board.moonboardLinkMode : null,
+    moonboardLinkDetected:
+      isMoonboard && isMoonboardLinkMode(board.moonboardLinkDetected) ? board.moonboardLinkDetected : null,
+    moonboardLinkModeEffective: resolveMoonboardLinkMode(board)?.mode ?? null,
+  };
+}
+
 async function enrichBoard(
   board: typeof dbSchema.userBoards.$inferSelect,
   authenticatedUserId?: string,
@@ -574,6 +590,7 @@ async function enrichBoard(
     angle: Number(board.angle),
     isAngleAdjustable: board.isAngleAdjustable,
     hasLeds: board.hasLeds,
+    ...moonboardLinkFields(board),
     createdAt: board.createdAt.toISOString(),
     // Computed name fields (TODO: resolve from board-specific layout/size/set tables if needed)
     layoutName: null,
@@ -823,6 +840,7 @@ export async function enrichBoards(
         angle: Number(board.angle),
         isAngleAdjustable: board.isAngleAdjustable,
         hasLeds: board.hasLeds,
+        ...moonboardLinkFields(board),
         createdAt: board.createdAt.toISOString(),
         layoutName: null,
         sizeName: null,
@@ -886,6 +904,7 @@ async function projectAnonymousSerialBoards(boards: Array<typeof dbSchema.userBo
       angle: Number(board.angle),
       isAngleAdjustable: board.isAngleAdjustable,
       hasLeds: board.hasLeds,
+      ...moonboardLinkFields(board),
       createdAt: board.createdAt.toISOString(),
       layoutName: null,
       sizeName: null,
@@ -1965,6 +1984,23 @@ export async function updateBoardRecord(
   if (validatedInput.angle !== undefined) updateValues.angle = validatedInput.angle;
   if (validatedInput.isAngleAdjustable !== undefined) updateValues.isAngleAdjustable = validatedInput.isAngleAdjustable;
   if (validatedInput.hasLeds !== undefined) updateValues.hasLeds = validatedInput.hasLeds;
+  // A null echoed back on another board type is "no choice", not a change:
+  // refuse only a real value, like the hardware fields above.
+  if (validatedInput.moonboardLinkMode != null && board.boardType !== 'moonboard') {
+    throw new GraphQLError('Only a MoonBoard has a link mode', { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  if (validatedInput.moonboardLinkMode !== undefined && board.boardType === 'moonboard') {
+    updateValues.moonboardLinkMode = validatedInput.moonboardLinkMode;
+  }
+  // A new controller serial is a new box: forget what the old one looked like,
+  // so the next iOS connect detects it afresh (detection only moves toward relay).
+  if (
+    board.boardType === 'moonboard' &&
+    validatedInput.serialNumber !== undefined &&
+    (validatedInput.serialNumber ?? null) !== (board.serialNumber ?? null)
+  ) {
+    updateValues.moonboardLinkDetected = null;
+  }
   if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
   if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 
@@ -2619,6 +2655,7 @@ export const socialBoardMutations = {
       angle: validatedInput.angle ?? 40,
       isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
       hasLeds: validatedInput.hasLeds ?? true,
+      moonboardLinkMode: validatedInput.boardType === 'moonboard' ? (validatedInput.moonboardLinkMode ?? null) : null,
       serialNumber: validatedInput.serialNumber ?? null,
       timerName: validatedInput.timerName ?? null,
     };

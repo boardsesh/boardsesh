@@ -21,6 +21,9 @@ export const adminBoardsTypeDefs = /* GraphQL */ `
     angle: Int!
     isAngleAdjustable: Boolean!
     hasLeds: Boolean!
+    moonboardLinkMode: MoonboardLinkMode
+    moonboardLinkDetected: MoonboardLinkMode
+    moonboardLinkModeEffective: MoonboardLinkMode
     "Owner-only, including in the admin registry."
     serialNumber: String
     "Owner-only, including in the admin registry."

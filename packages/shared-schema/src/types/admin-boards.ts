@@ -20,6 +20,9 @@ export type AdminBoard = {
   angle: number;
   isAngleAdjustable: boolean;
   hasLeds: boolean;
+  moonboardLinkMode?: 'relay' | 'multi' | null;
+  moonboardLinkDetected?: 'relay' | 'multi' | null;
+  moonboardLinkModeEffective?: 'relay' | 'multi' | null;
   serialNumber: string | null;
   timerName: string | null;
   createdAt: string;

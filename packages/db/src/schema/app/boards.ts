@@ -69,6 +69,18 @@ export const userBoards = pgTable(
     // row), and readers tolerate + log a dangling pointer. A self-referential
     // FK would only add write overhead for a failure mode we already surface.
     mergedIntoBoardUuid: text('merged_into_board_uuid'),
+    // MoonBoard only (#7220): how many phones the controller box takes.
+    // 'relay' = one phone holds the link and others light climbs through it;
+    // 'multi' = every phone can connect. The person's choice wins over the
+    // app's detection; with neither set the effective mode is 'relay'
+    // (resolveMoonboardLinkMode in @boardsesh/board-config). Validated as
+    // 'relay' | 'multi' by the GraphQL enum + zod; no CHECK because drizzle-kit
+    // does not reliably diff object-form check() on this table.
+    moonboardLinkMode: text('moonboard_link_mode').$type<'relay' | 'multi'>(),
+    // Set only by reportMoonboardLinkDetected from the write characteristic's
+    // properties on an iOS connect. Only ever moves toward 'relay', and never
+    // freezes sync (detection is not human curation).
+    moonboardLinkDetected: text('moonboard_link_detected').$type<'relay' | 'multi'>(),
   },
   (table) => ({
     // Gym lookup

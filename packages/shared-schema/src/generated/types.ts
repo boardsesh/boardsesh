@@ -233,6 +233,9 @@ export type AdminBoard = {
   layoutId: Scalars['Int']['output'];
   locationName?: Maybe<Scalars['String']['output']>;
   longitude?: Maybe<Scalars['Float']['output']>;
+  moonboardLinkDetected?: Maybe<MoonboardLinkMode>;
+  moonboardLinkMode?: Maybe<MoonboardLinkMode>;
+  moonboardLinkModeEffective?: Maybe<MoonboardLinkMode>;
   name: Scalars['String']['output'];
   ownerDisplayName?: Maybe<Scalars['String']['output']>;
   ownerId?: Maybe<Scalars['ID']['output']>;
@@ -2099,6 +2102,8 @@ export type CreateBoardInput = {
   locationName?: InputMaybe<Scalars['String']['input']>;
   /** GPS longitude */
   longitude?: InputMaybe<Scalars['Float']['input']>;
+  /** MoonBoard only: how many phones the controller takes (null = let the app detect it) */
+  moonboardLinkMode?: InputMaybe<MoonboardLinkMode>;
   /** Board name */
   name: Scalars['String']['input'];
   /** Controller box serial number */
@@ -4238,6 +4243,13 @@ export type MoonBoardMethod =
   /** Feet follow hands, but the kickboard is off-limits. */
   | 'method_no_kickboard';
 
+/**
+ * How many phones a MoonBoard controller box accepts (#7220).
+ * relay: one phone holds the board and others light climbs through it.
+ * multi: every phone can connect.
+ */
+export type MoonboardLinkMode = 'multi' | 'relay';
+
 /** Root mutation type for all write operations. */
 export type Mutation = {
   __typename?: 'Mutation';
@@ -4667,6 +4679,15 @@ export type Mutation = {
    * pair so repeated reports don't spam the team.
    */
   reportGymDuplicate: ReportGymDuplicateResult;
+  /**
+   * MoonBoard only (#7220): report the link mode this phone detected from the
+   * controller's write characteristic on connect. Fills only the detected column,
+   * only ever moves a board toward relay, never overrides a person's choice (the
+   * effective mode reads that first) and never freezes location sync. Refused on
+   * shared per-config feed boards and without board membership. Auth-optional.
+   * Returns whether the stored value changed.
+   */
+  reportMoonboardLinkDetected: Scalars['Boolean']['output'];
   /**
    * Report a spray wall. Any signed-in climber who can see it, once per wall.
    *
@@ -5518,6 +5539,12 @@ export type MutationReportClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportGymDuplicateArgs = {
   input: ReportGymDuplicateInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportMoonboardLinkDetectedArgs = {
+  boardId: Scalars['Int']['input'];
+  detected: MoonboardLinkMode;
 };
 
 /** Root mutation type for all write operations. */
@@ -11860,6 +11887,8 @@ export type UpdateBoardInput = {
   locationName?: InputMaybe<Scalars['String']['input']>;
   /** New GPS longitude */
   longitude?: InputMaybe<Scalars['Float']['input']>;
+  /** MoonBoard only: new link mode; null clears the choice so detection applies again */
+  moonboardLinkMode?: InputMaybe<MoonboardLinkMode>;
   /** New name */
   name?: InputMaybe<Scalars['String']['input']>;
   /** Controller box serial number */
@@ -12242,6 +12271,12 @@ export type UserBoard = {
   locationName?: Maybe<Scalars['String']['output']>;
   /** GPS longitude */
   longitude?: Maybe<Scalars['Float']['output']>;
+  /** MoonBoard only: the link mode the app detected from the controller */
+  moonboardLinkDetected?: Maybe<MoonboardLinkMode>;
+  /** MoonBoard only: the link mode a person chose on the board edit screen */
+  moonboardLinkMode?: Maybe<MoonboardLinkMode>;
+  /** MoonBoard only: the chosen mode, else the detected one, else relay. Null for other boards. */
+  moonboardLinkModeEffective?: Maybe<MoonboardLinkMode>;
   /** Board name */
   name: Scalars['String']['output'];
   /** Owner avatar URL */
@@ -12893,6 +12928,7 @@ export type ResolversTypes = ResolversObject<{
   MoonBoardClimbDuplicateMatch: ResolverTypeWrapper<MoonBoardClimbDuplicateMatch>;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
   MoonBoardMethod: MoonBoardMethod;
+  MoonboardLinkMode: MoonboardLinkMode;
   Mutation: ResolverTypeWrapper<{}>;
   MyBoardsInput: MyBoardsInput;
   MyGymClaim: ResolverTypeWrapper<MyGymClaim>;
@@ -13817,6 +13853,9 @@ export type AdminBoardResolvers<
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   locationName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   longitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  moonboardLinkDetected?: Resolver<Maybe<ResolversTypes['MoonboardLinkMode']>, ParentType, ContextType>;
+  moonboardLinkMode?: Resolver<Maybe<ResolversTypes['MoonboardLinkMode']>, ParentType, ContextType>;
+  moonboardLinkModeEffective?: Resolver<Maybe<ResolversTypes['MoonboardLinkMode']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   ownerDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   ownerId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
@@ -16447,6 +16486,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationReportGymDuplicateArgs, 'input'>
+  >;
+  reportMoonboardLinkDetected?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationReportMoonboardLinkDetectedArgs, 'boardId' | 'detected'>
   >;
   reportSprayWall?: Resolver<
     ResolversTypes['SprayWallReportResult'],
@@ -19981,6 +20026,9 @@ export type UserBoardResolvers<
   layoutName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   locationName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   longitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  moonboardLinkDetected?: Resolver<Maybe<ResolversTypes['MoonboardLinkMode']>, ParentType, ContextType>;
+  moonboardLinkMode?: Resolver<Maybe<ResolversTypes['MoonboardLinkMode']>, ParentType, ContextType>;
+  moonboardLinkModeEffective?: Resolver<Maybe<ResolversTypes['MoonboardLinkMode']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   ownerAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   ownerDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

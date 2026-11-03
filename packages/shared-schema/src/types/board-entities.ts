@@ -32,6 +32,12 @@ export type UserBoard = {
    * "has LEDs" instead of undefined. Every consumer branches on `=== false`.
    */
   hasLeds?: boolean;
+  /** MoonBoard only (#7220): the person's link-mode choice. */
+  moonboardLinkMode?: 'relay' | 'multi' | null;
+  /** MoonBoard only: the link mode the app detected from the controller. */
+  moonboardLinkDetected?: 'relay' | 'multi' | null;
+  /** MoonBoard only: choice, else detection, else 'relay'. Null for other boards. */
+  moonboardLinkModeEffective?: 'relay' | 'multi' | null;
   createdAt: string;
   layoutName?: string | null;
   sizeName?: string | null;
@@ -109,6 +115,7 @@ export type CreateBoardInput = {
   angle?: number;
   isAngleAdjustable?: boolean;
   hasLeds?: boolean;
+  moonboardLinkMode?: 'relay' | 'multi' | null;
   serialNumber?: string;
   timerName?: string | null;
   /**
@@ -140,6 +147,8 @@ export type UpdateBoardInput = {
   angle?: number;
   isAngleAdjustable?: boolean;
   hasLeds?: boolean;
+  /** MoonBoard only; null clears the person's choice so detection applies again. */
+  moonboardLinkMode?: 'relay' | 'multi' | null;
   layoutId?: number;
   sizeId?: number;
   setIds?: string;

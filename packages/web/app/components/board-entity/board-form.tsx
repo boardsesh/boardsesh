@@ -41,6 +41,8 @@ export type BoardFormFieldValues = {
   angle?: number;
   isAngleAdjustable?: boolean;
   hasLeds?: boolean;
+  /** MoonBoard only (#7220). null = no choice, so the app's detection applies. */
+  moonboardLinkMode?: 'relay' | 'multi' | null;
   layoutId?: number;
   sizeId?: number;
   setIds?: string;
@@ -97,6 +99,10 @@ type BoardFormProps = {
   requireChanges?: boolean;
   permissions?: BoardEditPermissions;
   saving?: boolean;
+  /** Show the MoonBoard "Phones on this MoonBoard" choice (#7220). */
+  showMoonboardLinkMode?: boolean;
+  /** What the app detected from the controller, phrased under "Detect automatically". */
+  moonboardLinkDetected?: 'relay' | 'multi' | null;
 };
 
 const NAME_MAX_LENGTH = 100;
@@ -126,6 +132,8 @@ export default function BoardForm({
   requireChanges = false,
   permissions,
   saving = false,
+  showMoonboardLinkMode = false,
+  moonboardLinkDetected = null,
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const resolvedDescriptionPlaceholder = descriptionPlaceholder ?? t('boardForm.placeholders.description');
@@ -144,6 +152,9 @@ export default function BoardForm({
   // Optional on the wire on purpose: a board fetched without the field must read
   // as "has LEDs", never as off.
   const [hasLeds, setHasLeds] = useState(initialValues.hasLeds ?? true);
+  const [moonboardLinkMode, setMoonboardLinkMode] = useState<'relay' | 'multi' | null>(
+    initialValues.moonboardLinkMode ?? null,
+  );
   const [serialNumber, setSerialNumber] = useState(initialValues.serialNumber ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isBusy = isSubmitting || saving;
@@ -185,6 +196,7 @@ export default function BoardForm({
     angle !== (initialValues.angle ?? 40) ||
     isAngleAdjustable !== (initialValues.isAngleAdjustable ?? true) ||
     hasLeds !== (initialValues.hasLeds ?? true) ||
+    moonboardLinkMode !== (initialValues.moonboardLinkMode ?? null) ||
     serialNumber !== (initialValues.serialNumber ?? '') ||
     layoutId !== initialValues.layoutId ||
     sizeId !== initialValues.sizeId ||
@@ -242,6 +254,7 @@ export default function BoardForm({
         angle,
         isAngleAdjustable,
         hasLeds,
+        ...(showMoonboardLinkMode ? { moonboardLinkMode } : {}),
         ...(configEditable
           ? {
               layoutId,
@@ -475,6 +488,43 @@ export default function BoardForm({
               onChange={setHasLeds}
               disabled={permissions?.setup === false}
             />
+
+            {showMoonboardLinkMode && (
+              <FormField
+                label={t('boardForm.fields.moonboardLinkMode')}
+                helper={
+                  moonboardLinkMode === 'relay'
+                    ? t('boardForm.helperText.moonboardLinkModeRelay')
+                    : moonboardLinkMode === 'multi'
+                      ? t('boardForm.helperText.moonboardLinkModeMulti')
+                      : moonboardLinkDetected === 'relay'
+                        ? t('boardForm.helperText.moonboardLinkModeDetectedRelay')
+                        : moonboardLinkDetected === 'multi'
+                          ? t('boardForm.helperText.moonboardLinkModeDetectedMulti')
+                          : t('boardForm.helperText.moonboardLinkModeAuto')
+                }
+              >
+                {(field) => (
+                  <MuiSelect
+                    labelId={field.labelId}
+                    id={field.id}
+                    value={moonboardLinkMode ?? 'auto'}
+                    fullWidth
+                    size="small"
+                    disabled={permissions?.setup === false}
+                    inputProps={{ 'aria-describedby': field.describedBy }}
+                    onChange={(event: SelectChangeEvent) => {
+                      const next = event.target.value;
+                      setMoonboardLinkMode(next === 'relay' || next === 'multi' ? next : null);
+                    }}
+                  >
+                    <MenuItem value="auto">{t('boardForm.linkModes.auto')}</MenuItem>
+                    <MenuItem value="relay">{t('boardForm.linkModes.relay')}</MenuItem>
+                    <MenuItem value="multi">{t('boardForm.linkModes.multi')}</MenuItem>
+                  </MuiSelect>
+                )}
+              </FormField>
+            )}
 
             {permissions?.credentials === false ? (
               permissions.setup !== false ? (

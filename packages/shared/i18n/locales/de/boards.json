@@ -581,7 +581,8 @@
       "isOwned": "Dieses Board gehört mir",
       "layout": "Layout",
       "size": "Größe",
-      "holdSets": "Hold-Sets"
+      "holdSets": "Hold-Sets",
+      "moonboardLinkMode": "Handys an diesem MoonBoard"
     },
     "placeholders": {
       "description": "Beschreibung (optional)",
@@ -593,7 +594,12 @@
       "hideLocation": "Taucht nicht in der Umkreissuche auf, außer du folgst der suchenden Person",
       "hasLeds": "Aus heißt: kein LED-Kit. Ihr wechselt euch trotzdem ab, und der Hallen-Bildschirm zeigt weiter den aktuellen Boulder.",
       "ownerOnlyPrivacy": "Nur der*die Eigentümer*in des Boards kann Sichtbarkeit und Standortfreigabe ändern.",
-      "ownerOnlyCredentials": "Nur der*die Eigentümer*in des Boards kann Controller-Zugangsdaten sehen oder ändern."
+      "ownerOnlyCredentials": "Nur der*die Eigentümer*in des Boards kann Controller-Zugangsdaten sehen oder ändern.",
+      "moonboardLinkModeAuto": "Boardsesh prüft den Controller, wenn sich zum ersten Mal ein iPhone verbindet. Bis dahin gilt die Weiterleitung.",
+      "moonboardLinkModeRelay": "Das erste verbundene Handy behält das Board. Die anderen beleuchten das Board über dieses Handy.",
+      "moonboardLinkModeMulti": "Jedes Handy kann sich verbinden und das Board beleuchten.",
+      "moonboardLinkModeDetectedRelay": "Erkannt: ein Handy zur Zeit. Boardsesh nutzt die Weiterleitung.",
+      "moonboardLinkModeDetectedMulti": "Erkannt: Jedes Handy kann sich verbinden."
     },
     "alerts": {
       "configEditable": "Du kannst Layout, Größe und Hold-Sets ändern. Schon eingetragene Begehungen bleiben erhalten."
@@ -624,6 +630,11 @@
       "dialogBodyPrivate": "Die Seriennummer {{serial}} ist schon für das private Board einer anderen Kletterer*in registriert. Wenn das wirklich eine andere Wand ist, kannst du deine trotzdem anlegen.",
       "useExisting": "Vorhandenes Board nutzen",
       "createAnyway": "Trotzdem ein Duplikat anlegen"
+    },
+    "linkModes": {
+      "auto": "Automatisch erkennen",
+      "relay": "Weiterleitung (ein Handy zur Zeit)",
+      "multi": "Mehrere Handys"
     }
   },
   "editBoard": {

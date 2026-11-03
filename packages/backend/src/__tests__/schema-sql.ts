@@ -976,8 +976,14 @@ export const schemaSQL = `
     "presence_seq" bigint DEFAULT 0 NOT NULL,
     "deleted_at" timestamp,
     "sync_frozen_at" timestamp,
-    "merged_into_board_uuid" text
+    "merged_into_board_uuid" text,
+    "moonboard_link_mode" text,
+    "moonboard_link_detected" text
   );
+  -- Worker databases are reused across runs; add the MoonBoard link-mode
+  -- columns (#7220, migration 0289) to a table created before them.
+  ALTER TABLE "user_boards" ADD COLUMN IF NOT EXISTS "moonboard_link_mode" text;
+  ALTER TABLE "user_boards" ADD COLUMN IF NOT EXISTS "moonboard_link_detected" text;
   -- Board presence: serials are not globally unique (the supplier reuses them),
   -- so a serial may map to many active boards. We only forbid one owner binding
   -- the same serial to two of their own boards OF THE SAME TYPE — Aurora runs a

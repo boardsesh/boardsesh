@@ -2024,6 +2024,13 @@
       "when": 1793692597289,
       "tag": "0288_user_deleted_upstream_playlists",
       "breakpoints": true
+    },
+    {
+      "idx": 289,
+      "version": "7",
+      "when": 1793707540166,
+      "tag": "0289_moonboard_link_mode",
+      "breakpoints": true
     }
   ]
 }

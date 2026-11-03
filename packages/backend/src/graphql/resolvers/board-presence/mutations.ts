@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type {
   ConnectionContext,
@@ -7,7 +7,7 @@ import type {
   ResolvedBoard,
   BoardPresenceClimb,
 } from '@boardsesh/shared-schema';
-import { normaliseSetIds } from '@boardsesh/board-config';
+import { nextDetectedMoonboardLinkMode, normaliseSetIds } from '@boardsesh/board-config';
 import { getGradeColor } from '@boardsesh/board-constants';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -17,6 +17,7 @@ import {
   AdvertisedBoardTypeSchema,
   BoardPresenceAngleSchema,
   BoardPresenceConfigInputSchema,
+  MoonboardLinkModeSchema,
   ReportBoardClimbInputSchema,
 } from '../../../validation/schemas';
 import { generateUniqueSlug } from '../social/boards';
@@ -43,6 +44,7 @@ import {
   findOwnActiveBoardByConfig,
   findReachableActiveBoardByUuid,
   findSelectedBoardForConnect,
+  isSharedConfigFeedBoard,
   hasSyncedGymBoardForSerial,
   isDuplicateBoardSerialError,
   isSyncedGymListing,
@@ -1147,6 +1149,65 @@ export const boardPresenceMutations = {
       });
     }
     return cleared;
+  },
+
+  /**
+   * MoonBoard link-mode detection (#7220). The phone reads the controller's
+   * write characteristic on an iOS connect and reports what it implies; see
+   * `detectMoonboardLinkMode`. Writes ONLY `moonboard_link_detected`:
+   * - never `sync_frozen_at` (detection is not human curation);
+   * - never the person's `moonboard_link_mode` (the effective mode reads that first);
+   * - only toward relay (`nextDetectedMoonboardLinkMode`), and atomically, so two
+   *   phones racing a `multi` and a `relay` can never leave `multi` behind.
+   * Refused on shared per-config feeds: one of those groups climbers across gyms.
+   */
+  reportMoonboardLinkDetected: async (
+    _: unknown,
+    { boardId, detected }: { boardId: number; detected: string },
+    ctx: ConnectionContext,
+  ): Promise<boolean> => {
+    // Anonymous callers share one bucket per IP (#2863), so a gym behind one NAT
+    // needs headroom: every iOS connect at that gym may report.
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 10 : 60, 'reportMoonboardLinkDetected');
+    assertValidBoardId(boardId);
+    const validatedDetected = validateInput(MoonboardLinkModeSchema, detected, 'detected');
+    const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
+
+    const [board, isMember] = await Promise.all([
+      db
+        .select({
+          boardType: dbSchema.userBoards.boardType,
+          ownerId: dbSchema.userBoards.ownerId,
+          slug: dbSchema.userBoards.slug,
+          moonboardLinkDetected: dbSchema.userBoards.moonboardLinkDetected,
+        })
+        .from(dbSchema.userBoards)
+        .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
+        .limit(1)
+        .then((rows) => rows[0]),
+      pubsub.hasBoardMembership(String(boardId), emitterId),
+    ]);
+    if (!board) throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    if (!isMember) throw new GraphQLError('Not connected to this board');
+    if (board.boardType !== 'moonboard' || isSharedConfigFeedBoard(board)) return false;
+    if (nextDetectedMoonboardLinkMode(board.moonboardLinkDetected, validatedDetected) === null) return false;
+
+    const detectedColumn = dbSchema.userBoards.moonboardLinkDetected;
+    const updated = await db
+      .update(dbSchema.userBoards)
+      // Deliberately NOT updatedAt / syncFrozenAt: nothing a person edited.
+      .set({ moonboardLinkDetected: validatedDetected })
+      .where(
+        and(
+          eq(dbSchema.userBoards.id, boardId),
+          isNull(dbSchema.userBoards.deletedAt),
+          validatedDetected === 'relay'
+            ? or(isNull(detectedColumn), eq(detectedColumn, 'multi'))
+            : isNull(detectedColumn),
+        ),
+      )
+      .returning({ id: dbSchema.userBoards.id });
+    return updated.length > 0;
   },
 
   /**
