@@ -269,9 +269,50 @@ MoonBoard, home boards as well as gyms** (owner, 2026-11-03). It sits under Sett
 Bluetooth when driving ends, on a MoonBoard with the flag on. The phone sends it with `setBoardRelayAccepting`
 right after its first accepted report as holder of a Relay mode MoonBoard, and again whenever it changes.
 
-**Not covered yet.** The other connect paths (WallScrubber, the empty-wall Connect, create-climb, the picker's no
-lights offer, the Android notification bulb) and every native path (Lock Screen Next / Previous, iOS
-`ReconnectBoardIntent`) still connect; a later PR gates them.
+### Relay mode (#7220): the connect gates
+
+Every JS path that would otherwise scan runs one gate first: `connectBlockedByRelayHolder` (`relay-holder.ts`,
+table-tested over surface × link mode × holder state × flag). It is `relayHolderFor` with two differences:
+
+- **A crewmate's hold blocks too.** `relayHolderFor` hands a crewmate's hold to the session queue; for a connect
+  that doesn't matter, the box still takes one phone.
+- **This phone's own unreleased hold doesn't.** A holder on the account this phone saw holding the board while its
+  own link was up (`lastLocalHolderUserId`, scoped to the board and session) is a release still on its way, so the
+  connect goes ahead. The climber's second phone has no such memory and is blocked.
+
+Never blocked, today's behaviour: flag off, Several phones, a non-MoonBoard, this phone linked, no holder, an idle
+holder (15 min), or a suppressed path (`NO_HOLDER` / `SELF_HOLDER` / `HOLDER_UNREACHABLE` until presence moves).
+
+`BluetoothProvider.guardRelayConnect(surface)` reads the gate at the tap (the idle clock is the tap's). When it
+blocks, nothing scans, a toast says who has the board, and the tap is counted as Board Connect Tapped with
+`blockedByRelayHolder: true`:
+
+| Path | Blocked behaviour |
+| --- | --- |
+| On the Wall kiosk Connect (`WallScrubber`) | "Sam's phone has the board · Your picks light through it" |
+| Wall display empty-state Connect (`WallEmptyState`) | Same line |
+| Create-climb lightbulb | "Sam's phone has the board · Drafts don't light through it"; the editor stays usable. A draft isn't in the catalog, so `relayBoardClimb` would answer `CLIMB_UNAVAILABLE` |
+| Android notification bulb, reconnect (`live-activity-bridge.tsx`) | The holder line; never takes the board back |
+| Picker Scan again | Closes the picker, holder line |
+| Picker "This wall has no lights" (`takeVirtualWall`) | Refused with the holder line: a virtual take would steal the holder slot. Not counted as a connect tap |
+| Put on {board} after a move (`connectAfterBoardSwitch`) | Waits up to 4 s for presence to bind the new board, reads its holder from the server (`fetchHolderForBoard`), then: no scan, and the current climb goes to the holder (`relayClimbThroughHolder`) with the holder line. When it can't go yet (presence hasn't seeded the holder, or a crewmate holds it and the queue lights it) the line reads "Sam's phone has the board · Put on board sends it there". Past 4 s, a failed read, or a board with no uuid, it connects as today. The picker's mismatch switch skips the check: its box was just seen advertising |
+| First-connect card (`FirstConnectCard`) | Hidden: a held Relay mode board isn't a free wall |
+
+An anonymous holder reads as "Someone's phone has the board". The notification bulb's toast shows only if the app
+is in front; in the background the tap simply does nothing (the native notification is PR 6). A blocked Put on
+{board} sends no second Board Connect Tapped: its tap was counted before the move, without `blockedByRelayHolder`,
+and no Bluetooth outcome event follows it. The bulbs, Put on board and the drives already
+relay through `relayHolderFor` and need no gate.
+
+**Not covered yet.** Every native path (Lock Screen Next / Previous, iOS `ReconnectBoardIntent`, the Android
+notification's drawing) still connects; a later PR gates them.
+
+**Home crews land on different board ids.** A crew session on a home MoonBoard (no gym, with lights) broadcasts the
+positional tuple path (`buildSessionBoardPath`), so a joiner binds presence to their own `user_boards` row, not the
+owner's. The holder's `board:{id}:writer` is then invisible to crewmates, and neither the relay nor this gate sees
+it. Sending `/b/{slug}/{angle}` for every slugged board fixes the id, but a private home board then fails the join
+(`fetchBoardBySlug`) and the presence bind (`canAccessBoard`) for crewmates. It needs session membership to grant
+read access to the session's board first; tracked on #7220.
 
 ## Known limitations
 

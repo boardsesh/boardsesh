@@ -1511,6 +1511,10 @@ export function useCreateClimbScreen({
       void bluetooth.disconnect();
       return;
     }
+    // Relay mode (#7220): another phone holds this Relay mode MoonBoard. A
+    // draft isn't in the board's catalog, so it can't light through that
+    // phone either: say who has the board and keep editing without lights.
+    if (bluetooth.guardRelayConnect?.('create_climb')) return;
     trackBoardConnectTapped({ surface: 'create_climb', boardName: bluetooth.boardName, reconnect: false });
     void bluetooth.connect(currentFrameBleString());
   }, [bluetooth, currentFrameBleString, wallMatchesEditor, editSizeMismatch, showToast, t]);

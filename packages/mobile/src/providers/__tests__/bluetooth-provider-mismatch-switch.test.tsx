@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, Fragment, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
-import type { BoardPresenceClimb, UserBoard } from '@boardsesh/shared-schema';
+import type { BoardConnectionHolder, BoardPresenceClimb, UserBoard } from '@boardsesh/shared-schema';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleConnectionHandle, PickerState } from '../../lib/ble/use-board-bluetooth';
 
@@ -72,6 +72,11 @@ const presence = vi.hoisted(() => ({
   enabled: false,
   boardId: null as number | null,
   currentClimb: null as BoardPresenceClimb | null,
+  // Relay mode (#7220): the connect gate's holder, binding and server read.
+  holder: null as BoardConnectionHolder | null,
+  boardUuid: null as string | null,
+  fetchHolderForBoard: vi.fn(async (): Promise<BoardConnectionHolder | null | undefined> => undefined),
+  relayModeEnabled: false,
   reportClimbForBoard: vi.fn(async () => true),
   reportDisconnectForBoard: vi.fn(async () => true),
   showUndoWallChangeSnackbar: vi.fn(),
@@ -202,13 +207,21 @@ vi.mock('@boardsesh/board-presence-react', () => ({
     currentClimb: presence.currentClimb,
     previousClimb: null,
     undoTarget: null,
+    holder: presence.holder,
+    lastHolderChangeSeq: 0,
     isLive: false,
   }),
+}));
+vi.mock('../feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../feature-flags-provider')>()),
+  useMoonboardRelayModeEnabled: () => presence.relayModeEnabled,
 }));
 vi.mock('../board-presence-provider', () => ({
   useBoardPresenceControls: () => ({
     enabled: presence.enabled,
     boardId: presence.boardId,
+    boardUuid: presence.boardUuid,
+    fetchHolderForBoard: presence.fetchHolderForBoard,
     resolveAndBindBoard: vi.fn(async () => null),
     resolveAndBindBoardByConfig: vi.fn(async () => null),
     reportClimbForBoard: presence.reportClimbForBoard,
@@ -1826,5 +1839,144 @@ describe('BluetoothProvider spill skip', () => {
       expect.anything(),
       expect.objectContaining({ sendSource: 'auto', climbUuid: 'lit' }),
     );
+  });
+});
+
+describe('BluetoothProvider relay connect gate (#7220)', () => {
+  const SAM: BoardConnectionHolder = {
+    userId: 'sam',
+    displayName: 'Sam',
+    avatarUrl: null,
+    lastSentAt: new Date().toISOString(),
+  };
+  const MOON_BOARD = makeBoard({
+    uuid: 'board-moon',
+    boardType: 'moonboard',
+    layoutId: 2,
+    sizeId: 1,
+    setIds: '1,2',
+    name: 'Home MoonBoard',
+    serialNumber: null,
+  });
+  const RELAY_MOON_PROPS = {
+    boardName: 'moonboard',
+    layoutId: 2,
+    sizeId: 1,
+    setIds: '1,2',
+    boardUuid: 'board-moon',
+    moonboardLinkMode: { mode: 'relay' as const, source: 'detected' as const },
+  };
+
+  beforeEach(() => {
+    analytics.track.mockClear();
+    toast.showToast.mockClear();
+    bluetooth.state.isConnected = false;
+    bluetooth.state.loading = false;
+    bluetooth.state.pickerState = null;
+    bluetooth.state.reconnectSerialForCurrentBoard = null;
+    bluetooth.state.reconnectDeviceIdForCurrentBoard = 'moon-device';
+    bluetooth.state.connect.mockClear();
+    bluetooth.state.connect.mockResolvedValue(true);
+    presence.enabled = true;
+    presence.boardId = 7;
+    presence.boardUuid = 'board-moon';
+    presence.holder = null;
+    presence.relayModeEnabled = true;
+    presence.fetchHolderForBoard.mockReset();
+    presence.fetchHolderForBoard.mockResolvedValue(undefined);
+    capturedBluetooth = null;
+  });
+
+  afterEach(() => {
+    cleanup();
+    presence.enabled = false;
+    presence.boardId = null;
+    presence.boardUuid = null;
+    presence.holder = null;
+    presence.relayModeEnabled = false;
+    bluetooth.state.reconnectDeviceIdForCurrentBoard = null;
+  });
+
+  function renderOn(props: Record<string, unknown>) {
+    return render(createElement(BluetoothProvider, { ...props, children: createElement(BluetoothProbe) }));
+  }
+
+  it('blocks the Wall display Connect while another phone holds the board, and counts the tap', () => {
+    presence.holder = SAM;
+    renderOn(RELAY_MOON_PROPS);
+    let blocked: boolean | undefined;
+    act(() => {
+      blocked = capturedBluetooth?.guardRelayConnect?.('wall_kiosk');
+    });
+    expect(blocked).toBe(true);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.boardPresence.relayHolderHasBoard', 'info');
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Connect Tapped',
+      expect.objectContaining({ surface: 'wall_kiosk', blockedByRelayHolder: true }),
+    );
+  });
+
+  it('lets the connect through with the flag off', () => {
+    presence.holder = SAM;
+    presence.relayModeEnabled = false;
+    renderOn(RELAY_MOON_PROPS);
+    expect(capturedBluetooth?.guardRelayConnect?.('wall_kiosk')).toBe(false);
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it('lets the connect through on a Several phones MoonBoard', () => {
+    presence.holder = SAM;
+    renderOn({ ...RELAY_MOON_PROPS, moonboardLinkMode: { mode: 'multi', source: 'detected' } });
+    expect(capturedBluetooth?.guardRelayConnect?.('wall_kiosk')).toBe(false);
+  });
+
+  it('says a draft does not light through the holder in the editor', () => {
+    presence.holder = { ...SAM, userId: null, displayName: null };
+    renderOn(RELAY_MOON_PROPS);
+    expect(capturedBluetooth?.guardRelayConnect?.('create_climb')).toBe(true);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.boardPresence.relayHolderHasBoardDraftAnonymous', 'info');
+  });
+
+  it('refuses the no-lights take on a held Relay mode board', () => {
+    presence.holder = SAM;
+    renderOn(RELAY_MOON_PROPS);
+    act(() => {
+      capturedBluetooth?.takeVirtualWall();
+    });
+    expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.boardPresence.relayHolderHasBoard', 'info');
+  });
+
+  it("doesn't scan after a move to a Relay mode MoonBoard the server says another phone holds", async () => {
+    presence.fetchHolderForBoard.mockResolvedValue(SAM);
+    const { rerender } = render(
+      createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement(BluetoothProbe) }),
+    );
+    let connected: Promise<boolean> | undefined;
+    act(() => {
+      connected = capturedBluetooth?.connectAfterBoardSwitch(MOON_BOARD);
+    });
+    rerender(createElement(BluetoothProvider, { ...RELAY_MOON_PROPS, children: createElement(BluetoothProbe) }));
+    await expect(connected).resolves.toBe(false);
+    expect(presence.fetchHolderForBoard).toHaveBeenCalledWith(7, 'board-moon');
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    // No relay engine is mounted here, so nothing went: the line points at Put on board.
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.boardPresence.relayHolderHasBoardPutOn', 'info');
+  });
+
+  it('connects after a move to a Relay mode MoonBoard no one holds', async () => {
+    presence.fetchHolderForBoard.mockResolvedValue(null);
+    const { rerender } = render(
+      createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement(BluetoothProbe) }),
+    );
+    let connected: Promise<boolean> | undefined;
+    act(() => {
+      connected = capturedBluetooth?.connectAfterBoardSwitch(MOON_BOARD);
+    });
+    rerender(createElement(BluetoothProvider, { ...RELAY_MOON_PROPS, children: createElement(BluetoothProbe) }));
+    await expect(connected).resolves.toBe(true);
+    expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-device', {
+      afterBoardSwitch: true,
+    });
   });
 });

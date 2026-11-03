@@ -116,9 +116,10 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
     drivesInSession,
     inSession,
   });
-  const { bluetooth, pressAction, pending, holderIsAuthoritative, onPress, connect } = useLightbulbControl({
-    surface: 'first_connect_card',
-  });
+  const { bluetooth, pressAction, pending, holderIsAuthoritative, boardRelayHolder, onPress, connect } =
+    useLightbulbControl({
+      surface: 'first_connect_card',
+    });
   const [attempt, setAttempt] = useState<ConnectAttempt>('idle');
   const mountedRef = useRef(true);
   useEffect(
@@ -135,7 +136,11 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
     dismissedThisLaunch: cardDismissedThisLaunch,
     launchId: FIRST_CONNECT_LAUNCH_ID,
     cardLaunchIds: device?.cardLaunchIds ?? [],
-    wallFree: !holderIsAuthoritative && !(bluetooth?.wallHeldByOtherUser ?? false),
+    // Relay mode (#7220): a Relay mode MoonBoard another phone holds isn't
+    // free either. Its box takes one phone, so Connect could only scan for
+    // nothing; this phone's picks light through that phone instead.
+    wallFree:
+      !holderIsAuthoritative && (boardRelayHolder ?? null) === null && !(bluetooth?.wallHeldByOtherUser ?? false),
   });
 
   // Counts this launch against the card's two. A launch it already appeared on

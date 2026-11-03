@@ -447,7 +447,11 @@ from #7202.
 `Board Connect Tapped` gains `boardUuid` (the board the connect is for; the
 board moved to on a move to another gym board) and `phoneNeverConnected`, both
 absent when not known. A newcomer's first connect is `phoneNeverConnected =
-true`. `Drive Mode Ended` already carries `boardType` and `windowSec` (added for the
+true`. Relay mode (#7220) adds `blockedByRelayHolder: true` on a tap that didn't
+scan because another phone holds a Relay mode MoonBoard; filter it out when
+counting connect attempts. A Put on {board} move blocked that way is the one
+exception: its tap is counted before the move without the flag, and no outcome
+event follows, so it reads as an abandoned connect. `Drive Mode Ended` already carries `boardType` and `windowSec` (added for the
 MoonBoard keep-lighting field test; since 2026-11 a MoonBoard takes the same Stop
 driving after as every board), and a window that ran out reports `durationSec`
 to its end even when the app noticed late.

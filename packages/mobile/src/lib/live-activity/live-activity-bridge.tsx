@@ -230,7 +230,8 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // Android-only: a tap on the foreground-service notification's lightbulb. The
   // tri-state-driven receiver tells us which action it wants:
   //  - reconnect (bulb was out): connect to the last board, taking it back from a
-  //    peer (Aurora is last-connection-wins). The BLE auto-sender then re-lights
+  //    peer (Aurora is last-connection-wins). Not on a Relay mode MoonBoard
+  //    another phone holds (#7220): its box takes one phone. The BLE auto-sender then re-lights
   //    the current climb on connect.
   //  - reassert (bulb was lit): re-push the current climb to the wall.
   //  - stopDriving (bulb was lit while this phone drove): stop driving, as the
@@ -254,6 +255,16 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
         // never reaches either outcome event.
         const reconnectSerial = bluetoothCtx.reconnectSerialForCurrentBoard ?? undefined;
         const reconnectDeviceId = bluetoothCtx.reconnectDeviceIdForCurrentBoard ?? undefined;
+        // Relay mode (#7220): never take a Relay mode MoonBoard back from the
+        // phone that holds it. The original box takes one phone and stops
+        // advertising, so this connect could only scan for nothing; the
+        // provider says who has the board instead.
+        if (
+          bluetoothCtx.guardRelayConnect?.('notification', {
+            reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
+          })
+        )
+          return;
         trackBoardConnectTapped({
           surface: 'notification',
           boardName: bluetoothCtx.boardName,

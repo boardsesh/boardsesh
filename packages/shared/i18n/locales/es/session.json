@@ -569,6 +569,12 @@
       "wallTakenToast": "Tienes el muro",
       "relayerDriving": "{{name}} está al mando",
       "relayerDrivingAnonymous": "Alguien en este plafón está al mando",
+      "relayHolderHasBoard": "El móvil de {{name}} tiene el plafón · Lo que elijas se enciende a través de él",
+      "relayHolderHasBoardAnonymous": "Otro móvil tiene el plafón · Lo que elijas se enciende a través de él",
+      "relayHolderHasBoardDraft": "El móvil de {{name}} tiene el plafón · Los borradores no se encienden a través de él",
+      "relayHolderHasBoardDraftAnonymous": "Otro móvil tiene el plafón · Los borradores no se encienden a través de él",
+      "relayHolderHasBoardPutOn": "El móvil de {{name}} tiene el plafón · Poner en el plafón lo envía allí",
+      "relayHolderHasBoardPutOnAnonymous": "Otro móvil tiene el plafón · Poner en el plafón lo envía allí",
       "wallReleasedToast": "El muro vuelve a estar libre",
       "kiosk": {
         "liveBadge": "En el muro ahora",

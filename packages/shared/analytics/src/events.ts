@@ -520,7 +520,9 @@ export const SHARED_EVENTS = {
   // the selected gym or saved board, or the one a move to another gym board
   // goes to; absent with no board identity) and `phoneNeverConnected` (true
   // until this phone's first connect; absent while its history isn't loaded),
-  // to read a newcomer's first connect apart from a regular's.
+  // to read a newcomer's first connect apart from a regular's. Relay mode
+  // (#7220): `blockedByRelayHolder: true` when another phone holds a Relay mode
+  // MoonBoard, so the tap didn't scan and said who has the board instead.
   BoardConnectTapped: 'Board Connect Tapped',
   // The Bluetooth controls sheet (Re-light / Turn off all lights / Disconnect)
   // opened. Props: { surface: 'board_control_indicator' | 'toolbar' | 'app_bar' |

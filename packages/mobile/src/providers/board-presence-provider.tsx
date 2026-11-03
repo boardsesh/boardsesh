@@ -35,6 +35,7 @@ import { AppState } from 'react-native';
 import { BoardPresenceProvider, useBoardPresenceActions, type RelayClimbArgs } from '@boardsesh/board-presence-react';
 import type {
   BoardCandidate,
+  BoardConnectionHolder,
   ClimbQueueItemInput,
   RelayBoardClimbResult,
   ResolvedBoard,
@@ -217,6 +218,16 @@ type BoardPresenceControlsValue = {
    * doesn't hold the board.
    */
   setRelayAcceptingForBoard: (boardId: number, accepting: boolean) => Promise<boolean>;
+  /**
+   * Relay mode (#7220): read a board's holder from the server, for the
+   * connect gate after a move to a board presence hasn't seeded yet. Resolves
+   * undefined when no transport is available or the read fails. Optional for
+   * test doubles.
+   */
+  fetchHolderForBoard?: (
+    boardId: number,
+    boardUuid?: string | null,
+  ) => Promise<BoardConnectionHolder | null | undefined>;
   /**
    * Tell the backend this client released its board hold (explicit lightbulb-off
    * or a detected BLE drop) so the "who's connected" indicator frees. No-op when
@@ -748,6 +759,23 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     return activeClient.relayClimb(args);
   }, []);
 
+  const fetchHolderForBoard = useCallback(
+    async (
+      targetBoardId: number,
+      targetBoardUuid?: string | null,
+    ): Promise<BoardConnectionHolder | null | undefined> => {
+      const activeClient = clientRef.current;
+      if (!enabledRef.current || activeClient === null || !activeClient.fetchConnection) return undefined;
+      try {
+        return await activeClient.fetchConnection(targetBoardId, targetBoardUuid ?? undefined);
+      } catch (error) {
+        console.warn('[board-presence] fetchConnection for the relay gate failed', error);
+        return undefined;
+      }
+    },
+    [],
+  );
+
   const setRelayAcceptingForBoard = useCallback(async (targetBoardId: number, accepting: boolean): Promise<boolean> => {
     const activeClient = clientRef.current;
     if (!enabledRef.current || activeClient === null) return false;
@@ -896,6 +924,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       reportClimbForBoard,
       relayClimbForBoard,
       setRelayAcceptingForBoard,
+      fetchHolderForBoard,
       reportDisconnectForBoard,
       reportClearForBoard,
       resetPresence,
@@ -903,6 +932,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     [
       relayClimbForBoard,
       setRelayAcceptingForBoard,
+      fetchHolderForBoard,
       enabled,
       visibleBoardId,
       visibleBoardUuid,

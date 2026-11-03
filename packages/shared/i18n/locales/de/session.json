@@ -569,6 +569,12 @@
       "wallTakenToast": "Du hast die Wand",
       "relayerDriving": "{{name}} steuert das Board",
       "relayerDrivingAnonymous": "Jemand an diesem Board steuert es",
+      "relayHolderHasBoard": "Das Handy von {{name}} hat das Board · Deine Auswahl leuchtet darüber",
+      "relayHolderHasBoardAnonymous": "Ein anderes Handy hat das Board · Deine Auswahl leuchtet darüber",
+      "relayHolderHasBoardDraft": "Das Handy von {{name}} hat das Board · Entwürfe leuchten darüber nicht",
+      "relayHolderHasBoardDraftAnonymous": "Ein anderes Handy hat das Board · Entwürfe leuchten darüber nicht",
+      "relayHolderHasBoardPutOn": "Das Handy von {{name}} hat das Board · „Am Board beleuchten“ schickt ihn dorthin",
+      "relayHolderHasBoardPutOnAnonymous": "Ein anderes Handy hat das Board · „Am Board beleuchten“ schickt ihn dorthin",
       "wallReleasedToast": "Die Wand ist wieder frei",
       "kiosk": {
         "liveBadge": "Jetzt an der Wand",

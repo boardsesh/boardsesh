@@ -569,6 +569,12 @@
       "wallTakenToast": "Il pannello è tuo",
       "relayerDriving": "{{name}} guida il pannello",
       "relayerDrivingAnonymous": "Qualcuno su questo pannello lo sta guidando",
+      "relayHolderHasBoard": "Il telefono di {{name}} ha il pannello · I blocchi che scegli si illuminano tramite lui",
+      "relayHolderHasBoardAnonymous": "Un altro telefono ha il pannello · I blocchi che scegli si illuminano tramite lui",
+      "relayHolderHasBoardDraft": "Il telefono di {{name}} ha il pannello · Le bozze non si illuminano tramite lui",
+      "relayHolderHasBoardDraftAnonymous": "Un altro telefono ha il pannello · Le bozze non si illuminano tramite lui",
+      "relayHolderHasBoardPutOn": "Il telefono di {{name}} ha il pannello · Illumina il pannello lo manda lì",
+      "relayHolderHasBoardPutOnAnonymous": "Un altro telefono ha il pannello · Illumina il pannello lo manda lì",
       "wallReleasedToast": "La parete è di nuovo libera",
       "kiosk": {
         "liveBadge": "Ora in parete",
