@@ -656,6 +656,11 @@ export async function redactBoardClimbs(
   viewerId: ViewerId,
   boardId: number,
   wallUuid?: string | null,
+  // Who may read the climb CONTENT (name, frames, grade). Defaults to the
+  // viewer; a wall device passes its key's owner here (`readViewerIdForBoard`) while
+  // `viewerId` stays anonymous, so the device sees the owner's climbs without
+  // seeing the climbers the owner may see.
+  contentViewerId: ViewerId = viewerId,
 ): Promise<BoardPresenceClimb[]> {
   const climbUuids = [...new Set(climbs.map((climb) => climb.climbUuid))];
   const readableClimbs =
@@ -667,10 +672,10 @@ export async function redactBoardClimbs(
           .where(
             and(
               inArray(boardClimbs.uuid, climbUuids),
-              ownedOrPublicClimbCondition(boardClimbs, viewerId),
+              ownedOrPublicClimbCondition(boardClimbs, contentViewerId),
               sprayClimbVisibilityCondition(
                 { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
-                viewerId,
+                contentViewerId,
                 wallUuid,
               ),
             ),
@@ -735,6 +740,8 @@ export async function redactBoardStats(
   viewerId: string | null | undefined,
   boardId: number,
   wallUuid?: string | null,
+  // Content reader, as in redactBoardClimbs; identity stays on `viewerId`.
+  contentViewerId: ViewerId = viewerId,
 ): Promise<BoardPresenceStats> {
   const hardest = stats.hardestSend;
   if (!hardest) return stats;
@@ -750,7 +757,7 @@ export async function redactBoardStats(
     .from(boardClimbs)
     .where(eq(boardClimbs.uuid, hardest.climbUuid))
     .limit(1);
-  if (catalogClimb && !(await canReadClimbContent(hardest.climbUuid, viewerId, wallUuid))) {
+  if (catalogClimb && !(await canReadClimbContent(hardest.climbUuid, contentViewerId, wallUuid))) {
     return { ...stats, hardestSend: null };
   }
   // Preserve the missing-catalog grade/Unknown fallback, without replaying a
@@ -783,19 +790,29 @@ export async function redactBoardHolder(
   return { ...holder, userId: null, displayName: null, avatarUrl: null };
 }
 
+/**
+ * Redact one `boardNowPlaying` event. `viewerId` decides whose names are shown
+ * (senders, the holder, the hardest send); `contentViewerId` decides which
+ * climbs' names and frames are shown, and defaults to `viewerId`. They differ
+ * only for a wall device, whose content reader is its key's owner.
+ */
 export async function redactBoardEvent(
   event: BoardPresenceEvent,
   viewerId: string | null | undefined,
   boardId: number,
   wallUuid?: string | null,
+  contentViewerId: ViewerId = viewerId,
 ): Promise<BoardPresenceEvent> {
   switch (event.__typename) {
     case 'BoardClimbSet':
-      return { ...event, climb: (await redactBoardClimbs([event.climb], viewerId, boardId, wallUuid))[0] };
+      return {
+        ...event,
+        climb: (await redactBoardClimbs([event.climb], viewerId, boardId, wallUuid, contentViewerId))[0],
+      };
     case 'BoardHistoryUpdated':
-      return { ...event, climbs: await redactBoardClimbs(event.climbs, viewerId, boardId, wallUuid) };
+      return { ...event, climbs: await redactBoardClimbs(event.climbs, viewerId, boardId, wallUuid, contentViewerId) };
     case 'BoardStatsUpdated':
-      return { ...event, stats: await redactBoardStats(event.stats, viewerId, boardId, wallUuid) };
+      return { ...event, stats: await redactBoardStats(event.stats, viewerId, boardId, wallUuid, contentViewerId) };
     case 'BoardConnectionChanged': {
       return { ...event, holder: await redactBoardHolder(event.holder, viewerId, boardId) };
     }

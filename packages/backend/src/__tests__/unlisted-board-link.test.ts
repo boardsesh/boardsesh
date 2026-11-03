@@ -35,6 +35,11 @@ import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
 import { boardPresenceSubscriptions } from '../graphql/resolvers/board-presence/subscription';
+import { controllerBoardQueries } from '../graphql/resolvers/controller/boards';
+import {
+  CONTROLLER_RECHECK_MS,
+  resetControllerOwnerChecksForTests,
+} from '../graphql/resolvers/climbs/spray-read-access';
 import {
   boardQueuePreviewQueries,
   boardQueuePreviewSubscriptions,
@@ -1123,4 +1128,274 @@ describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlis
       }
     },
   );
+});
+
+/**
+ * A wall device (an ESP32 controller, or an external projector such as
+ * LZRvision) connects with `connectionParams.controllerApiKey`. Its context has
+ * no `userId`; `controllerOwnerUserId` carries the key's owner, which
+ * `readViewerIdForBoard` honours only on a board that owner OWNS and only while
+ * the registration still exists. These pin both halves: the owner's key reads the
+ * owner's private wall, and a key opens nothing beyond its owner's own boards.
+ */
+describe('a wall device key', () => {
+  /** A context as websocket/setup.ts builds it, with no registration behind it. */
+  const unregisteredDeviceCtx = (ownerId: string): ConnectionContext =>
+    ({
+      connectionId: `${PREFIX}device-${counter++}`,
+      transport: 'ws',
+      isAuthenticated: false,
+      controllerId: uuidv4(),
+      controllerApiKey: `${PREFIX}unregistered-${counter++}`,
+      controllerOwnerUserId: ownerId,
+    }) as ConnectionContext;
+
+  /** A real registration, so the owner checks can re-read it. */
+  async function deviceCtx(ownerId: string): Promise<ConnectionContext> {
+    const apiKey = `${PREFIX}key-${counter++}`;
+    const [controller] = await db
+      .insert(dbSchema.esp32Controllers)
+      .values({ userId: ownerId, apiKey, boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1' })
+      .returning({ id: dbSchema.esp32Controllers.id });
+    return {
+      ...unregisteredDeviceCtx(ownerId),
+      controllerId: controller.id,
+      controllerApiKey: apiKey,
+    } as ConnectionContext;
+  }
+
+  const makePrivateSprayWall = (name: string) =>
+    makeSprayBoard((boardName) => insertBoard(boardName, { isPublic: false }), name);
+
+  /** The owner as a climber whose account is private: named to themselves only. */
+  const makeOwnerPrivate = () =>
+    db.insert(dbSchema.userProfiles).values({ userId: OWNER, isPrivate: true }).onConflictDoNothing();
+
+  /** Open a now-playing stream with the pubsub channel captured, so a test can push. */
+  async function openFeed(boardId: number, ctx: ConnectionContext) {
+    let emit: ((event: BoardPresenceEvent) => void) | undefined;
+    vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(async (_boardId, listener) => {
+      emit = listener;
+      return () => {};
+    });
+    vi.spyOn(pubsub, 'getActiveBoardClear').mockResolvedValue(null);
+    const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, { boardId }, ctx);
+    const next = () => iterator.next();
+    const firstRead = next();
+    await vi.waitFor(() => expect(emit).toBeDefined());
+    const push = (event: BoardPresenceEvent) => emit?.(event);
+    return { iterator, firstRead, next, push };
+  }
+
+  beforeEach(() => {
+    resetControllerOwnerChecksForTests();
+  });
+
+  it("streams the owner's private wall with climb details, and keeps sender names signed-out", async () => {
+    await makeOwnerPrivate();
+    const board = await makePrivateSprayWall('Device Private Wall');
+    const display = {
+      ...(await makeSprayClimbDisplay(board)),
+      sentByUserId: OWNER,
+      sentByDisplayName: 'Owner Name',
+      sentByAvatarUrl: 'https://avatar.example/owner.png',
+    };
+    const feed = await openFeed(board.id, await deviceCtx(OWNER));
+    try {
+      feed.push({ __typename: 'BoardClimbSet', climb: display });
+      const event = (await feed.firstRead).value?.boardNowPlaying;
+      expect(event?.__typename === 'BoardClimbSet' ? event.climb : null).toMatchObject({
+        name: display.name,
+        frames: display.frames,
+        sentByUserId: null,
+        sentByDisplayName: null,
+        sentByAvatarUrl: null,
+      });
+
+      feed.push({
+        __typename: 'BoardStatsUpdated',
+        seq: 2,
+        stats: {
+          climbsSentCount: 1,
+          distinctClimbersCount: 1,
+          hardestGrade: 'V5',
+          topGrade: 'V5',
+          lastSentAt: display.sentAt,
+          hardestSend: {
+            climbUuid: display.climbUuid,
+            name: display.name,
+            grade: 'V5',
+            sentByUserId: OWNER,
+            sentByDisplayName: 'Owner Name',
+            sentByAvatarUrl: null,
+            sentAt: display.sentAt,
+          },
+        },
+      });
+      const stats = (await feed.next()).value?.boardNowPlaying;
+      expect(stats?.__typename === 'BoardStatsUpdated' ? stats.stats.hardestSend : null).toMatchObject({
+        name: display.name,
+        sentByUserId: null,
+        sentByDisplayName: null,
+      });
+    } finally {
+      await feed.iterator.return(undefined);
+    }
+  });
+
+  it("backfills the current climb for the owner's key without the board uuid, names signed-out", async () => {
+    await makeOwnerPrivate();
+    const board = await makePrivateSprayWall('Device Backfill Wall');
+    const display = { ...(await makeSprayClimbDisplay(board)), sentByUserId: OWNER, sentByDisplayName: 'Owner Name' };
+    vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValue([display]);
+    const backfills = [
+      (ctx: ConnectionContext) => boardPresenceQueries.boardRecentClimbs(undefined, { boardId: board.id }, ctx),
+      (ctx: ConnectionContext) => boardPresenceQueries.boardRecentHistory(undefined, { boardId: board.id }, ctx),
+    ];
+    const ownerKey = await deviceCtx(OWNER);
+    const strangerKey = await deviceCtx(STRANGER);
+    for (const backfill of backfills) {
+      const climbs = await backfill(ownerKey);
+      expect(climbs.find((climb) => climb.climbUuid === display.climbUuid)).toMatchObject({
+        name: display.name,
+        frames: display.frames,
+        sentByUserId: null,
+        sentByDisplayName: null,
+      });
+      // The signed-in owner still sees their own name: the key is what is anonymous.
+      const ownerClimbs = await backfill(authCtx(OWNER));
+      expect(ownerClimbs.find((climb) => climb.climbUuid === display.climbUuid)).toMatchObject({
+        sentByUserId: OWNER,
+      });
+      for (const ctx of [strangerKey, unregisteredDeviceCtx(OWNER), anonCtx(), authCtx(STRANGER)]) {
+        await expect(backfill(ctx)).rejects.toThrow('Board not found');
+      }
+    }
+  });
+
+  it("refuses another user's key, an unregistered key, an anonymous socket and a signed-in stranger", async () => {
+    const board = await makePrivateSprayWall('Device Foreign Wall');
+    for (const ctx of [await deviceCtx(STRANGER), unregisteredDeviceCtx(OWNER), anonCtx(), authCtx(STRANGER)]) {
+      await expect(openSubscription('now-playing', board.id, undefined, ctx)).rejects.toThrow('Board not found');
+      await expect(openSubscription('now-playing', board.id, board.uuid, ctx)).rejects.toThrow('Board not found');
+    }
+    await expect(openSubscription('now-playing', board.id, undefined, await deviceCtx(OWNER))).resolves.toBe(
+      'subscribed',
+    );
+  });
+
+  it('reads only boards its owner owns, never one the owner was granted', async () => {
+    // OWNER's invite-only board, granted to GRANTEE. Signed in, GRANTEE reads it;
+    // GRANTEE's controller key must not.
+    const board = await makeInviteOnlyBoard('Device Granted Board');
+    await grant(board, GRANTEE);
+    await openSubscription('now-playing', board.id, undefined, authCtx(GRANTEE));
+    await boardPresenceQueries.boardRecentClimbs(undefined, { boardId: board.id }, authCtx(GRANTEE));
+    const granteeKey = await deviceCtx(GRANTEE);
+    await expect(openSubscription('now-playing', board.id, undefined, granteeKey)).rejects.toThrow('Board not found');
+    await expect(boardPresenceQueries.boardRecentClimbs(undefined, { boardId: board.id }, granteeKey)).rejects.toThrow(
+      'Board not found',
+    );
+    // The owner's own key reads it.
+    await expect(openSubscription('now-playing', board.id, undefined, await deviceCtx(OWNER))).resolves.toBe(
+      'subscribed',
+    );
+  });
+
+  it('stops an open stream once the controller is deleted and the recheck window has passed', async () => {
+    const board = await makePrivateSprayWall('Device Revoked Wall');
+    const display = await makeSprayClimbDisplay(board);
+    const ctx = await deviceCtx(OWNER);
+    const feed = await openFeed(board.id, ctx);
+    try {
+      await db.delete(dbSchema.esp32Controllers).where(eq(dbSchema.esp32Controllers.id, String(ctx.controllerId)));
+      // Inside the recheck window the cached registration still stands.
+      feed.push({ __typename: 'BoardClimbSet', climb: display });
+      expect((await feed.firstRead).value?.boardNowPlaying).toMatchObject({ __typename: 'BoardClimbSet' });
+      // Past it (the cache forgotten, as CONTROLLER_RECHECK_MS elapsing does), the
+      // registration is re-read, found gone, and the private wall closes.
+      resetControllerOwnerChecksForTests();
+      const pending = feed.next();
+      feed.push({ __typename: 'BoardClimbSet', climb: { ...display, seq: 2 } });
+      await expect(pending).rejects.toThrow('Board not found');
+    } finally {
+      await feed.iterator.return(undefined).catch(() => undefined);
+    }
+  });
+
+  it('honours the recheck window by time, not only by the test hook', async () => {
+    const ctx = await deviceCtx(OWNER);
+    const board = await makePrivateSprayWall('Device Clock Wall');
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    await boardPresenceQueries.boardRecentClimbs(undefined, { boardId: board.id }, ctx);
+    await db.delete(dbSchema.esp32Controllers).where(eq(dbSchema.esp32Controllers.id, String(ctx.controllerId)));
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000 + CONTROLLER_RECHECK_MS - 1);
+    await boardPresenceQueries.boardRecentClimbs(undefined, { boardId: board.id }, ctx);
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000 + CONTROLLER_RECHECK_MS);
+    await expect(boardPresenceQueries.boardRecentClimbs(undefined, { boardId: board.id }, ctx)).rejects.toThrow(
+      'Board not found',
+    );
+  });
+
+  it('ends the stream once the board changes hands, as it does for a signed-in viewer', async () => {
+    const board = await makePrivateSprayWall('Device Sold Wall');
+    const feed = await openFeed(board.id, await deviceCtx(OWNER));
+    try {
+      await db.update(dbSchema.userBoards).set({ ownerId: STRANGER }).where(eq(dbSchema.userBoards.id, board.id));
+      feed.push({ __typename: 'BoardClimbCleared', clearedAt: new Date().toISOString(), seq: 2 });
+      await expect(feed.firstRead).rejects.toThrow('Board not found');
+    } finally {
+      await feed.iterator.return(undefined).catch(() => undefined);
+    }
+  });
+
+  it("lists only its owner's own live boards, private spray walls included", async () => {
+    const privateWall = await makePrivateSprayWall('Device List Private Wall');
+    const homeBoard = await insertBoard('Device List Home Board', { isPublic: true });
+    const deletedBoard = await insertBoard('Device List Deleted Board', { isPublic: true });
+    await db
+      .update(dbSchema.userBoards)
+      .set({ deletedAt: new Date() })
+      .where(eq(dbSchema.userBoards.id, deletedBoard.id));
+    const archivedWall = await makePrivateSprayWall('Device List Archived Wall');
+    await db
+      .update(dbSchema.sprayWalls)
+      .set({ archivedAt: new Date() })
+      .where(eq(dbSchema.sprayWalls.boardUuid, archivedWall.uuid));
+    const strangersBoard = await insertBoard('Device List Stranger Board', { isPublic: true });
+    await db
+      .update(dbSchema.userBoards)
+      .set({ ownerId: STRANGER })
+      .where(eq(dbSchema.userBoards.id, strangersBoard.id));
+
+    const listed = await controllerBoardQueries.controllerBoards(undefined, undefined, await deviceCtx(OWNER));
+    const listedIds = listed.map((board) => board.boardId);
+    expect(listedIds).toEqual(expect.arrayContaining([privateWall.id, homeBoard.id]));
+    for (const hidden of [deletedBoard, archivedWall, strangersBoard]) expect(listedIds).not.toContain(hidden.id);
+    expect(listed.find((board) => board.boardId === privateWall.id)).toMatchObject({
+      uuid: privateWall.uuid,
+      name: 'Device List Private Wall',
+      boardType: 'spray',
+      hasLeds: false,
+    });
+
+    // The stranger's own key sees the stranger's board and none of the owner's.
+    const strangerList = await controllerBoardQueries.controllerBoards(undefined, undefined, await deviceCtx(STRANGER));
+    expect(strangerList.map((board) => board.boardId)).toEqual([strangersBoard.id]);
+  });
+
+  it('refuses a socket without a controller key, signed in or not, and a revoked key', async () => {
+    for (const ctx of [anonCtx(), authCtx(OWNER), unregisteredDeviceCtx(OWNER)]) {
+      await expect(controllerBoardQueries.controllerBoards(undefined, undefined, ctx)).rejects.toMatchObject({
+        extensions: { code: 'UNAUTHENTICATED' },
+      });
+    }
+    const revoked = await deviceCtx(OWNER);
+    await db
+      .delete(dbSchema.esp32Controllers)
+      .where(eq(dbSchema.esp32Controllers.apiKey, String(revoked.controllerApiKey)));
+    await expect(controllerBoardQueries.controllerBoards(undefined, undefined, revoked)).rejects.toMatchObject({
+      extensions: { code: 'UNAUTHENTICATED' },
+    });
+  });
 });

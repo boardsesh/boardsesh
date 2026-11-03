@@ -26,7 +26,7 @@ import {
   requireReadablePresenceBoard,
   resolveBoardHolder,
 } from './shared';
-import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
+import { assertSprayBoardIsReadable, readViewerIdForBoard } from '../climbs/spray-read-access';
 import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardPresenceStats } from './stats';
 
 export const boardPresenceQueries = {
@@ -37,9 +37,13 @@ export const boardPresenceQueries = {
   ) => {
     await applyRateLimit(ctx, 60, 'boardRecentHistory');
     const board = await requireActiveBoardWithVisibilityById(boardId);
-    await assertAnonReadableBoard(board, ctx.userId, boardUuid);
-    await assertSprayBoardIsReadable(board, ctx.userId, boardUuid, db);
-    return redactBoardClimbs(await readMergedRecentHistory(boardId), ctx.userId, boardId, boardUuid);
+    // The backfill half of boardNowPlaying, so it reads the same way: a wall
+    // device's key reads as its owner on the owner's own board, names stay as a
+    // signed-out viewer sees them.
+    const readerId = await readViewerIdForBoard(ctx, board);
+    await assertAnonReadableBoard(board, readerId, boardUuid);
+    await assertSprayBoardIsReadable(board, readerId, boardUuid, db);
+    return redactBoardClimbs(await readMergedRecentHistory(boardId), ctx.userId, boardId, boardUuid, readerId);
   },
   boardHistoryPage: async (
     _: unknown,
@@ -78,11 +82,21 @@ export const boardPresenceQueries = {
     // gate below reads the policy by. The id alone is the no-link reading; an
     // Unlisted board's backfill needs its uuid as well (`boardUuid`).
     const visibilityBoard = await requireActiveBoardWithVisibilityById(boardId);
-    await assertAnonReadableBoard(visibilityBoard, ctx.userId, boardUuid);
+    // A wall device's key reads as its owner on the owner's own board
+    // (readViewerIdForBoard), so a device on a private wall gets the current climb
+    // on connect. Names stay on ctx.userId.
+    const readerId = await readViewerIdForBoard(ctx, visibilityBoard);
+    await assertAnonReadableBoard(visibilityBoard, readerId, boardUuid);
     // The anon gate above waves every authenticated caller through; a spray wall is
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
-    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId, boardUuid, db);
-    return redactBoardClimbs(await pubsub.getRecentBoardClimbs(String(boardId)), ctx.userId, boardId, boardUuid);
+    await assertSprayBoardIsReadable(visibilityBoard, readerId, boardUuid, db);
+    return redactBoardClimbs(
+      await pubsub.getRecentBoardClimbs(String(boardId)),
+      ctx.userId,
+      boardId,
+      boardUuid,
+      readerId,
+    );
   },
 
   /**

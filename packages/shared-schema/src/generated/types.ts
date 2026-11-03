@@ -1975,6 +1975,30 @@ export type ConsentRegion = {
   promptRequired: Scalars['Boolean']['output'];
 };
 
+/**
+ * One board owned by the account a controller API key belongs to, for a wall
+ * device's setup screen (`controllerBoards`). Read-only identity and config.
+ */
+export type ControllerBoard = {
+  __typename?: 'ControllerBoard';
+  /** Board angle in degrees */
+  angle: Scalars['Int']['output'];
+  /** Numeric board-presence channel id (userBoards.id). Feeds boardNowPlaying(boardId). */
+  boardId: Scalars['Int']['output'];
+  /** kilter, tension, moonboard, spray, ... */
+  boardType: Scalars['String']['output'];
+  /** False for a board with no lights (every spray wall) */
+  hasLeds: Scalars['Boolean']['output'];
+  layoutId: Scalars['Int']['output'];
+  /** What the owner calls the board */
+  name: Scalars['String']['output'];
+  /** Comma-separated hold set ids */
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  /** The board's uuid. A spray wall's uuid is also its sprayWall(uuid) key. */
+  uuid: Scalars['ID']['output'];
+};
+
 export type ControllerEvent = ControllerPing | ControllerQueueSync | LedUpdate;
 
 export type ControllerGymBoard = {
@@ -7105,6 +7129,13 @@ export type Query = {
   /** Whether this request comes from a region where the analytics prompt is shown. No sign-in needed. */
   consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
+  /**
+   * The boards the controller API key's owner owns (home boards and spray walls,
+   * deleted and archived ones left out), so a wall device can let its owner pick
+   * one. Requires a WebSocket connected with `connectionParams.controllerApiKey`;
+   * without one it fails UNAUTHENTICATED, signed in or not.
+   */
+  controllerBoards: Array<ControllerBoard>;
   /** Read a gym's device configuration using a registered gym owner/admin's controller API key. */
   controllerGymManifest: ControllerGymManifest;
   /** Sessions and the last 30 days of published climbs from followed authors. */
@@ -12729,6 +12760,7 @@ export type ResolversTypes = ResolversObject<{
   CommunitySetting: ResolverTypeWrapper<CommunitySetting>;
   CommunityStats: ResolverTypeWrapper<CommunityStats>;
   ConsentRegion: ResolverTypeWrapper<ConsentRegion>;
+  ControllerBoard: ResolverTypeWrapper<ControllerBoard>;
   ControllerEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ControllerEvent']>;
   ControllerGymBoard: ResolverTypeWrapper<ControllerGymBoard>;
   ControllerGymManifest: ResolverTypeWrapper<ControllerGymManifest>;
@@ -13300,6 +13332,7 @@ export type ResolversParentTypes = ResolversObject<{
   CommunitySetting: CommunitySetting;
   CommunityStats: CommunityStats;
   ConsentRegion: ConsentRegion;
+  ControllerBoard: ControllerBoard;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
   ControllerGymBoard: ControllerGymBoard;
   ControllerGymManifest: ControllerGymManifest;
@@ -14785,6 +14818,22 @@ export type ConsentRegionResolvers<
   countryCode?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   globalPrivacyControl?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   promptRequired?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ControllerBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ControllerBoard'] = ResolversParentTypes['ControllerBoard'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  hasLeds?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17673,6 +17722,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryContentAudienceArgs, 'entityId' | 'entityType'>
   >;
+  controllerBoards?: Resolver<Array<ResolversTypes['ControllerBoard']>, ParentType, ContextType>;
   controllerGymManifest?: Resolver<
     ResolversTypes['ControllerGymManifest'],
     ParentType,
@@ -20228,6 +20278,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CommunitySetting?: CommunitySettingResolvers<ContextType>;
   CommunityStats?: CommunityStatsResolvers<ContextType>;
   ConsentRegion?: ConsentRegionResolvers<ContextType>;
+  ControllerBoard?: ControllerBoardResolvers<ContextType>;
   ControllerEvent?: ControllerEventResolvers<ContextType>;
   ControllerGymBoard?: ControllerGymBoardResolvers<ContextType>;
   ControllerGymManifest?: ControllerGymManifestResolvers<ContextType>;

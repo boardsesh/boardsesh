@@ -113,6 +113,7 @@ Ad-hoc edits and direct feature requests don't trigger this workflow. If the use
 ## Documentation
 
 - `docs/local-board-qa.md` — local-only connected-phone/ESP32 board driving, presence/history and shared-session QA, setup, recovery and evidence limits.
+- `docs/wall-devices.md` — for external device builders (laser projectors, custom LEDs): get a controller key, subscribe to `boardNowPlaying`, decode frames, fetch hold coordinates, and stay connected.
 
 Read relevant `docs/` before working on the matching area; update docs when the system changes.
 

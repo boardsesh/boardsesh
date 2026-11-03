@@ -5,11 +5,11 @@ import { kilterLiveSync } from '../../../services/kilter-live-sync';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
-import { requireAnonReadableBoard } from './shared';
+import { assertValidBoardId, requireAnonReadableBoard } from './shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { assertSprayBoardIsReadable, sprayStreamGate } from '../climbs/spray-read-access';
+import { assertSprayBoardIsReadable, readViewerIdForBoard, sprayStreamGate } from '../climbs/spray-read-access';
 
 export const boardPresenceSubscriptions = {
   /**
@@ -42,23 +42,44 @@ export const boardPresenceSubscriptions = {
       // poll rather than in a tight loop, so 60/min still leaves room for a
       // gym's worth of screens.
       await applyRateLimit(ctx, 60, 'boardNowPlaying');
+      assertValidBoardId(boardId);
+      // The row first: whose board it is decides whether a wall device's key reads
+      // it as its owner (readViewerIdForBoard), and the spray rule below needs its
+      // type and layout.
+      const loadBoard = async () => {
+        const [row] = await db
+          .select({
+            boardType: dbSchema.userBoards.boardType,
+            layoutId: dbSchema.userBoards.layoutId,
+            ownerId: dbSchema.userBoards.ownerId,
+          })
+          .from(dbSchema.userBoards)
+          .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
+          .limit(1);
+        return row;
+      };
+      // A controller key (no ctx.userId) is re-judged per event: the board can
+      // change hands and the controller can be deleted while the socket is open.
+      const isKeyReader = !ctx.userId && ctx.controllerOwnerUserId !== undefined;
+      const presenceBoard = await loadBoard();
+      // Read access for the gates and the climb half of the redaction: the
+      // signed-in user, or a wall device's key owner on a board that owner owns.
+      // The rate limit above, the Kilter live-sync lease and the names in the
+      // redaction below stay on ctx.userId, so a key reads its owner's own boards
+      // and nothing more.
+      const readerId = await readViewerIdForBoard(ctx, presenceBoard);
       // Validates the id and applies the board gate: the no-link reading for the
       // id alone (not a private or Unlisted wall reached by counting ids), the
       // link reading when `boardUuid` is this board's own.
-      await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
+      await requireAnonReadableBoard(boardId, readerId, boardUuid);
       // …and the wall's own rule on top, because the board policy above does not
       // know the spray wall rule and `boardId` is a small integer. The events on this
       // channel carry the climb's name and frames (`reportBoardClimb`, and the
       // hardest-send name in `publishBoardStats`), so without this a signed-in
       // caller could walk the ids and watch a private spray wall live. The sibling
       // QUERIES were patched for exactly this; the subscription was missed.
-      const [presenceBoard] = await db
-        .select({ boardType: dbSchema.userBoards.boardType, layoutId: dbSchema.userBoards.layoutId })
-        .from(dbSchema.userBoards)
-        .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
-        .limit(1);
       if (presenceBoard) {
-        await assertSprayBoardIsReadable(presenceBoard, ctx.userId, boardUuid, db);
+        await assertSprayBoardIsReadable(presenceBoard, readerId, boardUuid, db);
       }
 
       const boardKey = String(boardId);
@@ -91,11 +112,12 @@ export const boardPresenceSubscriptions = {
       // it: a wall going private, or a revoked gym membership, has to end a stream
       // that is already running. Ending the iterator is the subscription's empty
       // page — no error naming a wall the caller may no longer see.
-      const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId, boardUuid, db);
       for await (const event of asyncIterator) {
-        await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
+        const eventReaderId = isKeyReader ? await readViewerIdForBoard(ctx, await loadBoard()) : readerId;
+        await requireAnonReadableBoard(boardId, eventReaderId, boardUuid);
+        const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, eventReaderId, boardUuid, db);
         if (gate && !(await gate())) return;
-        yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardId, boardUuid) };
+        yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardId, boardUuid, eventReaderId) };
       }
     }),
   },

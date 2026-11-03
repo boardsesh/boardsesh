@@ -8320,6 +8320,13 @@ type Query {
   myControllers: [ControllerInfo!]!
   "Read a gym's device configuration using a registered gym owner/admin's controller API key."
   controllerGymManifest(gymRef: String!): ControllerGymManifest!
+  """
+  The boards the controller API key's owner owns (home boards and spray walls,
+  deleted and archived ones left out), so a wall device can let its owner pick
+  one. Requires a WebSocket connected with `connectionParams.controllerApiKey`;
+  without one it fails UNAUTHENTICATED, signed in or not.
+  """
+  controllerBoards: [ControllerBoard!]!
 
   # ============================================
   # Social / Follow Queries
@@ -10940,6 +10947,29 @@ type ControllerGymBoard {
   angle: Int!
   advertisedName: String!
   preview: ControllerPreviewDescriptor!
+}
+
+"""
+One board owned by the account a controller API key belongs to, for a wall
+device's setup screen (`controllerBoards`). Read-only identity and config.
+"""
+type ControllerBoard {
+  "Numeric board-presence channel id (userBoards.id). Feeds boardNowPlaying(boardId)."
+  boardId: Int!
+  "The board's uuid. A spray wall's uuid is also its sprayWall(uuid) key."
+  uuid: ID!
+  "What the owner calls the board"
+  name: String!
+  "kilter, tension, moonboard, spray, ..."
+  boardType: String!
+  layoutId: Int!
+  sizeId: Int!
+  "Comma-separated hold set ids"
+  setIds: String!
+  "Board angle in degrees"
+  angle: Int!
+  "False for a board with no lights (every spray wall)"
+  hasLeds: Boolean!
 }
 
 type ControllerGymManifest {

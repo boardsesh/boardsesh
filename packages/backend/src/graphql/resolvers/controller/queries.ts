@@ -1,3 +1,4 @@
+import { controllerBoardQueries } from './boards';
 import { controllerGymQueries } from './gym-manifest';
 import type { ConnectionContext, ControllerInfo } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
@@ -10,6 +11,7 @@ const ONLINE_THRESHOLD_MS = 60 * 1000;
 
 export const controllerQueries = {
   ...controllerGymQueries,
+  ...controllerBoardQueries,
   /**
    * Get all controllers registered by the current user
    * Requires authentication

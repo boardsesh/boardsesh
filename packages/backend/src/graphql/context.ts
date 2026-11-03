@@ -24,6 +24,11 @@ export type CreateContextOptions = {
   controllerId?: string;
   controllerApiKey?: string;
   controllerMac?: string;
+  /**
+   * Owner of the validated controller API key. Read-only identity for
+   * `readViewerIdForBoard`; never copied into `userId`.
+   */
+  controllerOwnerUserId?: string;
   /** Rate-limit identity for anonymous callers; see websocket/client-ip.ts. */
   clientIp?: string;
   /** TCP-peer backstop for anonymous WebSocket rate limiting. */
@@ -46,6 +51,7 @@ export function createContext({
   controllerId,
   controllerApiKey,
   controllerMac,
+  controllerOwnerUserId,
   clientIp,
   socketPeerIp,
   clientIdentity,
@@ -62,6 +68,7 @@ export function createContext({
     controllerId,
     controllerApiKey,
     controllerMac,
+    controllerOwnerUserId,
     clientIp,
     socketPeerIp,
     clientIdentity,
