@@ -153,6 +153,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         let controllerId: string | undefined;
         let controllerApiKey: string | undefined;
         let controllerMac: string | undefined;
+        let controllerOwnerUserId: string | undefined;
         const connectionParams = ctx.connectionParams as Record<string, unknown> | undefined;
         const extractedControllerApiKey = extractControllerApiKey(connectionParams);
 
@@ -161,6 +162,10 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           if (controllerResult) {
             controllerId = controllerResult.controllerId;
             controllerApiKey = controllerResult.controllerApiKey;
+            // Read-only: lets the key see its owner's private spray walls via
+            // readViewerIdForBoard. Deliberately not authenticatedUserId, so the key
+            // still cannot call mutations or read account data.
+            controllerOwnerUserId = controllerResult.userId ?? undefined;
             logger.info(`[Auth] Authenticated controller: ${controllerId}`);
           }
         }
@@ -194,6 +199,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           controllerId,
           controllerApiKey,
           controllerMac,
+          controllerOwnerUserId,
           clientIp,
           socketPeerIp,
           clientIdentity,

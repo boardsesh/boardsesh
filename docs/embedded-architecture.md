@@ -156,7 +156,7 @@ The device connects to the BoardSesh backend via a WebSocket GraphQL subscriptio
    - `ControllerPing` — Keepalive
 4. **Mutations sent**:
    - `navigateQueue` — Queue navigation (previous/next) triggered by touch or buttons
-   - `sendLedPositions` — Forward BLE-received LED data for climb identification
+   - `setClimbFromLedPositions` — Forward BLE-received LED data for climb identification (sent by the firmware's `sendLedPositions()` helper)
 
 Navigation mutations are debounced (100ms) to coalesce rapid button presses into a single backend call. The display updates optimistically while the mutation is in flight.
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  esp32Controllers,
   feedItems,
   communityRoles,
   gyms,
@@ -137,6 +138,7 @@ const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = 
 const { recomputeClimbStatsBulk } = await import('@boardsesh/db/queries');
 const { lockWallForWrite, resetSprayFullPhotoPresenceCache } = await import('../graphql/resolvers/board/spray-walls');
 const { betaLinkQueries } = await import('../graphql/resolvers/beta-videos/queries');
+const { resetControllerOwnerChecksForTests } = await import('../graphql/resolvers/climbs/spray-read-access');
 const { tickQueries } = await import('../graphql/resolvers/ticks/queries');
 
 const OWNER = 'sw-owner';
@@ -857,6 +859,134 @@ describe('who can see and who can edit a wall', () => {
     const mine = (await sprayWallQueries.mySprayWalls({}, {}, ctxFor(OWNER))) as Array<{ viewerCanEdit: boolean }>;
     expect(mine).toHaveLength(1);
     expect(mine[0].viewerCanEdit).toBe(true);
+  });
+});
+
+/**
+ * A wall device (an ESP32 controller, or an external projector) authenticates
+ * with a controller API key. Its socket has no `userId`; the key's owner rides
+ * in `controllerOwnerUserId`, which only the wall visibility check honours
+ * (`readViewerIdForBoard`), on the owner's own walls. Everything the response
+ * projects for a viewer stays signed-out.
+ */
+describe('a wall device key reading hold coordinates', () => {
+  async function deviceCtx(ownerId: string): Promise<ConnectionContext> {
+    const apiKey = `sw-device-key-${uuidv4()}`;
+    const [controller] = await db
+      .insert(esp32Controllers)
+      .values({ userId: ownerId, apiKey, boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1' })
+      .returning({ id: esp32Controllers.id });
+    return {
+      connectionId: `device-${ownerId}-${uuidv4()}`,
+      transport: 'ws',
+      isAuthenticated: false,
+      controllerId: controller.id,
+      controllerApiKey: apiKey,
+      controllerOwnerUserId: ownerId,
+    } as unknown as ConnectionContext;
+  }
+
+  beforeEach(() => {
+    resetControllerOwnerChecksForTests();
+  });
+
+  it("reads its owner's private wall: render data, holds and the wall itself", async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const ownerKey = await deviceCtx(OWNER);
+
+    const renderData = (await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ownerKey)) as {
+      versionNumber: number;
+      boardWidth: number;
+      boardHeight: number;
+      homography: number[];
+      holds: Array<{ id: number; cx: number; cy: number; r: number }>;
+      wall: { uuid: string; viewerCanEdit: boolean };
+    } | null;
+    expect(renderData).not.toBeNull();
+    expect(new Set(renderData?.holds.map((hold) => hold.id))).toEqual(new Set(holdIds));
+    expect(renderData?.homography).toHaveLength(9);
+    // Reading is all a key does: it never edits the wall.
+    expect(renderData?.wall.viewerCanEdit).toBe(false);
+
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ownerKey)) as {
+      uuid: string;
+      viewerCanEdit: boolean;
+    } | null;
+    expect(read?.uuid).toBe(wall.uuid);
+    expect(read?.viewerCanEdit).toBe(false);
+  });
+
+  it('projects nothing owner-only for a key, even on a hidden wall it may still read', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await db.update(sprayWalls).set({ hiddenAt: new Date() }).where(eq(sprayWalls.boardUuid, wall.uuid));
+
+    type ProjectedWall = {
+      trainingConsent: boolean | null;
+      pendingVisibility: unknown;
+      hiddenAt: string | null;
+      board: {
+        canEdit: boolean;
+        isFollowedByMe: boolean;
+        isPinnedByMe: boolean;
+        sprayImport: unknown;
+      };
+    };
+    const asKey = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, await deviceCtx(OWNER))) as ProjectedWall;
+    expect(asKey).not.toBeNull();
+    expect(asKey).toMatchObject({ trainingConsent: null, pendingVisibility: null, hiddenAt: null });
+    expect(asKey.board).toMatchObject({
+      canEdit: false,
+      isFollowedByMe: false,
+      isPinnedByMe: false,
+      sprayImport: null,
+    });
+
+    const renderData = (await sprayWallQueries.sprayWallRenderData(
+      {},
+      { uuid: wall.uuid },
+      await deviceCtx(OWNER),
+    )) as {
+      wall: ProjectedWall;
+    } | null;
+    expect(renderData?.wall).toMatchObject({ trainingConsent: null, hiddenAt: null });
+    expect(renderData?.wall.board.canEdit).toBe(false);
+
+    // The signed-in owner still gets their own fields: it is the key that is not the owner.
+    const asOwner = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as ProjectedWall;
+    expect(asOwner.hiddenAt).not.toBeNull();
+    expect(asOwner.trainingConsent).not.toBeNull();
+    expect(asOwner.board.canEdit).toBe(true);
+  });
+
+  it("gets nothing from another user's key, or a key with no registration behind it", async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const strangerKey = await deviceCtx(STRANGER);
+    const unregistered = {
+      ...(await deviceCtx(OWNER)),
+      controllerId: uuidv4(),
+    } as ConnectionContext;
+
+    for (const ctx of [strangerKey, unregistered]) {
+      expect(await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ctx)).toBeNull();
+      expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctx)).toBeNull();
+    }
+  });
+
+  it('returns null render data for a wall that has never been published', async () => {
+    const wall = await createWall(OWNER);
+    expect(await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, await deviceCtx(OWNER))).toBeNull();
+  });
+
+  it('is still not signed in: a mutation and a signed-in-only read refuse the key', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const ownerKey = await deviceCtx(OWNER);
+
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ownerKey),
+    ).rejects.toThrow();
+    await expect(sprayWallQueries.sprayWallHoldUsage({}, { wallUuid: wall.uuid, holdIds }, ownerKey)).rejects.toThrow();
+    // The refused update changed nothing: the wall is still private.
+    expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))).toBeNull();
   });
 });
 

@@ -1,12 +1,14 @@
 import { GraphQLError } from 'graphql';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   sprayLayoutVisibilitySql,
   sprayReferenceClimbExistsCondition,
   sprayReferenceVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
-import { dbRead } from '../../../db/client';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { esp32Controllers } from '@boardsesh/db/schema';
+import { db, dbRead } from '../../../db/client';
 
 /**
  * Read-side visibility for the climbs on a spray wall.
@@ -32,6 +34,87 @@ import { dbRead } from '../../../db/client';
  * `is_unlisted` is NOT an exemption: unlisted means reachable by uuid, and a layout
  * id is not a uuid.
  */
+
+/**
+ * How long a wall device's controller registration is trusted before it is read
+ * again. Deleting a controller in Settings therefore cuts an open socket's
+ * owner reads within this window, without a database read per pushed event.
+ */
+export const CONTROLLER_RECHECK_MS = 30_000;
+const CONTROLLER_CHECK_CACHE_MAX = 5_000;
+const controllerOwnerChecks = new Map<string, { ownerId: string | null; checkedAt: number }>();
+
+/** Forget every cached controller check. Tests only. */
+export function resetControllerOwnerChecksForTests(): void {
+  controllerOwnerChecks.clear();
+}
+
+/**
+ * The owner the connection's controller key belongs to RIGHT NOW: the owner
+ * stamped at connect, but only while the same registration (id + key) still
+ * exists and still names that owner. Cached per controller for
+ * {@link CONTROLLER_RECHECK_MS}.
+ */
+async function currentControllerOwner(
+  ctx: Pick<ConnectionContext, 'controllerId' | 'controllerApiKey' | 'controllerOwnerUserId'>,
+): Promise<string | undefined> {
+  const { controllerId, controllerApiKey, controllerOwnerUserId } = ctx;
+  if (!controllerId || !controllerApiKey || !controllerOwnerUserId) return undefined;
+  const now = Date.now();
+  const cached = controllerOwnerChecks.get(controllerId);
+  let ownerId: string | null;
+  if (cached && now - cached.checkedAt < CONTROLLER_RECHECK_MS) {
+    ownerId = cached.ownerId;
+  } else {
+    // The primary, not the replica: a deletion must be seen as soon as it lands.
+    const [registration] = await db
+      .select({ userId: esp32Controllers.userId })
+      .from(esp32Controllers)
+      .where(and(eq(esp32Controllers.id, controllerId), eq(esp32Controllers.apiKey, controllerApiKey)))
+      .limit(1);
+    ownerId = registration?.userId ?? null;
+    if (controllerOwnerChecks.size >= CONTROLLER_CHECK_CACHE_MAX) {
+      const oldest = controllerOwnerChecks.keys().next().value;
+      if (oldest !== undefined) controllerOwnerChecks.delete(oldest);
+    }
+    controllerOwnerChecks.delete(controllerId);
+    controllerOwnerChecks.set(controllerId, { ownerId, checkedAt: now });
+  }
+  return ownerId === controllerOwnerUserId ? ownerId : undefined;
+}
+
+/**
+ * The user whose READ access this connection carries for ONE board: the
+ * signed-in user; or, for a socket that presented a controller API key, the
+ * key's owner, but only on a board that owner OWNS and only while the
+ * registration still exists. Anything else reads as signed out.
+ *
+ * Exists for wall devices. An ESP32 controller or an external projector
+ * (`docs/wall-devices.md`) connects with `connectionParams.controllerApiKey`
+ * instead of a user token, and has to see the climbs on its owner's private
+ * spray wall. Setting `ctx.userId` for it would also hand the key every mutation,
+ * the queue, the account and anything else keyed on a signed-in user, so the
+ * owner travels in its own field (`controllerOwnerUserId`). Ownership is the
+ * whole grant: a board the owner merely follows, was invited to, or sees as a
+ * gym member stays at the signed-out reading, so a key opens exactly the
+ * boards `controllerBoards` lists.
+ *
+ * Honoured only by the `boardNowPlaying` access gates and the climb-content half
+ * of its redaction, its backfill reads (`boardRecentClimbs`,
+ * `boardRecentHistory`), and the `sprayWall` / `sprayWallRenderData` visibility
+ * check. Use it ONLY for "may this caller read this board's climbs and holds".
+ * Anything that writes, stamps membership, names other climbers, projects
+ * owner-only fields, starts work on the owner's behalf, or picks a rate-limit
+ * bucket keeps reading `ctx.userId`.
+ */
+export async function readViewerIdForBoard(
+  ctx: Pick<ConnectionContext, 'userId' | 'controllerId' | 'controllerApiKey' | 'controllerOwnerUserId'>,
+  board: { ownerId: string } | null | undefined,
+): Promise<string | undefined> {
+  if (ctx.userId) return ctx.userId;
+  if (!board || !ctx.controllerOwnerUserId || board.ownerId !== ctx.controllerOwnerUserId) return undefined;
+  return currentControllerOwner(ctx);
+}
 
 /**
  * True only for spray. Exported because call sites **must** short-circuit on it:

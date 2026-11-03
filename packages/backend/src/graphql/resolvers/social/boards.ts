@@ -610,10 +610,21 @@ async function enrichBoard(
 export async function enrichBoards(
   boards: Array<{ board: typeof dbSchema.userBoards.$inferSelect; distanceMeters?: number | null }>,
   authenticatedUserId?: string,
-  options: { allowUnlistedLink?: boolean } = {},
+  options: {
+    allowUnlistedLink?: boolean;
+    /**
+     * Who the ACCESS filter reads as, when that differs from the viewer: a wall
+     * device's key reads its owner's private board (`readViewerIdForBoard`), yet
+     * every viewer-projected field below (canEdit, follows, pins, location,
+     * owner identity, spray import) stays on `authenticatedUserId`. Defaults to
+     * `authenticatedUserId`.
+     */
+    accessUserId?: string;
+  } = {},
 ) {
   const checkAccess = options.allowUnlistedLink === false ? canAccessResourceWithoutLink : canAccessResource;
-  const access = await Promise.all(boards.map(({ board }) => checkAccess('board', board.uuid, authenticatedUserId)));
+  const accessUserId = options.accessUserId ?? authenticatedUserId;
+  const access = await Promise.all(boards.map(({ board }) => checkAccess('board', board.uuid, accessUserId)));
   boards = boards.filter((_, index) => access[index]);
   if (boards.length === 0) return [];
 

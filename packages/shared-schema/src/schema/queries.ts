@@ -390,6 +390,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     myControllers: [ControllerInfo!]!
     "Read a gym's device configuration using a registered gym owner/admin's controller API key."
     controllerGymManifest(gymRef: String!): ControllerGymManifest!
+    """
+    The boards the controller API key's owner owns (home boards and spray walls,
+    deleted and archived ones left out), so a wall device can let its owner pick
+    one. Requires a WebSocket connected with \`connectionParams.controllerApiKey\`;
+    without one it fails UNAUTHENTICATED, signed in or not.
+    """
+    controllerBoards: [ControllerBoard!]!
 
     # ============================================
     # Social / Follow Queries

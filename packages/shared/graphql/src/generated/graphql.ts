@@ -1972,6 +1972,30 @@ export type ConsentRegion = {
   promptRequired: Scalars['Boolean']['output'];
 };
 
+/**
+ * One board owned by the account a controller API key belongs to, for a wall
+ * device's setup screen (`controllerBoards`). Read-only identity and config.
+ */
+export type ControllerBoard = {
+  __typename?: 'ControllerBoard';
+  /** Board angle in degrees */
+  angle: Scalars['Int']['output'];
+  /** Numeric board-presence channel id (userBoards.id). Feeds boardNowPlaying(boardId). */
+  boardId: Scalars['Int']['output'];
+  /** kilter, tension, moonboard, spray, ... */
+  boardType: Scalars['String']['output'];
+  /** False for a board with no lights (every spray wall) */
+  hasLeds: Scalars['Boolean']['output'];
+  layoutId: Scalars['Int']['output'];
+  /** What the owner calls the board */
+  name: Scalars['String']['output'];
+  /** Comma-separated hold set ids */
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  /** The board's uuid. A spray wall's uuid is also its sprayWall(uuid) key. */
+  uuid: Scalars['ID']['output'];
+};
+
 export type ControllerEvent = ControllerPing | ControllerQueueSync | LedUpdate;
 
 export type ControllerGymBoard = {
@@ -7102,6 +7126,13 @@ export type Query = {
   /** Whether this request comes from a region where the analytics prompt is shown. No sign-in needed. */
   consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
+  /**
+   * The boards the controller API key's owner owns (home boards and spray walls,
+   * deleted and archived ones left out), so a wall device can let its owner pick
+   * one. Requires a WebSocket connected with `connectionParams.controllerApiKey`;
+   * without one it fails UNAUTHENTICATED, signed in or not.
+   */
+  controllerBoards: Array<ControllerBoard>;
   /** Read a gym's device configuration using a registered gym owner/admin's controller API key. */
   controllerGymManifest: ControllerGymManifest;
   /** Sessions and the last 30 days of published climbs from followed authors. */

@@ -24,6 +24,29 @@ export const controllerTypeDefs = /* GraphQL */ `
     preview: ControllerPreviewDescriptor!
   }
 
+  """
+  One board owned by the account a controller API key belongs to, for a wall
+  device's setup screen (\`controllerBoards\`). Read-only identity and config.
+  """
+  type ControllerBoard {
+    "Numeric board-presence channel id (userBoards.id). Feeds boardNowPlaying(boardId)."
+    boardId: Int!
+    "The board's uuid. A spray wall's uuid is also its sprayWall(uuid) key."
+    uuid: ID!
+    "What the owner calls the board"
+    name: String!
+    "kilter, tension, moonboard, spray, ..."
+    boardType: String!
+    layoutId: Int!
+    sizeId: Int!
+    "Comma-separated hold set ids"
+    setIds: String!
+    "Board angle in degrees"
+    angle: Int!
+    "False for a board with no lights (every spray wall)"
+    hasLeds: Boolean!
+  }
+
   type ControllerGymManifest {
     version: Int!
     gymUuid: ID!
