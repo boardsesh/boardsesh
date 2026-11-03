@@ -136,6 +136,12 @@ enum SharedConstants {
     /// session runs, so a lock-screen press can start or renew a drive the
     /// way Put on board would without asking JS.
     static let keepLightingConfigKey = "bs_keep_lighting_config"
+    /// The last lock-screen Next or Previous as a `SharedLockScreenPressState`
+    /// JSON blob: in flight from before its server request and board write
+    /// until just before its Darwin post, then settled. JS reads it
+    /// (`getLockScreenPress`) before it ends a timed drive at the clock, so it
+    /// never lets go of the board under a press on its way to the wall.
+    static let lockScreenPressKey = "bs_lock_screen_press"
 
     // MARK: Darwin Notification
 
@@ -736,10 +742,8 @@ struct SharedLightingWindowState: Codable, Equatable {
     static let sourceApp = "app"
     static let sourceLockScreen = "lockScreen"
 
-    /// Settings › Board's general choice opened it.
+    /// Settings › Board's choice opened it.
     static let familyGeneral = "general"
-    /// The MoonBoard choice opened it.
-    static let familyMoonboard = "moonboard"
 
     let v: Int
     let sessionId: String
@@ -749,7 +753,9 @@ struct SharedLightingWindowState: Codable, Equatable {
     /// The timed drive's length, so a lock-screen press renews it by its own
     /// length rather than whatever the setting says now. Nil outside one.
     let windowSeconds: Double?
-    /// Which choice opened it (`familyGeneral` / `familyMoonboard`), nil when unknown.
+    /// Which choice opened it (`familyGeneral`), nil when unknown. An older JS
+    /// may have written "moonboard" from the retired MoonBoard choice: nothing
+    /// reads it differently.
     let family: String?
     let source: String
     /// When this snapshot was written.
@@ -843,20 +849,23 @@ enum SharedLightingWindowStore {
 /// (`off` for Right away, `30`, `45`, `60`, `120`, `300`, `until_stopped`);
 /// the rest are the inputs
 /// `resolveKeepLightingPlan` (src/lib/keep-lighting.ts) reads.
+///
+/// JS also sends `moonboardKeepLighting` and `moonboard`, which an earlier
+/// binary read for a MoonBoard's own choice. This build reads neither: the
+/// decoder skips keys it doesn't know, so every board, a MoonBoard included,
+/// takes the one choice and the general rule (2.7, #7218). A JS from before
+/// #7218 that still says `moonboard: true` gets the same: its general choice,
+/// with In a session too deciding in a crew.
 struct SharedKeepLightingConfig: Codable, Equatable {
     static let currentVersion = 1
 
     let v: Int
-    /// The general choice, for every board but a MoonBoard.
+    /// Stop driving after, for every board.
     let keepLighting: String
-    /// The MoonBoard choice. It applies in a crew session too.
-    let moonboardKeepLighting: String
-    /// "In a session too": the general choice applies with a crew.
+    /// "In a session too": the choice applies with a crew.
     let drivesInSession: Bool
     /// A crew is in the session (the roster's crew, after its arrival dwell).
     let inCrew: Bool
-    /// The session's board is a MoonBoard.
-    let moonboard: Bool
     /// False where a press would not start a drive in the app either: the
     /// swipe flag (the drive's kill switch) is off, or the climber lights
     /// every pick solo with Light the board as I swipe.
@@ -913,14 +922,11 @@ enum SharedKeepLighting {
         return .window(seconds: seconds, family: family)
     }
 
-    /// The plan for a press, as `resolveKeepLightingPlan` reads it: a MoonBoard
-    /// takes its own choice, in a crew too; every other board takes the general
-    /// choice, and with a crew only while "In a session too" is on.
+    /// The plan for a press, as `resolveKeepLightingPlan` reads it: every
+    /// board takes the one choice, and with a crew only while "In a session
+    /// too" is on.
     static func plan(for config: SharedKeepLightingConfig?) -> SharedKeepLightingPlan? {
         guard let config, config.enabled else { return nil }
-        if config.moonboard {
-            return plan(forChoice: config.moonboardKeepLighting, family: SharedLightingWindowState.familyMoonboard)
-        }
         if config.inCrew && !config.drivesInSession { return nil }
         return plan(forChoice: config.keepLighting, family: SharedLightingWindowState.familyGeneral)
     }
@@ -1082,6 +1088,111 @@ enum LightingRenderPhase: Equatable {
         default:
             return .previews
         }
+    }
+}
+
+// MARK: - Lock-screen press in flight
+
+/// The last lock-screen Next or Previous, for JS's timed-drive end check
+/// (`resolveTimedDriveEndAtClock` in lock-screen-lighting.ts).
+///
+/// `ClimbNavigationIntent` stamps a press in flight before its server request
+/// and board write, and settles it just before the Darwin post that wakes JS.
+/// Native writes a press's drive (`recordPress`) only after the board write,
+/// and under Right away writes none, so until JS hears the press it cannot
+/// tell a timed drive the press is about to renew, or end keeping the board,
+/// from one that simply ran out. While a press is in flight JS leaves such a
+/// drive alone; once it settled after the drive's end, JS ends the drive
+/// keeping the board, as the press's own `queueNavigate` does. Epoch
+/// milliseconds as Doubles, like `SharedLightingWindowState`.
+struct SharedLockScreenPressState: Codable, Equatable {
+    static let currentVersion = 1
+
+    let v: Int
+    /// This press, so one that settles never touches a later press's stamp.
+    let pressId: String
+    /// When an unsettled press stops counting as in flight: iOS ended the
+    /// intent before it could settle.
+    let expiresAtMs: Double
+    /// When the press settled: its board write finished, any drive it starts
+    /// is stored, and its `queueNavigate` is on its way to JS. Nil in flight.
+    let settledAtMs: Double?
+}
+
+enum SharedLockScreenPress {
+    /// How long a press may take from the stamp to the Darwin post without a
+    /// server request: the board's 3 s ready wait and 1.5 s drain
+    /// (`LiveActivityBleBridge`, `BoardBleManager`), the two ActivityKit
+    /// updates around them, and a margin.
+    static let boardWriteSeconds: Double = 8
+    /// What a party session's server request adds first: `WidgetNetworking`'s
+    /// 10 s request timeout.
+    static let serverRequestSeconds: Double = 10
+
+    /// The stamp's lifetime, for a press that asks the party server first or not.
+    static func inFlightSeconds(asksServer: Bool) -> Double {
+        boardWriteSeconds + (asksServer ? serverRequestSeconds : 0)
+    }
+
+    /// Nil for an absent key, unreadable bytes or an unknown version.
+    static func load(from defaults: UserDefaults) -> SharedLockScreenPressState? {
+        guard let data = defaults.data(forKey: SharedConstants.lockScreenPressKey),
+              let state = try? JSONDecoder().decode(SharedLockScreenPressState.self, from: data),
+              state.v == SharedLockScreenPressState.currentVersion
+        else { return nil }
+        return state
+    }
+
+    /// Stamps a press in flight, over any earlier press's stamp. Returns the
+    /// press's id, for `settle` and `cancel`.
+    @discardableResult
+    static func begin(
+        in defaults: UserDefaults,
+        asksServer: Bool,
+        now: Date = Date(),
+        pressId: String = UUID().uuidString
+    ) -> String {
+        let nowMs = now.timeIntervalSince1970 * 1000
+        save(
+            SharedLockScreenPressState(
+                v: SharedLockScreenPressState.currentVersion,
+                pressId: pressId,
+                expiresAtMs: nowMs + inFlightSeconds(asksServer: asksServer) * 1000,
+                settledAtMs: nil
+            ),
+            to: defaults
+        )
+        return pressId
+    }
+
+    /// The press reached the wall, or failed to: its `queueNavigate` goes out
+    /// next. Only this press's stamp; a later press's stays in flight.
+    static func settle(_ pressId: String, in defaults: UserDefaults, now: Date = Date()) {
+        guard let current = load(from: defaults), current.pressId == pressId else { return }
+        save(
+            SharedLockScreenPressState(
+                v: current.v,
+                pressId: current.pressId,
+                expiresAtMs: current.expiresAtMs,
+                settledAtMs: now.timeIntervalSince1970 * 1000
+            ),
+            to: defaults
+        )
+    }
+
+    /// The press goes no further (the party server turned it down): no
+    /// `queueNavigate` follows, so JS must not count it. Only this press's stamp.
+    static func cancel(_ pressId: String, in defaults: UserDefaults) {
+        guard load(from: defaults)?.pressId == pressId else { return }
+        defaults.removeObject(forKey: SharedConstants.lockScreenPressKey)
+    }
+
+    private static func save(_ state: SharedLockScreenPressState, to defaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(state) else {
+            defaults.removeObject(forKey: SharedConstants.lockScreenPressKey)
+            return
+        }
+        defaults.set(data, forKey: SharedConstants.lockScreenPressKey)
     }
 }
 

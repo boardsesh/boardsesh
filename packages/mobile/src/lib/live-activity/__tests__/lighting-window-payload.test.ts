@@ -87,10 +87,11 @@ describe('buildKeepLightingConfig', () => {
     });
   });
 
-  // The binary's `SharedKeepLighting.plan(for:)` takes `moonboardKeepLighting`
-  // in a crew too when `moonboard` is true. JS never says MoonBoard and sends
-  // the general choice in that slot, so a press on a MoonBoard's card follows
-  // the general rule, In a session too included, with no native change.
+  // An older binary's `SharedKeepLighting.plan(for:)` takes
+  // `moonboardKeepLighting` in a crew too when `moonboard` is true; a later one
+  // reads neither. JS never says MoonBoard and sends the general choice in that
+  // slot, so a press on a MoonBoard's card follows the general rule, In a
+  // session too included, on either binary.
   it.each(['off', '30', '45', '60', '120', '300', 'until_stopped'] as const)(
     'never tells the binary the board is a MoonBoard, and sends %s in its slot too',
     (keepLighting) => {

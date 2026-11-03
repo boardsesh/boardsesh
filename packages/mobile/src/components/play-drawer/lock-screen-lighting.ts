@@ -1,7 +1,9 @@
 import type { KeepLightingPlan, KeepLightingSettingKey } from '../../lib/keep-lighting';
 import {
   readLiveActivityLightingWindow,
+  readLiveActivityLockScreenPress,
   type LiveActivityLightingWindowSnapshot,
+  type LiveActivityLockScreenPress,
 } from '../../lib/live-activity/live-activity-plugin';
 import {
   enterDriveMode,
@@ -42,7 +44,10 @@ import {
  * own `queueNavigate` ends it (`endTimedDriveOverAtPress`). That end keeps the
  * link (`keepLink`): the press is the climber at the wall lighting a climb, so
  * Disconnect Bluetooth when driving ends must not let go of the board under
- * it. A crewmate's put-up ends a
+ * it. JS hears an iOS press only once its write is done, so the intent stamps
+ * it in flight first (`getLockScreenPress`), and the watcher's own end check
+ * waits for a press in flight rather than end the drive at the clock under it
+ * (`endTimedDriveAtClock`). A crewmate's put-up ends a
  * timed drive either way started (`useDriveCrewPutUp`), and the climber's own
  * press never reads as one: the server names them as its mover.
  *
@@ -276,14 +281,101 @@ export function adoptLockScreenLighting({
  * of the board under it, Right away included. Android reads it here before
  * arming (`armNotificationPressDrive`). iOS reads it once the press's own
  * write is adopted: that write replaces a lapsed drive itself, but under Right
- * away the intent writes none, so the old drive ends here instead of at the
- * next foreground's catch-up, which would let go of the board. Returns whether
- * it ended one.
+ * away the intent writes none, so the old drive ends here. A catch-up that
+ * runs before this event reads the press's stamp instead and ends it the same
+ * way (`endTimedDriveAtClock`). Returns whether it ended one.
  */
 export function endTimedDriveOverAtPress(now = Date.now()): boolean {
   if (!isDriveWindowDue(getDriveMode(), now)) return false;
   exitDriveMode('window_ended', { keepLink: true });
   return true;
+}
+
+/**
+ * How long a timed-drive end check waiting on a Lock Screen press in flight
+ * waits before it looks again. A press usually settles well inside a second.
+ */
+export const LOCK_SCREEN_PRESS_RECHECK_MS = 250;
+
+/**
+ * The longest a press stamp may still claim to be in flight, counted from now.
+ * Native gives a press 18 s at most (`SharedLockScreenPress`); a stamp that
+ * claims more (the clock moved back since it was written) counts as no press.
+ */
+export const LOCK_SCREEN_PRESS_MAX_IN_FLIGHT_MS = 20_000;
+
+/**
+ * How far past now a settled press may say it landed: native stamps fractions
+ * of a millisecond, JS reads whole ones. Any later and the clock moved back.
+ */
+const LOCK_SCREEN_PRESS_CLOCK_SLACK_MS = 1_000;
+
+/** What the watcher's end check does with a timed drive the clock found over. */
+export type TimedDriveEndAtClock =
+  /** A Lock Screen press is on its way to the wall: leave the drive, look again in `recheckInMs`. */
+  | { kind: 'wait'; recheckInMs: number }
+  /** A press landed once the drive was over: it ends keeping the board, as the press's `queueNavigate` ends it. */
+  | { kind: 'end_keeping_board' }
+  /** No press: the clock ends it, and Disconnect Bluetooth when driving ends may let go of the board. */
+  | { kind: 'end' };
+
+/**
+ * The iOS Lock Screen press stamp, read where the clock found a timed drive
+ * over (the watcher's timer, or its catch-up when the app comes back). Native
+ * writes a press's own drive only after its board write, and under Right away
+ * none, and JS hears the press later still (`queueNavigate`). Ended at the
+ * clock in that gap, the drive would let go of the board under the press.
+ *
+ * - In flight (not settled, before its expiry): wait. The press either renews
+ *   the drive (adopted at the next look) or settles.
+ * - Settled at or after the drive's end: the press found the drive over, so it
+ *   ends keeping the board, as `endTimedDriveOverAtPress` ends it when the
+ *   press's `queueNavigate` arrives. That event may still be on its way.
+ * - Anything else (no stamp, one that expired unsettled, a press that landed
+ *   before the end and so renewed the drive): the clock ends it.
+ */
+export function resolveTimedDriveEndAtClock({
+  press,
+  expiresAt,
+  now,
+}: {
+  press: LiveActivityLockScreenPress | null;
+  /** The timed drive's end, already passed. */
+  expiresAt: number;
+  now: number;
+}): TimedDriveEndAtClock {
+  if (!press) return { kind: 'end' };
+  const { expiresAtMs, settledAtMs } = press;
+  if (settledAtMs === null || settledAtMs === undefined) {
+    const leftMs = expiresAtMs - now;
+    if (!Number.isFinite(leftMs) || leftMs <= 0 || leftMs > LOCK_SCREEN_PRESS_MAX_IN_FLIGHT_MS) return { kind: 'end' };
+    return { kind: 'wait', recheckInMs: Math.min(LOCK_SCREEN_PRESS_RECHECK_MS, leftMs) };
+  }
+  const landedOverTheEnd =
+    Number.isFinite(settledAtMs) && settledAtMs >= expiresAt && settledAtMs <= now + LOCK_SCREEN_PRESS_CLOCK_SLACK_MS;
+  return landedOverTheEnd ? { kind: 'end_keeping_board' } : { kind: 'end' };
+}
+
+/**
+ * The watcher's end check found the timed drive over: end it (`window_ended`)
+ * as `resolveTimedDriveEndAtClock` says, keeping the board for a press that
+ * landed once it was over. Returns how long to wait before looking again while
+ * a press is in flight, or null when it ended the drive (or none was due).
+ */
+export function endTimedDriveAtClock({
+  now = Date.now(),
+  readPress = readLiveActivityLockScreenPress,
+}: {
+  now?: number;
+  /** The native read; injectable for tests. */
+  readPress?: () => LiveActivityLockScreenPress | null;
+} = {}): number | null {
+  const drive = getDriveMode();
+  if (drive === null || drive.expiresAt === null || !isDriveWindowDue(drive, now)) return null;
+  const end = resolveTimedDriveEndAtClock({ press: readPress(), expiresAt: drive.expiresAt, now });
+  if (end.kind === 'wait') return end.recheckInMs;
+  exitDriveMode('window_ended', end.kind === 'end_keeping_board' ? { keepLink: true } : {});
+  return null;
 }
 
 /**

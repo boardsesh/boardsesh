@@ -9,6 +9,7 @@ import {
   type LiveActivityLightingWindowOptions,
   type LiveActivityLightingWindowSnapshot,
   type LiveActivityKeepLightingConfig,
+  type LiveActivityLockScreenPress,
   type WidgetQueueNavigateEvent,
   type WidgetMirrorEvent,
   type BoardControlEvent,
@@ -157,6 +158,21 @@ export function readLiveActivityLightingWindow(): LiveActivityLightingWindowSnap
 }
 
 /**
+ * The last iOS Lock Screen press (`getLockScreenPress`), read synchronously by
+ * the timed-drive end check so it can wait for a press still on its way to the
+ * wall. Null on Android (its press reaches JS before anything lights), on a
+ * binary without the stamp, when nothing is stored, or when the read fails.
+ */
+export function readLiveActivityLockScreenPress(): LiveActivityLockScreenPress | null {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    return liveActivityNative?.getLockScreenPress?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Explicitly marks that the actual React root committed in this process. This
  * is iOS-only and optional so an OTA bundle stays safe on an older binary.
  * Diagnostics must never affect app startup, so native bridge failures no-op.
@@ -223,6 +239,7 @@ export type {
   LiveActivityLightingWindowOptions,
   LiveActivityLightingWindowSnapshot,
   LiveActivityKeepLightingConfig,
+  LiveActivityLockScreenPress,
 };
 
 /** New native binaries only; older OTA hosts do not declare this event. */

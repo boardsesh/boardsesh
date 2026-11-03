@@ -19,7 +19,12 @@ import {
   addWidgetQueueNavigateListener,
   isAndroidSessionPresence,
 } from '../../lib/live-activity/live-activity-plugin';
-import { adoptLockScreenLighting, armNotificationPressDrive, endTimedDriveOverAtPress } from './lock-screen-lighting';
+import {
+  adoptLockScreenLighting,
+  armNotificationPressDrive,
+  endTimedDriveAtClock,
+  endTimedDriveOverAtPress,
+} from './lock-screen-lighting';
 import {
   clearDrivingStopped,
   isDrivingStoppedForLink,
@@ -92,7 +97,11 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * the app comes back (`stopped`, so Disconnect Bluetooth when driving ends
  * applies as for the frosted button). On both platforms a press that finds a timed drive over
  * ends it keeping the board (`endTimedDriveOverAtPress`); the catch-up with no
- * press heard ends it at the clock, letting go when the setting says so.
+ * press heard ends it at the clock, letting go when the setting says so. On
+ * iOS JS hears a press only after its board write, so the catch-up (and the
+ * timer) first reads the intent's press stamp (`endTimedDriveAtClock`): a
+ * press still on its way to the wall holds the end until it settles or its
+ * stamp runs out, and one that landed after the end ends it keeping the board.
  *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
@@ -292,6 +301,8 @@ export function DriveModeWatcher(): null {
   // The timed drive's end, modelled on the arming timeout below: one timeout, keyed
   // on the end, so a renewal re-arms it. A timer that fires a beat early (or a
   // clock that moved) waits out the rest instead of letting the window run on.
+  // An iOS Lock Screen press still on its way to the wall holds the end: it
+  // looks again shortly, until the press settles or its stamp runs out.
   const windowEndsAt = drive?.phase === 'live' ? drive.expiresAt : null;
   useEffect(() => {
     if (windowEndsAt === null) return undefined;
@@ -301,11 +312,13 @@ export function DriveModeWatcher(): null {
       adoptFromLockScreen();
       const latest = getDriveMode();
       if (latest?.expiresAt !== windowEndsAt) return;
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
       if (isDriveWindowDue(latest)) {
-        exitDriveMode('window_ended');
+        const recheckInMs = endTimedDriveAtClock();
+        if (recheckInMs !== null) timer = setTimeout(endIfDue, recheckInMs);
         return;
       }
-      if (timer !== null) clearTimeout(timer);
       timer = setTimeout(endIfDue, Math.max(0, windowEndsAt - Date.now()));
     };
     timer = setTimeout(endIfDue, Math.max(0, windowEndsAt - Date.now()));

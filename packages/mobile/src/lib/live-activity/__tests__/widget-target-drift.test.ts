@@ -171,7 +171,7 @@ function evaluateSwiftCompilationCondition(
   return result;
 }
 
-function widgetVisibleRecorderLines(source: string): string[] {
+function widgetVisibleRecorderLines(source: string, symbolPattern: RegExp = RECORDER_SYMBOL_PATTERN): string[] {
   // Model the production widget's compilation conditions: WIDGET_EXTENSION is
   // defined, BOARDSESH_TESTS is not. Each branch tracks visibility inherited
   // from its parent plus whether an earlier sibling branch already matched.
@@ -213,7 +213,7 @@ function widgetVisibleRecorderLines(source: string): string[] {
       conditionalBranches.pop();
       continue;
     }
-    if (conditionalBranches.every((branch) => branch.isVisible) && RECORDER_SYMBOL_PATTERN.test(line)) {
+    if (conditionalBranches.every((branch) => branch.isVisible) && symbolPattern.test(line)) {
       visibleRecorderLines.push(line.trim());
     }
   }
@@ -341,5 +341,44 @@ describe('Widget target Swift drift', () => {
     expect(bleAwait).toBeGreaterThanOrEqual(0);
     expect(bleDiagnostic).toBeGreaterThan(bleAwait);
     expect(darwinPost).toBeGreaterThan(bleDiagnostic);
+  });
+
+  // JS hears a lock-screen press only at its Darwin post, after the board
+  // write. The press stamp covers that gap, so JS's timed-drive end check never
+  // lets go of the board under a press on its way to the wall.
+  it('stamps a lock-screen press before its server request and board write, and settles it before the Darwin post', () => {
+    const navigationSource = readFileSync(join(MODULE_IOS, 'ClimbNavigationIntent.swift'), 'utf8');
+    const occurrences = (needle: string) => navigationSource.split(needle).length - 1;
+    expect(occurrences('SharedLockScreenPress.begin(')).toBe(1);
+    expect(occurrences('SharedLockScreenPress.cancel(pressId')).toBe(1);
+    expect(occurrences('SharedLockScreenPress.settle(pressId')).toBe(1);
+
+    const begin = navigationSource.indexOf('SharedLockScreenPress.begin(');
+    const network = navigationSource.indexOf('await WidgetNetworking.sendNavigation(');
+    const rejectedGuard = navigationSource.indexOf('guard navigationResult != .serverRejected else {');
+    const cancel = navigationSource.indexOf('SharedLockScreenPress.cancel(pressId');
+    const indexSaved = navigationSource.indexOf('SharedQueueState.saveCurrentIndex(');
+    const bleWrite = navigationSource.indexOf('LiveActivityBleBridge.writeBoardForIntent(');
+    const recordPress = navigationSource.indexOf('SharedLightingWindowRuntime.recordPress(');
+    const settle = navigationSource.indexOf('SharedLockScreenPress.settle(pressId');
+    const darwinPost = navigationSource.indexOf('postQueueNavigateDarwinNotification()', settle);
+
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(network).toBeGreaterThan(begin);
+    expect(bleWrite).toBeGreaterThan(begin);
+    // A press the party server turns down never posts: its stamp goes with it.
+    expect(cancel).toBeGreaterThan(rejectedGuard);
+    expect(cancel).toBeLessThan(indexSaved);
+    expect(settle).toBeGreaterThan(recordPress);
+    expect(recordPress).toBeGreaterThan(bleWrite);
+    expect(darwinPost).toBeGreaterThan(settle);
+
+    // Only the app process writes the board, so only it stamps: the widget
+    // extension never sees the stamp calls or the id they share.
+    const widgetSource = readFileSync(join(WIDGET_TARGET, 'ClimbNavigationIntent.swift'), 'utf8');
+    const widgetVisibleCode = widgetVisibleRecorderLines(widgetSource, /SharedLockScreenPress|\bpressId\b/).filter(
+      (line) => !line.startsWith('//'),
+    );
+    expect(widgetVisibleCode).toEqual([]);
   });
 });
