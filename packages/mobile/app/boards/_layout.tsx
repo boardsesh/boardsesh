@@ -98,6 +98,14 @@ function BoardsLayout() {
           unfollowing live on the picker's cards (#4623). */}
       <Stack.Screen name="manage" options={{ title: t('myBoards.title') }} />
       <Stack.Screen name="edit" options={{ title: tBoards('mobile.edit.screenTitle') }} />
+      <Stack.Screen
+        name="spray/led-setup"
+        options={{
+          title: tBoards('sprayLedSetup.title'),
+          headerBackButtonMenuEnabled: false,
+          ...sprayFlowScreenOptions(),
+        }}
+      />
       {/* The add-a-wall flow, pushed like the builder above it. A ROUTE and not a
           sheet: two of its steps (the corner markers and the hold editor) are
           full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`

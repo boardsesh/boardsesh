@@ -12,7 +12,6 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  TextInput,
   useWindowDimensions,
   type ViewStyle,
   type ScrollViewInstance,
@@ -24,6 +23,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useNavigation, useRouter } from 'expo-router';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
+import { useAndroidKeyboardScroll } from '../../hooks/use-android-keyboard-scroll';
 import { useHeaderActions } from '../../hooks/use-header-actions';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
@@ -242,22 +242,7 @@ export function BoardForm({
   });
 
   const scrollRef = useRef<ScrollViewInstance>(null);
-  const focusedInputRef = useRef<ReturnType<typeof TextInput.State.currentlyFocusedInput>>(undefined);
-  const keepFocusedInputVisible = useCallback(() => {
-    if (keyboardHeight === 0 || !focusedInputRef.current) return;
-    scrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
-      focusedInputRef.current,
-      headerHeight + spacing[4],
-      true,
-    );
-  }, [keyboardHeight, headerHeight]);
-  const handleInputFocus = useCallback(() => {
-    focusedInputRef.current = TextInput.State.currentlyFocusedInput();
-    keepFocusedInputVisible();
-  }, [keepFocusedInputVisible]);
-  const handleInputBlur = useCallback(() => {
-    focusedInputRef.current = undefined;
-  }, []);
+  const keyboardScroll = useAndroidKeyboardScroll(scrollRef, keyboardHeight, headerHeight + spacing[4]);
   // A submit failure shows at the top of the form, so the form scrolls back up
   // to it from wherever the climber was, and a screen reader hears it. The
   // header inset is the rest offset under `automatic` on a glass header. Runs
@@ -283,11 +268,7 @@ export function BoardForm({
         contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding + keyboardHeight }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onFocus={Platform.OS === 'android' ? handleInputFocus : undefined}
-        onBlur={Platform.OS === 'android' ? handleInputBlur : undefined}
-        // Wait until the keyboard padding has reached native layout before
-        // revealing the field; focus also handles moving between open inputs.
-        onContentSizeChange={Platform.OS === 'android' ? keepFocusedInputVisible : undefined}
+        {...keyboardScroll}
       >
         {/* Above everything, so it never pushes a control the climber is
             looking at; the scroll above brings it into view. */}

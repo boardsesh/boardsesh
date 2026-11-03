@@ -19,7 +19,7 @@
 // Coordinates leaving this component are PHOTO pixels, which is what
 // `createSprayWallVersion` stores and what the homography is solved in.
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
@@ -32,7 +32,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import type { Quad } from '@boardsesh/spray-wall-geometry';
+import { tnutGridPath, type Quad, type TnutGridOptions } from '@boardsesh/spray-wall-geometry';
 import { borderRadius } from '../../theme/tokens';
 import { brandColorsDark } from '../../theme/colors';
 import {
@@ -78,6 +78,10 @@ export type SprayCornerMarkerProps = {
    * being moved.
    */
   onDragActiveChange?: (active: boolean) => void;
+  /** Optional canonical-frame backdrop for calibration over an already rectified wall. */
+  renderBackdrop?: (width: number, height: number) => ReactNode;
+  /** Live T-nut preview follows the handles entirely on the UI thread. */
+  tnutGrid?: Omit<TnutGridOptions, 'corners'>;
 };
 
 const CORNER_ORDER = [0, 1, 2, 3] as const;
@@ -115,6 +119,8 @@ function FittedCornerMarker({
   onChange,
   invalid = false,
   onDragActiveChange,
+  renderBackdrop,
+  tnutGrid,
   renderWidth,
   renderHeight,
   renderScale,
@@ -238,6 +244,25 @@ function FittedCornerMarker({
     };
   });
 
+  const gridProps = useAnimatedProps(() => ({
+    d: tnutGrid
+      ? tnutGridPath(
+          {
+            ...tnutGrid,
+            corners: {
+              topLeft: { x: x0.value / renderWidth, y: y0.value / renderHeight },
+              topRight: { x: x1.value / renderWidth, y: y1.value / renderHeight },
+              bottomRight: { x: x2.value / renderWidth, y: y2.value / renderHeight },
+              bottomLeft: { x: x3.value / renderWidth, y: y3.value / renderHeight },
+            },
+          },
+          renderWidth,
+          renderHeight,
+          3,
+        )
+      : '',
+  }));
+
   const guideColor = invalid ? SPRAY_GUIDE_COLORS.invalid : SPRAY_GUIDE_COLORS.valid;
 
   // Written out rather than looked up by index: the i18n linter only accepts
@@ -258,14 +283,26 @@ function FittedCornerMarker({
     // frame's rounded clip.
     <View style={layout.layer}>
       <View style={[styles.frame, layout.frame, { borderRadius: borderRadius.lg }]}>
-        <Image
-          source={{ uri: photo.uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          accessibilityIgnoresInvertColors
-        />
+        {renderBackdrop ? (
+          renderBackdrop(renderWidth, renderHeight)
+        ) : (
+          <Image
+            source={{ uri: photo.uri }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            accessibilityIgnoresInvertColors
+          />
+        )}
       </View>
       <Svg pointerEvents="none" style={[styles.outline, layout.frame]} width={renderWidth} height={renderHeight}>
+        {tnutGrid ? (
+          <AnimatedPath
+            animatedProps={gridProps}
+            fill={SPRAY_GUIDE_COLORS.valid}
+            stroke={SPRAY_GUIDE_COLORS.halo}
+            strokeWidth={1.5}
+          />
+        ) : null}
         {/* Dark halo under the light guide, so the outline reads on a bright photo too. */}
         <AnimatedPath
           animatedProps={outlineProps}

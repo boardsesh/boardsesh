@@ -79,3 +79,20 @@ export {
 } from './look-preview';
 
 export { SPRAY_WALL_PHOTO_MAX_LONG_SIDE, SPRAY_WALL_PHOTO_MAX_PIXELS, sprayWallPhotoMaxLongSide } from './photo-size';
+
+export {
+  DEFAULT_TNUT_CORNERS,
+  DEFAULT_TNUT_DIMENSION,
+  MAX_TNUT_DIMENSION,
+  MAX_TNUT_HOLES,
+  MIN_TNUT_DIMENSION,
+  generateTnutGrid,
+  isValidTnutCorners,
+  readTnutLayout,
+  tnutGridPath,
+  type TnutCorners,
+  type TnutGridOptions,
+  type TnutLayout,
+  type TnutPattern,
+  type TnutPoint,
+} from './tnut-layout';

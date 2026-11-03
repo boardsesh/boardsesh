@@ -7,6 +7,9 @@ import type { SprayWallLedSettings } from '../../../lib/spray/use-spray-wall-led
 
 const controller = vi.hoisted(() => ({ probe: vi.fn(), lightAll: vi.fn(), turnOff: vi.fn() }));
 const storage = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), records: new Map<string, unknown>() }));
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+
+vi.mock('expo-router', () => ({ useRouter: () => navigation }));
 
 vi.mock('@boardsesh/led-controller', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/led-controller')>()),
@@ -330,7 +333,7 @@ describe('SprayWallLedSection', () => {
     expect(storage.records.get(settingsKey)).toEqual(savedSettings(true, 'http://wled.local'));
   });
 
-  it('allows retrying a failed settings read and opens the setup placeholder without contacting WLED', async () => {
+  it('allows retrying a failed settings read and opens this wall’s setup route without contacting WLED', async () => {
     storage.records.set(settingsKey, savedSettings());
     storage.read.mockRejectedValueOnce(new Error('Storage unavailable'));
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
@@ -340,7 +343,8 @@ describe('SprayWallLedSection', () => {
     fireEvent.click(button('retry'));
     await waitFor(() => expect(enabledSwitch().disabled).toBe(false));
     fireEvent.click(button('setup'));
-    expect(screen.queryByText('sprayLed.setupPending')).not.toBeNull();
+    expect(navigation.push).toHaveBeenCalledWith('/boards/spray/led-setup?wallUuid=wall-1');
+    expect(screen.queryByText('sprayLed.setupPending')).toBeNull();
     expect(controller.probe).not.toHaveBeenCalled();
     expect(controller.lightAll).not.toHaveBeenCalled();
   });

@@ -13,8 +13,36 @@ one surface with one WLED controller. It does not illuminate climbs or map holds
    **Keep address anyway** to save it. Invalid URL syntax must be corrected.
 4. After a successful check, **Light all LEDs** sets the entire configured strip
    to solid white at 25% brightness. **Turn LEDs off** ends the test.
-5. **LED setup** currently explains that hole positions, LED positions and hold
-   matching are not developed yet.
+5. **LED setup** opens the T-nut setup: choose grid, offset grid or custom spacing.
+   For offset grids choose whether the top row starts inset. Match four rings to
+   the grid's outer corners, then set rows and columns (8 × 8 initially, 2–50
+   each). The preview updates as the rings move. Inset rows have one fewer hole
+   than full rows; their missing outer corners are imaginary grid positions.
+6. Continue to add missing holes or remove unwanted ones by tapping the wall.
+   Custom spacing starts here with an empty image. Undo reverses manual edits.
+   Returning to the grid preserves manual edits unless its parameters change.
+7. Continue to save the hole positions on this device. The next screen explains
+   that LED pattern selection is not implemented yet. Back reopens the hole
+   editor; Done returns to the wall editor. No hardware commands are sent.
+
+## Wall image and coordinates
+
+Both the grid calibration and the manual editor use the existing **Wall only**
+photo transformation (`FlattenedSprayPhoto`), with no hold outlines or generated
+background. The published photo-to-wall homography rectifies the photo into its
+canonical frame. Android uses the existing affine mesh approximation; iOS/web
+use the perspective matrix. The photo comes from the managed private-wall cache.
+This reuses the wall's stored calibration; it cannot recover missing calibration
+from an uncalibrated photograph (an identity homography remains identity).
+
+T-nut coordinates are normalized in that same rectified frame, never in the raw
+photograph. The grid uses a second projective transform from the unit grid to the
+four selected anchors, and updates on the UI thread while dragging. The saved
+identity includes the immutable wall version, canonical dimensions and homography.
+A changed identity starts a new setup while preserving the previous saved setup
+until the user explicitly continues. Layout data has a separate local storage key
+from WLED connection settings. Unsaved changes are protected on leaving the flow;
+this step does not yet associate holds with holes or holes with LEDs.
 
 These settings save immediately on this device, separately for each wall. Turning
 the setting off hides the remaining controls and retains the saved controller URL.

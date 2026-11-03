@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'expo-router';
+import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
 import { getLedControllerDriver, LedControllerError, normalizeControllerUrl } from '@boardsesh/led-controller';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
@@ -22,6 +24,7 @@ export function SprayWallLedSection({ wallUuid, disabled = false }: { wallUuid: 
 }
 
 function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled: boolean }) {
+  const router = useRouter();
   const { t } = useTranslation('boards');
   const { systemColors, brandColors, spacing } = useTheme();
   const { settings, loading, saving, error, reload, save } = useSprayWallLedSettings(wallUuid);
@@ -30,7 +33,6 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
   const [result, setResult] = useState<ProbeResult | null>(null);
   const [pending, setPending] = useState<'probe' | 'lights' | null>(null);
   const [lighting, setLighting] = useState<'lit' | 'off' | 'failed' | null>(null);
-  const [setupOpen, setSetupOpen] = useState(false);
   const request = useRef<AbortController | null>(null);
   // Refs guard double taps before React commits the pending state.
   const savingRef = useRef(false);
@@ -260,14 +262,12 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
               <Button
                 title={t('sprayLed.setup')}
                 variant="outlined"
-                onPress={() => setSetupOpen(!setupOpen)}
-                disabled={disabled}
+                onPress={() => {
+                  cancelRequest();
+                  router.push(sprayLedSetupHref(wallUuid));
+                }}
+                disabled={locked || pending !== null}
               />
-              {setupOpen ? (
-                <Text variant="footnote" accessibilityLiveRegion="polite">
-                  {t('sprayLed.setupPending')}
-                </Text>
-              ) : null}
             </>
           ) : null}
         </View>

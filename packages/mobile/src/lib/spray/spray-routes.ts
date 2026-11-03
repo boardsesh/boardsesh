@@ -14,6 +14,10 @@ export const SPRAY_HOLD_EDITOR_PATH = '/boards/spray/holds';
 /** The add-a-wall wizard. With `resetOf`, it builds the reset clone of that wall. */
 export const SPRAY_NEW_WALL_PATH = '/boards/spray/new';
 
+export function sprayLedSetupHref(wallUuid: string): string {
+  return `/boards/spray/led-setup?wallUuid=${encodeURIComponent(wallUuid)}`;
+}
+
 /** `/boards/spray/holds?wallUuid=<uuid>`. */
 export function sprayHoldEditorHref(wallUuid: string): string {
   return `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=${encodeURIComponent(wallUuid)}`;
@@ -38,7 +42,7 @@ export function readSprayWallUuid(params: {
  * a wall and editing its holds. Each is a full-screen pan-and-pinch surface for
  * part of its life, which is why iPad presents them full screen.
  */
-const SPRAY_FLOW_SCREENS: ReadonlySet<string> = new Set(['spray/new', 'spray/holds']);
+const SPRAY_FLOW_SCREENS: ReadonlySet<string> = new Set(['spray/new', 'spray/holds', 'spray/led-setup']);
 
 /**
  * The root `boards` route as its options function sees it. `params.screen` is
