@@ -205,7 +205,7 @@ function renderList(items: ClimbQueueItem[] = queue) {
   return render(
     <QueueList
       queue={items}
-      currentItemUuid="b"
+      currentItem={items.find(({ uuid }) => uuid === 'b') ?? null}
       board={board}
       isEditMode={false}
       showHistory

@@ -2,6 +2,7 @@ export * from './types';
 export * from './queue-navigation';
 export * from './track-label';
 export * from './queue-list-model';
+export * from './queue-sheet-walk';
 export * from './grade-display';
 export * from './marquee-timing';
 export * from './tick-utils';

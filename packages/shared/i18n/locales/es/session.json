@@ -164,8 +164,11 @@
   },
   "queueList": {
     "sectionHistory": "Historial",
+    "sectionNow": "Ahora",
     "sectionUpNext": "A continuación",
-    "sectionSuggestions": "Sugerencias",
+    "sectionThenFrom": "Luego sigue {{list}}",
+    "sectionThenFromUnnamed": "Luego sigue la lista",
+    "sectionPopular": "Populares en este plafón",
     "showFullHistory_one": "Mostrar historial completo ({{count}} más)",
     "showFullHistory_other": "Mostrar historial completo ({{count}} más)",
     "showFullHistoryAria_one": "Mostrar {{count}} elemento más del historial",

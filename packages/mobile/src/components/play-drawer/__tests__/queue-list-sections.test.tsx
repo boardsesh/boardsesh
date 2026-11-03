@@ -12,13 +12,16 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { render, fireEvent } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
+import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { QueueWalkBoard } from '@boardsesh/play-view';
 
-// The queue sheet labels its sections (History, Up next, Suggestions), shows a
-// header only when the section has rows, and puts a divider before Suggestions.
+// The queue sheet labels its sections (History, Now, Up next, then below the
+// queue "Then from <list>" and "Popular on this board"), shows a header only
+// when the section has rows, and puts one divider between the queue and the
+// climbs below it (Then-signposts, 2026-11-02).
 
 type ViewProps = { children?: ReactNode; testID?: string; style?: unknown };
 
@@ -72,7 +75,12 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+// The list name rides along so a test can see which list a header names.
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { list?: string }) => (options?.list ? `${key}(${options.list})` : key),
+  }),
+}));
 
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
@@ -142,19 +150,23 @@ function renderQueue(
   showFullHistory = false,
   autoScrollOnMount = false,
   presentation: 'sheet' | 'panel' = 'sheet',
+  playlistSuggestionSource: PlaylistSuggestionSource | null = null,
+  active = true,
+  walkBoard?: QueueWalkBoard,
 ) {
   return render(
     createElement(QueueList, {
       presentation,
       queue,
-      currentItemUuid,
+      currentItem: queue.find(({ uuid }) => uuid === currentItemUuid) ?? null,
       board,
       isEditMode: false,
       showHistory: true,
       showFullHistory,
       selectedItems: new Set<string>(),
-      playlistSuggestionSource: null,
-      active: true,
+      playlistSuggestionSource,
+      walkBoard,
+      active,
       autoScrollOnMount,
       onToggleSelect: vi.fn(),
       onClimbPress: vi.fn(),
@@ -175,25 +187,26 @@ describe('QueueList section headers', () => {
     feedFixture.climbs = [];
   });
 
-  it('labels History, Up next and Suggestions in order', () => {
+  it('labels History, Now, Up next and Popular on this board in order', () => {
     feedFixture.climbs = [climb('s1')];
     const queue = ['h1', 'cur', 'f1'].map(item);
     const { container } = renderQueue(queue, 'cur');
     expect(headings(container)).toEqual([
       'queueList.sectionHistory',
+      'queueList.sectionNow',
       'queueList.sectionUpNext',
-      'queueList.sectionSuggestions',
+      'queueList.sectionPopular',
     ]);
   });
 
-  it('shows a header only when its section has rows', () => {
+  it('labels the current climb Now, on every platform, even alone', () => {
     const { container } = renderQueue([item('cur')], 'cur');
-    expect(headings(container)).toEqual([]);
+    expect(headings(container)).toEqual(['queueList.sectionNow']);
   });
 
-  it('omits History when nothing has been climbed and Suggestions when there are none', () => {
+  it('omits History when nothing has been climbed and the sections below the queue when they are empty', () => {
     const { container } = renderQueue([item('cur'), item('f1')], 'cur');
-    expect(headings(container)).toEqual(['queueList.sectionUpNext']);
+    expect(headings(container)).toEqual(['queueList.sectionNow', 'queueList.sectionUpNext']);
   });
 
   it('labels Up next when there is no current climb', () => {
@@ -217,19 +230,136 @@ describe('QueueList section headers', () => {
     expect(queryByTestId('row-h1')).not.toBeNull();
   });
 
-  it('puts one divider before Suggestions and none before History or Up next', () => {
+  it('puts one divider before the popular climbs and none before History, Now or Up next', () => {
     feedFixture.climbs = [climb('s1')];
     const { container, queryAllByTestId } = renderQueue(['h1', 'cur', 'f1'].map(item), 'cur');
-    const dividers = queryAllByTestId('queue-suggestions-divider');
+    const dividers = queryAllByTestId('queue-off-queue-divider');
     expect(dividers).toHaveLength(1);
     const nextHeading = dividers[0].parentElement?.querySelector('h2');
-    expect(nextHeading?.textContent).toBe('queueList.sectionSuggestions');
-    expect(container.querySelectorAll('[data-testid="queue-suggestions-divider"]')).toHaveLength(1);
+    expect(nextHeading?.textContent).toBe('queueList.sectionPopular');
+    expect(container.querySelectorAll('[data-testid="queue-off-queue-divider"]')).toHaveLength(1);
   });
 
-  it('has no divider without suggestions', () => {
+  it('has no divider with nothing below the queue', () => {
     const { queryAllByTestId } = renderQueue(['h1', 'cur', 'f1'].map(item), 'cur');
-    expect(queryAllByTestId('queue-suggestions-divider')).toHaveLength(0);
+    expect(queryAllByTestId('queue-off-queue-divider')).toHaveLength(0);
+  });
+
+  describe('Then from the list, and Popular on this board', () => {
+    const list = ['l1', 'l2', 'l3', 'l4'].map(climb);
+    const projects = (label?: string): PlaylistSuggestionSource => ({
+      playlistUuid: 'projects',
+      activatedClimbUuid: 'l1',
+      boardKey: 'kilter:1:10:1,2',
+      climbs: list,
+      ...(label ? { label } : {}),
+    });
+    // The current climb is the list's second, so swipes play Up next (f1) and
+    // then pick the list up at its third climb.
+    const onList = (): ClimbQueueItem[] => [
+      { uuid: 'cur', climb: list[1], suggested: true } as unknown as ClimbQueueItem,
+      item('f1'),
+    ];
+    const offQueueRows = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('button[aria-label]')).map((node) => node.getAttribute('aria-label'));
+
+    it('lists what swipes reach after Up next under the name the top bar uses', () => {
+      const { container } = renderQueue(onList(), 'cur', false, false, 'sheet', projects('Projects'));
+      expect(headings(container)).toEqual([
+        'queueList.sectionNow',
+        'queueList.sectionUpNext',
+        'queueList.sectionThenFrom(Projects)',
+      ]);
+      expect(offQueueRows(container)).toEqual(['Climb l3', 'Climb l4']);
+    });
+
+    it('splits the board feed off under its own header, leaving out the queue and Then from', () => {
+      feedFixture.climbs = [climb('l3'), climb('c-f1'), climb('p1'), climb('p2'), climb('p1')];
+      const { container, queryAllByTestId } = renderQueue(onList(), 'cur', false, false, 'sheet', projects('Projects'));
+      expect(headings(container)).toEqual([
+        'queueList.sectionNow',
+        'queueList.sectionUpNext',
+        'queueList.sectionThenFrom(Projects)',
+        'queueList.sectionPopular',
+      ]);
+      expect(offQueueRows(container)).toEqual(['Climb l3', 'Climb l4', 'Climb p1', 'Climb p2']);
+      // One divider: between the queue and everything below it.
+      const dividers = queryAllByTestId('queue-off-queue-divider');
+      expect(dividers).toHaveLength(1);
+      expect(dividers[0].parentElement?.querySelector('h2')?.textContent).toBe('queueList.sectionThenFrom(Projects)');
+    });
+
+    it('says "the list" for a list nobody named', () => {
+      const { container } = renderQueue(onList(), 'cur', false, false, 'sheet', projects());
+      expect(headings(container)).toContain('queueList.sectionThenFromUnnamed');
+    });
+
+    it('says "the list" for a popular climb\'s track too, which the top bar names nothing', () => {
+      // Not "Then from Popular on this board" over a "Popular on this board"
+      // header: two near-identical headings, one of them a name the top bar
+      // never shows.
+      feedFixture.climbs = [climb('p1')];
+      const feedTrack = { ...projects(), playlistUuid: 'queue-suggestions' };
+      const { container } = renderQueue(onList(), 'cur', false, false, 'sheet', feedTrack);
+      expect(headings(container)).toEqual([
+        'queueList.sectionNow',
+        'queueList.sectionUpNext',
+        'queueList.sectionThenFromUnnamed',
+        'queueList.sectionPopular',
+      ]);
+    });
+
+    it("walks past a queued climb this wall can't draw, as the swipe does", () => {
+      // The list holds a Tension climb, and a queued copy of it sits between the
+      // current climb and the queued l3. On a Kilter board the swipe walks past
+      // it onto that l3 (#6664), so Then from is only what lies beyond. A walk
+      // blind to the board stops at it and lists a second l3 here.
+      const tension = { uuid: 't1', name: 'Climb t1', boardType: 'tension', layoutId: 9 } as Climb;
+      const mixedList = { ...projects('Projects'), climbs: [list[0], tension, list[1], list[2], list[3]] };
+      const queue = [
+        { uuid: 'cur', climb: list[1], suggested: true },
+        { uuid: 'e-t1', climb: tension, suggested: true },
+        { uuid: 'e-l3', climb: list[2], suggested: true },
+      ] as unknown as ClimbQueueItem[];
+      const kilter: QueueWalkBoard = { activeConfig: { boardName: 'kilter', layoutId: 1 } };
+      const onKilter = renderQueue(queue, 'cur', false, false, 'sheet', mixedList, true, kilter);
+      expect(offQueueRows(onKilter.container)).toEqual(['Climb l4']);
+    });
+
+    it('walks from the current climb the player walks from, even before the queue holds it', () => {
+      // A commit the server hasn't echoed yet: the current climb is not in the
+      // queue. The swipe walks the list on from it; so does Then from, rather
+      // than the whole queue from the line.
+      const pending = { uuid: 'pending', climb: list[1], suggested: true } as unknown as ClimbQueueItem;
+      const { container } = render(
+        createElement(QueueList, {
+          presentation: 'sheet',
+          queue: [item('f1')],
+          currentItem: pending,
+          board,
+          isEditMode: false,
+          showHistory: true,
+          showFullHistory: false,
+          selectedItems: new Set<string>(),
+          playlistSuggestionSource: projects('Projects'),
+          active: true,
+          onToggleSelect: vi.fn(),
+          onClimbPress: vi.fn(),
+          onRemove: vi.fn(),
+          onShowFullHistory: vi.fn(),
+          onTickHistory: vi.fn(),
+          onSuggestionPress: vi.fn(),
+          reorderQueue: vi.fn(),
+        }),
+      );
+      expect(offQueueRows(container)).toEqual(['Climb l3', 'Climb l4']);
+    });
+
+    it('walks nothing while the sheet is hidden', () => {
+      const { container } = renderQueue(onList(), 'cur', false, false, 'sheet', projects('Projects'), false);
+      expect(headings(container)).toEqual(['queueList.sectionNow', 'queueList.sectionUpNext']);
+      expect(offQueueRows(container)).toEqual([]);
+    });
   });
 
   describe('row indices with headers', () => {
@@ -242,11 +372,11 @@ describe('QueueList section headers', () => {
       vi.useRealTimers();
     });
 
-    it('scrolls to the current climb counting the History header', () => {
-      // rows: [History header, h1, divider, cur, Up next header, f1] -> cur is row 3.
+    it('scrolls to the current climb counting the History and Now headers', () => {
+      // rows: [History header, h1, divider, Now header, cur, Up next header, f1] -> cur is row 4.
       renderQueue(['h1', 'cur', 'f1'].map(item), 'cur', false, true);
       vi.advanceTimersByTime(400);
-      expect(scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 3 }));
+      expect(scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 4 }));
     });
 
     it('re-centres the side panel only when the current climb changes, not when rows arrive', () => {
@@ -254,7 +384,7 @@ describe('QueueList section headers', () => {
         createElement(QueueList, {
           presentation: 'panel',
           queue,
-          currentItemUuid: current,
+          currentItem: queue.find(({ uuid }) => uuid === current) ?? null,
           board,
           isEditMode: false,
           showHistory: true,
@@ -287,9 +417,9 @@ describe('QueueList section headers', () => {
     });
 
     it('points the drag window at the first upcoming climb after the headers', () => {
-      // rows: [History header, h1, divider, cur, Up next header, f1] -> f1 is row 5.
+      // rows: [History header, h1, divider, Now header, cur, Up next header, f1] -> f1 is row 6.
       renderQueue(['h1', 'cur', 'f1'].map(item), 'cur');
-      expect(dragArgs.calls.at(-1)?.firstFutureRowIndex).toBe(5);
+      expect(dragArgs.calls.at(-1)?.firstFutureRowIndex).toBe(6);
     });
   });
 });
