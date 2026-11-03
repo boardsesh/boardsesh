@@ -271,11 +271,11 @@ describe('WallStatePill', () => {
     expect(pill(container).getAttribute('data-label')).toBe('playView.wallState.backToCurrent');
   });
 
-  // QA #147: named to a screen reader, "Back to my pick: The Eyes".
+  // QA #147: named to a screen reader, "Back to your climb: The Eyes" (the then-signposts).
   it('names the climb back goes to', () => {
     const mine = renderPill({ backTarget: 'current', targetName: 'The Eyes' });
     expect(pill(mine.container).getAttribute('data-label')).toBe(
-      'playView.wallState.backToMyPickNamed:{"name":"The Eyes"}',
+      'playView.wallState.backToCurrentNamed:{"name":"The Eyes"}',
     );
     mine.unmount();
     const wall = renderPill({ backTarget: 'wall', targetName: 'The Eyes' });
@@ -314,7 +314,7 @@ describe('WallStatePill', () => {
       createElement(WallStatePill, { state: 'browsing', backTarget: 'current', targetName: 'The Eyes', onPress }),
     );
     const viewer = container.querySelector('[data-viewer-title]') as HTMLElement;
-    expect(viewer.getAttribute('data-viewer-title')).toBe('playView.wallState.backToMyPickNamed:{"name":"The Eyes"}');
+    expect(viewer.getAttribute('data-viewer-title')).toBe('playView.wallState.backToCurrentNamed:{"name":"The Eyes"}');
     fireEvent.contextMenu(viewer);
     expect(onPress).toHaveBeenCalledTimes(1);
   });

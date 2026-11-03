@@ -8,6 +8,7 @@ import { useFavoriteStatus, useToggleFavorite } from '../../lib/graphql/hooks';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { trackQueueSheetOpened } from '../../lib/queue-navigation-analytics';
+import { queueSheetOpenContext } from '../../lib/queue-sheet-open-context';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -21,6 +22,7 @@ import { useRouter, useSegments } from 'expo-router';
 import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { isPlayerRoute } from '../../lib/route-segments';
 import { MiniPlayerTrackPager, useMiniPlayerNavigation } from './use-mini-player-navigation';
+import { describeMiniPlayerStep } from './mini-player-step-label';
 import { useQueueActions } from '../../providers/queue-provider';
 import { getLastPick, setLastPickMirrored } from '../../lib/last-pick-store';
 
@@ -270,11 +272,13 @@ function MiniPlayerMirrorButton({
 /** Open the queue sheet from the bar: its Queue button or its ⋯ row. */
 export function useOpenMiniPlayerQueue(surface: 'mini_player' | 'mini_player_menu'): () => void {
   const { openQueueSheet, boardConfig } = useDrawerHost();
+  const { getQueueSnapshot } = useQueueActions();
   const boardType = boardConfig?.boardName;
   return useCallback(() => {
-    trackQueueSheetOpened({ surface, boardType });
+    // `from`: the bar's last pick is a preview (Then-signposts).
+    trackQueueSheetOpened({ surface, boardType, ...queueSheetOpenContext(getQueueSnapshot()) });
     openQueueSheet();
-  }, [openQueueSheet, boardType, surface]);
+  }, [openQueueSheet, boardType, surface, getQueueSnapshot]);
 }
 
 function MiniPlayerQueueButton({ size, wideLayout }: { size: number; wideLayout: boolean }) {
@@ -360,7 +364,7 @@ function MiniPlayerTransportButtons({
           buttonId === 'previous' ? (
             <MiniPlayerIconButton
               iconName={wideLayout ? 'skip.previous.fill' : 'skip.previous'}
-              accessibilityLabel={t('playView.actionBar.previousAria')}
+              accessibilityLabel={describeMiniPlayerStep('previous', navigation.previousWalk, t)}
               onPress={navigation.onPrevious}
               disabled={!navigation.canPrevious}
               size={size}
@@ -369,7 +373,7 @@ function MiniPlayerTransportButtons({
           ) : (
             <MiniPlayerIconButton
               iconName={wideLayout ? 'skip.next.fill' : 'skip.next'}
-              accessibilityLabel={t('playView.actionBar.nextAria')}
+              accessibilityLabel={describeMiniPlayerStep('next', navigation.nextWalk, t)}
               onPress={navigation.onNext}
               disabled={!navigation.canNext}
               size={size}

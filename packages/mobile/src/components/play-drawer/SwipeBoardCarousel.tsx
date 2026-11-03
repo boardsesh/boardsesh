@@ -87,6 +87,14 @@ type SwipeBoardCarouselProps = {
   canSwipePrevious: boolean;
   onSwipeNext: () => void;
   onSwipePrevious: () => void;
+  /**
+   * The board's spoken value, as the then-signposts word it on a climb that
+   * plays Up next: "Up next, 4 of 4, then Projects". Absent everywhere else.
+   */
+  accessibilityValueText?: string;
+  /** The adjust actions' names when a step crosses into the list ("Next in Projects"); the plain ones otherwise. */
+  nextActionLabel?: string;
+  previousActionLabel?: string;
   // Fires whenever the local resetZoom callback identity is established or
   // changes — lets the parent stash it for the tick-FAB flow that needs to
   // reset zoom before opening the tick bar.
@@ -299,6 +307,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   canSwipePrevious,
   onSwipeNext,
   onSwipePrevious,
+  accessibilityValueText,
+  nextActionLabel,
+  previousActionLabel,
   onResetZoomReady,
   enabled = true,
   scrollRef,
@@ -324,13 +335,28 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       accessibilityLabel: accessibilitySummary,
       accessibilityHint: t('mobile.boardAccessibility.adjustHint'),
       accessibilityState: { disabled: !enabled },
+      ...(accessibilityValueText ? { accessibilityValue: { text: accessibilityValueText } } : null),
       accessibilityActions: [
-        ...(enabled && canSwipeNext ? [{ name: 'increment', label: t('mobile.boardAccessibility.next') }] : []),
-        ...(enabled && canSwipePrevious ? [{ name: 'decrement', label: t('mobile.boardAccessibility.previous') }] : []),
+        ...(enabled && canSwipeNext
+          ? [{ name: 'increment', label: nextActionLabel ?? t('mobile.boardAccessibility.next') }]
+          : []),
+        ...(enabled && canSwipePrevious
+          ? [{ name: 'decrement', label: previousActionLabel ?? t('mobile.boardAccessibility.previous') }]
+          : []),
       ],
       onAccessibilityAction: handleAccessibilityAction,
     }),
-    [accessibilitySummary, enabled, canSwipeNext, canSwipePrevious, handleAccessibilityAction, t],
+    [
+      accessibilitySummary,
+      accessibilityValueText,
+      enabled,
+      canSwipeNext,
+      canSwipePrevious,
+      nextActionLabel,
+      previousActionLabel,
+      handleAccessibilityAction,
+      t,
+    ],
   );
   // Measured box the board is laid out into. The board is sized to *fit* this
   // box (contain) so the play drawer's full-screen first view can keep the

@@ -26,7 +26,6 @@ import {
   isPlaylistPeekQueueItemUuid,
   decideAdd,
   deriveAcceptedConfigs,
-  isClimbOnReachableBoard,
   planPlayNext,
   playNextInsertPosition,
   MAX_SYNCED_QUEUE_ITEMS,
@@ -35,7 +34,6 @@ import {
   reorderAcrossLine,
 } from '@boardsesh/queue';
 import type {
-  Climb,
   ClimbAuthoredPatch,
   CurrentClimbPlacement,
   HistoryCopyRule,
@@ -61,11 +59,7 @@ import { isNowSlotValidationError } from '@boardsesh/queue-react/create-queue-mu
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isNotInSessionError, isRateLimitedError, isTransportClosedError } from '@boardsesh/graphql-client';
-import {
-  classifyClimbBoardCompatibility,
-  toBoardName,
-  type ActiveBoardForCompatibility,
-} from '@boardsesh/board-config';
+import { classifyClimbBoardCompatibility } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { JOIN_SESSION, JOIN_SESSION_NOW_SLOT, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
@@ -102,6 +96,7 @@ import {
 } from './queue/now-slot-server';
 import { buildSessionQueueStateQuery } from '@boardsesh/graphql/operations/queue-session';
 import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
+import { reachableClimbPredicate, toActiveBoardCompatibilityConfig } from './queue/active-board-compatibility';
 import { toClimbQueueItem } from '../lib/queue-conversion';
 import { getPlaylistRenderBoardTarget } from '../lib/playlists/playlist-climb-render-board';
 import { resolveCommittableQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
@@ -182,23 +177,6 @@ export {
   usePlaylistSuggestionSource,
 } from './queue/queue-contexts';
 export type { StartSessionConfig, QueueReorderSource, QueueClearSource } from './queue/queue-contexts';
-
-/**
- * The board identity the compatibility helpers need, or undefined when we can't
- * name the active board (an unrecognised `boardType`, or none picked yet).
- *
- * Identity only — board name + layout. A same-layout different-size climb still
- * renders on its own board, so neither the add gate nor the swipe skip should
- * act on it; hold-id and size containment stay in `canAddClimbToBoard`.
- * `undefined` fails open everywhere it is used.
- */
-function toActiveBoardCompatibilityConfig(
-  activeBoard: { boardType: string; layoutId: number } | null | undefined,
-): ActiveBoardForCompatibility | undefined {
-  if (!activeBoard) return undefined;
-  const activeBoardName = toBoardName(activeBoard.boardType);
-  return activeBoardName ? { boardName: activeBoardName, layoutId: activeBoard.layoutId } : undefined;
-}
 
 /** The skip-notice latch's key: which queue entries a forward run walked past. */
 function skippedItemsKey(skippedItems: readonly ClimbQueueItem[]): string {
@@ -930,10 +908,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
   // One stable identity per roster, because this feeds the forward-selection
   // memo that decides the next swipe target.
-  const isReachableClimb = useMemo(() => {
-    if (reachableBoardKeys.size === 0) return undefined;
-    return (climb: Climb) => isClimbOnReachableBoard(climb, reachableBoardKeys);
-  }, [reachableBoardKeys]);
+  const isReachableClimb = useMemo(() => reachableClimbPredicate(reachableBoardKeys), [reachableBoardKeys]);
   const isReachableClimbRef = useRef(isReachableClimb);
   isReachableClimbRef.current = isReachableClimb;
   const reachableBoardKeysRef = useRef(reachableBoardKeys);

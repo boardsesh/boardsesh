@@ -4,14 +4,30 @@ import type { BrowseCaption } from './wall-state';
 import { getCachedNumberFormat } from '../../lib/intl-formatter-cache';
 
 /**
- * The list the player walks, as the two pieces the top bar lays out side by
- * side: the name, which the layout may cut, and the count, which it never does.
+ * "then Projects" after an Up next count, in three pieces so the layout cuts
+ * only the list's name: the words before it and after it always show whole.
+ */
+export type TrackThenParts = {
+  before: string;
+  name: string;
+  after: string;
+};
+
+/**
+ * The list the player walks, as the pieces the top bar lays out side by side:
+ * the name, which the layout may cut, the count, which it never does, and on a
+ * climb Up next whose list carries on, what comes after it.
  */
 export type TrackLabelParts = {
   /** The list's name, whole. Only the layout cuts it. */
   name: string;
   /** "4 of 23", or null when the count isn't known to be right. */
   count: string | null;
+  /**
+   * "then Projects" (the then-signposts): the list a walk playing Up next picks
+   * up once Up next is played. Absent everywhere else, a workout stage included.
+   */
+  thenTail?: TrackThenParts | null;
   /** The whole label for VoiceOver, never cut: "Playing from Projects, 4 of 23". */
   accessibilityLabel: string;
 };
@@ -28,7 +44,7 @@ export function formatTrackLabelParts(
   locale: string,
 ): TrackLabelParts | null {
   if (model.kind === 'hidden') return null;
-  if (model.kind === 'upNext') return formatUpNextLabelParts(model.count, t, locale);
+  if (model.kind === 'upNext') return formatUpNextLabelParts(model.count, model.thenListName, t, locale);
   const { name } = model;
   if (model.kind === 'named') {
     return { name, count: null, accessibilityLabel: t('playView.track.playingFromAria', { name }) };
@@ -46,23 +62,60 @@ export function formatTrackLabelParts(
 /**
  * "Up next · 1 of 3" while a queued climb plays in the middle of a list
  * (#6777). The name is the queue's own section name, so the top bar reads the
- * way the queue sheet does.
+ * way the queue sheet does. `thenListName` adds "· then Projects" while the
+ * list carries on after Up next, and the spoken label says it too.
  */
 function formatUpNextLabelParts(
   count: { position: number; total: number } | null,
+  thenListName: string | null,
   t: TFunction<'session'>,
   locale: string,
 ): TrackLabelParts {
   const name = t('playView.track.upNext');
-  if (!count) return { name, count: null, accessibilityLabel: name };
+  const thenTail = thenListName ? formatThenParts(thenListName, t) : null;
+  if (!count) {
+    return {
+      name,
+      count: null,
+      thenTail,
+      accessibilityLabel: thenListName ? t('playView.track.upNextThenAria', { name: thenListName }) : name,
+    };
+  }
   const numbers = getCachedNumberFormat(locale);
   const position = numbers.format(count.position);
   const total = numbers.format(count.total);
   return {
     name,
     count: t('playView.track.position', { position, total }),
-    accessibilityLabel: t('playView.track.upNextPositionAria', { position, total }),
+    thenTail,
+    accessibilityLabel: thenListName
+      ? t('playView.track.upNextPositionThenAria', { position, total, name: thenListName })
+      : t('playView.track.upNextPositionAria', { position, total }),
   };
+}
+
+/** Stands in for the list's name while the "then" sentence is cut around it. */
+const THEN_NAME_MARK = '\u2063';
+
+/**
+ * "then Projects" split around the list's name, wherever the language puts it,
+ * so the top bar can cut the name and keep the rest. A translation that lost
+ * the name keeps the whole sentence before it and prints the name after.
+ */
+export function formatThenParts(listName: string, t: TFunction<'session'>): TrackThenParts {
+  const sentence = t('playView.track.then', { name: THEN_NAME_MARK });
+  const markAt = sentence.indexOf(THEN_NAME_MARK);
+  if (markAt < 0) return { before: `${sentence} `, name: listName, after: '' };
+  return {
+    before: sentence.slice(0, markAt),
+    name: listName,
+    after: sentence.slice(markAt + THEN_NAME_MARK.length),
+  };
+}
+
+/** The "then" part as printed, joined back up: "then Projects". */
+export function printedThen(tail: TrackThenParts): string {
+  return `${tail.before}${tail.name}${tail.after}`;
 }
 
 /**

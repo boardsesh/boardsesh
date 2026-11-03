@@ -16,6 +16,7 @@ type ViewProps = {
   pointerEvents?: string;
   accessibilityRole?: string;
   accessibilityActions?: { name: string; label: string }[];
+  accessibilityValue?: { text?: string };
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
 };
 
@@ -27,7 +28,7 @@ const recorded = vi.hoisted(() => ({
   boardProps: vi.fn(),
   synchronousArtReadiness: undefined as BoardArtReadiness | undefined,
   accessibility: undefined as
-    | Pick<ViewProps, 'accessibilityRole' | 'accessibilityActions' | 'onAccessibilityAction'>
+    | Pick<ViewProps, 'accessibilityRole' | 'accessibilityActions' | 'accessibilityValue' | 'onAccessibilityAction'>
     | undefined,
 }));
 
@@ -54,11 +55,12 @@ vi.mock('react-native', () => {
       pointerEvents,
       accessibilityRole,
       accessibilityActions,
+      accessibilityValue,
       onAccessibilityAction,
     }: ViewProps) => {
       if (testID === 'play-drawer-board-container') recorded.onLayout = onLayout;
       if (testID === 'play-drawer-board-accessibility') {
-        recorded.accessibility = { accessibilityRole, accessibilityActions, onAccessibilityAction };
+        recorded.accessibility = { accessibilityRole, accessibilityActions, accessibilityValue, onAccessibilityAction };
       }
       const dimensions = flattenStyle(style);
       return createElement(
@@ -708,6 +710,32 @@ describe('SwipeBoardCarousel pages', () => {
     act(() => recorded.accessibility?.onAccessibilityAction?.({ nativeEvent: { actionName: 'decrement' } }));
     expect(onSwipeNext).toHaveBeenCalledOnce();
     expect(onSwipePrevious).toHaveBeenCalledOnce();
+  });
+
+  // The then-signposts: on the last Up next climb the board's value names
+  // what comes after, and the action that crosses into the list says so.
+  it('reads the walk as its value and names an action that crosses into the list', () => {
+    render(
+      createElement(SwipeBoardCarousel, {
+        ...baseProps,
+        canSwipePrevious: true,
+        accessibilityValueText: 'Up next, 4 of 4, then Projects',
+        nextActionLabel: 'Next in Projects',
+      }),
+    );
+    measure(350, 500);
+
+    expect(recorded.accessibility?.accessibilityValue).toEqual({ text: 'Up next, 4 of 4, then Projects' });
+    expect(recorded.accessibility?.accessibilityActions).toEqual([
+      { name: 'increment', label: 'Next in Projects' },
+      { name: 'decrement', label: 'mobile.boardAccessibility.previous' },
+    ]);
+  });
+
+  it('has no value off Up next', () => {
+    render(createElement(SwipeBoardCarousel, baseProps));
+    measure(350, 500);
+    expect(recorded.accessibility?.accessibilityValue).toBeUndefined();
   });
 
   it('does not expose or run accessible navigation while the board is disabled', () => {

@@ -3,8 +3,10 @@ import {
   computeNavigationTargetsWithSuggestions,
   resolveNavigationSuggestionSource,
   resolvePreviewStepSource,
+  resolveStepTrack,
   resolveTrackListClimbUuid,
   resolveTrackPosition,
+  stepCrossesIntoList,
 } from '@boardsesh/play-view';
 import { toBoardName } from '@boardsesh/board-config';
 import {
@@ -14,7 +16,7 @@ import {
   type PlaylistTrackResume,
 } from '@boardsesh/queue';
 import type { Climb } from '@boardsesh/shared-schema';
-import type { QueueNavigationDirection } from '@boardsesh/analytics';
+import type { QueueNavigationDirection, QueueNavigationWalk } from '@boardsesh/analytics';
 import {
   useIsSharedSession,
   usePlaylistSuggestionSource,
@@ -33,14 +35,18 @@ import { useDrivingWall } from '../play-drawer/use-climb-change-lights';
 import { drivingAtPick } from '../play-drawer/drive-mode-store';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 import { resolvePreviewStepCommit } from '../play-drawer/preview-step-commit';
+import { countUpNext } from '../play-drawer/track-end';
 import { resolvePickBoard } from './pick-board';
 import { barOpenOptions, useBarClimb } from './use-bar-climb';
+import { miniPlayerStepWalk, type MiniPlayerStepWalk } from './mini-player-step-label';
 
 export type MiniPlayerNavigation = {
   canPrevious: boolean;
   canNext: boolean;
   onPrevious: () => void;
   onNext: () => void;
+  previousWalk: MiniPlayerStepWalk;
+  nextWalk: MiniPlayerStepWalk;
 };
 
 /**
@@ -73,9 +79,12 @@ export type MiniPlayerNavigation = {
  * pages the list or shows its end card.
  *
  * Each step that moves the wall or opens a preview fires `Queue Navigation`
- * with `surface: 'mini_player'`. The end-of-list open does not: it changes no
- * climb. {@link MiniPlayerTrackPager} keeps
+ * with `surface: 'mini_player'`, and which walk it took. The end-of-list open
+ * does not: it changes no climb. {@link MiniPlayerTrackPager} keeps
  * a long list paging while the player is closed.
+ *
+ * Each button also says, to a screen reader only, which walk it takes
+ * (`previousWalk` / `nextWalk`, worded by `describeMiniPlayerStep`).
  */
 export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   const { nextClimb, previousClimb, setCurrentClimb } = useQueueActions();
@@ -142,6 +151,31 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   // over too: the player loads the rest, or shows the end card.
   const listEnded = nextItem === null && atTrackEnd && (pick !== null || !canLoadMoreOfTrack(stepSource));
 
+  // Which walk each step takes, read off the step's own place on the list, as
+  // the player's signposts read it.
+  const stepPosition = useMemo(() => resolveTrackPosition(queue, stepFrom, stepSource), [queue, stepFrom, stepSource]);
+  const nextTrack = resolveStepTrack(stepPosition, nextTrackResume);
+  const previousTrack = resolveStepTrack(stepPosition, prevTrackResume);
+  const nextCrosses = stepCrossesIntoList(stepPosition, nextTrackResume);
+  const previousCrosses = stepCrossesIntoList(stepPosition, prevTrackResume);
+  const listName = stepSource?.label;
+  const nextWalk = useMemo(
+    () => (nextItem === null ? null : miniPlayerStepWalk(nextTrack, listName)),
+    [nextItem, nextTrack, listName],
+  );
+  const previousWalk = useMemo(
+    () => (prevItem === null ? null : miniPlayerStepWalk(previousTrack, listName)),
+    [prevItem, previousTrack, listName],
+  );
+  // Up next as the player counts it, for the event's bucket: after the queue's
+  // Now, or from the History line with nothing current.
+  const currentUuid = currentClimbQueueItem?.uuid;
+  const upNextCount = useMemo(
+    () => countUpNext(queue, currentUuid ? queue.findIndex(({ uuid }) => uuid === currentUuid) : -1, historyCount),
+    [queue, currentUuid, historyCount],
+  );
+  const from = pick ? 'preview' : 'current';
+
   const boardType = activeBoard?.boardType;
   const layoutId = activeBoard?.layoutId;
   const move = useCallback(
@@ -150,6 +184,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       trackResume: PlaylistTrackResume | null | undefined,
       navigateQueue: () => void,
       direction: QueueNavigationDirection,
+      walk: QueueNavigationWalk,
     ) => {
       if (!targetItem) return;
       hapticSelection();
@@ -182,6 +217,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
           driving: lights,
           boardType,
           layoutId,
+          walk,
         });
       if (target.viewOnly) {
         if (!target.targetItem) return;
@@ -237,8 +273,14 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
     ],
   );
   const onPrevious = useCallback(
-    () => move(prevItem, prevTrackResume, previousClimb, 'previous'),
-    [move, prevItem, prevTrackResume, previousClimb],
+    () =>
+      move(prevItem, prevTrackResume, previousClimb, 'previous', {
+        track: previousTrack,
+        from,
+        upNextCount,
+        crossed: previousCrosses,
+      }),
+    [move, prevItem, prevTrackResume, previousClimb, previousTrack, from, upNextCount, previousCrosses],
   );
   const onNext = useCallback(() => {
     if (nextItem === null && listEnded && stepFrom) {
@@ -248,10 +290,30 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       openPlayDrawer(stepFrom.climb as Climb, barOpenOptions(pick));
       return;
     }
-    move(nextItem, nextTrackResume, nextClimb, 'next');
-  }, [nextItem, nextTrackResume, listEnded, stepFrom, pick, openPlayDrawer, move, nextClimb]);
+    move(nextItem, nextTrackResume, nextClimb, 'next', { track: nextTrack, from, upNextCount, crossed: nextCrosses });
+  }, [
+    nextItem,
+    nextTrackResume,
+    listEnded,
+    stepFrom,
+    pick,
+    openPlayDrawer,
+    move,
+    nextClimb,
+    nextTrack,
+    from,
+    upNextCount,
+    nextCrosses,
+  ]);
 
-  return { canPrevious: prevItem !== null, canNext: nextItem !== null || listEnded, onPrevious, onNext };
+  return {
+    canPrevious: prevItem !== null,
+    canNext: nextItem !== null || listEnded,
+    onPrevious,
+    onNext,
+    previousWalk,
+    nextWalk,
+  };
 }
 
 // The bar never holds a preview of its own: the track it pages is the committed one.

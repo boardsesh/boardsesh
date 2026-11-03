@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-11-02T21:13:04.895Z",
+  "generatedAt": "2026-11-02T22:26:50.230Z",
   "entries": [
+    {
+      "prNumber": 4153,
+      "category": "fixed",
+      "title": "On Android, a board that misses your first Connect tap now gets a second try on its own.",
+      "mergedAt": "2026-11-02T22:13:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4153",
+      "body": "When the app moves you to another board and can't reach it, the message now says so."
+    },
+    {
+      "prNumber": 7232,
+      "category": "improved",
+      "title": "Learn preview browsing and Put on board from fresh Help clips.",
+      "mergedAt": "2026-11-02T22:03:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7232"
+    },
     {
       "prNumber": 7230,
       "category": "fixed",

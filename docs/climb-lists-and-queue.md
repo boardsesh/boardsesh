@@ -8,7 +8,8 @@ This page started as documentation only. The changes are the follow-ups at the b
 (F1 to F6), filed on 2026-10-23.
 
 The original audit's code references are to `main` at `1f9bc776a3` (2026-10-18).
-The driving, player-state and MiniPlayer sections reflect `main` at `38eecfa2f0` (2026-11-02, #7188).
+The driving, player-state and MiniPlayer sections reflect `main` at `38eecfa2f0` (2026-11-02, #7188);
+the then-signposts section reflects `main` at `9ddde8073a` (2026-11-02).
 Mobile paths are under `packages/mobile/`, shared paths under `packages/shared/`.
 Line numbers drift; the function names next to them don't.
 
@@ -56,7 +57,7 @@ remain internal state names for screen-reader announcements.
 | Word                         | Meaning                                                                                                                        | In code                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
 | List                         | Any screen that shows climbs in rows: search results, a playlist, your logbook, a session, the queue.                          | —                                                    |
-| Track, shown in the top bar  | The list the player is walking. The player's top bar, between ⌄ and ⋯, names it: "Projects · 4 of 23" (the count only when it is known to be right). While a queued climb plays in the middle of it, the top bar says "Up next · 1 of 3" instead (#6777). A long name is cut at its end; the count never is. F1 first put it on the header's stats line, where it pushed the sends and stars off the end. | `playlistSuggestionSource`, `resolveTrackLabel`      |
+| Track, shown in the top bar  | The list the player is walking. The player's top bar, between ⌄ and ⋯, names it: "Projects · 4 of 23" (the count only when it is known to be right). While a queued climb plays in the middle of it, the top bar says "Up next · 1 of 3" instead (#6777), with "· then Projects" while the list carries on after Up next (the then-signposts, below). A long name is cut at its end; the count never is. F1 first put it on the header's stats line, where it pushed the sends and stars off the end. | `playlistSuggestionSource`, `resolveTrackLabel`      |
 | Queue                        | Your climbs in order: **History** (climbs before the current one), **Now** (the current climb), **Up next**. In a crew, the room's queue. | `queue`, `currentClimbQueueItem`                     |
 | Preview                      | The player shows a climb without making it current.                                                                             | `previewQueueItem`                                   |
 | Browsing (back chip)         | A preview whose swipes are guaranteed not to touch the wall.                                                                    | `WallPillState 'browsing'`                           |
@@ -139,7 +140,7 @@ Three terms keep the tables short.
 | --- | --- | --- |
 | Commit | A new queue entry for the climb is inserted right after the current climb and becomes current, even if that climb is already queued further on. Only three taps reuse an existing entry: re-tapping the current climb, a queue-sheet row, and a board-history row whose climb has a queue entry. | `setCurrentClimb`, `src/providers/queue-provider.tsx:2068`; the reducer skips the insert only for the same entry uuid (`packages/shared/queue/src/reducer.ts:289`), and every list tap mints one (`src/lib/climb-to-queue-item.ts:106`) |
 | Trackless preview | The player shows the climb without committing it and has no list to walk. The climb is not in the queue, so swiping and the Next and Previous buttons are disabled. | `packages/shared/play-view/src/queue-navigation.ts:269-270`, `canNext` at `:449` |
-| Track end | Since F1 (#6664): at the last climb of the list it is walking, Next or one more forward swipe opens an end card, "Keep going with your queue (N)", N being Up next. Since #6777 Next plays Up next before the list goes on, so the card only comes up once Up next is played too; what N counts then is what the walk passed over, such as queued climbs this wall can't draw. From a committed climb its action goes to the next queued climb (a preview of it when swipes are view-only), and the card names that climb on its own line, "First up: Crimp Ladder" (#6238; names past 32 characters end in an ellipsis, and a climb with no name leaves the line out); from a preview it goes back to the queue's Now and names nothing, since Now is not Up next (a preview over a queue with no Now has nowhere to go back to, so it opens the queue's first climb, named). Up next is everything after Now, or the whole queue without one, the same count as the queue sheet's header. With nothing Up next the card says the list is finished. Previous stops at the list's first climb. While more of the list is still loading (the next page, or the load that follows a tap) the card waits and Next stays off until it lands. Rest-timer auto-advance stops here too, with "End of the list" on its pill. Before F1, a committed climb fell into the queue here and a preview stopped dead. While a list is walked (the header names it), the player's queue button carries a badge with the same Up next count, and its label says "Queue, N climbs up next", at 0 too; at 0 there is no badge, and playing from the queue the button has no badge and keeps its plain label (#6238). | `selectNextQueueItemWithSuggestions` (`atTrackEnd`), `resolveTrackEndCard`, `countUpNext`, `resolveListWalkUpNextBadge`, `TrackEndCard.tsx` |
+| Track end | Since F1 (#6664): at the last climb of the list it is walking, Next or one more forward swipe opens an end card, "Keep going with your queue (N)", N being Up next. Since #6777 Next plays Up next before the list goes on, so the card only comes up once Up next is played too; what N counts then is what the walk passed over, such as queued climbs this wall can't draw. From a committed climb its action goes to the next queued climb (a preview of it when swipes are view-only), and the card names that climb on its own line, "First up: Crimp Ladder" (#6238; names past 32 characters end in an ellipsis, and a climb with no name leaves the line out); from a preview it goes back to the queue's Now and names nothing, since Now is not Up next (a preview over a queue with no Now has nowhere to go back to, so it opens the queue's first climb, named). Up next is everything after Now, or with nothing current everything from the History line on (the whole queue in legacy mode), the same count as the queue sheet's header. From a preview the card reads "Back to your queue (N)" with "On the wall: modern love" under it, naming Now, or "Your climb: modern love" when the wall doesn't show it (the then-signposts; it read "Keep going with your queue", which promised a step forward the button doesn't take). With nothing Up next the card says the list is finished. Previous stops at the list's first climb. While more of the list is still loading (the next page, or the load that follows a tap) the card waits and Next stays off until it lands. Rest-timer auto-advance stops here too, with "End of the list" on its pill. Before F1, a committed climb fell into the queue here and a preview stopped dead. While a list is walked (the header names it), the player's queue button carries a badge with the same Up next count, and its label says "Queue, N climbs up next", at 0 too; at 0 there is no badge, and playing from the queue the button has no badge and keeps its plain label (#6238). | `selectNextQueueItemWithSuggestions` (`atTrackEnd`), `resolveTrackEndCard`, `countUpNext`, `resolveListWalkUpNextBadge`, `TrackEndCard.tsx` |
 
 **The crew column has two halves.** Everything that makes a tap a private look in a crew
 (#4281) sits behind the PostHog flag `shared-session-browse`
@@ -165,7 +166,7 @@ live. Untouched settings take each surface's preview path instead.
 | Home cards | Home tab | New-climb card: a trackless preview (`src/components/feed/NewClimbFeedCard.tsx:111`). A session card's climb (the hardest send): as the logbook, with a one-climb track named "Hardest send" (`app/(tabs)/home/index.tsx:253`; the Sessions tab's cards the same, `src/components/you/SessionsTab.tsx:106`). | New-climb card: nothing. Session card: the end card. | — |
 | Board history sheet, iPad wall column | The clock button on Climbs, the wall strip, the iPad side column | Since F2: commits with the wall's history as the track (the wall's climb first, then back through what was lit), named "Wall history", reusing the queue entry when the wall's climb has one (`src/providers/drawer-host-provider.tsx:1070`; the track is built in `src/components/board-presence/NowOnTheWallPanel.tsx:539`). Outside a drive: a preview with the same track. | Walks the history the sheet had loaded | Track end. It does not page past what the sheet loaded. |
 | Record in-session history | Record tab during a session | Since F2: as the session detail, through the same hook (`src/components/session-screen/in-session/InSessionView.tsx:435`). It no longer commits the climb itself with a fresh queue entry. | Walks the session's ticks, newest first | Track end |
-| Queue sheet | The queue button in the player, the mini-player | Previews the exact queue slot by default, deferring the current-climb change and track clear until the board button is pressed. A suggestion preview retains its suggestions as the track. An automatic-lighting opt-in or live Driver mode commits immediately. A pick of the climb already up never previews, because the commit bar compares climbs and its preview would have no Put on board: a History, Up next or suggestion copy commits at once solo with no #4979 hold (the wall keeps its climb, or a copy in the other orientation lights it that way); the Now slot itself, a crew, or a held climb reopens the climb up instead, writing nothing and lighting nothing. A History row's Replay from here follows the same rule (`resolveQueuePickLanding`). | The queue, or the suggestions | Stops at the end of the queue |
+| Queue sheet | The queue button in the player, the mini-player | Previews the exact queue slot by default, deferring the current-climb change and track clear until the board button is pressed. A Then from row's preview keeps its list as the track, re-entered at that climb; a popular row's keeps the popular rows. An automatic-lighting opt-in or live Driver mode commits immediately. A pick of the climb already up never previews, because the commit bar compares climbs and its preview would have no Put on board: a History, Up next, Then from or popular copy commits at once solo with no #4979 hold (the wall keeps its climb, or a copy in the other orientation lights it that way); the Now slot itself, a crew, or a held climb reopens the climb up instead, writing nothing and lighting nothing. A History row's Replay from here follows the same rule (`resolveQueuePickLanding`). | The queue, or the list a Then from or popular row started (the sheet's Then from rows are that walk) | Stops at the end of the queue |
 | Similar climbs | The strip under the board in the player | Since F2: commits, flagged `suggested`, inserted after the current climb, with the strip as the track, named "Similar climbs" (`use-play-selection-controller.ts:373`). The strip is the climbs this wall fits, plus the one tapped. A preview with the same track outside a drive, or when the player shows a climb from another board. | Walks the strip | Track end |
 | Workout preview | Record tab before a session, workout on | A trackless preview (`src/components/session-screen/pre-session/PreSessionView.tsx:245-251`). **Start** appends the workout behind the queue (`:301`). | Nothing | — |
 | Wall display kiosk | Wall display on a tablet bound to a board | No rows. Older and Newer step through the wall's own history locally; **Light this** lights the board without touching the queue (`src/components/board-presence/wall-kiosk/useWallPreview.ts:345-357`). | The wall's history | Returns to live |
@@ -295,7 +296,7 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
 
 - **What counts as a pick.** Every open the player applies (a list row, a search result, a
   deep link, the wall capsule's climb), and every later change of what the player shows: a
-  swipe to another preview, its mirror flip, a similar climb. Back to my pick and Put on board
+  swipe to another preview, its mirror flip, a similar climb. Back to your climb and Put on board
   end the pick. A pane that mounts later and replays another pane's target is a look, never a
   new pick.
 - **What ends it.** The queue's current changing after the pick: your own Put on board, a
@@ -351,6 +352,61 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
   deep link) ends when the restore sets the queue's current, so the bar shows the restored
   climb. The queue has no public "restored" signal to tell a restore from a real change.
 
+### The then-signposts (owner decision, 2026-11-02)
+
+A climb you tap is a preview, and its swipes walk only its own list. Swipes from your own
+climb play Up next first and then its list (#6777), so "Projects · 7 of 20" can mean two
+different walks. About 4 in 5 active climbers never queue and never see the difference; the
+21% who queue ran into it in 67% of their queued 2.6 sessions. The rule a climber can say:
+**"Swipes walk the list named at the top. My Up next plays from my own climb, and the player
+says *then* before a swipe switches."**
+
+Every sign reads the walk's own steps: `resolveStepTrack` and `stepCrossesIntoList` read the
+`trackResume` the step selectors (`selectNextQueueItemWithSuggestions` /
+`selectPreviousQueueItemWithSuggestions`) return, and "then" reads `upNextHandsBackToList`,
+the same `listSuccessorOf` value `selectNextOnTrack` steps to. A queued climb this wall can't
+draw (#5099) is walked past by those rules, so it never makes a sign wrong. A parity test in
+`queue-navigation.test.ts` walks forward from every Up next climb and checks "then" shows
+exactly when the walk reaches the list.
+
+| Where | What the climber sees | Rule |
+| --- | --- | --- |
+| Top bar, line 2, your own climb | "Up next first · 4 climbs" | Your committed climb sits on the list named above and Next steps into Up next. The count is the Up next the walk plays before the list goes on (`countUpNextBeforeList`), the total "Up next · 1 of 4" then reads. The busy-wall question and a crewmate's put-up keep priority. |
+| Top bar, line 1, an Up next climb | "Up next · 2 of 4 · then Projects" | Every Up next climb whose list carries on after the stretch (a list still paging its next climb counts). The list's name is cut first when the line runs out of room; "Up next", the count and "then" never are. The room is measured in the frame the bar has now (beside the rest timer, at the climber's text size): with fewer than six letters of the name left, "then Projects" takes line 2 while it is free; with line 2 taken it stays as "then …" if that fits, and otherwise is only spoken, so the line never runs under ⌄ or the timer (`resolveThenPlacement`). |
+| Top bar, line 2, a list preview | "Preview · Up next: 4 waiting" in place of "Preview · not on the wall" (or a crew's "Only you see this") | The first swipe in a preview opened on a list (not a look off your own climb, which walks Up next itself) while Up next has climbs. It stays until the next step, with no timer, and shows at most once per player open and 3 times per app run (`PREVIEW_NOTE_RUN_CAP`, in memory). Only a note that reached line 2 counts: one the busy wall or a crewmate's put-up kept off costs nothing. Up next here is what the queue sheet's header counts (`countUpNext`: after Now, or from the History line with nothing current), never History. Buttons, and a step that put a climb up while driving, don't earn it. A screen reader hears it as the board's value. |
+| Under the thumb | One `hapticSelection` tick | Your own swipe (the board's screen-reader adjust action included) that leaves Up next for the list: the last Up next climb's Next, or the first one's Previous back onto the list climb it left. The Next and Previous buttons stay silent; heavy haptics stay reserved for destructive actions. |
+| Screen readers | The board's value "Up next, 4 of 4, then Projects", or "Preview, Up next: 4 waiting" while the note shows; its increment action "Next in Projects" (decrement "Previous in Projects") on a step that crosses; on landing, "Now in Projects, 8 of 20" | The value rides an Up next climb, or the preview the note shows on. The landing is announced (queued, never cutting VoiceOver off) once the climb it went to is on screen, for a crossing by swipe or button; a step that lands anywhere else drops it. |
+| MiniPlayer ⏮ ⏭ | Spoken only: "Next in Search results", "Next in your queue", or the plain "Next climb" | Owner answer 2. The step's own track names the list; a step into Up next says "your queue"; no list, a list nobody named, or Next at a list's end keeps the plain label. No pixels change. |
+| Back chip | Spoken "Back to your climb: modern love" | Was "Back to my pick". |
+| End card from a preview | "Back to your queue (4)", "On the wall: modern love" | See Track end above. "On the wall" only while trusted presence shows your climb lit; with no board, nothing lit, or a crewmate's climb up it reads "Your climb: modern love". |
+
+With Up next empty there is nothing new: no line-2 sign, no tail, no note, no tick, no board
+value. Previews behave the same solo and in a crew: counts use the room's Up next, and "then"
+names your own list. In a workout the stage label keeps line 1, and none of the signs show
+(the player passes `enabled: false` while the climb on screen has a stage); `Queue Navigation`
+still reports the walk.
+
+`Queue Navigation` (both surfaces) carries `track` (`list`, `upNext` or `queue`: where the step
+landed), `from` (`preview` or `current`), `upNextBucket` (`0`, `1-3`, `4-10`, `11+`, the buckets `Queue Sheet Opened` uses) and
+`crossed`. A Previous right after a `crossed` step reads as a crossing that surprised the
+climber. Read them in 3 weeks; 2.6's baselines are the 46 climbers who walked both a list and
+the queue, and the 28% of active climbers whose swipes fell back to the queue.
+
+**Lock Screen and Live Activity** (checked for this change; no Swift or Kotlin changed). Their
+Next and Previous step the raw queue by index (`ClimbNavigationDirection.newIndex` in
+`modules/live-activity/ios/ClimbNavigationIntent.swift`, `actionPendingIntent` in
+`BoardSessionService.kt`), never the list. At the end of Up next (the queue's last entry)
+`hasNext` is false: iOS draws Next disabled and a stale press is dropped as
+`navigationOutOfBounds`; Android leaves the Next action out. They also step onto list-walk
+entries and climbs this wall can't draw, which the in-app walk passes over. The help sentence
+("Swipes walk the list named at the top. Up next plays from your own climb, then its list
+carries on.") is about swipes in the player and says nothing about the Lock Screen, so it
+does not contradict this; the Lock Screen keeps showing the wall's climb as before.
+
+Code: `then-signposts.ts` (pure rules), `use-then-signposts.ts` (the note, the crossing cue),
+`PlayNavigationSignposts` in `use-play-navigation-model.ts`, `PlayListContext.tsx` (the tail),
+`mini-player-step-label.ts`.
+
 ## Player states today
 
 The wall button's label says what a press does and whether subsequent climb changes light the wall.
@@ -373,7 +429,7 @@ with each climb that lights (in 5 s steps under Reduce Motion).
 | Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb, then starts a timed drive (45 s by default, on every board). In a crew it drives too on the phone that holds the board (In a session too, on by default, MoonBoards included). From a crewmate's phone it relays that one climb. |
 | Driving | The frosted full-width wall button says **You are driving the wall**; with no hold colours it uses amber | Every supported climb change lights the wall, in a crew too. A tap stops driving and keeps the link. The button becomes **Disconnect board**. |
 | Connected, lit, not driving | **Disconnect board**, a filled bulb and the holder's face on a plain tonal surface | A tap disconnects. Swiping the button left where chevrons appear starts driving. |
-| Browsing a list | The back chip (an arrow, plus the face of whoever lit the wall when back goes to the wall's climb), the "Preview · not on the wall" caption, and **Put on board** (or **Set active**) under the board. Screen readers hear "Back to my pick: …" or "Back to the climb on the wall: …" | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |
+| Browsing a list | The back chip (an arrow, plus the face of whoever lit the wall when back goes to the wall's climb), the "Preview · not on the wall" caption, and **Put on board** (or **Set active**) under the board. Screen readers hear "Back to your climb: …" or "Back to the climb on the wall: …" | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |
 | Standalone preview | The same preview controls, with a back chip when there is a climb to return to | A deep link, Home new-climb card or workout preview may have no list to walk; Next and swipes then do nothing. |
 | A crewmate holds the board | **Put on board**, an outline bulb and their face | A tap relays the climb through their phone. There is no swipe-to-drive on that phone's connection. |
 | Another board | A switch-board overlay when it is unreachable, or **Put on {board}** for another reachable board at the gym | The reachable-board action moves to that board, connects and lights the climb. A crew already on that board relays through its holder instead. |
@@ -626,13 +682,57 @@ previews instead (`:325`).
 
 ### 11. The queue sheet
 
+Then-signposts (owner decision, 2026-11-02) changed the sheet's sections and
+`Queue Sheet Opened`. The player half of the same decision (the top bar's "then", the
+preview note, the crossing cue) is described with the player.
+
 - It shows the last 2 History rows. That is the shared model's default
   (`packages/shared/play-view/src/queue-list-model.ts`); a QA follow-up cut it from 5 on purpose.
-- The sheet labels its sections History, Up next and Suggestions, each only when it has rows,
-  with a divider before Suggestions (`QueueList.tsx`), so suggestions no longer read as queued
-  climbs.
+- The sheet labels its sections History, **Now**, Up next, **Then from Projects** and
+  **Popular on this board**, each only when it has rows (`QueueList.tsx`). Now sits above the
+  current climb on both platforms: before, the row had only its ▶ marker and a tint, and
+  nothing said what it was. One divider separates the queue from the two sections below it,
+  so those stop reading as queued climbs.
+- **Then from Projects** holds exactly the climbs swipes from the current climb reach after
+  Up next, in the order they reach them, under the list name the player's top bar uses
+  ("Projects"). A list nobody named reads "Then from the list". So does the track a popular
+  row's tap starts: the top bar names nothing for it, and "Then from Popular on this board"
+  over a "Popular on this board" header read as the same section twice. The rows are the walk
+  itself, `resolveThenFromListItems` in `packages/shared/play-view/src/queue-sheet-walk.ts`:
+  one `selectNextQueueItemWithSuggestions` step after another from the queue's current climb
+  (`currentClimbQueueItem`, the object the player walks from, so a commit the server hasn't
+  echoed yet walks as the swipe does), each step's resume stored on the track as a look's
+  step or a commit stores it. The walk is filtered by the active board and the other walls at
+  its gym (`useQueueWalkBoard`), built by the same helpers as `nextClimb`'s filter
+  (`src/providers/queue/active-board-compatibility.ts`). The player's own navigation model
+  still builds the same rule in place (`use-play-navigation-model.ts`, `PlayCore.tsx`).
+  Climbs the sheet already lists under Now or Up next are left out. A list climb that History holds is listed where a
+  swipe goes to it, and a climb queued on purpose that the list reaches again is listed again,
+  because the swipe goes there twice. `queue-sheet-walk.test.ts` holds the rows to the
+  player's swipe (`computeNavigationTargetsWithSuggestions` and `resolvePreviewStepSource`,
+  one swipe at a time) and to Next while driving (commits through `placeOnWall`), for an empty
+  Up next, a filled one, the list resumed after Up next, a list loaded into Up next, the step
+  after a Previous, a workout, a crew, and a queued climb this wall can't draw. Until
+  2026-11-02 the section was "Suggestions": the list from the climb it was activated on, minus
+  every climb the queue held (`getPlaylistSuggestedClimbs`), topped up with the board feed. Once
+  Up next or a step moved the walk, those rows were not where swipes went.
+- **Popular on this board** is page 0 of the board's popular feed, minus queued climbs and the
+  Then from rows. No swipe reaches these (#5403). A tap on one gets a track of these rows only;
+  a tap on a Then from row re-enters its list at that climb. Neither section is worked out, and
+  the feed is not fetched, while the sheet is hidden (`active`): both QueueSheets stay mounted.
+- Up next still lists the raw queue after Now, which is not quite how swipes walk it. A list
+  climb queued as part of the list walk plays as the list, and a climb this wall can't draw is
+  walked past. With `[Now: s1, s2 (queued from the list), x1]` the swipe goes x1, s2, s3; the
+  sheet shows Up next s2, x1 and Then from s2, s3, so s2 is listed twice. Then from is right;
+  Up next is #7237.
 - The count in the sheet header is the Up next count: the climbs after the current one
-  (`QueueSheet.tsx`).
+  (`QueueListBody.tsx`). It says nothing about whether the player's swipes reach them: the
+  player's "Up next: 4 waiting" note says that, on the preview where it applies.
+- `Queue Sheet Opened` carries `from` (`preview` when the player, or the MiniPlayer's last pick,
+  showed a climb other than the queue's current; else `current`) and `upNextBucket` (`0`,
+  `1-3`, `4-10`, `11+`, the buckets `Queue Navigation` sends) beside `surface` and `boardType`
+  (`lib/queue-sheet-open-context.ts`). Opens with `from: 'preview'` while Up next has climbs
+  are climbers looking for their queue; that share should fall.
 - The header's ⋯ menu (⋮ on Android; `QueueSheetHeader.tsx`) holds Clear queue. Before it,
   Clear sat only behind the pencil, and climbers missed it (`Queue Cleared` fired 8 times on 2.6.0
   in 7 days and never on 2.7.x). Both controls run the same clear (`QueueListBody`
@@ -645,14 +745,15 @@ previews instead (`:325`).
   52pt left of centre on a 375pt phone (it was about 26pt). A balancing spacer would leave the
   title about 47pt, so the offset is the accepted trade-off. The title and count keep one line
   and truncate at large text sizes, as `SheetTopBar`'s title does.
-- Tapping a queue row clears the track (`use-queue-sheet-handlers.ts:65`); tapping a suggestion
-  sets one (`:94`).
+- Tapping a queue row clears the track (`use-queue-sheet-handlers.ts:65`); tapping a Then from
+  or popular row sets one (`:94`).
 - A workout queues as one flat run: the preview's sections (warm-up and so on) don't survive
   into the queue (`src/components/session-screen/pre-session/use-workout-preview.ts:269-273`).
+  Its climbs play as Up next, and Then from picks the list up after them.
 
 <img src="images/list-model/queue-sheet.png" alt="The queue sheet: History, the current climb, Up next and unlabelled suggestions" width="320">
 
-_The queue sheet. (1) History. (2) The current climb. (3) Up next. (4) Suggestions; with no playlist playing they are the board's most-sent climbs. This screenshot predates F6: it shows no section labels or divider, and a count of 4 that includes History and the current climb._
+_The queue sheet. (1) History. (2) The current climb, now labelled Now. (3) Up next. (4) Below the queue: Then from the list, then Popular on this board, the board's most-sent climbs. This screenshot predates F6 and Then-signposts: it shows no section labels or divider, a single Suggestions block, and a count of 4 that includes History and the current climb._
 
 ## The model: play from a list, queue on purpose
 
@@ -819,7 +920,8 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 | `packages/shared/play-view/src/browse-defaults.ts`                     | The crew gate, `shouldDefaultToBrowse`.                                                                        |
 | `packages/shared/playlists-react/src/fetch-playlist-suggestion-climbs.ts` | A track's first load, the one-page `fetchPlaylistTrackPage`, the 1,000-climb track bound and the 20-page replace drain. |
 | `src/lib/playlists/track-pager.ts`, `src/components/play-drawer/use-track-paging.ts` | Paging a track past what is loaded, one page as the climber nears its end.                               |
-| `packages/shared/play-view/src/track-label.ts`, `src/components/play-drawer/track-end.ts` | The top bar's "Projects · 4 of 23" and "Up next · 1 of 3", and the end card model.               |
+| `packages/shared/play-view/src/track-label.ts`, `src/components/play-drawer/track-end.ts` | The top bar's "Projects · 4 of 23" and "Up next · 1 of 3 · then Projects", and the end card model. |
+| `src/components/play-drawer/then-signposts.ts`, `use-then-signposts.ts`; `resolveStepTrack`, `stepCrossesIntoList`, `upNextHandsBackToList`, `countUpNextBeforeList` in `queue-navigation.ts` | The then-signposts: "Up next first", the preview note, the crossing tick and announcement, the board's spoken value, and the walk `Queue Navigation` reports. |
 | `src/lib/playlists/use-playlist-activation.ts`                         | Every list tap: wrong board, preview (outside a drive), replace, insert.                            |
 | `src/lib/playlists/use-board-list-activation.ts`, `use-tick-list-activation.ts`, `loaded-list-pages.ts` | Lists whose rows carry their own board (logbook, sessions, profile climbs, session cards, Record history): the tapped row's board and angle, and paging a track through the screen's own query. |
 | `src/components/play-drawer/use-play-selection-controller.ts`          | Opens without a track (notifications, deep links, the climb route's hand-off) and the similar-climbs tap.    |
@@ -829,7 +931,8 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 | `src/components/play-drawer/wall-state.ts`, `wall-control.ts`            | The header's back chip, preview commit state and current wall-button model.                                 |
 | `src/providers/queue-provider.tsx`                                     | `setCurrentClimb`, `nextClimb` and `previousClimb` (which store the track's resume point, `storeTrackResume`), `setQueue`, `appendQueueItems`, and where the prune is switched on. |
 | `src/providers/queue/use-queue-persistence.ts`, `src/lib/queue-snapshot-store.ts` | The solo queue saved across restarts.                                                                |
-| `src/components/play-drawer/QueueList.tsx`, `use-queue-sheet-handlers.ts` | The queue sheet: sections, suggestions, row taps.                                                          |
+| `src/components/play-drawer/QueueList.tsx`, `use-queue-sheet-handlers.ts` | The queue sheet: sections (Now, Then from, Popular on this board), row taps.                                |
+| `packages/shared/play-view/src/queue-sheet-walk.ts`                    | The queue sheet's Then from rows (`resolveThenFromListItems`), the swipe walk itself.                       |
 
 ## Follow-ups
 

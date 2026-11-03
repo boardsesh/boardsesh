@@ -170,6 +170,22 @@ export type ReplayCompatibilityEvidence = {
   joinSessionFixtures?: () => readonly GraphqlFixtureFile[];
 };
 
+/**
+ * The operations whose pinned recordings predate a tick's nullable
+ * `characteristics` (#5245). Every tick object in them selects it straight
+ * after `isNoMatch`, sometimes twice in one document (a session's highlights
+ * and its grouped items), so the single-copy `matchesWithoutSelection` rule does
+ * not fit. Replayed as null on every tick, which is what the drawer showed for
+ * these climbs when the set was recorded. GetCrewFeed shares the session feed
+ * fragment but has no pinned recording, so it needs no entry here.
+ */
+const TICK_CHARACTERISTICS_OPERATIONS = new Set([
+  'GetSessionDetail',
+  'GetSessionGroupedFeed',
+  'GetUserGroupedAscentsFeed',
+]);
+const TICK_CHARACTERISTICS_SELECTION = 'isNoMatch characteristics';
+
 /** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
 const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardNowPlaying',
@@ -200,6 +216,8 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  *   roster frame never is.
  * - GetSession: the non-null `isPermanent`, taken from what the set recorded
  *   (`replayGetSessionWithPermanence`), never defaulted.
+ * - GetSessionDetail / GetSessionGroupedFeed / GetUserGroupedAscentsFeed: each
+ *   tick's `characteristics`.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
@@ -223,6 +241,9 @@ export function replayCompatibleFixtureResponse(
   if (operationName === 'DiscoverPlaylists') return replayDiscoverPlaylistsWithoutGrades(requestQuery, fixture);
   if (operationName === 'GetSmartPlaylist') return replaySmartPlaylistWithoutUnfilteredCount(requestQuery, fixture);
   if (operationName === 'SessionUpdates') return replaySessionUpdatesWithoutRestCadence(requestQuery, fixture);
+  if (TICK_CHARACTERISTICS_OPERATIONS.has(operationName ?? '')) {
+    return replayTicksWithoutCharacteristics(requestQuery, fixture);
+  }
   if (!['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) return null;
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
   if (!matchesWithoutSelection(requestQuery, selection, fixture)) return null;
@@ -374,6 +395,43 @@ function replaySmartPlaylistWithoutUnfilteredCount(
   return {
     response: { ...response, data: { ...data, smartPlaylist: { ...result, unfilteredCount: null } } },
   };
+}
+
+function replayTicksWithoutCharacteristics(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  const normalized = normalizeDocument(requestQuery);
+  const pieces = normalized.split(TICK_CHARACTERISTICS_SELECTION);
+  // Every tick selects the field, so a bare `isNoMatch` left over means some
+  // other change, and the response walk below would answer a field nobody asked for.
+  if (pieces.length < 2 || normalized.split('isNoMatch').length !== pieces.length) return null;
+  if (pieces.join('isNoMatch') !== normalizeDocument(fixture.query)) return null;
+  if (!isRecord(fixture.response) || fixture.response.data === undefined) return null;
+  // A recording that already carries the field was made with it, so it is not this case.
+  if (containsKey(fixture.response.data, 'characteristics')) return null;
+  return { response: { ...fixture.response, data: withNullCharacteristics(fixture.response.data) } };
+}
+
+function containsKey(value: unknown, key: string): boolean {
+  if (Array.isArray(value)) return value.some((element) => containsKey(element, key));
+  if (!isRecord(value)) return false;
+  return key in value || Object.values(value).some((child) => containsKey(child, key));
+}
+
+/**
+ * Every object that answers `isNoMatch` here is a tick or an ascent group, and
+ * each of them now selects `characteristics` straight after it.
+ */
+function withNullCharacteristics(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withNullCharacteristics);
+  if (!isRecord(value)) return value;
+  const adapted: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    adapted[key] = withNullCharacteristics(child);
+    if (key === 'isNoMatch') adapted.characteristics = null;
+  }
+  return adapted;
 }
 
 function toCanonicalValue(value: unknown): unknown {

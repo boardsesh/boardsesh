@@ -549,7 +549,7 @@ A tap lights the climb, on Disconnect board disconnects (a warning buzz, and "Bo
 readers), or on You are driving the wall stops driving and keeps the link (unless Disconnect Bluetooth when driving
 ends is on); a hold opens the board sheet, a named "Board options" action for screen readers. The header keeps only
 the back chip: the back arrow, plus the face of whoever lit the wall when back goes to the wall's climb. It has no
-words, so the climb name keeps its room. Screen readers and the Large Content Viewer get "Back to my pick: …" /
+words, so the climb name keeps its room. Screen readers and the Large Content Viewer get "Back to your climb: …" /
 "Back to the climb on the wall: …".
 
 - **On the wall, not yours (QA #147).** With no live link but presence saying the climb on screen was lit on the wall

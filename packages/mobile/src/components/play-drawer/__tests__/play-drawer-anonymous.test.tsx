@@ -62,6 +62,7 @@ const recorded = vi.hoisted(() => ({
   panePlaceholder: 0,
   boardSheet: [] as Props[],
   previewFirstTip: [] as Props[],
+  board: [] as Props[],
 }));
 // Signed out unless a case says otherwise: both viewers here render without a
 // session, which is what the web export's read-only climb view is.
@@ -385,7 +386,12 @@ vi.mock('../PanePlaceholder', () => ({
     return createElement('div', { 'data-testid': 'pane-placeholder' });
   },
 }));
-vi.mock('../DeferredBoard', () => ({ DeferredBoard: () => createElement('div', { 'data-testid': 'board' }) }));
+vi.mock('../DeferredBoard', () => ({
+  DeferredBoard: (props: Props) => {
+    recorded.board.push(props);
+    return createElement('div', { 'data-testid': 'board' });
+  },
+}));
 // The preview-first card's seen flag. Seen unless a case says otherwise, so the
 // card stays out of every other case here.
 const previewFirstSeen = vi.hoisted(() => ({ current: true }));
@@ -538,10 +544,12 @@ vi.mock('../../ble/use-lightbulb-control', () => ({
   }),
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
+const haptics = vi.hoisted(() => ({ selection: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({
   hapticSuccess: vi.fn(),
   hapticMedium: vi.fn(),
   hapticWarning: vi.fn(),
+  hapticSelection: haptics.selection,
 }));
 vi.mock('../../../lib/board-details', () => ({
   getBoardRenderData: () => ({ boardWidth: 100, boardHeight: 100, holdsData: [], imagesToHolds: {} }),
@@ -555,6 +563,7 @@ const { AccessibilityInfo } = await import('react-native');
 const { PlayDrawer, SHARED_BROWSE_LATCH_RELEASE_MS } = await import('../PlayDrawer');
 const { getSetting, setSetting, resetAllSettings } = await import('../../../settings');
 const { _resetJoinedBrowseNoticeForTests } = await import('../joined-browse-notice');
+const { resetPreviewNotesForTests } = await import('../use-then-signposts');
 // Put on board's keep-lighting arms a drive (2.7): each test starts with nobody driving.
 const { getDriveMode, resetDriveModeForTests, startAlwaysDrive, stopDrivingForLink } =
   await import('../drive-mode-store');
@@ -729,6 +738,8 @@ beforeEach(() => {
   recorded.swipeableHeader = [];
   recorded.panePlaceholder = 0;
   recorded.previewFirstTip = [];
+  recorded.board = [];
+  resetPreviewNotesForTests();
   queueActions.addToQueue.mockResolvedValue('added');
   session.isShared = false;
   session.isCrew = null;
@@ -3707,10 +3718,169 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     session.currentItem = itemQueued;
     render(drawerElement('member', committedTargetFor(queued)));
 
+    // The list carries on after Up next: "· then Projects" (the then-signposts).
     expect(lastListParts()).toEqual({
       name: 'playView.track.upNext',
       count: 'playView.track.position',
-      accessibilityLabel: 'playView.track.upNextPositionAria',
+      thenTail: { before: 'playView.track.then ', name: 'Projects', after: '' },
+      accessibilityLabel: 'playView.track.upNextPositionThenAria',
+    });
+  });
+
+  // The then-signposts, wired end to end: the rules are tested in
+  // `use-then-signposts.test.tsx` and `@boardsesh/play-view`; what only a
+  // render can see is that PlayCore feeds them the walk it actually has.
+  describe('the then-signposts', () => {
+    function lastCaption(): unknown {
+      return recorded.listContext.at(-1)?.caption ?? null;
+    }
+    function lastBoardProps(): Props {
+      const props = recorded.board.at(-1);
+      if (!props) throw new Error('the board never rendered');
+      return props;
+    }
+    function swipeNext() {
+      act(() => {
+        (lastBoardProps().onSwipeNext as () => void)();
+      });
+    }
+    /** Your own climb, the last of Up next before the list picks up at Last. */
+    function onTheLastOfUpNext() {
+      session.useRealNavigation = true;
+      session.suggestionSource = { ...projects, resume: { climbUuid: first.uuid, queueItemUuid: itemFirst.uuid } };
+      session.queue = [itemFirst, itemQueued];
+      session.currentItem = itemQueued;
+      render(drawerElement('member', committedTargetFor(queued)));
+    }
+
+    it('says "Up next first" on your own climb when Next plays Up next', () => {
+      session.useRealNavigation = true;
+      session.suggestionSource = projects;
+      session.queue = [itemFirst, itemQueued];
+      session.currentItem = itemFirst;
+      render(drawerElement('member', committedTargetFor(first)));
+      expect(lastCaption()).toBe('playView.track.upNextFirst');
+    });
+
+    it('says nothing new with Up next empty', () => {
+      session.useRealNavigation = true;
+      session.suggestionSource = projects;
+      session.queue = [itemFirst];
+      session.currentItem = itemFirst;
+      render(drawerElement('member', committedTargetFor(first)));
+      expect(lastCaption()).toBeNull();
+      expect(lastListParts()).not.toHaveProperty('thenTail');
+      expect(lastBoardProps().accessibilityValueText).toBeUndefined();
+      expect(lastBoardProps().nextActionLabel).toBeUndefined();
+    });
+
+    it('names the list for a screen reader on the board, and ticks once on the swipe across', () => {
+      onTheLastOfUpNext();
+      expect(lastBoardProps().accessibilityValueText).toBe('playView.track.upNextPositionThenAria');
+      expect(lastBoardProps().nextActionLabel).toBe('playView.track.nextIn');
+      swipeNext();
+      expect(haptics.selection).toHaveBeenCalledTimes(1);
+      expect(queueAnalytics.navigation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          direction: 'next',
+          method: 'swipe',
+          walk: { track: 'list', from: 'current', upNextCount: 0, crossed: true },
+        }),
+        expect.anything(),
+      );
+    });
+
+    // Owner answer 1: the first swipe in a list preview, with Up next waiting,
+    // swaps the second line for the note until the next swipe.
+    it.each([
+      ['solo', false],
+      ['in a crew, counting the room’s Up next', true],
+    ])('notes Up next waiting after the first swipe in a list preview, until the next swipe (%s)', (_case, crew) => {
+      session.isShared = crew;
+      session.sessionId = crew ? 'session-1' : null;
+      const searchA = climb('climb-search-a', 'Sloper Town');
+      const searchB = climb('climb-search-b', 'B');
+      const searchC = climb('climb-search-c', 'C');
+      const search = {
+        playlistUuid: 'search',
+        activatedClimbUuid: searchA.uuid,
+        boardKey: 'kilter:1:10:1,20',
+        climbs: [searchA, searchB, searchC],
+        label: 'Search results',
+        total: 3,
+      } as unknown as PlaylistSuggestionSource;
+      session.useRealNavigation = true;
+      session.suggestionSource = projects;
+      session.queue = [itemFirst, itemQueued];
+      session.currentItem = itemFirst;
+      const openSearch = (nonce: number) =>
+        drawerElement('member', {
+          climb: searchA,
+          options: { previewQueueItem: { uuid: 'preview-a', climb: searchA }, playlistSuggestionSource: search },
+          nonce,
+        } as unknown as Parameters<typeof drawerElement>[1]);
+      const view = render(openSearch(1));
+      expect(lastCaption()).not.toBe('playView.track.previewUpNextWaiting');
+      swipeNext();
+      expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
+      // A screen reader hears it too: the board's value after the swipe.
+      expect(lastBoardProps().accessibilityValueText).toBe('playView.track.previewUpNextWaiting');
+      swipeNext();
+      expect(lastCaption()).not.toBe('playView.track.previewUpNextWaiting');
+      expect(lastBoardProps().accessibilityValueText).toBeUndefined();
+      // A look at a list never crosses anything: no tick.
+      expect(haptics.selection).not.toHaveBeenCalled();
+      // Once per open: a new open of the list earns it once more.
+      view.rerender(openSearch(2));
+      swipeNext();
+      expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
+    });
+
+    // The end card from a preview names the climb back goes to, as "On the
+    // wall" only while trusted presence shows it lit.
+    it.each([
+      ['your climb is lit', first.uuid, true],
+      ["a crewmate's climb is lit", 'someone-elses-climb', false],
+      ['nothing is lit', null, false],
+    ])('tells the end card whether the wall shows your climb when %s', (_case, wallUuid, onWall) => {
+      wall.uuid = wallUuid;
+      wall.sentAt = wallUuid ? new Date(Date.now() - 60_000).toISOString() : null;
+      const lastOfSearch = climb('climb-search-last', 'Last of search');
+      const search = {
+        playlistUuid: 'search',
+        activatedClimbUuid: lastOfSearch.uuid,
+        boardKey: 'kilter:1:10:1,20',
+        climbs: [lastOfSearch],
+        label: 'Search results',
+        total: 1,
+      } as unknown as PlaylistSuggestionSource;
+      session.useRealNavigation = true;
+      session.suggestionSource = projects;
+      session.queue = [itemFirst, itemQueued];
+      session.currentItem = itemFirst;
+      render(
+        drawerElement('member', {
+          climb: lastOfSearch,
+          options: {
+            previewQueueItem: { uuid: 'preview-last', climb: lastOfSearch },
+            playlistSuggestionSource: search,
+          },
+          nonce: 1,
+        } as unknown as Parameters<typeof drawerElement>[1]),
+      );
+      swipeNext();
+      expect(lastTrackEndCardProps().model).toMatchObject({ action: { kind: 'backToCommitted' } });
+      expect(lastTrackEndCardProps().committedOnWall).toBe(onWall);
+    });
+
+    it('stays silent on the Next button across', () => {
+      onTheLastOfUpNext();
+      pressNext();
+      expect(haptics.selection).not.toHaveBeenCalled();
+      expect(queueAnalytics.navigation).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'button', walk: expect.objectContaining({ crossed: true }) }),
+        expect.anything(),
+      );
     });
   });
 
