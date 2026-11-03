@@ -174,7 +174,14 @@ for (const width of [1440, 390]) {
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 10, 32)');
       await expect(page.locator('h1')).toHaveCSS(
         'font-size',
-        route === '/' ? (width === 390 ? '40px' : '64px') : width === 390 ? '32px' : '40px',
+        // /help pages carry the big showcase hero, the same scale as the homepage.
+        route === '/' || route.startsWith('/help')
+          ? width === 390
+            ? '40px'
+            : '64px'
+          : width === 390
+            ? '32px'
+            : '40px',
       );
     }
   });

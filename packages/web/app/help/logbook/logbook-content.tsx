@@ -4,13 +4,14 @@ import React from 'react';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageSection, Prose } from '@/app/components/ui/page-shell';
+import { Prose } from '@/app/components/ui/page-shell';
 import HelpPageShell from '../help-page-shell';
+import HelpBand from '../help-band';
 import HelpBreadcrumb from '../help-breadcrumb';
 import HelpCallout from '../help-callout';
 import HelpSteps from '../help-steps';
 import HelpInstallSection from '../help-install-section';
-import { HelpClip, HelpShots } from '../help-clip';
+import { HelpClip } from '../help-clip';
 import { HelpScreenshot } from '../help-screenshot';
 
 /**
@@ -30,39 +31,60 @@ export default function LogbookContent() {
       title={t('help.log.hero.title')}
       lead={t('help.log.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.log.breadcrumb')} />}
+      jumpLabel={t('help.nav.jump')}
+      jumpLinks={[
+        { id: 'log', label: t('help.log.log.title') },
+        { id: 'edit', label: t('help.log.edit.title') },
+        { id: 'bring-your-logbook', label: t('help.log.bring.title') },
+        { id: 'beta-videos', label: t('help.log.beta.title') },
+        { id: 'find-beta', label: t('help.log.findBeta.title') },
+      ]}
     >
-      <PageSection id="log" title={t('help.log.log.title')} lead={t('help.log.log.lead')}>
-        <HelpShots>
+      <HelpBand
+        id="log"
+        title={t('help.log.log.title')}
+        lead={t('help.log.log.lead')}
+        media={
           <HelpScreenshot shot="board-view" alt={t('help.log.log.shotAlt')} caption={t('help.log.log.shotCaption')} />
-          <HelpScreenshot
-            shot="logbook"
-            alt={t('help.log.log.logbookShotAlt')}
-            caption={t('help.log.log.logbookShotCaption')}
-          />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.log.log.p1')}</Prose>
         <Prose>{t('help.log.log.p2')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="edit" title={t('help.log.edit.title')} lead={t('help.log.edit.lead')}>
-        <HelpShots>
+      <HelpBand
+        id="edit"
+        flip
+        title={t('help.log.edit.title')}
+        lead={t('help.log.edit.lead')}
+        media={
           <HelpClip
             name="logbook-swipe-edit-delete"
             alt={t('help.log.edit.clipAlt')}
             caption={t('help.log.edit.clipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.log.edit.p1')}</Prose>
         <Prose>{t('help.log.edit.p2')}</Prose>
         <Prose>{t('help.log.edit.p3')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="repeats" title={t('help.log.repeats.title')} lead={t('help.log.repeats.lead')}>
+      <HelpBand id="repeats" title={t('help.log.repeats.title')} lead={t('help.log.repeats.lead')}>
         <Prose>{t('help.log.repeats.p1')}</Prose>
         <Prose>{t('help.log.repeats.p2')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="bring-your-logbook" title={t('help.log.bring.title')} lead={t('help.log.bring.lead')}>
+      <HelpBand
+        id="bring-your-logbook"
+        title={t('help.log.bring.title')}
+        lead={t('help.log.bring.lead')}
+        secondaryMedia
+        media={
+          // No caption: the logbook's own swipe gestures belong to #edit, not here.
+          <HelpScreenshot shot="logbook" alt={t('help.log.log.logbookShotAlt')} />
+        }
+      >
         <HelpSteps steps={[t('help.log.bring.step1'), t('help.log.bring.step2'), t('help.log.bring.step3')]} />
         <Prose>{t('help.log.bring.p1')}</Prose>
         {/* Sync direction. The app's "pending sync" label gets read as a push
@@ -73,18 +95,18 @@ export default function LogbookContent() {
             {t('help.log.bring.link')}
           </MuiLink>
         </Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="beta-videos" title={t('help.log.beta.title')} lead={t('help.log.beta.lead')}>
+      <HelpBand id="beta-videos" title={t('help.log.beta.title')} lead={t('help.log.beta.lead')}>
         {/* The share-sheet path leads because it is the feature nobody finds. */}
         <HelpSteps steps={[t('help.log.beta.step1'), t('help.log.beta.step2'), t('help.log.beta.step3')]} />
         <HelpCallout>{t('help.log.beta.callout')}</HelpCallout>
         <Prose>{t('help.log.beta.p1')}</Prose>
         <Prose>{t('help.log.beta.p2')}</Prose>
         <Prose>{t('help.log.beta.p3')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="find-beta" title={t('help.log.findBeta.title')} lead={t('help.log.findBeta.lead')}>
+      <HelpBand id="find-beta" title={t('help.log.findBeta.title')} lead={t('help.log.findBeta.lead')}>
         <Prose>
           {t('help.log.findBeta.p1')}{' '}
           <MuiLink component={LocaleLink} href="/help/finding-climbs#filters">
@@ -92,17 +114,17 @@ export default function LogbookContent() {
           </MuiLink>
         </Prose>
         <Prose>{t('help.log.findBeta.p2')}</Prose>
-      </PageSection>
+      </HelpBand>
 
       <HelpInstallSection />
 
-      <PageSection title={t('help.log.next.title')}>
+      <HelpBand title={t('help.log.next.title')}>
         <Prose>
           <MuiLink component={LocaleLink} href="/help/finding-climbs#climb-menu">
             {t('help.log.next.climbMenu')}
           </MuiLink>
         </Prose>
-      </PageSection>
+      </HelpBand>
     </HelpPageShell>
   );
 }

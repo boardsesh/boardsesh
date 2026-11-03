@@ -1,0 +1,222 @@
+/* HelpBand: one section of a guide, full width on the reading surface.
+   Desktop: heading + body share the text column, media spans both rows.
+   Phone (<= 900px): heading, then media, then body.
+   Doubled selectors beat MUI's single Typography variant class. */
+
+.band {
+  border-top: 1px solid var(--read-line);
+  /* Anchored bands (#driving, #climb-counts) clear the fixed header. */
+  scroll-margin-top: var(--global-header-height);
+}
+
+.band:first-child {
+  border-top: 0;
+}
+
+/* A band that carries on the one above: no rule, half the air on top. */
+.band.continues {
+  border-top: 0;
+}
+
+.inner {
+  max-width: 1136px;
+  margin: 0 auto;
+  padding: 96px var(--spacing-6);
+}
+
+.continues .inner {
+  padding-top: 0;
+}
+
+/* Text-only bands keep a reading measure. */
+.solo > * {
+  max-width: 720px;
+}
+
+.withMedia {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-areas:
+    'head media'
+    'body media';
+  grid-template-rows: auto 1fr;
+  column-gap: 96px;
+  align-items: start;
+}
+
+.withMedia.flip {
+  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-areas:
+    'media head'
+    'media body';
+}
+
+.withMedia .head {
+  grid-area: head;
+  align-self: end;
+}
+
+.withMedia .body {
+  grid-area: body;
+}
+
+.withMedia .media {
+  grid-area: media;
+  align-self: center;
+  min-width: 0;
+}
+
+/* A band with media but no heading: the body centres against the media. */
+.withMedia:not(:has(.head)) {
+  grid-template-rows: 1fr;
+  grid-template-areas: 'body media';
+}
+
+.withMedia.flip:not(:has(.head)) {
+  grid-template-areas: 'media body';
+}
+
+.withMedia:not(:has(.head)) .body {
+  align-self: center;
+}
+
+/* ---- type ---- */
+
+/* --color-primary on --read-surface: 6.6:1. */
+.eyebrow.eyebrow {
+  margin: 0 0 var(--spacing-3);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.title.title {
+  margin: 0 0 var(--spacing-4);
+  color: var(--read-text);
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+h3.title.title {
+  font-size: 32px;
+}
+
+.lead.lead {
+  margin: 0 0 var(--spacing-6);
+  color: var(--read-text);
+  font-size: 21px;
+  line-height: 1.45;
+}
+
+.head > :last-child {
+  margin-bottom: var(--spacing-6);
+}
+
+.body {
+  color: var(--read-text);
+}
+
+.body p,
+.body li {
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.body ul,
+.body ol {
+  color: var(--read-text);
+}
+
+.body li::marker {
+  color: var(--read-text-muted);
+}
+
+.body > ul + p,
+.body > ol + p,
+.body > p + p,
+.body > p + ul,
+.body > p + ol {
+  margin-top: var(--spacing-4);
+}
+
+.body > :first-child {
+  margin-top: 0;
+}
+
+/* Inline links on the reading surface get a 44px tap row when they stand alone. */
+.body > p > a:only-child {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.media {
+  display: grid;
+  justify-items: center;
+}
+
+@media (max-width: 900px) {
+  .inner {
+    padding: 56px var(--spacing-4);
+  }
+
+  .withMedia,
+  .withMedia.flip,
+  .withMedia:not(:has(.head)),
+  .withMedia.flip:not(:has(.head)) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-8);
+  }
+
+  .withMedia .head {
+    order: 0;
+  }
+
+  .withMedia .media {
+    order: 1;
+    align-self: center;
+    width: 100%;
+    max-width: 260px;
+  }
+
+  .withMedia .body {
+    order: 2;
+  }
+
+  /* The flex gap spaces a media band's parts; a text-only band keeps the margin. */
+  .withMedia .head > :last-child {
+    margin-bottom: 0;
+  }
+
+  .withMedia .head,
+  .withMedia .body {
+    align-self: stretch;
+  }
+
+  /* A second look at the copy: a phone skips it to keep the page short. */
+  .secondary .media {
+    display: none;
+  }
+
+  .title.title {
+    font-size: 32px;
+  }
+
+  h3.title.title {
+    font-size: var(--font-size-2xl);
+  }
+
+  .lead.lead {
+    font-size: var(--font-size-lg);
+  }
+
+  .body p,
+  .body li {
+    font-size: var(--font-size-base);
+  }
+}

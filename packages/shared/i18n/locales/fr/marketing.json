@@ -388,7 +388,8 @@
     "nav": {
       "label": "Fil d'Ariane",
       "home": "Accueil",
-      "help": "Aide"
+      "help": "Aide",
+      "jump": "Sur cette page"
     },
     "install": {
       "title": "Prends l'app",
@@ -423,7 +424,6 @@
         "tellClock": "Une horloge à côté du texte indique un pilotage chronométré, et le givre rétrécit avec le temps. Sans horloge, ça dure jusqu'à ce que tu touches. Sur le mini-lecteur, l'ampoule passe à l'ambre pendant que tu pilotes.",
         "clipAlt": "Glisser le bouton du mur vers la gauche pour piloter, puis le toucher pour arrêter",
         "clipCaption": "Glisse à gauche et relâche pour allumer chaque bloc. Touche Tu pilotes la board pour arrêter.",
-        "endsIntro": "Un pilotage s'arrête quand :",
         "end1": "Tu touches Tu pilotes la board.",
         "end2": "Le chrono arrive à zéro. Pilotages chronométrés seulement.",
         "end3": "Quelqu'un de ta crew allume un bloc. Pilotages chronométrés seulement.",
@@ -431,12 +431,21 @@
         "after": "Après un pilotage, ton prochain choix s'ouvre de nouveau en aperçu.",
         "states": {
           "lookingAlt": "Le lecteur en aperçu : la barre du haut affiche Aperçu · pas au mur et le bouton affiche Allumer sur la board",
-          "lookingCaption": "Aperçu : Allumer sur la board. Rien ne s'allume tant que tu ne le touches pas.",
           "timedAlt": "Le lecteur pendant un pilotage avec horloge : le bouton affiche Tu pilotes la board · 0:28",
-          "timedCaption": "Pilotage chronométré : l'horloge décompte après Allumer sur la board.",
           "openAlt": "Le lecteur pendant un pilotage sans horloge : le bouton affiche Tu pilotes la board",
-          "openCaption": "Glisser pour piloter : pas d'horloge, ça reste allumé jusqu'à ce que tu touches."
-        }
+          "lookingLabel": "Aperçu",
+          "lookingTitle": "Allumer sur la board",
+          "lookingBody": "Rien ne s'allume tant que tu ne le touches pas.",
+          "timedLabel": "Pilotage chronométré",
+          "timedTitle": "Le chrono décompte",
+          "timedBody": "L'horloge décompte après Allumer sur la board.",
+          "openLabel": "Glisser pour piloter",
+          "openTitle": "Pas d'horloge",
+          "openBody": "Ça reste allumé jusqu'à ce que tu touches."
+        },
+        "statesEyebrow": "Lire le bouton du mur",
+        "statesTitle": "Les trois états du bouton du mur",
+        "endsTitle": "Un pilotage s'arrête quand"
       },
       "history": {
         "title": "Ce qui est au mur maintenant",
@@ -624,7 +633,8 @@
         "spray": {
           "title": "Spraywalls",
           "body": "Photographie ton Spraywall et corrige les prises que Boardsesh trouve."
-        }
+        },
+        "read": "Lire le guide"
       },
       "bring": {
         "title": "Reprends ton carnet Kilter ou Tension",
@@ -634,20 +644,25 @@
       "counts": {
         "title": "Pourquoi l'app de Kilter montre-t-elle plus de blocs ?",
         "lead": "Les deux apps ont les mêmes blocs et les comptent différemment.",
-        "item1": "Boardsesh compte chaque bloc une fois. L'app de Kilter semble compter un bloc une fois par inclinaison à laquelle il a été grimpé.",
-        "item2": "Sur un mur Kilter maison de 8x12, cela donne environ 18 000 blocs dans Boardsesh et environ 36 000 dans l'app de Kilter."
+        "boardseshCount": "18 000",
+        "boardseshLabel": "Environ autant dans Boardsesh sur un mur Kilter maison de 8x12. Chaque bloc compté une fois.",
+        "kilterCount": "36 000",
+        "kilterLabel": "Environ autant dans l'app de Kilter, même mur. Elle semble compter un bloc une fois par inclinaison à laquelle il a été grimpé."
       },
       "ask": {
         "title": "Pose une question",
         "lead": "Discord est le plus rapide pour obtenir une réponse.",
         "discord": "Demander sur Discord",
         "bugLead": "Tu as trouvé un bug ?",
-        "github": "Ouvrir un ticket sur GitHub",
+        "github": "Tu as un compte GitHub ? Ouvre un ticket",
         "devLead": "Tu développes sur l'API ?",
-        "docs": "Lire la doc développeur"
+        "docs": "Lire la doc développeur",
+        "discordTitle": "Discord",
+        "discordBody": "Des grimpeurs et l'équipe répondent à la plupart des questions dans la journée.",
+        "bugBody": "Dans l'app, touche ton avatar, puis Signaler un bug. Dis-nous ce qui s'est passé et sur quel téléphone.",
+        "devBody": "Synchro du carnet, entraînements et webhooks."
       },
       "topics": {
-        "label": "Sujets d'aide",
         "guides": "Guides",
         "app": "Installer l'app",
         "logbook": "Reprendre ton carnet",
@@ -667,7 +682,6 @@
         "shotAlt": "Le bouton coche",
         "shotCaption": "La coche ouvre la fiche de notation.",
         "logbookShotAlt": "Le carnet",
-        "logbookShotCaption": "Glisse à droite pour modifier, à gauche pour supprimer.",
         "p1": "Touche la grosse coche dans le lecteur, ou ✓ sur la barre du bas. Date et Heure sont déjà remplies, le reste est optionnel.",
         "p2": "Essai note un essai manqué. L'autre bouton affiche Flash à ton premier essai à cet angle, sinon Enchaîné. Les croix s'enregistrent hors ligne et se synchronisent plus tard."
       },

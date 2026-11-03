@@ -5,14 +5,16 @@ import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import { Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpPageShell from '../help-page-shell';
+import HelpBand from '../help-band';
+import HelpWallButtonStates from '../help-wall-button';
 import HelpBreadcrumb from '../help-breadcrumb';
 import HelpCallout from '../help-callout';
 import HelpInstallSection from '../help-install-section';
 import HelpSteps from '../help-steps';
 import { HelpScreenshot } from '../help-screenshot';
-import { HelpClip, HelpShots } from '../help-clip';
+import { HelpClip } from '../help-clip';
 
 /**
  * 2,326 climbers hit a failed board connection in 90 days, which makes this the
@@ -37,23 +39,47 @@ export default function BoardAndBluetoothContent() {
       title={t('help.board.hero.title')}
       lead={t('help.board.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.board.breadcrumb')} />}
+      jumpLabel={t('help.nav.jump')}
+      jumpLinks={[
+        { id: 'connect', label: t('help.board.connect.title') },
+        { id: 'driving', label: t('help.board.driving.title') },
+        { id: 'board-history', label: t('help.board.history.title') },
+        { id: 'hold-the-lightbulb', label: t('help.board.controls.title') },
+        { id: 'failed', label: t('help.board.failed.title') },
+      ]}
     >
-      <PageSection id="connect" title={t('help.board.connect.title')} lead={t('help.board.connect.lead')}>
-        <HelpShots>
+      <HelpBand
+        id="connect"
+        title={t('help.board.connect.title')}
+        lead={t('help.board.connect.lead')}
+        media={
           <HelpClip
             name="put-on-board-timed-drive"
             alt={t('help.board.connect.clipAlt')}
             caption={t('help.board.connect.clipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <HelpSteps
           steps={[t('help.board.connect.step1'), t('help.board.connect.step2'), t('help.board.connect.step3')]}
         />
         <Prose>{t('help.board.connect.otherBoard')}</Prose>
         <Prose>{t('help.board.connect.changeBoard')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="driving" title={t('help.board.driving.title')} lead={t('help.board.driving.lead')}>
+      <HelpBand
+        id="driving"
+        flip
+        title={t('help.board.driving.title')}
+        lead={t('help.board.driving.lead')}
+        media={
+          <HelpClip
+            name="wall-swipe-to-drive"
+            alt={t('help.board.driving.clipAlt')}
+            caption={t('help.board.driving.clipCaption')}
+          />
+        }
+      >
         <Prose>{t('help.board.driving.looking')}</Prose>
         <Prose>{t('help.board.driving.waysIntro')}</Prose>
         <ProseList ordered>
@@ -61,33 +87,47 @@ export default function BoardAndBluetoothContent() {
           <li>{t('help.board.driving.way2')}</li>
           <li>{t('help.board.driving.way3')}</li>
         </ProseList>
-        <HelpShots>
-          <HelpClip
-            name="wall-swipe-to-drive"
-            alt={t('help.board.driving.clipAlt')}
-            caption={t('help.board.driving.clipCaption')}
-          />
-        </HelpShots>
-        <HelpCallout>{t('help.board.driving.tell')}</HelpCallout>
-        <HelpShots>
-          <HelpScreenshot
-            shot="preview"
-            alt={t('help.board.driving.states.lookingAlt')}
-            caption={t('help.board.driving.states.lookingCaption')}
-          />
-          <HelpScreenshot
-            shot="drive-timed"
-            alt={t('help.board.driving.states.timedAlt')}
-            caption={t('help.board.driving.states.timedCaption')}
-          />
-          <HelpScreenshot
-            shot="drive-open"
-            alt={t('help.board.driving.states.openAlt')}
-            caption={t('help.board.driving.states.openCaption')}
-          />
-        </HelpShots>
-        <Prose>{t('help.board.driving.tellClock')}</Prose>
-        <Prose>{t('help.board.driving.endsIntro')}</Prose>
+      </HelpBand>
+
+      {/* The three states, each as the real button cropped from its capture. */}
+      <HelpBand
+        wide
+        eyebrow={t('help.board.driving.statesEyebrow')}
+        title={t('help.board.driving.statesTitle')}
+        lead={t('help.board.driving.tell')}
+      >
+        <HelpWallButtonStates
+          states={[
+            {
+              shot: 'preview',
+              driving: false,
+              label: t('help.board.driving.states.lookingLabel'),
+              title: t('help.board.driving.states.lookingTitle'),
+              body: t('help.board.driving.states.lookingBody'),
+              alt: t('help.board.driving.states.lookingAlt'),
+            },
+            {
+              shot: 'drive-timed',
+              driving: true,
+              label: t('help.board.driving.states.timedLabel'),
+              title: t('help.board.driving.states.timedTitle'),
+              body: t('help.board.driving.states.timedBody'),
+              alt: t('help.board.driving.states.timedAlt'),
+            },
+            {
+              shot: 'drive-open',
+              driving: true,
+              label: t('help.board.driving.states.openLabel'),
+              title: t('help.board.driving.states.openTitle'),
+              body: t('help.board.driving.states.openBody'),
+              alt: t('help.board.driving.states.openAlt'),
+            },
+          ]}
+        />
+        <HelpCallout>{t('help.board.driving.tellClock')}</HelpCallout>
+      </HelpBand>
+
+      <HelpBand title={t('help.board.driving.endsTitle')}>
         <ProseList>
           <li>{t('help.board.driving.end1')}</li>
           <li>{t('help.board.driving.end2')}</li>
@@ -95,26 +135,26 @@ export default function BoardAndBluetoothContent() {
           <li>{t('help.board.driving.end4')}</li>
         </ProseList>
         <Prose>{t('help.board.driving.after')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="board-history" title={t('help.board.history.title')} lead={t('help.board.history.lead')}>
+      <HelpBand id="board-history" title={t('help.board.history.title')} lead={t('help.board.history.lead')}>
         <Prose>{t('help.board.history.p1')}</Prose>
         <Prose>{t('help.board.history.p2')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="hold-the-lightbulb" title={t('help.board.controls.title')} lead={t('help.board.controls.lead')}>
-        <HelpShots>
+      <HelpBand
+        id="hold-the-lightbulb"
+        flip
+        title={t('help.board.controls.title')}
+        lead={t('help.board.controls.lead')}
+        media={
           <HelpScreenshot
             shot="board-sheet"
             alt={t('help.board.controls.shotAlt')}
             caption={t('help.board.controls.shotCaption')}
           />
-          <HelpScreenshot
-            shot="board-lighting"
-            alt={t('help.board.controls.lightingShotAlt')}
-            caption={t('help.board.controls.lightingShotCaption')}
-          />
-        </HelpShots>
+        }
+      >
         <ProseList>
           <li>{t('help.board.controls.row1')}</li>
           <li>{t('help.board.controls.row2')}</li>
@@ -122,6 +162,19 @@ export default function BoardAndBluetoothContent() {
           <li>{t('help.board.controls.row4')}</li>
           <li>{t('help.board.controls.row5')}</li>
         </ProseList>
+      </HelpBand>
+
+      <HelpBand
+        continues
+        secondaryMedia
+        media={
+          <HelpScreenshot
+            shot="board-lighting"
+            alt={t('help.board.controls.lightingShotAlt')}
+            caption={t('help.board.controls.lightingShotCaption')}
+          />
+        }
+      >
         <Prose>{t('help.board.controls.settingsIntro')}</Prose>
         <ProseList>
           <li>{t('help.board.controls.setting1')}</li>
@@ -130,9 +183,9 @@ export default function BoardAndBluetoothContent() {
           <li>{t('help.board.controls.setting4')}</li>
         </ProseList>
         <Prose>{t('help.board.controls.bulb')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="someone-else" title={t('help.board.control.title')} lead={t('help.board.control.lead')}>
+      <HelpBand id="someone-else" title={t('help.board.control.title')} lead={t('help.board.control.lead')}>
         <Prose>{t('help.board.control.p1')}</Prose>
         <Prose>
           {t('help.board.control.p2')}{' '}
@@ -140,21 +193,17 @@ export default function BoardAndBluetoothContent() {
             {t('help.board.control.sessionsLink')}
           </MuiLink>
         </Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection
-        id="live-activity"
-        title={t('help.board.liveActivity.title')}
-        lead={t('help.board.liveActivity.lead')}
-      >
+      <HelpBand id="live-activity" title={t('help.board.liveActivity.title')} lead={t('help.board.liveActivity.lead')}>
         <Prose>{t('help.board.liveActivity.p1')}</Prose>
         <Prose>{t('help.board.liveActivity.p2')}</Prose>
         <Prose>{t('help.board.liveActivity.p3')}</Prose>
-      </PageSection>
+      </HelpBand>
 
       <Box component="span" id="two-boards" />
       <Box component="span" id="listed-twice" />
-      <PageSection id="failed" title={t('help.board.failed.title')} lead={t('help.board.failed.lead')}>
+      <HelpBand id="failed" title={t('help.board.failed.title')} lead={t('help.board.failed.lead')}>
         <ProseList>
           <li>{t('help.board.failed.fix1')}</li>
           <li>{t('help.board.failed.fix2')}</li>
@@ -165,11 +214,11 @@ export default function BoardAndBluetoothContent() {
         <Prose>{t('help.board.failed.twoBoards')}</Prose>
         <Prose>{t('help.board.failed.duplicate')}</Prose>
         <Prose>{t('help.board.failed.duplicateYourBoards')}</Prose>
-      </PageSection>
+      </HelpBand>
 
       <HelpInstallSection />
 
-      <PageSection title={t('help.board.next.title')}>
+      <HelpBand title={t('help.board.next.title')}>
         <ProseList>
           <li>
             <MuiLink component={LocaleLink} href="/help/finding-climbs">
@@ -182,7 +231,7 @@ export default function BoardAndBluetoothContent() {
             </MuiLink>
           </li>
         </ProseList>
-      </PageSection>
+      </HelpBand>
     </HelpPageShell>
   );
 }

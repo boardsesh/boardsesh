@@ -4,14 +4,15 @@ import React from 'react';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import { Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpPageShell from '../help-page-shell';
+import HelpBand from '../help-band';
 import HelpBreadcrumb from '../help-breadcrumb';
 import HelpCallout from '../help-callout';
 import HelpInstallSection from '../help-install-section';
 import HelpSteps from '../help-steps';
 import HelpSwipeDiagram from '../help-swipe-diagram';
-import { HelpClip, HelpShots } from '../help-clip';
+import { HelpClip } from '../help-clip';
 import { HelpScreenshot } from '../help-screenshot';
 
 /**
@@ -32,8 +33,17 @@ export default function FindingClimbsContent() {
       title={t('help.climbs.hero.title')}
       lead={t('help.climbs.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.climbs.breadcrumb')} />}
+      jumpLabel={t('help.nav.jump')}
+      jumpLinks={[
+        { id: 'player', label: t('help.climbs.player.title') },
+        { id: 'climb-menu', label: t('help.climbs.menu.title') },
+        { id: 'filters', label: t('help.climbs.filters.title') },
+        { id: 'rows', label: t('help.climbs.rows.title') },
+        { id: 'playlists', label: t('help.climbs.playlists.title') },
+      ]}
     >
-      <PageSection id="player" title={t('help.climbs.player.title')} lead={t('help.climbs.player.lead')}>
+      {/* The diagram gets the band's full width: its flow needs ~700px to run sideways. */}
+      <HelpBand id="player" wide title={t('help.climbs.player.title')} lead={t('help.climbs.player.lead')}>
         <HelpSwipeDiagram
           labels={{
             description: t('help.climbs.diagram.description'),
@@ -50,14 +60,18 @@ export default function FindingClimbsContent() {
             thenFrom: t('help.climbs.diagram.thenFrom', { list: t('help.climbs.diagram.listName') }),
           }}
         />
-        {/* MEDIA: screenshot of the preview top bar: "Preview · not on the wall", "Search results · 4 of 23" and the back chip. */}
-        <HelpShots>
+      </HelpBand>
+
+      <HelpBand
+        continues
+        media={
           <HelpClip
             name="preview-browsing"
             alt={t('help.climbs.player.clipAlt')}
             caption={t('help.climbs.player.clipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.climbs.player.p1')}</Prose>
         <Prose>{t('help.climbs.player.p2')}</Prose>
         <Prose>{t('help.climbs.player.p3')}</Prose>
@@ -68,16 +82,21 @@ export default function FindingClimbsContent() {
             {t('help.climbs.player.drivingLink')}
           </MuiLink>
         </HelpCallout>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="climb-menu" title={t('help.climbs.menu.title')} lead={t('help.climbs.menu.lead')}>
-        <HelpShots>
+      <HelpBand
+        id="climb-menu"
+        flip
+        title={t('help.climbs.menu.title')}
+        lead={t('help.climbs.menu.lead')}
+        media={
           <HelpClip
             name="long-press-climb-actions"
             alt={t('help.climbs.menu.clipAlt')}
             caption={t('help.climbs.menu.clipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.climbs.menu.p1')}</Prose>
         <ProseList>
           <li>{t('help.climbs.menu.playNext')}</li>
@@ -92,26 +111,36 @@ export default function FindingClimbsContent() {
             {t('help.climbs.menu.betaLink')}
           </MuiLink>
         </Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="filters" title={t('help.climbs.filters.title')} lead={t('help.climbs.filters.lead')}>
-        <HelpShots>
+      <HelpBand
+        id="filters"
+        title={t('help.climbs.filters.title')}
+        lead={t('help.climbs.filters.lead')}
+        media={
           <HelpClip
             name="grade-range-tap"
             alt={t('help.climbs.filters.gradeClipAlt')}
             caption={t('help.climbs.filters.gradeClipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.climbs.filters.grade')}</Prose>
         <Prose>{t('help.climbs.filters.angle')}</Prose>
         <Prose>{t('help.climbs.filters.progress')}</Prose>
-        <HelpShots>
+      </HelpBand>
+
+      <HelpBand
+        continues
+        flip
+        media={
           <HelpClip
             name="hold-filter-paint"
             alt={t('help.climbs.filters.holdClipAlt')}
             caption={t('help.climbs.filters.holdClipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.climbs.filters.holdsIntro')}</Prose>
         <HelpSteps
           steps={[
@@ -121,66 +150,101 @@ export default function FindingClimbsContent() {
           ]}
         />
         <Prose>{t('help.climbs.filters.holdNote')}</Prose>
-        <HelpShots>
+      </HelpBand>
+
+      <HelpBand
+        continues
+        media={
           <HelpClip
             name="zone-filter-drag"
             alt={t('help.climbs.filters.regionClipAlt')}
             caption={t('help.climbs.filters.regionClipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.climbs.filters.region')}</Prose>
         <Prose>{t('help.climbs.filters.regionModes')}</Prose>
-        <HelpShots>
+      </HelpBand>
+
+      <HelpBand
+        continues
+        flip
+        secondaryMedia
+        media={
           <HelpScreenshot
             shot="setters"
             alt={t('help.climbs.filters.shotAlt')}
             caption={t('help.climbs.filters.shotCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.climbs.filters.setters')}</Prose>
         <Prose>{t('help.climbs.filters.settersPicker')}</Prose>
         <Prose>{t('help.climbs.filters.count')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="rows" title={t('help.climbs.rows.title')} lead={t('help.climbs.rows.lead')}>
-        <HelpShots>
+      <HelpBand
+        id="rows"
+        title={t('help.climbs.rows.title')}
+        lead={t('help.climbs.rows.lead')}
+        media={
           <HelpClip
             name="swipe-row-queue-playlist"
             alt={t('help.climbs.rows.clipAlt')}
             caption={t('help.climbs.rows.clipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.climbs.rows.p1')}</Prose>
         <Prose>{t('help.climbs.rows.p2')}</Prose>
-      </PageSection>
+      </HelpBand>
 
-      <PageSection id="playlists" title={t('help.climbs.playlists.title')} lead={t('help.climbs.playlists.lead')}>
-        <HelpShots>
+      <HelpBand
+        id="playlists"
+        flip
+        title={t('help.climbs.playlists.title')}
+        lead={t('help.climbs.playlists.lead')}
+        media={
           <HelpScreenshot
             shot="discover"
             alt={t('help.climbs.playlists.discoverShotAlt')}
             caption={t('help.climbs.playlists.discoverShotCaption')}
           />
-          <HelpScreenshot
-            shot="playlist-detail"
-            alt={t('help.climbs.playlists.detailShotAlt')}
-            caption={t('help.climbs.playlists.detailShotCaption')}
-          />
-        </HelpShots>
+        }
+      >
         <HelpSteps
           steps={[t('help.climbs.playlists.step1'), t('help.climbs.playlists.step2'), t('help.climbs.playlists.step3')]}
         />
         <Prose>{t('help.climbs.playlists.p1')}</Prose>
         <Prose>{t('help.climbs.playlists.play')}</Prose>
-        <HelpShots>
+      </HelpBand>
+
+      <HelpBand
+        continues
+        media={
           <HelpClip
             name="remove-from-playlist"
             alt={t('help.climbs.playlists.removeClipAlt')}
             caption={t('help.climbs.playlists.removeClipCaption')}
           />
-        </HelpShots>
+        }
+      >
         <Prose>{t('help.climbs.playlists.remove')}</Prose>
         <Prose>{t('help.climbs.playlists.reorder')}</Prose>
+      </HelpBand>
+
+      <HelpBand
+        continues
+        flip
+        secondaryMedia
+        media={
+          <HelpScreenshot
+            shot="playlist-detail"
+            alt={t('help.climbs.playlists.detailShotAlt')}
+            caption={t('help.climbs.playlists.detailShotCaption')}
+          />
+        }
+      >
         <Prose>{t('help.climbs.playlists.forYou')}</Prose>
         <Prose>{t('help.climbs.playlists.forYouHow')}</Prose>
         <Prose>{t('help.climbs.playlists.tags')}</Prose>
@@ -189,7 +253,7 @@ export default function FindingClimbsContent() {
             {t('help.climbs.playlists.browse')}
           </MuiLink>
         </Prose>
-      </PageSection>
+      </HelpBand>
 
       <HelpInstallSection />
     </HelpPageShell>
