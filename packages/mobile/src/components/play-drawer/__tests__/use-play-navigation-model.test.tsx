@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import type { TFunction } from 'i18next';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { planPlayNext } from '@boardsesh/queue';
+import enSession from '@boardsesh/i18n/locales/en-US/session.json';
 import { getBoardConfigForPlaylist } from '../../../lib/playlists/board-details-for-playlist';
 import { registerTrackPageLoader } from '../../../lib/playlists/track-pager';
 import type { BoardConfig } from '../play-drawer-types';
+import { resolveUpNextFirstCaption } from '../then-signposts';
 import { usePlayNavigationModel } from '../use-play-navigation-model';
 
 function knownBoard(boardType: string, layoutId: number): BoardConfig {
@@ -528,6 +532,105 @@ describe('usePlayNavigationModel', () => {
       const first = result.current.signposts;
       rerender({ ...initialProps, queue: [...queue] });
       expect(result.current.signposts).toBe(first);
+    });
+  });
+
+  // #7247, the owner's report on 2.7.0: Now was Debaser, 13 of Search results'
+  // 11,312, and Play next put MacroDre, a climb History held from a walk down
+  // the same results, at the head of Up next (row 41). The queue sheet listed
+  // it; the top bar read "Search results · 13 of 11,312" with no "Up next
+  // first" line, and swipes walked the results past it.
+  describe('Play next on a climb History holds from the list being walked (#7247)', () => {
+    /** The English catalog, pluralised the way i18next does it. */
+    const t = ((key: string, values: Record<string, string | number> = {}) => {
+      const lookup = (path: string): unknown =>
+        path
+          .split('.')
+          .reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], enSession);
+      const count = values.count;
+      const template =
+        typeof count === 'number' ? (lookup(`${key}_${count === 1 ? 'one' : 'other'}`) ?? lookup(key)) : lookup(key);
+      if (typeof template !== 'string') return key;
+      return template.replace(/\{\{(\w+)\}\}/g, (_, field: string) => `${values[field] ?? ''}`);
+    }) as unknown as TFunction<'session'>;
+
+    const results = Array.from({ length: 20 }, (_, index) => item(`r${index + 1}`).climb);
+    const searchResults: PlaylistSuggestionSource = {
+      playlistUuid: 'search',
+      activatedClimbUuid: 'r1',
+      boardKey: 'kilter:1',
+      climbs: results,
+      label: 'Search results',
+      total: 11312,
+    };
+    const walked = (uuid: string, climbIndex: number): ClimbQueueItem => ({
+      uuid,
+      climb: results[climbIndex],
+      suggested: true,
+    });
+    const debaser = walked('now-debaser', 12);
+
+    /** 40 climbs of History, two passes down the results reaching MacroDre (r5), then Play next on it. */
+    function ownersQueueAfterPlayNext(historyCountOf: (queue: ClimbQueueItem[]) => number | null) {
+      const older = Array.from({ length: 22 }, (_, index) => item(`old-${index}`));
+      const firstPass = results.slice(0, 12).map((_, index) => walked(`first-${index}`, index));
+      const secondPass = results.slice(4, 10).map((_, index) => walked(`second-${index}`, index + 4));
+      const before = [...older, ...firstPass, ...secondPass, debaser];
+      const plan = planPlayNext(before, debaser, { climbUuid: 'r5' }, historyCountOf(before));
+      if (plan.kind === 'replace') return plan.queue;
+      if (plan.kind !== 'move') throw new Error(`Play next planned ${plan.kind}`);
+      // A move is one reorder, a splice out and back in.
+      const after = [...before];
+      const [moved] = after.splice(plan.oldIndex, 1);
+      after.splice(plan.newIndex, 0, moved);
+      return after;
+    }
+
+    it.each([
+      { mode: 'now-slot', historyCountOf: (queue: ClimbQueueItem[]) => queue.indexOf(debaser) },
+      { mode: 'legacy', historyCountOf: () => null },
+    ])('$mode: Next plays MacroDre, and the top bar says "Up next first · 1 climb"', ({ historyCountOf }) => {
+      const queue = ownersQueueAfterPlayNext(historyCountOf);
+      const macroDre = queue[queue.indexOf(debaser) + 1];
+      expect(macroDre.climb.uuid).toBe('r5');
+      expect(queue.indexOf(macroDre)).toBe(40);
+      expect(queue.slice(0, 40).some((queued) => queued.climb.uuid === 'r5')).toBe(true);
+
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({
+          ...inputs(queue),
+          displayedQueueItem: debaser,
+          displayedClimb: debaser.climb,
+          currentClimbQueueItem: debaser,
+          historyCount: historyCountOf(queue),
+          playlistSuggestionSource: searchResults,
+        }),
+      );
+      expect(result.current.navigationState.nextItem).toBe(macroDre);
+      expect(result.current.nextHeaderClimb?.uuid).toBe('r5');
+      expect(result.current.currentTrackLabel).toEqual({
+        kind: 'counted',
+        name: 'Search results',
+        position: 13,
+        total: 11312,
+      });
+      expect(result.current.signposts).toEqual({
+        upNextCount: 1,
+        nextTrack: 'upNext',
+        previousTrack: 'list',
+        nextCrosses: false,
+        previousCrosses: false,
+        upNextFirstCount: 1,
+      });
+      expect(
+        resolveUpNextFirstCaption({
+          enabled: true,
+          isPreview: false,
+          trackLabel: result.current.currentTrackLabel,
+          upNextFirstCount: result.current.signposts.upNextFirstCount,
+          t,
+        }),
+      ).toBe('Up next first · 1 climb');
     });
   });
 });

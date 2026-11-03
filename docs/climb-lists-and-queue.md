@@ -174,6 +174,9 @@ live. Untouched settings take each surface's preview path instead.
 Since #6777, every "Walks …" in the Next column plays Up next first: the queue after the
 climb on the wall, Play next climbs at the top of it, then Play last ones. The list picks up
 again after the last list climb played, and its end card comes once both are done (rule 2).
+Play next on a climb walked from a list, one History holds, makes it Up next like any other:
+the queue entry loses the walk's `suggested` flag, which would otherwise read it as part of
+the list and swipes would walk past it (#7247).
 A preview opened from a list walks only that list. A look off the climb on the wall, a swipe
 outside a drive, plays Up next and then the list, as Next does (#7227).
 

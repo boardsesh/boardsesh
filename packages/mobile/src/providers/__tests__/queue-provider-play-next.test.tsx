@@ -56,7 +56,9 @@ const queueMutations = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(async () => {}),
   mirrorCurrentClimb: vi.fn(async () => {}),
   publishPlaybackState: vi.fn(async () => {}),
-  setQueue: vi.fn(async () => {}),
+  setQueue: vi.fn(
+    async (_queue: ClimbQueueItem[], _current?: ClimbQueueItem | null, _historyCount?: number | null) => {},
+  ),
   replaceQueueItem: vi.fn(async () => {}),
   reportWallDisconnect: vi.fn(async () => {}),
   confirmClimbOnWall: vi.fn(async () => {}),
@@ -145,6 +147,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFee
 import { QueueProvider, useQueue } from '../queue-provider';
 
 type Snapshot = {
+  queue: ClimbQueueItem[];
   queueUuids: string[];
   currentUuid: string | null;
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
@@ -155,6 +158,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
   const queue = useQueue();
   useEffect(() => {
     onSnapshot({
+      queue: queue.state.queue,
       queueUuids: queue.state.queue.map((item) => item.uuid),
       currentUuid: queue.state.currentClimbQueueItem?.uuid ?? null,
       addToQueue: queue.addToQueue,
@@ -375,5 +379,58 @@ describe('QueueProvider play next', () => {
       SHARED_EVENTS.QueueReordered,
       expect.objectContaining({ source: 'play-next' }),
     );
+  });
+
+  // #7247: a climb walked from a list carries the walk's `suggested` flag into
+  // History, and the walk reads a flagged climb on its list as the list, never
+  // as Up next. A reorder carries no flag, so Play next rewrites the slot as
+  // queued on purpose in one setQueue.
+  it('pulls a walked History climb forward without the list walk flag, in one setQueue', async () => {
+    const walkedA = { ...makeQueueItem('a'), suggested: true };
+    const queued = [walkedA, makeQueueItem('b'), makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[2]);
+
+    await act(async () => {
+      const outcome = await latest().playNext({ item: makeQueueItem('fresh', 'climb-a') });
+      expect(outcome).toBe('moved');
+    });
+
+    expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
+    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
+    expect(latest().queueUuids).toEqual(['b', 'c', 'a']);
+    expect(latest().queue[2].suggested).toBeUndefined();
+    await waitFor(() => expect(queueMutations.setQueue).toHaveBeenCalledTimes(1));
+    const [sentQueue, sentCurrent, sentLine] = queueMutations.setQueue.mock.calls[0];
+    expect(sentQueue.map((queueItem) => [queueItem.uuid, queueItem.suggested])).toEqual([
+      ['b', false],
+      ['c', false],
+      ['a', undefined],
+    ]);
+    expect(sentCurrent?.uuid).toBe('c');
+    // A legacy queue sends no line, as its other writes.
+    expect(sentLine).toBeNull();
+    expect(analytics.track).toHaveBeenCalledWith(
+      SHARED_EVENTS.QueueReordered,
+      expect.objectContaining({ oldIndex: 0, newIndex: 2, source: 'play-next' }),
+    );
+    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext' });
+  });
+
+  it('mends a walked climb already up next with its flag, without counting a reorder', async () => {
+    const walkedB = { ...makeQueueItem('b'), suggested: true };
+    const queued = [makeQueueItem('a'), walkedB, makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[0]);
+
+    await act(async () => {
+      await latest().playNext({ item: makeQueueItem('fresh', 'climb-b'), queueItemUuid: 'b' });
+    });
+
+    expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
+    expect(latest().queueUuids).toEqual(['a', 'b', 'c']);
+    expect(latest().queue[1].suggested).toBeUndefined();
+    await waitFor(() => expect(queueMutations.setQueue).toHaveBeenCalledTimes(1));
+    expect(queueMutations.setQueue.mock.calls[0][0].map((queueItem) => queueItem.uuid)).toEqual(['a', 'b', 'c']);
+    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.QueueReordered, expect.anything());
+    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext' });
   });
 });

@@ -253,3 +253,111 @@ describe('Play next with nothing current (F3 now-slot mode)', () => {
     });
   });
 });
+
+// Issue #7247: a climb walked from a list sits in the queue flagged
+// `suggested`, and the list walk reads a flagged climb on its list as the list
+// itself, never as Up next. Play next is the climber queueing it on purpose, so
+// the entry it places drops the flag, which a reorder can't carry.
+describe('Play next on a list walk entry (#7247)', () => {
+  function walked(queueItemUuid: string, climbUuid: string = queueItemUuid): ClimbQueueItem {
+    return { ...makeItem(queueItemUuid, climbUuid), suggested: true };
+  }
+
+  it('pulls a walked History climb to the head of Up next as queued on purpose, in one write', () => {
+    const queue = [makeItem('h1'), walked('macro'), walked('h2'), walked('now')];
+    const plan = planPlayNext(queue, queue[3], { climbUuid: 'c-macro' }, 3);
+    expect(plan).toEqual({
+      kind: 'replace',
+      uuid: 'q-macro',
+      oldIndex: 1,
+      queue: [queue[0], queue[2], queue[3], makeItem('macro')],
+      historyCount: 2,
+    });
+    if (plan.kind === 'replace') {
+      // The same order a reorder would leave, the flag gone from that entry only.
+      expect(plan.queue.map((item) => item.uuid)).toEqual(applyMove(queue, 1, 3));
+      expect(plan.queue.map((item) => item.suggested)).toEqual([undefined, true, true, undefined]);
+    }
+  });
+
+  it('plans the same in legacy mode, where no line is read', () => {
+    const queue = [walked('macro'), walked('now')];
+    const plan = planPlayNext(queue, queue[1], { climbUuid: 'c-macro' });
+    expect(plan).toMatchObject({ kind: 'replace', uuid: 'q-macro', oldIndex: 0, historyCount: 0 });
+    if (plan.kind === 'replace') expect(plan.queue).toEqual([queue[1], makeItem('macro')]);
+  });
+
+  it('takes the oldest History copy when the climb was walked twice, and keeps the other', () => {
+    const queue = [walked('first', 'macro'), walked('h1'), walked('second', 'macro'), walked('now')];
+    const plan = planPlayNext(queue, queue[3], { climbUuid: 'c-macro' }, 3);
+    expect(plan).toMatchObject({ kind: 'replace', uuid: 'q-first', oldIndex: 0, historyCount: 2 });
+    if (plan.kind === 'replace') {
+      expect(plan.queue.map((item) => item.uuid)).toEqual(['q-h1', 'q-second', 'q-now', 'q-first']);
+      expect(plan.queue[3].suggested).toBeUndefined();
+      expect(plan.queue[1].suggested).toBe(true);
+    }
+  });
+
+  it('moves a walked climb from further down Up next', () => {
+    const queue = [walked('now'), makeItem('u1'), walked('later')];
+    const plan = planPlayNext(queue, queue[0], { climbUuid: 'c-later' }, 0);
+    expect(plan).toMatchObject({ kind: 'replace', uuid: 'q-later', oldIndex: 2, historyCount: 0 });
+    if (plan.kind === 'replace') expect(plan.queue).toEqual([queue[0], makeItem('later'), queue[1]]);
+  });
+
+  it('mends a walked climb an older build already moved, flag and all, where it stands', () => {
+    const queue = [walked('h1'), walked('now'), walked('macro'), makeItem('u1')];
+    const plan = planPlayNext(queue, queue[1], { climbUuid: 'c-macro' }, 1);
+    expect(plan).toEqual({
+      kind: 'replace',
+      uuid: 'q-macro',
+      oldIndex: 2,
+      queue: [queue[0], queue[1], makeItem('macro'), queue[3]],
+      historyCount: 1,
+    });
+  });
+
+  it('with nothing current, a walked History climb crosses the line without its flag', () => {
+    const queue = [walked('h1'), walked('h2'), makeItem('u1')];
+    expect(planPlayNext(queue, null, { climbUuid: 'c-h1' }, 2)).toEqual({
+      kind: 'replace',
+      uuid: 'q-h1',
+      oldIndex: 0,
+      queue: [queue[1], makeItem('h1'), queue[2]],
+      historyCount: 1,
+    });
+  });
+
+  it('with nothing current, a walked Up next climb goes to the head of Up next without its flag', () => {
+    const queue = [makeItem('h1'), makeItem('u1'), walked('u2')];
+    expect(planPlayNext(queue, null, { climbUuid: 'c-u2' }, 1)).toEqual({
+      kind: 'replace',
+      uuid: 'q-u2',
+      oldIndex: 2,
+      queue: [queue[0], makeItem('u2'), queue[1]],
+      historyCount: 1,
+    });
+  });
+
+  it('a climb queued on purpose still moves with one reorder, or not at all', () => {
+    const queue = [makeItem('h1'), walked('now'), makeItem('u1')];
+    expect(planPlayNext(queue, queue[1], { climbUuid: 'c-h1' }, 1)).toEqual({
+      kind: 'move',
+      uuid: 'q-h1',
+      oldIndex: 0,
+      newIndex: 1,
+    });
+    expect(planPlayNext(queue, queue[1], { climbUuid: 'c-u1' }, 1)).toEqual({
+      kind: 'unchanged',
+      reason: 'already-next',
+    });
+  });
+
+  it('never touches the climb on the wall', () => {
+    const queue = [walked('now')];
+    expect(planPlayNext(queue, queue[0], { queueItemUuid: 'q-now', climbUuid: 'c-now' }, 0)).toEqual({
+      kind: 'unchanged',
+      reason: 'is-current',
+    });
+  });
+});

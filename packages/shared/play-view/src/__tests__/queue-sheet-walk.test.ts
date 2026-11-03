@@ -4,6 +4,7 @@ import {
   createPlaylistSuggestionSource,
   isPlaylistPeekQueueItemUuid,
   placeOnWall,
+  planPlayNext,
   upNextStart,
   withPlaylistTrackResume,
 } from '@boardsesh/queue';
@@ -364,6 +365,57 @@ describe('Then from rows: parity with the swipe walk', () => {
     const current = walked('e-s6', S6);
     const scenario: Scenario = { queue: [current], current, source: projects(S1), historyCount: 0 };
     expectParity(scenario, { upNext: [], thenFrom: [] });
+  });
+
+  // Issue #7247: Play next on a climb History holds from a walk down this same
+  // list. The sheet lists it under Up next; swipes walked past it as a list
+  // climb, because the move kept the walk's flag. Built through the real Play
+  // next plan, committed as the provider commits it, in both modes, with the
+  // climb walked twice so History still holds a copy after the move.
+  describe.each([
+    { mode: 'now-slot', lineOf: (queue: ClimbQueue, current: ClimbQueueItem): number | null => queue.indexOf(current) },
+    { mode: 'legacy', lineOf: (): number | null => null },
+  ])('Play next on a climb History holds from this list ($mode)', ({ lineOf }) => {
+    function afterPlayNext(queue: ClimbQueue, current: ClimbQueueItem, target: Climb): Scenario {
+      const plan = planPlayNext(queue, current, { climbUuid: target.uuid }, lineOf(queue, current));
+      let next: ClimbQueue;
+      if (plan.kind === 'replace') next = plan.queue;
+      else if (plan.kind === 'move') {
+        next = [...queue];
+        const [moved] = next.splice(plan.oldIndex, 1);
+        next.splice(plan.newIndex, 0, moved);
+      } else throw new Error(`Play next planned ${plan.kind}`);
+      return { queue: next, current, source: projects(S1), historyCount: lineOf(next, current) };
+    }
+
+    it('Up next plays it first, then the list after the climb on the wall, with a copy still in History', () => {
+      const current = walked('e-s4', S4);
+      const history = [walked('e-s2', S2), walked('e-s1', S1), walked('e-s2-again', S2), walked('e-s3', S3)];
+      const scenario = afterPlayNext([...history, current], current, S2);
+      expect(scenario.queue.filter((item) => item.climb.uuid === 's2')).toHaveLength(2);
+      expectParity(scenario, { upNext: ['s2'], thenFrom: ['s5', 's6'] });
+    });
+
+    it('a climb further on the list plays as Up next, and the list still reaches it again', () => {
+      const current = walked('e-s2', S2);
+      const history = [walked('e-s4', S4), walked('e-s1', S1)];
+      const scenario = afterPlayNext([...history, current], current, S4);
+      expectParity(scenario, { upNext: ['s4'], thenFrom: ['s3', 's4', 's5', 's6'] });
+    });
+
+    it("mends the walked climb an older build moved into Up next with the walk's flag", () => {
+      const current = walked('e-s4', S4);
+      const stale = [walked('e-s1', S1), current, walked('e-s2', S2)];
+      // As 2.7.0 left it: the walk passes the climb the sheet lists under Up next.
+      const staleScenario: Scenario = {
+        queue: stale,
+        current,
+        source: projects(S1),
+        historyCount: lineOf(stale, current),
+      };
+      expect(swipeLook(staleScenario)[0]).not.toBe(stale[2]);
+      expectParity(afterPlayNext(stale, current, S2), { upNext: ['s2'], thenFrom: ['s5', 's6'] });
+    });
   });
 
   it('no list: the walk never leaves the queue', () => {

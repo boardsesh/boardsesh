@@ -2029,6 +2029,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    * - in History with nothing current (F3) → one whole-queue replace that pulls
    *   it to the head of Up next and lowers the line; no single reorder can
    *   (see `planPlayNext`)
+   * - a slot a list walk put in the queue (`suggested`) → the same one-write
+   *   replace, the slot rewritten as queued on purpose: a reorder would keep
+   *   the flag, and swipes would walk past it as part of the list (#7247)
    * - already up next (or its own queue slot is on the wall) → no mutation,
    *   but still confirm. Silence would read as a dead button.
    * - the climb on the wall, named by climb only (a list row's swipe) → a
@@ -2056,21 +2059,27 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       }
 
       if (plan.kind === 'replace') {
-        track(SHARED_EVENTS.QueueReordered, {
-          boardName: activeBoardRef.current?.boardType,
-          layoutId: activeBoardRef.current?.layoutId,
-          oldIndex: plan.oldIndex,
-          newIndex: plan.historyCount,
-          partyMode: sessionIdRef.current !== null,
-          reorderedBy: 'self',
-          source: 'play-next',
-        });
+        // Where the slot lands. A slot already up next that only drops its list
+        // walk flag (#7247) stays put, which is no reorder.
+        const newIndex = plan.queue.findIndex((queueItem) => queueItem.uuid === plan.uuid);
+        if (newIndex !== plan.oldIndex) {
+          track(SHARED_EVENTS.QueueReordered, {
+            boardName: activeBoardRef.current?.boardType,
+            layoutId: activeBoardRef.current?.layoutId,
+            oldIndex: plan.oldIndex,
+            newIndex,
+            partyMode: sessionIdRef.current !== null,
+            reorderedBy: 'self',
+            source: 'play-next',
+          });
+        }
         applyQueueSnapshot(
           plan.queue,
           stateRef.current.currentClimbQueueItem,
           captureQueueMutationOrigin(),
           undefined,
-          plan.historyCount,
+          // Legacy mode never reads a line, so it sends none, as its other writes.
+          nowSlotModeRef.current ? plan.historyCount : null,
         );
         showQueueAddedSnackbar({ kind: 'playNext' });
         return 'moved';
