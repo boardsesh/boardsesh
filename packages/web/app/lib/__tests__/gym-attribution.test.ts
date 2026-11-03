@@ -111,7 +111,7 @@ describe('gymRedirectAttributionQuery', () => {
     );
   });
 
-  it('carries all six, in the reported order, after the QR pair', () => {
+  it('carries every campaign param, in the reported order, after the QR pair', () => {
     expect(
       gymRedirectAttributionQuery({
         gclid: 'EAIaIQobChMI',
@@ -128,6 +128,10 @@ describe('gymRedirectAttributionQuery', () => {
     );
   });
 
+  it('carries the Meta and Reddit click ids', () => {
+    expect(gymRedirectAttributionQuery({ fbclid: 'IwAR1', rdt_cid: 'abc' })).toBe('?fbclid=IwAR1&rdt_cid=abc');
+  });
+
   it('drops every param outside the two allowlists', () => {
     expect(
       gymRedirectAttributionQuery({
@@ -137,7 +141,7 @@ describe('gymRedirectAttributionQuery', () => {
         next: 'https://evil.example.com',
         redirect: 'https://evil.example.com',
         utm_id: '42',
-        fbclid: 'abc',
+        msclkid: 'abc',
       }),
     ).toBe('?utm_source=instagram');
   });

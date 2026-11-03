@@ -381,7 +381,7 @@ export function track(name: string, properties?: EventProperties): void {
 }
 
 /**
- * Add the campaign this visit landed with (`utm_*`, `gclid`) to an event's
+ * Add the campaign this visit landed with (`utm_*` and the ad click ids) to an event's
  * properties (#6027).
  *
  * posthog-js-lite never parses campaign params, so nothing on www said where a

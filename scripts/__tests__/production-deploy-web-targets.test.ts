@@ -220,6 +220,7 @@ describe('production-deploy web deploy targets', () => {
       'BOARDSESH_WEB=1',
       'NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}',
       'NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com',
+      'NEXT_PUBLIC_APP_STORE_PROVIDER_ID=${{ vars.NEXT_PUBLIC_APP_STORE_PROVIDER_ID }}',
       'SENTRY_RELEASE=${{ github.sha }}',
       'BOARDSESH_BUILD_RELEASE=${{ github.sha }}',
     ]) {

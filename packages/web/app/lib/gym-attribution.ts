@@ -99,7 +99,7 @@ export function gymQrAttributionQuery(searchParams: GymQrSearchParams): string {
  * like direct traffic: no `utm_source` on its `$pageview`, none on `App Install
  * Click`, and a store link that said `boardsesh` / `web`.
  *
- * Still an allowlist. Only the six names in `INBOUND_CAMPAIGN_PARAMS` come out,
+ * Still an allowlist. Only the names in `INBOUND_CAMPAIGN_PARAMS` come out,
  * each value trimmed and capped by `parseInboundCampaign` and re-encoded here,
  * so `?next=`, `?claim=` and anything else a crafted link carries is dropped as
  * before. Carrying the campaign params hands a crafted link nothing new: the

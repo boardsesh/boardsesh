@@ -51,6 +51,12 @@ export const STORE_LINK_DEFAULT_CAMPAIGN = 'www';
 /** What a bare Google Ads click id stands for when the landing URL has no `utm_source`. */
 export const GOOGLE_ADS_SOURCE = 'google';
 export const GOOGLE_ADS_MEDIUM = 'cpc';
+export const REDDIT_ADS_SOURCE = 'reddit';
+export const REDDIT_ADS_MEDIUM = 'paid-social';
+export const META_SOURCE = 'meta';
+// `fbclid` is also appended to organic Facebook and Instagram link taps, so a
+// bare one cannot be called paid.
+export const META_MEDIUM = 'social';
 
 /**
  * Mediums a store link never takes from the visitor, compared lowercased.
@@ -137,7 +143,10 @@ export function storeLinkId(placement: AppInstallPlacement, qrMedium?: GymQrMedi
  *
  * A landing URL with a `gclid` and no `utm_source` is a Google Ads click, so it
  * reads as `google` / `cpc` instead of falling back to `boardsesh`. The click id
- * itself is not copied into the link.
+ * itself is not copied into the link. Likewise a bare `rdt_cid` (only ever added
+ * to Reddit ad clicks) reads as `reddit` / `paid-social`, and a bare `fbclid`
+ * as `meta` / `social` (Meta also adds it to organic taps, so never `paid`).
+ * With several click ids and no `utm_source`: gclid, then rdt_cid, then fbclid.
  *
  * One medium is never taken from the visitor: `organic` (any case), or Play's
  * own `(not set)`. See `RESERVED_PLAY_MEDIUMS`. Ours stays in its place, and the
@@ -145,14 +154,23 @@ export function storeLinkId(placement: AppInstallPlacement, qrMedium?: GymQrMedi
  */
 export function resolveStoreLinkAttribution(input: StoreLinkInput): StoreLinkAttribution {
   const inbound = input.inbound ?? null;
-  const isBareAdsClick = Boolean(inbound?.gclid) && !inbound?.utm_source;
+  const hasSource = Boolean(inbound?.utm_source);
+  const clickIdDefault = hasSource
+    ? undefined
+    : inbound?.gclid
+      ? { source: GOOGLE_ADS_SOURCE, medium: GOOGLE_ADS_MEDIUM }
+      : inbound?.rdt_cid
+        ? { source: REDDIT_ADS_SOURCE, medium: REDDIT_ADS_MEDIUM }
+        : inbound?.fbclid
+          ? { source: META_SOURCE, medium: META_MEDIUM }
+          : undefined;
 
-  const inboundSource = inbound?.utm_source ?? (isBareAdsClick ? GOOGLE_ADS_SOURCE : undefined);
+  const inboundSource = inbound?.utm_source ?? clickIdDefault?.source;
   const taggedMedium =
     inbound?.utm_medium && !RESERVED_PLAY_MEDIUMS.has(inbound.utm_medium.toLowerCase())
       ? inbound.utm_medium
       : undefined;
-  const inboundMedium = taggedMedium ?? (isBareAdsClick ? GOOGLE_ADS_MEDIUM : undefined);
+  const inboundMedium = taggedMedium ?? clickIdDefault?.medium;
   const inboundCampaign = inbound?.utm_campaign;
 
   const ownMedium = input.qrMedium ? STORE_LINK_MEDIUM_QR : STORE_LINK_MEDIUM_WEB;

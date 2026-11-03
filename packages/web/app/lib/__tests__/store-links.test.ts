@@ -213,6 +213,44 @@ describe('resolveStoreLinkAttribution', () => {
     });
   });
 
+  it('reads a bare Reddit click id as reddit / paid-social', () => {
+    expect(resolveStoreLinkAttribution({ placement: 'hero', inbound: { rdt_cid: 'abc' } })).toMatchObject({
+      source: 'reddit',
+      medium: 'paid-social',
+      inboundTagged: true,
+      inboundNamed: true,
+    });
+  });
+
+  it('reads a bare fbclid as meta / social, never paid', () => {
+    expect(resolveStoreLinkAttribution({ placement: 'hero', inbound: { fbclid: 'IwAR1' } })).toMatchObject({
+      source: 'meta',
+      medium: 'social',
+    });
+  });
+
+  it('ranks click ids gclid, then rdt_cid, then fbclid', () => {
+    expect(
+      resolveStoreLinkAttribution({ placement: 'hero', inbound: { fbclid: 'a', rdt_cid: 'b', gclid: 'c' } }).source,
+    ).toBe('google');
+    expect(resolveStoreLinkAttribution({ placement: 'hero', inbound: { fbclid: 'a', rdt_cid: 'b' } }).source).toBe(
+      'reddit',
+    );
+  });
+
+  it('lets the visitor utm fields win over a bare click id, field by field', () => {
+    expect(
+      resolveStoreLinkAttribution({ placement: 'hero', inbound: { rdt_cid: 'b', utm_medium: 'cpm' } }),
+    ).toMatchObject({ source: 'reddit', medium: 'cpm' });
+  });
+
+  it('never puts a Meta or Reddit click id in a store URL', () => {
+    const playUrl = buildPlayStoreUrl({ placement: 'hero', inbound: { fbclid: 'IwAR1', rdt_cid: 'zzz' } });
+    expect(playUrl).not.toContain('fbclid');
+    expect(playUrl).not.toContain('rdt_cid');
+    expect(playUrl).not.toContain('IwAR1');
+  });
+
   it('prefers an explicit utm_source over the click-id default', () => {
     expect(
       resolveStoreLinkAttribution({ placement: 'hero', inbound: { gclid: 'EAIaIQobChMI', utm_source: 'newsletter' } }),

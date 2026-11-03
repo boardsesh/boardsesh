@@ -48,9 +48,13 @@ describe('parseInboundCampaign', () => {
   });
 
   it('ignores every param outside the contract', () => {
-    expect(parseInboundCampaign('?utm_source=ig&fbclid=abc&src=qr&medium=poster&utm_id=7&ref=x')).toEqual({
+    expect(parseInboundCampaign('?utm_source=ig&utm_id=7&src=qr&medium=poster&ref=x')).toEqual({
       utm_source: 'ig',
     });
+  });
+
+  it('reads the Meta and Reddit click ids', () => {
+    expect(parseInboundCampaign('?fbclid=IwAR1&rdt_cid=2x9')).toEqual({ fbclid: 'IwAR1', rdt_cid: '2x9' });
   });
 
   it('reads a bare gclid as a campaign', () => {
@@ -95,6 +99,8 @@ describe('parseInboundCampaign', () => {
       'utm_content',
       'utm_term',
       'gclid',
+      'fbclid',
+      'rdt_cid',
     ]);
   });
 });
