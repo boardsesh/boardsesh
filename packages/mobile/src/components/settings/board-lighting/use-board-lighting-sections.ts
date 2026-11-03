@@ -7,6 +7,7 @@ import { buildHelpSectionUrl } from '../../../lib/help-url';
 import { openExternalUrl } from '../../../lib/open-url';
 import { hapticSelection } from '../../../lib/haptics';
 import { useOptionalBluetoothContext } from '../../../providers/bluetooth-provider';
+import { useMoonboardRelayModeEnabled } from '../../../providers/feature-flags-provider';
 import { useSetting } from '../../../settings';
 import { buildBoardLightingSections } from './board-lighting-model';
 
@@ -20,6 +21,9 @@ export function useBoardLightingSections(): MoreSection[] {
   const [storedKeepLighting, setKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [drivesInSession, setDrivesInSession] = useSetting('putOnBoardDrivesInSession');
   const [disconnectWhenDrivingEnds, setDisconnectWhenDrivingEnds] = useSetting('disconnectWhenDrivingEnds');
+  // Relay mode (#7220): the holder's setting, on a MoonBoard behind its flag.
+  const [acceptRelayedClimbs, setAcceptRelayedClimbs] = useSetting('acceptRelayedClimbs');
+  const relayModeEnabled = useMoonboardRelayModeEnabled();
   const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
   const [alwaysDrive, setAlwaysDrive] = useSetting('alwaysDrive');
   const [playlistTapLoadsQueue, setPlaylistTapLoadsQueue] = useSetting('playlistTapLoadsQueue');
@@ -57,6 +61,16 @@ export function useBoardLightingSections(): MoreSection[] {
             setDisconnectWhenDrivingEnds(enabled);
           },
         },
+        relayAccepting:
+          relayModeEnabled && showMoonboardLightAdjacentHolds
+            ? {
+                enabled: acceptRelayedClimbs,
+                onChange: (enabled) => {
+                  hapticSelection();
+                  setAcceptRelayedClimbs(enabled);
+                },
+              }
+            : undefined,
         alwaysDrive: {
           enabled: alwaysDrive,
           onChange: (enabled) => {
@@ -97,6 +111,9 @@ export function useBoardLightingSections(): MoreSection[] {
       setDrivesInSession,
       disconnectWhenDrivingEnds,
       setDisconnectWhenDrivingEnds,
+      relayModeEnabled,
+      acceptRelayedClimbs,
+      setAcceptRelayedClimbs,
       alwaysDrive,
       setAlwaysDrive,
       playlistTapLoadsQueue,

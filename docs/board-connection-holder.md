@@ -142,8 +142,8 @@ start answers `held_by_crew`): their phone holds it, and Put on board relays the
 ## Relay mode (#7220)
 
 An original MoonBoard controller takes one phone and stops advertising while connected. Every other climber at that
-wall lights climbs through the holder's phone. Backend and shared client only so far; the mobile UI ships later
-behind a flag.
+wall lights climbs through the holder's phone. The mobile side ships behind the `moonboard-relay-mode` flag; see
+[the relaying phone](#relay-mode-7220-the-relaying-phone) below.
 
 **The holder is a connection.** `commitBoardClimb` stores the reporting connection in `board:{id}:writer-conn`
 beside `board:{id}:writer`, with the same 12 h TTL. `clearBoardWriterIf` deletes both (and the opt-out) together. A
@@ -209,6 +209,69 @@ the report dedups as usual. A caller that replays another connection's id neithe
 is `SENT` to nobody; the relaying phone still needs a timeout on the echo. The WS-close backstop clears the writer by
 account, so if the same account holds from two connections, either one closing frees the board (the known
 same-user limitation below).
+
+### Relay mode (#7220): the relaying phone
+
+Mobile, behind the `moonboard-relay-mode` flag; with the flag off every path below is today's.
+
+**Who relays.** `relayHolderFor` (`packages/mobile/src/lib/board-relay/relay-holder.ts`, table-tested) returns
+presence's holder when all of these hold: the flag is on; the bound board is a MoonBoard whose effective link mode
+is `relay`; this phone's own Bluetooth link is down; presence names a holder; that holder isn't a member of this
+phone's crew session (there the shared queue stays the channel, as above); the holder's `lastSentAt` is under
+15 minutes old (an idle holder means Put on board connects, as today); and the path to that holder wasn't just
+lost. The server keys a hold on the connection, so the climber's own second phone relays like anyone's; this
+phone's own stale hold answers `SELF_HOLDER`.
+
+**What changes.** The bulb's press action becomes `relay` (`derivePlayDrawerLightbulbPressAction`'s
+`boardRelay`). The wall button reads as the holder's board (their face, Put on board), and unlike a crewmate's
+board it offers the swipe, Stop driving after's timed drive and Always drive the wall's resume (`boardRelay` in
+`resolveWallControl`). A press commits a preview to this phone's own queue and sends the climb on screen; a bulb
+with no climb of its own (toolbar, app bar) sends the current climb. A drive arms as `relayed`
+(`DriveModeState.relayed`), connects nothing, and `use-relayed-drive.ts` (mounted once as `BoardRelayWatcher`)
+relays its first climb and every change of current climb after. Always drive the wall starts on an engaged path
+(a relay of this phone's lit through that holder), never on a bare holder, so nobody drives through a stranger's
+phone without pressing first. Drive Mode Started and Ended carry `relayed: true`.
+
+**Subscription.** The legacy `BOARD_NOW_PLAYING` has no `relayRequestId`, so with the flag on every phone's
+presence client is built with `relayMode: true` (holder and relaying phone alike). The mobile client hands each
+`BoardClimbSet.relayRequestId` to an app-wide echo bus before the reducer sees the event. That open subscription
+is also what the server's relay gate needs from the relaying connection. Screenshot mode keeps the flag off and
+the seed transport, so the recorded documents never change.
+
+**Confirmation.** Each relay mints a fresh `relayRequestId` and waits for the echo for
+`RELAY_CONFIRM_TIMEOUT_MS` (8 s, the rollout gate; tune on the bench). Latest wins: a newer pick supersedes the
+one in flight, and the same climb already on its way is joined, not sent twice. Nothing is ever retried.
+- Echo: the path is engaged; an arming relayed drive goes live (a success buzz) and the climb counts.
+- `NO_HOLDER`, `SELF_HOLDER`, `HOLDER_UNREACHABLE`: the holder is gone. A relayed drive ends `holder_left`, the
+  path is suppressed until presence's holder changes, so the next Put on board connects.
+- `HOLDER_OPTED_OUT`, `NOT_RELAY_BOARD`, `CLIMB_UNAVAILABLE`, a thrown error, or no echo in 8 s: a relayed drive
+  ends `relay_unconfirmed`. The wall button keeps reading the holder's board, so the climb never shows as lit.
+
+**Holder changes.** During a relayed drive, presence clearing the holder ends it `holder_left`; another phone
+taking it ends it `holder_changed`. Either counts only for a change presence saw after the drive started
+(`lastHolderChangeSeq`, the #7234 rule), via `resolveRelayedDriveHolderExit`.
+
+**Lost-path notices.** The #7234 treatment (`relay-lost-store.ts`): one warning buzz, one screen-reader line, a
+caption on the player's top bar beside the board art for 10 s. "Sam's phone let go of the board · Put on board
+connects you" (the holder left, dropped, changed, or is unreachable) or "Didn't reach the board through Sam's
+phone · Try again". An anonymous holder reads as someone on this board. Said once per drive (or per press), never
+per pick, and never after the climber stopped: a stop supersedes the relay in flight.
+
+**The holder's side.** `BluetoothProvider` answers each `BoardClimbRelayRequested` only while its own link holds a
+Relay mode MoonBoard, the flag is on and "Let others on this board light climbs through my phone"
+(`acceptRelayedClimbs`) is on. It writes the frames over Bluetooth (fenced like the kiosk relight) and reports
+with `reportClimb(..., { relayRequestId })`, the id exactly as received. Anything else is ignored and the
+relaying phone's timeout speaks. One "Kim is driving" toast per relayer per run of relays (a relayer quiet for
+5 minutes starts a new run; the holder can't see the other phone's drive boundaries).
+
+**Holder setting.** "Let others on this board light climbs through my phone" is **on by default on every
+MoonBoard, home boards as well as gyms** (owner, 2026-11-03). It sits under Settings › Board beside Disconnect
+Bluetooth when driving ends, on a MoonBoard with the flag on. The phone sends it with `setBoardRelayAccepting`
+right after its first accepted report as holder of a Relay mode MoonBoard, and again whenever it changes.
+
+**Not covered yet.** The other connect paths (WallScrubber, the empty-wall Connect, create-climb, the picker's no
+lights offer, the Android notification bulb) and every native path (Lock Screen Next / Previous, iOS
+`ReconnectBoardIntent`) still connect; a later PR gates them.
 
 ## Known limitations
 

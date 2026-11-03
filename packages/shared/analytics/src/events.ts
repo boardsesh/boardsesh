@@ -134,7 +134,11 @@ export const SHARED_EVENTS = {
   // 'board_changed' | 'signed_out' | 'window_ended' (2.7: Put on board's
   // keep-lighting window ran out, or its setting was turned off) |
   // 'always_off' (2026-11: Always drive the wall went off, or a crew formed where
-  // it doesn't drive; the link stays), durationSec,
+  // it doesn't drive; the link stays) | 'holder_left' | 'holder_changed' |
+  // 'relay_unconfirmed' (Relay mode #7220: the holder's phone let go, another
+  // phone took the board, or a relayed climb never lit), relayed (#7220: true
+  // only on a drive lit through another phone's link; Drive Mode Started
+  // carries it too), durationSec,
   // climbsLit (the swipe's own climb included), inSession, windowRenewals (2.7:
   // lit climbs that renewed the keep-lighting window; 0 with no window, and
   // absent before 2.7), windowSec (2.7: the timed drive's length, 30 | 45 | 60 | 120 | 300, or
@@ -160,7 +164,7 @@ export const SHARED_EVENTS = {
   DriveModeEnded: 'Drive Mode Ended',
   // Mobile-only (2.7): a drive started, before it reached the wall (arming).
   // Props (built by `driveModeStarted`): { startedBy (as Drive Mode Ended),
-  // inSession, boardType (as Drive Mode Ended) }. Low volume: once per drive, never per climb. Every Drive Mode
+  // inSession, boardType (as Drive Mode Ended), relayed (#7220, only when true) }. Low volume: once per drive, never per climb. Every Drive Mode
   // Started has one Drive Mode Ended.
   DriveModeStarted: 'Drive Mode Started',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by

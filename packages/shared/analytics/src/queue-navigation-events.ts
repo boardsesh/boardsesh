@@ -232,7 +232,11 @@ export function queueNavigation(
  * `window_ended`: Put on board's keep-lighting window ran out with no climb lit
  * in it, or its setting was turned off. `always_off`: Always drive the wall's
  * drive ended because the switch went off, or a crew formed (or In a session
- * too went off in one) where it doesn't drive; the link stays.
+ * too went off in one) where it doesn't drive; the link stays. Relay mode
+ * (#7220, a phone lighting an original MoonBoard through the phone that holds
+ * it): `holder_left`, the holder's phone let go of the board; `holder_changed`,
+ * another phone took it during the drive; `relay_unconfirmed`, a relayed climb
+ * never lit (no confirm from the holder in time, or the relay was refused).
  */
 export type DriveModeEndReason =
   | 'stopped'
@@ -244,7 +248,10 @@ export type DriveModeEndReason =
   | 'board_changed'
   | 'signed_out'
   | 'window_ended'
-  | 'always_off';
+  | 'always_off'
+  | 'holder_left'
+  | 'holder_changed'
+  | 'relay_unconfirmed';
 
 /**
  * What started the drive (#7113): the wall button's swipe, a press on Put on
@@ -277,12 +284,19 @@ export type DriveModeStartedInput = {
    * so the MoonBoard keep-lighting field test reads its own drives.
    */
   boardType: string | null;
+  /**
+   * Relay mode (#7220): the drive lights the wall through another phone's
+   * link. Sent only when true, so every other drive keeps its old shape.
+   */
+  relayed?: boolean;
 };
 
 export type DriveModeStartedProps = {
   startedBy: DriveModeStartedBy;
   inSession: boolean;
   boardType: string | null;
+  /** Present (true) only on a relayed drive (#7220). */
+  relayed?: true;
 };
 
 /** A drive started (2.7): what started it, whether in a party session, and on which board type. */
@@ -291,7 +305,12 @@ export function driveModeStarted(
 ): QueueNavigationPayload<typeof SHARED_EVENTS.DriveModeStarted, DriveModeStartedProps> {
   return {
     name: SHARED_EVENTS.DriveModeStarted,
-    properties: { startedBy: input.startedBy, inSession: input.inSession, boardType: input.boardType },
+    properties: {
+      startedBy: input.startedBy,
+      inSession: input.inSession,
+      boardType: input.boardType,
+      ...(input.relayed ? { relayed: true as const } : {}),
+    },
   };
 }
 
@@ -323,6 +342,8 @@ export type DriveModeEndedInput = {
    * the drops a climber heard about from the ones they made.
    */
   takenBy?: DriveModeTakenBy | null;
+  /** As Drive Mode Started's: true only on a relayed drive (#7220). */
+  relayed?: boolean;
 };
 
 export type DriveModeEndedProps = {
@@ -338,6 +359,8 @@ export type DriveModeEndedProps = {
   boardType: string | null;
   /** As the input's: present only on a `link_dropped` end the phone didn't cause. */
   takenBy?: DriveModeTakenBy | null;
+  /** Present (true) only on a relayed drive (#7220). */
+  relayed?: true;
 };
 
 /** A drive ended (#7113): how long it lasted and how many climbs it lit. */
@@ -356,6 +379,7 @@ export function driveModeEnded(
       windowSec: input.windowMs === null ? null : Math.max(0, Math.round(input.windowMs / 1000)),
       boardType: input.boardType,
       ...(input.takenBy !== undefined ? { takenBy: input.takenBy } : {}),
+      ...(input.relayed ? { relayed: true as const } : {}),
     },
   };
 }

@@ -65,7 +65,7 @@ import {
 } from '../drive-mode-store';
 
 type MockRunners = {
-  [Name in Exclude<keyof WallControlRunners, 'drive' | 'light' | 'lightAgain' | 'keepLighting'>]: ReturnType<
+  [Name in Exclude<keyof WallControlRunners, 'drive' | 'light' | 'lightAgain' | 'keepLighting' | 'relay'>]: ReturnType<
     typeof vi.fn<() => void>
   >;
 } & {
@@ -73,6 +73,7 @@ type MockRunners = {
   lightAgain: ReturnType<typeof vi.fn<() => boolean>>;
   drive: ReturnType<typeof vi.fn<(startedBy: string) => DriveStartOutcome>>;
   keepLighting: ReturnType<typeof vi.fn<(plan: KeepLightingPlan) => void>>;
+  relay?: ReturnType<typeof vi.fn<() => boolean>>;
 };
 
 function runners(): MockRunners {
@@ -140,6 +141,21 @@ describe('useWallControl', () => {
     }
     expect(analytics.tapped).toHaveBeenCalledOnce();
     expect(analytics.tapped).toHaveBeenCalledWith({ state, action, control: 'button' });
+  });
+
+  // Relay mode (#7220): Put on board on a Relay mode MoonBoard relays, then
+  // arms Stop driving after's timed drive, only when the relay went.
+  it.each([
+    [true, 1],
+    [false, 0],
+  ] as const)('a relay press with a timed drive (relay went: %s) arms it %i time(s)', (went, armed) => {
+    const plan = { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' } as const;
+    const run = { ...runners(), relay: vi.fn<() => boolean>(() => went) };
+    const { hook } = setup(modelFor('crew', 'relay', { tapDrive: 'window', tapKeepLighting: plan }), run);
+    act(() => hook.result.current.press('button'));
+    expect(run.relay).toHaveBeenCalledOnce();
+    expect(run.toggle).not.toHaveBeenCalled();
+    expect(run.keepLighting).toHaveBeenCalledTimes(armed);
   });
 
   it('moves to the gym board on a tap on Put on {board}, with a medium buzz, and logs it once', () => {

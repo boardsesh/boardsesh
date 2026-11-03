@@ -455,7 +455,7 @@ export type BleSendContext = {
    *  clear (passed by clearBoard), a wall-kiosk relight, or connect()'s own
    *  initial frame write (`connect` — the one send that can take the link with
    *  it, so it needs to be separable in analytics). */
-  sendSource: 'auto' | 'undo' | 'clear' | 'wall-relight' | 'connect';
+  sendSource: 'auto' | 'undo' | 'clear' | 'wall-relight' | 'connect' | 'relay';
   targetQueueItemUuid?: string;
   climbUuid?: string;
   /** The climb's own board metadata, when known — lets a board/climb mismatch be seen. */

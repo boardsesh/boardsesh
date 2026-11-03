@@ -443,6 +443,15 @@ export type WallControlInput = WallControlStateInput & {
    * the frost with a clock, shrinking as its time runs out.
    */
   lightWindow?: boolean;
+  /**
+   * Relay mode (#7220): another phone holds this Relay mode MoonBoard and this
+   * one lights climbs through it (`relayHolderFor`). The caller passes
+   * `holderIsAuthoritative` true with it, so the control reads as the
+   * holder's board (their face, Put on board relays), and this adds what a
+   * crewmate's board never offers: the swipe, Stop driving after's timed
+   * drive, Always drive the wall's resume, and the frost of a relayed drive.
+   */
+  boardRelay?: boolean;
 };
 
 /**
@@ -568,6 +577,8 @@ function labelKeyOf(
     case 'lit':
       return drivingLit ? 'youAreDriving' : 'disconnectBoard';
     case 'crew':
+      // A relayed drive (#7220) is this climber's drive through the holder's phone.
+      if (drivingLit) return 'youAreDriving';
       // A relay puts the climb on the crewmate's board. With nothing to relay
       // the label says whose board it is instead.
       if (tapAction === 'relay') return 'putOnBoard';
@@ -629,12 +640,17 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   const driveMode = input.driveMode ?? 'off';
   // Put on board's timed drive (2.7) on this phone's lit climb: a drive like
   // any other (the frost, You are driving the wall), plus its clock.
+  // Relay mode (#7220): a live drive lit through the holder's phone. The
+  // control stays the holder's board (their face), with this climber's frost.
+  const boardRelay = input.boardRelay === true && state === 'crew' && !onCrewGymBoard;
+  const relayDriving = boardRelay && driveMode === 'live' && input.drivingStopped !== true;
   const windowLit =
-    state === 'lit' &&
-    holder === 'self' &&
-    driveMode === 'live' &&
-    input.lightWindow === true &&
-    input.drivingStopped !== true;
+    (relayDriving && input.lightWindow === true) ||
+    (state === 'lit' &&
+      holder === 'self' &&
+      driveMode === 'live' &&
+      input.lightWindow === true &&
+      input.drivingStopped !== true);
   // Driving: lit on this phone's link (or its hold on a wall with no lights),
   // and the next change of climb moves the wall: a live drive (#7113), timed
   // or not, Always drive the wall's included. A press on the frosted button
@@ -646,7 +662,7 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     input.drivingStopped !== true;
   // A wall with no lights keeps Release the wall: it has no frost and nothing
   // to light, so only a lit climb says You are driving the wall.
-  const drivingLit = driving && state === 'lit';
+  const drivingLit = (driving && state === 'lit') || relayDriving;
   let tapAction: WallControlAction;
   if (onCrewGymBoard) tapAction = input.confirmArmed || state !== 'put_on_wall' ? 'noop' : 'relay';
   // One rule, solo included: a press on the frosted button stops driving and
@@ -676,10 +692,16 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     // it; Put on board relays the climb to it), or a wall that can't light the
     // climb (`offWall`: no lights, or another board's climb). Keep-lighting
     // follows the swipe, so a press there arms no window it can't go live on.
-    (state === 'put_on_wall' && !input.offWall && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
+    (state === 'put_on_wall' && !input.offWall && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive') ||
+    // Relay mode (#7220): the holder's phone lights it, so the swipe drives through it.
+    (input.boardRelay === true && !onCrewGymBoard && !input.offWall && (state === 'crew' || state === 'put_on_wall'));
   // Driving already, only a timed drive is offered the swipe: it makes it open-ended.
   const swipeAction: WallControlSwipeAction =
-    swipeable && (!driving || windowLit) && !input.confirmArmed && !input.pending && driveMode !== 'arming'
+    swipeable &&
+    ((!driving && !relayDriving) || windowLit) &&
+    !input.confirmArmed &&
+    !input.pending &&
+    driveMode !== 'arming'
       ? 'drive'
       : null;
   // A press puts one climb up. Where Always drive the wall drives, its own
@@ -687,7 +709,9 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   // Otherwise the Stop driving after choice (2.7) starts a timed
   // drive, or an open-ended one for Until I stop, once the climb is up: where
   // the swipe could start a drive (its own rule) and nothing drives yet.
-  const putsUp = isPutUpAction(tapAction) && labelKey !== 'setActive';
+  // A relay on a Relay mode MoonBoard (#7220) puts the climb up as a connect would.
+  const putsUp =
+    (isPutUpAction(tapAction) || (input.boardRelay === true && tapAction === 'relay')) && labelKey !== 'setActive';
   const keepLightingPlan = resolveKeepLightingPlan({
     keepLighting: input.keepLighting ?? 'off',
     drivesInSession: input.drivesInSession === true,
@@ -745,9 +769,11 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     bulbValueKey,
     // The live fill only for a live drive (#7113): then a tap on any climb, in
     // any list, lights the wall. Solo swipes that light it say nothing about taps.
-    look: resolveWallBulbLook(state, selfHolds, input.displayedLit, drivingLit && driveMode === 'live'),
+    look: relayDriving
+      ? 'driving'
+      : resolveWallBulbLook(state, selfHolds, input.displayedLit, drivingLit && driveMode === 'live'),
     selected: state === 'lit',
-    driving,
+    driving: driving || relayDriving,
     drivePhase: driveMode,
     pending: input.pending,
     writing: input.writing,

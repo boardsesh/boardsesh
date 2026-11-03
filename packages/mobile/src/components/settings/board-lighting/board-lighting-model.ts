@@ -14,6 +14,12 @@ export type BoardLightingModelInput = {
   /** Disconnect Bluetooth when driving ends (2.7, replacing auto-disconnect). */
   disconnectWhenDrivingEnds: Toggle;
   /**
+   * Relay mode (#7220): "Let others on this board light climbs through my
+   * phone". Only on a MoonBoard with the `moonboard-relay-mode` flag on;
+   * omitted elsewhere.
+   */
+  relayAccepting?: Toggle;
+  /**
    * Always drive the wall: this phone drives the wall while it holds the
    * board. On, Stop driving after shows greyed with its reason on the row,
    * and In a session too applies whatever Stop driving after says.
@@ -161,6 +167,16 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       onValueChange: input.disconnectWhenDrivingEnds.onChange,
     },
   ];
+  if (input.relayAccepting) {
+    drivingEndsRows.push({
+      kind: 'toggle',
+      key: 'relayAccepting',
+      label: t('settings:ble.lighting.relayAccepting.label'),
+      subtitle: t('settings:ble.lighting.relayAccepting.description'),
+      value: input.relayAccepting.enabled,
+      onValueChange: input.relayAccepting.onChange,
+    });
+  }
   if (input.onOpenDrivingHelp) {
     drivingEndsRows.push({
       kind: 'nav',

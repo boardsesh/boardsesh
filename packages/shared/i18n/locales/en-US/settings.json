@@ -497,6 +497,10 @@
         "label": "Disconnect Bluetooth when driving ends",
         "description": "When your drive ends, your phone lets go of the board so the next climber can connect: when you stop it or turn off all lights, when its time runs out, or when a crewmate puts a climb up while your drive has a time limit. Put on board reconnects."
       },
+      "relayAccepting": {
+        "label": "Let others on this board light climbs through my phone",
+        "description": "On an original MoonBoard the first phone keeps the board. While yours has it, other climbers' climbs light through it. On by default."
+      },
       "drivingHelp": "How driving the wall works",
       "alwaysDriveLabel": "Always drive the wall",
       "alwaysDriveDescription": "Every climb you pick lights while this phone holds the board. In a session it needs In a session too.",

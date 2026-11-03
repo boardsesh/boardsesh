@@ -497,6 +497,10 @@
         "label": "Disconnetti il Bluetooth quando smetti di guidare",
         "description": "Quando la tua guida finisce, il telefono libera il pannello così il prossimo climber può connettersi: quando ti fermi o spegni tutte le luci, quando il tempo finisce o quando qualcuno della crew illumina un blocco mentre la tua guida ha un limite di tempo. Illumina il pannello si riconnette."
       },
+      "relayAccepting": {
+        "label": "Lascia che gli altri su questo pannello illuminino blocchi tramite il mio telefono",
+        "description": "Su un MoonBoard originale il primo telefono tiene il pannello. Finché ce l'ha il tuo, i blocchi degli altri climber si illuminano tramite lui. Attivo di default."
+      },
       "drivingHelp": "Come funziona la guida del pannello",
       "alwaysDriveLabel": "Guida sempre il pannello",
       "alwaysDriveDescription": "Ogni blocco che scegli si illumina in parete finché questo telefono ha il pannello. In una session serve Anche in una session.",

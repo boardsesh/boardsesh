@@ -497,6 +497,10 @@
         "label": "Desconectar el Bluetooth al dejar el mando",
         "description": "Cuando se acaba tu turno al mando, tu teléfono suelta el plafón para que el siguiente escalador pueda conectarse: al pararlo tú o apagar todas las luces, al acabarse el tiempo, o cuando alguien de tu crew pone un bloque mientras tu mando tiene límite de tiempo. Poner en el plafón vuelve a conectar."
       },
+      "relayAccepting": {
+        "label": "Dejar que otros en este plafón enciendan bloques a través de mi móvil",
+        "description": "En un MoonBoard original, el primer móvil se queda con el plafón. Mientras lo tenga el tuyo, los bloques de otros escaladores se encienden a través de él. Activado por defecto."
+      },
       "drivingHelp": "Cómo funciona el mando del plafón",
       "alwaysDriveLabel": "Siempre al mando del plafón",
       "alwaysDriveDescription": "Cada bloque que elijas se enciende mientras este teléfono tenga el plafón. En una sesión necesita También en una sesión.",

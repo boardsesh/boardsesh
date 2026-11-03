@@ -3,6 +3,8 @@ import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useQueueSessionControls } from '../../providers/queue-provider';
+import type { BoardConnectionHolder } from '@boardsesh/shared-schema';
+import { useRelayHolder } from './use-relay-holder';
 import {
   deriveBoardConnection,
   deriveInAppBoardConnection,
@@ -55,6 +57,12 @@ export type BoardConnectionState = {
    * first holder event, or 10 s without one.
    */
   holderIsAuthoritative: boolean;
+  /**
+   * Relay mode (#7220): the holder of this Relay mode MoonBoard this phone
+   * lights climbs through (`relayHolderFor`), or null. Never set together with
+   * `holderIsAuthoritative`: inside a crew the session queue stays the relay.
+   */
+  boardRelayHolder: BoardConnectionHolder | null;
 };
 
 /**
@@ -120,6 +128,8 @@ export function useBoardConnectionState(): BoardConnectionState {
   // account can conservatively fall back to connecting after a local hold.
   const holderIsStaleSelf = holderUserId !== null && holderUserId === bluetooth?.lastLocalHolderUserId;
   const holderIsAuthoritative = sessionHolderPresent && !localConnected && !holderIsStaleSelf;
+  const relayHolder = useRelayHolder();
+  const boardRelayHolder = holderIsAuthoritative ? null : relayHolder;
 
   return useMemo(
     () => ({
@@ -136,8 +146,10 @@ export function useBoardConnectionState(): BoardConnectionState {
       lit: inAppBoardConnection !== 'disconnected',
       holderDisplayName,
       holderIsAuthoritative,
+      boardRelayHolder,
     }),
     [
+      boardRelayHolder,
       bluetooth,
       localConnected,
       pending,

@@ -102,6 +102,7 @@ import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRunti
 import { WorkoutRunSessionSync } from '../src/components/queue-control/WorkoutRunSessionSync';
 import { CrewHolderSuspicionSync } from '../src/providers/crew-holder-suspicion';
 import { DriveModeWatcher } from '../src/components/play-drawer/DriveModeWatcher';
+import { BoardRelayWatcher } from '../src/components/play-drawer/use-relayed-drive';
 import { LastPickWatcher } from '../src/components/queue-control/LastPickWatcher';
 import { ScreenshotCurrentDriveReadiness } from '../src/components/play-drawer/ScreenshotCurrentDriveReadiness';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
@@ -798,6 +799,9 @@ function RootLayout() {
                                                                         {/* Driving the wall (#7113): renders nothing; ends the drive
                                                                             when the link drops, the session or board changes, or on sign-out. */}
                                                                         <DriveModeWatcher />
+                                                                        {/* Relay mode (#7220): renders nothing; lights an original
+                                                                            MoonBoard through the phone that holds it. */}
+                                                                        <BoardRelayWatcher />
                                                                         {/* The climber's last pick (owner decision A): renders
                                                                             nothing; ends it when the queue's current, the board
                                                                             or the account changes. */}

@@ -497,6 +497,10 @@
         "label": "Bluetooth trennen, wenn das Steuern endet",
         "description": "Endet dein Steuern, gibt dein Handy das Board frei, damit sich die nächste Person verbinden kann: wenn du stoppst oder alle Lichter ausschaltest, wenn die Zeit um ist oder wenn jemand aus deiner Crew einen Boulder beleuchtet, während dein Steuern ein Zeitlimit hat. „Am Board beleuchten“ verbindet wieder."
       },
+      "relayAccepting": {
+        "label": "Andere an diesem Board über mein Handy Boulder beleuchten lassen",
+        "description": "Bei einem originalen MoonBoard behält das erste Handy das Board. Solange deins es hat, leuchten die Boulder der anderen über dein Handy. Standardmäßig an."
+      },
       "drivingHelp": "So funktioniert das Steuern des Boards",
       "alwaysDriveLabel": "Board immer steuern",
       "alwaysDriveDescription": "Jeder Boulder, den du wählst, wird beleuchtet, solange dieses Handy das Board hat. In einer Session braucht es „Auch in einer Session“.",

@@ -325,6 +325,41 @@ describe('driveModeEnded', () => {
       }).properties,
     ).toMatchObject({ reason: 'always_off', startedBy: 'always', durationSec: 90, climbsLit: 4, windowSec: null });
   });
+
+  it('marks a relayed drive and its relay end reasons (#7220)', () => {
+    for (const reason of ['holder_left', 'holder_changed', 'relay_unconfirmed'] as const) {
+      expect(
+        driveModeEnded({
+          reason,
+          startedBy: 'tap',
+          startedAt: 0,
+          endedAt: 10_000,
+          climbsLit: 1,
+          inSession: false,
+          windowRenewals: 0,
+          windowMs: 45_000,
+          boardType: 'moonboard',
+          relayed: true,
+        }).properties,
+      ).toMatchObject({ reason, relayed: true, inSession: false });
+    }
+  });
+
+  it('leaves relayed off every other drive', () => {
+    const { properties } = driveModeEnded({
+      reason: 'stopped',
+      startedBy: 'swipe',
+      startedAt: 0,
+      endedAt: 1_000,
+      climbsLit: 1,
+      inSession: false,
+      windowRenewals: 0,
+      windowMs: null,
+      boardType: 'kilter',
+      relayed: false,
+    });
+    expect(properties).not.toHaveProperty('relayed');
+  });
 });
 
 describe('driveModeStarted', () => {
@@ -338,6 +373,15 @@ describe('driveModeStarted', () => {
       inSession: false,
       boardType: null,
     });
+  });
+
+  it('marks a relayed drive only when it is one (#7220)', () => {
+    expect(
+      driveModeStarted({ startedBy: 'swipe', inSession: false, boardType: 'moonboard', relayed: true }).properties,
+    ).toEqual({ startedBy: 'swipe', inSession: false, boardType: 'moonboard', relayed: true });
+    expect(
+      driveModeStarted({ startedBy: 'swipe', inSession: false, boardType: 'moonboard', relayed: false }).properties,
+    ).not.toHaveProperty('relayed');
   });
 
   it('says Always drive the wall started it', () => {

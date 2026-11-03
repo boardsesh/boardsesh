@@ -47,6 +47,7 @@ import {
 import { useBoardLetsGo } from './use-board-lets-go';
 import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
 import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
+import { useEngagedRelayPath } from '../../lib/board-relay/relay-path-store';
 
 /**
  * Ends driving the wall (#7113) when the wall stops being this phone's to
@@ -126,6 +127,11 @@ export function DriveModeWatcher(): null {
   // Goes live, and counts the climbs lit, at this phone's own link's confirms.
   useDriveWallConfirms(bluetooth?.isConnected ?? false);
   useDisconnectWhenDrivingEnds(bluetooth);
+  // Relay mode (#7220): this phone's relay path to the holder of an original
+  // MoonBoard is up (a relay of its own lit through them, on this board).
+  // `BoardRelayWatcher` owns it and drops it the moment the holder changes.
+  const engagedRelayPath = useEngagedRelayPath();
+  const relayEngaged = engagedRelayPath !== null && engagedRelayPath.boardId === boardId;
   // The roster's crew, after its arrival dwell: until it forms, the climber is solo.
   const isCrewSession = useIsCrewSession();
   const drivingStopped = useDrivingStoppedForLink();
@@ -268,9 +274,18 @@ export function DriveModeWatcher(): null {
       makeDriveOpenEnded({ byAlways: true });
       return;
     }
-    if (!shouldStartAlwaysDrive({ applies: true, ownLink, drive: latest, stopped: isDrivingStoppedForLink() })) return;
-    startAlwaysDrive({ sessionId, boardId, boardType });
-  }, [alwaysApplies, ownLink, driveActive, windowed, drivingStopped, sessionId, boardId, boardType]);
+    if (
+      !shouldStartAlwaysDrive({
+        applies: true,
+        ownLink,
+        relayEngaged,
+        drive: latest,
+        stopped: isDrivingStoppedForLink(),
+      })
+    )
+      return;
+    startAlwaysDrive({ sessionId, boardId, boardType, relayed: !ownLink && relayEngaged });
+  }, [alwaysApplies, ownLink, relayEngaged, driveActive, windowed, drivingStopped, sessionId, boardId, boardType]);
 
   // Settings › Board changed under a timed drive: its choice turned to Right
   // away, or In a session too turned off in a crew (or a crew formed with it
