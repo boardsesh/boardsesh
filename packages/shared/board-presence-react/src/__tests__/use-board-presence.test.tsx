@@ -1032,6 +1032,33 @@ describe('useBoardPresence — connection holder', () => {
     expect(result.current.lastConnectionSeq).toBe(3);
   });
 
+  it('hands a relay request to onRelayRequested without touching presence state (#7220)', () => {
+    const harness = makeClient();
+    const onRelayRequested = vi.fn();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client, undefined, null, onRelayRequested));
+    act(() => {
+      harness.emit(connectionEvent(2, holder({ userId: 'bob' })));
+    });
+    const stateBefore = result.current;
+
+    const request: BoardPresenceEvent = {
+      __typename: 'BoardClimbRelayRequested',
+      relayRequestId: 'relay-1',
+      climb: { climbUuid: 'c1', frames: 'p1r42' },
+      angle: 40,
+      mirrored: false,
+      relayer: { userId: null, displayName: null, avatarUrl: null, anonymous: true },
+      requestedAt: '2026-11-03T00:00:00.000Z',
+    };
+    act(() => {
+      harness.emit(request);
+    });
+    expect(onRelayRequested).toHaveBeenCalledWith(request);
+    expect(result.current.currentClimb).toBe(stateBefore.currentClimb);
+    expect(result.current.holder).toBe(stateBefore.holder);
+    expect(result.current.lastConnectionSeq).toBe(2);
+  });
+
   it('a live push that arrives before the seed wins; the late seed cannot clobber it', async () => {
     const harness = makeClient();
     const { result } = renderHook(() => useBoardPresence(1, harness.client));

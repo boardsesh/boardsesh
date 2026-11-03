@@ -94,6 +94,72 @@ export const BOARD_NOW_PLAYING = `
   }
 `;
 
+// Subscription — Relay mode (#7220): the same live feed as BOARD_NOW_PLAYING
+// plus the relay fields. A separate document so the recorded BOARD_NOW_PLAYING
+// never changes; a client opts in (createBoardPresenceClient's `relayMode`) once
+// the backend serving these fields is deployed. A BoardClimbRelayRequested
+// reaches only the holder's phone (the server filters it per subscriber), and
+// BoardClimbSet.relayRequestId is the echo a relaying phone matches to confirm
+// its climb landed.
+export const BOARD_NOW_PLAYING_RELAY = `
+  subscription BoardNowPlayingRelay($boardId: Int!, $boardUuid: ID) {
+    boardNowPlaying(boardId: $boardId, boardUuid: $boardUuid) {
+      __typename
+      ... on BoardHistoryUpdated {
+        seq
+        climbs { ${BOARD_PRESENCE_CLIMB_FIELDS} }
+      }
+      ... on BoardClimbSet {
+        climb {
+          ${BOARD_PRESENCE_CLIMB_FIELDS}
+        }
+        relayRequestId
+      }
+      ... on BoardClimbCleared {
+        clearedAt
+        seq
+        climbUuid
+      }
+      ... on BoardStatsUpdated {
+        stats {
+          ${BOARD_PRESENCE_STATS_FIELDS}
+        }
+        seq
+      }
+      ... on BoardConnectionChanged {
+        holder {
+          userId
+          displayName
+          avatarUrl
+          lastSentAt
+        }
+        seq
+      }
+      ... on BoardClimbRelayRequested {
+        relayRequestId
+        climb {
+          climbUuid
+          queueItemUuid
+          name
+          grade
+          gradeColor
+          frames
+          setter
+        }
+        angle
+        mirrored
+        relayer {
+          userId
+          displayName
+          avatarUrl
+          anonymous
+        }
+        requestedAt
+      }
+    }
+  }
+`;
+
 export const BOARD_RECENT_HISTORY = `
   query BoardRecentHistory($boardId: Int!, $boardUuid: ID) {
     boardRecentHistory(boardId: $boardId, boardUuid: $boardUuid) { ${BOARD_PRESENCE_CLIMB_FIELDS} }
@@ -117,6 +183,49 @@ export const REPORT_BOARD_CLIMB = `
     reportBoardClimb(boardId: $boardId, climb: $climb, angle: $angle)
   }
 `;
+
+// Mutation — Relay mode (#7220): the holder lights a climb another phone relayed.
+// A separate document from REPORT_BOARD_CLIMB so the recorded one (screenshot
+// fixtures, installed bundles) never changes; the server echoes
+// `relayRequestId` on the published BoardClimbSet.
+export const REPORT_BOARD_CLIMB_RELAYED = `
+  mutation ReportBoardClimbRelayed($boardId: Int!, $climb: ClimbQueueItemInput!, $angle: Int, $relayRequestId: ID!) {
+    reportBoardClimb(boardId: $boardId, climb: $climb, angle: $angle, relayRequestId: $relayRequestId)
+  }
+`;
+
+// Mutation — Relay mode (#7220): ask the phone holding a single-phone MoonBoard
+// to light a climb. The status says whether it went (SENT) or why not; the
+// holder is named under the boardConnection privacy rule.
+export const RELAY_BOARD_CLIMB = `
+  mutation RelayBoardClimb(
+    $boardId: Int!
+    $climb: ClimbQueueItemInput!
+    $angle: Int
+    $mirrored: Boolean
+    $relayRequestId: ID!
+  ) {
+    relayBoardClimb(
+      boardId: $boardId
+      climb: $climb
+      angle: $angle
+      mirrored: $mirrored
+      relayRequestId: $relayRequestId
+    ) {
+      status
+      holder {
+        userId
+        displayName
+        avatarUrl
+        lastSentAt
+      }
+    }
+  }
+`;
+
+// Mutation — Relay mode (#7220): the holder turns relayed climbs on or off for
+// the board it holds. Returns Boolean! (false when the caller doesn't hold it).
+export const SET_BOARD_RELAY_ACCEPTING = `mutation SetBoardRelayAccepting($boardId: Int!, $accepting: Boolean!) { setBoardRelayAccepting(boardId: $boardId, accepting: $accepting) }`;
 
 // Mutation — resolve (and bind) the shared board for a BLE serial. Called once
 // on BLE connect; the board-config args are used only to create the board the

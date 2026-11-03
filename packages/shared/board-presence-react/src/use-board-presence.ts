@@ -23,6 +23,7 @@ import {
   type BoardPresenceState,
 } from '@boardsesh/board-presence';
 import type {
+  BoardClimbRelayRequested,
   BoardConnectionHolder,
   BoardPresenceClimb,
   BoardPresenceEvent,
@@ -205,6 +206,7 @@ export function useBoardPresence(
   client: BoardPresenceClient | null,
   onCatchUp?: (info: BoardPresenceCatchUpInfo) => void,
   boardUuid: string | null = null,
+  onRelayRequested?: (request: BoardClimbRelayRequested) => void,
 ): UseBoardPresenceResult {
   const [state, dispatch] = useReducer(boardPresenceReducer, initialBoardPresenceState);
   const [isLive, setIsLive] = useState(false);
@@ -243,6 +245,10 @@ export function useBoardPresence(
   // subscription effect (keyed on [boardId, client]) to tear down and re-attach.
   const onCatchUpRef = useRef(onCatchUp);
   onCatchUpRef.current = onCatchUp;
+  // Relay mode (#7220): requests addressed to this phone as the board's holder.
+  // A ref for the same reason as onCatchUp: changing it never re-subscribes.
+  const onRelayRequestedRef = useRef(onRelayRequested);
+  onRelayRequestedRef.current = onRelayRequested;
   // Points at the active effect-run's `runCatchUp`, so the stable `refresh()`
   // action and the AppState/reconnect triggers can invoke it without being
   // listed in the effect deps. Null while inert.
@@ -422,6 +428,11 @@ export function useBoardPresence(
           (event) => {
             if (!isCurrentStream()) return;
             retryAttempt = 0;
+            if (event.__typename === 'BoardClimbRelayRequested') {
+              // No seq and no presence state: hand it to the holder flow only.
+              onRelayRequestedRef.current?.(event);
+              return;
+            }
             const eventSeq = boardPresenceEventSeq(event);
             if (eventSeq !== null) {
               const previousObservedSeq = observedSeqRef.current;

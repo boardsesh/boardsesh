@@ -66,6 +66,12 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   type BoardClimbSet {
     "The climb now on the wall"
     climb: BoardPresenceClimb!
+    """
+    Relay mode (#7220): the \`relayRequestId\` the holder echoed on
+    \`reportBoardClimb\` when this light answered a \`BoardClimbRelayRequested\`.
+    The relaying phone matches it to confirm its climb landed. Null otherwise.
+    """
+    relayRequestId: ID
   }
 
   """
@@ -137,12 +143,101 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
     nextCursor: String
   }
 
+  """
+  The climb a relaying phone asked the holder to light (#7220). Catalog fields
+  are read server-side from the board's own catalog, never taken from the
+  relaying client, so a relay can only light a real climb on this layout.
+  """
+  type BoardRelayClimb {
+    "UUID of the climb to light"
+    climbUuid: String!
+    "Queue item UUID on the relaying phone, if any"
+    queueItemUuid: String
+    "Climb name"
+    name: String
+    "Grade name at the requested angle"
+    grade: String
+    "Grade colour as a hex string"
+    gradeColor: String
+    "Frames string the holder writes to the wall"
+    frames: String
+    "Catalog route setter display name"
+    setter: String
+  }
+
+  """
+  Who asked for a relayed climb. Named under the same rule as the board's
+  connection holder: their own account privacy, and anonymous on a board they
+  don't own when they chose to be. \`anonymous\` is true whenever no identity
+  is shown.
+  """
+  type BoardRelayRequester {
+    "Boardsesh user id; null when anonymous."
+    userId: ID
+    "Display name; null when anonymous."
+    displayName: String
+    "Avatar URL; null when anonymous."
+    avatarUrl: String
+    "True when the requester is shown without a name."
+    anonymous: Boolean!
+  }
+
+  """
+  Event (#7220, Relay mode for single-phone MoonBoard controllers): another
+  climber asked the phone holding the board to light a climb. Delivered ONLY to
+  the holder's own subscription; every other viewer never receives it. Carries
+  no sequence number and changes no presence state: the holder lights the climb
+  and confirms it with \`reportBoardClimb(relayRequestId:)\`.
+  """
+  type BoardClimbRelayRequested {
+    """
+    Client-minted id the holder echoes back on reportBoardClimb. Always set; typed
+    nullable only so one document can select it beside BoardClimbSet.relayRequestId.
+    """
+    relayRequestId: ID
+    "The climb to light"
+    climb: BoardRelayClimb!
+    "Board angle in degrees the climb should be lit at"
+    angle: Int!
+    "Whether to light the climb mirrored"
+    mirrored: Boolean!
+    "Who asked"
+    relayer: BoardRelayRequester!
+    "ISO 8601 timestamp when the server accepted the request"
+    requestedAt: String!
+  }
+
+  "Outcome of \`relayBoardClimb\` (#7220)."
+  enum RelayBoardClimbStatus {
+    "The request went to the holder's phone."
+    SENT
+    "Nobody holds the board, so there is no phone to relay through."
+    NO_HOLDER
+    "The caller holds the board; light the climb directly."
+    SELF_HOLDER
+    "The holder turned off relayed climbs."
+    HOLDER_OPTED_OUT
+    "This board is not in Relay mode (not a MoonBoard, a shared per-config feed, or set to multi)."
+    NOT_RELAY_BOARD
+  }
+
+  type RelayBoardClimbResult {
+    status: RelayBoardClimbStatus!
+    """
+    The holder the request went to (or who opted out), named under the same
+    privacy rule as \`boardConnection\`. Null for NO_HOLDER, SELF_HOLDER and
+    NOT_RELAY_BOARD.
+    """
+    holder: BoardConnectionHolder
+  }
+
   union BoardPresenceEvent =
     | BoardClimbSet
     | BoardClimbCleared
     | BoardStatsUpdated
     | BoardConnectionChanged
     | BoardHistoryUpdated
+    | BoardClimbRelayRequested
 
   """
   The first climber to send the hardest grade logged on this wall.

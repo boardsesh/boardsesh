@@ -6,8 +6,9 @@ import type {
   ClimbQueueItemInput,
   ResolvedBoard,
   BoardPresenceClimb,
+  RelayBoardClimbResult,
 } from '@boardsesh/shared-schema';
-import { nextDetectedMoonboardLinkMode, normaliseSetIds } from '@boardsesh/board-config';
+import { nextDetectedMoonboardLinkMode, normaliseSetIds, resolveMoonboardLinkMode } from '@boardsesh/board-config';
 import { getGradeColor } from '@boardsesh/board-constants';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -18,8 +19,12 @@ import {
   BoardPresenceAngleSchema,
   BoardPresenceConfigInputSchema,
   MoonboardLinkModeSchema,
+  RelayRequestIdSchema,
   ReportBoardClimbInputSchema,
 } from '../../../validation/schemas';
+import { RateLimitError } from '../../../utils/rate-limiter';
+import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
+import { redactBoardHolder } from '../../../services/board-session-privacy';
 import { generateUniqueSlug } from '../social/boards';
 import { assertBoardCapNotReached } from '../social/board-limits';
 import { assertKnownBoardConfig } from './board-catalog';
@@ -52,6 +57,7 @@ import {
   rememberBoardForSerial,
   reserveBoardPresenceSeq,
   requireActiveBoardWithVisibilityById,
+  resolveBoardHolder,
   resolveSharedBoardForConfig,
   serialAlreadyBoundError,
   throwIfDuplicateBoardSerial,
@@ -587,6 +593,99 @@ async function chooseAndRememberActiveBoardForSerial(
   });
 }
 
+/**
+ * The catalog row (name, frames, setter, grade at `angle`) for a climb on this
+ * board's own layout, or undefined when the board's catalog has no such climb.
+ * Shared by `reportBoardClimb` and `relayBoardClimb` so both read display
+ * fields from the catalog, never from the client.
+ */
+async function findBoardCatalogClimb(
+  board: { boardType: string; layoutId: number | string },
+  climbUuid: string,
+  angle: number,
+) {
+  const [catalogClimb] = await db
+    .select({
+      uuid: dbSchema.boardClimbs.uuid,
+      name: dbSchema.boardClimbs.name,
+      frames: dbSchema.boardClimbs.frames,
+      setterUsername: dbSchema.boardClimbs.setterUsername,
+      grade: dbSchema.boardDifficultyGrades.boulderName,
+    })
+    .from(dbSchema.boardClimbs)
+    .leftJoin(
+      dbSchema.boardClimbStats,
+      and(
+        eq(dbSchema.boardClimbStats.boardType, dbSchema.boardClimbs.boardType),
+        eq(dbSchema.boardClimbStats.climbUuid, dbSchema.boardClimbs.uuid),
+        eq(dbSchema.boardClimbStats.angle, angle),
+      ),
+    )
+    .leftJoin(
+      dbSchema.boardDifficultyGrades,
+      and(
+        eq(dbSchema.boardDifficultyGrades.boardType, dbSchema.boardClimbStats.boardType),
+        eq(dbSchema.boardDifficultyGrades.difficulty, sql`ROUND(${dbSchema.boardClimbStats.displayDifficulty})`),
+      ),
+    )
+    .where(
+      and(
+        eq(dbSchema.boardClimbs.uuid, climbUuid),
+        eq(dbSchema.boardClimbs.boardType, board.boardType),
+        eq(dbSchema.boardClimbs.layoutId, Number(board.layoutId)),
+      ),
+    )
+    .limit(1);
+  return catalogClimb;
+}
+
+/**
+ * A logged-in emitter's display identity (profile first, auth account second).
+ * Anonymous emitters have no profile, so the attribution stays null.
+ */
+async function findEmitterIdentity(
+  userId: string | null | undefined,
+): Promise<{ displayName: string | null; avatarUrl: string | null }> {
+  if (!userId) return { displayName: null, avatarUrl: null };
+  const [account] = await db
+    .select({
+      name: dbSchema.users.name,
+      image: dbSchema.users.image,
+      displayName: dbSchema.userProfiles.displayName,
+      avatarUrl: dbSchema.userProfiles.avatarUrl,
+    })
+    .from(dbSchema.users)
+    .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+    .where(eq(dbSchema.users.id, userId))
+    .limit(1);
+  return {
+    displayName: account?.displayName ?? account?.name ?? null,
+    avatarUrl: account?.avatarUrl ?? account?.image ?? null,
+  };
+}
+
+/** Per (emitter, board) relay budget (#7220), on top of the caller's own bucket. */
+const RELAY_PER_BOARD_MAX = 20;
+const RELAY_PER_BOARD_WINDOW_MS = 60_000;
+
+async function applyRelayPerBoardRateLimit(emitterId: string, boardId: number): Promise<void> {
+  try {
+    await checkRateLimitRedis(
+      `relay:${emitterId}:board:${boardId}`,
+      'relayBoardClimb',
+      RELAY_PER_BOARD_MAX,
+      RELAY_PER_BOARD_WINDOW_MS,
+    );
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new GraphQLError(error.message, {
+        extensions: { code: 'RATE_LIMITED', operation: 'relayBoardClimb', retryAfterSeconds: error.retryAfterSeconds },
+      });
+    }
+    throw error;
+  }
+}
+
 export const boardPresenceMutations = {
   /**
    * Legacy serial resolver, kept for backward-compat with already-shipped
@@ -818,7 +917,12 @@ export const boardPresenceMutations = {
    */
   reportBoardClimb: async (
     _: unknown,
-    { boardId, climb, angle }: { boardId: number; climb: ClimbQueueItemInput; angle?: number | null },
+    {
+      boardId,
+      climb,
+      angle,
+      relayRequestId,
+    }: { boardId: number; climb: ClimbQueueItemInput; angle?: number | null; relayRequestId?: string | null },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     // Anonymous callers are now bucketed per client IP rather than per
@@ -857,6 +961,8 @@ export const boardPresenceMutations = {
 
     const validatedClimb = validateInput(ReportBoardClimbInputSchema, climb, 'climb');
     const validatedAngle = validateInput(BoardPresenceAngleSchema, angle, 'angle');
+    const validatedRelayRequestId =
+      relayRequestId == null ? null : validateInput(RelayRequestIdSchema, relayRequestId, 'relayRequestId');
     // The explicit `angle` arg is int-validated, but the `climb.angle` / board
     // fallbacks aren't — round so a fractional angle can't break the `Int` event
     // serialization, the durable insert, or the grade join (defensive; real
@@ -894,62 +1000,21 @@ export const boardPresenceMutations = {
       effectiveAngle,
       mirrored: reportedMirrored === true,
     });
-    if (gate.lastReport === dedupMarker && gate.currentWriter === emitterId) {
+    // A relayed light (#7220) carries a relayRequestId the relaying phone waits
+    // to see echoed on BoardClimbSet. When the holder already has that exact
+    // climb lit, the light would otherwise dedup into silence and the relayer
+    // would never get its confirmation, so a relayed report always falls
+    // through and publishes.
+    if (validatedRelayRequestId === null && gate.lastReport === dedupMarker && gate.currentWriter === emitterId) {
       roomManager.noteBoardWriter(ctx.connectionId, boardId, emitterId);
       return true;
     }
 
-    const [catalogClimbRows, sender] = await Promise.all([
-      db
-        .select({
-          uuid: dbSchema.boardClimbs.uuid,
-          name: dbSchema.boardClimbs.name,
-          frames: dbSchema.boardClimbs.frames,
-          setterUsername: dbSchema.boardClimbs.setterUsername,
-          grade: dbSchema.boardDifficultyGrades.boulderName,
-        })
-        .from(dbSchema.boardClimbs)
-        .leftJoin(
-          dbSchema.boardClimbStats,
-          and(
-            eq(dbSchema.boardClimbStats.boardType, dbSchema.boardClimbs.boardType),
-            eq(dbSchema.boardClimbStats.climbUuid, dbSchema.boardClimbs.uuid),
-            eq(dbSchema.boardClimbStats.angle, effectiveAngle),
-          ),
-        )
-        .leftJoin(
-          dbSchema.boardDifficultyGrades,
-          and(
-            eq(dbSchema.boardDifficultyGrades.boardType, dbSchema.boardClimbStats.boardType),
-            eq(dbSchema.boardDifficultyGrades.difficulty, sql`ROUND(${dbSchema.boardClimbStats.displayDifficulty})`),
-          ),
-        )
-        .where(
-          and(
-            eq(dbSchema.boardClimbs.uuid, climbUuid),
-            eq(dbSchema.boardClimbs.boardType, board.boardType),
-            eq(dbSchema.boardClimbs.layoutId, Number(board.layoutId)),
-          ),
-        )
-        .limit(1),
-      // Anonymous emitters have no profile — leave the attribution null.
-      ctx.userId
-        ? db
-            .select({
-              name: dbSchema.users.name,
-              image: dbSchema.users.image,
-              displayName: dbSchema.userProfiles.displayName,
-              avatarUrl: dbSchema.userProfiles.avatarUrl,
-            })
-            .from(dbSchema.users)
-            .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-            .where(eq(dbSchema.users.id, ctx.userId))
-            .limit(1)
-            .then((rows) => rows[0])
-        : Promise.resolve(undefined),
+    const [catalogClimb, sender] = await Promise.all([
+      findBoardCatalogClimb(board, climbUuid, effectiveAngle),
+      findEmitterIdentity(ctx.userId),
     ]);
 
-    const catalogClimb = catalogClimbRows[0];
     if (!catalogClimb) {
       throw new GraphQLError('Unknown climb for this board');
     }
@@ -1018,8 +1083,8 @@ export const boardPresenceMutations = {
       angle: effectiveAngle,
       mirrored: reportedMirrored,
       setter: catalogClimb.setterUsername ?? null,
-      sentByDisplayName: sender?.displayName ?? sender?.name ?? null,
-      sentByAvatarUrl: sender?.avatarUrl ?? sender?.image ?? null,
+      sentByDisplayName: sender.displayName,
+      sentByAvatarUrl: sender.avatarUrl,
       sentByUserId: ctx.userId ?? null,
       sentAt,
       seq,
@@ -1077,6 +1142,7 @@ export const boardPresenceMutations = {
     pubsub.publishBoardPresenceEvent(String(boardId), {
       __typename: 'BoardClimbSet',
       climb: presenceClimb,
+      relayRequestId: validatedRelayRequestId,
     });
 
     // This emitter is now the board's connection holder. Only broadcast a
@@ -1120,6 +1186,138 @@ export const boardPresenceMutations = {
     }
 
     return true;
+  },
+
+  /**
+   * Relay mode (#7220). An original MoonBoard controller accepts one phone and
+   * stops advertising while it is connected, so every other climber at the wall
+   * lights climbs through the holder's phone. This asks the holder to light
+   * `climb`: the event reaches ONLY the holder's subscription (see
+   * `boardNowPlaying`), and the holder answers with
+   * `reportBoardClimb(relayRequestId:)`, whose `BoardClimbSet` echo is the
+   * caller's confirmation.
+   *
+   * Gates, in order: rate limits (the caller's bucket, then a per caller and
+   * board bucket); the board-presence stamp; a MoonBoard in relay mode that is
+   * not a shared per-config feed (else NOT_RELAY_BOARD); a holder that is not
+   * the caller (NO_HOLDER / SELF_HOLDER); the holder's opt-out
+   * (HOLDER_OPTED_OUT). Input is validated before any status is returned.
+   */
+  relayBoardClimb: async (
+    _: unknown,
+    {
+      boardId,
+      climb,
+      angle,
+      mirrored,
+      relayRequestId,
+    }: {
+      boardId: number;
+      climb: ClimbQueueItemInput;
+      angle?: number | null;
+      mirrored?: boolean | null;
+      relayRequestId: string;
+    },
+    ctx: ConnectionContext,
+  ): Promise<RelayBoardClimbResult> => {
+    // Same anon-per-IP headroom as reportBoardClimb (issue #2863).
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 60 : 240, 'relayBoardClimb');
+    assertValidBoardId(boardId);
+    const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
+    await applyRelayPerBoardRateLimit(emitterId, boardId);
+    const boardKey = String(boardId);
+
+    const [board, isMember] = await Promise.all([
+      db
+        .select({
+          boardType: dbSchema.userBoards.boardType,
+          layoutId: dbSchema.userBoards.layoutId,
+          angle: dbSchema.userBoards.angle,
+          uuid: dbSchema.userBoards.uuid,
+          ownerId: dbSchema.userBoards.ownerId,
+          slug: dbSchema.userBoards.slug,
+          moonboardLinkMode: dbSchema.userBoards.moonboardLinkMode,
+          moonboardLinkDetected: dbSchema.userBoards.moonboardLinkDetected,
+        })
+        .from(dbSchema.userBoards)
+        .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
+        .limit(1)
+        .then((rows) => rows[0]),
+      pubsub.hasBoardMembership(boardKey, emitterId),
+    ]);
+    if (!board) throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    if (!isMember) throw new GraphQLError('Not connected to this board');
+    // Same current-policy check reportBoardClimb runs on a stamped membership.
+    await assertSprayBoardIsReadable(board, ctx.userId, board.uuid, db);
+
+    const validatedClimb = validateInput(ReportBoardClimbInputSchema, climb, 'climb');
+    const validatedAngle = validateInput(BoardPresenceAngleSchema, angle, 'angle');
+    const validatedRelayRequestId = validateInput(RelayRequestIdSchema, relayRequestId, 'relayRequestId');
+
+    if (isSharedConfigFeedBoard(board) || resolveMoonboardLinkMode(board)?.mode !== 'relay') {
+      return { status: 'NOT_RELAY_BOARD', holder: null };
+    }
+
+    const { holderEmitterId, relayOff } = await pubsub.getBoardRelayGate(boardKey);
+    if (holderEmitterId === null) return { status: 'NO_HOLDER', holder: null };
+    if (holderEmitterId === emitterId) return { status: 'SELF_HOLDER', holder: null };
+
+    const holder = await redactBoardHolder(await resolveBoardHolder(boardId), ctx.userId, boardId);
+    if (relayOff) return { status: 'HOLDER_OPTED_OUT', holder };
+
+    const effectiveAngle = Math.round(validatedAngle ?? validatedClimb.climb.angle ?? Number(board.angle));
+    const climbUuid = validatedClimb.climb.uuid;
+    const [catalogClimb, relayer] = await Promise.all([
+      findBoardCatalogClimb(board, climbUuid, effectiveAngle),
+      findEmitterIdentity(ctx.userId),
+    ]);
+    if (!catalogClimb) {
+      throw new GraphQLError('Unknown climb for this board');
+    }
+
+    // Identity here is the raw server-derived one; `redactBoardEvent` applies
+    // the holder-as-viewer privacy rule on delivery, and strips the routing key.
+    pubsub.publishBoardPresenceEvent(boardKey, {
+      __typename: 'BoardClimbRelayRequested',
+      relayRequestId: validatedRelayRequestId,
+      climb: {
+        climbUuid,
+        queueItemUuid: validatedClimb.uuid,
+        name: catalogClimb.name ?? null,
+        grade: catalogClimb.grade ?? null,
+        gradeColor: getGradeColor(catalogClimb.grade) ?? null,
+        frames: catalogClimb.frames ?? null,
+        setter: catalogClimb.setterUsername ?? null,
+      },
+      angle: effectiveAngle,
+      mirrored: mirrored ?? validatedClimb.climb.mirrored ?? false,
+      relayer: {
+        userId: ctx.userId ?? null,
+        displayName: relayer.displayName,
+        avatarUrl: relayer.avatarUrl,
+        anonymous: !ctx.userId,
+      },
+      requestedAt: new Date().toISOString(),
+      holderEmitterId,
+    });
+    return { status: 'SENT', holder };
+  },
+
+  /**
+   * Relay mode (#7220): the holder turns relayed climbs on or off for the board
+   * they hold. Compare-and-set against the writer slot, so only the current
+   * holder changes it, and the opt-out lapses as soon as anyone else takes the
+   * board (it is stored against the holder's emitter id).
+   */
+  setBoardRelayAccepting: async (
+    _: unknown,
+    { boardId, accepting }: { boardId: number; accepting: boolean },
+    ctx: ConnectionContext,
+  ): Promise<boolean> => {
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 30 : 120, 'setBoardRelayAccepting');
+    assertValidBoardId(boardId);
+    const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
+    return pubsub.setBoardRelayAccepting(String(boardId), emitterId, accepting === true);
   },
 
   /**

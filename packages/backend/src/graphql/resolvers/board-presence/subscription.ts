@@ -92,7 +92,17 @@ export const boardPresenceSubscriptions = {
       // that is already running. Ending the iterator is the subscription's empty
       // page — no error naming a wall the caller may no longer see.
       const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId, boardUuid, db);
+      // Relay mode (#7220): a relay request is addressed to one phone, the
+      // board's holder. Same emitter-id rule as reportBoardClimb, so it matches
+      // the writer slot the request was routed by.
+      const subscriberEmitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
       for await (const event of asyncIterator) {
+        // Privacy boundary: every other subscriber (crew, kiosks, anonymous
+        // viewers of a public board) never receives a relay request. Checked
+        // before any other work so a dropped request costs nothing.
+        if (event.__typename === 'BoardClimbRelayRequested' && event.holderEmitterId !== subscriberEmitterId) {
+          continue;
+        }
         await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
         if (gate && !(await gate())) return;
         yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardId, boardUuid) };

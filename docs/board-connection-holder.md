@@ -139,6 +139,54 @@ drops, the connect fails or arming times out, the session or the board changes, 
 (`DriveModeExitReason` in `drive-mode-store.ts`). A crewmate's board offers no swipe, by design (and a drive the runner can't
 start answers `held_by_crew`): their phone holds it, and Put on board relays the climb to that phone. See `docs/climb-view-options.md`, "Swipe to drive".
 
+## Relay mode (#7220)
+
+An original MoonBoard controller takes one phone and stops advertising while connected. Every other climber at that
+wall lights climbs through the holder's phone. Backend and shared client only so far; the mobile UI ships later
+behind a flag.
+
+**`relayBoardClimb(boardId, climb, angle, mirrored, relayRequestId)`** returns a `RelayBoardClimbStatus` and the
+holder, named under the same rule as `boardConnection` (`redactBoardHolder`, with the caller as viewer). Gates in
+order:
+
+1. Rate limits: the caller's own bucket (`applyRateLimit`, 60/min signed in, 240/min anonymous per IP), then 20 a
+   minute per caller and board (`ratelimit:relay:{emitter}:board:{id}:…`).
+2. Board membership (the same stamp `reportBoardClimb` needs), else the `Not connected to this board` error. The
+   spray-wall read check runs too. The climb, angle and request id are validated next.
+3. `NOT_RELAY_BOARD` unless the board is a MoonBoard whose effective link mode (`resolveMoonboardLinkMode`) is
+   `relay` and it is not a shared per-config feed.
+4. `NO_HOLDER` when the writer slot is empty, `SELF_HOLDER` when the caller holds it.
+5. `HOLDER_OPTED_OUT` when the holder turned relay off.
+6. Otherwise `SENT`: a `BoardClimbRelayRequested` goes out on the board's presence channel. The climb's name,
+   frames, setter and grade come from the board's catalog, never from the relaying phone.
+
+**Holder-only delivery.** The event carries a server-only `holderEmitterId` (not in the SDL). `boardNowPlaying`
+drops it for every subscriber whose emitter id (`userId`, or `conn:{connectionId}`) is not that holder, before any
+other work: crewmates, kiosks and anonymous viewers of a public board never receive it. `redactBoardEvent` strips
+the routing key, names the relayer under the holder rule (`anonymous: true` whenever no name is shown) and blanks
+the climb's content if the holder may not read it. The event has no seq and is never stored: no history, stats,
+Live Activity push or queue preview carries it. The shared reducer ignores it; `useBoardPresence` hands it to its
+`onRelayRequested` callback (also a `BoardPresenceProvider` prop).
+
+**Opt-out.** `setBoardRelayAccepting(boardId, accepting)` is a compare-and-set against the writer slot, so only the
+current holder can change it (it returns `false` otherwise). Off stores `board:{id}:relay-off` = the holder's
+emitter id with the writer's 12 h TTL. It counts only while that value equals the current writer, so a new holder
+starts with relay on and nothing needs clearing on hand-off.
+
+**Confirmation.** The holder lights the climb and calls `reportBoardClimb(..., relayRequestId)`. The published
+`BoardClimbSet` carries `relayRequestId`, which the relaying phone matches. A report with a `relayRequestId` skips
+the 10 s same-climb dedup, so a relay of the climb already on the wall still publishes its echo (one extra history
+row).
+
+**Documents.** The recorded `BOARD_NOW_PLAYING` and `REPORT_BOARD_CLIMB` are unchanged. A client opts in with
+`createBoardPresenceClient(transport, { relayMode: true })`, which subscribes with `BOARD_NOW_PLAYING_RELAY`;
+`reportClimb(..., { relayRequestId })` sends `REPORT_BOARD_CLIMB_RELAYED`. `relayClimb` and `setRelayAccepting`
+send `RELAY_BOARD_CLIMB` and `SET_BOARD_RELAY_ACCEPTING`.
+
+**Not covered yet.** A holder that lost its socket or switched boards still owns the writer slot, so a request can
+be `SENT` to a phone that never sees it; the relaying phone needs a timeout on the echo. A retried relayed report
+publishes twice.
+
 ## Known limitations
 
 - **Same-user multi-connection**: the writer is keyed by emitter, so if a logged-in user holds from two connections, either connection's drop frees the wall (re-acquired on the next send). Benign under always-take.

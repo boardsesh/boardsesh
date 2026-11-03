@@ -971,6 +971,60 @@ export class BoardPresenceStore {
     }
   }
 
+  /**
+   * Relay mode (#7220): the board's current holder and whether that holder
+   * turned relayed climbs off. One Redis round trip (MGET). The opt-out key
+   * stores the emitter id that set it and counts only while that emitter still
+   * holds the board, so a new holder starts with relay on without any cleanup
+   * on hand-off. Redis-only like the writer slot: without Redis the holder is
+   * unknown (null), so nothing is relayed.
+   */
+  async getBoardRelayGate(boardId: string): Promise<{ holderEmitterId: string | null; relayOff: boolean }> {
+    if (!this.deps.isRedisAvailable()) return { holderEmitterId: null, relayOff: false };
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const [holderEmitterId, relayOffBy] = await publisher.mget(
+        `board:${boardId}:writer`,
+        `board:${boardId}:relay-off`,
+      );
+      return { holderEmitterId, relayOff: holderEmitterId !== null && relayOffBy === holderEmitterId };
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to read board relay gate:', error);
+      return { holderEmitterId: null, relayOff: false };
+    }
+  }
+
+  /**
+   * Relay mode (#7220): the holder turns relayed climbs on or off. Atomic
+   * compare-and-set against the writer slot, so only the emitter holding the
+   * board at that instant can change it. Off is stored with the writer's TTL.
+   * Returns whether the caller held the board (and the setting was applied).
+   */
+  async setBoardRelayAccepting(boardId: string, emitterId: string, accepting: boolean): Promise<boolean> {
+    if (!this.deps.isRedisAvailable()) return false;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const applied = await publisher.eval(
+        "if redis.call('get', KEYS[1]) ~= ARGV[1] then return 0 end; " +
+          "if ARGV[2] == 'on' then redis.call('del', KEYS[2]) " +
+          "else redis.call('set', KEYS[2], ARGV[1], 'EX', ARGV[3]) end; " +
+          'return 1',
+        2,
+        `board:${boardId}:writer`,
+        `board:${boardId}:relay-off`,
+        emitterId,
+        accepting ? 'on' : 'off',
+        BOARD_MEMBERSHIP_TTL,
+      );
+      return applied === 1;
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to set board relay accepting:', error);
+      return false;
+    }
+  }
+
   /** The board's current connection holder emitter id, or null when free. */
   async getBoardWriter(boardId: string): Promise<string | null> {
     if (!this.deps.isRedisAvailable()) return null;

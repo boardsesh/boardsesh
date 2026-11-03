@@ -716,11 +716,43 @@ export type BoardClimbRecentSender = {
   userId?: Maybe<Scalars['ID']['output']>;
 };
 
+/**
+ * Event (#7220, Relay mode for single-phone MoonBoard controllers): another
+ * climber asked the phone holding the board to light a climb. Delivered ONLY to
+ * the holder's own subscription; every other viewer never receives it. Carries
+ * no sequence number and changes no presence state: the holder lights the climb
+ * and confirms it with `reportBoardClimb(relayRequestId:)`.
+ */
+export type BoardClimbRelayRequested = {
+  __typename?: 'BoardClimbRelayRequested';
+  /** Board angle in degrees the climb should be lit at */
+  angle: Scalars['Int']['output'];
+  /** The climb to light */
+  climb: BoardRelayClimb;
+  /** Whether to light the climb mirrored */
+  mirrored: Scalars['Boolean']['output'];
+  /**
+   * Client-minted id the holder echoes back on reportBoardClimb. Always set; typed
+   * nullable only so one document can select it beside BoardClimbSet.relayRequestId.
+   */
+  relayRequestId?: Maybe<Scalars['ID']['output']>;
+  /** Who asked */
+  relayer: BoardRelayRequester;
+  /** ISO 8601 timestamp when the server accepted the request */
+  requestedAt: Scalars['String']['output'];
+};
+
 /** Event: a climb was set (lit) on the wall. */
 export type BoardClimbSet = {
   __typename?: 'BoardClimbSet';
   /** The climb now on the wall */
   climb: BoardPresenceClimb;
+  /**
+   * Relay mode (#7220): the `relayRequestId` the holder echoed on
+   * `reportBoardClimb` when this light answered a `BoardClimbRelayRequested`.
+   * The relaying phone matches it to confirm its climb landed. Null otherwise.
+   */
+  relayRequestId?: Maybe<Scalars['ID']['output']>;
 };
 
 /**
@@ -913,6 +945,7 @@ export type BoardPresenceClimb = {
 
 export type BoardPresenceEvent =
   | BoardClimbCleared
+  | BoardClimbRelayRequested
   | BoardClimbSet
   | BoardConnectionChanged
   | BoardHistoryUpdated
@@ -1021,6 +1054,47 @@ export type BoardQueuePreviewItem = {
   queueItemUuid: Scalars['ID']['output'];
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * The climb a relaying phone asked the holder to light (#7220). Catalog fields
+ * are read server-side from the board's own catalog, never taken from the
+ * relaying client, so a relay can only light a real climb on this layout.
+ */
+export type BoardRelayClimb = {
+  __typename?: 'BoardRelayClimb';
+  /** UUID of the climb to light */
+  climbUuid: Scalars['String']['output'];
+  /** Frames string the holder writes to the wall */
+  frames?: Maybe<Scalars['String']['output']>;
+  /** Grade name at the requested angle */
+  grade?: Maybe<Scalars['String']['output']>;
+  /** Grade colour as a hex string */
+  gradeColor?: Maybe<Scalars['String']['output']>;
+  /** Climb name */
+  name?: Maybe<Scalars['String']['output']>;
+  /** Queue item UUID on the relaying phone, if any */
+  queueItemUuid?: Maybe<Scalars['String']['output']>;
+  /** Catalog route setter display name */
+  setter?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * Who asked for a relayed climb. Named under the same rule as the board's
+ * connection holder: their own account privacy, and anonymous on a board they
+ * don't own when they chose to be. `anonymous` is true whenever no identity
+ * is shown.
+ */
+export type BoardRelayRequester = {
+  __typename?: 'BoardRelayRequester';
+  /** True when the requester is shown without a name. */
+  anonymous: Scalars['Boolean']['output'];
+  /** Avatar URL; null when anonymous. */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Display name; null when anonymous. */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** Boardsesh user id; null when anonymous. */
+  userId?: Maybe<Scalars['ID']['output']>;
 };
 
 /**
@@ -4616,6 +4690,16 @@ export type Mutation = {
    * registration lasts until the credential expires (24 hours at most).
    */
   registerNotificationDevice: Scalars['Boolean']['output'];
+  /**
+   * Relay mode (#7220): ask the phone holding a single-phone MoonBoard to light
+   * `climb`. The request reaches only the holder's `boardNowPlaying`
+   * subscription as `BoardClimbRelayRequested`; the holder lights it and calls
+   * `reportBoardClimb` with the same `relayRequestId`, which the caller sees
+   * echoed on `BoardClimbSet`. Requires board membership, and the board must be
+   * a MoonBoard whose effective link mode is relay and that is not a shared
+   * per-config feed. Auth-optional. Rate limited per caller and per board.
+   */
+  relayBoardClimb: RelayBoardClimbResult;
   /** Remove a climb from a playlist. */
   removeClimbFromPlaylist: Scalars['Boolean']['output'];
   /**
@@ -4659,6 +4743,8 @@ export type Mutation = {
    * avatar. Also makes the caller the board's current connection holder (the
    * "who's connected" indicator). Fire-and-forget after the BLE write succeeded —
    * no confirm/timeout handshake. `angle` is the wall angle (null = unspecified).
+   * `relayRequestId` (Relay mode, #7220) is set by a holder lighting a relayed
+   * climb; it is echoed on the published `BoardClimbSet`.
    */
   reportBoardClimb: Scalars['Boolean']['output'];
   /**
@@ -4824,6 +4910,12 @@ export type Mutation = {
    * whether or not account privacy controls are enabled.
    */
   setAnonymousOnForeignBoards: PrivacySettings;
+  /**
+   * Relay mode (#7220): the holder turns relayed climbs on or off for the board
+   * they hold. Only the current holder may set it; the setting lapses when
+   * anyone else takes the board. Returns whether it was stored.
+   */
+  setBoardRelayAccepting: Scalars['Boolean']['output'];
   setClimbFromLedPositions: ClimbMatchResult;
   /** Set a community setting (admin/leader only). */
   setCommunitySettings: CommunitySetting;
@@ -5467,6 +5559,15 @@ export type MutationRegisterNotificationDeviceArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRelayBoardClimbArgs = {
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  boardId: Scalars['Int']['input'];
+  climb: ClimbQueueItemInput;
+  mirrored?: InputMaybe<Scalars['Boolean']['input']>;
+  relayRequestId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRemoveClimbFromPlaylistArgs = {
   input: RemoveClimbFromPlaylistInput;
 };
@@ -5524,6 +5625,7 @@ export type MutationReportBoardClimbArgs = {
   angle?: InputMaybe<Scalars['Int']['input']>;
   boardId: Scalars['Int']['input'];
   climb: ClimbQueueItemInput;
+  relayRequestId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root mutation type for all write operations. */
@@ -5693,6 +5795,12 @@ export type MutationSetAnalyticsConsentArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSetAnonymousOnForeignBoardsArgs = {
   enabled: Scalars['Boolean']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetBoardRelayAcceptingArgs = {
+  accepting: Scalars['Boolean']['input'];
+  boardId: Scalars['Int']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -8908,6 +9016,30 @@ export type RegisterNotificationDeviceInput = {
   platform: Scalars['String']['input'];
   token: Scalars['String']['input'];
 };
+
+export type RelayBoardClimbResult = {
+  __typename?: 'RelayBoardClimbResult';
+  /**
+   * The holder the request went to (or who opted out), named under the same
+   * privacy rule as `boardConnection`. Null for NO_HOLDER, SELF_HOLDER and
+   * NOT_RELAY_BOARD.
+   */
+  holder?: Maybe<BoardConnectionHolder>;
+  status: RelayBoardClimbStatus;
+};
+
+/** Outcome of `relayBoardClimb` (#7220). */
+export type RelayBoardClimbStatus =
+  /** The holder turned off relayed climbs. */
+  | 'HOLDER_OPTED_OUT'
+  /** This board is not in Relay mode (not a MoonBoard, a shared per-config feed, or set to multi). */
+  | 'NOT_RELAY_BOARD'
+  /** Nobody holds the board, so there is no phone to relay through. */
+  | 'NO_HOLDER'
+  /** The caller holds the board; light the climb directly. */
+  | 'SELF_HOLDER'
+  /** The request went to the holder's phone. */
+  | 'SENT';
 
 /** Running identity with backend-verified current automatic canary membership. */
 export type ReleaseContext = {
@@ -12623,6 +12755,7 @@ export type DirectiveResolverFn<TResult = {}, TParent = {}, TContext = {}, TArgs
 export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = ResolversObject<{
   BoardPresenceEvent:
     | BoardClimbCleared
+    | BoardClimbRelayRequested
     | BoardClimbSet
     | BoardConnectionChanged
     | BoardHistoryUpdated
@@ -12697,6 +12830,7 @@ export type ResolversTypes = ResolversObject<{
   BoardCandidate: ResolverTypeWrapper<BoardCandidate>;
   BoardClimbCleared: ResolverTypeWrapper<BoardClimbCleared>;
   BoardClimbRecentSender: ResolverTypeWrapper<BoardClimbRecentSender>;
+  BoardClimbRelayRequested: ResolverTypeWrapper<BoardClimbRelayRequested>;
   BoardClimbSet: ResolverTypeWrapper<BoardClimbSet>;
   BoardConnectionChanged: ResolverTypeWrapper<BoardConnectionChanged>;
   BoardConnectionHolder: ResolverTypeWrapper<BoardConnectionHolder>;
@@ -12715,6 +12849,8 @@ export type ResolversTypes = ResolversObject<{
   BoardPresenceStats: ResolverTypeWrapper<BoardPresenceStats>;
   BoardQueuePreview: ResolverTypeWrapper<BoardQueuePreview>;
   BoardQueuePreviewItem: ResolverTypeWrapper<BoardQueuePreviewItem>;
+  BoardRelayClimb: ResolverTypeWrapper<BoardRelayClimb>;
+  BoardRelayRequester: ResolverTypeWrapper<BoardRelayRequester>;
   BoardSerialConfig: ResolverTypeWrapper<BoardSerialConfig>;
   BoardShareLink: ResolverTypeWrapper<BoardShareLink>;
   BoardShareLinkPreview: ResolverTypeWrapper<BoardShareLinkPreview>;
@@ -13015,6 +13151,8 @@ export type ResolversTypes = ResolversObject<{
   RecordSessionWorkoutInput: RecordSessionWorkoutInput;
   RegisterControllerInput: RegisterControllerInput;
   RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
+  RelayBoardClimbResult: ResolverTypeWrapper<RelayBoardClimbResult>;
+  RelayBoardClimbStatus: RelayBoardClimbStatus;
   ReleaseContext: ResolverTypeWrapper<ReleaseContext>;
   ReleaseContextInput: ReleaseContextInput;
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
@@ -13272,6 +13410,7 @@ export type ResolversParentTypes = ResolversObject<{
   BoardCandidate: BoardCandidate;
   BoardClimbCleared: BoardClimbCleared;
   BoardClimbRecentSender: BoardClimbRecentSender;
+  BoardClimbRelayRequested: BoardClimbRelayRequested;
   BoardClimbSet: BoardClimbSet;
   BoardConnectionChanged: BoardConnectionChanged;
   BoardConnectionHolder: BoardConnectionHolder;
@@ -13290,6 +13429,8 @@ export type ResolversParentTypes = ResolversObject<{
   BoardPresenceStats: BoardPresenceStats;
   BoardQueuePreview: BoardQueuePreview;
   BoardQueuePreviewItem: BoardQueuePreviewItem;
+  BoardRelayClimb: BoardRelayClimb;
+  BoardRelayRequester: BoardRelayRequester;
   BoardSerialConfig: BoardSerialConfig;
   BoardShareLink: BoardShareLink;
   BoardShareLinkPreview: BoardShareLinkPreview;
@@ -13554,6 +13695,7 @@ export type ResolversParentTypes = ResolversObject<{
   RecordSessionWorkoutInput: RecordSessionWorkoutInput;
   RegisterControllerInput: RegisterControllerInput;
   RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
+  RelayBoardClimbResult: RelayBoardClimbResult;
   ReleaseContext: ReleaseContext;
   ReleaseContextInput: ReleaseContextInput;
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
@@ -14140,11 +14282,26 @@ export type BoardClimbRecentSenderResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type BoardClimbRelayRequestedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardClimbRelayRequested'] =
+    ResolversParentTypes['BoardClimbRelayRequested'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  climb?: Resolver<ResolversTypes['BoardRelayClimb'], ParentType, ContextType>;
+  mirrored?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  relayRequestId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  relayer?: Resolver<ResolversTypes['BoardRelayRequester'], ParentType, ContextType>;
+  requestedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type BoardClimbSetResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['BoardClimbSet'] = ResolversParentTypes['BoardClimbSet'],
 > = ResolversObject<{
   climb?: Resolver<ResolversTypes['BoardPresenceClimb'], ParentType, ContextType>;
+  relayRequestId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14285,7 +14442,12 @@ export type BoardPresenceEventResolvers<
   ParentType extends ResolversParentTypes['BoardPresenceEvent'] = ResolversParentTypes['BoardPresenceEvent'],
 > = ResolversObject<{
   __resolveType: TypeResolveFn<
-    'BoardClimbCleared' | 'BoardClimbSet' | 'BoardConnectionChanged' | 'BoardHistoryUpdated' | 'BoardStatsUpdated',
+    | 'BoardClimbCleared'
+    | 'BoardClimbRelayRequested'
+    | 'BoardClimbSet'
+    | 'BoardConnectionChanged'
+    | 'BoardHistoryUpdated'
+    | 'BoardStatsUpdated',
     ParentType,
     ContextType
   >;
@@ -14343,6 +14505,31 @@ export type BoardQueuePreviewItemResolvers<
   name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   queueItemUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   setter?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardRelayClimbResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardRelayClimb'] = ResolversParentTypes['BoardRelayClimb'],
+> = ResolversObject<{
+  climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  grade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gradeColor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  queueItemUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  setter?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardRelayRequesterResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardRelayRequester'] = ResolversParentTypes['BoardRelayRequester'],
+> = ResolversObject<{
+  anonymous?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16403,6 +16590,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRegisterNotificationDeviceArgs, 'input'>
   >;
+  relayBoardClimb?: Resolver<
+    ResolversTypes['RelayBoardClimbResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRelayBoardClimbArgs, 'boardId' | 'climb' | 'relayRequestId'>
+  >;
   removeClimbFromPlaylist?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -16647,6 +16840,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationSetAnonymousOnForeignBoardsArgs, 'enabled'>
+  >;
+  setBoardRelayAccepting?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSetBoardRelayAcceptingArgs, 'accepting' | 'boardId'>
   >;
   setClimbFromLedPositions?: Resolver<
     ResolversTypes['ClimbMatchResult'],
@@ -18552,6 +18751,15 @@ export type RecentBetaLinkResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type RelayBoardClimbResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['RelayBoardClimbResult'] = ResolversParentTypes['RelayBoardClimbResult'],
+> = ResolversObject<{
+  holder?: Resolver<Maybe<ResolversTypes['BoardConnectionHolder']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['RelayBoardClimbStatus'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ReleaseContextResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['ReleaseContext'] = ResolversParentTypes['ReleaseContext'],
@@ -20225,6 +20433,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardCandidate?: BoardCandidateResolvers<ContextType>;
   BoardClimbCleared?: BoardClimbClearedResolvers<ContextType>;
   BoardClimbRecentSender?: BoardClimbRecentSenderResolvers<ContextType>;
+  BoardClimbRelayRequested?: BoardClimbRelayRequestedResolvers<ContextType>;
   BoardClimbSet?: BoardClimbSetResolvers<ContextType>;
   BoardConnectionChanged?: BoardConnectionChangedResolvers<ContextType>;
   BoardConnectionHolder?: BoardConnectionHolderResolvers<ContextType>;
@@ -20241,6 +20450,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardPresenceStats?: BoardPresenceStatsResolvers<ContextType>;
   BoardQueuePreview?: BoardQueuePreviewResolvers<ContextType>;
   BoardQueuePreviewItem?: BoardQueuePreviewItemResolvers<ContextType>;
+  BoardRelayClimb?: BoardRelayClimbResolvers<ContextType>;
+  BoardRelayRequester?: BoardRelayRequesterResolvers<ContextType>;
   BoardSerialConfig?: BoardSerialConfigResolvers<ContextType>;
   BoardShareLink?: BoardShareLinkResolvers<ContextType>;
   BoardShareLinkPreview?: BoardShareLinkPreviewResolvers<ContextType>;
@@ -20411,6 +20622,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   QueueState?: QueueStateResolvers<ContextType>;
   ReassignGymOwnerResult?: ReassignGymOwnerResultResolvers<ContextType>;
   RecentBetaLink?: RecentBetaLinkResolvers<ContextType>;
+  RelayBoardClimbResult?: RelayBoardClimbResultResolvers<ContextType>;
   ReleaseContext?: ReleaseContextResolvers<ContextType>;
   RenderBoardConfig?: RenderBoardConfigResolvers<ContextType>;
   ReportClimbResult?: ReportClimbResultResolvers<ContextType>;

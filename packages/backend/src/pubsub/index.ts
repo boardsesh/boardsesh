@@ -652,6 +652,16 @@ class PubSub {
     return this.boardPresenceStore.getBoardWriter(boardId);
   }
 
+  /** Relay mode (#7220): the current holder and whether that holder turned relay off. */
+  async getBoardRelayGate(boardId: string): Promise<{ holderEmitterId: string | null; relayOff: boolean }> {
+    return this.boardPresenceStore.getBoardRelayGate(boardId);
+  }
+
+  /** Relay mode (#7220): the holder turns relayed climbs on or off. False when the caller doesn't hold the board. */
+  async setBoardRelayAccepting(boardId: string, emitterId: string, accepting: boolean): Promise<boolean> {
+    return this.boardPresenceStore.setBoardRelayAccepting(boardId, emitterId, accepting);
+  }
+
   /** The shared board_id this session is on, or null when unknown (written by commitBoardClimb). */
   async getSessionBoard(sessionId: string): Promise<string | null> {
     return this.boardPresenceStore.getSessionBoard(sessionId);

@@ -24,16 +24,20 @@ import {
   BOARD_HISTORY_PAGE,
   BOARD_RECENT_HISTORY,
   BOARD_NOW_PLAYING,
+  BOARD_NOW_PLAYING_RELAY,
   BOARD_PRESENCE_STATS,
   BOARD_RECENT_CLIMBS,
   CHOOSE_BOARD_FOR_SERIAL,
+  RELAY_BOARD_CLIMB,
   REPORT_BOARD_CLIMB,
+  REPORT_BOARD_CLIMB_RELAYED,
   REPORT_BOARD_DISCONNECT,
   REPORT_BOARD_CLEAR,
   RESOLVE_BOARD_CANDIDATES_FOR_SERIAL,
   RESOLVE_BOARD_FOR_CONFIG,
   RESOLVE_BOARD_FOR_SERIAL,
   RESOLVE_BOARD_FOR_UUID,
+  SET_BOARD_RELAY_ACCEPTING,
 } from '@boardsesh/graphql/operations/board-presence';
 import type {
   BoardClimbRecentSender,
@@ -43,6 +47,7 @@ import type {
   BoardPresenceEvent,
   BoardPresenceStats,
   ClimbQueueItemInput,
+  RelayBoardClimbResult,
   ResolveBoardResult,
   ResolvedBoard,
 } from '@boardsesh/shared-schema';
@@ -57,6 +62,18 @@ type BoardConnectionData = { boardConnection: BoardConnectionHolder | null };
 type ReportBoardClimbData = { reportBoardClimb: boolean };
 type ReportBoardDisconnectData = { reportBoardDisconnect: boolean };
 type ReportBoardClearData = { reportBoardClear: boolean };
+type RelayBoardClimbData = { relayBoardClimb: RelayBoardClimbResult };
+type SetBoardRelayAcceptingData = { setBoardRelayAccepting: boolean };
+
+/** Args for `relayClimb` (Relay mode, #7220). */
+export type RelayClimbArgs = {
+  boardId: number;
+  climb: ClimbQueueItemInput;
+  angle: number | null;
+  mirrored?: boolean | null;
+  /** Client-minted id; the holder's `BoardClimbSet` echoes it as confirmation. */
+  relayRequestId: string;
+};
 type ResolveBoardForSerialData = { resolveBoardForSerial: ResolvedBoard };
 type ResolveBoardForUuidData = { resolveBoardForUuid: ResolvedBoard };
 type ResolveBoardForConfigData = { resolveBoardForConfig: ResolvedBoard };
@@ -129,6 +146,16 @@ export type BoardPresenceTransport = {
 export type FullBoardPresenceClient = Required<BoardPresenceClient> & {
   resolveBoardCandidatesForSerial(args: SerialResolveArgs): Promise<ResolveBoardResult>;
   chooseBoardForSerial(args: { boardId: number; serial: string }): Promise<ResolvedBoard>;
+  /**
+   * Relay mode (#7220): ask the phone holding a single-phone MoonBoard to light
+   * a climb. The status says whether the request went (SENT) or why not.
+   */
+  relayClimb(args: RelayClimbArgs): Promise<RelayBoardClimbResult>;
+  /**
+   * Relay mode (#7220): as the board's holder, turn relayed climbs on or off.
+   * Resolves false when this client doesn't hold the board.
+   */
+  setRelayAccepting(boardId: number, accepting: boolean): Promise<boolean>;
 };
 
 /**
@@ -141,7 +168,23 @@ function boardReadVariables(boardId: number, boardUuid?: string | null): { board
   return { boardId, ...(boardUuid ? { boardUuid } : {}) };
 }
 
-export function createBoardPresenceClient(transport: BoardPresenceTransport): FullBoardPresenceClient {
+/** Factory options. */
+export type BoardPresenceClientOptions = {
+  /**
+   * Relay mode (#7220): subscribe with BOARD_NOW_PLAYING_RELAY, which adds
+   * `BoardClimbRelayRequested` and `BoardClimbSet.relayRequestId`. Off by
+   * default so the recorded BOARD_NOW_PLAYING document stays what every client
+   * sends until the platform turns relay on (behind its flag, after the
+   * backend serving these fields is deployed).
+   */
+  relayMode?: boolean;
+};
+
+export function createBoardPresenceClient(
+  transport: BoardPresenceTransport,
+  options: BoardPresenceClientOptions = {},
+): FullBoardPresenceClient {
+  const nowPlayingDocument = options.relayMode ? BOARD_NOW_PLAYING_RELAY : BOARD_NOW_PLAYING;
   // Whether ANY `onReconnect` registration made through this factory instance
   // has observed a `connected` event. Factory-level, NOT per-registration, on
   // purpose: graphql-ws does not replay `connected` to a listener added on an
@@ -172,7 +215,7 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
     },
     subscribeNowPlaying(boardId, onEvent, onError, onComplete, boardUuid) {
       return transport.subscribe<BoardNowPlayingData>(
-        { query: BOARD_NOW_PLAYING, variables: boardReadVariables(boardId, boardUuid) },
+        { query: nowPlayingDocument, variables: boardReadVariables(boardId, boardUuid) },
         {
           next: (data) => {
             if (data?.boardNowPlaying) {
@@ -239,12 +282,32 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
       return data.boardPresenceStats;
     },
 
-    async reportClimb(boardId, climb: ClimbQueueItemInput, angle) {
-      const data = await transport.execute<ReportBoardClimbData>({
-        query: REPORT_BOARD_CLIMB,
-        variables: { boardId, climb, angle },
-      });
+    async reportClimb(boardId, climb: ClimbQueueItemInput, angle, reportOptions) {
+      const relayRequestId = reportOptions?.relayRequestId;
+      // A relayed light uses its own document so the recorded REPORT_BOARD_CLIMB
+      // never changes shape.
+      const data = await transport.execute<ReportBoardClimbData>(
+        relayRequestId
+          ? { query: REPORT_BOARD_CLIMB_RELAYED, variables: { boardId, climb, angle, relayRequestId } }
+          : { query: REPORT_BOARD_CLIMB, variables: { boardId, climb, angle } },
+      );
       return data.reportBoardClimb === true;
+    },
+
+    async relayClimb({ boardId, climb, angle, mirrored, relayRequestId }) {
+      const data = await transport.execute<RelayBoardClimbData>({
+        query: RELAY_BOARD_CLIMB,
+        variables: { boardId, climb, angle, mirrored: mirrored ?? null, relayRequestId },
+      });
+      return data.relayBoardClimb;
+    },
+
+    async setRelayAccepting(boardId, accepting) {
+      const data = await transport.execute<SetBoardRelayAcceptingData>({
+        query: SET_BOARD_RELAY_ACCEPTING,
+        variables: { boardId, accepting },
+      });
+      return data.setBoardRelayAccepting === true;
     },
 
     async fetchConnection(boardId, boardUuid) {

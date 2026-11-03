@@ -41,10 +41,12 @@ export type { BoardHistoryCursor, BoardPresenceClient } from './types';
 
 export { createBoardPresenceClient } from './create-board-presence-client';
 export type {
+  BoardPresenceClientOptions,
   BoardPresenceOperation,
   BoardPresenceSink,
   BoardPresenceTransport,
   FullBoardPresenceClient,
+  RelayClimbArgs,
   SerialResolveArgs,
 } from './create-board-presence-client';
 

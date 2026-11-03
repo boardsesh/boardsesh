@@ -120,9 +120,16 @@ export interface BoardPresenceClient {
 
   /**
    * Report the climb just lit on the wall. `angle` is the wall angle (null =
-   * unspecified). Resolves to the server's accepted flag.
+   * unspecified). Resolves to the server's accepted flag. `options.relayRequestId`
+   * (Relay mode, #7220) is set when the holder lights a climb another phone
+   * relayed; the server echoes it on `BoardClimbSet`.
    */
-  reportClimb(boardId: number, climb: ClimbQueueItemInput, angle: number | null): Promise<boolean>;
+  reportClimb(
+    boardId: number,
+    climb: ClimbQueueItemInput,
+    angle: number | null,
+    options?: { relayRequestId?: string | null },
+  ): Promise<boolean>;
 
   /**
    * Resolve (and bind) the shared board for a BLE serial. Pass

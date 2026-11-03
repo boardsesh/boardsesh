@@ -210,6 +210,59 @@ describe('createBoardPresenceClient', () => {
     expect(await client.reportClimb(5, climb, null)).toBe(false);
   });
 
+  it('sends a relayed light through its own document, leaving the recorded one unchanged (#7220)', async () => {
+    const client = createBoardPresenceClient(harness.transport);
+    const climb = { uuid: 'q1', climb: { uuid: 'c1', name: 'X' } } as unknown as ClimbQueueItemInput;
+    harness.setExecuteResult({ reportBoardClimb: true });
+
+    expect(await client.reportClimb(5, climb, 40, { relayRequestId: 'relay-1' })).toBe(true);
+    expect(harness.executeCalls[0].query).toContain('mutation ReportBoardClimbRelayed');
+    expect(harness.executeCalls[0].variables).toEqual({ boardId: 5, climb, angle: 40, relayRequestId: 'relay-1' });
+
+    await client.reportClimb(5, climb, 40, { relayRequestId: null });
+    expect(harness.executeCalls[1].query).toContain('mutation ReportBoardClimb(');
+    expect(harness.executeCalls[1].variables).toEqual({ boardId: 5, climb, angle: 40 });
+  });
+
+  it('relays a climb and unwraps the status (#7220)', async () => {
+    const client = createBoardPresenceClient(harness.transport);
+    const climb = { uuid: 'q1', climb: { uuid: 'c1', name: 'X' } } as unknown as ClimbQueueItemInput;
+    harness.setExecuteResult({ relayBoardClimb: { status: 'SENT', holder: null } });
+
+    expect(await client.relayClimb({ boardId: 5, climb, angle: 40, relayRequestId: 'relay-2' })).toEqual({
+      status: 'SENT',
+      holder: null,
+    });
+    expect(harness.executeCalls[0].query).toContain('relayBoardClimb');
+    expect(harness.executeCalls[0].variables).toEqual({
+      boardId: 5,
+      climb,
+      angle: 40,
+      mirrored: null,
+      relayRequestId: 'relay-2',
+    });
+  });
+
+  it('sets relay accepting, treating a non-true response as not stored (#7220)', async () => {
+    const client = createBoardPresenceClient(harness.transport);
+    harness.setExecuteResult({ setBoardRelayAccepting: true });
+    expect(await client.setRelayAccepting(5, false)).toBe(true);
+    expect(harness.executeCalls[0].variables).toEqual({ boardId: 5, accepting: false });
+
+    harness.setExecuteResult({});
+    expect(await client.setRelayAccepting(5, true)).toBe(false);
+  });
+
+  it('subscribes with the relay document only in relay mode (#7220)', () => {
+    createBoardPresenceClient(harness.transport).subscribeNowPlaying(5, () => {});
+    expect(harness.subscribeCalls[0].query).toContain('subscription BoardNowPlaying(');
+    expect(harness.subscribeCalls[0].query).not.toContain('BoardClimbRelayRequested');
+
+    createBoardPresenceClient(harness.transport, { relayMode: true }).subscribeNowPlaying(5, () => {});
+    expect(harness.subscribeCalls[1].query).toContain('subscription BoardNowPlayingRelay(');
+    expect(harness.subscribeCalls[1].query).toContain('BoardClimbRelayRequested');
+  });
+
   it('reports a disconnect, treating a non-true response as not accepted', async () => {
     const client = createBoardPresenceClient(harness.transport);
     harness.setExecuteResult({ reportBoardDisconnect: true });
