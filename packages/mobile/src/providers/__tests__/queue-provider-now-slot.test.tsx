@@ -98,7 +98,7 @@ const queueMutations = vi.hoisted(() => ({
       _historyCount?: number | null,
     ) => {},
   ),
-  replaceQueueItem: vi.fn(async () => {}),
+  replaceQueueItem: vi.fn(async (_uuid: string, _item: ClimbQueueItem) => {}),
   confirmClimbOnWall: vi.fn(async () => {}),
   reportWallDisconnect: vi.fn(async () => {}),
   setSessionBoardSerial: vi.fn(async () => {}),
@@ -373,6 +373,16 @@ const A = makeQueueItem('a');
 const B = makeQueueItem('b');
 const C = makeQueueItem('c');
 const D = makeQueueItem('d');
+
+/** A list being walked from `current`: X (walked earlier), B, C, D. */
+function walkedList(current: ClimbQueueItem): PlaylistSuggestionSource {
+  return {
+    playlistUuid: 'search-1',
+    activatedClimbUuid: current.climb.uuid,
+    boardKey: 'kilter:1:10:1,2',
+    climbs: [makeQueueItem('xw', 'climb-x').climb, B.climb, C.climb, D.climb],
+  };
+}
 
 describe('QueueProvider now-slot mode (F3)', () => {
   beforeEach(() => {
@@ -668,6 +678,33 @@ describe('QueueProvider now-slot mode (F3)', () => {
       });
     });
 
+    // #7247: X was walked from the list earlier, so History holds it flagged
+    // `suggested`. Play next on it must make it what Next plays, not a list
+    // climb the walk passes on its way from B to C.
+    it.each([
+      { mode: 'now-slot', nowSlot: true },
+      { mode: 'legacy', nowSlot: false },
+    ])('$mode: Next plays a climb Play next pulled from History off the list being walked', async ({ nowSlot }) => {
+      flags.nowSlot = nowSlot;
+      const walkedX = { ...makeQueueItem('xw', 'climb-x'), suggested: true };
+      const walkedB = { ...B, suggested: true };
+      const latest = await renderSolo([walkedX, walkedB], walkedB);
+      const list = walkedList(walkedB);
+      act(() => latest().setCurrentClimb(walkedB, { playlistSuggestionSource: list }));
+
+      await act(async () => {
+        await latest().playNext({ item: makeQueueItem('fresh-x', 'climb-x') });
+      });
+      expect(uuidsOf(latest())).toEqual(['b', 'xw']);
+      expect(latest().state.queue[1].suggested).toBeUndefined();
+
+      act(() => latest().nextClimb());
+      expect(latest().state.currentClimbQueueItem?.uuid).toBe('xw');
+      // Then the list picks up after B, where the walk left it.
+      act(() => latest().nextClimb());
+      expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe(C.climb.uuid);
+    });
+
     it('flag off: today’s reducer copies the climb, and no Replay from here', async () => {
       flags.nowSlot = false;
       const latest = await renderSolo([A, B, C], B);
@@ -835,6 +872,33 @@ describe('QueueProvider now-slot mode (F3)', () => {
       expect(snapshots[1]).not.toContain('currentChangedBy');
       expect(snapshots[1]).toContain('historyCount');
       expect(latest().state.nowSlotMode).toBe(true);
+    });
+
+    // #7247 in a crew: the flag goes as an item-level swap by uuid, after the
+    // reorder, and never as a whole-queue setQueue built at tap time, which
+    // would undo a crewmate's Next or reorder that reached the server first.
+    it('Play next on a walked History climb sends a reorder and a swap by uuid, never a setQueue', async () => {
+      const walkedX = { ...makeQueueItem('xw', 'climb-x'), suggested: true };
+      const walkedB = { ...B, suggested: true };
+      const latest = await renderSession([walkedX, walkedB], walkedB);
+      act(() => latest().setCurrentClimb(walkedB, { playlistSuggestionSource: walkedList(walkedB) }));
+
+      await act(async () => {
+        await latest().playNext({ item: makeQueueItem('fresh-x', 'climb-x') });
+      });
+      expect(uuidsOf(latest())).toEqual(['b', 'xw']);
+      await waitFor(() => expect(queueMutations.replaceQueueItem).toHaveBeenCalledTimes(1));
+      expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('xw', 0, 1);
+      expect(queueMutations.reorderQueueItem.mock.invocationCallOrder[0]).toBeLessThan(
+        queueMutations.replaceQueueItem.mock.invocationCallOrder[0],
+      );
+      const [swappedUuid, swappedItem] = queueMutations.replaceQueueItem.mock.calls[0];
+      expect(swappedUuid).toBe('xw');
+      expect(swappedItem).toEqual({ uuid: 'xw', climb: walkedX.climb });
+      expect(queueMutations.setQueue).not.toHaveBeenCalled();
+
+      act(() => latest().nextClimb());
+      expect(latest().state.currentClimbQueueItem?.uuid).toBe('xw');
     });
 
     it('does not relay a live snapshot whose current loses to the protected optimistic move', async () => {

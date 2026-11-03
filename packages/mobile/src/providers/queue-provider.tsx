@@ -28,6 +28,7 @@ import {
   deriveAcceptedConfigs,
   planPlayNext,
   playNextInsertPosition,
+  withoutListWalkFlag,
   MAX_SYNCED_QUEUE_ITEMS,
   findPlaylistClimbIndex,
   placeOnWall,
@@ -2018,17 +2019,66 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
 
   /**
+   * Rewrite a list walk's queue slot (`suggested`) as queued on purpose, here
+   * and for the crew (#7247). The walk reads a flagged climb on its own list as
+   * the list, never as Up next, so a Play next that kept the flag would be
+   * walked past. One item-level write by uuid on the lane: the server swaps
+   * that slot under its version check and leaves every other slot, the order
+   * and the climb on the wall as they stand, so a crewmate's Next or reorder in
+   * the same moment is never undone (a whole-queue `setQueue` built now would).
+   */
+  const dropListWalkFlag = useCallback(
+    (uuid: string) => {
+      const origin = captureQueueMutationOrigin();
+      const flagged = stateRef.current.queue.find((queueItem) => queueItem.uuid === uuid);
+      if (!flagged || flagged.suggested !== true) return;
+      dispatch({ type: 'DELTA_REPLACE_QUEUE_ITEM', payload: { uuid, item: withoutListWalkFlag(flagged) } });
+      void enqueueQueueMutation(async () => {
+        if (!isQueueMutationOriginCurrent(origin)) return;
+        // The slot as this phone holds it at send time (hydrated, regraded or
+        // mirrored since), so the swap carries nothing older. Gone, never on
+        // the server, or still a placeholder: nothing to swap, and a
+        // placeholder must never reach the crew (#2527).
+        const live = stateRef.current.queue.find((queueItem) => queueItem.uuid === uuid);
+        const liveUuids = new Set(stateRef.current.queue.map((queueItem) => queueItem.uuid));
+        if (!live || !isOnServer(uuid, liveUuids) || !isClimbResolved(live.climb)) return;
+        try {
+          await mutations.replaceQueueItem(uuid, withoutListWalkFlag(live));
+        } catch (error) {
+          if (!isQueueMutationOriginCurrent(origin)) return;
+          if (__DEV__) console.warn('[queue] replaceQueueItem sync failed', error);
+          // The crew still has the flag. Reconcile against the server rather
+          // than leave this phone walking a queue nobody else has. Solo no-ops.
+          reconcileFailedContentMutation(error, origin);
+        }
+      });
+    },
+    [
+      captureQueueMutationOrigin,
+      enqueueQueueMutation,
+      isOnServer,
+      isQueueMutationOriginCurrent,
+      mutations,
+      reconcileFailedContentMutation,
+    ],
+  );
+
+  /**
    * Jump a climb to the slot right behind the one on the wall.
    *
-   * Five shapes, decided by `planPlayNext` against live state:
+   * The shapes, decided by `planPlayNext` against live state:
    * - not queued yet → a positional add (the cross-board gate still runs first,
    *   and `commitQueueAdd` re-derives the index after it, so a prompt that sat
    *   open while the queue moved can't land the climb in a stale slot)
    * - queued elsewhere → a MOVE, never a duplicate: a second copy would leave
-   *   the crew deleting the stale one by hand
+   *   the crew deleting the stale one by hand. A slot a list walk put in the
+   *   queue (`suggested`) also drops the flag (`dropListWalkFlag`): a reorder
+   *   keeps it, and swipes would walk past the climb as part of the list (#7247)
    * - in History with nothing current (F3) → one whole-queue replace that pulls
    *   it to the head of Up next and lowers the line; no single reorder can
    *   (see `planPlayNext`)
+   * - already up next but flagged by a list walk (as an older build left it) →
+   *   only the flag goes
    * - already up next (or its own queue slot is on the wall) → no mutation,
    *   but still confirm. Silence would read as a dead button.
    * - the climb on the wall, named by climb only (a list row's swipe) → a
@@ -2051,6 +2101,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
       if (plan.kind === 'move') {
         reorderQueue(plan.uuid, plan.oldIndex, plan.newIndex, { source: 'play-next' });
+        if (plan.dropListWalkFlag) dropListWalkFlag(plan.uuid);
+        showQueueAddedSnackbar({ kind: 'playNext' });
+        return 'moved';
+      }
+
+      if (plan.kind === 'unflag') {
+        // Already at the head of Up next, where the walk passed it: no reorder.
+        dropListWalkFlag(plan.uuid);
         showQueueAddedSnackbar({ kind: 'playNext' });
         return 'moved';
       }
@@ -2087,7 +2145,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
       return addToQueue(item, { placement: 'next' });
     },
-    [addToQueue, applyQueueSnapshot, captureQueueMutationOrigin, reorderQueue, showQueueAddedSnackbar],
+    [
+      addToQueue,
+      applyQueueSnapshot,
+      captureQueueMutationOrigin,
+      dropListWalkFlag,
+      reorderQueue,
+      showQueueAddedSnackbar,
+    ],
   );
 
   // The wire half of a multi-item removal (clear, bulk remove). There is no

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planPlayNext, playNextInsertPosition } from '../play-next';
+import { planPlayNext, playNextInsertPosition, withoutListWalkFlag } from '../play-next';
 import type { Climb, ClimbQueue, ClimbQueueItem } from '../types';
 
 function makeClimb(uuid: string): Climb {
@@ -251,5 +251,146 @@ describe('Play next with nothing current (F3 now-slot mode)', () => {
       oldIndex: 0,
       newIndex: 1,
     });
+  });
+});
+
+// Issue #7247: a climb walked from a list sits in the queue flagged
+// `suggested`, and the list walk reads a flagged climb on its list as the list
+// itself, never as Up next. Play next is the climber queueing it on purpose, so
+// the slot it places drops the flag. A reorder can't carry that, so the plan
+// says so, and the caller drops it by uuid rather than in a whole-queue write.
+describe('Play next on a list walk entry (#7247)', () => {
+  function walked(queueItemUuid: string, climbUuid: string = queueItemUuid): ClimbQueueItem {
+    return { ...makeItem(queueItemUuid, climbUuid), suggested: true };
+  }
+
+  it('moves a walked History climb to the head of Up next with one reorder, and drops the flag', () => {
+    const queue = [makeItem('h1'), walked('macro'), walked('h2'), walked('now')];
+    expect(planPlayNext(queue, queue[3], { climbUuid: 'c-macro' }, 3)).toEqual({
+      kind: 'move',
+      uuid: 'q-macro',
+      oldIndex: 1,
+      newIndex: 3,
+      dropListWalkFlag: true,
+    });
+    expect(applyMove(queue, 1, 3)).toEqual(['q-h1', 'q-h2', 'q-now', 'q-macro']);
+  });
+
+  // The landing slot with Up next already holding a climb: the climb on the
+  // wall slides down one when the walked climb leaves History, so a flat
+  // `currentIndex + 1` would put it behind `u1`.
+  it('lands ahead of the Up next already queued, not behind it', () => {
+    const queue = [walked('macro'), walked('h1'), walked('now'), makeItem('u1')];
+    const plan = planPlayNext(queue, queue[2], { climbUuid: 'c-macro' }, 2);
+    expect(plan).toEqual({ kind: 'move', uuid: 'q-macro', oldIndex: 0, newIndex: 2, dropListWalkFlag: true });
+    if (plan.kind === 'move') {
+      expect(applyMove(queue, plan.oldIndex, plan.newIndex)).toEqual(['q-h1', 'q-now', 'q-macro', 'q-u1']);
+    }
+  });
+
+  it('plans the same in legacy mode, where no line is read', () => {
+    const queue = [walked('macro'), walked('now')];
+    expect(planPlayNext(queue, queue[1], { climbUuid: 'c-macro' })).toEqual({
+      kind: 'move',
+      uuid: 'q-macro',
+      oldIndex: 0,
+      newIndex: 1,
+      dropListWalkFlag: true,
+    });
+  });
+
+  it('takes the oldest History copy when the climb was walked twice, and leaves the other', () => {
+    const queue = [walked('first', 'macro'), walked('h1'), walked('second', 'macro'), walked('now')];
+    const plan = planPlayNext(queue, queue[3], { climbUuid: 'c-macro' }, 3);
+    expect(plan).toEqual({ kind: 'move', uuid: 'q-first', oldIndex: 0, newIndex: 3, dropListWalkFlag: true });
+    expect(applyMove(queue, 0, 3)).toEqual(['q-h1', 'q-second', 'q-now', 'q-first']);
+  });
+
+  it('moves a walked climb from further down Up next', () => {
+    const queue = [walked('now'), makeItem('u1'), walked('later')];
+    expect(planPlayNext(queue, queue[0], { climbUuid: 'c-later' }, 0)).toEqual({
+      kind: 'move',
+      uuid: 'q-later',
+      oldIndex: 2,
+      newIndex: 1,
+      dropListWalkFlag: true,
+    });
+  });
+
+  it('mends a walked climb an older build already moved, flag and all, where it stands', () => {
+    const queue = [walked('h1'), walked('now'), walked('macro'), makeItem('u1')];
+    expect(planPlayNext(queue, queue[1], { climbUuid: 'c-macro' }, 1)).toEqual({ kind: 'unflag', uuid: 'q-macro' });
+  });
+
+  it('with nothing current, a walked History climb crosses the line without its flag', () => {
+    const queue = [walked('h1'), walked('h2'), makeItem('u1')];
+    expect(planPlayNext(queue, null, { climbUuid: 'c-h1' }, 2)).toEqual({
+      kind: 'replace',
+      uuid: 'q-h1',
+      oldIndex: 0,
+      queue: [queue[1], makeItem('h1'), queue[2]],
+      historyCount: 1,
+    });
+  });
+
+  it('with nothing current, a walked Up next climb goes to the head of Up next, or only drops its flag there', () => {
+    const queue = [makeItem('h1'), makeItem('u1'), walked('u2')];
+    expect(planPlayNext(queue, null, { climbUuid: 'c-u2' }, 1)).toEqual({
+      kind: 'move',
+      uuid: 'q-u2',
+      oldIndex: 2,
+      newIndex: 1,
+      dropListWalkFlag: true,
+    });
+    const atHead = [makeItem('h1'), walked('u1'), makeItem('u2')];
+    expect(planPlayNext(atHead, null, { climbUuid: 'c-u1' }, 1)).toEqual({ kind: 'unflag', uuid: 'q-u1' });
+  });
+
+  it('a climb queued on purpose still moves with one reorder, or not at all', () => {
+    const queue = [makeItem('h1'), walked('now'), makeItem('u1')];
+    expect(planPlayNext(queue, queue[1], { climbUuid: 'c-h1' }, 1)).toEqual({
+      kind: 'move',
+      uuid: 'q-h1',
+      oldIndex: 0,
+      newIndex: 1,
+    });
+    expect(planPlayNext(queue, queue[1], { climbUuid: 'c-u1' }, 1)).toEqual({
+      kind: 'unchanged',
+      reason: 'already-next',
+    });
+  });
+
+  it('reads `suggested: false` as queued on purpose', () => {
+    const queue = [{ ...makeItem('h1'), suggested: false }, makeItem('now')];
+    expect(planPlayNext(queue, queue[1], { climbUuid: 'c-h1' }, 1)).toEqual({
+      kind: 'move',
+      uuid: 'q-h1',
+      oldIndex: 0,
+      newIndex: 1,
+    });
+  });
+
+  it('never touches the climb on the wall', () => {
+    const queue = [walked('now')];
+    expect(planPlayNext(queue, queue[0], { queueItemUuid: 'q-now', climbUuid: 'c-now' }, 0)).toEqual({
+      kind: 'unchanged',
+      reason: 'is-current',
+    });
+  });
+});
+
+describe('withoutListWalkFlag', () => {
+  it('drops the flag and keeps everything else', () => {
+    const flagged = { ...makeItem('a'), suggested: true, addedBy: 'someone' };
+    const queued = withoutListWalkFlag(flagged);
+    expect(queued).toEqual({ uuid: 'q-a', climb: flagged.climb, addedBy: 'someone' });
+    expect('suggested' in queued).toBe(false);
+  });
+
+  it('returns the same slot when there is no flag to drop', () => {
+    const unflagged = makeItem('a');
+    const queuedFalse = { ...makeItem('b'), suggested: false };
+    expect(withoutListWalkFlag(unflagged)).toBe(unflagged);
+    expect(withoutListWalkFlag(queuedFalse)).toBe(queuedFalse);
   });
 });
