@@ -38,12 +38,40 @@ const live = vi.hoisted(() => ({
   playlistSource: null as PlaylistSuggestionSource | null,
 }));
 
+// VoiceOver / TalkBack as the real useScreenReaderEnabled hook reads it: the
+// first query, then `screenReaderChanged` events. `timeToTakeActionMs` is
+// Android's accessibility setting, answered the way Android does: the larger of
+// it and the timeout the app asks about.
+const screenReader = vi.hoisted(() => ({
+  enabled: false,
+  os: 'ios',
+  listeners: new Set<(enabled: boolean) => void>(),
+  timeToTakeActionMs: 0,
+  recommendedTimeoutQueries: 0,
+}));
+
 type ViewProps = { children?: ReactNode; testID?: string; onPress?: () => void; accessibilityLabel?: string };
 vi.mock('react-native', () => ({
   View: ({ children }: ViewProps) => createElement('div', null, children),
   Pressable: ({ children, onPress, accessibilityLabel }: ViewProps) =>
     createElement('button', { onClick: onPress, 'data-label': accessibilityLabel }, children),
-  Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios },
+  AccessibilityInfo: {
+    isScreenReaderEnabled: () => Promise.resolve(screenReader.enabled),
+    addEventListener: (_event: string, listener: (enabled: boolean) => void) => {
+      screenReader.listeners.add(listener);
+      return { remove: () => screenReader.listeners.delete(listener) };
+    },
+    getRecommendedTimeoutMillis: (originalTimeout: number) => {
+      screenReader.recommendedTimeoutQueries += 1;
+      return Promise.resolve(Math.max(originalTimeout, screenReader.timeToTakeActionMs));
+    },
+  },
+  Platform: {
+    get OS() {
+      return screenReader.os;
+    },
+    select: (options: Record<string, unknown>) => options[screenReader.os],
+  },
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
@@ -138,10 +166,27 @@ vi.mock('../QueueList', () => ({
     ),
 }));
 vi.mock('../../UndoSnackbar', () => ({
-  UndoSnackbar: ({ message, onUndo, onDismiss }: { message: string; onUndo: () => void; onDismiss: () => void }) =>
+  UndoSnackbar: ({
+    message,
+    onUndo,
+    onDismiss,
+    duration,
+    focusUndoOnShow,
+  }: {
+    message: string;
+    onUndo: () => void;
+    onDismiss: () => void;
+    duration: number;
+    focusUndoOnShow?: boolean;
+  }) =>
     createElement(
       'div',
-      { 'data-testid': 'undo-snackbar', 'data-message': message },
+      {
+        'data-testid': 'undo-snackbar',
+        'data-message': message,
+        'data-duration': String(duration),
+        'data-focus-undo': String(focusUndoOnShow === true),
+      },
       createElement('button', { 'data-testid': 'undo', onClick: onUndo }),
       createElement('button', { 'data-testid': 'undo-dismiss', onClick: onDismiss }),
     ),
@@ -204,6 +249,11 @@ function renderSheet() {
 }
 
 beforeEach(() => {
+  screenReader.enabled = false;
+  screenReader.os = 'ios';
+  screenReader.listeners.clear();
+  screenReader.timeToTakeActionMs = 0;
+  screenReader.recommendedTimeoutQueries = 0;
   const queue = ['a', 'b', 'c'].map(item);
   live.current = { queue, currentClimbQueueItem: queue[1] };
   live.sessionId = 'session-1';
@@ -427,5 +477,128 @@ describe('QueueSheet undo', () => {
     expect(restoredQueue).toHaveLength(500);
     expect(restoredQueue.at(-1)?.uuid).toBe('peer');
     expect(restoredQueue.some((queueItem) => queueItem.uuid === 'q-499')).toBe(false);
+  });
+});
+
+// Owner decision 2026-11-02: a screen-reader climber who removes by accident
+// gets ten times the 8 s, and lands on Undo, because the ⋯ / Remove bar / row
+// they were on is gone. Sighted climbers keep 8 s.
+describe('QueueSheet undo with a screen reader', () => {
+  // Every queue removal that offers an Undo: edit-mode Clear, ⋯ → Clear queue,
+  // the bulk Remove bar, and one row's Remove.
+  const removals: [string, (view: ReturnType<typeof render>) => void][] = [
+    ['edit-mode Clear', (view) => fireEvent.click(view.getByTestId('clear'))],
+    ['⋯ Clear queue', (view) => fireEvent.click(view.getByTestId('menu-clear'))],
+    [
+      'bulk Remove',
+      (view) => {
+        fireEvent.click(view.getByTestId('edit'));
+        fireEvent.click(view.getByTestId('select-a'));
+        const removeButton = view.container.querySelector('[data-label="queueDrawer.removeItems:1"]');
+        if (!removeButton) throw new Error('bulk remove button missing');
+        fireEvent.click(removeButton);
+      },
+    ],
+    ['row Remove', (view) => fireEvent.click(view.getByTestId('remove-a'))],
+  ];
+
+  // Let the first isScreenReaderEnabled() read land, then Android's
+  // getRecommendedTimeoutMillis() answer that it triggers.
+  async function settle() {
+    await act(async () => {});
+    await act(async () => {});
+  }
+
+  async function renderSettledSheet() {
+    const view = renderSheet();
+    await settle();
+    return view;
+  }
+
+  function setScreenReader(enabled: boolean) {
+    act(() => {
+      for (const listener of screenReader.listeners) listener(enabled);
+    });
+  }
+
+  it.each(removals)('holds the Undo after %s for 8 s and leaves focus alone without one', async (_name, remove) => {
+    const view = await renderSettledSheet();
+    remove(view);
+    const snackbar = view.getByTestId('undo-snackbar');
+    expect(snackbar.getAttribute('data-duration')).toBe('8000');
+    expect(snackbar.getAttribute('data-focus-undo')).toBe('false');
+  });
+
+  it.each(removals)('holds the Undo after %s for 80 s and moves focus onto it with one', async (_name, remove) => {
+    screenReader.enabled = true;
+    const view = await renderSettledSheet();
+    remove(view);
+    const snackbar = view.getByTestId('undo-snackbar');
+    expect(snackbar.getAttribute('data-duration')).toBe('80000');
+    expect(snackbar.getAttribute('data-focus-undo')).toBe('true');
+  });
+
+  it('follows the screen reader switching on and off while the Undo is up', async () => {
+    const view = await renderSettledSheet();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('8000');
+
+    setScreenReader(true);
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('80000');
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-focus-undo')).toBe('true');
+
+    setScreenReader(false);
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('8000');
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-focus-undo')).toBe('false');
+  });
+
+  it('stretches to the climber\'s longer Android "Time to take action" with TalkBack on', async () => {
+    screenReader.os = 'android';
+    screenReader.enabled = true;
+    screenReader.timeToTakeActionMs = 120000;
+    const view = await renderSettledSheet();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('120000');
+  });
+
+  it('keeps 80 s on Android when "Time to take action" is shorter', async () => {
+    screenReader.os = 'android';
+    screenReader.enabled = true;
+    screenReader.timeToTakeActionMs = 30000;
+    const view = await renderSettledSheet();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('80000');
+  });
+
+  it('keeps the sighted 8 s on Android without TalkBack, whatever "Time to take action" says', async () => {
+    screenReader.os = 'android';
+    screenReader.timeToTakeActionMs = 120000;
+    const view = await renderSettledSheet();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('8000');
+    expect(screenReader.recommendedTimeoutQueries).toBe(0);
+  });
+
+  it('asks Android again each time TalkBack turns on, since the setting sends no event', async () => {
+    screenReader.os = 'android';
+    screenReader.enabled = true;
+    screenReader.timeToTakeActionMs = 60000;
+    const view = await renderSettledSheet();
+    setScreenReader(false);
+    screenReader.timeToTakeActionMs = 120000;
+    setScreenReader(true);
+    await settle();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('120000');
+    expect(screenReader.recommendedTimeoutQueries).toBe(2);
+  });
+
+  it('keeps the sighted 8 s in the browser app, where react-native-web always reports a screen reader', async () => {
+    screenReader.os = 'web';
+    screenReader.enabled = true;
+    const view = await renderSettledSheet();
+    fireEvent.click(view.getByTestId('menu-clear'));
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-duration')).toBe('8000');
+    expect(view.getByTestId('undo-snackbar').getAttribute('data-focus-undo')).toBe('false');
   });
 });

@@ -18,6 +18,12 @@ const listProps = vi.hoisted(() => ({ calls: [] as Array<Record<string, unknown>
 vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  // The queue Undo reads the screen reader state (its longer timeout).
+  AccessibilityInfo: {
+    isScreenReaderEnabled: () => Promise.resolve(false),
+    addEventListener: () => ({ remove: () => {} }),
+  },
+  Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
