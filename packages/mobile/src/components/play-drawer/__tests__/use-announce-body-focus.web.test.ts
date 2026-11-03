@@ -29,6 +29,22 @@ describe('useAnnounceBodyFocus (web)', () => {
     expect(document.activeElement).toBe(node);
   });
 
+  it('focuses again when the refocus key changes', () => {
+    const node = document.createElement('div');
+    const other = document.createElement('button');
+    document.body.append(node, other);
+    const bodyRef = { current: node as unknown as ViewInstance } as RefObject<ViewInstance | null>;
+
+    const hook = renderHook(({ refocusKey }) => useAnnounceBodyFocus(bodyRef, true, refocusKey), {
+      initialProps: { refocusKey: 1 },
+    });
+    other.focus();
+    hook.rerender({ refocusKey: 1 });
+    expect(document.activeElement).toBe(other);
+    hook.rerender({ refocusKey: 2 });
+    expect(document.activeElement).toBe(node);
+  });
+
   it('does not throw when the ref has not mounted', () => {
     const bodyRef = { current: null } as RefObject<ViewInstance | null>;
     expect(() => renderHook(() => useAnnounceBodyFocus(bodyRef, true))).not.toThrow();

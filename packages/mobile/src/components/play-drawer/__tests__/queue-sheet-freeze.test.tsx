@@ -94,6 +94,10 @@ vi.mock('react-native', () => ({
   View: ({ children, testID, style }: ViewProps) =>
     createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(style) }, children),
   Pressable: ({ children }: ViewProps) => createElement('div', null, children),
+  AccessibilityInfo: {
+    isScreenReaderEnabled: () => Promise.resolve(false),
+    addEventListener: () => ({ remove: () => {} }),
+  },
   Platform: {
     get OS() {
       return platform.os;

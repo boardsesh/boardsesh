@@ -19,8 +19,14 @@ import type { ViewInstance } from 'react-native';
  *
  * `enabled` is false for the notice variant, which asked for nothing and so
  * never yanks focus off whatever the climber was already reading.
+ *
+ * `refocusKey` lands focus again whenever it changes, as on native.
  */
-export function useAnnounceBodyFocus(bodyRef: RefObject<ViewInstance | null>, enabled: boolean): void {
+export function useAnnounceBodyFocus(
+  bodyRef: RefObject<ViewInstance | null>,
+  enabled: boolean,
+  refocusKey?: number,
+): void {
   useEffect(() => {
     if (!enabled) return;
     const node = bodyRef.current as unknown as HTMLElement | null;
@@ -29,5 +35,5 @@ export function useAnnounceBodyFocus(bodyRef: RefObject<ViewInstance | null>, en
       node.setAttribute('tabindex', '-1');
     }
     node.focus({ preventScroll: true });
-  }, [bodyRef, enabled]);
+  }, [bodyRef, enabled, refocusKey]);
 }

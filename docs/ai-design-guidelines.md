@@ -1133,13 +1133,32 @@ just did. The rules:
 
 ### Queue Undo
 
-Clear and bulk remove offer Undo inside the queue sheet, where a native modal cannot hide it.
+Clear (from Edit or from ⋯ → Clear queue), the bulk Remove bar and a row's Remove all offer Undo
+inside the queue sheet, where a native modal cannot hide it.
 The provider serializes the removals and composes Undo from the live queue when those requests
 finish, preserving crew additions, removals and order during a retry. The shared GraphQL transport
 owns bounded attempts and rate-limit retries; do not race a second deadline against that promise.
 Undo restores the current climb only if this removal cleared it, keeps live items within the
 500-climb sync limit, and expires when the session, board configuration or account changes.
 VoiceOver announcements queue behind current speech; Android uses its live region.
+
+The Undo lasts 8 s. With VoiceOver or TalkBack running it lasts 80 s, ten times as long, which
+is the WCAG 2.2.1 (Timing Adjustable) floor for stretching a time limit. A screen-reader user
+has to reach the snackbar, hear it and double-tap, which takes far longer than a glance. It
+still ends: the iPad side panel never closes, and an hour-old offer would restore a queue the
+crew has moved past. Switching the screen reader on or off while the Undo is up re-arms the
+timer with the new length (Paper only reads `duration` when it mounts, so `UndoSnackbar` keys
+it on the duration).
+
+Each time the Undo appears with a screen reader running, focus moves onto the Undo button.
+Every one of these removals unmounts the control the climber was on: the ⋯ and Edit go once
+the queue is empty, the Remove bar goes with the selection, and the row goes with the climb.
+On iOS the focus move runs before the queued announcement, so VoiceOver reads the Undo button
+first and the message after it. Other `UndoSnackbar` callers (logbook delete, wall change)
+keep their durations and do not move focus; `focusUndoOnShow` is opt-in.
+
+The browser app keeps 8 s and leaves focus alone, because react-native-web's
+`isScreenReaderEnabled` always resolves true and cannot tell who is running one.
 
 ---
 

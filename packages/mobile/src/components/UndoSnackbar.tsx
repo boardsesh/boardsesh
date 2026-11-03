@@ -1,6 +1,6 @@
 import { PressableSurface } from './PressableSurface';
-import { useEffect, useRef } from 'react';
-import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
+import { useEffect, useRef, type RefObject } from 'react';
+import { Platform, StyleSheet, View, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { Snackbar } from 'react-native-paper';
 import { Text } from './Text';
@@ -8,6 +8,7 @@ import { borderRadius, spacing, shadowColor } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { selectByVariant } from '../theme/variants';
 import { announceQueued } from '../lib/announce-queued';
+import { useAnnounceBodyFocus } from './play-drawer/use-announce-body-focus';
 
 export type UndoSnackbarProps = {
   visible: boolean;
@@ -24,7 +25,15 @@ export type UndoSnackbarProps = {
   duration: number;
   /** Distance from the bottom of the snackbar's container. */
   bottom: number;
+  /**
+   * Move the screen reader onto Undo each time the snackbar shows. For a caller
+   * whose removal unmounts the control the climber was on (the queue's ⋯, its
+   * Remove bar, a removed row); pass it only while a screen reader runs.
+   */
+  focusUndoOnShow?: boolean;
 };
+
+type UndoSnackbarBodyProps = UndoSnackbarProps & { undoRef: RefObject<ViewInstance | null> };
 
 /**
  * "Something happened · Undo" — the shared body behind every undo snackbar
@@ -36,7 +45,11 @@ export type UndoSnackbarProps = {
  */
 export function UndoSnackbar(props: UndoSnackbarProps) {
   const { variant: uiVariant } = useTheme();
-  const { visible, nonce, message } = props;
+  const { visible, nonce, message, focusUndoOnShow = false } = props;
+  const undoRef = useRef<ViewInstance>(null);
+  // Runs before the announcement below, so VoiceOver lands on Undo and the
+  // queued message follows it instead of being cut off by the focus move.
+  useAnnounceBodyFocus(undoRef, visible && focusUndoOnShow, nonce);
   // VoiceOver doesn't read an `alert` role appearing; say it once per show
   // (keyed on `nonce`). Android's Snackbar / live region already speaks.
   const messageRef = useRef(message);
@@ -45,8 +58,8 @@ export function UndoSnackbar(props: UndoSnackbarProps) {
     if (visible && Platform.OS === 'ios') announceQueued(messageRef.current);
   }, [visible, nonce]);
   return selectByVariant(uiVariant, {
-    material: <UndoSnackbarMaterial {...props} />,
-    liquidGlass: <UndoSnackbarGlass {...props} />,
+    material: <UndoSnackbarMaterial {...props} undoRef={undoRef} />,
+    liquidGlass: <UndoSnackbarGlass {...props} undoRef={undoRef} />,
   });
 }
 
@@ -60,17 +73,28 @@ function UndoSnackbarMaterial({
   onUndo,
   duration,
   bottom,
-}: UndoSnackbarProps) {
+  undoRef,
+}: UndoSnackbarBodyProps) {
   const wrapperStyle: ViewStyle = { bottom };
 
   return (
     <Snackbar
-      key={nonce}
+      // Paper arms its dismiss timer once per mount and never re-reads
+      // `duration`, so a new duration mid-show (a screen reader switched on or
+      // off) needs a fresh mount to take effect.
+      key={`${nonce}:${duration}`}
       visible={visible}
       onDismiss={onDismiss}
       duration={duration}
       wrapperStyle={wrapperStyle}
-      action={{ label: undoLabel, onPress: onUndo, accessibilityLabel: undoAccessibilityLabel ?? undoLabel }}
+      action={{
+        label: undoLabel,
+        onPress: onUndo,
+        accessibilityLabel: undoAccessibilityLabel ?? undoLabel,
+        // Paper types this ref by RN's retired `View` class; the value it holds
+        // is the button's host instance, the same thing the glass pill's ref holds.
+        touchableRef: undoRef as unknown as RefObject<View>,
+      }}
     >
       {message}
     </Snackbar>
@@ -87,7 +111,8 @@ function UndoSnackbarGlass({
   onUndo,
   duration,
   bottom,
-}: UndoSnackbarProps) {
+  undoRef,
+}: UndoSnackbarBodyProps) {
   const { systemColors, brandColors } = useTheme();
 
   useEffect(() => {
@@ -110,6 +135,7 @@ function UndoSnackbarGlass({
             {message}
           </Text>
           <PressableSurface
+            ref={undoRef}
             onPress={onUndo}
             hitSlop={8}
             accessibilityRole="button"
