@@ -56,12 +56,21 @@ enum ClimbNavigationIntent {
             return
         }
         // No navigationAllowed gate: the widget only shows Prev/Next when this
-        // device holds the board (connectedByMe — see SessionFooter), so reaching
-        // here means we may drive. Gating visibility rather than the intent fixes
+        // device holds the board (connectedByMe — see SessionFooter) or lights
+        // it through the phone that does (relayedByMe), so reaching here means
+        // we may drive. Gating visibility rather than the intent fixes
         // Prev/Next no-op'ing when the persisted navigationAllowed flag drifted
         // from the shown state. `wallControl` is still read below to decide whether
         // the party-session server POST runs.
         let wallControl = SharedWidgetWallControlState.load(from: defaults)
+        // Relay mode (#7220): this phone lights the board through the phone
+        // that holds it (JS said so, `SharedBoardRelay`), so it has no link to
+        // write. The press moves the queue as usual and then goes to JS, which
+        // relays the climb (`startRelayedPressDrive`): one relay path, owned
+        // by the app's relay engine, which needs the app's open socket. No
+        // Bluetooth write, and no drive recorded here: JS starts the drive at
+        // the holder's echo.
+        let relaying = SharedBoardRelay.isRelaying(in: defaults)
 
         let (items, currentIndex) = SharedQueueState.load(from: defaults)
         guard let newIndex = direction.newIndex(from: currentIndex, count: items.count) else {
@@ -116,6 +125,11 @@ enum ClimbNavigationIntent {
         SharedQueueState.saveCurrentIndex(newIndex, to: defaults)
 
         let newItem = items[newIndex]
+        // A relaying phone's card stays the relaying card (held, plus the
+        // relay read from the App Group at render); everyone else's shows
+        // the bulb lit, since Prev/Next are only shown when this device
+        // drives the wall.
+        let storedConnection = SharedWidgetWallControlState.loadBoardConnection(from: defaults)
         let newState = ClimbSessionAttributes.ContentState(
             climbName: newItem.climbName,
             climbDifficulty: VGradeFormatter.formatVGrade(newItem.difficulty),
@@ -128,10 +142,8 @@ enum ClimbNavigationIntent {
             queueItemUuid: newItem.uuid,
             mirrored: newItem.mirrored,
             supportsMirroring: defaults.bool(forKey: SharedConstants.supportsMirroringKey),
-            // Prev/Next are only shown when this device drives the wall, so the
-            // optimistic frame keeps the bulb lit + controls shown.
-            boardConnection: "connectedByMe",
-            holderDisplayName: nil
+            boardConnection: relaying ? "heldByPeer" : "connectedByMe",
+            holderDisplayName: relaying ? storedConnection.holderDisplayName : nil
         )
 
         for activity in Activity<ClimbSessionAttributes>.activities {
@@ -148,7 +160,7 @@ enum ClimbNavigationIntent {
         // the Darwin/WebSocket fallback, whose mutation path owns repainting.
         #if !WIDGET_EXTENSION
         let bleWriteTask: Task<Bool, Never>?
-        if navigationResult == .success {
+        if navigationResult == .success, !relaying {
             diagnosticRun.mark(.bleStarted)
             bleWriteTask = Task {
                 await LiveActivityBleBridge.writeBoardForIntent(items: items, currentIndex: newIndex)

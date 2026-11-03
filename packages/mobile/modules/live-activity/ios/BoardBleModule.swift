@@ -254,7 +254,7 @@ public class BoardBleModule: Module {
             guard let device = BoardBleManager.shared.connectedDeviceInfo else { return nil }
             let diagnostics = device.diagnostics
             let provenance = BoardBleManager.shared.connectRelightProvenance
-            return [
+            var info: [String: Any] = [
                 "deviceId": device.deviceId,
                 "name": device.name ?? "",
                 "configKey": device.configKey,
@@ -269,6 +269,12 @@ public class BoardBleModule: Module {
                 "connectOrigin": provenance.origin ?? "",
                 "implicitRelightSuppressed": provenance.implicitRelightSuppressed
             ]
+            // Relay mode (#7220): the write service, for Bluetooth Connection
+            // Success. Left out when unknown, so JS drops the property.
+            if let writeServiceUuid = diagnostics.writeServiceUuid {
+                info["writeServiceUuid"] = writeServiceUuid
+            }
+            return info
         }
 
         AsyncFunction("configureBoard") { (options: ConfigureBoardOptions) -> Void in

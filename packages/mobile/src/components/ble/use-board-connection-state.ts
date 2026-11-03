@@ -4,7 +4,7 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useQueueSessionControls } from '../../providers/queue-provider';
 import type { BoardConnectionHolder } from '@boardsesh/shared-schema';
-import { useRelayHolder } from './use-relay-holder';
+import { useRelayConnectBlocker, useRelayHolder } from './use-relay-holder';
 import {
   deriveBoardConnection,
   deriveInAppBoardConnection,
@@ -63,6 +63,13 @@ export type BoardConnectionState = {
    * `holderIsAuthoritative`: inside a crew the session queue stays the relay.
    */
   boardRelayHolder: BoardConnectionHolder | null;
+  /**
+   * Relay mode (#7220): the holder a connect from this phone would be blocked
+   * by (`connectBlockedByRelayHolder`), or null. Read by the Live Activity
+   * bridge only: the card draws that board as held, never "Tap to reconnect".
+   * In-app connects run the gate at the tap.
+   */
+  relayConnectBlocker: BoardConnectionHolder | null;
 };
 
 /**
@@ -130,6 +137,7 @@ export function useBoardConnectionState(): BoardConnectionState {
   const holderIsAuthoritative = sessionHolderPresent && !localConnected && !holderIsStaleSelf;
   const relayHolder = useRelayHolder();
   const boardRelayHolder = holderIsAuthoritative ? null : relayHolder;
+  const relayConnectBlocker = useRelayConnectBlocker();
 
   return useMemo(
     () => ({
@@ -147,9 +155,11 @@ export function useBoardConnectionState(): BoardConnectionState {
       holderDisplayName,
       holderIsAuthoritative,
       boardRelayHolder,
+      relayConnectBlocker,
     }),
     [
       boardRelayHolder,
+      relayConnectBlocker,
       bluetooth,
       localConnected,
       pending,

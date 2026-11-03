@@ -2,6 +2,7 @@
 // board's timed drive natively on iOS (2.7); this is how the drive store takes
 // it on. An Android notification press arms the drive from JS instead.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ClimbQueueItem } from '@boardsesh/queue';
 import type {
   LiveActivityLightingWindowSnapshot,
   LiveActivityLockScreenPress,
@@ -29,6 +30,7 @@ import {
 import {
   adoptLockScreenLighting,
   armNotificationPressDrive,
+  startRelayedPressDrive,
   endTimedDriveAtClock,
   endTimedDriveOverAtPress,
   isUnsettledLockScreenLighting,
@@ -521,5 +523,93 @@ describe('armNotificationPressDrive', () => {
     const before = getDriveMode();
     expect(armNotificationPressDrive({ ...press, now: NOW })).toBe(false);
     expect(getDriveMode()).toBe(before);
+  });
+});
+
+// Relay mode (#7220): a press on a phone that lights an original MoonBoard
+// through the phone that holds it. Native wrote nothing; JS relays.
+describe('startRelayedPressDrive', () => {
+  const item = { uuid: 'queue-item-2', climb: { uuid: 'climb-2' } } as unknown as ClimbQueueItem;
+  const press = {
+    sessionId: 'session-1',
+    boardId: 7,
+    boardType: 'moonboard',
+    plan: { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' as const },
+  };
+
+  it('relays the press’s climb and arms a relayed timed drive the echo takes live', () => {
+    const relay = vi.fn((_item: ClimbQueueItem) => {
+      // The drive is on before the send, so a relay that doesn't land ends it.
+      expect(getDriveMode()).toMatchObject({ phase: 'arming', relayed: true });
+      return true;
+    });
+    expect(startRelayedPressDrive({ ...press, item, relay, now: NOW })).toBe(true);
+    expect(relay).toHaveBeenCalledWith(item);
+    expect(getDriveMode()).toMatchObject({
+      phase: 'arming',
+      relayed: true,
+      startedBy: 'lock_screen',
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      boardType: 'moonboard',
+    });
+  });
+
+  it('relays one climb and starts nothing under Right away', () => {
+    const relay = vi.fn(() => true);
+    expect(startRelayedPressDrive({ ...press, plan: null, item, relay, now: NOW })).toBe(true);
+    expect(relay).toHaveBeenCalledTimes(1);
+    expect(getDriveMode()).toBeNull();
+  });
+
+  it('leaves a drive already on alone: it follows the new climb', () => {
+    enterDriveMode({ startedBy: 'tap', sessionId: 'session-1', boardId: 7, relayed: true });
+    markDriveLive({ now: NOW - 1_000 });
+    const before = getDriveMode();
+    const relay = vi.fn(() => true);
+    startRelayedPressDrive({ ...press, item, relay, now: NOW });
+    expect(getDriveMode()).toBe(before);
+    expect(relay).toHaveBeenCalledWith(item);
+  });
+
+  it('ends a relayed timed drive past its end first, then arms the press’s own', () => {
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: 'session-1',
+      boardId: 7,
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      relayed: true,
+    });
+    markDriveLive({ now: NOW - 46_000 });
+    const ends: DriveEnded[] = [];
+    const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+    startRelayedPressDrive({ ...press, item, relay: () => true, now: NOW });
+    unsubscribe();
+    expect(ends).toEqual([expect.objectContaining({ reason: 'window_ended', keepLink: true })]);
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', relayed: true, startedBy: 'lock_screen' });
+  });
+
+  it('drops an iOS press JS hears long after the intent handed it over', () => {
+    const relay = vi.fn(() => true);
+    expect(startRelayedPressDrive({ ...press, item, relay, pressSettledAtMs: NOW - 60_000, now: NOW })).toBe(false);
+    expect(relay).not.toHaveBeenCalled();
+    expect(getDriveMode()).toBeNull();
+    // A fresh one goes.
+    expect(startRelayedPressDrive({ ...press, item, relay, pressSettledAtMs: NOW - 200, now: NOW })).toBe(true);
+    expect(relay).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends the drive it armed when nothing could be sent', () => {
+    expect(startRelayedPressDrive({ ...press, item, relay: () => false, now: NOW })).toBe(false);
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('relay_unconfirmed');
+  });
+
+  it('sends nothing for a press with no climb', () => {
+    const relay = vi.fn(() => true);
+    expect(startRelayedPressDrive({ ...press, item: null, relay, now: NOW })).toBe(false);
+    expect(relay).not.toHaveBeenCalled();
+    expect(getDriveMode()).toBeNull();
   });
 });

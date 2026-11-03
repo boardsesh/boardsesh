@@ -91,6 +91,14 @@ resolved, the fields are omitted and the device keeps its own App-Group state. S
 `packages/backend/src/services/apns/board-connection.ts` and the ownership section
 in `docs/live-activity-board-control.md`.
 
+Relay mode (#7220) adds nothing to the push. Whether this phone relays through
+the holder of an original MoonBoard, or is blocked by it, lives only in the App
+Group (`bs_board_relay`, written by JS), and the card applies it on top of the
+pushed value: a pushed `heldByPeer` or `disconnected` draws the relay controls
+or the held footer, never "Tap to reconnect". To test it, push a `heldByPeer`
+or `disconnected` state at a phone whose app last said `relaying` or `blocked`.
+See "Relay mode (#7220): the native paths" in `docs/board-connection-holder.md`.
+
 Latency on the BLE side from a suspended-app cold-launch is ~1.5–2.5 s: background-launch (~0.5–1 s) + CoreBluetooth state restoration (~0.5–1 s) + UART chunk flush (~0.2–0.5 s). Subsequent taps inside the same wake window are faster because the peripheral stays connected.
 
 Cross-device limitation: when _another_ user navigates and your phone is suspended, your board does **not** repaint — the WS connection is dead and the APNs Live Activity push reaches the widget extension, which can't open the CoreBluetooth connection. Tracked in issue #2174; ultimately solved by the planned WS-enabled board controller.

@@ -18,13 +18,16 @@ import {
   addLockScreenDriveStopListener,
   addWidgetQueueNavigateListener,
   isAndroidSessionPresence,
+  readLiveActivityLockScreenPress,
 } from '../../lib/live-activity/live-activity-plugin';
 import {
   adoptLockScreenLighting,
   armNotificationPressDrive,
   endTimedDriveAtClock,
   endTimedDriveOverAtPress,
+  startRelayedPressDrive,
 } from './lock-screen-lighting';
+import { useRelayHolder } from '../ble/use-relay-holder';
 import {
   clearDrivingStopped,
   isDrivingStoppedForLink,
@@ -47,7 +50,7 @@ import {
 import { useBoardLetsGo } from './use-board-lets-go';
 import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
 import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
-import { useEngagedRelayPath } from '../../lib/board-relay/relay-path-store';
+import { relayClimbThroughHolder, useEngagedRelayPath } from '../../lib/board-relay/relay-path-store';
 
 /**
  * Ends driving the wall (#7113) when the wall stops being this phone's to
@@ -169,6 +172,12 @@ export function DriveModeWatcher(): null {
     : null;
   const adoptionInputRef = useRef({ sessionId, linked, boardId, boardType, plan: pressPlan });
   adoptionInputRef.current = { sessionId, linked, boardId, boardType, plan: pressPlan };
+  // Relay mode (#7220): the holder this phone lights the wall through. A
+  // Lock Screen or notification press then comes here unlit (native wrote
+  // nothing: the card said `relaying`), and goes to that holder.
+  const relayHolder = useRelayHolder();
+  const relayingRef = useRef(relayHolder !== null);
+  relayingRef.current = relayHolder !== null;
   const adoptFromLockScreen = useCallback(() => {
     adoptLockScreenLighting(adoptionInputRef.current);
   }, []);
@@ -181,6 +190,20 @@ export function DriveModeWatcher(): null {
     });
     const removeNavigateListener = addWidgetQueueNavigateListener((event) => {
       adoptFromLockScreen();
+      if (relayingRef.current && !adoptionInputRef.current.linked) {
+        // Relay mode (#7220), both platforms: the press lit nothing, so it
+        // goes to the holder's phone, starting a relayed drive as Put on
+        // board would. The bridge drops an index the queue doesn't hold.
+        const { queue } = getQueueSnapshot();
+        const item = event.currentIndex >= 0 && event.currentIndex < queue.length ? queue[event.currentIndex] : null;
+        // iOS: the intent's press stamp says when it handed the press over,
+        // so one heard after a long suspension is dropped, not lit late.
+        const pressSettledAtMs = isAndroidSessionPresence
+          ? null
+          : (readLiveActivityLockScreenPress()?.settledAtMs ?? null);
+        startRelayedPressDrive({ ...adoptionInputRef.current, item, relay: relayClimbThroughHolder, pressSettledAtMs });
+        return;
+      }
       if (!isAndroidSessionPresence) {
         // iOS: the intent lit the wall and wrote the press's own drive, adopted
         // just above, unless Right away starts none. A timed drive still over

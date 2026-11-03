@@ -63,6 +63,17 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useWallSwipeToDriveEnabled: () => reads.current.swipeToDrive ?? true,
 }));
+// Relay mode (#7220): the holder this phone lights the wall through, and the
+// relay engine's sender (`use-relayed-drive.ts` registers it in the app).
+const relay = vi.hoisted(() => ({
+  holder: null as null | { userId: string | null; displayName: string | null },
+  send: vi.fn((_item: unknown) => true),
+}));
+vi.mock('../../ble/use-relay-holder', () => ({ useRelayHolder: () => relay.holder }));
+vi.mock('../../../lib/board-relay/relay-path-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/board-relay/relay-path-store')>()),
+  relayClimbThroughHolder: relay.send,
+}));
 // The queue is read narrowly: the current climb's uuid as the trigger, the
 // snapshot for the item. A stable snapshot reader, like the provider's.
 const getQueueSnapshot = () => ({
@@ -1455,6 +1466,75 @@ describe('DriveModeWatcher: a stop from the Lock Screen bulb', () => {
       await Promise.resolve();
     });
     expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+});
+
+// Relay mode (#7220): a Lock Screen or notification Previous / Next on a phone
+// that lights an original MoonBoard through the phone that holds it. Native
+// wrote nothing (the card said `relaying`), so JS relays the press's climb.
+describe('DriveModeWatcher: a press on a relaying phone', () => {
+  function navigate(currentIndex = 1): void {
+    act(() => {
+      for (const listener of lockScreen.navigateListeners) {
+        listener({ action: 'next', currentIndex, correlationId: 'corr-relay' });
+      }
+    });
+  }
+
+  beforeEach(() => {
+    relay.holder = { userId: 'sam', displayName: 'Sam' };
+    relay.send.mockClear();
+    reads.current = { ...reads.current, boardName: 'moonboard', queueLength: 3, isConnected: false };
+  });
+  afterEach(() => {
+    relay.holder = null;
+  });
+
+  for (const android of [false, true]) {
+    it(`relays the press's climb and arms a relayed drive (${android ? 'Android' : 'iOS'})`, () => {
+      lockScreen.android = android;
+      mount();
+      navigate(2);
+      expect(relay.send).toHaveBeenCalledExactlyOnceWith({ uuid: 'item-2' });
+      expect(getDriveMode()).toMatchObject({
+        phase: 'arming',
+        relayed: true,
+        startedBy: 'lock_screen',
+        windowMs: 45_000,
+      });
+    });
+  }
+
+  it('lights one climb and starts nothing under Right away', () => {
+    reads.current = { ...reads.current, keepLighting: 'off' };
+    mount();
+    navigate(1);
+    expect(relay.send).toHaveBeenCalledExactlyOnceWith({ uuid: 'item-1' });
+    expect(getDriveMode()).toBeNull();
+  });
+
+  it('drops a press whose index the queue doesn’t hold', () => {
+    mount();
+    navigate(7);
+    expect(relay.send).not.toHaveBeenCalled();
+  });
+
+  it('drops an iOS press the intent settled long ago', () => {
+    lockScreen.press = { pressId: 'p', expiresAtMs: Date.now(), settledAtMs: Date.now() - 60_000 };
+    mount();
+    navigate(1);
+    expect(relay.send).not.toHaveBeenCalled();
+    expect(getDriveMode()).toBeNull();
+  });
+
+  it('is today’s press when this phone has its own link', () => {
+    lockScreen.android = true;
+    reads.current = { ...reads.current, isConnected: true };
+    mount();
+    navigate(1);
+    expect(relay.send).not.toHaveBeenCalled();
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'lock_screen' });
+    expect(getDriveMode()?.relayed).toBeUndefined();
   });
 });
 

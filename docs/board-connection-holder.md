@@ -299,13 +299,88 @@ blocks, nothing scans, a toast says who has the board, and the tap is counted as
 | First-connect card (`FirstConnectCard`) | Hidden: a held Relay mode board isn't a free wall |
 
 An anonymous holder reads as "Someone's phone has the board". The notification bulb's toast shows only if the app
-is in front; in the background the tap simply does nothing (the native notification is PR 6). A blocked Put on
+is in front; in the background the tap simply does nothing. Binaries from the next native release draw no bulb
+there at all (see the native paths below). A blocked Put on
 {board} sends no second Board Connect Tapped: its tap was counted before the move, without `blockedByRelayHolder`,
 and no Bluetooth outcome event follows it. The bulbs, Put on board and the drives already
 relay through `relayHolderFor` and need no gate.
 
-**Not covered yet.** Every native path (Lock Screen Next / Previous, iOS `ReconnectBoardIntent`, the Android
-notification's drawing) still connects; a later PR gates them.
+### Relay mode (#7220): the native paths
+
+Ships with the next native release (the fingerprint changes). A phone still on an older binary keeps that
+binary's native behaviour, so its Lock Screen card can still offer "Tap to reconnect" on a held Relay mode board.
+
+**Native draws what JS decides.** Swift and Kotlin never work out the holder rule. The Live Activity bridge
+(`live-activity-bridge.tsx`) runs `deriveLiveActivityBoardPresence` (`live-activity-board-relay.ts`) over the BLE-only
+`boardConnection`, `relayHolderFor` and `connectBlockedByRelayHolder` (`useRelayConnectBlocker`, the notification
+surface), and sends:
+
+| This phone | `boardConnection` | `holderDisplayName` | `boardRelay` |
+| --- | --- | --- | --- |
+| Holds the board through its own link | `connectedByMe` | none | null |
+| Lights the board through the holder's phone (`relayHolderFor`) | `heldByPeer` | the holder, under the privacy rule | `relaying` |
+| Would scan for nothing (`connectBlockedByRelayHolder`: a stranger's or a crewmate's hold) | `heldByPeer` | the crewmate's name already shown, else the holder | `blocked` |
+| Anything else | unchanged | unchanged | null |
+
+**Why a separate field, not a fourth connection value.** `boardConnection` is the contract every installed binary
+and the backend's APNs push share (the "Two connection values" rule above). A relay always travels with
+`heldByPeer`, so an iOS binary that ignores `boardRelay` draws the held card ("Sam is on the wall", no controls, no
+"Tap to reconnect"). An older Android binary draws `heldByPeer` with its Connect bulb, but a tap only reaches JS,
+whose notification gate (`guardRelayConnect`) refuses it; and the fingerprint keeps this JS off older binaries
+anyway. Unknown values are safe both ways: the Swift `ContentState` keeps
+`boardConnection` a `String?` and synthesized `Codable` ignores keys it doesn't know; `BoardConnection.from` maps
+an unknown string to nil and falls back to the App Group copy; expo `Record`s drop fields they don't declare; and
+both native sides read an unknown `boardRelay` as none. Widget navigation (`widgetNavigationAllowed`) stays gated
+on the raw BLE value, so no binary arms a Bluetooth Next / Previous on a phone with no link.
+
+**The backend is unchanged.** Its push (`services/apns/board-connection.ts`) already says `heldByPeer` for a
+named holder outside the session and `disconnected` for an anonymous one; it never knows a board's link mode per
+phone. iOS stores `boardRelay` only in the App Group (`SharedBoardRelay`, key `bs_board_relay`) and applies it on
+top of whatever connection it resolved, pushed or local (`SharedBoardRelay.effectiveConnection`): `relaying`
+draws `relayedByMe` over `heldByPeer` or `disconnected`; `blocked` turns `disconnected` into `heldByPeer`;
+`connectedByMe` always stands. It is cleared on session end, by a Lock Screen reconnect that lands, and by any
+update that sends null. A change of relay alone redraws the card.
+
+**iOS card.**
+- `relayedByMe`: Previous and Next, and in the middle either the radio glyph ("Lights through Sam's phone") or,
+  while a relayed drive is on, the bulb that stops it (`StopDrivingIntent`, adopted by JS as for any drive). No
+  mirror: a MoonBoard is never lit mirrored. The compact and minimal Dynamic Island show the radio glyph, or the
+  drive's ring.
+- Held (`blocked`, or a pushed `disconnected` under `blocked`): the "Sam is on the wall" footer, never the
+  reconnect button.
+- `ReconnectBoardIntent` returns at once when the App Group says another phone holds the board (completion class
+  `relayHolder`), for a card drawn before JS said so. It neither scans nor claims wall control.
+
+**Lock Screen Next / Previous for a relaying phone: JS relays it (option b).** `ClimbNavigationIntent` still moves
+the queue (in a party session through the server, as before), but when `SharedBoardRelay.isRelaying` it skips the
+Bluetooth write and records no drive, keeps the card's frame relayed, and posts the usual `queueNavigate`. JS then
+relays the press's climb (`startRelayedPressDrive` in `lock-screen-lighting.ts`, from `DriveModeWatcher`): it
+ends a timed drive over by the press, starts a relayed drive under Stop driving after (`startedBy:
+'lock_screen'`, going live at the holder's echo), or lights one climb under Right away or where Always drive the
+wall drives, and sends it with `relayClimbThroughHolder`. Android's notification Previous / Next take the same
+path. We chose this over posting `relayBoardClimb` from the intent through `WidgetNetworking`, because
+`relayBoardClimb` only accepts a connection with a live `boardNowPlaying` viewer key, which a bare HTTP request
+from the intent doesn't have, and because one relay engine (`use-relayed-drive.ts`) owns the confirm timeout, the
+lost-path notices and the drive. The cost: a `LiveActivityIntent` runs in the app process, and iOS resumes a
+suspended app for it, but a socket iOS closed while the app slept has to reconnect before the relay can go. A
+press that can't reach the holder ends `relay_unconfirmed` after 8 s and the app says so when it is next opened.
+
+**Android notification.** `boardRelay` rides `EXTRA_BOARD_RELAY` on start and every update.
+- `relaying`: Previous, the bulb and Next. The bulb's broadcast carries the relay, and
+  `BoardSessionActionReceiver.bulbAction` turns it into `relay` (or `stopDriving` while a relayed drive is on,
+  which shows the "Driving the wall" header like the holder's own drive). The bridge answers `relay` by stopping a
+  live drive, else `relayClimbThroughHolder(null)`. Nothing connects.
+- `blocked`: no bulb. The holder line says who has it; a tap on the notification opens the app. A stale bulb
+  broadcast with `blocked` dispatches nothing.
+- No extra (an older bundle) or an unknown value: today's notification.
+
+**Analytics.** iOS adds `writeServiceUuid` (the write characteristic's service, uppercased) to
+`getConnectedDevice`, and Bluetooth Connection Success carries it as `bleWriteServiceUuid` beside
+`bleCharProperties`.
+
+**Not covered yet.** The relaying card goes stale like any card: when the holder leaves while the app is
+suspended, the card keeps the relay controls until the app runs again; a press then reaches JS, which finds no
+holder and lights nothing.
 
 **Home crews land on different board ids.** A crew session on a home MoonBoard (no gym, with lights) broadcasts the
 positional tuple path (`buildSessionBoardPath`), so a joiner binds presence to their own `user_boards` row, not the

@@ -61,6 +61,9 @@ enum LiveActivityIntentCompletionClass: String, Codable, CaseIterable {
     /// A lock-screen stop found nothing driving: the timed drive had already
     /// run out, so there was nothing to stop and only the card was redrawn.
     case nothingDriving
+    /// Relay mode (#7220): another phone holds this Relay mode MoonBoard, so
+    /// the reconnect did not run (the original box takes one phone).
+    case relayHolder
 }
 
 struct LiveActivityIntentDiagnosticRecord: Codable, Equatable {

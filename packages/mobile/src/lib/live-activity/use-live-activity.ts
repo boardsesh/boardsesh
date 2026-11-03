@@ -5,7 +5,7 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import { parseSetIds, toBoardName } from '@boardsesh/board-config';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import type { BoardConnection } from '../../components/play-drawer/lightbulb-control';
-import type { LiveActivityBoardRenderMode } from '../../../modules/live-activity/src/index';
+import type { LiveActivityBoardRelay, LiveActivityBoardRenderMode } from '../../../modules/live-activity/src/index';
 import { getAuthToken } from '../auth-store';
 import { decodeFileUri } from '../file-uri';
 import { BACKEND_URL } from '../env';
@@ -59,6 +59,11 @@ type UseLiveActivityOptions = {
   boardConnection: BoardConnection;
   /** Display name of the peer holding the board (heldByPeer only). */
   holderDisplayName?: string | null;
+  /**
+   * Relay mode (#7220): another phone holds this Relay mode MoonBoard
+   * (`deriveLiveActivityBoardPresence`). Null clears it natively.
+   */
+  boardRelay?: LiveActivityBoardRelay | null;
   /**
    * Android notification only: no remembered board, so the outline bulb opens
    * the app rather than reconnecting in the background (#7087).
@@ -182,6 +187,7 @@ export function useLiveActivity({
   isPartySession,
   boardConnection,
   holderDisplayName,
+  boardRelay = null,
   bulbOpensApp = false,
   boardConnecting = false,
   nativePairingRevision = 0,
@@ -227,6 +233,8 @@ export function useLiveActivity({
   boardConnectionRef.current = boardConnection;
   const holderDisplayNameRef = useRef(holderDisplayName);
   holderDisplayNameRef.current = holderDisplayName;
+  const boardRelayRef = useRef(boardRelay);
+  boardRelayRef.current = boardRelay;
   const bulbOpensAppRef = useRef(bulbOpensApp);
   bulbOpensAppRef.current = bulbOpensApp;
   const boardConnectingRef = useRef(boardConnecting);
@@ -397,6 +405,7 @@ export function useLiveActivity({
             isPartySession: isPartySessionRef.current,
             boardConnection: boardConnectionRef.current,
             holderDisplayName: holderDisplayNameRef.current,
+            boardRelay: boardRelayRef.current,
             renderMode: renderModeRef.current,
             boardBackgroundPaths,
             androidNotification: androidNotificationRef.current,
@@ -433,6 +442,7 @@ export function useLiveActivity({
               isPartySession: isPartySessionRef.current,
               boardConnection: boardConnectionRef.current,
               holderDisplayName: holderDisplayNameRef.current,
+              boardRelay: boardRelayRef.current,
               bulbOpensApp: bulbOpensAppRef.current,
               boardConnecting: boardConnectingRef.current,
               renderMode: renderModeRef.current,
@@ -542,6 +552,7 @@ export function useLiveActivity({
         isPartySession,
         boardConnection,
         holderDisplayName,
+        boardRelay,
         bulbOpensApp,
         boardConnecting,
         renderMode,
@@ -560,6 +571,7 @@ export function useLiveActivity({
     getCurrentAndroidBackgroundPaths,
     getCurrentAndroidOverlayPath,
     holderDisplayName,
+    boardRelay,
     bulbOpensApp,
     boardConnecting,
     isPartySession,
@@ -607,6 +619,7 @@ export function useLiveActivity({
         isPartySession,
         boardConnection,
         holderDisplayName,
+        boardRelay,
         bulbOpensApp,
         boardConnecting,
         renderMode,
@@ -625,6 +638,7 @@ export function useLiveActivity({
     getCurrentAndroidBackgroundPaths,
     getCurrentAndroidOverlayPath,
     holderDisplayName,
+    boardRelay,
     bulbOpensApp,
     boardConnecting,
     isPartySession,

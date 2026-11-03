@@ -115,6 +115,11 @@ enum SharedConstants {
     /// Display name of the peer holding the board when `boardConnectionKey` is
     /// "heldByPeer" (absent otherwise). Companion to `boardConnectionKey`.
     static let holderDisplayNameKey = "bs_holder_display_name"
+    /// Relay mode (#7220): "relaying" | "blocked", absent otherwise. Written by
+    /// JS beside `boardConnectionKey` (`SharedBoardRelay`). Never pushed: the
+    /// backend's push and the native builders leave it alone, so the card
+    /// reads it at render time like the rest timer.
+    static let boardRelayKey = "bs_board_relay"
     /// The climber's rest timer (#6513) as a `SharedRestTimerState` JSON blob,
     /// written by JS through `updateRestTimer`. Lives ONLY here, never in the
     /// pushed `ContentState`: the backend re-sends the whole content state on
@@ -406,6 +411,69 @@ enum SharedWidgetWallControlState {
             navigationAllowed: defaults.bool(forKey: SharedConstants.widgetNavigationAllowedKey),
             requiresServerAuthorization: true
         )
+    }
+}
+
+/// Relay mode (#7220): another phone holds this Relay mode MoonBoard (an
+/// original controller takes one phone). JS works out the holder rule
+/// (`relayHolderFor`, `connectBlockedByRelayHolder`) and sends the answer
+/// beside the connection value, which stays "heldByPeer" so a binary without
+/// this draws the held card. Native only reads the answer:
+///
+/// - "relaying": this phone lights climbs through that phone. The card shows
+///   Previous / Next; a press skips the Bluetooth write and goes to JS, which
+///   relays it. The bulb never reconnects.
+/// - "blocked": a connect would only scan for nothing, so the card shows the
+///   board as held and the bulb never reconnects.
+///
+/// The backend's push carries none of this (it never knows a board's link
+/// mode per phone), so the App Group copy is the source at render time. A
+/// pushed "connectedByMe" always wins: this phone holds the board then.
+enum SharedBoardRelay {
+    static let relaying = "relaying"
+    static let blocked = "blocked"
+
+    /// Stores what JS sent. Anything else (nil, or a value a later JS adds)
+    /// clears it, so an unknown value reads as no relay.
+    static func save(_ raw: String?, to defaults: UserDefaults) {
+        if let raw, raw == relaying || raw == blocked {
+            defaults.set(raw, forKey: SharedConstants.boardRelayKey)
+        } else {
+            defaults.removeObject(forKey: SharedConstants.boardRelayKey)
+        }
+    }
+
+    static func load(from defaults: UserDefaults) -> String? {
+        guard let raw = defaults.string(forKey: SharedConstants.boardRelayKey),
+              raw == relaying || raw == blocked
+        else { return nil }
+        return raw
+    }
+
+    static func clear(in defaults: UserDefaults) {
+        defaults.removeObject(forKey: SharedConstants.boardRelayKey)
+    }
+
+    /// This phone lights the board through another phone's link.
+    static func isRelaying(in defaults: UserDefaults) -> Bool {
+        load(from: defaults) == relaying
+    }
+
+    /// Another phone holds this Relay mode board: a reconnect from here must
+    /// not run (relaying or blocked).
+    static func holdsBoardElsewhere(in defaults: UserDefaults) -> Bool {
+        load(from: defaults) != nil
+    }
+
+    /// The connection the card draws, as a wire string: "relayedByMe" while
+    /// relaying, "heldByPeer" for a blocked board the push called
+    /// disconnected (an anonymous holder, which the backend can't attribute),
+    /// otherwise `connection` unchanged. "connectedByMe" always stands.
+    static func effectiveConnection(_ connection: String, relay: String?) -> String {
+        guard connection != "connectedByMe", let relay else { return connection }
+        if relay == relaying { return "relayedByMe" }
+        if relay == blocked { return "heldByPeer" }
+        return connection
     }
 }
 
@@ -1263,6 +1331,7 @@ enum SharedBoardReconnect {
         guard let failure else {
             clearFailure(in: defaults)
             SharedWidgetWallControlState.saveBoardConnection("connectedByMe", holderDisplayName: nil, to: defaults)
+            SharedBoardRelay.clear(in: defaults)
             return
         }
         recordFailure(failure, in: defaults)

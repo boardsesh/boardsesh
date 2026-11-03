@@ -35,6 +35,7 @@ const OPTION_FIELDS = [
   'hasPrevious',
   'boardConnection',
   'holderDisplayName',
+  'boardRelay',
   'bulbOpensApp',
   'boardConnecting',
   'androidThumbnailOverlayPath',

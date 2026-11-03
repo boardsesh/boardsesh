@@ -62,6 +62,12 @@ export type NativeBleConnectedDevice = {
   maxWriteWithResponse?: number;
   maxWriteWithoutResponse?: number;
   /**
+   * The GATT service the write characteristic sits under (uppercased UUID), so
+   * Bluetooth Connection Success can tell controller generations apart
+   * (#7220). Absent on older binaries and when iOS no longer knows the service.
+   */
+  writeServiceUuid?: string;
+  /**
    * How the current connection came to be: a JS `connect`, the Live Activity
    * lightbulb, automatic write-stall recovery, or a CoreBluetooth state
    * restoration nobody in this process asked for. Empty string when the binary
@@ -268,6 +274,22 @@ export const boardBleNative = requireOptionalNativeModule<BoardBleNativeModule>(
  */
 export type LiveActivityBoardConnection = 'connectedByMe' | 'heldByPeer' | 'disconnected';
 
+/**
+ * Relay mode (#7220): another phone holds this Relay mode MoonBoard (an
+ * original controller takes one phone). Sent beside `boardConnection`, never
+ * in it, so the three connection values every binary and the backend's push
+ * know keep their meaning. `boardConnection` is `heldByPeer` whenever this is
+ * set, so a binary that ignores the field draws the held card: no "Tap to
+ * reconnect", no Previous / Next.
+ * - `relaying`: this phone lights climbs through that phone
+ *   (`relayHolderFor`). Previous / Next show, and a press goes to JS, which
+ *   relays it; nothing writes Bluetooth.
+ * - `blocked`: a connect would only scan for nothing
+ *   (`connectBlockedByRelayHolder`), so the bulb never reconnects.
+ * Null or absent: no relay holder; native clears what it stored.
+ */
+export type LiveActivityBoardRelay = 'relaying' | 'blocked';
+
 /** The climber's saved board look (requestedBoardRenderMode). */
 export type LiveActivityBoardRenderMode = 'classic' | 'aura';
 
@@ -288,6 +310,8 @@ export type LiveActivityStartSessionOptions = {
   boardConnection: LiveActivityBoardConnection;
   /** Display name of the peer holding the board (heldByPeer only). */
   holderDisplayName?: string | null;
+  /** Relay mode (#7220); see {@link LiveActivityBoardRelay}. An older binary ignores it. */
+  boardRelay?: LiveActivityBoardRelay | null;
   /**
    * Bundled board-background webp file paths for the active board, resolved on
    * the JS side (expo-asset) and staged into the App Group so the iOS
@@ -376,6 +400,8 @@ export type LiveActivityUpdateOptions = {
   boardConnection: LiveActivityBoardConnection;
   /** Display name of the peer holding the board (heldByPeer only). */
   holderDisplayName?: string | null;
+  /** Relay mode (#7220); see {@link LiveActivityBoardRelay}. An older binary ignores it. */
+  boardRelay?: LiveActivityBoardRelay | null;
   /**
    * Android-only: on-device climb render for the notification thumbnail, so it
    * never hits the network (the app's "no-network board art" rule). `file://`
@@ -575,7 +601,8 @@ export type LiveActivityIntentCompletionClass =
   | 'alreadyAllowed'
   | 'bleFailure'
   | 'mirrorNotCommitted'
-  | 'nothingDriving';
+  | 'nothingDriving'
+  | 'relayHolder';
 
 export type InterruptedLiveActivityIntentDiagnostic = {
   schemaVersion: 1;
@@ -599,10 +626,13 @@ export type InterruptedLiveActivityIntentDiagnostic = {
  * - `stopDriving`: bulb was lit and this phone was driving when the
  *   notification was drawn → stop driving (only sent when JS supplied
  *   `stopDrivingLabel`).
+ * - `relay`: Relay mode (#7220), this phone lights the board through the
+ *   phone that holds it (`boardRelay: 'relaying'`) → stop a drive, or send the
+ *   current climb to that phone. Never a reconnect.
  * iOS drives the equivalent through App Intents, not this event.
  */
 export type BoardControlEvent = {
-  action: 'reconnect' | 'reassert' | 'stopDriving';
+  action: 'reconnect' | 'reassert' | 'stopDriving' | 'relay';
   correlationId: string;
 };
 

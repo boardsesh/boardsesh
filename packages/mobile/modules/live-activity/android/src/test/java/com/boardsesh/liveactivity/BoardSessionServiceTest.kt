@@ -283,6 +283,82 @@ class BoardSessionServiceTest {
         assertEquals(listOf("Connect to board"), actionTitles(captured.captured))
     }
 
+    // --- Relay mode (#7220) ---
+
+    private fun startedService(captured: CapturingSlot<Notification>): BoardSessionService {
+        every { ServiceCompat.startForeground(any(), any(), capture(captured), any()) } just Runs
+        val intent = Intent(context, BoardSessionService::class.java).apply { action = BoardSessionService.ACTION_START }
+        val controller = Robolectric.buildService(BoardSessionService::class.java, intent).create()
+        controller.startCommand(0, 1)
+        return controller.get()
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a relaying phone gets Previous and Next and a relay bulb, never Connect`() {
+        val captured = slot<Notification>()
+        val service = startedService(captured)
+
+        service.onStartCommand(
+            updateIntent("heldByPeer", hasPrevious = true, hasNext = true, holderName = "Alex")
+                .putExtra(BoardSessionService.EXTRA_BOARD_RELAY, BoardSessionService.RELAY_RELAYING),
+            0,
+            2,
+        )
+
+        assertEquals(listOf("Previous", "Relight wall", "Next"), actionTitles(captured.captured))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a phone blocked by a Relay mode holder gets no bulb at all`() {
+        val captured = slot<Notification>()
+        val service = startedService(captured)
+
+        for ((startId, connection) in listOf("heldByPeer", "disconnected").withIndex()) {
+            service.onStartCommand(
+                updateIntent(connection, hasPrevious = true, hasNext = true, holderName = "Alex")
+                    .putExtra(BoardSessionService.EXTRA_BOARD_RELAY, BoardSessionService.RELAY_BLOCKED),
+                0,
+                startId + 2,
+            )
+            assertEquals(emptyList<String>(), actionTitles(captured.captured))
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `an update without the relay extra (an older bundle) draws today's notification`() {
+        val captured = slot<Notification>()
+        val service = startedService(captured)
+
+        service.onStartCommand(
+            updateIntent("heldByPeer", holderName = "Alex")
+                .putExtra(BoardSessionService.EXTRA_BOARD_RELAY, BoardSessionService.RELAY_BLOCKED),
+            0,
+            2,
+        )
+        service.onStartCommand(updateIntent("heldByPeer", holderName = "Alex"), 0, 3)
+
+        assertEquals(listOf("Connect to board"), actionTitles(captured.captured))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveLighting shows a relaying phone's drive, and nobody else's`() {
+        val now = 1_000L
+        val window = BoardSessionService.LIGHT_STATE_WINDOW
+        assertEquals(
+            LightingDisplay.Window(now + 1),
+            BoardSessionService.resolveLighting(window, now + 1, now, "heldByPeer", BoardSessionService.RELAY_RELAYING),
+        )
+        assertEquals(
+            LightingDisplay.Off,
+            BoardSessionService.resolveLighting(window, now + 1, now, "heldByPeer", BoardSessionService.RELAY_BLOCKED),
+        )
+        assertEquals(LightingDisplay.Off, BoardSessionService.resolveLighting(window, now + 1, now, "heldByPeer"))
+    }
+
     @Test
     @Config(sdk = [30])
     fun `disconnected leaves only the reconnect lightbulb`() {

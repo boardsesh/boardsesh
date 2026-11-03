@@ -172,6 +172,11 @@ enum GradeColors {
 /// reflect the most authoritative source available.
 enum BoardConnection {
     case connectedByMe
+    /// Relay mode (#7220): another phone holds this original MoonBoard and
+    /// this phone lights climbs through it. Never on the wire as a pushed
+    /// value from the backend: resolved from the App Group relay JS wrote
+    /// (`SharedBoardRelay.effectiveConnection`).
+    case relayedByMe
     case heldByPeer
     case disconnected
 
@@ -182,6 +187,7 @@ enum BoardConnection {
         guard let raw else { return nil }
         switch raw {
         case "connectedByMe": return .connectedByMe
+        case "relayedByMe": return .relayedByMe
         case "heldByPeer": return .heldByPeer
         case "disconnected": return .disconnected
         default: return nil
@@ -189,8 +195,20 @@ enum BoardConnection {
     }
 }
 
+extension BoardConnection {
+    /// The wire string `from(string:)` reads back.
+    var wireValue: String {
+        switch self {
+        case .connectedByMe: return "connectedByMe"
+        case .relayedByMe: return "relayedByMe"
+        case .heldByPeer: return "heldByPeer"
+        case .disconnected: return "disconnected"
+        }
+    }
+}
+
 /// Resolved render state: the effective connection plus the holder name (only
-/// meaningful for `.heldByPeer`).
+/// meaningful for `.heldByPeer` and `.relayedByMe`).
 struct ResolvedBoardState {
     let connection: BoardConnection
     let holderDisplayName: String?
@@ -228,19 +246,27 @@ private func resolveBoardState(
         appGroup = (nil, nil)
     }
 
-    let connection: BoardConnection
+    let resolved: BoardConnection
     if let pushed = BoardConnection.from(string: context.state.boardConnection) {
         // 1. Authoritative pushed state (arrives via APNs when backgrounded).
-        connection = pushed
+        resolved = pushed
     } else if let mirrored = BoardConnection.from(string: appGroup.boardConnection) {
         // 2. App Group mirror written by the foreground app / intents.
-        connection = mirrored
+        resolved = mirrored
     } else {
         // 3. Derive from navigationAllowed; default preserves today's behaviour.
-        connection = WallControlViewState.current().navigationAllowed
+        resolved = WallControlViewState.current().navigationAllowed
             ? .connectedByMe
             : .heldByPeer
     }
+    // Relay mode (#7220): the backend's push never knows this phone relays
+    // (or that the holder of a Relay mode board blocks a reconnect), so the
+    // relay JS wrote to the App Group is applied on top. This phone's own
+    // link always stands.
+    let relay = SharedConstants.sharedDefaults.flatMap { SharedBoardRelay.load(from: $0) }
+    let connection = BoardConnection.from(
+        string: SharedBoardRelay.effectiveConnection(resolved.wireValue, relay: relay)
+    ) ?? resolved
 
     // Prefer the pushed holder name, fall back to the App Group mirror.
     let holderDisplayName = context.state.holderDisplayName ?? appGroup.holderDisplayName
@@ -276,7 +302,9 @@ private func resolveLighting(
     connection: BoardConnection,
     now: Date = Date()
 ) -> LightingRenderPhase {
-    guard connection == .connectedByMe, let defaults = SharedConstants.sharedDefaults else { return .previews }
+    guard connection == .connectedByMe || connection == .relayedByMe,
+          let defaults = SharedConstants.sharedDefaults
+    else { return .previews }
     return LightingRenderPhase.resolve(
         state: SharedLightingWindowStore.load(from: defaults),
         sessionId: context.attributes.sessionId,
@@ -656,6 +684,77 @@ private struct NavigationControlsView: View {
     }
 }
 
+/// Relay mode (#7220): Previous / Next for a phone that lights an original
+/// MoonBoard through the phone that holds it. The intents skip the Bluetooth
+/// write and hand each press to the app, which relays the climb. No mirror (a
+/// MoonBoard is never lit mirrored) and no reconnect: the middle shows whose
+/// phone lights the wall, or, while a relayed drive is on, the bulb that
+/// stops it, as in the app.
+@available(iOS 17.0, *)
+private struct RelayNavigationControlsView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let holderDisplayName: String?
+    let hasPrevious: Bool
+    let hasNext: Bool
+    let lighting: LightingRenderPhase
+
+    private var stopsDrive: Bool {
+        guard lighting != .previews, let defaults = SharedConstants.sharedDefaults else { return false }
+        return SharedLightingWindowRuntime.lockScreenStopSupported(in: defaults)
+    }
+
+    private var throughLabel: Text {
+        if let name = holderDisplayName, !name.isEmpty {
+            return Text("Lights through \(name)'s phone")
+        }
+        return Text("Lights through another phone")
+    }
+
+    var body: some View {
+        let palette = VelvetSend.Palette.resolve(colorScheme)
+        HStack(spacing: VelvetSend.Spacing.sm) {
+            Button(intent: PreviousClimbIntent()) {
+                NavigationButtonLabel(
+                    title: "Prev",
+                    systemImage: "chevron.left",
+                    imagePlacement: .leading,
+                    enabled: hasPrevious
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasPrevious)
+            .accessibilityLabel("Previous climb")
+
+            if stopsDrive {
+                Button(intent: StopDrivingIntent()) {
+                    WallControlStatus(lighting: lighting, stopsDrive: true)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(palette.tint)
+                    .frame(width: 44, height: 44)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(throughLabel)
+            }
+
+            Button(intent: NextClimbIntent()) {
+                NavigationButtonLabel(
+                    title: "Next",
+                    systemImage: "chevron.right",
+                    imagePlacement: .trailing,
+                    enabled: hasNext
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasNext)
+            .accessibilityLabel("Next climb")
+        }
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+    }
+}
+
 // MARK: - Rest Timer Subviews (#6513)
 
 /// One colour per rest state, matching the app's pill: violet while it runs,
@@ -1013,6 +1112,13 @@ private struct SessionFooter: View {
                 hasNext: hasNext,
                 lighting: lighting
             )
+        case .relayedByMe:
+            RelayNavigationControlsView(
+                holderDisplayName: state.holderDisplayName,
+                hasPrevious: hasPrevious,
+                hasNext: hasNext,
+                lighting: lighting
+            )
         case .heldByPeer:
             HeldByPeerFooter(holderDisplayName: state.holderDisplayName)
         case .disconnected:
@@ -1247,7 +1353,7 @@ private struct ConnectionGlyph: View {
             Image(systemName: "lightbulb.fill")
                 .font(.system(size: size))
                 .foregroundColor(palette.warning)
-        case .heldByPeer:
+        case .heldByPeer, .relayedByMe:
             Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.system(size: size))
                 .foregroundColor(palette.tint)

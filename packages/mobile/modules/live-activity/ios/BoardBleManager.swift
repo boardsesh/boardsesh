@@ -34,6 +34,10 @@ struct BoardBleConnectionDiagnostics {
     let chosenWriteType: String         // "withoutResponse" | "withResponse"
     let maxWriteWithResponse: Int
     let maxWriteWithoutResponse: Int
+    /// The GATT service the write characteristic sits under (uppercased UUID
+    /// string), so Bluetooth Connection Success can tell MoonBoard controller
+    /// generations apart (#7220). Nil once iOS has let go of the service.
+    var writeServiceUuid: String? = nil
 }
 
 /// Who enqueued a write: the JS bridge (`BoardBleModule.write`) or native code
@@ -2994,7 +2998,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             supportsWriteWithoutResponse: properties.contains(.writeWithoutResponse),
             chosenWriteType: writeType == .withoutResponse ? "withoutResponse" : "withResponse",
             maxWriteWithResponse: peripheral.maximumWriteValueLength(for: .withResponse),
-            maxWriteWithoutResponse: peripheral.maximumWriteValueLength(for: .withoutResponse)
+            maxWriteWithoutResponse: peripheral.maximumWriteValueLength(for: .withoutResponse),
+            // `service` is optional (weak) since iOS 15: absent rather than a guess.
+            writeServiceUuid: characteristic.service?.uuid.uuidString.uppercased()
         )
     }
 

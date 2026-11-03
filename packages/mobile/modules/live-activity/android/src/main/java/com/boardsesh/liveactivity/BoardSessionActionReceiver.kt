@@ -22,16 +22,27 @@ import android.content.Intent
  */
 class BoardSessionActionReceiver : BroadcastReceiver() {
     companion object {
-        /** The `boardControl` action for a lightbulb tap. */
-        internal fun bulbAction(intent: Intent): String {
+        /**
+         * The `boardControl` action for a lightbulb tap, or null for none.
+         *
+         * Relay mode (#7220): a relaying phone's bulb stops its relayed drive
+         * or relays the climb (`relay`); a phone blocked by the holder of a
+         * Relay mode board never reconnects (the notification draws no bulb
+         * then, so only a stale one lands here). Neither ever reconnects.
+         */
+        internal fun bulbAction(intent: Intent): String? {
             val connectedByMe =
                 intent.getStringExtra(BoardSessionService.EXTRA_BOARD_CONNECTION) ==
                     BoardSessionService.CONNECTION_CONNECTED_BY_ME
-            return when {
-                !connectedByMe -> "reconnect"
-                intent.getBooleanExtra(BoardSessionService.EXTRA_STOPS_DRIVE, false) -> "stopDriving"
-                else -> "reassert"
+            val stopsDrive = intent.getBooleanExtra(BoardSessionService.EXTRA_STOPS_DRIVE, false)
+            if (!connectedByMe) {
+                return when (BoardSessionService.relayFrom(intent)) {
+                    BoardSessionService.RELAY_RELAYING -> if (stopsDrive) "stopDriving" else "relay"
+                    BoardSessionService.RELAY_BLOCKED -> null
+                    else -> "reconnect"
+                }
             }
+            return if (stopsDrive) "stopDriving" else "reassert"
         }
     }
 
@@ -65,7 +76,7 @@ class BoardSessionActionReceiver : BroadcastReceiver() {
             // current climb; otherwise reconnect (taking the board back from a
             // peer / reconnecting after a drop).
             BoardSessionService.ACTION_BULB -> {
-                SessionPresenceModule.dispatchBoardControl(bulbAction(intent), correlationId)
+                bulbAction(intent)?.let { SessionPresenceModule.dispatchBoardControl(it, correlationId) }
             }
         }
     }

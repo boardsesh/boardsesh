@@ -1,3 +1,4 @@
+import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { KeepLightingPlan, KeepLightingSettingKey } from '../../lib/keep-lighting';
 import {
   readLiveActivityLightingWindow,
@@ -430,6 +431,94 @@ export function armNotificationPressDrive({
   });
   return true;
 }
+
+/**
+ * Relay mode (#7220): a Lock Screen, Dynamic Island or notification Previous /
+ * Next on a phone that lights an original MoonBoard through the phone that
+ * holds it (the card's `boardRelay: 'relaying'`), as JS hears it
+ * (`queueNavigate`). Native wrote nothing to the board and started no drive
+ * for it: there is no link here, and one relay engine (`use-relayed-drive.ts`)
+ * owns the path, so the press comes to JS on both platforms.
+ *
+ * It lights the press's climb through the holder (`relay`, normally
+ * `relayClimbThroughHolder`) and, as Put on board would, starts a relayed
+ * drive under Stop driving after (`plan`); under Right away, or where Always
+ * drive the wall drives, the press lights its one climb (`plan` null). A
+ * relayed drive already on just follows the new climb. A timed drive over by
+ * the press ends first, as for any press. The drive arms and goes live at the
+ * holder's echo, so a press that never lands says so once
+ * (`relay_unconfirmed`), like a relayed Put on board.
+ *
+ * Returns whether a relay went: false with no climb or no relay engine.
+ */
+export function startRelayedPressDrive({
+  item,
+  sessionId,
+  boardId,
+  boardType,
+  plan,
+  relay,
+  pressSettledAtMs = null,
+  now = Date.now(),
+}: {
+  /** The climb the press moved to. */
+  item: ClimbQueueItem | null;
+  sessionId: string | null;
+  boardId: number | null;
+  boardType: string | null;
+  /** What the press keeps lighting, or null for one climb (see `armNotificationPressDrive`). */
+  plan: KeepLightingPlan | null;
+  /** Sends one climb to the holder's phone (`relayClimbThroughHolder`). */
+  relay: (item: ClimbQueueItem) => boolean;
+  /**
+   * iOS: when the intent finished with the press (its stamp's `settledAtMs`),
+   * or null. A press JS hears long after (the app was suspended between the
+   * intent and this event) is dropped: its climb would land on the holder's
+   * wall over whatever they climb now.
+   */
+  pressSettledAtMs?: number | null;
+  now?: number;
+}): boolean {
+  endTimedDriveOverAtPress(now);
+  if (!item) return false;
+  if (
+    pressSettledAtMs !== null &&
+    pressSettledAtMs !== undefined &&
+    Number.isFinite(pressSettledAtMs) &&
+    now - pressSettledAtMs > RELAYED_PRESS_MAX_AGE_MS
+  ) {
+    return false;
+  }
+  // Entered before the send, so a relay that doesn't land belongs to the
+  // drive's lost-path episode and ends it.
+  const armed = plan !== null && getDriveMode() === null;
+  if (armed) {
+    enterDriveMode({
+      sessionId,
+      boardId,
+      boardType,
+      startedBy: 'lock_screen',
+      windowMs: plan.windowMs,
+      windowSetting: plan.windowMs === null ? null : plan.setting,
+      relayed: true,
+      now,
+    });
+  }
+  const sent = relay(item);
+  // Nothing went (no relay engine, no holder): don't leave the drive arming
+  // until its 30 s timeout.
+  if (!sent && armed && getDriveMode()?.relayed && getDriveMode()?.phase === 'arming') {
+    exitDriveMode('relay_unconfirmed');
+  }
+  return sent;
+}
+
+/**
+ * How old an iOS relayed press may be when JS hears it. The intent settles a
+ * press just before its Darwin post, so a fresh one is milliseconds old; one
+ * older than this waited out a suspended app.
+ */
+export const RELAYED_PRESS_MAX_AGE_MS = 10_000;
 
 /**
  * Tests only: forget which lock-screen write was settled, and when this JS
