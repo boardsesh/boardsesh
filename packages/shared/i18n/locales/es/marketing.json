@@ -388,7 +388,8 @@
     "nav": {
       "label": "Ruta de navegación",
       "home": "Inicio",
-      "help": "Ayuda"
+      "help": "Ayuda",
+      "jump": "En esta página"
     },
     "install": {
       "title": "Consigue la app",
@@ -423,7 +424,6 @@
         "tellClock": "Un reloj junto a la etiqueta indica un mando con tiempo, y el hielo se encoge al acabarse. Sin reloj, dura hasta que toques. En el mini reproductor, la bombilla se pone ámbar mientras mandas.",
         "clipAlt": "Deslizar el botón del plafón a la izquierda para tomar el mando y tocarlo para soltarlo",
         "clipCaption": "Desliza a la izquierda y suelta para encender cada bloque. Toca Estás al mando del plafón para parar.",
-        "endsIntro": "El mando termina cuando:",
         "end1": "Tocas Estás al mando del plafón.",
         "end2": "Se acaba el reloj. Solo en mandos con tiempo.",
         "end3": "Un compañero pone un bloque. Solo en mandos con tiempo.",
@@ -431,12 +431,21 @@
         "after": "Después, tu siguiente elección vuelve a abrirse como vista previa.",
         "states": {
           "lookingAlt": "El reproductor con una vista previa: la barra de arriba dice Vista previa · no está en el plafón y el botón dice Poner en el plafón",
-          "lookingCaption": "Mirando: Poner en el plafón. No se enciende nada hasta que lo toques.",
           "timedAlt": "El reproductor al mando con reloj: el botón dice Estás al mando del plafón · 0:28",
-          "timedCaption": "Mando con tiempo: el reloj cuenta atrás tras Poner en el plafón.",
           "openAlt": "El reproductor al mando sin reloj: el botón dice Estás al mando del plafón",
-          "openCaption": "Desliza para mandar: sin reloj, se enciende hasta que toques."
-        }
+          "lookingLabel": "Mirando",
+          "lookingTitle": "Poner en el plafón",
+          "lookingBody": "No se enciende nada hasta que lo toques.",
+          "timedLabel": "Mando con tiempo",
+          "timedTitle": "Cuenta atrás",
+          "timedBody": "El reloj cuenta atrás tras Poner en el plafón.",
+          "openLabel": "Desliza para mandar",
+          "openTitle": "Sin reloj",
+          "openBody": "Se enciende hasta que toques."
+        },
+        "statesEyebrow": "Lee el botón del plafón",
+        "statesTitle": "Los tres estados del botón del plafón",
+        "endsTitle": "El mando termina cuando"
       },
       "history": {
         "title": "Qué hay ahora en el plafón",
@@ -624,7 +633,8 @@
         "spray": {
           "title": "Spraywalls",
           "body": "Fotografía tu Spraywall y corrige las presas que encuentra Boardsesh."
-        }
+        },
+        "read": "Lee la guía"
       },
       "bring": {
         "title": "Trae tu logbook de Kilter o Tension",
@@ -634,20 +644,25 @@
       "counts": {
         "title": "¿Por qué la app de Kilter muestra más bloques?",
         "lead": "Las dos apps tienen los mismos bloques y los cuentan distinto.",
-        "item1": "Boardsesh cuenta cada bloque una vez. La app de Kilter parece contar un bloque una vez por cada ángulo en el que se ha escalado.",
-        "item2": "En un Kilter de casa de 8x12 son unos 18.000 bloques en Boardsesh y unos 36.000 en la app de Kilter."
+        "boardseshCount": "18.000",
+        "boardseshLabel": "Aproximadamente los que hay en Boardsesh en un Kilter de casa de 8x12. Cada bloque cuenta una vez.",
+        "kilterCount": "36.000",
+        "kilterLabel": "Aproximadamente los que hay en la app de Kilter, el mismo plafón. Parece contar un bloque una vez por cada ángulo en el que se ha escalado."
       },
       "ask": {
         "title": "Haz una pregunta",
         "lead": "Discord es el sitio más rápido para recibir respuesta.",
         "discord": "Pregunta en Discord",
         "bugLead": "¿Has encontrado un fallo?",
-        "github": "Abre una incidencia en GitHub",
+        "github": "¿Tienes cuenta de GitHub? Abre una incidencia",
         "devLead": "¿Desarrollas sobre la API?",
-        "docs": "Lee la documentación para desarrolladores"
+        "docs": "Lee la documentación para desarrolladores",
+        "discordTitle": "Discord",
+        "discordBody": "Escaladores y el equipo responden casi todo el mismo día.",
+        "bugBody": "En la app, toca tu avatar y luego Reportar un bug. Cuéntanos qué pasó y en qué móvil.",
+        "devBody": "Sincronización del logbook, entrenamientos y webhooks."
       },
       "topics": {
-        "label": "Temas de ayuda",
         "guides": "Guías",
         "app": "Consigue la app",
         "logbook": "Trae tu logbook",
@@ -667,7 +682,6 @@
         "shotAlt": "El botón del tick",
         "shotCaption": "El tick abre la hoja de registro.",
         "logbookShotAlt": "El logbook",
-        "logbookShotCaption": "Desliza a la derecha para editar, a la izquierda para eliminar.",
         "p1": "Toca el tick grande del reproductor, o ✓ en la barra de abajo. Fecha y Hora ya vienen rellenas, y el resto es opcional.",
         "p2": "Intento registra un intento que no salió. El otro botón dice Flash en tu primer intento a este ángulo, y si no, Encadenado. Los ticks se guardan sin conexión y se sincronizan luego."
       },

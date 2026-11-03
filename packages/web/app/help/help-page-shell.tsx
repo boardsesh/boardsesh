@@ -1,76 +1,67 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import type { SxProps, Theme } from '@mui/material/styles';
-import { PageShell, type PageShellProps } from '@/app/components/ui/page-shell';
-import shell from '@/app/components/ui/page-shell/page-shell.module.css';
+import MuiLink from '@mui/material/Link';
+import Typography from '@mui/material/Typography';
+import styles from './help-page-shell.module.css';
 
-/**
- * The help site's reading type, laid over the shared PageShell.
- *
- * /about, /legal and /privacy share PageShell's grey leads and 32px section
- * headings. Help pages are read differently: someone is mid-problem, scanning
- * for the one section that answers it. So, on /help only:
- *
- * - leads move from --neutral-500 (8.2:1) to --neutral-700 (13.0:1) and up a size,
- *   so the one-line summary under a heading is the easiest thing to read, not
- *   the hardest;
- * - body copy is pinned to --neutral-800 with a looser line height;
- * - section headings drop to 28px (24px on a phone) with more air above them, so
- *   a page of eight sections reads as a list of questions;
- * - a list followed by a paragraph gets the paragraph gap it was missing.
- *
- * The overrides target PageShell's own module classes from a wrapper, so the
- * shared component and every other page stay pixel-identical. Selectors carry
- * one extra class each to beat the shell's doubled `.x.x` heading rule.
- */
-const helpTypeSx: SxProps<Theme> = {
-  [`& .${shell.header} .${shell.lead}`]: {
-    maxWidth: '62ch',
-    color: 'var(--neutral-700)',
-    fontSize: 'var(--font-size-lg)',
-    lineHeight: 1.55,
-  },
-  [`& .${shell.section} .${shell.sectionLead}`]: {
-    color: 'var(--neutral-700)',
-    fontSize: 'var(--font-size-lg)',
-    lineHeight: 1.55,
-  },
-  [`& .${shell.section} .${shell.paragraph}, & .${shell.section} .${shell.list}`]: {
-    color: 'var(--neutral-800)',
-    lineHeight: 1.7,
-  },
-  [`& .${shell.section} .${shell.list} li::marker`]: {
-    color: 'var(--neutral-500)',
-  },
-  [`& .${shell.section} .${shell.paragraph} + .${shell.paragraph}, & .${shell.section} .${shell.list} + .${shell.paragraph}`]:
-    {
-      marginTop: 'var(--spacing-4)',
-    },
-  [`& .${shell.section} .${shell.sectionHeading}.${shell.sectionHeadingType}.${shell.sectionHeadingType}`]: {
-    marginBottom: 'var(--spacing-3)',
-    color: 'var(--neutral-900)',
-    fontSize: '28px',
-    fontWeight: 700,
-    lineHeight: 1.25,
-  },
-  [`& .${shell.section} + .${shell.section}`]: {
-    marginTop: 'var(--spacing-12)',
-  },
-  '@media (max-width: 760px)': {
-    [`& .${shell.section} .${shell.sectionHeading}.${shell.sectionHeadingType}.${shell.sectionHeadingType}`]: {
-      fontSize: 'var(--font-size-2xl)',
-    },
-    [`& .${shell.section} + .${shell.section}`]: {
-      marginTop: 'var(--spacing-10)',
-    },
-  },
+export type HelpJumpLink = { id: string; label: string };
+
+export type HelpPageShellProps = {
+  /** The page's one <h1>. */
+  title: string;
+  /** One sentence under the title. */
+  lead: string;
+  /** HelpBreadcrumb on a guide page; the hub has none. */
+  breadcrumb?: React.ReactNode;
+  /** Chips under the lead that jump to a section on this page. Five at most. */
+  jumpLinks: readonly HelpJumpLink[];
+  /** Accessible name of the chip row, already resolved by the caller's `t()`. */
+  jumpLabel: string;
+  /** `HelpBand`s. */
+  children: React.ReactNode;
 };
 
-/** PageShell with the help site's reading type. Takes exactly PageShell's props. */
-export default function HelpPageShell(props: PageShellProps) {
+/**
+ * The frame every /help page sits in: a hero on the violet chrome, then the
+ * guide's bands on the neutral reading surface (`--read-surface`).
+ *
+ * Help used the shared PageShell until the "Showcase" redesign. Its prose
+ * measure and single column cannot hold a band that puts a phone beside the
+ * copy, so help owns its frame now; /about, /legal and /privacy keep PageShell.
+ *
+ * The jump chips replace the hub's old sticky topics rail. They are plain
+ * anchors, so they work before hydration and on every guide page alike.
+ *
+ * Server-safe: no hooks, strings arrive resolved.
+ */
+export default function HelpPageShell({ title, lead, breadcrumb, jumpLinks, jumpLabel, children }: HelpPageShellProps) {
   return (
-    <Box sx={helpTypeSx}>
-      <PageShell {...props} />
+    <Box component="main" className={styles.page}>
+      <Box component="header" className={styles.hero}>
+        <Box className={styles.heroInner}>
+          {breadcrumb ? <Box className={styles.breadcrumb}>{breadcrumb}</Box> : null}
+          <Typography variant="h2" component="h1" className={styles.title}>
+            {title}
+          </Typography>
+          <Typography variant="body1" component="p" className={styles.lead}>
+            {lead}
+          </Typography>
+          {jumpLinks.length > 0 ? (
+            <Box component="nav" aria-label={jumpLabel}>
+              <Box component="ul" className={styles.jump}>
+                {jumpLinks.map((link) => (
+                  <li key={link.id}>
+                    <MuiLink href={`#${link.id}`} underline="none" className={styles.chip}>
+                      {link.label}
+                    </MuiLink>
+                  </li>
+                ))}
+              </Box>
+            </Box>
+          ) : null}
+        </Box>
+      </Box>
+      <Box className={styles.read}>{children}</Box>
     </Box>
   );
 }

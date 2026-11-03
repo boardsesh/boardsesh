@@ -117,6 +117,21 @@ export const themeTokens = {
     overlayDark: 'rgba(0, 0, 0, 0.7)', // Dark overlay for text backgrounds
   },
 
+  // The reading surface: a neutral, barely-violet grey the /help guides sit on.
+  // The violet chrome (header, hero, footer) stays Velvet; long how-to copy and
+  // near-black app captures read better on grey, where a phone's own violet UI
+  // is the only violet in the band. `surfaceRaised` is one step up (tiles, state
+  // rows, count cards); `line` is decorative only (band rules, card edges).
+  // Contrast, fenced in the parity test: text 15.0:1 on surface / 13.5:1 on
+  // raised, textMuted 8.0:1 / 7.1:1, the foreground violet 6.6:1 / 5.9:1.
+  read: {
+    surface: '#18171C',
+    surfaceRaised: '#222127',
+    text: '#ECEBEF',
+    textMuted: '#AEACB6',
+    line: '#2E2D34',
+  },
+
   // Syntax highlighting colors (VS Code dark theme inspired)
   syntax: {
     keyword: '#569cd6',

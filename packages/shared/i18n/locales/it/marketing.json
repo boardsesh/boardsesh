@@ -388,7 +388,8 @@
     "nav": {
       "label": "Percorso di navigazione",
       "home": "Home",
-      "help": "Aiuto"
+      "help": "Aiuto",
+      "jump": "In questa pagina"
     },
     "install": {
       "title": "Scarica l'app",
@@ -423,7 +424,6 @@
         "tellClock": "Un timer accanto all'etichetta indica una guida a tempo, e il ghiaccio si restringe man mano che scade. Senza timer, dura finché non tocchi. Sul mini player, la lampadina diventa ambra mentre guidi.",
         "clipAlt": "Scorrere a sinistra il pulsante del pannello per iniziare a guidare, poi toccarlo per fermarsi",
         "clipCaption": "Scorri a sinistra e rilascia per illuminare ogni blocco. Tocca Guidi tu il pannello per fermarti.",
-        "endsIntro": "Una guida finisce quando:",
         "end1": "Tocchi Guidi tu il pannello.",
         "end2": "Il timer scade. Solo guide a tempo.",
         "end3": "Un compagno mette un blocco. Solo guide a tempo.",
@@ -431,12 +431,21 @@
         "after": "Dopo una guida, la tua prossima scelta si apre di nuovo come anteprima.",
         "states": {
           "lookingAlt": "Il player con un'anteprima: la barra in alto dice Anteprima · non in parete e il pulsante dice Illumina il pannello",
-          "lookingCaption": "Stai guardando: Illumina il pannello. Non si accende nulla finché non lo tocchi.",
           "timedAlt": "Il player mentre guidi con un timer: il pulsante dice Guidi tu il pannello · 0:28",
-          "timedCaption": "Guida a tempo: il timer scende dopo Illumina il pannello.",
           "openAlt": "Il player mentre guidi senza timer: il pulsante dice Guidi tu il pannello",
-          "openCaption": "Scorri per guidare: niente timer, resta acceso finché non tocchi."
-        }
+          "lookingLabel": "Stai guardando",
+          "lookingTitle": "Illumina il pannello",
+          "lookingBody": "Non si accende nulla finché non lo tocchi.",
+          "timedLabel": "Guida a tempo",
+          "timedTitle": "Il timer scende",
+          "timedBody": "Il timer scende dopo Illumina il pannello.",
+          "openLabel": "Scorri per guidare",
+          "openTitle": "Niente timer",
+          "openBody": "Resta acceso finché non tocchi."
+        },
+        "statesEyebrow": "Leggi il pulsante del pannello",
+        "statesTitle": "I tre stati del pulsante del pannello",
+        "endsTitle": "Una guida finisce quando"
       },
       "history": {
         "title": "Cosa c'è ora in parete",
@@ -624,7 +633,8 @@
         "spray": {
           "title": "Spraywall",
           "body": "Fotografa la tua Spraywall e correggi le prese che trova Boardsesh."
-        }
+        },
+        "read": "Leggi la guida"
       },
       "bring": {
         "title": "Porta qui il tuo diario Kilter o Tension",
@@ -634,20 +644,25 @@
       "counts": {
         "title": "Perché l'app Kilter mostra più blocchi?",
         "lead": "Le due app hanno gli stessi blocchi e li contano in modo diverso.",
-        "item1": "Boardsesh conta ogni blocco una volta. L'app Kilter sembra contare un blocco una volta per ogni inclinazione a cui è stato scalato.",
-        "item2": "Su un Kilter casalingo 8x12 sono circa 18.000 blocchi in Boardsesh e circa 36.000 nell'app Kilter."
+        "boardseshCount": "18.000",
+        "boardseshLabel": "Circa questi in Boardsesh su un Kilter casalingo 8x12. Ogni blocco contato una volta.",
+        "kilterCount": "36.000",
+        "kilterLabel": "Circa questi nell'app Kilter, stesso pannello. Sembra contare un blocco una volta per ogni inclinazione a cui è stato scalato."
       },
       "ask": {
         "title": "Fai una domanda",
         "lead": "Discord è il posto più veloce per avere una risposta.",
         "discord": "Chiedi su Discord",
         "bugLead": "Hai trovato un bug?",
-        "github": "Apri una issue su GitHub",
+        "github": "Hai un account GitHub? Apri una issue",
         "devLead": "Sviluppi sull'API?",
-        "docs": "Leggi la documentazione per sviluppatori"
+        "docs": "Leggi la documentazione per sviluppatori",
+        "discordTitle": "Discord",
+        "discordBody": "Altri climber e il team rispondono a quasi tutte le domande in giornata.",
+        "bugBody": "Nell'app, tocca il tuo avatar, poi Segnala un bug. Dicci cosa è successo e su quale telefono.",
+        "devBody": "Sincronizzazione del diario, allenamenti e webhook."
       },
       "topics": {
-        "label": "Argomenti dell'aiuto",
         "guides": "Guide",
         "app": "Scarica l'app",
         "logbook": "Porta qui il tuo diario",
@@ -667,7 +682,6 @@
         "shotAlt": "Il pulsante della spunta",
         "shotCaption": "La spunta apre il foglio di registrazione.",
         "logbookShotAlt": "Il diario",
-        "logbookShotCaption": "Scorri a destra per modificare, a sinistra per eliminare.",
         "p1": "Tocca la grande spunta nel player, o ✓ nella barra in basso. Data e Ora sono già compilate, il resto è facoltativo.",
         "p2": "Tentativo registra un tentativo non riuscito. L'altro pulsante dice Flash al tuo primo tentativo a questa inclinazione, altrimenti Chiuso. Le spunte si salvano offline e si sincronizzano dopo."
       },

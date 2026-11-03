@@ -1,0 +1,117 @@
+/* The /help frame: a violet hero, then the neutral reading surface.
+   Colours are tokens from app/components/index.css. Doubled selectors beat
+   MUI's single Typography variant class. */
+
+.page {
+  /* Clears the fixed MarketingHeader, like PageShell does. */
+  padding-top: var(--global-header-height);
+  background: var(--semantic-background);
+  min-height: calc(100dvh - var(--global-header-height));
+}
+
+/* ---- hero, on the violet chrome ---- */
+
+.hero {
+  border-bottom: 1px solid var(--separator);
+}
+
+.heroInner {
+  max-width: 1136px;
+  margin: 0 auto;
+  padding: 56px var(--spacing-6) var(--spacing-16);
+}
+
+.breadcrumb {
+  margin-bottom: var(--spacing-4);
+  color: var(--neutral-600);
+  font-size: var(--font-size-sm);
+}
+
+.title.title {
+  max-width: 820px;
+  margin: 0 0 18px;
+  color: var(--neutral-900);
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+/* --neutral-600 on the page violet: 10.5:1. */
+.lead.lead {
+  max-width: 680px;
+  margin: 0;
+  color: var(--neutral-600);
+  font-size: 22px;
+  line-height: 1.45;
+}
+
+.jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin: var(--spacing-8) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A chip is a control, so its edge is --control-border (4.8:1 on the page). */
+.jump .chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: var(--spacing-2) 14px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--border-radius-full);
+  color: var(--neutral-900);
+  font-size: var(--font-size-sm);
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.jump .chip:hover {
+  border-color: var(--color-primary);
+  background: var(--semantic-selected-light);
+}
+
+.jump .chip:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ---- the reading surface the bands sit on ---- */
+
+.read {
+  background: var(--read-surface);
+  color: var(--read-text);
+}
+
+@media (max-width: 900px) {
+  .heroInner {
+    padding: var(--spacing-8) var(--spacing-4) var(--spacing-10);
+  }
+
+  .title.title {
+    font-size: 40px;
+  }
+
+  .lead.lead {
+    font-size: var(--font-size-lg);
+  }
+
+  .jump {
+    margin-top: var(--spacing-6);
+  }
+
+  .jump .chip {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jump .chip {
+    transition: none;
+  }
+}
