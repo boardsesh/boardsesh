@@ -432,3 +432,540 @@ index 69bd2fc..66cd93c 100644
  - (void)setLayoutDirection:(UITraitEnvironmentLayoutDirection)layoutDirection
  {
    _layoutDirection = layoutDirection;
+diff --git a/ios/tabs/bottom-accessory/RNSAccessoryPresentationSettler.h b/ios/tabs/bottom-accessory/RNSAccessoryPresentationSettler.h
+new file mode 100644
+--- /dev/null
++++ b/ios/tabs/bottom-accessory/RNSAccessoryPresentationSettler.h
+@@ -0,0 +1,36 @@
++#pragma once
++
++// No UIKit dependency: the transition/timeout policy is exercised by portable tests.
++namespace rnscreens {
++enum class AccessoryPresentationSample { Pending, Settled, TimedOut };
++
++class AccessoryPresentationSettler {
++ public:
++  bool begin(double now) {
++    const bool shouldPublishMoving = !moving_;
++    if (!moving_) deadline_ = now + 2.0;
++    moving_ = true;
++    stableFrames_ = 0;
++    return shouldPublishMoving;
++  }
++
++  AccessoryPresentationSample sample(double now, bool geometryIsStable) {
++    if (!moving_) return AccessoryPresentationSample::Pending;
++    if (now >= deadline_) {
++      reset();
++      return AccessoryPresentationSample::TimedOut;
++    }
++    stableFrames_ = geometryIsStable ? stableFrames_ + 1 : 0;
++    if (stableFrames_ < 2) return AccessoryPresentationSample::Pending;
++    reset();
++    return AccessoryPresentationSample::Settled;
++  }
++
++  void reset() { moving_ = false; stableFrames_ = 0; }
++
++ private:
++  bool moving_ = false;
++  unsigned stableFrames_ = 0;
++  double deadline_ = 0;
++};
++} // namespace rnscreens
+diff --git a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryComponentView.mm b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryComponentView.mm
+--- a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryComponentView.mm
++++ b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryComponentView.mm
+@@ -77,6 +77,7 @@
+   const auto &castedEventEmitter =
+       std::static_pointer_cast<const react::RNSTabsBottomAccessoryEventEmitter>(eventEmitter);
+   [_reactEventEmitter updateEventEmitter:castedEventEmitter];
++  [_helper presentationEventEmitterDidChange];
+ }
+
+ + (react::ComponentDescriptorProvider)componentDescriptorProvider
+diff --git a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryEventEmitter.h b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryEventEmitter.h
+--- a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryEventEmitter.h
++++ b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryEventEmitter.h
+@@ -18,6 +18,12 @@
+
+ @interface RNSTabsBottomAccessoryEventEmitter : NSObject
+
++- (BOOL)emitPresentationPhase:(NSString *)phase
++                 environment:(NSString *)environment
++                    sourceId:(NSInteger)sourceId
++                    revision:(NSInteger)revision
++                 windowFrame:(CGRect)frame;
++
+ - (BOOL)emitOnEnvironmentChangeIfNeeded:(UITabAccessoryEnvironment)environment API_AVAILABLE(ios(26.0));
+
+ @end
+diff --git a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryEventEmitter.mm b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryEventEmitter.mm
+--- a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryEventEmitter.mm
++++ b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryEventEmitter.mm
+@@ -26,6 +26,26 @@
+   _reactEventEmitter = emitter;
+ }
+
++- (BOOL)emitPresentationPhase:(NSString *)phase
++                 environment:(NSString *)environment
++                    sourceId:(NSInteger)sourceId
++                    revision:(NSInteger)revision
++                 windowFrame:(CGRect)frame
++{
++  if (_reactEventEmitter == nullptr) return NO;
++  _reactEventEmitter->onPresentationChange({
++      .phase = std::string(phase.UTF8String),
++      .environment = std::string(environment.UTF8String),
++      .sourceId = static_cast<int>(sourceId),
++      .revision = static_cast<int>(revision),
++      .windowX = frame.origin.x,
++      .windowY = frame.origin.y,
++      .width = frame.size.width,
++      .height = frame.size.height,
++  });
++  return YES;
++}
++
+ - (BOOL)emitOnEnvironmentChangeIfNeeded:(UITabAccessoryEnvironment)environment API_AVAILABLE(ios(26.0))
+ {
+   if (_reactEventEmitter != nullptr) {
+diff --git a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryHelper.h b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryHelper.h
+--- a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryHelper.h
++++ b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryHelper.h
+@@ -27,6 +27,8 @@
+  * `RNSTabBarController`.
+  */
+ - (void)registerForAccessoryFrameChanges;
++/** Replays presentation after the Fabric emitter is installed, regardless of mount order. */
++- (void)presentationEventEmitterDidChange;
+ /**
+  * Removes the KVO registration set up by `registerForAccessoryFrameChanges`.
+  */
+diff --git a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryHelper.mm b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryHelper.mm
+--- a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryHelper.mm
++++ b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryHelper.mm
+@@ -4,10 +4,31 @@
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+
+ #import <React/RCTAssert.h>
++#import <QuartzCore/QuartzCore.h>
++#import "RNSAccessoryPresentationSettler.h"
+
+ namespace react = facebook::react;
+
+-static void *RNSTabsBottomAccessoryNativeWrapperViewContext = &RNSTabsBottomAccessoryNativeWrapperViewContext;
++static void *RNSAccessoryPresentationGeometryContext = &RNSAccessoryPresentationGeometryContext;
++static NSInteger RNSAccessoryPresentationNextSourceId = 0;
++
++@interface RNSTabsBottomAccessoryHelper (PresentationSampling)
++- (void)sampleAccessoryPresentation;
++@end
++
++// A display link must not retain the helper (and therefore an unmounted accessory).
++API_AVAILABLE(ios(26.0))
++@interface RNSAccessoryPresentationTick : NSObject
++@property(nonatomic, weak) RNSTabsBottomAccessoryHelper *helper;
++@end
++@implementation RNSAccessoryPresentationTick
++- (void)tick:(CADisplayLink *)link
++{
++  RNSTabsBottomAccessoryHelper *helper = self.helper;
++  if (helper != nil) [helper sampleAccessoryPresentation];
++  else [link invalidate];
++}
++@end
+ static void *RNSTabsBottomAccessoryContentViewHiddenContext = &RNSTabsBottomAccessoryContentViewHiddenContext;
+
+ @implementation RNSTabsBottomAccessoryHelper {
+@@ -18,6 +39,14 @@
+   RNSTabsBottomAccessoryContentComponentView *_inlineContentView;
+
+   BOOL _isAdjustingContentViewVisibility;
++  NSHashTable<NSObject *> *_presentationObservedViews;
++  CADisplayLink *_presentationDisplayLink;
++  rnscreens::AccessoryPresentationSettler _presentationSettler;
++  CGRect _previousPresentationWindowFrame;
++  NSInteger _presentationSourceId;
++  NSInteger _presentationRevision;
++  NSString *_lastPublishedPresentationPhase;
++  NSString *_lastPublishedPresentationEnvironment;
+
+   id<UITraitChangeRegistration> _traitChangeRegistration;
+ }
+@@ -39,6 +68,10 @@
+   _regularContentView = nil;
+   _inlineContentView = nil;
+   _isAdjustingContentViewVisibility = NO;
++  _presentationObservedViews = [NSHashTable weakObjectsHashTable];
++  _previousPresentationWindowFrame = CGRectNull;
++  _presentationSourceId = ++RNSAccessoryPresentationNextSourceId;
++  _presentationRevision = 0;
+ }
+
+ #pragma mark - Content view switching workaround
+@@ -133,37 +166,186 @@
+                         self->_bottomAccessoryView.traitCollection.tabAccessoryEnvironment;
+                     [self->_bottomAccessoryView.reactEventEmitter emitOnEnvironmentChangeIfNeeded:environment];
+                     [self handleContentViewVisibilityForEnvironmentIfNeeded];
++                    [self requestAccessoryPresentation];
+                   }];
+ }
+
+ #pragma mark - Observing frame changes
+
++// All observations are weak: retaining a window here would retain this component through its ancestors.
++- (NSArray<NSString *> *)presentationObservedKeysForObject:(NSObject *)object
++{
++  return [object isKindOfClass:CALayer.class]
++      ? @[@"position", @"bounds", @"transform", @"sublayerTransform", @"hidden", @"opacity"]
++      : @[@"center", @"bounds", @"transform", @"hidden", @"alpha"];
++}
++
++- (void)stopPresentationSampling
++{
++  [_presentationDisplayLink invalidate];
++  _presentationDisplayLink = nil;
++  _presentationSettler.reset();
++}
++
++- (void)removePresentationObservers
++{
++  for (NSObject *view in _presentationObservedViews.allObjects) {
++    for (NSString *key in [self presentationObservedKeysForObject:view]) {
++      [view removeObserver:self forKeyPath:key context:RNSAccessoryPresentationGeometryContext];
++    }
++  }
++  [_presentationObservedViews removeAllObjects];
++}
++
++- (void)refreshPresentationObservers
++{
++  NSMutableArray<NSObject *> *ancestors = [NSMutableArray new];
++  for (UIView *view = _bottomAccessoryView; view != nil; view = view.superview) {
++    [ancestors addObject:view];
++    [ancestors addObject:view.layer];
++    if (view == _bottomAccessoryView.window) break;
++  }
++  BOOL unchanged = ancestors.count == _presentationObservedViews.count;
++  for (NSObject *view in ancestors) unchanged = unchanged && [_presentationObservedViews containsObject:view];
++  if (unchanged) return;
++  [self removePresentationObservers];
++  for (NSObject *view in ancestors) {
++    // Track before registering; do not request synchronous Initial KVO callbacks mid-registration.
++    [_presentationObservedViews addObject:view];
++    for (NSString *key in [self presentationObservedKeysForObject:view]) {
++      [view addObserver:self forKeyPath:key options:(NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew) context:RNSAccessoryPresentationGeometryContext];
++    }
++  }
++}
++
++- (void)emitPresentationPhase:(NSString *)phase frame:(CGRect)frame
++{
++  UITabAccessoryEnvironment environment = _bottomAccessoryView.traitCollection.tabAccessoryEnvironment;
++  NSString *environmentName = environment == UITabAccessoryEnvironmentRegular ? @"regular" :
++      environment == UITabAccessoryEnvironmentInline ? @"inline" : @"unknown";
++  BOOL offSurface = [phase isEqualToString:@"detached"] || ![environmentName isEqualToString:@"regular"];
++  BOOL sameOffState = [_lastPublishedPresentationPhase isEqualToString:phase] &&
++      ([phase isEqualToString:@"detached"] || [_lastPublishedPresentationEnvironment isEqualToString:environmentName]);
++  if (offSurface && sameOffState) return;
++  BOOL emitted = [_bottomAccessoryView.reactEventEmitter emitPresentationPhase:phase
++                                                  environment:environmentName
++                                                     sourceId:_presentationSourceId
++                                                     revision:++_presentationRevision
++                                                  windowFrame:offSurface ? CGRectZero : frame];
++  if (emitted) {
++    _lastPublishedPresentationPhase = phase;
++    _lastPublishedPresentationEnvironment = environmentName;
++  }
++}
++
++- (BOOL)accessoryHasVisibleWindow
++{
++  UIWindow *window = _bottomAccessoryView.window;
++  UIView *wrapper = _observedNativeWrapperView;
++  if (window == nil || wrapper.window != window || CGRectIsEmpty(wrapper.bounds)) return NO;
++  for (UIView *ancestor = _bottomAccessoryView; ancestor != nil; ancestor = ancestor.superview) {
++    if (ancestor.hidden || ancestor.alpha <= 0.01 || ancestor.layer.hidden || ancestor.layer.opacity <= 0.01) return NO;
++    if (ancestor == window) return YES;
++  }
++  return NO;
++}
++
++- (void)requestAccessoryPresentation
++{
++  [self refreshPresentationObservers];
++  if (![self accessoryHasVisibleWindow]) {
++    [self stopPresentationSampling];
++    [self emitPresentationPhase:@"detached" frame:CGRectZero];
++    return;
++  }
++  UIView *wrapper = _observedNativeWrapperView;
++  CGRect frame = [wrapper convertRect:wrapper.bounds toView:_bottomAccessoryView.window];
++  if (_bottomAccessoryView.traitCollection.tabAccessoryEnvironment != UITabAccessoryEnvironmentRegular) {
++    [self stopPresentationSampling];
++    [self emitPresentationPhase:@"settled" frame:frame];
++    return;
++  }
++  if (_presentationSettler.begin(CACurrentMediaTime())) {
++    [self emitPresentationPhase:@"moving" frame:frame];
++  }
++  _previousPresentationWindowFrame = CGRectNull;
++  if (_presentationDisplayLink == nil) {
++    RNSAccessoryPresentationTick *target = [RNSAccessoryPresentationTick new];
++    target.helper = self;
++    _presentationDisplayLink = [CADisplayLink displayLinkWithTarget:target selector:@selector(tick:)];
++    [_presentationDisplayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
++  }
++}
++
++static BOOL RNSAccessoryPresentationRectsMatch(CGRect first, CGRect second)
++{
++  return !CGRectIsNull(first) && !CGRectIsNull(second) &&
++      fabs(first.origin.x - second.origin.x) < 0.5 && fabs(first.origin.y - second.origin.y) < 0.5 &&
++      fabs(first.size.width - second.size.width) < 0.5 && fabs(first.size.height - second.size.height) < 0.5;
++}
++
++- (void)sampleAccessoryPresentation
++{
++  if (![self accessoryHasVisibleWindow]) {
++    [self stopPresentationSampling];
++    [self emitPresentationPhase:@"detached" frame:CGRectZero];
++    return;
++  }
++  [self refreshPresentationObservers];
++  UIView *wrapper = _observedNativeWrapperView;
++  CGRect windowFrame = [wrapper convertRect:wrapper.bounds toView:_bottomAccessoryView.window];
++  BOOL stable = RNSAccessoryPresentationRectsMatch(windowFrame, _previousPresentationWindowFrame);
++  // A stable wrapper alone is insufficient: its tab controller/sidebar may still be animating.
++  for (UIView *ancestor = _bottomAccessoryView; ancestor != nil; ancestor = ancestor.superview) {
++    CALayer *model = ancestor.layer;
++    CALayer *presentation = model.presentationLayer;
++    if (presentation != nil) {
++      stable = stable && presentation.hidden == model.hidden &&
++          RNSAccessoryPresentationRectsMatch(presentation.frame, model.frame) &&
++          RNSAccessoryPresentationRectsMatch(presentation.bounds, model.bounds) &&
++          CATransform3DEqualToTransform(presentation.transform, model.transform) &&
++          CATransform3DEqualToTransform(presentation.sublayerTransform, model.sublayerTransform) &&
++          fabs(presentation.opacity - model.opacity) < 0.01;
++    }
++    if (ancestor == _bottomAccessoryView.window) break;
++  }
++  _previousPresentationWindowFrame = windowFrame;
++  auto result = _presentationSettler.sample(CACurrentMediaTime(), stable);
++  if (result == rnscreens::AccessoryPresentationSample::Pending) return;
++  [self stopPresentationSampling];
++  // Timeout deliberately leaves JS in `moving` (hidden); only a new geometry edge retries.
++  if (result == rnscreens::AccessoryPresentationSample::Settled) {
++    [self emitPresentationPhase:@"settled" frame:windowFrame];
++  }
++}
++
+ - (void)unregisterForAccessoryFrameChanges
+ {
+-  UIView *observedNativeWrapperView = _observedNativeWrapperView;
+-  if (observedNativeWrapperView == nil) {
+-    return;
+-  }
+-
+-  [observedNativeWrapperView removeObserver:self
+-                                 forKeyPath:@"center"
+-                                    context:RNSTabsBottomAccessoryNativeWrapperViewContext];
++  [self stopPresentationSampling];
++  [self removePresentationObservers];
+   _observedNativeWrapperView = nil;
++  [self emitPresentationPhase:@"detached" frame:CGRectZero];
+ }
+
+ - (void)registerForAccessoryFrameChanges
+ {
+-  UIView *nativeWrapperView = self.nativeWrapperView;
+-  if (_observedNativeWrapperView == nativeWrapperView) {
+-    return;
+-  }
+-
+-  [self unregisterForAccessoryFrameChanges];
+-  [nativeWrapperView addObserver:self
+-                      forKeyPath:@"center"
+-                         options:NSKeyValueObservingOptionInitial
+-                         context:RNSTabsBottomAccessoryNativeWrapperViewContext];
+-  _observedNativeWrapperView = nativeWrapperView;
++  _observedNativeWrapperView = self.nativeWrapperView;
++  [self refreshPresentationObservers];
++  [self notifyWrapperViewFrameHasChanged];
++  [self requestAccessoryPresentation];
++}
++
++- (void)presentationEventEmitterDidChange
++{
++  // Fabric can install its emitter before OR after window attachment.
++  _lastPublishedPresentationPhase = nil;
++  _lastPublishedPresentationEnvironment = nil;
++  [self stopPresentationSampling];
++  if (_bottomAccessoryView.window != nil && _bottomAccessoryView.superview.superview != nil) {
++    [self registerForAccessoryFrameChanges];
++  } else {
++    [self emitPresentationPhase:@"detached" frame:CGRectZero];
++  }
+ }
+
+ - (void)observeValueForKeyPath:(NSString *)keyPath
+@@ -171,8 +353,12 @@
+                         change:(NSDictionary *)change
+                        context:(void *)context
+ {
+-  if (context == RNSTabsBottomAccessoryNativeWrapperViewContext) {
+-    [self notifyWrapperViewFrameHasChanged];
++  if (context == RNSAccessoryPresentationGeometryContext) {
++    if ([change[NSKeyValueChangeOldKey] isEqual:change[NSKeyValueChangeNewKey]]) return;
++    if (object == _observedNativeWrapperView && ([keyPath isEqualToString:@"center"] || [keyPath isEqualToString:@"bounds"])) {
++      [self notifyWrapperViewFrameHasChanged];
++    }
++    [self requestAccessoryPresentation];
+   } else if (context == RNSTabsBottomAccessoryContentViewHiddenContext) {
+     if (!_isAdjustingContentViewVisibility) {
+       [self handleContentViewVisibilityForEnvironmentIfNeeded];
+diff --git a/lib/commonjs/components/tabs/host/TabsHost.ios.js b/lib/commonjs/components/tabs/host/TabsHost.ios.js
+--- a/lib/commonjs/components/tabs/host/TabsHost.ios.js
++++ b/lib/commonjs/components/tabs/host/TabsHost.ios.js
+@@ -59,7 +59,7 @@
+     bottomAccessoryHidden: ios?.bottomAccessoryHidden,
+     prominentScreenKey: ios?.prominentScreenKey,
+     onMoreTabSelected: ios?.onMoreTabSelected
+-  }), children, ios?.bottomAccessory && _PlatformUtils.isIOS26OrHigher && /*#__PURE__*/_react.default.createElement(_TabsBottomAccessory.default, null, /*#__PURE__*/_react.default.createElement(_TabsBottomAccessoryContent.default, {
++  }), children, ios?.bottomAccessory && _PlatformUtils.isIOS26OrHigher && /*#__PURE__*/_react.default.createElement(_TabsBottomAccessory.default, { onPresentationChange: ios.onBottomAccessoryPresentationChange }, /*#__PURE__*/_react.default.createElement(_TabsBottomAccessoryContent.default, {
+     environment: "regular"
+   }, ios.bottomAccessory('regular')), /*#__PURE__*/_react.default.createElement(_TabsBottomAccessoryContent.default, {
+     environment: "inline"
+diff --git a/lib/module/components/tabs/host/TabsHost.ios.js b/lib/module/components/tabs/host/TabsHost.ios.js
+--- a/lib/module/components/tabs/host/TabsHost.ios.js
++++ b/lib/module/components/tabs/host/TabsHost.ios.js
+@@ -53,7 +53,7 @@
+     bottomAccessoryHidden: ios?.bottomAccessoryHidden,
+     prominentScreenKey: ios?.prominentScreenKey,
+     onMoreTabSelected: ios?.onMoreTabSelected
+-  }), children, ios?.bottomAccessory && isIOS26OrHigher && /*#__PURE__*/React.createElement(TabsBottomAccessory, null, /*#__PURE__*/React.createElement(TabsBottomAccessoryContent, {
++  }), children, ios?.bottomAccessory && isIOS26OrHigher && /*#__PURE__*/React.createElement(TabsBottomAccessory, { onPresentationChange: ios.onBottomAccessoryPresentationChange }, /*#__PURE__*/React.createElement(TabsBottomAccessoryContent, {
+     environment: "regular"
+   }, ios.bottomAccessory('regular')), /*#__PURE__*/React.createElement(TabsBottomAccessoryContent, {
+     environment: "inline"
+diff --git a/lib/typescript/components/tabs/bottom-accessory/TabsBottomAccessory.types.d.ts b/lib/typescript/components/tabs/bottom-accessory/TabsBottomAccessory.types.d.ts
+--- a/lib/typescript/components/tabs/bottom-accessory/TabsBottomAccessory.types.d.ts
++++ b/lib/typescript/components/tabs/bottom-accessory/TabsBottomAccessory.types.d.ts
+@@ -3,7 +3,20 @@
+ export type TabsBottomAccessoryEnvironmentChangeEvent = {
+     environment: TabsBottomAccessoryEnvironment;
+ };
++/** A native-only, coalesced snapshot. Unknown phases must be treated as hidden. */
++export type TabsBottomAccessoryPresentationChangeEvent = {
++  phase: string;
++  environment: string;
++  sourceId: number;
++  revision: number;
++  windowX: number;
++  windowY: number;
++  width: number;
++  height: number;
++};
++
+ export type TabsBottomAccessoryProps = ViewProps & {
++  onPresentationChange?: ((event: NativeSyntheticEvent<TabsBottomAccessoryPresentationChangeEvent>) => void) | undefined;
+     onEnvironmentChange?: ((event: NativeSyntheticEvent<TabsBottomAccessoryEnvironmentChangeEvent>) => void) | undefined;
+ };
+ //# sourceMappingURL=TabsBottomAccessory.types.d.ts.map
+\ No newline at end of file
+diff --git a/lib/typescript/components/tabs/host/TabsHost.ios.types.d.ts b/lib/typescript/components/tabs/host/TabsHost.ios.types.d.ts
+--- a/lib/typescript/components/tabs/host/TabsHost.ios.types.d.ts
++++ b/lib/typescript/components/tabs/host/TabsHost.ios.types.d.ts
+@@ -1,4 +1,5 @@
+ import type { ReactNode } from 'react';
++import type { TabsBottomAccessoryPresentationChangeEvent } from '../bottom-accessory/TabsBottomAccessory.types';
+ import type { TabsBottomAccessoryEnvironment } from '../bottom-accessory/TabsBottomAccessory.types';
+ import type { ColorValue, NativeSyntheticEvent } from 'react-native';
+ /**
+@@ -24,6 +25,8 @@
+ export type TabBarControllerMode = 'automatic' | 'tabBar' | 'tabSidebar';
+ export type TabBarSidebarPreferredPlacement = 'automatic' | 'sidebar' | 'tabBar';
+ export interface TabsHostPropsIOS {
++  /** Coalesced native presentation snapshots for content hosted outside the accessory. */
++  onBottomAccessoryPresentationChange?: ((event: NativeSyntheticEvent<TabsBottomAccessoryPresentationChangeEvent>) => void) | undefined;
+     /**
+      * @summary Whether changes of `tabBarHidden` are animated.
+      *
+diff --git a/src/components/tabs/bottom-accessory/TabsBottomAccessory.types.ts b/src/components/tabs/bottom-accessory/TabsBottomAccessory.types.ts
+--- a/src/components/tabs/bottom-accessory/TabsBottomAccessory.types.ts
++++ b/src/components/tabs/bottom-accessory/TabsBottomAccessory.types.ts
+@@ -6,7 +6,20 @@
+   environment: TabsBottomAccessoryEnvironment;
+ };
+
++/** A native-only, coalesced snapshot. Unknown phases must be treated as hidden. */
++export type TabsBottomAccessoryPresentationChangeEvent = {
++  phase: string;
++  environment: string;
++  sourceId: number;
++  revision: number;
++  windowX: number;
++  windowY: number;
++  width: number;
++  height: number;
++};
++
+ export type TabsBottomAccessoryProps = ViewProps & {
++  onPresentationChange?: ((event: NativeSyntheticEvent<TabsBottomAccessoryPresentationChangeEvent>) => void) | undefined;
+   onEnvironmentChange?:
+     | ((
+         event: NativeSyntheticEvent<TabsBottomAccessoryEnvironmentChangeEvent>,
+diff --git a/src/components/tabs/host/TabsHost.ios.tsx b/src/components/tabs/host/TabsHost.ios.tsx
+--- a/src/components/tabs/host/TabsHost.ios.tsx
++++ b/src/components/tabs/host/TabsHost.ios.tsx
+@@ -58,7 +58,7 @@
+       onMoreTabSelected={ios?.onMoreTabSelected}>
+       {children}
+       {ios?.bottomAccessory && isIOS26OrHigher && (
+-        <TabsBottomAccessory>
++        <TabsBottomAccessory onPresentationChange={ios.onBottomAccessoryPresentationChange}>
+           <TabsBottomAccessoryContent environment="regular">
+             {ios.bottomAccessory('regular')}
+           </TabsBottomAccessoryContent>
+diff --git a/src/components/tabs/host/TabsHost.ios.types.ts b/src/components/tabs/host/TabsHost.ios.types.ts
+--- a/src/components/tabs/host/TabsHost.ios.types.ts
++++ b/src/components/tabs/host/TabsHost.ios.types.ts
+@@ -1,4 +1,5 @@
+ import type { ReactNode } from 'react';
++import type { TabsBottomAccessoryPresentationChangeEvent } from '../bottom-accessory/TabsBottomAccessory.types';
+ import type { TabsBottomAccessoryEnvironment } from '../bottom-accessory/TabsBottomAccessory.types';
+ import type { ColorValue, NativeSyntheticEvent } from 'react-native';
+
+@@ -39,6 +40,8 @@
+   | 'tabBar';
+
+ export interface TabsHostPropsIOS {
++  /** Coalesced native presentation snapshots for content hosted outside the accessory. */
++  onBottomAccessoryPresentationChange?: ((event: NativeSyntheticEvent<TabsBottomAccessoryPresentationChangeEvent>) => void) | undefined;
+   /**
+    * @summary Whether changes of `tabBarHidden` are animated.
+    *
+diff --git a/src/fabric/tabs/TabsBottomAccessoryNativeComponent.ts b/src/fabric/tabs/TabsBottomAccessoryNativeComponent.ts
+--- a/src/fabric/tabs/TabsBottomAccessoryNativeComponent.ts
++++ b/src/fabric/tabs/TabsBottomAccessoryNativeComponent.ts
+@@ -11,7 +11,19 @@
+   environment: 'regular' | 'inline';
+ };
+
++type PresentationChangeEvent = {
++  phase: string;
++  environment: string;
++  sourceId: CT.Int32;
++  revision: CT.Int32;
++  windowX: CT.Double;
++  windowY: CT.Double;
++  width: CT.Double;
++  height: CT.Double;
++};
++
+ export interface NativeProps extends ViewProps {
++  onPresentationChange?: CT.DirectEventHandler<PresentationChangeEvent> | undefined;
+   onEnvironmentChange?:
+     | CT.DirectEventHandler<EnvironmentChangeEvent>
+     | undefined;

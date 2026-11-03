@@ -928,6 +928,19 @@ sheet's push), with the existing `mobile.boardPresence.wallDisplay.open` label.
 **The ⋯ menu** (`MiniPlayerActionsMenu`) is the player's ⋯ over the same `useClimbActions` and
 `buildPlayDrawerMenuRows`, in Music's order (`MINI_PLAYER_MENU_GROUPS`):
 
+On iOS its menu host lives at the app's existing Paper portal root, aligned to a non-interactive
+slot in the accessory (`MiniPlayerMenuAnchor`). Opening a menu from inside UIKit's accessory
+can conceal the whole glass bar even while its React and native views remain mounted (#7106).
+The root-hosted menu keeps the live bar visible and uses the same system menu and actions.
+
+The screens patch publishes native `moving`, `settled`, and `detached` presentation snapshots.
+The menu exists only for a settled, visible regular accessory and an eligible tab route. Native
+geometry tracking includes ancestor views and layers; its bounded sampler sends no per-frame
+JavaScript updates and stops when settled, hidden, or timed out. The inline tree cannot leave a
+floating menu button behind. Anchor measurements also retire when the climb, account, actions,
+or native geometry changes. This requires a binary containing the screens patch; an unknown
+native presentation keeps the portaled trigger hidden rather than guessing from safe-area insets.
+
 1. Favourite, Add to playlist, Share
 2. Open queue, Wall display (tablets, when ⛶ is not on the bar)
 3. Mirror, Change angle

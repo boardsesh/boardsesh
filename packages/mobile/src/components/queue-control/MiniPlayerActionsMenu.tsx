@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useSegments } from 'expo-router';
 import type { Climb } from '@boardsesh/queue';
-import { AppMenu } from '../AppMenu';
+import { MiniPlayerMenuAnchor } from './MiniPlayerMenuAnchor';
 import {
   useClimbActions,
   type ClimbActionsFavoriteControl,
@@ -268,8 +268,8 @@ export const MiniPlayerActionsMenu = memo(function MiniPlayerActionsMenu({
   if (isPlayerRoute(segments)) return null;
 
   return (
-    <AppMenu
-      key={`${climb.uuid}|${rowSignature}`}
+    <MiniPlayerMenuAnchor
+      key={`${climb.uuid}|${currentUserId ?? 'signed-out'}|${rowSignature}`}
       iconName="more"
       iconAppearance="plain"
       anchorSize={size}
