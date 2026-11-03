@@ -19,6 +19,10 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
 
 // BluetoothProvider is stubbed to a passthrough so the test exercises only the
 // wrapper's element-stability decision, not the real BLE provider's internals.
+vi.mock('../../lib/graphql/use-board-link-mode', () => ({
+  useBoardLinkMode: () => ({ linkMode: { moonboardLinkMode: null, moonboardLinkDetected: null }, settled: true }),
+}));
+vi.mock('../feature-flags-provider', () => ({ useMoonboardRelayModeEnabled: () => true }));
 vi.mock('../bluetooth-provider', () => ({
   BluetoothProvider: (props: { children: ReactNode; boardSerialNumber?: string | null }) => {
     provider.props = props;

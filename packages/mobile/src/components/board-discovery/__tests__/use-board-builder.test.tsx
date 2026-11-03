@@ -495,3 +495,33 @@ describe('useBoardBuilder', () => {
     expect(input?.setIds).toBe('1,20');
   });
 });
+
+describe('useBoardBuilder: MoonBoard link mode (#7220)', () => {
+  const moonboardSeed = { boardName: 'moonboard' as const, layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10' };
+
+  it('defaults to Detect automatically and leaves create input without a choice', () => {
+    const { result } = renderHook(() => useBoardBuilder(moonboardSeed));
+    expect(result.current.moonboardLinkMode).toBeNull();
+    expect(result.current.buildCreateInput()).not.toHaveProperty('moonboardLinkMode');
+  });
+
+  it('sends a chosen mode on create and update, and null to clear it', () => {
+    const { result } = renderHook(() => useBoardBuilder({ ...moonboardSeed, moonboardLinkMode: 'relay' }));
+    expect(result.current.buildUpdateInput('board-uuid-1')?.moonboardLinkMode).toBe('relay');
+
+    act(() => result.current.setMoonboardLinkMode('multi'));
+    expect(result.current.buildCreateInput()?.moonboardLinkMode).toBe('multi');
+    expect(result.current.buildUpdateInput('board-uuid-1')?.moonboardLinkMode).toBe('multi');
+
+    act(() => result.current.setMoonboardLinkMode(null));
+    expect(result.current.buildUpdateInput('board-uuid-1')?.moonboardLinkMode).toBeNull();
+  });
+
+  it('never sends a link mode for other boards', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '20,1', moonboardLinkMode: 'multi' }),
+    );
+    expect(result.current.buildCreateInput()).not.toHaveProperty('moonboardLinkMode');
+    expect(result.current.buildUpdateInput('board-uuid-1')).not.toHaveProperty('moonboardLinkMode');
+  });
+});

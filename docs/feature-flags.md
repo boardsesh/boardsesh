@@ -203,6 +203,14 @@ diagnostic) applies on native. The whole surface lives in three files:
   nothing drives the wall: Always drive the wall's running drive ends keeping the
   link (`always_off`), and every pick is a preview until the flag is back. Check its rollout in PostHog before reading any
   driving metric.
+  `moonboard-relay-mode` is a POSITIVE flag (read through
+  `moonboardRelayModeOffered`: unresolved or off means off in a store build; dev
+  builds read it as on unless it is set to off; screenshot mode reads it as off).
+  It gates Relay mode for original MoonBoard controllers (#7220): reporting the
+  controller type detected on an iOS connect, and lighting climbs through the
+  phone that holds a Relay mode board instead of connecting. Off is the
+  behaviour from before Relay mode. The board edit setting is not gated, because
+  it is stored data that a person chose.
   `shared-session-browse` is a POSITIVE flag (read `=== true`, unresolved =
   off) that decides whether a crew's swipes and list taps preview instead of
   writing the shared queue and lighting the wall; off, every gesture lights the

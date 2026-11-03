@@ -158,6 +158,23 @@ export function BoardForm({
       })),
     [builder.boardName],
   );
+  // MoonBoard link mode (#7220): null is "Detect automatically".
+  const linkModeOptions = useMemo(
+    () =>
+      ([null, 'relay', 'multi'] as const).map((mode) => ({
+        key: mode ?? 'auto',
+        label: t(
+          mode === 'relay'
+            ? 'boardForm.linkModes.relay'
+            : mode === 'multi'
+              ? 'boardForm.linkModes.multi'
+              : 'boardForm.linkModes.auto',
+        ),
+        value: mode,
+        selected: mode === builder.moonboardLinkMode,
+      })),
+    [t, builder.moonboardLinkMode],
+  );
   const layoutOptions = useMemo(
     () =>
       builder.layouts.map((layout) => ({
@@ -486,6 +503,24 @@ export function BoardForm({
                   value={builder.hasLeds}
                   onValueChange={builder.setHasLeds}
                 />
+
+                {builder.boardName === 'moonboard' ? (
+                  <>
+                    <SectionLabel>{t('boardForm.fields.moonboardLinkMode')}</SectionLabel>
+                    <BoardConfigChips
+                      groupLabel={t('boardForm.fields.moonboardLinkMode')}
+                      options={linkModeOptions}
+                      onSelect={builder.setMoonboardLinkMode}
+                    />
+                    <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.serialHint}>
+                      {builder.moonboardLinkMode === 'relay'
+                        ? t('boardForm.helperText.moonboardLinkModeRelay')
+                        : builder.moonboardLinkMode === 'multi'
+                          ? t('boardForm.helperText.moonboardLinkModeMulti')
+                          : t('boardForm.helperText.moonboardLinkModeAuto')}
+                    </Text>
+                  </>
+                ) : null}
 
                 <SectionLabel>{t('mobile.create.serial')}</SectionLabel>
                 <BuilderTextInput

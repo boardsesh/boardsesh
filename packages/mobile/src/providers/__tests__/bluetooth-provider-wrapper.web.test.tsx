@@ -8,6 +8,10 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 // transitively imports react-native, and the web wrapper's only job is to feed it
 // the active board and pass children through. Capture the props it was mounted with.
 const providerProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
+vi.mock('../../lib/graphql/use-board-link-mode', () => ({
+  useBoardLinkMode: () => ({ linkMode: { moonboardLinkMode: null, moonboardLinkDetected: null }, settled: true }),
+}));
+vi.mock('../feature-flags-provider', () => ({ useMoonboardRelayModeEnabled: () => true }));
 vi.mock('../bluetooth-provider', () => ({
   BluetoothProvider: (props: { children: ReactNode } & Record<string, unknown>) => {
     const { children, ...rest } = props;
@@ -54,6 +58,7 @@ describe('BluetoothProviderWrapper on web', () => {
       sizeId: undefined,
       setIds: undefined,
       boardUuid: undefined,
+      moonboardLinkMode: null,
     });
   });
 
@@ -78,6 +83,7 @@ describe('BluetoothProviderWrapper on web', () => {
       sizeId: 2,
       setIds: [3, 4],
       boardUuid: 'board-uuid',
+      moonboardLinkMode: null,
     });
   });
 });

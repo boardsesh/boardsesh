@@ -41,6 +41,7 @@ import {
   nativeBleSupportsPreparedConnections,
   subscribeNativeBleConnected,
 } from './adapter-factory';
+import type { NativeBleConnectedDevice } from '../../../modules/live-activity/src/index';
 import { requestBleRuntimePermissionStatus, requestOptionalNotificationPermission } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
 import { alertBluetoothPermissionDenied, alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
@@ -579,6 +580,10 @@ type UseBoardBluetoothOptions = {
   encodingSignature?: string;
   analyticsBoardId?: number | null;
   analyticsInSession?: boolean;
+  /** MoonBoard link mode (#7220) for connection analytics; null on other boards. */
+  analyticsLinkMode?: { linkMode: string; linkModeSource: string } | null;
+  /** Connect-time write diagnostics (iOS native only; null elsewhere), for link-mode detection. */
+  onConnectionDiagnostics?: (diagnostics: NativeBleConnectedDevice | null) => void;
   onConnectionEnded?: (connection: BleConnectionEnded) => void;
   /** Fired on every connection-state edge. A consumer must tolerate a `false`
    *  with no preceding `true`: when connect()'s initial write kills the link,
@@ -695,6 +700,8 @@ export function useBoardBluetooth({
   moonboardLightAdjacentHolds = false,
   encodingSignature = getBleEncodingSignature(boardName, moonboardLightAdjacentHolds),
   analyticsBoardId,
+  analyticsLinkMode,
+  onConnectionDiagnostics,
   analyticsInSession = false,
   onConnectionEnded,
   onConnectionChange,
@@ -1014,6 +1021,10 @@ export function useBoardBluetooth({
   // recreating callbacks that drive the connection and auto-sender.
   const analyticsBoardIdRef = useRef(analyticsBoardId);
   analyticsBoardIdRef.current = analyticsBoardId;
+  const analyticsLinkModeRef = useRef(analyticsLinkMode);
+  analyticsLinkModeRef.current = analyticsLinkMode;
+  const onConnectionDiagnosticsRef = useRef(onConnectionDiagnostics);
+  onConnectionDiagnosticsRef.current = onConnectionDiagnostics;
   // A connect callback can outlive the render which started its asynchronous
   // adapter request. Read session attribution when that request actually opens
   // a physical-link generation, rather than from the callback's stale closure.
@@ -2172,6 +2183,8 @@ export function useBoardBluetooth({
             boardName,
             layoutId,
             sizeId,
+            boardId: analyticsBoardIdRef.current ?? undefined,
+            ...analyticsLinkModeRef.current,
             // Sits alongside the classifyBleFailure categories used by the catch
             // block below; this one is only reachable from the initial write.
             failureReason: 'dropped_after_connect',
@@ -2217,6 +2230,7 @@ export function useBoardBluetooth({
         // be explicit so analytics parity can't regress).
         const connectionDiagnostics = await getNativeBleConnectedDevice().catch(() => null);
         setBleDiagnosticsTags(connectionDiagnostics);
+        onConnectionDiagnosticsRef.current?.(connectionDiagnostics);
         // apiLevel is the level parseApiLevel actually picked; deviceNamePresent
         // records whether an advertised name was even available. parseApiLevel
         // silently defaults to v2 when the name is missing/unparseable, and v2
@@ -2238,6 +2252,7 @@ export function useBoardBluetooth({
           connectAttempts: connectAdapter?.getLastConnectAttemptCount?.(),
           ...connectRetryProperties(connectAdapter),
           afterBoardSwitch,
+          ...analyticsLinkModeRef.current,
           bleChosenWriteType: connectionDiagnostics?.chosenWriteType,
           bleSupportsWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
           bleCharProperties: connectionDiagnostics?.characteristicProperties,
@@ -2365,12 +2380,16 @@ export function useBoardBluetooth({
             boardName,
             layoutId,
             sizeId,
+            boardId: analyticsBoardIdRef.current ?? undefined,
+            ...analyticsLinkModeRef.current,
           });
         } else {
           track(SHARED_EVENTS.BluetoothConnectionFailed, {
             boardName,
             layoutId,
             sizeId,
+            boardId: analyticsBoardIdRef.current ?? undefined,
+            ...analyticsLinkModeRef.current,
             failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
             // 0 = never reached the GATT connect (board not found, scan error),
             // 1 = one attempt, 2 = the Android retry ran. Key is dropped on

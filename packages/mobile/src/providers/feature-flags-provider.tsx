@@ -258,6 +258,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       "Swipe the player's wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action \"Light every climb\" appears, and the board sheet gets a Light every climb row. It also gates Put on board's timed drive (2.7) and Always drive the wall's always-on drive: off, Put on board lights one climb, nothing drives the wall, and every pick is a preview. A POSITIVE rollout flag: unresolved or off is the button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.",
   },
+  {
+    key: 'moonboard-relay-mode',
+    label: 'MoonBoard Relay mode',
+    description:
+      "Relay mode for original MoonBoard controllers (#7220). With it on, a phone on a Relay mode MoonBoard that someone else holds lights climbs through the holder instead of connecting, and the app reports the controller type it detects on an iOS connect. A POSITIVE rollout flag: unresolved or off is today's behaviour. Dev builds read it as on unless it is set to off here; screenshot mode reads it as off.",
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -645,6 +651,21 @@ export function useWorkoutTimedBlocksFlag(): boolean {
  */
 export function useWallSwipeToDriveEnabled(): boolean {
   return wallSwipeToDriveOffered(useFeatureFlag('wall-swipe-to-drive'));
+}
+
+/**
+ * MoonBoard Relay mode (#7220). A POSITIVE rollout flag read strictly: off or
+ * unresolved is today's behaviour, where every phone tries to connect. Dev
+ * builds read it as on unless a tester turns it off; screenshot mode is off.
+ */
+export function useMoonboardRelayModeEnabled(): boolean {
+  return moonboardRelayModeOffered(useFeatureFlag('moonboard-relay-mode'));
+}
+
+/** The rule behind `useMoonboardRelayModeEnabled`, for tests. */
+export function moonboardRelayModeOffered(flag: boolean | string | undefined): boolean {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  return __DEV__ ? flag !== false : flag === true;
 }
 
 /** The rule behind `useWallSwipeToDriveEnabled`, for tests. */
