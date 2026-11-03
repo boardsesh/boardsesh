@@ -166,6 +166,32 @@ describe('MarqueeText settles on one copy (#7253)', () => {
     expect(reanim.withRepeat).not.toHaveBeenCalled();
   });
 
+  // A name that fits, whose width is not a whole point. The clip's width is
+  // rounded and the measurer's ceiled, so a width ending in .333 (a 3x screen)
+  // reads as 1pt of overflow and picks the shrunk copy. If only that copy claims
+  // the measured width, the clip widens by that 1pt, the overflow is gone, the
+  // plain copy shows, the clip narrows back: a loop again, now on short names.
+  it.each([
+    ['ending in .333', 200 + 1 / 3],
+    ['ending in .667', 200 + 2 / 3],
+    ['of whole points', 200],
+  ])('keeps a name that fits, %s, still', (_label, width) => {
+    model.room = 271;
+    model.contentWidth = width;
+    model.fittedWidth = width;
+
+    const { container } = render(
+      <MarqueeText active shrinkToFitScale={0.9}>
+        {NAME}
+      </MarqueeText>,
+    );
+
+    expect(model.clipReports.length).toBeLessThanOrEqual(2);
+    expect(container.textContent).toContain(NAME);
+    expect(container.querySelector('[data-animated]')).toBeNull();
+    expect(reanim.withRepeat).not.toHaveBeenCalled();
+  });
+
   // The header re-renders on every player update (the wall chip, the top bar's
   // signposts, the rest timer). None of that may restart or remount the scroll.
   it('starts the scroll once and keeps it through unrelated parent updates', () => {

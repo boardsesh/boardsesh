@@ -133,6 +133,16 @@ export const MarqueeText = memo(function MarqueeText({
         </Text>
       </View>
 
+      {/* With shrink-to-fit on, the copy shown is picked from the clip's width,
+          so the clip's width must not depend on the copy. Where the clip hugs
+          its content (the play-drawer header) each copy sizes it differently:
+          the shrunk copy lays out a few points inside the room it was fitted
+          to, the plain copy at its unrounded width. Either switch flips the
+          pick back, every frame: the name flickers and never scrolls (#7253).
+          This strut claims the whole name's width under every copy, so the
+          clip is always min(room, name width). */}
+      {shrinkToFitScale !== undefined ? <View style={[styles.widthStrut, { width: contentWidth }]} /> : null}
+
       {shouldScroll ? (
         <MarqueeScroller overflow={overflow}>
           {/* Pin to the full measured width and clip (don't ellipsize): otherwise
@@ -150,26 +160,17 @@ export const MarqueeText = memo(function MarqueeText({
           </Text>
         </MarqueeScroller>
       ) : shrinksToFit ? (
-        <>
-          {/* Claims the whole name's width, as the scrolling copy does, so the
-              clip stays as wide as its room. The shrunk copy alone lays out a
-              few points inside the room it was fitted to; where the clip hugs
-              its content (the play-drawer header), that narrower clip reads as
-              "too long to shrink", the name scrolls, the clip widens, it
-              shrinks again: a flicker every frame and no scroll (#7253). */}
-          <View style={[styles.widthStrut, { width: contentWidth }]} />
-          <Text
-            variant={variant}
-            color={color}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={shrinkToFitScale}
-            maxFontSizeMultiplier={maxFontSizeMultiplier}
-            style={textStyle}
-          >
-            {children}
-          </Text>
-        </>
+        <Text
+          variant={variant}
+          color={color}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={shrinkToFitScale}
+          maxFontSizeMultiplier={maxFontSizeMultiplier}
+          style={textStyle}
+        >
+          {children}
+        </Text>
       ) : (
         <Text
           variant={variant}
