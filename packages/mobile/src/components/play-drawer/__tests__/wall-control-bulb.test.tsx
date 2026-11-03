@@ -76,8 +76,6 @@ const LIT: WallControlModel = {
   labelKey: 'disconnectBoard',
   a11yValueKey: 'youHaveBoardLit',
   a11yHintKey: 'litHint',
-  bulbTapAction: 'disconnect',
-  bulbA11yHintKey: 'litHint',
   bulbValueKey: 'youHaveBoardLit',
   look: 'lit',
   selected: true,
@@ -152,6 +150,27 @@ describe('WallControlBulb', () => {
     expect(plain.container.querySelector('[data-ring]')).toBeNull();
     expect(plain.bulb.dataset.halo).toBe('true');
     expect(plain.bulb.dataset.value).toBe('playView.wallControl.youHaveBoardLit');
+  });
+
+  // Owner, 2026-11-03 ("Yes, every bulb"): during a drive the bulb's tap stops
+  // driving, so it speaks the button's stop hint; with none it says it lets go.
+  it.each([
+    ['an open-ended drive', { tapAction: 'stop_driving', look: 'driving' }],
+    ["Put on board's timed drive", { tapAction: 'stop_window', lightWindow: true, look: 'driving' }],
+  ] as [string, Partial<WallControlModel>][])('says a tap stops %s, and that it lets go with none', (_drive, drive) => {
+    const driving = renderBulb({
+      ...LIT,
+      driving: true,
+      labelKey: 'youAreDriving',
+      a11yValueKey: 'drivingEveryClimb',
+      a11yHintKey: 'stopDrivingHint',
+      ...drive,
+    }).bulb;
+    expect(driving.dataset.hint).toBe('playView.wallControl.stopDrivingHint');
+    // Its name stays the bulb's own, whatever the tap does.
+    expect(driving.getAttribute('aria-label')).toBe('playView.wallControl.bulbAria');
+    cleanup();
+    expect(renderBulb(LIT).bulb.dataset.hint).toBe('playView.wallControl.litHint');
   });
 
   it('shows the scan and the write from the model', () => {

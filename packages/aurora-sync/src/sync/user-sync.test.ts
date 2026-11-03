@@ -4,9 +4,13 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 
 /** Driverless drizzle handle — `.toSQL()` renders without a connection. */
 const renderOnlyDb = drizzle({} as never);
-import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
+import { playlists, playlistClimbs, playlistOwnership, userDeletedUpstreamPlaylists } from '@boardsesh/db/schema/app';
 import { boardCircuits } from '@boardsesh/db/schema';
-import { foreignPlaylistOwnerGuard, upstreamPlaylistOwnersQuery } from '@boardsesh/db/queries';
+import {
+  foreignPlaylistOwnerGuard,
+  upstreamPlaylistLockStatement,
+  upstreamPlaylistOwnersQuery,
+} from '@boardsesh/db/queries';
 import {
   CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,
   DUPLICATE_CIRCUIT_OWNER_SKIP_REASON,
@@ -21,14 +25,25 @@ import {
  * hands back canned rows for the owner lookup.
  */
 type DbCall = {
-  kind: 'select' | 'insert' | 'delete' | 'conflict' | 'execute' | 'transaction';
+  kind: 'select' | 'deletedLookup' | 'insert' | 'delete' | 'conflict' | 'execute' | 'lock' | 'transaction';
   table?: unknown;
   args: unknown[];
 };
 type SelectRows = Array<Record<string, unknown>>;
 
+/**
+ * The per-user upstream-playlist lock (#7240), recorded as its own kind so the
+ * tests that pin the per-circuit advisory lock order keep pinning exactly those.
+ */
+const UPSTREAM_PLAYLIST_LOCK_SQL = new PgDialect().sqlToQuery(upstreamPlaylistLockStatement('any-user')).sql;
+
 function createDbShim(
-  opts: { selectResults?: SelectRows[]; returningRows?: Array<Array<Record<string, unknown>>> } = {},
+  opts: {
+    selectResults?: SelectRows[];
+    returningRows?: Array<Array<Record<string, unknown>>>;
+    /** What the deleted-circuit lookup reads; served by table, outside the `selectResults` queue. */
+    deletedUpstreamIds?: string[];
+  } = {},
 ) {
   const calls: DbCall[] = [];
   const selectResults = opts.selectResults ?? [];
@@ -42,18 +57,29 @@ function createDbShim(
       return processor(db);
     },
     execute(statement: unknown) {
-      calls.push({ kind: 'execute', args: [statement] });
+      const isUpstreamPlaylistLock = new PgDialect().sqlToQuery(statement as never).sql === UPSTREAM_PLAYLIST_LOCK_SQL;
+      calls.push({ kind: isUpstreamPlaylistLock ? 'lock' : 'execute', args: [statement] });
       return Promise.resolve([]);
     },
     select(cols: unknown) {
-      calls.push({ kind: 'select', args: [cols] });
-      const rows = selectResults[selectIdx++] ?? [];
-      const source = {
-        where: (_cond: unknown) => Promise.resolve(rows),
-        leftJoin: (_table: unknown, _on: unknown) => source,
-        innerJoin: (_table: unknown, _on: unknown) => source,
+      const sourceFor = (rows: SelectRows) => {
+        const source = {
+          where: (_cond: unknown) => Promise.resolve(rows),
+          leftJoin: (_table: unknown, _on: unknown) => source,
+          innerJoin: (_table: unknown, _on: unknown) => source,
+        };
+        return source;
       };
-      return { from: (_table: unknown) => source };
+      return {
+        from: (table: unknown) => {
+          if (table === userDeletedUpstreamPlaylists) {
+            calls.push({ kind: 'deletedLookup', table, args: [cols] });
+            return sourceFor((opts.deletedUpstreamIds ?? []).map((upstreamId) => ({ upstreamId })));
+          }
+          calls.push({ kind: 'select', table, args: [cols] });
+          return sourceFor(selectResults[selectIdx++] ?? []);
+        },
+      };
     },
     delete(table: unknown) {
       return {
@@ -965,12 +991,110 @@ describe('getCircuitPlaylistOwnershipConflictState (#3950)', () => {
     const rendered = new PgDialect().sqlToQuery(captured.where as never);
     expect(rendered.sql).toContain('"board_circuits"."board_type" =');
     expect(rendered.sql).toContain('"board_circuits"."user_id" =');
-    expect(rendered.params).toEqual(['tension', 144574]);
+    // Circuits this user deleted in Boardsesh (#7240) are not conflicts: the
+    // probe is scoped to THIS user, and correlated to the scanned circuit.
+    expect(rendered.sql).toContain('not exists (select "upstream_id" from "user_deleted_upstream_playlists"');
+    expect(rendered.sql).toContain('"user_deleted_upstream_playlists"."user_id" =');
+    expect(rendered.sql).toContain('"user_deleted_upstream_playlists"."upstream_source" =');
+    expect(rendered.sql).toContain('"user_deleted_upstream_playlists"."upstream_id" = "board_circuits"."uuid"');
+    expect(rendered.params).toEqual(['tension', 144574, 'user-1', 'aurora']);
 
     expect(captured.ownerJoin).toBeDefined();
     const renderedOwnerJoin = new PgDialect().sqlToQuery(captured.ownerJoin as never);
     expect(renderedOwnerJoin.sql).toContain('"playlist_ownership"."playlist_id" = "playlists"."id"');
     expect(renderedOwnerJoin.sql).toContain('"playlist_ownership"."role" =');
     expect(renderedOwnerJoin.params).toEqual(['owner']);
+  });
+});
+
+/**
+ * #7240: a circuit the climber deleted in Boardsesh. Aurora re-sends a circuit
+ * when it changes upstream (and on any full re-sync), and the playlist upsert
+ * used to insert it straight back.
+ */
+describe('upsertTableData circuits — circuits deleted in Boardsesh (#7240)', () => {
+  it('keeps the source row but writes no playlist, ownership or climbs, and reports no refusal', async () => {
+    const { db, calls, insertsInto } = createDbShim({ deletedUpstreamIds: ['circuit-1'] });
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Deleted in Boardsesh', [{ climb_uuid: 'climb-A' }])],
+      () => {},
+    );
+
+    expect(insertsInto(boardCircuits)).toHaveLength(1);
+    expect(insertsInto(playlists)).toHaveLength(0);
+    expect(insertsInto(playlistOwnership)).toHaveLength(0);
+    expect(insertsInto(playlistClimbs)).toHaveLength(0);
+    expect(calls.filter((call) => call.kind === 'delete')).toHaveLength(0);
+    // Nothing to arbitrate, so no owner lookup either.
+    expect(calls.filter((call) => call.kind === 'select')).toHaveLength(0);
+    // A deliberate delete is not a duplicate-account conflict or an invariant
+    // failure: it must never reach sync_error.
+    expect(result).toEqual({ synced: 1, skipped: 0 });
+  });
+
+  it('still writes the circuits the climber kept in the same payload', async () => {
+    const { db, insertsInto } = createDbShim({
+      deletedUpstreamIds: ['circuit-gone'],
+      selectResults: [[]],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-gone', 'Gone'), circuit('circuit-kept', 'Kept')],
+      () => {},
+    );
+
+    const playlistRows = insertsInto(playlists).map((call) => call.args[0] as { auroraId: string });
+    expect(playlistRows.map((row) => row.auroraId)).toEqual(['circuit-kept']);
+  });
+
+  it('takes the per-user lock after the circuit locks and before any row write or read', async () => {
+    const { db, calls } = createDbShim({ deletedUpstreamIds: ['circuit-1'] });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Deleted in Boardsesh')],
+      () => {},
+    );
+
+    const order = calls
+      .filter((call) => call.kind !== 'transaction' && call.kind !== 'conflict')
+      .map((call) =>
+        call.kind === 'insert' ? `insert:${call.table === boardCircuits ? 'source' : 'other'}` : call.kind,
+      );
+    expect(order).toEqual(['execute', 'lock', 'insert:source', 'deletedLookup']);
+    const lock = calls.find((call) => call.kind === 'lock');
+    expect(new PgDialect().sqlToQuery(lock?.args[0] as never).params).toContain('user-1');
+  });
+
+  it('takes no per-user lock and reads no deleted list when no Boardsesh user is syncing', async () => {
+    const { db, calls } = createDbShim({ deletedUpstreamIds: ['circuit-1'] });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      '',
+      [circuit('circuit-1', 'Source only')],
+      () => {},
+    );
+
+    expect(calls.filter((call) => call.kind === 'lock' || call.kind === 'deletedLookup')).toHaveLength(0);
   });
 });

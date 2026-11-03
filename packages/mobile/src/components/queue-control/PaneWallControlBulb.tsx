@@ -33,6 +33,10 @@ type PaneWallControlBulbProps = {
  * an amber arc that drains, the Live Activity's ring. An open-ended drive keeps
  * the amber disc. Its label is already the button's "You are driving the
  * wall", so no value: a live number would re-render the bar on every step.
+ *
+ * Its tap is the wall button's (`tapAction`), as on every bulb (owner,
+ * 2026-11-03): during any drive it stops driving and keeps the link, and its
+ * hint says so.
  */
 export function PaneWallControlBulb({
   control,
@@ -75,7 +79,7 @@ export function PaneWallControlBulb({
       onLongPress={hold ? longPress : undefined}
       accessibilityRole="button"
       accessibilityLabel={text.accessibilityLabel}
-      accessibilityHint={text.bulbAccessibilityHint}
+      accessibilityHint={text.accessibilityHint}
       accessibilityState={{ selected: model.selected, busy: model.pending || model.writing }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}

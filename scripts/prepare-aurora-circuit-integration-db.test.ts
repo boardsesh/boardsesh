@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   columnMatchesCanonical,
+  deletedUpstreamPlaylistsStatements,
+  findDeletedUpstreamPlaylistsMigration,
   indexMatchesCanonical,
   ledgerSnapshotsMatch,
+  readDeletedUpstreamPlaylistsMigration,
   requireCompatibilityOptIn,
   requireLocalDatabaseUrl,
   type PlaylistColumnDefinition,
@@ -121,5 +124,34 @@ describe('Aurora circuit schema compatibility guards', () => {
         ordered_rows: '[{"id":2,"hash":"original","created_at":null}]',
       }),
     ).toBe(false);
+  });
+
+  it('creates the deleted-circuits table from its generated migration, and only creates', () => {
+    const statements = deletedUpstreamPlaylistsStatements(readDeletedUpstreamPlaylistsMigration());
+
+    expect(statements.map((statement) => statement.split(/\s+/).slice(0, 2).join(' '))).toEqual([
+      'CREATE TYPE',
+      'CREATE TABLE',
+      'ALTER TABLE',
+      'CREATE UNIQUE',
+    ]);
+    expect(statements.join('\n')).not.toMatch(/\bDROP\b/i);
+  });
+
+  it('finds that migration by name, so a renumbered migration still resolves', () => {
+    expect(
+      findDeletedUpstreamPlaylistsMigration([
+        '0287_climb_mutation_receipts.sql',
+        '0291_user_deleted_upstream_playlists.sql',
+        'meta',
+      ]),
+    ).toBe('0291_user_deleted_upstream_playlists.sql');
+    expect(() => findDeletedUpstreamPlaylistsMigration(['0287_climb_mutation_receipts.sql'])).toThrow(/found 0/);
+    expect(() =>
+      findDeletedUpstreamPlaylistsMigration([
+        '0288_user_deleted_upstream_playlists.sql',
+        '0289_user_deleted_upstream_playlists.sql',
+      ]),
+    ).toThrow(/found 2/);
   });
 });

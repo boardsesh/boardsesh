@@ -26,6 +26,8 @@ import { hapticLight } from '../../lib/haptics';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { getBleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
+import { useBulbDriveTap } from '../queue-control/bar-bulb-tap';
+import { phoneDrivesTheWall } from '../queue-control/bulb-drive-cue';
 import { Text } from '../Text';
 import { iconMap } from '../icon-map';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
@@ -66,22 +68,44 @@ export function MaterialAngleAction() {
   );
 }
 
+/**
+ * The Android app bar's bulb. While this phone drives the wall a tap stops
+ * driving and keeps the link, as every bulb does (owner, 2026-11-03;
+ * `useBulbDriveTap`), and the bulb says "Stop driving". With no drive it
+ * connects or hangs up, as before.
+ */
 export function MaterialLightbulbAction() {
   const { systemColors, brandColors } = useTheme();
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
-  const { bluetooth, lit, localConnected, onPress, onLongPress, pressAction, holderIsAuthoritative } =
-    useLightbulbControl({
-      surface: 'app_bar',
-      onOpenControls: openControls,
-    });
+  const {
+    bluetooth,
+    lit,
+    localConnected,
+    ledless,
+    inAppBoardConnection,
+    onPress,
+    onLongPress,
+    pressAction,
+    holderIsAuthoritative,
+  } = useLightbulbControl({
+    surface: 'app_bar',
+    onOpenControls: openControls,
+  });
   const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);
+  const { driving, takeTap } = useBulbDriveTap({
+    drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),
+    linked: localConnected,
+    control: 'app_bar',
+  });
 
   const handlePress = useCallback(() => {
+    // A stop buzzes on its own; a dropped tap (just after a stop) does nothing.
+    if (takeTap()) return;
     hapticLight();
     onPress();
-  }, [onPress]);
+  }, [takeTap, onPress]);
 
   // Offered only where the long press itself is wired (connected, handler present).
   const canOpenControls = localConnected && !!onLongPress;
@@ -104,7 +128,9 @@ export function MaterialLightbulbAction() {
   // On a wall with no light kit there is no Bluetooth link to describe, so the
   // label names the two states that DO exist there: holding the wall or not.
   let accessibilityLabel: string;
-  if (labelKind === 'releaseWall') {
+  if (driving) {
+    accessibilityLabel = tSettings('ble.barControl.stopDrivingLabel');
+  } else if (labelKind === 'releaseWall') {
     accessibilityLabel = tSettings('ble.releaseWall');
   } else if (labelKind === 'takeWall') {
     accessibilityLabel = tSettings('ble.takeWall');
@@ -130,8 +156,10 @@ export function MaterialLightbulbAction() {
       // The label reflects what tapping ACTUALLY does, not the fill — the bulb
       // can read lit because a session peer holds the wall. While a peer drives
       // the board there is no connect to promise, and this surface has no
-      // displayed climb to relay, so the tap settles instead.
+      // displayed climb to relay, so the tap settles instead. While this phone
+      // drives the wall it says "Stop driving", and the hint what follows.
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={driving ? tSettings('ble.barControl.stopDrivingHint') : undefined}
     />
   );
 }

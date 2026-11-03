@@ -7,10 +7,12 @@
  * including a historical gap in the Drizzle ledger.  Running migrations here
  * would therefore give CI a different failure mode from production.  This script
  * only supplies the four backwards-compatible playlist fields that the two
- * arbitration specifications need.  It never applies a migration or changes the
- * migration ledger.
+ * arbitration specifications need, plus the deleted-circuits table (#7240) the
+ * circuit writer reads before it writes a playlist.  It never runs the migrator
+ * or changes the migration ledger.
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import postgres, { type TransactionSql } from 'postgres';
@@ -352,6 +354,59 @@ async function createCanonicalIndex(
   await transaction.unsafe(statements[index.indexName]);
 }
 
+/**
+ * The deleted-circuits table (#7240), from its generated migration rather than
+ * a second copy of the DDL: the Aurora circuit writer reads it before every
+ * playlist write, and a pinned image older than that migration lacks it.
+ *
+ * Found by name, not number: `vp run db:renumber` moves a migration to the
+ * next free number when main takes its slot, and a hard-coded number would
+ * then point at a file that no longer exists.
+ */
+const DRIZZLE_MIGRATIONS_DIR = new URL('../packages/db/drizzle/', import.meta.url);
+const DELETED_UPSTREAM_PLAYLISTS_MIGRATION_SUFFIX = '_user_deleted_upstream_playlists.sql';
+
+export function findDeletedUpstreamPlaylistsMigration(fileNames: readonly string[]): string {
+  const matches = fileNames.filter(
+    (fileName) => /^\d{4}_/.test(fileName) && fileName.endsWith(DELETED_UPSTREAM_PLAYLISTS_MIGRATION_SUFFIX),
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected exactly one *${DELETED_UPSTREAM_PLAYLISTS_MIGRATION_SUFFIX} migration in packages/db/drizzle, found ${matches.length}.`,
+    );
+  }
+  return matches[0];
+}
+
+export function readDeletedUpstreamPlaylistsMigration(): string {
+  const fileName = findDeletedUpstreamPlaylistsMigration(readdirSync(DRIZZLE_MIGRATIONS_DIR));
+  return readFileSync(new URL(fileName, DRIZZLE_MIGRATIONS_DIR), 'utf8');
+}
+
+export function deletedUpstreamPlaylistsStatements(migrationSql: string): string[] {
+  return migrationSql
+    .split('--> statement-breakpoint')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+}
+
+async function ensureDeletedUpstreamPlaylistsTable(transaction: TransactionSql): Promise<void> {
+  const [before] = await transaction<{ present: boolean }[]>`
+    SELECT to_regclass('public.user_deleted_upstream_playlists') IS NOT NULL AS present
+  `;
+  if (!before?.present) {
+    for (const statement of deletedUpstreamPlaylistsStatements(readDeletedUpstreamPlaylistsMigration())) {
+      await transaction.unsafe(statement);
+    }
+  }
+  const [after] = await transaction<{ present: boolean }[]>`
+    SELECT to_regclass('public.user_deleted_upstream_playlists_unique') IS NOT NULL AS present
+  `;
+  if (!after?.present) {
+    throw new Error('user_deleted_upstream_playlists exists without its user_deleted_upstream_playlists_unique index.');
+  }
+}
+
 export async function prepareAuroraCircuitIntegrationDatabase(databaseUrl: string): Promise<void> {
   const client = postgres(databaseUrl, { max: 1, prepare: false, onnotice: () => undefined });
   try {
@@ -389,6 +444,8 @@ export async function prepareAuroraCircuitIntegrationDatabase(databaseUrl: strin
         assertCanonicalIndex(actualIndex, requiredIndex);
       }
 
+      await ensureDeletedUpstreamPlaylistsTable(transaction);
+
       const ledgerAfter = await snapshotLedger(transaction);
       if (!ledgerSnapshotsMatch(ledgerBefore, ledgerAfter)) {
         throw new Error('Aurora circuit schema preparation must not change the Drizzle migration ledger.');
@@ -403,7 +460,7 @@ async function main(): Promise<void> {
   requireCompatibilityOptIn(process.env);
   const databaseUrl = requireLocalDatabaseUrl(process.env.DATABASE_URL);
   await prepareAuroraCircuitIntegrationDatabase(databaseUrl);
-  console.info('[aurora-circuit-schema-compat] playlist compatibility verified without applying migrations.');
+  console.info('[aurora-circuit-schema-compat] playlist compatibility verified without running the migrator.');
 }
 
 const invokedPath = process.argv[1];

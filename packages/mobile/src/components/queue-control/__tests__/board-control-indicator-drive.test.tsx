@@ -32,6 +32,7 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackDriveModeStarted: vi.fn(),
   trackDriveModeEnded: vi.fn(),
+  trackWallControlTapped: vi.fn(),
 }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },

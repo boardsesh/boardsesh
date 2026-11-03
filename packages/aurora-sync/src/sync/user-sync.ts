@@ -15,10 +15,13 @@ import {
 } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   DeferredClimbStatsRecompute,
+  acquireUpstreamPlaylistLock,
   acquireUserTickMutationLock,
   foreignPlaylistOwnerGuard,
   isSyncFenceError,
+  notDeletedUpstreamPlaylistGuard,
   recomputeClimbStatsBulk,
+  selectDeletedUpstreamPlaylistIds,
   selectUpstreamPlaylistOwners,
   type ClimbStatsRecompute,
   type SyncBatchRunner,
@@ -70,6 +73,10 @@ export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = DUPLICATE_BOARD_ACCOUNT_CIRCU
  * circuit set regardless of what arrived in this delta. `clearAuroraBoardData`
  * does wipe it board-wide, but that also clears `board_user_syncs` in the same
  * transaction, so the next sync refills both and the check self-heals.
+ *
+ * Circuits this user deleted in Boardsesh (#7240) are left out: the writer
+ * skips them, so another Boardsesh account linked to the same Aurora account
+ * claiming one is not a conflict for this user.
  */
 export async function getCircuitPlaylistOwnershipConflictState(
   db: OwnerQueryDb,
@@ -93,7 +100,13 @@ export async function getCircuitPlaylistOwnershipConflictState(
       playlistOwnership,
       and(eq(playlistOwnership.playlistId, playlists.id), eq(playlistOwnership.role, 'owner')),
     )
-    .where(and(eq(circuitsSchema.boardType, boardName), eq(circuitsSchema.userId, auroraUserId)));
+    .where(
+      and(
+        eq(circuitsSchema.boardType, boardName),
+        eq(circuitsSchema.userId, auroraUserId),
+        notDeletedUpstreamPlaylistGuard(nextAuthUserId, 'aurora', circuitsSchema.uuid),
+      ),
+    );
 
   const ownerIdsByCircuit = new Map<string, string[]>();
   for (const row of ownerRows) {
@@ -436,6 +449,11 @@ export async function upsertTableData(
         for (const item of circuitItems) {
           await circuitsTransaction.execute(auroraCircuitAdvisoryLockStatement(boardName, item.uuid));
         }
+        // Then the user's upstream-playlist lock (#7240), still before any row
+        // write: deletePlaylist takes it before recording a deleted circuit, so
+        // the deleted-circuit read below sees every delete that committed, and
+        // a delete that arrives mid-write waits for this transaction.
+        if (nextAuthUserId) await acquireUpstreamPlaylistLock(circuitsTransaction, nextAuthUserId);
 
         await processBatches(circuitItems, BATCH_SIZE, async (batch) => {
           const values = batch.map((item) => ({
@@ -479,6 +497,22 @@ export async function upsertTableData(
         }
 
         const refusalReasonsByCircuitUuid = new Map<string, CircuitRefusalReason>();
+
+        // Circuits the climber deleted in Boardsesh (#7240). The source row
+        // above still mirrors upstream; only the playlist stays deleted. Not
+        // a refusal: nothing is wrong, so it is not counted in `skipped` and
+        // never reaches sync_error.
+        const deletedCircuitUuids = await selectDeletedUpstreamPlaylistIds(
+          circuitsTransaction as unknown as OwnerQueryDb,
+          nextAuthUserId,
+          'aurora',
+          circuitItems.map((item) => item.uuid),
+        );
+        const playlistItems = circuitItems.filter((item) => !deletedCircuitUuids.has(item.uuid));
+        if (deletedCircuitUuids.size > 0) {
+          log(`  Skipped ${deletedCircuitUuids.size} circuits deleted in Boardsesh`);
+        }
+
         // One owner query per payload, after every advisory lock and source
         // write. Compliant writers cannot change these owner sets until this
         // transaction releases its complete lock set; only the rare SQL-guard
@@ -486,10 +520,10 @@ export async function upsertTableData(
         const ownersByCircuitUuid = await selectUpstreamPlaylistOwners(
           circuitsTransaction as unknown as OwnerQueryDb,
           playlists.auroraId,
-          circuitItems.map((item) => item.uuid),
+          playlistItems.map((item) => item.uuid),
         );
 
-        for (const item of circuitItems) {
+        for (const item of playlistItems) {
           const outcome = await circuitsTransaction.transaction(
             async (playlistTransaction): Promise<CircuitPlaylistWriteOutcome> => {
               const tx = playlistTransaction as unknown as DrizzleDb;
@@ -645,7 +679,7 @@ export async function upsertTableData(
           }
         }
 
-        log(`  Synced ${circuitItems.length - refusalReasonsByCircuitUuid.size} circuits to playlists table`);
+        log(`  Synced ${playlistItems.length - refusalReasonsByCircuitUuid.size} circuits to playlists table`);
         if (refusalReasonsByCircuitUuid.size > 0 || rejectedCount > 0) {
           const circuitPlaylistRefusals: CircuitPlaylistRefusalSummary = {
             foreign: 0,

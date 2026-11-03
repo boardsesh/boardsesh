@@ -1,4 +1,39 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import type { WallControlSurface } from '../../lib/analytics-wall-control';
+import type { WallControlAction } from './wall-control';
+
+/**
+ * Whether the bar's Put on board request presses the wall control's tap
+ * (`mini_bar`, the button's `tapAction`), given what that tap would do now.
+ * Never a `noop` (a climb this wall can't light, with no board at this gym to
+ * walk to: nothing to press, and no bar tap to count), and never a stop: the
+ * request asked to put the pick up, and a control that reads You are driving
+ * the wall has the climb on screen lit already, so a stop would end the drive
+ * the climber never asked to end.
+ */
+export function putOnBoardIntentPresses(action: WallControlAction): boolean {
+  return action !== 'noop' && action !== 'stop_driving' && action !== 'stop_window';
+}
+
+/**
+ * The press behind the bar's Put on board request (`usePutOnBoardIntent`'s
+ * `press`): the wall control's own handler as the bar's control (`mini_bar`,
+ * the button's `tapAction`), skipped where that tap would do nothing or stop a
+ * drive (`putOnBoardIntentPresses`). It reads `tapAction` as it is at the
+ * press, and keeps its identity across renders so the request's effect doesn't
+ * re-run for it.
+ */
+export function usePutOnBoardIntentPress(
+  tapAction: WallControlAction,
+  press: (control: WallControlSurface) => void,
+): () => void {
+  const tapActionRef = useRef(tapAction);
+  tapActionRef.current = tapAction;
+  return useCallback(() => {
+    if (!putOnBoardIntentPresses(tapActionRef.current)) return;
+    press('mini_bar');
+  }, [press]);
+}
 
 export type PutOnBoardIntentInputs = {
   /** The preview item the MiniPlayer's bulb asked to put up (`putOnBoard`), or null. */

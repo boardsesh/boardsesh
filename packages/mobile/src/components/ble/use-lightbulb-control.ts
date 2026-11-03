@@ -8,6 +8,7 @@ import {
 } from '../../lib/analytics-board-connect';
 import {
   derivePlayDrawerLightbulbPressAction,
+  type BoardConnection,
   type PlayDrawerLightbulbPressAction,
 } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
@@ -138,6 +139,12 @@ export type LightbulbControl = {
   ledless: boolean;
   /** This device holds the wall with no Bluetooth link. */
   wallHeldLocally: boolean;
+  /**
+   * Who holds the board as the in-app surfaces see it
+   * (`BoardConnectionState.inAppBoardConnection`), for a bulb that asks
+   * whether this phone drives the wall (`phoneDrivesTheWall`).
+   */
+  inAppBoardConnection: BoardConnection;
 };
 
 /**
@@ -162,6 +169,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     pending,
     ledless,
     wallHeldLocally,
+    inAppBoardConnection,
     holderIsAuthoritative: holderConfirmed,
   } = useBoardConnectionState();
   // A crewmate's board that presence hasn't confirmed yet reads as theirs: a
@@ -315,5 +323,6 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     wallHeldLocally,
     pressAction,
     holderIsAuthoritative,
+    inAppBoardConnection,
   };
 }

@@ -22,6 +22,7 @@ import {
   stopDrivingForLink,
   useDriveLightingMode,
 } from './drive-mode-store';
+import { DISCONNECT_TAP_GUARD_MS, WINDOW_END_TAP_GRACE_MS } from './drive-tap-guards';
 import { shouldDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
 import { useWallControlShown } from './use-wall-control-shown';
 import { isPutUpAction, type WallControlModel } from './wall-control';
@@ -89,29 +90,6 @@ export type UseWallControlOptions = {
   /** For Wall Control Shown and Tapped: why the climb on screen is a preview, or null. */
   previewReason?: WallControlPreviewReason | null;
 };
-
-/**
- * After a tap that changes what the next tap does, how long further taps are
- * dropped. After a disconnect: the provider marks the link down before the
- * adapter's disconnect finishes, so the second tap of a double tap would
- * otherwise read Put on board and start a connect (the picker, or a 15 s scan)
- * mid-disconnect. After a stop: the second tap would land on Disconnect board,
- * and a crew's board has no Undo.
- */
-export const DISCONNECT_TAP_GUARD_MS = 600;
-
-/**
- * After Put on board's timed drive ends on its own and the label flips to
- * Disconnect board, how long a tap that would disconnect is dropped (spec B2),
- * the button's or a bulb's: a tap aimed at You are driving the wall to stop it
- * must not let go of a crew's board instead. With Disconnect Bluetooth when
- * driving ends on, that end lets go of the board and the label flips to Put
- * on board instead, so a put-up is dropped too: the stop the climber meant
- * must not reconnect and start a fresh drive. Otherwise any other tap (Put on
- * board on a preview) goes through. Touch, VoiceOver, Switch Control and
- * Voice Control all arrive as this one press.
- */
-export const WINDOW_END_TAP_GRACE_MS = 2_000;
 
 export type WallControlHandlers = {
   press: (control: WallControlSurface) => void;
@@ -272,8 +250,10 @@ export function useWallControl({
     // the wall (it now reads Disconnect board). Drop it.
     const tappedAt = guardedTapAtRef.current;
     if (tappedAt !== null && Date.now() - tappedAt < DISCONNECT_TAP_GUARD_MS) return;
-    // A bulb draws no frost, so it never stops driving (`bulbTapAction`).
-    const action = control === 'button' ? current.tapAction : current.bulbTapAction;
+    // Every view runs the one tap (owner, 2026-11-03: "Yes, every bulb"):
+    // during a drive the first-row bulb and the MiniPlayer's bulb standing in
+    // for it stop driving and keep the link, as the button does.
+    const action = current.tapAction;
     // A timed drive just ran out under the climber's thumb: a stop aimed at it
     // now reads Disconnect board, or Put on board once that end let go of the
     // board. Only that is dropped; with the link kept, a Put on board on
