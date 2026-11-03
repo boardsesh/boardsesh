@@ -18,6 +18,7 @@ import {
   addLockScreenDriveStopListener,
   addWidgetQueueNavigateListener,
   isAndroidSessionPresence,
+  readLiveActivityLockScreenPress,
 } from '../../lib/live-activity/live-activity-plugin';
 import {
   adoptLockScreenLighting,
@@ -195,7 +196,12 @@ export function DriveModeWatcher(): null {
         // board would. The bridge drops an index the queue doesn't hold.
         const { queue } = getQueueSnapshot();
         const item = event.currentIndex >= 0 && event.currentIndex < queue.length ? queue[event.currentIndex] : null;
-        startRelayedPressDrive({ ...adoptionInputRef.current, item, relay: relayClimbThroughHolder });
+        // iOS: the intent's press stamp says when it handed the press over,
+        // so one heard after a long suspension is dropped, not lit late.
+        const pressSettledAtMs = isAndroidSessionPresence
+          ? null
+          : (readLiveActivityLockScreenPress()?.settledAtMs ?? null);
+        startRelayedPressDrive({ ...adoptionInputRef.current, item, relay: relayClimbThroughHolder, pressSettledAtMs });
         return;
       }
       if (!isAndroidSessionPresence) {

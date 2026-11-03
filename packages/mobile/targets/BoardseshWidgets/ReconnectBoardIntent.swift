@@ -51,7 +51,12 @@ struct ReconnectBoardIntent: LiveActivityIntent {
         // and claiming wall control would take nothing either. The card
         // offers no reconnect then; this covers a tap on a card drawn before
         // JS said so. Nothing is recorded: the card just redraws as held.
-        if let defaults = SharedConstants.sharedDefaults, SharedBoardRelay.holdsBoardElsewhere(in: defaults) {
+        // The holder's own relight bulb is this intent too, so a relay value
+        // left beside "connectedByMe" never stops it (`connectedByMe` always
+        // stands, as in `SharedBoardRelay.effectiveConnection`).
+        if let defaults = SharedConstants.sharedDefaults,
+           SharedBoardRelay.holdsBoardElsewhere(in: defaults),
+           SharedWidgetWallControlState.loadBoardConnection(from: defaults).boardConnection != "connectedByMe" {
             #if !WIDGET_EXTENSION
             completionClass = .relayHolder
             await LiveActivityManager.shared.rerenderForLightingWindow()

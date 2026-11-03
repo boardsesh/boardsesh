@@ -590,6 +590,22 @@ describe('startRelayedPressDrive', () => {
     expect(getDriveMode()).toMatchObject({ phase: 'arming', relayed: true, startedBy: 'lock_screen' });
   });
 
+  it('drops an iOS press JS hears long after the intent handed it over', () => {
+    const relay = vi.fn(() => true);
+    expect(startRelayedPressDrive({ ...press, item, relay, pressSettledAtMs: NOW - 60_000, now: NOW })).toBe(false);
+    expect(relay).not.toHaveBeenCalled();
+    expect(getDriveMode()).toBeNull();
+    // A fresh one goes.
+    expect(startRelayedPressDrive({ ...press, item, relay, pressSettledAtMs: NOW - 200, now: NOW })).toBe(true);
+    expect(relay).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends the drive it armed when nothing could be sent', () => {
+    expect(startRelayedPressDrive({ ...press, item, relay: () => false, now: NOW })).toBe(false);
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('relay_unconfirmed');
+  });
+
   it('sends nothing for a press with no climb', () => {
     const relay = vi.fn(() => true);
     expect(startRelayedPressDrive({ ...press, item: null, relay, now: NOW })).toBe(false);

@@ -324,8 +324,10 @@ surface), and sends:
 
 **Why a separate field, not a fourth connection value.** `boardConnection` is the contract every installed binary
 and the backend's APNs push share (the "Two connection values" rule above). A relay always travels with
-`heldByPeer`, so a binary that ignores `boardRelay` draws the held card ("Sam is on the wall", no controls, no
-"Tap to reconnect"), never a reconnect. Unknown values are safe both ways: the Swift `ContentState` keeps
+`heldByPeer`, so an iOS binary that ignores `boardRelay` draws the held card ("Sam is on the wall", no controls, no
+"Tap to reconnect"). An older Android binary draws `heldByPeer` with its Connect bulb, but a tap only reaches JS,
+whose notification gate (`guardRelayConnect`) refuses it; and the fingerprint keeps this JS off older binaries
+anyway. Unknown values are safe both ways: the Swift `ContentState` keeps
 `boardConnection` a `String?` and synthesized `Codable` ignores keys it doesn't know; `BoardConnection.from` maps
 an unknown string to nil and falls back to the App Group copy; expo `Record`s drop fields they don't declare; and
 both native sides read an unknown `boardRelay` as none. Widget navigation (`widgetNavigationAllowed`) stays gated

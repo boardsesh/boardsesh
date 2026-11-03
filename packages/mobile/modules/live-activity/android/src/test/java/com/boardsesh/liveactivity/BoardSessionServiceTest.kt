@@ -344,6 +344,7 @@ class BoardSessionServiceTest {
     }
 
     @Test
+    @Config(sdk = [30])
     fun `resolveLighting shows a relaying phone's drive, and nobody else's`() {
         val now = 1_000L
         val window = BoardSessionService.LIGHT_STATE_WINDOW

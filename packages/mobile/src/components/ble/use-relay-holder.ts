@@ -1,11 +1,11 @@
-import { useContext, useMemo } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
 import type { BoardConnectionHolder } from '@boardsesh/shared-schema';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useMoonboardRelayModeEnabled } from '../../providers/feature-flags-provider';
 import { useQueueSessionControls } from '../../providers/queue-provider';
-import { connectBlockedByRelayHolder, relayHolderFor } from '../../lib/board-relay/relay-holder';
+import { RELAY_HOLDER_IDLE_MS, connectBlockedByRelayHolder, relayHolderFor } from '../../lib/board-relay/relay-holder';
 import { isRelayPathSuppressed, useRelaySuppression } from '../../lib/board-relay/relay-path-store';
 
 /**
@@ -73,6 +73,20 @@ export function useRelayConnectBlocker(): BoardConnectionHolder | null {
   const linkMode = bluetooth?.moonboardLinkMode?.mode ?? null;
   const localConnected = bluetooth?.isConnected ?? false;
   const lastLocalHolderUserId = bluetooth?.lastLocalHolderUserId ?? null;
+  // The card can sit in the background for a whole session, so a holder that
+  // goes idle (and stops blocking) must be re-read when it does, not at the
+  // next presence event: Android draws no bulb at all while blocked.
+  const [idleTick, setIdleTick] = useState(0);
+  const lastSentAt = holder?.lastSentAt ?? null;
+  useEffect(() => {
+    if (!lastSentAt) return undefined;
+    const idleAt = Date.parse(lastSentAt) + RELAY_HOLDER_IDLE_MS;
+    if (Number.isNaN(idleAt)) return undefined;
+    const delay = idleAt - Date.now();
+    if (delay < 0) return undefined;
+    const timer = setTimeout(() => setIdleTick((tick) => tick + 1), delay + 1_000);
+    return () => clearTimeout(timer);
+  }, [lastSentAt]);
   return useMemo(() => {
     const gate = connectBlockedByRelayHolder('notification', {
       flagEnabled,
@@ -85,5 +99,6 @@ export function useRelayConnectBlocker(): BoardConnectionHolder | null {
       now: Date.now(),
     });
     return gate.blocked ? gate.holder : null;
-  }, [flagEnabled, boardType, linkMode, boardId, holder, localConnected, suppressed, lastLocalHolderUserId]);
+    // idleTick only re-reads the clock.
+  }, [flagEnabled, boardType, linkMode, boardId, holder, localConnected, suppressed, lastLocalHolderUserId, idleTick]);
 }

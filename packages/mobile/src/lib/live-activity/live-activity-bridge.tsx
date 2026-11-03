@@ -270,6 +270,8 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // changes when a board is (de)selected).
   const bluetoothRef = useRef(bluetooth);
   bluetoothRef.current = bluetooth;
+  const relayingRef = useRef(presence.boardRelay === 'relaying');
+  relayingRef.current = presence.boardRelay === 'relaying';
   useEffect(() => {
     const unsubscribe = addBoardControlListener((event) => {
       const bluetoothCtx = bluetoothRef.current;
@@ -308,6 +310,10 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
         else relayClimbThroughHolder(null);
       } else if (event.action === 'stopDriving' && isDriveStillOn()) {
         stopDrivingForLink();
+      } else if (event.action === 'stopDriving' && relayingRef.current) {
+        // A relaying phone's stop that found the drive over (or still
+        // arming): relay the climb, as its bulb does. It has no link to reassert.
+        relayClimbThroughHolder(null);
       } else if (event.action === 'reassert' || event.action === 'stopDriving') {
         // A re-push of the current climb — no climb change to undo, so no toast.
         bluetoothCtx.reassertWall();

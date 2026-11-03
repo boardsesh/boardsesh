@@ -458,6 +458,7 @@ export function startRelayedPressDrive({
   boardType,
   plan,
   relay,
+  pressSettledAtMs = null,
   now = Date.now(),
 }: {
   /** The climb the press moved to. */
@@ -469,13 +470,29 @@ export function startRelayedPressDrive({
   plan: KeepLightingPlan | null;
   /** Sends one climb to the holder's phone (`relayClimbThroughHolder`). */
   relay: (item: ClimbQueueItem) => boolean;
+  /**
+   * iOS: when the intent finished with the press (its stamp's `settledAtMs`),
+   * or null. A press JS hears long after (the app was suspended between the
+   * intent and this event) is dropped: its climb would land on the holder's
+   * wall over whatever they climb now.
+   */
+  pressSettledAtMs?: number | null;
   now?: number;
 }): boolean {
   endTimedDriveOverAtPress(now);
   if (!item) return false;
+  if (
+    pressSettledAtMs !== null &&
+    pressSettledAtMs !== undefined &&
+    Number.isFinite(pressSettledAtMs) &&
+    now - pressSettledAtMs > RELAYED_PRESS_MAX_AGE_MS
+  ) {
+    return false;
+  }
   // Entered before the send, so a relay that doesn't land belongs to the
   // drive's lost-path episode and ends it.
-  if (plan !== null && getDriveMode() === null) {
+  const armed = plan !== null && getDriveMode() === null;
+  if (armed) {
     enterDriveMode({
       sessionId,
       boardId,
@@ -487,8 +504,21 @@ export function startRelayedPressDrive({
       now,
     });
   }
-  return relay(item);
+  const sent = relay(item);
+  // Nothing went (no relay engine, no holder): don't leave the drive arming
+  // until its 30 s timeout.
+  if (!sent && armed && getDriveMode()?.relayed && getDriveMode()?.phase === 'arming') {
+    exitDriveMode('relay_unconfirmed');
+  }
+  return sent;
 }
+
+/**
+ * How old an iOS relayed press may be when JS hears it. The intent settles a
+ * press just before its Darwin post, so a fresh one is milliseconds old; one
+ * older than this waited out a suspended app.
+ */
+export const RELAYED_PRESS_MAX_AGE_MS = 10_000;
 
 /**
  * Tests only: forget which lock-screen write was settled, and when this JS

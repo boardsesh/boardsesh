@@ -1519,6 +1519,14 @@ describe('DriveModeWatcher: a press on a relaying phone', () => {
     expect(relay.send).not.toHaveBeenCalled();
   });
 
+  it('drops an iOS press the intent settled long ago', () => {
+    lockScreen.press = { pressId: 'p', expiresAtMs: Date.now(), settledAtMs: Date.now() - 60_000 };
+    mount();
+    navigate(1);
+    expect(relay.send).not.toHaveBeenCalled();
+    expect(getDriveMode()).toBeNull();
+  });
+
   it('is today’s press when this phone has its own link', () => {
     lockScreen.android = true;
     reads.current = { ...reads.current, isConnected: true };
