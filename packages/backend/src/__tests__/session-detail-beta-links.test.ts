@@ -173,6 +173,8 @@ function makeTickRow(overrides: {
   /** Boardsesh grade fields as the sessionDetail select aliases them (top-level). */
   boardseshDifficulty?: number | null;
   boardseshConfidence?: string | null;
+  /** Structured matching/feet rules (see decodeClimbRules). Defaults to unrecorded. */
+  characteristics?: string[] | null;
 }) {
   const boardType = overrides.boardType ?? 'kilter';
   const angle = overrides.angle ?? 40;
@@ -194,6 +196,8 @@ function makeTickRow(overrides: {
     },
     climbName: overrides.climbName,
     climbDescription: '',
+    // Match the alias selected by sessionDetail's Drizzle projection.
+    climbCharacteristics: overrides.characteristics ?? null,
     setterUsername: 'setter',
     layoutId: 1,
     frames: 'p1r1',
@@ -384,6 +388,35 @@ describe('sessionDetail per-tick betaLinks (tick-scoped to the crew)', () => {
     expect(byUuid.get('tick-graded')?.boardseshConfidence).toBe('confirmed');
     expect(byUuid.get('tick-ungraded')?.boardseshDifficulty).toBeNull();
     expect(byUuid.get('tick-ungraded')?.boardseshConfidence).toBeNull();
+  });
+
+  // Regression guard for #5245: the characteristics assertions are the guard.
+  // characteristics must reach the client so the mobile Logbook/session play
+  // drawer can show Woods' explicit rules — see tickToClimb in
+  // packages/mobile/src/lib/tick-to-climb.ts. isNoMatch already comes from
+  // resolveClimbNoMatch; it is asserted only to pin that it agrees with the
+  // array on a climb with an empty description (fixture below).
+  it('carries characteristics onto each session-detail tick and derives isNoMatch from it', async () => {
+    betaLinkTestState.tickRows = [
+      makeTickRow({
+        uuid: 'tick-no-match',
+        climbUuid: 'climb-a',
+        climbName: 'No Match Send',
+        characteristics: ['no_match'],
+      }),
+      // No characteristics recorded → null, not [], and isNoMatch falls back to
+      // the (empty) legacy description heuristic.
+      makeTickRow({ uuid: 'tick-unrecorded', climbUuid: 'climb-b', climbName: 'Unrecorded' }),
+    ];
+    betaLinkTestState.betaLinkRowsByQuery.push([]);
+
+    const result = await sessionDetail(undefined, { sessionId: 'party-1' });
+
+    const byUuid = new Map((result?.ticks ?? []).map((tick) => [tick.uuid, tick] as const));
+    expect(byUuid.get('tick-no-match')?.characteristics).toEqual(['no_match']);
+    expect(byUuid.get('tick-no-match')?.isNoMatch).toBe(true);
+    expect(byUuid.get('tick-unrecorded')?.characteristics).toBeNull();
+    expect(byUuid.get('tick-unrecorded')?.isNoMatch).toBe(false);
   });
 });
 

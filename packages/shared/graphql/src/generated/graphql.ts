@@ -474,6 +474,8 @@ export type AscentFeedItem = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   /**
    * Always null. Revision history was retired, so no log is marked as made on an earlier version.
    * @deprecated Climb revision history was retired. Always null.
@@ -3144,6 +3146,8 @@ export type GroupedAscentFeedItem = {
   bestQuality?: Maybe<Scalars['Int']['output']>;
   /** Board type */
   boardType: Scalars['String']['output'];
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   /** Name of the climb */
   climbName: Scalars['String']['output'];
   /** UUID of the climb */
@@ -3203,6 +3207,13 @@ export type GroupedNotification = {
    * climbs that carry no angle; clients fall back to the reader's own board.
    */
   climbAngle?: Maybe<Scalars['Int']['output']>;
+  /**
+   * Structured climb characteristics (e.g. 'no_match', 'method_footless').
+   * Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod).
+   * Drives the Woods matching/feet rules line and the no-match glyph elsewhere
+   * when a notification opens the play drawer directly, without a climb refetch.
+   */
+  climbCharacteristics?: Maybe<Array<Scalars['String']['output']>>;
   /**
    * Sizes the climb fits. Boards whose sizes number holds independently (Woods)
    * render a COMPLETELY different climb on the layout's default size, so a client
@@ -9455,6 +9466,8 @@ export type SessionDetailTick = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid: Scalars['String']['output'];
   climbedAt: Scalars['String']['output'];
@@ -9570,6 +9583,8 @@ export type SessionFeedTickHighlight = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid: Scalars['String']['output'];
   climbedAt: Scalars['String']['output'];
@@ -12608,6 +12623,7 @@ export type SessionFeedItemFieldsFragment = {
     isMirror: boolean;
     isBenchmark: boolean;
     isNoMatch: boolean;
+    characteristics?: Array<string> | null;
     comment?: string | null;
     frames?: string | null;
     setterUsername?: string | null;
@@ -12635,6 +12651,7 @@ export type SessionFeedItemFieldsFragment = {
       isMirror: boolean;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics?: Array<string> | null;
       comment?: string | null;
       frames?: string | null;
       setterUsername?: string | null;
@@ -12729,6 +12746,7 @@ export type GetSessionGroupedFeedQuery = {
         isMirror: boolean;
         isBenchmark: boolean;
         isNoMatch: boolean;
+        characteristics?: Array<string> | null;
         comment?: string | null;
         frames?: string | null;
         setterUsername?: string | null;
@@ -12761,6 +12779,7 @@ export type GetSessionGroupedFeedQuery = {
           isMirror: boolean;
           isBenchmark: boolean;
           isNoMatch: boolean;
+          characteristics?: Array<string> | null;
           comment?: string | null;
           frames?: string | null;
           setterUsername?: string | null;
@@ -12962,6 +12981,7 @@ export type GetCrewFeedQuery = {
               isMirror: boolean;
               isBenchmark: boolean;
               isNoMatch: boolean;
+              characteristics?: Array<string> | null;
               comment?: string | null;
               frames?: string | null;
               setterUsername?: string | null;
@@ -12994,6 +13014,7 @@ export type GetCrewFeedQuery = {
                 isMirror: boolean;
                 isBenchmark: boolean;
                 isNoMatch: boolean;
+                characteristics?: Array<string> | null;
                 comment?: string | null;
                 frames?: string | null;
                 setterUsername?: string | null;
@@ -13087,6 +13108,7 @@ export type GetSessionDetailQuery = {
       isMirror: boolean;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics?: Array<string> | null;
       comment?: string | null;
       frames?: string | null;
       setterUsername?: string | null;
@@ -14345,6 +14367,7 @@ export type GetGroupedNotificationsQuery = {
       climbAngle?: number | null;
       climbFrames?: string | null;
       climbCompatibleSizeIds?: Array<number> | null;
+      climbCharacteristics?: Array<string> | null;
       threadEntityType?: SocialEntityType | null;
       threadEntityId?: string | null;
       proposalUuid?: string | null;
@@ -16683,6 +16706,7 @@ export type GetUserAscentsFeedQuery = {
       qualityAverage?: number | null;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics?: Array<string> | null;
       comment: string;
       climbedAt: string;
       frames?: string | null;
@@ -16739,6 +16763,7 @@ export type GetUserAscentCaptionMatchesQuery = {
     qualityAverage?: number | null;
     isBenchmark: boolean;
     isNoMatch: boolean;
+    characteristics?: Array<string> | null;
     comment: string;
     climbedAt: string;
     frames?: string | null;
@@ -16771,6 +16796,7 @@ export type GetUserGroupedAscentsFeedQuery = {
       difficultyName?: string | null;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics?: Array<string> | null;
       date: string;
       flashCount: number;
       sendCount: number;
@@ -16808,6 +16834,7 @@ export type GetUserGroupedAscentsFeedQuery = {
         qualityAverage?: number | null;
         isBenchmark: boolean;
         isNoMatch: boolean;
+        characteristics?: Array<string> | null;
         comment: string;
         climbedAt: string;
         frames?: string | null;
@@ -17109,6 +17136,7 @@ export const SessionFeedItemFieldsFragmentDoc = {
                 { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -17157,6 +17185,7 @@ export const SessionFeedItemFieldsFragmentDoc = {
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -17799,6 +17828,7 @@ export const GetSessionGroupedFeedDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -17847,6 +17877,7 @@ export const GetSessionGroupedFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -18083,6 +18114,7 @@ export const GetCrewFeedDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -18131,6 +18163,7 @@ export const GetCrewFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -18323,6 +18356,7 @@ export const GetSessionDetailDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -21519,6 +21553,7 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'climbAngle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbFrames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbCompatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbCharacteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'threadEntityType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'threadEntityId' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
@@ -27543,6 +27578,7 @@ export const GetUserAscentsFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
@@ -27673,6 +27709,7 @@ export const GetUserAscentCaptionMatchesDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
@@ -27755,6 +27792,7 @@ export const GetUserGroupedAscentsFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'date' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'flashCount' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'sendCount' } },
@@ -27802,6 +27840,7 @@ export const GetUserGroupedAscentsFeedDocument = {
                             { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
