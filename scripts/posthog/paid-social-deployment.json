@@ -1,0 +1,15 @@
+{
+  "projectId": 412845,
+  "dashboardId": 2297251,
+  "url": "https://us.posthog.com/project/412845/dashboard/2297251",
+  "deployedAt": "2026-11-03T12:29:51Z",
+  "introTextTileId": 14729942,
+  "iosTextTileId": 14730056,
+  "insights": {
+    "landing-sessions": { "id": 13621659, "shortId": "cbqRk2LB", "tileId": 14729990 },
+    "store-clicks": { "id": 13621680, "shortId": "6rf26J0b", "tileId": 14730018 },
+    "ads": { "id": 13621686, "shortId": "T9ynfkta", "tileId": 14730027 },
+    "android-installs": { "id": 13621704, "shortId": "LkfEa6li", "tileId": 14730052 },
+    "android-outcomes": { "id": 13621705, "shortId": "sVdFl9uw", "tileId": 14730053 }
+  }
+}
