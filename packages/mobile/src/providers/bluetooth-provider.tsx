@@ -17,7 +17,7 @@ import {
 import { SHARED_EVENTS, blePickerSessionProps, type BlePickerSessionInput } from '@boardsesh/analytics';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
-import type { BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
+import type { BoardConnectionHolder, BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
 import {
   useBoardBluetooth,
@@ -62,6 +62,7 @@ import {
   readRecentBoardConnectSurface,
   registerConnectBoardUuidReader,
   trackBoardConnectTapped,
+  type BoardConnectSurface,
 } from '../lib/analytics-board-connect';
 import { useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { getHttpClient } from '../lib/graphql/client';
@@ -92,6 +93,14 @@ import type { ResolvedMoonboardLinkMode } from '@boardsesh/board-config';
 import { reportMoonboardLinkDetection } from '../lib/ble/moonboard-link-detection';
 import { subscribeRelayRequests } from '../lib/board-relay/relay-bus';
 import { createRelayRequestHandler, type RelayRequestHandlerDeps } from '../lib/board-relay/relay-request-handler';
+import {
+  connectBlockedByRelayHolder,
+  relayHolderNameOf,
+  type RelayConnectGate,
+  type RelayConnectGateInput,
+  type RelayConnectSurface,
+} from '../lib/board-relay/relay-holder';
+import { isRelayPathSuppressed, relayClimbThroughHolder } from '../lib/board-relay/relay-path-store';
 
 export type ReassertWallOptions = {
   /** A press whose own connect brought the link up: carry the ask to that link. */
@@ -102,6 +111,14 @@ type BluetoothContextValue = {
   isConnected: boolean;
   /** MoonBoard link mode (#7220), null off a MoonBoard. Optional for test doubles. */
   moonboardLinkMode?: ResolvedMoonboardLinkMode | null;
+  /**
+   * Relay mode (#7220): the connect gate for a surface that would otherwise
+   * scan. True when another phone holds this Relay mode MoonBoard: the tap is
+   * counted (Board Connect Tapped, `blockedByRelayHolder`), a line says who has
+   * the board, and the caller must not connect. False means connect as today.
+   * Optional for test doubles.
+   */
+  guardRelayConnect?: (surface: RelayConnectSurface, options?: { reconnect?: boolean }) => boolean;
   /** Account observed holding this board during our BLE connection, scoped to the session. */
   lastLocalHolderUserId: string | null;
   loading: boolean;
@@ -260,6 +277,27 @@ const EMPTY_PICKER_DEVICES: [] = [];
 // How long a switch-to-config auto-connect request stays armed waiting for the
 // switched board's props to reach this provider before it is dropped.
 const PENDING_AUTO_CONNECT_TTL_MS = 15_000;
+
+/**
+ * Relay mode (#7220): how long a connect after a move to a Relay mode
+ * MoonBoard waits for board presence to bind that board and read its holder.
+ * Past it the connect goes ahead as today (fail open: a missed gate costs an
+ * empty scan, a stuck one would cost the connect).
+ */
+const RELAY_HOLDER_CHECK_WAIT_MS = 4_000;
+
+/**
+ * Relay mode (#7220): the Board Connect Tapped surface a blocked connect is
+ * counted under, with `blockedByRelayHolder`. The picker's no-lights offer is
+ * no connect tap, and Put on {board}'s move already counted its tap.
+ */
+const RELAY_CONNECT_TRACKED_SURFACES: Partial<Record<RelayConnectSurface, BoardConnectSurface>> = {
+  wall_kiosk: 'wall_kiosk',
+  wall_empty_state: 'wall_empty_state',
+  create_climb: 'create_climb',
+  notification: 'notification',
+  picker_scan_again: 'picker_scan_again',
+};
 // A tap can beat the background serial lookup. Give that controller one bounded
 // lookup before connecting with the current wall's geometry.
 const PICKER_SELECTION_LOOKUP_TIMEOUT_MS = 3_000;
@@ -1072,8 +1110,10 @@ export function BluetoothProvider({
     reportClearForBoard,
     restampBoardMembershipByUuid,
     setRelayAcceptingForBoard,
+    boardUuid: presenceBoardUuid,
+    fetchHolderForBoard,
   } = useBoardPresenceControls();
-  const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
+  const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq, lastHolderChangeSeq } = useBoardPresenceCurrent();
   const lastConnectionSeqRef = useRef(lastConnectionSeq);
   lastConnectionSeqRef.current = lastConnectionSeq;
   // Set by VirtualWallHolderWatch, which mounts only on a wall with no light kit
@@ -1703,6 +1743,86 @@ export function BluetoothProvider({
     isConnected,
   });
 
+  // Relay mode (#7220): the connect gate. Read at the tap, so the holder's
+  // idle clock is the tap's, not the last render's.
+  const relayConnectGateInputRef = useRef<Omit<RelayConnectGateInput, 'holder' | 'now'>>({
+    flagEnabled: false,
+    boardType: null,
+    linkMode: null,
+    localConnected: false,
+    suppressed: false,
+    lastLocalHolderUserId: null,
+  });
+  relayConnectGateInputRef.current = {
+    flagEnabled: relayModeEnabled,
+    boardType: boardName ?? null,
+    linkMode: moonboardLinkMode?.mode ?? null,
+    localConnected: isConnected,
+    suppressed: isRelayPathSuppressed(presenceBoardId, lastHolderChangeSeq),
+    lastLocalHolderUserId,
+  };
+  const relayConnectHolderRef = useRef(presenceBoardId === null ? null : holder);
+  relayConnectHolderRef.current = presenceBoardId === null ? null : holder;
+  const readRelayConnectGate = useCallback(
+    (surface: RelayConnectSurface, holderOverride?: BoardConnectionHolder | null): RelayConnectGate =>
+      connectBlockedByRelayHolder(surface, {
+        ...relayConnectGateInputRef.current,
+        holder: holderOverride === undefined ? relayConnectHolderRef.current : holderOverride,
+        now: Date.now(),
+      }),
+    [],
+  );
+  // A blocked connect says who has the board instead of scanning. A toast,
+  // never drawn over the climb; the toast speaks it to a screen reader.
+  const showRelayConnectBlocked = useCallback(
+    (gate: Extract<RelayConnectGate, { blocked: true }>) => {
+      const name = relayHolderNameOf(gate.holder);
+      if (gate.response === 'holder_line_put_on') {
+        showToast(
+          name === null
+            ? tSession('mobile.boardPresence.relayHolderHasBoardPutOnAnonymous')
+            : tSession('mobile.boardPresence.relayHolderHasBoardPutOn', { name }),
+          'info',
+        );
+        return;
+      }
+      const draft = gate.response === 'holder_line_draft';
+      const message =
+        name === null
+          ? tSession(
+              draft
+                ? 'mobile.boardPresence.relayHolderHasBoardDraftAnonymous'
+                : 'mobile.boardPresence.relayHolderHasBoardAnonymous',
+            )
+          : tSession(
+              draft ? 'mobile.boardPresence.relayHolderHasBoardDraft' : 'mobile.boardPresence.relayHolderHasBoard',
+              {
+                name,
+              },
+            );
+      showToast(message, 'info');
+    },
+    [showToast, tSession],
+  );
+  const guardRelayConnect = useCallback(
+    (surface: RelayConnectSurface, options?: { reconnect?: boolean }): boolean => {
+      const gate = readRelayConnectGate(surface);
+      if (!gate.blocked) return false;
+      const trackedSurface = RELAY_CONNECT_TRACKED_SURFACES[surface];
+      if (trackedSurface) {
+        trackBoardConnectTapped({
+          surface: trackedSurface,
+          boardName: boardNameRef.current,
+          reconnect: options?.reconnect ?? false,
+          blockedByRelayHolder: true,
+        });
+      }
+      showRelayConnectBlocked(gate);
+      return true;
+    },
+    [readRelayConnectGate, showRelayConnectBlocked],
+  );
+
   /**
    * The single commit seam for "put this climb on the wall". Two backends, one
    * pipeline: everything downstream of a `true` — the latest-wins coalescing
@@ -1748,6 +1868,10 @@ export function BluetoothProvider({
    */
   const takeVirtualWall = useCallback(() => {
     if (isConnected || virtualWallHeldRef.current) return;
+    // Relay mode (#7220): another phone holds this Relay mode MoonBoard. A
+    // virtual take would steal its holder slot from a board that does light,
+    // so say who has it instead (the picker's "This wall has no lights").
+    if (guardRelayConnect('picker_no_lights')) return;
     wallOperationEpochRef.current += 1;
     // Same reset a fresh BLE connect does, so the climb already on screen is
     // reported rather than deduped away as "already sent".
@@ -1776,7 +1900,7 @@ export function BluetoothProvider({
       inSession: sessionIdRef.current != null,
       boardId: presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current ?? undefined,
     });
-  }, [isConnected, ledless, showToast, tSession]);
+  }, [isConnected, ledless, showToast, tSession, guardRelayConnect]);
 
   /**
    * Give the wall back. Mirrors what a BLE drop does (`handleBluetoothConnectionEnded`):
@@ -2088,12 +2212,26 @@ export function BluetoothProvider({
      * which stays on the board the climber was already on.
      */
     afterBoardSwitch: boolean;
+    /**
+     * Relay mode (#7220): read the switched-to board's holder before scanning
+     * (`connectAfterBoardSwitch` only). Not for the picker's mismatch switch,
+     * whose box the climber just saw advertising, so no one holds it.
+     */
+    relayHolderCheck?: boolean;
   } | null>(null);
   // Who is waiting on the request in the slot: `connectAfterBoardSwitch`'s
   // promise. Kept beside the slot rather than in it, so a request that is
   // replaced or expires can still be told "no" instead of hanging.
   const pendingConnectWaiterRef = useRef<{ resolve: (connected: boolean) => void; board: UserBoard } | null>(null);
+  // Relay mode (#7220): a holder check after a move is async; any newer
+  // connect request (every one settles the waiter first) supersedes it.
+  const relayHolderCheckGenerationRef = useRef(0);
+  // The request whose holder check timed out waiting for presence: it connects
+  // as today (fail open). Cleared with every settled or replaced request.
+  const [relayHolderCheckExpiredKey, setRelayHolderCheckExpiredKey] = useState<string | null>(null);
   const settlePendingConnectWaiter = useCallback((connected: boolean) => {
+    relayHolderCheckGenerationRef.current += 1;
+    setRelayHolderCheckExpiredKey(null);
     const waiter = pendingConnectWaiterRef.current;
     pendingConnectWaiterRef.current = null;
     waiter?.resolve(connected);
@@ -2133,6 +2271,37 @@ export function BluetoothProvider({
     return () => clearTimeout(expiryTimeoutId);
   }, [pendingConfigKey, settlePendingConnectWaiter]);
 
+  // Relay mode (#7220): a connect after a move to another board at this gym
+  // (Put on {board}) lands on a board this phone's presence hasn't read yet.
+  // On a Relay mode MoonBoard it waits for presence to bind that board, reads
+  // its holder, and runs the connect gate before scanning.
+  const fetchHolderForBoardRef = useRef(fetchHolderForBoard);
+  fetchHolderForBoardRef.current = fetchHolderForBoard;
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
+  // Only once the props describe the switched-to board (its config key), so
+  // nothing is read on the board being left. A board with no uuid is skipped.
+  const relayHolderCheckNeeded =
+    pendingAutoConnect?.relayHolderCheck === true &&
+    relayModeEnabled &&
+    boardName === 'moonboard' &&
+    moonboardLinkMode?.mode === 'relay' &&
+    !!boardUuid &&
+    layoutId !== undefined &&
+    sizeId !== undefined &&
+    boardConfigKey(boardName, layoutId, sizeId, boardUuid) === pendingAutoConnect.configKey;
+  const presenceBoundToBoard = presenceBoardId !== null && !!boardUuid && presenceBoardUuid === boardUuid;
+  const awaitingRelayHolderKey =
+    relayHolderCheckNeeded && !presenceBoundToBoard ? (pendingAutoConnect?.configKey ?? null) : null;
+  useEffect(() => {
+    if (!awaitingRelayHolderKey) return;
+    const waitTimeoutId = setTimeout(
+      () => setRelayHolderCheckExpiredKey(awaitingRelayHolderKey),
+      RELAY_HOLDER_CHECK_WAIT_MS,
+    );
+    return () => clearTimeout(waitTimeoutId);
+  }, [awaitingRelayHolderKey]);
+
   useEffect(() => {
     if (!pendingAutoConnect) return;
     // Still on the old config — setActiveBoard's cache write hasn't propagated
@@ -2149,33 +2318,88 @@ export function BluetoothProvider({
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
     if (loading) return;
+    const checkHolder = relayHolderCheckNeeded && relayHolderCheckExpiredKey !== pendingAutoConnect.configKey;
+    // Presence hasn't bound the board yet: wait (the timer above fails it open).
+    if (checkHolder && !presenceBoundToBoard) return;
     const { serial, armUndoToast, useRememberedBoard, afterBoardSwitch } = pendingAutoConnect;
     setPendingAutoConnect(null);
+    if (relayHolderCheckExpiredKey !== null) setRelayHolderCheckExpiredKey(null);
     const waiter = pendingConnectWaiterRef.current;
     pendingConnectWaiterRef.current = null;
-    if (armUndoToast) {
-      armUndoWallChangeToast();
+    const startConnect = () => {
+      if (armUndoToast) {
+        armUndoWallChangeToast();
+      }
+      // connect's third param auto-selects that serial while the picker shows
+      // "searching", falling back to the list only if it never advertises. A
+      // remembered target is read now: the props describe the switched-to board,
+      // so it is that board's own, never the one just left. A MoonBoard is
+      // remembered by device id, not serial.
+      const connecting = useRememberedBoard
+        ? connect(
+            undefined,
+            undefined,
+            reconnectSerialForCurrentBoard ?? undefined,
+            reconnectDeviceIdForCurrentBoard ?? undefined,
+            { afterBoardSwitch },
+          )
+        : connect(undefined, undefined, serial, undefined, { afterBoardSwitch });
+      if (waiter) {
+        connecting.then(waiter.resolve, () => waiter.resolve(false));
+      } else {
+        void connecting;
+      }
+    };
+    if (!checkHolder) {
+      startConnect();
+      return;
     }
-    // connect's third param auto-selects that serial while the picker shows
-    // "searching", falling back to the list only if it never advertises. A
-    // remembered target is read now: the props describe the switched-to board,
-    // so it is that board's own, never the one just left. A MoonBoard is
-    // remembered by device id, not serial.
-    const connecting = useRememberedBoard
-      ? connect(
-          undefined,
-          undefined,
-          reconnectSerialForCurrentBoard ?? undefined,
-          reconnectDeviceIdForCurrentBoard ?? undefined,
-          { afterBoardSwitch },
-        )
-      : connect(undefined, undefined, serial, undefined, { afterBoardSwitch });
-    if (waiter) {
-      connecting.then(waiter.resolve, () => waiter.resolve(false));
-    } else {
-      void connecting;
-    }
+    // Read the holder from the server rather than presence's state, which may
+    // not have seeded it yet for a board it just bound. A failed or slow read
+    // falls back to presence's holder.
+    const generation = relayHolderCheckGenerationRef.current;
+    const targetBoardUuid = boardUuid;
+    const fetchHolder = fetchHolderForBoardRef.current;
+    const holderRead: Promise<BoardConnectionHolder | null | undefined> =
+      fetchHolder && presenceBoardId !== null
+        ? Promise.race([
+            fetchHolder(presenceBoardId, presenceBoardUuid).catch(() => undefined),
+            new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), RELAY_HOLDER_CHECK_WAIT_MS)),
+          ])
+        : Promise.resolve(undefined);
+    void holderRead.then((fetchedHolder) => {
+      // A newer request, another board, or a connect another surface started
+      // meanwhile (this phone linked, or a connect in flight) takes over.
+      if (
+        generation !== relayHolderCheckGenerationRef.current ||
+        boardUuidRef.current !== targetBoardUuid ||
+        bleConnectedRef.current ||
+        loadingRef.current
+      ) {
+        waiter?.resolve(bleConnectedRef.current);
+        return;
+      }
+      const gate = readRelayConnectGate('move_to_board', fetchedHolder);
+      if (!gate.blocked) {
+        startConnect();
+        return;
+      }
+      // Another phone holds it, and nothing scans. The climb the move carried
+      // goes to that phone. When it can't go yet (presence hasn't seeded the
+      // holder, or the holder is a crewmate whose queue lights it), the line
+      // points at Put on board instead of promising a light.
+      const relayed = relayClimbThroughHolder(null);
+      showRelayConnectBlocked(relayed ? gate : { ...gate, response: 'holder_line_put_on' });
+      waiter?.resolve(false);
+    });
   }, [
+    relayHolderCheckNeeded,
+    relayHolderCheckExpiredKey,
+    presenceBoundToBoard,
+    readRelayConnectGate,
+    showRelayConnectBlocked,
+    presenceBoardId,
+    presenceBoardUuid,
     pendingAutoConnect,
     boardName,
     layoutId,
@@ -2204,6 +2428,7 @@ export function BluetoothProvider({
           armUndoToast: true,
           useRememberedBoard: true,
           afterBoardSwitch: true,
+          relayHolderCheck: true,
         });
       }),
     [settlePendingConnectWaiter],
@@ -2235,6 +2460,14 @@ export function BluetoothProvider({
     if (!activePickerState) return;
     if (!boardName || layoutId === undefined || sizeId === undefined) return;
     const armUndoToastAfterRescan = undoWallChangeToastArmIdRef.current !== null;
+    // Relay mode (#7220): the board's holder showed up while this picker
+    // scanned. Another scan can't list a box that stopped advertising, so
+    // close the picker and say who has the board.
+    if (guardRelayConnect('picker_scan_again')) {
+      activePickerState.handleCancel();
+      settlePendingConnectWaiter(false);
+      return;
+    }
     trackBoardConnectTapped({ surface: 'picker_scan_again', boardName, reconnect: false });
     activePickerState.handleCancel();
     settlePendingConnectWaiter(false);
@@ -2244,7 +2477,7 @@ export function BluetoothProvider({
       armUndoToast: armUndoToastAfterRescan,
       afterBoardSwitch: false,
     });
-  }, [boardName, layoutId, sizeId, setIds, boardUuid, settlePendingConnectWaiter]);
+  }, [boardName, layoutId, sizeId, setIds, boardUuid, settlePendingConnectWaiter, guardRelayConnect]);
 
   const handleMismatchSwitch = useCallback(
     async (decision: Extract<PickerSelectionDecision, { kind: 'mismatch' }>, intent: PickerSelectionIntent) => {
@@ -2969,6 +3202,7 @@ export function BluetoothProvider({
     () => ({
       isConnected,
       moonboardLinkMode: moonboardLinkMode ?? null,
+      guardRelayConnect,
       lastLocalHolderUserId,
       loading,
       connect,
@@ -3002,6 +3236,7 @@ export function BluetoothProvider({
     [
       isConnected,
       moonboardLinkMode,
+      guardRelayConnect,
       lastLocalHolderUserId,
       loading,
       connect,

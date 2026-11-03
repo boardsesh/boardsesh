@@ -39,6 +39,9 @@ function WallEmptyStateComponent() {
   const handleConnect = useCallback(() => {
     hapticSelection();
     if (!bluetooth) return;
+    // Relay mode (#7220): another phone holds this Relay mode MoonBoard, so a
+    // scan would find nothing. The provider says who has it instead.
+    if (bluetooth.guardRelayConnect?.('wall_empty_state')) return;
     trackBoardConnectTapped({ surface: 'wall_empty_state', boardName: bluetooth.boardName, reconnect: false });
     void bluetooth.connect();
   }, [bluetooth]);

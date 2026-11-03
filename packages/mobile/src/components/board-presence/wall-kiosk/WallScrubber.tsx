@@ -74,6 +74,9 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
 
   const handleConnect = useCallback(() => {
     if (!bluetooth) return;
+    // Relay mode (#7220): another phone holds this Relay mode MoonBoard, so a
+    // scan would find nothing. The provider says who has it instead.
+    if (bluetooth.guardRelayConnect?.('wall_kiosk')) return;
     trackBoardConnectTapped({ surface: 'wall_kiosk', boardName: bluetooth.boardName, reconnect: false });
     void bluetooth.connect();
   }, [bluetooth]);

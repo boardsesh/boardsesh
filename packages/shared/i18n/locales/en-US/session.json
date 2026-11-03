@@ -569,6 +569,12 @@
       "wallTakenToast": "You've got the wall",
       "relayerDriving": "{{name}} is driving",
       "relayerDrivingAnonymous": "Someone on this board is driving",
+      "relayHolderHasBoard": "{{name}}'s phone has the board · Your picks light through it",
+      "relayHolderHasBoardAnonymous": "Someone's phone has the board · Your picks light through it",
+      "relayHolderHasBoardDraft": "{{name}}'s phone has the board · Drafts don't light through it",
+      "relayHolderHasBoardDraftAnonymous": "Someone's phone has the board · Drafts don't light through it",
+      "relayHolderHasBoardPutOn": "{{name}}'s phone has the board · Put on board sends it there",
+      "relayHolderHasBoardPutOnAnonymous": "Someone's phone has the board · Put on board sends it there",
       "wallReleasedToast": "Wall's open again",
       "kiosk": {
         "liveBadge": "On the wall now",

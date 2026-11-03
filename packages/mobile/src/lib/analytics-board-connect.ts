@@ -52,6 +52,11 @@ type BoardConnectTappedProperties = {
    * provider's selected board (`registerConnectBoardUuidReader`).
    */
   boardUuid?: string | null;
+  /**
+   * Relay mode (#7220): another phone holds this Relay mode MoonBoard, so the
+   * tap didn't scan and said who has the board instead. Absent otherwise.
+   */
+  blockedByRelayHolder?: boolean;
 };
 
 /** How long after a connect tap a picker list counts as that tap's (`entrySurface`). */
@@ -110,6 +115,7 @@ export function trackBoardConnectTapped({
   boardName,
   reconnect,
   boardUuid,
+  blockedByRelayHolder,
 }: BoardConnectTappedProperties): void {
   lastConnectTap = { surface, at: Date.now() };
   const targetBoardUuid = boardUuid === undefined ? (connectBoardUuidReader?.() ?? null) : boardUuid;
@@ -121,6 +127,7 @@ export function trackBoardConnectTapped({
     reconnect,
     ...(targetBoardUuid ? { boardUuid: targetBoardUuid } : {}),
     ...(phoneNeverConnected === null ? {} : { phoneNeverConnected }),
+    ...(blockedByRelayHolder ? { blockedByRelayHolder: true } : {}),
   });
 }
 

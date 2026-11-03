@@ -569,6 +569,12 @@
       "wallTakenToast": "Tu as le mur",
       "relayerDriving": "{{name}} pilote la board",
       "relayerDrivingAnonymous": "Quelqu’un sur cette board la pilote",
+      "relayHolderHasBoard": "Le téléphone de {{name}} a la board · Tes choix s’allument via lui",
+      "relayHolderHasBoardAnonymous": "Un autre téléphone a la board · Tes choix s’allument via lui",
+      "relayHolderHasBoardDraft": "Le téléphone de {{name}} a la board · Les brouillons ne s’allument pas via lui",
+      "relayHolderHasBoardDraftAnonymous": "Un autre téléphone a la board · Les brouillons ne s’allument pas via lui",
+      "relayHolderHasBoardPutOn": "Le téléphone de {{name}} a la board · Allumer sur la board l’y envoie",
+      "relayHolderHasBoardPutOnAnonymous": "Un autre téléphone a la board · Allumer sur la board l’y envoie",
       "wallReleasedToast": "Le mur est de nouveau libre",
       "kiosk": {
         "liveBadge": "Sur le mur maintenant",

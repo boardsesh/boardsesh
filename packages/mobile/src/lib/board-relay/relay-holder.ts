@@ -129,3 +129,97 @@ export function resolveRelayedDriveHolderExit({
   if (key === null) return 'holder_left';
   return key === startHolderKey ? null : 'holder_changed';
 }
+
+/**
+ * Every connect path the relay gate covers (#7220 step 4). The bulbs and the
+ * player's own Put on board already relay through `relayHolderFor`
+ * (`derivePlayDrawerLightbulbPressAction`'s `boardRelay`), so they are not here.
+ *
+ * - `wall_kiosk`, `wall_empty_state`: the Wall display's Connect.
+ * - `create_climb`: the editor's lightbulb. Its frame is a draft the holder's
+ *   catalog doesn't have (`CLIMB_UNAVAILABLE`), so it can't be relayed.
+ * - `notification`: Android's ongoing-session notification bulb.
+ * - `picker_scan_again`: Scan again in a picker whose scan found nothing.
+ * - `picker_no_lights`: the picker's "This wall has no lights", which would
+ *   take the holder slot with no Bluetooth.
+ * - `move_to_board`: Put on {board}'s connect after moving to another board at
+ *   this gym (`connectAfterBoardSwitch`), which carries the climb on screen.
+ */
+export type RelayConnectSurface =
+  | 'wall_kiosk'
+  | 'wall_empty_state'
+  | 'create_climb'
+  | 'notification'
+  | 'picker_scan_again'
+  | 'picker_no_lights'
+  | 'move_to_board';
+
+/**
+ * What a blocked connect does instead of scanning:
+ *
+ * - `relay`: the surface carries a climb, so it goes to the holder's phone
+ *   (outside a crew) or rides the crew's queue (inside one), as Put on board does.
+ * - `holder_line`: no climb to send. Say who has the board.
+ * - `holder_line_draft`: the editor. Say who has the board, and that a draft
+ *   doesn't light through it.
+ * - `holder_line_put_on`: a `relay` that couldn't go yet (presence hasn't
+ *   seeded the holder, or a crewmate holds it). Say who has the board and that
+ *   Put on board lights it through them.
+ */
+export type RelayConnectBlockedResponse = 'relay' | 'holder_line' | 'holder_line_draft' | 'holder_line_put_on';
+
+export type RelayConnectGate =
+  | { blocked: false }
+  | { blocked: true; holder: BoardConnectionHolder; response: RelayConnectBlockedResponse };
+
+export type RelayConnectGateInput = Omit<RelayHolderInput, 'sessionId' | 'sessionMemberUserIds'> & {
+  /**
+   * The account this phone saw holding this board while its own link was up,
+   * in this board and session (`useLocalBluetoothHolder`). A holder on that
+   * account is this phone's own hold the server hasn't released yet (a
+   * dropped link whose release is still on its way), so the connect goes
+   * ahead: refusing it would lock a climber out of their own board.
+   */
+  lastLocalHolderUserId: string | null;
+};
+
+const NO_SESSION_MEMBERS: ReadonlySet<string> = new Set();
+
+/** How each gated surface answers a block. */
+export function relayConnectBlockedResponseFor(surface: RelayConnectSurface): RelayConnectBlockedResponse {
+  switch (surface) {
+    case 'move_to_board':
+      return 'relay';
+    case 'create_climb':
+      return 'holder_line_draft';
+    case 'wall_kiosk':
+    case 'wall_empty_state':
+    case 'notification':
+    case 'picker_scan_again':
+    case 'picker_no_lights':
+      return 'holder_line';
+  }
+}
+
+/**
+ * Relay mode (#7220): whether this connect attempt must NOT scan, because
+ * another phone holds this Relay mode MoonBoard. The original controller
+ * stops advertising while it holds a phone, so a scan here finds nothing for
+ * 15 s, and some boxes then need a power cycle.
+ *
+ * The holder rule is `relayHolderFor`'s, with one difference: a crewmate's
+ * hold blocks too. Inside a crew the shared queue lights the wall through
+ * that crewmate, so a connect is just as futile there. Never blocked (today's
+ * behaviour): flag off, Several phones, a non-MoonBoard, this phone already
+ * linked, no holder, an idle holder (15 min), a suppressed path (the server
+ * said no one can light it), or this phone's own unreleased hold.
+ */
+export function connectBlockedByRelayHolder(
+  surface: RelayConnectSurface,
+  input: RelayConnectGateInput,
+): RelayConnectGate {
+  const holder = relayHolderFor({ ...input, sessionId: null, sessionMemberUserIds: NO_SESSION_MEMBERS });
+  if (!holder) return { blocked: false };
+  if (holder.userId && holder.userId === input.lastLocalHolderUserId) return { blocked: false };
+  return { blocked: true, holder, response: relayConnectBlockedResponseFor(surface) };
+}
