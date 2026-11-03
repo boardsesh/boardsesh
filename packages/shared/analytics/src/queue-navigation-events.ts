@@ -94,6 +94,9 @@ export type QueueNavigationWalk = {
   crossed: boolean;
 };
 
+/** How many climbs were Up next when the step was taken, in coarse buckets. */
+export type QueueNavigationUpNextBucket = '0' | '1-3' | '4-10' | '11+';
+
 /** The board the step happened on, as the call site knows it. */
 export type QueueNavigationBoard = {
   /** The board's type (`kilter`, `spray`, ...). Anything outside the nine is sent as null. */
@@ -137,7 +140,7 @@ export type QueueNavigationProps = BoardTypeProperty & {
   layoutId: number | null;
   track: QueueNavigationTrack;
   from: QueueNavigationFrom;
-  upNextBucket: UpNextBucket;
+  upNextBucket: QueueNavigationUpNextBucket;
   crossed: boolean;
   /** Only on a swipe that went before its board had painted: what the board was doing. */
   heldArtState?: QueueNavigationArtState;
@@ -153,33 +156,40 @@ export type QueueNavigationProps = BoardTypeProperty & {
  */
 export type QueueSheetSurface = 'player' | 'player_menu' | 'mini_player' | 'mini_player_menu' | 'snackbar';
 
-/**
- * How many climbs Up next held, bucketed so a breakdown stays readable and no
- * event carries a queue's exact length: `0`, `1`, `2-4`, `5-9`, `10+`.
- */
-export type UpNextBucket = '0' | '1' | '2-4' | '5-9' | '10+';
-
-/** {@link UpNextBucket} for a count of Up next climbs. Anything below 1 (or not a number) is `0`. */
-export function upNextBucket(count: number): UpNextBucket {
-  if (!(count >= 1)) return '0';
-  if (count < 2) return '1';
-  if (count < 5) return '2-4';
-  if (count < 10) return '5-9';
-  return '10+';
-}
-
 export type QueueSheetOpenedInput = {
   surface: QueueSheetSurface;
   boardType: string | null | undefined;
+  /**
+   * What the player (or the MiniPlayer, with the player closed) showed when the
+   * sheet opened (Then-signposts, 2026-11-02): `preview` for a climb that isn't
+   * the queue's current one (a list tap, a swipe that only looked, the
+   * MiniPlayer's last pick), `current` for the climb up. Opens from a preview
+   * while Up next has climbs are climbers looking for their queue.
+   */
+  from: QueueNavigationFrom;
+  /** Climbs in Up next when the sheet opened: the count its header shows. Sent as {@link upNextBucket}. */
+  upNextCount: number;
 };
 
-export type QueueSheetOpenedProps = BoardTypeProperty & { surface: QueueSheetSurface };
+export type QueueSheetOpenedProps = BoardTypeProperty & {
+  surface: QueueSheetSurface;
+  from: QueueNavigationFrom;
+  upNextBucket: QueueNavigationUpNextBucket;
+};
 
 /** A name paired with the exact properties that name expects. */
 export type QueueNavigationPayload<TName extends string, TProperties> = {
   name: TName;
   properties: TProperties;
 };
+
+/** Up next in the buckets `upNextBucket` reports: none, a few, a session's worth, a long queue. */
+export function upNextBucket(upNextCount: number): QueueNavigationUpNextBucket {
+  if (!(upNextCount >= 1)) return '0';
+  if (upNextCount <= 3) return '1-3';
+  if (upNextCount <= 10) return '4-10';
+  return '11+';
+}
 
 function layoutIdProperty({ boardType, layoutId }: QueueNavigationBoard): number | null {
   if (boardType === 'spray') return null;
@@ -337,6 +347,11 @@ export function queueSheetOpened(
 ): QueueNavigationPayload<typeof SHARED_EVENTS.QueueSheetOpened, QueueSheetOpenedProps> {
   return {
     name: SHARED_EVENTS.QueueSheetOpened,
-    properties: { surface: input.surface, ...boardTypeProperty(input.boardType) },
+    properties: {
+      surface: input.surface,
+      ...boardTypeProperty(input.boardType),
+      from: input.from,
+      upNextBucket: upNextBucket(input.upNextCount),
+    },
   };
 }

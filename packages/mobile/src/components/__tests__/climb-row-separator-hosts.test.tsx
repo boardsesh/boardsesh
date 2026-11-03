@@ -358,7 +358,7 @@ describe('where each climb row host starts its separator', () => {
     const { container } = render(
       <QueueList
         queue={[]}
-        currentItemUuid={null}
+        currentItem={null}
         board={board}
         isEditMode={false}
         showHistory
@@ -496,7 +496,7 @@ describe('where each climb row host starts its separator with thumbnails switche
         render(
           <QueueList
             queue={[]}
-            currentItemUuid={null}
+            currentItem={null}
             board={board}
             isEditMode={false}
             showHistory

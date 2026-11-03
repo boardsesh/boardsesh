@@ -970,13 +970,15 @@ The defaults above were picked without data. Two events (#6940) let them be revi
   painted, but the swipe waited over 700 ms in all) and `heldMs` (finger-up to the step); every other step sends
   neither. Every step also says which walk it took (the then-signposts, 2026-11-02): `track` (`list`, `upNext` or
   `queue`: where it landed), `from` (`preview`, or `current` for the climber's own climb; a MiniPlayer step from
-  the last pick is `preview`), `upNextBucket` (`0`, `1`, `2-4`, `5-9`, `10+`, the buckets `Queue Sheet Opened` uses) and `crossed` (it left Up next for the
+  the last pick is `preview`), `upNextBucket` (`0`, `1-3`, `4-10`, `11+`, the buckets `Queue Sheet Opened` uses) and `crossed` (it left Up next for the
   list). A Previous right after a `crossed` Next is a crossing that surprised the climber. The rest
   timer's auto-advance and the workout runner don't fire it, and neither does Next opening the player at the end
   of a list. www fired the same name before W-16 with other `method` values and no `surface`, so filter on
   `surface`.
-- `Queue Sheet Opened`: `surface` (`player`, `player_menu`, `mini_player`, `mini_player_menu`, `snackbar`) and
-  `boardType`. The
+- `Queue Sheet Opened`: `surface` (`player`, `player_menu`, `mini_player`, `mini_player_menu`, `snackbar`),
+  `boardType`, and since Then-signposts (2026-11-02) `from` (`preview` when the player, or the MiniPlayer's last
+  pick, showed a climb other than the queue's current; else `current`) and `upNextBucket` (`0`, `1-3`, `4-10`,
+  `11+`). The
   side-by-side iPad player's queue button shows Up next in its panel instead of a sheet, and still counts as
   `player`.
 

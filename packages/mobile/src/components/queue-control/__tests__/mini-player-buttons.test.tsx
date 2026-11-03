@@ -293,7 +293,37 @@ describe('MiniPlayerLeadingButtons', () => {
     fireEvent.click(getByLabelText('mobile.queueSnackbar.openAria'));
     expect(host.openQueueSheet).toHaveBeenCalledOnce();
     expect(effects.track).toHaveBeenCalledOnce();
-    expect(effects.track).toHaveBeenCalledWith('Queue Sheet Opened', { surface: 'mini_player', boardType: 'kilter' });
+    expect(effects.track).toHaveBeenCalledWith('Queue Sheet Opened', {
+      surface: 'mini_player',
+      boardType: 'kilter',
+      from: 'current',
+      upNextBucket: '0',
+    });
+  });
+
+  it('Queue says the bar showed a preview while the last pick stands (Then-signposts)', () => {
+    resetLastPickForTests();
+    queue.currentClimbQueueItem = { uuid: 'item-current', climb: { uuid: 'climb-current' } };
+    setLastPick({
+      item: { uuid: 'item-a', climb },
+      suggestionSource: null,
+      commitOptions: undefined,
+      mirrored: false,
+      currentAtPick: 'item-current',
+      wallAtPick: null,
+      pickedAt: 0,
+    });
+    try {
+      const { getByLabelText } = renderButtons(['queue']);
+      fireEvent.click(getByLabelText('mobile.queueSnackbar.openAria'));
+      expect(effects.track).toHaveBeenCalledWith(
+        'Queue Sheet Opened',
+        expect.objectContaining({ surface: 'mini_player', from: 'preview' }),
+      );
+    } finally {
+      resetLastPickForTests();
+      queue.currentClimbQueueItem = null;
+    }
   });
 
   it("Share runs the player's share action for this climb and board, tagged as the MiniPlayer's", () => {

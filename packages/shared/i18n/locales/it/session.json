@@ -164,8 +164,11 @@
   },
   "queueList": {
     "sectionHistory": "Cronologia",
+    "sectionNow": "Ora",
     "sectionUpNext": "Prossimi",
-    "sectionSuggestions": "Suggerimenti",
+    "sectionThenFrom": "Poi da {{list}}",
+    "sectionThenFromUnnamed": "Poi dalla lista",
+    "sectionPopular": "Popolari su questo pannello",
     "showFullHistory_one": "Mostra tutta la cronologia ({{count}} in più)",
     "showFullHistory_other": "Mostra tutta la cronologia ({{count}} in più)",
     "showFullHistoryAria_one": "Mostra {{count}} elemento in più dalla cronologia",

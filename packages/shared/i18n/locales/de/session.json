@@ -164,8 +164,11 @@
   },
   "queueList": {
     "sectionHistory": "Historie",
+    "sectionNow": "Jetzt",
     "sectionUpNext": "Als Nächstes",
-    "sectionSuggestions": "Vorschläge",
+    "sectionThenFrom": "Danach aus {{list}}",
+    "sectionThenFromUnnamed": "Danach aus der Liste",
+    "sectionPopular": "Beliebt an diesem Board",
     "showFullHistory_one": "Ganze Historie zeigen (noch {{count}})",
     "showFullHistory_other": "Ganze Historie zeigen (noch {{count}})",
     "showFullHistoryAria_one": "{{count}} weiteren Eintrag aus der Historie zeigen",

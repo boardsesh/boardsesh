@@ -136,7 +136,7 @@ export {
   type QueueNavigationArtWait,
   type QueueNavigationTrack,
   type QueueNavigationFrom,
-  type UpNextBucket,
+  type QueueNavigationUpNextBucket,
   type QueueNavigationWalk,
   type QueueNavigationInput,
   type QueueNavigationProps,

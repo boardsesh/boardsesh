@@ -38,7 +38,7 @@ The portable development and CI base is:
 - official base `postgres:18.6-bookworm` at
   `sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af`
 - PGDG PostGIS `3.6.4+dfsg-2.pgdg12+1`
-- PGDG HypoPG `1.4.3-1.pgdg12+1`
+- PGDG HypoPG `1.4.3-1.pgdg12+2`
 
 `.github/workflows/dev-db-docker.yml` builds both architectures of the portable
 PostGIS image and boots the native and ARM64 candidates without logging in to a

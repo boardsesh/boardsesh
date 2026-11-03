@@ -657,7 +657,7 @@ describe('useMiniPlayerNavigation names the walk each button takes', () => {
     act(() => result.current.onNext());
     expect(analytics.track).toHaveBeenCalledWith(
       'Queue Navigation',
-      expect.objectContaining({ track: 'list', from: 'current', upNextBucket: '2-4', crossed: true }),
+      expect.objectContaining({ track: 'list', from: 'current', upNextBucket: '1-3', crossed: true }),
     );
   });
 
@@ -665,12 +665,13 @@ describe('useMiniPlayerNavigation names the walk each button takes', () => {
   // not Up next. The bucket counts from the line, as the queue sheet does.
   it('never buckets History as Up next with nothing current', () => {
     queue.current = null;
-    queue.historyCount = 2;
-    queue.items = [makeItem('h1'), makeItem('h2'), makeItem('u1')];
+    // 4 History climbs, so counting them (5) would land in '4-10', not '1-3'.
+    queue.historyCount = 4;
+    queue.items = [makeItem('h1'), makeItem('h2'), makeItem('h3'), makeItem('h4'), makeItem('u1')];
     targets.nextItem = makeItem('u1');
     const { result } = renderHook(() => useMiniPlayerNavigation());
     act(() => result.current.onNext());
-    expect(analytics.track).toHaveBeenCalledWith('Queue Navigation', expect.objectContaining({ upNextBucket: '1' }));
+    expect(analytics.track).toHaveBeenCalledWith('Queue Navigation', expect.objectContaining({ upNextBucket: '1-3' }));
   });
 
   it('reports a step from the last pick as from a preview', () => {
