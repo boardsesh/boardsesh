@@ -565,19 +565,15 @@ final class LiveActivityWidgetTests: XCTestCase {
 
     private func keepLightingConfig(
         keepLighting: String = "45",
-        moonboardKeepLighting: String = "until_stopped",
         drivesInSession: Bool = true,
         inCrew: Bool = false,
-        moonboard: Bool = false,
         enabled: Bool = true
     ) -> SharedKeepLightingConfig {
         SharedKeepLightingConfig(
             v: SharedKeepLightingConfig.currentVersion,
             keepLighting: keepLighting,
-            moonboardKeepLighting: moonboardKeepLighting,
             drivesInSession: drivesInSession,
             inCrew: inCrew,
-            moonboard: moonboard,
             enabled: enabled
         )
     }
@@ -673,16 +669,11 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
     }
 
-    func testKeepLightingPlanFollowsTheBoardFamilyLikeTheApp() {
-        // The general choice: a 45 s timed drive.
+    func testKeepLightingPlanFollowsTheSettingsLikeTheApp() {
+        // The choice: a 45 s timed drive.
         XCTAssertEqual(
             SharedKeepLighting.plan(for: keepLightingConfig()),
             .window(seconds: 45, family: SharedLightingWindowState.familyGeneral)
-        )
-        // A MoonBoard takes its own choice, in a crew too.
-        XCTAssertEqual(
-            SharedKeepLighting.plan(for: keepLightingConfig(drivesInSession: false, inCrew: true, moonboard: true)),
-            .driving(family: SharedLightingWindowState.familyMoonboard)
         )
         // In a crew with "In a session too" off, the general choice lights one climb.
         XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(drivesInSession: false, inCrew: true)))
@@ -720,7 +711,7 @@ final class LiveActivityWidgetTests: XCTestCase {
     }
 
     func testKeepLightingConfigRoundTripsAndRejectsAnUnknownVersion() {
-        let config = keepLightingConfig(inCrew: true, moonboard: true)
+        let config = keepLightingConfig(inCrew: true)
         SharedKeepLightingConfigStore.save(config, to: defaults)
         XCTAssertEqual(SharedKeepLightingConfigStore.load(from: defaults), config)
 
@@ -776,7 +767,6 @@ final class LiveActivityWidgetTests: XCTestCase {
         // A timed drive that already ran out is not one to renew: Right away starts nothing new.
         let over = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: -1, windowSeconds: 45)
         XCTAssertNil(press(current: over, config: keepLightingConfig(keepLighting: "off")))
-        XCTAssertNil(press(current: over, config: keepLightingConfig(moonboardKeepLighting: "off", moonboard: true)))
     }
 
     func testLockScreenPressIgnoresAnotherSessionsWindow() throws {
@@ -787,10 +777,34 @@ final class LiveActivityWidgetTests: XCTestCase {
     }
 
     func testLockScreenPressUntilStoppedStartsADrive() throws {
-        let drive = try XCTUnwrap(press(current: nil, config: keepLightingConfig(moonboard: true)))
+        let drive = try XCTUnwrap(press(current: nil, config: keepLightingConfig(keepLighting: "until_stopped")))
         XCTAssertEqual(drive.mode, SharedLightingWindowState.modeDriving)
         XCTAssertNil(drive.endsAtMs)
-        XCTAssertEqual(drive.family, SharedLightingWindowState.familyMoonboard)
+        XCTAssertEqual(drive.family, SharedLightingWindowState.familyGeneral)
+    }
+
+    // A JS from before #7218 still says MoonBoard and sends the MoonBoard
+    // choice in its own slot. This build reads neither (2.7: one choice for
+    // every board), so the press takes the general choice and the general
+    // rule: one lit climb in a crew with In a session too off.
+    func testAMoonBoardFlagFromAnOlderBundleFollowsTheGeneralRule() throws {
+        let legacy = """
+        {"v": 1, "keepLighting": "45", "moonboardKeepLighting": "until_stopped", "drivesInSession": false, "inCrew": true, "moonboard": true, "enabled": true}
+        """
+        defaults.set(Data(legacy.utf8), forKey: SharedConstants.keepLightingConfigKey)
+        let config = try XCTUnwrap(SharedKeepLightingConfigStore.load(from: defaults))
+        XCTAssertEqual(config, keepLightingConfig(drivesInSession: false, inCrew: true))
+        XCTAssertNil(SharedKeepLighting.plan(for: config))
+        XCTAssertNil(press(current: nil, config: config))
+
+        let solo = """
+        {"v": 1, "keepLighting": "45", "moonboardKeepLighting": "until_stopped", "drivesInSession": false, "inCrew": false, "moonboard": true, "enabled": true}
+        """
+        defaults.set(Data(solo.utf8), forKey: SharedConstants.keepLightingConfigKey)
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: SharedKeepLightingConfigStore.load(from: defaults)),
+            .window(seconds: 45, family: SharedLightingWindowState.familyGeneral)
+        )
     }
 
     func testRecordPressStoresTheWindowForTheStagedSessionOnly() throws {
@@ -827,16 +841,21 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
     }
 
-    func testLightingEndSessionClearsTheWindowAndTheSettings() {
+    func testLightingEndSessionClearsTheWindowTheSettingsAndThePressStamp() {
         SharedLightingWindowStore.save(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults)
         SharedKeepLightingConfigStore.save(keepLightingConfig(), to: defaults)
+        SharedLockScreenPress.begin(in: defaults, asksServer: false, now: lightNow, pressId: "press-1")
+        SharedLockScreenPress.settle("press-1", in: defaults, now: lightNow)
         XCTAssertNotNil(SharedLightingWindowStore.load(from: defaults))
         XCTAssertNotNil(SharedKeepLightingConfigStore.load(from: defaults))
+        XCTAssertNotNil(SharedLockScreenPress.load(from: defaults))
 
         SharedLightingWindowRuntime.endSession(in: defaults)
 
         XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
         XCTAssertNil(defaults.data(forKey: SharedConstants.keepLightingConfigKey))
+        // A settled stamp outlives nothing: the session it belonged to is gone.
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lockScreenPressKey))
     }
 
     func testLightingWriteRedrawsOnlyWhenTheCardChanges() {
@@ -989,6 +1008,90 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
         XCTAssertTrue(StopDrivingIntent.appSettled(stop, current: later))
         XCTAssertTrue(StopDrivingIntent.appSettled(stop, current: nil))
+    }
+
+    // MARK: A lock-screen press in flight
+
+    // The intent stamps the press before its server request and board write,
+    // so JS's timed-drive end check can wait for it instead of letting go of
+    // the board under it.
+    func testAPressIsStampedInFlightWithAShortExpiry() throws {
+        XCTAssertNil(SharedLockScreenPress.load(from: defaults))
+
+        let pressId = SharedLockScreenPress.begin(in: defaults, asksServer: false, now: lightNow, pressId: "press-1")
+        XCTAssertEqual(pressId, "press-1")
+        let local = try XCTUnwrap(SharedLockScreenPress.load(from: defaults))
+        XCTAssertEqual(local.pressId, "press-1")
+        XCTAssertNil(local.settledAtMs)
+        // The board's 3 s ready wait and 1.5 s drain, the ActivityKit updates and a margin.
+        XCTAssertEqual(local.expiresAtMs, lightNowMs + 8_000)
+
+        // A party session asks the server first: its 10 s request timeout comes on top.
+        SharedLockScreenPress.begin(in: defaults, asksServer: true, now: lightNow, pressId: "press-2")
+        XCTAssertEqual(SharedLockScreenPress.load(from: defaults)?.expiresAtMs, lightNowMs + 18_000)
+
+        // A fresh id every press when none is given.
+        let first = SharedLockScreenPress.begin(in: defaults, asksServer: false)
+        let second = SharedLockScreenPress.begin(in: defaults, asksServer: false)
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(SharedLockScreenPress.load(from: defaults)?.pressId, second)
+    }
+
+    // Settled after the write, before the Darwin post: JS then knows the press
+    // was over by the time it landed, and ends a lapsed drive keeping the board.
+    func testAPressSettlesAfterItsWriteKeepingItsExpiry() throws {
+        SharedLockScreenPress.begin(in: defaults, asksServer: false, now: lightNow, pressId: "press-1")
+        let settledAt = lightNow.addingTimeInterval(2)
+        SharedLockScreenPress.settle("press-1", in: defaults, now: settledAt)
+        let settled = try XCTUnwrap(SharedLockScreenPress.load(from: defaults))
+        XCTAssertEqual(settled.pressId, "press-1")
+        XCTAssertEqual(settled.settledAtMs, settledAt.timeIntervalSince1970 * 1000)
+        XCTAssertEqual(settled.expiresAtMs, lightNowMs + 8_000)
+    }
+
+    // Two quick presses: the first one settling leaves the second in flight.
+    func testAPressOnlySettlesItsOwnStamp() throws {
+        SharedLockScreenPress.begin(in: defaults, asksServer: true, now: lightNow, pressId: "press-1")
+        SharedLockScreenPress.begin(in: defaults, asksServer: true, now: lightNow, pressId: "press-2")
+
+        SharedLockScreenPress.settle("press-1", in: defaults, now: lightNow)
+        let inFlight = try XCTUnwrap(SharedLockScreenPress.load(from: defaults))
+        XCTAssertEqual(inFlight.pressId, "press-2")
+        XCTAssertNil(inFlight.settledAtMs)
+
+        // The party server turned press 2 down. It settles rather than removing
+        // the stamp, which covered press 1 and press 1 may still be writing, so
+        // JS ends a lapsed drive keeping the board instead of letting go.
+        let turnedDownAt = lightNow.addingTimeInterval(1)
+        SharedLockScreenPress.settle("press-2", in: defaults, now: turnedDownAt)
+        let settled = try XCTUnwrap(SharedLockScreenPress.load(from: defaults))
+        XCTAssertEqual(settled.pressId, "press-2")
+        XCTAssertEqual(settled.settledAtMs, turnedDownAt.timeIntervalSince1970 * 1000)
+
+        // Nothing stored: settling writes nothing.
+        SharedLockScreenPress.clear(in: defaults)
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lockScreenPressKey))
+        SharedLockScreenPress.settle("press-2", in: defaults, now: lightNow)
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lockScreenPressKey))
+    }
+
+    func testThePressStampRejectsGarbageAndAnUnknownVersion() throws {
+        defaults.set(Data("not json".utf8), forKey: SharedConstants.lockScreenPressKey)
+        XCTAssertNil(SharedLockScreenPress.load(from: defaults))
+
+        let future = """
+        {"v": 2, "pressId": "press-1", "expiresAtMs": 1800000008000}
+        """
+        defaults.set(Data(future.utf8), forKey: SharedConstants.lockScreenPressKey)
+        XCTAssertNil(SharedLockScreenPress.load(from: defaults))
+
+        let inFlight = """
+        {"v": 1, "pressId": "press-1", "expiresAtMs": 1800000008000, "settledAtMs": null}
+        """
+        defaults.set(Data(inFlight.utf8), forKey: SharedConstants.lockScreenPressKey)
+        let state = try XCTUnwrap(SharedLockScreenPress.load(from: defaults))
+        XCTAssertNil(state.settledAtMs)
+        XCTAssertEqual(state.expiresAtMs, 1_800_000_008_000)
     }
 
     // MARK: The disconnected card's bulb

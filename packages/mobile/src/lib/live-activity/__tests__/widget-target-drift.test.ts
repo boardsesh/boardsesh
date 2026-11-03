@@ -171,7 +171,7 @@ function evaluateSwiftCompilationCondition(
   return result;
 }
 
-function widgetVisibleRecorderLines(source: string): string[] {
+function widgetVisibleRecorderLines(source: string, symbolPattern: RegExp = RECORDER_SYMBOL_PATTERN): string[] {
   // Model the production widget's compilation conditions: WIDGET_EXTENSION is
   // defined, BOARDSESH_TESTS is not. Each branch tracks visibility inherited
   // from its parent plus whether an earlier sibling branch already matched.
@@ -213,7 +213,7 @@ function widgetVisibleRecorderLines(source: string): string[] {
       conditionalBranches.pop();
       continue;
     }
-    if (conditionalBranches.every((branch) => branch.isVisible) && RECORDER_SYMBOL_PATTERN.test(line)) {
+    if (conditionalBranches.every((branch) => branch.isVisible) && symbolPattern.test(line)) {
       visibleRecorderLines.push(line.trim());
     }
   }
@@ -337,9 +337,60 @@ describe('Widget target Swift drift', () => {
 
     const bleAwait = navigationSource.indexOf('let writeSucceeded = await bleWriteTask.value');
     const bleDiagnostic = navigationSource.indexOf('diagnosticRun.mark(writeSucceeded ?', bleAwait);
-    const darwinPost = navigationSource.indexOf('postQueueNavigateDarwinNotification()', bleDiagnostic);
+    // The call, not the helper's own declaration further down, which would
+    // match even with the call moved above the write.
+    const darwinPostCall = '\n        postQueueNavigateDarwinNotification()\n';
+    expect(navigationSource.split(darwinPostCall)).toHaveLength(2);
+    const darwinPost = navigationSource.indexOf(darwinPostCall);
     expect(bleAwait).toBeGreaterThanOrEqual(0);
     expect(bleDiagnostic).toBeGreaterThan(bleAwait);
     expect(darwinPost).toBeGreaterThan(bleDiagnostic);
+  });
+
+  // JS hears a lock-screen press only at its Darwin post, after the board
+  // write. The press stamp covers that gap, so JS's timed-drive end check never
+  // lets go of the board under a press on its way to the wall.
+  it('stamps a lock-screen press before its server request and board write, and settles it before the Darwin post', () => {
+    const navigationSource = readFileSync(join(MODULE_IOS, 'ClimbNavigationIntent.swift'), 'utf8');
+    const occurrences = (needle: string) => navigationSource.split(needle).length - 1;
+    const settleCall = 'SharedLockScreenPress.settle(pressId';
+    expect(occurrences('SharedLockScreenPress.begin(')).toBe(1);
+    // Never removed: a turned-down press's stamp may cover an earlier press
+    // still writing the board.
+    expect(navigationSource).not.toContain('SharedLockScreenPress.clear(');
+    expect(navigationSource).not.toContain('lockScreenPressKey');
+    // Once where the party server turns the press down, once after the write.
+    expect(occurrences(settleCall)).toBe(2);
+    // The call, not the helper's own declaration further down.
+    const darwinPostCall = '\n        postQueueNavigateDarwinNotification()\n';
+    expect(occurrences(darwinPostCall)).toBe(1);
+
+    const begin = navigationSource.indexOf('SharedLockScreenPress.begin(');
+    const network = navigationSource.indexOf('await WidgetNetworking.sendNavigation(');
+    const rejectedGuard = navigationSource.indexOf('guard navigationResult != .serverRejected else {');
+    const settleTurnedDown = navigationSource.indexOf(settleCall);
+    const indexSaved = navigationSource.indexOf('SharedQueueState.saveCurrentIndex(');
+    const bleWrite = navigationSource.indexOf('LiveActivityBleBridge.writeBoardForIntent(');
+    const recordPress = navigationSource.indexOf('SharedLightingWindowRuntime.recordPress(');
+    const settle = navigationSource.lastIndexOf(settleCall);
+    const darwinPost = navigationSource.indexOf(darwinPostCall);
+
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(network).toBeGreaterThan(begin);
+    expect(bleWrite).toBeGreaterThan(begin);
+    // A press the party server turns down never posts: it settles there.
+    expect(settleTurnedDown).toBeGreaterThan(rejectedGuard);
+    expect(settleTurnedDown).toBeLessThan(indexSaved);
+    expect(settle).toBeGreaterThan(recordPress);
+    expect(recordPress).toBeGreaterThan(bleWrite);
+    expect(darwinPost).toBeGreaterThan(settle);
+
+    // Only the app process writes the board, so only it stamps: the widget
+    // extension never sees the stamp calls or the id they share.
+    const widgetSource = readFileSync(join(WIDGET_TARGET, 'ClimbNavigationIntent.swift'), 'utf8');
+    const widgetVisibleCode = widgetVisibleRecorderLines(widgetSource, /SharedLockScreenPress|\bpressId\b/).filter(
+      (line) => !line.startsWith('//'),
+    );
+    expect(widgetVisibleCode).toEqual([]);
   });
 });
