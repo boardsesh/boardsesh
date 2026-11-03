@@ -129,11 +129,21 @@ describe('iOS fingerprint evidence', () => {
       { sha: 'd'.repeat(40), parents: ['c'.repeat(40), 'e'.repeat(40)] },
       { sha: 'd'.repeat(40), parents: ['c'.repeat(40)] },
       { sha: 'e'.repeat(40), parents: ['e'.repeat(40), 'c'.repeat(40)] },
-    ])
-      expect(() => hasIosNativeChange(pullRequest(), [comment], () => commit)).toThrow('final head');
+    ]) {
+      const warnings: string[] = [];
+      expect(
+        hasIosNativeChange(
+          pullRequest(),
+          [comment],
+          () => commit,
+          (message) => warnings.push(message),
+        ),
+      ).toBe(true);
+      expect(warnings).toEqual([expect.stringContaining('final head')]);
+    }
   });
 
-  it('does not resolve stale branch evidence, human comments, or another PR merge ref', () => {
+  it('keeps unproven PRs without resolving stale branch evidence, human comments, or another PR merge ref', () => {
     for (const comment of [
       otaComment('⚠️ Native change', { body: otaComment().body.replace('ccccccc', 'ddddddd') }),
       otaComment('⚠️ Native change', {
@@ -141,12 +151,37 @@ describe('iOS fingerprint evidence', () => {
       }),
       otaComment('⚠️ Native change', { authorType: 'User' }),
     ]) {
-      expect(() =>
-        hasIosNativeChange(pullRequest(), [comment], () => {
-          throw new Error('must not resolve');
-        }),
-      ).toThrow('PR #42');
+      const warnings: string[] = [];
+      expect(
+        hasIosNativeChange(
+          pullRequest(),
+          [comment],
+          () => {
+            throw new Error('must not resolve');
+          },
+          (message) => warnings.push(message),
+        ),
+      ).toBe(true);
+      expect(warnings).toEqual([expect.stringContaining('PR #42 has no OTA compatibility comment')]);
     }
+  });
+
+  it('keeps the PR when GitHub cannot prove a historical merge ref', () => {
+    const comment = otaComment('⚠️ Native change', {
+      body: otaComment().body.replace('fix/connection', '42/merge').replace('ccccccc', 'ddddddd'),
+    });
+    const warnings: string[] = [];
+    expect(
+      hasIosNativeChange(
+        pullRequest(),
+        [comment],
+        () => {
+          throw new Error('commit lookup failed');
+        },
+        (message) => warnings.push(message),
+      ),
+    ).toBe(true);
+    expect(warnings).toEqual([expect.stringContaining('commit lookup failed')]);
   });
 
   it('includes iOS-native changes but excludes Android-only changes', () => {
@@ -159,17 +194,25 @@ describe('iOS fingerprint evidence', () => {
     ['human-authored', [otaComment('⚠️ Native change', { authorLogin: 'contributor', authorType: 'User' })]],
     ['stale', [otaComment('⚠️ Native change', { body: otaComment().body.replace('ccccccc', 'ddddddd') })]],
     ['unknown', [otaComment('ℹ️ Unknown')]],
-  ])('rejects %s evidence', (_description, comments) => {
-    expect(() => hasIosNativeChange(pullRequest(), comments as OtaComment[])).toThrow('PR #42');
+  ])('keeps the PR and warns on %s evidence instead of blocking delivery', (_description, comments) => {
+    const warnings: string[] = [];
+    expect(
+      hasIosNativeChange(pullRequest(), comments as OtaComment[], undefined, (message) => warnings.push(message)),
+    ).toBe(true);
+    expect(warnings).toEqual([expect.stringContaining('PR #42')]);
   });
 
-  it('never falls back to an older positive result when the newest bot result is unknown', () => {
-    expect(() =>
-      hasIosNativeChange(pullRequest(), [
-        otaComment(),
-        otaComment('ℹ️ Unknown', { updatedAt: '2026-10-25T12:00:00Z' }),
-      ]),
-    ).toThrow('unknown');
+  it('never trusts an older Android-only result when the newest bot result is unknown', () => {
+    const warnings: string[] = [];
+    expect(
+      hasIosNativeChange(
+        pullRequest(),
+        [otaComment('✅ Compatible'), otaComment('ℹ️ Unknown', { updatedAt: '2026-10-25T12:00:00Z' })],
+        undefined,
+        (message) => warnings.push(message),
+      ),
+    ).toBe(true);
+    expect(warnings).toEqual([expect.stringContaining('unknown')]);
   });
 });
 

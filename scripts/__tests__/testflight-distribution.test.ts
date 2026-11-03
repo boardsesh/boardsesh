@@ -177,7 +177,15 @@ describe('distribution result capture after earlier job failures', () => {
 
   function selectFixture(
     status: DistributionResult['status'] | 'malformed' | 'missing',
-    options: { rerunTerminal?: boolean; paginate?: boolean; unrelatedMissing?: boolean; restored?: boolean } = {},
+    options: {
+      rerunTerminal?: boolean;
+      paginate?: boolean;
+      unrelatedMissing?: boolean;
+      restored?: boolean;
+      neverDistributed?: boolean;
+      untrustedFirst?: boolean;
+      uploadReceipt?: typeof receipt;
+    } = {},
   ) {
     const directory = mkdtempSync(join(tmpdir(), 'testflight-select-'));
     directories.push(directory);
@@ -207,6 +215,13 @@ describe('distribution result capture after earlier job failures', () => {
         const runId = argumentsList[2];
         downloads.push(runId);
         const target = argumentsList[argumentsList.indexOf('--dir') + 1];
+        if (argumentsList[argumentsList.indexOf('--name') + 1] === 'ios-testflight-build-1') {
+          writeFileSync(
+            join(target, 'testflight-build.json'),
+            JSON.stringify(options.uploadReceipt ?? uploadedReceipt),
+          );
+          return '';
+        }
         const older = runId === '1';
         const statusForRun = older ? (options.rerunTerminal ? 'terminal-failure' : 'deferred-beta-review') : status;
         const checkedAt = older
@@ -252,14 +267,42 @@ describe('distribution result capture after earlier job failures', () => {
           created_at: '2026-11-01T10:00:00Z',
           head_repository: { full_name: 'boardsesh/boardsesh' },
         });
+      if (endpoint.includes('/workflows/ios-testflight-rn.yml/runs')) {
+        expect(endpoint).toContain('status=success');
+        const nativeRun = (id: number, title: string) => ({
+          id,
+          run_attempt: 1,
+          display_title: title,
+          path: '.github/workflows/ios-testflight-rn.yml',
+          status: 'completed',
+          conclusion: 'success',
+          event: 'workflow_dispatch',
+          head_branch: 'main',
+          head_sha: 'e'.repeat(40),
+          head_repository: { full_name: 'boardsesh/boardsesh' },
+        });
+        return JSON.stringify({
+          workflow_runs: options.neverDistributed
+            ? [
+                ...(options.untrustedFirst
+                  ? [{ ...nativeRun(998, `ios:${uploadedReceipt.sourceSha}`), head_branch: 'feature' }]
+                  : []),
+                nativeRun(999, `ios:${'f'.repeat(40)}`),
+                nativeRun(123, `ios:${uploadedReceipt.sourceSha}`),
+              ]
+            : [],
+        });
+      }
       if (endpoint.includes('/workflows/')) {
         const page = Number(endpoint.match(/&page=(\d+)/)?.[1]);
         pages.push(page);
-        const ids = options.paginate
-          ? page === 1
-            ? [...Array.from({ length: 98 }, (_, index) => index + 100), 3, 2]
-            : [1]
-          : [3, 2, 1];
+        const ids = options.neverDistributed
+          ? []
+          : options.paginate
+            ? page === 1
+              ? [...Array.from({ length: 98 }, (_, index) => index + 100), 3, 2]
+              : [1]
+            : [3, 2, 1];
         return JSON.stringify({
           workflow_runs: ids.map((id) => ({
             id,
@@ -274,6 +317,8 @@ describe('distribution result capture after earlier job failures', () => {
       }
       const runId = endpoint.match(/runs\/(\d+)\//)?.[1];
       const name = endpoint.match(/[?&]name=([^&]+)/)?.[1];
+      if (name === 'ios-testflight-build-1')
+        return JSON.stringify({ artifacts: runId === '123' ? [{ id: 77, name, expired: false }] : [] });
       return JSON.stringify({
         artifacts: runId === '3' || Number(runId) >= 100 ? [] : [{ id: 123, name, expired: false }],
       });
@@ -327,6 +372,36 @@ describe('distribution result capture after earlier job failures', () => {
 
   it('keeps higher uploaded versions eligible without a validated restoration record', () => {
     const fixture = selectFixture('deferred-processing', { restored: true });
+    main(['select'], fixture.execute, () => []);
+    expect(fixture.outputs()).toBe('selected=false\n');
+  });
+
+  it('delivers a newest upload that no distribution ever attempted', () => {
+    const fixture = selectFixture('deferred-processing', { neverDistributed: true });
+    main(['select'], fixture.execute, () => []);
+    expect(fixture.downloads).toEqual(['123']);
+    expect(fixture.outputs()).toBe('selected=true\nsource_run_id=123\nsource_run_attempt=1\n');
+  });
+
+  it('skips an untrusted same-titled run instead of blocking hourly delivery', () => {
+    const fixture = selectFixture('deferred-processing', { neverDistributed: true, untrustedFirst: true });
+    main(['select'], fixture.execute, () => []);
+    expect(fixture.downloads).toEqual(['123']);
+    expect(fixture.outputs()).toBe('selected=true\nsource_run_id=123\nsource_run_attempt=1\n');
+  });
+
+  it('does not deliver an attempted upload a second time through the never-attempted path', () => {
+    const fixture = selectFixture('ready-for-testing');
+    main(['select'], fixture.execute, () => []);
+    expect(fixture.downloads).not.toContain('123');
+    expect(fixture.outputs()).toBe('selected=false\n');
+  });
+
+  it.each([
+    ['another build tag', { ...receipt, buildNumber: '9', buildTag: 'build-ios-v2.7.0-9-abcdef123456' }],
+    ['another source run', { ...receipt, sourceRunId: '124' }],
+  ])('refuses a never-attempted upload whose receipt names %s', (_description, uploadReceipt) => {
+    const fixture = selectFixture('deferred-processing', { neverDistributed: true, uploadReceipt });
     main(['select'], fixture.execute, () => []);
     expect(fixture.outputs()).toBe('selected=false\n');
   });

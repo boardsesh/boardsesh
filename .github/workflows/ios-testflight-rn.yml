@@ -831,6 +831,24 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
+      # Hand this exact upload to the Discord Users distribution. A dispatch, not
+      # workflow_run: GitHub sends no workflow_run for a run GITHUB_TOKEN started,
+      # and Main Native Release starts recovery builds that way. The distribution
+      # waits for this run to finish before trusting it. Non-blocking: if the
+      # dispatch fails, its hourly check delivers the newest never-attempted upload.
+      - name: Hand the uploaded build to Discord Users distribution
+        if: steps.testflight_upload.outcome == 'success' && steps.testflight_receipt.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run ios-testflight-distribute.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f source_run_id="$GITHUB_RUN_ID"
+          echo "::notice::Dispatched Discord Users distribution for run $GITHUB_RUN_ID."
+
       # Un-strand the binary we just uploaded. expo-updates launches whichever
       # update has the newest commitTime, and this binary stamped its embedded
       # bundle minutes ago at the end of a ~50-minute build — so any OTA published

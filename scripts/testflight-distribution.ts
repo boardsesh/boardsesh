@@ -14,7 +14,12 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { objectFields, parseTestflightBuildReceipt } from './lib/testflight-build';
+import {
+  objectFields,
+  parseTestflightBuildReceipt,
+  TESTFLIGHT_RECEIPT_ARTIFACT,
+  trustedTestflightRun,
+} from './lib/testflight-build';
 import { createTestflightCommandRunner } from './lib/testflight-github';
 import {
   createDistributionResult,
@@ -47,6 +52,60 @@ function artifactFiles(directory: string, basename: string): string[] {
     if (entry.isDirectory()) return artifactFiles(path, basename);
     return entry.isFile() && entry.name === basename ? [path] : [];
   });
+}
+
+const NATIVE_RUN_SCAN = 100;
+
+/** The finished upload run whose own receipt names this exact build tag and source. */
+function findUploadRun(
+  repository: string,
+  latestBuild: { name: string; sha: string },
+  json: (path: string) => unknown,
+  command: (binary: string, argumentsList: string[]) => string,
+): { id: string; attempt: number } | null {
+  const response = objectFields(
+    json(
+      `/repos/${repository}/actions/workflows/ios-testflight-rn.yml/runs?status=success&per_page=${NATIVE_RUN_SCAN}`,
+    ),
+  );
+  if (!Array.isArray(response.workflow_runs)) throw new Error('Unreadable native build runs.');
+  for (const entry of response.workflow_runs) {
+    // run-name is `ios:<native source sha>`; the receipt below is the proof.
+    if (objectFields(entry).display_title !== `ios:${latestBuild.sha}`) continue;
+    let run: ReturnType<typeof trustedTestflightRun>;
+    try {
+      run = trustedTestflightRun(entry, repository);
+    } catch {
+      // One odd same-titled run must not stop every hourly retry; the receipt is the proof.
+      continue;
+    }
+    const artifactName = `${TESTFLIGHT_RECEIPT_ARTIFACT}-${run.attempt}`;
+    const listing = objectFields(
+      json(`/repos/${repository}/actions/runs/${run.id}/artifacts?name=${artifactName}&per_page=100`),
+    );
+    if (!Array.isArray(listing.artifacts)) throw new Error('Unreadable native build artifacts.');
+    const receipts = listing.artifacts
+      .map(objectFields)
+      .filter((artifact) => artifact.name === artifactName && artifact.expired === false);
+    if (receipts.length === 0) continue;
+    if (receipts.length !== 1) throw new Error('Ambiguous native build receipt artifact.');
+    const directory = mkdtempSync(join(tmpdir(), 'testflight-upload-'));
+    try {
+      command('gh', ['run', 'download', run.id, '--repo', repository, '--name', artifactName, '--dir', directory]);
+      const files = artifactFiles(directory, 'testflight-build.json');
+      if (files.length !== 1) throw new Error('Missing or ambiguous native build receipt.');
+      const receipt = parseTestflightBuildReceipt(JSON.parse(readFileSync(files[0], 'utf8')));
+      if (
+        receipt.buildTag === latestBuild.name &&
+        receipt.sourceSha === latestBuild.sha &&
+        receipt.sourceRunId === run.id
+      )
+        return { id: run.id, attempt: run.attempt };
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+  return null;
 }
 
 export function main(
@@ -194,6 +253,23 @@ export function main(
     throw new Error(
       'Newest matching distribution attempt has no valid result; explicit source_run_id recovery is required.',
     );
+  if (outcomes.length === 0) {
+    // No distribution ever saw this upload. Main Native Release dispatches
+    // recovery builds with GITHUB_TOKEN, and GitHub sends no workflow_run for
+    // those, so 2.7.0 builds 11 and 12 waited here with nothing to retry.
+    const upload = findUploadRun(repository, latestBuild, json, command);
+    emit(
+      upload
+        ? { selected: 'true', source_run_id: upload.id, source_run_attempt: String(upload.attempt) }
+        : { selected: 'false' },
+    );
+    console.log(
+      upload
+        ? `Newest uploaded iOS build: ${latestBuild.name}; never distributed, delivering from run ${upload.id}.`
+        : `::warning::Newest uploaded iOS build ${latestBuild.name} was never distributed and its finished upload run is not among the newest ${NATIVE_RUN_SCAN}. Dispatch this workflow with its source_run_id.`,
+    );
+    return;
+  }
   const retry = retryableDistribution(
     latestBuild,
     outcomes.flatMap((outcome) => (outcome.result ? [outcome.result] : [])),
