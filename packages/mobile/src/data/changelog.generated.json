@@ -1,6 +1,45 @@
 {
-  "generatedAt": "2026-11-02T22:26:50.230Z",
+  "generatedAt": "2026-11-03T07:49:29.984Z",
   "entries": [
+    {
+      "prNumber": 7234,
+      "category": "improved",
+      "title": "When someone takes the board while you drive, your phone tells you who",
+      "mergedAt": "2026-11-03T07:31:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7234",
+      "body": "A board that drops mid-drive now says so, beside the climb"
+    },
+    {
+      "prNumber": 7239,
+      "category": "improved",
+      "title": "With a queue going, the player tells you where your next swipe goes: \"Up next · 2 of 4 · then Projects\".",
+      "mergedAt": "2026-11-03T07:25:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7239",
+      "body": "Your first swipe through search results or a playlist says how many climbs wait in Up next.\nA light tick when a swipe leaves your queue and picks your list back up.\nAt the end of a list, \"Back to your queue\" names the climb it takes you back to.\nScreen readers hear which list Next and Previous walk, in the player and the mini player."
+    },
+    {
+      "prNumber": 7233,
+      "category": "improved",
+      "title": "Can't find your board? Tips show 5 seconds into the scan while it keeps looking.",
+      "mergedAt": "2026-11-03T07:22:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7233",
+      "body": "Browse for now closes the board picker so you can keep picking climbs.\nThe Bluetooth scan on the Boards tab shows the same tips."
+    },
+    {
+      "prNumber": 5257,
+      "category": "fixed",
+      "title": "Climbs opened from your Logbook, the home feed, or a notification now show their real matching and feet rules on Woods. Tapping a notification for a no-match climb shows its ⊘ again, and Logbook and session rows now show campus, any-feet and no-kickboard badges.",
+      "mergedAt": "2026-11-03T07:21:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5257"
+    },
+    {
+      "prNumber": 7238,
+      "category": "improved",
+      "title": "Your queue now shows what's on, what's up next, and the list your swipes carry on with",
+      "mergedAt": "2026-11-03T07:20:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7238",
+      "body": "Popular climbs on your board sit in their own section, apart from your list"
+    },
     {
       "prNumber": 4153,
       "category": "fixed",
