@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   columnMatchesCanonical,
+  deletedUpstreamPlaylistsStatements,
   indexMatchesCanonical,
   ledgerSnapshotsMatch,
   requireCompatibilityOptIn,
@@ -121,5 +124,19 @@ describe('Aurora circuit schema compatibility guards', () => {
         ordered_rows: '[{"id":2,"hash":"original","created_at":null}]',
       }),
     ).toBe(false);
+  });
+
+  it('creates the deleted-circuits table from its generated migration, and only creates', () => {
+    const statements = deletedUpstreamPlaylistsStatements(
+      readFileSync(new URL('../packages/db/drizzle/0288_user_deleted_upstream_playlists.sql', import.meta.url), 'utf8'),
+    );
+
+    expect(statements.map((statement) => statement.split(/\s+/).slice(0, 2).join(' '))).toEqual([
+      'CREATE TYPE',
+      'CREATE TABLE',
+      'ALTER TABLE',
+      'CREATE UNIQUE',
+    ]);
+    expect(statements.join('\n')).not.toMatch(/\bDROP\b/i);
   });
 });

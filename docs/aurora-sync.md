@@ -92,10 +92,30 @@ playlist-only pause during a rolling deployment.
 
 The arbitration integration job uses a fresh, pinned development-database
 container. Its opt-in preparation script adds only the legacy playlist columns
-and indexes absent from that image, verifies their canonical definitions, and
-checks that the Drizzle migration ledger is unchanged. This fixture setup is
-guarded to loopback PostgreSQL and is not a production schema migration or a
-replacement for the migration journal.
+and indexes absent from that image, plus the `user_deleted_upstream_playlists`
+table from its generated migration (0288) when the image predates it, verifies
+their canonical definitions, and checks that the Drizzle migration ledger is
+unchanged. This fixture setup is guarded to loopback PostgreSQL and is not a
+production schema migration or a replacement for the migration journal.
+
+#### Deleted circuits
+
+A playlist the climber deletes in Boardsesh used to come back the next time
+Aurora sent its circuit: when the circuit changed upstream, or on any full
+re-sync (#7240). `deletePlaylist` now records the playlist's `aurora_id` in
+`user_deleted_upstream_playlists` (per user, with the playlist's board) in the
+same transaction as the delete. After taking its circuit locks, the circuits
+case takes the same per-user lock `deletePlaylist` takes
+(`acquireUpstreamPlaylistLock`), then reads the list and leaves those circuits
+out of the owner lookup and the playlist write. The `board_circuits` source row
+is still written, since it mirrors upstream. A deleted circuit is not a refusal:
+it is not counted in `skipped` and never reaches `sync_error`.
+
+The skip lasts until the climber unlinks that board's account, which clears the
+list for that board (`deleteAuroraCredential`). The JSON import never reads the
+list: importing a file is an explicit request for what is in it, and it keys its
+playlists on its own `json-import-…` ids. Kilter follows the same rule; see
+`docs/kilter-sync.md`, "Deleted circuits".
 
 ### Logbook writes (`ascents`/`bids`): timezone, claim, soft-delete
 

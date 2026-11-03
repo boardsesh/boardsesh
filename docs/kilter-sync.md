@@ -159,6 +159,16 @@ The upsert in (1) carries an **edit-clobber guard**, the twin of the ticks one: 
 
 When the guard lets it through, the climbs list is **full-replace per sync**: delete every `playlist_climbs` row for the playlist, re-insert from the snapshot, chunk inserts at 500 rows to stay under the 65535-parameter Postgres ceiling. Matches aurora-sync's circuit handling. Ownership is idempotent via `(playlist_id, user_id)` unique.
 
+### Deleted circuits
+
+PowerSync sends every circuit on every cycle, so before #7240 a playlist the climber deleted in Boardsesh came back within 5 minutes: no row carried its `kilter_id`, so step 3 inserted a fresh one with a new uuid. Now `deletePlaylist` writes the playlist's `kilter_id` (and its `aurora_id`, for an adopted pre-split playlist) to `user_deleted_upstream_playlists` in the same transaction as the delete, and `applyCircuits` drops the PUTs for those circuits before the owner lookup. A deleted circuit is not inserted, not adopted onto a same-named legacy playlist, and not counted as a duplicate-account refusal. The circuit stays on Kilter; nothing is pushed upstream.
+
+The rule is per climber: the list is keyed on `(user_id, upstream_source, upstream_id)`, so a second Boardsesh account linked to the same Kilter account still gets the circuit. An upstream REMOVE still applies.
+
+The skip lasts until the climber **unlinks that board's account**. `deleteAuroraCredential` clears the list for that user and board in the same transaction, so a later re-link imports every circuit again, the deleted ones too. Editing the circuit on Kilter does not bring it back. Deleting the Boardsesh account cascades.
+
+**Locking.** `deletePlaylist` and `applyCircuits` both take a per-user transaction-scoped advisory lock (`acquireUpstreamPlaylistLock`, seed `PLST`) before they read the playlist or the list. Without it a delete could commit after a circuits phase read the list and before it reached that circuit, and the phase would insert it again. The circuits phase holds its transaction for the whole snapshot, so a delete can wait a few seconds behind it. A playlist built in Boardsesh (no `kilter_id`, no `aurora_id`) takes no lock and records nothing.
+
 ### Defensive sub-scoping
 
 The Kilter server scopes the `user_buckets` and `circuit_buckets` streams by the bearer token's `sub` today, so subscribing with `parameters: {}` works. We still defensively decode `sub` from the access JWT and drop any `circuits` op whose `user_uuid` doesn't match — if the server-side sync rules ever loosen, we'd at worst ignore valid data rather than write someone else's. `circuit_climbs` carry no `user_uuid`; we trust the parent-circuit filter.

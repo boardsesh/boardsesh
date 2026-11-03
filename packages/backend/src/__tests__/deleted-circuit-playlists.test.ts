@@ -22,21 +22,20 @@ import {
 } from '../workers/families/__tests__/provider-sync-fixtures';
 
 // ---------------------------------------------------------------------------
-// Deleted circuit playlists are recorded (#7240), against a real database.
+// Deleted playlists stay deleted (#7240), against a real database.
 //
 // The Kilter PowerSync stream re-sends every circuit every routine cycle, and
 // Aurora re-sends a circuit when it changes. Before the fix, deletePlaylist
 // hard-deleted the row and kept nothing, so the next cycle found no playlist
-// with that kilter_id / aurora_id and inserted a fresh one. This half records
-// the deleted circuit; the circuit writers start skipping it in the next
-// change, which ships after this migration and grant are deployed
-// (docs/background-workers.md).
+// with that kilter_id / aurora_id and inserted a fresh one. These tests run the
+// real resolver and the real circuit writers back to back.
 // ---------------------------------------------------------------------------
 
 const USER_A = 'psync-deleted-circuit-a';
 const USER_B = 'psync-deleted-circuit-b';
 const TENSION_CLIMB = 'psync-deleted-tension-climb';
 const KILTER_CIRCUIT = 'psync-deleted-kcircuit-1';
+const OTHER_KILTER_CIRCUIT = 'psync-deleted-kcircuit-2';
 const ADOPTED_CIRCUIT = 'psync-deleted-adopted';
 /** The circuit `fullSyncPage` carries. */
 const TENSION_CIRCUIT = 'psync-circuit-1';
@@ -157,14 +156,14 @@ async function cleanUp(): Promise<void> {
   await removeFixtures(db, [USER_A, USER_B], [TENSION_CLIMB]);
 }
 
-describe('deleted circuit playlists are recorded (#7240)', () => {
+describe('deleted circuit playlists stay deleted (#7240)', () => {
   beforeEach(cleanUp);
   afterEach(() => {
     vi.unstubAllGlobals();
   });
   afterAll(cleanUp);
 
-  it('deleting a synced Kilter circuit playlist records the circuit, and the pull serves only its tombstone', async () => {
+  it('a deleted Kilter circuit playlist is not re-imported by the next sync, and the pull serves only its tombstone', async () => {
     await seedUser(USER_A);
     await kilterCycle(USER_A);
     const [synced] = await ownedPlaylists(USER_A);
@@ -175,6 +174,11 @@ describe('deleted circuit playlists are recorded (#7240)', () => {
       { boardType: 'kilter', upstreamSource: 'kilter', upstreamId: KILTER_CIRCUIT },
     ]);
 
+    // Two more cycles of the same snapshot: before the fix the first one
+    // inserted a fresh playlist with a new uuid.
+    await kilterCycle(USER_A);
+    await kilterCycle(USER_A);
+    expect(await ownedPlaylists(USER_A)).toEqual([]);
     expect(await playlistsCarrying(KILTER_CIRCUIT)).toBe(0);
 
     // Offline clients: the playlist pull has nothing, and the tombstone the
@@ -193,7 +197,7 @@ describe('deleted circuit playlists are recorded (#7240)', () => {
     ]);
   });
 
-  it('deleting a synced Tension circuit playlist records the circuit with its board', async () => {
+  it('a deleted Tension circuit playlist is not re-imported when Aurora sends the circuit again', async () => {
     await insertLinkedTensionAccount(db, USER_A, TENSION_CLIMB);
     await tensionCycle(USER_A);
     const [synced] = await ownedPlaylists(USER_A);
@@ -203,7 +207,15 @@ describe('deleted circuit playlists are recorded (#7240)', () => {
     expect(await deletedRows(USER_A)).toEqual([
       { boardType: FIXTURE_BOARD, upstreamSource: 'aurora', upstreamId: TENSION_CIRCUIT },
     ]);
+
+    await tensionCycle(USER_A);
+    expect(await ownedPlaylists(USER_A)).toEqual([]);
     expect(await playlistsCarrying(TENSION_CIRCUIT)).toBe(0);
+    // The circuit itself still mirrors upstream: only the playlist stays gone.
+    const source = await db.execute(sql`
+      SELECT count(*)::int AS count FROM board_circuits WHERE board_type = ${FIXTURE_BOARD} AND uuid = ${TENSION_CIRCUIT}
+    `);
+    expect(Array.from(source as Iterable<{ count: number }>)[0].count).toBe(1);
   });
 
   it('deleting a playlist built in Boardsesh records nothing and still deletes it', async () => {
@@ -221,7 +233,27 @@ describe('deleted circuit playlists are recorded (#7240)', () => {
     expect(await deletedRows(USER_A)).toEqual([]);
   });
 
-  it('an adopted pre-split Kilter playlist records both upstream ids', async () => {
+  it('one climber deleting a circuit does not hide it from another climber linked to the same account', async () => {
+    await seedUser(USER_A);
+    await seedUser(USER_B);
+    await kilterCycle(USER_A);
+    const [synced] = await ownedPlaylists(USER_A);
+    await deletePlaylist(USER_A, synced.uuid);
+
+    // B's sync of the same circuit is untouched by A's list.
+    const bResult = await kilterCycle(USER_B);
+    expect(bResult.skippedForeignCircuits).toBe(0);
+    expect((await ownedPlaylists(USER_B)).map((row) => row.kilter_id)).toEqual([KILTER_CIRCUIT]);
+
+    // A's next cycle skips it quietly: a circuit A deleted is not a
+    // duplicate-account conflict just because B now holds it.
+    const aResult = await kilterCycle(USER_A);
+    expect(aResult.skippedForeignCircuits).toBe(0);
+    expect(await ownedPlaylists(USER_A)).toEqual([]);
+    expect((await ownedPlaylists(USER_B)).map((row) => row.kilter_id)).toEqual([KILTER_CIRCUIT]);
+  });
+
+  it('an adopted pre-split Kilter playlist records both upstream ids and stays deleted', async () => {
     await seedUser(USER_A);
     // The pre-split shape: aurora_id only. Tier-1 adoption stamps the kilter_id.
     const inserted = await db.execute(sql`
@@ -244,9 +276,12 @@ describe('deleted circuit playlists are recorded (#7240)', () => {
       { boardType: 'kilter', upstreamSource: 'kilter', upstreamId: ADOPTED_CIRCUIT },
       { boardType: 'kilter', upstreamSource: 'aurora', upstreamId: ADOPTED_CIRCUIT },
     ]);
+
+    await kilterCycle(USER_A, [ADOPTED_CIRCUIT]);
+    expect(await ownedPlaylists(USER_A)).toEqual([]);
   });
 
-  it("unlinking a board account clears only that board's deleted circuits", async () => {
+  it('unlinking a board account clears only that board, so a re-link imports the circuit again', async () => {
     await insertLinkedTensionAccount(db, USER_A, TENSION_CLIMB);
     await tensionCycle(USER_A);
     await kilterCycle(USER_A);
@@ -257,6 +292,57 @@ describe('deleted circuit playlists are recorded (#7240)', () => {
     expect(await deletedRows(USER_A)).toEqual([
       { boardType: FIXTURE_BOARD, upstreamSource: 'aurora', upstreamId: TENSION_CIRCUIT },
     ]);
+
+    await kilterCycle(USER_A);
+    await tensionCycle(USER_A);
+    // Kilter's circuit is back; the Tension one, whose account is still
+    // linked, stays deleted.
+    expect((await ownedPlaylists(USER_A)).map((row) => row.kilter_id ?? row.aurora_id)).toEqual([KILTER_CIRCUIT]);
+  });
+
+  it('a delete waits for an in-flight circuit sync of the same climber instead of racing it', async () => {
+    await seedUser(USER_A);
+    await kilterCycle(USER_A);
+    const [synced] = await ownedPlaylists(USER_A);
+
+    // A circuits phase for a DIFFERENT circuit: it holds no row lock on the
+    // playlist being deleted, so only the per-user lock can make the delete
+    // wait. Without it the delete commits mid-batch, and a batch that had
+    // already read the deleted list would re-insert the circuit.
+    let releaseSync!: () => void;
+    const syncMayCommit = new Promise<void>((resolve) => {
+      releaseSync = resolve;
+    });
+    let syncHoldsLock!: () => void;
+    const syncStarted = new Promise<void>((resolve) => {
+      syncHoldsLock = resolve;
+    });
+    const inFlightSync = db.transaction(async (tx) => {
+      await applyCircuits(
+        tx as unknown as ApplyTx,
+        USER_A,
+        [circuitPut(OTHER_KILTER_CIRCUIT, 'Other')],
+        [],
+        new Map(),
+        () => {},
+      );
+      syncHoldsLock();
+      await syncMayCommit;
+    });
+    await syncStarted;
+
+    const pendingDelete = deletePlaylist(USER_A, synced.uuid);
+    const settledEarly = await Promise.race([
+      pendingDelete.then(() => 'deleted'),
+      new Promise<string>((resolve) => setTimeout(() => resolve('waiting'), 400)),
+    ]);
+    expect(settledEarly).toBe('waiting');
+
+    releaseSync();
+    await inFlightSync;
+    expect(await pendingDelete).toBe(true);
+    expect((await ownedPlaylists(USER_A)).map((row) => row.kilter_id)).toEqual([OTHER_KILTER_CIRCUIT]);
+    expect((await deletedRows(USER_A)).map((row) => row.upstreamId)).toEqual([KILTER_CIRCUIT]);
   });
 
   it("a delete of a circuit playlist waits for a transaction holding the climber's upstream-playlist lock", async () => {
