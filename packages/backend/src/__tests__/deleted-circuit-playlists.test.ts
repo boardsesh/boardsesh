@@ -5,7 +5,7 @@ import { asc, eq, sql } from 'drizzle-orm';
 import type { ConnectionContext, SyncResult } from '@boardsesh/shared-schema';
 import { userDeletedUpstreamPlaylists } from '@boardsesh/db/schema';
 import { acquireUpstreamPlaylistLock } from '@boardsesh/db/queries';
-import { syncUserData } from '@boardsesh/aurora-sync/sync';
+import { getCircuitPlaylistOwnershipConflictState, syncUserData } from '@boardsesh/aurora-sync/sync';
 import { applyCircuits, type PowerSyncOp } from '@boardsesh/kilter-sync';
 
 import { db } from '../db/client';
@@ -37,6 +37,7 @@ const TENSION_CLIMB = 'psync-deleted-tension-climb';
 const KILTER_CIRCUIT = 'psync-deleted-kcircuit-1';
 const OTHER_KILTER_CIRCUIT = 'psync-deleted-kcircuit-2';
 const ADOPTED_CIRCUIT = 'psync-deleted-adopted';
+const UNADOPTED_CIRCUIT = 'psync-deleted-unadopted';
 /** The circuit `fullSyncPage` carries. */
 const TENSION_CIRCUIT = 'psync-circuit-1';
 
@@ -279,6 +280,64 @@ describe('deleted circuit playlists stay deleted (#7240)', () => {
 
     await kilterCycle(USER_A, [ADOPTED_CIRCUIT]);
     expect(await ownedPlaylists(USER_A)).toEqual([]);
+  });
+
+  it('a pre-split Kilter playlist deleted before Kilter adopted it stays deleted when Grips sends its circuit', async () => {
+    await seedUser(USER_A);
+    // The pre-split shape no Kilter cycle has adopted yet: aurora_id only.
+    const inserted = await db.execute(sql`
+      INSERT INTO playlists (uuid, board_type, name, aurora_type, aurora_id, aurora_synced_at, created_at, updated_at)
+      VALUES ('psync-deleted-unadopted-row', 'kilter', 'Projects', 'circuits', ${UNADOPTED_CIRCUIT},
+              now() - interval '200 days', now() - interval '200 days', now() - interval '200 days')
+      RETURNING id
+    `);
+    const playlistId = Array.from(inserted as Iterable<{ id: string }>)[0].id;
+    await db.execute(sql`
+      INSERT INTO playlist_ownership (playlist_id, user_id, role) VALUES (${playlistId}, ${USER_A}, 'owner')
+    `);
+
+    await deletePlaylist(USER_A, 'psync-deleted-unadopted-row');
+    // aurora-sync never syncs a Kilter credential, so the aurora row alone is
+    // never read: the kilter row is the one that keeps it gone.
+    expect(await deletedRows(USER_A)).toEqual([
+      { boardType: 'kilter', upstreamSource: 'kilter', upstreamId: UNADOPTED_CIRCUIT },
+      { boardType: 'kilter', upstreamSource: 'aurora', upstreamId: UNADOPTED_CIRCUIT },
+    ]);
+
+    // Grips kept the circuit uuid, so it arrives as a Kilter circuit. Before
+    // the fix nothing held that kilter_id and there was no row left to adopt,
+    // so the first cycle inserted a fresh playlist.
+    await kilterCycle(USER_A, [UNADOPTED_CIRCUIT]);
+    await kilterCycle(USER_A, [UNADOPTED_CIRCUIT]);
+    expect(await ownedPlaylists(USER_A)).toEqual([]);
+    expect(await playlistsCarrying(UNADOPTED_CIRCUIT)).toBe(0);
+  });
+
+  it('a Tension circuit one climber deleted and another claimed is not a duplicate-account conflict', async () => {
+    // Two Boardsesh accounts linked to the same Tension account.
+    await insertLinkedTensionAccount(db, USER_A, TENSION_CLIMB);
+    await insertLinkedTensionAccount(db, USER_B, TENSION_CLIMB);
+    const conflictStateFor = (userId: string) =>
+      getCircuitPlaylistOwnershipConflictState(db, FIXTURE_BOARD, AURORA_USER_ID, userId);
+
+    await tensionCycle(USER_A);
+    const [synced] = await ownedPlaylists(USER_A);
+    await deletePlaylist(USER_A, synced.uuid);
+    expect(await conflictStateFor(USER_A)).toBe('none');
+
+    // B's sync claims the circuit A deleted.
+    await tensionCycle(USER_B);
+    expect((await ownedPlaylists(USER_B)).map((row) => row.aurora_id)).toEqual([TENSION_CIRCUIT]);
+
+    // Before the fix this read 'foreign' for A on every sync from here on, and
+    // A's runner stored the duplicate-account sync_error.
+    expect(await conflictStateFor(USER_A)).toBe('none');
+    expect(await conflictStateFor(USER_B)).toBe('none');
+
+    // A's next sync still leaves it alone, and B keeps it.
+    await tensionCycle(USER_A);
+    expect(await ownedPlaylists(USER_A)).toEqual([]);
+    expect((await ownedPlaylists(USER_B)).map((row) => row.aurora_id)).toEqual([TENSION_CIRCUIT]);
   });
 
   it('unlinking a board account clears only that board, so a re-link imports the circuit again', async () => {

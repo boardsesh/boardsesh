@@ -19,6 +19,7 @@ import {
   acquireUserTickMutationLock,
   foreignPlaylistOwnerGuard,
   isSyncFenceError,
+  notDeletedUpstreamPlaylistGuard,
   recomputeClimbStatsBulk,
   selectDeletedUpstreamPlaylistIds,
   selectUpstreamPlaylistOwners,
@@ -72,6 +73,10 @@ export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = DUPLICATE_BOARD_ACCOUNT_CIRCU
  * circuit set regardless of what arrived in this delta. `clearAuroraBoardData`
  * does wipe it board-wide, but that also clears `board_user_syncs` in the same
  * transaction, so the next sync refills both and the check self-heals.
+ *
+ * Circuits this user deleted in Boardsesh (#7240) are left out: the writer
+ * skips them, so another Boardsesh account linked to the same Aurora account
+ * claiming one is not a conflict for this user.
  */
 export async function getCircuitPlaylistOwnershipConflictState(
   db: OwnerQueryDb,
@@ -95,7 +100,13 @@ export async function getCircuitPlaylistOwnershipConflictState(
       playlistOwnership,
       and(eq(playlistOwnership.playlistId, playlists.id), eq(playlistOwnership.role, 'owner')),
     )
-    .where(and(eq(circuitsSchema.boardType, boardName), eq(circuitsSchema.userId, auroraUserId)));
+    .where(
+      and(
+        eq(circuitsSchema.boardType, boardName),
+        eq(circuitsSchema.userId, auroraUserId),
+        notDeletedUpstreamPlaylistGuard(nextAuthUserId, 'aurora', circuitsSchema.uuid),
+      ),
+    );
 
   const ownerIdsByCircuit = new Map<string, string[]>();
   for (const row of ownerRows) {

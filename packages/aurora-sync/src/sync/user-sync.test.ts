@@ -991,7 +991,13 @@ describe('getCircuitPlaylistOwnershipConflictState (#3950)', () => {
     const rendered = new PgDialect().sqlToQuery(captured.where as never);
     expect(rendered.sql).toContain('"board_circuits"."board_type" =');
     expect(rendered.sql).toContain('"board_circuits"."user_id" =');
-    expect(rendered.params).toEqual(['tension', 144574]);
+    // Circuits this user deleted in Boardsesh (#7240) are not conflicts: the
+    // probe is scoped to THIS user, and correlated to the scanned circuit.
+    expect(rendered.sql).toContain('not exists (select "upstream_id" from "user_deleted_upstream_playlists"');
+    expect(rendered.sql).toContain('"user_deleted_upstream_playlists"."user_id" =');
+    expect(rendered.sql).toContain('"user_deleted_upstream_playlists"."upstream_source" =');
+    expect(rendered.sql).toContain('"user_deleted_upstream_playlists"."upstream_id" = "board_circuits"."uuid"');
+    expect(rendered.params).toEqual(['tension', 144574, 'user-1', 'aurora']);
 
     expect(captured.ownerJoin).toBeDefined();
     const renderedOwnerJoin = new PgDialect().sqlToQuery(captured.ownerJoin as never);

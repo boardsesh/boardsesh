@@ -1,4 +1,9 @@
-export { syncUserData, getLastSyncTimes, getLastSharedSyncTimes } from './user-sync';
+export {
+  syncUserData,
+  getLastSyncTimes,
+  getLastSharedSyncTimes,
+  getCircuitPlaylistOwnershipConflictState,
+} from './user-sync';
 export type { SyncUserDataResult, SyncUserDataOptions } from './user-sync';
 export {
   syncSharedData,

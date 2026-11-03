@@ -1,5 +1,5 @@
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
-import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import { and, eq, inArray, notExists, sql, type SQL } from 'drizzle-orm';
+import { QueryBuilder, type AnyPgColumn, type PgDatabase, type PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import { userDeletedUpstreamPlaylists, type UpstreamPlaylistSource } from '../../schema/app/deleted-upstream-playlists';
 
@@ -56,11 +56,46 @@ export function upstreamPlaylistLockStatement(userId: string): SQL {
   return sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, ${UPSTREAM_PLAYLIST_LOCK_SEED}::bigint))`;
 }
 
+/** `playlists.board_type` of a Kilter playlist: kilter-sync's KILTER_BOARD_TYPE. */
+const KILTER_BOARD_TYPE = 'kilter';
+
 /**
- * Remember that `userId` deleted a playlist carrying these upstream ids. Writes
- * one row per non-null id: an adopted Kilter playlist carries both a
- * `kilter_id` and its pre-split `aurora_id`, and either sync could bring it
- * back.
+ * The (source, id) pairs `recordDeletedUpstreamPlaylist` writes for one
+ * deleted playlist. Pure, so a unit test can pin every case.
+ *
+ * - `kilter_id` gives `('kilter', kilter_id)`.
+ * - `aurora_id` gives `('aurora', aurora_id)`: an adopted Kilter playlist
+ *   carries both ids, and either sync could bring it back.
+ * - On a Kilter playlist, `aurora_id` ALSO gives `('kilter', aurora_id)`. A
+ *   pre-split Kilter playlist that Kilter has not adopted yet carries only an
+ *   `aurora_id`, and aurora-sync never syncs a Kilter credential, so the
+ *   `aurora` row alone is never read. Grips kept the circuit uuid (the tier-1
+ *   adoption in applyCircuits), so the same id comes back as a `kilter_id`:
+ *   without this row the next Kilter cycle finds nothing to adopt and inserts
+ *   a fresh playlist. A JSON import's `json-import-…` id never matches a Grips
+ *   uuid, so the extra row is inert there.
+ *
+ * Deduped: a tier-1 adopted row has `kilter_id = aurora_id`, and one
+ * `ON CONFLICT DO UPDATE` statement may not touch the same row twice.
+ */
+export function deletedUpstreamPlaylistKeys(input: {
+  boardType: string;
+  kilterId: string | null;
+  auroraId: string | null;
+}): Array<{ upstreamSource: UpstreamPlaylistSource; upstreamId: string }> {
+  const keys = new Map<string, { upstreamSource: UpstreamPlaylistSource; upstreamId: string }>();
+  const add = (upstreamSource: UpstreamPlaylistSource, upstreamId: string | null) => {
+    if (upstreamId) keys.set(`${upstreamSource}:${upstreamId}`, { upstreamSource, upstreamId });
+  };
+  add('kilter', input.kilterId);
+  add('aurora', input.auroraId);
+  if (input.boardType === KILTER_BOARD_TYPE) add('kilter', input.auroraId);
+  return Array.from(keys.values());
+}
+
+/**
+ * Remember that `userId` deleted a playlist carrying these upstream ids: one
+ * row per pair `deletedUpstreamPlaylistKeys` returns.
  *
  * A repeat delete (a JSON re-import, then a second delete) refreshes the row.
  */
@@ -68,24 +103,11 @@ export async function recordDeletedUpstreamPlaylist(
   db: DeletedUpstreamDb,
   input: { userId: string; boardType: string; kilterId: string | null; auroraId: string | null },
 ): Promise<void> {
-  const rows: Array<{ userId: string; boardType: string; upstreamSource: UpstreamPlaylistSource; upstreamId: string }> =
-    [];
-  if (input.kilterId) {
-    rows.push({
-      userId: input.userId,
-      boardType: input.boardType,
-      upstreamSource: 'kilter',
-      upstreamId: input.kilterId,
-    });
-  }
-  if (input.auroraId) {
-    rows.push({
-      userId: input.userId,
-      boardType: input.boardType,
-      upstreamSource: 'aurora',
-      upstreamId: input.auroraId,
-    });
-  }
+  const rows = deletedUpstreamPlaylistKeys(input).map((key) => ({
+    userId: input.userId,
+    boardType: input.boardType,
+    ...key,
+  }));
   if (rows.length === 0) return;
 
   await db
@@ -150,6 +172,33 @@ export async function selectDeletedUpstreamPlaylistIds(
     for (const row of rows) deleted.add(row.upstreamId);
   }
   return deleted;
+}
+
+/**
+ * Correlated `NOT EXISTS` for "this user has not deleted the playlist mirroring
+ * `upstreamIdColumn`". For a statement that scans circuits rather than taking
+ * a list of ids: aurora-sync's ownership-conflict state query uses it so a
+ * circuit the climber deleted, which a second Boardsesh account linked to the
+ * same Aurora account may since have claimed, is not reported as a
+ * duplicate-account conflict.
+ */
+export function notDeletedUpstreamPlaylistGuard(
+  userId: string,
+  upstreamSource: UpstreamPlaylistSource,
+  upstreamIdColumn: AnyPgColumn,
+): SQL {
+  return notExists(
+    new QueryBuilder()
+      .select({ upstreamId: userDeletedUpstreamPlaylists.upstreamId })
+      .from(userDeletedUpstreamPlaylists)
+      .where(
+        and(
+          eq(userDeletedUpstreamPlaylists.userId, userId),
+          eq(userDeletedUpstreamPlaylists.upstreamSource, upstreamSource),
+          eq(userDeletedUpstreamPlaylists.upstreamId, upstreamIdColumn),
+        ),
+      ),
+  );
 }
 
 /**

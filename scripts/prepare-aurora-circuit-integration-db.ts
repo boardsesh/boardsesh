@@ -12,7 +12,7 @@
  * or changes the migration ledger.
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import postgres, { type TransactionSql } from 'postgres';
@@ -357,12 +357,31 @@ async function createCanonicalIndex(
 /**
  * The deleted-circuits table (#7240), from its generated migration rather than
  * a second copy of the DDL: the Aurora circuit writer reads it before every
- * playlist write, and a pinned image older than migration 0288 lacks it.
+ * playlist write, and a pinned image older than that migration lacks it.
+ *
+ * Found by name, not number: `vp run db:renumber` moves a migration to the
+ * next free number when main takes its slot, and a hard-coded number would
+ * then point at a file that no longer exists.
  */
-const DELETED_UPSTREAM_PLAYLISTS_MIGRATION = new URL(
-  '../packages/db/drizzle/0288_user_deleted_upstream_playlists.sql',
-  import.meta.url,
-);
+const DRIZZLE_MIGRATIONS_DIR = new URL('../packages/db/drizzle/', import.meta.url);
+const DELETED_UPSTREAM_PLAYLISTS_MIGRATION_SUFFIX = '_user_deleted_upstream_playlists.sql';
+
+export function findDeletedUpstreamPlaylistsMigration(fileNames: readonly string[]): string {
+  const matches = fileNames.filter(
+    (fileName) => /^\d{4}_/.test(fileName) && fileName.endsWith(DELETED_UPSTREAM_PLAYLISTS_MIGRATION_SUFFIX),
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected exactly one *${DELETED_UPSTREAM_PLAYLISTS_MIGRATION_SUFFIX} migration in packages/db/drizzle, found ${matches.length}.`,
+    );
+  }
+  return matches[0];
+}
+
+export function readDeletedUpstreamPlaylistsMigration(): string {
+  const fileName = findDeletedUpstreamPlaylistsMigration(readdirSync(DRIZZLE_MIGRATIONS_DIR));
+  return readFileSync(new URL(fileName, DRIZZLE_MIGRATIONS_DIR), 'utf8');
+}
 
 export function deletedUpstreamPlaylistsStatements(migrationSql: string): string[] {
   return migrationSql
@@ -376,8 +395,7 @@ async function ensureDeletedUpstreamPlaylistsTable(transaction: TransactionSql):
     SELECT to_regclass('public.user_deleted_upstream_playlists') IS NOT NULL AS present
   `;
   if (!before?.present) {
-    const migrationSql = readFileSync(DELETED_UPSTREAM_PLAYLISTS_MIGRATION, 'utf8');
-    for (const statement of deletedUpstreamPlaylistsStatements(migrationSql)) {
+    for (const statement of deletedUpstreamPlaylistsStatements(readDeletedUpstreamPlaylistsMigration())) {
       await transaction.unsafe(statement);
     }
   }
