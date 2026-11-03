@@ -486,12 +486,17 @@ export type WallControlModel = {
   holderFace: WallControlFace | null;
   /** The gym board a tap moves to, for `move_to_board`. */
   gymBoardName: string | null;
-  /** What a tap on the wall button (full width or compact) does. */
+  /**
+   * What a tap on the wall button (full width or compact) does, and on the
+   * MiniPlayer's bulb standing in for the player's (`PaneWallControlBulb`):
+   * every bar bulb stops a drive on a tap (owner, 2026-11-03), as its drive
+   * cue shows the drive.
+   */
   tapAction: WallControlAction;
   /**
-   * What a tap on a bulb does: the first row's bulb, or the MiniPlayer's
-   * standing in for it. A bulb draws no frost, so a stop there would be an
-   * invisible first tap; while driving a bulb tap disconnects, as it always has.
+   * What a tap on the player's first-row bulb does. While driving it
+   * disconnects, as it always has: `tapAction` with a stop turned into
+   * `disconnect`.
    */
   bulbTapAction: WallControlAction;
   /**
@@ -516,8 +521,9 @@ export type WallControlModel = {
   longPress: 'sheet' | null;
   labelKey: WallControlLabelKey | null;
   a11yValueKey: WallControlA11yValueKey | null;
+  /** The hint for `tapAction`: the wall button's, and the MiniPlayer's bulb's. */
   a11yHintKey: WallControlA11yHintKey | null;
-  /** The hint for a bulb's tap (`bulbTapAction`). */
+  /** The hint for the first-row bulb's tap (`bulbTapAction`). */
   bulbA11yHintKey: WallControlA11yHintKey | null;
   bulbValueKey: WallControlBulbValueKey;
   /** The bulb's look; the wall button reads `lit` as its amber fill. */

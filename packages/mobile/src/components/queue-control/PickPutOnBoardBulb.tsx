@@ -16,6 +16,7 @@ import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
 import { WallWindowRing } from '../play-drawer/WallWindowRing';
 import { getBoardConnectionLabel, getBoardControlIndicatorVisual } from './board-control-indicator-state';
 import { phoneDrivesTheWall, resolveBulbDriveCue } from './bulb-drive-cue';
+import { readBarBulbTap, useBarBulbStopDriving } from './bar-bulb-tap';
 import type { PickBulb } from './use-pick-bulb';
 
 /**
@@ -63,7 +64,9 @@ type PickBulbSlotProps = {
  * the gym to walk to, gets no bulb, as the player offers no board control.
  * While this phone drives the wall the unlit pick's bulb is ringed in amber
  * (`BulbDriveCue`): the timed drive's ring drains, an open-ended drive's stays
- * whole, so the bar still says how long picks keep lighting.
+ * whole, so the bar still says how long picks keep lighting. A tap then stops
+ * driving and keeps the link, as on every bar bulb (owner, 2026-11-03;
+ * `bar-bulb-tap.ts`), and the bulb says "Stop driving".
  */
 export function PickBulbSlot({
   pick,
@@ -115,6 +118,19 @@ function PickPutOnBoardBulb({
   const lightingMode = useDriveLightingMode();
   const { open: openBoardControls } = useBleControlSheet();
   const putOnBoard = usePickPutOnBoard(pick);
+  const stopDriving = useBarBulbStopDriving();
+  const drivesTheWall = phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless });
+  const handlePress = useCallback(() => {
+    const tap = readBarBulbTap(drivesTheWall);
+    if (tap === 'stop_driving') {
+      stopDriving();
+      return;
+    }
+    // A double tap's second tap after a stop, or a stop aimed at a timed drive
+    // that ran out under the thumb: never a Put on board and a fresh drive.
+    if (tap === 'held') return;
+    putOnBoard();
+  }, [drivesTheWall, stopDriving, putOnBoard]);
   // The board controls, as on the usual bulb: gated on a real Bluetooth link,
   // since every action in that sheet writes the radio.
   const handleLongPress = useCallback(() => {
@@ -131,11 +147,7 @@ function PickPutOnBoardBulb({
   // No board bound: nothing to put it on, as the bar's usual bulb.
   if (!bluetooth) return null;
   // This pick isn't the lit climb, so an open-ended drive is a whole ring, never the disc.
-  const driveCue = resolveBulbDriveCue({
-    mode: lightingMode,
-    drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),
-    showsLitClimb: false,
-  });
+  const driveCue = resolveBulbDriveCue({ mode: lightingMode, drivesTheWall, showsLitClimb: false });
   const visual = getBoardControlIndicatorVisual({
     boardConnection: 'disconnected',
     connectedColor: brandColors.warning,
@@ -146,13 +158,18 @@ function PickPutOnBoardBulb({
     solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
   });
   // The player's own words for the press: Put on {board} where it moves to
-  // another board at this gym. The hint says the player opens first.
-  const accessibilityLabel = gymBoardName
-    ? t('playView.wallControl.putOnGymBoard', { board: gymBoardName })
-    : t('playView.wallControl.putOnBoard');
-  const accessibilityHint = gymBoardName
-    ? t('playView.wallControl.pickMoveToGymBoardHint', { board: gymBoardName })
-    : t('playView.wallControl.pickLightHint');
+  // another board at this gym. The hint says the player opens first. While
+  // driving, the tap stops the drive, and the bulb says so.
+  const accessibilityLabel = driveCue
+    ? tSettings('ble.barControl.stopDrivingLabel')
+    : gymBoardName
+      ? t('playView.wallControl.putOnGymBoard', { board: gymBoardName })
+      : t('playView.wallControl.putOnBoard');
+  const accessibilityHint = driveCue
+    ? tSettings('ble.barControl.stopDrivingHint')
+    : gymBoardName
+      ? t('playView.wallControl.pickMoveToGymBoardHint', { board: gymBoardName })
+      : t('playView.wallControl.pickLightHint');
   // The usual bulb speaks the board's connection; this one stands in its
   // place, so the connection is still heard on the bar.
   const connectionValue = getBoardConnectionLabel(tSettings, {
@@ -168,7 +185,7 @@ function PickPutOnBoardBulb({
   return (
     <PressableSurface
       testID="mini-player-pick-put-on-board"
-      onPress={putOnBoard}
+      onPress={handlePress}
       onLongPress={enableLongPress ? handleLongPress : undefined}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}

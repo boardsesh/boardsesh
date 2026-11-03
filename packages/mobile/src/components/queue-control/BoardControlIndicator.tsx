@@ -10,6 +10,11 @@ import { PressableSurface } from '../PressableSurface';
 //                    confirmation lives in the long-press controls sheet now.
 //   heldByPeer     → open the read-only "Now on the wall" view (a teammate drives)
 //
+// While this phone drives the wall (any drive the bulb shows, below) a tap
+// stops driving and keeps the link instead, as the player's frosted button and
+// the Lock Screen bulb do (owner, 2026-11-03; `bar-bulb-tap.ts`). It says
+// "Stop driving" then.
+//
 // On a board with no LED light kit the same control takes and releases the wall
 // instead (pin glyph, brand tone — never the lit-LED amber), and long-press is
 // suppressed: every action in the controls sheet writes the radio.
@@ -33,6 +38,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
+import { readBarBulbTap, useBarBulbStopDriving } from './bar-bulb-tap';
 import { hapticMedium } from '../../lib/haptics';
 import { glassSize } from '../../theme/layout';
 import {
@@ -45,7 +51,7 @@ import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
 import { WallWindowRing } from '../play-drawer/WallWindowRing';
 import { useDifferentiateWithoutColor } from '../../hooks/use-differentiate-without-color';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
-import { bulbHaloFor, resolveBulbDriveCue } from './bulb-drive-cue';
+import { bulbHaloFor, phoneDrivesTheWall, resolveBulbDriveCue } from './bulb-drive-cue';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 
 type BoardControlIndicatorProps = {
@@ -93,18 +99,31 @@ export function BoardControlIndicator({
   // connect. (Connect outcome telemetry is emitted inside bluetooth.connect().)
   const { onPress: lightbulbPress } = useLightbulbControl({ surface: 'board_control_indicator', placement });
   const { openPlay } = useAccessoryClimbTap();
+  const stopDriving = useBarBulbStopDriving();
+  // This phone drives the wall over its own link, on a board with lights: the
+  // only time the bulb draws a drive (`resolveBulbDriveCue` below).
+  const drivesTheWall = phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless });
 
   const handlePress = useCallback(() => {
+    // Any drive the bulb shows → stop driving, keeping the link.
+    const tap = readBarBulbTap(drivesTheWall);
+    if (tap === 'stop_driving') {
+      stopDriving();
+      return;
+    }
     // A teammate drives the wall → open the read-only "Now on the wall" view.
     if (inAppBoardConnection === 'heldByPeer') {
       openPlay();
       return;
     }
+    // A double tap's second tap after a stop, or a stop aimed at a timed
+    // drive that ran out under the thumb: never a hang-up or a reconnect.
+    if (tap === 'held') return;
     // connectedByMe → disconnect (or release, on a wall with no lights);
     // disconnected → connect (or take). The destructive Disconnect's
     // confirmation moved to the long-press controls sheet.
     lightbulbPress();
-  }, [inAppBoardConnection, openPlay, lightbulbPress]);
+  }, [drivesTheWall, stopDriving, inAppBoardConnection, openPlay, lightbulbPress]);
 
   const handleLongPress = useCallback(() => {
     // Gated on the BLE-only `localConnected`, NOT the widened in-app value: the
@@ -153,17 +172,23 @@ export function BoardControlIndicator({
 
   const haloColor = bulbHaloFor(driveCue, visual.haloColor);
 
-  const accessibilityLabel = getBoardConnectionLabel(t, {
-    boardConnection: inAppBoardConnection,
-    ledless,
-    holderDisplayName,
-  });
+  // While driving the label says what a tap does, as the Live Activity's bulb
+  // does; "Driving the wall" stays the value.
+  const accessibilityLabel = driveCue
+    ? t('ble.barControl.stopDrivingLabel')
+    : getBoardConnectionLabel(t, {
+        boardConnection: inAppBoardConnection,
+        ledless,
+        holderDisplayName,
+      });
 
-  const accessibilityHint = heldByMe
-    ? t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint')
-    : inAppBoardConnection === 'heldByPeer'
-      ? t('ble.barControl.peerHint')
-      : t(ledless ? 'ble.barControl.wallOpenHint' : 'ble.barControl.disconnectedHint');
+  const accessibilityHint = driveCue
+    ? t('ble.barControl.stopDrivingHint')
+    : heldByMe
+      ? t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint')
+      : inAppBoardConnection === 'heldByPeer'
+        ? t('ble.barControl.peerHint')
+        : t(ledless ? 'ble.barControl.wallOpenHint' : 'ble.barControl.disconnectedHint');
 
   // Surface the long-press shortcut to assistive tech without overriding the
   // default activate (so a VoiceOver/TalkBack double-tap still fires the tap).

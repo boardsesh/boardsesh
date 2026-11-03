@@ -223,7 +223,7 @@ import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
 import { pickBoardOverride, useLastPickWriter, type PickLatchStart } from './use-last-pick-writer';
 import { useSharedBrowseLatch } from './shared-browse-latch';
-import { usePutOnBoardIntent } from './use-put-on-board-intent';
+import { putOnBoardIntentPresses, usePutOnBoardIntent } from './use-put-on-board-intent';
 import type { AppliedPlayerOpen } from './use-play-selection-controller';
 export type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
 
@@ -2693,12 +2693,12 @@ export function PlayCore({
   // the busy-wall question compares against the wall at the pick; a drive
   // never asks. Analytics count it as the bar's control (`mini_bar`).
   const pressWallControl = wallControlHandlers.press;
-  const barWallControlActionRef = useRef(wallControl.bulbTapAction);
-  barWallControlActionRef.current = wallControl.bulbTapAction;
+  // `mini_bar` runs the button's tap (`tapAction`), a stop included.
+  const barWallControlActionRef = useRef(wallControl.tapAction);
+  barWallControlActionRef.current = wallControl.tapAction;
   const pressWallControlForBar = useCallback(() => {
-    // A climb this wall can't light (another board, with no board at this gym
-    // to walk to): nothing to press, and no bar tap to count.
-    if (barWallControlActionRef.current === 'noop') return;
+    // Nothing to light, or a stop where the pick is already lit: no press.
+    if (!putOnBoardIntentPresses(barWallControlActionRef.current)) return;
     pressWallControl('mini_bar');
   }, [pressWallControl]);
   const clearPutOnBoard = useCallback(() => setPutOnBoardFor(null), []);

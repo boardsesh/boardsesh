@@ -538,7 +538,9 @@
       "wallHeldHint": "Releases the wall",
       "wallOpenLabel": "Wall's open",
       "wallOpenHint": "Takes the wall",
-      "drivingValue": "Driving the wall"
+      "drivingValue": "Driving the wall",
+      "stopDrivingLabel": "Stop driving",
+      "stopDrivingHint": "Your next picks open as previews"
     },
     "relayToWall": "Put your climb on the wall",
     "peerDrivingBoard": "Someone else has the board"

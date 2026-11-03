@@ -104,16 +104,27 @@ describe('PaneWallControlBulb', () => {
     expect(longPress).toHaveBeenCalledOnce();
   });
 
-  // #7113: a bulb draws no frost, so while driving it still says a tap disconnects.
-  it('says a tap disconnects while driving, not that it stops', () => {
-    const { getByRole } = renderBulb({
+  // Owner, 2026-11-03: a bar bulb's tap during a drive only stops driving, so
+  // this bulb says the button's stop hint, never the first-row bulb's disconnect.
+  it.each([
+    ['an open-ended drive', { tapAction: 'stop_driving' }],
+    ["Put on board's timed drive", { tapAction: 'stop_window', lightWindow: true, look: 'driving' }],
+  ] as [string, Partial<WallControlModel>][])('says a tap stops %s, not that it disconnects', (_drive, drive) => {
+    const { getByRole, press } = renderBulb({
       ...LIT,
       driving: true,
-      tapAction: 'stop_driving',
       labelKey: 'youAreDriving',
       a11yHintKey: 'stopDrivingHint',
+      // The first-row bulb's own hint while driving: never spoken here.
+      bulbTapAction: 'disconnect',
+      bulbA11yHintKey: 'litHint',
+      ...drive,
     });
-    expect(getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.litHint');
+    const bulb = getByRole('button');
+    expect(bulb.getAttribute('aria-label')).toContain('playView.wallControl.youAreDriving');
+    expect(bulb.getAttribute('data-hint')).toBe('playView.wallControl.stopDrivingHint');
+    fireEvent.click(bulb);
+    expect(press).toHaveBeenCalledOnce();
   });
 
   // Beside a tablet's player this bulb stands in for the wall button: the timed

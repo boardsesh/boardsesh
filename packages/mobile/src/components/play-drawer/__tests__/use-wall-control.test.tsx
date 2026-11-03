@@ -36,13 +36,8 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-import {
-  DISCONNECT_TAP_GUARD_MS,
-  WINDOW_END_TAP_GRACE_MS,
-  useWallControl,
-  type DriveStartOutcome,
-  type WallControlRunners,
-} from '../use-wall-control';
+import { DISCONNECT_TAP_GUARD_MS, WINDOW_END_TAP_GRACE_MS } from '../drive-tap-guards';
+import { useWallControl, type DriveStartOutcome, type WallControlRunners } from '../use-wall-control';
 import type { KeepLightingPlan } from '../../../lib/keep-lighting';
 import * as wallSwipeHint from '../../../lib/wall-swipe-hint';
 import { resetAllSettings, setSetting } from '../../../settings';
@@ -64,6 +59,7 @@ import {
   markDriveLive,
   noteDriveClimbLit,
   resetDriveModeForTests,
+  startAlwaysDrive,
   stopDrivingForLink,
 } from '../drive-mode-store';
 
@@ -118,8 +114,8 @@ const modelFor = (
     ...EMPTY_WALL_CONTROL,
     state,
     tapAction,
-    // The resolver's rule: a bulb never stops driving.
-    bulbTapAction: tapAction === 'stop_driving' ? 'disconnect' : tapAction,
+    // The resolver's rule: the first-row bulb never stops driving.
+    bulbTapAction: tapAction === 'stop_driving' || tapAction === 'stop_window' ? 'disconnect' : tapAction,
     ...extra,
   }) as WallControlModel;
 
@@ -183,15 +179,67 @@ describe('useWallControl', () => {
     resetDriveModeForTests();
   });
 
-  // Review: a bulb draws no frost, so a tap there disconnects, as it always has.
-  it.each(['bulb', 'mini_bar'] as const)('lets go of the board from the %s while driving', (control) => {
+  // Review: the player's first-row bulb disconnects while driving, as it always has.
+  it('lets go of the board from the first-row bulb while driving', () => {
     resetDriveModeForTests();
     const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
-    act(() => hook.result.current.press(control));
+    act(() => hook.result.current.press('bulb'));
     expect(run.disconnect).toHaveBeenCalledOnce();
     expect(isDrivingStoppedForLink()).toBe(false);
     expect(haptics.hapticWarning).toHaveBeenCalledOnce();
-    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'disconnect', control });
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'disconnect', control: 'bulb' });
+  });
+
+  // Owner, 2026-11-03: a bar bulb's tap during a drive only stops driving. The
+  // tablet and open-Duo bulb stands in for the player's, so it runs the button's tap.
+  const startTapDrive = (windowMs: number | null) => {
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: null,
+      boardId: 7,
+      windowMs,
+      windowSetting: windowMs === null ? null : 'putOnBoardKeepsLighting',
+    });
+    markDriveLive();
+  };
+  it.each([
+    ["Put on board's timed drive", 'stop_window', () => startTapDrive(45_000)],
+    ['an open-ended drive', 'stop_driving', () => startTapDrive(null)],
+    ["Always drive the wall's drive", 'stop_driving', () => startAlwaysDrive({ sessionId: null, boardId: 7 })],
+  ] as const)("stops %s from the MiniPlayer's bulb and keeps the link: no disconnect", (_drive, action, start) => {
+    resetDriveModeForTests();
+    start();
+    expect(getDriveMode()?.phase).toBe('live');
+    const { hook, run } = setup(modelFor('lit', action, { driving: true, lightWindow: action === 'stop_window' }));
+    act(() => hook.result.current.press('mini_bar'));
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(isDrivingStoppedForLink()).toBe(true);
+    for (const runner of ['light', 'toggle', 'disconnect', 'openSheet', 'lightAgain', 'moveToBoard'] as const) {
+      expect(run[runner]).not.toHaveBeenCalled();
+    }
+    expect(haptics.hapticLight).toHaveBeenCalledOnce();
+    expect(haptics.hapticWarning).not.toHaveBeenCalled();
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action, control: 'mini_bar' });
+    resetDriveModeForTests();
+  });
+
+  it("drops the second tap of a double tap on the MiniPlayer's bulb: one stop, no disconnect", () => {
+    vi.useFakeTimers();
+    try {
+      const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+      act(() => hook.result.current.press('mini_bar'));
+      hook.rerender({ model: modelFor('lit', 'disconnect') });
+      act(() => hook.result.current.press('mini_bar'));
+      expect(run.disconnect).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(DISCONNECT_TAP_GUARD_MS);
+      act(() => hook.result.current.press('mini_bar'));
+      expect(run.disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      resetDriveModeForTests();
+    }
   });
 
   // A double tap on the frost must not stop driving and then let go of a crew's board.

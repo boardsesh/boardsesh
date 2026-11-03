@@ -20,9 +20,13 @@ export type WallControlText = {
   label: string;
   /** The wall button's screen-reader label: the label, then where things stand ("Put on board, Sam has the board"). */
   accessibilityLabel: string;
-  /** What a tap on the wall button does; the scanning and writing hints win while they apply. */
+  /**
+   * What a tap on the wall button does, and on the MiniPlayer's bulb standing
+   * in for the player's (it stops a drive too); the scanning and writing hints
+   * win while they apply.
+   */
   accessibilityHint: string | undefined;
-  /** What a tap on a bulb does (it never stops driving: a bulb draws no frost). */
+  /** What a tap on the player's first-row bulb does (it never stops driving). */
   bulbAccessibilityHint: string | undefined;
   /** The bulb's own label ("Board lights"); its state rides `bulbValue`. */
   bulbAccessibilityLabel: string;

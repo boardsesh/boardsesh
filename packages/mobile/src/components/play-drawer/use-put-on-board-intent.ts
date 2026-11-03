@@ -1,4 +1,18 @@
 import { useEffect } from 'react';
+import type { WallControlAction } from './wall-control';
+
+/**
+ * Whether the bar's Put on board request presses the wall control's tap
+ * (`mini_bar`, the button's `tapAction`), given what that tap would do now.
+ * Never a `noop` (a climb this wall can't light, with no board at this gym to
+ * walk to: nothing to press, and no bar tap to count), and never a stop: the
+ * request asked to put the pick up, and a control that reads You are driving
+ * the wall has the climb on screen lit already, so a stop would end the drive
+ * the climber never asked to end.
+ */
+export function putOnBoardIntentPresses(action: WallControlAction): boolean {
+  return action !== 'noop' && action !== 'stop_driving' && action !== 'stop_window';
+}
 
 export type PutOnBoardIntentInputs = {
   /** The preview item the MiniPlayer's bulb asked to put up (`putOnBoard`), or null. */
