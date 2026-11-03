@@ -1199,6 +1199,7 @@ describe('automation default-deny (allow-list model)', () => {
     ['empty UA', ''],
     ['production smoke', 'boardsesh-production-smoke/1.0'],
     ['ESP32 board controller (thumbnail fetch)', 'ESP32HTTPClient'],
+    ['LZRvision laser projector (websocket upgrade)', 'lzrvision-projector/1.0 Python/3.12 websockets/13.1'],
     [
       'Snapchat unfurler',
       'Mozilla/5.0 (compatible; Snap URL Preview Service; bot; snapchat; https://developers.snap.com/robots)',
