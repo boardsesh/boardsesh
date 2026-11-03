@@ -27,6 +27,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Tap any lightbulb while you drive the wall and it just stops driving. Your board stays connected; tap again to disconnect. ([#7252](https://github.com/boardsesh/boardsesh/pull/7252))
+- Playlists you delete stay deleted, even ones synced from Kilter. ([#7249](https://github.com/boardsesh/boardsesh/pull/7249))
 - Play next on a climb you already did now really comes up next, even mid-list. ([#7251](https://github.com/boardsesh/boardsesh/pull/7251))
   Climb still skipped from an older version? Tap Play next on it once more.
 - Tap Next or Previous on your Lock Screen as your drive runs out, and the board stays connected. ([#7242](https://github.com/boardsesh/boardsesh/pull/7242))

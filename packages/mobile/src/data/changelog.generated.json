@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-11-03T10:41:14.292Z",
+  "generatedAt": "2026-11-03T11:13:30.660Z",
   "entries": [
+    {
+      "prNumber": 7252,
+      "category": "fixed",
+      "title": "Tap any lightbulb while you drive the wall and it just stops driving. Your board stays connected; tap again to disconnect.",
+      "mergedAt": "2026-11-03T11:09:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7252"
+    },
+    {
+      "prNumber": 7249,
+      "category": "fixed",
+      "title": "Playlists you delete stay deleted, even ones synced from Kilter.",
+      "mergedAt": "2026-11-03T10:52:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7249"
+    },
     {
       "prNumber": 7251,
       "category": "fixed",
