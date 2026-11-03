@@ -5,7 +5,7 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useMoonboardRelayModeEnabled } from '../../providers/feature-flags-provider';
 import { useQueueSessionControls } from '../../providers/queue-provider';
-import { relayHolderFor } from '../../lib/board-relay/relay-holder';
+import { connectBlockedByRelayHolder, relayHolderFor } from '../../lib/board-relay/relay-holder';
 import { isRelayPathSuppressed, useRelaySuppression } from '../../lib/board-relay/relay-path-store';
 
 /**
@@ -46,4 +46,44 @@ export function useRelayHolder(): BoardConnectionHolder | null {
       }),
     [flagEnabled, boardType, linkMode, boardId, holder, localConnected, sessionId, sessionMemberUserIds, suppressed],
   );
+}
+
+/**
+ * Relay mode (#7220): the holder a connect from this phone would be blocked
+ * by (`connectBlockedByRelayHolder`, as the notification bulb reads it), or
+ * null when a connect goes ahead. The Lock Screen card and the Android
+ * notification draw that board as held, never "Tap to reconnect". A
+ * crewmate's hold counts, and this phone's own unreleased hold doesn't, as at
+ * the tap.
+ *
+ * Like {@link useRelayHolder}, the idle clock is read when an input changes.
+ * The tap itself still runs the gate fresh (`guardRelayConnect`).
+ */
+export function useRelayConnectBlocker(): BoardConnectionHolder | null {
+  const flagEnabled = useMoonboardRelayModeEnabled();
+  const bluetooth = useOptionalBluetoothContext();
+  const presence = useContext(BoardPresenceCurrentContext);
+  const { boardId } = useBoardPresenceControls();
+  // Subscribed so a suppression re-renders; read through the pure check.
+  useRelaySuppression();
+  const holder = presence?.holder ?? null;
+  const holderChangeSeq = presence?.lastHolderChangeSeq ?? 0;
+  const suppressed = isRelayPathSuppressed(boardId, holderChangeSeq);
+  const boardType = bluetooth?.boardName ?? null;
+  const linkMode = bluetooth?.moonboardLinkMode?.mode ?? null;
+  const localConnected = bluetooth?.isConnected ?? false;
+  const lastLocalHolderUserId = bluetooth?.lastLocalHolderUserId ?? null;
+  return useMemo(() => {
+    const gate = connectBlockedByRelayHolder('notification', {
+      flagEnabled,
+      boardType,
+      linkMode,
+      holder: boardId === null ? null : holder,
+      localConnected,
+      suppressed,
+      lastLocalHolderUserId,
+      now: Date.now(),
+    });
+    return gate.blocked ? gate.holder : null;
+  }, [flagEnabled, boardType, linkMode, boardId, holder, localConnected, suppressed, lastLocalHolderUserId]);
 }

@@ -42,3 +42,7 @@
 "Every climb you pick lights up" = "Every climb you pick lights up";
 "Lights the climb again" = "Lights the climb again";
 "Stops driving" = "Stops driving";
+
+/* Relay mode (#7220): this phone lights the board through the phone that holds it */
+"Lights through %@'s phone" = "Lights through %@'s phone";
+"Lights through another phone" = "Lights through another phone";

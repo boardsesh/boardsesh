@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { WidgetMirrorEvent } from '../../../../modules/live-activity/src/index';
 import { LiveActivityBridge } from '../live-activity-bridge';
@@ -20,7 +20,7 @@ type QueueNavigateEvent = {
 };
 
 type BoardControlEvent = {
-  action: 'reconnect' | 'reassert' | 'stopDriving';
+  action: 'reconnect' | 'reassert' | 'stopDriving' | 'relay';
   correlationId: string;
 };
 
@@ -76,7 +76,12 @@ const boardState = vi.hoisted(() => ({
   ledless: false,
   holderDisplayName: null as string | null,
   hasBluetooth: true,
+  // Relay mode (#7220): the holder this phone relays through / is blocked by.
+  relayHolder: null as null | { userId: string | null; displayName: string | null },
+  relayBlocker: null as null | { userId: string | null; displayName: string | null },
 }));
+
+const relayPath = vi.hoisted(() => ({ relayClimbThroughHolder: vi.fn((_item: unknown) => true) }));
 
 const climbRender = vi.hoisted(() => ({
   overlayUri: null as string | null,
@@ -142,7 +147,13 @@ vi.mock('../../../components/ble/use-board-connection-state', () => ({
     canDriveWall: boardState.boardConnection === 'connectedByMe' || boardState.ledless,
     lit: (boardState.ledless ? boardState.inAppBoardConnection : boardState.boardConnection) !== 'disconnected',
     holderDisplayName: boardState.holderDisplayName,
+    boardRelayHolder: boardState.relayHolder,
+    relayConnectBlocker: boardState.relayBlocker,
   }),
+}));
+
+vi.mock('../../board-relay/relay-path-store', () => ({
+  relayClimbThroughHolder: relayPath.relayClimbThroughHolder,
 }));
 
 vi.mock('../../../hooks/use-native-climb-render', () => ({
@@ -659,6 +670,72 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
       });
       expect(bt.reassertWall).toHaveBeenCalledTimes(2);
       expect(getLastDriveModeExitReason()).toBeNull();
+    });
+  });
+
+  describe('relay (#7220): a phone that lights the board through the phone that holds it', () => {
+    beforeEach(() => {
+      resetDriveModeForTests();
+      relayPath.relayClimbThroughHolder.mockClear();
+      boardState.boardConnection = 'disconnected';
+      boardState.relayHolder = { userId: 'sam', displayName: 'Sam' };
+      boardState.relayBlocker = { userId: 'sam', displayName: 'Sam' };
+    });
+    afterEach(() => {
+      boardState.relayHolder = null;
+      boardState.relayBlocker = null;
+    });
+
+    it('tells native the board is held and relayed, and never arms Bluetooth Next / Previous', () => {
+      renderBridge();
+      expect(widget.useLiveActivity).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          boardConnection: 'heldByPeer',
+          holderDisplayName: 'Sam',
+          boardRelay: 'relaying',
+          widgetNavigationAllowed: false,
+        }),
+      );
+    });
+
+    it('a blocked phone reads held with `blocked`, never disconnected', () => {
+      boardState.relayHolder = null;
+      renderBridge();
+      expect(widget.useLiveActivity).toHaveBeenLastCalledWith(
+        expect.objectContaining({ boardConnection: 'heldByPeer', holderDisplayName: 'Sam', boardRelay: 'blocked' }),
+      );
+    });
+
+    it('sends no relay with no holder, as today', () => {
+      boardState.relayHolder = null;
+      boardState.relayBlocker = null;
+      renderBridge();
+      expect(widget.useLiveActivity).toHaveBeenLastCalledWith(
+        expect.objectContaining({ boardConnection: 'disconnected', boardRelay: null }),
+      );
+    });
+
+    it('the relay bulb sends the climb on the card to the holder, and never connects', () => {
+      renderBridge();
+      act(() => {
+        widget.boardControlListener?.({ action: 'relay', correlationId: 'bulb-relay' });
+      });
+      expect(relayPath.relayClimbThroughHolder).toHaveBeenCalledWith(null);
+      expect(bt.connect).not.toHaveBeenCalled();
+      expect(bt.reassertWall).not.toHaveBeenCalled();
+    });
+
+    it('the relay bulb stops a relayed drive first, like every bulb', () => {
+      enterDriveMode({ startedBy: 'tap', sessionId: 'session-1', boardId: 7, relayed: true });
+      markDriveLive({});
+      renderBridge();
+      act(() => {
+        widget.boardControlListener?.({ action: 'relay', correlationId: 'bulb-relay-stop' });
+      });
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveModeExitReason()).toBe('stopped');
+      expect(relayPath.relayClimbThroughHolder).not.toHaveBeenCalled();
+      expect(bt.connect).not.toHaveBeenCalled();
     });
   });
 

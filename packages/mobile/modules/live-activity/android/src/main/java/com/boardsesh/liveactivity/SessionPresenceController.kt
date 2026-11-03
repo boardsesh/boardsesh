@@ -101,6 +101,7 @@ internal class SessionPresenceController(
                 options?.boardConnection ?: BoardSessionService.CONNECTION_CONNECTED_BY_ME,
             )
             options?.holderDisplayName?.let { putExtra(BoardSessionService.EXTRA_HOLDER_NAME, it) }
+            options?.boardRelay?.let { putExtra(BoardSessionService.EXTRA_BOARD_RELAY, it) }
         }
         // Startup path: a failed initial promotion means the service never
         // started, so clear sessionActive to stop futile update retries.
@@ -135,6 +136,7 @@ internal class SessionPresenceController(
             putExtra(BoardSessionService.EXTRA_TOTAL_CLIMBS, options.totalClimbs)
             putExtra(BoardSessionService.EXTRA_BOARD_CONNECTION, options.boardConnection)
             options.holderDisplayName?.let { putExtra(BoardSessionService.EXTRA_HOLDER_NAME, it) }
+            options.boardRelay?.let { putExtra(BoardSessionService.EXTRA_BOARD_RELAY, it) }
             putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, options.bulbOpensApp)
             putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, options.boardConnecting)
             // On-device thumbnail: the BoardRenderer overlay PNG + the bundled board

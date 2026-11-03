@@ -763,6 +763,7 @@ public class LiveActivityModule: Module {
         let isPartySession = options.isPartySession
         let boardConnection = options.boardConnection
         let holderDisplayName = options.holderDisplayName
+        let boardRelay = options.boardRelay
         let boardBackgroundPaths = options.boardBackgroundPaths
 
         // Store session details for push token registration.
@@ -853,6 +854,7 @@ public class LiveActivityModule: Module {
                 holderDisplayName: holderDisplayName,
                 to: defaults
             )
+            SharedBoardRelay.save(boardRelay, to: defaults)
         }
         if let authToken = authToken {
             if authToken.isEmpty {
@@ -983,6 +985,7 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.livePushTokenKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigationAllowedKey)
             defaults.removeObject(forKey: SharedConstants.partySessionKey)
+            SharedBoardRelay.clear(in: defaults)
             SharedRestTimerStore.clear(in: defaults)
             // No session, no lock-screen card to open a window from.
             SharedLightingWindowRuntime.endSession(in: defaults)
@@ -1010,6 +1013,7 @@ public class LiveActivityModule: Module {
             sessionId: options.sessionId, sequence: options.queueSequence,
             navigationAllowed: options.widgetNavigationAllowed, isPartySession: options.isPartySession,
             boardConnection: options.boardConnection, holderDisplayName: options.holderDisplayName,
+            boardRelay: options.boardRelay,
             supportsMirroring: options.supportsMirroring
         ) else { return }
 
@@ -1018,10 +1022,14 @@ public class LiveActivityModule: Module {
         if let defaults = SharedConstants.sharedDefaults {
             let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
             let previousBoardConnection = defaults.string(forKey: SharedConstants.boardConnectionKey)
+            // The relay lives only in the App Group, so a change there must
+            // redraw the card even when the pushed state is the same.
+            let previousBoardRelay = SharedBoardRelay.load(from: defaults)
             wallControlChanged =
                 previousWallControl.navigationAllowed != options.widgetNavigationAllowed ||
                 previousWallControl.requiresServerAuthorization != options.isPartySession ||
-                previousBoardConnection != options.boardConnection
+                previousBoardConnection != options.boardConnection ||
+                previousBoardRelay != options.boardRelay
 
             // A look change bypasses the dedup window like a wall-control
             // change: the pushed content state is unchanged, but the widget
@@ -1062,6 +1070,7 @@ public class LiveActivityModule: Module {
                 holderDisplayName: options.holderDisplayName,
                 to: defaults
             )
+            SharedBoardRelay.save(options.boardRelay, to: defaults)
         }
 
         let state = ClimbSessionAttributes.ContentState(
@@ -1101,7 +1110,7 @@ public class LiveActivityModule: Module {
     /// Ownership always advances, even while an older JS queue waits for mirror reconciliation.
     private func acceptQueueUpdate(
         sessionId: String?, sequence: Int?, navigationAllowed: Bool, isPartySession: Bool,
-        boardConnection: String, holderDisplayName: String?, supportsMirroring: Bool
+        boardConnection: String, holderDisplayName: String?, boardRelay: String?, supportsMirroring: Bool
     ) -> Bool {
         guard let defaults = SharedConstants.sharedDefaults else { return true }
         if let sessionId, sessionId != defaults.string(forKey: SharedConstants.sessionIdKey) { return false }
@@ -1111,6 +1120,7 @@ public class LiveActivityModule: Module {
         if stale {
             SharedWidgetWallControlState.save(navigationAllowed: navigationAllowed, isPartySession: isPartySession, to: defaults)
             SharedWidgetWallControlState.saveBoardConnection(boardConnection, holderDisplayName: holderDisplayName, to: defaults)
+            SharedBoardRelay.save(boardRelay, to: defaults)
             let (items, index) = SharedQueueState.load(from: defaults)
             if let state = LiveActivityManager.buildContentState(items: items, currentIndex: index) {
                 enqueueLifecycleWork { await LiveActivityManager.shared.updateActivity(state: state) }
@@ -1131,6 +1141,7 @@ public class LiveActivityModule: Module {
             sessionId: options.sessionId, sequence: options.queueSequence,
             navigationAllowed: options.widgetNavigationAllowed, isPartySession: options.isPartySession,
             boardConnection: options.boardConnection, holderDisplayName: options.holderDisplayName,
+            boardRelay: options.boardRelay,
             supportsMirroring: options.supportsMirroring
         ) else { return }
 
@@ -1139,10 +1150,14 @@ public class LiveActivityModule: Module {
         if let defaults = SharedConstants.sharedDefaults {
             let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
             let previousBoardConnection = defaults.string(forKey: SharedConstants.boardConnectionKey)
+            // The relay lives only in the App Group, so a change there must
+            // redraw the card even when the pushed state is the same.
+            let previousBoardRelay = SharedBoardRelay.load(from: defaults)
             wallControlChanged =
                 previousWallControl.navigationAllowed != options.widgetNavigationAllowed ||
                 previousWallControl.requiresServerAuthorization != options.isPartySession ||
-                previousBoardConnection != options.boardConnection
+                previousBoardConnection != options.boardConnection ||
+                previousBoardRelay != options.boardRelay
 
             // Same look-change bypass + set-if-present rule as updateActivity.
             if let renderMode = options.renderMode, !renderMode.isEmpty {
@@ -1174,6 +1189,7 @@ public class LiveActivityModule: Module {
                 holderDisplayName: options.holderDisplayName,
                 to: defaults
             )
+            SharedBoardRelay.save(options.boardRelay, to: defaults)
         }
 
         let state = ClimbSessionAttributes.ContentState(
@@ -1383,6 +1399,9 @@ struct StartSessionOptions: Record {
     @Field var boardConnection: String = "connectedByMe"
     /// Display name of the peer holding the board (heldByPeer only).
     @Field var holderDisplayName: String?
+    /// Relay mode (#7220): "relaying" | "blocked" | nil (`SharedBoardRelay`).
+    /// Nil from a JS bundle that predates it, which clears the stored value.
+    @Field var boardRelay: String?
     /// Bundled board-background webp file paths (JS-resolved via expo-asset).
     /// Empty when none resolved. iOS-only; the Android SessionPresence Record
     /// ignores the extra key.
@@ -1424,6 +1443,8 @@ struct UpdateActivityOptions: Record {
     @Field var isPartySession: Bool = false
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String?
+    /// Relay mode (#7220), see StartSessionOptions.boardRelay.
+    @Field var boardRelay: String?
     /// The climber's saved board look; nil (older JS) leaves the staged value
     /// untouched. See StartSessionOptions.renderMode.
     @Field var renderMode: String?
@@ -1447,6 +1468,8 @@ struct UpdateActivityClimbOptions: Record {
     @Field var isPartySession: Bool = false
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String?
+    /// Relay mode (#7220), see StartSessionOptions.boardRelay.
+    @Field var boardRelay: String?
     /// The climber's saved board look; nil (older JS) leaves the staged value
     /// untouched. See StartSessionOptions.renderMode.
     @Field var renderMode: String?

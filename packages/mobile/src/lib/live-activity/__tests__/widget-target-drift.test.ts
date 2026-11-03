@@ -95,6 +95,7 @@ const TYPESCRIPT_COMPLETION_CLASSES = {
   bleFailure: true,
   mirrorNotCommitted: true,
   nothingDriving: true,
+  relayHolder: true,
 } as const satisfies Record<LiveActivityIntentCompletionClass, true>;
 
 type SwiftConditionalBranch = {

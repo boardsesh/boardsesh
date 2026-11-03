@@ -926,6 +926,76 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(state.climbName, "Masquerade")
     }
 
+    // MARK: Relay mode (#7220)
+
+    func testContentStateDecodesAPushWithAConnectionValueOrKeyItDoesNotKnow() throws {
+        // A later backend or JS could send a fourth value or a new key: the
+        // state still decodes, and the card falls back to its App Group copy.
+        let json = """
+        {
+          "climbName": "Masquerade",
+          "climbDifficulty": "6a/V3",
+          "angle": 40,
+          "currentIndex": 0,
+          "totalClimbs": 2,
+          "hasNext": true,
+          "hasPrevious": false,
+          "climbUuid": "climb-1",
+          "boardConnection": "relayedByMe",
+          "boardRelay": "relaying"
+        }
+        """
+        let state = try JSONDecoder().decode(ClimbSessionAttributes.ContentState.self, from: Data(json.utf8))
+        XCTAssertEqual(state.boardConnection, "relayedByMe")
+        XCTAssertEqual(state.climbName, "Masquerade")
+    }
+
+    func testBoardRelayStoresOnlyTheValuesItKnows() {
+        SharedBoardRelay.save("relaying", to: defaults)
+        XCTAssertEqual(SharedBoardRelay.load(from: defaults), "relaying")
+        XCTAssertTrue(SharedBoardRelay.isRelaying(in: defaults))
+        XCTAssertTrue(SharedBoardRelay.holdsBoardElsewhere(in: defaults))
+
+        SharedBoardRelay.save("blocked", to: defaults)
+        XCTAssertFalse(SharedBoardRelay.isRelaying(in: defaults))
+        XCTAssertTrue(SharedBoardRelay.holdsBoardElsewhere(in: defaults))
+
+        // An unknown value (a later JS) or nil (an older JS) clears it.
+        SharedBoardRelay.save("somethingNewer", to: defaults)
+        XCTAssertNil(SharedBoardRelay.load(from: defaults))
+        SharedBoardRelay.save("blocked", to: defaults)
+        SharedBoardRelay.save(nil, to: defaults)
+        XCTAssertNil(SharedBoardRelay.load(from: defaults))
+        XCTAssertFalse(SharedBoardRelay.holdsBoardElsewhere(in: defaults))
+
+        // A value written behind the helper's back still reads as none.
+        defaults.set("bogus", forKey: SharedConstants.boardRelayKey)
+        XCTAssertNil(SharedBoardRelay.load(from: defaults))
+    }
+
+    func testBoardRelayResolvesTheConnectionTheCardDraws() {
+        // This phone's own link always stands.
+        XCTAssertEqual(SharedBoardRelay.effectiveConnection("connectedByMe", relay: "relaying"), "connectedByMe")
+        XCTAssertEqual(SharedBoardRelay.effectiveConnection("connectedByMe", relay: "blocked"), "connectedByMe")
+        // Relaying: the backend's push says held (a named holder) or
+        // disconnected (an anonymous one); both draw the relay controls.
+        XCTAssertEqual(SharedBoardRelay.effectiveConnection("heldByPeer", relay: "relaying"), "relayedByMe")
+        XCTAssertEqual(SharedBoardRelay.effectiveConnection("disconnected", relay: "relaying"), "relayedByMe")
+        // Blocked: never "Tap to reconnect".
+        XCTAssertEqual(SharedBoardRelay.effectiveConnection("disconnected", relay: "blocked"), "heldByPeer")
+        XCTAssertEqual(SharedBoardRelay.effectiveConnection("heldByPeer", relay: "blocked"), "heldByPeer")
+        // No relay: today's value.
+        XCTAssertEqual(SharedBoardRelay.effectiveConnection("disconnected", relay: nil), "disconnected")
+        XCTAssertEqual(SharedBoardRelay.effectiveConnection("heldByPeer", relay: nil), "heldByPeer")
+    }
+
+    func testALockScreenReconnectThatLandsClearsTheRelay() {
+        SharedBoardRelay.save("blocked", to: defaults)
+        SharedBoardReconnect.record(nil, in: defaults)
+        XCTAssertNil(SharedBoardRelay.load(from: defaults))
+        XCTAssertEqual(SharedWidgetWallControlState.loadBoardConnection(from: defaults).boardConnection, "connectedByMe")
+    }
+
     // MARK: Stop driving from the Lock Screen bulb
 
     private func stopAt(_ current: SharedLightingWindowState?, sessionId: String = "session") -> SharedLightingWindowState? {

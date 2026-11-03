@@ -2256,6 +2256,10 @@ export function useBoardBluetooth({
           bleChosenWriteType: connectionDiagnostics?.chosenWriteType,
           bleSupportsWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
           bleCharProperties: connectionDiagnostics?.characteristicProperties,
+          // The GATT service the write characteristic sits under: with
+          // bleCharProperties, it tells MoonBoard controller generations apart
+          // (#7220). iOS binaries from this release on; absent elsewhere.
+          bleWriteServiceUuid: connectionDiagnostics?.writeServiceUuid,
           // Negotiated write lengths too, so a future MTU-related stall (vs a
           // write-type one) is visible in PostHog (see #3230).
           bleMaxWriteWithResponse: connectionDiagnostics?.maxWriteWithResponse,

@@ -45,6 +45,23 @@ struct ReconnectBoardIntent: LiveActivityIntent {
 
         Self.logger.notice("ReconnectBoardIntent.perform() running process=\(ProcessInfo.processInfo.processName, privacy: .public)")
 
+        // Relay mode (#7220): another phone holds this Relay mode MoonBoard
+        // (JS said so, `SharedBoardRelay`). The original box takes one phone
+        // and stops advertising, so a reconnect could only scan for nothing,
+        // and claiming wall control would take nothing either. The card
+        // offers no reconnect then; this covers a tap on a card drawn before
+        // JS said so. Nothing is recorded: the card just redraws as held.
+        if let defaults = SharedConstants.sharedDefaults, SharedBoardRelay.holdsBoardElsewhere(in: defaults) {
+            #if !WIDGET_EXTENSION
+            completionClass = .relayHolder
+            await LiveActivityManager.shared.rerenderForLightingWindow()
+            diagnosticRun.mark(.activityKitUpdated)
+            #else
+            await refreshActivities()
+            #endif
+            return .result()
+        }
+
         // Reconnect BLE to the last board. In the main app process (the path iOS
         // takes for a registered LiveActivityIntent) this calls BoardBleManager
         // directly. If iOS instead runs the intent in the widget extension — which

@@ -101,6 +101,10 @@ class BoardSessionService : Service() {
     private var totalClimbs: Int = 0
     private var boardConnection: String = CONNECTION_CONNECTED_BY_ME
     private var holderDisplayName: String? = null
+    // Relay mode (#7220): RELAY_RELAYING, RELAY_BLOCKED or null, from JS
+    // (deriveLiveActivityBoardPresence). boardConnection is heldByPeer then.
+    // Absent (an older bundle) means no relay: today's notification.
+    private var boardRelay: String? = null
     // Both ride every ACTION_UPDATE and default to false when an older bundle
     // leaves them out (#7087). bulbOpensApp: no remembered board, so the outline
     // bulb opens the app rather than starting a reconnect that would need the
@@ -255,6 +259,7 @@ class BoardSessionService : Service() {
                 stopDrivingLabel = intent.getStringExtra(EXTRA_STOP_DRIVING_LABEL)
                 boardConnection = intent.getStringExtra(EXTRA_BOARD_CONNECTION) ?: boardConnection
                 holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
+                boardRelay = relayFrom(intent)
                 // A new session window starts without a countdown or a lighting
                 // window; JS sends both right after every start.
                 restTimer = null
@@ -303,6 +308,7 @@ class BoardSessionService : Service() {
                     // Absent extra ⇒ no peer holder ⇒ clear (the controller only sends
                     // it for heldByPeer).
                     holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
+                    boardRelay = relayFrom(intent)
                     bulbOpensApp = intent.getBooleanExtra(EXTRA_BULB_OPENS_APP, false)
                     boardConnecting = intent.getBooleanExtra(EXTRA_BOARD_CONNECTING, false)
                     // Absent overlay ⇒ render not ready yet; keep the last one so the
@@ -456,7 +462,7 @@ class BoardSessionService : Service() {
             // frosted button does in the app. The re-post at a timed drive's
             // end (and JS's own "off") turns it back into a relight.
             val stopLabel = stopDrivingLabel?.takeIf {
-                resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection) != LightingDisplay.Off
+                resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection, boardRelay) != LightingDisplay.Off
             }
             builder.addAction(
                 R.drawable.ic_lightbulb_filled,
@@ -466,6 +472,31 @@ class BoardSessionService : Service() {
             if (hasNext) {
                 builder.addAction(R.drawable.ic_skip_next, nextLabel, actionPendingIntent(ACTION_NAV_NEXT, REQ_NEXT))
             }
+        } else if (boardRelay == RELAY_RELAYING) {
+            // Relay mode (#7220): this phone lights an original MoonBoard
+            // through the phone that holds it. Previous / Next go to JS (the
+            // receiver forwards them as for the holder) and JS relays the
+            // climb; the bulb relays the climb on the card, or stops a relayed
+            // drive. Nothing here connects.
+            if (hasPrevious) {
+                builder.addAction(R.drawable.ic_skip_previous, previousLabel, actionPendingIntent(ACTION_NAV_PREVIOUS, REQ_PREVIOUS))
+            }
+            val stopLabel = stopDrivingLabel?.takeIf {
+                resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection, boardRelay) != LightingDisplay.Off
+            }
+            builder.addAction(
+                R.drawable.ic_lightbulb_filled,
+                stopLabel ?: relightLabel,
+                bulbPendingIntent(stopsDrive = stopLabel != null),
+            )
+            if (hasNext) {
+                builder.addAction(R.drawable.ic_skip_next, nextLabel, actionPendingIntent(ACTION_NAV_NEXT, REQ_NEXT))
+            }
+        } else if (boardRelay == RELAY_BLOCKED) {
+            // Relay mode (#7220): another phone holds this original MoonBoard,
+            // and the box takes one phone. No bulb: a reconnect could only
+            // scan for nothing. The holder line says who has it; a tap on the
+            // notification opens the app.
         } else {
             builder.addAction(
                 R.drawable.ic_lightbulb_outline,
@@ -662,7 +693,7 @@ class BoardSessionService : Service() {
     // the phone that holds the board shows it; the rest timer keeps the
     // content Chronometer.
     private fun applyLighting(builder: NotificationCompat.Builder) {
-        val lighting = resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection)
+        val lighting = resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection, boardRelay)
         when (lighting) {
             is LightingDisplay.Window -> builder
                 .setSmallIcon(R.drawable.ic_lightbulb_filled)
@@ -681,7 +712,7 @@ class BoardSessionService : Service() {
     // Arms one re-post just after a timed drive ends. Nothing for an open-ended drive or off.
     private fun scheduleLightTransition() {
         cancelOnMain(lightTransition)
-        val window = resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection)
+        val window = resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection, boardRelay)
             as? LightingDisplay.Window ?: return
         val delayMs = (window.endMs - wallClockMs()).coerceAtLeast(0L) + REST_TRANSITION_SLACK_MS
         scheduleOnMain(lightTransition, delayMs)
@@ -778,6 +809,7 @@ class BoardSessionService : Service() {
         val intent = Intent(this, BoardSessionActionReceiver::class.java).apply {
             action = ACTION_BULB
             putExtra(EXTRA_BOARD_CONNECTION, boardConnection)
+            boardRelay?.let { putExtra(EXTRA_BOARD_RELAY, it) }
             putExtra(EXTRA_STOPS_DRIVE, stopsDrive)
             putExtra(EXTRA_CORRELATION_ID, UUID.randomUUID().toString())
         }
@@ -1002,8 +1034,16 @@ class BoardSessionService : Service() {
          * doesn't hold the board, shows nothing. Pure, for tests.
          */
         @VisibleForTesting
-        internal fun resolveLighting(state: String, windowEndMs: Long?, nowMs: Long, boardConnection: String): LightingDisplay {
-            if (boardConnection != CONNECTION_CONNECTED_BY_ME) return LightingDisplay.Off
+        internal fun resolveLighting(
+            state: String,
+            windowEndMs: Long?,
+            nowMs: Long,
+            boardConnection: String,
+            boardRelay: String? = null,
+        ): LightingDisplay {
+            // A relaying phone's drive (#7220) lights the wall through the
+            // holder's phone, so it shows like the holder's own.
+            if (boardConnection != CONNECTION_CONNECTED_BY_ME && boardRelay != RELAY_RELAYING) return LightingDisplay.Off
             return when (state) {
                 LIGHT_STATE_DRIVING -> LightingDisplay.Driving
                 LIGHT_STATE_WINDOW -> windowEndMs?.takeIf { it > nowMs }?.let { LightingDisplay.Window(it) } ?: LightingDisplay.Off
@@ -1154,6 +1194,16 @@ class BoardSessionService : Service() {
         const val CONNECTION_CONNECTED_BY_ME = "connectedByMe"
         const val CONNECTION_HELD_BY_PEER = "heldByPeer"
         const val CONNECTION_DISCONNECTED = "disconnected"
+
+        // Relay mode (#7220), beside boardConnection (never in it).
+        const val EXTRA_BOARD_RELAY = "boardRelay"
+        const val RELAY_RELAYING = "relaying"
+        const val RELAY_BLOCKED = "blocked"
+        private val RELAYS = setOf(RELAY_RELAYING, RELAY_BLOCKED)
+
+        /** The relay an intent carries; anything unknown reads as none. */
+        internal fun relayFrom(intent: Intent): String? =
+            intent.getStringExtra(EXTRA_BOARD_RELAY)?.takeIf { it in RELAYS }
 
         private const val REQ_PREVIOUS = 0
         private const val REQ_NEXT = 1

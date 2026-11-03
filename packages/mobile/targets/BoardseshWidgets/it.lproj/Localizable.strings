@@ -43,3 +43,7 @@
 "Every climb you pick lights up" = "Ogni blocco che scegli si illumina in parete";
 "Lights the climb again" = "Illumina di nuovo il blocco";
 "Stops driving" = "Termina la guida del pannello";
+
+/* Relay mode (#7220): this phone lights the board through the phone that holds it */
+"Lights through %@'s phone" = "Si illumina tramite il telefono di %@";
+"Lights through another phone" = "Si illumina tramite un altro telefono";

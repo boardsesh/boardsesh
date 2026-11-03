@@ -10,6 +10,8 @@ import { useQueue } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../../components/ble/use-board-connection-state';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { useLiveActivity } from './use-live-activity';
+import { deriveLiveActivityBoardPresence } from './live-activity-board-relay';
+import { relayClimbThroughHolder } from '../board-relay/relay-path-store';
 import { LiveActivityRestTimerSync } from './live-activity-rest-timer';
 import { LiveActivityLightingSync } from './live-activity-lighting';
 import { getDriveMode, isDriveWindowDue, stopDrivingForLink } from '../../components/play-drawer/drive-mode-store';
@@ -56,7 +58,30 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // Live Activity lightbulb + Previous/Next visibility: controls show only while
   // THIS device holds the BLE link (connectedByMe); once a peer takes the wall
   // the bulb goes out and the controls hide, leaving just the current climb.
-  const { bluetooth, boardConnection, holderDisplayName, pending: boardConnectPending } = useBoardConnectionState();
+  const {
+    bluetooth,
+    boardConnection,
+    holderDisplayName,
+    pending: boardConnectPending,
+    boardRelayHolder,
+    relayConnectBlocker,
+  } = useBoardConnectionState();
+  // Relay mode (#7220): what the card and the notification draw. A phone that
+  // lights the wall through another phone's link reads that board as held,
+  // with Previous / Next that go to JS (`relaying`); one whose connect would
+  // only scan for nothing never offers a reconnect (`blocked`). The connection
+  // value itself keeps its three meanings, so a binary that predates relay
+  // draws both as held. Widget navigation stays on the BLE-only value below.
+  const presence = useMemo(
+    () =>
+      deriveLiveActivityBoardPresence({
+        boardConnection,
+        holderDisplayName,
+        relayHolder: boardRelayHolder ?? null,
+        blockingHolder: relayConnectBlocker ?? null,
+      }),
+    [boardConnection, holderDisplayName, boardRelayHolder, relayConnectBlocker],
+  );
   // Android notification bulb (#7087). With no remembered board a background
   // reconnect could only end in the board list, on an activity nobody can see,
   // so the bulb opens the app instead. While a connect runs the bulb reads
@@ -177,8 +202,9 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     // over the session socket. Inlined comparison so it dead-strips (see
     // screenshot-mode.ts).
     isPartySession: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? false : sessionId !== null,
-    boardConnection,
-    holderDisplayName,
+    boardConnection: presence.boardConnection,
+    holderDisplayName: presence.holderDisplayName,
+    boardRelay: presence.boardRelay,
     bulbOpensApp,
     boardConnecting,
     nativePairingRevision,
@@ -273,6 +299,13 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
         bluetoothCtx.armUndoWallChangeToast();
         // By serial (Aurora) or device id (MoonBoard); neither → adapter picker.
         void bluetoothCtx.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
+      } else if (event.action === 'relay') {
+        // Relay mode (#7220): this phone lights the board through the phone
+        // that holds it. Like every bulb, a tap during a drive only stops it
+        // (#7252); otherwise it sends the climb on the card to that phone. It
+        // never connects. With no relay engine mounted it does nothing.
+        if (isDriveStillOn()) stopDrivingForLink();
+        else relayClimbThroughHolder(null);
       } else if (event.action === 'stopDriving' && isDriveStillOn()) {
         stopDrivingForLink();
       } else if (event.action === 'reassert' || event.action === 'stopDriving') {

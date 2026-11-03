@@ -105,6 +105,52 @@ class BoardSessionActionReceiverTest {
         verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("reconnect", "corr-1") }
     }
 
+    // --- Relay mode (#7220) ---
+
+    @Test
+    fun `a relaying phone's bulb relays the climb and never reconnects`() {
+        receiver.onReceive(context, bulbIntent("heldByPeer").apply {
+            putExtra(BoardSessionService.EXTRA_BOARD_RELAY, BoardSessionService.RELAY_RELAYING)
+        })
+        verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("relay", "corr-1") }
+        verify(exactly = 0) { SessionPresenceModule.dispatchBoardControl("reconnect", any()) }
+    }
+
+    @Test
+    fun `a relaying phone's bulb drawn as Stop driving stops the relayed drive`() {
+        receiver.onReceive(context, bulbIntent("heldByPeer").apply {
+            putExtra(BoardSessionService.EXTRA_BOARD_RELAY, BoardSessionService.RELAY_RELAYING)
+            putExtra(BoardSessionService.EXTRA_STOPS_DRIVE, true)
+        })
+        verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("stopDriving", "corr-1") }
+    }
+
+    @Test
+    fun `a stale bulb on a board another phone holds in Relay mode dispatches nothing`() {
+        for (connection in listOf("heldByPeer", "disconnected")) {
+            receiver.onReceive(context, bulbIntent(connection).apply {
+                putExtra(BoardSessionService.EXTRA_BOARD_RELAY, BoardSessionService.RELAY_BLOCKED)
+            })
+        }
+        verify(exactly = 0) { SessionPresenceModule.dispatchBoardControl(any(), any()) }
+    }
+
+    @Test
+    fun `an unknown relay value reads as none, so the bulb reconnects as before`() {
+        receiver.onReceive(context, bulbIntent("disconnected").apply {
+            putExtra(BoardSessionService.EXTRA_BOARD_RELAY, "somethingNewer")
+        })
+        verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("reconnect", "corr-1") }
+    }
+
+    @Test
+    fun `this phone's own link wins over a relay value`() {
+        receiver.onReceive(context, bulbIntent("connectedByMe").apply {
+            putExtra(BoardSessionService.EXTRA_BOARD_RELAY, BoardSessionService.RELAY_BLOCKED)
+        })
+        verify(exactly = 1) { SessionPresenceModule.dispatchBoardControl("reassert", "corr-1") }
+    }
+
     @Test
     fun `next action dispatches a queue navigate with the absolute index`() {
         val intent = Intent(BoardSessionService.ACTION_NAV_NEXT).apply {

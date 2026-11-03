@@ -42,6 +42,8 @@ class StartSessionOptions : Record {
     @Field var androidNotification: AndroidNotificationStrings? = null
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String? = null
+    // Relay mode (#7220): "relaying" | "blocked" | null, beside boardConnection.
+    @Field var boardRelay: String? = null
 }
 
 // Mirrors the fields of LiveActivityUpdateOptions the notification needs. Other
@@ -64,6 +66,8 @@ class SessionUpdateOptions : Record {
     @Field var hasPrevious: Boolean = false
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String? = null
+    // Relay mode (#7220): "relaying" | "blocked" | null, beside boardConnection.
+    @Field var boardRelay: String? = null
     // The outline bulb opens the app instead of reconnecting in the background:
     // there is no remembered board, so a reconnect would need the board list
     // (#7087). False on an older JS bundle, which keeps the broadcast.
