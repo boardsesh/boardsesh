@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "adAccountId": 21374740,
+  "appId": 6761350784,
+  "currency": "AUD",
+  "namespace": "Boardsesh Managed",
+  "legacyCampaignIds": [2144850955, 2143695506],
+  "campaigns": [
+    {
+      "country": "US",
+      "dailyBudget": "50.00",
+      "status": "ENABLED",
+      "locale": "en-US",
+      "groups": [
+        {
+          "target": "kilter",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["kilter", "kilterboard", "kilter board"]
+        },
+        {
+          "target": "tension",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["tension board", "tensionboard", "tension board 2"]
+        },
+        {
+          "target": "moonboard",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["moonboard", "moon board"]
+        },
+        {
+          "target": "spray",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["spray wall", "spraywall"]
+        }
+      ]
+    },
+    {
+      "country": "AU",
+      "dailyBudget": "20.00",
+      "status": "ENABLED",
+      "locale": "en-US",
+      "groups": [
+        {
+          "target": "kilter",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["kilter", "kilterboard", "kilter board"]
+        },
+        {
+          "target": "tension",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["tension board", "tensionboard", "tension board 2"]
+        },
+        {
+          "target": "moonboard",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["moonboard", "moon board"]
+        },
+        {
+          "target": "spray",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["spray wall", "spraywall"]
+        }
+      ]
+    },
+    {
+      "country": "CA",
+      "dailyBudget": "15.00",
+      "status": "ENABLED",
+      "locale": "en-US",
+      "groups": [
+        {
+          "target": "kilter",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["kilter", "kilterboard", "kilter board"]
+        },
+        {
+          "target": "tension",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["tension board", "tensionboard", "tension board 2"]
+        },
+        {
+          "target": "moonboard",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["moonboard", "moon board"]
+        },
+        {
+          "target": "spray",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["spray wall", "spraywall"]
+        }
+      ]
+    },
+    {
+      "country": "DE",
+      "dailyBudget": "15.00",
+      "status": "ENABLED",
+      "locale": "de-DE",
+      "groups": [
+        {
+          "target": "kilter",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["kilter", "kilterboard", "kilter board"]
+        },
+        {
+          "target": "tension",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["tension board", "tensionboard", "tension board 2"]
+        },
+        {
+          "target": "moonboard",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["moonboard", "moon board"]
+        },
+        {
+          "target": "spray",
+          "maxCptBid": "1.00",
+          "status": "ENABLED",
+          "keywords": ["spray wall", "spraywall", "spraywand"]
+        }
+      ]
+    }
+  ]
+}

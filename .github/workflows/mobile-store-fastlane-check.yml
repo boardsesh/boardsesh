@@ -4,6 +4,11 @@ on:
   pull_request:
     paths:
       - 'fastlane/**'
+      - 'app-stores/apple/ads.json'
+      - 'scripts/apple-ads.ts'
+      - 'scripts/lib/apple-ads*'
+      - 'scripts/__tests__/apple-ads*.test.ts'
+      - '.github/workflows/apple-ads.yml'
       - '.github/workflows/android-apk-rn.yml'
       - '.github/workflows/ios-testflight-rn.yml'
       - '.github/workflows/ios-testflight-distribute.yml'
@@ -38,6 +43,11 @@ on:
     branches: [main, main]
     paths:
       - 'fastlane/**'
+      - 'app-stores/apple/ads.json'
+      - 'scripts/apple-ads.ts'
+      - 'scripts/lib/apple-ads*'
+      - 'scripts/__tests__/apple-ads*.test.ts'
+      - '.github/workflows/apple-ads.yml'
       - '.github/workflows/mobile-store-fastlane-check.yml'
 
 permissions:
@@ -71,6 +81,7 @@ jobs:
           vp exec ruby tests/store_review_submission_test.rb
           vp exec ruby tests/store_release_control_test.rb
           vp exec ruby tests/store_audit_test.rb
+          vp exec ruby tests/apple_ads_test.rb
           vp exec ruby tests/creative_assets_test.rb
           vp exec ruby tests/custom_product_pages_test.rb
           vp exec ruby tests/creative_download_test.rb
@@ -80,4 +91,4 @@ jobs:
         run: |
           bundle exec ruby -e 'require "supply"; require "supply/client"; abort "Missing review guard" unless Google::Apis::AndroidpublisherV3::AndroidPublisherService.instance_method(:commit_edit).parameters.include?([:key, :changes_in_review_behavior])'
       - name: Verify native triggers, exact promotion and the merge-back submission
-        run: vp test run scripts/native-release-workflows.test.ts scripts/__tests__/mobile-native-build-source.test.ts scripts/mobile-native-release.test.ts scripts/__tests__/testflight-build.test.ts scripts/__tests__/testflight-notes.test.ts scripts/__tests__/testflight-distribution-workflow.test.ts scripts/__tests__/mobile-store-android-audit.test.ts scripts/__tests__/mobile-store-android-beta.test.ts scripts/__tests__/mobile-store-android-production.test.ts scripts/__tests__/mobile-store-android-draft-guard.test.ts scripts/__tests__/mobile-store-android-draft.test.ts scripts/lib/google-play-tracks.test.ts scripts/__tests__/mobile-store-android-review-pending.test.ts scripts/__tests__/push-run-superseded.test.ts scripts/__tests__/mobile-store-submit-target.test.ts scripts/__tests__/mobile-store-submit-android.test.ts scripts/__tests__/mobile-store-submit-workflow.test.ts scripts/__tests__/mobile-screenshots-workflows.test.ts scripts/__tests__/mobile-cut-release-tags.test.ts --reporter=agent
+        run: vp test run scripts/native-release-workflows.test.ts scripts/__tests__/mobile-native-build-source.test.ts scripts/mobile-native-release.test.ts scripts/__tests__/testflight-build.test.ts scripts/__tests__/testflight-notes.test.ts scripts/__tests__/testflight-distribution-workflow.test.ts scripts/__tests__/mobile-store-android-audit.test.ts scripts/__tests__/mobile-store-android-beta.test.ts scripts/__tests__/mobile-store-android-production.test.ts scripts/__tests__/mobile-store-android-draft-guard.test.ts scripts/__tests__/mobile-store-android-draft.test.ts scripts/lib/google-play-tracks.test.ts scripts/__tests__/mobile-store-android-review-pending.test.ts scripts/__tests__/push-run-superseded.test.ts scripts/__tests__/mobile-store-submit-target.test.ts scripts/__tests__/mobile-store-submit-android.test.ts scripts/__tests__/mobile-store-submit-workflow.test.ts scripts/__tests__/mobile-screenshots-workflows.test.ts scripts/__tests__/mobile-cut-release-tags.test.ts scripts/__tests__/apple-ads*.test.ts --reporter=agent
