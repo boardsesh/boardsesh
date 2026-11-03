@@ -12,6 +12,15 @@ reads what a signed-out visitor reads, so boards the owner follows, was invited 
 or sees through a gym open no further for the key. It cannot log climbs, change the
 queue, edit a wall, or read the owner's account.
 
+## Where the climbs come from
+
+Every climb on this feed is one a climber put on the wall in the Boardsesh app. A
+phone connected to the board over Bluetooth reports each climb it lights. Without
+Bluetooth, the board owner (or anyone who can edit the board) turns on **Edit board ›
+Lights › Lit by a wall device** in the app. Every climber on that board then taps
+**Take the wall** instead of connecting, and each climb they put up arrives here. A
+board with no LED kit at all works the same way without the switch.
+
 ## 1. Get a key
 
 The board's owner creates the key on the website:
