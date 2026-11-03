@@ -510,6 +510,7 @@
     "connectionFailedTitle": "Impossibile connettersi",
     "permissionRequired": "Serve il permesso Bluetooth",
     "errorPermissionDenied": "Consenti i permessi Bluetooth per connettere un pannello.",
+    "tryAgain": "Riprova",
     "blockedTitle": "Il Bluetooth è bloccato per Boardsesh",
     "blockedBody": "Consenti il Bluetooth per Boardsesh nelle Impostazioni per illuminare i blocchi sul tuo pannello.",
     "blockedBodyNearbyDevices": "Consenti Dispositivi nelle vicinanze per Boardsesh nelle Impostazioni per illuminare i blocchi sul tuo pannello.",

@@ -15,6 +15,21 @@
  */
 export const CONSENT_VERSION = 1;
 
+/**
+ * The day the website's consent copy (banner and Privacy choices) started to
+ * say that analytics on www also covers ad measurement with Meta and Reddit.
+ *
+ * The ad pixels on www (`packages/web/app/lib/ad-pixels.ts`) count an explicit
+ * Allow only when it was given on the website on or after this instant: an
+ * earlier Allow agreed to copy that never named Meta or Reddit, so it keeps
+ * PostHog but gets no pixels. This replaces a CONSENT_VERSION bump, which would
+ * have asked every climber again. It must be no earlier than the production
+ * deploy that ships the new copy; a later date is the safe direction (Allows
+ * in between just get no pixels). Never move it earlier.
+ * See docs/analytics-consent.md#ad-pixels.
+ */
+export const AD_MEASUREMENT_COPY_SINCE = '2026-11-10T00:00:00.000Z';
+
 export const ANALYTICS_CONSENT_CHOICES = ['granted', 'denied'] as const;
 export type AnalyticsConsentChoice = (typeof ANALYTICS_CONSENT_CHOICES)[number];
 

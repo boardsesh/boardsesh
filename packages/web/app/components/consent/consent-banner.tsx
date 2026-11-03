@@ -34,6 +34,9 @@ export default function ConsentBanner() {
       <Typography variant="body2" color="text.secondary">
         {t('body')}
       </Typography>
+      <Typography variant="body2" color="text.secondary">
+        {t('adMeasurement')}
+      </Typography>
       <MuiLink component={LocaleLink} href="/privacy">
         {t('privacyLink')}
       </MuiLink>

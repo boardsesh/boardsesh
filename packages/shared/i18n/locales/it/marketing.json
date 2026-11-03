@@ -1062,9 +1062,9 @@
   },
   "privacy": {
     "title": "Informativa sulla privacy",
-    "lastUpdated": "Ultimo aggiornamento: 29 ottobre 2026",
+    "lastUpdated": "Ultimo aggiornamento: 3 novembre 2026",
     "intro1": "Boardsesh è un'app open source per controllare via Bluetooth i pannelli di allenamento in arrampicata (Kilter, Tension, MoonBoard). Questa informativa spiega quali dati raccogliamo, perché e cosa ne facciamo.",
-    "intro2ProductAnalytics": "In breve: raccogliamo solo ciò che serve a far funzionare l'app. Non vendiamo i tuoi dati, non mostriamo pubblicità e non condividiamo dati con inserzionisti terzi o data broker.",
+    "intro2ProductAnalytics": "In breve: raccogliamo solo ciò che serve a far funzionare l'app. Non vendiamo i tuoi dati, in Boardsesh non ci sono pubblicità e non condividiamo dati con data broker. Pubblicizziamo Boardsesh su Reddit e Instagram e sul nostro sito l'analisi include la misurazione di quegli annunci con Meta e Reddit, come spiegato più sotto.",
     "collect": {
       "title": "Cosa raccogliamo",
       "accountLabel": "Informazioni sull'account.",
@@ -1075,6 +1075,8 @@
       "locationBody": "Se concedi il permesso di posizione, usiamo la tua posizione approssimativa per aiutarti a scoprire le session in Modalità party vicine. Non tracciamo la tua posizione in background né conserviamo uno storico delle posizioni.",
       "productAnalyticsLabel": "Analisi di prodotto.",
       "productAnalyticsBody": "Usiamo PostHog per l'uso delle funzioni, le visualizzazioni di pagina, le prestazioni e, facoltativamente, la registrazione delle sessioni nell'app. Nell'UE, nel SEE, nel Regno Unito, in Svizzera, a Gibilterra, Jersey, Guernsey, nell'Isola di Man, in Cina, Corea del Sud, Andorra, Monaco, San Marino, Città del Vaticano, nelle Isole Fær Øer e in Québec, e ogni volta che non è possibile capire dove ti trovi, chiediamo prima e PostHog funziona solo dopo che hai consentito l'analisi. Altrove l'analisi è attiva per impostazione predefinita, in base al nostro legittimo interesse a migliorare Boardsesh, e puoi disattivarla in qualsiasi momento in Impostazioni o in Scelte sulla privacy; se il tuo browser invia un segnale Global Privacy Control, lo trattiamo come un no. Lo decidiamo in base al paese e, in Canada, alla provincia che Cloudflare riporta per la tua connessione, e non li conserviamo. L'analisi con accesso effettuato può essere collegata al tuo account Boardsesh. L'attribuzione delle installazioni richiede ovunque il tuo Consenti esplicito; l'impostazione predefinita non la attiva. Con il tuo Consenti, l'attribuzione delle installazioni su Android può includere il referrer di installazione del Play Store e le informazioni sulla campagna, e su iOS usiamo Apple AdServices tramite il nostro backend per misurare quali campagne Apple Ads portano a registrazioni e attività di arrampicata. Condividiamo con PostHog identificatori di campagna validati e lo stato del download, mai il token di attribuzione. Non usiamo questi dati per mostrarti pubblicità.",
+      "adMeasurementLabel": "Misurazione degli annunci sul nostro sito.",
+      "adMeasurementBody": "Pubblicizziamo Boardsesh su Reddit e Instagram. Quando l'analisi è attiva sul nostro sito, carichiamo il pixel di Meta e il pixel di Reddit perché Meta e Reddit ci dicano quali annunci portano visite e tocchi sugli store. Ricevono le pagine che visiti su boardsesh.com, i tuoi tocchi sui nostri pulsanti degli store (quale store e dove si trovava il pulsante) e ciò che i loro pixel leggono dal tuo browser: il tuo indirizzo IP, dati del browser e i loro cookie. Non inviamo mai la tua email, il tuo account o altri dati di contatto. Nelle regioni in cui chiediamo prima, serve un «Consenti» dato dopo che il nostro banner ha iniziato a nominare Meta e Reddit. Altrove segue l'impostazione predefinita dell'analisi e si ferma se dici di no in Scelte sulla privacy o se il tuo browser invia il segnale Global Privacy Control. Non funziona mai nell'app, sugli schermi kiosk, nei widget incorporati o nelle pagine di accesso.",
       "serviceStatsLabel": "Statistiche di servizio di prima parte.",
       "serviceStatsBody": "Registriamo il giorno attivo e la piattaforma di un account con accesso effettuato nel nostro database, indipendentemente dal consenso all'analisi, in base al legittimo interesse a capire come viene usato il servizio. Queste righe sono conservate per 13 mesi. A PostHog vengono inviati solo conteggi aggregati giornalieri, settimanali e mensili. I visitatori senza accesso non sono inclusi in questi conteggi di utenti attivi basati sull'account."
     },
@@ -1100,6 +1102,12 @@
       "posthogLabel": "PostHog.",
       "posthogBody": "PostHog elabora negli Stati Uniti l'analisi di prodotto facoltativa e la registrazione delle sessioni dell'app. Inviamo anche eventi operativi minimi senza identificatori di account per la stabilità del servizio, i display kiosk e lo stato degli aggiornamenti, oltre ai conteggi aggregati di utenti attivi. Vedi ",
       "posthogLink": "l'informativa sulla privacy di PostHog",
+      "adPixelsLabel": "Meta e Reddit.",
+      "adPixelsBody": "Meta Platforms e Reddit ricevono dati di misurazione degli annunci dal nostro sito finché l'analisi è attiva (vedi Cosa raccogliamo). Li usano anche secondo le proprie informative sulla privacy, il che può includere un trattamento negli Stati Uniti. Vedi ",
+      "metaLink": "l'informativa sulla privacy di Meta",
+      "adPixelsJoin": " e ",
+      "redditLink": "l'informativa sulla privacy di Reddit",
+      "adPixelsBodyEnd": ".",
       "auroraLabel": "API di Aurora Climbing.",
       "auroraBody": "Se colleghi il tuo account Aurora Climbing (usato dai pannelli Kilter e Tension), sincronizziamo i dati dei tuoi blocchi con i server di Aurora così il tuo diario resta coerente tra le app. Questa sincronizzazione avviene solo quando la avvii tu. Vedi ",
       "auroraLink": "Aurora Climbing",
@@ -1120,7 +1128,7 @@
     },
     "sharing": {
       "title": "Condivisione dei dati",
-      "body1ProductAnalytics": "Non vendiamo i tuoi dati, non mostriamo pubblicità e non condividiamo informazioni con inserzionisti o data broker. I fornitori descritti sopra elaborano dati per hosting, archiviazione, pagamenti, affidabilità del servizio e analisi facoltativa. La sincronizzazione con Aurora Climbing avviene quando la attivi.",
+      "body1ProductAnalytics": "Non vendiamo i tuoi dati, non mostriamo pubblicità in Boardsesh e non condividiamo informazioni con data broker. I fornitori descritti sopra elaborano dati per hosting, archiviazione, pagamenti, affidabilità del servizio e analisi facoltativa, che sul nostro sito include la misurazione degli annunci con Meta e Reddit. La sincronizzazione con Aurora Climbing avviene quando la attivi.",
       "body2": "Gli altri utenti di Boardsesh possono vedere il tuo nome utente, il tuo profilo e i blocchi che hai registrato se partecipi a funzioni social come la Modalità party. È visibile nell'app e fa parte di come funziona il prodotto.",
       "body3SprayPhotos": "Non diamo a nessun altro le foto delle Spraywall né le prese che segni per addestrare modelli. L'unico modello addestrato su di esse è il nostro rilevatore di prese. Gli altri vedono la foto di una Spraywall come consente la sua impostazione di visibilità, e i membri di una palestra vedono le Spraywall collegate a quella palestra, comprese quelle private. La foto di una Spraywall pubblica è sul web aperto."
     },
@@ -1160,6 +1168,7 @@
     "choices": {
       "title": "Cookie e scelte sulla privacy",
       "storageBody": "L'archiviazione necessaria include i cookie di accesso e del flusso di accesso di NextAuth, la tua preferenza di lingua (boardsesh-locale), le preferenze del dispositivo e il cookie boardsesh-consent. Il cookie del consenso dura un anno ed è condiviso tra boardsesh.com e app.boardsesh.com. Fuori dalle regioni in cui chiediamo, il sito lo imposta sul valore predefinito dell'analisi alla tua prima visita. Quando l'analisi è attiva (il tuo Consenti, oppure il valore predefinito fuori dalle regioni in cui chiediamo), PostHog memorizza identificatori ed eventi (ph_* sul sito e archiviazione dell'SDK nell'app). Rifiutare o revocare cancella gli identificatori di analisi e interrompe l'analisi facoltativa, la registrazione delle sessioni e gli eventi di attribuzione delle installazioni. Restano attive la diagnostica di base dei crash e delle prestazioni di prima parte. I feature flag usano ancora un client in memoria; i flag con accesso effettuato possono usare l'ID del tuo account.",
+      "adCookiesBody": "Finché la misurazione degli annunci è attiva, il pixel di Meta imposta _fbp (e _fbc se arrivi da un annuncio Meta) e il pixel di Reddit imposta _rdt_uuid (e _rdt_cid se arrivi da un annuncio Reddit), ciascuno per un massimo di 90 giorni. Dire di no in Scelte sulla privacy ferma subito entrambi i pixel e cancella questi cookie.",
       "changeBody": "Usa Scelte sulla privacy nel piè di pagina del sito o Analisi in Impostazioni → Privacy per cambiare la tua risposta. Salviamo la tua decisione sul dispositivo e, se hai effettuato l'accesso, sul tuo account. Dove l'analisi è attiva per impostazione predefinita, quel valore resta sul dispositivo e non viene mai salvato sul tuo account come consenso. Un rifiuto sull'account prevale sui consensi dei dispositivi; un consenso sull'account vale per i dispositivi che non hanno ancora risposto. Conserviamo lo storico delle decisioni come prova del consenso fino all'eliminazione dell'account. Gli eventi anonimi e di breve durata sullo stato degli aggiornamenti e dei kiosk restano attivi per l'affidabilità del servizio."
     }
   },

@@ -25,8 +25,7 @@ import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta
 import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
-import { track } from '@/app/lib/analytics';
-import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
+import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import OnboardingCard from '@/app/components/home/onboarding-card';
 import HomeShowcaseVideo from '@/app/components/home/home-showcase-video';
@@ -194,15 +193,12 @@ export default function HomePageContent({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => {
-                    track(
-                      APP_INSTALL_CLICK_EVENT,
-                      buildAppInstallClickProperties({
-                        platform: button.store,
-                        source: button.source,
-                        placement: 'hero',
-                        mode: heroInstall.mode,
-                      }),
-                    );
+                    trackAppInstallClick({
+                      platform: button.store,
+                      source: button.source,
+                      placement: 'hero',
+                      mode: heroInstall.mode,
+                    });
                   }}
                   sx={button.primary ? HERO_CTA_SX : HERO_SECONDARY_CTA_SX}
                 >

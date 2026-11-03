@@ -50,7 +50,12 @@ function PrivacyConsentScreen() {
         <Text accessibilityRole="header" style={[styles.title, { color: colors.label }]}>
           {t('mobileTitle')}
         </Text>
-        <Text style={[styles.body, { color: colors.secondaryLabel }]}>{t('mobileBody')}</Text>
+        <Text style={[styles.body, { color: colors.secondaryLabel }]}>
+          {t('mobileBody')}
+          {/* The browser app shares its consent cookie with www, where analytics
+              also runs the Meta and Reddit ad pixels. */}
+          {Platform.OS === 'web' ? ` ${t('adMeasurement')}` : null}
+        </Text>
         <Button
           title={t('allow')}
           onPress={() => choose('granted')}

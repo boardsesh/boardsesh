@@ -1062,9 +1062,9 @@
   },
   "privacy": {
     "title": "Privacy Policy",
-    "lastUpdated": "Last updated: October 29, 2026",
+    "lastUpdated": "Last updated: November 3, 2026",
     "intro1": "Boardsesh is an open-source app for controlling climbing training boards (Kilter, Tension, MoonBoard) over Bluetooth. This policy explains what data we collect, why, and what we do with it.",
-    "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, we do not run ads, and we do not share data with third-party marketers or data brokers.",
+    "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, there are no ads in Boardsesh, and we do not share data with data brokers. We do advertise Boardsesh on Reddit and Instagram, and on our website analytics includes measuring those ads with Meta and Reddit, as described below.",
     "collect": {
       "title": "What we collect",
       "accountLabel": "Account information.",
@@ -1075,6 +1075,8 @@
       "locationBody": "If you grant location permission, we use your approximate location to help you discover nearby Party Mode sessions. We do not track your location in the background or store location history.",
       "productAnalyticsLabel": "Product analytics.",
       "productAnalyticsBody": "We use PostHog for feature usage, page views, performance and optional session replay in the app. In the EU, the EEA, the UK, Switzerland, Gibraltar, Jersey, Guernsey, the Isle of Man, China, South Korea, Andorra, Monaco, San Marino, Vatican City, the Faroe Islands and Quebec, and whenever we cannot tell where you are, we ask first and PostHog runs only after you allow analytics. Elsewhere analytics is on by default, under our legitimate interest in improving Boardsesh, and you can turn it off anytime in Settings or Privacy choices; if your browser sends a Global Privacy Control signal, we treat it as a no. We decide this from the country and, in Canada, province Cloudflare reports for your connection, which we do not store. Signed-in analytics can be linked to your Boardsesh account. Install attribution needs your own Allow everywhere; the default does not turn it on. With your Allow, Android install attribution may include the Play Store install referrer and campaign information, and on iOS we use Apple AdServices through our own backend to measure which Apple Ads campaigns lead to signups and climbing activity. We share validated campaign identifiers and download status with PostHog, never the attribution token. We do not use these data to show you ads.",
+      "adMeasurementLabel": "Ad measurement on our website.",
+      "adMeasurementBody": "We advertise Boardsesh on Reddit and Instagram. When analytics is on for our website, we load the Meta Pixel and the Reddit Pixel so Meta and Reddit can tell us which ads bring visitors and app store taps. They receive the pages you visit on boardsesh.com, your taps on our app store buttons (which store, and where the button was) and what their pixels read from your browser: your IP address, browser details and their own cookies. We never send them your email, your account or any other contact details. In the regions where we ask first, this needs an Allow given after our banner started naming Meta and Reddit. Elsewhere it follows the analytics default and stops when you say no in Privacy choices or your browser sends a Global Privacy Control signal. It never runs in the app, on kiosk displays, in embedded widgets or on sign-in pages.",
       "serviceStatsLabel": "First-party service statistics.",
       "serviceStatsBody": "We record a signed-in account’s active day and platform in our own database, regardless of analytics consent, under legitimate interest to understand service use. These rows are kept for 13 months. Only aggregate daily, weekly and monthly counts are sent to PostHog. Signed-out visitors are not included in these account-based active-user counts."
     },
@@ -1100,6 +1102,12 @@
       "posthogLabel": "PostHog.",
       "posthogBody": "PostHog processes optional product analytics and app session replay in the United States. We also send minimal operational events without account identifiers for service stability, kiosk displays and update health, plus aggregate active-user counts. See ",
       "posthogLink": "PostHog's privacy policy",
+      "adPixelsLabel": "Meta and Reddit.",
+      "adPixelsBody": "Meta Platforms and Reddit receive ad-measurement data from our website while analytics is on (see What we collect). They also use it under their own privacy policies, which can include processing in the United States. See ",
+      "metaLink": "Meta's privacy policy",
+      "adPixelsJoin": " and ",
+      "redditLink": "Reddit's privacy policy",
+      "adPixelsBodyEnd": ".",
       "auroraLabel": "Aurora Climbing API.",
       "auroraBody": "If you link your Aurora Climbing account (used by Kilter and Tension boards), we sync your climb data with Aurora's servers so your logbook stays consistent across apps. This sync only happens when you initiate it. See ",
       "auroraLink": "Aurora Climbing",
@@ -1120,7 +1128,7 @@
     },
     "sharing": {
       "title": "Data sharing",
-      "body1ProductAnalytics": "We do not sell your data, run ads or share information with advertisers or data brokers. The providers described above process data for hosting, storage, payments, service reliability and optional analytics. Aurora Climbing synchronization runs when you enable it.",
+      "body1ProductAnalytics": "We do not sell your data, show ads in Boardsesh or share information with data brokers. The providers described above process data for hosting, storage, payments, service reliability and optional analytics, which on our website includes ad measurement with Meta and Reddit. Aurora Climbing synchronization runs when you enable it.",
       "body2": "Other Boardsesh users can see your username, profile, and logged climbs if you participate in social features like Party Mode. This is visible in the app and is part of how the product works.",
       "body3SprayPhotos": "We do not give Spraywall photos or the holds you mark to anyone else to train on. The only model trained on them is our own hold finder. Other people see a Spraywall's photo as its visibility setting allows, and members of a gym see the Spraywalls attached to that gym, private ones included. A public Spraywall's photo is on the open web."
     },
@@ -1160,6 +1168,7 @@
     "choices": {
       "title": "Cookies and privacy choices",
       "storageBody": "Required storage includes NextAuth login and sign-in-flow cookies, your language preference (boardsesh-locale), device preferences and the boardsesh-consent cookie. The consent cookie lasts one year and is shared between boardsesh.com and app.boardsesh.com. Outside the regions where we ask, the website sets it to the analytics default on your first visit. When analytics is on (your Allow, or the default outside the regions where we ask), PostHog stores identifiers and events (ph_* on the website and SDK storage in the app). Declining or withdrawing clears analytics identifiers and stops optional analytics, replay and install-attribution events. Basic crash and first-party performance diagnostics remain on. Feature flags still use an in-memory client; signed-in flags can use your account ID.",
+      "adCookiesBody": "While ad measurement is on, the Meta Pixel sets _fbp (and _fbc after you arrive from a Meta ad) and the Reddit Pixel sets _rdt_uuid (and _rdt_cid after you arrive from a Reddit ad), each for up to 90 days. Saying no in Privacy choices stops both pixels straight away and deletes these cookies.",
       "changeBody": "Use Privacy choices in the website footer or Analytics in Settings → Privacy to change your answer. We save your decision on the device and, when signed in, on your account. Where analytics is on by default, that default stays on the device and is never saved to your account as consent. An account denial overrides device grants; an account grant fills devices that have not answered. We retain decision history as evidence of consent until account deletion. Anonymous, short-lived update-health and kiosk events remain enabled for service reliability."
     }
   },

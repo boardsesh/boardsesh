@@ -89,6 +89,10 @@ ARG NEXT_PUBLIC_STATIC_ASSET_BASE_URL
 # Optional: empty or non-numeric is ignored by store-links.ts, which then emits
 # `ct` and `mt` with no `pt`. Build-time like every NEXT_PUBLIC_ value.
 ARG NEXT_PUBLIC_APP_STORE_PROVIDER_ID
+# Ad pixel ids (docs/analytics-consent.md#ad-pixels). Optional: unset means
+# the www bundle loads no Meta or Reddit script at all.
+ARG NEXT_PUBLIC_META_PIXEL_ID
+ARG NEXT_PUBLIC_REDDIT_PIXEL_ID
 # The Docker context carries no .git, so the Sentry plugin cannot derive a
 # release name on its own and would upload maps under a generated one that
 # matches no deploy. The workflow passes github.sha.
@@ -101,6 +105,8 @@ ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV BASE_URL=$BASE_URL
 ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 ENV NEXT_PUBLIC_STATIC_ASSET_BASE_URL=$NEXT_PUBLIC_STATIC_ASSET_BASE_URL
+ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
+ENV NEXT_PUBLIC_REDDIT_PIXEL_ID=$NEXT_PUBLIC_REDDIT_PIXEL_ID
 ENV SENTRY_RELEASE=$SENTRY_RELEASE
 
 RUN if [ "${#BOARDSESH_BUILD_RELEASE}" -ne 40 ]; then \

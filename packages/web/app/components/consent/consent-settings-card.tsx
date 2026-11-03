@@ -14,7 +14,7 @@ export default function ConsentSettingsCard() {
       <CardContent>
         <Typography variant="h5">{t('settingsTitle')}</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ my: 2 }}>
-          {t('settingsBody')}
+          {t('settingsBody')} {t('adMeasurement')}
         </Typography>
         <Typography variant="body2">{granted ? t('enabled') : t('disabled')}</Typography>
         {isRegionDefaultConsent(snapshot.record) && (
