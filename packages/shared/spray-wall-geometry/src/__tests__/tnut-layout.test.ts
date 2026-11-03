@@ -177,6 +177,22 @@ const saved: TnutLayout = {
 };
 
 describe('persisted T-nut layout', () => {
+  it.each(['center', 'sides', 'below'] as const)(
+    'round-trips optional LED placement %s without changing hole positions',
+    (ledPlacement) => {
+      const configured = { ...saved, ledPlacement };
+      expect(readTnutLayout(JSON.parse(JSON.stringify(configured)))).toEqual(configured);
+    },
+  );
+
+  it('keeps legacy layouts unselected', () => {
+    expect(readTnutLayout(saved)).not.toHaveProperty('ledPlacement');
+  });
+
+  it.each([null, 'unknown', 'alternate', 1, {}])('rejects unsupported LED placement %j', (ledPlacement) => {
+    expect(readTnutLayout({ ...saved, ledPlacement })).toBeNull();
+  });
+
   it.each(['grid', 'offset', 'custom'] as const)('preserves manually edited holes for %s', (pattern) => {
     const parsed = readTnutLayout({ ...saved, pattern, ignoredFutureField: true });
     expect(parsed).toEqual({ ...saved, pattern });

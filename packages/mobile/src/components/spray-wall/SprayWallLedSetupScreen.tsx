@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   Keyboard,
@@ -47,6 +47,7 @@ import { BuilderTextInput } from '../board-discovery/BoardMetaFields';
 import { FlattenedSprayPhoto } from './FlattenedSprayPhoto';
 import { SprayCornerMarker } from './SprayCornerMarker';
 import { TnutPatternThumbnail } from './TnutPatternThumbnail';
+import { LedPlacementThumbnail } from './LedPlacementThumbnail';
 import { TnutPhotoEditor } from './TnutPhotoEditor';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 
@@ -212,12 +213,14 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   ].map(({ x, y }) => [x * photo.width, y * photo.height]);
 
   function changeLayout(update: Partial<TnutLayout>) {
+    if (busy.current) return;
     setLayout((previous) => ({ ...previous, ...update }));
     setDirty(true);
     setSaveFailed(false);
   }
 
   function previousStep() {
+    if (busy.current) return;
     Keyboard.dismiss();
     if (step === 'offset') setStep('pattern');
     else if (step === 'align') setStep(layout.pattern === 'offset' ? 'offset' : 'pattern');
@@ -227,11 +230,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   }
 
   useSprayWizardLeaveGuard((leave) => {
-    if (busy.current) return;
     if (finished.current) {
       leave();
       return;
     }
+    if (busy.current) return;
     if (step !== 'pattern') {
       previousStep();
       return;
@@ -269,8 +272,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       setStep('holes');
       return;
     }
-    if (step === 'holes') {
+    if (step === 'holes' || step === 'led') {
       if (!layout.holes.length) return;
+      if (step === 'led' && !layout.ledPlacement) return;
       busy.current = true;
       setSaving(true);
       setSaveFailed(false);
@@ -279,7 +283,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         if (mounted.current) {
           setDirty(false);
           setPhotoChanged(false);
-          setStep('led');
+          if (step === 'holes') setStep('led');
+          else {
+            finished.current = true;
+            router.back();
+          }
         }
       } catch {
         if (mounted.current) setSaveFailed(true);
@@ -289,15 +297,14 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       }
       return;
     }
-    finished.current = true;
-    router.back();
   }
 
   const canContinue =
     !saving &&
     !dragging &&
     (step !== 'align' || (validCounts && validCorners)) &&
-    (step !== 'holes' || layout.holes.length > 0);
+    (step !== 'holes' || layout.holes.length > 0) &&
+    (step !== 'led' || Boolean(layout.ledPlacement));
   useHeaderActions({
     leading: { kind: 'back', onPress: previousStep, accessibilityLabel: t('sprayLedSetup.back'), disabled: saving },
     trailing: {
@@ -538,8 +545,30 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         ) : null}
         {step === 'led' ? (
           <>
-            <Text>{t('sprayLedSetup.ledPending')}</Text>
-            <Text variant="footnote">{t('sprayLedSetup.saved')}</Text>
+            <Text>{t('sprayLedSetup.ledHint')}</Text>
+            <View style={[styles.row, { gap: spacing[2] }]}>
+              {(['center', 'sides', 'below'] as const).map((placement) => (
+                <ChoiceCard
+                  key={placement}
+                  label={
+                    placement === 'center'
+                      ? t('sprayLedSetup.ledCenter')
+                      : placement === 'sides'
+                        ? t('sprayLedSetup.ledSides')
+                        : t('sprayLedSetup.ledBelow')
+                  }
+                  selected={layout.ledPlacement === placement}
+                  disabled={saving}
+                  onPress={() => changeLayout({ ledPlacement: placement })}
+                >
+                  <LedPlacementThumbnail placement={placement} />
+                </ChoiceCard>
+              ))}
+            </View>
+            <Text variant="footnote">{t('sprayLedSetup.ledSetupPending')}</Text>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayLedSetup.localHint')}
+            </Text>
           </>
         ) : null}
       </View>
@@ -560,13 +589,34 @@ function PatternCard({
   firstRowOffset?: boolean;
   onPress: () => void;
 }) {
+  return (
+    <ChoiceCard label={label} selected={selected} onPress={onPress}>
+      <TnutPatternThumbnail pattern={pattern} firstRowOffset={firstRowOffset} />
+    </ChoiceCard>
+  );
+}
+
+function ChoiceCard({
+  label,
+  selected,
+  disabled = false,
+  onPress,
+  children,
+}: {
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  children: ReactNode;
+}) {
   const { systemColors, brandColors, spacing } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="radio"
       accessibilityLabel={label}
-      accessibilityState={{ checked: selected }}
+      accessibilityState={{ checked: selected, disabled }}
       style={[
         styles.card,
         {
@@ -577,9 +627,7 @@ function PatternCard({
         },
       ]}
     >
-      <View style={styles.thumbnail}>
-        <TnutPatternThumbnail pattern={pattern} firstRowOffset={firstRowOffset} />
-      </View>
+      <View style={styles.thumbnail}>{children}</View>
       <Text variant="footnote" style={styles.cardLabel}>
         {label}
       </Text>

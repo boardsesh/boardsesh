@@ -110,17 +110,20 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityRole,
     accessibilityLabel,
     accessibilityState,
+    disabled,
   }: {
     children?: ReactNode;
     onPress: () => void;
     accessibilityRole?: string;
     accessibilityLabel?: string;
     accessibilityState?: { checked?: boolean };
+    disabled?: boolean;
   }) =>
     createElement(
       'button',
       {
         onClick: onPress,
+        disabled,
         role: accessibilityRole,
         'aria-label': accessibilityLabel,
         'aria-checked': accessibilityState?.checked,
@@ -145,6 +148,7 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
     }),
 }));
 vi.mock('../TnutPatternThumbnail', () => ({ TnutPatternThumbnail: () => null }));
+vi.mock('../LedPlacementThumbnail', () => ({ LedPlacementThumbnail: () => null }));
 vi.mock('../FlattenedSprayPhoto', () => ({
   FlattenedSprayPhoto: ({ photoUri }: { photoUri: string }) =>
     createElement('div', { 'data-testid': 'rectified-photo', 'data-uri': photoUri }),
@@ -230,7 +234,7 @@ afterEach(cleanup);
 describe('SprayWallLedSetupScreen', () => {
   it('starts each new step at the top without resetting scroll while editing that step', async () => {
     await open();
-    expect(controls.scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
+    await waitFor(() => expect(controls.scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false }));
     controls.scrollTo.mockClear();
     next();
     expect(controls.scrollTo).toHaveBeenCalledOnce();
@@ -245,7 +249,7 @@ describe('SprayWallLedSetupScreen', () => {
     expect(controls.scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
   });
 
-  it('loads the managed wall photo, aligns an 8×8 grid and saves canonical coordinates before the LED placeholder', async () => {
+  it('loads the managed wall photo, aligns an 8×8 grid and saves canonical coordinates before LED placement selection', async () => {
     await open();
     expect(radio('grid').getAttribute('aria-checked')).toBe('true');
     expect(storage.load).toHaveBeenCalledWith('wall-1');
@@ -269,7 +273,7 @@ describe('SprayWallLedSetupScreen', () => {
     expectHoles(64);
     expect(storage.save).not.toHaveBeenCalled();
     next();
-    await screen.findByText('sprayLedSetup.ledPending');
+    await screen.findByText('sprayLedSetup.ledHint');
     expect(storage.save).toHaveBeenCalledWith(
       'wall-1',
       expect.objectContaining({ photoKey: photoKey(), pattern: 'grid', rows: 8, columns: 8 }),
@@ -280,9 +284,11 @@ describe('SprayWallLedSetupScreen', () => {
     back();
     expectHoles(64);
     next();
-    await screen.findByText('sprayLedSetup.ledPending');
+    await screen.findByText('sprayLedSetup.ledHint');
+    expect(controls.header?.trailing.disabled).toBe(true);
+    fireEvent.click(radio('ledCenter'));
     next();
-    expect(controls.back).toHaveBeenCalledOnce();
+    await waitFor(() => expect(controls.back).toHaveBeenCalledOnce());
     const leave = vi.fn();
     act(() => controls.leave?.(leave));
     expect(leave).toHaveBeenCalledOnce();
@@ -391,10 +397,10 @@ describe('SprayWallLedSetupScreen', () => {
     next();
     await screen.findByText('sprayLedSetup.saveFailed');
     expectHoles(64);
-    expect(screen.queryByText('sprayLedSetup.ledPending')).toBeNull();
+    expect(screen.queryByText('sprayLedSetup.ledHint')).toBeNull();
     expect(controls.header?.trailing.disabled).toBe(false);
     next();
-    await screen.findByText('sprayLedSetup.ledPending');
+    await screen.findByText('sprayLedSetup.ledHint');
     expect(storage.save).toHaveBeenCalledTimes(2);
   });
 
@@ -405,6 +411,95 @@ describe('SprayWallLedSetupScreen', () => {
     next();
     expectHoles(1);
     expect(controls.editor?.holes).toEqual(savedLayout().holes);
+  });
+
+  it.each(['grid', 'offset', 'custom'] as const)(
+    'offers all three LED placements for %s and restores the saved choice',
+    async (pattern) => {
+      storage.load.mockResolvedValue({ ...savedLayout(), pattern, ledPlacement: 'sides' });
+      await open();
+      next();
+      if (pattern === 'offset') next();
+      if (pattern !== 'custom') next();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(radio('ledCenter')).toBeTruthy();
+      expect(radio('ledBelow')).toBeTruthy();
+      expect(radio('ledSides').getAttribute('aria-checked')).toBe('true');
+      fireEvent.click(radio('ledBelow'));
+      back();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(radio('ledBelow').getAttribute('aria-checked')).toBe('true');
+      next();
+      await waitFor(() => expect(controls.back).toHaveBeenCalledOnce());
+      expect(storage.save).toHaveBeenLastCalledWith(
+        'wall-1',
+        expect.objectContaining({ pattern, ledPlacement: 'below' }),
+      );
+    },
+  );
+
+  it('keeps the LED choice on write failure and prevents changes or duplicate saves while retrying', async () => {
+    storage.load.mockResolvedValue(savedLayout());
+    await open();
+    next();
+    next();
+    next();
+    await screen.findByText('sprayLedSetup.ledHint');
+    next();
+    expect(controls.back).not.toHaveBeenCalled();
+    expect(storage.save).toHaveBeenCalledTimes(1);
+    fireEvent.click(radio('ledSides'));
+    storage.save.mockRejectedValueOnce(new Error('Disk full'));
+    next();
+    await screen.findByText('sprayLedSetup.saveFailed');
+    expect(radio('ledSides').getAttribute('aria-checked')).toBe('true');
+    expect(controls.back).not.toHaveBeenCalled();
+    let finishSave: (() => void) | undefined;
+    storage.save.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    const leaveAfterSave = vi.fn();
+    controls.back.mockImplementationOnce(() => controls.leave?.(leaveAfterSave));
+    next();
+    expect(controls.header?.trailing.disabled).toBe(true);
+    expect((radio('ledBelow') as HTMLButtonElement).disabled).toBe(true);
+    next();
+    back();
+    fireEvent.click(radio('ledBelow'));
+    expect(storage.save).toHaveBeenCalledTimes(3);
+    expect(storage.save).toHaveBeenLastCalledWith('wall-1', expect.objectContaining({ ledPlacement: 'sides' }));
+    expect(radio('ledSides').getAttribute('aria-checked')).toBe('true');
+    await act(async () => finishSave?.());
+    expect(controls.back).toHaveBeenCalledOnce();
+    expect(leaveAfterSave).toHaveBeenCalledOnce();
+  });
+
+  it('retains an unsaved LED choice across wall pattern changes and guards leaving', async () => {
+    storage.load.mockResolvedValue(savedLayout());
+    await open();
+    next();
+    next();
+    next();
+    await screen.findByText('sprayLedSetup.ledHint');
+    fireEvent.click(radio('ledCenter'));
+    back();
+    back();
+    back();
+    const leave = vi.fn();
+    act(() => controls.leave?.(leave));
+    expect(leave).not.toHaveBeenCalled();
+    expect(controls.alert).toHaveBeenCalledOnce();
+    fireEvent.click(radio('custom'));
+    next();
+    tap({ x: 0.5, y: 0.5 });
+    next();
+    await screen.findByText('sprayLedSetup.ledHint');
+    expect(radio('ledCenter').getAttribute('aria-checked')).toBe('true');
   });
 
   it.each(['version', 'frame', 'transform'] as const)(

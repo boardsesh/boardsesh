@@ -21,9 +21,11 @@ one surface with one WLED controller. It does not illuminate climbs or map holds
 6. Continue to add missing holes or remove unwanted ones by tapping the wall.
    Custom spacing starts here with an empty image. Undo reverses manual edits.
    Returning to the grid preserves manual edits unless its parameters change.
-7. Continue to save the hole positions on this device. The next screen explains
-   that LED pattern selection is not implemented yet. Back reopens the hole
-   editor; Done returns to the wall editor. No hardware commands are sent.
+7. Continue to save the hole positions on this device. Choose LEDs in the hold,
+   to its left and right, or below it. The selected diagram has a purple outline.
+   Back reopens the hole editor; Done saves the choice and returns to the wall
+   editor. Assigning LED numbers to positions is not implemented yet.
+   No hardware commands are sent.
 
 ## Wall image and coordinates
 
@@ -115,7 +117,7 @@ configuration likewise need a native-build check. Browser mixed-content, CORS
 and local-network restrictions can make a reachable controller inaccessible to
 the app; a failed test never prevents retaining the address.
 
-All visible strings are in the `boards.sprayLed` catalogs for English, German,
+All visible strings are in the `boards.sprayLed` and `boards.sprayLedSetup` catalogs for English, German,
 Spanish, French and Italian. Validate the driver, storage and component tests,
 then the mobile typecheck, mobile suite and native bundle check. Verify on a phone
 in light/dark mode and with large text, including offline retention and disabling

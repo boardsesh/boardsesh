@@ -94,5 +94,6 @@ export {
   type TnutGridOptions,
   type TnutLayout,
   type TnutPattern,
+  type SprayLedPlacement,
   type TnutPoint,
 } from './tnut-layout';

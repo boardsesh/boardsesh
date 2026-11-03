@@ -9,6 +9,8 @@ export type TnutCorners = {
   bottomRight: TnutPoint;
 };
 export type TnutPattern = 'grid' | 'offset' | 'custom';
+/** Placement choice only; physical LED indices are assigned separately. */
+export type SprayLedPlacement = 'center' | 'sides' | 'below';
 
 export const MIN_TNUT_DIMENSION = 2;
 export const MAX_TNUT_DIMENSION = 50;
@@ -40,6 +42,8 @@ export type TnutLayout = {
   holes: TnutPoint[];
   /** Stable version identity; never an expiring signed photo URL. */
   photoKey: string;
+  /** Absent for layouts saved before the LED placement step was completed. */
+  ledPlacement?: SprayLedPlacement;
 };
 
 function isRecord(candidate: unknown): candidate is Record<string, unknown> {
@@ -198,6 +202,10 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
   if (
     !isRecord(candidate) ||
     candidate.version !== 1 ||
+    (candidate.ledPlacement !== undefined &&
+      candidate.ledPlacement !== 'center' &&
+      candidate.ledPlacement !== 'sides' &&
+      candidate.ledPlacement !== 'below') ||
     (candidate.pattern !== 'grid' && candidate.pattern !== 'offset' && candidate.pattern !== 'custom') ||
     !isDimension(candidate.rows) ||
     !isDimension(candidate.columns) ||
@@ -226,5 +234,6 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     },
     holes: candidate.holes.map(({ x, y }) => ({ x, y })),
     photoKey: candidate.photoKey,
+    ...(candidate.ledPlacement !== undefined ? { ledPlacement: candidate.ledPlacement } : {}),
   };
 }
