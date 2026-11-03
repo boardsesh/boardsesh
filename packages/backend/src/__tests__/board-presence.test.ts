@@ -4045,6 +4045,7 @@ describe('board-presence durable history (board_climb_events)', () => {
       firstSeenMs: Date.now(),
       lastReport: null,
       currentWriter: null,
+      currentWriterConnectionId: null,
     });
     const accepted = await boardPresenceMutations.reportBoardClimb(
       undefined,
@@ -4062,6 +4063,7 @@ describe('board-presence durable history (board_climb_events)', () => {
       firstSeenMs: null,
       lastReport: null,
       currentWriter: null,
+      currentWriterConnectionId: null,
     });
     await boardPresenceMutations.reportBoardClimb(
       undefined,
@@ -4079,6 +4081,7 @@ describe('board-presence durable history (board_climb_events)', () => {
       firstSeenMs: Date.now() - 120_000,
       lastReport: null,
       currentWriter: null,
+      currentWriterConnectionId: null,
     });
 
     const accepted = await boardPresenceMutations.reportBoardClimb(

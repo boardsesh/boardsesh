@@ -1,6 +1,6 @@
 import { redactBoardEvent } from '../../../services/board-session-privacy';
 import type { ConnectionContext, BoardPresenceEvent } from '@boardsesh/shared-schema';
-import { pubsub } from '../../../pubsub/index';
+import { BOARD_VIEWER_REFRESH_MS, pubsub } from '../../../pubsub/index';
 import { kilterLiveSync } from '../../../services/kilter-live-sync';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
@@ -30,7 +30,7 @@ export const boardPresenceSubscriptions = {
     subscribe: withSubscriptionCleanup(async function* (
       lifetime,
       _: unknown,
-      { boardId, boardUuid }: { boardId: number; boardUuid?: string | null },
+      { boardId, boardUuid, relay }: { boardId: number; boardUuid?: string | null; relay?: boolean | null },
       ctx: ConnectionContext,
     ) {
       // Bumped to the same 60/min budget as the sibling anon-tolerant reads
@@ -62,6 +62,7 @@ export const boardPresenceSubscriptions = {
       }
 
       const boardKey = String(boardId);
+      const relayListener = relay === true;
 
       const asyncIterator = await lifetime.own(
         createEagerAsyncIterator<BoardPresenceEvent>(async (push) => {
@@ -80,7 +81,18 @@ export const boardPresenceSubscriptions = {
             !lifetime.closed && ctx.userId && presenceBoard?.boardType === 'kilter'
               ? kilterLiveSync.watch(boardId, ctx.userId, ctx.connectionId)
               : () => {};
+          // Relay mode (#7220): while this stream is open the connection counts as
+          // a viewer of the board (relayBoardClimb requires one) and, for a relay
+          // subscription, as a holder that can take relayed climbs. Short-TTL keys
+          // refreshed on a timer, deleted on close; a crashed instance's keys lapse.
+          await pubsub.touchBoardViewer(boardKey, ctx.connectionId, relayListener);
+          const viewerRefresh = setInterval(() => {
+            void pubsub.touchBoardViewer(boardKey, ctx.connectionId, relayListener);
+          }, BOARD_VIEWER_REFRESH_MS);
+          viewerRefresh.unref?.();
           return () => {
+            clearInterval(viewerRefresh);
+            void pubsub.clearBoardViewer(boardKey, ctx.connectionId, relayListener);
             stopWatching();
             unsubscribe();
           };
@@ -93,6 +105,17 @@ export const boardPresenceSubscriptions = {
       // page — no error naming a wall the caller may no longer see.
       const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId, boardUuid, db);
       for await (const event of asyncIterator) {
+        // Relay mode (#7220), a privacy boundary: a relay request goes only to a
+        // relay subscription on the connection holding the board. Every other
+        // subscriber (crew, the same account's other phone, kiosks, anonymous
+        // viewers, apps without relay) never receives it. Checked before any
+        // other work so a dropped request costs nothing.
+        if (
+          event.__typename === 'BoardClimbRelayRequested' &&
+          (!relayListener || event.holderConnectionId !== ctx.connectionId)
+        ) {
+          continue;
+        }
         await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
         if (gate && !(await gate())) return;
         yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardId, boardUuid) };

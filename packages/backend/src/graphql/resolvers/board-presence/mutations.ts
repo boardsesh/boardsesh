@@ -6,8 +6,9 @@ import type {
   ClimbQueueItemInput,
   ResolvedBoard,
   BoardPresenceClimb,
+  RelayBoardClimbResult,
 } from '@boardsesh/shared-schema';
-import { nextDetectedMoonboardLinkMode, normaliseSetIds } from '@boardsesh/board-config';
+import { nextDetectedMoonboardLinkMode, normaliseSetIds, resolveMoonboardLinkMode } from '@boardsesh/board-config';
 import { getGradeColor } from '@boardsesh/board-constants';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -18,8 +19,12 @@ import {
   BoardPresenceAngleSchema,
   BoardPresenceConfigInputSchema,
   MoonboardLinkModeSchema,
+  RelayRequestIdSchema,
   ReportBoardClimbInputSchema,
 } from '../../../validation/schemas';
+import { RateLimitError } from '../../../utils/rate-limiter';
+import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
+import { canReadClimbContent, redactBoardHolder } from '../../../services/board-session-privacy';
 import { generateUniqueSlug } from '../social/boards';
 import { assertBoardCapNotReached } from '../social/board-limits';
 import { assertKnownBoardConfig } from './board-catalog';
@@ -52,6 +57,7 @@ import {
   rememberBoardForSerial,
   reserveBoardPresenceSeq,
   requireActiveBoardWithVisibilityById,
+  resolveBoardHolderForEmitter,
   resolveSharedBoardForConfig,
   serialAlreadyBoundError,
   throwIfDuplicateBoardSerial,
@@ -587,6 +593,131 @@ async function chooseAndRememberActiveBoardForSerial(
   });
 }
 
+/**
+ * The catalog row (name, frames, setter, grade at `angle`) for a climb on this
+ * board's own layout, or undefined when the board's catalog has no such climb.
+ * Shared by `reportBoardClimb` and `relayBoardClimb` so both read display
+ * fields from the catalog, never from the client.
+ */
+async function findBoardCatalogClimb(
+  board: { boardType: string; layoutId: number | string },
+  climbUuid: string,
+  angle: number,
+) {
+  const [catalogClimb] = await db
+    .select({
+      uuid: dbSchema.boardClimbs.uuid,
+      name: dbSchema.boardClimbs.name,
+      frames: dbSchema.boardClimbs.frames,
+      setterUsername: dbSchema.boardClimbs.setterUsername,
+      angle: dbSchema.boardClimbs.angle,
+      grade: dbSchema.boardDifficultyGrades.boulderName,
+    })
+    .from(dbSchema.boardClimbs)
+    .leftJoin(
+      dbSchema.boardClimbStats,
+      and(
+        eq(dbSchema.boardClimbStats.boardType, dbSchema.boardClimbs.boardType),
+        eq(dbSchema.boardClimbStats.climbUuid, dbSchema.boardClimbs.uuid),
+        eq(dbSchema.boardClimbStats.angle, angle),
+      ),
+    )
+    .leftJoin(
+      dbSchema.boardDifficultyGrades,
+      and(
+        eq(dbSchema.boardDifficultyGrades.boardType, dbSchema.boardClimbStats.boardType),
+        eq(dbSchema.boardDifficultyGrades.difficulty, sql`ROUND(${dbSchema.boardClimbStats.displayDifficulty})`),
+      ),
+    )
+    .where(
+      and(
+        eq(dbSchema.boardClimbs.uuid, climbUuid),
+        eq(dbSchema.boardClimbs.boardType, board.boardType),
+        eq(dbSchema.boardClimbs.layoutId, Number(board.layoutId)),
+      ),
+    )
+    .limit(1);
+  return catalogClimb;
+}
+
+/**
+ * A logged-in emitter's display identity (profile first, auth account second).
+ * Anonymous emitters have no profile, so the attribution stays null.
+ */
+async function findEmitterIdentity(
+  userId: string | null | undefined,
+): Promise<{ displayName: string | null; avatarUrl: string | null }> {
+  if (!userId) return { displayName: null, avatarUrl: null };
+  const [account] = await db
+    .select({
+      name: dbSchema.users.name,
+      image: dbSchema.users.image,
+      displayName: dbSchema.userProfiles.displayName,
+      avatarUrl: dbSchema.userProfiles.avatarUrl,
+    })
+    .from(dbSchema.users)
+    .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+    .where(eq(dbSchema.users.id, userId))
+    .limit(1);
+  return {
+    displayName: account?.displayName ?? account?.name ?? null,
+    avatarUrl: account?.avatarUrl ?? account?.image ?? null,
+  };
+}
+
+/**
+ * Relay budgets (#7220), on top of the caller's own `applyRateLimit` bucket:
+ * 20 a minute per caller and board (an anonymous caller is keyed on its client
+ * IP, like `applyRateLimit`, so reconnecting doesn't reset it), and 60 a minute
+ * per board across every relayer.
+ */
+const RELAY_PER_CALLER_MAX = 20;
+const RELAY_PER_BOARD_MAX = 60;
+const RELAY_WINDOW_MS = 60_000;
+
+function relayCallerIdentity(ctx: ConnectionContext): string {
+  if (ctx.isAuthenticated && ctx.userId) return ctx.userId;
+  if (ctx.clientIp) return `ip:${ctx.clientIp}`;
+  return `conn:${ctx.connectionId}`;
+}
+
+async function applyRelayRateLimits(ctx: ConnectionContext, boardId: number): Promise<void> {
+  try {
+    await checkRateLimitRedis(
+      `relay:${relayCallerIdentity(ctx)}:board:${boardId}`,
+      'relayBoardClimb',
+      RELAY_PER_CALLER_MAX,
+      RELAY_WINDOW_MS,
+    );
+    await checkRateLimitRedis(`relay-board:${boardId}`, 'relayBoardClimb', RELAY_PER_BOARD_MAX, RELAY_WINDOW_MS);
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new GraphQLError(error.message, {
+        extensions: { code: 'RATE_LIMITED', operation: 'relayBoardClimb', retryAfterSeconds: error.retryAfterSeconds },
+      });
+    }
+    throw error;
+  }
+}
+
+/**
+ * The angles a climb may be lit at (#7220): its catalog angle plus every angle
+ * the catalog has stats for. Empty means the catalog doesn't say, and any angle goes.
+ */
+async function catalogClimbAngles(
+  boardType: string,
+  climbUuid: string,
+  climbAngle: number | null,
+): Promise<Set<number>> {
+  const statRows = await db
+    .select({ angle: dbSchema.boardClimbStats.angle })
+    .from(dbSchema.boardClimbStats)
+    .where(and(eq(dbSchema.boardClimbStats.boardType, boardType), eq(dbSchema.boardClimbStats.climbUuid, climbUuid)));
+  const angles = new Set(statRows.map((row) => Number(row.angle)));
+  if (climbAngle !== null) angles.add(Number(climbAngle));
+  return angles;
+}
+
 export const boardPresenceMutations = {
   /**
    * Legacy serial resolver, kept for backward-compat with already-shipped
@@ -818,7 +949,12 @@ export const boardPresenceMutations = {
    */
   reportBoardClimb: async (
     _: unknown,
-    { boardId, climb, angle }: { boardId: number; climb: ClimbQueueItemInput; angle?: number | null },
+    {
+      boardId,
+      climb,
+      angle,
+      relayRequestId,
+    }: { boardId: number; climb: ClimbQueueItemInput; angle?: number | null; relayRequestId?: string | null },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     // Anonymous callers are now bucketed per client IP rather than per
@@ -857,6 +993,16 @@ export const boardPresenceMutations = {
 
     const validatedClimb = validateInput(ReportBoardClimbInputSchema, climb, 'climb');
     const validatedAngle = validateInput(BoardPresenceAngleSchema, angle, 'angle');
+    const validatedRelayRequestId =
+      relayRequestId == null ? null : validateInput(RelayRequestIdSchema, relayRequestId, 'relayRequestId');
+    // Relay mode (#7220): an id is honoured only when it names a live request
+    // that relayBoardClimb sent to THIS connection. Claiming consumes it, so it
+    // echoes once. Anything else is ignored and the report is an ordinary one.
+    const honouredRelayRequestId =
+      validatedRelayRequestId !== null &&
+      (await pubsub.claimBoardRelayRequest(String(boardId), validatedRelayRequestId, ctx.connectionId))
+        ? validatedRelayRequestId
+        : null;
     // The explicit `angle` arg is int-validated, but the `climb.angle` / board
     // fallbacks aren't — round so a fractional angle can't break the `Int` event
     // serialization, the durable insert, or the grade join (defensive; real
@@ -894,62 +1040,26 @@ export const boardPresenceMutations = {
       effectiveAngle,
       mirrored: reportedMirrored === true,
     });
-    if (gate.lastReport === dedupMarker && gate.currentWriter === emitterId) {
+    // A relayed light (#7220) carries a relayRequestId the relaying phone waits
+    // to see echoed on BoardClimbSet. When the holder already has that exact
+    // climb lit, the light would otherwise dedup into silence and the relayer
+    // would never get its confirmation, so an honoured relayed report always
+    // falls through and publishes.
+    if (honouredRelayRequestId === null && gate.lastReport === dedupMarker && gate.currentWriter === emitterId) {
       roomManager.noteBoardWriter(ctx.connectionId, boardId, emitterId);
+      // The holder is a connection (#7220). The same account re-sending from
+      // another phone keeps the writer but moves the link: re-point writer-conn.
+      if (gate.currentWriterConnectionId !== ctx.connectionId) {
+        await pubsub.refreshBoardWriterConnection(String(boardId), emitterId, ctx.connectionId);
+      }
       return true;
     }
 
-    const [catalogClimbRows, sender] = await Promise.all([
-      db
-        .select({
-          uuid: dbSchema.boardClimbs.uuid,
-          name: dbSchema.boardClimbs.name,
-          frames: dbSchema.boardClimbs.frames,
-          setterUsername: dbSchema.boardClimbs.setterUsername,
-          grade: dbSchema.boardDifficultyGrades.boulderName,
-        })
-        .from(dbSchema.boardClimbs)
-        .leftJoin(
-          dbSchema.boardClimbStats,
-          and(
-            eq(dbSchema.boardClimbStats.boardType, dbSchema.boardClimbs.boardType),
-            eq(dbSchema.boardClimbStats.climbUuid, dbSchema.boardClimbs.uuid),
-            eq(dbSchema.boardClimbStats.angle, effectiveAngle),
-          ),
-        )
-        .leftJoin(
-          dbSchema.boardDifficultyGrades,
-          and(
-            eq(dbSchema.boardDifficultyGrades.boardType, dbSchema.boardClimbStats.boardType),
-            eq(dbSchema.boardDifficultyGrades.difficulty, sql`ROUND(${dbSchema.boardClimbStats.displayDifficulty})`),
-          ),
-        )
-        .where(
-          and(
-            eq(dbSchema.boardClimbs.uuid, climbUuid),
-            eq(dbSchema.boardClimbs.boardType, board.boardType),
-            eq(dbSchema.boardClimbs.layoutId, Number(board.layoutId)),
-          ),
-        )
-        .limit(1),
-      // Anonymous emitters have no profile — leave the attribution null.
-      ctx.userId
-        ? db
-            .select({
-              name: dbSchema.users.name,
-              image: dbSchema.users.image,
-              displayName: dbSchema.userProfiles.displayName,
-              avatarUrl: dbSchema.userProfiles.avatarUrl,
-            })
-            .from(dbSchema.users)
-            .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-            .where(eq(dbSchema.users.id, ctx.userId))
-            .limit(1)
-            .then((rows) => rows[0])
-        : Promise.resolve(undefined),
+    const [catalogClimb, sender] = await Promise.all([
+      findBoardCatalogClimb(board, climbUuid, effectiveAngle),
+      findEmitterIdentity(ctx.userId),
     ]);
 
-    const catalogClimb = catalogClimbRows[0];
     if (!catalogClimb) {
       throw new GraphQLError('Unknown climb for this board');
     }
@@ -1018,8 +1128,8 @@ export const boardPresenceMutations = {
       angle: effectiveAngle,
       mirrored: reportedMirrored,
       setter: catalogClimb.setterUsername ?? null,
-      sentByDisplayName: sender?.displayName ?? sender?.name ?? null,
-      sentByAvatarUrl: sender?.avatarUrl ?? sender?.image ?? null,
+      sentByDisplayName: sender.displayName,
+      sentByAvatarUrl: sender.avatarUrl,
       sentByUserId: ctx.userId ?? null,
       sentAt,
       seq,
@@ -1046,6 +1156,7 @@ export const boardPresenceMutations = {
       effectiveAngle,
       mirrored: reportedMirrored === true,
       sessionId: reportingSessionId,
+      holderConnectionId: ctx.connectionId,
     });
 
     // This send just bound a NEW session to the wall (first report, or a
@@ -1077,6 +1188,7 @@ export const boardPresenceMutations = {
     pubsub.publishBoardPresenceEvent(String(boardId), {
       __typename: 'BoardClimbSet',
       climb: presenceClimb,
+      relayRequestId: honouredRelayRequestId,
     });
 
     // This emitter is now the board's connection holder. Only broadcast a
@@ -1120,6 +1232,165 @@ export const boardPresenceMutations = {
     }
 
     return true;
+  },
+
+  /**
+   * Relay mode (#7220). An original MoonBoard controller accepts one phone and
+   * stops advertising while it is connected, so every other climber at the wall
+   * lights climbs through the holder's phone. This asks the holder to light
+   * `climb`: the event reaches ONLY a `relay: true` subscription on the holder's
+   * connection (see `boardNowPlaying`), and the holder answers with
+   * `reportBoardClimb(relayRequestId:)`, whose `BoardClimbSet` echo is the
+   * caller's confirmation.
+   *
+   * The holder is a CONNECTION (`board:{id}:writer-conn`), not an account, so a
+   * second phone on the holder's account is an ordinary relayer.
+   *
+   * Gates, in order: rate limits (the caller's bucket, then per caller and
+   * board, then per board); the presence stamp AND an open `boardNowPlaying` on
+   * this connection; input validation; a MoonBoard in relay mode that is not a
+   * shared per-config feed (else NOT_RELAY_BOARD); a holder (NO_HOLDER) on
+   * another connection (SELF_HOLDER) with a live relay subscription
+   * (HOLDER_UNREACHABLE) that accepts relays (HOLDER_OPTED_OUT); a climb in
+   * this board's catalog at that angle that the holder may read
+   * (CLIMB_UNAVAILABLE).
+   */
+  relayBoardClimb: async (
+    _: unknown,
+    {
+      boardId,
+      climb,
+      angle,
+      relayRequestId,
+    }: {
+      boardId: number;
+      climb: ClimbQueueItemInput;
+      angle?: number | null;
+      mirrored?: boolean | null;
+      relayRequestId: string;
+    },
+    ctx: ConnectionContext,
+  ): Promise<RelayBoardClimbResult> => {
+    // Same anon-per-IP headroom as reportBoardClimb (issue #2863).
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 60 : 240, 'relayBoardClimb');
+    assertValidBoardId(boardId);
+    await applyRelayRateLimits(ctx, boardId);
+    const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
+    const boardKey = String(boardId);
+
+    const [board, isMember, isViewer] = await Promise.all([
+      db
+        .select({
+          boardType: dbSchema.userBoards.boardType,
+          layoutId: dbSchema.userBoards.layoutId,
+          angle: dbSchema.userBoards.angle,
+          uuid: dbSchema.userBoards.uuid,
+          ownerId: dbSchema.userBoards.ownerId,
+          slug: dbSchema.userBoards.slug,
+          moonboardLinkMode: dbSchema.userBoards.moonboardLinkMode,
+          moonboardLinkDetected: dbSchema.userBoards.moonboardLinkDetected,
+        })
+        .from(dbSchema.userBoards)
+        .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
+        .limit(1)
+        .then((rows) => rows[0]),
+      pubsub.hasBoardMembership(boardKey, emitterId),
+      pubsub.isBoardViewer(boardKey, ctx.connectionId),
+    ]);
+    if (!board) throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    // Both proofs: the stamp (selected or connected to this board) and a live
+    // feed on this very connection, so a script can't relay onto a board id
+    // without watching it.
+    if (!isMember || !isViewer) throw new GraphQLError('Not connected to this board');
+    // Same current-policy check reportBoardClimb runs on a stamped membership.
+    await assertSprayBoardIsReadable(board, ctx.userId, board.uuid, db);
+
+    const validatedClimb = validateInput(ReportBoardClimbInputSchema, climb, 'climb');
+    const validatedAngle = validateInput(BoardPresenceAngleSchema, angle, 'angle');
+    const validatedRelayRequestId = validateInput(RelayRequestIdSchema, relayRequestId, 'relayRequestId');
+
+    if (isSharedConfigFeedBoard(board) || resolveMoonboardLinkMode(board)?.mode !== 'relay') {
+      return { status: 'NOT_RELAY_BOARD', holder: null };
+    }
+
+    // One read decides every holder gate and names the holder.
+    const relayGate = await pubsub.getBoardRelayGate(boardKey);
+    if (relayGate.holderEmitterId === null) return { status: 'NO_HOLDER', holder: null };
+    if (relayGate.holderConnectionId === ctx.connectionId) return { status: 'SELF_HOLDER', holder: null };
+    const holder = await redactBoardHolder(
+      await resolveBoardHolderForEmitter(boardId, relayGate.holderEmitterId),
+      ctx.userId,
+      boardId,
+    );
+    if (relayGate.holderConnectionId === null || !relayGate.holderListening) {
+      return { status: 'HOLDER_UNREACHABLE', holder };
+    }
+    if (relayGate.relayOff) return { status: 'HOLDER_OPTED_OUT', holder };
+
+    const effectiveAngle = Math.round(validatedAngle ?? validatedClimb.climb.angle ?? Number(board.angle));
+    const climbUuid = validatedClimb.climb.uuid;
+    const holderUserId = relayGate.holderEmitterId.startsWith('conn:') ? null : relayGate.holderEmitterId;
+    const [catalogClimb, relayer] = await Promise.all([
+      findBoardCatalogClimb(board, climbUuid, effectiveAngle),
+      findEmitterIdentity(ctx.userId),
+    ]);
+    if (!catalogClimb) return { status: 'CLIMB_UNAVAILABLE', holder };
+    // A MoonBoard problem is set for its catalog angle(s); lighting it at any
+    // other angle shows a different climb.
+    const allowedAngles = await catalogClimbAngles(board.boardType, climbUuid, catalogClimb.angle);
+    if (allowedAngles.size > 0 && !allowedAngles.has(effectiveAngle)) return { status: 'CLIMB_UNAVAILABLE', holder };
+    // The holder's phone must be allowed to see what it is asked to light (a
+    // draft or unlisted climb of the relayer's, say). Same rule as redaction.
+    if (!(await canReadClimbContent(climbUuid, holderUserId, board.uuid))) {
+      return { status: 'CLIMB_UNAVAILABLE', holder };
+    }
+
+    // Only the holder connection this request goes to can answer it.
+    await pubsub.rememberBoardRelayRequest(boardKey, validatedRelayRequestId, relayGate.holderConnectionId);
+    // Identity here is the raw server-derived one; `redactBoardEvent` applies
+    // the holder-as-viewer privacy rule on delivery, and strips the routing key.
+    pubsub.publishBoardPresenceEvent(boardKey, {
+      __typename: 'BoardClimbRelayRequested',
+      relayRequestId: validatedRelayRequestId,
+      climb: {
+        climbUuid,
+        queueItemUuid: validatedClimb.uuid,
+        name: catalogClimb.name ?? null,
+        grade: catalogClimb.grade ?? null,
+        gradeColor: getGradeColor(catalogClimb.grade) ?? null,
+        frames: catalogClimb.frames ?? null,
+        setter: catalogClimb.setterUsername ?? null,
+      },
+      angle: effectiveAngle,
+      // Relay boards are MoonBoards, and a MoonBoard is never lit mirrored.
+      mirrored: false,
+      relayer: {
+        userId: ctx.userId ?? null,
+        displayName: relayer.displayName,
+        avatarUrl: relayer.avatarUrl,
+        anonymous: !ctx.userId,
+      },
+      requestedAt: new Date().toISOString(),
+      holderConnectionId: relayGate.holderConnectionId,
+    });
+    return { status: 'SENT', holder };
+  },
+
+  /**
+   * Relay mode (#7220): the holding connection turns relayed climbs on or off.
+   * Compare-and-set against `writer-conn`, so only that connection changes it.
+   * The opt-out is stored against the connection with writer-conn's lifetime:
+   * it ends when the board is let go (or the link drops) and never carries to
+   * the next holder, including another phone on the same account.
+   */
+  setBoardRelayAccepting: async (
+    _: unknown,
+    { boardId, accepting }: { boardId: number; accepting: boolean },
+    ctx: ConnectionContext,
+  ): Promise<boolean> => {
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 30 : 120, 'setBoardRelayAccepting');
+    assertValidBoardId(boardId);
+    return pubsub.setBoardRelayAccepting(String(boardId), ctx.connectionId, accepting === true);
   },
 
   /**

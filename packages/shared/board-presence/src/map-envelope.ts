@@ -36,6 +36,11 @@ export function mapBoardPresenceEnvelopeToAction(event: BoardPresenceEvent): Boa
         type: 'APPLY_CONNECTION_CHANGED',
         payload: { holder: event.holder, seq: event.seq },
       };
+    case 'BoardClimbRelayRequested':
+      // Relay mode (#7220): a request addressed to the holder's phone, not a
+      // change to the wall. It never touches presence state; the hook hands it
+      // to its `onRelayRequested` callback instead.
+      return null;
     default:
       return null;
   }

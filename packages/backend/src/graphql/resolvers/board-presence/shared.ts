@@ -1063,7 +1063,17 @@ export function isSharedConfigFeedBoard(board: PresenceBoardIdentity): boolean {
  * holder's userId; clients render a "?".
  */
 export async function resolveBoardHolder(boardId: number): Promise<BoardConnectionHolder | null> {
-  const emitterId = await pubsub.getBoardWriter(String(boardId));
+  return resolveBoardHolderForEmitter(boardId, await pubsub.getBoardWriter(String(boardId)));
+}
+
+/**
+ * `resolveBoardHolder` for a writer emitter id the caller already read, so one
+ * read of the writer slot decides both the gate and the named holder (#7220).
+ */
+export async function resolveBoardHolderForEmitter(
+  boardId: number,
+  emitterId: string | null,
+): Promise<BoardConnectionHolder | null> {
   if (emitterId === null) return null;
   const userId = emitterId.startsWith('conn:') ? null : emitterId;
   const recent = await pubsub.getRecentBoardClimbs(String(boardId));

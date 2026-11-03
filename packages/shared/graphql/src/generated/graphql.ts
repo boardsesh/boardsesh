@@ -713,11 +713,44 @@ export type BoardClimbRecentSender = {
   userId?: Maybe<Scalars['ID']['output']>;
 };
 
+/**
+ * Event (#7220, Relay mode for single-phone MoonBoard controllers): another
+ * climber asked the phone holding the board to light a climb. Delivered ONLY to
+ * a `relay: true` subscription on the connection that holds the board; every
+ * other subscriber never receives it. Carries
+ * no sequence number and changes no presence state: the holder lights the climb
+ * and confirms it with `reportBoardClimb(relayRequestId:)`.
+ */
+export type BoardClimbRelayRequested = {
+  __typename?: 'BoardClimbRelayRequested';
+  /** Board angle in degrees the climb should be lit at */
+  angle: Scalars['Int']['output'];
+  /** The climb to light */
+  climb: BoardRelayClimb;
+  /** Whether to light the climb mirrored. Always false on a MoonBoard. */
+  mirrored: Scalars['Boolean']['output'];
+  /**
+   * Client-minted id the holder echoes back on reportBoardClimb. Always set; typed
+   * nullable only so one document can select it beside BoardClimbSet.relayRequestId.
+   */
+  relayRequestId?: Maybe<Scalars['ID']['output']>;
+  /** Who asked */
+  relayer: BoardRelayRequester;
+  /** ISO 8601 timestamp when the server accepted the request */
+  requestedAt: Scalars['String']['output'];
+};
+
 /** Event: a climb was set (lit) on the wall. */
 export type BoardClimbSet = {
   __typename?: 'BoardClimbSet';
   /** The climb now on the wall */
   climb: BoardPresenceClimb;
+  /**
+   * Relay mode (#7220): the `relayRequestId` the holder echoed on
+   * `reportBoardClimb` when this light answered a `BoardClimbRelayRequested`.
+   * The relaying phone matches it to confirm its climb landed. Null otherwise.
+   */
+  relayRequestId?: Maybe<Scalars['ID']['output']>;
 };
 
 /**
@@ -910,6 +943,7 @@ export type BoardPresenceClimb = {
 
 export type BoardPresenceEvent =
   | BoardClimbCleared
+  | BoardClimbRelayRequested
   | BoardClimbSet
   | BoardConnectionChanged
   | BoardHistoryUpdated
@@ -1018,6 +1052,47 @@ export type BoardQueuePreviewItem = {
   queueItemUuid: Scalars['ID']['output'];
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * The climb a relaying phone asked the holder to light (#7220). Catalog fields
+ * are read server-side from the board's own catalog, never taken from the
+ * relaying client, so a relay can only light a real climb on this layout.
+ */
+export type BoardRelayClimb = {
+  __typename?: 'BoardRelayClimb';
+  /** UUID of the climb to light */
+  climbUuid: Scalars['String']['output'];
+  /** Frames string the holder writes to the wall */
+  frames?: Maybe<Scalars['String']['output']>;
+  /** Grade name at the requested angle */
+  grade?: Maybe<Scalars['String']['output']>;
+  /** Grade colour as a hex string */
+  gradeColor?: Maybe<Scalars['String']['output']>;
+  /** Climb name */
+  name?: Maybe<Scalars['String']['output']>;
+  /** Queue item UUID on the relaying phone, if any */
+  queueItemUuid?: Maybe<Scalars['String']['output']>;
+  /** Catalog route setter display name */
+  setter?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * Who asked for a relayed climb. Named under the same rule as the board's
+ * connection holder: their own account privacy, and anonymous on a board they
+ * don't own when they chose to be. `anonymous` is true whenever no identity
+ * is shown.
+ */
+export type BoardRelayRequester = {
+  __typename?: 'BoardRelayRequester';
+  /** True when the requester is shown without a name. */
+  anonymous: Scalars['Boolean']['output'];
+  /** Avatar URL; null when anonymous. */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Display name; null when anonymous. */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** Boardsesh user id; null when anonymous. */
+  userId?: Maybe<Scalars['ID']['output']>;
 };
 
 /**
@@ -4613,6 +4688,19 @@ export type Mutation = {
    * registration lasts until the credential expires (24 hours at most).
    */
   registerNotificationDevice: Scalars['Boolean']['output'];
+  /**
+   * Relay mode (#7220): ask the phone holding a single-phone MoonBoard to light
+   * `climb`. The request reaches only the holder's `boardNowPlaying`
+   * subscription as `BoardClimbRelayRequested`; the holder lights it and calls
+   * `reportBoardClimb` with the same `relayRequestId`, which the caller sees
+   * echoed on `BoardClimbSet`. Requires board membership AND an open
+   * `boardNowPlaying` subscription on this connection, and the board must be a
+   * MoonBoard whose effective link mode is relay and that is not a shared
+   * per-config feed. The holder is a connection: another phone on the caller's
+   * account gets SENT. `mirrored` is ignored (a MoonBoard is never mirrored).
+   * Auth-optional. Rate limited per caller and board, and per board.
+   */
+  relayBoardClimb: RelayBoardClimbResult;
   /** Remove a climb from a playlist. */
   removeClimbFromPlaylist: Scalars['Boolean']['output'];
   /**
@@ -4656,6 +4744,10 @@ export type Mutation = {
    * avatar. Also makes the caller the board's current connection holder (the
    * "who's connected" indicator). Fire-and-forget after the BLE write succeeded —
    * no confirm/timeout handshake. `angle` is the wall angle (null = unspecified).
+   * `relayRequestId` (Relay mode, #7220) is set by a holder lighting a relayed
+   * climb. It is honoured (echoed on the published `BoardClimbSet`, and the
+   * same-climb dedup skipped) only when it names a live request sent to this
+   * connection; otherwise it is ignored.
    */
   reportBoardClimb: Scalars['Boolean']['output'];
   /**
@@ -4821,6 +4913,12 @@ export type Mutation = {
    * whether or not account privacy controls are enabled.
    */
   setAnonymousOnForeignBoards: PrivacySettings;
+  /**
+   * Relay mode (#7220): the holding connection turns relayed climbs on or off for
+   * the board it holds. Only that connection may set it; the setting ends when
+   * the board is let go or anyone else takes it. Returns whether it was stored.
+   */
+  setBoardRelayAccepting: Scalars['Boolean']['output'];
   setClimbFromLedPositions: ClimbMatchResult;
   /** Set a community setting (admin/leader only). */
   setCommunitySettings: CommunitySetting;
@@ -5464,6 +5562,15 @@ export type MutationRegisterNotificationDeviceArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRelayBoardClimbArgs = {
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  boardId: Scalars['Int']['input'];
+  climb: ClimbQueueItemInput;
+  mirrored?: InputMaybe<Scalars['Boolean']['input']>;
+  relayRequestId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRemoveClimbFromPlaylistArgs = {
   input: RemoveClimbFromPlaylistInput;
 };
@@ -5521,6 +5628,7 @@ export type MutationReportBoardClimbArgs = {
   angle?: InputMaybe<Scalars['Int']['input']>;
   boardId: Scalars['Int']['input'];
   climb: ClimbQueueItemInput;
+  relayRequestId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root mutation type for all write operations. */
@@ -5690,6 +5798,12 @@ export type MutationSetAnalyticsConsentArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSetAnonymousOnForeignBoardsArgs = {
   enabled: Scalars['Boolean']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetBoardRelayAcceptingArgs = {
+  accepting: Scalars['Boolean']['input'];
+  boardId: Scalars['Int']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -8906,6 +9020,34 @@ export type RegisterNotificationDeviceInput = {
   token: Scalars['String']['input'];
 };
 
+export type RelayBoardClimbResult = {
+  __typename?: 'RelayBoardClimbResult';
+  /**
+   * The holder the request went to (or who can't take it), named under the same
+   * privacy rule as `boardConnection`. Null for NO_HOLDER, SELF_HOLDER and
+   * NOT_RELAY_BOARD.
+   */
+  holder?: Maybe<BoardConnectionHolder>;
+  status: RelayBoardClimbStatus;
+};
+
+/** Outcome of `relayBoardClimb` (#7220). */
+export type RelayBoardClimbStatus =
+  /** The climb isn't in this board's catalog at that angle, or the holder can't read it. */
+  | 'CLIMB_UNAVAILABLE'
+  /** The holder turned off relayed climbs. */
+  | 'HOLDER_OPTED_OUT'
+  /** The holder's connection has no relay-capable subscription open (gone, or an app without relay). */
+  | 'HOLDER_UNREACHABLE'
+  /** This board is not in Relay mode (not a MoonBoard, a shared per-config feed, or set to multi). */
+  | 'NOT_RELAY_BOARD'
+  /** Nobody holds the board, so there is no phone to relay through. */
+  | 'NO_HOLDER'
+  /** The caller holds the board; light the climb directly. */
+  | 'SELF_HOLDER'
+  /** The request went to the holder's phone. */
+  | 'SENT';
+
 /** Running identity with backend-verified current automatic canary membership. */
 export type ReleaseContext = {
   __typename?: 'ReleaseContext';
@@ -11589,6 +11731,7 @@ export type Subscription = {
 export type SubscriptionBoardNowPlayingArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  relay?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root subscription type for real-time updates. */

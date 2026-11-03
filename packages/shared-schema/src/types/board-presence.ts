@@ -41,6 +41,8 @@ export type BoardClimbRecentSender = {
 export type BoardClimbSet = {
   __typename: 'BoardClimbSet';
   climb: BoardPresenceClimb;
+  /** Relay mode (#7220): echoed from `reportBoardClimb` when this light answered a relay request. */
+  relayRequestId?: string | null;
 };
 
 export type BoardClimbCleared = {
@@ -79,12 +81,66 @@ export type BoardHistoryUpdated = {
 };
 export type BoardHistoryPage = { entries: BoardPresenceClimb[]; nextCursor: string | null };
 
+/** The climb a relaying phone asked the holder to light (#7220). Catalog fields are server-read. */
+export type BoardRelayClimb = {
+  climbUuid: string;
+  queueItemUuid?: string | null;
+  name?: string | null;
+  grade?: string | null;
+  gradeColor?: string | null;
+  frames?: string | null;
+  setter?: string | null;
+};
+
+/** Who asked for a relayed climb, named under the board-holder privacy rule. */
+export type BoardRelayRequester = {
+  userId?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  anonymous: boolean;
+};
+
+/**
+ * Relay mode (#7220): another climber asked the holder's phone to light a climb.
+ * Delivered only to the holder's subscription. Changes no presence state.
+ */
+export type BoardClimbRelayRequested = {
+  __typename: 'BoardClimbRelayRequested';
+  relayRequestId: string;
+  climb: BoardRelayClimb;
+  angle: number;
+  mirrored: boolean;
+  relayer: BoardRelayRequester;
+  requestedAt: string;
+  /**
+   * Server-only routing key: the connection holding the board. Not in the SDL;
+   * the subscription delivers the event only to a relay subscription on this
+   * connection, and redaction strips it.
+   */
+  holderConnectionId?: string;
+};
+
 export type BoardPresenceEvent =
   | BoardClimbSet
   | BoardClimbCleared
   | BoardStatsUpdated
   | BoardConnectionChanged
-  | BoardHistoryUpdated;
+  | BoardHistoryUpdated
+  | BoardClimbRelayRequested;
+
+export type RelayBoardClimbStatus =
+  | 'SENT'
+  | 'NO_HOLDER'
+  | 'SELF_HOLDER'
+  | 'HOLDER_UNREACHABLE'
+  | 'HOLDER_OPTED_OUT'
+  | 'CLIMB_UNAVAILABLE'
+  | 'NOT_RELAY_BOARD';
+
+export type RelayBoardClimbResult = {
+  status: RelayBoardClimbStatus;
+  holder: BoardConnectionHolder | null;
+};
 
 export type BoardPresenceHardestSend = {
   /** Internal provenance for viewer-specific identity and content projection. */

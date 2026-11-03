@@ -799,6 +799,39 @@ export async function redactBoardEvent(
     case 'BoardConnectionChanged': {
       return { ...event, holder: await redactBoardHolder(event.holder, viewerId, boardId) };
     }
+    case 'BoardClimbRelayRequested': {
+      // Relay mode (#7220). The subscription delivers this only to the holder;
+      // here the relayer is named under the same rule as a board holder, the
+      // climb's content under the same rule as history, and the server-only
+      // routing key never leaves.
+      const { holderConnectionId: _routingKey, ...deliverable } = event;
+      const relayer = await redactBoardHolder(
+        { userId: event.relayer.userId, displayName: event.relayer.displayName, avatarUrl: event.relayer.avatarUrl },
+        viewerId,
+        boardId,
+      );
+      const climbReadable = await canReadClimbContent(event.climb.climbUuid, viewerId, wallUuid);
+      return {
+        ...deliverable,
+        climb: climbReadable
+          ? event.climb
+          : {
+              ...event.climb,
+              name: null,
+              frames: null,
+              setter: null,
+              grade: null,
+              gradeColor: null,
+              queueItemUuid: null,
+            },
+        relayer: {
+          userId: relayer?.userId ?? null,
+          displayName: relayer?.userId ? (relayer.displayName ?? null) : null,
+          avatarUrl: relayer?.userId ? (relayer.avatarUrl ?? null) : null,
+          anonymous: !relayer?.userId,
+        },
+      };
+    }
     default:
       return event;
   }

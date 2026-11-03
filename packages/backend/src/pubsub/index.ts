@@ -16,6 +16,7 @@ import {
   BoardPresenceStore,
   type BoardSeqAllocator,
   type BoardReportGate,
+  type BoardRelayGate,
   type CommitBoardClimbInput,
   type CommitBoardClimbResult,
   type StoredBoardClear,
@@ -27,11 +28,12 @@ import { logger } from '../utils/logger';
 // from the pubsub entry point.
 export type {
   BoardReportGate,
+  BoardRelayGate,
   CommitBoardClimbInput,
   CommitBoardClimbResult,
   StoredBoardClear,
 } from './board-presence-store';
-export { boardReportDedupMarker } from './board-presence-store';
+export { BOARD_VIEWER_REFRESH_MS, boardReportDedupMarker } from './board-presence-store';
 
 type QueueSubscriber = ChannelSubscriber<QueueEvent>;
 type SessionSubscriber = ChannelSubscriber<SessionEvent>;
@@ -650,6 +652,46 @@ class PubSub {
   /** The board's current connection holder emitter id, or null when free. */
   async getBoardWriter(boardId: string): Promise<string | null> {
     return this.boardPresenceStore.getBoardWriter(boardId);
+  }
+
+  /** Relay mode (#7220): the holder, its connection, its opt-out and whether it listens. */
+  async getBoardRelayGate(boardId: string): Promise<BoardRelayGate> {
+    return this.boardPresenceStore.getBoardRelayGate(boardId);
+  }
+
+  /** Relay mode (#7220): the holder connection turns relayed climbs on or off. False when it doesn't hold the board. */
+  async setBoardRelayAccepting(boardId: string, connectionId: string, accepting: boolean): Promise<boolean> {
+    return this.boardPresenceStore.setBoardRelayAccepting(boardId, connectionId, accepting);
+  }
+
+  /** Re-point `writer-conn` at this connection while `emitterId` still holds the board. */
+  async refreshBoardWriterConnection(boardId: string, emitterId: string, connectionId: string): Promise<void> {
+    return this.boardPresenceStore.refreshBoardWriterConnection(boardId, emitterId, connectionId);
+  }
+
+  /** Relay mode (#7220): remember a SENT request for the holder connection it went to. */
+  async rememberBoardRelayRequest(boardId: string, relayRequestId: string, holderConnectionId: string): Promise<void> {
+    return this.boardPresenceStore.rememberBoardRelayRequest(boardId, relayRequestId, holderConnectionId);
+  }
+
+  /** Relay mode (#7220): consume a request only when it was sent to `connectionId`. */
+  async claimBoardRelayRequest(boardId: string, relayRequestId: string, connectionId: string): Promise<boolean> {
+    return this.boardPresenceStore.claimBoardRelayRequest(boardId, relayRequestId, connectionId);
+  }
+
+  /** Relay mode (#7220): mark (or refresh) an open boardNowPlaying subscription on this connection. */
+  async touchBoardViewer(boardId: string, connectionId: string, relayListener: boolean): Promise<void> {
+    return this.boardPresenceStore.touchBoardViewer(boardId, connectionId, relayListener);
+  }
+
+  /** Relay mode (#7220): the subscription closed. */
+  async clearBoardViewer(boardId: string, connectionId: string, relayListener: boolean): Promise<void> {
+    return this.boardPresenceStore.clearBoardViewer(boardId, connectionId, relayListener);
+  }
+
+  /** Relay mode (#7220): whether this connection has a live boardNowPlaying subscription on the board. */
+  async isBoardViewer(boardId: string, connectionId: string): Promise<boolean> {
+    return this.boardPresenceStore.isBoardViewer(boardId, connectionId);
   }
 
   /** The shared board_id this session is on, or null when unknown (written by commitBoardClimb). */

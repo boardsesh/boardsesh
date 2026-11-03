@@ -19,6 +19,24 @@ export type BoardReportGate = {
    * emitter holds it (no re-take, no re-broadcast).
    */
   currentWriter: string | null;
+  /**
+   * The connection holding the board (`board:{id}:writer-conn`, #7220), or null
+   * when unknown. The holder is a connection, not an account: one account on two
+   * phones is two connections, and only one of them has the Bluetooth link.
+   */
+  currentWriterConnectionId: string | null;
+};
+
+/** Relay mode (#7220): everything `relayBoardClimb` needs about the holder, read in one round trip. */
+export type BoardRelayGate = {
+  /** The holder's emitter id (account id or `conn:{id}`), or null when the board is free. */
+  holderEmitterId: string | null;
+  /** The connection holding the board, or null when unknown. */
+  holderConnectionId: string | null;
+  /** Whether that holder connection turned relayed climbs off. */
+  relayOff: boolean;
+  /** Whether that holder connection has a live relay-capable `boardNowPlaying` subscription. */
+  holderListening: boolean;
 };
 
 export type CommitBoardClimbInput = {
@@ -31,6 +49,12 @@ export type CommitBoardClimbInput = {
   mirrored: boolean;
   /** The reporting connection's party-session id, when it's in one. */
   sessionId: string | null;
+  /**
+   * The reporting connection (#7220), stored as `board:{id}:writer-conn` beside
+   * the writer. Missing means unknown, and the key is deleted so a stale
+   * connection never outlives the writer it belonged to.
+   */
+  holderConnectionId?: string | null;
 };
 
 /**
@@ -122,6 +146,13 @@ const BOARD_SEQ_RESEED_THRESHOLD = 50;
 // resolveBoardForConfig) a user may report climbs to that board's feed. Long
 // enough for a climbing session; a reconnect re-stamps it.
 const BOARD_MEMBERSHIP_TTL = 43_200; // 12 hours
+// Relay mode (#7220): how long a `boardNowPlaying` subscription's viewer and
+// relay-listener keys live without a refresh. The subscription refreshes them
+// every BOARD_VIEWER_REFRESH_MS, so a crashed instance's keys lapse within this.
+const BOARD_VIEWER_TTL = 90;
+export const BOARD_VIEWER_REFRESH_MS = 30_000;
+// How long a SENT relay request can be answered by the holder's report.
+const BOARD_RELAY_REQUEST_TTL = 60;
 // Write-side idempotency window for reportBoardClimb: a retry of the exact
 // same (emitter, climb, angle, orientation) within this window is treated as a no-op
 // duplicate rather than a new send (see `getBoardReportGate` / A2 dedup).
@@ -218,6 +249,8 @@ export class BoardPresenceStore {
   private boardSeqReseedPending = new Set<string>();
   // Local-only proof-of-presence: `${boardId}:${userId}` → expiry epoch ms.
   private localBoardMembership = new Map<string, number>();
+  // Relay mode (#7220): Redis-less viewer keys (`touchBoardViewer`), boardId:connectionId → expiry ms.
+  private localBoardViewers = new Map<string, number>();
   // Local-only session↔board binding fallback (single-instance, no Redis) —
   // mirrors the localBoardSeq / localBoardMembership pattern. In Redis mode
   // the authoritative pair is `session:{id}:board` / `board:{id}:session`
@@ -780,24 +813,38 @@ export class BoardPresenceStore {
     const membershipKey = `presence:board:${boardId}:user:${emitterId}`;
     const lastReportKey = `board:${boardId}:lastReport`;
     const writerKey = `board:${boardId}:writer`;
+    const writerConnectionKey = `board:${boardId}:writer-conn`;
 
     if (this.deps.isRedisAvailable()) {
       try {
         const { publisher } = redisClientManager.getClients();
-        const results = await publisher.pipeline().get(membershipKey).get(lastReportKey).get(writerKey).exec();
+        const results = await publisher
+          .pipeline()
+          .get(membershipKey)
+          .get(lastReportKey)
+          .get(writerKey)
+          .get(writerConnectionKey)
+          .exec();
         if (!results) {
           throw new Error('getBoardReportGate pipeline returned null');
         }
-        const [[membershipError, membershipRaw], [lastReportError, lastReportRaw], [writerError, writerRaw]] = results;
+        const [
+          [membershipError, membershipRaw],
+          [lastReportError, lastReportRaw],
+          [writerError, writerRaw],
+          [writerConnectionError, writerConnectionRaw],
+        ] = results;
         if (membershipError) throw membershipError;
         if (lastReportError) throw lastReportError;
         if (writerError) throw writerError;
+        if (writerConnectionError) throw writerConnectionError;
         const raw = membershipRaw as string | null;
         return {
           isMember: raw !== null,
           firstSeenMs: parsePlausibleFirstSeenMs(raw),
           lastReport: (lastReportRaw as string | null) ?? null,
           currentWriter: (writerRaw as string | null) ?? null,
+          currentWriterConnectionId: (writerConnectionRaw as string | null) ?? null,
         };
       } catch (error) {
         if (this.deps.isRedisRequired()) {
@@ -813,6 +860,7 @@ export class BoardPresenceStore {
       firstSeenMs: null,
       lastReport: null,
       currentWriter: null,
+      currentWriterConnectionId: null,
     };
   }
 
@@ -870,6 +918,18 @@ export class BoardPresenceStore {
       const writerCommandIndex = commandLabels.length;
       pipeline.set(writerKey, input.emitterId, 'EX', BOARD_MEMBERSHIP_TTL, 'GET');
       commandLabels.push('writer-set');
+      // Relay mode (#7220): the holder is a connection. Stored with the writer's
+      // TTL; an unknown connection deletes the key rather than leave a stale one.
+      if (input.holderConnectionId) {
+        pipeline.set(`board:${input.boardId}:writer-conn`, input.holderConnectionId, 'EX', BOARD_MEMBERSHIP_TTL);
+      } else {
+        pipeline.del(`board:${input.boardId}:writer-conn`);
+      }
+      commandLabels.push('writer-conn-set');
+      // The opt-out lives as long as writer-conn. It names its connection, so
+      // refreshing it after a hand-off is harmless: it no longer matches.
+      pipeline.expire(`board:${input.boardId}:relay-off`, BOARD_MEMBERSHIP_TTL);
+      commandLabels.push('relay-off-expire');
       // Seq-gated against a stored clear (#7015): when a clear with a higher seq
       // already ran its Lua (which deletes this marker), setting it again would
       // make a re-light of this same climb inside the window read as a retry,
@@ -957,10 +1017,14 @@ export class BoardPresenceStore {
     if (!this.deps.isRedisAvailable()) return false;
     try {
       const { publisher } = redisClientManager.getClients();
+      // The holder's connection and its relay opt-out (#7220) go with the writer.
       const cleared = await publisher.eval(
-        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
-        1,
+        "if redis.call('get', KEYS[1]) == ARGV[1] then redis.call('del', KEYS[2], KEYS[3]); " +
+          "return redis.call('del', KEYS[1]) else return 0 end",
+        3,
         `board:${boardId}:writer`,
+        `board:${boardId}:writer-conn`,
+        `board:${boardId}:relay-off`,
         emitterId,
       );
       return cleared === 1;
@@ -969,6 +1033,217 @@ export class BoardPresenceStore {
       this.deps.logger.error('[PubSub] Failed to clear board writer:', error);
       return false;
     }
+  }
+
+  /**
+   * Relay mode (#7220): the holder, its connection, its opt-out and whether it
+   * is listening, in one round trip. The opt-out and the listener key both name
+   * a connection, so a new holder starts with relay on and must have its own
+   * relay-capable subscription. Redis-only like the writer slot: without Redis
+   * the holder is unknown, so nothing is relayed.
+   */
+  async getBoardRelayGate(boardId: string): Promise<BoardRelayGate> {
+    const unknown: BoardRelayGate = {
+      holderEmitterId: null,
+      holderConnectionId: null,
+      relayOff: false,
+      holderListening: false,
+    };
+    if (!this.deps.isRedisAvailable()) return unknown;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const snapshot: unknown = await publisher.eval(
+        "local writer = redis.call('get', KEYS[1]); " +
+          'if not writer then return {} end; ' +
+          "local conn = redis.call('get', KEYS[2]); " +
+          'if not conn then return {writer} end; ' +
+          "local off = redis.call('get', KEYS[3]); " +
+          "local listening = redis.call('exists', ARGV[1] .. conn); " +
+          "return {writer, conn, off == conn and '1' or '0', tostring(listening)}",
+        3,
+        `board:${boardId}:writer`,
+        `board:${boardId}:writer-conn`,
+        `board:${boardId}:relay-off`,
+        `board:${boardId}:relay-listener:`,
+      );
+      if (!Array.isArray(snapshot) || typeof snapshot[0] !== 'string') return unknown;
+      const [holderEmitterId, holderConnectionId, relayOffFlag, listeningFlag] = snapshot as string[];
+      return {
+        holderEmitterId,
+        holderConnectionId: holderConnectionId ?? null,
+        relayOff: relayOffFlag === '1',
+        holderListening: listeningFlag === '1',
+      };
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to read board relay gate:', error);
+      return unknown;
+    }
+  }
+
+  /**
+   * Relay mode (#7220): the holder connection turns relayed climbs on or off.
+   * Atomic compare-and-set against `writer-conn`, so only the connection holding
+   * the board at that instant can change it. Off is stored against that
+   * connection with writer-conn's remaining lifetime; `commitBoardClimb`
+   * refreshes it with the writer and `clearBoardWriterIf` deletes it with the
+   * writer. Returns whether the caller held the board.
+   */
+  async setBoardRelayAccepting(boardId: string, connectionId: string, accepting: boolean): Promise<boolean> {
+    if (!this.deps.isRedisAvailable()) return false;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const applied = await publisher.eval(
+        "if redis.call('get', KEYS[1]) ~= ARGV[1] then return 0 end; " +
+          "if ARGV[2] == 'on' then redis.call('del', KEYS[2]) return 1 end; " +
+          "local ttl = redis.call('pttl', KEYS[1]); " +
+          "if ttl > 0 then redis.call('set', KEYS[2], ARGV[1], 'PX', ttl) " +
+          "else redis.call('set', KEYS[2], ARGV[1], 'EX', ARGV[3]) end; " +
+          'return 1',
+        2,
+        `board:${boardId}:writer-conn`,
+        `board:${boardId}:relay-off`,
+        connectionId,
+        accepting ? 'on' : 'off',
+        BOARD_MEMBERSHIP_TTL,
+      );
+      return applied === 1;
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to set board relay accepting:', error);
+      return false;
+    }
+  }
+
+  /**
+   * The emitter still holds the board but `writer-conn` names another (or no)
+   * connection: a deduped re-send from this connection re-points it here.
+   * Compare-and-set on the writer, so it never re-points a board someone else took.
+   */
+  async refreshBoardWriterConnection(boardId: string, emitterId: string, connectionId: string): Promise<void> {
+    if (!this.deps.isRedisAvailable()) return;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      await publisher.eval(
+        "if redis.call('get', KEYS[1]) ~= ARGV[1] then return 0 end; " +
+          "local ttl = redis.call('pttl', KEYS[1]); " +
+          "if ttl > 0 then redis.call('set', KEYS[2], ARGV[2], 'PX', ttl) end; " +
+          'return 1',
+        2,
+        `board:${boardId}:writer`,
+        `board:${boardId}:writer-conn`,
+        emitterId,
+        connectionId,
+      );
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to refresh board writer connection:', error);
+    }
+  }
+
+  /**
+   * Relay mode (#7220): remember a SENT request so only the holder connection it
+   * went to can answer it (`claimBoardRelayRequest`). Lives ~60 s.
+   */
+  async rememberBoardRelayRequest(boardId: string, relayRequestId: string, holderConnectionId: string): Promise<void> {
+    if (!this.deps.isRedisAvailable()) return;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      await publisher.set(
+        `board:${boardId}:relay:${relayRequestId}`,
+        holderConnectionId,
+        'EX',
+        BOARD_RELAY_REQUEST_TTL,
+      );
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to remember board relay request:', error);
+    }
+  }
+
+  /**
+   * Relay mode (#7220): true, and the request is consumed, only when
+   * `relayRequestId` names a live request sent to `connectionId`. Compare then
+   * delete: a caller that guesses another connection's id neither claims nor
+   * burns it.
+   */
+  async claimBoardRelayRequest(boardId: string, relayRequestId: string, connectionId: string): Promise<boolean> {
+    if (!this.deps.isRedisAvailable()) return false;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const claimed = await publisher.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then redis.call('del', KEYS[1]) return 1 end; return 0",
+        1,
+        `board:${boardId}:relay:${relayRequestId}`,
+        connectionId,
+      );
+      return claimed === 1;
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to claim board relay request:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Relay mode (#7220): a `boardNowPlaying` subscription is open on this
+   * connection. Sets `board:{id}:viewer:{conn}` and, for a relay-capable
+   * subscription, `board:{id}:relay-listener:{conn}`, both with a short TTL the
+   * subscription refreshes. Without Redis the viewer key lives in memory.
+   */
+  async touchBoardViewer(boardId: string, connectionId: string, relayListener: boolean): Promise<void> {
+    if (this.deps.isRedisAvailable()) {
+      try {
+        const { publisher } = redisClientManager.getClients();
+        const pipeline = publisher
+          .pipeline()
+          .set(`board:${boardId}:viewer:${connectionId}`, '1', 'EX', BOARD_VIEWER_TTL);
+        if (relayListener) {
+          pipeline.set(`board:${boardId}:relay-listener:${connectionId}`, '1', 'EX', BOARD_VIEWER_TTL);
+        }
+        await pipeline.exec();
+        return;
+      } catch (error) {
+        if (this.deps.isRedisRequired()) throw error;
+        this.deps.logger.error('[PubSub] Failed to touch board viewer, falling back to local:', error);
+      }
+    }
+    this.localBoardViewers.set(`${boardId}:${connectionId}`, Date.now() + BOARD_VIEWER_TTL * 1000);
+  }
+
+  /** The subscription closed: drop its viewer (and relay-listener) keys. */
+  async clearBoardViewer(boardId: string, connectionId: string, relayListener: boolean): Promise<void> {
+    this.localBoardViewers.delete(`${boardId}:${connectionId}`);
+    if (!this.deps.isRedisAvailable()) return;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const viewerKeys = [`board:${boardId}:viewer:${connectionId}`];
+      if (relayListener) viewerKeys.push(`board:${boardId}:relay-listener:${connectionId}`);
+      await publisher.del(...viewerKeys);
+    } catch (error) {
+      this.deps.logger.error('[PubSub] Failed to clear board viewer:', error);
+    }
+  }
+
+  /** Whether this connection has a live `boardNowPlaying` subscription on the board. */
+  async isBoardViewer(boardId: string, connectionId: string): Promise<boolean> {
+    if (this.deps.isRedisAvailable()) {
+      try {
+        const { publisher } = redisClientManager.getClients();
+        return (await publisher.exists(`board:${boardId}:viewer:${connectionId}`)) === 1;
+      } catch (error) {
+        if (this.deps.isRedisRequired()) throw error;
+        this.deps.logger.error('[PubSub] Failed to check board viewer, falling back to local:', error);
+      }
+    }
+    const localKey = `${boardId}:${connectionId}`;
+    const expiry = this.localBoardViewers.get(localKey);
+    if (expiry === undefined) return false;
+    if (expiry <= Date.now()) {
+      this.localBoardViewers.delete(localKey);
+      return false;
+    }
+    return true;
   }
 
   /** The board's current connection holder emitter id, or null when free. */

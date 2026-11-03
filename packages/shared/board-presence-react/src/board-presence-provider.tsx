@@ -11,7 +11,7 @@ import {
   type BoardPresenceFeedState,
 } from './use-board-presence';
 import type { BoardPresenceClient } from './types';
-import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardClimbRelayRequested, BoardPresenceClimb } from '@boardsesh/shared-schema';
 
 const BoardPresenceActionsContext = createContext<BoardPresenceActions | undefined>(undefined);
 const BoardPresenceCurrentContext = createContext<BoardPresenceCurrentState | undefined>(undefined);
@@ -55,6 +55,7 @@ export function BoardPresenceProvider({
   boardUuid = null,
   client,
   onCatchUp,
+  onRelayRequested,
   children,
 }: {
   boardId: number | null;
@@ -67,9 +68,14 @@ export function BoardPresenceProvider({
    * renderer-agnostic package.
    */
   onCatchUp?: (info: BoardPresenceCatchUpInfo) => void;
+  /**
+   * Relay mode (#7220): fired when another phone asks this one, as the board's
+   * holder, to light a climb. Only the holder's subscription ever receives it.
+   */
+  onRelayRequested?: (request: BoardClimbRelayRequested) => void;
   children: ReactNode;
 }) {
-  const value = useBoardPresence(boardId, client, onCatchUp, boardUuid);
+  const value = useBoardPresence(boardId, client, onCatchUp, boardUuid, onRelayRequested);
   const actions = useMemo<BoardPresenceActions>(
     () => ({
       reportClimb: value.reportClimb,

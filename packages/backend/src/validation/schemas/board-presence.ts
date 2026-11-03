@@ -68,3 +68,14 @@ export const ReportBoardClimbInputSchema = z.object({
   tickedBy: z.array(z.string().max(100)).max(100).nullish(),
   suggested: z.boolean().nullish(),
 });
+
+/**
+ * Relay mode (#7220): the id a relaying phone mints for one request, echoed back
+ * on the holder's `reportBoardClimb` and the published `BoardClimbSet`. Opaque
+ * to the server; bounded and restricted to id-safe characters.
+ */
+export const RelayRequestIdSchema = z
+  .string()
+  .min(1, 'Relay request id cannot be empty')
+  .max(100, 'Relay request id too long')
+  .regex(/^[A-Za-z0-9_-]+$/, 'Relay request id has invalid characters');
