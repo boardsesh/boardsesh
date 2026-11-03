@@ -95,6 +95,16 @@ int main(int argc, char **argv) {
 afterAll(() => rmSync(fixtureDirectory, { recursive: true, force: true }));
 
 describe('native accessory presentation settlement', () => {
+  it('can be imported by the Swift and Objective-C C module parser', () => {
+    expect(
+      execFileSync(process.env.CC ?? 'cc', ['-std=c11', '-x', 'c', '-fsyntax-only', '-I', fixtureDirectory, '-'], {
+        input: '#include "RNSAccessoryPresentationSettler.h"\nint main(void) { return 0; }\n',
+        encoding: 'utf8',
+        timeout: 5_000,
+      }),
+    ).toBe('');
+  });
+
   it.each(['coalesce', 'stability', 'dirty-edge', 'deadline', 'detach'])(
     'preserves the %s lifecycle contract',
     (scenario) => {

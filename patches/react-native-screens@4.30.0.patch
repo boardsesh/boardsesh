@@ -436,10 +436,11 @@ diff --git a/ios/tabs/bottom-accessory/RNSAccessoryPresentationSettler.h b/ios/t
 new file mode 100644
 --- /dev/null
 +++ b/ios/tabs/bottom-accessory/RNSAccessoryPresentationSettler.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,38 @@
 +#pragma once
 +
 +// No UIKit dependency: the transition/timeout policy is exercised by portable tests.
++#ifdef __cplusplus
 +namespace rnscreens {
 +enum class AccessoryPresentationSample { Pending, Settled, TimedOut };
 +
@@ -473,6 +474,7 @@ new file mode 100644
 +  double deadline_ = 0;
 +};
 +} // namespace rnscreens
++#endif // __cplusplus
 diff --git a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryComponentView.mm b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryComponentView.mm
 --- a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryComponentView.mm
 +++ b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryComponentView.mm
