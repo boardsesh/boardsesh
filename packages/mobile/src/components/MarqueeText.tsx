@@ -150,17 +150,26 @@ export const MarqueeText = memo(function MarqueeText({
           </Text>
         </MarqueeScroller>
       ) : shrinksToFit ? (
-        <Text
-          variant={variant}
-          color={color}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={shrinkToFitScale}
-          maxFontSizeMultiplier={maxFontSizeMultiplier}
-          style={textStyle}
-        >
-          {children}
-        </Text>
+        <>
+          {/* Claims the whole name's width, as the scrolling copy does, so the
+              clip stays as wide as its room. The shrunk copy alone lays out a
+              few points inside the room it was fitted to; where the clip hugs
+              its content (the play-drawer header), that narrower clip reads as
+              "too long to shrink", the name scrolls, the clip widens, it
+              shrinks again: a flicker every frame and no scroll (#7253). */}
+          <View style={[styles.widthStrut, { width: contentWidth }]} />
+          <Text
+            variant={variant}
+            color={color}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={shrinkToFitScale}
+            maxFontSizeMultiplier={maxFontSizeMultiplier}
+            style={textStyle}
+          >
+            {children}
+          </Text>
+        </>
       ) : (
         <Text
           variant={variant}
@@ -226,6 +235,10 @@ const styles = StyleSheet.create({
     // Unclamp the measurer so the single-line text reports its true width (see
     // MEASURE_MAX_WIDTH). It's opacity-0 and clipped, so the width is inert.
     width: MEASURE_MAX_WIDTH,
+  },
+  // In flow but zero-height: it sets the clip's content width and nothing else.
+  widthStrut: {
+    height: 0,
   },
   scrollRow: {
     flexDirection: 'row',
