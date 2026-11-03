@@ -1416,6 +1416,19 @@ export default defineConfig({
         cache: false,
       },
 
+      // Meta (Instagram) and Reddit ads as code from app-stores/<platform>/ads.json.
+      // Forward `-- --action audit|plan|apply` (plan is the default) and
+      // `--offline` for a credential-free preview. Never deletes; spend is capped.
+      // See scripts/paid-social-ads.ts + docs/paid-social-ads.md.
+      'ads:meta': {
+        command: 'tsx scripts/paid-social-ads.ts --platform meta',
+        cache: false,
+      },
+      'ads:reddit': {
+        command: 'tsx scripts/paid-social-ads.ts --platform reddit',
+        cache: false,
+      },
+
       // xprem control plane as code: the production channel's branch and Branch
       // Surfing, and the long-lived branches and their protection. Plans by
       // default and exits non-zero on drift; forward `-- --apply` to converge.

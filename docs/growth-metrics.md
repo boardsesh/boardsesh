@@ -1006,6 +1006,8 @@ code paths only; they do not prove real campaign attribution.
 
 Dashboard: [Paid social: Reddit and Instagram](https://us.posthog.com/project/412845/dashboard/2297251).
 
+The campaigns themselves are managed as code: [paid-social-ads.md](paid-social-ads.md).
+
 Reddit and Instagram ads link to www tagged
 `?utm_source=reddit|instagram&utm_medium=paid-social&utm_campaign=<code>&utm_content=<ad>`.
 The dashboard counts sources `reddit`, `instagram` and `meta`, lower-cased. A
@@ -1315,7 +1317,7 @@ already has the app to update it, which is not an install.
 
 ### Paid social URLs (Reddit, Instagram)
 
-Tag every ad URL by hand; the bare click ids above are only the fallback.
+Never write these by hand: the ads-as-code configs build every destination from the campaign code and ad name with `scripts/lib/paid-social-urls.ts` ([paid-social-ads.md](paid-social-ads.md)). The bare click ids above are only the fallback.
 
 ```
 https://www.boardsesh.com/?utm_source=reddit|instagram&utm_medium=paid-social&utm_campaign=<code>&utm_content=<ad>
