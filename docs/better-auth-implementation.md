@@ -5,7 +5,7 @@ Design: [Better Auth migration](./better-auth-migration.md).
 Started: 2026-11-04, from `origin/main` at `796746a5db`.
 
 Review: [PR #7280](https://github.com/boardsesh/boardsesh/pull/7280) is ready.
-The latest reviewed batch passes **693 cases on both PostgreSQL 15.17 and 18.6**.
+The latest reviewed batch passes **702 cases on both PostgreSQL 15.17 and 18.6**.
 Recorded full CI is green at `10795b93f0`; cloud review reported no findings at
 the earlier `689446f9bc` head. Later commits require their own CI. Production migration remains gated. The
 user's password policy is to keep the current device signed in, revoke other
@@ -69,13 +69,13 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Agent decision: apply current-device continuation to explicit provider link/unlink. | Reuse the password continuation helper, preserve authentication age/expiry, and revoke old credentials. This is not a user answer about provider policy. Linking preserves local email/verification and never merges or reassigns a subject. The narrow Facebook trust setting proves provider-account ownership through authenticated Graph exchange, not mailbox ownership. |
 | 2026-11-04 | Consume validated browser-link intents even when provider work fails. | Keep receipt consumption in the outer transaction and provider/credential changes in a savepoint. Cancellation, rejection or late policy failure requires a new flow while original credentials survive; wrong/stale actors reject before consumption. A final supported after-hook observer corrects the pinned callback's saved302/late403 behavior. |
 | 2026-11-04 | Use one source-bound canonical browser-to-native handoff. | A signed JWT with readable claims carries a distinct purpose/key and exact120-second deadline. A hashed single-use receipt binds the same user/session/generation; native issuance reuses the canonical source and never creates fresh authentication. A valid optional cookie must match the exact source session. |
-| 2026-11-04 | Independent gate decision: implement BA-03 over the existing store. | Supported-API capability and concurrency evidence permits implementing backend centralization, reservations and fencing. This does not authorize activating a writer switch, importing identities or launching partners. The configured Google browser-code callback still needs its own bounded fixture before claiming all provider browser surfaces passed. |
+| 2026-11-04 | Independent gate decision: implement BA-03 over the existing store. | Supported-API capability and concurrency evidence permits implementing backend centralization, reservations and fencing. This does not authorize activating a writer switch, importing identities or launching partners. The final configured Google browser-code fixture closes the last identified prototype capability gap; deployed provider/device and operational gates remain. |
 
 ## Acceptance ledger
 
 | Child | Evidence/status |
 | --- | --- |
-| BA-01 #6976 | Identity/native/session/OAuth/browser, legacy compatibility, recovery, explicit provider mutations and canonical handoff implemented and independently reviewed. Google browser-code transport remains a specific fixture gap; source-provenance and operational acceptance remain open. No child-close claim. |
+| BA-01 #6976 | Prototype capability gate: GO for BA-03 implementation. Identity/native/session/OAuth/browser, legacy compatibility, recovery, explicit provider mutations, canonical handoff and configured Google browser-code transport are implemented and independently reviewed. Open pending review/merge; production source-provenance and operational acceptance remain separate. |
 | BA-03 #6977 | Implementation-only GO after independent capability audit. Complete [source writer inventory](./better-auth-writer-inventory.md) and 10 independently reviewed [candidate role-fence cases](./better-auth-writer-fence-proof.md). Backend current-store service/reservations/fencing are next; no production writer activation or deployed role policy. |
 | BA-02 #4847 | Read-only audit, 21 tests and local execution delivered. Current production counts and ownership resolutions remain unknown; no final uniqueness migration is enabled. |
 | BA-04 #6978 | Prototype cookie/JWT lineage, clock-aware cutoffs, tombstones and reset races pass; production import still depends on one writer and ownership-verified collision resolution. |
@@ -132,6 +132,7 @@ in its output. See the inventory for its scope and operational limits.
 | Real Chromium over local HTTPS | 4 cases passed independently in 8.5 seconds: secure HttpOnly shared-domain cookies, website/app credentialed CORS and preflight, server-rendered session reads, hostile JavaScript origin isolation, OAuth redirects and discovery routing. See the [browser proof](./better-auth-browser-proof.md). |
 | Explicit provider link/unlink and shared continuation | [51 provider cases](./better-auth-provider-link-proof.md) and 32 password cases passed independent security QA on PostgreSQL15/18 in27.05/27.35 seconds. Real provider verification, ownership/freshness, usable methods, callback intent, formPOST and late policy rollback are exercised. |
 | Canonical browser-to-native handoff | [43 cases](./better-auth-canonical-handoff-proof.md) passed two independent reviewers on both database versions. Source/session/generation binding, exact expiry, single use, account switching, mutation races, rollback and publication failures pass. Signed claims are readable; no production rollout claim. |
+| Configured Google browser callback | [9 cases](./better-auth-google-browser-callback-proof.md) independently pass on PostgreSQL15/18 in2.50/2.46 seconds. Actual public code exchange checks configured client/redirect/PKCE/state and subject ownership. This browser path trusts the authenticated token endpoint; separate native tests prove JWKS/signature/audience/nonce verification. |
 | Application process replacement and crash rollback | 18 cases passed independently, including actual SIGKILL at a pre-commit barrier, rejected-startup cleanup, persisted revocation, and unknown authentication age after replacement. See the [process proof](./better-auth-process-proof.md). |
 | Pre-cutover native/watch refresh import | 34 cases passed independently; preserve source ownership/hash/expiry, reject new admission after canonical signout while retaining known live bindings, and retain an immutable epoch through verification cleanup. See the [refresh proof](./better-auth-legacy-refresh-proof.md). |
 | Durable old recovery binding | 34 cases passed independently after cleanup, mutable-caller and cutover-extension fixes; canonical reset invalidates both imported purposes in the mutation transaction. |
@@ -227,6 +228,12 @@ and handoff sources received independent review, fixes and independent dual-vers
 reruns. The four HTTPS tests previously passed on the unchanged browser fixture
 and base authority; they are not new provider browser-navigation evidence.
 
+**Final configured-provider combined proof: 28 files /702 tests passed on both
+servers**, with clean teardown: **77.74 seconds on PostgreSQL15.17** and
+**77.07 seconds on PostgreSQL18.6**. The aggregate typecheck passed **59 tasks**.
+The new Google test passed selected-file lint with zero warnings/errors and
+independent dual-version QA. It changes no runtime source, schema or dependency.
+
 The published `10795b93f0` slice passed [full remote CI run 41909591768](https://github.com/boardsesh/boardsesh/actions/runs/41909591768):
 **59,948 passed, 0 failed, 23 skipped**. Backend, serial, prototype, HTTPS browser,
 typecheck, lint, guard, migration, mobile bundle and Docker web jobs all passed.
@@ -249,16 +256,17 @@ This verifies review setup, not new production auth adoption.
 
 **No production first-party cutover and no partner launch.** The prototype
 demonstrates supported library integration and exposes the custom lifecycle
-work needed. It does not satisfy every BA-01 acceptance criterion or complete
-epic #6975. None of the child issues should be closed from test counts alone.
+work needed. The prototype capability gate permits BA-03 implementation;
+epic #6975 remains incomplete. No child issue is closed from test counts alone.
 
 **BA-03 implementation may proceed over the existing authoritative store.**
 Independent security review mapped the pinned supported APIs, provider mutation,
 handoff and concurrency evidence to its prerequisite; no unsupported library
 capability remains that must block building the service. This is separate from
 activating its production writers. The configured Google browser authorization-code
-callback needs its own fixture before claiming every social browser surface passed.
-Do not infer its transport coverage from native Google or other browser providers.
+callback now has its own independently reviewed fixture, closing the precise
+transport gap found by the audit. Its browser assurance is documented separately
+from native Google verification and actual deployed-provider/device validation.
 
 Before activating BA-03 writers, finish source-provenance and mixed-version
 acceptance. The configured Facebook, old pending Garmin,
