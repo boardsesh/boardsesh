@@ -88,8 +88,8 @@ automatically measured whole-app similarity percentage.
 Boardlordz changes the surrounding interface: its encoder accepts LED entry
 objects instead of Boardsesh's frames/placement mapping; its wrapper maps board
 coordinate roles to RGB, returns skipped coordinates and throws when a v2 packet
-would darken the whole climb. The same bundle includes MoonBoard and Dungeon
-Trainer handling. Matching hardware support by itself does not establish copying
+would darken the whole climb. The same bundle includes MoonBoard and Digital
+Training Board handling. Matching hardware support by itself does not establish copying
 of those other implementations.
 
 The About component explicitly identifies Boardsesh as the source of the Aurora
@@ -244,7 +244,8 @@ describes the comparison commit; rollout flags are identified where known.
 
 | Feature | Boardlordz APK evidence | Boardsesh comparison |
 | --- | --- | --- |
-| Board browsing, grade/hold/setter filters, queues, ticks | Main bundled app and REST client | Existing core features. Boardsesh also has Woods support; Boardlordz includes Dungeon Trainer-specific code. Hardware operation was not tested. |
+| Board browsing, grade/hold/setter filters, queues, ticks | Main bundled app and REST client | Existing core features. Boardsesh also has Woods support. Hardware operation was not tested. |
+| Digital Training Board catalogue and controller | The `dtb` catalogue label is Digital Training Board; controller casts JSON with `type: cast_problem`, wall ID and problem name. | No equivalent catalogue/controller found in Boardsesh. This is separate from Decoy Dungeon Trainer, which Boardsesh already supports. Compatibility is inferred from shipped code, without a physical-board test. |
 | Shared sessions and current climb | Session REST/WS code, current-item and reconnect state | Existing collaborative queues, presence and shared control. |
 | Lists, profiles, follows, feed, external beta videos | Main app/API modules | Existing playlists, social feed, profiles, comments and beta links. |
 | Rest, pyramids, 4×4 and limit training | Workout UI, plan types and timers | Existing staged generator and runner. Timed types are dev/tester-flagged in [workout-stages.md](../workout-stages.md). Boardlordz describes four distinct problems per 4×4 round; Boardsesh's documented version repeats one problem per set. This is a variant/rollout distinction. |
@@ -255,6 +256,7 @@ describes the comparison commit; rollout flags are identified where known.
 | Similar climbs | Similar-problems endpoint | Existing indexed similarity online and offline; see [similar-climbs.md](../similar-climbs.md). Boardlordz's server algorithm is unknown. |
 | Photo spray wall recognition and corner calibration | Wall photo/sweep upload, consent, detection and corner UI | Existing durable backend recognition and four-corner homography; see [spray-recognition-rollout.md](../spray-recognition-rollout.md) and [spray-walls.md](../spray-walls.md). |
 | Describe a workout in prose | 1,000-character input and plan response `{spec, parser}` | New input method for the existing generator; parser internals are not recoverable from the APK. |
+| Estimate a newly drawn climb's grade | Packaged `/grade` UI sends setup, angle and hold coordinates/roles to `/api/v1/guess-grade`. | No interactive unsaved/draft prediction flow found. Boardsesh already ships geometry-based grades for saved climbs with few ascents; this is a workflow extension, not a missing grade model. Prediction quality was not tested. |
 | Planner session handoff and results | Prøva connect/upcoming/start/finish endpoints | Generic OAuth/workout integration is [accepted design](../integration-platform.md), not built at this commit. Reuse that plan rather than create a bespoke partner API. |
 | Offline catalogue/outbox and background board controls | Comparable durability was not established from this investigation | Boardsesh already has local catalogue downloads, mutation outbox and native background/lock-screen board control. Do not claim competitor parity without runtime tests. |
 
@@ -287,6 +289,26 @@ has Daily Crux, a five-climb game where players place missing holds, with streak
 and gym/league scores out of 5,000. It is not a grade-guessing game and was absent
 from the acquired APK's JavaScript and routes. A similar retention experiment
 would need demand validation and an estimated 8–12 days.
+
+Digital Training Board support is another compatibility candidate: assess
+demand at gyms using those controllers before adding its catalogue and JSON
+casting protocol. It must remain distinct from existing Decoy Dungeon Trainer
+support. Any eventual BLE implementation needs the repository's required
+specialist review and physical-controller validation. A rough estimate is 8–15
+engineer-days plus real-device QA, across catalogue import, shared board/BLE
+configuration and mobile discovery. Acceptance requires browsing a supported
+layout and casting the selected named climb on its actual controller.
+
+An interactive draft grade preview could reuse Boardsesh's existing geometry
+model through a backend-owned prediction endpoint, rather than introduce a
+separate grading model. The existing [Climb2Vec implementation](../climb2vec.md)
+already exports geometry predictions and blends content priors for persisted
+climbs; training extraction excludes drafts. Validate predictions on newly set
+climbs before presenting an estimate as useful to setters. A Kilter-first estimate
+is 7–12 engineer-days including backend inference/export and mobile preview;
+calibrating other boards is separate. Unsaved edits must not publish a climb,
+unsupported layouts must show unavailable, and estimates must remain distinct
+from community grades.
 
 Existing source references supporting the comparison include
 [heatmap queries](../../packages/mobile/src/db/queries/get-hold-heatmap-local.ts),

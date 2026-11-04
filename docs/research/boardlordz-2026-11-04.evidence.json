@@ -194,6 +194,10 @@
           "byte_offset": 1848
         },
         {
+          "literal": "/api/v1/guess-grade",
+          "byte_offset": 2753
+        },
+        {
           "literal": "/api/v1/me/heatmap/compare",
           "byte_offset": 1784
         },
@@ -335,6 +339,32 @@
         {
           "literal": "Apache 2.0",
           "byte_offset": 8732
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/chunks/b0Y818fH.js",
+      "bytes": 5022,
+      "sha256": "945c506ca720823e4e24030346d52fe120dbc6c36baf42947bb21088bfbf86f0",
+      "markers": [
+        {
+          "literal": "Digital Training Board",
+          "byte_offset": 119
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/nodes/7.ivqhKCZX.js",
+      "bytes": 8213,
+      "sha256": "905098217edc9c550fb3112838e5d6870e0ae6d3bda746cf47dfc2b3264cfbdc",
+      "markers": [
+        {
+          "literal": "guessGrade(",
+          "byte_offset": 4332
+        },
+        {
+          "literal": "What grade is it?",
+          "byte_offset": 7731
         }
       ]
     },
