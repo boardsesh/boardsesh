@@ -9,7 +9,7 @@ type PasswordIdentityReader = Pick<DbInstance, 'select'>;
 type PasswordIdentityTransaction = Parameters<Parameters<DbInstance['transaction']>[0]>[0];
 
 const DUMMY_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfRzC2VyM4dy';
-const MAX_CREDENTIAL_CANDIDATES = 8;
+export const MAX_CURRENT_STORE_PASSWORD_CANDIDATES = 8;
 const REGISTER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 128;
@@ -28,6 +28,44 @@ interface PreparedPasswordRegistration {
   readonly name?: string;
 }
 
+export interface CurrentStorePasswordCandidate {
+  readonly userId: string;
+  readonly passwordHash: string;
+  readonly createdAt: Date;
+}
+
+/** One bounded comparison engine; callers own their explicit legacy lookup policy. */
+export async function matchCurrentStorePasswordCandidate(
+  candidates: readonly CurrentStorePasswordCandidate[],
+  password: string,
+): Promise<{ userId: string; createdAt: Date } | null> {
+  const snapshot = candidates.map((candidate) => ({
+    userId: candidate.userId,
+    passwordHash: candidate.passwordHash,
+    createdAt: candidate.createdAt instanceof Date ? new Date(candidate.createdAt.getTime()) : candidate.createdAt,
+  }));
+  if (snapshot.length === 0) {
+    await compare(password, DUMMY_PASSWORD_HASH);
+    return null;
+  }
+  if (snapshot.length > MAX_CURRENT_STORE_PASSWORD_CANDIDATES) {
+    await Promise.all(
+      snapshot
+        .slice(0, MAX_CURRENT_STORE_PASSWORD_CANDIDATES)
+        .map((candidate) => compare(password, candidate.passwordHash)),
+    );
+    return null;
+  }
+  const matches = await Promise.all(snapshot.map((candidate) => compare(password, candidate.passwordHash)));
+  const matchingIndexes = matches.reduce<number[]>((indexes, matchesPassword, index) => {
+    if (matchesPassword) indexes.push(index);
+    return indexes;
+  }, []);
+  if (matchingIndexes.length !== 1) return null;
+  const authenticated = snapshot[matchingIndexes[0]];
+  return { userId: authenticated.userId, createdAt: authenticated.createdAt };
+}
+
 /** Current-store password verification only; no credential issuance or mutation. */
 export async function authenticateCurrentStorePassword(
   database: PasswordIdentityReader,
@@ -42,28 +80,8 @@ export async function authenticateCurrentStorePassword(
     .from(users)
     .innerJoin(userCredentials, eq(userCredentials.userId, users.id))
     .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
-    .limit(MAX_CREDENTIAL_CANDIDATES + 1);
-
-  if (candidates.length === 0) {
-    // Unknown addresses and OAuth-only users retain one dummy comparison.
-    await compare(password, DUMMY_PASSWORD_HASH);
-    return null;
-  }
-  if (candidates.length > MAX_CREDENTIAL_CANDIDATES) {
-    await Promise.all(
-      candidates.slice(0, MAX_CREDENTIAL_CANDIDATES).map((candidate) => compare(password, candidate.passwordHash)),
-    );
-    return null;
-  }
-  // Every candidate is checked. No first-row or first-password-match takeover.
-  const matches = await Promise.all(candidates.map((candidate) => compare(password, candidate.passwordHash)));
-  const matchingIndexes = matches.reduce<number[]>((indexes, matchesPassword, index) => {
-    if (matchesPassword) indexes.push(index);
-    return indexes;
-  }, []);
-  if (matchingIndexes.length !== 1) return null;
-  const authenticated = candidates[matchingIndexes[0]];
-  return { userId: authenticated.userId, createdAt: authenticated.createdAt };
+    .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1);
+  return matchCurrentStorePasswordCandidate(candidates, password);
 }
 
 /** Preserve the native registration bounds and error text; login has no new bounds. */
@@ -114,9 +132,12 @@ export async function insertCurrentStorePasswordIdentity(
   transaction: PasswordIdentityTransaction,
   registration: PreparedPasswordRegistration,
   emailVerificationEnabled: boolean,
+  reservedUserId?: string,
 ): Promise<{ userId: string; createdAt: Date }> {
   const { email, name, passwordHash } = registration;
-  const userId = crypto.randomUUID();
+  // Only a trusted backend command may supply the ID it just reserved. Native
+  // callers retain the existing server-generated ID and insertion behavior.
+  const userId = reservedUserId ?? crypto.randomUUID();
   const createdAt = new Date();
   await transaction.insert(users).values({
     id: userId,

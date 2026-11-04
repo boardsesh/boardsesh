@@ -345,6 +345,7 @@ const nextConfig = {
   // Transpile internal monorepo packages from TypeScript source
   // This eliminates the need to pre-build packages before running the web app
   transpilePackages: [
+    '@boardsesh/auth-protocol',
     '@boardsesh/board-constants',
     '@boardsesh/aurora-sync',
     '@boardsesh/shared-schema',

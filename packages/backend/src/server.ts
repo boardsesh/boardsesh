@@ -64,6 +64,7 @@ import {
   stopRefreshTokenCleanup,
 } from './handlers/native-auth';
 import { handleApnsStats } from './handlers/apns-stats';
+import { handleCurrentStoreWebAuth } from './handlers/current-store-web-auth';
 import { handleIntegrationOAuthStart, handleIntegrationOAuthCallback } from './handlers/integrations-oauth';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
@@ -649,6 +650,15 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // APNs metrics (debugging aid, gated on APNS_STATS_SECRET)
       if (pathname === '/api/internal/apns-stats' && (req.method === 'GET' || req.method === 'OPTIONS')) {
         await handleApnsStats(req, res);
+        return;
+      }
+
+      // Default-off service commands. Browser cookies do not authorize them.
+      if (
+        pathname === '/api/internal/auth/current-store/register' ||
+        pathname === '/api/internal/auth/current-store/password'
+      ) {
+        await handleCurrentStoreWebAuth(req, res);
         return;
       }
 

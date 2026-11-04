@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+vi.mock('server-only', () => ({}));
 
 const { nextAuthHandlerMock, getTokenMock } = vi.hoisted(() => ({
   nextAuthHandlerMock: vi.fn(),
@@ -19,7 +20,11 @@ vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));
 
 import { GET, POST } from '../route';
 
-const context = { params: Promise.resolve({ nextauth: ['signout'] }) };
+function routeContext(request: NextRequest) {
+  return {
+    params: Promise.resolve({ nextauth: request.nextUrl.pathname.split('/api/auth/')[1].split('/').filter(Boolean) }),
+  };
+}
 
 function request(path: string, body: Record<string, string>): NextRequest {
   return new NextRequest(`https://www.boardsesh.com${path}`, {
@@ -60,7 +65,7 @@ describe('POST /api/auth/[...nextauth]', () => {
   it('rejects an unscoped legacy NextAuth sign-out', async () => {
     const signOutRequest = request('/api/auth/signout', { csrfToken: 'csrf-token' });
 
-    const response = await POST(signOutRequest, context);
+    const response = await POST(signOutRequest, routeContext(signOutRequest));
 
     expect(response.status).toBe(400);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
@@ -79,7 +84,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       body: JSON.stringify({ expectedUserId: 'user-1', expectedAuthSessionId: 'login-1' }),
     });
 
-    const response = await POST(signOutRequest, context);
+    const response = await POST(signOutRequest, routeContext(signOutRequest));
 
     expect(response.status).toBe(503);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
@@ -91,7 +96,7 @@ describe('POST /api/auth/[...nextauth]', () => {
   it('does not bypass the identity requirement with a trailing slash', async () => {
     const signOutRequest = request('/api/auth/signout/', { csrfToken: 'csrf-token' });
 
-    const response = await POST(signOutRequest, context);
+    const response = await POST(signOutRequest, routeContext(signOutRequest));
 
     expect(response.status).toBe(400);
     expect(nextAuthHandlerMock).not.toHaveBeenCalled();
@@ -106,7 +111,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedAuthSessionId: 'login-1',
     });
 
-    await expect(POST(signOutRequest, context)).resolves.toMatchObject({ status: 200 });
+    await expect(POST(signOutRequest, routeContext(signOutRequest))).resolves.toMatchObject({ status: 200 });
 
     expect(getTokenMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -126,7 +131,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedAuthSessionId: 'login-1',
     });
 
-    const response = await POST(signOutRequest, context);
+    const response = await POST(signOutRequest, routeContext(signOutRequest));
 
     expect(response.status).toBe(409);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
@@ -140,7 +145,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedUserId: 'user-1',
     });
 
-    const response = await POST(signOutRequest, context);
+    const response = await POST(signOutRequest, routeContext(signOutRequest));
 
     expect(response.status).toBe(400);
     expect(nextAuthHandlerMock).not.toHaveBeenCalled();
@@ -153,9 +158,9 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedAuthSessionId: 'login-1',
     });
 
-    await expect(POST(callbackRequest, context)).resolves.toMatchObject({ status: 200 });
+    await expect(POST(callbackRequest, routeContext(callbackRequest))).resolves.toMatchObject({ status: 200 });
 
-    expect(nextAuthHandlerMock).toHaveBeenCalledWith(callbackRequest, context);
+    expect(nextAuthHandlerMock).toHaveBeenCalledWith(callbackRequest, routeContext(callbackRequest));
     expect(getTokenMock).not.toHaveBeenCalled();
   });
 
@@ -169,7 +174,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedAuthSessionId: 'login-1',
     });
 
-    await expect(POST(signOutRequest, context)).resolves.toMatchObject({ status: 200 });
+    await expect(POST(signOutRequest, routeContext(signOutRequest))).resolves.toMatchObject({ status: 200 });
 
     expect(getTokenMock).toHaveBeenNthCalledWith(
       1,
@@ -199,7 +204,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedAuthSessionId: 'login-1',
     });
 
-    const response = await POST(signOutRequest, context);
+    const response = await POST(signOutRequest, routeContext(signOutRequest));
 
     const setCookies = response.headers.getSetCookie();
     for (const name of ['__Secure-next-auth.session-token', 'next-auth.session-token']) {
@@ -232,7 +237,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedAuthSessionId: 'login-1',
     });
 
-    const response = await POST(signOutRequest, context);
+    const response = await POST(signOutRequest, routeContext(signOutRequest));
 
     const clearedNames = response.headers.getSetCookie().map((setCookie) => setCookie.split('=', 1)[0]);
     expect(clearedNames).toContain('__Secure-next-auth.session-token');
@@ -256,7 +261,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedAuthSessionId: 'login-1',
     });
 
-    const response = await POST(signOutRequest, context);
+    const response = await POST(signOutRequest, routeContext(signOutRequest));
 
     expect(response.status).toBe(200);
     expect(hostOnlySessionCookieCleared(response)).toBe(true);
@@ -274,7 +279,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
     const callbackRequest = request('/api/auth/callback/credentials', {});
 
-    const response = await POST(callbackRequest, context);
+    const response = await POST(callbackRequest, routeContext(callbackRequest));
 
     expect(hostOnlySessionCookieCleared(response)).toBe(true);
   });
@@ -283,7 +288,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
     const sessionRequest = new NextRequest('https://www.boardsesh.com/api/auth/session', { method: 'GET' });
 
-    const response = await GET(sessionRequest, context);
+    const response = await GET(sessionRequest, routeContext(sessionRequest));
 
     expect(hostOnlySessionCookieCleared(response)).toBe(false);
   });
@@ -303,7 +308,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
     const callbackRequest = request('/api/auth/callback/credentials', {});
 
-    const response = await POST(callbackRequest, context);
+    const response = await POST(callbackRequest, routeContext(callbackRequest));
 
     const setCookies = response.headers.getSetCookie();
     expect(setCookies).toEqual(['next-auth.session-token=fresh-jwt; Path=/; HttpOnly; SameSite=Lax']);
@@ -323,7 +328,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       callbackUrl: returnUrl,
     });
 
-    const signInResponse = await POST(signInRequest, context);
+    const signInResponse = await POST(signInRequest, routeContext(signInRequest));
     const returnCookie = signInResponse.headers
       .getSetCookie()
       .find((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'));
@@ -344,7 +349,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       },
     );
 
-    const callbackResponse = await GET(callbackRequest, context);
+    const callbackResponse = await GET(callbackRequest, routeContext(callbackRequest));
     const destination = new URL(callbackResponse.headers.get('Location')!);
     expect(destination.origin + destination.pathname).toBe('https://app.boardsesh.com/auth/login');
     expect(destination.searchParams.get('boardseshOAuthProvider')).toBe('google');
@@ -366,7 +371,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
     const signInResponse = await POST(
       request('/api/auth/signin/google', { csrfToken: 'csrf-token', callbackUrl: returnUrl }),
-      context,
+      { params: Promise.resolve({ nextauth: ['signin', 'google'] }) },
     );
     const returnCookie = signInResponse.headers
       .getSetCookie()
@@ -383,7 +388,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       { headers: { Cookie: returnCookie!.split(';', 1)[0]! } },
     );
 
-    const callbackResponse = await GET(callbackRequest, context);
+    const callbackResponse = await GET(callbackRequest, routeContext(callbackRequest));
 
     expect(callbackResponse.status).toBe(302);
     expect(callbackResponse.headers.get('Location')).toBe(returnUrl);
@@ -400,7 +405,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
     const signInResponse = await POST(
       request('/api/auth/signin/google', { csrfToken: 'csrf-token', callbackUrl: returnUrl }),
-      context,
+      { params: Promise.resolve({ nextauth: ['signin', 'google'] }) },
     );
     const returnCookie = signInResponse.headers
       .getSetCookie()
@@ -411,7 +416,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       { headers: { Cookie: returnCookie!.split(';', 1)[0]! } },
     );
 
-    const callbackResponse = await GET(callbackRequest, context);
+    const callbackResponse = await GET(callbackRequest, routeContext(callbackRequest));
 
     expect(callbackResponse.status).toBe(302);
     const destination = new URL(callbackResponse.headers.get('Location')!);
@@ -430,7 +435,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
     const signInResponse = await POST(
       request('/api/auth/signin/google', { csrfToken: 'csrf-token', callbackUrl: returnUrl }),
-      context,
+      { params: Promise.resolve({ nextauth: ['signin', 'google'] }) },
     );
     const returnCookie = signInResponse.headers
       .getSetCookie()
@@ -446,7 +451,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       { headers: { Cookie: returnCookie!.split(';', 1)[0]! } },
     );
 
-    const callbackResponse = await GET(callbackRequest, context);
+    const callbackResponse = await GET(callbackRequest, routeContext(callbackRequest));
 
     const destination = new URL(callbackResponse.headers.get('Location')!);
     expect(destination.origin + destination.pathname).toBe('https://app.boardsesh.com/auth/login');
@@ -464,7 +469,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
     const signInResponse = await POST(
       request('/api/auth/signin/apple', { csrfToken: 'csrf-token', callbackUrl: returnUrl }),
-      context,
+      { params: Promise.resolve({ nextauth: ['signin', 'apple'] }) },
     );
     const returnCookie = signInResponse.headers
       .getSetCookie()
@@ -488,7 +493,7 @@ describe('POST /api/auth/[...nextauth]', () => {
       body: new URLSearchParams({ state: 'apple-state-1', code: 'provider-code' }),
     });
 
-    const callbackResponse = await POST(callbackRequest, context);
+    const callbackResponse = await POST(callbackRequest, routeContext(callbackRequest));
     expect(callbackResponse.headers.get('Location')).toBe(returnUrl);
     expect(callbackResponse.headers.getSetCookie()).toContainEqual(
       expect.stringContaining('__Secure-next-auth.session-token=fresh'),
@@ -508,12 +513,12 @@ describe('POST /api/auth/[...nextauth]', () => {
         'https://app.boardsesh.com.evil.example/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-1',
     });
 
-    const response = await POST(lookalikeRequest, context);
+    const response = await POST(lookalikeRequest, routeContext(lookalikeRequest));
 
     expect(response.headers.getSetCookie().some((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'))).toBe(
       false,
     );
-    expect(nextAuthHandlerMock).toHaveBeenCalledWith(lookalikeRequest, context);
+    expect(nextAuthHandlerMock).toHaveBeenCalledWith(lookalikeRequest, routeContext(lookalikeRequest));
   });
 
   it('fails explicitly when Expo return binding has no signing secret', async () => {
@@ -530,7 +535,7 @@ describe('POST /api/auth/[...nextauth]', () => {
         'https://app.boardsesh.com/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-4',
     });
 
-    await expect(POST(signInRequest, context)).rejects.toThrow(
+    await expect(POST(signInRequest, routeContext(signInRequest))).rejects.toThrow(
       'NEXTAUTH_SECRET is required to bind Expo web OAuth returns',
     );
   });
