@@ -3,6 +3,10 @@ import { getToken } from 'next-auth/jwt';
 import { type NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import {
+  createPasswordCommandAuthRequest,
+  unavailablePasswordAuthResponse,
+} from '@/app/lib/auth/password-command-auth.server';
+import {
   appendLegacyHostOnlySessionCookieClear,
   appendSignOutSessionCookieClears,
   isSecureCookieContext,
@@ -146,12 +150,23 @@ function clearLegacyCookieIfSessionWritten(response: Response): Response {
 }
 
 export async function POST(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+  // Match the public NextAuth App Router dispatch exactly. URL suffixes can
+  // differ from decoded catch-all parameters (and may contain extra segments).
+  const [action, provider] = (await context.params).nextauth;
   const pathname = request.nextUrl.pathname.endsWith('/')
     ? request.nextUrl.pathname.slice(0, -1)
     : request.nextUrl.pathname;
-  const expoOAuthResponse = await handleExpoOAuthPost(request, context, pathname);
-  if (expoOAuthResponse) return expoOAuthResponse;
-  if (!pathname.endsWith('/api/auth/signout')) {
+  if (action === 'callback' && provider === 'credentials') {
+    const commandRequest = createPasswordCommandAuthRequest(authOptions);
+    const commandHandler = NextAuth(commandRequest.options) as NextAuthHandler;
+    const response = await commandHandler(request, context);
+    return commandRequest.unavailable()
+      ? unavailablePasswordAuthResponse(request.url)
+      : clearLegacyCookieIfSessionWritten(response);
+  }
+  if (action !== 'signout') {
+    const expoOAuthResponse = await handleExpoOAuthPost(request, context, pathname);
+    if (expoOAuthResponse) return expoOAuthResponse;
     return clearLegacyCookieIfSessionWritten(await handler(request, context));
   }
 

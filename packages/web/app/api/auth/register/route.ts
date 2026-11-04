@@ -7,6 +7,11 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
+import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
+import {
+  passwordCommandUnavailableResponse,
+  registerWithPasswordCommand,
+} from '@/app/lib/auth/register-password-command.server';
 
 const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
@@ -36,6 +41,8 @@ export async function POST(request: NextRequest) {
         },
       );
     }
+
+    if (webPasswordMode() === 'backend-staging') return registerWithPasswordCommand(request);
 
     const body = await request.json();
 
@@ -149,6 +156,7 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    if (error instanceof AuthBackendUnavailableError) return passwordCommandUnavailableResponse();
     console.error('Registration error:', error);
     return NextResponse.json({ error: 'An error occurred during registration' }, { status: 500 });
   }

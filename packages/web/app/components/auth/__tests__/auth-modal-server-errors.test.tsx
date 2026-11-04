@@ -74,6 +74,46 @@ describe('AuthModal — login server errors', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('shows retryable authentication failure for backend unavailability, keeping the form open', async () => {
+    mockSignIn.mockResolvedValueOnce({ error: 'AuthBackendUnavailable', status: 503, ok: false });
+    render(<AuthModal open onClose={vi.fn()} />);
+    submitLogin();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Authentication failed/i);
+    expect(alert.textContent).not.toMatch(/Invalid email or password/i);
+    expect((screen.getByRole('button', { name: 'Login' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('maps registration backend unavailability to translated auth-failed text without exposing its code', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ error: 'AuthBackendUnavailable' }) }),
+    );
+    render(<AuthModal open onClose={vi.fn()} />);
+    submitRegister();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Authentication failed/i);
+    expect(alert.textContent).not.toContain('AuthBackendUnavailable');
+    expect(mockSignIn).not.toHaveBeenCalled();
+  });
+
+  it('keeps committed registration separate from a failed automatic login without repeating registration', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ requiresVerification: false }) });
+    vi.stubGlobal('fetch', fetchMock);
+    mockSignIn.mockResolvedValueOnce({ error: 'AuthBackendUnavailable', status: 503, ok: false });
+    render(<AuthModal open onClose={vi.fn()} />);
+    submitRegister();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Authentication failed/i);
+    expect(screen.getByRole('button', { name: 'Login' })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(mockSignIn).toHaveBeenCalledOnce();
+  });
+
   it('shows the generic auth-failed alert when signIn throws (network down)', async () => {
     mockSignIn.mockRejectedValueOnce(new Error('fetch failed'));
     const onClose = vi.fn();
