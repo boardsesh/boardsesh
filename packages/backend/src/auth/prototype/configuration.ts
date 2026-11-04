@@ -26,6 +26,7 @@ export const PROTOTYPE_CONFIGURATION = {
     additionalFields: {
       originalAuthenticatedAt: { type: 'date', required: false, input: false },
       legacyLineageId: { type: 'string', required: false, input: false },
+      revocationGeneration: { type: 'number', required: false, input: false },
     },
   },
   account: { accountLinking: { enabled: false } },

@@ -32,6 +32,7 @@ export const session = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     originalAuthenticatedAt: timestamp('original_authenticated_at'),
     legacyLineageId: text('legacy_lineage_id'),
+    revocationGeneration: integer('revocation_generation'),
   },
   (table) => [index('session_userId_idx').on(table.userId)],
 );
@@ -346,5 +347,3 @@ export const oauthConsentRelations = relations(oauthConsent, ({ one }) => ({
     references: [user.id],
   }),
 }));
-
-// Deliberate prototype extension to the pinned provider-generated schema.

@@ -36,6 +36,13 @@
       "when": 1793819416178,
       "tag": "0004_ba01_refresh_ancestry",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793822267099,
+      "tag": "0005_ba01_session_generation",
+      "breakpoints": true
     }
   ]
 }

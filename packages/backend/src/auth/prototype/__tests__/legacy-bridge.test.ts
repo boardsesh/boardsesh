@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { SignJWT, type JWTPayload } from 'jose';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createPrototypeEnvironment } from '../environment';
 import { createPrototypeLegacyHandler, PROTOTYPE_LEGACY_KEY } from '../legacy-bridge';
 import { PROTOTYPE_ISSUER } from '../oauth-options';
@@ -89,6 +89,45 @@ describe('cryptographically verified legacy lineage and transactional revocation
     passwordHash = await hash(PASSWORD, 4);
   });
   afterAll(async () => environment?.close());
+
+  it.each([false, true])(
+    'rejects rolled old issuance after reset even with unseen explicit-lineage=%s',
+    async (explicitLineage) => {
+      const userId = await seedUser();
+      const tokenForReset = await seedReset(userId);
+      expect(
+        (
+          await firstHandler(
+            request('/reset-password', { token: tokenForReset, newPassword: 'new-rolled-issuer-password' }),
+          )
+        ).status,
+      ).toBe(200);
+      const [cutoff] = await environment.database
+        .select()
+        .from(environment.schema.prototypeUserCutoff)
+        .where(eq(environment.schema.prototypeUserCutoff.userId, userId));
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(Date.now() + 10_000);
+        const rolledIssueTime = Math.floor(Date.now() / 1000);
+        expect(rolledIssueTime * 1000).toBeGreaterThan(cutoff.revokedThrough.getTime());
+        const credential = await legacyToken(userId, {
+          iat: rolledIssueTime,
+          exp: rolledIssueTime + 3600,
+          ...(explicitLineage ? { authSessionId: randomUUID() } : {}),
+        });
+        expect((await secondHandler(request('/prototype-legacy-bridge', {}, undefined, credential))).status).toBe(401);
+        expect(
+          await environment.database
+            .select()
+            .from(environment.schema.session)
+            .where(eq(environment.schema.session.userId, userId)),
+        ).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('bridges actual historic native claim shape without treating rolling iat as fresh authentication', async () => {
     const userId = await seedUser();

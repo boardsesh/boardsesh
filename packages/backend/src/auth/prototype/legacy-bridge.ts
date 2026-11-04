@@ -94,15 +94,19 @@ export async function revokePrototypeUser(
   database: LifecycleDatabase,
   userId: string,
   revokePartners = true,
-): Promise<void> {
+): Promise<number> {
   const revokedAt = new Date();
-  await database
+  const [cutoff] = await database
     .insert(schema.prototypeUserCutoff)
     .values({ userId, revokedThrough: revokedAt })
     .onConflictDoUpdate({
       target: schema.prototypeUserCutoff.userId,
-      set: { revokedThrough: sql`greatest(${schema.prototypeUserCutoff.revokedThrough}, excluded.revoked_through)` },
-    });
+      set: {
+        revokedThrough: sql`greatest(${schema.prototypeUserCutoff.revokedThrough}, excluded.revoked_through)`,
+        generation: sql`${schema.prototypeUserCutoff.generation} + 1`,
+      },
+    })
+    .returning({ generation: schema.prototypeUserCutoff.generation });
   await database
     .update(schema.prototypeLegacyLineage)
     .set({ revokedAt })
@@ -122,6 +126,7 @@ export async function revokePrototypeUser(
       .set({ generation: sql`${schema.prototypeOAuthConnection.generation} + 1`, revokedAt })
       .where(eq(schema.prototypeOAuthConnection.userId, userId));
   }
+  return cutoff.generation;
 }
 
 function bridgePlugin(database: LifecycleDatabase): BetterAuthPlugin {
@@ -171,6 +176,9 @@ function bridgePlugin(database: LifecycleDatabase): BetterAuthPlugin {
           }
           session = existingSession;
         } else {
+          // A rolled issue time from an unfenced old issuer cannot establish
+          // new authentication after an account security mutation.
+          if (cutoff) throw new APIError('UNAUTHORIZED');
           if (await hasPrototypeLegacySourceDenial(database, userId)) throw new APIError('UNAUTHORIZED');
           const originalAuthenticatedAt = proof.originalAuthenticatedAt;
           const [createdSession] = await database

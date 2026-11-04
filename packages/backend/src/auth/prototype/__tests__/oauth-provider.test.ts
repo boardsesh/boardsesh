@@ -1132,7 +1132,15 @@ describe('BA-01 pinned OAuth Provider against disposable Postgres', () => {
       // is the same canonical revocation helper used by the legacy adapter.
       const deletionAuthority = createPrototypeAuthority(transaction, {
         user: { deleteUser: { enabled: true } },
-        databaseHooks: { user: { delete: { before: (user) => revokePrototypeUser(transaction, user.id) } } },
+        databaseHooks: {
+          user: {
+            delete: {
+              async before(user) {
+                await revokePrototypeUser(transaction, user.id);
+              },
+            },
+          },
+        },
       });
       const response = await postJson(deletionAuthority, '/delete-user', client.cookie, {
         password: 'prototype-password-123',

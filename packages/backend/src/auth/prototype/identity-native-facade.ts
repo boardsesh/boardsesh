@@ -7,6 +7,7 @@ import * as schema from '@boardsesh/db/auth-prototype';
 import { createPrototypeAuthority, type PrototypeDatabase } from './authority';
 import { revokePrototypeUser } from './legacy-bridge';
 import { normalizeAccountEmail } from '../normalize-email';
+import { prototypeSessionPassesRevocation } from './session-revocation';
 
 const ACCESS_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
 const REFRESH_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
@@ -61,8 +62,7 @@ export function createPrototypeNativeFacade(
       .select()
       .from(schema.prototypeUserCutoff)
       .where(eq(schema.prototypeUserCutoff.userId, userId));
-    if (cutoff && session.createdAt.getTime() <= cutoff.revokedThrough.getTime())
-      throw new PrototypeNativeCredentialError();
+    if (!prototypeSessionPassesRevocation(session, cutoff)) throw new PrototypeNativeCredentialError();
     return session;
   }
 
@@ -233,7 +233,7 @@ export function createPrototypeNativeFacade(
       .where(and(eq(schema.session.id, claims.sid), eq(schema.session.userId, claims.sub)));
     const current = matched[0];
     if (!current || current.session.expiresAt.getTime() <= Date.now()) return null;
-    if (current.cutoff && current.session.createdAt.getTime() <= current.cutoff.revokedThrough.getTime()) return null;
+    if (!prototypeSessionPassesRevocation(current.session, current.cutoff)) return null;
     return { userId: current.session.userId, sessionId: current.session.id };
   }
 

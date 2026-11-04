@@ -1,9 +1,10 @@
-import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 // Prototype lifecycle state only. None of these tables enters production schema exports.
 export const prototypeUserCutoff = pgTable('prototype_user_cutoff', {
   userId: text('user_id').primaryKey(),
   revokedThrough: timestamp('revoked_through', { withTimezone: true }).notNull(),
+  generation: integer('generation').default(1).notNull(),
 });
 
 export const prototypeLegacyLineage = pgTable('prototype_legacy_lineage', {
