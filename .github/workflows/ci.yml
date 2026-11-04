@@ -1375,6 +1375,7 @@ jobs:
         if: ${{ !cancelled() && matrix.shard == 1 }}
         env:
           AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
         run: vp run test:auth-prototype
       - name: Install Chromium for auth compatibility proof
         if: ${{ !cancelled() && matrix.shard == 1 }}

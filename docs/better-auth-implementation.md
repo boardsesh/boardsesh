@@ -35,17 +35,21 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Guard both GET and form POST authorization. | The provider supports both transports. Reconnect consent must use the actual form body on POST, ignoring misleading URL parameters; the reviewer reproduced and fixed the missing POST guard. |
 | 2026-11-04 | Use a separate local Postgres for final QA. | The shared instance was blocked on WAL/file-sync I/O during broad tests. An isolated Postgres 15.17 container with temporary storage produced a clean run; this does not prove database crash durability. |
 | 2026-11-04 | Give the browser fixture a separate required typecheck. | The first Docker web CI build exposed backend imports from the fixture in the slim production context. The product tsconfig now excludes that folder; a dedicated fixture tsconfig and aggregate task keep its full typecheck required without expanding the production context. |
+| 2026-11-04 | Preserve the backend's explicit 60-second legacy-web clock policy. | Signed expiry and accepted `validUntil` remain separate. The bridge compares raw signed issue time minus the allowance with revocation cutoffs, so an ahead-clock credential cannot bypass reset. Unknown web authentication age stays non-fresh. |
+| 2026-11-04 | Bind old recovery links only with proven original ownership. | Synthetic issuance evidence supplies immutable user IDs. Stable user/purpose supersession markers block replay and delayed import across changed cutover arguments; real links without ownership evidence remain a readiness exception. |
+| 2026-11-04 | Share recovery invalidation with canonical reset. | Reset/compromise invalidates both imported purposes in the same transaction; ordinary sign-out retains valid mailbox recovery links. Independent tests caught and closed an initially facade-only invalidation gap. |
+| 2026-11-04 | Keep watch issuance behind the canonical native service. | Redis proves a one-time user/session binding; a trusted internal method rechecks live ownership under the lifecycle fence and reuses existing native token issuance. There is no second watch password or JWT policy. |
 
 ## Acceptance ledger
 
 | Child | Evidence/status |
 | --- | --- |
-| BA-01 #6976 | Substantial runnable identity/native/session/OAuth/browser proof implemented and independently reviewed. Remaining compatibility and operational proofs below keep the overall gate open. |
+| BA-01 #6976 | Runnable identity/native/session/OAuth/browser, legacy web/recovery and Redis watch proofs implemented and independently reviewed. Process restart and pre-cutover refresh work continue; remaining operational proofs below keep the overall gate open. |
 | BA-03 #6977 | Complete [source writer inventory](./better-auth-writer-inventory.md); no production writer switch or database role fence. |
 | BA-02 #4847 | Read-only audit, 21 tests and local execution delivered. Current production counts and ownership resolutions remain unknown; no final uniqueness migration is enabled. |
-| BA-04 #6978 | Blocked on prototype, one writer and ownership-verified collision resolution. |
+| BA-04 #6978 | Prototype cookie/JWT lineage, clock-aware cutoffs, tombstones and reset races pass; production import still depends on one writer and ownership-verified collision resolution. |
 | BA-05 #6979 | Blocked on the authority and session bridge. |
-| BA-06 #6980 | Blocked on the authority and session bridge. |
+| BA-06 #6980 | New canonical native and Redis watch protocol proofs pass. Old refresh import and pending user-only pairing values, full HTTP behavior and device/offline QA remain acceptance work. |
 | BA-07 #6981 | Tested prototype guards for family isolation, client ownership, consent binding and Disconnect. Production router, app-specific subjects and operational guards remain unimplemented. |
 | BA-08 #6982 | Blocked on first-party adoption and partner authority. |
 | BA-09 #6983 | Production rollout requires restored-database and real-device evidence. |
@@ -99,7 +103,7 @@ in its output. See the inventory for its scope and operational limits.
 | Full repository typecheck | `vp run typecheck` passed; final change verification is recorded with the implementation PR. |
 | Separate Drizzle registry drift check | `vp exec drizzle-kit generate --config auth-prototype.drizzle.config.ts` reported no schema changes after generation. |
 
-**Final combined proof: 9 files / 144 tests passed in 25.62 seconds**, including
+**Initial combined proof: 9 files / 144 tests passed in 25.62 seconds**, including
 clean database teardown. This run used
 `AUTH_PROTOTYPE_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15475/postgres`
 on isolated Postgres **15.17** (image
@@ -111,6 +115,24 @@ Earlier combined runs completed all assertions but failed database cleanup under
 shared Postgres I/O contention. The harness now awaits eager plugin initialization
 and bounds connection/statement/lock waits; the clean isolated rerun includes
 those fixes. Interrupted broad backend runs are not recorded as passed tests.
+
+**Expanded combined proof: 13 files / 262 tests passed in 26.34 seconds**, with
+clean teardown on isolated Postgres 15475 and Redis 15476. The real Chromium
+proof passed **2/2** again through its separately required typecheck. The added
+cases are documented in the [legacy web proof](./better-auth-legacy-web-proof.md),
+[legacy recovery proof](./better-auth-legacy-recovery.md) and
+[watch proof](./better-auth-watch-proof.md):
+
+- 53 real NextAuth encoder/decoder cases, including clock grace and cookie conflicts.
+- 11 joined cookie-to-authority cases, including reset, logout and wrong-account races.
+- 28 old recovery cases, independently rerun after shared reset invalidation was wired.
+- 26 real Redis watch cases, independently rerun after review fixes.
+
+The watch proof uses Redis **7.4.11**, an eight-character code with a 300-second
+TTL, NX allocation and atomic GETDEL. Tests cover a committed mint whose
+response is lost, plus a deterministic reset before a delayed response is used.
+Race tests described as two start orders assert the final fail-closed property;
+they do not claim both possible serialized winners unless a barrier proves them.
 
 The local development audit at **2026-11-04 18:11:40 UTC** measured 53 users,
 1 credential, no provider links, 40 non-normalized addresses, and zero
@@ -129,10 +151,12 @@ demonstrates supported library integration and exposes the custom lifecycle
 work needed. It does not satisfy every BA-01 acceptance criterion or complete
 epic #6975. None of the child issues should be closed from test counts alone.
 
-Before BA-03 changes production writers, finish the legacy NextAuth JWE/chunked
-cookie, native pre-cutover refresh-record, browser-transfer-token, Garmin pairing,
-configured Facebook and pre-cutover recovery-link proofs. Recreate processes,
-not only handler objects, and measure HTTP/WebSocket revocation windows.
+Before BA-03 changes production writers, finish native pre-cutover refresh-record,
+browser-transfer-token, old pending Garmin pairing, configured Facebook and
+production-shaped handoff proofs. The JWE/chunked-cookie and purpose-bound old
+recovery experiments now pass, but historical ownership must still be established
+for actual links. Recreate processes, not only handler objects, and measure
+HTTP/WebSocket revocation windows.
 Password reset/sign-out/deletion proofs do not establish change/set-password,
 verification or provider-link mutation coverage.
 

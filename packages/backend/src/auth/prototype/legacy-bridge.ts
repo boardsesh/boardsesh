@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { BetterAuthPlugin } from 'better-auth';
-import { APIError, createAuthEndpoint } from 'better-auth/api';
+import { APIError, createAuthEndpoint, getSessionFromCtx } from 'better-auth/api';
 import { setSessionCookie } from 'better-auth/cookies';
 import { and, eq, sql } from 'drizzle-orm';
 import { jwtVerify } from 'jose';
@@ -8,12 +8,85 @@ import * as schema from '@boardsesh/db/auth-prototype';
 import { createPrototypeAuthority, type PrototypeDatabase } from './authority';
 import { PROTOTYPE_CONFIGURATION } from './configuration';
 import { PrototypeResponseRollback, rejectPrototypeServerFailure } from './transaction-response';
+import { invalidatePrototypeLegacyRecovery } from './legacy-recovery-state';
+import { verifyPrototypeLegacyWebCookie } from './legacy-web-credentials';
 
 export const PROTOTYPE_LEGACY_KEY = new TextEncoder().encode('boardsesh-disposable-legacy-verification-key-6975');
+export const PROTOTYPE_LEGACY_WEB_SECRET = 'boardsesh-disposable-nextauth-verification-key-6975';
 const MAX_LEGACY_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
 
 type PrototypeTransaction = Parameters<Parameters<PrototypeDatabase['transaction']>[0]>[0];
 type LifecycleDatabase = PrototypeDatabase | PrototypeTransaction;
+
+interface VerifiedLegacyProof {
+  readonly userId: string;
+  readonly issuedAt: Date;
+  readonly expiresAt: Date;
+  readonly validUntil: Date;
+  readonly clockToleranceSeconds: number;
+  readonly originalAuthenticatedAt: Date | null;
+  readonly lineageId: string;
+}
+
+async function verifyLegacyNativeProof(credential: string): Promise<VerifiedLegacyProof | null> {
+  let identity: Awaited<ReturnType<typeof jwtVerify>>['payload'];
+  try {
+    ({ payload: identity } = await jwtVerify(credential, PROTOTYPE_LEGACY_KEY, {
+      algorithms: ['HS256'],
+      issuer: 'boardsesh',
+      audience: 'boardsesh-mobile',
+      requiredClaims: ['sub', 'iat', 'exp'],
+    }));
+  } catch {
+    return null;
+  }
+  const issuedAt = identity.iat!;
+  const expiresAt = identity.exp!;
+  if (
+    !identity.sub ||
+    !Number.isInteger(issuedAt) ||
+    !Number.isInteger(expiresAt) ||
+    issuedAt * 1000 > Date.now() ||
+    expiresAt <= issuedAt ||
+    expiresAt - issuedAt > MAX_LEGACY_LIFETIME_SECONDS
+  )
+    return null;
+  const authenticationTime = identity.auth_time;
+  if (
+    authenticationTime !== undefined &&
+    (typeof authenticationTime !== 'number' ||
+      !Number.isInteger(authenticationTime) ||
+      authenticationTime < 0 ||
+      authenticationTime > issuedAt)
+  )
+    return null;
+  const stableSessionId =
+    typeof identity.authSessionId === 'string' && identity.authSessionId.length > 0
+      ? identity.authSessionId
+      : undefined;
+  return {
+    userId: identity.sub,
+    issuedAt: new Date(issuedAt * 1000),
+    expiresAt: new Date(expiresAt * 1000),
+    validUntil: new Date(expiresAt * 1000),
+    clockToleranceSeconds: 0,
+    originalAuthenticatedAt: typeof authenticationTime === 'number' ? new Date(authenticationTime * 1000) : null,
+    lineageId: `${stableSessionId ? 'session' : 'credential'}:${createHash('sha256')
+      .update(JSON.stringify([identity.sub, stableSessionId ?? credential]))
+      .digest('hex')}`,
+  };
+}
+
+async function verifiedRequestProof(request: Request | undefined): Promise<VerifiedLegacyProof | null> {
+  if (!request) return null;
+  const webProof = await verifyPrototypeLegacyWebCookie(request.headers.get('cookie'), PROTOTYPE_LEGACY_WEB_SECRET);
+  const authorization = request.headers.get('authorization');
+  if (authorization === null) return webProof;
+  if (!authorization.startsWith('Bearer ')) return null;
+  const nativeProof = await verifyLegacyNativeProof(authorization.slice('Bearer '.length));
+  if (!nativeProof || (webProof && nativeProof.userId !== webProof.userId)) return null;
+  return nativeProof;
+}
 
 /** Persist security state in the same transaction as the credential mutation. */
 export async function revokePrototypeUser(
@@ -36,6 +109,7 @@ export async function revokePrototypeUser(
   // Direct Drizzle operations avoid recursively invoking the session deletion hook.
   await database.delete(schema.session).where(eq(schema.session.userId, userId));
   if (revokePartners) {
+    await invalidatePrototypeLegacyRecovery(database, userId);
     await database.delete(schema.oauthAccessToken).where(eq(schema.oauthAccessToken.userId, userId));
     await database.delete(schema.oauthRefreshToken).where(eq(schema.oauthRefreshToken.userId, userId));
     await database.delete(schema.oauthConsent).where(eq(schema.oauthConsent.userId, userId));
@@ -51,60 +125,32 @@ function bridgePlugin(database: LifecycleDatabase): BetterAuthPlugin {
     id: 'boardsesh-disposable-legacy-bridge',
     endpoints: {
       prototypeLegacyBridge: createAuthEndpoint('/prototype-legacy-bridge', { method: 'POST' }, async (context) => {
-        const authorization = context.request?.headers.get('authorization');
-        if (!authorization?.startsWith('Bearer ')) throw new APIError('UNAUTHORIZED');
-        const credential = authorization.slice('Bearer '.length);
-        let identity: Awaited<ReturnType<typeof jwtVerify>>['payload'];
-        try {
-          ({ payload: identity } = await jwtVerify(credential, PROTOTYPE_LEGACY_KEY, {
-            algorithms: ['HS256'],
-            issuer: 'boardsesh',
-            audience: 'boardsesh-mobile',
-            requiredClaims: ['sub', 'iat', 'exp'],
-          }));
-        } catch {
-          throw new APIError('UNAUTHORIZED');
-        }
-        const issuedAt = identity.iat!;
-        const expiresAt = identity.exp!;
+        const proof = await verifiedRequestProof(context.request);
+        if (!proof) throw new APIError('UNAUTHORIZED');
         const now = Date.now();
-        if (
-          !identity.sub ||
-          !Number.isInteger(issuedAt) ||
-          !Number.isInteger(expiresAt) ||
-          issuedAt * 1000 > now ||
-          expiresAt <= issuedAt ||
-          expiresAt - issuedAt > MAX_LEGACY_LIFETIME_SECONDS
-        )
-          throw new APIError('UNAUTHORIZED');
-        const authenticationTime = identity.auth_time;
-        if (
-          authenticationTime !== undefined &&
-          (typeof authenticationTime !== 'number' ||
-            !Number.isInteger(authenticationTime) ||
-            authenticationTime < 0 ||
-            authenticationTime > issuedAt)
-        )
-          throw new APIError('UNAUTHORIZED');
-
-        const userId = identity.sub;
+        if (proof.validUntil.getTime() <= now) throw new APIError('UNAUTHORIZED');
+        const currentSession = await getSessionFromCtx(context);
+        if (currentSession && currentSession.user.id !== proof.userId) throw new APIError('UNAUTHORIZED');
+        const userId = proof.userId;
         const [user] = await database.select().from(schema.user).where(eq(schema.user.id, userId));
         const [cutoff] = await database
           .select()
           .from(schema.prototypeUserCutoff)
           .where(eq(schema.prototypeUserCutoff.userId, userId));
-        if (!user || (cutoff && issuedAt * 1000 <= cutoff.revokedThrough.getTime())) throw new APIError('UNAUTHORIZED');
+        // A credential minted before reset on an ahead-clock replica must not
+        // appear newer than the authoritative cutoff. Preserve raw signed iat
+        // in the decoder, but compare its conservative lower bound here.
+        if (
+          !user ||
+          (cutoff && proof.issuedAt.getTime() - proof.clockToleranceSeconds * 1000 <= cutoff.revokedThrough.getTime())
+        ) {
+          throw new APIError('UNAUTHORIZED');
+        }
 
         // Real historic native JWTs lack a stable session ID and auth_time. Their
         // exact fingerprint is idempotent; revocation must conservatively use an
         // account cutoff. Rolling iat is deliberately never used as fresh auth.
-        const stableSessionId =
-          typeof identity.authSessionId === 'string' && identity.authSessionId.length > 0
-            ? identity.authSessionId
-            : undefined;
-        const lineageId = `${stableSessionId ? 'session' : 'credential'}:${createHash('sha256')
-          .update(JSON.stringify([userId, stableSessionId ?? credential]))
-          .digest('hex')}`;
+        const lineageId = proof.lineageId;
         const [lineage] = await database
           .select()
           .from(schema.prototypeLegacyLineage)
@@ -121,8 +167,7 @@ function bridgePlugin(database: LifecycleDatabase): BetterAuthPlugin {
           }
           session = existingSession;
         } else {
-          const originalAuthenticatedAt =
-            typeof authenticationTime === 'number' ? new Date(authenticationTime * 1000) : null;
+          const originalAuthenticatedAt = proof.originalAuthenticatedAt;
           const [createdSession] = await database
             .insert(schema.session)
             .values({
@@ -131,7 +176,7 @@ function bridgePlugin(database: LifecycleDatabase): BetterAuthPlugin {
               userId,
               createdAt: originalAuthenticatedAt ?? new Date(0),
               updatedAt: new Date(now),
-              expiresAt: new Date(expiresAt * 1000),
+              expiresAt: proof.validUntil,
               originalAuthenticatedAt,
               legacyLineageId: lineageId,
             })
@@ -142,7 +187,7 @@ function bridgePlugin(database: LifecycleDatabase): BetterAuthPlugin {
             userId,
             sessionId: session.id,
             originalAuthenticatedAt,
-            originalExpiresAt: new Date(expiresAt * 1000),
+            originalExpiresAt: proof.expiresAt,
           });
         }
         await setSessionCookie(context, { session, user });

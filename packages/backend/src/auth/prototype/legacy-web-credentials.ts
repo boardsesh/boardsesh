@@ -1,0 +1,213 @@
+import { createHash } from 'node:crypto';
+import { hkdf } from '@panva/hkdf';
+import { jwtDecrypt } from 'jose';
+
+const SESSION_COOKIE_NAMES = ['__Secure-next-auth.session-token', 'next-auth.session-token'] as const;
+const MAX_COOKIE_HEADER_LENGTH = 128 * 1024;
+const MAX_CREDENTIAL_LENGTH = 64 * 1024;
+const MAX_COOKIE_CHUNKS = 64;
+const MAX_SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+// Match the backend's installed validateNextAuthToken transport. NextAuth's
+// browser decoder uses 15 seconds instead; this is deliberately explicit.
+export const PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS = 60;
+
+export interface VerifiedPrototypeLegacyWebCredential {
+  readonly kind: 'nextauth-v4-jwe';
+  readonly userId: string;
+  readonly issuedAt: Date;
+  readonly expiresAt: Date;
+  readonly validUntil: Date;
+  readonly clockToleranceSeconds: typeof PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS;
+  readonly originalAuthenticatedAt: null;
+  readonly authSessionId: string | null;
+  readonly lineageId: string;
+  readonly credentialFingerprint: string;
+  readonly requiresAccountCutoff: boolean;
+  readonly cookieNames: readonly string[];
+}
+
+function fingerprint(material: string): string {
+  return createHash('sha256').update(material).digest('hex');
+}
+
+/**
+ * Exact installed NextAuth 4.24.15 encoding, using only its legacy verification
+ * key. The library's rolling iat/jti never prove original authentication age.
+ * There is intentionally no framework dependency or successful-token cache.
+ */
+export async function verifyPrototypeLegacyNextAuthJwe(
+  credential: string,
+  verificationSecret: string,
+  currentTime = new Date(),
+): Promise<VerifiedPrototypeLegacyWebCredential | null> {
+  if (
+    !verificationSecret ||
+    !credential ||
+    credential.length > MAX_CREDENTIAL_LENGTH ||
+    credential.split('.').length !== 5 ||
+    !Number.isFinite(currentTime.getTime())
+  )
+    return null;
+
+  try {
+    // Cookie names are not a salt in NextAuth v4. Do not import Auth.js v5's
+    // different key context or broaden supported encryption algorithms.
+    const encryptionKey = await hkdf(
+      'sha256',
+      new TextEncoder().encode(verificationSecret),
+      '',
+      'NextAuth.js Generated Encryption Key',
+      32,
+    );
+    const { payload } = await jwtDecrypt(credential, encryptionKey, {
+      keyManagementAlgorithms: ['dir'],
+      contentEncryptionAlgorithms: ['A256GCM'],
+      requiredClaims: ['sub', 'iat', 'exp'],
+      currentDate: currentTime,
+      clockTolerance: PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS,
+    });
+    const userId = payload.sub;
+    const issuedAt = payload.iat;
+    const expiresAt = payload.exp;
+    if (
+      typeof userId !== 'string' ||
+      userId.trim().length === 0 ||
+      userId.length > 256 ||
+      typeof issuedAt !== 'number' ||
+      !Number.isInteger(issuedAt) ||
+      issuedAt < 0 ||
+      typeof expiresAt !== 'number' ||
+      !Number.isInteger(expiresAt) ||
+      issuedAt * 1000 > currentTime.getTime() + PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS * 1000 ||
+      expiresAt <= issuedAt ||
+      expiresAt - issuedAt > MAX_SESSION_LIFETIME_SECONDS ||
+      // The installed session encoder sets none of these purpose/audience
+      // claims. A separately labelled credential must not become a session.
+      payload.iss !== undefined ||
+      payload.aud !== undefined ||
+      payload.purpose !== undefined ||
+      payload.token_use !== undefined
+    )
+      return null;
+
+    const claimedSessionId = payload.authSessionId;
+    if (
+      claimedSessionId !== undefined &&
+      (typeof claimedSessionId !== 'string' || claimedSessionId.trim().length === 0 || claimedSessionId.length > 256)
+    )
+      return null;
+    const authSessionId = typeof claimedSessionId === 'string' ? claimedSessionId : null;
+    const credentialFingerprint = fingerprint(credential);
+    return {
+      kind: 'nextauth-v4-jwe',
+      userId,
+      issuedAt: new Date(issuedAt * 1000),
+      expiresAt: new Date(expiresAt * 1000),
+      // Keep the signed expiry distinct from the accepted transport grace.
+      // A later bridge must also subtract the skew allowance from issuedAt
+      // when comparing user cutoffs; an ahead-clock token is not a new login.
+      validUntil: new Date((expiresAt + PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS) * 1000),
+      clockToleranceSeconds: PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS,
+      // Existing web sessions do not persist a general verified login time.
+      // In particular, do not promote an unsolicited auth_time or rolling iat.
+      originalAuthenticatedAt: null,
+      authSessionId,
+      lineageId: `${authSessionId ? 'session' : 'credential'}:${fingerprint(
+        JSON.stringify(['nextauth-v4', userId, authSessionId ?? credentialFingerprint]),
+      )}`,
+      credentialFingerprint,
+      requiresAccountCutoff: authSessionId === null,
+      cookieNames: [],
+    };
+  } catch {
+    // Crypto failures may include credential bytes. No tokens or claims enter logs.
+    return null;
+  }
+}
+
+type CookieCredential = { credential: string; cookieNames: string[] };
+
+function cookieCredentials(cookieHeader: string): CookieCredential[] | null {
+  if (cookieHeader.length > MAX_COOKIE_HEADER_LENGTH) return null;
+  const cookies = new Map<string, string>();
+  for (const member of cookieHeader.split(';')) {
+    const separator = member.indexOf('=');
+    if (separator < 0) continue;
+    const name = member.slice(0, separator).trim();
+    if (!SESSION_COOKIE_NAMES.some((baseName) => name === baseName || name.startsWith(`${baseName}.`))) continue;
+    let content: string;
+    try {
+      content = decodeURIComponent(member.slice(separator + 1).trim());
+    } catch {
+      return null;
+    }
+    const existing = cookies.get(name);
+    if (existing !== undefined && existing !== content) return null;
+    cookies.set(name, content);
+  }
+
+  const candidates: CookieCredential[] = [];
+  for (const baseName of SESSION_COOKIE_NAMES) {
+    const base = cookies.get(baseName);
+    const chunks: { name: string; index: number; content: string }[] = [];
+    for (const [name, content] of cookies) {
+      if (!name.startsWith(`${baseName}.`)) continue;
+      const suffix = name.slice(baseName.length + 1);
+      if (!/^(0|[1-9]\d*)$/.test(suffix)) return null;
+      const index = Number(suffix);
+      if (!Number.isSafeInteger(index) || index >= MAX_COOKIE_CHUNKS) return null;
+      chunks.push({ name, index, content });
+    }
+    if (base !== undefined && chunks.length > 0) return null;
+    if (base !== undefined) {
+      if (!base) return null;
+      candidates.push({ credential: base, cookieNames: [baseName] });
+    } else if (chunks.length > 0) {
+      chunks.sort((firstChunk, secondChunk) => firstChunk.index - secondChunk.index);
+      if (chunks.some((chunk, index) => chunk.index !== index || chunk.content.length === 0)) return null;
+      candidates.push({
+        credential: chunks.map((chunk) => chunk.content).join(''),
+        cookieNames: chunks.map((chunk) => chunk.name),
+      });
+    }
+  }
+  return candidates;
+}
+
+/**
+ * Accept both historical names and contiguous NextAuth chunks. Conflicting
+ * identities fail closed rather than selecting whichever cookie arrived first.
+ * Invalid stale alternate credentials do not override a valid session. Equal
+ * credentials, or rotations with the same proven user/session lineage,
+ * are safe to combine; their issuance and expiry bounds remain conservative.
+ */
+export async function verifyPrototypeLegacyWebCookie(
+  cookieHeader: string | null,
+  verificationSecret: string,
+  currentTime = new Date(),
+): Promise<VerifiedPrototypeLegacyWebCredential | null> {
+  if (cookieHeader === null) return null;
+  const candidates = cookieCredentials(cookieHeader);
+  if (!candidates?.length) return null;
+  const verified = await Promise.all(
+    candidates.map(async (candidate) => {
+      const proof = await verifyPrototypeLegacyNextAuthJwe(candidate.credential, verificationSecret, currentTime);
+      return proof ? { ...proof, cookieNames: candidate.cookieNames } : null;
+    }),
+  );
+  const proofs = verified.filter((proof) => proof !== null);
+  if (proofs.length === 0) return null;
+  const first = proofs[0];
+  if (proofs.some((proof) => proof.userId !== first.userId || proof.lineageId !== first.lineageId)) return null;
+  const fingerprints = [...new Set(proofs.map((proof) => proof.credentialFingerprint))].sort();
+  return {
+    ...first,
+    issuedAt: new Date(Math.min(...proofs.map((proof) => proof.issuedAt.getTime()))),
+    expiresAt: new Date(Math.min(...proofs.map((proof) => proof.expiresAt.getTime()))),
+    validUntil: new Date(Math.min(...proofs.map((proof) => proof.validUntil.getTime()))),
+    credentialFingerprint: fingerprints.length === 1 ? fingerprints[0] : fingerprint(JSON.stringify(fingerprints)),
+    // Include stale recognized alternates so a successful handoff can clear
+    // their exact chunk names, without trusting any of their identity claims.
+    cookieNames: candidates.flatMap((candidate) => candidate.cookieNames),
+  };
+}

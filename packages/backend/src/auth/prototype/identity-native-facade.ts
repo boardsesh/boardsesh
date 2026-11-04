@@ -138,6 +138,14 @@ export function createPrototypeNativeFacade(
     });
   }
 
+  /** Trusted internal service only: callers must prove this binding, never accept request user IDs. */
+  async function issueForVerifiedSession(userId: string, sessionId: string): Promise<PrototypeNativeTokenPair> {
+    return database.transaction(async (transaction) => {
+      await lockLifecycle(transaction);
+      return issue(transaction, await lockedSession(transaction, userId, sessionId));
+    });
+  }
+
   async function refresh(refreshToken: string) {
     const hash = tokenHash(refreshToken);
     const [candidate] = await database
@@ -210,5 +218,5 @@ export function createPrototypeNativeFacade(
     return { userId: current.session.userId, sessionId: current.session.id };
   }
 
-  return { credentials, social, refresh, revoke, validateAccessToken };
+  return { credentials, social, issueForVerifiedSession, refresh, revoke, validateAccessToken };
 }
