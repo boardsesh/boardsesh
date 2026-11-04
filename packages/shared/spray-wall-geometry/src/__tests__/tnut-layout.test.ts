@@ -189,6 +189,15 @@ describe('persisted T-nut layout', () => {
     expect(readTnutLayout(saved)).not.toHaveProperty('ledPlacement');
   });
 
+  it.each([false, true])('round-trips complementary positions for either offset phase (%s)', (firstRowOffset) => {
+    const configured = { ...saved, pattern: 'offset', firstRowOffset, ledPlacement: 'alternating' };
+    expect(readTnutLayout(JSON.parse(JSON.stringify(configured)))).toEqual(configured);
+  });
+
+  it.each(['grid', 'custom'])('rejects complementary positions for %s', (pattern) => {
+    expect(readTnutLayout({ ...saved, pattern, ledPlacement: 'alternating' })).toBeNull();
+  });
+
   it.each([null, 'unknown', 'alternate', 1, {}])('rejects unsupported LED placement %j', (ledPlacement) => {
     expect(readTnutLayout({ ...saved, ledPlacement })).toBeNull();
   });

@@ -1441,6 +1441,8 @@
     "ledCenter": "Dans la prise",
     "ledSides": "À gauche et à droite",
     "ledBelow": "Sous la prise",
+    "ledAlternating": "Positions complémentaires",
+    "ledAlternatingHint": "Les LED occupent les espaces de chaque rangée de la grille décalée, en alternance avec les prises.",
     "ledSetupPending": "La prochaine étape, associer les numéros des LED à leurs positions, n’est pas encore implémentée.",
     "discardTitle": "Quitter la configuration des LED ?",
     "discardBody": "Tes modifications ne sont pas encore enregistrées.",

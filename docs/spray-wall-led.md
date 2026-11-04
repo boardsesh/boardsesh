@@ -27,6 +27,12 @@ one surface with one WLED controller. It does not illuminate climbs or map holds
    editor. Assigning LED numbers to positions is not implemented yet.
    No hardware commands are sent.
 
+Offset grids also offer **Complementary positions**: LEDs occupy the opposite
+phase of the staggered hold grid, as in CRUX. The diagram follows the chosen
+top-row inset. Switching to grid or custom clears this offset-only choice;
+the three common placement choices remain available for every wall pattern.
+This saves the arrangement type only, not LED coordinates or wiring indices.
+
 ## Wall image and coordinates
 
 Both the grid calibration and the manual editor use the existing **Wall only**

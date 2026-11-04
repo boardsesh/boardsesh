@@ -1441,6 +1441,8 @@
     "ledCenter": "En la presa",
     "ledSides": "A izquierda y derecha",
     "ledBelow": "Debajo de la presa",
+    "ledAlternating": "Posiciones complementarias",
+    "ledAlternatingHint": "Los LED ocupan los huecos de cada fila de la cuadrícula desplazada, alternándose con las presas.",
     "ledSetupPending": "El siguiente paso, asignar los números de los LED a sus posiciones, aún no está implementado.",
     "discardTitle": "¿Salir de la configuración de LED?",
     "discardBody": "Tus cambios aún no se han guardado.",

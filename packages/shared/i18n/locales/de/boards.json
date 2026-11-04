@@ -1441,6 +1441,8 @@
     "ledCenter": "Im Griff",
     "ledSides": "Links und rechts",
     "ledBelow": "Unter dem Griff",
+    "ledAlternating": "Gegenpositionen",
+    "ledAlternatingHint": "Die LEDs sitzen in den Lücken jeder Reihe des versetzten Rasters und wechseln sich mit den Griffen ab.",
     "ledSetupPending": "Der nächste Schritt, die Zuordnung der LED-Nummern zu den Positionen, ist noch nicht implementiert.",
     "discardTitle": "LED-Einrichtung verlassen?",
     "discardBody": "Deine Änderungen sind noch nicht gespeichert.",

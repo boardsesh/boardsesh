@@ -148,7 +148,15 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
     }),
 }));
 vi.mock('../TnutPatternThumbnail', () => ({ TnutPatternThumbnail: () => null }));
-vi.mock('../LedPlacementThumbnail', () => ({ LedPlacementThumbnail: () => null }));
+vi.mock('../LedPlacementThumbnail', () => ({
+  LedPlacementThumbnail: ({ placement, firstRowOffset }: { placement: string; firstRowOffset?: boolean }) =>
+    placement === 'alternating'
+      ? createElement('div', {
+          'data-testid': 'alternating-thumbnail',
+          'data-first-row-offset': String(firstRowOffset),
+        })
+      : null,
+}));
 vi.mock('../FlattenedSprayPhoto', () => ({
   FlattenedSprayPhoto: ({ photoUri }: { photoUri: string }) =>
     createElement('div', { 'data-testid': 'rectified-photo', 'data-uri': photoUri }),
@@ -426,6 +434,7 @@ describe('SprayWallLedSetupScreen', () => {
       expect(radio('ledCenter')).toBeTruthy();
       expect(radio('ledBelow')).toBeTruthy();
       expect(radio('ledSides').getAttribute('aria-checked')).toBe('true');
+      expect(screen.queryByRole('radio', { name: 'sprayLedSetup.ledAlternating' }) !== null).toBe(pattern === 'offset');
       fireEvent.click(radio('ledBelow'));
       back();
       next();
@@ -436,6 +445,77 @@ describe('SprayWallLedSetupScreen', () => {
       expect(storage.save).toHaveBeenLastCalledWith(
         'wall-1',
         expect.objectContaining({ pattern, ledPlacement: 'below' }),
+      );
+    },
+  );
+
+  it.each([false, true])(
+    'restores complementary positions and follows changes to the first-row phase (%s)',
+    async (firstRowOffset) => {
+      storage.load.mockResolvedValue({
+        ...savedLayout(),
+        pattern: 'offset',
+        firstRowOffset,
+        ledPlacement: 'alternating',
+      });
+      await open();
+      next();
+      next();
+      next();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(radio('ledAlternating').getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByTestId('alternating-thumbnail').getAttribute('data-first-row-offset')).toBe(
+        String(firstRowOffset),
+      );
+      back();
+      back();
+      back();
+      fireEvent.click(radio(firstRowOffset ? 'firstFull' : 'firstInset'));
+      next();
+      next();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(radio('ledAlternating').getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByTestId('alternating-thumbnail').getAttribute('data-first-row-offset')).toBe(
+        String(!firstRowOffset),
+      );
+      next();
+      await waitFor(() => expect(controls.back).toHaveBeenCalledOnce());
+      expect(storage.save).toHaveBeenLastCalledWith(
+        'wall-1',
+        expect.objectContaining({ pattern: 'offset', firstRowOffset: !firstRowOffset, ledPlacement: 'alternating' }),
+      );
+    },
+  );
+
+  it.each(['grid', 'custom'] as const)(
+    'clears complementary positions when changing the wall pattern to %s',
+    async (pattern) => {
+      storage.load.mockResolvedValue({ ...savedLayout(), pattern: 'offset' });
+      await open();
+      next();
+      next();
+      next();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      fireEvent.click(radio('ledAlternating'));
+      expect(radio('ledAlternating').getAttribute('aria-checked')).toBe('true');
+      back();
+      back();
+      back();
+      back();
+      fireEvent.click(radio(pattern));
+      next();
+      if (pattern === 'grid') next();
+      else tap({ x: 0.5, y: 0.5 });
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(screen.queryByRole('radio', { name: 'sprayLedSetup.ledAlternating' })).toBeNull();
+      expect(controls.header?.trailing.disabled).toBe(true);
+      expect(storage.save).toHaveBeenLastCalledWith(
+        'wall-1',
+        expect.objectContaining({ pattern, ledPlacement: undefined }),
       );
     },
   );

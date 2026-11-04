@@ -1441,6 +1441,8 @@
     "ledCenter": "Nella presa",
     "ledSides": "A sinistra e a destra",
     "ledBelow": "Sotto la presa",
+    "ledAlternating": "Posizioni complementari",
+    "ledAlternatingHint": "I LED occupano gli spazi di ogni fila della griglia sfalsata, alternandosi con le prese.",
     "ledSetupPending": "Il prossimo passaggio, assegnare i numeri dei LED alle posizioni, non è ancora implementato.",
     "discardTitle": "Uscire dalla configurazione LED?",
     "discardBody": "Le modifiche non sono ancora state salvate.",

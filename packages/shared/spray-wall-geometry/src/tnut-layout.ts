@@ -10,7 +10,7 @@ export type TnutCorners = {
 };
 export type TnutPattern = 'grid' | 'offset' | 'custom';
 /** Placement choice only; physical LED indices are assigned separately. */
-export type SprayLedPlacement = 'center' | 'sides' | 'below';
+export type SprayLedPlacement = 'center' | 'sides' | 'below' | 'alternating';
 
 export const MIN_TNUT_DIMENSION = 2;
 export const MAX_TNUT_DIMENSION = 50;
@@ -205,7 +205,9 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     (candidate.ledPlacement !== undefined &&
       candidate.ledPlacement !== 'center' &&
       candidate.ledPlacement !== 'sides' &&
-      candidate.ledPlacement !== 'below') ||
+      candidate.ledPlacement !== 'below' &&
+      candidate.ledPlacement !== 'alternating') ||
+    (candidate.ledPlacement === 'alternating' && candidate.pattern !== 'offset') ||
     (candidate.pattern !== 'grid' && candidate.pattern !== 'offset' && candidate.pattern !== 'custom') ||
     !isDimension(candidate.rows) ||
     !isDimension(candidate.columns) ||

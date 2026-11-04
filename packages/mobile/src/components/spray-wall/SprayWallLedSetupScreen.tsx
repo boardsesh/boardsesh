@@ -396,7 +396,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                   selected={layout.pattern === pattern}
                   onPress={() => {
                     if (pattern !== layout.pattern) {
-                      changeLayout({ pattern, holes: [] });
+                      changeLayout({
+                        pattern,
+                        holes: [],
+                        ledPlacement: layout.ledPlacement === 'alternating' ? undefined : layout.ledPlacement,
+                      });
                       setHistory([]);
                       generatedSignature.current = null;
                     }
@@ -565,6 +569,21 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                 </ChoiceCard>
               ))}
             </View>
+            {layout.pattern === 'offset' ? (
+              <View style={[styles.row, { gap: spacing[2], alignItems: 'center' }]}>
+                <ChoiceCard
+                  label={t('sprayLedSetup.ledAlternating')}
+                  selected={layout.ledPlacement === 'alternating'}
+                  disabled={saving}
+                  onPress={() => changeLayout({ ledPlacement: 'alternating' })}
+                >
+                  <LedPlacementThumbnail placement="alternating" firstRowOffset={layout.firstRowOffset} />
+                </ChoiceCard>
+                <View style={{ flex: 2 }}>
+                  <Text variant="footnote">{t('sprayLedSetup.ledAlternatingHint')}</Text>
+                </View>
+              </View>
+            ) : null}
             <Text variant="footnote">{t('sprayLedSetup.ledSetupPending')}</Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('sprayLedSetup.localHint')}

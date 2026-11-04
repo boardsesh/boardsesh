@@ -1441,6 +1441,8 @@
     "ledCenter": "In the hold",
     "ledSides": "Left and right",
     "ledBelow": "Below the hold",
+    "ledAlternating": "Complementary positions",
+    "ledAlternatingHint": "LEDs fill the gaps in each row of the offset grid, alternating with the holds.",
     "ledSetupPending": "The next step, assigning LED numbers to positions, is not implemented yet.",
     "discardTitle": "Leave LED setup?",
     "discardBody": "Your changes have not been saved yet.",
