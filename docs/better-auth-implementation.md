@@ -6,7 +6,7 @@ Started: 2026-11-04, from `origin/main` at `796746a5db`.
 
 Review: [PR #7280](https://github.com/boardsesh/boardsesh/pull/7280) is ready.
 The latest reviewed batch passes **702 cases on both PostgreSQL 15.17 and 18.6**.
-Recorded full CI is green at `10795b93f0`; cloud review reported no findings at
+Recorded full CI is green at `0487eaca0b`; cloud review reported no findings at
 the earlier `689446f9bc` head. Later commits require their own CI. Production migration remains gated. The
 user's password policy is to keep the current device signed in, revoke other
 credentials, and revoke every session after forgotten-password reset.
@@ -70,6 +70,7 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Consume validated browser-link intents even when provider work fails. | Keep receipt consumption in the outer transaction and provider/credential changes in a savepoint. Cancellation, rejection or late policy failure requires a new flow while original credentials survive; wrong/stale actors reject before consumption. A final supported after-hook observer corrects the pinned callback's saved302/late403 behavior. |
 | 2026-11-04 | Use one source-bound canonical browser-to-native handoff. | A signed JWT with readable claims carries a distinct purpose/key and exact120-second deadline. A hashed single-use receipt binds the same user/session/generation; native issuance reuses the canonical source and never creates fresh authentication. A valid optional cookie must match the exact source session. |
 | 2026-11-04 | Independent gate decision: implement BA-03 over the existing store. | Supported-API capability and concurrency evidence permits implementing backend centralization, reservations and fencing. This does not authorize activating a writer switch, importing identities or launching partners. The final configured Google browser-code fixture closes the last identified prototype capability gap; deployed provider/device and operational gates remain. |
+| 2026-11-04 | Keep prototype test discovery separate from current-store implementation tests. | Explicit prototype and identity-audit patterns retain all 28 proof files. The new BA-03 current-store tests need the ordinary backend worker database setup and must not enter the isolated prototype project when the PRs merge. Independent discovery review verified both boundaries. |
 
 ## Acceptance ledger
 
@@ -234,13 +235,17 @@ servers**, with clean teardown: **77.74 seconds on PostgreSQL15.17** and
 The new Google test passed selected-file lint with zero warnings/errors and
 independent dual-version QA. It changes no runtime source, schema or dependency.
 
-The published `10795b93f0` slice passed [full remote CI run 41909591768](https://github.com/boardsesh/boardsesh/actions/runs/41909591768):
+The published `0487eaca0b` slice passed [full remote CI run 41916355530](https://github.com/boardsesh/boardsesh/actions/runs/41916355530):
 **59,948 passed, 0 failed, 23 skipped**. Backend, serial, prototype, HTTPS browser,
 typecheck, lint, guard, migration, mobile bundle and Docker web jobs all passed.
 The increased backend budget resolved the measured Chromium-install timeout.
 PR #7280 was marked ready for review after checking that it had no review
-comments or merge conflicts. The unpublished provider/handoff follow-up
-still requires its own committed-head CI; this does not close the epic's gates.
+comments or merge conflicts. The later discovery-only compatibility follow-up
+still requires its own committed-head CI. Its independent review retained all
+28 files; the same **702 cases passed on PostgreSQL18.6 in58.97 seconds** and the
+full aggregate typecheck again passed **59 tasks**. This does not close the
+epic's production gates. The first current-store service slice is independently
+reviewed in [PR #7282](https://github.com/boardsesh/boardsesh/pull/7282).
 
 The local development audit at **2026-11-04 18:11:40 UTC** measured 53 users,
 1 credential, no provider links, 40 non-normalized addresses, and zero

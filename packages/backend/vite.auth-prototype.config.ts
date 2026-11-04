@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     name: 'auth-prototype',
     environment: 'node',
-    include: ['src/auth/**/__tests__/*.test.ts'],
+    include: ['src/auth/prototype/__tests__/*.test.ts', 'src/auth/__tests__/identity-audit*.test.ts'],
     testTimeout: 30000,
     hookTimeout: 60000,
     maxWorkers: 4,
