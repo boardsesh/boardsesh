@@ -34,6 +34,7 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Generate the schema offline. | Better Auth initializes OAuth resource seeds eagerly. Generation now uses the Drizzle mock only for schema discovery with empty resource seeds; a regression fails if it constructs a Postgres client. Actual protocol tests still use real Postgres. |
 | 2026-11-04 | Guard both GET and form POST authorization. | The provider supports both transports. Reconnect consent must use the actual form body on POST, ignoring misleading URL parameters; the reviewer reproduced and fixed the missing POST guard. |
 | 2026-11-04 | Use a separate local Postgres for final QA. | The shared instance was blocked on WAL/file-sync I/O during broad tests. An isolated Postgres 15.17 container with temporary storage produced a clean run; this does not prove database crash durability. |
+| 2026-11-04 | Give the browser fixture a separate required typecheck. | The first Docker web CI build exposed backend imports from the fixture in the slim production context. The product tsconfig now excludes that folder; a dedicated fixture tsconfig and aggregate task keep its full typecheck required without expanding the production context. |
 
 ## Acceptance ledger
 
