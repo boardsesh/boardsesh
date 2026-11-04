@@ -86,6 +86,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@better-auth/drizzle-adapter": "1.7.17",
+    "@better-auth/oauth-provider": "1.7.17",
     "@boardsesh/graphql-client": "workspace:*",
     "@boardsesh/queue-react": "workspace:*",
     "@boardsesh/queue-runtime": "workspace:*",
@@ -93,6 +95,7 @@
     "@types/node": "^25.9.5",
     "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.18.1",
+    "better-auth": "1.7.17",
     "drizzle-kit": "^0.31.10",
     "postgres": "^3.4.9",
     "typescript": "~7.0.2",

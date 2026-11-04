@@ -95,6 +95,11 @@
       "types": "./src/testing/moonboard-residual-dedup-replay.ts",
       "import": "./src/testing/moonboard-residual-dedup-replay.ts",
       "default": "./src/testing/moonboard-residual-dedup-replay.ts"
+    },
+    "./auth-prototype": {
+      "types": "./src/auth-prototype/index.ts",
+      "import": "./src/auth-prototype/index.ts",
+      "default": "./src/auth-prototype/index.ts"
     }
   },
   "scripts": {

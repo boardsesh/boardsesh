@@ -1114,6 +1114,14 @@ export default defineConfig({
         command: 'vp test run --project backend && vp test run --project backend-serial',
         cache: false,
       },
+      'test:auth-prototype': {
+        command: 'vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent',
+        cache: false,
+      },
+      'test:auth-prototype:browser': {
+        command: 'cd packages/web && vp exec playwright test --config=playwright.auth-prototype.config.ts',
+        cache: false,
+      },
       // The offline-sync engine suites live in their own Vitest project
       // (packages/shared/offline-sync/vite.config.ts, name: 'offline-sync').
       // Neither `test:mobile` nor the backend project pulls them in, so a

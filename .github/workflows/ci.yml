@@ -135,6 +135,9 @@ jobs:
               - 'packages/web/**'
             backend:
               - 'packages/backend/**'
+              # The HTTPS auth proof runs with the backend's disposable Postgres.
+              - 'packages/web/auth-prototype/**'
+              - 'packages/web/playwright.auth-prototype.config.ts'
             mobile:
               - 'packages/mobile/**'
               - 'packages/board-renderer/wasm/pkg/**'
@@ -1368,6 +1371,20 @@ jobs:
           vp test run --project backend-serial \
             --reporter=verbose --reporter=github-actions \
             --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-serial.xml
+      - name: Run Better Auth compatibility prototype
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-prototype
+      - name: Install Chromium for auth compatibility proof
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        working-directory: packages/web
+        run: vp exec playwright install --with-deps chromium
+      - name: Run HTTPS auth browser proof
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-prototype:browser
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
