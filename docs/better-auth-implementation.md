@@ -39,18 +39,30 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Bind old recovery links only with proven original ownership. | Synthetic issuance evidence supplies immutable user IDs. Stable user/purpose supersession markers block replay and delayed import across changed cutover arguments; real links without ownership evidence remain a readiness exception. |
 | 2026-11-04 | Share recovery invalidation with canonical reset. | Reset/compromise invalidates both imported purposes in the same transaction; ordinary sign-out retains valid mailbox recovery links. Independent tests caught and closed an initially facade-only invalidation gap. |
 | 2026-11-04 | Keep watch issuance behind the canonical native service. | Redis proves a one-time user/session binding; a trusted internal method rechecks live ownership under the lifecycle fence and reuses existing native token issuance. There is no second watch password or JWT policy. |
+| 2026-11-04 | Persist migration epochs outside expiring verification records. | Cleanup must never let a caller supply a later cutover and reopen old refresh or recovery imports. The dedicated metadata table has no expiry or user foreign key; source snapshots and dates are copied before awaiting the lifecycle fence. |
+| 2026-11-04 | Import old native refresh hashes without inferring authentication age. | Preserve owner, hash and exact original expiry, then use the same rotating native facade. Source row creation is not login time. A canonical cutoff or conflicting immutable source binding rejects import. |
+| 2026-11-04 | Test actual process replacement and a kill before commit. | Two Node processes share Postgres. An IPC barrier proves the mutation reached the open transaction before SIGKILL; a survivor observes rollback, and a retry survives replacement. Postgres crash and restored-production rollback remain unproved. |
+| 2026-11-04 | Preserve consumed refresh ancestry independently of provider cleanup. | Expiring or pruning an ancestor must not let its replay leave rolling descendants alive. Hash-only family metadata remains while descendants can live; closing the family removes its sidecars. Natural-expiry retention cleanup is a separate production gate. |
+| 2026-11-04 | Finalize approved offline token rows before publication. | Pinned provider issuance validates the original browser session first. A transaction-bound after-token hook detaches only the exact newly issued offline grant from that session before commit. This is tested Drizzle augmentation, not stock configuration or a background repair; reset, Disconnect and deletion still revoke it. |
+| 2026-11-04 | Exercise the current backend CORS helper in a real browser. | Website and app origins perform actual credentialed preflight, login, server-side cookie reads and logout. The forwarding model replaces hostile headers; deployed ingress, actual product pages and Safari remain gates. Shared-domain cookies require trusting every matching server. |
+| 2026-11-04 | Budget CI for the full backend and cold browser installation. | Run 41891846044 passed backend, serial and prototype tests before its 20-minute timeout cancelled Chromium installation. Increase only that job to 30 minutes; preserve every required check. |
+| 2026-11-04 | Treat browser handoff issuance separately from source authentication. | The actual returning-user issuer omits source session identity. A recent handoff cannot bypass reset or a prior source tombstone; ambiguous source-less exchange requires real reauthentication. Proven live mapped lineage can retain its existing age. This compatibility limit blocks production adoption until source issuance is fenced and identified. |
+| 2026-11-04 | Explicitly enable origin and CSRF checks even in test mode. | Pinned Better Auth otherwise silently skips origin checks under `NODE_ENV=test`. The base configuration sets both disabling flags to false, and advanced overrides merge with those defaults. Six real-request regressions cover hostile cookie origins, redirect destinations and first-login navigation in both configurations. |
+| 2026-11-04 | Serialize social callback state consumption too. | The actual Facebook callback's stock state read/delete permits two subjects to authenticate against the same state/cookie under a deterministic race. The existing transaction-bound wrapper and lifecycle fence produce one winner; the unsafe stock behavior is explicitly characterized rather than counted as a safe configuration. |
+| 2026-11-04 | Record source denial for canonical session signout. | A fresh non-legacy canonical session previously left no tombstone, allowing an unbound pending handoff/watch code to restore access. Its deletion now records a permanent denial in the same transaction. Newly unseen legacy admissions reject; known live mappings, unrelated canonical sessions and offline partner grants survive. |
+| 2026-11-04 | Preserve pending old Garmin codes within a fixed admission window. | Real Redis PTTL and GETDEL retain remaining validity, bounded by a permanent 300-second cutover epoch. The epoch commits before the destructive Redis operation. SQL mint failure cannot restore the consumed code; no distributed exactly-once claim or in-memory fallback is made. |
 
 ## Acceptance ledger
 
 | Child | Evidence/status |
 | --- | --- |
-| BA-01 #6976 | Runnable identity/native/session/OAuth/browser, legacy web/recovery and Redis watch proofs implemented and independently reviewed. Process restart and pre-cutover refresh work continue; remaining operational proofs below keep the overall gate open. |
+| BA-01 #6976 | Identity/native/session/OAuth/browser, configured Facebook, legacy web/recovery/transfer, pre-cutover refresh, real process restart and both new/pending-old Redis watch proofs implemented and independently reviewed. Source-provenance and operational proofs below keep the overall gate open. |
 | BA-03 #6977 | Complete [source writer inventory](./better-auth-writer-inventory.md); no production writer switch or database role fence. |
 | BA-02 #4847 | Read-only audit, 21 tests and local execution delivered. Current production counts and ownership resolutions remain unknown; no final uniqueness migration is enabled. |
 | BA-04 #6978 | Prototype cookie/JWT lineage, clock-aware cutoffs, tombstones and reset races pass; production import still depends on one writer and ownership-verified collision resolution. |
 | BA-05 #6979 | Blocked on the authority and session bridge. |
-| BA-06 #6980 | New canonical native and Redis watch protocol proofs pass. Old refresh import and pending user-only pairing values, full HTTP behavior and device/offline QA remain acceptance work. |
-| BA-07 #6981 | Tested prototype guards for family isolation, client ownership, consent binding and Disconnect. Production router, app-specific subjects and operational guards remain unimplemented. |
+| BA-06 #6980 | Canonical native, pre-cutover refresh and both Redis watch formats pass. Pending source-less pairing requires an authenticated snapshot or fenced issuer; full HTTP behavior and device/offline QA remain acceptance work. |
+| BA-07 #6981 | Tested guards preserve family ancestry after expiry/pruning and offline access after browser-session expiry, alongside client ownership, consent binding and Disconnect. Production router, app-specific subjects and operational guards remain unimplemented. |
 | BA-08 #6982 | Blocked on first-party adoption and partner authority. |
 | BA-09 #6983 | Production rollout requires restored-database and real-device evidence. |
 | BA-10 #6984 | NextAuth remains until the migration readiness gate passes. |
@@ -96,9 +108,17 @@ in its output. See the inventory for its scope and operational limits.
 | Identity import, signed Google/Apple login, native facade and session freshness | 63 authored cases passed. RSA fixtures replace only remote JWKS transport; real signature, issuer, audience, nonce and subject checks execute. |
 | Read-only identity audit | 19 pure/URL cases and 2 real-Postgres cases passed. Tests compare source rows before/after and remeasure after a new synthetic insert. |
 | Signed legacy bridge, idempotency, reset/sign-out races and rollback | 16 cases passed, including unknown freshness, deleted-session tombstones and a post-mutation injected failure. |
-| OAuth provider and guarded lifecycle | 43 cases passed, including joined reset/code-redemption races and POST reconnect consent. The earlier 39 were independently rerun; the final reviewer ran the complete expanded suite. |
+| OAuth provider and guarded lifecycle | 51 cases passed independently, including expired/pruned refresh ancestry, day-91 offline access, retained expired sessions, and deletion of a consenting climber while the same developer app and another grant survive. |
 | Offline schema generation | A regression proves the complete auth configuration initializes without constructing a Postgres client. The pinned CLI generated the same 11 core tables and exited cleanly. |
-| Real Chromium over local HTTPS | 2 cases passed: secure HttpOnly shared-domain cookies, sibling subdomain session reads, OAuth state/code/issuer redirects, logout, and RFC 8414/OIDC proxy routing. |
+| Real Chromium over local HTTPS | 4 cases passed independently in 8.5 seconds: secure HttpOnly shared-domain cookies, website/app credentialed CORS and preflight, server-rendered session reads, hostile JavaScript origin isolation, OAuth redirects and discovery routing. See the [browser proof](./better-auth-browser-proof.md). |
+| Application process replacement and crash rollback | 18 cases passed independently, including actual SIGKILL at a pre-commit barrier, rejected-startup cleanup, persisted revocation, and unknown authentication age after replacement. See the [process proof](./better-auth-process-proof.md). |
+| Pre-cutover native/watch refresh import | 34 cases passed independently; preserve source ownership/hash/expiry, reject new admission after canonical signout while retaining known live bindings, and retain an immutable epoch through verification cleanup. See the [refresh proof](./better-auth-legacy-refresh-proof.md). |
+| Durable old recovery binding | 34 cases passed independently after cleanup, mutable-caller and cutover-extension fixes; canonical reset invalidates both imported purposes in the mutation transaction. |
+| Genuine legacy web credentials | 56 cases passed, including the real NextAuth encoder crossing a second boundary. Signed expiry, clock grace and cutoff accounting remain distinct. |
+| Browser-native legacy transfer | 71 cases passed independently, plus all 17 native facade regressions. Uses the actual web producer, preserves non-fresh age, rejects source tombstones and atomically consumes/mints. See the [transfer proof](./better-auth-transfer-proof.md) for the source-less returning-user compatibility gate. |
+| Configured Facebook callback | 22 cases passed independently with actual Better Auth handlers and synthetic Graph transport, including stock-state race characterization and guarded one-winner behavior. See the [Facebook proof](./better-auth-facebook-proof.md). |
+| Pending old Garmin codes | 40 cases passed independently with real Redis PTTL/GETDEL, fixed cutover, canonical-signout denial, sibling preservation, reset races and explicit SQL/Redis failure boundaries. See the [legacy watch proof](./better-auth-legacy-watch-proof.md). |
+| Final source-denial and explicit-origin review | 163 cases passed independently in 12.68 seconds: 6 origin, 12 web bridge, 71 transfer, 34 old refresh and 40 pending watch cases; selected lint clean and all findings re-reviewed. |
 | Independent cross-reviews | Native/bridge 33 cases, identity/provider 41 cases, OAuth 39 cases, web auth regression 85 cases and CI guard 50 cases passed in independent runs. Findings were fixed and re-reviewed. |
 | Full repository typecheck | `vp run typecheck` passed; final change verification is recorded with the implementation PR. |
 | Separate Drizzle registry drift check | `vp exec drizzle-kit generate --config auth-prototype.drizzle.config.ts` reported no schema changes after generation. |
@@ -134,6 +154,21 @@ response is lost, plus a deterministic reset before a delayed response is used.
 Race tests described as two start orders assert the final fail-closed property;
 they do not claim both possible serialized winners unless a barrier proves them.
 
+**Durable lifecycle combined proof: 16 files / 396 tests passed in 35.08 seconds**,
+including clean database/process teardown. It adds the process-replacement,
+pre-cutover refresh and browser-transfer suites, plus the reviewed recovery,
+clock-read and OAuth fixes above. The expanded HTTPS suite passed **4/4** in an
+independent run. The full aggregate TypeScript check is required again before
+publishing this slice.
+
+**Final combined proof: 19 files / 471 tests passed in 46.91 seconds**, with
+clean database/process teardown and explicit origin/CSRF checks enabled. This
+includes the Facebook, pending-old-watch, strict-origin and canonical-signout
+follow-ups. Real Chromium passed **4/4** under the explicit checks. The full
+repository `vp run typecheck` passed **59 tasks**, and generated Drizzle
+verification reported no schema changes. Final PR evidence records lint and
+hook results; earlier interrupted backend runs remain distinct from passing CI.
+
 The local development audit at **2026-11-04 18:11:40 UTC** measured 53 users,
 1 credential, no provider links, 40 non-normalized addresses, and zero
 normalized-email collision groups. Of those fixture/catalog users, 52 had no
@@ -151,24 +186,28 @@ demonstrates supported library integration and exposes the custom lifecycle
 work needed. It does not satisfy every BA-01 acceptance criterion or complete
 epic #6975. None of the child issues should be closed from test counts alone.
 
-Before BA-03 changes production writers, finish native pre-cutover refresh-record,
-browser-transfer-token, old pending Garmin pairing, configured Facebook and
-production-shaped handoff proofs. The JWE/chunked-cookie and purpose-bound old
-recovery experiments now pass, but historical ownership must still be established
-for actual links. Recreate processes, not only handler objects, and measure
-HTTP/WebSocket revocation windows.
+Before BA-03 changes production writers, finish production-shaped handoff and
+source-provenance acceptance. The configured Facebook, old pending Garmin,
+pre-cutover refresh, JWE/chunked-cookie,
+purpose-bound old recovery, browser transfer and actual process-replacement experiments now pass;
+historical ownership must still be established for actual recovery links.
+Measure HTTP/WebSocket revocation windows through every production validator.
 Password reset/sign-out/deletion proofs do not establish change/set-password,
 verification or provider-link mutation coverage.
+The released browser-transfer producer omits source session identity for returning
+users. Its recent handoff timestamp cannot prove authentication after revocation;
+source-less rejection in the proof exposes a compatibility gap to resolve in the
+fenced issuer, rather than evidence that every existing handoff already migrates.
 
 The browser fixture skips consent for its managed client. Server tests exercise
-consent binding, but the real-browser proof does not exercise a product consent
-UI, www-to-auth credentialed cross-origin XHR/CORS, Safari/WebKit, or real
-production forwarding/origin headers. Those remain separate tests.
+consent binding, and Chromium now proves www/app-to-auth credentialed CORS and
+server cookie forwarding. Product consent UI, Safari/WebKit and actual production
+forwarding/origin configuration remain separate tests.
 
 Production also needs a database-enforced writer fence covering stale deployments
 and jobs, indexed lifecycle ownership instead of fixture scans, final normalized
-email/provider constraints after ownership-verified collision resolution, old
-refresh migration, push-device cleanup, real iOS/Android/Garmin and offline
+email/provider constraints after ownership-verified collision resolution, a fenced
+production refresh migration, push-device cleanup, real iOS/Android/Garmin and offline
 account-isolation QA, restored-database mutation-safe cutover/rollback, monitoring,
 and separate partner app-registration/subject/workout gates. A global advisory
 lock proves serialization only for callers that participate; it is not a fence

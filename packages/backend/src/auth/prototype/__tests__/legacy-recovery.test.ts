@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
-import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { eq, sql } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createPrototypeEnvironment } from '../environment';
 import { createPrototypeNativeFacade } from '../identity-native-facade';
 import { createPrototypeLegacyHandler } from '../legacy-bridge';
@@ -72,6 +72,24 @@ async function passwordMatches(userId: string, password: string) {
     .from(environment.schema.account)
     .where(eq(environment.schema.account.userId, userId));
   return compare(password, account.password!);
+}
+
+async function holdLifecycleFence() {
+  let announceEntered!: () => void;
+  let releaseFence!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    announceEntered = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    releaseFence = resolve;
+  });
+  const closed = environment.database.transaction(async (transaction) => {
+    await transaction.execute(sql`select pg_advisory_xact_lock(6975, 1)`);
+    announceEntered();
+    await released;
+  });
+  await Promise.race([entered, closed]);
+  return { release: releaseFence, closed };
 }
 
 describe('bounded legacy email-keyed recovery through one canonical authority', () => {
@@ -521,10 +539,9 @@ describe('bounded legacy email-keyed recovery through one canonical authority', 
       const original = createPrototypeLegacyRecoveryFacade(environment.database, cutoverAt);
       await original.supersede(legacy.userId, purpose);
       const alternateCutover = new Date(cutoverAt.getTime() + 1000);
-      expect(await bindPrototypeLegacyRecoveryLinks(environment.database, legacy.snapshot, alternateCutover)).toEqual({
-        bound: 0,
-        rejected: 1,
-      });
+      await expect(
+        bindPrototypeLegacyRecoveryLinks(environment.database, legacy.snapshot, alternateCutover),
+      ).rejects.toBeInstanceOf(PrototypeLegacyRecoveryError);
       const restarted = createPrototypeLegacyRecoveryFacade(environment.database, alternateCutover);
       const attempt =
         purpose === 'password-reset'
@@ -588,5 +605,126 @@ describe('bounded legacy email-keyed recovery through one canonical authority', 
       }),
     ).rejects.toBeInstanceOf(PrototypeLegacyRecoveryError);
     expect(await passwordMatches(legacy.userId, 'canonical-racing-import-password')).toBe(true);
+  });
+
+  it('a later caller boundary cannot reclassify an originally overlong link', async () => {
+    const legacy = await fixture('password-reset');
+    const snapshot = {
+      ...legacy.snapshot,
+      records: [{ ...legacy.record, expires: new Date(cutoverAt.getTime() + 3600001) }],
+    };
+    expect(await bindPrototypeLegacyRecoveryLinks(environment.database, snapshot, cutoverAt)).toEqual({
+      bound: 0,
+      rejected: 1,
+    });
+    await expect(
+      bindPrototypeLegacyRecoveryLinks(environment.database, snapshot, new Date(cutoverAt.getTime() + 1000)),
+    ).rejects.toBeInstanceOf(PrototypeLegacyRecoveryError);
+  });
+
+  it('expired verification cleanup cannot reopen a later recovery epoch', async () => {
+    const legacy = await fixture('email-verification');
+    const snapshot = {
+      ...legacy.snapshot,
+      records: [{ ...legacy.record, expires: new Date(cutoverAt.getTime() + 26 * 3600000) }],
+    };
+    expect(await bindPrototypeLegacyRecoveryLinks(environment.database, snapshot, cutoverAt)).toMatchObject({
+      bound: 0,
+      rejected: 1,
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(cutoverAt.getTime() + 25 * 3600000);
+      // A real Better Auth reset lookup runs its ordinary expired-record cleanup.
+      await expect(
+        environment.auth.api.resetPassword({ body: { token: randomUUID(), newPassword: NEXT_PASSWORD } }),
+      ).rejects.toThrow();
+      await expect(
+        bindPrototypeLegacyRecoveryLinks(environment.database, snapshot, new Date(Date.now() - 1)),
+      ).rejects.toBeInstanceOf(PrototypeLegacyRecoveryError);
+      await expect(
+        createPrototypeLegacyRecoveryFacade(environment.database, new Date(Date.now() - 1)).verifyEmail({
+          email: legacy.canonicalEmail,
+          token: legacy.token,
+        }),
+      ).rejects.toBeInstanceOf(PrototypeLegacyRecoveryError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects future migration boundaries before importing or constructing a facade', async () => {
+    const legacy = await fixture('password-reset');
+    const futureCutover = new Date(Date.now() + 3600000);
+    await expect(
+      bindPrototypeLegacyRecoveryLinks(environment.database, legacy.snapshot, futureCutover),
+    ).rejects.toBeInstanceOf(PrototypeLegacyRecoveryError);
+    expect(() => createPrototypeLegacyRecoveryFacade(environment.database, futureCutover)).toThrow(
+      PrototypeLegacyRecoveryError,
+    );
+  });
+
+  it('captures the original migration date and source expiry before waiting for the lifecycle fence', async () => {
+    const legacy = await fixture('email-verification');
+    const boundary = new Date(cutoverAt);
+    const originalExpiry = new Date(legacy.record.expires);
+    const fence = await holdLifecycleFence();
+    const pending = bindPrototypeLegacyRecoveryLinks(environment.database, legacy.snapshot, boundary);
+    boundary.setTime(boundary.getTime() + 24 * 3600000);
+    legacy.record.expires.setTime(legacy.record.expires.getTime() + 365 * 24 * 3600000);
+    fence.release();
+    await fence.closed;
+    expect(await pending).toMatchObject({ bound: 1, rejected: 0 });
+    const bindings = await environment.database.select().from(environment.schema.verification);
+    const binding = bindings.find(
+      (record) => record.value.includes(legacy.userId) && record.value.includes('prototype-legacy-recovery'),
+    );
+    expect(binding?.expiresAt).toEqual(originalExpiry);
+    await expect(
+      createPrototypeLegacyRecoveryFacade(environment.database, cutoverAt).verifyEmail({
+        email: legacy.canonicalEmail,
+        token: legacy.token,
+      }),
+    ).resolves.toMatchObject({ status: true, userId: legacy.userId });
+  });
+
+  it('cannot repair invalid owner evidence or expiry while an import waits for the lifecycle fence', async () => {
+    const legacy = await fixture('password-reset');
+    const unrelated = await fixture('password-reset');
+    const snapshot = {
+      users: [{ ...legacy.snapshot.users[0], id: unrelated.userId }],
+      records: [{ ...legacy.record, expires: new Date(cutoverAt.getTime() + 3600001) }],
+      ownership: [{ ...legacy.snapshot.ownership[0], originalUserId: unrelated.userId }],
+    };
+    const fence = await holdLifecycleFence();
+    const pending = bindPrototypeLegacyRecoveryLinks(environment.database, snapshot, cutoverAt);
+    snapshot.users[0].id = legacy.userId;
+    snapshot.ownership[0].originalUserId = legacy.userId;
+    snapshot.records[0].expires.setTime(legacy.record.expires.getTime());
+    fence.release();
+    await fence.closed;
+    expect(await pending).toEqual({ bound: 0, rejected: 1 });
+    await expect(
+      createPrototypeLegacyRecoveryFacade(environment.database, cutoverAt).resetPassword({
+        email: legacy.canonicalEmail,
+        token: legacy.token,
+        password: NEXT_PASSWORD,
+        confirmPassword: NEXT_PASSWORD,
+      }),
+    ).rejects.toBeInstanceOf(PrototypeLegacyRecoveryError);
+    expect(await passwordMatches(legacy.userId, ORIGINAL_PASSWORD)).toBe(true);
+    expect(await passwordMatches(unrelated.userId, ORIGINAL_PASSWORD)).toBe(true);
+  });
+
+  it('a mutable Date argument cannot change an already constructed facade boundary', async () => {
+    const legacy = await fixture('email-verification');
+    await bindPrototypeLegacyRecoveryLinks(environment.database, legacy.snapshot, cutoverAt);
+    const boundary = new Date(cutoverAt);
+    const facade = createPrototypeLegacyRecoveryFacade(environment.database, boundary);
+    boundary.setTime(boundary.getTime() + 1000);
+    await expect(facade.supersede(legacy.userId, 'email-verification')).resolves.toBeUndefined();
+    await expect(facade.verifyEmail({ email: legacy.canonicalEmail, token: legacy.token })).rejects.toBeInstanceOf(
+      PrototypeLegacyRecoveryError,
+    );
   });
 });

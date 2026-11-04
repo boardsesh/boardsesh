@@ -172,9 +172,15 @@ scope after those fixes. This is not a first-party migration or partner-launch
 approval. The HTTPS tests were independently source-reviewed and executed by the
 primary agent: they exercise actual browser cookie transport, sibling-domain GET
 reads, a fixture OAuth redirect, discovery, and sign-out. Consent is deliberately
-skipped for that browser fixture. They do not prove a consent UI, credentialed
-www-to-auth cross-origin XHR/CORS, production origin forwarding, or Safari/iOS/
-Android behavior. Production writer fencing, normalized/provider uniqueness,
-old email-keyed recovery links, every credential mutation, NextAuth JWE/cookie
-bridging, active WebSocket revocation, ownership resolution, restored-database
-rollback, and device QA remain explicitly separate gates.
+skipped for that browser fixture. These were the initial evidence runs. The
+[HTTPS browser proof](./better-auth-browser-proof.md) now adds real credentialed
+www/app CORS and server cookie forwarding. Follow-up proofs cover
+[genuine NextAuth cookies](./better-auth-legacy-web-proof.md),
+[purpose-bound old recovery links](./better-auth-legacy-recovery.md),
+[pre-cutover refresh](./better-auth-legacy-refresh-proof.md) and
+[actual process replacement](./better-auth-process-proof.md), with later counts
+and decisions in the implementation ledger. Consent UI, actual production
+forwarding, Safari and device behavior remain unproved. Production writer
+fencing, normalized/provider uniqueness, every credential mutation, active
+WebSocket revocation, ownership resolution and restored-database rollback remain
+separate gates.

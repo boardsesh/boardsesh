@@ -165,6 +165,39 @@ describe('actual NextAuth cookie to canonical authority bridge', () => {
     ).toHaveLength(0);
   });
 
+  it('canonical signout denies new old-cookie admission while preserving another mapped live session', async () => {
+    const registration = await firstHandler(
+      request('', '/sign-up/email', {
+        name: 'Canonical signout fixture',
+        email: `${randomUUID()}@example.test`,
+        password: 'canonical-signout-password',
+      }),
+    );
+    expect(registration.status).toBe(200);
+    const { user: registeredUser } = (await registration.json()) as { user: { id: string } };
+    const freshCookie = canonicalCookie(registration);
+    const mappedToken = await signedWebToken(registeredUser.id, { authSessionId: randomUUID() });
+    const mapped = await firstHandler(request(oldCookie(mappedToken)));
+    expect(mapped.status).toBe(200);
+    const mappedCookie = canonicalCookie(mapped);
+    const unseenToken = await signedWebToken(registeredUser.id);
+    expect((await secondHandler(request(freshCookie, '/sign-out'))).status).toBe(200);
+
+    const restarted = createPrototypeLegacyHandler(environment.database);
+    expect((await restarted(request(oldCookie(unseenToken)))).status).toBe(401);
+    const renewedUnseenToken = await signedWebToken(registeredUser.id, { authSessionId: randomUUID() });
+    expect((await restarted(request(oldCookie(renewedUnseenToken)))).status).toBe(401);
+    expect((await restarted(request(oldCookie(mappedToken)))).status).toBe(200);
+    expect(await (await readSession(mappedCookie)).json()).toMatchObject({ user: { id: registeredUser.id } });
+    expect(await (await readSession(freshCookie)).json()).toBeNull();
+    expect(
+      await environment.database
+        .select()
+        .from(environment.schema.prototypeUserCutoff)
+        .where(eq(environment.schema.prototypeUserCutoff.userId, registeredUser.id)),
+    ).toEqual([]);
+  });
+
   it('preserves the signed expiry separately from the bounded accepted clock grace', async () => {
     const userId = await user();
     const now = Math.floor(Date.now() / 1000);

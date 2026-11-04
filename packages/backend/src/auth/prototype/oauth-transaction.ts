@@ -7,6 +7,7 @@ import {
   oauthRefreshToken,
   prototypeOAuthConnection,
   prototypeOAuthInteraction,
+  prototypeOAuthRefreshAncestor,
   verification,
 } from '@boardsesh/db/auth-prototype';
 import { createPrototypeAuthority, type PrototypeDatabase } from './authority';
@@ -231,6 +232,11 @@ export async function disconnectPrototypeOAuthConnection(
     await transaction
       .delete(oauthConsent)
       .where(and(eq(oauthConsent.userId, userId), eq(oauthConsent.clientId, clientId)));
+    await transaction
+      .delete(prototypeOAuthRefreshAncestor)
+      .where(
+        and(eq(prototypeOAuthRefreshAncestor.userId, userId), eq(prototypeOAuthRefreshAncestor.clientId, clientId)),
+      );
 
     // This bounded-fixture scan avoids casting non-JSON recovery values. A
     // production implementation needs indexed, explicitly owned interaction rows.

@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { hkdf } from '@panva/hkdf';
-import { EncryptJWT, SignJWT, type JWTPayload } from 'jose';
+import { EncryptJWT, SignJWT, jwtDecrypt, type JWTPayload } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS,
@@ -176,6 +176,37 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
     ).toBeNull();
   });
 
+  it.each([1, 60])('accepts actual encoder output with %s seconds between issue/expiry clock reads', async (delay) => {
+    // jose v4 reads new Date() for iat; NextAuth then independently reads
+    // Date.now() for exp. Model a real second boundary between those reads.
+    const expiryClock = vi.spyOn(Date, 'now').mockReturnValue(NOW.getTime() + delay * 1000);
+    const credential = await installedSession();
+    expiryClock.mockRestore();
+    const encryptionKey = await hkdf(
+      'sha256',
+      new TextEncoder().encode(LEGACY_SECRET),
+      '',
+      'NextAuth.js Generated Encryption Key',
+      32,
+    );
+    const { payload } = await jwtDecrypt(credential, encryptionKey, { currentDate: NOW });
+    expect(payload.iat).toBe(NOW_SECONDS);
+    expect(payload.exp! - payload.iat!).toBe(MAX_SESSION_SECONDS + delay);
+    expect(await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toMatchObject({
+      issuedAt: NOW,
+      expiresAt: new Date(NOW.getTime() + (MAX_SESSION_SECONDS + delay) * 1000),
+      validUntil: new Date(NOW.getTime() + (MAX_SESSION_SECONDS + delay + 60) * 1000),
+      originalAuthenticatedAt: null,
+    });
+  });
+
+  it('rejects actual encoder output beyond the explicit 60-second clock-read allowance', async () => {
+    const expiryClock = vi.spyOn(Date, 'now').mockReturnValue(NOW.getTime() + 61_000);
+    const credential = await installedSession();
+    expiryClock.mockRestore();
+    expect(await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toBeNull();
+  });
+
   it('accepts actual legacy encoder output from a node ahead by the bounded 60-second allowance', async () => {
     const aheadTime = new Date(NOW.getTime() + 60_000);
     vi.setSystemTime(aheadTime);
@@ -227,7 +258,7 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
     ['fractional issue time', { iat: NOW_SECONDS - 0.5 }],
     ['fractional expiry', { exp: NOW_SECONDS + 0.5 }],
     ['non-positive lifetime', { iat: NOW_SECONDS - 60, exp: NOW_SECONDS - 60 }],
-    ['overlong rolling lifetime', { iat: NOW_SECONDS - 60, exp: NOW_SECONDS + MAX_SESSION_SECONDS }],
+    ['overlong rolling lifetime', { iat: NOW_SECONDS - 60, exp: NOW_SECONDS + MAX_SESSION_SECONDS + 1 }],
     ['malformed lineage type', { authSessionId: { untrusted: true } }],
     ['blank lineage', { authSessionId: '' }],
     ['another issuer', { iss: 'a-different-authority' }],

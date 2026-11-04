@@ -10,6 +10,7 @@ import { PROTOTYPE_CONFIGURATION } from './configuration';
 import { PrototypeResponseRollback, rejectPrototypeServerFailure } from './transaction-response';
 import { invalidatePrototypeLegacyRecovery } from './legacy-recovery-state';
 import { verifyPrototypeLegacyWebCookie } from './legacy-web-credentials';
+import { hasPrototypeLegacySourceDenial, recordPrototypeCanonicalSignout } from './legacy-source-state';
 
 export const PROTOTYPE_LEGACY_KEY = new TextEncoder().encode('boardsesh-disposable-legacy-verification-key-6975');
 export const PROTOTYPE_LEGACY_WEB_SECRET = 'boardsesh-disposable-nextauth-verification-key-6975';
@@ -112,6 +113,9 @@ export async function revokePrototypeUser(
     await invalidatePrototypeLegacyRecovery(database, userId);
     await database.delete(schema.oauthAccessToken).where(eq(schema.oauthAccessToken.userId, userId));
     await database.delete(schema.oauthRefreshToken).where(eq(schema.oauthRefreshToken.userId, userId));
+    await database
+      .delete(schema.prototypeOAuthRefreshAncestor)
+      .where(eq(schema.prototypeOAuthRefreshAncestor.userId, userId));
     await database.delete(schema.oauthConsent).where(eq(schema.oauthConsent.userId, userId));
     await database
       .update(schema.prototypeOAuthConnection)
@@ -167,6 +171,7 @@ function bridgePlugin(database: LifecycleDatabase): BetterAuthPlugin {
           }
           session = existingSession;
         } else {
+          if (await hasPrototypeLegacySourceDenial(database, userId)) throw new APIError('UNAUTHORIZED');
           const originalAuthenticatedAt = proof.originalAuthenticatedAt;
           const [createdSession] = await database
             .insert(schema.session)
@@ -224,7 +229,13 @@ export function createPrototypeLegacyHandler(database: PrototypeDatabase, afterP
                     .select()
                     .from(schema.prototypeLegacyLineage)
                     .where(eq(schema.prototypeLegacyLineage.sessionId, session.id));
-                  if (!lineage) return;
+                  if (!lineage) {
+                    // Pending old user-only proofs cannot be associated with
+                    // this source session. Deny new unknown admissions without
+                    // ending unrelated canonical sessions or partner grants.
+                    await recordPrototypeCanonicalSignout(transaction, session);
+                    return;
+                  }
                   if (lineage.id.startsWith('credential:')) {
                     // Ordinary sign-out does not terminate approved partner connections.
                     await revokePrototypeUser(transaction, session.userId, false);

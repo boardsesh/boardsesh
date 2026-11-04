@@ -75,6 +75,8 @@ limitations; their green result does not mean the contract is satisfied.
 | --- | --- | --- |
 | Code and refresh single use | Conditional consumption prevents two successful redemptions; source documents an unclosed refresh-issuance/invalidation transaction race | Whole-request Postgres transaction plus a shared advisory lock serializes competing instances |
 | Refresh-family isolation | Consumed-token reuse invalidates every grant for the same app/user | Authenticated middleware deletes only the matching immutable authorization-code family; another grant for the same app/user survives |
+| Offline browser-session independence | Refresh can issue after browser-session expiry while the new opaque access token still introspects inactive through its retained session link | Issuance finalization detaches only the newly issued approved `offline_access` access/refresh rows inside the same transaction, after the provider validates the original code/session |
+| Expired consumed-token refresh replay | The provider rejects the expired token before applying its consumed-token family policy, and pruning that old row removes its lookup evidence | Independent hashed ancestry retains immutable grant ownership and consumption, so replay still ends every live descendant of that family even after the provider row is pruned |
 | Cross-client revocation | The consumed-refresh revoke branch invalidates a supplied client/user family before checking token ownership | Known cross-client refresh tokens reject refresh or return RFC 7009's successful no-op for revocation, without reaching stock cleanup |
 | Expired consumed-token revocation | Stock revoke can reach broad cleanup even after the old token expires | An expired token is a successful revocation no-op; a later independent grant survives |
 | Revocation input normalization | The endpoint accepts whitespace and Bearer/DPoP token presentation; a raw-only guard would miss those lookup values | The same exported normalization helper runs before guarded lookup, and opposite supported token-type hints search the actual known token type |
@@ -87,6 +89,51 @@ before token lookup or deletion, including for public clients whose registered
 method is `none`. Wrong or missing confidential-client secrets cannot revoke a
 family. Active token issuance still runs through the provider; the middleware
 does not issue OAuth credentials or implement its own password/client policy.
+
+The offline-session adjustment is **pinned Drizzle issuance augmentation through
+public middleware**, not a stock provider configuration option. The provider's
+schema guidance treats access tokens as immutable after issuance. This prototype
+therefore finalizes only the new rows belonging to the current response before
+the transaction commits or any token reaches the caller. It matches the issued
+access-token hash, refresh-row ID, user, client, immutable authorization-code ID,
+and actual granted `offline_access` scope before clearing that pair's browser
+session link. It does not update older access tokens, extend the browser session,
+change authentication time, add scopes, or bypass the provider's original-session
+check for code redemption. Grants without `offline_access` remain session-bound.
+Canonical reset, Disconnect, and account deletion still revoke the credentials
+through user and connection state. Production adoption needs independent review
+of this pinned schema dependency and every authoritative revocation path.
+
+Decision recorded after independent review: retain transaction-bound issuance
+finalization instead of decorating `DBAdapter.create` and recursively wrapping
+its transaction adapters. PostgreSQL MVCC hides the inserted rows until this
+whole-request transaction commits; middleware finishes before the handler
+returns, and the handler does not publish a token before that commit. The
+configured zero reuse interval means each successful rotation creates a fresh
+token pair. No already-issued row is modified. A create decorator would add a
+second adapter-maintenance surface without correcting an observed publication
+or transaction-boundary defect. This decision depends on keeping the global
+prototype fence, outer transaction, disabled reuse grace, and 500 rollback
+guard; the helper must never become a delayed or independent background update.
+
+The guarded token endpoint also records each issued refresh hash and the
+consumed parent's hash through a supported after hook. Those ancestry records
+share the provider's transaction and advisory fence; they contain no plaintext
+credential and do not depend on a foreign key to the provider's token row.
+Consumed-token refresh reuse therefore remains detectable after the ancestor's
+90-day expiry or provider cleanup. Client authentication and client ownership
+checks happen before that evidence can trigger deletion. The original
+authorization-code ID limits the deletion to one grant, so another grant for the
+same app and climber survives.
+
+Refresh reuse and RFC 7009 revocation remain separate operations. Refreshing
+with an expired consumed ancestor terminates its rolling family, matching the
+existing partner contract. Explicitly revoking that already-expired token is a
+successful no-op. A family's ancestry is removed only after its provider
+credentials are closed by scoped reuse cleanup, Disconnect, or account security
+revocation; it is never pruned merely because one ancestor expired. Tests also
+inject a failure after refresh issuance and verify that the successor ancestry
+and parent-consumption evidence roll back together.
 
 Consent tests cover account switching, another session for the same account,
 query tampering, interaction replay, narrower scope approval, later scope
@@ -103,14 +150,24 @@ that a pending code cannot recreate a partner family after password reset: the
 provider requires the original canonical session, which reset revokes. Both
 race orderings leave no usable partner descendants.
 
-Validation on 2026-11-04: **43 OAuth integration tests passed** against local
+Validation on 2026-11-04: **51 OAuth integration tests passed** against local
 Postgres. The reviewer-requested cases include raw, whitespace, Bearer, and DPoP
 presentations for both independent-family and cross-client consumed-token
 revocation, expired consumed ancestors, and incorrect supported token hints.
-The finalized isolated suite passed all **144 tests in 9 files**, including clean
-database teardown and the offline schema-generator regression. The source
-passed backend TypeScript checking; the exact run commands and
-combined validation totals are recorded in the implementation ledger.
+Retained expired browser sessions and ordinary first-party sign-out are each
+tested with live day-30/day-91 access introspection, before and after pruning an
+expired provider ancestor. Detached offline grants still end on canonical reset,
+Disconnect, and account deletion; grants without offline permission stay linked
+to their browser session. Injected 500 responses roll back both minted tokens and
+ancestry changes. The source passed backend TypeScript checking; exact commands,
+combined-suite totals, database teardown, and generator results are recorded in
+the implementation ledger.
+
+The deletion regression deliberately uses an app owned by another developer.
+Deleting the authorizing climber leaves that app and another climber's grant for
+the same app usable; the deleted climber's detached tokens and ancestry disappear.
+This prevents app-owner cascade deletion from hiding a missing user-level kill
+path in the test.
 
 ## Limits that keep the production gates closed
 
@@ -120,12 +177,19 @@ throughput. Every production request path, credential mutation, and worker would
 need the same reviewed authority boundary. The prototype scans its tiny
 verification fixture table to remove pending connection codes; production needs
 explicitly owned and indexed interaction records and cleanup policy.
+The ancestry sidecar intentionally retains old hashes while a rolling family
+can still have active descendants. The prototype has no automatic sweep for
+families that disappear only through natural expiry; production needs a bounded,
+reviewed retention job that checks the entire family's remaining access and
+refresh credentials before removing its evidence. A simple token-expiry sweep
+would violate the replay contract and is not an acceptable storage optimization.
 
-The suite proves persistence across authority/handler recreation, not a killed
-operating-system process or database recovery. The real-browser/proxy evidence
-and any remaining first-party/native proofs are recorded separately in the
-implementation ledger. Provider signatures use synthetic keys in the identity
-suite; no production OAuth credentials are used.
+These OAuth cases prove persistence across authority/handler recreation.
+[Process-restart proofs](./better-auth-process-proof.md), real-browser/proxy
+evidence, and any remaining first-party/native proofs are recorded separately;
+database-recovery readiness is not inferred from these tests. Provider
+signatures use synthetic keys in the identity suite; no production OAuth
+credentials are used.
 
 The cookie `get-session` test shows that an OAuth bearer token does not create a
 first-party Better Auth cookie session. It does not prove every production

@@ -1,11 +1,13 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { createAuthMiddleware } from 'better-auth/api';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createPrototypeEnvironment } from '../environment';
+import { createPrototypeAuthority } from '../authority';
 import { PROTOTYPE_ISSUER, PROTOTYPE_OAUTH_OPTIONS, PROTOTYPE_RESOURCE } from '../oauth-options';
 import { createSerializedPrototypeOAuthHandler, disconnectPrototypeOAuthConnection } from '../oauth-transaction';
-import { createPrototypeLegacyHandler } from '../legacy-bridge';
+import { createPrototypeLegacyHandler, revokePrototypeUser } from '../legacy-bridge';
+import { rejectPrototypeServerFailure } from '../transaction-response';
 
 type PrototypeEnvironment = Awaited<ReturnType<typeof createPrototypeEnvironment>>;
 type PrototypeAuthority = PrototypeEnvironment['auth'];
@@ -377,7 +379,7 @@ describe('BA-01 pinned OAuth Provider against disposable Postgres', () => {
     expect((await refresh(client, rotated.body.refresh_token!)).body.error).toBe('invalid_grant');
   });
 
-  it('rolling refresh remains usable after day 30 and day 90 of continuous use', async () => {
+  it('stock rolling refresh issues past day 90 but an expired retained browser session disables opaque access', async () => {
     const client = await createClient();
     const issued = await issueTokens(client);
     const originalTime = Date.now();
@@ -389,6 +391,8 @@ describe('BA-01 pinned OAuth Provider against disposable Postgres', () => {
       vi.setSystemTime(originalTime + 91 * 24 * 3600 * 1000);
       const day91 = await refresh(client, day30.body.refresh_token!, environment.auth);
       expect(day91.response.status).toBe(200);
+      // This stock-provider limitation remains a separate partner readiness gate.
+      expect((await introspect(client, day91.body.access_token!)).body.active).toBe(false);
       const [currentRefresh] = await environment.database
         .select()
         .from(environment.schema.oauthRefreshToken)
@@ -634,6 +638,121 @@ describe('BA-01 pinned OAuth Provider against disposable Postgres', () => {
     }
   });
 
+  it.each([
+    { pruneProviderRow: false, signOut: false },
+    { pruneProviderRow: true, signOut: false },
+    { pruneProviderRow: false, signOut: true },
+    { pruneProviderRow: true, signOut: true },
+  ])('expired consumed refresh reuse ends only its rolling family: %j', async ({ pruneProviderRow, signOut }) => {
+    const client = await createClient();
+    const anotherClient = await createClient({ publicClient: true, owner: client });
+    const firstInstance = createSerializedPrototypeOAuthHandler(environment.database);
+    const secondInstance = createSerializedPrototypeOAuthHandler(environment.database);
+    const firstGrant = await issueTokens(client, undefined, firstInstance);
+    const [ancestor] = await environment.database
+      .select()
+      .from(environment.schema.prototypeOAuthRefreshAncestor)
+      .where(eq(environment.schema.prototypeOAuthRefreshAncestor.clientId, client.clientId));
+    expect(ancestor.tokenHash).not.toBe(firstGrant.refresh_token);
+    const independentGrant = await issueTokens(client, undefined, firstInstance);
+    const initialSessions = await environment.database
+      .select()
+      .from(environment.schema.session)
+      .where(eq(environment.schema.session.userId, client.userId));
+    expect(initialSessions).toHaveLength(1);
+    if (signOut) {
+      expect((await postJson(environment.auth, '/sign-out', client.cookie, {})).response.status).toBe(200);
+      expect((await introspect(client, firstGrant.access_token!, secondInstance)).body.active).toBe(true);
+    }
+    const initialTime = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(initialTime + 30 * 24 * 3600 * 1000);
+      const firstDay30 = await refresh(client, firstGrant.refresh_token!, firstInstance);
+      const independentDay30 = await refresh(client, independentGrant.refresh_token!, firstInstance);
+      expect(firstDay30.response.status).toBe(200);
+      expect(independentDay30.response.status).toBe(200);
+      expect((await introspect(client, firstDay30.body.access_token!, secondInstance)).body.active).toBe(true);
+      expect((await introspect(client, independentDay30.body.access_token!, secondInstance)).body.active).toBe(true);
+      vi.setSystemTime(initialTime + 91 * 24 * 3600 * 1000);
+      const firstDay91 = await refresh(client, firstDay30.body.refresh_token!, secondInstance);
+      const independentDay91 = await refresh(client, independentDay30.body.refresh_token!, secondInstance);
+      expect(firstDay91.response.status).toBe(200);
+      expect(independentDay91.response.status).toBe(200);
+      expect((await introspect(client, firstDay91.body.access_token!, secondInstance)).body.active).toBe(true);
+      expect((await introspect(client, independentDay91.body.access_token!, secondInstance)).body.active).toBe(true);
+      const sessions = await environment.database
+        .select()
+        .from(environment.schema.session)
+        .where(eq(environment.schema.session.userId, client.userId));
+      expect(sessions).toHaveLength(signOut ? 0 : 1);
+      if (!signOut) {
+        expect(sessions[0].expiresAt.getTime()).toBeLessThan(Date.now());
+        expect(sessions[0].createdAt).toEqual(initialSessions[0].createdAt);
+      }
+      if (pruneProviderRow) {
+        // Model the provider's expired-token cleanup, including its FK children.
+        await environment.database
+          .delete(environment.schema.oauthRefreshToken)
+          .where(eq(environment.schema.oauthRefreshToken.token, ancestor.tokenHash));
+      }
+      const [retained] = await environment.database
+        .select()
+        .from(environment.schema.prototypeOAuthRefreshAncestor)
+        .where(eq(environment.schema.prototypeOAuthRefreshAncestor.tokenHash, ancestor.tokenHash));
+      expect(retained.expiresAt.getTime()).toBeLessThan(Date.now());
+      expect(retained.consumedAt).not.toBeNull();
+
+      const restarted = createSerializedPrototypeOAuthHandler(environment.database);
+      const invalidSecret = await refresh(
+        { ...client, clientSecret: 'wrong-secret' },
+        firstGrant.refresh_token!,
+        restarted,
+      );
+      expect(invalidSecret.body.error).toBe('invalid_client');
+      expect((await refresh(anotherClient, firstGrant.refresh_token!, restarted)).body.error).toBe('invalid_grant');
+      const expiredRevoke = await postForm(restarted, '/oauth2/revoke', {
+        ...clientCredentials(client),
+        token: `Bearer ${firstGrant.refresh_token!}`,
+        token_type_hint: 'refresh_token',
+      });
+      expect(expiredRevoke.response.status).toBe(200);
+      expect((await introspect(client, firstDay91.body.access_token!, restarted)).body.active).toBe(true);
+
+      const replay = await refresh(client, firstGrant.refresh_token!, restarted);
+      expect(replay.body.error).toBe('invalid_grant');
+      expect((await introspect(client, firstDay91.body.access_token!, secondInstance)).body.active).toBe(false);
+      expect((await refresh(client, firstDay91.body.refresh_token!, firstInstance)).body.error).toBe('invalid_grant');
+      expect((await introspect(client, independentDay91.body.access_token!, secondInstance)).body.active).toBe(true);
+      expect((await refresh(client, independentDay91.body.refresh_token!, firstInstance)).response.status).toBe(200);
+      const retainedFamilies = await environment.database
+        .select()
+        .from(environment.schema.prototypeOAuthRefreshAncestor)
+        .where(eq(environment.schema.prototypeOAuthRefreshAncestor.clientId, client.clientId));
+      expect(retainedFamilies).not.toHaveLength(0);
+      expect(retainedFamilies.every((record) => record.authorizationCodeId !== ancestor.authorizationCodeId)).toBe(
+        true,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('offline detachment leaves grants without offline_access session-bound', async () => {
+    const client = await createClient();
+    const firstInstance = createSerializedPrototypeOAuthHandler(environment.database);
+    const issued = await issueTokens(client, ['profile:read'], firstInstance);
+    expect(issued.refresh_token).toBeUndefined();
+    const [accessToken] = await environment.database
+      .select()
+      .from(environment.schema.oauthAccessToken)
+      .where(eq(environment.schema.oauthAccessToken.clientId, client.clientId));
+    expect(accessToken.sessionId).not.toBeNull();
+    expect((await introspect(client, issued.access_token!, firstInstance)).body.active).toBe(true);
+    expect((await postJson(environment.auth, '/sign-out', client.cookie, {})).response.status).toBe(200);
+    expect((await introspect(client, issued.access_token!, firstInstance)).body.active).toBe(false);
+  });
+
   it('RFC revocation searches the actual supported token type when the hint is wrong', async () => {
     const client = await createClient();
     const firstInstance = createSerializedPrototypeOAuthHandler(environment.database);
@@ -691,7 +810,50 @@ describe('BA-01 pinned OAuth Provider against disposable Postgres', () => {
       .where(eq(environment.schema.oauthRefreshToken.clientId, client.clientId));
     expect(accessRows).toHaveLength(0);
     expect(refreshRows).toHaveLength(0);
+    expect(
+      await environment.database
+        .select()
+        .from(environment.schema.prototypeOAuthRefreshAncestor)
+        .where(eq(environment.schema.prototypeOAuthRefreshAncestor.clientId, client.clientId)),
+    ).toHaveLength(0);
     expect((await exchange(client, authorization, healthyInstance)).response.status).toBe(200);
+  });
+
+  it('a failed refresh mint rolls back successor ancestry and parent consumption together', async () => {
+    const client = await createClient();
+    const healthyInstance = createSerializedPrototypeOAuthHandler(environment.database);
+    const issued = await issueTokens(client, undefined, healthyInstance);
+    const failingInstance = createSerializedPrototypeOAuthHandler(environment.database, {
+      plugins: [
+        {
+          id: 'prototype-injected-refresh-ancestry-failure',
+          hooks: {
+            after: [
+              {
+                matcher: (context) => context.path === '/oauth2/token',
+                handler: createAuthMiddleware(async () => {
+                  throw new Error('Injected disposable refresh ancestry failure');
+                }),
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect((await refresh(client, issued.refresh_token!, failingInstance)).response.status).toBe(500);
+    const providerRows = await environment.database
+      .select()
+      .from(environment.schema.oauthRefreshToken)
+      .where(eq(environment.schema.oauthRefreshToken.clientId, client.clientId));
+    const ancestorRows = await environment.database
+      .select()
+      .from(environment.schema.prototypeOAuthRefreshAncestor)
+      .where(eq(environment.schema.prototypeOAuthRefreshAncestor.clientId, client.clientId));
+    expect(providerRows).toHaveLength(1);
+    expect(providerRows[0].revoked).toBeNull();
+    expect(ancestorRows).toHaveLength(1);
+    expect(ancestorRows[0].consumedAt).toBeNull();
+    expect((await refresh(client, issued.refresh_token!, healthyInstance)).response.status).toBe(200);
   });
 
   it('transactional Disconnect wins against issuance and preserves unrelated connections', async () => {
@@ -714,6 +876,11 @@ describe('BA-01 pinned OAuth Provider against disposable Postgres', () => {
       );
     }
     expect((await introspect(unrelated, unrelatedTokens.access_token!, secondInstance)).body.active).toBe(true);
+    const remainingAncestors = await environment.database
+      .select()
+      .from(environment.schema.prototypeOAuthRefreshAncestor);
+    expect(remainingAncestors.some((record) => record.clientId === client.clientId)).toBe(false);
+    expect(remainingAncestors.some((record) => record.clientId === unrelated.clientId)).toBe(true);
   });
 
   it('Disconnect consumes outstanding codes and forces fresh consent after a handler restart', async () => {
@@ -902,6 +1069,106 @@ describe('BA-01 pinned OAuth Provider against disposable Postgres', () => {
     ).toHaveLength(0);
   });
 
+  it('password reset revokes detached offline credentials and ancestry without ending another connection', async () => {
+    const client = await createClient();
+    const unrelated = await createClient();
+    const authority = createSerializedPrototypeOAuthHandler(environment.database);
+    const issued = await issueTokens(client, undefined, authority);
+    const unrelatedTokens = await issueTokens(unrelated, undefined, authority);
+    const [detached] = await environment.database
+      .select()
+      .from(environment.schema.oauthAccessToken)
+      .where(eq(environment.schema.oauthAccessToken.clientId, client.clientId));
+    expect(detached.sessionId).toBeNull();
+    const resetToken = randomUUID();
+    await environment.database.insert(environment.schema.verification).values({
+      id: randomUUID(),
+      identifier: `reset-password:${resetToken}`,
+      value: client.userId,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const reset = await postJson(
+      { handler: createPrototypeLegacyHandler(environment.database) },
+      '/reset-password',
+      '',
+      {
+        token: resetToken,
+        newPassword: 'password-reset-must-end-detached-offline-grant',
+      },
+    );
+    expect(reset.response.status).toBe(200);
+    expect((await introspect(client, issued.access_token!, authority)).body.active).toBe(false);
+    expect((await refresh(client, issued.refresh_token!, authority)).body.error).toBe('invalid_grant');
+    expect(
+      await environment.database
+        .select()
+        .from(environment.schema.prototypeOAuthRefreshAncestor)
+        .where(eq(environment.schema.prototypeOAuthRefreshAncestor.userId, client.userId)),
+    ).toHaveLength(0);
+    expect((await introspect(unrelated, unrelatedTokens.access_token!, authority)).body.active).toBe(true);
+  });
+
+  it('canonical account deletion removes detached offline credentials and ancestry for only that user', async () => {
+    const developerApplication = await createClient();
+    const climber = await createClient();
+    // The app belongs to someone else and must survive this climber's deletion.
+    const client = { ...developerApplication, cookie: climber.cookie, userId: climber.userId };
+    const authority = createSerializedPrototypeOAuthHandler(environment.database);
+    const issued = await issueTokens(client, undefined, authority);
+    const developerTokens = await issueTokens(developerApplication, undefined, authority);
+    const [detached] = await environment.database
+      .select()
+      .from(environment.schema.oauthAccessToken)
+      .where(
+        and(
+          eq(environment.schema.oauthAccessToken.clientId, client.clientId),
+          eq(environment.schema.oauthAccessToken.userId, client.userId),
+        ),
+      );
+    expect(detached.sessionId).toBeNull();
+    const deleted = await environment.database.transaction(async (transaction) => {
+      await transaction.execute(sql`select pg_advisory_xact_lock(6975, 1)`);
+      // Enable deletion only for this disposable experiment. The lifecycle hook
+      // is the same canonical revocation helper used by the legacy adapter.
+      const deletionAuthority = createPrototypeAuthority(transaction, {
+        user: { deleteUser: { enabled: true } },
+        databaseHooks: { user: { delete: { before: (user) => revokePrototypeUser(transaction, user.id) } } },
+      });
+      const response = await postJson(deletionAuthority, '/delete-user', client.cookie, {
+        password: 'prototype-password-123',
+      });
+      return rejectPrototypeServerFailure(response.response);
+    });
+    expect(deleted.status).toBe(200);
+    expect(
+      await environment.database
+        .select()
+        .from(environment.schema.user)
+        .where(eq(environment.schema.user.id, client.userId)),
+    ).toHaveLength(0);
+    expect(
+      await environment.database
+        .select()
+        .from(environment.schema.oauthAccessToken)
+        .where(eq(environment.schema.oauthAccessToken.userId, client.userId)),
+    ).toHaveLength(0);
+    expect(
+      await environment.database
+        .select()
+        .from(environment.schema.prototypeOAuthRefreshAncestor)
+        .where(eq(environment.schema.prototypeOAuthRefreshAncestor.userId, client.userId)),
+    ).toHaveLength(0);
+    const [survivingApplication] = await environment.database
+      .select()
+      .from(environment.schema.oauthClient)
+      .where(eq(environment.schema.oauthClient.clientId, client.clientId));
+    expect(survivingApplication.userId).toBe(developerApplication.userId);
+    expect((await introspect(client, issued.access_token!, authority)).body.active).toBe(false);
+    expect((await refresh(client, issued.refresh_token!, authority)).body.error).toBe('invalid_grant');
+    expect((await introspect(developerApplication, developerTokens.access_token!, authority)).body.active).toBe(true);
+    expect((await refresh(developerApplication, developerTokens.refresh_token!, authority)).response.status).toBe(200);
+  });
+
   it.each(['reset-first', 'redemption-first'] as const)(
     'password reset racing code redemption leaves no usable partner descendants (%s)',
     async (order) => {
@@ -941,6 +1208,12 @@ describe('BA-01 pinned OAuth Provider against disposable Postgres', () => {
           .select()
           .from(environment.schema.oauthRefreshToken)
           .where(eq(environment.schema.oauthRefreshToken.userId, client.userId)),
+      ).toHaveLength(0);
+      expect(
+        await environment.database
+          .select()
+          .from(environment.schema.prototypeOAuthRefreshAncestor)
+          .where(eq(environment.schema.prototypeOAuthRefreshAncestor.userId, client.userId)),
       ).toHaveLength(0);
     },
   );

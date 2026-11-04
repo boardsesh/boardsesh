@@ -7,6 +7,9 @@ const MAX_COOKIE_HEADER_LENGTH = 128 * 1024;
 const MAX_CREDENTIAL_LENGTH = 64 * 1024;
 const MAX_COOKIE_CHUNKS = 64;
 const MAX_SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+// NextAuth computes iat and exp from separate clock reads. A second boundary
+// or bounded process pause can make a genuine signed span exceed maxAge.
+const ENCODER_CLOCK_READ_ALLOWANCE_SECONDS = 60;
 // Match the backend's installed validateNextAuthToken transport. NextAuth's
 // browser decoder uses 15 seconds instead; this is deliberately explicit.
 export const PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS = 60;
@@ -80,7 +83,7 @@ export async function verifyPrototypeLegacyNextAuthJwe(
       !Number.isInteger(expiresAt) ||
       issuedAt * 1000 > currentTime.getTime() + PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS * 1000 ||
       expiresAt <= issuedAt ||
-      expiresAt - issuedAt > MAX_SESSION_LIFETIME_SECONDS ||
+      expiresAt - issuedAt > MAX_SESSION_LIFETIME_SECONDS + ENCODER_CLOCK_READ_ALLOWANCE_SECONDS ||
       // The installed session encoder sets none of these purpose/audience
       // claims. A separately labelled credential must not become a session.
       payload.iss !== undefined ||

@@ -13,7 +13,8 @@ it imports neither NextAuth runtime code nor a web authentication module.
 Separate purpose, audience and issuer labels are rejected rather than guessed.
 
 Every accepted credential has a verified subject, integer issue/expiry claims
-and a signed lifetime of at most 30 days. Original authentication age remains
+and a signed lifetime bounded by the nominal 30 days plus the explicit encoder
+clock-read allowance below. Original authentication age remains
 unknown, including when the payload contains an unsolicited `auth_time` or
 attribution timestamp. The current web callback's explicit `authSessionId`
 identifies a stable login; NextAuth regenerates `jti` during rolling encoding,
@@ -30,8 +31,17 @@ have identical validity rules.
 
 Future issue times are bounded to 60 seconds. The result preserves the signed
 `expiresAt` separately from `validUntil = expiresAt + 60 seconds`, and exposes
-`clockToleranceSeconds`. A token is rejected at `validUntil`. The signed
-30-day lifetime limit is unchanged, and clock grace never proves fresh login.
+`clockToleranceSeconds`. A token is rejected at `validUntil`. Clock grace never
+proves fresh login.
+
+The installed encoder obtains `iat` through jose's `new Date()` and then reads
+`Date.now()` separately to compute `exp = now + maxAge`. Crossing a second
+boundary between these calls creates a genuine cookie whose signed span is
+30 days plus one second. A separately named **60-second encoder clock-read
+allowance** permits that boundary and bounded process pauses; a span beyond
+30 days plus 60 seconds is rejected. This does not add time to the signed
+`expiresAt`, change `validUntil = signed exp + 60 seconds`, or widen the
+cutoff margin. The helper preserves those separate timestamps explicitly.
 
 A bridge must compare the verified issue time **minus the skew allowance**
 against an account cutoff. Otherwise an old token minted on an ahead-clock node
@@ -56,9 +66,10 @@ conservative.
 
 ## Recorded evidence
 
-On 2026-11-04 the decoder suite passed **53 tests**, using the installed encoder,
+On 2026-11-04 the decoder suite passed **56 tests**, using the installed encoder,
 real HKDF/JWE verification, cross-node clock fixtures, expiry-grace boundaries,
-cookie/chunk conflicts and stale alternate account claims. The two changed
+cookie/chunk conflicts, stale alternate account claims and independent encoder
+clock reads at one second, 60 seconds and beyond the allowed boundary. The two changed
 source/test files passed `vp check` with no lint or type findings.
 
 ```sh

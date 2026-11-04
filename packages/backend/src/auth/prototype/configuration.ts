@@ -29,6 +29,9 @@ export const PROTOTYPE_CONFIGURATION = {
     },
   },
   account: { accountLinking: { enabled: false } },
+  // Pinned Better Auth otherwise skips origin checks under NODE_ENV=test.
+  // Security fixtures must exercise the same checks as a deployed authority.
+  advanced: { disableOriginCheck: false, disableCSRFCheck: false },
   rateLimit: { enabled: false },
   telemetry: { enabled: false },
   logger: { disabled: true },

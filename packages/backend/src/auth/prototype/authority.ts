@@ -20,6 +20,7 @@ export function createPrototypeAuthority(
   const configuration: PrototypeAuthorityOptions = {
     ...PROTOTYPE_CONFIGURATION,
     ...overrides,
+    advanced: { ...PROTOTYPE_CONFIGURATION.advanced, ...overrides.advanced },
     user: {
       ...PROTOTYPE_CONFIGURATION.user,
       ...overrides.user,

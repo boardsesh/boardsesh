@@ -9,6 +9,7 @@ import { createPrototypeAuthority, type PrototypeAuthority, type PrototypeDataba
 import { PROTOTYPE_CONFIGURATION } from './configuration';
 import { revokePrototypeUser } from './legacy-bridge';
 import { PROTOTYPE_ISSUER } from './oauth-options';
+import { ensurePrototypeMigrationEpoch } from './migration-epoch';
 import {
   invalidatePrototypeLegacyRecovery,
   prototypeRecoveryCutoffId,
@@ -18,6 +19,7 @@ import {
 
 export type { PrototypeRecoveryPurpose } from './legacy-recovery-state';
 const BINDING_PREFIX = PROTOTYPE_LEGACY_RECOVERY_PREFIX;
+const MIGRATION_EPOCH = 'legacy-recovery';
 const PURPOSE_LIFETIMES = { 'password-reset': 3600000, 'email-verification': 86400000 } as const;
 
 export interface PrototypeLegacyRecoveryRecord {
@@ -57,6 +59,12 @@ export class PrototypeLegacyRecoveryError extends Error {
     super('Invalid or expired recovery link');
     this.name = 'PrototypeLegacyRecoveryError';
   }
+}
+
+function captureCutoverTime(cutoverAt: Date): number {
+  const cutoverTime = cutoverAt.getTime();
+  if (!Number.isFinite(cutoverTime) || cutoverTime > Date.now()) throw new PrototypeLegacyRecoveryError();
+  return cutoverTime;
 }
 
 function purposeAndEmail(identifier: string): { purpose: PrototypeRecoveryPurpose; email: string } {
@@ -110,21 +118,29 @@ export async function bindPrototypeLegacyRecoveryLinks(
   snapshot: PrototypeLegacyRecoverySnapshot,
   cutoverAt: Date,
 ) {
-  if (!Number.isFinite(cutoverAt.getTime())) throw new PrototypeLegacyRecoveryError();
+  const cutoverTime = captureCutoverTime(cutoverAt);
+  // Snapshot ownership and dates before awaiting the shared lifecycle fence.
+  const capturedSnapshot = {
+    users: snapshot.users.map((user) => ({ id: user.id, email: user.email })),
+    records: snapshot.records.map((record) => ({ ...record, expires: new Date(record.expires.getTime()) })),
+    ownership: snapshot.ownership.map((evidence) => ({ ...evidence })),
+  };
   const ownersByEmail = new Map<string, readonly { id: string; email: string }[]>();
-  for (const user of snapshot.users) {
+  for (const user of capturedSnapshot.users) {
     const address = normalizeAccountEmail(user.email);
     ownersByEmail.set(address, [...(ownersByEmail.get(address) ?? []), user]);
   }
   return database.transaction(async (transaction) => {
     await transaction.execute(sql`select pg_advisory_xact_lock(6975, 1)`);
+    if (!(await ensurePrototypeMigrationEpoch(transaction, MIGRATION_EPOCH, cutoverTime)))
+      throw new PrototypeLegacyRecoveryError();
     let bound = 0;
     let rejected = 0;
-    for (const record of snapshot.records) {
+    for (const record of capturedSnapshot.records) {
       const { purpose, email } = purposeAndEmail(record.identifier);
       const emailAtIssuance = normalizeAccountEmail(email);
       const owners = ownersByEmail.get(emailAtIssuance) ?? [];
-      const evidence = snapshot.ownership.filter(
+      const evidence = capturedSnapshot.ownership.filter(
         (candidate) => candidate.identifier === record.identifier && candidate.storedToken === record.token,
       );
       const expiration = record.expires.getTime();
@@ -138,8 +154,8 @@ export async function bindPrototypeLegacyRecoveryLinks(
         evidence[0].originalUserId !== owners[0].id ||
         !['captured-at-issuance', 'verified-ownership-resolution'].includes(evidence[0].source) ||
         !Number.isFinite(expiration) ||
-        expiration <= cutoverAt.getTime() ||
-        expiration > cutoverAt.getTime() + PURPOSE_LIFETIMES[purpose]
+        expiration <= cutoverTime ||
+        expiration > cutoverTime + PURPOSE_LIFETIMES[purpose]
       ) {
         rejected += 1;
         continue;
@@ -239,13 +255,15 @@ export function createPrototypeLegacyRecoveryFacade(
   cutoverAt: Date,
   afterMutation?: () => Promise<void>,
 ) {
-  if (!Number.isFinite(cutoverAt.getTime())) throw new PrototypeLegacyRecoveryError();
+  const cutoverTime = captureCutoverTime(cutoverAt);
   async function consume(purpose: PrototypeRecoveryPurpose, email: string, token: string, password?: string) {
     if (!z.uuid().safeParse(token).success) throw new PrototypeLegacyRecoveryError();
     const storedToken = purpose === 'password-reset' ? createHash('sha256').update(token).digest('hex') : token;
     const identifier = lookupIdentifier(purpose, email, storedToken);
     return database.transaction(async (transaction) => {
       await transaction.execute(sql`select pg_advisory_xact_lock(6975, 1)`);
+      if (!(await ensurePrototypeMigrationEpoch(transaction, MIGRATION_EPOCH, cutoverTime)))
+        throw new PrototypeLegacyRecoveryError();
       const [record] = await transaction
         .select()
         .from(schema.verification)
@@ -259,8 +277,8 @@ export function createPrototypeLegacyRecoveryFacade(
         binding.consumedAt ||
         binding.supersededAt ||
         record.expiresAt.getTime() <= now ||
-        now > cutoverAt.getTime() + PURPOSE_LIFETIMES[purpose] ||
-        record.expiresAt.getTime() > cutoverAt.getTime() + PURPOSE_LIFETIMES[purpose]
+        now > cutoverTime + PURPOSE_LIFETIMES[purpose] ||
+        record.expiresAt.getTime() > cutoverTime + PURPOSE_LIFETIMES[purpose]
       )
         throw new PrototypeLegacyRecoveryError();
       const [user] = await transaction.select().from(schema.user).where(eq(schema.user.id, binding.userId));
@@ -307,6 +325,8 @@ export function createPrototypeLegacyRecoveryFacade(
     supersede(userId: string, purpose: PrototypeRecoveryPurpose) {
       return database.transaction(async (transaction) => {
         await transaction.execute(sql`select pg_advisory_xact_lock(6975, 1)`);
+        if (!(await ensurePrototypeMigrationEpoch(transaction, MIGRATION_EPOCH, cutoverTime)))
+          throw new PrototypeLegacyRecoveryError();
         await invalidatePrototypeLegacyRecovery(transaction, userId, [purpose]);
       });
     },

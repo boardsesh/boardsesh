@@ -22,6 +22,20 @@
       "when": 1793815388034,
       "tag": "0002_ba01_native_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793819352371,
+      "tag": "0003_ba01_durable_migration_epoch",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793819416178,
+      "tag": "0004_ba01_refresh_ancestry",
+      "breakpoints": true
     }
   ]
 }

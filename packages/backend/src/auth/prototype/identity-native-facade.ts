@@ -146,6 +146,25 @@ export function createPrototypeNativeFacade(
     });
   }
 
+  /**
+   * Trusted internal adapters only. Verify source proof before supplying an
+   * owner/session binding; never pass public request user IDs directly here.
+   * Proof consumption and the existing native issuer share one transaction.
+   */
+  async function withIssuanceTransaction<Result>(
+    operation: (
+      transaction: PrototypeTransaction,
+      issueForSession: (userId: string, sessionId: string) => Promise<PrototypeNativeTokenPair>,
+    ) => Promise<Result>,
+  ): Promise<Result> {
+    return database.transaction(async (transaction) => {
+      await lockLifecycle(transaction);
+      return operation(transaction, async (userId, sessionId) =>
+        issue(transaction, await lockedSession(transaction, userId, sessionId)),
+      );
+    });
+  }
+
   async function refresh(refreshToken: string) {
     const hash = tokenHash(refreshToken);
     const [candidate] = await database
@@ -218,5 +237,13 @@ export function createPrototypeNativeFacade(
     return { userId: current.session.userId, sessionId: current.session.id };
   }
 
-  return { credentials, social, issueForVerifiedSession, refresh, revoke, validateAccessToken };
+  return {
+    credentials,
+    social,
+    issueForVerifiedSession,
+    withIssuanceTransaction,
+    refresh,
+    revoke,
+    validateAccessToken,
+  };
 }

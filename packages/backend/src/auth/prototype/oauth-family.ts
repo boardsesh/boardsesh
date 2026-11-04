@@ -2,10 +2,57 @@ import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { stripAccessTokenAuthorizationScheme } from 'better-auth/oauth2';
 import { getOAuthProviderApi } from '@better-auth/oauth-provider';
-import { and, eq } from 'drizzle-orm';
-import { oauthAccessToken, oauthRefreshToken } from '@boardsesh/db/auth-prototype';
+import { and, eq, isNull } from 'drizzle-orm';
+import { oauthAccessToken, oauthRefreshToken, prototypeOAuthRefreshAncestor } from '@boardsesh/db/auth-prototype';
 import type { PrototypeDatabase } from './authority';
 import { PROTOTYPE_OAUTH_OPTIONS } from './oauth-options';
+import { detachPrototypeOfflineGrant } from './oauth-offline';
+
+function isRecord(candidate: unknown): candidate is Record<string, unknown> {
+  return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
+}
+
+async function rememberRefreshAncestor(
+  database: PrototypeDatabase,
+  refreshToken: typeof oauthRefreshToken.$inferSelect,
+) {
+  if (!refreshToken.authorizationCodeId) throw new Error('Missing persisted prototype refresh lineage.');
+  await database
+    .insert(prototypeOAuthRefreshAncestor)
+    .values({
+      tokenHash: refreshToken.token,
+      clientId: refreshToken.clientId,
+      userId: refreshToken.userId,
+      authorizationCodeId: refreshToken.authorizationCodeId,
+      expiresAt: refreshToken.expiresAt,
+      consumedAt: refreshToken.revoked,
+    })
+    .onConflictDoNothing();
+  const [existing] = await database
+    .select()
+    .from(prototypeOAuthRefreshAncestor)
+    .where(eq(prototypeOAuthRefreshAncestor.tokenHash, refreshToken.token));
+  if (
+    !existing ||
+    existing.clientId !== refreshToken.clientId ||
+    existing.userId !== refreshToken.userId ||
+    existing.authorizationCodeId !== refreshToken.authorizationCodeId ||
+    existing.expiresAt.getTime() !== refreshToken.expiresAt.getTime()
+  ) {
+    throw new Error('Conflicting immutable prototype refresh lineage.');
+  }
+  if (refreshToken.revoked) {
+    await database
+      .update(prototypeOAuthRefreshAncestor)
+      .set({ consumedAt: refreshToken.revoked })
+      .where(
+        and(
+          eq(prototypeOAuthRefreshAncestor.tokenHash, refreshToken.token),
+          isNull(prototypeOAuthRefreshAncestor.consumedAt),
+        ),
+      );
+  }
+}
 
 /**
  * Opt-in BA-01 glue. Stock 1.7.17 invalidates every grant for an app/user when
@@ -44,7 +91,20 @@ export function prototypeOAuthFamilyGuard(database: PrototypeDatabase): BetterAu
               .select()
               .from(oauthRefreshToken)
               .where(eq(oauthRefreshToken.token, lookup));
-            if (!refreshToken) {
+            const [ancestor] = await database
+              .select()
+              .from(prototypeOAuthRefreshAncestor)
+              .where(eq(prototypeOAuthRefreshAncestor.tokenHash, lookup));
+            const lineage = refreshToken
+              ? {
+                  clientId: refreshToken.clientId,
+                  userId: refreshToken.userId,
+                  authorizationCodeId: refreshToken.authorizationCodeId,
+                  expiresAt: refreshToken.expiresAt,
+                  consumedAt: ancestor?.consumedAt ?? refreshToken.revoked,
+                }
+              : ancestor;
+            if (!lineage) {
               if (!isRefresh && context.body?.token_type_hint === 'refresh_token') {
                 const accessLookup = await provider.hashToken(presentedToken, 'access_token');
                 const [accessToken] = await database
@@ -58,7 +118,7 @@ export function prototypeOAuthFamilyGuard(database: PrototypeDatabase): BetterAu
             // RFC 7009's type is a lookup hint, not authority to skip other types.
             if (!isRefresh && context.body?.token_type_hint === 'access_token')
               context.body.token_type_hint = 'refresh_token';
-            if (refreshToken.clientId !== client.clientId) {
+            if (lineage.clientId !== client.clientId) {
               // Stock 1.7.17's consumed-token revocation path invalidates the
               // supplied client/user family before checking token ownership.
               // A different registered client must never reach that path.
@@ -67,36 +127,46 @@ export function prototypeOAuthFamilyGuard(database: PrototypeDatabase): BetterAu
                 headers: { 'cache-control': 'no-store' },
               });
             }
-            if (refreshToken.expiresAt < new Date()) {
+            if (!isRefresh && lineage.expiresAt < new Date()) {
               // RFC 7009 treats an already-invalid token as a successful no-op.
               // Delegating an expired consumed token reaches stock broad cleanup.
-              if (!isRefresh) return context.json(null, { status: 200, headers: { 'cache-control': 'no-store' } });
-              return;
+              return context.json(null, { status: 200, headers: { 'cache-control': 'no-store' } });
             }
-            if (!refreshToken.authorizationCodeId) {
+            if (!lineage.authorizationCodeId) {
               throw new APIError('BAD_REQUEST', {
                 error: 'invalid_grant',
                 error_description: 'Missing grant lineage.',
               });
             }
-            if (!refreshToken.revoked) return;
+            if (!lineage.consumedAt) return;
 
             await database
               .delete(oauthAccessToken)
               .where(
                 and(
-                  eq(oauthAccessToken.clientId, refreshToken.clientId),
-                  eq(oauthAccessToken.userId, refreshToken.userId),
-                  eq(oauthAccessToken.authorizationCodeId, refreshToken.authorizationCodeId),
+                  eq(oauthAccessToken.clientId, lineage.clientId),
+                  eq(oauthAccessToken.userId, lineage.userId),
+                  eq(oauthAccessToken.authorizationCodeId, lineage.authorizationCodeId),
                 ),
               );
             await database
               .delete(oauthRefreshToken)
               .where(
                 and(
-                  eq(oauthRefreshToken.clientId, refreshToken.clientId),
-                  eq(oauthRefreshToken.userId, refreshToken.userId),
-                  eq(oauthRefreshToken.authorizationCodeId, refreshToken.authorizationCodeId),
+                  eq(oauthRefreshToken.clientId, lineage.clientId),
+                  eq(oauthRefreshToken.userId, lineage.userId),
+                  eq(oauthRefreshToken.authorizationCodeId, lineage.authorizationCodeId),
+                ),
+              );
+            // The family is now closed, so forgetting its ancestry cannot leave
+            // a live descendant behind. Expiry alone never triggers this delete.
+            await database
+              .delete(prototypeOAuthRefreshAncestor)
+              .where(
+                and(
+                  eq(prototypeOAuthRefreshAncestor.clientId, lineage.clientId),
+                  eq(prototypeOAuthRefreshAncestor.userId, lineage.userId),
+                  eq(prototypeOAuthRefreshAncestor.authorizationCodeId, lineage.authorizationCodeId),
                 ),
               );
             if (!isRefresh) return context.json(null, { status: 200, headers: { 'cache-control': 'no-store' } });
@@ -104,6 +174,42 @@ export function prototypeOAuthFamilyGuard(database: PrototypeDatabase): BetterAu
               { error: 'invalid_grant', error_description: 'The refresh token has already been used.' },
               { status: 400, headers: { 'cache-control': 'no-store' } },
             );
+          }),
+        },
+      ],
+      after: [
+        {
+          matcher: (context) => context.path === '/oauth2/token',
+          handler: createAuthMiddleware(async (context) => {
+            const returned: unknown = context.context.returned;
+            const tokenResponse: unknown = returned instanceof Response ? await returned.clone().json() : returned;
+            if (!isRecord(tokenResponse) || typeof tokenResponse.refresh_token !== 'string') return;
+            // The provider has already authenticated the client and issued this
+            // response. Record only hashes from its transaction-bound rows.
+            const provider = getOAuthProviderApi(context, PROTOTYPE_OAUTH_OPTIONS);
+            const issuedHash = await provider.hashToken(tokenResponse.refresh_token, 'refresh_token');
+            const [issued] = await database
+              .select()
+              .from(oauthRefreshToken)
+              .where(eq(oauthRefreshToken.token, issuedHash));
+            if (!issued) throw new Error('Missing persisted prototype refresh token.');
+            if (issued.scopes.includes('offline_access')) {
+              if (typeof tokenResponse.access_token !== 'string')
+                throw new Error('Missing issued offline access token.');
+              const accessTokenHash = await provider.hashToken(tokenResponse.access_token, 'access_token');
+              await detachPrototypeOfflineGrant(database, issued, accessTokenHash);
+            }
+            await rememberRefreshAncestor(database, issued);
+
+            if (context.body?.grant_type === 'refresh_token' && typeof context.body.refresh_token === 'string') {
+              const consumedHash = await provider.hashToken(context.body.refresh_token, 'refresh_token');
+              const [consumed] = await database
+                .select()
+                .from(oauthRefreshToken)
+                .where(eq(oauthRefreshToken.token, consumedHash));
+              if (!consumed || !consumed.revoked) throw new Error('Missing consumed prototype refresh token.');
+              await rememberRefreshAncestor(database, consumed);
+            }
           }),
         },
       ],

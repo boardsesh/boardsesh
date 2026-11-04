@@ -40,7 +40,18 @@ old writers and old consumption handlers before this authority can safely own
 those links. The cooperative prototype advisory lock is not that writer fence.
 
 The acceptance horizon is bounded to the original one-hour or 24-hour lifetime
-after cutover, and expiry is checked again at consumption. User/purpose
+after cutover, and expiry is checked again at consumption. The actual boundary
+is recorded once under the `legacy-recovery` key in the separate, non-expiring
+`prototype_auth_migration_epoch` table. Import, consumption and supersession
+require that same boundary under the lifecycle fence. Ordinary expired
+verification cleanup cannot erase it, and handler recreation cannot choose a
+later date to admit a record rejected by the original horizon. A future boundary
+is rejected. The boundary is migration metadata, never authentication age.
+
+The importer copies source users, ownership evidence and record dates before
+awaiting the fence; a caller cannot change an in-flight snapshot into an accepted
+one. A facade likewise captures its boundary when constructed rather than
+retaining a caller's mutable Date object. User/purpose
 supersession markers are independent of a caller-selected migration date and
 last at least the maximum remaining legacy lifetime. They block late imports of
 links not previously seen by the new authority. A credential mutation extends
@@ -95,7 +106,7 @@ wrong-secret and cross-purpose/account failures, changed/deleted original
 owners, canonical-reset invalidation, ordinary logout, password validation and
 transaction rollback.
 
-Validation on 2026-11-04: all **28 recovery integration tests passed** against
+Initial validation on 2026-11-04: all **28 recovery integration tests passed** against
 Postgres on the dedicated local port 15475 (10.40 seconds). An independent
 reviewer re-read the service, state helper and shared reset hook, then separately
 ran all **28 cases successfully** (10.57 seconds). The new files also passed
@@ -109,6 +120,16 @@ Joined tests exercise canonical reset against both purposes and a late import
 racing that mutation; separate tests preserve valid links through ordinary
 logout. The original-owner evidence and production writer/consumer fence remain
 blocking requirements for real historical links.
+
+Further review found that a caller-selected later boundary could reclassify a
+never-imported, originally overlong link. The permanent migration epoch closes
+that configuration gap. Added regression cases exercise actual Better Auth
+expired-record cleanup, a changed boundary after rejection, future dates, Date
+mutation while waiting for the fence, and changing invalid ownership evidence
+while an import is queued. The hardened suite passed **34 integration tests**
+on the same dedicated local Postgres instance (10.70 seconds); its changed
+TypeScript files passed `vp check --fix`. Independent review of this hardening
+is recorded separately in the parent ledger.
 
 The code does not implement a public forgot-password issuer, mail delivery,
 rate limits, CORS, browser/deep-link routing, anti-enumeration timing, restored

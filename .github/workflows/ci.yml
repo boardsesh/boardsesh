@@ -1254,7 +1254,10 @@ jobs:
     # sharedDeps filter note in the `changes` job before narrowing that gate.
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A full PR suite plus serial/prototype tests used 18 minutes in run
+    # 41891846044, leaving under 2 minutes for Chromium's cold apt/browser
+    # install and the HTTPS proof. Keep room for that install as well as tests.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: ${{ github.event_name == 'pull_request' && 1 || 2 }}
