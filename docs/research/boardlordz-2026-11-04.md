@@ -129,6 +129,99 @@ against a simple package rename and skin swap. It cannot exclude translated or
 rewritten Boardsesh logic in other areas; no defensible overall copied percentage
 is available.
 
+## Hold renderer follow-up
+
+The visual resemblance extends beyond the shared board photographs. Boardlordz
+calls its default treatment `aura`, uses Boardsesh's Aura hand cyan `#4DF5FD`,
+and caps its small-hold glow boost at the same `1.7`. Both draw light around a
+hold silhouette while preserving readable hold art. These are concrete design
+similarities. They do not, by themselves, establish copied renderer source.
+
+### Different rendering implementations
+
+The APK's `assets/public/_app/immutable/chunks/BvMzZtc1.js` implements its packaged
+board component in Svelte/SVG. For the Aura path it builds silhouette polygons,
+paints a wider colored stroke, applies an SVG `feGaussianBlur`, then draws the
+board image again through a clip path containing the lit holds. The foreground
+copy keeps the physical hold image visible inside the colored glow. A fixed
+veil is conditional on the faded-wall preference. An alternative path draws
+circles or stroked/filled polygons.
+
+Boardsesh's [Rust Aura renderer](../../packages/board-renderer/core/src/aura/mod.rs)
+creates an RGBA overlay with `tiny-skia` and a
+[labelled distance field](../../packages/board-renderer/core/src/aura/glow.rs).
+Its selected treatment includes nearest-hold distance falloff, merging nearby
+same-color glows and blending seams between different colors. Its generated
+geometry additionally carries sampled lightness, painted-LED offsets and
+optional inner plate boundaries. The compiled Boardlordz component does not
+implement this same pipeline or consume those additional fields.
+
+Boardlordz derives stroke width from median nearest-hold spacing: base half-width
+`spacing * .23`, blur deviation `spacing * .1`, and a boost bounded at `1.7`
+using `spacing * .36 / max(maximum outline radius, 1)`. Boardsesh uses the
+placement radius and silhouette bounding extents, caps spread by the shortest
+extent and evaluates its glow per pixel. The shared boost cap is a useful
+fingerprint, but the complete formulas differ.
+
+A raw-byte scan of all 579 regular base-APK members found no WASM magic header,
+`WebAssembly`, `board_renderer_render`, `board_renderer_ffi`,
+`board_renderer_wasm`, `render_overlay`, `silhouette_lightness`, `led_inner`,
+`spread_fraction`, `merge_softness`, `seam_blend_fraction` or `normalise_target`.
+The earlier inventory also found no `.so` libraries. Together with the observed
+SVG implementation, this provides no evidence of an embedded copy of Boardsesh's
+Rust/WASM renderer in this APK. It does not exclude translated logic, encrypted
+code, remotely delivered code or a different release.
+
+REA renderer evidence is
+`ev_a397967e1ad72029325605aa1085221b9474ba5e8854010eea01b5e6c2b4a369`:
+two selected APK files, 15,636 source bytes, 6,770 visited AST nodes and zero
+parse failures. The other 99 inventoried relevant files are outside that
+semantic analysis. Separate ordinary Babel AST inspection recovered 82 literal
+JSON records, including 35 outline datasets, without importing or executing
+target code.
+
+### Compared hold outlines
+
+Boardlordz stores integer pixel offsets as point pairs, keyed by board
+coordinates or placement IDs. Boardsesh stores flat arrays in placement-radius
+units, rounded to four decimal places. The comparison reconstructed the literal
+arrays and matched placement IDs in these six configurations:
+
+| Configuration | Matching holds | Median vertices Boardlordz | Median vertices Boardsesh |
+| --- | ---: | ---: | ---: |
+| Kilter Original 12×12 | 476 | 9 | 16 |
+| Kilter Original 8×12 | 311 | 12 | 17 |
+| Kilter Homewall 10×12 | 499 | 11 | 19 |
+| Kilter Homewall 8×12 | 389 | 13 | 19 |
+| Tension 2 Mirror | 498 | 9 | 22 |
+| Tension 2 Spray | 498 | 8 | 17 |
+
+Across **2,671 matched configuration–placement pairs**, there were **zero identical numeric
+polygons and zero matching vertex counts**, both against the pinned Boardsesh
+comparison commit and the cited historical commit `6fdc0d6e`. The compared
+Boardsesh outline arrays are identical in those two revisions. Consequently,
+none of these polygons is an unchanged copy or a one-to-one uniformly scaled
+copy of those Boardsesh arrays.
+
+After translating polygon centroids and uniformly scaling to equal area, the
+median sampled boundary difference per configuration was **0.324–0.343 pixels**
+in the APK image coordinate system. This samples four points along every edge
+in each direction and measures nearest-segment distance; it is not an exhaustive
+Hausdorff distance or a rendered-pixel comparison. It shows the outlines follow
+very similar hold shapes with different polygon detail. Retracing shared
+manufacturer imagery and simplifying another polygon source could both produce
+that result. The measurement does not distinguish those origins.
+
+![Six hold outlines compared after centroid and area alignment](./boardlordz-rendering-outlines.svg)
+
+The figure chooses the lowest common placement ID in each configuration,
+independently of the measured error. It compares geometry, not app screenshots.
+The shape data does not establish an exact copy of Boardsesh's processed
+silhouettes, and the implementation does not establish reuse of its Rust engine.
+The previously documented Kilter image-input copy remains confirmed by the
+APK's own provenance file. Visual design influence is plausible; renderer-code
+or transformed-data derivation remains unproven.
+
 ## Attribution and license findings
 
 The claim that there is **no attribution** is contradicted by the inspected build.

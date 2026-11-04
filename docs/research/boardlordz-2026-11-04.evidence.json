@@ -529,5 +529,547 @@
       "status": "unresolved",
       "finding": "Cannot exclude server-side proxying or other unobserved backend use without authenticated runtime/production logs."
     }
-  ]
+  ],
+  "renderer_followup": {
+    "compared_source_commit": "796746a5db3c4fae37a54d8d8fd2d0a7cb00fc1f",
+    "historical_source_commit": "6fdc0d6e41949ca758c0c5db42a570946543219f",
+    "rea": {
+      "evidence_id": "ev_a397967e1ad72029325605aa1085221b9474ba5e8854010eea01b5e6c2b4a369",
+      "filename": "rendering/rea-renderer-evidence.json",
+      "sha256": "5dc29f2a89aefc73c9b1ec0bf120d9ed60899db764efd635ef6df719e150e935",
+      "statistics": {
+        "relevant_files": 101,
+        "nested_asar_containers": 0,
+        "text_bytes_read": 15636,
+        "invalid_utf8_files": 0,
+        "parsed_javascript_files": 2,
+        "skipped_javascript_files": 0,
+        "visited_ast_nodes": 6770,
+        "findings": 53,
+        "modules": 0,
+        "parse_failures": 0
+      },
+      "limitations": [
+        "Caller-selected source analysis leaves 99 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+        "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+        "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+        "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+        "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+        "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+        "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+      ]
+    },
+    "key_members": [
+      {
+        "path": "assets/public/_app/immutable/chunks/BvMzZtc1.js",
+        "bytes": 14941,
+        "sha256": "a3dc2e712bf6e41eb8f534aee8cc8c2d127421db1fc1f1c5b9e168fc60d68a4f"
+      },
+      {
+        "path": "assets/public/_app/immutable/chunks/D5vxCRIn.js",
+        "bytes": 1749609,
+        "sha256": "ea57147e3cf99342efadd03447dbcee52703ab58c3cf9af65c4ec66d43519b74"
+      },
+      {
+        "path": "assets/public/_app/immutable/chunks/D5w8oGkP.js",
+        "bytes": 695,
+        "sha256": "7572f4b1c0e5a382bdc88615df3c4bfad3aa81b9d2a8ea1b960874d402f572b5"
+      },
+      {
+        "path": "assets/public/_app/immutable/assets/BoardRenderer.BxGmw7C0.css",
+        "bytes": 1229,
+        "sha256": "0421f227f37de08716a70c30c4bc9d9cc455e9cbb6deaa9029d8ee5f98e31c8b"
+      }
+    ],
+    "implementation": "SVG silhouette polygons, Gaussian blur, foreground board image clipped to selected holds; no APK target execution claimed",
+    "binary_indicator_scan": {
+      "file": "rendering/binary-renderer-indicators.json",
+      "sha256": "7d3bf7160dc3749031ef25ddf78d2c966773a0097aa4fe96f41215e1b2247c8c",
+      "scope": "All 579 regular members of verified base APK; literal raw-byte markers, no decryption",
+      "results": [
+        {
+          "marker_hex": "0061736d",
+          "label": "\u0000asm",
+          "hits": []
+        },
+        {
+          "marker_hex": "576562417373656d626c79",
+          "label": "WebAssembly",
+          "hits": []
+        },
+        {
+          "marker_hex": "626f6172645f72656e64657265725f72656e646572",
+          "label": "board_renderer_render",
+          "hits": []
+        },
+        {
+          "marker_hex": "626f6172645f72656e64657265725f666669",
+          "label": "board_renderer_ffi",
+          "hits": []
+        },
+        {
+          "marker_hex": "626f6172645f72656e64657265725f7761736d",
+          "label": "board_renderer_wasm",
+          "hits": []
+        },
+        {
+          "marker_hex": "72656e6465725f6f7665726c6179",
+          "label": "render_overlay",
+          "hits": []
+        },
+        {
+          "marker_hex": "73696c686f75657474655f6c696768746e657373",
+          "label": "silhouette_lightness",
+          "hits": []
+        },
+        {
+          "marker_hex": "6c65645f696e6e6572",
+          "label": "led_inner",
+          "hits": []
+        },
+        {
+          "marker_hex": "7370726561645f6672616374696f6e",
+          "label": "spread_fraction",
+          "hits": []
+        },
+        {
+          "marker_hex": "6d657267655f736f66746e657373",
+          "label": "merge_softness",
+          "hits": []
+        },
+        {
+          "marker_hex": "7365616d5f626c656e645f6672616374696f6e",
+          "label": "seam_blend_fraction",
+          "hits": []
+        },
+        {
+          "marker_hex": "6e6f726d616c6973655f746172676574",
+          "label": "normalise_target",
+          "hits": []
+        }
+      ]
+    },
+    "geometry_literal_extraction": {
+      "files": 82,
+      "outline_datasets": 35,
+      "method": "Babel AST literal/identifier reconstruction; no target imports, eval or function execution"
+    },
+    "geometry_comparison": {
+      "matched_configuration_placement_pairs": 2671,
+      "compared_revisions": ["current comparison commit", "cited historical commit6fdc0d6e"],
+      "literal_matches": 0,
+      "matching_vertex_counts": 0,
+      "scope": "Six Kilter/Tension configurations, not every outline dataset",
+      "method": "Compare vertex counts and coordinates; for approximate boundary comparison translate polygon centroids and use uniform equal-area scaling. Four samples per edge in each direction, nearest segment distances. Not pixel identity or a proof of polygon origin.",
+      "results": [
+        {
+          "setup": "kilter-original-12x12",
+          "boardsesh_shard": "kilter/1-7",
+          "revision": "current",
+          "compared_placements": 476,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 9.0,
+          "median_boardsesh_vertices": 16.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.324497327626889,
+          "median_max_sample_edge_distance_pixels": 1.0060162606673373,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "1526",
+              "mean_edge_distance_pixels": 0.15146783386201468,
+              "max_sample_edge_distance_pixels": 0.8506724024123562,
+              "area_fit_scale": 30.628084934960558,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 10
+            },
+            {
+              "placement": "1534",
+              "mean_edge_distance_pixels": 0.16168591699691068,
+              "max_sample_edge_distance_pixels": 0.5371708742299677,
+              "area_fit_scale": 29.80133508786065,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 14
+            }
+          ]
+        },
+        {
+          "setup": "kilter-original-12x12",
+          "boardsesh_shard": "kilter/1-7",
+          "revision": "historical",
+          "compared_placements": 476,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 9.0,
+          "median_boardsesh_vertices": 16.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.324497327626889,
+          "median_max_sample_edge_distance_pixels": 1.0060162606673373,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "1526",
+              "mean_edge_distance_pixels": 0.15146783386201468,
+              "max_sample_edge_distance_pixels": 0.8506724024123562,
+              "area_fit_scale": 30.628084934960558,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 10
+            },
+            {
+              "placement": "1534",
+              "mean_edge_distance_pixels": 0.16168591699691068,
+              "max_sample_edge_distance_pixels": 0.5371708742299677,
+              "area_fit_scale": 29.80133508786065,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 14
+            }
+          ]
+        },
+        {
+          "setup": "kilter-original-8x12",
+          "boardsesh_shard": "kilter/1-8",
+          "revision": "current",
+          "compared_placements": 311,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 12,
+          "median_boardsesh_vertices": 17,
+          "median_symmetric_sample_edge_distance_pixels": 0.3386425640233852,
+          "median_max_sample_edge_distance_pixels": 1.0714878476177665,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "1595",
+              "mean_edge_distance_pixels": 0.19837205040392855,
+              "max_sample_edge_distance_pixels": 0.6516943575572036,
+              "area_fit_scale": 45.1266935694231,
+              "boardlordz_vertices": 10,
+              "boardsesh_vertices": 15
+            },
+            {
+              "placement": "1583",
+              "mean_edge_distance_pixels": 0.2021432799108698,
+              "max_sample_edge_distance_pixels": 0.7218858328552057,
+              "area_fit_scale": 45.40217796535683,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 12
+            }
+          ]
+        },
+        {
+          "setup": "kilter-original-8x12",
+          "boardsesh_shard": "kilter/1-8",
+          "revision": "historical",
+          "compared_placements": 311,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 12,
+          "median_boardsesh_vertices": 17,
+          "median_symmetric_sample_edge_distance_pixels": 0.3386425640233852,
+          "median_max_sample_edge_distance_pixels": 1.0714878476177665,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "1595",
+              "mean_edge_distance_pixels": 0.19837205040392855,
+              "max_sample_edge_distance_pixels": 0.6516943575572036,
+              "area_fit_scale": 45.1266935694231,
+              "boardlordz_vertices": 10,
+              "boardsesh_vertices": 15
+            },
+            {
+              "placement": "1583",
+              "mean_edge_distance_pixels": 0.2021432799108698,
+              "max_sample_edge_distance_pixels": 0.7218858328552057,
+              "area_fit_scale": 45.40217796535683,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 12
+            }
+          ]
+        },
+        {
+          "setup": "kilter-homewall-10x12",
+          "boardsesh_shard": "kilter/8-25",
+          "revision": "current",
+          "compared_placements": 499,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 11,
+          "median_boardsesh_vertices": 19,
+          "median_symmetric_sample_edge_distance_pixels": 0.3316762080531031,
+          "median_max_sample_edge_distance_pixels": 1.055854855137434,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "4199",
+              "mean_edge_distance_pixels": 0.18766659476641528,
+              "max_sample_edge_distance_pixels": 0.6851318859895696,
+              "area_fit_scale": 38.74414792079556,
+              "boardlordz_vertices": 12,
+              "boardsesh_vertices": 22
+            },
+            {
+              "placement": "4150",
+              "mean_edge_distance_pixels": 0.19146927132706515,
+              "max_sample_edge_distance_pixels": 0.8892682449942969,
+              "area_fit_scale": 38.59771848176179,
+              "boardlordz_vertices": 14,
+              "boardsesh_vertices": 21
+            }
+          ]
+        },
+        {
+          "setup": "kilter-homewall-10x12",
+          "boardsesh_shard": "kilter/8-25",
+          "revision": "historical",
+          "compared_placements": 499,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 11,
+          "median_boardsesh_vertices": 19,
+          "median_symmetric_sample_edge_distance_pixels": 0.3316762080531031,
+          "median_max_sample_edge_distance_pixels": 1.055854855137434,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "4199",
+              "mean_edge_distance_pixels": 0.18766659476641528,
+              "max_sample_edge_distance_pixels": 0.6851318859895696,
+              "area_fit_scale": 38.74414792079556,
+              "boardlordz_vertices": 12,
+              "boardsesh_vertices": 22
+            },
+            {
+              "placement": "4150",
+              "mean_edge_distance_pixels": 0.19146927132706515,
+              "max_sample_edge_distance_pixels": 0.8892682449942969,
+              "area_fit_scale": 38.59771848176179,
+              "boardlordz_vertices": 14,
+              "boardsesh_vertices": 21
+            }
+          ]
+        },
+        {
+          "setup": "kilter-homewall-8x12",
+          "boardsesh_shard": "kilter/8-23",
+          "revision": "current",
+          "compared_placements": 389,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 13,
+          "median_boardsesh_vertices": 19,
+          "median_symmetric_sample_edge_distance_pixels": 0.33732474753053204,
+          "median_max_sample_edge_distance_pixels": 1.136417549020866,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "4393",
+              "mean_edge_distance_pixels": 0.19057182019159485,
+              "max_sample_edge_distance_pixels": 1.1849793271767954,
+              "area_fit_scale": 49.540763707056065,
+              "boardlordz_vertices": 14,
+              "boardsesh_vertices": 17
+            },
+            {
+              "placement": "4397",
+              "mean_edge_distance_pixels": 0.1948006937135318,
+              "max_sample_edge_distance_pixels": 0.8227119055195289,
+              "area_fit_scale": 49.57551305406788,
+              "boardlordz_vertices": 15,
+              "boardsesh_vertices": 18
+            }
+          ]
+        },
+        {
+          "setup": "kilter-homewall-8x12",
+          "boardsesh_shard": "kilter/8-23",
+          "revision": "historical",
+          "compared_placements": 389,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 13,
+          "median_boardsesh_vertices": 19,
+          "median_symmetric_sample_edge_distance_pixels": 0.33732474753053204,
+          "median_max_sample_edge_distance_pixels": 1.136417549020866,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "4393",
+              "mean_edge_distance_pixels": 0.19057182019159485,
+              "max_sample_edge_distance_pixels": 1.1849793271767954,
+              "area_fit_scale": 49.540763707056065,
+              "boardlordz_vertices": 14,
+              "boardsesh_vertices": 17
+            },
+            {
+              "placement": "4397",
+              "mean_edge_distance_pixels": 0.1948006937135318,
+              "max_sample_edge_distance_pixels": 0.8227119055195289,
+              "area_fit_scale": 49.57551305406788,
+              "boardlordz_vertices": 15,
+              "boardsesh_vertices": 18
+            }
+          ]
+        },
+        {
+          "setup": "tension2",
+          "boardsesh_shard": "tension/10-6",
+          "revision": "current",
+          "compared_placements": 498,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 9.0,
+          "median_boardsesh_vertices": 22.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.3406497786213937,
+          "median_max_sample_edge_distance_pixels": 1.0791402959245722,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "535",
+              "mean_edge_distance_pixels": 0.183377775777303,
+              "max_sample_edge_distance_pixels": 0.6411250797365448,
+              "area_fit_scale": 32.298966348457604,
+              "boardlordz_vertices": 10,
+              "boardsesh_vertices": 13
+            },
+            {
+              "placement": "646",
+              "mean_edge_distance_pixels": 0.18375490295219865,
+              "max_sample_edge_distance_pixels": 0.643869763070661,
+              "area_fit_scale": 32.32570553065349,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 12
+            }
+          ]
+        },
+        {
+          "setup": "tension2",
+          "boardsesh_shard": "tension/10-6",
+          "revision": "historical",
+          "compared_placements": 498,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 9.0,
+          "median_boardsesh_vertices": 22.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.3406497786213937,
+          "median_max_sample_edge_distance_pixels": 1.0791402959245722,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "535",
+              "mean_edge_distance_pixels": 0.183377775777303,
+              "max_sample_edge_distance_pixels": 0.6411250797365448,
+              "area_fit_scale": 32.298966348457604,
+              "boardlordz_vertices": 10,
+              "boardsesh_vertices": 13
+            },
+            {
+              "placement": "646",
+              "mean_edge_distance_pixels": 0.18375490295219865,
+              "max_sample_edge_distance_pixels": 0.643869763070661,
+              "area_fit_scale": 32.32570553065349,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 12
+            }
+          ]
+        },
+        {
+          "setup": "tension2-spray",
+          "boardsesh_shard": "tension/11-6",
+          "revision": "current",
+          "compared_placements": 498,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 8.0,
+          "median_boardsesh_vertices": 17.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.34298942329507076,
+          "median_max_sample_edge_distance_pixels": 1.0528415404390192,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "958",
+              "mean_edge_distance_pixels": 0.15717942494447742,
+              "max_sample_edge_distance_pixels": 0.5861729566970033,
+              "area_fit_scale": 31.532176936895542,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 14
+            },
+            {
+              "placement": "1013",
+              "mean_edge_distance_pixels": 0.16542328019696476,
+              "max_sample_edge_distance_pixels": 0.7817463364678168,
+              "area_fit_scale": 32.26253665228053,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 11
+            }
+          ]
+        },
+        {
+          "setup": "tension2-spray",
+          "boardsesh_shard": "tension/11-6",
+          "revision": "historical",
+          "compared_placements": 498,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 8.0,
+          "median_boardsesh_vertices": 17.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.34298942329507076,
+          "median_max_sample_edge_distance_pixels": 1.0528415404390192,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "958",
+              "mean_edge_distance_pixels": 0.15717942494447742,
+              "max_sample_edge_distance_pixels": 0.5861729566970033,
+              "area_fit_scale": 31.532176936895542,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 14
+            },
+            {
+              "placement": "1013",
+              "mean_edge_distance_pixels": 0.16542328019696476,
+              "max_sample_edge_distance_pixels": 0.7817463364678168,
+              "area_fit_scale": 32.26253665228053,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 11
+            }
+          ]
+        }
+      ]
+    },
+    "observed_visual_fingerprints": {
+      "mode_name": "aura",
+      "common_display_color": "#4DF5FD",
+      "small_hold_boost_cap": 1.7,
+      "interpretation": "Consistent with similar design treatment; insufficient to establish renderer source copying."
+    },
+    "conclusions": {
+      "same_rust_binary": "No embedded Rust/WASM renderer evidence found; active shipped path is SVG. Remote or encoded code is outside this negative scan.",
+      "same_processed_geometry": "No unchanged or one-to-one uniformly scaled polygon copy in the six compared configurations. Retracing vs transformed/simplified derivation unresolved.",
+      "manufacturer_image_copy": "Kilter layer reuse remains explicitly acknowledged in packaged SOURCES.md."
+    }
+  }
 }
