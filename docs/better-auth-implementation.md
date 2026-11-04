@@ -62,13 +62,14 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Separate session revocation eligibility from authentication age. | Canonical creation stamps a trusted generation, and every account revocation increments its durable generation. A replacement binds the current generation while retaining original `createdAt`/authentication time. This handles equal-millisecond changes and ahead-clock cutoffs without making an old login fresh; unbound legacy rows retain conservative date checks. |
 | 2026-11-04 | Deny unseen old credentials after any account cutoff. | A newer rolling legacy `iat`, even with an unseen session identifier, is not proof of authentication after reset. Fresh canonical authentication uses the current generation instead. This strengthens the source-provenance gate without changing released endpoints. |
 | 2026-11-04 | Fence each protected operation in the transport proof. | Actual loopback HTTP and WebSocket commands revalidate canonical state within the mutation fence. A committed response may arrive after reset; subsequent commands reject. The proof does not replace the product's cache/GraphQL context or claim a production latency SLA. |
+| 2026-11-04 | Test a restricted-role database fence before choosing production grants. | An owner transaction drains old table writes, transfers DML capability and rejects already-connected, genuinely prepared and queued stale statements. Retained reads do not fence stateless issuers. PUBLIC, membership, ownership and superuser counterexamples prevent treating named-role revocation alone as a production policy. |
 
 ## Acceptance ledger
 
 | Child | Evidence/status |
 | --- | --- |
 | BA-01 #6976 | Identity/native/session/OAuth/browser, configured Facebook, legacy web/recovery/transfer, pre-cutover refresh, real process restart and both new/pending-old Redis watch proofs implemented and independently reviewed. Source-provenance and operational proofs below keep the overall gate open. |
-| BA-03 #6977 | Complete [source writer inventory](./better-auth-writer-inventory.md); no production writer switch or database role fence. |
+| BA-03 #6977 | Complete [source writer inventory](./better-auth-writer-inventory.md) and 10 independently reviewed [candidate role-fence cases](./better-auth-writer-fence-proof.md). No current-store service adoption, production writer switch or deployed role policy. |
 | BA-02 #4847 | Read-only audit, 21 tests and local execution delivered. Current production counts and ownership resolutions remain unknown; no final uniqueness migration is enabled. |
 | BA-04 #6978 | Prototype cookie/JWT lineage, clock-aware cutoffs, tombstones and reset races pass; production import still depends on one writer and ownership-verified collision resolution. |
 | BA-05 #6979 | Blocked on the authority and session bridge. |
@@ -133,6 +134,7 @@ in its output. See the inventory for its scope and operational limits.
 | Trusted generation and transport follow-up | 61 cases passed independently in 6.64 seconds: 10 generation, 17 native, 18 legacy bridge and 16 real HTTP/WebSocket cases. See the [transport proof](./better-auth-transport-proof.md) for in-flight and product-integration limits. |
 | Existing native/Expo-web identity storage | 250 cases in 7 existing files passed in 14.10 seconds, covering auth storage/session/provider races. These are baseline client regressions, not migration traffic, SecureStore hardware or real-device evidence. |
 | Authenticated password set/change | 28 cases passed independently in 24.76 seconds. Requesting-device replacement preserves original age; old requester/native/partner/recovery credentials reject; equal/ahead clocks and forgotten reset pass. See the [lifecycle proof](./better-auth-lifecycle-proof.md). |
+| Candidate PostgreSQL writer fence | 10 cases passed independently in 3.09 seconds, including real prepared/queued stale writes, privilege rollback, bypass characterizations and pre/post-commit setup cleanup. The [proof](./better-auth-writer-fence-proof.md) changes no production grants or writer paths. |
 | Independent cross-reviews | Native/bridge 33 cases, identity/provider 41 cases, OAuth 39 cases, web auth regression 85 cases and CI guard 50 cases passed in independent runs. Findings were fixed and re-reviewed. |
 | Full repository typecheck | `vp run typecheck` passed; final change verification is recorded with the implementation PR. |
 | Separate Drizzle registry drift check | `vp exec drizzle-kit generate --config auth-prototype.drizzle.config.ts` reported no schema changes after generation. |
@@ -188,8 +190,8 @@ in 38.75 seconds**, with clean teardown. This run includes generation-bound
 replacement, the user-approved continuation policy, rolled-old-issue-time denial
 and actual HTTP/WebSocket operation proofs. HTTPS Chromium passed **4/4** again
 in **11.2 seconds** and the full aggregate TypeScript check passed **59 tasks**.
-Candidate writer-fence and canonical-verification experiments remain separate
-until their own review and combined validation finish.
+Candidate writer-fence evidence has passed separate independent review; its
+combined validation and canonical-verification experiments are still pending.
 
 The published `689446f9bc` slice passed [full remote CI run 41900504353](https://github.com/boardsesh/boardsesh/actions/runs/41900504353):
 **59,948 passed, 0 failed, 23 skipped**. Backend, serial, prototype, HTTPS browser,
