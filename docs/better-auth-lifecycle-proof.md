@@ -88,6 +88,13 @@ not publish a stock replacement and then revoke it. The user's selected policy
 revokes partner credentials too; unrelated accounts and their connections remain
 usable.
 
+The isolated [provider link/unlink proof](./better-auth-provider-link-proof.md)
+reuses this policy through `credential-continuation.ts`. The shared helper binds
+replacement to the exact requesting user, session ID and token, and retains the
+existing original age, expiry, hook composition and revocation checks. Provider
+continuation is a separate agent decision; it does not broaden the user's
+password-specific answer. Password failures still roll back the whole request.
+
 ## Automated evidence
 
 `lifecycle-mutations.test.ts` exercises real Postgres and independently created

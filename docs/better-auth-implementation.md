@@ -5,9 +5,9 @@ Design: [Better Auth migration](./better-auth-migration.md).
 Started: 2026-11-04, from `origin/main` at `796746a5db`.
 
 Review: [PR #7280](https://github.com/boardsesh/boardsesh/pull/7280) is ready.
-The latest reviewed batch passes **595 cases on both PostgreSQL 15.17 and 18.6**.
-Recorded full CI is green at `689446f9bc`, with no cloud-review findings; later
-commits still require their own CI. Production migration remains gated. The
+The latest reviewed batch passes **693 cases on both PostgreSQL 15.17 and 18.6**.
+Recorded full CI is green at `10795b93f0`; cloud review reported no findings at
+the earlier `689446f9bc` head. Later commits require their own CI. Production migration remains gated. The
 user's password policy is to keep the current device signed in, revoke other
 credentials, and revoke every session after forgotten-password reset.
 
@@ -58,7 +58,7 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Serialize social callback state consumption too. | The actual Facebook callback's stock state read/delete permits two subjects to authenticate against the same state/cookie under a deterministic race. The existing transaction-bound wrapper and lifecycle fence produce one winner; the unsafe stock behavior is explicitly characterized rather than counted as a safe configuration. |
 | 2026-11-04 | Record source denial for canonical session signout. | A fresh non-legacy canonical session previously left no tombstone, allowing an unbound pending handoff/watch code to restore access. Its deletion now records a permanent denial in the same transaction. Newly unseen legacy admissions reject; known live mappings, unrelated canonical sessions and offline partner grants survive. |
 | 2026-11-04 | Preserve pending old Garmin codes within a fixed admission window. | Real Redis PTTL and GETDEL retain remaining validity, bounded by a permanent 300-second cutover epoch. The epoch commits before the destructive Redis operation. SQL mint failure cannot restore the consumed code; no distributed exactly-once claim or in-memory fallback is made. |
-| 2026-11-04 | User decision: keep the current device signed in after authenticated password set/change. | Revoke other credentials and replace the requesting session atomically; retain its proven original authentication age. Forgotten-password reset revokes every session. The 28-case lifecycle proof implements and independently verifies this policy; production adoption remains gated. |
+| 2026-11-04 | User decision: keep the current device signed in after authenticated password set/change. | Revoke other credentials and replace the requesting session atomically; retain its proven original authentication age. Forgotten-password reset revokes every session. The lifecycle proof implements and independently verifies this policy; production adoption remains gated. |
 | 2026-11-04 | Separate session revocation eligibility from authentication age. | Canonical creation stamps a trusted generation, and every account revocation increments its durable generation. A replacement binds the current generation while retaining original `createdAt`/authentication time. This handles equal-millisecond changes and ahead-clock cutoffs without making an old login fresh; unbound legacy rows retain conservative date checks. |
 | 2026-11-04 | Deny unseen old credentials after any account cutoff. | A newer rolling legacy `iat`, even with an unseen session identifier, is not proof of authentication after reset. Fresh canonical authentication uses the current generation instead. This strengthens the source-provenance gate without changing released endpoints. |
 | 2026-11-04 | Fence each protected operation in the transport proof. | Actual loopback HTTP and WebSocket commands revalidate canonical state within the mutation fence. A committed response may arrive after reset; subsequent commands reject. The proof does not replace the product's cache/GraphQL context or claim a production latency SLA. |
@@ -66,13 +66,17 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Bind new verification links to a receipt as well as the actual signed JWT. | The public producer includes user ID, but stock verification permits stateless replay and older email-only forms. A random nonce and hashed, purpose-bound receipt enforce original ownership, exact expiry, resend supersession and single use without creating a login or rewriting imported timestamps. |
 | 2026-11-04 | Use the exact shared email normalization in fixture ownership checks. | PostgreSQL `btrim`/`lower` differs from JavaScript trim/lowercase for historical whitespace and Unicode. Complete fixture scans use `normalizeAccountEmail`; production normalized indexes and reservations remain required. |
 | 2026-11-04 | Separate issuer clock-read bounds from expiry transport policy. | Actual Better Auth and legacy native producers read clocks separately. Both get a named 60-second nominal-span allowance; canonical verification still expires exactly at signed `exp`, while old native JWTs preserve the installed backend's 60-second transport tolerance. Neither grants fresh authentication. |
+| 2026-11-04 | Agent decision: apply current-device continuation to explicit provider link/unlink. | Reuse the password continuation helper, preserve authentication age/expiry, and revoke old credentials. This is not a user answer about provider policy. Linking preserves local email/verification and never merges or reassigns a subject. The narrow Facebook trust setting proves provider-account ownership through authenticated Graph exchange, not mailbox ownership. |
+| 2026-11-04 | Consume validated browser-link intents even when provider work fails. | Keep receipt consumption in the outer transaction and provider/credential changes in a savepoint. Cancellation, rejection or late policy failure requires a new flow while original credentials survive; wrong/stale actors reject before consumption. A final supported after-hook observer corrects the pinned callback's saved302/late403 behavior. |
+| 2026-11-04 | Use one source-bound canonical browser-to-native handoff. | A signed JWT with readable claims carries a distinct purpose/key and exact120-second deadline. A hashed single-use receipt binds the same user/session/generation; native issuance reuses the canonical source and never creates fresh authentication. A valid optional cookie must match the exact source session. |
+| 2026-11-04 | Independent gate decision: implement BA-03 over the existing store. | Supported-API capability and concurrency evidence permits implementing backend centralization, reservations and fencing. This does not authorize activating a writer switch, importing identities or launching partners. The configured Google browser-code callback still needs its own bounded fixture before claiming all provider browser surfaces passed. |
 
 ## Acceptance ledger
 
 | Child | Evidence/status |
 | --- | --- |
-| BA-01 #6976 | Identity/native/session/OAuth/browser, configured Facebook, legacy web/recovery/transfer, pre-cutover refresh, real process restart and both new/pending-old Redis watch proofs implemented and independently reviewed. Source-provenance and operational proofs below keep the overall gate open. |
-| BA-03 #6977 | Complete [source writer inventory](./better-auth-writer-inventory.md) and 10 independently reviewed [candidate role-fence cases](./better-auth-writer-fence-proof.md). No current-store service adoption, production writer switch or deployed role policy. |
+| BA-01 #6976 | Identity/native/session/OAuth/browser, legacy compatibility, recovery, explicit provider mutations and canonical handoff implemented and independently reviewed. Google browser-code transport remains a specific fixture gap; source-provenance and operational acceptance remain open. No child-close claim. |
+| BA-03 #6977 | Implementation-only GO after independent capability audit. Complete [source writer inventory](./better-auth-writer-inventory.md) and 10 independently reviewed [candidate role-fence cases](./better-auth-writer-fence-proof.md). Backend current-store service/reservations/fencing are next; no production writer activation or deployed role policy. |
 | BA-02 #4847 | Read-only audit, 21 tests and local execution delivered. Current production counts and ownership resolutions remain unknown; no final uniqueness migration is enabled. |
 | BA-04 #6978 | Prototype cookie/JWT lineage, clock-aware cutoffs, tombstones and reset races pass; production import still depends on one writer and ownership-verified collision resolution. |
 | BA-05 #6979 | Blocked on the authority and session bridge. |
@@ -126,6 +130,8 @@ in its output. See the inventory for its scope and operational limits.
 | OAuth provider and guarded lifecycle | 51 cases passed independently, including expired/pruned refresh ancestry, day-91 offline access, retained expired sessions, and deletion of a consenting climber while the same developer app and another grant survive. |
 | Offline schema generation | A regression proves the complete auth configuration initializes without constructing a Postgres client. The pinned CLI generated the same 11 core tables and exited cleanly. |
 | Real Chromium over local HTTPS | 4 cases passed independently in 8.5 seconds: secure HttpOnly shared-domain cookies, website/app credentialed CORS and preflight, server-rendered session reads, hostile JavaScript origin isolation, OAuth redirects and discovery routing. See the [browser proof](./better-auth-browser-proof.md). |
+| Explicit provider link/unlink and shared continuation | [51 provider cases](./better-auth-provider-link-proof.md) and 32 password cases passed independent security QA on PostgreSQL15/18 in27.05/27.35 seconds. Real provider verification, ownership/freshness, usable methods, callback intent, formPOST and late policy rollback are exercised. |
+| Canonical browser-to-native handoff | [43 cases](./better-auth-canonical-handoff-proof.md) passed two independent reviewers on both database versions. Source/session/generation binding, exact expiry, single use, account switching, mutation races, rollback and publication failures pass. Signed claims are readable; no production rollout claim. |
 | Application process replacement and crash rollback | 18 cases passed independently, including actual SIGKILL at a pre-commit barrier, rejected-startup cleanup, persisted revocation, and unknown authentication age after replacement. See the [process proof](./better-auth-process-proof.md). |
 | Pre-cutover native/watch refresh import | 34 cases passed independently; preserve source ownership/hash/expiry, reject new admission after canonical signout while retaining known live bindings, and retain an immutable epoch through verification cleanup. See the [refresh proof](./better-auth-legacy-refresh-proof.md). |
 | Durable old recovery binding | 34 cases passed independently after cleanup, mutable-caller and cutover-extension fixes; canonical reset invalidates both imported purposes in the mutation transaction. |
@@ -212,12 +218,21 @@ with **0 errors and 623 existing warnings**. Isolated Drizzle generation
 reported no schema changes. Independent reviews and re-reviews above cover
 every new source change in this batch.
 
-The published `689446f9bc` slice passed [full remote CI run 41900504353](https://github.com/boardsesh/boardsesh/actions/runs/41900504353):
+**Provider continuation and canonical handoff combined proof: 27 files /693 tests
+passed on both servers**, with clean teardown: **78.05 seconds on PostgreSQL15.17**
+and **52.35 seconds on PostgreSQL18.6**. The full aggregate typecheck again passed
+**59 tasks**; repository `vp check` passed with **0 errors and623 existing warnings**.
+The generated schema did not change. The new provider, shared password helper
+and handoff sources received independent review, fixes and independent dual-version
+reruns. The four HTTPS tests previously passed on the unchanged browser fixture
+and base authority; they are not new provider browser-navigation evidence.
+
+The published `10795b93f0` slice passed [full remote CI run 41909591768](https://github.com/boardsesh/boardsesh/actions/runs/41909591768):
 **59,948 passed, 0 failed, 23 skipped**. Backend, serial, prototype, HTTPS browser,
 typecheck, lint, guard, migration, mobile bundle and Docker web jobs all passed.
 The increased backend budget resolved the measured Chromium-install timeout.
 PR #7280 was marked ready for review after checking that it had no review
-comments or merge conflicts. The unpublished continuation/transport follow-up
+comments or merge conflicts. The unpublished provider/handoff follow-up
 still requires its own committed-head CI; this does not close the epic's gates.
 
 The local development audit at **2026-11-04 18:11:40 UTC** measured 53 users,
@@ -237,15 +252,24 @@ demonstrates supported library integration and exposes the custom lifecycle
 work needed. It does not satisfy every BA-01 acceptance criterion or complete
 epic #6975. None of the child issues should be closed from test counts alone.
 
-Before BA-03 changes production writers, finish production-shaped handoff and
-source-provenance acceptance. The configured Facebook, old pending Garmin,
+**BA-03 implementation may proceed over the existing authoritative store.**
+Independent security review mapped the pinned supported APIs, provider mutation,
+handoff and concurrency evidence to its prerequisite; no unsupported library
+capability remains that must block building the service. This is separate from
+activating its production writers. The configured Google browser authorization-code
+callback needs its own fixture before claiming every social browser surface passed.
+Do not infer its transport coverage from native Google or other browser providers.
+
+Before activating BA-03 writers, finish source-provenance and mixed-version
+acceptance. The configured Facebook, old pending Garmin,
 pre-cutover refresh, JWE/chunked-cookie,
 purpose-bound old recovery, browser transfer and actual process-replacement experiments now pass;
 historical ownership must still be established for actual recovery links.
 Measure HTTP/WebSocket revocation windows through every production validator.
 Password reset/sign-out/deletion, authenticated change/set-password and canonical
-verification proofs now pass. Email change and provider-link/unlink mutation
-coverage remain separate work. Verification creates no login or new authentication
+verification, [provider link/unlink](./better-auth-provider-link-proof.md) and
+[canonical handoff](./better-auth-canonical-handoff-proof.md) proofs now pass.
+Email change remains separate work. Verification creates no login or new authentication
 age. The current-device continuation proof uses browser cookies;
 native storage and actual settings-screen adoption remain unproved.
 The released browser-transfer producer omits source session identity for returning

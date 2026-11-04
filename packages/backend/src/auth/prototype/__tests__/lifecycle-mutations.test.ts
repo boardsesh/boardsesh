@@ -749,90 +749,109 @@ describe('canonical credential mutations through supported Better Auth APIs', ()
     expect(cutoff.generation).toBe(1);
   });
 
-  it.each(['replacement-creation', 'post-cookie', 'late-policy-denial'] as const)(
-    'rolls back %s failure without publishing an uncommitted replacement',
-    async (failurePoint) => {
-      const identity = await fixture();
-      let observedPendingReplacement = false;
-      let options: Parameters<typeof createPrototypeLifecycleMutations>[1];
-      if (failurePoint === 'replacement-creation') {
-        options = {
-          authority: {
-            databaseHooks: {
-              session: {
-                create: {
-                  async before() {
-                    return false;
-                  },
+  it.each([
+    'replacement-creation',
+    'post-cookie',
+    'late-policy-denial',
+    'plugin-api-error',
+    'global-api-error',
+    'plugin-response',
+    'global-response',
+  ] as const)('rolls back %s failure without publishing an uncommitted replacement', async (failurePoint) => {
+    const identity = await fixture();
+    let observedPendingReplacement = false;
+    let options: Parameters<typeof createPrototypeLifecycleMutations>[1];
+    if (failurePoint === 'replacement-creation') {
+      options = {
+        authority: {
+          databaseHooks: {
+            session: {
+              create: {
+                async before() {
+                  return false;
                 },
               },
             },
           },
-        };
-      } else if (failurePoint === 'post-cookie') {
-        options = {
-          authority: {
-            plugins: [
-              {
-                id: 'synthetic-post-cookie-failure',
-                hooks: {
-                  after: [
-                    {
-                      matcher: (context) => context.path === PROTOTYPE_LIFECYCLE_PATHS.changePassword,
-                      handler: createAuthMiddleware(async (context) => {
-                        observedPendingReplacement = Boolean(context.context.newSession?.session);
-                        throw new Error('Synthetic post-cookie failure');
-                      }),
-                    },
-                  ],
-                },
-              },
-            ],
-          },
-        };
-      } else {
-        options = {
-          authority: {
-            databaseHooks: {
-              account: {
-                update: {
-                  async after() {
-                    throw new APIError('FORBIDDEN', { code: 'SYNTHETIC_LATE_DENIAL' });
+        },
+      };
+    } else if (failurePoint === 'post-cookie') {
+      options = {
+        authority: {
+          plugins: [
+            {
+              id: 'synthetic-post-cookie-failure',
+              hooks: {
+                after: [
+                  {
+                    matcher: (context) => context.path === PROTOTYPE_LIFECYCLE_PATHS.changePassword,
+                    handler: createAuthMiddleware(async (context) => {
+                      observedPendingReplacement = Boolean(context.context.newSession?.session);
+                      throw new Error('Synthetic post-cookie failure');
+                    }),
                   },
+                ],
+              },
+            },
+          ],
+        },
+      };
+    } else if (failurePoint === 'late-policy-denial') {
+      options = {
+        authority: {
+          databaseHooks: {
+            account: {
+              update: {
+                async after() {
+                  throw new APIError('FORBIDDEN', { code: 'SYNTHETIC_LATE_DENIAL' });
                 },
               },
             },
           },
-        };
-      }
-      const completed = await mutate(
-        'change',
-        identity.cookie,
-        nextPassword,
-        createPrototypeLifecycleMutations(environment.database, options),
-      );
-      expect(completed.status).toBe(failurePoint === 'late-policy-denial' ? 403 : 500);
-      if (failurePoint === 'post-cookie') expect(observedPendingReplacement).toBe(true);
-      expect(completed.headers.getSetCookie()).toEqual([]);
-      expect(await passwordMatches(identity.userId, originalPassword)).toBe(true);
-      expect(await passwordMatches(identity.userId, nextPassword)).toBe(false);
-      expect((await authority.api.getSession({ headers: new Headers({ cookie: identity.cookie }) }))?.session.id).toBe(
-        identity.sessionId,
-      );
-      expect(
-        await environment.database
-          .select()
-          .from(environment.schema.session)
-          .where(eq(environment.schema.session.userId, identity.userId)),
-      ).toHaveLength(1);
-      expect(
-        await environment.database
-          .select()
-          .from(environment.schema.prototypeUserCutoff)
-          .where(eq(environment.schema.prototypeUserCutoff.userId, identity.userId)),
-      ).toEqual([]);
-    },
-  );
+        },
+      };
+    } else {
+      const after = createAuthMiddleware(async (context) => {
+        if (context.path !== PROTOTYPE_LIFECYCLE_PATHS.changePassword) return;
+        observedPendingReplacement = Boolean(context.context.newSession?.session);
+        if (failurePoint.endsWith('response'))
+          return Response.json({ code: 'POST_COOKIE_POLICY_DENIED' }, { status: 403 });
+        throw new APIError('FORBIDDEN', { code: 'POST_COOKIE_POLICY_DENIED' });
+      });
+      options = {
+        authority: failurePoint.startsWith('global')
+          ? { hooks: { after } }
+          : { plugins: [{ id: 'late-password-policy', hooks: { after: [{ matcher: () => true, handler: after }] } }] },
+      };
+    }
+    const completed = await mutate(
+      'change',
+      identity.cookie,
+      nextPassword,
+      createPrototypeLifecycleMutations(environment.database, options),
+    );
+    expect(completed.status).toBe(['replacement-creation', 'post-cookie'].includes(failurePoint) ? 500 : 403);
+    if (failurePoint !== 'replacement-creation' && failurePoint !== 'late-policy-denial')
+      expect(observedPendingReplacement).toBe(true);
+    expect(completed.headers.getSetCookie()).toEqual([]);
+    expect(await passwordMatches(identity.userId, originalPassword)).toBe(true);
+    expect(await passwordMatches(identity.userId, nextPassword)).toBe(false);
+    expect((await authority.api.getSession({ headers: new Headers({ cookie: identity.cookie }) }))?.session.id).toBe(
+      identity.sessionId,
+    );
+    expect(
+      await environment.database
+        .select()
+        .from(environment.schema.session)
+        .where(eq(environment.schema.session.userId, identity.userId)),
+    ).toHaveLength(1);
+    expect(
+      await environment.database
+        .select()
+        .from(environment.schema.prototypeUserCutoff)
+        .where(eq(environment.schema.prototypeUserCutoff.userId, identity.userId)),
+    ).toEqual([]);
+  });
 
   it.each(['credential-write', 'revocation'] as const)(
     'rolls back a failure after %s without publishing cookies or restoring stale credentials on restart',
