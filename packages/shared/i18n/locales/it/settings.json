@@ -160,6 +160,7 @@
       "nameLabel": "Nome del controller (facoltativo)",
       "namePlaceholder": "es. Pannello del salotto",
       "boardLabel": "Tipo di pannello",
+      "boardSpray": "Spraywall",
       "layoutLabel": "Layout",
       "sizeLabel": "Dimensione",
       "setsLabel": "Set di prese",

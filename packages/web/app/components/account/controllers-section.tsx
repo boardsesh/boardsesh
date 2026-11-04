@@ -45,7 +45,10 @@ type ControllerCardProps = {
 
 function ControllerCard({ controller, onRemove, isRemoving }: ControllerCardProps) {
   const { t } = useTranslation('settings');
-  const boardName = controller.boardName.charAt(0).toUpperCase() + controller.boardName.slice(1);
+  const isSpray = controller.boardName === 'spray';
+  const boardName = isSpray
+    ? t('controllers.register.boardSpray')
+    : controller.boardName.charAt(0).toUpperCase() + controller.boardName.slice(1);
 
   const getStatusTag = () => {
     if (controller.isOnline) {
@@ -91,14 +94,16 @@ function ControllerCard({ controller, onRemove, isRemoving }: ControllerCardProp
             </Typography>
             <Chip label={boardName} size="small" color="primary" />
           </div>
-          <div className={styles.infoRow}>
-            <Typography variant="body2" component="span" color="text.secondary">
-              {t('controllers.card.layout')}
-            </Typography>
-            <Typography variant="body2" component="span">
-              {t('controllers.card.layoutValue', { layoutId: controller.layoutId, sizeId: controller.sizeId })}
-            </Typography>
-          </div>
+          {isSpray ? null : (
+            <div className={styles.infoRow}>
+              <Typography variant="body2" component="span" color="text.secondary">
+                {t('controllers.card.layout')}
+              </Typography>
+              <Typography variant="body2" component="span">
+                {t('controllers.card.layoutValue', { layoutId: controller.layoutId, sizeId: controller.sizeId })}
+              </Typography>
+            </div>
+          )}
           <div className={styles.infoRow}>
             <Typography variant="body2" component="span" color="text.secondary">
               {t('controllers.card.lastSeen')}
@@ -300,9 +305,9 @@ export default function ControllersSection() {
   const handleRegister = async (values: {
     name?: string;
     boardName: BoardName;
-    layoutId: number;
-    sizeId: number;
-    setIds: number[];
+    layoutId?: number;
+    sizeId?: number;
+    setIds?: number[];
   }) => {
     setIsSaving(true);
     try {
@@ -314,7 +319,7 @@ export default function ControllersSection() {
           boardName: values.boardName,
           layoutId: values.layoutId,
           sizeId: values.sizeId,
-          setIds: Array.isArray(values.setIds) ? values.setIds.join(',') : values.setIds,
+          setIds: values.setIds?.join(','),
         }),
       });
 
@@ -431,6 +436,10 @@ export default function ControllersSection() {
             component="form"
             onSubmit={(e: React.FormEvent) => {
               e.preventDefault();
+              if (selectedBoard === 'spray') {
+                void handleRegister({ name: formValues.name, boardName: selectedBoard });
+                return;
+              }
               if (!selectedBoard || !selectedLayout || !selectedSize || selectedSets.length === 0) return;
               void handleRegister({
                 name: formValues.name,
@@ -464,54 +473,60 @@ export default function ControllersSection() {
                 <MenuItem value="kilter">Kilter</MenuItem>
                 {/* i18n-ignore-next-line -- brand name, not translated */}
                 <MenuItem value="tension">Tension</MenuItem>
+                <MenuItem value="spray">{t('controllers.register.boardSpray')}</MenuItem>
               </MuiSelect>
             </FormControl>
 
-            <FormControl fullWidth required disabled={!selectedBoard}>
-              <InputLabel>{t('controllers.register.layoutLabel')}</InputLabel>
-              <MuiSelect
-                value={selectedLayout ?? ''}
-                label={t('controllers.register.layoutLabel')}
-                onChange={(e) => handleLayoutChange(e.target.value)}
-              >
-                {layouts.map(({ id, name }) => (
-                  <MenuItem key={id} value={id}>
-                    {name}
-                  </MenuItem>
-                ))}
-              </MuiSelect>
-            </FormControl>
+            {/* A Spraywall key has no layout to set up: the device picks its wall when it subscribes. */}
+            {selectedBoard === 'spray' ? null : (
+              <>
+                <FormControl fullWidth required disabled={!selectedBoard}>
+                  <InputLabel>{t('controllers.register.layoutLabel')}</InputLabel>
+                  <MuiSelect
+                    value={selectedLayout ?? ''}
+                    label={t('controllers.register.layoutLabel')}
+                    onChange={(e) => handleLayoutChange(e.target.value)}
+                  >
+                    {layouts.map(({ id, name }) => (
+                      <MenuItem key={id} value={id}>
+                        {name}
+                      </MenuItem>
+                    ))}
+                  </MuiSelect>
+                </FormControl>
 
-            <FormControl fullWidth required disabled={!selectedLayout}>
-              <InputLabel>{t('controllers.register.sizeLabel')}</InputLabel>
-              <MuiSelect
-                value={selectedSize ?? ''}
-                label={t('controllers.register.sizeLabel')}
-                onChange={(e) => handleSizeChange(e.target.value)}
-              >
-                {sizes.map(({ id, name, description }) => (
-                  <MenuItem key={id} value={id}>
-                    {name} {description}
-                  </MenuItem>
-                ))}
-              </MuiSelect>
-            </FormControl>
+                <FormControl fullWidth required disabled={!selectedLayout}>
+                  <InputLabel>{t('controllers.register.sizeLabel')}</InputLabel>
+                  <MuiSelect
+                    value={selectedSize ?? ''}
+                    label={t('controllers.register.sizeLabel')}
+                    onChange={(e) => handleSizeChange(e.target.value)}
+                  >
+                    {sizes.map(({ id, name, description }) => (
+                      <MenuItem key={id} value={id}>
+                        {name} {description}
+                      </MenuItem>
+                    ))}
+                  </MuiSelect>
+                </FormControl>
 
-            <FormControl fullWidth required disabled={!selectedSize}>
-              <InputLabel>{t('controllers.register.setsLabel')}</InputLabel>
-              <MuiSelect
-                multiple
-                value={selectedSets}
-                label={t('controllers.register.setsLabel')}
-                onChange={(e) => handleSetsChange(e.target.value as number[])}
-              >
-                {sets.map(({ id, name }) => (
-                  <MenuItem key={id} value={id}>
-                    {name}
-                  </MenuItem>
-                ))}
-              </MuiSelect>
-            </FormControl>
+                <FormControl fullWidth required disabled={!selectedSize}>
+                  <InputLabel>{t('controllers.register.setsLabel')}</InputLabel>
+                  <MuiSelect
+                    multiple
+                    value={selectedSets}
+                    label={t('controllers.register.setsLabel')}
+                    onChange={(e) => handleSetsChange(e.target.value as number[])}
+                  >
+                    {sets.map(({ id, name }) => (
+                      <MenuItem key={id} value={id}>
+                        {name}
+                      </MenuItem>
+                    ))}
+                  </MuiSelect>
+                </FormControl>
+              </>
+            )}
 
             <Button
               variant="contained"

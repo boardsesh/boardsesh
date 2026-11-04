@@ -160,6 +160,7 @@
       "nameLabel": "Controller-Name (optional)",
       "namePlaceholder": "z. B. Board im Wohnzimmer",
       "boardLabel": "Board-Typ",
+      "boardSpray": "Spraywall",
       "layoutLabel": "Layout",
       "sizeLabel": "Größe",
       "setsLabel": "Griff-Sets",

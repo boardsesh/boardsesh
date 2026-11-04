@@ -160,6 +160,7 @@
       "nameLabel": "Controller Name (optional)",
       "namePlaceholder": "e.g., Living Room Board",
       "boardLabel": "Board Type",
+      "boardSpray": "Spraywall",
       "layoutLabel": "Layout",
       "sizeLabel": "Size",
       "setsLabel": "Hold Sets",

@@ -34,10 +34,11 @@ Things to know about this form:
 
 - The key is shown once. Boardsesh does not show it again. If it is lost, delete the
   controller and register a new one.
-- **Board Type** only offers Kilter and Tension, and the form asks for a layout, size
-  and hold sets. Pick anything that is valid. The feed described here ignores those
-  values: which board the device watches is decided by the `boardId` it subscribes
-  to, and what it may read is decided by the key's owner.
+- **Board Type** offers Kilter, Tension and Spraywall. Choose Spraywall and the form
+  asks for nothing else. For Kilter or Tension it asks for a layout, size and hold
+  sets, so pick anything that is valid. The feed described here ignores all of them:
+  which board the device watches is decided by the `boardId` it subscribes to, and
+  what it may read is decided by the key's owner.
 - The key belongs to the account that created it. A device using it reads that
   account's own boards, private ones included, plus anything public. The boards it
   can open are exactly the ones `controllerBoards` (section 3) lists.
