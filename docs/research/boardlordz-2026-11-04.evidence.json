@@ -1,0 +1,503 @@
+{
+  "investigation_date": "2026-11-04",
+  "comparison_commit": "796746a5db3c4fae37a54d8d8fd2d0a7cb00fc1f",
+  "package": "com.provatech.boardlordz",
+  "version_name": "1.1.0",
+  "version_code": 43,
+  "acquisition": {
+    "source": "Official Google Play delivery using publicly offered Aurora anonymous access",
+    "artifacts": [
+      {
+        "package": "com.provatech.boardlordz",
+        "version_code": 43,
+        "version_string": "1.1.0",
+        "time": "2026-11-04T09:08:30.022864+00:00",
+        "file": "com.provatech.boardlordz-43.apk",
+        "size": 23834117,
+        "sha256": "dc6fa93990c6fc0b1f4d50a032003a6bad16ab7a718a2250882ca15fcd6fe7ca",
+        "sha1": "39c4ca1c21396a54270d999674916068c954efdd",
+        "url_origin": "https://play.googleapis.com/download/by-token/download",
+        "zip_valid": true
+      },
+      {
+        "package": "com.provatech.boardlordz",
+        "version_code": 43,
+        "version_string": "1.1.0",
+        "time": "2026-11-04T09:08:30.066287+00:00",
+        "file": "com.provatech.boardlordz-43-config.en.apk",
+        "size": 74137,
+        "sha256": "95f11e2dcea944fcf0e57b09047129fd14e64d5f5c27b911948e9ea4f19dfb67",
+        "sha1": "0ddab8cfcaf4edacbcf3e1cd467e3c461b533d0a",
+        "url_origin": "https://play.googleapis.com/download/by-token/download",
+        "zip_valid": true
+      },
+      {
+        "package": "com.provatech.boardlordz",
+        "version_code": 43,
+        "version_string": "1.1.0",
+        "time": "2026-11-04T09:08:30.072903+00:00",
+        "file": "com.provatech.boardlordz-43-config.xxhdpi.apk",
+        "size": 120352,
+        "sha256": "26a8f1a4ae3d2e7659c10c63db543bc29dcf922045d65d430dcf110787b94345",
+        "sha1": "6c91ec2e45d65687f5a19fbf7a1f64a24a7fddbb",
+        "url_origin": "https://play.googleapis.com/download/by-token/download",
+        "zip_valid": true
+      }
+    ],
+    "private_tokens_or_signed_delivery_urls_included": false
+  },
+  "signature_verification": {
+    "tool": "Google apksig 8.13.0",
+    "zip_crcs": "pass for base and acquired splits",
+    "v2": true,
+    "v3": true,
+    "source_stamp": true,
+    "errors": [],
+    "warnings": [],
+    "signer_certificate_sha256": "daea75c2747a626ad5ccf357724a0583a5eeabd55c057e2fe79017f48385c016"
+  },
+  "base_scan": {
+    "schema_version": 1,
+    "artifact": {
+      "filename": "com.provatech.boardlordz-43.apk",
+      "bytes": 23834117,
+      "sha256": "dc6fa93990c6fc0b1f4d50a032003a6bad16ab7a718a2250882ca15fcd6fe7ca"
+    },
+    "coverage": {
+      "zip_entries": 579,
+      "regular_members_scanned": 579,
+      "uncompressed_bytes_scanned": 25925173,
+      "all_regular_member_crcs_verified": true,
+      "indicator_encodings": ["utf-8", "utf-16le"],
+      "javascript_members": 91,
+      "native_libraries": [],
+      "limitations": [
+        "No target execution, HTTP requests, signature verification or decryption.",
+        "Only decompressed ZIP member bytes are scanned, not APK signing blocks.",
+        "Computed, remotely configured, encoded or encrypted destinations can be missed.",
+        "Literal origins include documentation and schema URLs, not only network targets.",
+        "Four Apache text markers identify candidates, not completeness or compliance."
+      ]
+    },
+    "capacitor_config": {
+      "appId": "com.provatech.boardlordz",
+      "appName": "Boardlordz",
+      "webDir": "build",
+      "plugins": {
+        "LocalNotifications": {
+          "smallIcon": "ic_stat_boardlordz",
+          "iconColor": "#F2A93B"
+        },
+        "SocialLogin": {
+          "providers": {
+            "google": true,
+            "apple": true,
+            "facebook": false,
+            "twitter": false
+          },
+          "logLevel": 1
+        }
+      }
+    },
+    "capacitor_plugins": [
+      {
+        "pkg": "@capacitor-community/bluetooth-le",
+        "classpath": "com.capacitorjs.community.plugins.bluetoothle.BluetoothLe"
+      },
+      {
+        "pkg": "@capacitor/app",
+        "classpath": "com.capacitorjs.plugins.app.AppPlugin"
+      },
+      {
+        "pkg": "@capacitor/haptics",
+        "classpath": "com.capacitorjs.plugins.haptics.HapticsPlugin"
+      },
+      {
+        "pkg": "@capacitor/local-notifications",
+        "classpath": "com.capacitorjs.plugins.localnotifications.LocalNotificationsPlugin"
+      },
+      {
+        "pkg": "@capgo/capacitor-social-login",
+        "classpath": "ee.forgr.capacitor.social.login.SocialLoginPlugin"
+      },
+      {
+        "pkg": "@capacitor/share",
+        "classpath": "com.capacitorjs.plugins.share.SharePlugin"
+      }
+    ],
+    "indicator_matches": [
+      {
+        "member": "assets/public/_app/immutable/nodes/3.NVsT88l9.js",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 1135
+      },
+      {
+        "member": "assets/public/_app/immutable/nodes/3.NVsT88l9.js",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 1145
+      },
+      {
+        "member": "assets/public/_app/immutable/nodes/3.NVsT88l9.js",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 1156
+      },
+      {
+        "member": "assets/public/about.html",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 8696
+      },
+      {
+        "member": "assets/public/about.html",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 8706
+      },
+      {
+        "member": "assets/public/about.html",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 8717
+      },
+      {
+        "member": "assets/public/boards/SOURCES.md",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 1098
+      }
+    ],
+    "apache_license_candidate_members": ["META-INF/androidx/concurrent/concurrent-futures/LICENSE.txt"],
+    "license_named_members": [
+      "META-INF/androidx/concurrent/concurrent-futures/LICENSE.txt",
+      "assets/public/fonts/LICENSE-Inter.txt",
+      "assets/public/fonts/LICENSE-JetBrainsMono.txt",
+      "okhttp3/internal/publicsuffix/NOTICE"
+    ],
+    "member_manifest_sha256": "c210c2ff23f41bc7139059f6a959160e33ef504db5f351150c8604d8d69129ab"
+  },
+  "literal_origin_count": 48,
+  "selected_members": [
+    {
+      "path": "assets/public/_app/immutable/chunks/DzaoLw-V.js",
+      "bytes": 11585,
+      "sha256": "07a9763d1120cc23632507d35ba574ba404df53695d4c1b9fc36e9bb65839846",
+      "markers": [
+        {
+          "literal": "https://boardlordz-api.fly.dev",
+          "byte_offset": 345
+        },
+        {
+          "literal": "/api/v1/plan",
+          "byte_offset": 1848
+        },
+        {
+          "literal": "/api/v1/me/heatmap/compare",
+          "byte_offset": 1784
+        },
+        {
+          "literal": "/api/v1/leagues",
+          "byte_offset": 8959
+        },
+        {
+          "literal": "/api/v1/prova",
+          "byte_offset": 8227
+        },
+        {
+          "literal": "beta-submission",
+          "byte_offset": 9814
+        },
+        {
+          "literal": "/sequence",
+          "byte_offset": 9731
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/chunks/7JG8B3Vy.js",
+      "bytes": 4117,
+      "sha256": "48b11a644ce6df888520ba392e8bdbbb545c7123f3c9c16cba4ab0e7783c109f",
+      "markers": [
+        {
+          "literal": "ledsWithColour",
+          "byte_offset": 1866
+        },
+        {
+          "literal": "allLedsDark",
+          "byte_offset": 1883
+        },
+        {
+          "literal": "[1,.8,.6,.4,.2,.1,.05]",
+          "byte_offset": 574
+        },
+        {
+          "literal": "b=18",
+          "byte_offset": 567
+        },
+        {
+          "literal": "cast_problem",
+          "byte_offset": 3394
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/nodes/2.D1uGF9ZH.js",
+      "bytes": 356894,
+      "sha256": "88ea95671f500628e92a6998ce66ae8d4f22531e16c19f16eac1eae21c38c499",
+      "markers": [
+        {
+          "literal": "/api/v1/sessions/",
+          "byte_offset": 51627
+        },
+        {
+          "literal": "new WebSocket",
+          "byte_offset": 51609
+        },
+        {
+          "literal": "Setter Rotation",
+          "byte_offset": 313908
+        },
+        {
+          "literal": "Flash Comp",
+          "byte_offset": 313959
+        },
+        {
+          "literal": "from_coord",
+          "byte_offset": 31884
+        },
+        {
+          "literal": "to_coord",
+          "byte_offset": 31903
+        },
+        {
+          "literal": "Your hold map",
+          "byte_offset": 192349
+        },
+        {
+          "literal": "Me vs board",
+          "byte_offset": 246533
+        },
+        {
+          "literal": "parser",
+          "byte_offset": 131785
+        },
+        {
+          "literal": "hunters",
+          "byte_offset": 38779
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/nodes/3.NVsT88l9.js",
+      "bytes": 1665,
+      "sha256": "64c980d47cc37a80b30b47beea7fcb0999d3ba3caefdbd5d517265301b5c5209",
+      "markers": [
+        {
+          "literal": "Boardsesh",
+          "byte_offset": 1156
+        },
+        {
+          "literal": "Apache 2.0",
+          "byte_offset": 1171
+        }
+      ]
+    },
+    {
+      "path": "assets/public/boards/SOURCES.md",
+      "bytes": 1778,
+      "sha256": "1cc26638ea08523ace15b8f7c873f8cd7993321734f163142ebf86af496a1ee2",
+      "markers": [
+        {
+          "literal": "Boardsesh",
+          "byte_offset": 1098
+        },
+        {
+          "literal": "6fdc0d6e",
+          "byte_offset": 1153
+        },
+        {
+          "literal": "one-time copy",
+          "byte_offset": 1169
+        }
+      ]
+    },
+    {
+      "path": "assets/public/about.html",
+      "bytes": 10482,
+      "sha256": "ba6963ebaa19514b8ef6482ea361121ad4f54852a12231f6e20ce96362f4b92d",
+      "markers": [
+        {
+          "literal": "Boardsesh",
+          "byte_offset": 8717
+        },
+        {
+          "literal": "Apache 2.0",
+          "byte_offset": 8732
+        }
+      ]
+    },
+    {
+      "path": "assets/capacitor.config.json",
+      "bytes": 347,
+      "sha256": "30aaa2155ba2c6744e71b53d1d72c5c28bdc4fe18f0183bb9173d96a4aaf1e49",
+      "markers": []
+    },
+    {
+      "path": "assets/capacitor.plugins.json",
+      "bytes": 667,
+      "sha256": "74005fee736dfee18d3ca68c5386d45c3eb771d7ea74f506e1ebabe28dc59656",
+      "markers": []
+    },
+    {
+      "path": "META-INF/androidx/concurrent/concurrent-futures/LICENSE.txt",
+      "bytes": 10175,
+      "sha256": "809fa1ed21450f59827d1e9aec720bbc4b687434fa22283c6cb5dd82a47ab9c0",
+      "markers": []
+    }
+  ],
+  "rea": [
+    {
+      "filename": "rea-apk-evidence.json",
+      "evidence_id": "ev_bcc4b9323227775f535a8dd88a2e00ea0eeb4f9fad6bb27313a61979252d9acd",
+      "operation": "inspect_artifact",
+      "sha256": "2ba9ad8f20d8396154d04286af93eb670f14c02bb63271a1adc4c497e34daaa1",
+      "subject": {
+        "name": "com.provatech.boardlordz-43.apk",
+        "digest": {
+          "sha256": "dc6fa93990c6fc0b1f4d50a032003a6bad16ab7a718a2250882ca15fcd6fe7ca"
+        },
+        "local_path": "com.provatech.boardlordz-43.apk",
+        "format": "apk",
+        "architecture": null
+      },
+      "limitations": [
+        "Inspection derives bounded static hypotheses and next probes; it does not execute the artifact or claim format-specific semantics.",
+        "ZIP inventory lists central-directory entries only. Non-entry bytes, including an APK Signing Block before the central directory or a ZIP comment after it, are not occurrences."
+      ],
+      "statistics": null,
+      "completeness": null
+    },
+    {
+      "filename": "rea-apk-javascript-evidence.json",
+      "evidence_id": "ev_16535b03f76d8667cff8ef80c2e599a288456a2af5ccdd1271724c8e1de78f6a",
+      "operation": "analyze_javascript_application",
+      "sha256": "d477dc9766f3ff265acaa4fb979ae2af72986c55022b85518a2c4d2a1f9d4a46",
+      "subject": {
+        "name": "public",
+        "digest": {
+          "sha256": "a159b54eda729759ec4c02289e43f9ac720f437eda1fea654e96c1ad60887fcb"
+        },
+        "local_path": "public",
+        "format": "directory",
+        "architecture": null
+      },
+      "limitations": [
+        "Caller-selected source analysis leaves 95 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+        "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+        "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+        "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+        "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+        "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+        "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+      ],
+      "statistics": {
+        "relevant_files": 101,
+        "nested_asar_containers": 0,
+        "text_bytes_read": 378901,
+        "invalid_utf8_files": 0,
+        "parsed_javascript_files": 6,
+        "skipped_javascript_files": 0,
+        "visited_ast_nodes": 122808,
+        "findings": 351,
+        "modules": 0,
+        "parse_failures": 0
+      },
+      "completeness": null
+    },
+    {
+      "filename": "rea-network-success-evidence.json",
+      "evidence_id": "ev_94969fbac3cf5a70e6b4bb31f13854c44a9c9541aaa23c05ef92f8289aeeef1c",
+      "operation": "capture_browser_scenario",
+      "sha256": "0aa1a22c709df73737f202e9f7bd83613b89feaafda6fdf322408ed3919ecdbd",
+      "subject": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "Event sequence records provider receipt order; simultaneous browser causality is not inferred.",
+        "Network content is retained only when selected; Playwright response-body bytes are API results and are not guaranteed to match wire bytes.",
+        "Request bytes are limited to what Playwright exposes; not_exposed does not establish body absence or multipart file coverage.",
+        "Network content reads settle within 5 seconds each and the observer does not request bodies from unfinished responses.",
+        "Playwright scenario events do not expose request initiator stacks; receipt order does not prove causality.",
+        "Storage values are hashed only after declared-secret redaction.",
+        "Some network requests had not completed when capture ended; later activity is unknown.",
+        "Browser host platform and architecture were not observed."
+      ],
+      "statistics": null,
+      "completeness": {
+        "status": "incomplete",
+        "equality_eligible": false,
+        "missing_sections": ["events"],
+        "truncated_sections": []
+      }
+    }
+  ],
+  "supplemental_public_web_capture": {
+    "observed_at": "2026-11-04T09:12:33.852Z",
+    "target": "BoardLordz public website, not Android APK runtime",
+    "request_count": 76,
+    "request_counts_by_host": {
+      "boardlordz.com": 66,
+      "static.cloudflareinsights.com": 1,
+      "boardlordz-api.fly.dev": 5,
+      "accounts.google.com": 3,
+      "fonts.gstatic.com": 1
+    },
+    "boardsesh_origin_requests": 0,
+    "limitations": [
+      "Current public website, not Android runtime.",
+      "No sign-in, authenticated flow, BLE or server-side proxy observation."
+    ]
+  },
+  "backend_log_access": {
+    "railway_cli": "5.52.1",
+    "result": "Unauthorized for whoami and linked project status; no backend traffic logs obtained",
+    "loki_boundary": "last-24h service inventory listed worker streams, no identifiable public ingress/realtime backend stream",
+    "conclusion": "Production or server-side use is unresolved."
+  },
+  "apk_to_current_web_comparison": {
+    "total_apk_javascript_members": 91,
+    "public_app_javascript_members": 90,
+    "byte_identical_to_a_fetched_web_member": 41,
+    "api_chunk_identical": true,
+    "ble_chunk_identical": true,
+    "daily_crux_game_observed_in": "current website only, not acquired APK"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "status": "confirmed",
+      "finding": "Aurora BLE code port acknowledged and corroborated by matching static implementation."
+    },
+    {
+      "id": "F2",
+      "status": "confirmed",
+      "finding": "Packaged image provenance says Kilter layers copied from Boardsesh commit 6fdc0d6e."
+    },
+    {
+      "id": "F3",
+      "status": "confirmed",
+      "finding": "Boardsesh credit and Apache 2.0 terms are packaged; no blanket no-attribution finding."
+    },
+    {
+      "id": "F4",
+      "status": "bounded-negative",
+      "finding": "No direct Boardsesh backend indicators in acquired APK member scans; API implementation points to own Fly.io origin."
+    },
+    {
+      "id": "F5",
+      "status": "unresolved",
+      "finding": "Cannot exclude server-side proxying or other unobserved backend use without authenticated runtime/production logs."
+    }
+  ]
+}
