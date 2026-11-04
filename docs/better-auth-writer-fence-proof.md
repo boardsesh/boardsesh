@@ -81,6 +81,14 @@ removing membership closes that path. A restricted role cannot assume the
 replacement role or grant itself missing write rights.
 [PostgreSQL 15 REVOKE](https://www.postgresql.org/docs/15/sql-revoke.html)
 
+PostgreSQL 16 and later store inheritance on each membership; a role's
+`INHERIT` attribute supplies the default for new grants. Changing the attribute
+does not rewrite an existing grant. The test sets the default before granting,
+then revokes and regrants after changing it, so both the inherited-write and
+explicit `SET ROLE` observations retain their meaning on PostgreSQL 15 and 18.
+The CI service uses PostgreSQL 18.6, making this distinction part of validation.
+[PostgreSQL 18 role attributes](https://www.postgresql.org/docs/18/sql-createrole.html)
+
 A separate counterexample role intentionally owns one fixture table. Revoking
 its ordinary insertion privilege blocks the insert, but the owner can grant
 that privilege back to itself. The local superuser can write even after its own
@@ -135,6 +143,13 @@ Review found the pending-operation cleanup escape and the untracked role-create
 acknowledgement window; the staged cleanup and transactional tracking above
 address both findings. The reviewer rechecked both fixes and found no remaining
 actionable issue within this candidate's scope.
+
+The parent review then checked CI's server version and corrected the membership
+setup ordering described above. Independent final runs passed **10/10 on
+PostgreSQL 15.17 in 3.73 seconds** and **10/10 on PostgreSQL 18.6 in 3.60 seconds**,
+both with clean teardown. The latter matches CI's PostgreSQL server version;
+it uses a separate local PostGIS image, not the exact CI image artifact. No test
+is skipped or weakened for either version.
 
 Retaining `SELECT` intentionally does not stop an old deployment from verifying
 a password or signing a legacy token without a database write. Nor does it

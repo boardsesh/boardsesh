@@ -489,11 +489,15 @@ describe('candidate database writer capability fence over authenticated PostgreS
     fixtureTest(async ({ owner, oldRole, old, role, fence }) => {
       const inherited = await role('group', false);
       await owner.unsafe(`GRANT INSERT ON public."user" TO "${inherited.name}"`);
-      await owner.unsafe(`GRANT "${inherited.name}" TO "${oldRole.name}"`);
       await owner.unsafe(`ALTER ROLE "${oldRole.name}" INHERIT`);
+      await owner.unsafe(`GRANT "${inherited.name}" TO "${oldRole.name}"`);
       await fence();
       await old.database.insert(schema.user).values(userRecord());
+      await owner.unsafe(`REVOKE "${inherited.name}" FROM "${oldRole.name}"`);
       await owner.unsafe(`ALTER ROLE "${oldRole.name}" NOINHERIT`);
+      // PostgreSQL 16+ stores inheritance on each membership. Regrant after
+      // changing the default; ALTER ROLE alone does not update an old grant.
+      await owner.unsafe(`GRANT "${inherited.name}" TO "${oldRole.name}"`);
       expect(await outcome(old.database.insert(schema.user).values(userRecord()))).toMatchObject({
         ok: false,
         code: '42501',

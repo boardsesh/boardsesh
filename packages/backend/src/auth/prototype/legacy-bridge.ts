@@ -11,10 +11,16 @@ import { PrototypeResponseRollback, rejectPrototypeServerFailure } from './trans
 import { invalidatePrototypeLegacyRecovery } from './legacy-recovery-state';
 import { verifyPrototypeLegacyWebCookie } from './legacy-web-credentials';
 import { hasPrototypeLegacySourceDenial, recordPrototypeCanonicalSignout } from './legacy-source-state';
+import { invalidatePrototypeCanonicalVerification } from './verification-state';
 
 export const PROTOTYPE_LEGACY_KEY = new TextEncoder().encode('boardsesh-disposable-legacy-verification-key-6975');
 export const PROTOTYPE_LEGACY_WEB_SECRET = 'boardsesh-disposable-nextauth-verification-key-6975';
 const MAX_LEGACY_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
+// The installed native issuer reads its clock separately for iat and exp.
+// Bound that encoder-read span without changing the nominal seven-day policy.
+const LEGACY_NATIVE_ENCODER_READ_ALLOWANCE_SECONDS = 60;
+// Match middleware/auth.ts validateMobileJwt; keep the signed expiry distinct.
+export const PROTOTYPE_LEGACY_NATIVE_CLOCK_TOLERANCE_SECONDS = 60;
 
 type PrototypeTransaction = Parameters<Parameters<PrototypeDatabase['transaction']>[0]>[0];
 type LifecycleDatabase = PrototypeDatabase | PrototypeTransaction;
@@ -29,7 +35,11 @@ interface VerifiedLegacyProof {
   readonly lineageId: string;
 }
 
-async function verifyLegacyNativeProof(credential: string): Promise<VerifiedLegacyProof | null> {
+export async function verifyLegacyNativeProof(
+  credential: string,
+  currentTime = new Date(),
+): Promise<VerifiedLegacyProof | null> {
+  if (!Number.isFinite(currentTime.getTime())) return null;
   let identity: Awaited<ReturnType<typeof jwtVerify>>['payload'];
   try {
     ({ payload: identity } = await jwtVerify(credential, PROTOTYPE_LEGACY_KEY, {
@@ -37,6 +47,8 @@ async function verifyLegacyNativeProof(credential: string): Promise<VerifiedLega
       issuer: 'boardsesh',
       audience: 'boardsesh-mobile',
       requiredClaims: ['sub', 'iat', 'exp'],
+      currentDate: currentTime,
+      clockTolerance: PROTOTYPE_LEGACY_NATIVE_CLOCK_TOLERANCE_SECONDS,
     }));
   } catch {
     return null;
@@ -44,12 +56,13 @@ async function verifyLegacyNativeProof(credential: string): Promise<VerifiedLega
   const issuedAt = identity.iat!;
   const expiresAt = identity.exp!;
   if (
-    !identity.sub ||
+    typeof identity.sub !== 'string' ||
+    identity.sub.trim().length === 0 ||
     !Number.isInteger(issuedAt) ||
     !Number.isInteger(expiresAt) ||
-    issuedAt * 1000 > Date.now() ||
+    issuedAt * 1000 > currentTime.getTime() + PROTOTYPE_LEGACY_NATIVE_CLOCK_TOLERANCE_SECONDS * 1000 ||
     expiresAt <= issuedAt ||
-    expiresAt - issuedAt > MAX_LEGACY_LIFETIME_SECONDS
+    expiresAt - issuedAt > MAX_LEGACY_LIFETIME_SECONDS + LEGACY_NATIVE_ENCODER_READ_ALLOWANCE_SECONDS
   )
     return null;
   const authenticationTime = identity.auth_time;
@@ -58,7 +71,8 @@ async function verifyLegacyNativeProof(credential: string): Promise<VerifiedLega
     (typeof authenticationTime !== 'number' ||
       !Number.isInteger(authenticationTime) ||
       authenticationTime < 0 ||
-      authenticationTime > issuedAt)
+      authenticationTime > issuedAt ||
+      authenticationTime * 1000 > currentTime.getTime())
   )
     return null;
   const stableSessionId =
@@ -69,8 +83,8 @@ async function verifyLegacyNativeProof(credential: string): Promise<VerifiedLega
     userId: identity.sub,
     issuedAt: new Date(issuedAt * 1000),
     expiresAt: new Date(expiresAt * 1000),
-    validUntil: new Date(expiresAt * 1000),
-    clockToleranceSeconds: 0,
+    validUntil: new Date((expiresAt + PROTOTYPE_LEGACY_NATIVE_CLOCK_TOLERANCE_SECONDS) * 1000),
+    clockToleranceSeconds: PROTOTYPE_LEGACY_NATIVE_CLOCK_TOLERANCE_SECONDS,
     originalAuthenticatedAt: typeof authenticationTime === 'number' ? new Date(authenticationTime * 1000) : null,
     lineageId: `${stableSessionId ? 'session' : 'credential'}:${createHash('sha256')
       .update(JSON.stringify([identity.sub, stableSessionId ?? credential]))
@@ -115,6 +129,7 @@ export async function revokePrototypeUser(
   await database.delete(schema.session).where(eq(schema.session.userId, userId));
   if (revokePartners) {
     await invalidatePrototypeLegacyRecovery(database, userId);
+    await invalidatePrototypeCanonicalVerification(database, userId);
     await database.delete(schema.oauthAccessToken).where(eq(schema.oauthAccessToken.userId, userId));
     await database.delete(schema.oauthRefreshToken).where(eq(schema.oauthRefreshToken.userId, userId));
     await database

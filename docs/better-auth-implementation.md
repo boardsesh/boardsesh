@@ -4,12 +4,12 @@ Parent: [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975).
 Design: [Better Auth migration](./better-auth-migration.md).
 Started: 2026-11-04, from `origin/main` at `796746a5db`.
 
-Current review: [PR #7280](https://github.com/boardsesh/boardsesh/pull/7280) is ready
-with full CI green at `689446f9bc` and no cloud-review findings. Its published
-prototype has 471 cases; the reviewed local password/transport follow-up has
-527 passing cases and still needs publication. Production migration remains
-gated. The user's password policy is to keep the current device signed in,
-revoke other credentials, and revoke every session after forgotten-password reset.
+Review: [PR #7280](https://github.com/boardsesh/boardsesh/pull/7280) is ready.
+The latest reviewed batch passes **595 cases on both PostgreSQL 15.17 and 18.6**.
+Recorded full CI is green at `689446f9bc`, with no cloud-review findings; later
+commits still require their own CI. Production migration remains gated. The
+user's password policy is to keep the current device signed in, revoke other
+credentials, and revoke every session after forgotten-password reset.
 
 ## Execution plan
 
@@ -63,6 +63,9 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Deny unseen old credentials after any account cutoff. | A newer rolling legacy `iat`, even with an unseen session identifier, is not proof of authentication after reset. Fresh canonical authentication uses the current generation instead. This strengthens the source-provenance gate without changing released endpoints. |
 | 2026-11-04 | Fence each protected operation in the transport proof. | Actual loopback HTTP and WebSocket commands revalidate canonical state within the mutation fence. A committed response may arrive after reset; subsequent commands reject. The proof does not replace the product's cache/GraphQL context or claim a production latency SLA. |
 | 2026-11-04 | Test a restricted-role database fence before choosing production grants. | An owner transaction drains old table writes, transfers DML capability and rejects already-connected, genuinely prepared and queued stale statements. Retained reads do not fence stateless issuers. PUBLIC, membership, ownership and superuser counterexamples prevent treating named-role revocation alone as a production policy. |
+| 2026-11-04 | Bind new verification links to a receipt as well as the actual signed JWT. | The public producer includes user ID, but stock verification permits stateless replay and older email-only forms. A random nonce and hashed, purpose-bound receipt enforce original ownership, exact expiry, resend supersession and single use without creating a login or rewriting imported timestamps. |
+| 2026-11-04 | Use the exact shared email normalization in fixture ownership checks. | PostgreSQL `btrim`/`lower` differs from JavaScript trim/lowercase for historical whitespace and Unicode. Complete fixture scans use `normalizeAccountEmail`; production normalized indexes and reservations remain required. |
+| 2026-11-04 | Separate issuer clock-read bounds from expiry transport policy. | Actual Better Auth and legacy native producers read clocks separately. Both get a named 60-second nominal-span allowance; canonical verification still expires exactly at signed `exp`, while old native JWTs preserve the installed backend's 60-second transport tolerance. Neither grants fresh authentication. |
 
 ## Acceptance ledger
 
@@ -134,7 +137,9 @@ in its output. See the inventory for its scope and operational limits.
 | Trusted generation and transport follow-up | 61 cases passed independently in 6.64 seconds: 10 generation, 17 native, 18 legacy bridge and 16 real HTTP/WebSocket cases. See the [transport proof](./better-auth-transport-proof.md) for in-flight and product-integration limits. |
 | Existing native/Expo-web identity storage | 250 cases in 7 existing files passed in 14.10 seconds, covering auth storage/session/provider races. These are baseline client regressions, not migration traffic, SecureStore hardware or real-device evidence. |
 | Authenticated password set/change | 28 cases passed independently in 24.76 seconds. Requesting-device replacement preserves original age; old requester/native/partner/recovery credentials reject; equal/ahead clocks and forgotten reset pass. See the [lifecycle proof](./better-auth-lifecycle-proof.md). |
-| Candidate PostgreSQL writer fence | 10 cases passed independently in 3.09 seconds, including real prepared/queued stale writes, privilege rollback, bypass characterizations and pre/post-commit setup cleanup. The [proof](./better-auth-writer-fence-proof.md) changes no production grants or writer paths. |
+| Candidate PostgreSQL writer fence | 10 cases passed independently on both PostgreSQL 15.17 and CI's 18.6 server version, including real prepared/queued stale writes, privilege rollback, bypass characterizations and pre/post-commit setup cleanup. The [proof](./better-auth-writer-fence-proof.md) changes no production grants or writer paths. |
+| Canonical new verification links | 41 cases passed independently in 25.78 seconds, including actual public issuance, original-user receipts, single use/resend, exact JS-normalized collisions, policy hooks and rollback. See the [verification proof](./better-auth-verification-proof.md). |
+| Actual legacy native issuer clocks | 17 new cases plus 18 bridge cases passed independently in 6.73 seconds. Actual exchange/signature output exercises encoder pauses, ahead clocks, signed expiry/grace and runtime subject validation. See the [native clock proof](./better-auth-native-clock-proof.md). |
 | Independent cross-reviews | Native/bridge 33 cases, identity/provider 41 cases, OAuth 39 cases, web auth regression 85 cases and CI guard 50 cases passed in independent runs. Findings were fixed and re-reviewed. |
 | Full repository typecheck | `vp run typecheck` passed; final change verification is recorded with the implementation PR. |
 | Separate Drizzle registry drift check | `vp exec drizzle-kit generate --config auth-prototype.drizzle.config.ts` reported no schema changes after generation. |
@@ -191,7 +196,21 @@ replacement, the user-approved continuation policy, rolled-old-issue-time denial
 and actual HTTP/WebSocket operation proofs. HTTPS Chromium passed **4/4** again
 in **11.2 seconds** and the full aggregate TypeScript check passed **59 tasks**.
 Candidate writer-fence evidence has passed separate independent review; its
-combined validation and canonical-verification experiments are still pending.
+later combined validation is recorded below.
+
+**Cross-version combined proof: 25 files / 595 tests passed on both servers**,
+with clean teardown: **62.49 seconds on PostgreSQL 15.17** and **61.04 seconds on
+PostgreSQL 18.6**. Both use the same real Redis 7.4.11 service with owned
+namespaces. The latter matches CI's server version and uses a separate cached
+PostGIS image, not the exact CI container artifact. No test is skipped or
+weakened for a server version. The current batch includes the user-approved
+password continuation, canonical verification, legacy native clock policy and
+candidate database fence. Provider linking and email change remain separate.
+The real HTTPS Chromium proof passed **4/4 on PostgreSQL 18.6 in 8.3 seconds**.
+The final aggregate typecheck passed **59 tasks**; repository `vp check` passed
+with **0 errors and 623 existing warnings**. Isolated Drizzle generation
+reported no schema changes. Independent reviews and re-reviews above cover
+every new source change in this batch.
 
 The published `689446f9bc` slice passed [full remote CI run 41900504353](https://github.com/boardsesh/boardsesh/actions/runs/41900504353):
 **59,948 passed, 0 failed, 23 skipped**. Backend, serial, prototype, HTTPS browser,
@@ -224,10 +243,10 @@ pre-cutover refresh, JWE/chunked-cookie,
 purpose-bound old recovery, browser transfer and actual process-replacement experiments now pass;
 historical ownership must still be established for actual recovery links.
 Measure HTTP/WebSocket revocation windows through every production validator.
-Password reset/sign-out/deletion and authenticated change/set-password proofs now
-pass. Canonical verification, email change and provider-link/unlink mutation
-coverage remain separate work; verification by itself must not manufacture fresh
-authentication. The current-device continuation proof uses browser cookies;
+Password reset/sign-out/deletion, authenticated change/set-password and canonical
+verification proofs now pass. Email change and provider-link/unlink mutation
+coverage remain separate work. Verification creates no login or new authentication
+age. The current-device continuation proof uses browser cookies;
 native storage and actual settings-screen adoption remain unproved.
 The released browser-transfer producer omits source session identity for returning
 users. Its recent handoff timestamp cannot prove authentication after revocation;
