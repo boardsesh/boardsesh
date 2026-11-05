@@ -32,6 +32,7 @@ export async function startAppRouterHarness(options: {
     discardSuccessfulCompoundResponse?: boolean;
   };
   browserIdentity?: ConfiguredIdentity;
+  sessionPublicationProof?: boolean;
 }) {
   const require = createRequire(import.meta.url);
   const secret = options.nextAuthSecret ?? randomBytes(32).toString('base64url');
@@ -109,6 +110,7 @@ export async function startAppRouterHarness(options: {
     compound: options.compound,
     faults: options.faults,
     browserIdentity: options.browserIdentity,
+    sessionPublicationProof: options.sessionPublicationProof,
   });
   let ready: Record<string, unknown>;
   try {
@@ -118,8 +120,18 @@ export async function startAppRouterHarness(options: {
     await completion.catch(() => {});
     throw error;
   }
-  if (typeof ready.origin !== 'string' || !/^https:\/\/localhost:\d+$/.test(ready.origin))
+  if (
+    typeof ready.origin !== 'string' ||
+    !/^https:\/\/localhost:\d+$/.test(ready.origin) ||
+    (options.sessionPublicationProof &&
+      (typeof ready.peerOrigin !== 'string' ||
+        !/^https:\/\/localhost:\d+$/.test(ready.peerOrigin) ||
+        ready.peerOrigin === ready.origin))
+  ) {
+    processHandle.kill('SIGKILL');
+    await completion.catch(() => {});
     throw new Error('Invalid owned App Router origin');
+  }
   const origin = ready.origin;
   async function requestOwned(
     path: string,
@@ -173,9 +185,18 @@ export async function startAppRouterHarness(options: {
   return {
     origin,
     providerOrigin: String(ready.providerOrigin),
+    peerOrigin: typeof ready.peerOrigin === 'string' ? ready.peerOrigin : undefined,
     request: requestOwned,
     call,
     waitEncodeCheckpoint: () => wait((message) => message.kind === 'encode-checkpoint'),
+    async armSessionResponseGate() {
+      const gateId = randomUUID();
+      await call('arm-session-response', { gateId });
+      return gateId;
+    },
+    waitSessionResponseGate: (gateId: string) =>
+      wait((message) => message.kind === 'response-checkpoint' && message.gateId === gateId),
+    releaseSessionResponseGate: (gateId: string) => call('release-session-response', { gateId }),
     async authorize(url: string, identity: ConfiguredIdentity, faults: ConfiguredProviderFaults = {}) {
       return (await call('authorize', { url, identity, faults })) as {
         provider: ConfiguredProvider;
