@@ -160,8 +160,8 @@ format/lint checks pass with zero warnings/errors. The event-insert failure and
 stale-writer tests use actual database errors rather than mocked adapter methods.
 
 The primary agent's full aggregate typecheck passed **58 tasks**. Repository
-`vp check` passed with **0 errors and 623 existing warnings**. The generated
-registry contains **290 consistent migrations**, and a second Drizzle generation
+`vp check` passed with **0 errors and 623 existing warnings**. The original generated
+registry contained **290 consistent migrations**, and a second Drizzle generation
 reported no schema changes.
 The final backend typecheck passed its **13 tasks** after the last source fix.
 The foundation and all five existing native suites passed together: **134 tests
@@ -172,3 +172,27 @@ or verification link verifier is added here. Current validators do not consume
 the new cutoff and no consumer applies the new event to sessions/partner tokens.
 BA-03 acceptance remains open until the current-store service and every adapter,
 writer fence, recovery path and revocation consumer are implemented and proved.
+
+## Migration repair after main advanced
+
+Main added `0289_board_lit_by_wall_device.sql` before this candidate merged.
+The repository bot rebased and renumbered the auth migration to
+`0290_auth_current_store_foundation.sql`. This repair retains the bot's SQL tag,
+snapshot identity and journal timestamp, together with main's unchanged board
+migration, snapshot and journal entry. Independent compilation of the merged
+schema and local Drizzle generation reproduced the same auth SQL and schema
+additions. The auth SQL is byte-identical to the original unmerged auth migration
+(SHA-256 `074511634085cc87c8affcc44309106afabf2e45ddc6c83a7d8b16077f2b2962`).
+The new snapshot adds exactly five auth tables, changes no prior table or other
+schema section, and preserves `user_boards.lit_by_wall_device`.
+
+The independently generated equivalent candidate passed all **29 foundation
+cases** on owned PostgreSQL18 (11.71 seconds) and PostgreSQL15 (13.53 seconds).
+The final bot-aligned candidate passed **29/29 on PostgreSQL18 in 13.79 seconds**,
+all **14 real migration-journal tests** without skips, and **13 backend type
+tasks**. These reruns overlap the earlier cases. The registry contains
+**291 consistent migrations**; a second Drizzle generation reports no drift.
+The backend fixture reads the retained SQL filename. Generated SQL executes
+only in owned test schemas. No migration was applied to a shared or deployed
+database, no development service was started, and no previously applied shared
+local migration ledger was reconciled.
