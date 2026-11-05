@@ -30,22 +30,34 @@ function asWorkflowRuns(payload) {
   return payload.workflow_runs;
 }
 
+// The newest successful main run by run id, never the first one listed. The
+// workflow reads the plain workflow listing, because the search-backed filters
+// (`status=`, `branch=`) twice handed back a months-old success ahead of the
+// newer ones (runs 41618818054 and 41650355602, 2026-11-03). That stale base
+// marked every target changed and sent the critical-OTA walk paging back
+// months until it tripped on a duplicate run.
 function selectLatestSuccessfulPriorRun(payload, { currentRunId = '' } = {}) {
   const workflowRuns = asWorkflowRuns(payload);
   if (!workflowRuns) return null;
 
-  return (
-    workflowRuns.find((run) => {
-      const headSha = typeof run?.head_sha === 'string' ? run.head_sha.trim() : '';
-      return (
-        run?.status === 'completed' &&
-        run?.conclusion === 'success' &&
-        FULL_COMMIT_SHA_PATTERN.test(headSha) &&
-        headSha !== ZERO_SHA &&
-        (currentRunId === '' || String(run?.id ?? '') !== String(currentRunId))
-      );
-    }) ?? null
-  );
+  let latest = null;
+  for (const run of workflowRuns) {
+    const headSha = typeof run?.head_sha === 'string' ? run.head_sha.trim() : '';
+    const runId = run?.id;
+    if (
+      run?.status === 'completed' &&
+      run?.conclusion === 'success' &&
+      run?.head_branch === 'main' &&
+      Number.isSafeInteger(runId) &&
+      runId > 0 &&
+      FULL_COMMIT_SHA_PATTERN.test(headSha) &&
+      headSha !== ZERO_SHA &&
+      (currentRunId === '' || String(runId) !== String(currentRunId)) &&
+      (latest === null || runId > latest.id)
+    )
+      latest = run;
+  }
+  return latest;
 }
 
 function isProductionDeployControlFile(filePath) {

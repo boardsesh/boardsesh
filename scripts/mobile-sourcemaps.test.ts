@@ -23,6 +23,7 @@ import {
   createSentryUploadEnvironment,
   parseUploadArgs,
   resolveInstalledSentryUploader,
+  SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS,
   uploadMobileSourceMaps,
   validateSourceMapOutput,
   type MobilePlatform,
@@ -503,6 +504,8 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
       let cliExitCode = 0;
       const dependencies: UploadSourceMapsDependencies = {
         resolveUploader: () => uploaderPath,
+        // One real subprocess per call; the retry policy has its own tests.
+        retryDelaysMs: [],
         spawnUploader: (executable, args, options) => {
           // Inject the fake only at the test subprocess boundary. Production
           // still strips SENTRY_CLI_EXECUTABLE and never receives real credentials.
@@ -683,6 +686,7 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
         },
         {
           resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
+          retryDelaysMs: [],
           spawnUploader: (_executable, args, options) => {
             temporaryWorkingDirectory = options.cwd;
             stagingDirectory = args[1];
@@ -693,6 +697,73 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
     ).toThrow('Official Sentry uploader failed with exit code 17');
     expect(existsSync(temporaryWorkingDirectory ?? '')).toBe(false);
     expect(existsSync(stagingDirectory ?? '')).toBe(false);
+  });
+
+  it('retries a nonzero uploader exit against the same staged files, waiting 15 s then 45 s', () => {
+    const fixture = createMobileFixture('ios');
+    const exitCodes = [1, 1, 0];
+    const stagingDirectories: string[] = [];
+    const waits: number[] = [];
+
+    expect(
+      uploadMobileSourceMaps(
+        {
+          platform: 'ios',
+          mobileDir: fixture.mobileDir,
+          outputDir: fixture.outputDir,
+          environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
+        },
+        {
+          resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
+          sleepSync: (milliseconds) => waits.push(milliseconds),
+          spawnUploader: (_executable, args) => {
+            const stagingDirectory = args[1]!;
+            expect(readdirSync(stagingDirectory, { recursive: true }).length).toBeGreaterThan(0);
+            stagingDirectories.push(stagingDirectory);
+            return { status: exitCodes.shift() ?? 99 };
+          },
+        },
+      ),
+    ).toHaveLength(1);
+    expect(stagingDirectories).toHaveLength(3);
+    expect(new Set(stagingDirectories).size).toBe(1);
+    expect(waits).toEqual([...SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS]);
+    expect(SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS).toEqual([15_000, 45_000]);
+  });
+
+  it('gives up after three nonzero exits and does not retry an uploader that cannot start', () => {
+    const fixture = createMobileFixture('android');
+    const uploadOptions = {
+      platform: 'android' as const,
+      mobileDir: fixture.mobileDir,
+      outputDir: fixture.outputDir,
+      environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
+    };
+    let exits = 0;
+    expect(() =>
+      uploadMobileSourceMaps(uploadOptions, {
+        resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
+        sleepSync: () => {},
+        spawnUploader: () => {
+          exits += 1;
+          return { status: 1 };
+        },
+      }),
+    ).toThrow('Official Sentry uploader failed with exit code 1');
+    expect(exits).toBe(3);
+
+    let starts = 0;
+    expect(() =>
+      uploadMobileSourceMaps(uploadOptions, {
+        resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
+        sleepSync: () => {},
+        spawnUploader: () => {
+          starts += 1;
+          return { status: null, error: new Error('spawn node ENOENT') };
+        },
+      }),
+    ).toThrow('Could not start the official Sentry uploader: spawn node ENOENT');
+    expect(starts).toBe(1);
   });
 
   it('stages exactly declared executable groups, uses a fresh cwd, and cleans only its temporary root', () => {

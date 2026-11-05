@@ -6,7 +6,9 @@ import {
   mapPublicIosBuilds,
   PUBLIC_ANDROID_STATE,
   PUBLIC_IOS_STATE,
+  readStoreWithRetries,
   resolveLiveStoreRuntimes,
+  STORE_READ_RETRY_DELAYS_MS,
 } from './mobile-live-store-runtimes';
 import {
   LIVE_STORE_MAX_AGE_MS,
@@ -210,5 +212,35 @@ describe('public iOS store evidence', () => {
       PUBLIC_IOS_STATE,
     );
     expect(options?.redirect).toBe('error');
+  });
+});
+
+describe('readStoreWithRetries', () => {
+  it('waits 10 s then 30 s and returns the first read that succeeds', async () => {
+    const read = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error('504 from App Store Connect'))
+      .mockRejectedValueOnce(new Error('socket hang up'))
+      .mockResolvedValueOnce('builds');
+    const sleep = vi.fn<(milliseconds: number) => Promise<void>>().mockResolvedValue(undefined);
+    const log = vi.fn<(message: string) => void>();
+
+    await expect(readStoreWithRetries(read, { sleep, log })).resolves.toBe('builds');
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(sleep.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([...STORE_READ_RETRY_DELAYS_MS]);
+    expect(STORE_READ_RETRY_DELAYS_MS).toEqual([10_000, 30_000]);
+  });
+
+  it('gives up after three reads with the redacted error and never logs the store error', async () => {
+    const secretBody = 'invalid_grant for service-account@boardsesh.iam';
+    const read = vi.fn<() => Promise<string>>().mockRejectedValue(new Error(secretBody));
+    const log = vi.fn<(message: string) => void>();
+
+    await expect(readStoreWithRetries(read, { sleep: async () => {}, log })).rejects.toThrow(
+      'Could not read exact public store builds; check Production store credentials and API responses',
+    );
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(log).toHaveBeenCalledTimes(2);
+    expect(log.mock.calls.flat().join('\n')).not.toContain('invalid_grant');
   });
 });

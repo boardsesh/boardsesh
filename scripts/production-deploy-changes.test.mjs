@@ -19,7 +19,7 @@ function runsPayload(workflowRuns) {
 }
 
 function successfulRun(id, headSha = BASE_SHA) {
-  return { id, status: 'completed', conclusion: 'success', head_sha: headSha };
+  return { id, status: 'completed', conclusion: 'success', head_branch: 'main', head_sha: headSha };
 }
 
 function validGit(changedFiles = []) {
@@ -30,7 +30,7 @@ function validGit(changedFiles = []) {
   };
 }
 
-void test('selects the first successful prior run from GitHub newest-first results', () => {
+void test('selects the newest successful prior run and skips unfinished ones', () => {
   const selected = selectLatestSuccessfulPriorRun(
     runsPayload([
       { id: 30, conclusion: null, head_sha: HEAD_SHA },
@@ -66,6 +66,48 @@ void test('ignores incomplete runs and malformed head SHAs from the Actions resp
 
   assert.equal(selected?.id, 42);
   assert.equal(selected?.head_sha, BASE_SHA);
+});
+
+void test('selects the highest successful run id when GitHub lists an old run first', () => {
+  // Runs 41618818054 and 41650355602 (2026-11-03) were handed months-old
+  // successes ahead of the newer ones and deployed against a June baseline.
+  const selected = selectLatestSuccessfulPriorRun(
+    runsPayload([
+      successfulRun(27_346_151_418, '5555555555555555555555555555555555555555'),
+      successfulRun(41_637_508_448),
+      successfulRun(36_239_433_703, '6666666666666666666666666666666666666666'),
+    ]),
+    { currentRunId: '41650355602' },
+  );
+
+  assert.equal(selected?.id, 41_637_508_448);
+  assert.equal(selected?.head_sha, BASE_SHA);
+});
+
+void test('ignores successful runs from branches other than main', () => {
+  const selected = selectLatestSuccessfulPriorRun(
+    runsPayload([{ ...successfulRun(50, HEAD_SHA), head_branch: 'fix/manual-dispatch' }, successfulRun(49)]),
+  );
+
+  assert.equal(selected?.id, 49);
+});
+
+void test('ignores runs whose id is not a positive integer', () => {
+  const selected = selectLatestSuccessfulPriorRun(
+    runsPayload([{ ...successfulRun(60), id: '61' }, { ...successfulRun(60), id: Number.NaN }, successfulRun(59)]),
+  );
+
+  assert.equal(selected?.id, 59);
+});
+
+void test('the workflow reads the plain run listing, not the search-backed filters', () => {
+  const workflow = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../.github/workflows/production-deploy.yml'),
+    'utf8',
+  );
+  const listing = workflow.match(/actions\/workflows\/production-deploy\.yml\/runs\?[^"]*/)?.[0] ?? '';
+
+  assert.equal(listing, 'actions/workflows/production-deploy.yml/runs?per_page=100');
 });
 
 void test('classifies changed paths with the production workflow semantics', () => {

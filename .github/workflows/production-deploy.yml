@@ -125,8 +125,12 @@ jobs:
         run: |
           set -euo pipefail
           runs_json="$RUNNER_TEMP/production-deploy-runs.json"
+          # Plain listing on purpose: `status=` and `branch=` route through
+          # GitHub's search index, which has returned months-old runs first.
+          # production-deploy-changes.mjs filters to successful main runs and
+          # takes the highest run id.
           if ! gh api --method GET \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/production-deploy.yml/runs?branch=main&status=success&per_page=20" \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/production-deploy.yml/runs?per_page=100" \
             > "$runs_json"; then
             echo "::warning::Could not read prior production runs; falling back to a full deploy."
             printf '{"workflow_runs":[]}\n' > "$runs_json"
