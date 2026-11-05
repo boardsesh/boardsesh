@@ -1,0 +1,162 @@
+name: Reddit Ads
+
+# Reddit ads as code. docs/paid-social-ads.md.
+# PRs: credential-free tests + an offline plan artifact.
+# Push to main: reconcile the newest main in the Production environment; apply only when
+# the config or a creative changed in the push, otherwise plan.
+# Missing credentials skip a push with a notice; a manual dispatch fails instead.
+
+on:
+  pull_request:
+    paths:
+      - 'app-stores/reddit/ads.json'
+      - 'app-stores/paid-social/creatives/**'
+      - 'scripts/paid-social-ads.ts'
+      - 'scripts/lib/paid-social*'
+      - 'scripts/lib/reddit-ads-client.ts'
+      - 'scripts/__tests__/paid-social*.test.ts'
+      - 'scripts/__tests__/helpers/fake-paid-social.ts'
+      - '.github/workflows/reddit-ads.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app-stores/reddit/ads.json'
+      - 'app-stores/paid-social/creatives/**'
+      - 'scripts/paid-social-ads.ts'
+      - 'scripts/lib/paid-social*'
+      - 'scripts/lib/reddit-ads-client.ts'
+      - '.github/workflows/reddit-ads.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Audit, preview, or apply the committed Reddit ads configuration'
+        type: choice
+        options: [audit, plan, apply]
+        default: plan
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('reddit-ads-preview-{0}', github.event.pull_request.number) || 'reddit-ads-writer' }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+      - name: Install workspace dependencies
+        run: vp install --frozen-lockfile
+      - name: Test ads without credentials
+        run: vp test run scripts/__tests__/paid-social --reporter=agent
+      - name: Preview campaigns offline
+        run: vp exec tsx scripts/paid-social-ads.ts --platform reddit --action plan --offline --output "$RUNNER_TEMP/reddit-ads-preview.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reddit-ads-preview
+          path: ${{ runner.temp }}/reddit-ads-preview.json
+          retention-days: 14
+
+  reconcile:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 20
+    steps:
+      # Always reconcile the newest main: a run queued behind a later merge applies
+      # that later config instead of skipping, so a merged pause can never be lost.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Choose the action
+        id: source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCHED_ACTION: ${{ inputs.action }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CONFIG_PATH: app-stores/reddit/ads.json
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            action="$DISPATCHED_ACTION"
+          elif ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            action=apply
+          elif git diff --name-only "$BEFORE_SHA" HEAD -- "$CONFIG_PATH" app-stores/paid-social/creatives | grep -q .; then
+            action=apply
+          else
+            # A script-only push must not re-apply the config (it would re-enable anything paused by hand).
+            echo '::notice::No ads config change in this push; planning only.'
+            action=plan
+          fi
+          case "$action" in audit|plan|apply) ;; *) echo '::error::Invalid ads action'; exit 1 ;; esac
+          echo "action=$action" >> "$GITHUB_OUTPUT"
+      - name: Check Reddit credentials
+        id: credentials
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PAID_SOCIAL_MAX_DAILY: ${{ vars.PAID_SOCIAL_MAX_DAILY }}
+          REDDIT_ADS_CLIENT_ID: ${{ secrets.REDDIT_ADS_CLIENT_ID }}
+          REDDIT_ADS_CLIENT_SECRET: ${{ secrets.REDDIT_ADS_CLIENT_SECRET }}
+          REDDIT_ADS_REFRESH_TOKEN: ${{ secrets.REDDIT_ADS_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=''
+          for name in REDDIT_ADS_CLIENT_ID REDDIT_ADS_CLIENT_SECRET REDDIT_ADS_REFRESH_TOKEN; do
+            [ -n "${!name:-}" ] || missing="$missing $name"
+          done
+          if [ "$(jq -r '.reddit.pixelId // empty' app-stores/reddit/ads.json)" = '' ]; then echo '::notice::reddit.pixelId is not set; new ad groups stay pending.'; fi
+          [ -n "${PAID_SOCIAL_MAX_DAILY:-}" ] || missing="$missing PAID_SOCIAL_MAX_DAILY(variable)"
+          if [ "$(jq -r '.adAccountId // empty' app-stores/reddit/ads.json)" = '' ]; then missing="$missing adAccountId(config)"; fi
+          if [ -z "$missing" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo "::error::Missing Reddit ads credentials:$missing"
+            exit 1
+          else
+            echo "::notice::Skipping Reddit ads: not provisioned yet (missing:$missing). See docs/paid-social-ads.md."
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: voidzero-dev/setup-vp@v1
+        if: steps.credentials.outputs.ready == 'true'
+        with:
+          node-version: '22.x'
+      - name: Install workspace dependencies
+        if: steps.credentials.outputs.ready == 'true'
+        run: vp install --frozen-lockfile
+      - name: Reconcile Reddit ads
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          REQUESTED_ACTION: ${{ steps.source.outputs.action }}
+          PAID_SOCIAL_MAX_DAILY: ${{ vars.PAID_SOCIAL_MAX_DAILY }}
+          REDDIT_ADS_CLIENT_ID: ${{ secrets.REDDIT_ADS_CLIENT_ID }}
+          REDDIT_ADS_CLIENT_SECRET: ${{ secrets.REDDIT_ADS_CLIENT_SECRET }}
+          REDDIT_ADS_REFRESH_TOKEN: ${{ secrets.REDDIT_ADS_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "$REQUESTED_ACTION" in audit|plan|apply) ;; *) echo '::error::Invalid ads action'; exit 1 ;; esac
+          if [ "$REQUESTED_ACTION" = apply ]; then
+            vp exec tsx scripts/paid-social-ads.ts --platform reddit --action plan --output "$RUNNER_TEMP/reddit-ads-plan.json" > /dev/null
+          fi
+          vp exec tsx scripts/paid-social-ads.ts --platform reddit --action "$REQUESTED_ACTION" --output "$RUNNER_TEMP/reddit-ads-result.json" > /dev/null
+      - name: Retain ads plan and read-back
+        if: always() && steps.credentials.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: reddit-ads-result
+          path: |
+            ${{ runner.temp }}/reddit-ads-plan.json
+            ${{ runner.temp }}/reddit-ads-result.json
+          if-no-files-found: warn
+          retention-days: 14
