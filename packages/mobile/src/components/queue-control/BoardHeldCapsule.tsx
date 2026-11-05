@@ -233,7 +233,8 @@ function BoardHeldCapsuleImpl({ ledless: ledlessBoard, dismiss }: BoardHeldCapsu
     </HeaderStatusCapsule>
   );
 
-  if (!dismiss) return capsule;
+  // Always wrapped (the pan is off with nothing to hide), so Hide arriving or
+  // leaving with the presence feed never remounts the capsule and its frost.
   return <WallCapsuleSwipe swipe={swipe}>{capsule}</WallCapsuleSwipe>;
 }
 

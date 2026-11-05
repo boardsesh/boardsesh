@@ -31,6 +31,7 @@ const spies = vi.hoisted(() => ({
   layoutHeight: 38,
   panConsumed: false,
   swipeOptions: null as null | { occurrenceKey: string; onDismiss?: (occurrenceKey: string) => void },
+  swipeWrapped: false,
 }));
 
 // The pan itself has its own suite (use-wall-capsule-dismiss.test.tsx); here it
@@ -47,10 +48,12 @@ vi.mock('../use-wall-capsule-dismiss', () => ({
     };
   },
 }));
-vi.mock('react-native-gesture-handler', () => ({
-  GestureHandlerRootView: ({ children }: { children?: ReactNode }) =>
-    createElement('div', { 'data-gesture-root': true }, children),
-  GestureDetector: ({ children }: { children?: ReactNode }) => children,
+// A pass-through, so the capsule stays the rendered root the layout tests read.
+vi.mock('../WallCapsuleSwipe', () => ({
+  WallCapsuleSwipe: ({ children }: { children?: ReactNode }) => {
+    spies.swipeWrapped = true;
+    return children;
+  },
 }));
 
 vi.mock('../use-climb-wall-glow', () => ({
@@ -679,6 +682,7 @@ describe('BoardHeldCapsule', () => {
       spies.currentClimb = { uuid: 'climb-1', name: 'Kish Mud Prison', difficulty: 'V7' };
       spies.panConsumed = false;
       spies.swipeOptions = null;
+      spies.swipeWrapped = false;
     });
 
     it('has no ×: a left swipe hides this lighting (#7281)', () => {
@@ -688,7 +692,7 @@ describe('BoardHeldCapsule', () => {
       );
       expect(container.querySelector('[data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
       expect(container.querySelector('[data-icon="close"]')).toBeNull();
-      expect(container.querySelector('[data-gesture-root]')).not.toBeNull();
+      expect(spies.swipeWrapped).toBe(true);
       expect(spies.swipeOptions).toMatchObject({ occurrenceKey: 'board-1:climb-1', onDismiss });
     });
 
@@ -710,7 +714,8 @@ describe('BoardHeldCapsule', () => {
 
     it('is not swipeable and has no Hide action for a bare hold', () => {
       const { container } = render(<BoardHeldCapsule ledless={false} />);
-      expect(container.querySelector('[data-gesture-root]')).toBeNull();
+      // The wrapper stays mounted so Hide arriving never remounts the capsule; its pan is off.
+      expect(spies.swipeWrapped).toBe(true);
       expect(spies.swipeOptions?.onDismiss).toBeUndefined();
       const capsule = container.querySelector('[data-pressable="true"]') as HTMLElement;
       expect(capsule.getAttribute('data-actions')).not.toContain('dismiss');
