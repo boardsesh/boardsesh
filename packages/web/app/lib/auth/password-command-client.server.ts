@@ -17,6 +17,8 @@ import {
   type RegisterReply,
   type VerifyEmailReply,
   type ResendVerificationReply,
+  type ForgotPasswordReply,
+  type ResetPasswordReply,
 } from '@boardsesh/auth-protocol';
 
 type AuthEnvironment = Readonly<Record<string, string | undefined>>;
@@ -79,15 +81,19 @@ export type EmailVerificationCommandClient = {
   verifyEmail(token: string, email?: string): Promise<VerifyEmailReply>;
   resendVerification(payload: unknown): Promise<ResendVerificationReply>;
 };
+export type PasswordRecoveryCommandClient = {
+  forgotPassword(payload: unknown): Promise<ForgotPasswordReply>;
+  resetPassword(payload: unknown): Promise<ResetPasswordReply>;
+};
 
-/** Four fixed server-only commands. No retry: a lost reply may follow a commit. */
+/** Fixed server-only commands. No retry: a lost reply may follow a commit. */
 export function createPasswordCommandClient(
   options: {
     environment?: AuthEnvironment;
     fetch?: typeof fetch;
     timeoutMs?: number;
   } = {},
-): PasswordCommandClient & EmailVerificationCommandClient {
+): PasswordCommandClient & EmailVerificationCommandClient & PasswordRecoveryCommandClient {
   const environment = options.environment ?? process.env;
   let origin: string;
   let secret: string;
@@ -211,6 +217,24 @@ export function createPasswordCommandClient(
         issuedAt: Date.now(),
         payload,
       })) as ResendVerificationReply;
+    },
+    async forgotPassword(payload) {
+      return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'forgot-password',
+        requestId: randomUUID(),
+        issuedAt: Date.now(),
+        payload,
+      })) as ForgotPasswordReply;
+    },
+    async resetPassword(payload) {
+      return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'reset-password',
+        requestId: randomUUID(),
+        issuedAt: Date.now(),
+        payload,
+      })) as ResetPasswordReply;
     },
   };
 }

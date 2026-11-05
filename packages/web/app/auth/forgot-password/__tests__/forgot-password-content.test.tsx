@@ -101,4 +101,18 @@ describe('ForgotPasswordContent', () => {
     expect(await screen.findByText('Failed to request password reset')).toBeTruthy();
     expect(mockShowMessage).not.toHaveBeenCalled();
   });
+  it('keeps the form retryable and localizes backend unavailability without claiming email delivery', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'AuthBackendUnavailable' }),
+    });
+    const { container } = render(<ForgotPasswordContent />);
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } });
+    submitForm(container);
+    expect(await screen.findByText('Authentication failed. Please try again.')).toBeTruthy();
+    expect(screen.queryByText('AuthBackendUnavailable')).toBeNull();
+    expect(screen.getByLabelText(/email/i)).toBeTruthy();
+    expect(mockShowMessage).not.toHaveBeenCalled();
+  });
 });

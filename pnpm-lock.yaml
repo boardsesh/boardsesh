@@ -713,6 +713,9 @@ importers:
       '@boardsesh/spray-wall-geometry':
         specifier: workspace:*
         version: link:../shared/spray-wall-geometry
+      '@boardsesh/text-redaction':
+        specifier: workspace:*
+        version: link:../shared/text-redaction
       '@boardsesh/velvet-tokens':
         specifier: workspace:*
         version: link:../shared/velvet-tokens
@@ -1870,6 +1873,9 @@ importers:
       '@boardsesh/sync-runtime':
         specifier: workspace:*
         version: link:../sync-runtime
+      '@boardsesh/text-redaction':
+        specifier: workspace:*
+        version: link:../shared/text-redaction
       '@boardsesh/velvet-tokens':
         specifier: workspace:*
         version: link:../shared/velvet-tokens

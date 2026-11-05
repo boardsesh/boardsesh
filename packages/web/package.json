@@ -68,6 +68,7 @@
     "@boardsesh/spray-wall-geometry": "workspace:*",
     "@boardsesh/static-assets": "workspace:*",
     "@boardsesh/sync-runtime": "workspace:*",
+    "@boardsesh/text-redaction": "workspace:*",
     "@boardsesh/velvet-tokens": "workspace:*",
     "@boardsesh/watch-pairing": "workspace:*",
     "@boardsesh/workout-summary": "workspace:*",

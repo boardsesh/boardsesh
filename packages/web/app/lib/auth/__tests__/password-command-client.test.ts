@@ -53,6 +53,32 @@ beforeEach(() => {
 });
 
 describe('server-only password command transport', () => {
+  it.each(['forgot-password', 'reset-password'] as const)(
+    'uses only the fixed %s destination and correlated v2 reply',
+    async (operation) => {
+      handle = (_request, response, command) =>
+        reply(response, {
+          protocolVersion: 2,
+          operation,
+          requestId: command.requestId,
+          outcome: operation === 'forgot-password' ? 'accepted' : 'reset',
+        });
+      const client = createPasswordCommandClient({ environment: environment() });
+      const payload = {
+        email: 'hint@example.test',
+        token: `pr1_${'A'.repeat(43)}`,
+        password: 'unchanged bytes',
+        confirmPassword: 'unchanged bytes',
+      };
+      const result =
+        operation === 'forgot-password' ? await client.forgotPassword(payload) : await client.resetPassword(payload);
+      expect(result.operation).toBe(operation);
+      expect(received).toHaveLength(1);
+      expect(received[0].url).toBe(`/api/internal/auth/current-store/${operation}`);
+      expect(received[0].body).toMatchObject({ protocolVersion: 2, operation, payload });
+      expect(received[0].headers.cookie).toBeUndefined();
+    },
+  );
   it('sends only the fixed command, distinct server credential, raw password input and fresh nonce', async () => {
     const client = createPasswordCommandClient({ environment: environment() });
     await expect(client.password('Legacy@example.com', 'one')).resolves.toMatchObject({
