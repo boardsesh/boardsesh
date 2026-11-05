@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import type { PgBoss, JobWithMetadata } from 'pg-boss';
 import type { DbInstance } from '@boardsesh/db/client';
+import type { JobSystemUserAuthority, JobSystemUserKind } from '@boardsesh/db/jobs';
+import { AuthBackendUnavailableError } from '@boardsesh/auth-protocol/transport';
 import { BACKGROUND_JOB_QUEUES, type BackgroundWorkerRole } from '@boardsesh/db/background-jobs';
 import { backgroundJobRuns } from '@boardsesh/db/schema';
 import {
@@ -12,6 +14,8 @@ import {
 } from '@boardsesh/db/queries';
 import { enqueueOn } from '../services/job-queue';
 import { logger } from '../utils/logger';
+import { currentStoreBatchSystemUsersMode } from '../auth/current-store/authority-configuration';
+import { createBatchSystemUserClient } from '../auth/current-store/batch-system-user-client';
 import {
   BackgroundJobError,
   InvalidJobPayloadError,
@@ -270,32 +274,38 @@ export async function executeBackgroundJob(
   handler: BackgroundJobHandler,
   shutdownSignal: AbortSignal,
 ): Promise<'succeeded' | 'failed' | 'stale'> {
+  const runId = job.id;
+  const queue = job.name;
+  const retryCount = job.retryCount;
+  const workerRole = handler.role;
+  const systemUserEnvironment = { ...process.env };
   if (
     !job.data ||
     Object.keys(job.data).length !== 1 ||
-    requireRunId(job.data.runId) !== job.id ||
-    job.name !== handler.queue
+    requireRunId(job.data.runId) !== runId ||
+    queue !== handler.queue
   ) {
     throw new Error('INVALID_JOB_PAYLOAD');
   }
   shutdownSignal.throwIfAborted();
-  const token = await claimBackgroundJobRun(database, job.id, job.name, job.retryCount);
+  const token = await claimBackgroundJobRun(database, runId, queue, retryCount);
   if (!token) return 'stale';
   // Family and payload are written once at enqueue, so an unfenced read is exact.
   const [run] = await database
     .select({ family: backgroundJobRuns.family, payload: backgroundJobRuns.payload })
     .from(backgroundJobRuns)
-    .where(eq(backgroundJobRuns.id, job.id));
+    .where(eq(backgroundJobRuns.id, runId));
   const family = run ? handler.resolveFamily(run.family) : undefined;
   if (!run || !family) {
-    logger.warn('[worker] job rejected', { runId: job.id, role: handler.role, code: 'UNKNOWN_FAMILY' });
+    logger.warn('[worker] job rejected', { runId, role: workerRole, code: 'UNKNOWN_FAMILY' });
     return settleFailure(database, boss, job, token, { errorCode: 'UNKNOWN_FAMILY', retryable: false });
   }
   const parsed = family.payload.safeParse(run.payload);
   if (!parsed.success) {
-    logger.warn('[worker] job rejected', { runId: job.id, family: family.name, code: 'INVALID_PAYLOAD' });
+    logger.warn('[worker] job rejected', { runId, family: family.name, code: 'INVALID_PAYLOAD' });
     return settleFailure(database, boss, job, token, { errorCode: 'INVALID_PAYLOAD', retryable: false });
   }
+  const familyName = family.name;
   const lostAttempt = new AbortController();
   const remainingMs = Math.max(1, job.startedOn.getTime() + job.expireInSeconds * 1000 - Date.now());
   const signal = AbortSignal.any([shutdownSignal, AbortSignal.timeout(remainingMs), lostAttempt.signal]);
@@ -304,13 +314,13 @@ export async function executeBackgroundJob(
   let heartbeatPending: Promise<void> | undefined;
   const heartbeat = setInterval(() => {
     if (heartbeatPending) return;
-    heartbeatPending = withBackgroundJobAttempt(database, job.id, token, async (transaction) => {
-      const touched = await boss.touch(job.name, job.id, { db: enqueueOn(transaction) });
+    heartbeatPending = withBackgroundJobAttempt(database, runId, token, async (transaction) => {
+      const touched = await boss.touch(queue, runId, { db: enqueueOn(transaction) });
       requireSettlement(touched);
       await transaction
         .update(backgroundJobRuns)
         .set({ heartbeatAt: sql`clock_timestamp()` })
-        .where(eq(backgroundJobRuns.id, job.id));
+        .where(eq(backgroundJobRuns.id, runId));
     })
       .catch(() => {
         lostAttempt.abort();
@@ -322,29 +332,58 @@ export async function executeBackgroundJob(
   heartbeat.unref();
   try {
     signal.throwIfAborted();
+    let systemUserAuthority: JobSystemUserAuthority | undefined;
+    if (
+      workerRole === 'batch' &&
+      (familyName === 'refresh-recommendations' || familyName === 'refresh-hold-features')
+    ) {
+      const mode = currentStoreBatchSystemUsersMode(systemUserEnvironment);
+      const expectedKind: JobSystemUserKind =
+        familyName === 'refresh-recommendations' ? 'recommendations' : 'hold-classifier';
+      systemUserAuthority =
+        mode === 'legacy'
+          ? Object.freeze({ mode })
+          : Object.freeze({
+              mode,
+              async ensure(kind: JobSystemUserKind) {
+                if (kind !== expectedKind) throw new AuthBackendUnavailableError();
+                signal.throwIfAborted();
+                const client = createBatchSystemUserClient({ environment: systemUserEnvironment });
+                await client.ensure({
+                  protocolVersion: 1,
+                  operation: 'ensure',
+                  requestId: randomUUID(),
+                  issuedAt: Date.now(),
+                  payload: { runId, attemptToken: token },
+                });
+                signal.throwIfAborted();
+              },
+            });
+    }
     await family.execute(
       {
-        runId: job.id,
-        family: family.name,
+        runId,
+        family: familyName,
         signal,
         expiresAt: job.startedOn.getTime() + job.expireInSeconds * 1000,
         database,
+        systemUserAuthority,
         enqueue: (transaction, input) => enqueueBackgroundJobOn(transaction, boss, input),
         transaction: (callback) =>
-          withBackgroundJobAttempt(database, job.id, token, async (transaction) => {
+          withBackgroundJobAttempt(database, runId, token, async (transaction) => {
             signal.throwIfAborted();
             const result = await callback(transaction);
             signal.throwIfAborted();
             return result;
           }),
-        transactionAfterAbort: (callback) => withBackgroundJobAttempt(database, job.id, token, callback),
+        transactionAfterAbort: (callback) => withBackgroundJobAttempt(database, runId, token, callback),
       },
       parsed.data,
     );
     signal.throwIfAborted();
-    const settled = await settleBackgroundJobRun(database, job.id, token, async (transaction) => {
+    const settled = await settleBackgroundJobRun(database, runId, token, async (transaction) => {
       signal.throwIfAborted();
-      const completed = await boss.complete(job.name, job.id, undefined, { db: enqueueOn(transaction) });
+      const completed = await boss.complete(queue, runId, undefined, { db: enqueueOn(transaction) });
       requireSettlement(completed);
       return { status: 'succeeded' };
     });

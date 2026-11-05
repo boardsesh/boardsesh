@@ -129,32 +129,42 @@ export async function claimBackgroundJobRun(
  * Put each bounded database batch inside this callback, never network requests.
  * Both generations remain locked through its commit; expiry rolls writes back.
  */
+export async function withBackgroundJobAttemptTransaction<Result>(
+  transaction: BackgroundJobTransaction,
+  runId: string,
+  attemptToken: string,
+  callback: (transaction: BackgroundJobTransaction) => Promise<Result>,
+): Promise<Result> {
+  const run = await lockRun(transaction, runId);
+  if (
+    !run ||
+    run.status !== 'running' ||
+    run.attemptToken !== attemptToken ||
+    !(await deadlineIsCurrent(transaction, runId)) ||
+    !(await lockActiveQueueAttempt(transaction, runId, run.queue, run.attemptNumber))
+  ) {
+    throw new BackgroundJobAttemptLostError();
+  }
+  const result = await callback(transaction);
+  if (
+    !(await deadlineIsCurrent(transaction, runId)) ||
+    !(await lockActiveQueueAttempt(transaction, runId, run.queue, run.attemptNumber))
+  ) {
+    throw new BackgroundJobAttemptLostError();
+  }
+  return result;
+}
+
+/** Own a transaction around the same run/queue fence used by existing batches. */
 export async function withBackgroundJobAttempt<Result>(
   database: DbInstance,
   runId: string,
   attemptToken: string,
   callback: (transaction: BackgroundJobTransaction) => Promise<Result>,
 ): Promise<Result> {
-  return database.transaction(async (transaction) => {
-    const run = await lockRun(transaction, runId);
-    if (
-      !run ||
-      run.status !== 'running' ||
-      run.attemptToken !== attemptToken ||
-      !(await deadlineIsCurrent(transaction, runId)) ||
-      !(await lockActiveQueueAttempt(transaction, runId, run.queue, run.attemptNumber))
-    ) {
-      throw new BackgroundJobAttemptLostError();
-    }
-    const result = await callback(transaction);
-    if (
-      !(await deadlineIsCurrent(transaction, runId)) ||
-      !(await lockActiveQueueAttempt(transaction, runId, run.queue, run.attemptNumber))
-    ) {
-      throw new BackgroundJobAttemptLostError();
-    }
-    return result;
-  });
+  return database.transaction((transaction) =>
+    withBackgroundJobAttemptTransaction(transaction, runId, attemptToken, callback),
+  );
 }
 
 export async function heartbeatBackgroundJobRun(

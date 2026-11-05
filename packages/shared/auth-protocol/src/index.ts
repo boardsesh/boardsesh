@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from './client-errors';
 export * from './web-oauth-v1';
+export * from './batch-system-user-v1';
 
 export const AUTH_PROTOCOL_VERSION = 2;
 export const AUTH_COMMAND_PATHS = {
@@ -54,7 +55,9 @@ export function isVersionedEmailVerificationToken(token: unknown): boolean {
 export function isReservedAuthRecordIdentifier(identifier: unknown): boolean {
   return (
     typeof identifier === 'string' &&
-    ['ba03-web-auth:', 'password-reset:', 'ba03-flow:', 'ba03-lineage:'].some((prefix) => identifier.startsWith(prefix))
+    ['ba03-web-auth:', 'password-reset:', 'ba03-flow:', 'ba03-lineage:', 'ba03-batch-system-user:'].some((prefix) =>
+      identifier.startsWith(prefix),
+    )
   );
 }
 

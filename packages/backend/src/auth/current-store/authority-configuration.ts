@@ -1,7 +1,39 @@
 import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } from './foundation-context';
 import type { WebPasswordAuthority } from './command-context';
+import {
+  BATCH_SYSTEM_USER_COMMAND_ENV,
+  currentStoreBatchSystemUsersMode as parseBatchSystemUsersMode,
+} from '@boardsesh/auth-protocol';
 
 type Environment = Readonly<Record<string, string | undefined>>;
+
+export function currentStoreBatchSystemUsersMode(environment: Environment = process.env) {
+  return parseBatchSystemUsersMode(environment);
+}
+
+export function currentStoreBatchSystemUsersRpcSecret(environment: Environment): string {
+  const secret = environment[BATCH_SYSTEM_USER_COMMAND_ENV.secret];
+  if (
+    !secret ||
+    secret !== secret.trim() ||
+    Buffer.byteLength(secret, 'utf8') < 32 ||
+    [environment.NEXTAUTH_SECRET, environment.CRON_SECRET, environment.CURRENT_STORE_AUTH_RPC_SECRET].some(
+      (otherSecret) => Boolean(otherSecret) && secret === otherSecret,
+    )
+  )
+    throw new Error('Invalid batch system-user authority configuration');
+  return secret;
+}
+
+export function currentStoreBatchSystemUsersConfiguration(environment: Environment = process.env) {
+  const mode = currentStoreBatchSystemUsersMode(environment);
+  if (mode === 'legacy') return { mode } as const;
+  return {
+    mode,
+    authority: currentStoreAuthorityConfiguration(environment),
+    rpcSecret: currentStoreBatchSystemUsersRpcSecret(environment),
+  } as const;
+}
 
 export function currentStoreRpcSecret(environment: Environment): string {
   const rpcSecret = environment.CURRENT_STORE_AUTH_RPC_SECRET;

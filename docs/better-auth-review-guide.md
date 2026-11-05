@@ -32,6 +32,16 @@ full-Next preview passed five baseline authentication flows in one Chromium run;
 that baseline is not staged fixed-owner browser or production authority proof.
 Draft #7301 is published and current-head CI/review feedback is monitored.
 
+The next [batch-job system identity slice](./better-auth-batch-system-users.md)
+adopts recommendations and hold-classifier account creation through a dedicated
+machine command. The backend derives the fixed account under the real job fence;
+workers receive no auth-table privileges or backend database credential. Direct
+staging CLIs require the existing queued operator path. Location-sync writers
+retain a separate rollback/caller-adoption gate. Independent PostgreSQL 15 and
+author PostgreSQL 18 qualification cover actual HTTP, restricted workers,
+expiry/rollback and reply loss; the broader 689-case auth selection also passes.
+No production authority switch follows from these implementation results.
+
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 
 The [password recovery follow-up](./better-auth-password-recovery.md) records the paired UID-bound issuer/consumer and measured QA. Credential delegation remains default-off. Its reset-link headers, shared web/mobile Sentry redaction and fixed legacy-route diagnostics apply in every mode. Privacy coverage is partial: actual trailing-slash 308 first hops omit the configured headers, and the pinned development renderer overrides browser cache control. Production activation requires validated first-hop protection; canonical-page checks and telemetry tests do not close that gate.

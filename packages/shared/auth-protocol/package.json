@@ -16,6 +16,11 @@
       "types": "./src/client-errors.ts",
       "import": "./src/client-errors.ts",
       "default": "./src/client-errors.ts"
+    },
+    "./transport": {
+      "types": "./src/private-command-transport.ts",
+      "import": "./src/private-command-transport.ts",
+      "default": "./src/private-command-transport.ts"
     }
   },
   "scripts": {
