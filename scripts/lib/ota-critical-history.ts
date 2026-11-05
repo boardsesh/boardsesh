@@ -62,7 +62,12 @@ export async function latestConsumedCriticalRelease(options: CriticalReleaseHist
   for (let page = 1; page <= MAX_RUN_PAGES; page += 1) {
     const listing = object(
       await request(
-        `repos/${repository}/actions/workflows/production-deploy.yml/runs?branch=main&per_page=100&page=${page}`,
+        // Plain listing on purpose. `branch=` routes through GitHub's search index,
+        // which on 2026-11-03 twice put a months-old success first (production
+        // runs 41618818054 and 41650355602). This walk stops at the first success
+        // at or behind the deploy base, so a misordered old success would end it
+        // before it read a newer run that already consumed a critical release.
+        `repos/${repository}/actions/workflows/production-deploy.yml/runs?per_page=100&page=${page}`,
       ),
       'workflow listing',
     );
@@ -76,9 +81,15 @@ export async function latestConsumedCriticalRelease(options: CriticalReleaseHist
       if (runId >= currentRunId) continue;
       if (seenRuns.has(runId)) throw new Error('Duplicate critical publication workflow run.');
       seenRuns.add(runId);
+      if (typeof run.head_branch !== 'string')
+        throw new Error('Critical publication history contains an untrusted production run.');
+      // Unfiltered, the listing includes dispatches from other branches. None of
+      // them can have released critical bytes: mobile-ota-critical.ts refuses to
+      // run outside refs/heads/main, so `critical_ota` is never true there, and
+      // the ota-stable-release and Production environments both admit only main.
+      if (run.head_branch !== 'main') continue;
       if (
         run.path !== SOURCE_WORKFLOW ||
-        run.head_branch !== 'main' ||
         object(run.repository, 'run repository').full_name !== repository ||
         object(run.head_repository, 'run head repository').full_name !== repository ||
         !['push', 'workflow_dispatch'].includes(String(run.event)) ||

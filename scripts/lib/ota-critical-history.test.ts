@@ -35,7 +35,7 @@ const promotion = (runId: number, head = 15, overrides: Record<string, unknown> 
 });
 const listing = (runs: unknown[]) => ({ workflow_runs: runs });
 const jobListing = (jobs: unknown[]) => ({ total_count: jobs.length, jobs });
-const workflowPath = 'production-deploy.yml/runs?branch=main&per_page=100&page=1';
+const workflowPath = 'production-deploy.yml/runs?per_page=100&page=1';
 
 function fixture(responses: Record<string, unknown>) {
   const github = vi.fn(async (endpoint: string) => {
@@ -305,7 +305,8 @@ describe('critical publication consumption boundary', () => {
 
   it.each([
     { path: '.github/workflows/other.yml' },
-    { head_branch: 'feature' },
+    { head_branch: undefined },
+    { head_branch: null },
     { event: 'pull_request' },
     { head_sha: 'main' },
     { repository: { full_name: 'attacker/repo' } },
@@ -346,6 +347,31 @@ describe('critical publication consumption boundary', () => {
     await expect(latestConsumedCriticalRelease(test.options)).rejects.toThrow(/pagination/);
   });
 
+  it('skips runs from other branches instead of letting them end the walk', async () => {
+    // Without the search-backed `branch=` filter the listing carries dispatches
+    // from other branches. A successful one at an old head must not stop the walk
+    // before the main run that consumed a critical release.
+    const test = fixture({
+      [workflowPath]: listing([
+        run(26, 5, { head_branch: 'fix/manual-dispatch', event: 'workflow_dispatch', conclusion: 'success' }),
+        run(25),
+      ]),
+      'runs/25/attempts/1/jobs?per_page=100&page=1': jobListing([promotion(25)]),
+    });
+    await expect(latestConsumedCriticalRelease(test.options)).resolves.toBe(commit(15));
+    expect(test.github.mock.calls.map(([endpoint]) => endpoint)).not.toContainEqual(
+      expect.stringContaining('runs/26/'),
+    );
+  });
+
+  it('reads the plain workflow listing, never the search-backed branch filter', async () => {
+    const test = fixture({ [workflowPath]: listing([]) });
+    await expect(latestConsumedCriticalRelease(test.options)).resolves.toBeNull();
+    expect(test.github).toHaveBeenCalledWith(
+      `repos/${repository}/actions/workflows/production-deploy.yml/runs?per_page=100&page=1`,
+    );
+  });
+
   it('refuses duplicate workflow runs, promotion jobs and critical steps', async () => {
     const repeatedRuns = fixture({
       [workflowPath]: listing([run(25), run(25)]),
@@ -384,7 +410,7 @@ describe('critical publication consumption boundary', () => {
   it('fails closed when workflow history reaches the pagination bound', async () => {
     const responses = Object.fromEntries(
       Array.from({ length: 10 }, (_, page) => [
-        `production-deploy.yml/runs?branch=main&per_page=100&page=${page + 1}`,
+        `production-deploy.yml/runs?per_page=100&page=${page + 1}`,
         listing(Array.from({ length: 100 }, (_, index) => run(2000 - page * 100 - index, 21))),
       ]),
     );
