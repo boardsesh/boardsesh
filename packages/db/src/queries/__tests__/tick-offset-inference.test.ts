@@ -4,6 +4,8 @@ import {
   inferUserUtcOffsetSeconds,
   climbedAtMatchesForAdoption,
   adoptionMatchScoreSeconds,
+  isWholeUtcOffsetShift,
+  perKeyClosestDeltasMs,
   type TickTimeSample,
 } from '../tick-offset-inference';
 
@@ -144,5 +146,69 @@ describe('adoptionMatchScoreSeconds', () => {
     const distinct = adoptionMatchScoreSeconds(base + 10 * HOUR + 5_000, incoming, 10 * 3600);
     assert.ok(honest !== null && distinct !== null);
     assert.ok((honest as number) < (distinct as number), 'fast-path honest row must win');
+  });
+});
+
+describe('perKeyClosestDeltasMs', () => {
+  // The extraction (#3909) exists so the correction classifier can compute a
+  // MAD from the SAME per-key deltas the median is taken from. If these two
+  // ever disagree the classifier is measuring something the sync path isn't.
+  it('produces exactly the list inferUserUtcOffsetSeconds takes its median of', () => {
+    const existing = [
+      sample('c1', 40, '2026-05-01T22:00:00Z'),
+      sample('c2', 40, '2026-05-02T22:00:00Z'),
+      sample('c3', 40, '2026-05-03T21:00:00Z'),
+    ];
+    const incoming = [
+      sample('c1', 40, '2026-05-01T12:00:00Z'),
+      sample('c2', 40, '2026-05-02T12:00:00Z'),
+      sample('c3', 40, '2026-05-03T12:00:00Z'),
+    ];
+    const deltas = perKeyClosestDeltasMs(existing, incoming);
+    assert.deepEqual(
+      [...deltas].sort((a, b) => a - b),
+      [9 * HOUR, 10 * HOUR, 10 * HOUR],
+    );
+    assert.equal(inferUserUtcOffsetSeconds(existing, incoming), 10 * 3600);
+  });
+
+  it('is empty when either side is empty, matching the null the median returns', () => {
+    assert.deepEqual(perKeyClosestDeltasMs([], [sample('c1', 40, '2026-05-01T12:00:00Z')]), []);
+    assert.equal(inferUserUtcOffsetSeconds([], [sample('c1', 40, '2026-05-01T12:00:00Z')]), null);
+  });
+
+  it('keeps one delta per key, so a busy key cannot dominate', () => {
+    const existing = [
+      sample('c1', 40, '2026-05-01T22:00:00Z'),
+      sample('c1', 40, '2026-05-01T22:00:05Z'),
+      sample('c1', 40, '2026-05-01T23:00:00Z'),
+    ];
+    const incoming = [sample('c1', 40, '2026-05-01T12:00:00Z')];
+    assert.equal(perKeyClosestDeltasMs(existing, incoming).length, 1);
+  });
+});
+
+describe('isWholeUtcOffsetShift', () => {
+  // The #3909 writer guard. It must recognise a timezone-shaped gap and must
+  // NOT swallow a small genuine edit, or the pull stops propagating real
+  // upstream changes to climbed_at.
+  it('recognises a whole-zone gap, within 60s of the 15-minute grid', () => {
+    assert.equal(isWholeUtcOffsetShift(10 * HOUR), true);
+    assert.equal(isWholeUtcOffsetShift(-10 * HOUR), true);
+    assert.equal(isWholeUtcOffsetShift(10 * HOUR + 30_000), true);
+    assert.equal(isWholeUtcOffsetShift(5.75 * HOUR), true, '+05:45 Nepal');
+    assert.equal(isWholeUtcOffsetShift(9.5 * HOUR), true, '+09:30 Adelaide');
+  });
+
+  it('leaves a genuine small edit alone', () => {
+    assert.equal(isWholeUtcOffsetShift(0), false);
+    assert.equal(isWholeUtcOffsetShift(45_000), false, '45s edit still propagates');
+    assert.equal(isWholeUtcOffsetShift(5 * 60_000), false, '5-minute edit still propagates');
+    assert.equal(isWholeUtcOffsetShift(7.5 * 60_000), false, 'exactly between two grid points');
+  });
+
+  it('refuses an implausible gap and a non-finite delta', () => {
+    assert.equal(isWholeUtcOffsetShift(20 * HOUR), false);
+    assert.equal(isWholeUtcOffsetShift(Number.NaN), false);
   });
 });
