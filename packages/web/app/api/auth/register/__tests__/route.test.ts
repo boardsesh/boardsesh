@@ -152,7 +152,7 @@ describe('POST /api/auth/register', () => {
 });
 
 describe('backend-staging registration public adapter', () => {
-  const token = 'a363934b-b7ba-41ba-a279-52185daa100e';
+  const token = `ev1_${'A'.repeat(43)}`;
   const committedEmail = 'Committed@example.com';
   beforeEach(() => {
     vi.clearAllMocks();
@@ -172,7 +172,10 @@ describe('backend-staging registration public adapter', () => {
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       if (typeof init.body !== 'string') throw new Error('Expected serialized command');
       const command = JSON.parse(init.body) as { requestId: string };
-      return Response.json({ operation: 'register', requestId: command.requestId, ...outcome }, { status });
+      return Response.json(
+        { protocolVersion: 2, operation: 'register', requestId: command.requestId, ...outcome },
+        { status },
+      );
     });
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;
@@ -186,8 +189,8 @@ describe('backend-staging registration public adapter', () => {
       ...(requiresVerification
         ? {
             mailPlan: {
+              kind: 'uid-email-verification-v1',
               recipient: committedEmail,
-              identifier: committedEmail,
               token,
               expiresAt: '2026-11-05T10:00:00.000Z',
             },

@@ -5,12 +5,14 @@ import {
   AUTH_COMMAND_ENV,
   AUTH_COMMAND_PATHS,
   AUTH_COMMAND_REQUEST_BYTES,
+  AUTH_PROTOCOL_VERSION,
+  authCommandReplySchema,
   authCommandReplyStatus,
   parseWebAuthMode,
   passwordCommandSchema,
-  passwordReplySchema,
   registerCommandSchema,
-  registerReplySchema,
+  verifyEmailCommandSchema,
+  resendVerificationCommandSchema,
   type AuthCommand,
 } from '@boardsesh/auth-protocol';
 import { db } from '../db/client';
@@ -22,6 +24,7 @@ import {
   WebPasswordCommandError,
   type WebPasswordAuthority,
 } from '../auth/current-store/web-password';
+import { consumeEmailVerification, resendEmailVerification } from '../auth/current-store/email-verification';
 import { checkRateLimit, RateLimitError } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
 import { readJsonBody, sendJson } from './http-utils';
@@ -120,16 +123,30 @@ export async function handleCurrentStoreWebAuth(
   }
   const path = new URL(request.url ?? '/', 'http://private.invalid').pathname;
   const operation =
-    path === AUTH_COMMAND_PATHS.register ? 'register' : path === AUTH_COMMAND_PATHS.password ? 'password' : undefined;
+    path === AUTH_COMMAND_PATHS.register
+      ? 'register'
+      : path === AUTH_COMMAND_PATHS.password
+        ? 'password'
+        : path === AUTH_COMMAND_PATHS['verify-email']
+          ? 'verify-email'
+          : path === AUTH_COMMAND_PATHS['resend-verification']
+            ? 'resend-verification'
+            : undefined;
   if (!operation) {
     sendJson(response, 404, { error: 'disabled' });
     return;
   }
   let command: AuthCommand;
   try {
-    const parsed = (operation === 'register' ? registerCommandSchema : passwordCommandSchema).safeParse(
-      await readCommand(request),
-    );
+    const parsed = (
+      operation === 'register'
+        ? registerCommandSchema
+        : operation === 'password'
+          ? passwordCommandSchema
+          : operation === 'verify-email'
+            ? verifyEmailCommandSchema
+            : resendVerificationCommandSchema
+    ).safeParse(await readCommand(request));
     if (!parsed.success) {
       sendJson(response, 400, { error: 'invalid_request' });
       return;
@@ -147,10 +164,15 @@ export async function handleCurrentStoreWebAuth(
     // Process-wide service budget, in addition to retained web per-IP limits.
     // This is not claimed as distributed production abuse protection.
     checkRateLimit(`current-store-web-auth:${operation}`, operation === 'register' ? 60 : 180, 60_000);
-    const result =
+    const result = authCommandReplySchema.parse(
       command.operation === 'register'
-        ? registerReplySchema.parse(await registerWebPassword(database, configuration.authority, command))
-        : passwordReplySchema.parse(await authenticateWebPassword(database, configuration.authority, command));
+        ? await registerWebPassword(database, configuration.authority, command)
+        : command.operation === 'password'
+          ? await authenticateWebPassword(database, configuration.authority, command)
+          : command.operation === 'verify-email'
+            ? await consumeEmailVerification(database, configuration.authority, command)
+            : await resendEmailVerification(database, configuration.authority, command),
+    );
     sendJson(response, authCommandReplyStatus(result), result);
   } catch (error) {
     if (error instanceof WebPasswordCommandError) {
@@ -165,6 +187,7 @@ export async function handleCurrentStoreWebAuth(
         response,
         429,
         {
+          protocolVersion: AUTH_PROTOCOL_VERSION,
           operation,
           requestId: command.requestId,
           outcome: 'error',
@@ -178,6 +201,12 @@ export async function handleCurrentStoreWebAuth(
     // SQL/Sentry/validation exceptions can contain bound credentials or the
     // private mail response. Emit only a fixed category, never the exception.
     logger.warn('Current-store web authentication command unavailable', { operation });
-    sendJson(response, 503, { operation, requestId: command.requestId, outcome: 'error', code: 'unavailable' });
+    sendJson(response, 503, {
+      protocolVersion: AUTH_PROTOCOL_VERSION,
+      operation,
+      requestId: command.requestId,
+      outcome: 'error',
+      code: 'unavailable',
+    });
   }
 }

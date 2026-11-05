@@ -71,8 +71,9 @@ function backendResponse(
     const command = JSON.parse(init.body) as { requestId: string };
     const body =
       options.outcome === 'invalid_credentials'
-        ? { operation: 'password', requestId: command.requestId, outcome: 'invalid_credentials' }
+        ? { protocolVersion: 2, operation: 'password', requestId: command.requestId, outcome: 'invalid_credentials' }
         : {
+            protocolVersion: 2,
             operation: 'password',
             requestId: command.requestId,
             outcome: 'authenticated',

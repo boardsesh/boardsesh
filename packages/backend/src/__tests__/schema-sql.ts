@@ -34,6 +34,10 @@ const authCurrentStoreFoundationSchema = readFileSync(
   new URL('../../../db/drizzle/0290_auth_current_store_foundation.sql', import.meta.url),
   'utf8',
 );
+const authUidVerificationSchema = readFileSync(
+  new URL('../../../db/drizzle/0291_auth_uid_email_verification.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2269,4 +2273,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS auth_security_mutation_events;
   DROP TABLE IF EXISTS auth_subject_cutoffs;
   ${authCurrentStoreFoundationSchema}
+  DROP TABLE IF EXISTS auth_email_verification_tokens;
+  DROP TABLE IF EXISTS auth_email_verification_state;
+  ${authUidVerificationSchema}
 `;

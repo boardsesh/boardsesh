@@ -481,6 +481,12 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
         ],
       },
+      // Matching config headers can override a route handler's response. Keep
+      // credential URLs after the site-wide default, including locale rewrites.
+      ...['/api/auth/verify-email', '/:locale/api/auth/verify-email'].map((source) => ({
+        source,
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      })),
     ];
   },
   async rewrites() {
