@@ -164,8 +164,7 @@ transport on PostgreSQL 18 in 17.95 seconds. All **59 canonical typecheck tasks*
 passed with zero cache hits. Repository checking passed with **zero errors and
 623 existing warnings**, 9,206 linted files and 9,737 correctly formatted files.
 Compilation used deliberate offline backend/app URLs; it is not a live-backend
-or device claim. The authored scope is eight test/documentation files; the
-automatic prerequisite merge separately retains current main changes.
+or device claim. The authored scope is eight test/documentation files.
 
 An independent read-only catalog audit after all runtime runs found zero
 `ba01_*`/`ba03_*` fixture roles and zero `boardsesh_ba01_*` prototype databases
@@ -194,3 +193,42 @@ configured headers when returning its automatic redirect, before middleware
 runs. A scoped ingress response rule is a possible follow-up; changing global
 trailing-slash normalization is not part of this work. Actual ingress/cache
 ordering, encoded/repeated-slash paths and direct-origin behavior need proof.
+
+## Reproducing the focused cases
+
+The nine normal cases use the standard backend infrastructure:
+
+```sh
+vp test run --project backend app-router-session-publication.test.ts --reporter=agent
+```
+
+The browser file is deliberately outside ordinary test discovery. With an owned
+local test cluster and installed Playwright Chromium, select its explicit config:
+
+```sh
+BOARDSESH_AUTH_PROOF_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15478/boardsesh_backend_test \
+  vp test run --config packages/backend/auth-proofs/session-publication.vite.config.ts --reporter=agent
+```
+
+The separately owned PostgreSQL 15 service uses port 15475; the browser config
+owns the Redis destination on port 15476. These are local fixture contracts,
+not application or production connection settings.
+
+## Review-stack repair
+
+Initial implementation and qualification started at main `eceaa2d61e`, with an
+automatic prerequisite merge `0e09a59`. The complete qualified commit `4743c2d`
+and tree `f698cec607004640d55c712fd6fb9db1ffb83e7f` remain backed up. CI then
+correctly rejected generated changelog changes inherited from main when compared
+with the older stacked PR target. Its guard permits no import waiver.
+
+The repair replays only the eight-file follow-up onto published parent `aa4a6e5`.
+Before updating these notes, the resulting `5762e33` merged automatically with
+the same main to reproduce the **exact qualified tree** above. All six TypeScript
+files are byte-identical to the qualified source. This removes unrelated
+already-merged main changes from the review diff without reverting them on main
+or changing the guard. The later repair-note and review-guide changes are prose
+only. The original main-integrated qualification and the cleaned review branch
+remain distinct. Fresh canonical typechecking passed all **59 tasks**, with four
+cache hits, before the repaired push. The unchanged generated-changelog guard
+also passed against the exact cleaned base/head commit identities.
