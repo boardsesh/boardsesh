@@ -2,8 +2,9 @@
 
 Implementation slice for [BA-03 #6977](https://github.com/boardsesh/boardsesh/issues/6977)
 in [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975), building on
-[#7301](https://github.com/boardsesh/boardsesh/pull/7301). Both issues remain
-open. This adopts two existing account writers; it does not activate the
+[#7301](https://github.com/boardsesh/boardsesh/pull/7301). Published as draft
+[#7302](https://github.com/boardsesh/boardsesh/pull/7302), with current-head CI and
+review feedback monitored. Both issues remain open. This adopts two existing account writers; it does not activate the
 production authority migration.
 
 ## Mounted callers and configuration
@@ -223,7 +224,44 @@ with **zero errors and 623 existing warnings across 9,247 linted files**; all
 was fixed, followed by removal and independent re-review of the new test
 warnings. No test or commit hook was bypassed.
 
-Clean replay, preview and PR evidence are recorded below as they complete.
+## Clean replay and isolated preview
+
+The source commit `5b3a1f5b8eb2c6981d5977ee64b1014a4b12c60e` passed the
+real staged checks and commit hook. A preserved backup retains that main-based
+candidate. Clean replay onto published parent `1e57f569625753f93008b23de6dd695360bb1411`
+produces `7f79b2a9f5c76bf05f978d0c53fe61241ce95d93`. Range-diff is equal,
+all 39 patch files are byte-identical, and merging fresh main into that clean
+head reproduces the exact qualified tree `c7f284271ad83a87ff2709ecd58a7a14eab98634`.
+Independent review verified those comparisons and the source-guard repins.
+The clean-head canonical graph then passed all **59 tasks, with four cache
+hits**. This is separate from the earlier zero-cache-hit main-based run.
+
+A read-only preflight verified an absent fresh owned PostgreSQL 18 namespace
+and an empty exclusive Redis database. Exactly one acknowledged creation
+hydrated that new database and seeded one synthetic fixture account. No
+existing preview namespace was reset or deleted. The launcher rechecked the
+source fingerprints, database OID, TLS, free ports, environment isolation and
+six legacy selectors before invoking the development orchestrator with the
+written QA notes. Startup printed the expected notes path; the actual metadata
+GET returned **200** and matched branch, notes and notes path.
+
+One fresh private Chromium run passed all **five baseline legacy-auth flows**:
+fixture login with the same browser session ID, actual sign-out, wrong-password
+401, invalid-email validation with no recovery request, and invalid-reset 400
+with an empty session. It observed eight allowed read-only GraphQL posts and
+five owned development HMR connections, with zero unexpected requests,
+mutations, console errors or page errors. The expected 401/400 console messages
+were classified separately. The context and browser closed successfully, and
+the preview remains running. The bounded result is retained locally as
+`6977-batch-system-users-preview-ui-d5829902-1c20-465c-a980-7815b60a0803.json`.
+
+This preview keeps all delegation modes on legacy. It proves the ordinary
+fixture browser baseline on the clean source head; the restricted-role staged
+command is qualified by the separate integration suites. It does not prove
+valid recovery delivery, real providers/devices, production IAM or a migration
+rollout. Later evidence-only documentation commits deliberately invalidate the
+source receipt for restart; they do not change the already running preview.
+
 Passing these implementation checks does not
 complete BA-03, collision cleanup, source/validator migration, production
 rollout, restored-database rollback or the separate partner OAuth launch.
