@@ -665,7 +665,7 @@ collided with; the leading and trailing groups stay separate, as on the rail.
 - The centre capsule's width comes from the items' measured widths (`nativeItemsTitleMaxWidth`: a
   native item 44pt and 57pt for each one after it, a glass island 38pt a slot plus 8pt), so it
   ellipsizes before the trailing group. Climbs gets 134pt at 375pt, 161pt at 402pt and 199pt at
-  440pt. An adjustable angle beside history leaves 65, 92 and 130pt. The angle never leaves the bar
+  440pt. The glass angle beside history leaves 77, 104 and 142pt. The angle never leaves the bar
   for the capsule (#7281): under 100pt the capsule drops its face instead. The capsules carry no ×:
   a left swipe hides them, and VoiceOver gets a Hide action.
 - The Climbs capsule shows the climb's name only, so it fits beside the angle. A climb lit with no
@@ -675,13 +675,13 @@ collided with; the leading and trailing groups stay separate, as on the rail.
   drawn from the bar's geometry in screenshot mode (`NativeTrailingItemShowcaseAnchor`).
 - + (create) and the notifications bell keep `visibilityPriority: 'high'`, so they stay on screen
   longest. Board history is `'standard'`; the rest take the default.
-- The angle ("40°") stays a title-only item. An icon would hide the number on every iPhone, so it
-  gives up its place on the Duo rail. It sets `sharesBackground`, so it sits in the trailing group's
-  glass with history and ⋯ instead of a capsule of its own. On a regular-width iPad it stays the glass "40°" as a custom
-  view, still first in the trailing group: its picker is a popover there (`useAnglePickerPopover`),
-  and a popover needs a React view to point at, which a UIKit bar item is not. A compact-width iPad
-  (Split View under 700pt) behaves like an iPhone: the native title item opens the sheet. A width
-  change while the picker is open closes it first, then swaps the trigger.
+- In a horizontal bar the angle is the glass "40°" as a custom view, first in the trailing group and
+  inside its glass with history and ⋯, as the glass bulb is on Discover. A native title-only item
+  ("40°") got a capsule of its own beside the group, even with `sharesBackground` (#7281 QA, iOS 27),
+  and an icon would hide the number. Its picker is a sheet on iPhone and a popover on a regular-width
+  iPad (`useAnglePickerPopover`), which needs a React view to point at. On the Duo rail the angle is
+  the native title item, which stays in the bar: a title-only item never goes on the rail. A flip
+  between the two while the picker is open closes it first, then swaps the trigger.
 - The capsule's room and the showcase anchor measure the navigation stack's frame
   (`useFrameSize`), not the window, so the iPad sidebar is left out.
 - Custom views stay custom: the Climbs "On the wall" capsule and the controls under the bar.

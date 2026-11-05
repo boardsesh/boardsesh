@@ -13,6 +13,8 @@ const NO_INSETS = { left: 0, right: 0 };
 const GLASS_AVATAR_AND_CREATE = { customSlots: 2 };
 const HISTORY_AND_MENU = { nativeItems: 2 };
 const ANGLE_HISTORY_AND_MENU = { nativeItems: 3, titleItems: 1 };
+// The glass "40°" a horizontal bar uses: a custom view in the group's glass, one plain slot (#7281).
+const GLASS_ANGLE_HISTORY_AND_MENU = { nativeItems: 3 };
 
 describe('nativeBarSideWidth', () => {
   it('matches the widths measured on an iPhone 17 Pro', () => {
@@ -51,13 +53,13 @@ describe('nativeItemsTitleMaxWidth', () => {
   });
 
   it.each([
-    [375, 65],
-    [402, 92],
-    [440, 130],
-  ])('leaves a %ipt iPhone capsule %ipt beside the angle, which stays in the bar (#7281)', (frameWidth, room) => {
+    [375, 77],
+    [402, 104],
+    [440, 142],
+  ])('leaves a %ipt iPhone capsule %ipt beside the glass angle, which stays in the bar (#7281)', (frameWidth, room) => {
     const roomBesideAngle = nativeItemsTitleMaxWidth(frameWidth, NO_INSETS, {
       leading: GLASS_AVATAR_AND_CREATE,
-      trailing: ANGLE_HISTORY_AND_MENU,
+      trailing: GLASS_ANGLE_HISTORY_AND_MENU,
     });
     expect(roomBesideAngle).toBe(room);
   });

@@ -386,9 +386,12 @@ type CollapsingNativeBarHeaderProps = Pick<
  * - In a horizontal bar the bulb stays the glass bulb, which keeps its long
  *   press to Board controls: react-native-screens has no native item with both
  *   a tap and a long-press menu. On the rail it is a native item.
- * - On a regular-width iPad the angle stays the glass "40°", first in the
- *   trailing group: its picker is a popover there, and a popover needs a view
- *   to point at, which a UIKit bar item is not.
+ * - In a horizontal bar the angle is the glass "40°", first in the trailing
+ *   group. UIKit draws a title-only item ("40°") in glass of its own, apart
+ *   from history and ⋯, even with `sharesBackground` (#7281); a custom view
+ *   rides the group's glass, as the bulb does. Its picker is a sheet on iPhone
+ *   and a popover on a regular-width iPad, which needs a view to point at. On
+ *   the rail it is the native title item, which stays in the bar.
  * - The `centerContent` capsule and the controls under the bar, always.
  *
  * The angle never leaves the bar (#7281). The capsule takes the room left between
@@ -416,15 +419,16 @@ function CollapsingNativeBarHeader({
   const onRail = useBarItemsOnRail();
   const accountItem = useAccountRailItem();
   // Swapping the glass angle for the native item unmounts whichever picker is
-  // open. So a width-class flip waits while it is open: the picker sees the new
-  // width, closes itself, reports closed, and only then does the trigger swap.
+  // open. So a flip between the bar and the rail (or a width-class flip on the
+  // rail) waits while it is open: the picker closes itself, reports closed, and
+  // only then does the trigger swap.
   const [anglePickerOpen, setAnglePickerOpen] = useState(false);
   const { item: angleItem, picker: anglePicker } = useAngleBarItem({ onPickerOpenChange: setAnglePickerOpen });
-  const livePickerPopover = useAnglePickerPopover();
-  const [heldPickerPopover, setHeldPickerPopover] = useState(livePickerPopover);
-  if (!anglePickerOpen && heldPickerPopover !== livePickerPopover) setHeldPickerPopover(livePickerPopover);
-  const pickerPopover = anglePickerOpen ? heldPickerPopover : livePickerPopover;
-  const angleAnchorsPopover = pickerPopover && angleItem != null;
+  const pickerPopover = useAnglePickerPopover();
+  const liveGlassAngle = !onRail || pickerPopover;
+  const [heldGlassAngle, setHeldGlassAngle] = useState(liveGlassAngle);
+  if (!anglePickerOpen && heldGlassAngle !== liveGlassAngle) setHeldGlassAngle(liveGlassAngle);
+  const glassAngleShown = (anglePickerOpen ? heldGlassAngle : liveGlassAngle) && angleItem != null;
   const boardSwitcherItem = useBoardSwitcherBarItem({
     onPress: onOpenBoardSwitcher,
     accessibilityHint: boardPillAccessibilityHint,
@@ -435,8 +439,8 @@ function CollapsingNativeBarHeader({
   const hasLeadingAction = isValidElement(leadingAction);
 
   const leadingSide: NativeBarSide = { customSlots: 1 + (hasLeadingAction ? 1 : 0) + (canCreate ? 1 : 0) };
-  // The iPad's popover angle is a glass custom view instead (`glassAngle`).
-  const barAngle = angleAnchorsPopover ? null : angleItem;
+  // The native title item only on the rail; the bar gets the glass "40°".
+  const barAngle = glassAngleShown ? null : angleItem;
   const climbListItems = useClimbListBarItems({
     onOpenHistory: climbListBarActions?.onOpenHistory ?? onOpenBoardSwitcher,
     badge: climbListBarActions?.badge ?? false,
@@ -492,12 +496,9 @@ function CollapsingNativeBarHeader({
     if (lightbulbItem && showsLight && onRail) items.push(lightbulbItem);
     return items;
   }, [barAngle, climbListBarActions, climbListItems, boardSwitcherItem, lightbulbItem, showsLight, onRail]);
-  // Custom views before the native items (the iPad's glass angle keeps the
-  // angle's place at the front) and after them (the bulb, a trailing action).
-  const leadingCustomElements = useMemo(
-    () => (angleAnchorsPopover ? [glassAngle] : []),
-    [angleAnchorsPopover, glassAngle],
-  );
+  // Custom views before the native items (the glass angle keeps the angle's
+  // place at the front) and after them (the bulb, a trailing action).
+  const leadingCustomElements = useMemo(() => (glassAngleShown ? [glassAngle] : []), [glassAngleShown, glassAngle]);
   const rightCustomElements = useMemo(() => {
     const elements: ReactElement[] = [];
     if (showsLight && !onRail) elements.push(glassLightbulb);
@@ -559,7 +560,7 @@ function CollapsingNativeBarHeader({
       >
         {children}
       </NativeRootHeader>
-      {angleAnchorsPopover ? null : anglePicker}
+      {glassAngleShown ? null : anglePicker}
       {historyAnchored ? <NativeTrailingItemShowcaseAnchor name="board-history-button" positionFromEnd={1} /> : null}
     </>
   );

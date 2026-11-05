@@ -74,9 +74,9 @@ export function nativeBarSideWidth({ nativeItems = 0, titleItems = 0, customSlot
  * `nativeTitleMaxWidth` for a bar of native items. Each side gives up its
  * safe-area inset, the bar margin, its items' width and UIKit's title-view
  * clearance. Climbs on an iPhone 17 Pro (402pt), with the glass avatar and +
- * leading and history and ⋯ trailing, leaves 161pt; an adjustable angle beside
- * history takes it down to 92pt (65pt at 375pt). The angle stays: the capsule
- * goes compact instead (#7281).
+ * leading and history and ⋯ trailing, leaves 161pt; the glass angle beside
+ * history (one plain slot in the group's glass) takes it down to 104pt (77pt at
+ * 375pt). The angle stays: the capsule drops its face instead (#7281).
  */
 export function nativeItemsTitleMaxWidth(
   frameWidth: number,

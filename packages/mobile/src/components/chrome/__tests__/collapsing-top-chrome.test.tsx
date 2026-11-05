@@ -612,12 +612,19 @@ describe('CollapsingTopChrome', () => {
         const leading = render(<>{ctrl.nativeLeftActions}</>).container;
         expect(leading.querySelector('[data-pressable="ariaLabels.userMenu"]')).not.toBeNull();
         expect(createAction(leading)).not.toBeNull();
-        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'board', 'custom']);
-        // The angle picker sheet still mounts beside the header.
-        expect(container.querySelector('[data-native-angle-picker]')).not.toBeNull();
+        // The glass "40°" leads the trailing group as a custom view, so it rides the group's glass.
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'board', 'custom']);
+        const angle = ctrl.nativeRightItems?.[0] as BarItemStandIn & { element?: ReactElement };
+        expect(
+          render(angle.element as ReactElement).container.querySelector(
+            '[data-pressable="mobile.angleSelector.buttonAria"]',
+          ),
+        ).not.toBeNull();
+        // The glass angle owns its picker; the native item's is not mounted beside the header.
+        expect(container.querySelector('[data-native-angle-picker]')).toBeNull();
         expect(ctrl.nativeCenterItemSides).toEqual({
           leading: { customSlots: 2 },
-          trailing: { nativeItems: 3, titleItems: 1 },
+          trailing: { nativeItems: 3, titleItems: 0 },
         });
       });
 
@@ -642,11 +649,11 @@ describe('CollapsingTopChrome', () => {
             centerContent={<button>On the wall</button>}
           />,
         );
-        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
         // UIKit slides the capsule clear of the angle; native-title-bound.test.ts has the widths.
         expect(ctrl.nativeCenterItemSides).toEqual({
           leading: { customSlots: 2 },
-          trailing: { nativeItems: 3, titleItems: 1 },
+          trailing: { nativeItems: 3, titleItems: 0 },
         });
       });
 
@@ -656,7 +663,7 @@ describe('CollapsingTopChrome', () => {
         render(
           <CollapsingTopChrome {...makeProps({ canCreate: true, hideLight: true, climbListBarActions: climbList })} />,
         );
-        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
       });
 
       it('anchors the showcase callout on the native history item, second from the end', () => {
@@ -677,18 +684,18 @@ describe('CollapsingTopChrome', () => {
         ctrl.widthClass = 'compact';
       });
 
-      it('uses the native "40°" item and its sheet, as on iPhone', () => {
+      it('uses the glass "40°", as on iPhone (its picker opens as a sheet there)', () => {
         ctrl.board = board;
         ctrl.frameWidth = 507;
         ctrl.windowWidth = 507;
         const { container } = render(
           <CollapsingTopChrome {...makeProps({ canCreate: true, hideLight: true, climbListBarActions: climbList })} />,
         );
-        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
-        expect(container.querySelector('[data-native-angle-picker]')).not.toBeNull();
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
+        expect(container.querySelector('[data-native-angle-picker]')).toBeNull();
       });
 
-      it('keeps the native angle in the bar beside the wall capsule', () => {
+      it('keeps the glass angle in the bar beside the wall capsule', () => {
         ctrl.board = board;
         ctrl.windowWidth = 1210;
         ctrl.frameWidth = 375;
@@ -698,7 +705,7 @@ describe('CollapsingTopChrome', () => {
             centerContent={<button>On the wall</button>}
           />,
         );
-        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
       });
     });
 
@@ -711,19 +718,18 @@ describe('CollapsingTopChrome', () => {
         ctrl.frameWidth = 930;
       });
 
-      it("keeps an open picker's trigger through a width-class flip until the picker closes itself", () => {
+      it('keeps the same glass trigger through a width-class flip, so an open picker is never unmounted', () => {
         ctrl.board = board;
         const props = makeProps({ hideLight: true, climbListBarActions: climbList });
         const { rerender } = render(<CollapsingTopChrome {...props} />);
         expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
         act(() => ctrl.anglePickerOpenChange?.(true));
-        // Split View narrows to compact while the popover is up: the glass angle stays mounted.
+        // Split View narrows to compact while the popover is up: the glass angle stays.
         ctrl.widthClass = 'compact';
         rerender(<CollapsingTopChrome {...props} />);
         expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
-        // The picker sees the new width and closes; only then does the native item take over.
         act(() => ctrl.anglePickerOpenChange?.(false));
-        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
       });
 
       it('keeps the glass "40°" first in the trailing group, so its popover has a view to point at', () => {
@@ -802,6 +808,22 @@ describe('CollapsingTopChrome', () => {
         render(<CollapsingTopChrome {...makeProps({ hideLight: true })} />);
         expect(labels(ctrl.nativeLeftItems)).toEqual(['account']);
         expect(ctrl.nativeRightItems).toBeNull();
+      });
+
+      it("keeps an open picker's trigger through a move onto the rail until the picker closes itself", () => {
+        ctrl.onRail = false;
+        ctrl.board = board;
+        const props = makeProps({ hideLight: true, climbListBarActions: climbList });
+        const { rerender } = render(<CollapsingTopChrome {...props} />);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
+        act(() => ctrl.anglePickerOpenChange?.(true));
+        // The Duo folds while the sheet is up: the glass angle stays mounted.
+        ctrl.onRail = true;
+        rerender(<CollapsingTopChrome {...props} />);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
+        // The sheet closes; only then does the native title item take over.
+        act(() => ctrl.anglePickerOpenChange?.(false));
+        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
       });
 
       it('keeps the angle on the rail beside the capsule, and logs no history anchor', () => {

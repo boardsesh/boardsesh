@@ -121,12 +121,6 @@ describe('titleBarItem', () => {
     expect(item.icon).toBeUndefined();
     expect(item.accessibilityLabel).toBe('Angle 40°');
   });
-
-  it("shares the trailing group's glass with the symbol items beside it (#7281)", () => {
-    const item = titleBarItem({ label: '40°', onPress: vi.fn(), accessibilityLabel: 'Angle 40°', identifier: 'angle' });
-    expect(item.sharesBackground).toBe(true);
-    expect(item.hidesSharedBackground).toBeUndefined();
-  });
 });
 
 describe('barItemsFactory', () => {
