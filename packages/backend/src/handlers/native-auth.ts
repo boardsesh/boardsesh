@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
-import { eq, and, isNull, lt, or, isNotNull } from 'drizzle-orm';
+import { eq, and, isNull, lt, or, isNotNull, DrizzleQueryError } from 'drizzle-orm';
+import type { DbInstance } from '@boardsesh/db/client';
 import { mobileRefreshTokens, users, accounts, userProfiles } from '@boardsesh/db/schema/auth';
 import { notificationDevices } from '@boardsesh/db/schema/app';
 import { db } from '../db/client';
@@ -10,6 +11,11 @@ import { redisClientManager } from '../redis/client';
 import { applyCorsHeaders } from './cors';
 import { validateToken } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
+import { currentStoreNativeRegistrationConfiguration } from '../auth/current-store/authority-configuration';
+import { preflight, transactionSettings, type WebPasswordAuthority } from '../auth/current-store/command-context';
+import { CurrentStoreFoundationError } from '../auth/current-store/foundation-context';
+import { insertReservedPasswordIdentity } from '../auth/current-store/reserved-password-registration';
 import {
   authenticateCurrentStorePassword,
   parseCurrentStorePasswordRegistration,
@@ -564,7 +570,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
 // app logs the user straight in (no web browser, no email round-trip) — the same
 // auto-login behaviour the native OAuth and credentials handlers already have.
 //
-// Email verification: the backend can't send a verification email, and
+// Email verification: this adapter does not deliver verification email, and
 // handleNativeAuthCredentials never checks emailVerified, so the new user is
 // auto-logged-in on the device regardless. We still honour
 // EMAIL_VERIFICATION_ENABLED for the stored emailVerified value, mirroring the
@@ -575,7 +581,11 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
 // When the flag is off (the default), accounts are created verified.
 // ---------------------------------------------------------------------------
 
-export async function handleNativeAuthRegister(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleNativeAuthRegister(
+  req: IncomingMessage,
+  res: ServerResponse,
+  database: DbInstance = db,
+): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 
   if (req.method !== 'POST') {
@@ -616,8 +626,21 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
     return;
   }
 
+  let configuration: ReturnType<typeof currentStoreNativeRegistrationConfiguration>;
   try {
-    const prepared = await prepareCurrentStorePasswordRegistration(db, validation.registration);
+    configuration = currentStoreNativeRegistrationConfiguration();
+  } catch {
+    logger.warn('[NativeAuth] Reserved registration unavailable', { category: 'configuration' });
+    sendJson(res, 503, { error: 'Service temporarily unavailable' });
+    return;
+  }
+  if (configuration.mode === 'reserved-staging') {
+    await handleReservedNativeRegistration(res, database, configuration.authority, validation.registration);
+    return;
+  }
+
+  try {
+    const prepared = await prepareCurrentStorePasswordRegistration(database, validation.registration);
     if (!prepared) {
       sendJson(res, 409, {
         error: 'An account with this email already exists. Please sign in with your existing account.',
@@ -628,7 +651,7 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
     // Mirror web: unverified when the verification gate is on, verified otherwise.
     const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
-    const result = await db.transaction(async (tx) => {
+    const result = await database.transaction(async (tx) => {
       const identity = await insertCurrentStorePasswordIdentity(tx, prepared, emailVerificationEnabled);
       const tokenPair = await generateTokenPair(identity.userId, tx);
       return {
@@ -652,6 +675,75 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
     }
     logger.error('[NativeAuth] Registration failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
+  }
+}
+
+const nativeRegistrationDriverCodes = new Set([
+  'CONNECT_TIMEOUT',
+  'CONNECTION_CLOSED',
+  'CONNECTION_ENDED',
+  'CONNECTION_DESTROYED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+]);
+
+async function handleReservedNativeRegistration(
+  response: ServerResponse,
+  database: DbInstance,
+  authority: WebPasswordAuthority,
+  registration: Parameters<typeof prepareCurrentStorePasswordRegistration>[1],
+) {
+  try {
+    // Validate authority before even an exact-email precheck can report409.
+    // Bcrypt remains outside the global manifest's locked transaction.
+    await preflight(database, authority);
+    const prepared = await prepareCurrentStorePasswordRegistration(database, registration);
+    const result = await database.transaction(async (transaction) => {
+      await transactionSettings(transaction);
+      const inserted = await insertReservedPasswordIdentity(transaction, authority, {
+        email: registration.email,
+        prepared,
+        emailVerificationEnabled: authority.emailVerificationEnabled,
+      });
+      if (inserted.outcome === 'exists') return inserted;
+      const { identity } = inserted;
+      // This remains the installed native issuer, bound to the identity's tx.
+      const tokenPair = await generateTokenPair(identity.userId, transaction);
+      return {
+        outcome: 'created' as const,
+        tokenPair,
+        accountCreation: accountCreationReceipt(identity.userId, true, 'email', identity.createdAt),
+      };
+    });
+    if (result.outcome === 'exists') {
+      sendJson(response, 409, {
+        error: 'An account with this email already exists. Please sign in with your existing account.',
+      });
+      return;
+    }
+    logger.info('[NativeAuth] Reserved registration successful', { category: 'created' });
+    sendJson(response, 201, { ...result.tokenPair, accountCreation: result.accountCreation });
+  } catch (error) {
+    const code = getPostgresErrorCode(error);
+    const unavailable =
+      error instanceof CurrentStoreFoundationError ||
+      error instanceof DrizzleQueryError ||
+      (code !== undefined && (/^[0-9A-Z]{5}$/.test(code) || nativeRegistrationDriverCodes.has(code)));
+    // Never pass the original query/error/cause/parameters into logs or Sentry.
+    // This branch returns before the unchanged legacy raw-error handler.
+    if (unavailable) {
+      logger.warn('[NativeAuth] Reserved registration unavailable', { category: 'authority-or-database' });
+      sendJson(response, 503, { error: 'Service temporarily unavailable' });
+    } else {
+      logger.error('[NativeAuth] Reserved registration failed', new Error('Native registration internal failure'));
+      sendJson(response, 500, { error: 'Internal server error' });
+    }
   }
 }
 

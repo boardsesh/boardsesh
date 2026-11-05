@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
   AUTH_PROTOCOL_VERSION,
@@ -8,14 +7,11 @@ import {
   type RegisterCommand,
   type RegisterReply,
 } from '@boardsesh/auth-protocol';
-import { authEmailReservations, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
+import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { normalizeAccountEmail } from '../normalize-email';
-import { reserveEnforcedEmail } from './email-reservations';
 import { lockEnforcedProjection, CurrentStoreFoundationError } from './foundation-context';
 import {
-  insertCurrentStorePasswordIdentity,
   matchCurrentStorePasswordCandidate,
   MAX_CURRENT_STORE_PASSWORD_CANDIDATES,
   prepareCurrentStorePasswordRegistration,
@@ -42,6 +38,7 @@ import {
   type WebPasswordAuthority,
 } from './command-context';
 import { issueEmailVerification } from './email-verification';
+import { insertReservedPasswordIdentity } from './reserved-password-registration';
 
 function validationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
   return (
@@ -87,20 +84,15 @@ export async function registerWebPassword(
         code: 'validation_error',
         message: invalidMessage ?? 'Invalid input: expected object, received undefined',
       };
-    const [existing] = await transaction
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, registration.email))
-      .limit(1);
-    const [reservation] = await transaction
-      .select()
-      .from(authEmailReservations)
-      .where(eq(authEmailReservations.normalizedEmail, normalizeAccountEmail(registration.email)))
-      .for('update');
+    const inserted = await insertReservedPasswordIdentity(transaction, authority, {
+      email: registration.email,
+      prepared,
+      emailVerificationEnabled: authority.emailVerificationEnabled,
+    });
     assertFresh(issuedAt);
     // Every occupied normalized key is unavailable to a newly generated ID;
     // there is no existing-user takeover or collision-owner selection.
-    if (!prepared || existing || reservation)
+    if (inserted.outcome === 'exists')
       return {
         protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'register',
@@ -108,14 +100,8 @@ export async function registerWebPassword(
         outcome: 'error',
         code: 'exists',
       };
-    const userId = randomUUID();
-    await reserveEnforcedEmail(transaction, { ...authority, requestedUserId: userId, rawEmail: registration.email });
-    const identity = await insertCurrentStorePasswordIdentity(
-      transaction,
-      prepared,
-      authority.emailVerificationEnabled,
-      userId,
-    );
+    const { identity } = inserted;
+    const { userId } = identity;
     assertFresh(issuedAt);
     if (!authority.emailVerificationEnabled)
       return {
