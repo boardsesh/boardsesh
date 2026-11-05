@@ -4,6 +4,9 @@ Status: accepted direction, implementation gated on the proofs below. This is a
 design and backlog, not a deployed authentication system. Updated 2026-10-27 in
 [PR #6974](https://github.com/boardsesh/boardsesh/pull/6974).
 
+For implementation PRs, decisions, measured QA and outstanding activation gates,
+start with the [implementation review guide](./better-auth-review-guide.md).
+
 The target is self-hosted **Better Auth with its OAuth Provider plugin**, running
 inside `packages/backend`, with PostgreSQL and Drizzle schemas/migrations owned by
 `packages/db`. Next.js remains a presentation client for account and consent

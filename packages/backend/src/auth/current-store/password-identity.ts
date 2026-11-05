@@ -84,15 +84,24 @@ export async function authenticateCurrentStorePassword(
   return matchCurrentStorePasswordCandidate(candidates, password);
 }
 
+/** Shared native creation email policy; subjects and login passwords are separate. */
+export function parseCurrentStoreRegistrationEmail(
+  email: unknown,
+): { ok: true; email: string } | { ok: false; error: string } {
+  if (typeof email !== 'string' || email.trim().length === 0)
+    return { ok: false, error: 'email and password are required' };
+  const normalizedEmail = normalizeAccountEmail(email);
+  if (!REGISTER_EMAIL_REGEX.test(normalizedEmail)) return { ok: false, error: 'Invalid email address' };
+  return { ok: true, email: normalizedEmail };
+}
+
 /** Preserve the native registration bounds and error text; login has no new bounds. */
 export function parseCurrentStorePasswordRegistration(
   body: Record<string, unknown>,
 ): { ok: true; registration: PasswordRegistration } | { ok: false; error: string } {
   const { email, password, name } = body;
-  if (typeof email !== 'string' || email.trim().length === 0)
-    return { ok: false, error: 'email and password are required' };
-  const normalizedEmail = normalizeAccountEmail(email);
-  if (!REGISTER_EMAIL_REGEX.test(normalizedEmail)) return { ok: false, error: 'Invalid email address' };
+  const parsedEmail = parseCurrentStoreRegistrationEmail(email);
+  if (!parsedEmail.ok) return parsedEmail;
   if (typeof password !== 'string' || password.length === 0)
     return { ok: false, error: 'email and password are required' };
   if (password.length < PASSWORD_MIN_LENGTH) return { ok: false, error: 'Password must be at least 8 characters' };
@@ -105,7 +114,7 @@ export function parseCurrentStorePasswordRegistration(
     if (candidate.length > NAME_MAX_LENGTH) return { ok: false, error: 'Name must be less than 100 characters' };
     if (candidate.length > 0) trimmedName = candidate;
   }
-  return { ok: true, registration: { email: normalizedEmail, password, name: trimmedName } };
+  return { ok: true, registration: { email: parsedEmail.email, password, name: trimmedName } };
 }
 
 /**
