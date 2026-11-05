@@ -262,6 +262,24 @@ valid recovery delivery, real providers/devices, production IAM or a migration
 rollout. Later evidence-only documentation commits deliberately invalidate the
 source receipt for restart; they do not change the already running preview.
 
+## CI packaging correction
+
+The first final-head CI run exposed a standalone dev-database image packaging
+failure: its explicit workspace-dependency strip list omitted the newly added
+DB dependency on auth-protocol. Installation stopped with
+ERR_PNPM_WORKSPACE_PKG_NOT_FOUND before the seeded image was built. This was a
+real failed check; retrying unchanged could not fix it. The image now strips
+that dependency consistently with its existing standalone install. Only the
+two batch CLI mode guards import it at runtime; the image's migration, snapshot
+loading and seed entry points do not load those scripts. No protocol source or
+new external dependency is needed in the seed image.
+
+Executing the actual Dockerfile manifest-preparation command on a temporary
+copy removes every workspace reference while preserving all other dependency
+versions. Independent closure and source review qualify the correction; the
+new-head seeded-image CI remains the complete build gate. The Dockerfile is an
+additional path after the earlier historical 39-file source qualification.
+
 Passing these implementation checks does not
 complete BA-03, collision cleanup, source/validator migration, production
 rollout, restored-database rollback or the separate partner OAuth launch.
