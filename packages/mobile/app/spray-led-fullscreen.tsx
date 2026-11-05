@@ -1,5 +1,5 @@
 import { useRef, useState, useSyncExternalStore } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, ScrollView } from 'react-native';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +11,12 @@ import { PressableSurface } from '../src/components/PressableSurface';
 import { Icon } from '../src/components/Icon';
 import { SprayCornerMarker } from '../src/components/spray-wall/SprayCornerMarker';
 import { FlattenedSprayPhoto } from '../src/components/spray-wall/FlattenedSprayPhoto';
+import { SprayPhotoCanvas } from '../src/components/spray-wall/SprayPhotoCanvas';
+import {
+  closeSprayPhotoSession,
+  readSprayPhotoSession,
+  subscribeSprayPhotoSession,
+} from '../src/lib/spray/spray-photo-session';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 import { useSprayWizardLeaveGuard } from '../src/components/spray-wall/use-spray-wizard-leave-guard';
 import {
@@ -22,7 +28,16 @@ import {
 
 /** Utility route: only a live, authenticated editor can supply its private photo. */
 function SprayLedFullscreen() {
-  const { sessionId } = useLocalSearchParams<{ sessionId?: string | string[] }>();
+  const { sessionId, photoSessionId } = useLocalSearchParams<{
+    sessionId?: string | string[];
+    photoSessionId?: string | string[];
+  }>();
+  const photoId = typeof photoSessionId === 'string' ? photoSessionId : '';
+  const photoSnapshot = useSyncExternalStore(
+    subscribeSprayPhotoSession,
+    () => readSprayPhotoSession(photoId),
+    () => null,
+  );
   const id = typeof sessionId === 'string' ? sessionId : '';
   const snapshot = useSyncExternalStore(
     subscribeTnutCalibrationSession,
@@ -41,10 +56,51 @@ function SprayLedFullscreen() {
   useSprayWizardLeaveGuard((leave) => {
     closing.current = true;
     closeTnutCalibrationSession(id);
+    closeSprayPhotoSession(photoId);
     leave();
   });
   if (closing.current) return null;
-  if (!snapshot || !isAuthenticated || viewerId !== snapshot.viewerId) return <Redirect href="/boards" />;
+  if ((!snapshot && !photoSnapshot) || !isAuthenticated || viewerId !== (photoSnapshot ?? snapshot)?.viewerId)
+    return <Redirect href="/boards" />;
+  const closeButton = (
+    <PressableSurface
+      accessibilityRole="button"
+      accessibilityLabel={t('sprayLedSetup.closeFullScreen')}
+      disabled={dragging}
+      onPress={() => router.back()}
+      style={[
+        styles.close,
+        {
+          top: insets.top + spacing[2],
+          right: insets.right + spacing[2],
+          backgroundColor: systemColors.secondaryGroupedBackground,
+        },
+      ]}
+    >
+      <Icon name="fit.screen" size={22} color={systemColors.label} />
+    </PressableSurface>
+  );
+  if (photoSnapshot)
+    return (
+      <View style={{ flex: 1, backgroundColor: systemColors.background }}>
+        <View style={styles.canvas} onLayout={({ nativeEvent }) => setBox(nativeEvent.layout)}>
+          <SprayPhotoCanvas
+            {...photoSnapshot.canvas}
+            maxWidth={box.width}
+            maxHeight={box.height}
+            onInteractionChange={setDragging}
+          />
+        </View>
+        <ScrollView
+          style={{ height: '28%', flexGrow: 0, paddingBottom: insets.bottom, paddingHorizontal: spacing[4] }}
+          scrollEnabled={!dragging}
+        >
+          {photoSnapshot.tools}
+        </ScrollView>
+        {closeButton}
+      </View>
+    );
+  if (!snapshot) return null;
   const { source, photoUri, quad, grid } = snapshot;
   const corners = {
     topLeft: { x: quad[0][0] / source.frame.width, y: quad[0][1] / source.frame.height },

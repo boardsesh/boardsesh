@@ -98,3 +98,18 @@ export {
   type SprayLedPlacement,
   type TnutPoint,
 } from './tnut-layout';
+export { migrateTnutLayoutColumns } from './tnut-layout';
+export {
+  MAX_LED_POSITIONS,
+  generateLedPositions,
+  createWiring,
+  connectWiring,
+  cutWiring,
+  setWiringSkip,
+  assignLedIndices,
+  traceLedPath,
+  type LedPosition,
+  type TnutWiring,
+  type CableDirection,
+  type CableStartCorner,
+} from './led-layout';

@@ -3,6 +3,7 @@ import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
+import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 
 type Event = {
   translationX: number;
@@ -11,10 +12,13 @@ type Event = {
   focalY: number;
   scale: number;
   numberOfTouches: number;
+  numberOfPointers: number;
+  x: number;
+  y: number;
 };
 type Manager = { activate: () => void; fail: () => void };
 type GestureRecord = {
-  kind: 'pan' | 'pinch';
+  kind: 'pan' | 'pinch' | 'tap';
   handlers: Record<string, (event: Event, manager: Manager) => void>;
   options: Record<string, unknown[]>;
 };
@@ -30,6 +34,13 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
 }));
 vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
+const photoRenderer = vi.hoisted(() => vi.fn());
+vi.mock('../FlattenedSprayPhoto', () => ({
+  FlattenedSprayPhoto: (props: unknown) => {
+    photoRenderer(props);
+    return createElement('div', { 'data-testid': 'rectified-photo' });
+  },
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../theme/colors', () => ({ brandColorsDark: { tint: '#A78BFA', error: '#F87171' } }));
 vi.mock('react-native-svg', () => ({
@@ -77,11 +88,11 @@ vi.mock('react-native-reanimated', async () => {
   };
 });
 vi.mock('react-native-gesture-handler', () => {
-  const create = (kind: 'pan' | 'pinch') => {
+  const create = (kind: 'pan' | 'pinch' | 'tap') => {
     const record: GestureRecord = { kind, handlers: {}, options: {} };
     runtime.gestures.push(record);
     const builder: Record<string, (...args: unknown[]) => unknown> = {};
-    for (const name of ['onBegin', 'onStart', 'onUpdate', 'onFinalize', 'onTouchesMove', 'onTouchesDown']) {
+    for (const name of ['onBegin', 'onStart', 'onUpdate', 'onEnd', 'onFinalize', 'onTouchesMove', 'onTouchesDown']) {
       builder[name] = (callback) => {
         record.handlers[name] = callback as (event: Event, manager: Manager) => void;
         return builder;
@@ -94,6 +105,7 @@ vi.mock('react-native-gesture-handler', () => {
       'manualActivation',
       'simultaneousWithExternalGesture',
       'requireExternalGestureToFail',
+      'enabled',
     ]) {
       builder[name] = (...args) => {
         record.options[name] = args;
@@ -107,12 +119,15 @@ vi.mock('react-native-gesture-handler', () => {
     Gesture: {
       Pan: () => create('pan'),
       Pinch: () => create('pinch'),
+      Tap: () => create('tap'),
       Simultaneous: (...gestures: unknown[]) => gestures,
+      Exclusive: (...gestures: unknown[]) => gestures,
     },
   };
 });
 
 import { ZoomableTnutMarker } from '../ZoomableTnutMarker';
+import { SprayPhotoCanvas, type SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 
 const quad: Quad = [
   [300, 450],
@@ -143,11 +158,16 @@ const event = (overrides: Partial<Event> = {}): Event => ({
   focalY: 225,
   scale: 1,
   numberOfTouches: 1,
+  numberOfPointers: 1,
+  x: 150,
+  y: 225,
   ...overrides,
 });
 const manager = () => ({ activate: vi.fn(), fail: vi.fn() });
 function fire(gesture: GestureRecord, name: string, overrides: Partial<Event> = {}, state = manager()) {
-  act(() => gesture.handlers[name]?.(event(overrides), state));
+  act(() =>
+    gesture.handlers[name]?.(event({ numberOfPointers: gesture.kind === 'pinch' ? 2 : 1, ...overrides }), state),
+  );
   return state;
 }
 function pinchTo(scale: number) {
@@ -157,15 +177,185 @@ function pinchTo(scale: number) {
   fire(pinch, 'onUpdate', { scale });
   fire(pinch, 'onFinalize');
 }
+function end(gesture: GestureRecord, overrides: Partial<Event> = {}, success = true) {
+  const callback = gesture.handlers.onEnd as unknown as (event: Event, success: boolean) => void;
+  act(() => callback(event(overrides), success));
+}
 afterEach(() => {
   cleanup();
   runtime.gestures.length = 0;
   runtime.shapes.length = 0;
   runtime.styles.length = 0;
   runtime.bridges = 0;
+  photoRenderer.mockClear();
+});
+
+const source: SprayLookPreviewSource = {
+  layoutId: 1,
+  versionId: 2,
+  photoUrl: 'https://example.invalid/wall.jpg',
+  photoExpiresAt: '2030-01-01',
+  photo: { width: 2000, height: 3000 },
+  homography: [0.5, 0, 0, 0, 0.5, 0, 0, 0, 1],
+  frame: { width: 1000, height: 1500 },
+  holds: [],
+};
+function canvasProps(overrides: Partial<SprayPhotoCanvasProps> = {}): SprayPhotoCanvasProps {
+  return { source, photoUri: 'file:///cached-wall.jpg', maxWidth: 300, maxHeight: 450, ...overrides };
+}
+
+describe('SprayPhotoCanvas', () => {
+  it('fits the canonical frame and shares the cached rectified backdrop with overlays', () => {
+    const renderOverlay = vi.fn<NonNullable<SprayPhotoCanvasProps['renderOverlay']>>(() => createElement('div'));
+    render(createElement(SprayPhotoCanvas, canvasProps({ renderOverlay })));
+    expect(photoRenderer).toHaveBeenLastCalledWith({
+      source,
+      photoUri: 'file:///cached-wall.jpg',
+      tile: { width: 300, height: 450 },
+    });
+    expect(renderOverlay).toHaveBeenCalledWith(300, 450, expect.objectContaining({ value: 1 }));
+    pinchTo(2);
+    expect(renderOverlay.mock.calls[0][2]).toEqual({ value: 2 });
+  });
+
+  it('inverts zoom and pan for taps and keeps screen-distance hit tolerance', () => {
+    const onTap = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    pinchTo(2);
+    const pan = runtime.gestures[1];
+    fire(pan, 'onStart');
+    fire(pan, 'onUpdate', { translationX: 60, translationY: 90 });
+    fire(pan, 'onFinalize');
+    const tap = runtime.gestures.find((gesture) => gesture.kind === 'tap')!;
+    expect(onTap).not.toHaveBeenCalled();
+    end(tap, { x: 150, y: 225 });
+    expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, 600, 900);
+  });
+
+  it('collects a normalized trace on the UI thread and commits only once at release', () => {
+    const onTrace = vi.fn();
+    const lock = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'draw', onTrace, onInteractionChange: lock })));
+    pinchTo(2);
+    const pan = runtime.gestures[1];
+    expect(fire(pan, 'onTouchesMove').fail).toHaveBeenCalledOnce();
+    const draw = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    fire(draw, 'onStart', { x: 90, y: 135 });
+    const bridges = runtime.bridges;
+    fire(draw, 'onUpdate', { x: 210, y: 315 });
+    expect(runtime.bridges).toBe(bridges);
+    expect(onTrace).not.toHaveBeenCalled();
+    end(draw, { x: 270, y: 405 });
+    expect(onTrace).toHaveBeenCalledExactlyOnceWith(
+      [
+        { x: 0.4, y: 0.4 },
+        { x: 0.6, y: 0.6 },
+        { x: 0.7, y: 0.7 },
+      ],
+      14 / 900,
+    );
+    fire(draw, 'onFinalize');
+    expect(lock).toHaveBeenLastCalledWith(false);
+  });
+
+  it('does not add a hole when a pinch finishes before the tap callback', () => {
+    const onTap = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    const tap = runtime.gestures.find((gesture) => gesture.kind === 'tap')!;
+    fire(tap, 'onBegin');
+    fire(tap, 'onTouchesDown', { numberOfTouches: 2 });
+    pinchTo(2);
+    end(tap);
+    expect(onTap).not.toHaveBeenCalled();
+    fire(tap, 'onBegin');
+    fire(tap, 'onTouchesDown', { numberOfTouches: 1 });
+    end(tap);
+    expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.5, y: 0.5 }, 600, 900);
+  });
+
+  it('cancels a cable trace interrupted by pinching and balances overlapping scroll locks', () => {
+    const onTrace = vi.fn();
+    const lock = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'draw', onTrace, onInteractionChange: lock })));
+    const pinch = runtime.gestures[0];
+    const draw = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    fire(draw, 'onStart', { x: 90, y: 135 });
+    fire(pinch, 'onStart');
+    fire(draw, 'onUpdate', { x: 210, y: 315 });
+    fire(pinch, 'onFinalize');
+    end(draw, { x: 270, y: 405 });
+    fire(draw, 'onFinalize');
+    expect(onTrace).not.toHaveBeenCalled();
+    expect(lock.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('retains viewport state and gesture identity across parent callback rerenders', () => {
+    const { rerender } = render(createElement(SprayPhotoCanvas, canvasProps({ onInteractionChange: vi.fn() })));
+    pinchTo(2);
+    const gestureCount = runtime.gestures.length;
+    const before = runtime.styles[0].compute();
+    rerender(createElement(SprayPhotoCanvas, canvasProps({ onInteractionChange: vi.fn() })));
+    expect(runtime.gestures).toHaveLength(gestureCount);
+    expect(runtime.styles[0].compute()).toEqual(before);
+  });
+
+  it('cancels a cable trace when the second finger lands without any intervening draw update', () => {
+    const onTrace = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'draw', onTrace })));
+    const pinch = runtime.gestures[0];
+    const draw = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    fire(draw, 'onStart', { x: 90, y: 135 });
+    fire(draw, 'onTouchesDown', { numberOfTouches: 2 });
+    fire(pinch, 'onStart');
+    fire(pinch, 'onFinalize');
+    end(draw, { x: 270, y: 405 });
+    fire(draw, 'onFinalize');
+    expect(onTrace).not.toHaveBeenCalled();
+  });
 });
 
 describe('ZoomableTnutMarker', () => {
+  it('preserves the current viewport at non-unit pinch start and after successive pinches', () => {
+    render(createElement(ZoomableTnutMarker, props()));
+    pinchTo(2);
+    const pan = runtime.gestures[1];
+    fire(pan, 'onStart', { translationX: 15, translationY: 20 });
+    fire(pan, 'onUpdate', { translationX: 75, translationY: 110 });
+    fire(pan, 'onFinalize');
+    const before = runtime.styles[0].compute();
+    expect(before).toEqual({ transform: [{ translateX: 60 }, { translateY: 90 }, { scale: 2 }] });
+    const pinch = runtime.gestures[0];
+    fire(pinch, 'onStart', { scale: 1.2, focalX: 120, focalY: 180 });
+    fire(pinch, 'onUpdate', { scale: 1.2, focalX: 120, focalY: 180 });
+    expect(runtime.styles[0].compute()).toEqual(before);
+    fire(pinch, 'onUpdate', { scale: 1.8, focalX: 120, focalY: 180 });
+    expect(runtime.styles[0].compute()).toEqual({
+      transform: [{ translateX: 105 }, { translateY: 157.5 }, { scale: 3 }],
+    });
+    fire(pinch, 'onFinalize');
+    fire(pinch, 'onStart', { scale: 1, focalX: 160, focalY: 200 });
+    fire(pinch, 'onUpdate', { scale: 1, focalX: 160, focalY: 200 });
+    expect(runtime.styles[0].compute()).toEqual({
+      transform: [{ translateX: 105 }, { translateY: 157.5 }, { scale: 3 }],
+    });
+  });
+
+  it('does not jump to the remaining finger when Android keeps a pinch active after a pointer lifts', () => {
+    render(createElement(ZoomableTnutMarker, props()));
+    const pinch = runtime.gestures[0];
+    fire(pinch, 'onStart');
+    fire(pinch, 'onUpdate', { scale: 2 });
+    const before = runtime.styles[0].compute();
+    fire(pinch, 'onUpdate', { scale: 2, numberOfPointers: 1, focalX: 250, focalY: 350 });
+    expect(runtime.styles[0].compute()).toEqual(before);
+    fire(pinch, 'onUpdate', { scale: 2, numberOfPointers: 2, focalX: 190, focalY: 290 });
+    expect(runtime.styles[0].compute()).toEqual(before);
+    fire(pinch, 'onUpdate', { scale: 3, numberOfPointers: 2, focalX: 190, focalY: 290 });
+    expect(runtime.styles[0].compute()).toEqual({
+      transform: [{ translateX: -20 }, { translateY: -32.5 }, { scale: 3 }],
+    });
+  });
+
   it('moves a corner in canonical coordinates after zoom and pan, without per-frame JS commits', () => {
     const onChange = vi.fn();
     const backdrop = vi.fn(() => createElement('div'));

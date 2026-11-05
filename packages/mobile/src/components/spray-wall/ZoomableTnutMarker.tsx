@@ -12,20 +12,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { tnutGridPath, type Quad } from '@boardsesh/spray-wall-geometry';
+import { useSprayPhotoViewport } from './use-spray-photo-viewport';
 import { brandColorsDark } from '../../theme/colors';
 import type { SprayCornerMarkerProps } from './SprayCornerMarker';
-import {
-  activeTnutCorners,
-  clampViewportPan,
-  cornerScreenCoordinate,
-  draggedCornerCoordinate,
-  focalZoomPan,
-} from './tnut-corner-viewport';
+import { activeTnutCorners, cornerScreenCoordinate, draggedCornerCoordinate } from './tnut-corner-viewport';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const HANDLE_SIZE = 44;
-const MAX_ZOOM = 6;
 
 type FittedProps = SprayCornerMarkerProps & { renderWidth: number; renderHeight: number };
 
@@ -53,11 +47,6 @@ export function ZoomableTnutMarker({
       ];
   const seedKey = seed.map(([x, y]) => `${x}:${y}`).join(';');
   const corners = useSharedValue<Quad>(seed);
-  const zoom = useSharedValue(1);
-  const panX = useSharedValue(0);
-  const panY = useSharedValue(0);
-  const isPinching = useSharedValue(false);
-  const interactions = useSharedValue(0);
   const callbacks = useRef({ onChange, onDragActiveChange, photo });
   callbacks.current = { onChange, onDragActiveChange, photo };
   const mounted = useRef(true);
@@ -73,21 +62,12 @@ export function ZoomableTnutMarker({
     // The scalar seed key prevents a scroll-lock re-render from resetting a held corner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
-  useEffect(() => {
-    // Rotation changes the fitted viewport, never the canonical corner coordinates.
-    zoom.value = 1;
-    panX.value = 0;
-    panY.value = 0;
-  }, [width, height, zoom, panX, panY]);
+
   const commit = useCallback(() => {
     if (!mounted.current) return;
     const { photo: currentPhoto, onChange: change } = callbacks.current;
     change(corners.value.map(([x, y]) => [x * currentPhoto.width, y * currentPhoto.height]));
   }, [corners]);
-  const reportInteraction = useCallback((active: boolean) => {
-    if (mounted.current) callbacks.current.onDragActiveChange?.(active);
-  }, []);
-  const pinchRef = useRef<GestureType | undefined>(undefined);
   const firstHandleRef = useRef<GestureType | undefined>(undefined);
   const secondHandleRef = useRef<GestureType | undefined>(undefined);
   const thirdHandleRef = useRef<GestureType | undefined>(undefined);
@@ -96,114 +76,9 @@ export function ZoomableTnutMarker({
   const rows = tnutGrid?.rows ?? 8;
   const columns = tnutGrid?.columns ?? 8;
   const activeCorners = useMemo(() => activeTnutCorners(rows, columns), [rows, columns]);
-  const pinchStartZoom = useSharedValue(1);
-  const pinchStartX = useSharedValue(0);
-  const pinchStartY = useSharedValue(0);
-  const pinchFocalX = useSharedValue(0);
-  const pinchFocalY = useSharedValue(0);
-  const panStartX = useSharedValue(0);
-  const panStartY = useSharedValue(0);
-  const panActive = useSharedValue(false);
-  const viewportGesture = useMemo(() => {
-    const pinch = Gesture.Pinch()
-      .withRef(pinchRef)
-      .onTouchesDown((event) => {
-        // Lock the page as soon as the second finger lands, before either
-        // the native scroll view or a corner drag can consume its movement.
-        if (event.numberOfTouches < 2 || isPinching.value) return;
-        isPinching.value = true;
-        interactions.value++;
-        if (interactions.value === 1) runOnJS(reportInteraction)(true);
-      })
-      .onStart((event) => {
-        if (!isPinching.value) {
-          isPinching.value = true;
-          interactions.value++;
-          if (interactions.value === 1) runOnJS(reportInteraction)(true);
-        }
-        pinchStartZoom.value = zoom.value;
-        pinchStartX.value = panX.value;
-        pinchStartY.value = panY.value;
-        pinchFocalX.value = event.focalX;
-        pinchFocalY.value = event.focalY;
-      })
-      .onUpdate((event) => {
-        const nextZoom = Math.max(1, Math.min(MAX_ZOOM, pinchStartZoom.value * event.scale));
-        panX.value = focalZoomPan(
-          pinchFocalX.value,
-          event.focalX,
-          width,
-          pinchStartZoom.value,
-          nextZoom,
-          pinchStartX.value,
-        );
-        panY.value = focalZoomPan(
-          pinchFocalY.value,
-          event.focalY,
-          height,
-          pinchStartZoom.value,
-          nextZoom,
-          pinchStartY.value,
-        );
-        zoom.value = nextZoom;
-      })
-      .onFinalize(() => {
-        if (!isPinching.value) return;
-        isPinching.value = false;
-        interactions.value--;
-        if (interactions.value === 0) runOnJS(reportInteraction)(false);
-      });
-    const pan = Gesture.Pan()
-      .maxPointers(1)
-      .manualActivation(true)
-      .onTouchesMove((_event, manager) => {
-        // At fit scale, let the surrounding settings page scroll normally.
-        if (zoom.value > 1 && !isPinching.value) manager.activate();
-        else manager.fail();
-      })
-      .onStart(() => {
-        panActive.value = true;
-        panStartX.value = panX.value;
-        panStartY.value = panY.value;
-        interactions.value++;
-        if (interactions.value === 1) runOnJS(reportInteraction)(true);
-      })
-      .onUpdate((event) => {
-        if (isPinching.value) return;
-        panX.value = clampViewportPan(panStartX.value + event.translationX, width, zoom.value);
-        panY.value = clampViewportPan(panStartY.value + event.translationY, height, zoom.value);
-      })
-      .onFinalize(() => {
-        if (!panActive.value) return;
-        panActive.value = false;
-        interactions.value--;
-        if (interactions.value === 0) runOnJS(reportInteraction)(false);
-      });
-    pan.requireExternalGestureToFail(...activeCorners.map((corner) => handleRefs[corner]));
-    return Gesture.Simultaneous(pinch, pan);
-  }, [
-    activeCorners,
-    handleRefs,
-    width,
-    height,
-    zoom,
-    panX,
-    panY,
-    isPinching,
-    interactions,
-    reportInteraction,
-    pinchStartZoom,
-    pinchStartX,
-    pinchStartY,
-    pinchFocalX,
-    pinchFocalY,
-    panStartX,
-    panStartY,
-    panActive,
-  ]);
-  const imageTransform = useAnimatedStyle(() => ({
-    transform: [{ translateX: panX.value }, { translateY: panY.value }, { scale: zoom.value }],
-  }));
+  const failures = useMemo(() => activeCorners.map((corner) => handleRefs[corner]), [activeCorners, handleRefs]);
+  const { zoom, panX, panY, isPinching, interactions, reportInteraction, pinchRef, viewportGesture, imageTransform } =
+    useSprayPhotoViewport(width, height, onDragActiveChange, true, failures);
   const outlineProps = useAnimatedProps(() => {
     const active = activeTnutCorners(rows, columns);
     return {
@@ -234,10 +109,10 @@ export function ZoomableTnutMarker({
           },
           width,
           height,
-          3 / zoom.value,
+          4 / zoom.value,
         )
       : '',
-    strokeWidth: 1 / zoom.value,
+    strokeWidth: 2 / zoom.value,
   }));
   const color = invalid ? brandColorsDark.error : brandColorsDark.tint;
   const labels = [
@@ -257,13 +132,13 @@ export function ZoomableTnutMarker({
               <Image source={{ uri: photo.uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
             )}
             <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
+              <AnimatedPath animatedProps={outlineProps} stroke={color} fill="none" opacity={0.6} />
               <AnimatedPath
                 animatedProps={gridProps}
                 fill={brandColorsDark.tint}
                 stroke="rgba(0,0,0,0.4)"
-                opacity={0.48}
+                opacity={0.95}
               />
-              <AnimatedPath animatedProps={outlineProps} stroke={color} fill="none" opacity={0.6} />
             </Svg>
           </Animated.View>
           {activeCorners.map((corner) => (

@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import {
-  Alert,
-  Keyboard,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  View,
-  useWindowDimensions,
-  type ScrollViewInstance,
-} from 'react-native';
+import { Alert, Keyboard, Platform, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -16,6 +7,11 @@ import { useTranslation } from 'react-i18next';
 import {
   DEFAULT_TNUT_CORNERS,
   generateTnutGrid,
+  generateLedPositions,
+  migrateTnutLayoutColumns,
+  createWiring,
+  type CableDirection,
+  type CableStartCorner,
   isValidTnutGrid,
   MAX_TNUT_HOLES,
   type Quad,
@@ -50,11 +46,23 @@ import { FlattenedSprayPhoto } from './FlattenedSprayPhoto';
 import { SprayCornerMarker } from './SprayCornerMarker';
 import { TnutPatternThumbnail } from './TnutPatternThumbnail';
 import { LedPlacementThumbnail } from './LedPlacementThumbnail';
-import { TnutPhotoEditor } from './TnutPhotoEditor';
+import { SprayPhotoStage } from './SprayPhotoStage';
+import { SpraySetupOverlay } from './SpraySetupOverlay';
+import { SprayLedMapEditor } from './SprayLedMapEditor';
+import { CablePatternThumbnail } from './CablePatternThumbnail';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 
 type LoadedSetup = { source: SprayLookPreviewSource; photoUri: string; photoKey: string; saved: TnutLayout | null };
-type Step = 'pattern' | 'offset' | 'align' | 'holes' | 'led';
+type Step =
+  | 'pattern'
+  | 'offset'
+  | 'align'
+  | 'holes'
+  | 'led'
+  | 'ledPositions'
+  | 'cablePattern'
+  | 'cableStart'
+  | 'wiring';
 
 /** Private photos use the same managed cache and perspective warp as Wall only. */
 export function SprayWallLedSetupScreen({ wallUuid }: { wallUuid: string }) {
@@ -144,6 +152,7 @@ function SetupLoader({ wallUuid }: { wallUuid: string }) {
 function defaultLayout(photoKey: string): TnutLayout {
   return {
     version: 1,
+    columnConvention: 'all',
     photoKey,
     pattern: 'grid',
     rows: 8,
@@ -155,7 +164,14 @@ function defaultLayout(photoKey: string): TnutLayout {
 }
 
 function gridSignature(layout: TnutLayout): string {
-  return JSON.stringify([layout.pattern, layout.rows, layout.columns, layout.firstRowOffset, layout.corners]);
+  return JSON.stringify([
+    layout.pattern,
+    layout.rows,
+    layout.columns,
+    layout.firstRowOffset,
+    layout.corners,
+    layout.columnConvention,
+  ]);
 }
 
 function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSetup }) {
@@ -176,8 +192,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const headerHeight = useHeaderHeight();
   const scrollRef = useRef<ScrollViewInstance>(null);
   const keyboardScroll = useAndroidKeyboardScroll(scrollRef, keyboardHeight, headerHeight + spacing[4]);
-  const window = useWindowDimensions();
-  const matchingSaved = loaded.saved?.photoKey === loaded.photoKey ? loaded.saved : null;
+  const matchingSaved = useMemo(
+    () => (loaded.saved?.photoKey === loaded.photoKey ? migrateTnutLayoutColumns(loaded.saved) : null),
+    [loaded.saved, loaded.photoKey],
+  );
   const [photoChanged, setPhotoChanged] = useState(Boolean(loaded.saved && !matchingSaved));
   const [layout, setLayout] = useState<TnutLayout>(() => matchingSaved ?? defaultLayout(loaded.photoKey));
   const [step, setStep] = useState<Step>('pattern');
@@ -192,7 +210,6 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const [dragging, setDragging] = useState(false);
   const [mode, setMode] = useState<'add' | 'remove'>('add');
   const [history, setHistory] = useState<TnutPoint[][]>([]);
-  const [contentWidth, setContentWidth] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(0);
   const busy = useRef(false);
   const finished = useRef(false);
@@ -203,14 +220,31 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       mounted.current = false;
     };
   }, []);
+  const [direction, setDirection] = useState<CableDirection>(layout.wiring?.direction ?? 'horizontal');
+  const [startCorner, setStartCorner] = useState<CableStartCorner>(layout.wiring?.startCorner ?? 'tl');
+  const ledSignature = (draft: TnutLayout) =>
+    JSON.stringify([
+      draft.holes,
+      draft.ledPlacement,
+      draft.corners,
+      draft.rows,
+      draft.columns,
+      draft.columnConvention,
+      draft.firstRowOffset,
+    ]);
+  const generatedLeds = useRef(layout.ledPositions ? ledSignature(layout) : null);
+  const wiringSignature = (draft: TnutLayout, axis: CableDirection, corner: CableStartCorner) =>
+    JSON.stringify([draft.ledPositions, axis, corner]);
+  const generatedWiring = useRef(
+    layout.wiring ? wiringSignature(layout, layout.wiring.direction, layout.wiring.startCorner) : null,
+  );
   const generatedSignature = useRef(matchingSaved ? gridSignature(matchingSaved) : null);
   const parsedRows = Number(rowsText);
   const parsedColumns = Number(columnsText);
-  const validCount = (text: string) => /^\d+$/.test(text) && Number(text) >= 1 && Number(text) <= 50;
-  const validCounts = validCount(rowsText) && validCount(columnsText);
+  const maxColumns = layout.pattern === 'offset' ? 99 : 50;
+  const validCount = (text: string, maximum = 50) => /^\d+$/.test(text) && Number(text) >= 1 && Number(text) <= maximum;
+  const validCounts = validCount(rowsText) && validCount(columnsText, maxColumns);
   const validCorners = isValidTnutGrid({ ...layout, pattern: layout.pattern === 'offset' ? 'offset' : 'grid' });
-  const maxWidth = Math.max(0, contentWidth - 44);
-  const maxHeight = Math.max(180, Math.min(480, window.height * 0.43));
   const { source, photoUri } = loaded;
   const photo = useMemo(
     () => ({ uri: photoUri, width: source.frame.width, height: source.frame.height }),
@@ -255,6 +289,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
           rows: layout.rows,
           columns: layout.columns,
           firstRowOffset: layout.firstRowOffset,
+          columnConvention: layout.columnConvention,
         },
       },
       changeCorners,
@@ -273,6 +308,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else if (step === 'align') setStep(layout.pattern === 'offset' ? 'offset' : 'pattern');
     else if (step === 'holes') setStep(layout.pattern === 'custom' ? 'pattern' : 'align');
     else if (step === 'led') setStep('holes');
+    else if (step === 'ledPositions') setStep('led');
+    else if (step === 'cablePattern') setStep('ledPositions');
+    else if (step === 'cableStart') setStep('cablePattern');
+    else if (step === 'wiring') setStep(direction === 'custom' ? 'cablePattern' : 'cableStart');
     else router.back();
   }
 
@@ -319,9 +358,37 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       setStep('holes');
       return;
     }
-    if (step === 'holes' || step === 'led') {
+    if (step === 'led') {
+      if (!layout.ledPlacement) return;
+      const signature = ledSignature(layout);
+      if (generatedLeds.current !== signature) {
+        changeLayout({ ledPositions: generateLedPositions(layout), wiring: undefined });
+        generatedLeds.current = signature;
+        generatedWiring.current = null;
+      }
+      setStep('ledPositions');
+      return;
+    }
+    if (step === 'ledPositions') {
+      if (layout.ledPositions?.length) setStep('cablePattern');
+      return;
+    }
+    if (step === 'cablePattern' || step === 'cableStart') {
+      if (step === 'cablePattern' && direction !== 'custom') {
+        setStep('cableStart');
+        return;
+      }
+      const signature = wiringSignature(layout, direction, startCorner);
+      if (generatedWiring.current !== signature) {
+        changeLayout({ wiring: createWiring(layout.ledPositions ?? [], direction, startCorner, layout) });
+        generatedWiring.current = signature;
+      }
+      setStep('wiring');
+      return;
+    }
+    if (step === 'holes' || step === 'wiring') {
       if (!layout.holes.length) return;
-      if (step === 'led' && !layout.ledPlacement) return;
+      if (step === 'wiring' && (!layout.ledPositions?.length || !layout.wiring)) return;
       busy.current = true;
       setSaving(true);
       setSaveFailed(false);
@@ -351,11 +418,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     !dragging &&
     (step !== 'align' || (validCounts && validCorners)) &&
     (step !== 'holes' || layout.holes.length > 0) &&
-    (step !== 'led' || Boolean(layout.ledPlacement));
+    (step !== 'led' || Boolean(layout.ledPlacement)) &&
+    ((step !== 'ledPositions' && step !== 'wiring') || Boolean(layout.ledPositions?.length));
   useHeaderActions({
     leading: { kind: 'back', onPress: previousStep, accessibilityLabel: t('sprayLedSetup.back'), disabled: saving },
     trailing: {
-      label: step === 'led' ? t('sprayLedSetup.done') : t('sprayLedSetup.next'),
+      label: step === 'wiring' ? t('sprayLedSetup.done') : t('sprayLedSetup.next'),
       onPress: () => void next(),
       disabled: !canContinue,
     },
@@ -402,7 +470,15 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
           ? t('sprayLedSetup.alignTitle')
           : step === 'holes'
             ? t('sprayLedSetup.editTitle')
-            : t('sprayLedSetup.ledTitle');
+            : step === 'led'
+              ? t('sprayLedSetup.ledTitle')
+              : step === 'ledPositions'
+                ? t('sprayLedSetup.ledPositionsTitle')
+                : step === 'cablePattern'
+                  ? t('sprayLedSetup.cablePatternTitle')
+                  : step === 'cableStart'
+                    ? t('sprayLedSetup.cableStartTitle')
+                    : t('sprayLedSetup.wiringTitle');
 
   return (
     <ScrollView
@@ -420,10 +496,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         paddingHorizontal: spacing[4],
       }}
     >
-      <View
-        style={[styles.content, { gap: spacing[4] }]}
-        onLayout={(event) => setContentWidth(event.nativeEvent.layout.width)}
-      >
+      <View style={[styles.content, { gap: spacing[4] }]}>
         <Text variant="title2">{title}</Text>
         {photoChanged ? <Text variant="footnote">{t('sprayLedSetup.photoChanged')}</Text> : null}
         {step === 'pattern' ? (
@@ -446,9 +519,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                     if (pattern !== layout.pattern) {
                       changeLayout({
                         pattern,
+                        columns: Math.min(pattern === 'offset' ? 99 : 50, layout.columns),
                         holes: [],
                         ledPlacement: layout.ledPlacement === 'alternating' ? undefined : layout.ledPlacement,
                       });
+                      setColumnsText(String(Math.min(pattern === 'offset' ? 99 : 50, layout.columns)));
                       setHistory([]);
                       generatedSignature.current = null;
                     }
@@ -487,8 +562,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
               {layout.rows === 1 && layout.columns === 1
                 ? t('sprayLedSetup.singlePointHint')
                 : layout.rows === 1
-                  ? layout.pattern === 'offset' && layout.firstRowOffset
-                    ? t('sprayLedSetup.singleInsetRowHint')
+                  ? layout.pattern === 'offset'
+                    ? t('sprayLedSetup.singleOffsetRowHint')
                     : t('sprayLedSetup.singleRowHint')
                   : layout.columns === 1
                     ? t('sprayLedSetup.singleColumnHint')
@@ -512,6 +587,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                   rows: layout.rows,
                   columns: layout.columns,
                   firstRowOffset: layout.firstRowOffset,
+                  columnConvention: layout.columnConvention,
                 }}
                 onChange={changeCorners}
               />
@@ -539,13 +615,16 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             />
             <CountControl
               label={t('sprayLedSetup.columns')}
+              maximum={maxColumns}
               value={columnsText}
               onChange={(text) => {
                 setColumnsText(text);
-                if (validCount(text)) changeLayout({ columns: Number(text) });
+                if (validCount(text, maxColumns)) changeLayout({ columns: Number(text) });
               }}
             />
-            {!validCounts ? <Text color={brandColors.error}>{t('sprayLedSetup.countRange')}</Text> : null}
+            {!validCounts ? (
+              <Text color={brandColors.error}>{t('sprayLedSetup.countRange', { max: maxColumns })}</Text>
+            ) : null}
             {layout.pattern === 'offset' ? <Text variant="footnote">{t('sprayLedSetup.countHint')}</Text> : null}
             {layout.holes.length > 0 && gridSignature(layout) !== generatedSignature.current ? (
               <Text variant="footnote">{t('sprayLedSetup.regenerateHint')}</Text>
@@ -587,16 +666,33 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                 }}
               />
             </View>
-            <View style={styles.stage}>
-              <TnutPhotoEditor
-                source={source}
-                photoUri={photoUri}
-                holes={layout.holes}
-                maxWidth={maxWidth}
-                maxHeight={maxHeight}
-                onTap={tapHole}
-              />
-            </View>
+            <SprayPhotoStage
+              width={viewportWidth}
+              tools={
+                <View style={{ flexDirection: 'row', gap: spacing[2] }}>
+                  <Button
+                    title={t('sprayLedSetup.add')}
+                    onPress={() => setMode('add')}
+                    variant={mode === 'add' ? 'filled' : 'outlined'}
+                  />
+                  <Button
+                    title={t('sprayLedSetup.remove')}
+                    onPress={() => setMode('remove')}
+                    variant={mode === 'remove' ? 'filled' : 'outlined'}
+                  />
+                </View>
+              }
+              canvas={{
+                source,
+                photoUri,
+                mode: 'tap',
+                onTap: tapHole,
+                onInteractionChange: setDragging,
+                renderOverlay: (width, height, zoom) => (
+                  <SpraySetupOverlay holes={layout.holes} width={width} height={height} zoom={zoom} />
+                ),
+              }}
+            />
             <Text accessibilityLiveRegion="polite">{t('sprayLedSetup.holes', { count: layout.holes.length })}</Text>
             {!layout.holes.length ? <Text variant="footnote">{t('sprayLedSetup.needHole')}</Text> : null}
             {layout.holes.length >= MAX_TNUT_HOLES ? (
@@ -647,10 +743,68 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                 </View>
               </View>
             ) : null}
-            <Text variant="footnote">{t('sprayLedSetup.ledSetupPending')}</Text>
+
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('sprayLedSetup.localHint')}
             </Text>
+          </>
+        ) : null}
+        {step === 'ledPositions' || step === 'wiring' ? (
+          <SprayLedMapEditor
+            key={step}
+            kind={step === 'wiring' ? 'wiring' : 'positions'}
+            layout={layout}
+            onChange={changeLayout}
+            source={source}
+            photoUri={photoUri}
+            width={viewportWidth}
+            onInteractionChange={setDragging}
+          />
+        ) : null}
+        {step === 'cablePattern' ? (
+          <>
+            <Text>{t('sprayLedSetup.cablePatternHint')}</Text>
+            <View style={[styles.row, { gap: spacing[2] }]}>
+              {(['horizontal', 'vertical', 'custom'] as const).map((axis) => (
+                <ChoiceCard
+                  key={axis}
+                  label={
+                    axis === 'horizontal'
+                      ? t('sprayLedSetup.horizontal')
+                      : axis === 'vertical'
+                        ? t('sprayLedSetup.vertical')
+                        : t('sprayLedSetup.customCable')
+                  }
+                  selected={direction === axis}
+                  onPress={() => setDirection(axis)}
+                >
+                  <CablePatternThumbnail direction={axis} />
+                </ChoiceCard>
+              ))}
+            </View>
+          </>
+        ) : null}
+        {step === 'cableStart' ? (
+          <>
+            <Text>{t('sprayLedSetup.cableStartHint')}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing[3] }}>
+              {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+                <Button
+                  key={corner}
+                  title={
+                    corner === 'tl'
+                      ? t('sprayLedSetup.topLeft')
+                      : corner === 'tr'
+                        ? t('sprayLedSetup.topRight')
+                        : corner === 'bl'
+                          ? t('sprayLedSetup.bottomLeft')
+                          : t('sprayLedSetup.bottomRight')
+                  }
+                  variant={startCorner === corner ? 'filled' : 'outlined'}
+                  onPress={() => setStartCorner(corner)}
+                />
+              ))}
+            </View>
           </>
         ) : null}
       </View>
@@ -717,7 +871,17 @@ function ChoiceCard({
   );
 }
 
-function CountControl({ label, value, onChange }: { label: string; value: string; onChange: (text: string) => void }) {
+function CountControl({
+  label,
+  value,
+  onChange,
+  maximum = 50,
+}: {
+  label: string;
+  value: string;
+  onChange: (text: string) => void;
+  maximum?: number;
+}) {
   const { t } = useTranslation('boards');
   const { spacing } = useTheme();
   const count = Number(value) || 1;
@@ -730,7 +894,7 @@ function CountControl({ label, value, onChange }: { label: string; value: string
           accessibilityLabel={t('sprayLedSetup.decrease', { label })}
           variant="outlined"
           disabled={count <= 1}
-          onPress={() => onChange(String(Math.max(1, Math.min(50, count - 1))))}
+          onPress={() => onChange(String(Math.max(1, Math.min(maximum, count - 1))))}
         />
         <View style={styles.countInput}>
           <BuilderTextInput
@@ -748,8 +912,8 @@ function CountControl({ label, value, onChange }: { label: string; value: string
           title="+"
           accessibilityLabel={t('sprayLedSetup.increase', { label })}
           variant="outlined"
-          disabled={count >= 50}
-          onPress={() => onChange(String(Math.max(1, Math.min(50, count + 1))))}
+          disabled={count >= maximum}
+          onPress={() => onChange(String(Math.max(1, Math.min(maximum, count + 1))))}
         />
       </View>
     </View>

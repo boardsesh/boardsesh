@@ -2,6 +2,13 @@
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
+import {
+  createSprayPhotoSession,
+  readSprayPhotoSession,
+  updateSprayPhotoSession,
+  closeSprayPhotoSession,
+} from '../../../lib/spray/spray-photo-session';
 import type { SprayCornerMarker } from '../SprayCornerMarker';
 import {
   closeTnutCalibrationSession,
@@ -12,6 +19,8 @@ import {
 
 const controls = vi.hoisted(() => ({
   id: undefined as string | string[] | undefined,
+  photoId: undefined as string | undefined,
+  canvas: null as SprayPhotoCanvasProps | null,
   viewerId: 'viewer-one',
   authenticated: true,
   marker: null as ComponentProps<typeof SprayCornerMarker> | null,
@@ -19,12 +28,13 @@ const controls = vi.hoisted(() => ({
   back: vi.fn(),
 }));
 vi.mock('expo-router', () => ({
-  useLocalSearchParams: () => ({ sessionId: controls.id }),
+  useLocalSearchParams: () => ({ sessionId: controls.id, photoSessionId: controls.photoId }),
   useRouter: () => ({ back: controls.back }),
   Redirect: ({ href }: { href: string }) => createElement('div', { 'data-testid': 'redirect' }, href),
 }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('react-native-safe-area-context', () => ({
@@ -53,6 +63,12 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityLabel: string;
     disabled?: boolean;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel, disabled }),
+}));
+vi.mock('../SprayPhotoCanvas', () => ({
+  SprayPhotoCanvas: (props: SprayPhotoCanvasProps) => {
+    controls.canvas = props;
+    return createElement('div', { 'data-testid': 'photo-canvas' });
+  },
 }));
 vi.mock('../SprayCornerMarker', () => ({
   SprayCornerMarker: (props: ComponentProps<typeof SprayCornerMarker>) => {
@@ -104,6 +120,8 @@ function open() {
 }
 beforeEach(() => {
   controls.id = undefined;
+  controls.photoId = undefined;
+  controls.canvas = null;
   controls.viewerId = 'viewer-one';
   controls.authenticated = true;
   controls.marker = null;
@@ -179,5 +197,63 @@ describe('fullscreen T-nut calibration route', () => {
     act(() => closeTnutCalibrationSession(id));
     expect(screen.getByTestId('redirect').textContent).toBe('/boards');
     expect(screen.queryByTestId('marker')).toBeNull();
+  });
+});
+
+describe('fullscreen point/cable editors', () => {
+  it('shares the rectified frame and live tools without exposing photo URLs in navigation', () => {
+    const { snapshot } = open();
+    controls.id = undefined;
+    const onTap = vi.fn(),
+      onClose = vi.fn();
+    const session = {
+      viewerId: 'viewer-one',
+      canvas: { source: snapshot.source, photoUri: snapshot.photoUri, mode: 'tap' as const, onTap },
+      tools: createElement('span', null, 'initial-tools'),
+    };
+    const id = createSprayPhotoSession(session, onClose);
+    controls.photoId = id;
+    const view = render(createElement(SprayLedFullscreen));
+    expect(screen.getByTestId('photo-canvas')).toBeTruthy();
+    expect(controls.canvas?.source).toEqual(snapshot.source);
+    expect(controls.canvas?.photoUri).toBe(snapshot.photoUri);
+    act(() => controls.canvas?.onTap?.({ x: 0.2, y: 0.3 }, 300, 450));
+    expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.2, y: 0.3 }, 300, 450);
+    act(() =>
+      updateSprayPhotoSession(id, {
+        ...session,
+        canvas: { ...session.canvas, mode: 'pan' },
+        tools: createElement('span', null, 'changed-tools'),
+      }),
+    );
+    expect(screen.getByText('changed-tools')).toBeTruthy();
+    expect(controls.canvas?.mode).toBe('pan');
+    const leave = vi.fn();
+    act(() => controls.leave?.(leave));
+    expect(leave).toHaveBeenCalledOnce();
+    expect(readSprayPhotoSession(id)).toBeNull();
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('redirect')).toBeNull();
+    view.unmount();
+    closeSprayPhotoSession(id);
+  });
+  it('hides a private point editor from another viewer and reacts to owner revocation', () => {
+    const { snapshot } = open();
+    controls.id = undefined;
+    const id = createSprayPhotoSession(
+      { viewerId: 'viewer-one', canvas: { source: snapshot.source, photoUri: snapshot.photoUri }, tools: null },
+      vi.fn(),
+    );
+    controls.photoId = id;
+    controls.viewerId = 'other';
+    const view = render(createElement(SprayLedFullscreen));
+    expect(screen.queryByTestId('photo-canvas')).toBeNull();
+    expect(screen.getByTestId('redirect')).toBeTruthy();
+    controls.viewerId = 'viewer-one';
+    view.rerender(createElement(SprayLedFullscreen));
+    expect(screen.getByTestId('photo-canvas')).toBeTruthy();
+    act(() => closeSprayPhotoSession(id));
+    expect(screen.queryByTestId('photo-canvas')).toBeNull();
+    expect(screen.getByTestId('redirect')).toBeTruthy();
   });
 });

@@ -185,30 +185,34 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                 {t('sprayLed.localHint')}
               </Text>
               <SectionLabel>{t('sprayLed.url')}</SectionLabel>
-              <BuilderTextInput
-                value={url}
-                onChangeText={(next) => {
-                  cancelRequest();
-                  setDraftUrl(next);
-                  setResult(null);
-                  setLighting(null);
-                }}
-                accessibilityLabel={t('sprayLed.url')}
-                placeholder={t('sprayLed.urlPlaceholder')}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                maxLength={2048}
-                editable={!locked && pending !== 'lights'}
-                onSubmitEditing={() => void confirmUrl()}
-                returnKeyType="done"
-              />
-              <Button
-                title={t('sprayLed.confirm')}
-                variant="outlined"
-                disabled={locked || pending !== null || !url.trim()}
-                onPress={() => void confirmUrl()}
-              />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <BuilderTextInput
+                    value={url}
+                    onChangeText={(next) => {
+                      cancelRequest();
+                      setDraftUrl(next);
+                      setResult(null);
+                      setLighting(null);
+                    }}
+                    accessibilityLabel={t('sprayLed.url')}
+                    placeholder={t('sprayLed.urlPlaceholder')}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    maxLength={2048}
+                    editable={!locked && pending !== 'lights'}
+                    onSubmitEditing={() => void confirmUrl()}
+                    returnKeyType="done"
+                  />
+                </View>
+                <Button
+                  title={t('sprayLed.confirm')}
+                  variant="outlined"
+                  disabled={locked || pending !== null || !url.trim()}
+                  onPress={() => void confirmUrl()}
+                />
+              </View>
               {message ? (
                 <Text variant="footnote" accessibilityLiveRegion="polite">
                   {message}

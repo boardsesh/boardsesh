@@ -1,4 +1,5 @@
 import type { Quad } from './homography';
+import { readLedPositions, readTnutWiring, type LedPosition, type TnutWiring } from './led-layout';
 
 /** Rectified wall-only frame coordinates in [0, 1], with the origin at the top left. */
 export type TnutPoint = { x: number; y: number };
@@ -29,6 +30,8 @@ export type TnutGridOptions = {
   columns: number;
   corners: TnutCorners;
   firstRowOffset: boolean;
+  /** Absent means the legacy count of positions in a full row. */
+  columnConvention?: 'all';
 };
 
 /** The edited hole list is authoritative, including additions/removals from a grid. */
@@ -44,6 +47,9 @@ export type TnutLayout = {
   photoKey: string;
   /** Absent for layouts saved before the LED placement step was completed. */
   ledPlacement?: SprayLedPlacement;
+  columnConvention?: 'all';
+  ledPositions?: LedPosition[];
+  wiring?: TnutWiring;
 };
 
 function isRecord(candidate: unknown): candidate is Record<string, unknown> {
@@ -110,6 +116,18 @@ function isDimension(candidate: unknown): candidate is number {
   );
 }
 
+function isColumnCount(candidate: unknown, convention: unknown): candidate is number {
+  'worklet';
+  // A migrated legacy 50-column offset layout has 99 distinct vertical positions.
+  return (
+    (convention === undefined || convention === 'all') &&
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 1 &&
+    candidate <= (convention === 'all' ? 99 : 50)
+  );
+}
+
 /** Closed-form unit-square→wall-frame homography, computed once for each frame. */
 function squareToWallFrame(corners: TnutCorners): number[] {
   'worklet';
@@ -165,7 +183,8 @@ export function isValidTnutGrid(options: unknown): options is TnutGridOptions {
     isRecord(options) &&
     (options.pattern === 'grid' || options.pattern === 'offset') &&
     isDimension(options.rows) &&
-    isDimension(options.columns) &&
+    isColumnCount(options.columns, options.columnConvention) &&
+    (options.pattern === 'offset' || options.columns <= 50) &&
     typeof options.firstRowOffset === 'boolean' &&
     hasCornerPoints(options.corners) &&
     hasValidCalibration(options.corners, options.rows, options.columns)
@@ -190,12 +209,13 @@ export function generateTnutGrid(options: TnutGridOptions): TnutPoint[] {
       options.columns > 1 &&
       options.pattern === 'offset' &&
       (row % 2 === 0 ? options.firstRowOffset : !options.firstRowOffset);
-    const count = options.columns - (inset ? 1 : 0);
+    const all = options.pattern === 'offset' && options.columnConvention === 'all' && options.columns > 1;
+    const count = all ? Math.ceil((options.columns - (inset ? 1 : 0)) / 2) : options.columns - (inset ? 1 : 0);
     for (let column = 0; column < count; column++) {
       holes.push(
         projectPoint(
           projection,
-          (column + (inset ? 0.5 : 0)) / Math.max(1, options.columns - 1),
+          (all ? column * 2 + (inset ? 1 : 0) : column + (inset ? 0.5 : 0)) / Math.max(1, options.columns - 1),
           row / Math.max(1, options.rows - 1),
         ),
       );
@@ -225,10 +245,12 @@ export function tnutGridPath(options: TnutGridOptions, width: number, height: nu
       options.columns > 1 &&
       options.pattern === 'offset' &&
       (row % 2 === 0 ? options.firstRowOffset : !options.firstRowOffset);
-    for (let column = 0; column < options.columns - (inset ? 1 : 0); column++) {
+    const all = options.pattern === 'offset' && options.columnConvention === 'all' && options.columns > 1;
+    const count = all ? Math.ceil((options.columns - (inset ? 1 : 0)) / 2) : options.columns - (inset ? 1 : 0);
+    for (let column = 0; column < count; column++) {
       const point = projectPoint(
         projection,
-        (column + (inset ? 0.5 : 0)) / Math.max(1, options.columns - 1),
+        (all ? column * 2 + (inset ? 1 : 0) : column + (inset ? 0.5 : 0)) / Math.max(1, options.columns - 1),
         row / Math.max(1, options.rows - 1),
       );
       path += `M${(point.x * width - radius).toFixed(2)} ${(point.y * height).toFixed(2)}${circle}`;
@@ -250,7 +272,8 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     (candidate.ledPlacement === 'alternating' && candidate.pattern !== 'offset') ||
     (candidate.pattern !== 'grid' && candidate.pattern !== 'offset' && candidate.pattern !== 'custom') ||
     !isDimension(candidate.rows) ||
-    !isDimension(candidate.columns) ||
+    !isColumnCount(candidate.columns, candidate.columnConvention) ||
+    (candidate.pattern !== 'offset' && typeof candidate.columns === 'number' && candidate.columns > 50) ||
     typeof candidate.firstRowOffset !== 'boolean' ||
     !hasCornerPoints(candidate.corners) ||
     !hasValidCalibration(candidate.corners, candidate.rows, candidate.columns) ||
@@ -263,6 +286,10 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
   ) {
     return null;
   }
+  const ledPositions = candidate.ledPositions === undefined ? undefined : readLedPositions(candidate.ledPositions);
+  if (ledPositions === null) return null;
+  const wiring = candidate.wiring === undefined ? undefined : readTnutWiring(candidate.wiring, ledPositions ?? []);
+  if (wiring === null) return null;
   return {
     version: 1,
     pattern: candidate.pattern,
@@ -278,5 +305,18 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     holes: candidate.holes.map(({ x, y }) => ({ x, y })),
     photoKey: candidate.photoKey,
     ...(candidate.ledPlacement !== undefined ? { ledPlacement: candidate.ledPlacement } : {}),
+    ...(candidate.columnConvention === 'all' ? { columnConvention: 'all' as const } : {}),
+    ...(ledPositions !== undefined ? { ledPositions } : {}),
+    ...(wiring !== undefined ? { wiring } : {}),
+  };
+}
+
+/** Update count labels without changing calibrated or edited positions. Idempotent. */
+export function migrateTnutLayoutColumns(layout: TnutLayout): TnutLayout {
+  if (layout.columnConvention === 'all') return layout;
+  return {
+    ...layout,
+    columnConvention: 'all',
+    columns: layout.pattern === 'offset' ? 2 * layout.columns - 1 : layout.columns,
   };
 }

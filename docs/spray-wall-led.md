@@ -1,6 +1,6 @@
 # Spray wall LED setup (MVP)
 
-Edit an existing spray wall and expand **LED**, immediately above **More options**.
+Edit an existing spray wall and expand **LEDs**, immediately above **More options**.
 Enable LEDs to show the WLED address and setup controls. This first version supports
 one surface with one WLED controller. It does not illuminate climbs or map holds yet.
 
@@ -15,38 +15,54 @@ one surface with one WLED controller. It does not illuminate climbs or map holds
    to solid white at 25% brightness. **Turn LEDs off** ends the test.
 5. **LED setup** opens the T-nut setup: choose grid, offset grid or custom spacing.
    For offset grids choose whether the top row starts inset. Match four rings to
-   the grid's outer corners, then set rows and columns (8 × 8 initially, 1–50
-   each). The preview updates as the rings move. Inset rows have one fewer hole
-   than full rows; their missing outer corners are imaginary grid positions.
+   the grid's outer corners, then set rows and columns (8 × 8 initially, 1–50 rows and up to 99 offset columns). The preview updates as the rings move. Count every distinct vertical position for offset columns: 8 + 7 holes means
+   15 columns. Existing saved counts migrate without moving any holes. Missing
+   outer corners remain imaginary grid positions.
 6. Continue to add missing holes or remove unwanted ones by tapping the wall.
    Custom spacing starts here with an empty image. Undo reverses manual edits.
    Returning to the grid preserves manual edits unless its parameters change.
-7. Continue to save the hole positions on this device. Choose LEDs in the hold,
-   behind the hold, or below it. The selected diagram has a purple outline.
-   Back reopens the hole editor; Done saves the choice and returns to the wall
-   editor. Assigning LED numbers to positions is not implemented yet.
-   No hardware commands are sent.
+7. Continue to save the holes on this device and choose LEDs in, behind or below
+   the hold. Next opens the LED editor: add/remove individual positions with the
+   same full-width, zoomable, fullscreen photo. Orange rings mark holes and purple
+   dots mark LEDs, including coincident positions. Below shifts by half a row in
+   the calibrated grid plane, then projects through its homography. Behind the
+   hold uses two positions a quarter of a column spacing to either side. Custom
+   hole layouts estimate spacing from the median nearest-neighbor distance
+   (single-hole fallback: 10% of the normalized frame). Out-of-image generated
+   positions are omitted rather than clamped onto an edge; manual edits stay valid.
+8. Choose horizontal, vertical or custom cable layout. Horizontal/vertical ask
+   for one of four start corners and generate a single serpentine run. Custom
+   opens an empty cable editor directly. Drag across LEDs to join free cable ends;
+   use Move image for panning and pinch in any mode. Select two connected LEDs to
+   cut their edge or insert skipped physical LED numbers; select free endpoints
+   to reconnect sections. The preview shows direction arrows, highlighted
+   selections and dashed gap segments with diamond markers. Undo restores edits.
+9. Done saves positions and wiring on this device. Partial wiring can be saved;
+   its status reports connected LEDs and separate cable sections. The assigned
+   zero-based indices include skipped LEDs. No climb illumination or automatic
+   hold-to-hole associations are activated by this setup.
 
 Offset grids also offer **Complementary positions**: LEDs occupy the opposite
 phase of the staggered hold grid, as in CRUX. The diagram follows the chosen
 top-row inset. Switching to grid or custom clears this offset-only choice;
 the three common placement choices remain available for every wall pattern.
-This saves the arrangement type only, not LED coordinates or wiring indices.
+LED positions and cable paths are stored alongside the placement choice.
 
 ## Wall image and coordinates
 
 The alignment photo fills the available editor width. Pinch to zoom and drag the
 zoomed image to pan; the expand icon opens the same editor across the whole screen.
 Fullscreen follows device rotation, and closing it preserves all corner edits.
-Zoom changes only the viewport. Dashed, translucent guides and fixed-size handles
+The shared `SprayPhotoStage` is the default for setup-photo editors, backed by
+`SprayPhotoCanvas` for gestures. Use it for future setup images. Zoom changes only
+the viewport. Dashed, translucent guides and fixed-size handles
 keep the holes visible at higher magnification. Rotation refits the viewport
 without changing wall coordinates.
 
 With one row only the two upper anchors are active; with one column only the two
 left anchors are active. A 1 × 1 grid uses the upper-left anchor alone. Hidden
-anchors retain their positions when rows or columns are restored. A single inset
-row still uses imaginary full-row endpoints, half a spacing beyond its actual
-end holes. A single column has no offset.
+anchors retain their positions when rows or columns are restored. A single offset row uses endpoints of the complete column grid; either
+endpoint may be imaginary depending on parity and the selected first-row phase. A single column has no offset.
 
 Fullscreen is an authenticated root `transparentModal` with an opaque canvas,
 avoiding `fullScreenModal` over the iOS native tabs. Its temporary session stays
@@ -69,7 +85,8 @@ identity includes the immutable wall version, canonical dimensions and homograph
 A changed identity starts a new setup while preserving the previous saved setup
 until the user explicitly continues. Layout data has a separate local storage key
 from WLED connection settings. Unsaved changes are protected on leaving the flow;
-this step does not yet associate holds with holes or holes with LEDs.
+the setup does not yet associate detected holds with holes. Generated LED offsets
+are editable estimates, not recognition results.
 
 These settings save immediately on this device, separately for each wall. Turning
 the setting off hides the remaining controls and retains the saved controller URL.
@@ -147,3 +164,11 @@ Spanish, French and Italian. Validate the driver, storage and component tests,
 then the mobile typecheck, mobile suite and native bundle check. Verify on a phone
 in light/dark mode and with large text, including offline retention and disabling
 then re-enabling after reopening the editor.
+
+The Android pinch guard ignores focal updates after one finger lifts and rebases
+on pointer-count changes; the gesture handler can stay active until the final
+finger lifts. Canvas gestures never commit point edits per frame. The existing
+photo renderer follows the stored photo-to-canonical homography; Android uses an
+affine mesh with a 0.5 fitted-pixel error target and a bounded subdivision count.
+Higher magnification can expose that existing approximation. No unverified photo
+warp correction was introduced.
