@@ -88,6 +88,7 @@ export const BOARD_FIELDS = `
   angle
   isAngleAdjustable
   hasLeds
+  litByWallDevice
   createdAt
   layoutName
   sizeName

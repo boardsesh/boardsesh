@@ -110,6 +110,21 @@ describe('buildBoardUpdateInput', () => {
     });
   });
 
+  it('sends the wall device flag only when it changes, reading a missing flag as off', () => {
+    const permissions = boardEditPermissions(board, 'owner');
+    expect(buildBoardUpdateInput(board, { ...formFields(), litByWallDevice: false }, permissions)).toEqual({
+      boardUuid: board.uuid,
+    });
+    expect(buildBoardUpdateInput(board, { ...formFields(), litByWallDevice: true }, permissions)).toEqual({
+      boardUuid: board.uuid,
+      litByWallDevice: true,
+    });
+    const deviceBoard = { ...board, litByWallDevice: true };
+    expect(
+      buildBoardUpdateInput(deviceBoard, { ...formFields(deviceBoard), litByWallDevice: false }, permissions),
+    ).toEqual({ boardUuid: board.uuid, litByWallDevice: false });
+  });
+
   it('keeps spray configuration, hardware, angle, credentials, and privacy out of the generic mutation', () => {
     const sprayBoard = { ...board, boardType: 'spray' };
     expect(

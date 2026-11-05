@@ -565,6 +565,7 @@
       "wallEmptyBody": "Connect to your board over Bluetooth to see what's lit, who's crushing it, and the session's hardest send.",
       "wallEmptyCta": "Connect a board",
       "wallEmptyBodyNoLeds": "This wall has no lights. Take the wall and everyone here sees the climb you're on, on their phones and on the gym screen.",
+      "wallEmptyBodyWallDevice": "A wall device lights this wall. Take the wall and the climb you're on goes up on it, and everyone here sees it on their phones and on the gym screen.",
       "wallEmptyCtaNoLeds": "Take the wall",
       "wallTakenToast": "You've got the wall",
       "wallReleasedToast": "Wall's open again",

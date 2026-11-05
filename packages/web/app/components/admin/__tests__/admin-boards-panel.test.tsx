@@ -75,6 +75,7 @@ const moonBoard: AdminBoard = {
   angle: 40,
   isAngleAdjustable: false,
   hasLeds: true,
+  litByWallDevice: false,
   serialNumber: null,
   timerName: null,
   createdAt: '2026-10-01T12:00:00.000Z',

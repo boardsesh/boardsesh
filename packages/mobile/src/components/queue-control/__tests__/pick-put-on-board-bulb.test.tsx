@@ -251,11 +251,16 @@ describe('PickBulbSlot while this phone drives the wall', () => {
     const unlinked = renderSlot();
     expect(ringOf(unlinked)).toBeNull();
     unlinked.unmount();
-    state.localConnected = true;
+    // A wall with no lights held with no link: nothing drives the LEDs.
     state.ledless = true;
     const noLights = renderSlot();
     expect(ringOf(noLights)).toBeNull();
     noLights.unmount();
+    // A wall-device board over this phone's live link writes real LEDs: it rings.
+    state.localConnected = true;
+    const wallDeviceLinked = renderSlot();
+    expect(ringOf(wallDeviceLinked)).not.toBeNull();
+    wallDeviceLinked.unmount();
     state.ledless = false;
     state.inAppBoardConnection = 'heldByPeer';
     const crew = renderSlot();

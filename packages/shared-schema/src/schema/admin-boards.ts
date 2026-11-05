@@ -21,6 +21,7 @@ export const adminBoardsTypeDefs = /* GraphQL */ `
     angle: Int!
     isAngleAdjustable: Boolean!
     hasLeds: Boolean!
+    litByWallDevice: Boolean!
     "Owner-only, including in the admin registry."
     serialNumber: String
     "Owner-only, including in the admin registry."

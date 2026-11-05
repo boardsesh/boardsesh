@@ -32,6 +32,7 @@ import {
 import { getBleEncodingSignature } from '../lib/ble/encoding-signature';
 import { unambiguousQueueMirror } from '../lib/queue-mirror-orientation';
 import { hasRenderableFrames } from '../lib/ble/renderable-frames';
+import { drivesWithoutBluetooth } from '../lib/boards/board-lighting';
 import {
   holdAgeHours,
   isStaleCurrentClimb,
@@ -78,6 +79,7 @@ import { useToast } from './toast-provider';
 import { toClimbInput } from '../lib/climb-to-queue-item';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
+import { visibleWallHeldByOtherUser } from '../components/play-drawer/lightbulb-control';
 import type { DevicePickerSeen } from '../lib/ble/picker-seen';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
@@ -207,11 +209,22 @@ type BluetoothContextValue = {
   moonboardLightAdjacentHolds: boolean;
   setMoonboardLightAdjacentHolds: (next: boolean) => void;
   /**
-   * The active board is flagged as having no LED light kit (`hasLeds === false`).
-   * Optional-field contract: a missing/stale flag reads as "has LEDs", so an LED
-   * wall can only lose its Bluetooth affordances through an explicit `false`.
+   * The active board is driven without Bluetooth (`drivesWithoutBluetooth`): it
+   * has no LED light kit (`hasLeds === false`), or a wall device lights it from
+   * the board feed (`litByWallDevice === true`). Either way the bulb takes the
+   * wall instead of connecting. Optional-field contract: a missing/stale flag
+   * reads as "connect over Bluetooth", so an LED wall can only lose its
+   * Bluetooth affordances through an explicit flag. Copy that says the wall has
+   * no lights must ask `boardHasLights` instead: a wall-device board is lit.
    */
   ledless: boolean;
+  /**
+   * The active board is lit by a wall device (`litByWallDevice === true`), one
+   * of the two reasons `ledless` is true. Such a board can also have LEDs a
+   * crewmate drives over Bluetooth, so the bulb relays to an authoritative
+   * crewmate before it takes the wall (`derivePlayDrawerLightbulbPressAction`).
+   */
+  wallDevice: boolean;
   /**
    * This device holds the wall WITHOUT a Bluetooth link: it drives who is on the
    * wall for everyone watching the board feed, but writes zero bytes. Never true
@@ -953,12 +966,13 @@ function BluetoothAutoSender({
  * with any party-session row at all, so a session gate would miss the case this
  * feature exists for.
  *
- * On a wall with no light kit it also carries the peer signal for a BYSTANDER
- * who never took the wall: `deriveBoardConnection` only reports a holder who is
- * a member of your party session, and the observed sharing pattern here is same
- * board, no session.
+ * On a board driven without Bluetooth (no light kit, or lit by a wall device) it
+ * also carries the peer signal for a BYSTANDER who never took the wall:
+ * `deriveBoardConnection` only reports a holder who is a member of your party
+ * session, and the observed sharing pattern here is same board, no session.
  *
- * Mounted only on a ledless board, or while the wall is held virtually, which
+ * Mounted only on a board driven without Bluetooth (`ledless`: no light kit, or
+ * lit by a wall device), or while the wall is held virtually, which
  * keeps the profile read (and the holder subscription's re-renders) entirely off
  * the ordinary Bluetooth path. Anonymous holders carry no userId and cannot be
  * compared — accepted, not guessed at.
@@ -1018,6 +1032,11 @@ type BluetoothProviderProps = {
    * behaviour.
    */
   hasLeds?: boolean;
+  /**
+   * A wall device lights the active board from the board feed. Optional, and
+   * only an explicit `true` changes behaviour.
+   */
+  litByWallDevice?: boolean;
   children: React.ReactNode;
 };
 
@@ -1030,9 +1049,14 @@ export function BluetoothProvider({
   boardSerialNumber,
   reachableBoardKeys,
   hasLeds,
+  litByWallDevice,
   children,
 }: BluetoothProviderProps) {
-  const ledless = hasLeds === false;
+  const ledless = drivesWithoutBluetooth({ hasLeds, litByWallDevice });
+  // Analytics keep `ledless` as the server's no-light-kit flag (Wall Taken /
+  // Wall Released), and say a wall device apart.
+  const noLightKit = hasLeds === false;
+  const wallDevice = litByWallDevice === true;
   // A hold with no radio behind it. Kept OUT of `isConnected` so the Live
   // Activity, the lock-screen Prev/Next and both native iOS intents keep seeing
   // the BLE-only value they see today (no Swift change).
@@ -1066,9 +1090,11 @@ export function BluetoothProvider({
   const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
   const lastConnectionSeqRef = useRef(lastConnectionSeq);
   lastConnectionSeqRef.current = lastConnectionSeq;
-  // Set by VirtualWallHolderWatch, which mounts only on a wall with no light kit
-  // or while this device holds one virtually — so the profile read it needs never
-  // runs on the ordinary Bluetooth path.
+  // Set by VirtualWallHolderWatch, which mounts only on a board driven without
+  // Bluetooth (no light kit, or lit by a wall device) or while this device holds
+  // the wall virtually — so the profile read it needs never runs on the ordinary
+  // Bluetooth path. Consumers read it through `visibleWallHeldByOtherUser`, which
+  // hides it from the phone holding a live link.
   const [wallHeldByOtherUser, setWallHeldByOtherUser] = useState(false);
   const { showUndoWallChangeSnackbar } = useQueueSnackbar();
   // Queue actions (no state subscription, so the provider doesn't re-render on
@@ -1733,11 +1759,12 @@ export function BluetoothProvider({
       boardName: boardNameRef.current,
       layoutId: layoutIdRef.current,
       sizeId: sizeIdRef.current,
-      ledless,
+      ledless: noLightKit,
+      wallDevice,
       inSession: sessionIdRef.current != null,
       boardId: presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current ?? undefined,
     });
-  }, [isConnected, ledless, showToast, tSession]);
+  }, [isConnected, noLightKit, wallDevice, showToast, tSession]);
 
   /**
    * Give the wall back. Mirrors what a BLE drop does (`handleBluetoothConnectionEnded`):
@@ -1788,13 +1815,14 @@ export function BluetoothProvider({
         boardName: boardNameRef.current,
         layoutId: layoutIdRef.current,
         sizeId: sizeIdRef.current,
-        ledless,
+        ledless: noLightKit,
+        wallDevice,
         reason,
         inSession: sessionIdRef.current != null,
         boardId: boardId ?? undefined,
       });
     },
-    [clearPendingWallReportAndUndoToastArm, ledless, showToast, tSession],
+    [clearPendingWallReportAndUndoToastArm, noLightKit, wallDevice, showToast, tSession],
   );
 
   const releaseVirtualWallForUser = useCallback(() => releaseVirtualWall('user'), [releaseVirtualWall]);
@@ -2887,8 +2915,9 @@ export function BluetoothProvider({
       moonboardLightAdjacentHolds,
       setMoonboardLightAdjacentHolds,
       ledless,
+      wallDevice,
       virtualWallHeld,
-      wallHeldByOtherUser,
+      wallHeldByOtherUser: visibleWallHeldByOtherUser({ isBluetoothConnected: isConnected, wallHeldByOtherUser }),
       takeVirtualWall,
       releaseVirtualWall: releaseVirtualWallForUser,
       canDriveWall: isConnected || virtualWallHeld,
@@ -2919,6 +2948,7 @@ export function BluetoothProvider({
       moonboardLightAdjacentHolds,
       setMoonboardLightAdjacentHolds,
       ledless,
+      wallDevice,
       virtualWallHeld,
       wallHeldByOtherUser,
       takeVirtualWall,

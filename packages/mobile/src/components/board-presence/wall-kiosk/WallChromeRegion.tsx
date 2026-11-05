@@ -9,6 +9,7 @@ import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
+import { boardHasLights } from '../../../lib/boards/board-lighting';
 import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallKioskRegion } from './wall-kiosk-layout';
@@ -34,9 +35,9 @@ function WallIdleRecovery({
   const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   // Same source as WallStateStrip's idle line so the two can't disagree about
-  // whether this wall has a light kit. Optional-field contract: only `false`.
+  // whether anything on this wall lights up: a light kit or a wall device.
   const { data: activeBoard } = useActiveBoard();
-  const ledless = activeBoard?.hasLeds === false;
+  const ledless = !boardHasLights(activeBoard);
 
   const name = lastLitClimb?.name?.trim() || '';
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls

@@ -15,6 +15,7 @@ import { useBoardConnectionState } from './use-board-connection-state';
 import { useCrewHolderUnconfirmed } from './use-crew-holder-unconfirmed';
 import { useClimbBoardConnect } from '../../lib/boards/climb-board-connect-context';
 import type { ClimbBoardModel } from '../../lib/boards/gym-board-for-climb';
+import { drivesWithoutBluetooth } from '../../lib/boards/board-lighting';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 /** Which bulb was tapped, for Board Connect Tapped. */
@@ -135,7 +136,10 @@ export type LightbulbControl = {
    * offers a Re-light / Turn off / Disconnect sheet for a wall with no lights.
    */
   onLongPress: () => void;
-  /** The active board is flagged as having no LED light kit. */
+  /**
+   * The active board is driven without Bluetooth: no LED light kit, or lit by a
+   * wall device (`drivesWithoutBluetooth`).
+   */
   ledless: boolean;
   /** This device holds the wall with no Bluetooth link. */
   wallHeldLocally: boolean;
@@ -190,6 +194,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
         isBluetoothConnected: bluetooth?.isConnected ?? false,
         isBluetoothLoading: bluetooth?.loading ?? false,
         ledless,
+        wallDevice: bluetooth?.wallDevice ?? false,
         wallHeld: wallHeldLocally,
         holderIsAuthoritative,
         canRelay,
@@ -205,11 +210,12 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   const connectAfterMove = useCallback(
     (board: UserBoard, surfaceOverride?: ConnectSurface): Promise<boolean> => {
       if (!bluetooth) return Promise.resolve(false);
-      // A wall with no light kit has no radio, so there is nothing to scan
-      // for. Stop at the move: on the new board the bulb re-derives to taking
-      // the wall, the same tap a ledless board offers everywhere else. Taking
-      // it here would bind the wall still in these props, the board just left.
-      if (board.hasLeds === false) return Promise.resolve(false);
+      // A wall with no light kit, or one a wall device lights from the board
+      // feed, has no radio to scan for. Stop at the move: on the new board the
+      // bulb re-derives to taking the wall, the same tap a ledless board offers
+      // everywhere else. Taking it here would bind the wall still in these
+      // props, the board just left.
+      if (drivesWithoutBluetooth(board)) return Promise.resolve(false);
       trackBoardConnectTapped({
         surface: surfaceOverride ?? surface,
         placement,

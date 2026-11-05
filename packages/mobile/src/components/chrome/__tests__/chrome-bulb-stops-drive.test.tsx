@@ -328,13 +328,19 @@ describe("the toolbar's shared hook (the rail's native bar item)", () => {
     expect(result.current.accessibilityLabel).toBe('lightControl.disconnect');
   });
 
-  it('says nothing of driving on a wall with no lights: nothing drives there', () => {
-    signals.board = { localConnected: true, ledless: true, inAppBoardConnection: 'connectedByMe' };
+  it('says nothing of driving on a wall held with no link: nothing drives its LEDs', () => {
+    signals.board = { localConnected: false, ledless: true, inAppBoardConnection: 'connectedByMe' };
     startTapDrive(null);
     const { result } = renderHook(() => useToolbarLightbulb());
     expect(result.current.accessibilityLabel).not.toBe('ble.barControl.stopDrivingLabel');
     act(() => result.current.handlePress());
     expect(signals.wallControlTapped).not.toHaveBeenCalled();
-    expect(signals.bluetooth.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("stops the drive on a wall-device board over this phone's live link, which writes its LEDs", () => {
+    signals.board = { localConnected: true, ledless: true, inAppBoardConnection: 'connectedByMe' };
+    startTapDrive(null);
+    const { result } = renderHook(() => useToolbarLightbulb());
+    expect(result.current.accessibilityLabel).toBe('ble.barControl.stopDrivingLabel');
   });
 });

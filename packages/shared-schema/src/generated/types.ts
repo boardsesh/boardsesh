@@ -231,6 +231,7 @@ export type AdminBoard = {
   isUnlisted: Scalars['Boolean']['output'];
   latitude?: Maybe<Scalars['Float']['output']>;
   layoutId: Scalars['Int']['output'];
+  litByWallDevice: Scalars['Boolean']['output'];
   locationName?: Maybe<Scalars['String']['output']>;
   longitude?: Maybe<Scalars['Float']['output']>;
   name: Scalars['String']['output'];
@@ -2118,6 +2119,8 @@ export type CreateBoardInput = {
   latitude?: InputMaybe<Scalars['Float']['input']>;
   /** Layout ID */
   layoutId: Scalars['Int']['input'];
+  /** Whether a wall device lights this wall from the board feed (default false) */
+  litByWallDevice?: InputMaybe<Scalars['Boolean']['input']>;
   locationAudience?: InputMaybe<PrivacyLocationAudience>;
   /** Location name */
   locationName?: InputMaybe<Scalars['String']['input']>;
@@ -11887,6 +11890,8 @@ export type UpdateBoardInput = {
   latitude?: InputMaybe<Scalars['Float']['input']>;
   /** New layout ID (authorized editors only; existing ticks are preserved untouched) */
   layoutId?: InputMaybe<Scalars['Int']['input']>;
+  /** New wall device flag */
+  litByWallDevice?: InputMaybe<Scalars['Boolean']['input']>;
   /** New location name */
   locationName?: InputMaybe<Scalars['String']['input']>;
   /** New GPS longitude */
@@ -12269,6 +12274,12 @@ export type UserBoard = {
   layoutId: Scalars['Int']['output'];
   /** Human-readable layout name */
   layoutName?: Maybe<Scalars['String']['output']>;
+  /**
+   * Whether an internet-connected wall device (a laser projector, an LED
+   * controller) lights this wall from the board feed. Climbers take the wall
+   * with no Bluetooth link.
+   */
+  litByWallDevice: Scalars['Boolean']['output'];
   /** Location name */
   locationName?: Maybe<Scalars['String']['output']>;
   /** GPS longitude */
@@ -13848,6 +13859,7 @@ export type AdminBoardResolvers<
   isUnlisted?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   latitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  litByWallDevice?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   locationName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   longitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -20029,6 +20041,7 @@ export type UserBoardResolvers<
   latitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   layoutName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  litByWallDevice?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   locationName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   longitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

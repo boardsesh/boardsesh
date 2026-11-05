@@ -447,11 +447,13 @@ export const SHARED_EVENTS = {
   BluetoothDisconnected: 'Bluetooth Disconnected',
   // A climber took / gave back the wall with no Bluetooth link — the turn-taking
   // signal for a wall with no light kit. Props: { boardName, layoutId, sizeId,
-  // ledless, inSession, boardId }, plus `reason` on Wall Released
+  // ledless, wallDevice, inSession, boardId }, plus `reason` on Wall Released
   // ('user' | 'ble_connected' | 'board_changed' | 'taken_by_peer' | 'unmount').
   // `ledless` is false when the take came from the device picker's "this wall has
   // no lights" offer on a board still flagged as having them, which is how often
-  // the server flag is wrong (or unset) shows up in the data.
+  // the server flag is wrong (or unset) shows up in the data. `wallDevice` is
+  // true on a board the owner marked "Lit by a wall device": its climbers take
+  // the wall although `ledless` is false.
   WallTaken: 'Wall Taken',
   WallReleased: 'Wall Released',
   // BLE lifecycle telemetry — added so a session recording (and PostHog) shows

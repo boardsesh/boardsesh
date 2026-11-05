@@ -565,6 +565,7 @@
       "wallEmptyBody": "Connecte-toi à ta board en Bluetooth pour voir ce qui est allumé, qui déroule et la plus grosse croix de la séance.",
       "wallEmptyCta": "Connecter une board",
       "wallEmptyBodyNoLeds": "Ce mur n'a pas de LED. Prends le mur et tout le monde ici voit le bloc que tu grimpes, sur leur téléphone et sur l'écran de la salle.",
+      "wallEmptyBodyWallDevice": "Un appareil mural éclaire ce mur. Prends le mur et le bloc que tu grimpes s'allume dessus, et tout le monde ici le voit sur son téléphone et sur l'écran de la salle.",
       "wallEmptyCtaNoLeds": "Prendre le mur",
       "wallTakenToast": "Tu as le mur",
       "wallReleasedToast": "Le mur est de nouveau libre",

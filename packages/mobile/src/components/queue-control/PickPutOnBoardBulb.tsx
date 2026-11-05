@@ -154,6 +154,7 @@ function PickPutOnBoardBulb({
     peerColor: systemColors.secondaryLabel,
     disconnectedColor: systemColors.secondaryLabel,
     ledless,
+    localConnected,
     wallHeldColor: brandColors.primary,
     solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
   });
@@ -175,6 +176,7 @@ function PickPutOnBoardBulb({
   const connectionValue = getBoardConnectionLabel(tSettings, {
     boardConnection: inAppBoardConnection,
     ledless,
+    localConnected,
     holderDisplayName,
   });
   const accessibilityValue = driveCue

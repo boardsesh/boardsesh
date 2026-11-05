@@ -224,6 +224,42 @@ describe('BoardForm', () => {
     expect(mockOnCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('neither dirties nor submits a hidden wall device flag, so a wall keeps the value set elsewhere', async () => {
+    const onDirtyChange = vi.fn();
+    render(
+      <BoardForm
+        title="Edit Board"
+        submitLabel="Save"
+        initialValues={{ ...defaultValues, hasLeds: false, litByWallDevice: true }}
+        onSubmit={mockOnSubmit}
+        requireChanges
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+    expect(screen.queryByText('Lit by a wall device')).toBeNull();
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.change(screen.getByLabelText('Board Name *'), { target: { value: 'Renamed wall' } });
+    fireEvent.submit(screen.getByText('Save').closest('form')!);
+    await waitFor(() => expect(mockOnSubmit).toHaveBeenCalledTimes(1));
+    expect(mockOnSubmit.mock.calls[0][0].litByWallDevice).toBeUndefined();
+  });
+
+  it('shows and submits the wall device switch while the board has LED lights', async () => {
+    render(
+      <BoardForm
+        title="Edit Board"
+        submitLabel="Save"
+        initialValues={{ ...defaultValues, hasLeds: true, litByWallDevice: true }}
+        onSubmit={mockOnSubmit}
+      />,
+    );
+    expect(screen.getByText('Lit by a wall device')).toBeDefined();
+    fireEvent.submit(screen.getByText('Save').closest('form')!);
+    await waitFor(() => expect(mockOnSubmit).toHaveBeenCalledTimes(1));
+    expect(mockOnSubmit.mock.calls[0][0].litByWallDevice).toBe(true);
+  });
+
   it('keeps typed edits after a failed save and prevents duplicate submits while pending', async () => {
     let resolveSave!: () => void;
     mockOnSubmit.mockImplementation(

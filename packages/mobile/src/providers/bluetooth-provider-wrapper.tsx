@@ -42,6 +42,7 @@ export function BluetoothProviderWrapper({ children }: { children: ReactNode }) 
       boardUuid={activeBoard?.uuid}
       boardSerialNumber={activeBoard?.serialNumber}
       hasLeds={activeBoard?.hasLeds}
+      litByWallDevice={activeBoard?.litByWallDevice}
     >
       {activeBoard ? (
         <LiveActivityBridge

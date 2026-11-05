@@ -194,6 +194,8 @@
       "lights": "Lights",
       "hasLeds": "Board has LED lights",
       "hasLedsHint": "Turn it off for a board with no light kit. Your crew still takes turns, and the gym screen still shows the active climb. No Bluetooth needed.",
+      "litByWallDevice": "Lit by a wall device",
+      "litByWallDeviceHint": "Climbs go to your laser or LED device over the internet. No Bluetooth needed.",
       "duplicate": {
         "title": "You already have this setup",
         "body": "You already have \"{{name}}\" with the same layout, size and hold sets.",
@@ -575,6 +577,7 @@
       "defaultAngle": "Default Angle",
       "angleAdjustable": "Angle is adjustable",
       "hasLeds": "Board has LED lights",
+      "litByWallDevice": "Lit by a wall device",
       "isPublic": "Public board",
       "unlisted": "Unlisted",
       "hideLocation": "Hide from nearby boards",
@@ -592,6 +595,7 @@
       "unlisted": "Hidden from search results but accessible via direct link",
       "hideLocation": "Hidden from nearby board searches unless you follow the searcher",
       "hasLeds": "Off means no light kit. Turns still work, and the gym screen still shows the active climb.",
+      "litByWallDevice": "Climbs go to your laser or LED device over the internet. No Bluetooth needed.",
       "ownerOnlyPrivacy": "Only the board owner can change visibility and location privacy.",
       "ownerOnlyCredentials": "Only the board owner can see or change controller credentials."
     },

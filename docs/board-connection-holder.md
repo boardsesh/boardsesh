@@ -75,6 +75,15 @@ The no-Undo rule was decided 2026-10-28. #6997 built an 8 s "Board disconnected 
 
 `user_boards.has_leds` is a capability flag, `NOT NULL DEFAULT true`. The client type is `hasLeds?: boolean` and every branch tests `=== false`, so a stale snapshot or a query that omitted the field degrades to "has LEDs" — an LED wall can only lose its Bluetooth affordances through an explicit `false` from someone with edit access. 79% of production board rows have no serial number, so absence of hardware evidence is emphatically **not** evidence of absence.
 
+**Lit by a wall device.** `user_boards.lit_by_wall_device` (`NOT NULL DEFAULT false`, client `litByWallDevice?: boolean`) marks a wall that an internet-connected wall device lights: a laser projector or an LED controller that follows `boardNowPlaying(boardId)`. The owner, or anyone with edit access (the same rule as `has_leds`), turns it on in Edit board › Lights › "Lit by a wall device"; the row shows while "Board has LED lights" is on, and on a spray wall on its own. Every climber on such a board takes the wall with no Bluetooth link, exactly as on a wall with no light kit, and every climb they put up reaches the device through `reportBoardClimb`. A live Bluetooth link still wins (`derivePlayDrawerLightbulbPressAction` returns `disconnect`, `commitWallFrames` writes the radio first).
+
+Two helpers in `packages/mobile/src/lib/boards/board-lighting.ts` decide every site, and the two questions stay apart:
+
+- `drivesWithoutBluetooth(board)`: `has_leds = false` or `lit_by_wall_device = true`. The bulb's press path, the Bluetooth context's `ledless`, the Wall display's empty-state CTA, the first-connect card, the move-then-connect gate and the session board path (a wall-device board keeps its `/b/{slug}` identity, so a joiner reports to the feed the device reads).
+- `boardHasLights(board)`: false only for a wall with no light kit and no wall device. Copy that says "this wall has no lights" (the empty state, the kiosk idle lines, the gym wall switcher) and the player's wall button, lit state and frost ask this one, so a wall-device board keeps its wall button and never reads as dark-by-design.
+
+`Wall Taken` / `Wall Released` keep `ledless` as the server's no-light-kit flag and add `wallDevice`.
+
 **One commit seam, two backends.** `commitWallFrames` (`packages/mobile/src/providers/bluetooth-provider.tsx`) is what the auto-sender, `undoWallChange` and `relightPresenceClimb` all call:
 
 1. `isConnected` → the real BLE write, byte-identical to a board with lights. **Tested first**, so a physical link always wins even in the window before the auto-release effect runs.

@@ -40,6 +40,7 @@ import { useSettledHeaderValue } from '../chrome/use-settled-header-value';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { useBulbDriveTap } from './bar-bulb-tap';
 import { phoneDrivesTheWall } from './bulb-drive-cue';
+import { showsWallHoldLook } from './board-control-indicator-state';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -75,7 +76,7 @@ type BoardHeldCapsuleProps = {
 
 const DISMISS_ACTION = 'dismiss';
 
-function BoardHeldCapsuleImpl({ ledless, dismiss }: BoardHeldCapsuleProps) {
+function BoardHeldCapsuleImpl({ ledless: ledlessBoard, dismiss }: BoardHeldCapsuleProps) {
   const { t } = useTranslation('settings');
   const { t: tSession } = useTranslation('session');
   const { systemColors, brandColors, colorScheme } = useTheme();
@@ -114,6 +115,9 @@ function BoardHeldCapsuleImpl({ ledless, dismiss }: BoardHeldCapsuleProps) {
     surface: 'header_pill',
     onOpenControls: openControls,
   });
+  // The pin and "You have the wall" only without a live link: this phone's link
+  // to a wall-device board's LEDs reads as any LED board's.
+  const ledless = showsWallHoldLook({ ledless: ledlessBoard, localConnected });
   // Any drive this phone runs: the tap stops it and keeps the link.
   const { driving, takeTap } = useBulbDriveTap({
     drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),

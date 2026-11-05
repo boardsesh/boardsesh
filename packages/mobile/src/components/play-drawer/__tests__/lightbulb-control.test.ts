@@ -6,6 +6,7 @@ import {
   deriveInAppBoardConnection,
   deriveLightbulbLit,
   derivePlayDrawerLightbulbPressAction,
+  visibleWallHeldByOtherUser,
 } from '../lightbulb-control';
 import type { BoardConnection } from '../lightbulb-control';
 
@@ -393,6 +394,72 @@ describe('a wall with no LED light kit', () => {
     }
   });
 
+  describe('a board lit by a wall device', () => {
+    const wallDeviceBoard = {
+      hasBluetooth: true,
+      isBluetoothConnected: false,
+      isBluetoothLoading: false,
+      ledless: true,
+      wallDevice: true,
+      wallHeld: false,
+    };
+
+    it('takes the wall when nobody holds it', () => {
+      expect(
+        derivePlayDrawerLightbulbPressAction({ ...wallDeviceBoard, holderIsAuthoritative: false, canRelay: true }),
+      ).toBe('takeWall');
+    });
+
+    it("relays to a crewmate's authoritative hold instead of taking the wall off their link", () => {
+      // The crewmate may drive the LEDs over Bluetooth: Bluetooth wins across phones.
+      expect(
+        derivePlayDrawerLightbulbPressAction({ ...wallDeviceBoard, holderIsAuthoritative: true, canRelay: true }),
+      ).toBe('relay');
+      expect(
+        derivePlayDrawerLightbulbPressAction({ ...wallDeviceBoard, holderIsAuthoritative: true, canRelay: false }),
+      ).toBe('noop');
+    });
+
+    it('still hands back its own hold and hangs up its own link', () => {
+      expect(
+        derivePlayDrawerLightbulbPressAction({
+          ...wallDeviceBoard,
+          wallHeld: true,
+          holderIsAuthoritative: true,
+          canRelay: true,
+        }),
+      ).toBe('releaseWall');
+      expect(
+        derivePlayDrawerLightbulbPressAction({
+          ...wallDeviceBoard,
+          isBluetoothConnected: true,
+          holderIsAuthoritative: true,
+          canRelay: true,
+        }),
+      ).toBe('disconnect');
+    });
+
+    it('never connects', () => {
+      expect(
+        derivePlayDrawerLightbulbPressAction({ ...wallDeviceBoard, holderIsAuthoritative: false, canRelay: false }),
+      ).not.toBe('connect');
+    });
+  });
+
+  it('keeps taking the wall over a session holder on a board with no light kit', () => {
+    expect(
+      derivePlayDrawerLightbulbPressAction({
+        holderIsAuthoritative: true,
+        canRelay: true,
+        hasBluetooth: true,
+        isBluetoothConnected: false,
+        isBluetoothLoading: false,
+        ledless: true,
+        wallHeld: false,
+      }),
+    ).toBe('takeWall');
+  });
+
   it('keeps the pre-existing behaviour when the ledless inputs are omitted', () => {
     expect(
       derivePlayDrawerLightbulbPressAction({
@@ -573,5 +640,16 @@ describe('deriveCrewHolderUnconfirmed (#7017 QA)', () => {
     ["this phone's own stale hold", { lastLocalHolderUserId: 'liz' }, false],
   ])('%s', (_case, over, expected) => {
     expect(deriveCrewHolderUnconfirmed({ ...suspected, ...over })).toBe(expected);
+  });
+});
+
+describe('visibleWallHeldByOtherUser', () => {
+  it('never reads as someone else’s wall on the phone holding the radio', () => {
+    expect(visibleWallHeldByOtherUser({ isBluetoothConnected: true, wallHeldByOtherUser: true })).toBe(false);
+  });
+
+  it('passes the peer hold through with no link', () => {
+    expect(visibleWallHeldByOtherUser({ isBluetoothConnected: false, wallHeldByOtherUser: true })).toBe(true);
+    expect(visibleWallHeldByOtherUser({ isBluetoothConnected: false, wallHeldByOtherUser: false })).toBe(false);
   });
 });

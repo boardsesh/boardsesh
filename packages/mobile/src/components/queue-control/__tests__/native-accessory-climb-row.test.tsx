@@ -1080,10 +1080,11 @@ describe('NativeAccessoryClimbRow', () => {
         },
       ],
       [
-        'a wall with no lights',
+        'a wall with no lights, held with no link',
         () => {
           driveTheWall('window');
           connection.state.ledless = true;
+          connection.state.localConnected = false;
         },
       ],
     ])('keeps ✓ for %s', (_label, arrange) => {
@@ -1091,6 +1092,16 @@ describe('NativeAccessoryClimbRow', () => {
       const { container } = renderRow('inline');
       expect(container.querySelector('[data-board-control]')).toBeNull();
       expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+    });
+
+    it("keeps the bulb for this phone's live link to a wall-device board's LEDs", () => {
+      // A wall-device board is driven without Bluetooth (`ledless`), but a live
+      // link writes real LEDs, so the drive shows as on any LED board.
+      driveTheWall('window');
+      connection.state.ledless = true;
+      const { container } = renderRow('inline');
+      expect(container.querySelector('[data-board-control]')).not.toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).toBeNull();
     });
   });
 

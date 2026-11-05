@@ -44,11 +44,11 @@ describe('phoneDrivesTheWall', () => {
     expect(phoneDrivesTheWall({ inAppBoardConnection: 'connectedByMe', localConnected: true, ledless: false })).toBe(
       true,
     );
-    // A hold with no Bluetooth link behind it, a wall with no lights, a crewmate's board, a free board.
+    // A hold with no Bluetooth link behind it (on any board), a crewmate's board, a free board.
     expect(phoneDrivesTheWall({ inAppBoardConnection: 'connectedByMe', localConnected: false, ledless: false })).toBe(
       false,
     );
-    expect(phoneDrivesTheWall({ inAppBoardConnection: 'connectedByMe', localConnected: true, ledless: true })).toBe(
+    expect(phoneDrivesTheWall({ inAppBoardConnection: 'connectedByMe', localConnected: false, ledless: true })).toBe(
       false,
     );
     expect(phoneDrivesTheWall({ inAppBoardConnection: 'heldByPeer', localConnected: true, ledless: false })).toBe(
@@ -56,6 +56,15 @@ describe('phoneDrivesTheWall', () => {
     );
     expect(phoneDrivesTheWall({ inAppBoardConnection: 'disconnected', localConnected: true, ledless: false })).toBe(
       false,
+    );
+  });
+});
+
+describe('phoneDrivesTheWall on a board driven without Bluetooth', () => {
+  it("draws the drive cue for this phone's live link to a wall-device board's LEDs", () => {
+    // `ledless` is true on a wall-device board, but a live link writes real LEDs.
+    expect(phoneDrivesTheWall({ inAppBoardConnection: 'connectedByMe', localConnected: true, ledless: true })).toBe(
+      true,
     );
   });
 });

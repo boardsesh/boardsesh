@@ -32,6 +32,12 @@ export type UserBoard = {
    * "has LEDs" instead of undefined. Every consumer branches on `=== false`.
    */
   hasLeds?: boolean;
+  /**
+   * An internet-connected wall device lights this wall from the board feed, so
+   * climbers take the wall with no Bluetooth link. Optional for the same reason
+   * as `hasLeds`; only an explicit `true` changes behaviour.
+   */
+  litByWallDevice?: boolean;
   createdAt: string;
   layoutName?: string | null;
   sizeName?: string | null;
@@ -109,6 +115,7 @@ export type CreateBoardInput = {
   angle?: number;
   isAngleAdjustable?: boolean;
   hasLeds?: boolean;
+  litByWallDevice?: boolean;
   serialNumber?: string;
   timerName?: string | null;
   /**
@@ -140,6 +147,7 @@ export type UpdateBoardInput = {
   angle?: number;
   isAngleAdjustable?: boolean;
   hasLeds?: boolean;
+  litByWallDevice?: boolean;
   layoutId?: number;
   sizeId?: number;
   setIds?: string;

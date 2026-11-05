@@ -216,6 +216,7 @@ import { useHoldStateColors } from './use-hold-state-colors';
 import type { WallGlowInput } from './use-wall-glow';
 import { buildWallGlowInput } from './wall-glow-input';
 import { wallControlFrostHasLeds, wallControlUsesFrost } from './wall-control-frost';
+import { boardHasLights, litByWallDevice } from '../../lib/boards/board-lighting';
 
 const EMPTY_HOLD_PLACEMENTS: HoldPlacement[] = [];
 import { useWallHolderIdentity } from './use-wall-holder-name';
@@ -874,6 +875,23 @@ export function PlayCore({
     canRelay: canRelayToHolder,
   });
   const { data: activeBoardForNavigation } = useActiveBoard();
+  // Something on the wall lights up: an LED kit, or a wall device that follows
+  // the board feed (`boardHasLights`). A wall-device board keeps the wall button
+  // and the lit state even though its bulb takes the wall instead of connecting.
+  // `ledless` above is the bulb's `drivesWithoutBluetooth` (no light kit, or a
+  // wall device), so a board it marks has lights only through its wall device.
+  // The type is the rendered climb's board, as before; the wall device counts
+  // only while that is the active board's type, so a climb rendered on another
+  // board never borrows this one's device.
+  const playerBoardLighting = useMemo(
+    () => ({
+      boardType: boardName,
+      hasLeds: !boardIsLedless,
+      litByWallDevice: activeBoardForNavigation?.boardType === boardName && litByWallDevice(activeBoardForNavigation),
+    }),
+    [boardName, boardIsLedless, activeBoardForNavigation],
+  );
+  const playerBoardHasLights = boardHasLights(playerBoardLighting);
   // The board at this gym that draws the climb on screen, when it isn't the
   // active one (#7076): what Put on {board} names and moves to. The same lookup
   // the connect and the drawer host's switch use, so all three name one board.
@@ -1321,7 +1339,7 @@ export function PlayCore({
   const presenceClearedClimbUuid = bluetoothConnected ? null : feedClearedClimbUuid;
   const displayedWallLit = resolveWallLit({
     isAnonymous,
-    boardHasLights: bluetooth !== null && !boardIsLedless && boardName !== 'spray',
+    boardHasLights: bluetooth !== null && playerBoardHasLights,
     boardMismatch: showBoardMismatch,
     otherBoard: climbBoardMismatch,
     displayedClimbUuid: displayedClimbUuid ?? null,
@@ -1436,7 +1454,7 @@ export function PlayCore({
         displayedLit,
         // The switch-board overlay, another board's climb, or a board with no
         // lights: the connected wall can't light what's on screen.
-        offWall: showBoardMismatch || climbBoardMismatch || boardIsLedless || boardName === 'spray',
+        offWall: showBoardMismatch || climbBoardMismatch || !playerBoardHasLights,
         // ...unless another board at this gym draws it: then Put on {board} (#7076).
         gymBoardName: climbGymBoardName,
         crewGymBoard: climbOnCrewGymBoard,
@@ -1483,8 +1501,7 @@ export function PlayCore({
       climbBoardMismatch,
       climbGymBoardName,
       climbOnCrewGymBoard,
-      boardIsLedless,
-      boardName,
+      playerBoardHasLights,
       wallHeldLocally,
       wallClimb.uuid,
       wallPresenceFresh,
@@ -1517,8 +1534,9 @@ export function PlayCore({
   // layout's key (a second row that comes or goes moves the board).
   const hasBluetooth = bluetooth !== null;
   const angleAvailable = resolvePlayerAngle({ isAngleAdjustable, angle: activeAngle }) !== null;
-  // A wall with lights to put a climb on; without one the wall button's row folds.
-  const playerHasWall = hasBluetooth && !boardIsLedless && boardName !== 'spray';
+  // A wall with lights to put a climb on (LEDs, or a wall device); without one
+  // the wall button's row folds.
+  const playerHasWall = hasBluetooth && playerBoardHasLights;
   const actionBarLayout = useMemo(
     () =>
       resolveActionBarLayout({
@@ -2745,9 +2763,7 @@ export function PlayCore({
   // Only confirmed physical driving needs hold geometry for the button's frost.
   // Swipe previews use flat progress; a target gym board owns its LED contract.
   const wallGlowShown =
-    !isAnonymous &&
-    wallControlFrostHasLeds({ boardType: boardName, hasLeds: !boardIsLedless }, climbGymBoard) &&
-    wallControlUsesFrost(wallControl);
+    !isAnonymous && wallControlFrostHasLeds(playerBoardLighting, climbGymBoard) && wallControlUsesFrost(wallControl);
   // The preview-first card draws the real wall button frosted in this climb's
   // colours, so it needs the same hold geometry while it is up.
   const wallGlowWanted = wallGlowShown || previewFirstTip.visible;

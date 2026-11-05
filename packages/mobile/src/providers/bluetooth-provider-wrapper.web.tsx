@@ -26,6 +26,7 @@ export function BluetoothProviderWrapper({ children }: { children: ReactNode }) 
       setIds={activeBoard?.setIds}
       boardUuid={activeBoard?.uuid}
       hasLeds={activeBoard?.hasLeds}
+      litByWallDevice={activeBoard?.litByWallDevice}
     >
       {children}
     </BluetoothProvider>

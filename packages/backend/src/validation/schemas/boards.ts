@@ -53,6 +53,7 @@ export const CreateBoardInputSchema = z
     angle: z.number().int().min(-5).max(70).optional(),
     isAngleAdjustable: z.boolean().optional(),
     hasLeds: z.boolean().optional(),
+    litByWallDevice: z.boolean().optional(),
     serialNumber: OptionalBoardSerialInputSchema,
     // Min 1: a paired timer is stored by its advertised BLE name; an empty string
     // is meaningless (the "no timer" sentinel is null/absent, and the mobile
@@ -92,6 +93,7 @@ export const UpdateBoardInputSchema = z.object({
   angle: z.number().int().min(-5).max(70).optional(),
   isAngleAdjustable: z.boolean().optional(),
   hasLeds: z.boolean().optional(),
+  litByWallDevice: z.boolean().optional(),
   layoutId: z.number().int().positive('Layout ID must be positive').optional(),
   sizeId: z.number().int().positive('Size ID must be positive').optional(),
   setIds: NumericCsvSchema.optional(),

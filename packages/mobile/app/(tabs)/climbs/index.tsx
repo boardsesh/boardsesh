@@ -163,6 +163,7 @@ import { SprayWallArchivedBanner } from '../../../src/components/spray-wall/Spra
 import { NO_BOARD_PICKER_HREF } from '../../../src/lib/boards/first-board-mode';
 import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
+import { drivesWithoutBluetooth } from '../../../src/lib/boards/board-lighting';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import { FirstConnectCard, useFirstConnectCardExpected } from '../../../src/components/onboarding/FirstConnectCard';
 import {
@@ -584,7 +585,9 @@ function ClimbListInner() {
   // The connect-step card (#5654, treatment only) goes first: one card at a
   // time, and both one-shot tips below wait until it is gone. Read from the
   // card's own store, so for everyone outside the treatment this is false.
-  const connectCardBoardHasLights = activeBoard != null && activeBoard.hasLeds !== false;
+  // The card offers a Bluetooth connect: not on a wall with no light kit, and not
+  // on one lit by a wall device, where climbers take the wall instead.
+  const connectCardBoardHasLights = activeBoard != null && !drivesWithoutBluetooth(activeBoard);
   const connectCardVisible = useFirstConnectCardExpected(connectCardBoardHasLights);
   // Connecting from that card hides it, and the "Connected to {{board}}" dialog
   // lands a moment later: the tips wait through that too, so neither shows

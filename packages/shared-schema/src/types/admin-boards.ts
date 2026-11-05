@@ -20,6 +20,7 @@ export type AdminBoard = {
   angle: number;
   isAngleAdjustable: boolean;
   hasLeds: boolean;
+  litByWallDevice: boolean;
   serialNumber: string | null;
   timerName: string | null;
   createdAt: string;

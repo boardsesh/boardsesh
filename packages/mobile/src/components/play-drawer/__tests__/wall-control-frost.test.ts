@@ -57,3 +57,23 @@ describe('wall control frost requires physical driving', () => {
     expect(wallControlFrostHasLeds({ boardType: 'kilter' }, { boardType: 'spray' })).toBe(false);
   });
 });
+
+describe('wallControlFrostHasLeds', () => {
+  it('frosts a board with lights, and a wall a device lights', () => {
+    expect(wallControlFrostHasLeds({ boardType: 'kilter' })).toBe(true);
+    expect(wallControlFrostHasLeds({ boardType: 'kilter', hasLeds: true, litByWallDevice: true })).toBe(true);
+    expect(wallControlFrostHasLeds({ boardType: 'spray', hasLeds: false, litByWallDevice: true })).toBe(true);
+  });
+
+  it('keeps a dark wall plain', () => {
+    expect(wallControlFrostHasLeds({ boardType: 'kilter', hasLeds: false })).toBe(false);
+    expect(wallControlFrostHasLeds({ boardType: 'spray', hasLeds: false })).toBe(false);
+  });
+
+  it('reads the target gym board over the active one', () => {
+    expect(
+      wallControlFrostHasLeds({ boardType: 'kilter' }, { boardType: 'tension', hasLeds: false, litByWallDevice: true }),
+    ).toBe(true);
+    expect(wallControlFrostHasLeds({ boardType: 'kilter' }, { boardType: 'tension', hasLeds: false })).toBe(false);
+  });
+});

@@ -42,6 +42,11 @@ export const userBoards = pgTable(
     angle: bigint('angle', { mode: 'number' }).notNull().default(40),
     isAngleAdjustable: boolean('is_angle_adjustable').notNull().default(true),
     hasLeds: boolean('has_leds').notNull().default(true),
+    // An internet-connected wall device (a laser projector, an LED controller)
+    // lights this wall from the board feed (`boardNowPlaying`). Every climber
+    // takes the wall with no Bluetooth link, and their climbs reach the device
+    // through `reportBoardClimb`.
+    litByWallDevice: boolean('lit_by_wall_device').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     serialNumber: text('serial_number'),

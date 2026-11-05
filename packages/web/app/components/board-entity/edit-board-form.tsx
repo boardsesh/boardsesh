@@ -190,6 +190,7 @@ export default function EditBoardForm(props: EditBoardFormProps) {
           angle: board.angle,
           isAngleAdjustable: board.isAngleAdjustable,
           hasLeds: board.hasLeds,
+          litByWallDevice: board.litByWallDevice,
           layoutId: board.layoutId,
           sizeId: board.sizeId,
           setIds: board.setIds,

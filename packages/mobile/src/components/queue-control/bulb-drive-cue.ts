@@ -1,6 +1,7 @@
 import type { BoardConnectionState } from '../ble/use-board-connection-state';
 import type { DriveLightingMode } from '../play-drawer/drive-mode-store';
 import type { WallControlModel } from '../play-drawer/wall-control';
+import { showsWallHoldLook } from './board-control-indicator-state';
 
 /**
  * How a MiniPlayer bulb shows this phone's drive, the Live Activity's pattern
@@ -42,7 +43,9 @@ export function phoneDrivesTheWall({
   localConnected,
   ledless,
 }: Pick<BoardConnectionState, 'inAppBoardConnection' | 'localConnected' | 'ledless'>): boolean {
-  return inAppBoardConnection === 'connectedByMe' && localConnected && !ledless;
+  // A live link writes real LEDs, on a wall-device board too, so only the
+  // wall-hold look (no link) rules a drive cue out.
+  return inAppBoardConnection === 'connectedByMe' && localConnected && !showsWallHoldLook({ ledless, localConnected });
 }
 
 export function resolveBulbDriveCue({ mode, drivesTheWall, showsLitClimb }: BulbDriveCueInput): BulbDriveCue {

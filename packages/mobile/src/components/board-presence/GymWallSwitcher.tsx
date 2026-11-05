@@ -10,6 +10,7 @@ import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnai
 import { useBoardRecentClimb } from '../../lib/graphql/hooks/use-board-recent-climb';
 import { useTheme } from '../../providers/theme-provider';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
+import { boardHasLights } from '../../lib/boards/board-lighting';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 /** Board art beside each row — small enough not to set the row's height floor. */
@@ -188,7 +189,8 @@ const GymWallRow = memo(function GymWallRow({
   const detail = [
     subtitle || (boardConfigLabel(board) ?? board.boardType),
     subtitleAlreadyNamesAngle ? null : angleLabel,
-    board.hasLeds === false ? t('mobile.boardPresence.gymWalls.noLights') : null,
+    // A wall device lights a wall with no LED kit, so only a truly dark wall says so.
+    boardHasLights(board) ? null : t('mobile.boardPresence.gymWalls.noLights'),
   ]
     .filter(Boolean)
     .join(' · ');

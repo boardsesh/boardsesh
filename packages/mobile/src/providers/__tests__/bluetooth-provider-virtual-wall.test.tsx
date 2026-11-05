@@ -234,9 +234,10 @@ function BluetoothProbe() {
 
 function providerElement({
   hasLeds = false,
+  litByWallDevice,
   boardUuid = 'board-uuid-1',
   showProbe = true,
-}: { hasLeds?: boolean; boardUuid?: string; showProbe?: boolean } = {}) {
+}: { hasLeds?: boolean; litByWallDevice?: boolean; boardUuid?: string; showProbe?: boolean } = {}) {
   return createElement(BluetoothProvider, {
     boardName: 'kilter',
     layoutId: 1,
@@ -244,6 +245,7 @@ function providerElement({
     setIds: '1,20',
     boardUuid,
     hasLeds,
+    litByWallDevice,
     children: showProbe ? (createElement(BluetoothProbe, null) as ReactNode) : null,
   });
 }
@@ -842,6 +844,92 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
       if (change !== 'Bluetooth connect') expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('BluetoothProvider — an LED board lit by a wall device', () => {
+  const wallDeviceBoard = { hasLeds: true, litByWallDevice: true } as const;
+
+  beforeEach(async () => {
+    await setHoldColorOverridesPreference({});
+    vi.useFakeTimers();
+    queue.currentClimbQueueItem = makeQueueItem('climb-1');
+    queue.sessionId = null;
+    bluetooth.state.isConnected = false;
+    bluetooth.state.loading = false;
+    bluetooth.state.sendFramesToBoard.mockReset();
+    bluetooth.state.sendFramesToBoard.mockResolvedValue(true);
+    bluetooth.state.connectInitialSendRef.current = null;
+    presence.enabled = true;
+    presence.boardId = 42;
+    presence.holder = null;
+    presence.lastConnectionSeq = 0;
+    presence.reportClimbForBoard.mockClear();
+    presence.reportClimbForBoard.mockResolvedValue(true);
+    presence.reportDisconnectForBoard.mockClear();
+    analytics.track.mockClear();
+    viewer.profile = { id: 'me' };
+    capturedBluetooth = null;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+  });
+
+  it('drives without Bluetooth: the take reports the climb to the feed the device reads, writing no bytes', async () => {
+    renderProvider(wallDeviceBoard);
+    expect(capturedBluetooth?.ledless).toBe(true);
+    expect(capturedBluetooth?.wallDevice).toBe(true);
+
+    await takeTheWall();
+    await settle();
+
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+    expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+    // `ledless` stays the server's no-light-kit flag; the device is said apart.
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Wall Taken',
+      expect.objectContaining({ ledless: false, wallDevice: true }),
+    );
+  });
+
+  it('keeps Bluetooth on an LED board without the flag', () => {
+    renderProvider({ hasLeds: true });
+    expect(capturedBluetooth?.ledless).toBe(false);
+    expect(capturedBluetooth?.wallDevice).toBe(false);
+  });
+
+  it('hands the hold to Bluetooth when a link comes up', async () => {
+    const view = renderProvider(wallDeviceBoard);
+    await takeTheWall();
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+
+    bluetooth.state.isConnected = true;
+    await act(async () => view.rerender(providerElement(wallDeviceBoard)));
+
+    expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+    expect(capturedBluetooth?.canDriveWall).toBe(true);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Wall Released',
+      expect.objectContaining({ reason: 'ble_connected', ledless: false, wallDevice: true }),
+    );
+  });
+
+  it('never tells the phone holding the radio that someone else has the wall', async () => {
+    // A crewmate's virtual take lands in the server's holder slot, but this
+    // phone's live link is what lights the LEDs. Put on board and the drive
+    // runner read this value, so it must not refuse the radio's owner.
+    presence.holder = { userId: 'someone-else' };
+    presence.lastConnectionSeq = 1;
+    const view = renderProvider(wallDeviceBoard);
+    await act(async () => {});
+    expect(capturedBluetooth?.wallHeldByOtherUser).toBe(true);
+
+    bluetooth.state.isConnected = true;
+    await act(async () => view.rerender(providerElement(wallDeviceBoard)));
+    expect(capturedBluetooth?.wallHeldByOtherUser).toBe(false);
+  });
 });
 
 describe('BluetoothProvider — a rejected report re-stamps membership once', () => {

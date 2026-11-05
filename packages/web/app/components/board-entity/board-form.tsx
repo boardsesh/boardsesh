@@ -41,6 +41,7 @@ export type BoardFormFieldValues = {
   angle?: number;
   isAngleAdjustable?: boolean;
   hasLeds?: boolean;
+  litByWallDevice?: boolean;
   layoutId?: number;
   sizeId?: number;
   setIds?: string;
@@ -144,6 +145,12 @@ export default function BoardForm({
   // Optional on the wire on purpose: a board fetched without the field must read
   // as "has LEDs", never as off.
   const [hasLeds, setHasLeds] = useState(initialValues.hasLeds ?? true);
+  // A wall device lights the wall from the board feed, so climbers take the wall
+  // in the app with no Bluetooth. Offered only while the board has LED lights.
+  // While hidden it is neither dirty nor submitted, so a value set elsewhere (the
+  // app on a spray wall, the API) is never reset by a save from here.
+  const [litByWallDevice, setLitByWallDevice] = useState(initialValues.litByWallDevice ?? false);
+  const litByWallDeviceShown = hasLeds;
   const [serialNumber, setSerialNumber] = useState(initialValues.serialNumber ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isBusy = isSubmitting || saving;
@@ -185,6 +192,7 @@ export default function BoardForm({
     angle !== (initialValues.angle ?? 40) ||
     isAngleAdjustable !== (initialValues.isAngleAdjustable ?? true) ||
     hasLeds !== (initialValues.hasLeds ?? true) ||
+    (litByWallDeviceShown && litByWallDevice !== (initialValues.litByWallDevice ?? false)) ||
     serialNumber !== (initialValues.serialNumber ?? '') ||
     layoutId !== initialValues.layoutId ||
     sizeId !== initialValues.sizeId ||
@@ -242,6 +250,7 @@ export default function BoardForm({
         angle,
         isAngleAdjustable,
         hasLeds,
+        litByWallDevice: litByWallDeviceShown ? litByWallDevice : undefined,
         ...(configEditable
           ? {
               layoutId,
@@ -475,6 +484,15 @@ export default function BoardForm({
               onChange={setHasLeds}
               disabled={permissions?.setup === false}
             />
+            {litByWallDeviceShown ? (
+              <FormSwitchRow
+                label={t('boardForm.fields.litByWallDevice')}
+                description={t('boardForm.helperText.litByWallDevice')}
+                checked={litByWallDevice}
+                onChange={setLitByWallDevice}
+                disabled={permissions?.setup === false}
+              />
+            ) : null}
 
             {permissions?.credentials === false ? (
               permissions.setup !== false ? (

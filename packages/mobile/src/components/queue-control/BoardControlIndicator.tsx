@@ -45,6 +45,7 @@ import {
   drivingBulbColors,
   getBoardConnectionLabel,
   getBoardControlIndicatorVisual,
+  showsWallHoldLook,
 } from './board-control-indicator-state';
 import { resolveWallBulbLook } from '../play-drawer/wall-control';
 import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
@@ -145,8 +146,11 @@ export function BoardControlIndicator({
   if (!bluetooth) return null;
 
   const heldByMe = inAppBoardConnection === 'connectedByMe';
+  // The pin and the wall words only without a live link: this phone's link to a
+  // wall-device board's LEDs reads lit, Connected, as any LED board's.
+  const wallHoldLook = showsWallHoldLook({ ledless, localConnected });
   const bulbLook = resolveWallBulbLook(
-    heldByMe && !ledless ? 'lit' : null,
+    heldByMe && !wallHoldLook ? 'lit' : null,
     heldByMe && localConnected,
     true,
     drivingLive,
@@ -164,6 +168,7 @@ export function BoardControlIndicator({
     peerColor: systemColors.secondaryLabel,
     disconnectedColor: systemColors.secondaryLabel,
     ledless,
+    localConnected,
     wallHeldColor: brandColors.primary,
     solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
     // A timed drive is ringed instead: the amber disc would hide the arc.
@@ -179,16 +184,17 @@ export function BoardControlIndicator({
     : getBoardConnectionLabel(t, {
         boardConnection: inAppBoardConnection,
         ledless,
+        localConnected,
         holderDisplayName,
       });
 
   const accessibilityHint = driveCue
     ? t('ble.barControl.stopDrivingHint')
     : heldByMe
-      ? t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint')
+      ? t(wallHoldLook ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint')
       : inAppBoardConnection === 'heldByPeer'
         ? t('ble.barControl.peerHint')
-        : t(ledless ? 'ble.barControl.wallOpenHint' : 'ble.barControl.disconnectedHint');
+        : t(wallHoldLook ? 'ble.barControl.wallOpenHint' : 'ble.barControl.disconnectedHint');
 
   // Surface the long-press shortcut to assistive tech without overriding the
   // default activate (so a VoiceOver/TalkBack double-tap still fires the tap).

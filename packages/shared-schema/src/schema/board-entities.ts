@@ -110,6 +110,12 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     isAngleAdjustable: Boolean!
     "Whether this wall has an LED light kit"
     hasLeds: Boolean!
+    """
+    Whether an internet-connected wall device (a laser projector, an LED
+    controller) lights this wall from the board feed. Climbers take the wall
+    with no Bluetooth link.
+    """
+    litByWallDevice: Boolean!
     "When created"
     createdAt: String!
     "Human-readable layout name"
@@ -270,6 +276,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     isAngleAdjustable: Boolean
     "Whether this wall has an LED light kit (default true)"
     hasLeds: Boolean
+    "Whether a wall device lights this wall from the board feed (default false)"
+    litByWallDevice: Boolean
     "Controller box serial number"
     serialNumber: String
     "Paired Rogue Fitness timer's advertised BLE name"
@@ -316,6 +324,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     isAngleAdjustable: Boolean
     "New LED light kit flag"
     hasLeds: Boolean
+    "New wall device flag"
+    litByWallDevice: Boolean
     "New layout ID (authorized editors only; existing ticks are preserved untouched)"
     layoutId: Int
     "New size ID (authorized editors only; existing ticks are preserved untouched)"

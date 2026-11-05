@@ -574,6 +574,7 @@ async function enrichBoard(
     angle: Number(board.angle),
     isAngleAdjustable: board.isAngleAdjustable,
     hasLeds: board.hasLeds,
+    litByWallDevice: board.litByWallDevice,
     createdAt: board.createdAt.toISOString(),
     // Computed name fields (TODO: resolve from board-specific layout/size/set tables if needed)
     layoutName: null,
@@ -834,6 +835,7 @@ export async function enrichBoards(
         angle: Number(board.angle),
         isAngleAdjustable: board.isAngleAdjustable,
         hasLeds: board.hasLeds,
+        litByWallDevice: board.litByWallDevice,
         createdAt: board.createdAt.toISOString(),
         layoutName: null,
         sizeName: null,
@@ -897,6 +899,7 @@ async function projectAnonymousSerialBoards(boards: Array<typeof dbSchema.userBo
       angle: Number(board.angle),
       isAngleAdjustable: board.isAngleAdjustable,
       hasLeds: board.hasLeds,
+      litByWallDevice: board.litByWallDevice,
       createdAt: board.createdAt.toISOString(),
       layoutName: null,
       sizeName: null,
@@ -1976,6 +1979,9 @@ export async function updateBoardRecord(
   if (validatedInput.angle !== undefined) updateValues.angle = validatedInput.angle;
   if (validatedInput.isAngleAdjustable !== undefined) updateValues.isAngleAdjustable = validatedInput.isAngleAdjustable;
   if (validatedInput.hasLeds !== undefined) updateValues.hasLeds = validatedInput.hasLeds;
+  // Not a spray-wall hardware lie like `hasLeds`: a laser projector lights a
+  // photographed wall as well as a catalogue board, so a wall may carry it.
+  if (validatedInput.litByWallDevice !== undefined) updateValues.litByWallDevice = validatedInput.litByWallDevice;
   if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
   if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 
@@ -2630,6 +2636,7 @@ export const socialBoardMutations = {
       angle: validatedInput.angle ?? 40,
       isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
       hasLeds: validatedInput.hasLeds ?? true,
+      litByWallDevice: validatedInput.litByWallDevice ?? false,
       serialNumber: validatedInput.serialNumber ?? null,
       timerName: validatedInput.timerName ?? null,
     };

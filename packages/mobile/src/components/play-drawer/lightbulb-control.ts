@@ -4,8 +4,18 @@ export function derivePlayDrawerLightbulbPressAction(args: {
   hasBluetooth: boolean;
   isBluetoothConnected: boolean;
   isBluetoothLoading: boolean;
-  /** The board is flagged as having no LED light kit (`hasLeds === false`). */
+  /**
+   * The board is driven without Bluetooth (`drivesWithoutBluetooth`): no LED
+   * light kit, or a wall device lights it from the board feed.
+   */
   ledless?: boolean;
+  /**
+   * The board is driven without Bluetooth because a wall device lights it
+   * (`litByWallDevice`), not because it has no light kit. Such a board can still
+   * have a crewmate's live Bluetooth link to its LEDs, so a crewmate's
+   * authoritative hold is relayed to before this phone may take the wall.
+   */
+  wallDevice?: boolean;
   /** This device holds the wall with no Bluetooth link. */
   wallHeld?: boolean;
   /**
@@ -33,7 +43,9 @@ export function derivePlayDrawerLightbulbPressAction(args: {
   if (args.isBluetoothConnected) return 'disconnect';
   if (args.wallHeld) return 'releaseWall';
   // A wall with no lights has nothing to connect to; the tap takes the wall.
-  if (args.ledless) return 'takeWall';
+  // A wall-device board waits for the crew check below: a crewmate may hold its
+  // LEDs over Bluetooth, and a take from here would pull the wall off their link.
+  if (args.ledless && !args.wallDevice) return 'takeWall';
   // Someone I'm climbing with is driving the wall. Most Aurora boxes are
   // last-connection-wins and some MoonBoards refuse a second phone, so a connect
   // from here would kick them off or fail — it spends ~15s scanning and can then
@@ -48,7 +60,22 @@ export function derivePlayDrawerLightbulbPressAction(args: {
   // nothing tells the truth ("it's on, someone else is driving") where the
   // alert actively lied.
   if (args.holderIsAuthoritative) return args.canRelay ? 'relay' : 'noop';
+  if (args.ledless) return 'takeWall';
   return 'connect';
+}
+
+/**
+ * The `wallHeldByOtherUser` the provider shows its consumers. A phone holding
+ * the Bluetooth link owns the wall whatever the server's holder slot says (a
+ * crewmate's virtual take on a wall-device board lands there), so while
+ * connected it never reads as held by someone else: Put on board and the
+ * drive runner must not refuse the phone that owns the radio.
+ */
+export function visibleWallHeldByOtherUser(args: {
+  isBluetoothConnected: boolean;
+  wallHeldByOtherUser: boolean;
+}): boolean {
+  return !args.isBluetoothConnected && args.wallHeldByOtherUser;
 }
 
 /**
@@ -217,7 +244,9 @@ export function deriveLightbulbLit(args: {
  * stranger who happens to share the board feed, and `deriveBoardConnection`'s
  * session gate deliberately keeps them from lighting your bulb. A wall with no
  * light kit has no such ambiguity: the holder is by definition the person whose
- * climb is up, which is exactly what the gym screen already shows everyone.
+ * climb is up, which is exactly what the gym screen already shows everyone. A
+ * wall lit by a wall device is the same: every climber takes it the same way,
+ * and the device shows the holder's climb.
  */
 export function deriveInAppBoardConnection(args: {
   boardConnection: BoardConnection;

@@ -24,6 +24,7 @@ type BluetoothCtx = {
   reconnectSerialForCurrentBoard: string | null;
   reconnectDeviceIdForCurrentBoard: string | null;
   ledless: boolean;
+  wallDevice: boolean;
   virtualWallHeld: boolean;
   wallHeldByOtherUser: boolean;
   canDriveWall: boolean;
@@ -86,6 +87,7 @@ function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullab
     reconnectSerialForCurrentBoard: null,
     reconnectDeviceIdForCurrentBoard: null,
     ledless: false,
+    wallDevice: false,
     virtualWallHeld: false,
     wallHeldByOtherUser: false,
     canDriveWall: false,
@@ -492,6 +494,31 @@ describe('useLightbulbControl relay to an authoritative holder', () => {
     result.current.onPress();
     expect(virtualWallHeld ? ctrl.bluetooth.releaseVirtualWall : ctrl.bluetooth.takeVirtualWall).toHaveBeenCalledOnce();
     expect(onRelayToHolder).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth.connect).not.toHaveBeenCalled();
+  });
+
+  it("relays on a wall-device board instead of taking the wall off a crewmate's link", () => {
+    // Bluetooth wins across phones: the crewmate may light the LEDs over a live
+    // link, so a take from here would pull the wall from under them.
+    arrangePeerHoldsBoard();
+    ctrl.bluetooth = makeBluetooth({ ledless: true, wallDevice: true });
+    const onRelayToHolder = vi.fn();
+    const { result } = renderControl({ onRelayToHolder, canRelay: true });
+
+    expect(result.current.pressAction).toBe('relay');
+    result.current.onPress();
+    expect(onRelayToHolder).toHaveBeenCalledOnce();
+    expect(ctrl.bluetooth.takeVirtualWall).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth.connect).not.toHaveBeenCalled();
+  });
+
+  it('takes the wall on a wall-device board nobody holds', () => {
+    ctrl.bluetooth = makeBluetooth({ ledless: true, wallDevice: true });
+    const { result } = renderControl({ canRelay: true });
+
+    expect(result.current.pressAction).toBe('takeWall');
+    result.current.onPress();
+    expect(ctrl.bluetooth.takeVirtualWall).toHaveBeenCalledOnce();
     expect(ctrl.bluetooth.connect).not.toHaveBeenCalled();
   });
 

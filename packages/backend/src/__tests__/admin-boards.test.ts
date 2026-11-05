@@ -85,6 +85,12 @@ describe('admin board operations authorization', () => {
     });
     expect(detail).not.toHaveProperty('totalAscents');
   });
+
+  it('shows the wall device flag, so an admin edit starts from the real value', async () => {
+    const board = await insertBoard({ litByWallDevice: true });
+    const detail = await adminBoardQueries.adminBoard(null, { boardUuid: board.uuid }, context(ADMIN));
+    expect(detail).toMatchObject({ uuid: board.uuid, hasLeds: true, litByWallDevice: true });
+  });
 });
 
 describe('admin board registry', () => {
