@@ -583,6 +583,10 @@ const NOT_APPLICABLE: Record<string, string> = {
     'home boards only: a spray wall has no share link (it keeps its own ?wall= link), so the owner gets null too, and a non-owner is refused before the board type is read',
   'Query.checkMoonBoardClimbDuplicates':
     "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",
+  'Query.previewMoonBoardCollectionImport':
+    "validates a MoonBoard layout and hardcodes board_type = 'moonboard' for source and canonical climbs, so a spray climb is not a row it can return",
+  'Query.moonBoardCollectionDestinations':
+    "validates a MoonBoard layout and returns only the caller's private MoonBoard playlist metadata, never spray climbs or playlists",
 
   // --- similar climbs: never materialised for a wall --------------------------
   'Query.similarClimbs':

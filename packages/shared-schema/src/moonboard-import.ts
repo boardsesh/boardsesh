@@ -1,3 +1,5 @@
+import type { MoonBoardCollectionRow } from './moonboard-collection';
+
 export type MoonBoardExportUser = {
   firstName?: string;
   lastName?: string;
@@ -89,7 +91,7 @@ export type MoonBoardImportProgressEvent =
 
 export const DEFAULT_MOONBOARD_IMPORT_ANGLE = 40;
 
-type MoonBoardExportColumn =
+export type MoonBoardExportColumn =
   | 'problemId'
   | 'name'
   | 'setter'
@@ -101,7 +103,9 @@ type MoonBoardExportColumn =
   | 'setup'
   | 'configuration'
   | 'benchmark'
-  | 'comment';
+  | 'comment'
+  | 'active'
+  | 'deleted';
 
 // Moon builds these exports by hand, so column order and header wording drift
 // between files. Headers are matched after stripping case, spaces and punctuation.
@@ -118,11 +122,34 @@ const COLUMN_ALIASES: Record<MoonBoardExportColumn, readonly string[]> = {
   configuration: ['configuration', 'angle'],
   benchmark: ['benchmark'],
   comment: ['comments', 'comment', 'notes'],
+  active: ['active', 'isactive'],
+  deleted: ['deleted', 'deletedat', 'datedeleted'],
 };
 
 const REQUIRED_COLUMNS: readonly MoonBoardExportColumn[] = ['grade', 'tries', 'date'];
 
-type MoonBoardColumnIndexes = Partial<Record<MoonBoardExportColumn, number>>;
+export type MoonBoardColumnIndexes = Partial<Record<MoonBoardExportColumn, number>>;
+
+export type MoonBoardCsvParseOptions = {
+  /** Zero-based CSV record containing the column headers. */
+  headerRowIndex?: number;
+  /** Complete column mapping; omitted fields are not read. */
+  columns?: MoonBoardColumnIndexes;
+};
+
+export type MoonBoardCsvInspection = {
+  kind: 'logbook' | 'profile' | 'collection' | 'unknown';
+  headers: string[];
+  headerRowIndex: number;
+  sampleRows: string[][];
+  columns: MoonBoardColumnIndexes;
+  rowCount: number;
+};
+
+export type ParsedMoonBoardCollectionResult = {
+  rows: MoonBoardCollectionRow[];
+  excluded: number;
+};
 
 const USER_METADATA_KEYS: Record<string, keyof MoonBoardExportUser> = {
   firstname: 'firstName',
@@ -132,6 +159,17 @@ const USER_METADATA_KEYS: Record<string, keyof MoonBoardExportUser> = {
   city: 'city',
   country: 'country',
 };
+
+const PROFILE_METADATA_KEYS = new Set([
+  ...Object.keys(USER_METADATA_KEYS),
+  'email',
+  'gender',
+  'dob',
+  'hasownmoonboard',
+  'agreeterms',
+  'cansharedata',
+  'subscribetomarketingemails',
+]);
 
 function normalizeHeaderCell(cell: string): string {
   return cell.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -184,7 +222,7 @@ function parseCsvRows(csv: string): string[][] {
   return rows;
 }
 
-function findColumnIndexes(row: string[]): MoonBoardColumnIndexes | null {
+function findColumnIndexes(row: string[]): MoonBoardColumnIndexes {
   const normalizedCells = row.map(normalizeHeaderCell);
   const indexes: MoonBoardColumnIndexes = {};
   for (const [column, aliases] of Object.entries(COLUMN_ALIASES) as [MoonBoardExportColumn, readonly string[]][]) {
@@ -192,9 +230,111 @@ function findColumnIndexes(row: string[]): MoonBoardColumnIndexes | null {
     if (index !== -1) indexes[column] = index;
   }
 
-  const hasRequiredColumns = REQUIRED_COLUMNS.every((column) => indexes[column] != null);
-  const identifiesProblem = indexes.problemId != null || indexes.name != null;
-  return hasRequiredColumns && identifiesProblem ? indexes : null;
+  return indexes;
+}
+
+function hasLogColumns(columns: MoonBoardColumnIndexes): boolean {
+  return (
+    REQUIRED_COLUMNS.every((column) => columns[column] != null) && (columns.problemId != null || columns.name != null)
+  );
+}
+
+function isBlankRow(row: string[]): boolean {
+  return row.every((cell) => cell.trim() === '');
+}
+
+function isProfileMetadataRow(row: string[]): boolean {
+  return (
+    PROFILE_METADATA_KEYS.has(normalizeMetadataKey(row[0] ?? '')) && row.slice(2).every((cell) => cell.trim() === '')
+  );
+}
+
+function inspectCsvRows(rows: string[][], selectedHeaderRowIndex?: number): MoonBoardCsvInspection {
+  if (
+    selectedHeaderRowIndex != null &&
+    (!Number.isInteger(selectedHeaderRowIndex) ||
+      selectedHeaderRowIndex < 0 ||
+      selectedHeaderRowIndex >= rows.length ||
+      isBlankRow(rows[selectedHeaderRowIndex]))
+  ) {
+    throw new Error('invalid_header_row');
+  }
+
+  let headerRowIndex = selectedHeaderRowIndex ?? -1;
+  if (headerRowIndex === -1) {
+    // Prefer a complete log header, even when metadata or a cover table comes first.
+    headerRowIndex = rows.findIndex((row) => hasLogColumns(findColumnIndexes(row)));
+    if (headerRowIndex === -1) {
+      headerRowIndex = rows.findIndex((row) => {
+        const columns = findColumnIndexes(row);
+        return columns.name != null && columns.grade != null;
+      });
+    }
+    if (headerRowIndex === -1) {
+      headerRowIndex = rows.findIndex(
+        (row) => !isProfileMetadataRow(row) && row.filter((cell) => cell.trim() !== '').length >= 2,
+      );
+    }
+    if (headerRowIndex === -1)
+      headerRowIndex = Math.max(
+        rows.findIndex((row) => !isBlankRow(row)),
+        0,
+      );
+  }
+
+  const headers = rows[headerRowIndex].map((cell) => cell.trim());
+  const columns = findColumnIndexes(headers);
+  let kind: MoonBoardCsvInspection['kind'] = 'unknown';
+  if (hasLogColumns(columns)) {
+    kind = 'logbook';
+  } else if (columns.name != null && columns.grade != null) {
+    kind = 'collection';
+  } else if (
+    rows.filter(isProfileMetadataRow).length >= 2 &&
+    rows.every((row) => isBlankRow(row) || isProfileMetadataRow(row))
+  ) {
+    kind = 'profile';
+  }
+
+  const sampleRows: string[][] = [];
+  let rowCount = 0;
+  for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    if (isBlankRow(rows[rowIndex])) continue;
+    rowCount += 1;
+    if (sampleRows.length < 5) sampleRows.push(rows[rowIndex]);
+  }
+  return {
+    kind,
+    headers,
+    headerRowIndex,
+    sampleRows,
+    columns,
+    rowCount,
+  };
+}
+
+/** Inspects file contents without requiring a supported logbook schema. */
+export function inspectMoonBoardExportCsv(csv: string, headerRowIndex?: number): MoonBoardCsvInspection {
+  return inspectCsvRows(parseCsvRows(csv.replace(/^\uFEFF/, '')), headerRowIndex);
+}
+
+function validateColumnIndexes(columns: MoonBoardColumnIndexes, headerWidth: number): MoonBoardColumnIndexes {
+  const usedIndexes = new Set<number>();
+  for (const [column, index] of Object.entries(columns)) {
+    if (index === undefined) continue;
+    if (!Object.hasOwn(COLUMN_ALIASES, column) || !Number.isInteger(index) || index < 0 || index >= headerWidth) {
+      throw new Error(`invalid_${column}_column`);
+    }
+    if (usedIndexes.has(index)) throw new Error(`duplicate_${column}_column`);
+    usedIndexes.add(index);
+  }
+  return columns;
+}
+
+function requireColumns(columns: MoonBoardColumnIndexes, required: readonly MoonBoardExportColumn[]): void {
+  for (const column of required) {
+    if (columns[column] == null) throw new Error(`missing_${column}_column`);
+  }
 }
 
 function cellAt(row: string[], index: number | undefined): string {
@@ -348,17 +488,16 @@ function buildPreview(data: StrippedMoonBoardExportData): MoonBoardExportPreview
   };
 }
 
-export function parseMoonBoardExportCsv(csv: string): ParsedMoonBoardExportResult {
+export function parseMoonBoardExportCsv(csv: string, options?: MoonBoardCsvParseOptions): ParsedMoonBoardExportResult {
   const rows = parseCsvRows(csv.replace(/^\uFEFF/, ''));
-  let headerIndex = -1;
-  let columns: MoonBoardColumnIndexes | null = null;
-  for (let rowIndex = 0; rowIndex < rows.length && !columns; rowIndex += 1) {
-    columns = findColumnIndexes(rows[rowIndex]);
-    if (columns) headerIndex = rowIndex;
-  }
-  if (!columns) {
+  const inspection = inspectCsvRows(rows, options?.headerRowIndex);
+  if (options?.headerRowIndex == null && options?.columns == null && inspection.kind !== 'logbook') {
     throw new Error('missing_moonboard_log_header');
   }
+  const headerIndex = inspection.headerRowIndex;
+  const columns = validateColumnIndexes(options?.columns ?? inspection.columns, inspection.headers.length);
+  requireColumns(columns, REQUIRED_COLUMNS);
+  if (columns.problemId == null && columns.name == null) throw new Error('missing_problem_column');
 
   const user: MoonBoardExportUser = {};
   for (const row of rows.slice(0, headerIndex)) {
@@ -415,4 +554,43 @@ export function parseMoonBoardExportCsv(csv: string): ParsedMoonBoardExportResul
     data,
     preview: buildPreview(data),
   };
+}
+
+/**
+ * Reads problem references only. These rows never become logbook entries or
+ * new climbs: the backend must match them to its existing catalogue.
+ */
+export function parseMoonBoardCollectionCsv(
+  csv: string,
+  options?: MoonBoardCsvParseOptions,
+  includeInactive = false,
+): ParsedMoonBoardCollectionResult {
+  const records = parseCsvRows(csv.replace(/^\uFEFF/, ''));
+  const inspection = inspectCsvRows(records, options?.headerRowIndex);
+  const columns = validateColumnIndexes(options?.columns ?? inspection.columns, inspection.headers.length);
+  requireColumns(columns, ['name', 'grade']);
+
+  const rows: MoonBoardCollectionRow[] = [];
+  let excluded = 0;
+  for (let rowIndex = inspection.headerRowIndex + 1; rowIndex < records.length; rowIndex += 1) {
+    const record = records[rowIndex];
+    if (isBlankRow(record)) continue;
+    const lineNumber = rowIndex + 1;
+    const active = parseBenchmark(cellAt(record, columns.active));
+    const deleted = cellAt(record, columns.deleted);
+    const isDeleted =
+      deleted !== '' && deleted.toLowerCase() !== 'null' && deleted !== '-' && parseBenchmark(deleted) !== false;
+    if (isDeleted || (!includeInactive && active === false)) {
+      excluded += 1;
+      continue;
+    }
+
+    const name = cellAt(record, columns.name);
+    const grade = cellAt(record, columns.grade).toUpperCase();
+    const setter = cellAt(record, columns.setter);
+    if (!name) throw new Error(`missing_name_line_${lineNumber}`);
+    if (!grade) throw new Error(`missing_grade_line_${lineNumber}`);
+    rows.push({ lineNumber, name, grade, ...(setter ? { setter } : {}) });
+  }
+  return { rows, excluded };
 }
