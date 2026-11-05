@@ -116,6 +116,7 @@ export async function loadProviderSyncAdapter(
   provider: SyncProvider,
 ): Promise<ProviderSyncAdapter> {
   const onLog = (message: string) => logger.debug(message, { runId: context.runId, family: context.family });
+  const onWarn = (message: string) => logger.warn(message, { runId: context.runId, family: context.family });
   // The outcome carries the failure; the message can hold provider detail, so
   // only the bounded code ever reaches the ledger.
   const onError = () => {};
@@ -127,7 +128,7 @@ export async function loadProviderSyncAdapter(
       interactiveFamily: 'aurora-user-sync',
       candidateFilter: syncableAuroraCredentialsFilter(),
       sync(credential, transaction, signal = context.signal) {
-        const runner = new SyncRunner({ db: context.database, transaction, signal, onLog, onError });
+        const runner = new SyncRunner({ db: context.database, transaction, signal, onLog, onWarn, onError });
         return runner.syncCredential(credential, { skipSharedSync: true });
       },
       recordTransientFailure: (credential, transaction, code) => recordAuroraSyncFailure(transaction, credential, code),
