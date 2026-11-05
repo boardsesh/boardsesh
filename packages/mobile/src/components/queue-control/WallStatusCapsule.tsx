@@ -44,10 +44,12 @@ import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
+import { useAuth } from '../../providers/auth-provider';
 import { useClimbStatsDetail } from './use-climb-byline';
 import {
   HeaderCapsuleClimbLabel,
   HeaderStatusCapsule,
+  useHeaderCapsuleCompact,
   useHeaderCapsuleFaceFits,
   type HeaderCapsuleByline,
 } from './HeaderStatusCapsule';
@@ -93,6 +95,8 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
   const faceFits = useHeaderCapsuleFaceFits();
+  const narrowTitle = useHeaderCapsuleCompact();
+  const { isAuthenticated } = useAuth();
   const viewerUserId = useViewerUserId();
   const { boardConfig } = useDrawerHost();
   const history = presentation?.kind === 'history' ? presentation : null;
@@ -111,10 +115,14 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const gradeColor = resolvedGrade.color;
   const senderName = climb.sentByDisplayName?.trim() || null;
   const hasSenderIdentity = climb.sentByAvatarUrl != null || senderName != null;
-  // Someone else lit it: their face and name say who. Your own climb (or an
-  // anonymous one) says its sends instead; your face would say nothing new.
-  const litByOther = climb.sentByUserId != null ? climb.sentByUserId !== viewerUserId : senderName != null;
-  const showFace = litByOther && hasSenderIdentity && faceFits;
+  // Someone else lit it, and has a name: their face and name say who. Your own
+  // climb, or an unnamed sender's, says its sends instead. While a signed-in
+  // climber's id is still loading, nobody can say whose it is: grade alone, so
+  // your own climb never flashes your face and name.
+  const senderIsYou = climb.sentByUserId != null && climb.sentByUserId === viewerUserId;
+  const senderPending = isAuthenticated && viewerUserId == null && climb.sentByUserId != null;
+  const namedOther = senderName != null && !senderIsYou && !senderPending;
+  const showFace = namedOther && hasSenderIdentity && faceFits;
 
   const a11yLabel = history
     ? senderName
@@ -160,11 +168,14 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   // else's. An older reporter sends no angle, and the converted climb's 0° would
   // read some other angle's sends, so that shows the grade alone.
   const statsDetail = useClimbStatsDetail(previewClimb, boardConfig, {
-    statsEnabled: !isMaterial && !history && !litByOther && climb.angle != null,
+    statsEnabled: !isMaterial && !history && !namedOther && !senderPending && climb.angle != null,
   });
+  // A climb with no name shows its grade as the name, so line 2 drops it. The age
+  // stays whole unless the title is too narrow for it (a 320pt Display Zoom bar).
+  const bylineGrade = name ? formattedGrade : null;
   const byline: HeaderCapsuleByline = history
-    ? { grade: formattedGrade, detail: history.ageByline, fixed: true }
-    : { grade: formattedGrade, detail: litByOther ? senderName : statsDetail };
+    ? { grade: bylineGrade, detail: history.ageByline, fixed: !narrowTitle }
+    : { grade: bylineGrade, detail: namedOther ? senderName : statsDetail };
 
   const { consumePanned, dismiss } = swipe;
   const handlePress = useCallback(() => {

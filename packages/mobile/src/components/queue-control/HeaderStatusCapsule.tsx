@@ -45,11 +45,12 @@ const CAPSULE_HEIGHT = glassSize.bar;
 // scale has no 6 or 10.
 const CAPSULE_GAP = 6;
 const CAPSULE_PADDING_END = 10;
-// Under this title bound (a 320pt frame beside five bar slots leaves 58pt) a
-// leading avatar or glyph would squeeze the text to nothing, so it drops out.
+// Under this title bound (a 320pt Display Zoom frame leaves 96pt) a leading
+// glyph would squeeze the text to nothing, so it drops out, and an age may cut.
 const CAPSULE_COMPACT_BELOW = 100;
 // A face costs the name 24pt, so it shows only where the name keeps room: from a
-// 130pt title bound (402pt with the matched islands, every iPhone off the rail).
+// 130pt title bound. Between the iPhone's matched islands that is every phone
+// (375pt leaves 151pt) except a 320pt Display Zoom bar (96pt).
 const CAPSULE_FACE_MIN_WIDTH = 130;
 /** True when UIKit's title slot is too narrow for the capsule's leading element. */
 export function useHeaderCapsuleCompact(): boolean {

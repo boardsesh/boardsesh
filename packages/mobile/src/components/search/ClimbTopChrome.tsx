@@ -279,7 +279,8 @@ function ClimbTopChromeComponent({
   }, [hasWallCapsule]);
 
   const handleOpenBoardSwitcher = useCallback(() => router.push('/boards'), [router]);
-  // The same history and ⋯ actions as native bar items on the iOS 26 iPhone header.
+  // The same history and ⋯ actions for the iOS 26 header: the iPhone's trailing
+  // glass island, or native items on iPad and the Duo rail.
   const climbListBarActions = useMemo(
     () => ({ onOpenHistory: onOpenBoardDetail, badge: showBoardBadge }),
     [onOpenBoardDetail, showBoardBadge],

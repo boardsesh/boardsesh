@@ -665,7 +665,7 @@ Discover  (@ 40° +)                       ((board) (*))
 - The leading island is the avatar, then the glass "40°", then + where it stays. The angle sits in the
   same place on both tabs.
 - On Climbs in a compact-width bar, + is the first row of ⋯ ("Create a climb"), so the capsule gets
-  the slot. A regular-width bar (iPhone landscape, iPad) keeps + in the island. Discover keeps +: it
+  the slot. A regular-width iPad keeps + in the island. Discover keeps +: it
   has no capsule and no ⋯.
 - The trailing island is history and ⋯ on Climbs (`ClimbListBoardActions` with `showAngle` off), the
   board and the bulb on Discover. Equal islands centre the capsule: 151pt at 375pt, 178pt at 402pt,
@@ -698,13 +698,15 @@ and one fact:
 
 | State | Line 2 | Face |
 | --- | --- | --- |
-| Someone else lit it | `V6 · Sam` | theirs, from a 130pt capsule (402pt phones and up) |
-| Your own climb, or no sender | `V6 · 683 sends` | none |
+| Someone else lit it (with a name) | `V6 · Sam` | theirs, from a 130pt capsule (every iPhone but Display Zoom) |
+| Your own climb, or no named sender | `V6 · 683 sends` | none |
 | You hold the board | `V6 · 683 sends` | none (it would be yours) |
 | Lit with no live link | `V6 · 20m ago` | as above |
 
 The grade never cuts; the fact after it ends in "…" when room runs out, except the age, which a cut
-would make wrong. A reporter that sent no name shows the grade as the name. The capsules carry no ×:
+would make wrong (it may cut only in a 320pt Display Zoom bar). A climb with no name shows its grade
+as the name, and line 2 drops the grade. While a signed-in climber's id is still loading, the capsule
+shows the grade alone, so your own climb never flashes your face. The capsules carry no ×:
 a left swipe hides them, and VoiceOver gets a Hide action. The capsule's room and the showcase
 anchor measure the navigation stack's frame (`useFrameSize`), not the window, so the iPad sidebar is
 left out. The capsule and the controls under the bar are always custom views.

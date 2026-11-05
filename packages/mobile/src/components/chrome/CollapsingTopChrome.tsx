@@ -63,8 +63,9 @@ type CollapsingTopChromeProps = {
   /** Replace the default angle/board pair while retaining shared toolbar sizing. */
   boardControls?: { content: ReactNode; actionCount: number };
   /**
-   * The Climbs list's `boardControls` as native bar items: after the angle,
-   * board history and the list's ⋯ menu instead of the board switcher.
+   * The Climbs list's `boardControls` on the iOS 26 header: board history and
+   * the list's ⋯ menu instead of the board switcher. A glass island on iPhone,
+   * native items on iPad and the Duo rail.
    */
   climbListBarActions?: { onOpenHistory: () => void; badge: boolean };
   /** Report the measured chrome height so the list can inset its top padding. */

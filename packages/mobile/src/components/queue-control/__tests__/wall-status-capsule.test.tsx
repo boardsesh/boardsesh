@@ -20,12 +20,14 @@ const spies = vi.hoisted(() => ({
   enterAnimation: vi.fn(() => ({})),
   panConsumed: false,
   viewerUserId: 'u-me' as string | null,
+  isAuthenticated: true,
   // The sends after the grade; null leaves the grade alone, as for an unsent climb.
   sends: null as string | null,
   statsArgs: null as unknown,
 }));
 
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => spies.viewerUserId }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: spies.isAuthenticated }) }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ boardConfig: { boardName: 'kilter', layoutId: 1 } }),
 }));
@@ -343,6 +345,7 @@ describe('WallStatusCapsule', () => {
     spies.nativeGlass = true;
     spies.panConsumed = false;
     spies.viewerUserId = 'u-me';
+    spies.isAuthenticated = true;
     spies.sends = null;
     spies.statsArgs = null;
   });
@@ -586,9 +589,54 @@ describe('WallStatusCapsule', () => {
     expect(capsuleLines(container)).toEqual(['Wax On', 'V5 6C']);
   });
 
-  it('shows the grade in place of a missing climb name, never an empty capsule', () => {
+  it('shows the grade in place of a missing climb name, once', () => {
     const { container } = render(<WallStatusCapsule climb={makeClimb({ name: null })} />);
-    expect(capsuleLines(container)[0]).toBe('V5 6C');
+    expect(capsuleLines(container)).toEqual(['V5 6C', 'Casey']);
+  });
+
+  it('shows the grade alone, no face, while a signed-in climber’s id is still loading', () => {
+    spies.viewerUserId = null;
+    spies.sends = '1.4k sends';
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    expect(capsuleLines(container)).toEqual(['Wax On', 'V5 6C']);
+    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+    expect(spies.statsArgs).toMatchObject({ statsEnabled: false });
+  });
+
+  it("reads a signed-out climber's view of a named sender as someone else's climb", () => {
+    spies.viewerUserId = null;
+    spies.isAuthenticated = false;
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    expect(capsuleLines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
+    expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
+  });
+
+  it("says an unnamed sender's climb in sends, with no face", () => {
+    spies.sends = '1.4k sends';
+    const { container } = render(
+      <WallStatusCapsule climb={makeClimb({ sentByDisplayName: null, sentByUserId: 'u-unnamed' })} />,
+    );
+    expect(capsuleLines(container)).toEqual(['Wax On', 'V5 6C', ' · 1.4k sends']);
+    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+  });
+
+  it('lets the age cut only in a title too narrow for it (a 320pt Display Zoom bar)', () => {
+    const history = { kind: 'history' as const, ageLabel: '20m', ageByline: '20m ago' };
+    const ageStyle = (bound: number) => {
+      const { container, unmount } = render(
+        <NativeHeaderActionContext.Provider value={true}>
+          <NativeTitleMaxWidthContext.Provider value={bound}>
+            <WallStatusCapsule climb={makeClimb()} presentation={history} />
+          </NativeTitleMaxWidthContext.Provider>
+        </NativeHeaderActionContext.Provider>,
+      );
+      const age = [...container.querySelectorAll('[data-text]')].find((node) => node.textContent === ' · 20m ago');
+      const style = JSON.parse(age?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+      unmount();
+      return style;
+    };
+    expect(ageStyle(151).flexShrink).toBe(0);
+    expect(ageStyle(96)).toMatchObject({ flexShrink: 1, minWidth: 0 });
   });
 
   it('keeps the name and avatar when the climb grade is null', () => {

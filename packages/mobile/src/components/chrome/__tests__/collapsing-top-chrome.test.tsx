@@ -687,17 +687,6 @@ describe('CollapsingTopChrome', () => {
         expect(ctrl.nativeCenterItemSides).toEqual({ leading: { customSlots: 2 }, trailing: { customSlots: 2 } });
       });
 
-      it('keeps + in the island in a regular-width bar (iPhone landscape)', () => {
-        ctrl.board = board;
-        ctrl.widthClass = 'regular';
-        render(
-          <CollapsingTopChrome {...makeProps({ canCreate: true, hideLight: true, climbListBarActions: climbList })} />,
-        );
-        expect(createAction(leadingIsland())).not.toBeNull();
-        expect(trailingIsland().querySelector('[data-create-row]')).toBeNull();
-        expect(ctrl.nativeCenterItemSides?.leading).toEqual({ customSlots: 3 });
-      });
-
       it('gives a fixed-angle board the angle slot back', () => {
         ctrl.board = { ...board, isAngleAdjustable: false };
         render(
@@ -778,19 +767,6 @@ describe('CollapsingTopChrome', () => {
           leading: { customSlots: 3 },
           trailing: { nativeItems: 2, titleItems: 0 },
         });
-      });
-
-      it('keeps the glass angle through a width-class flip, so an open picker is never unmounted', () => {
-        ctrl.board = board;
-        const props = makeProps({ hideLight: true, climbListBarActions: climbList });
-        const { rerender } = render(<CollapsingTopChrome {...props} />);
-        expect(angleButton(leadingIsland())).not.toBeNull();
-        act(() => ctrl.anglePickerOpenChange?.(true));
-        ctrl.widthClass = 'compact';
-        rerender(<CollapsingTopChrome {...props} />);
-        expect(angleButton(leadingIsland())).not.toBeNull();
-        act(() => ctrl.anglePickerOpenChange?.(false));
-        expect(angleButton(leadingIsland())).not.toBeNull();
       });
 
       it('anchors the showcase callout on the native history item, second from the end', () => {
