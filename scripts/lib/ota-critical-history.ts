@@ -83,8 +83,10 @@ export async function latestConsumedCriticalRelease(options: CriticalReleaseHist
       seenRuns.add(runId);
       if (typeof run.head_branch !== 'string')
         throw new Error('Critical publication history contains an untrusted production run.');
-      // Unfiltered, the listing includes dispatches from other branches. The
-      // Production environment only admits main, so they never released bytes.
+      // Unfiltered, the listing includes dispatches from other branches. None of
+      // them can have released critical bytes: mobile-ota-critical.ts refuses to
+      // run outside refs/heads/main, so `critical_ota` is never true there, and
+      // the ota-stable-release and Production environments both admit only main.
       if (run.head_branch !== 'main') continue;
       if (
         run.path !== SOURCE_WORKFLOW ||
