@@ -45,8 +45,17 @@ Its 39-file patch replays unchanged onto #7301 and reproduces the exact qualifie
 main-based merge tree. All 59 clean-head type tasks pass with four cache hits.
 A fresh owned full-Next preview passes five baseline legacy-auth browser flows,
 with clean browser teardown and no unexpected traffic or console/page errors.
-Draft #7302 is published and current-head CI/review feedback is monitored.
+#7302 is ready at fc39334871 with green checks and completed no-finding Codex code review; feedback remains monitored.
 No production authority switch follows from these implementation results.
+
+The [shared location batch preparation](./better-auth-location-batch-preparation.md)
+extracts the whole-gym planner and caller-owned transaction apply path, with
+optional cooperative checks around SQL. Existing callers keep their owner
+ensure and commit boundaries. A compound location authority remains gated on
+all fixed-owner foreign-key lock orders; no location writer switches authority.
+The required PostgreSQL 18 project passes 89 cases across seven files with zero
+skips after canonical per-file bootstrap and actual Node journal reconciliation.
+The note retains the failed one-transaction bootstrap and its enum boundary.
 
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 
