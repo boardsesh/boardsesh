@@ -17,7 +17,7 @@ const legacyAccountsSchema = readFileSync(
   )
   .join('\n');
 const authCurrentStoreFoundationSchema = readFileSync(
-  new URL('../../../db/drizzle/0289_auth_current_store_foundation.sql', import.meta.url),
+  new URL('../../../db/drizzle/0290_auth_current_store_foundation.sql', import.meta.url),
   'utf8',
 );
 const sharedSprayDraftsSchema = readFileSync(
