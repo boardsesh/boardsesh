@@ -435,3 +435,89 @@ Android auth is the Play service account JSON:
 
 No new secrets beyond what the screenshot / TestFlight / Android workflows
 already use.
+
+## Apple Ads — `ios ads`
+
+Manage paid Search Results campaigns from `app-stores/apple/ads.json`. This is
+separate from `ios cpp`: publishing CPP keywords does not select the creative
+used by paid ads. Each country campaign contains Kilter, Tension, MoonBoard,
+and spray-wall exact-match groups, each linked to its matching CPP.
+
+```bash
+cd fastlane
+bundle exec fastlane ios ads offline:true
+bundle exec fastlane ios ads action:audit
+bundle exec fastlane ios ads action:plan
+bundle exec fastlane ios ads action:apply
+```
+
+Omitting `action` selects read-only `plan`. `offline:true` validates and expands
+configuration without connecting to Apple and only supports `plan`.
+`config:` selects another manifest; `output:` (or `APPLE_ADS_OUTPUT`) retains a
+JSON report. Relative paths resolve from the repository root. Audit shows
+configured ads and delivery blockers; an enabled status alone does not prove
+that Apple is serving the intended artwork.
+
+The initial configuration enables four campaigns in account `21374740` for
+Boardsesh (`6761350784`), using account currency AUD:
+
+| Country | Daily budget |
+| --- | ---: |
+| United States | AUD 50 |
+| Australia | AUD 20 |
+| Canada | AUD 15 |
+| Germany | AUD 15 |
+
+The initial maximum cost-per-tap bid is AUD 1.00 per board group. Search Match
+is off. Germany uses the German CPP assets; other starting markets use English.
+Apple's actual locale/device eligibility is checked before activation. Budgets,
+bids, keywords, and desired running status are configured in code; this version
+does not optimize them from performance reports.
+
+The user owns pausing the old campaigns. The existing IDs `2144850955` and
+`2143695506` are excluded from automation. New campaigns are assembled paused,
+then eligible groups and their campaigns are enabled on the first apply. A CPP
+ad awaiting Apple approval leaves its group paused; rerun apply after approval,
+or let the next configuration merge retry it. No scheduled retries run.
+
+### Credentials
+
+Apple Ads authentication is separate from App Store Connect. Follow
+[Apple's OAuth setup](https://developer.apple.com/documentation/apple-ads-platform-api/implementing-oauth-for-the-apple-ads-platform-api)
+to obtain API access, register a public key, and obtain the client, team, and
+key IDs. Keep the private key outside the repository. Local runs need:
+
+| Environment variable | Purpose |
+| --- | --- |
+| `APPLE_ADS_CLIENT_ID` | Apple Ads OAuth client ID |
+| `APPLE_ADS_TEAM_ID` | Apple Ads OAuth team ID |
+| `APPLE_ADS_KEY_ID` | Registered public-key ID |
+| `APPLE_ADS_PRIVATE_KEY_PATH` | Path to the corresponding private PEM key |
+
+For GitHub Actions, add `APPLE_ADS_CLIENT_ID`, `APPLE_ADS_TEAM_ID`,
+`APPLE_ADS_KEY_ID`, and `APPLE_ADS_PRIVATE_KEY_BASE64` to the **Production**
+environment secrets. The workflow decodes the key into a temporary file with
+mode 600, removes it afterward, and never uploads it as an artifact. Do not
+paste private keys or tokens into PR descriptions, reports, or logs.
+
+### Reconciliation and CI
+
+PRs validate configuration and preview expansion offline without credentials.
+Merging relevant configuration/tooling changes to `main` runs a live plan and
+then applies the committed configuration. The Apple Ads workflow also supports
+manual audit, plan, and apply dispatches from `main`. Account-scoped concurrency
+serializes writers; reports are retained for 14 days.
+
+Generated campaign/group names are stable identities. Do not rename them or
+add manual campaign/group structures for this app: unexpected or duplicate
+identities stop reconciliation before mutation rather than creating replacements.
+Pause an entry in configuration to retire it; removing campaign/group entries
+is not a deletion mechanism. Keywords and custom ads inside managed groups are
+code-owned; remote-only keywords are paused. No campaign, group, keyword, or ad
+history is deleted. Configured fields are reconciled, and concurrent edits are
+reported instead of overwritten blindly.
+
+Apple can fall back to default artwork when a custom ad is unavailable. The
+audit reports default ads, custom-ad status, and eligibility blockers; it does
+not promise to permanently prevent Apple's fallback. The existing PostHog Apple
+Ads dashboard remains the reporting surface.

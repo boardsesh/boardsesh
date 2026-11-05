@@ -433,6 +433,20 @@ platform :ios do
     UI.user_error!(error.message)
   end
 
+  desc "Audit, plan, or reconcile code-managed Apple Ads campaigns"
+  lane :ads do |options|
+    action = (options[:action] || "plan").to_s
+    UI.user_error!("Ads action must be audit, plan, or apply") unless %w[audit plan apply].include?(action)
+    offline = options[:offline] == true || options[:offline].to_s == "true"
+    UI.user_error!("Offline mode only supports plan") if offline && action != "plan"
+    config_path = File.expand_path((options[:config] || "app-stores/apple/ads.json").to_s, REPO_ROOT)
+    arguments = ["vp", "exec", "node", "--import", "tsx", File.join(REPO_ROOT, "scripts", "apple-ads.ts"), "--action", action, "--config", config_path]
+    output = options[:output] || ENV["APPLE_ADS_OUTPUT"]
+    arguments.concat(["--output", File.expand_path(output.to_s, REPO_ROOT)]) if output && !output.to_s.empty?
+    arguments << "--offline" if offline
+    Dir.chdir(REPO_ROOT) { sh(*arguments) }
+  end
+
   desc "Plan, create empty drafts, stage assets, upload, or submit board-specific custom product pages"
   lane :cpp do |options|
     require File.join(REPO_ROOT, "fastlane", "lib", "custom_product_pages")

@@ -1,0 +1,140 @@
+name: Apple Ads
+
+on:
+  pull_request:
+    paths:
+      - 'app-stores/apple/ads.json'
+      - 'app-stores/apple/custom-product-pages.json'
+      - 'scripts/apple-ads.ts'
+      - 'scripts/lib/apple-ads*'
+      - 'scripts/__tests__/apple-ads*.test.ts'
+      - 'fastlane/Fastfile'
+      - 'fastlane/tests/apple_ads_test.rb'
+      - '.github/workflows/apple-ads.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  push:
+    branches: [main]
+    paths:
+      - 'app-stores/apple/ads.json'
+      - 'app-stores/apple/custom-product-pages.json'
+      - 'scripts/apple-ads.ts'
+      - 'scripts/lib/apple-ads*'
+      - 'fastlane/Fastfile'
+      - '.github/workflows/apple-ads.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Audit, preview, or apply the committed ads configuration'
+        type: choice
+        options: [audit, plan, apply]
+        default: plan
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('apple-ads-preview-{0}', github.event.pull_request.number) || 'apple-ads-21374740' }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+      - name: Install workspace dependencies
+        run: vp install --frozen-lockfile
+      - name: Test ads without credentials
+        run: vp test run scripts/__tests__/apple-ads*.test.ts --reporter=agent
+      - name: Preview campaign expansion offline
+        run: vp exec node --import tsx scripts/apple-ads.ts --action plan --config app-stores/apple/ads.json --offline --output "$RUNNER_TEMP/apple-ads-preview.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apple-ads-preview
+          path: ${{ runner.temp }}/apple-ads-preview.json
+          retention-days: 14
+  reconcile:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+      - name: Install workspace dependencies
+        run: vp install --frozen-lockfile
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          working-directory: fastlane
+      - name: Install Fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
+      - name: Verify current main before paid writes
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          current_main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [ "$current_main_sha" != "$EXPECTED_SHA" ]; then
+            echo '::notice::Skipping superseded ads configuration; main has advanced.'
+            echo 'fresh=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'fresh=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Reconcile Apple Ads
+        if: steps.source.outputs.fresh == 'true'
+        working-directory: fastlane
+        env:
+          REQUESTED_ACTION: ${{ inputs.action || 'apply' }}
+          APPLE_ADS_CLIENT_ID: ${{ secrets.APPLE_ADS_CLIENT_ID }}
+          APPLE_ADS_TEAM_ID: ${{ secrets.APPLE_ADS_TEAM_ID }}
+          APPLE_ADS_KEY_ID: ${{ secrets.APPLE_ADS_KEY_ID }}
+          APPLE_ADS_PRIVATE_KEY_BASE64: ${{ secrets.APPLE_ADS_PRIVATE_KEY_BASE64 }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+        run: |
+          set -euo pipefail
+          case "$REQUESTED_ACTION" in audit|plan|apply) ;; *) echo '::error::Invalid ads action'; exit 1 ;; esac
+          [ -n "$APPLE_ADS_CLIENT_ID" ] && [ -n "$APPLE_ADS_TEAM_ID" ] && [ -n "$APPLE_ADS_KEY_ID" ] && [ -n "$APPLE_ADS_PRIVATE_KEY_BASE64" ] || { echo '::error::Missing Apple Ads credentials'; exit 1; }
+          APPLE_ADS_PRIVATE_KEY_PATH=$(mktemp "$RUNNER_TEMP/boardsesh-ads-key.XXXXXX.pem")
+          export APPLE_ADS_PRIVATE_KEY_PATH
+          trap 'rm -f "$APPLE_ADS_PRIVATE_KEY_PATH"' EXIT
+          chmod 600 "$APPLE_ADS_PRIVATE_KEY_PATH"
+          printf '%s' "$APPLE_ADS_PRIVATE_KEY_BASE64" | base64 --decode > "$APPLE_ADS_PRIVATE_KEY_PATH"
+          if [ "$REQUESTED_ACTION" = apply ]; then
+            bundle exec fastlane ios ads action:plan output:"$RUNNER_TEMP/apple-ads-plan.json"
+          fi
+          bundle exec fastlane ios ads action:"$REQUESTED_ACTION" output:"$RUNNER_TEMP/apple-ads-result.json"
+      - name: Retain ads plan and readback
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-ads-result
+          path: |
+            ${{ runner.temp }}/apple-ads-plan.json
+            ${{ runner.temp }}/apple-ads-result.json
+          if-no-files-found: warn
+          retention-days: 14

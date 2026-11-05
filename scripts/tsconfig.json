@@ -14,6 +14,9 @@
     "types": ["node"]
   },
   "include": [
+    "apple-ads.ts",
+    "lib/apple-ads*.ts",
+    "__tests__/apple-ads*.test.ts",
     "board-qa.ts",
     "board-qa-ios-driver.ts",
     "board-qa-simulator-peer.ts",

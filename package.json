@@ -30,6 +30,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@apple/apple-ads-platform": "1.117.0",
     "@aws-sdk/client-s3": "^3.1101.0",
     "@boardsesh/pr-body": "workspace:*",
     "@boardsesh/text-redaction": "workspace:*",
