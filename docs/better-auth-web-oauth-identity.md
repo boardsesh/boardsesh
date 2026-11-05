@@ -160,7 +160,8 @@ The strengthened test also passed the repository's type-aware, type-checking
 `vp check`. After clean replay, all 59 canonical tasks passed again, with four
 cache hits; that run includes the final receipt assertions.
 
-PR publication remains in progress. No normal test result implies a real vendor UI, Safari/iPhone,
+Draft [PR #7300](https://github.com/boardsesh/boardsesh/pull/7300) is published,
+with current-head CI and review feedback monitored. No normal test result implies a real vendor UI, Safari/iPhone,
 installed native/watch client, production provider registration or SMTP proof.
 
 The HTTP fixture initially failed before server admission because a forced-close
