@@ -7,13 +7,24 @@ import { z } from 'zod';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { randomBytes } from 'crypto';
 
-const registerControllerSchema = z.object({
-  name: z.string().max(100).optional(),
-  boardName: z.enum(['kilter', 'tension']),
-  layoutId: z.number().int().positive(),
-  sizeId: z.number().int().positive(),
-  setIds: z.string().min(1),
-});
+const registerControllerSchema = z.discriminatedUnion('boardName', [
+  z.object({
+    name: z.string().max(100).optional(),
+    boardName: z.enum(['kilter', 'tension']),
+    layoutId: z.number().int().positive(),
+    sizeId: z.number().int().positive(),
+    setIds: z.string().min(1),
+  }),
+  z.object({
+    name: z.string().max(100).optional(),
+    boardName: z.literal('spray'),
+  }),
+]);
+
+// A Spraywall key is for wall devices (docs/wall-devices.md), which pick their board
+// when they subscribe, so there is no configuration to store. The columns are NOT
+// NULL, and 0 is never a real layout or size.
+const SPRAY_CONTROLLER_CONFIG = { layoutId: 0, sizeId: 0, setIds: '' };
 
 const deleteControllerSchema = z.object({
   controllerId: z.string().uuid(),
@@ -96,7 +107,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { name, boardName, layoutId, sizeId, setIds } = validationResult.data;
+    const registration = validationResult.data;
+    const { name, boardName } = registration;
+    const { layoutId, sizeId, setIds } = registration.boardName === 'spray' ? SPRAY_CONTROLLER_CONFIG : registration;
     const apiKey = generateApiKey();
 
     const db = getDb();

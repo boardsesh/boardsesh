@@ -160,6 +160,7 @@
       "nameLabel": "Nom du contrôleur (facultatif)",
       "namePlaceholder": "ex. Board du salon",
       "boardLabel": "Type de board",
+      "boardSpray": "Spraywall",
       "layoutLabel": "Layout",
       "sizeLabel": "Taille",
       "setsLabel": "Sets de prises",

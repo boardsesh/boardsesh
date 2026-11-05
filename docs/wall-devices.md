@@ -34,17 +34,19 @@ Things to know about this form:
 
 - The key is shown once. Boardsesh does not show it again. If it is lost, delete the
   controller and register a new one.
-- **Board Type** only offers Kilter and Tension, and the form asks for a layout, size
-  and hold sets. Pick anything that is valid. The feed described here ignores those
-  values: which board the device watches is decided by the `boardId` it subscribes
-  to, and what it may read is decided by the key's owner.
+- **Board Type** offers Kilter, Tension and Spraywall. Choose Spraywall and the form
+  asks for nothing else. For Kilter or Tension it asks for a layout, size and hold
+  sets, so pick anything that is valid. The feed described here ignores all of them:
+  which board the device watches is decided by the `boardId` it subscribes to, and
+  what it may read is decided by the key's owner.
 - The key belongs to the account that created it. A device using it reads that
   account's own boards, private ones included, plus anything public. The boards it
   can open are exactly the ones `controllerBoards` (section 3) lists.
 - Treat the key like a password. Anyone holding it can watch every board its owner
-  owns. Deleting the controller in Settings revokes it: new connections fail at once,
-  and a socket that is already open loses the owner's boards within 30 seconds (its
-  next event or query after that answers `Board not found` on a private board).
+  owns. Deleting the controller in Settings revokes it. A socket that is already open
+  loses the owner's boards within 30 seconds (its next event or query after that
+  answers `Board not found` on a private board). A new socket using that key still
+  connects, but only as a signed-out visitor (see section 2).
 
 ## 2. Connect
 
@@ -57,6 +59,25 @@ Things to know about this form:
 Do not send an `Origin` header. The server accepts connections without one (native
 and server clients) and rejects origins it does not know. Node's `ws` package sends
 none by default.
+
+**Check your user agent first.** A socket upgrade is a GET, and Cloudflare blocks a GET
+whose user agent says it is automation: `python`, `bot`, `curl/`, `java/`,
+`go-http-client`, `httpclient` and the rest of `AUTOMATION_SIGNATURE_TOKENS` in
+`packages/web/app/lib/crawler-policy.ts`. The device gets a plain HTTP 403 with
+`Server: cloudflare`, and the backend never sees its key. Node's `ws` sends no user
+agent, so the example below gets through. Python's `websockets` sends
+`Python/3.12 websockets/13.1` by default, which is blocked.
+
+To get in, put your device's name at the front of its user agent and open a PR adding
+that name to `CRAWLER_ALLOW_TOKENS` in the same file ("To let an agent in" in
+`docs/cloudflare.md`). The LZRvision projector, for example, sends
+`lzrvision-projector/1.0 Python/3.12 websockets/13.1`.
+
+**A key that fails its check does not fail the connection.** A wrong or deleted key, or
+a database error at that moment, leaves you with a working socket that reads as a
+signed-out visitor. `controllerBoards` answers `UNAUTHENTICATED`, a private board
+answers `Board not found`, and a public board keeps working. The socket stays that way
+until it reconnects, so treat either answer as a reason to connect again with backoff.
 
 A short Node example with [`graphql-ws`](https://github.com/enisdenjo/graphql-ws)
 6.x and `ws`:
@@ -91,22 +112,34 @@ const NOW_PLAYING = /* GraphQL */ `
 `;
 
 let lastSeq = 0;
-client.subscribe(
-  { query: NOW_PLAYING, variables: { boardId: 1234, boardUuid: 'the-wall-uuid' } },
-  {
-    next: ({ data, errors }) => {
-      if (errors) return console.error(errors);
-      const event = data.boardNowPlaying;
-      const seq = event.__typename === 'BoardClimbSet' ? event.climb.seq : event.seq;
-      if (seq <= lastSeq) return; // stale or duplicate
-      lastSeq = seq;
-      if (event.__typename === 'BoardClimbSet') light(event.climb);
-      if (event.__typename === 'BoardClimbCleared') clearWall();
+function followWall() {
+  // `retryAttempts` only covers a dropped socket. When the server ends this
+  // subscription, nothing retries it for you.
+  const tryAgainSoon = () => setTimeout(followWall, 30_000);
+  client.subscribe(
+    { query: NOW_PLAYING, variables: { boardId: 1234, boardUuid: 'the-wall-uuid' } },
+    {
+      next: ({ data, errors }) => {
+        if (errors) return console.error(errors);
+        const event = data.boardNowPlaying;
+        const seq = event.__typename === 'BoardClimbSet' ? event.climb.seq : event.seq;
+        if (seq <= lastSeq) return; // stale or duplicate
+        lastSeq = seq;
+        if (event.__typename === 'BoardClimbSet') light(event.climb);
+        if (event.__typename === 'BoardClimbCleared') clearWall();
+      },
+      error: (error) => {
+        console.error('subscription failed', error);
+        tryAgainSoon();
+      },
+      complete: () => {
+        console.warn('server ended the feed');
+        tryAgainSoon();
+      },
     },
-    error: (error) => console.error('subscription failed', error),
-    complete: () => console.warn('server ended the feed'),
-  },
-);
+  );
+}
+followWall();
 ```
 
 The same socket can run queries too (`client.subscribe` with a `query { ... }`
@@ -248,11 +281,16 @@ live events.
 
 - A `Board not found` error (code `NOT_FOUND`) means the key may not read this board,
   or it does not exist. Check the `boardId` against `controllerBoards`; the board may
-  have been deleted.
+  have been deleted. The socket itself may also be signed out (section 2), so connect
+  again before you decide.
 - The server can also end the stream without an error (`complete`). That happens when
   the key loses access while subscribed, for example the wall changed owner, or it is
   a gym's wall and the key's owner left the gym. Do not reconnect in a tight loop. Wait, then try again
   with backoff.
+
+The example in section 2 retries after both. With nothing left to listen to, `graphql-ws`
+closes the socket, so the retry opens a new one and the key is checked again. If your
+client keeps its socket open, close it yourself first.
 
 ## 5. Hold coordinates
 
@@ -342,8 +380,9 @@ Cache geometry per `(board_name, layout_id, size_id, set_ids)`.
 ## 6. Staying connected
 
 - **Reconnect with backoff.** Networks drop. Retry forever, starting near 1 second and
-  doubling to about a minute, with jitter. The example above does this. After a
-  reconnect, subscribe again and repeat the history fetch from section 4.
+  doubling to about a minute, with jitter. The example above does this, and `graphql-ws`
+  resubscribes on its own after a reconnect. A client that does not has to subscribe
+  again. Either way, repeat the history fetch from section 4.
 - **Keepalive.** The server pings every socket every 30 seconds and drops one that
   misses a pong. Node's `ws` answers pings for you.
 - **Rate limits.** A key is not signed in, so its limits are counted per public IP

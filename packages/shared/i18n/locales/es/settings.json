@@ -160,6 +160,7 @@
       "nameLabel": "Nombre del controlador (opcional)",
       "namePlaceholder": "Ej.: Plafón del salón",
       "boardLabel": "Tipo de plafón",
+      "boardSpray": "Spraywall",
       "layoutLabel": "Diseño",
       "sizeLabel": "Tamaño",
       "setsLabel": "Conjuntos de presas",

@@ -168,6 +168,39 @@ describe('ControllersSection', () => {
     expect(screen.getByDisplayValue('esp32-secret-key')).toBeTruthy();
   });
 
+  it('registers a Spraywall key with nothing but the board type', async () => {
+    respondWith([], () => ({ ok: true, json: async () => ({ apiKey: 'spray-secret-key' }) }));
+
+    render(<ControllersSection />);
+    fireEvent.click(await screen.findByText(t('controllers.add')));
+    await screen.findByText(t('controllers.register.title'));
+
+    await chooseOption(0, t('controllers.register.boardSpray'));
+    // The layout, size and hold set selects are gone, not just disabled.
+    expect(document.querySelectorAll('[role="combobox"]').length).toBe(1);
+
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+
+    await waitFor(() => {
+      expect(postCalls().length).toBe(1);
+    });
+    const posted = JSON.parse(postCalls()[0][1].body);
+    expect(posted.boardName).toBe('spray');
+    expect(posted).not.toHaveProperty('layoutId');
+    expect(posted).not.toHaveProperty('sizeId');
+    expect(posted).not.toHaveProperty('setIds');
+    expect(await screen.findByDisplayValue('spray-secret-key')).toBeTruthy();
+  });
+
+  it('shows a Spraywall key by name, without the placeholder layout', async () => {
+    respondWith([makeController({ name: 'Projector', boardName: 'spray', layoutId: 0, sizeId: 0, setIds: '' })]);
+
+    render(<ControllersSection />);
+
+    expect(await screen.findByText(t('controllers.register.boardSpray'))).toBeTruthy();
+    expect(screen.queryByText(t('controllers.card.layout'))).toBeNull();
+  });
+
   it('deletes a controller through the confirmation popover', async () => {
     respondWith([makeController()], () => ({ ok: true, json: async () => ({ success: true }) }));
 
