@@ -2,7 +2,8 @@
 
 Implementation slice for [BA-03 #6977](https://github.com/boardsesh/boardsesh/issues/6977)
 in [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). The epic and
-BA-03 remain incomplete. This slice builds on the web OAuth identity delegation
+BA-03 remain incomplete. Draft [#7301](https://github.com/boardsesh/boardsesh/pull/7301)
+builds on the web OAuth identity delegation
 in [#7300](https://github.com/boardsesh/boardsesh/pull/7300).
 
 ## Mounted writer and selector
@@ -158,3 +159,44 @@ All database work is against newly salted owned local worker fixtures. Provider
 keys, outbound mail, external application origins and telemetry are disabled.
 No installed-device, physical board, real provider, production role or rollback
 claim follows from these tests. Overlapping selections are reported separately.
+
+## Clean replay and preview
+
+The real pre-commit and commit-message hooks passed for all ten changed files,
+including eight TypeScript files. Main-based qualified commit
+`c1008b892434d149f1c163bdb7b58df4724a0779` is preserved at
+`backup/6977-system-board-owner-main-qualified-20261105`. Only that patch was
+replayed onto published prerequisite `d1a26add39`, producing
+`8e8e64c45fc31bbcacf533b92d29fb0ebfeda6da`. Independent range-diff and byte
+comparison found no patch changes. Merging that clean head with the same main
+`c2e1f09c6b` reproduces exact qualified tree
+`6571d6afcebb719327295e22446bfd7507cb78eb` without conflicts. The clean head then
+passed all 59 canonical typecheck tasks again, with four cache hits.
+
+At clean replay `8e8e64c45f`, a fresh owned default-legacy full-Next preview
+passed five baseline authentication flows in one Chromium run: fixture login
+with matching UID/stable browser SID, actual sign-out, wrong-password 401 with
+visible feedback, invalid recovery email with no API request, and invalid-reset
+400 with visible feedback. Actual metadata matched the branch and trimmed QA
+notes/path; that endpoint exposes no commit SHA. Eight strictly validated
+read-only GraphQL POSTs and five owned HMR connections were allowed. No external
+request, unexpected mutation, unexpected console/page error or deadline expiry
+occurred. Browser and context cleanup completed; the owned dev server remains
+running. Independent evidence review approved the complete run.
+
+The preview uses a newly claimed UUID database and separate Redis logical
+database. Its source, empty namespace, PostgreSQL OID, TLS freshness and fixed
+ports were checked before starting the normal dev orchestrator with injected QA
+notes. Creation was acknowledged once; no namespace retry, reset or deletion
+was needed. All five authority selectors stay legacy, real providers/mail and
+telemetry are disabled, and existing previews are preserved. The usual shared
+database setup/migration prerequisites are bypassed in favor of the already
+hydrated owned fixture; OOM and allocation guards remain enabled.
+
+This is baseline UI compatibility, not staged fixed-owner browser, production
+authority, real-device or distributed deployment proof. No valid reset link or
+outbound message was sent. Later documentation commits record this evidence and
+the PR link; the tested preview source remains `8e8e64c45f`. Its immutable helper
+receipt intentionally becomes stale after a later documentation commit and is
+not permission to restart or reuse a claimed namespace. PR #7301 stays draft
+while its current-head CI and feedback are monitored. The epic remains open.
