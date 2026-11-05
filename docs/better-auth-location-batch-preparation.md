@@ -3,6 +3,8 @@
 Preparation for [BA-03 #6977](https://github.com/boardsesh/boardsesh/issues/6977)
 in [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975), following
 [batch system identities #7302](https://github.com/boardsesh/boardsesh/pull/7302).
+Published as draft [#7303](https://github.com/boardsesh/boardsesh/pull/7303);
+current-head CI and review feedback are monitored.
 No location writer is delegated to a new authority by this slice. Both issues
 remain open; production authority, grants and schema remain unchanged.
 
@@ -128,16 +130,16 @@ failed claim, database, volume and private log remain retained without retry,
 reset or deletion; ordinary application code and the production migrator are
 unchanged.
 
-A new isolated fixture will instead use the exact checked-in image migration
-helper, which commits each SQL file and its two hash/time ledger rows together.
+The replacement fixture uses the exact checked-in image migration helper,
+which commits each SQL file and its two hash/time ledger rows together.
 The host already has jq; the PostgreSQL container has psql. A reviewed transport
-adapter will stream each exact checked-in SQL file and forward the helper's
+adapter streams each exact checked-in SQL file and forwards the helper's
 original ledger commands to one container psql process, retaining its single
 transaction per file. This introduces no migration SQL or reconstructed ledger.
 Only this child receives the adapter directory before the original PATH;
 ordinary Vite+ children retain their system paths. No package installation or
-host-library copying is required. The new fixture and transport must be
-reviewed and qualified separately before any success is recorded.
+host-library copying is required. The replacement fixture and transport were reviewed separately before their
+qualification below.
 
 The replacement PostgreSQL 18.6 container was created once with a different
 port, database, volume and cluster identity; the failed fixture remains intact.
@@ -174,6 +176,51 @@ formatted files pass (51.4 seconds). Frozen installs leave both lockfiles
 unchanged. Independent runtime-evidence review confirms actual closed exits,
 zero skipped integration cases and bounded child cleanup.
 
-Clean replay, the complete canonical type graph and fresh preview evidence are
-recorded after they complete. These implementation results neither adopt a
-location authority nor complete BA-03 or the epic.
+## Clean replay and preview
+
+Source commit 07ee7e57e42c629014c5e738c30122178d1bcc56 passed the real hooks
+with exactly six reviewed files. A preserved backup retains the main-based
+candidate. Replaying only that patch onto published parent
+fc39334871b8b0cceaaa3f72299a2b4971453c36 produces clean head
+0e314e9c6e13982d5feaa2936a12a1851d436724. Range-diff is equal and all six
+patch blobs are byte-identical. Merging main c2e1f09c6b179bc05cbcb9a50f7e27d6adb0dffa
+with the clean head reproduces saved source tree
+c999bb013ee51f77817d9454e77ec7cec90ed54c. Independent review checked the replay
+and head-only guard update. The three TypeScript blobs remain identical to the
+passed 89-case claim. The complete canonical type graph then passed all
+59 tasks at that clean head, with zero cache hits (165.98 seconds).
+
+After tests, the actual canonical test-user script seeded the fixed synthetic
+UID ending in 0001 once (2.03 seconds). A precheck proved its UID/email and
+credential absent; postchecks confirmed the exact user, test email, credential
+and profile. The script also creates its normal synthetic playlist fixtures.
+This is isolated QA data, not a production identity import or backfill.
+
+A new version3 preview receipt explicitly acknowledges reuse of this same
+owned full-schema QA database. It does not claim a second database creation.
+Its reviewed guard binds the original container, fresh volume, database OID,
+cluster identifier, all successful schema/test/seed claims and current source.
+The launcher preserves default memory protection, cached TLS, dedicated ports,
+source/private-environment suppression and all six legacy selectors. QA notes
+were written before startup. Actual startup printed their path, and the real
+metadata GET returned 200 with matching branch, notes and notes path.
+
+One fresh private Chromium run passed all five baseline authentication flows:
+fixture login with repeated session reads retaining the same browser SID,
+actual sign-out, wrong-password 401, invalid-email validation with no recovery
+POST, and invalid-reset 400 with an empty session. It allowed eight AST-checked
+GraphQL query posts and five owned HMR connections; external traffic,
+unexpected mutations, unexpected console errors and page errors were all zero.
+The expected 401/400 console messages were classified separately. Browser and
+context closed, and the preview remains running. The bounded result is retained
+locally as
+6977-location-preparation-preview-ui-853a0754-a96e-431b-8aad-fb1c6a57e8cc.json.
+Independent evidence review approved the final result and all 31 fingerprints.
+
+This is a desktop legacy-auth baseline, not location-writer adoption, valid
+recovery delivery, provider/device/BLE behavior or continuing credential
+authority. Later evidence-only documentation commits deliberately stale the
+startup receipt; the running preview is retained and must not be restarted
+against that stale receipt. PR #7303 remains an unmerged review candidate.
+These implementation results neither adopt a location authority nor complete
+BA-03 or the epic.
