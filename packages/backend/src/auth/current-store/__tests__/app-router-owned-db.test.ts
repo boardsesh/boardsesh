@@ -17,26 +17,15 @@ describe('owned App Router fixture database boundary', () => {
       ownedAppRouterAdminDatabase('postgresql://postgres:postgres@127.0.0.1:15478/boardsesh_backend_test'),
     ).toContain(':15478/');
   });
-  it.each(['15475', '15478'])(
-    'accepts explicit local owned port %s with salted worker database and generated LOGIN role',
+  it.each(['5433', '15475', '15478'])(
+    'accepts configured backend test port %s with salted worker database and generated LOGIN role',
     (port) => {
-      expect(ownedAppRouterDatabase(connection(port), {}).port).toBe(port);
+      expect(ownedAppRouterDatabase(connection(port)).port).toBe(port);
     },
   );
-  it('accepts the dedicated GitHub backend service only under both trusted runner indicators', () => {
-    expect(
-      ownedAppRouterDatabase(connection('5433', 'localhost', 'boardsesh_backend_test_w1'), {
-        CI: 'true',
-        GITHUB_ACTIONS: 'true',
-      }).port,
-    ).toBe('5433');
+  it('accepts a normal unsalted backend worker without CI-specific environment flags', () => {
+    expect(ownedAppRouterDatabase(connection('5433', 'localhost', 'boardsesh_backend_test_w1')).port).toBe('5433');
   });
-  it.each([{}, { CI: 'true' }, { GITHUB_ACTIONS: 'true' }, { CI: '1', GITHUB_ACTIONS: 'true' }])(
-    'refuses local/user port5433 without the exact GitHub service environment %j',
-    (environment) => {
-      expect(() => ownedAppRouterDatabase(connection('5433'), environment)).toThrow('Unowned proof database');
-    },
-  );
   it.each([
     connection('15478', 'production.example.test'),
     connection('15478', '127.0.0.1', 'boardsesh_backend_test'),
@@ -44,7 +33,10 @@ describe('owned App Router fixture database boundary', () => {
     connection().replace(role, 'postgres'),
     `${connection()}?options=unsafe`,
     connection('5432'),
+    connection('5433', 'production.example.test'),
+    connection('5433', 'localhost', 'boardsesh_backend_test'),
+    connection('5433').replace(role, 'postgres'),
   ])('refuses an unowned destination or principal', (input) => {
-    expect(() => ownedAppRouterDatabase(input, {})).toThrow('Unowned proof database');
+    expect(() => ownedAppRouterDatabase(input)).toThrow('Unowned proof database');
   });
 });

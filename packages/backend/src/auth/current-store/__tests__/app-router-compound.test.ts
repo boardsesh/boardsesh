@@ -149,8 +149,7 @@ describe('synthetic App Router compound source/intent authority', () => {
     if (
       !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
       !url.pathname.startsWith('/boardsesh_backend_test_w') ||
-      (!['15475', '15478'].includes(url.port) &&
-        !(process.env.CI === 'true' && process.env.GITHUB_ACTIONS === 'true' && url.port === '5433'))
+      !['5433', '15475', '15478'].includes(url.port)
     )
       throw new Error('Compound fixture requires an owned local worker database');
     await db.transaction(async (transaction) => {
