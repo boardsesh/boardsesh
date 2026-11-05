@@ -16,6 +16,7 @@ This is the review entry point for [epic #6975](https://github.com/boardsesh/boa
 | [#7288](https://github.com/boardsesh/boardsesh/pull/7288) | Independently opted-in native Apple/Google identity reservations | Stacked on #7287 |
 | [#7289](https://github.com/boardsesh/boardsesh/pull/7289) | Paired UID-bound password recovery and unconditional web/mobile capability redaction | Stacked on #7288; migration 0292 |
 | [#7290](https://github.com/boardsesh/boardsesh/pull/7290) | Actual App Router/configured-provider callbacks and browser actor-cookie proof | Stacked on #7289; test fixtures only |
+| [#7299](https://github.com/boardsesh/boardsesh/pull/7299) | Server encoding versus cookie publication, rolling renewal and delayed-response browser races | Stacked on #7290; test fixtures only |
 
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 
