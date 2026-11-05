@@ -18,7 +18,6 @@ const spies = vi.hoisted(() => ({
   localConnected: true,
   pressAction: 'disconnect' as string,
   currentClimb: null as null | { uuid: string; name: string; difficulty: string; mirrored?: boolean },
-  byline: 'V7 · 1.4k sends' as string | null,
   announce: vi.fn(),
   reduceMotion: false,
   nativeGlass: true,
@@ -194,7 +193,6 @@ vi.mock('../../../hooks/use-display-grade', () => ({
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { avatarUrl: 'https://example.com/me.png', displayName: 'Marco', email: null } }),
 }));
-vi.mock('../use-climb-byline', () => ({ useClimbByline: () => spies.byline }));
 vi.mock('../../Avatar', () => ({
   Avatar: ({ uri, name, size }: { uri?: string | null; name?: string | null; size?: number }) =>
     createElement('img', { 'data-avatar': 'true', 'data-uri': uri, 'data-name': name, 'data-size': size }),
@@ -359,7 +357,6 @@ describe('BoardHeldCapsule', () => {
     spies.localConnected = true;
     spies.pressAction = 'disconnect';
     spies.currentClimb = null;
-    spies.byline = 'V7 · 1.4k sends';
     spies.colorScheme = 'dark';
     spies.glowInput = null;
     spies.glowEnabled = null;
@@ -424,25 +421,18 @@ describe('BoardHeldCapsule', () => {
       spies.currentClimb = { uuid: 'climb-1', name: 'Kish Mud Prison', difficulty: 'V7' };
     });
 
-    it('shows your face, then the climb over its grade · sends byline', () => {
+    it('shows your face, then the climb name alone, so the angle keeps its bar slot (#7281)', () => {
       const { container } = render(<BoardHeldCapsule ledless={false} />);
       const avatar = container.querySelector('[data-avatar]');
       expect(avatar?.getAttribute('data-uri')).toBe('https://example.com/me.png');
       expect(avatar?.getAttribute('data-name')).toBe('Marco');
       const lines = [...container.querySelectorAll('[data-text]')].map((node) => node.textContent);
-      expect(lines).toEqual(['Kish Mud Prison', 'V7 · 1.4k sends']);
+      expect(lines).toEqual(['Kish Mud Prison']);
       expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
       // Still the amber "LEDs on" tone.
       expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-tint')).toBe(
         'rgba(251, 191, 36, 0.14)',
       );
-    });
-
-    it('drops the byline line when there is nothing to say', () => {
-      spies.byline = null;
-      const { container } = render(<BoardHeldCapsule ledless={false} />);
-      const lines = [...container.querySelectorAll('[data-text]')].map((node) => node.textContent);
-      expect(lines).toEqual(['Kish Mud Prison']);
     });
 
     it('names the climb and the hold in one spoken label', () => {

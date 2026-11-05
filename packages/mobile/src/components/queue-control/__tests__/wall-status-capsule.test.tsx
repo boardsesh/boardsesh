@@ -18,9 +18,6 @@ const spies = vi.hoisted(() => ({
   colorScheme: 'dark' as 'dark' | 'light',
   nativeGlass: true,
   enterAnimation: vi.fn(() => ({})),
-  // The sends half of the byline; null leaves the grade alone, as for an unsent climb.
-  sends: null as string | null,
-  bylineArgs: null as unknown,
   panConsumed: false,
 }));
 
@@ -127,22 +124,6 @@ vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   DEFAULT_GRADE_COLOR: '#808080',
 }));
 
-vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ boardConfig: { boardName: 'kilter', layoutId: 1 } }),
-}));
-vi.mock('../use-climb-byline', () => ({
-  useClimbByline: (
-    climb: unknown,
-    boardConfig: unknown,
-    grade: string | null,
-    options: { statsEnabled?: boolean } = {},
-  ) => {
-    spies.bylineArgs = { climb, boardConfig, grade, statsEnabled: options.statsEnabled };
-    const sends = options.statsEnabled === false ? null : spies.sends;
-    const parts = [grade, sends].filter((part): part is string => !!part);
-    return parts.length > 0 ? parts.join(' · ') : null;
-  },
-}));
 vi.mock('../use-open-wall-preview', () => ({ useOpenWallPreview: () => spies.openWallPreview }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => spies.nativeGlass }));
 vi.mock('../../GlassSurface', () => ({
@@ -345,7 +326,6 @@ describe('WallStatusCapsule', () => {
     spies.variant = 'liquidGlass';
     spies.colorScheme = 'dark';
     spies.nativeGlass = true;
-    spies.sends = null;
     spies.panConsumed = false;
   });
 
@@ -361,15 +341,12 @@ describe('WallStatusCapsule', () => {
     const capsuleStyle = JSON.parse(glassSurface?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
 
     expect(getByText('Wax On')).toBeTruthy();
-    expect(getByText('V5 6C')).toBeTruthy();
     expect(nameStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
     expect(nameStyle.flex).toBeUndefined();
     // UIKit's 38pt bar slot, the same height as the action groups beside it.
     expect(capsuleStyle).toMatchObject({ height: 38 });
     expect(glassSurface?.getAttribute('data-glass-radius')).toBe('19');
-    // 12pt name over an 11pt byline fits the 38pt slot at the font cap.
     expect(getByText('Wax On').getAttribute('data-variant')).toBe('caption1');
-    expect(getByText('V5 6C').getAttribute('data-variant')).toBe('caption2');
     const rowStyle = JSON.parse(container.querySelector('[data-pressable]')?.getAttribute('data-style') ?? '{}');
     expect(rowStyle).toMatchObject({ gap: 6, paddingStart: 4, paddingEnd: 10 });
     expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('24');
@@ -423,7 +400,7 @@ describe('WallStatusCapsule', () => {
     expect(spies.enterAnimation).toHaveBeenCalledWith(180);
   });
 
-  it('lets a long native title shrink its name while retaining the avatar and byline', () => {
+  it('lets a long native title shrink its name while retaining the avatar', () => {
     const { container, getByText } = render(
       <NativeHeaderActionContext.Provider value={true}>
         <WallStatusCapsule climb={makeClimb({ name: 'Lightest Pair of Shorts' })} />
@@ -446,9 +423,6 @@ describe('WallStatusCapsule', () => {
       unknown
     >;
     expect(avatarStyle.flexShrink).toBe(0);
-    // The byline sits under the name and ends in an ellipsis rather than wrapping.
-    expect(getByText('V5 6C').getAttribute('data-lines')).toBe('1');
-    expect(getByText('V5 6C').getAttribute('data-ellipsize')).toBe('tail');
     expect(nameStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
     // A capped title ends the name in an ellipsis instead of clipping it.
     expect(getByText('Lightest Pair of Shorts').getAttribute('data-lines')).toBe('1');
@@ -465,7 +439,7 @@ describe('WallStatusCapsule', () => {
     [100, false],
     [113, false],
     [undefined, false],
-  ])('drops the avatar, never the grade, when the title bound is %s (compact: %s)', (titleMaxWidth, compact) => {
+  ])('drops the avatar, never the name, when the title bound is %s (compact: %s)', (titleMaxWidth, compact) => {
     const { container, getByText } = render(
       <NativeHeaderActionContext.Provider value={true}>
         <NativeTitleMaxWidthContext.Provider value={titleMaxWidth}>
@@ -475,7 +449,6 @@ describe('WallStatusCapsule', () => {
     );
     expect(container.querySelector('[data-driver-avatar]') == null).toBe(compact);
     expect(getByText('Wax On')).toBeTruthy();
-    expect(getByText('V5 6C')).toBeTruthy();
     const rowStyle = JSON.parse(container.querySelector('[data-pressable]')?.getAttribute('data-style') ?? '{}');
     expect(rowStyle.paddingStart).toBe(compact ? 10 : 4);
   });
@@ -548,46 +521,24 @@ describe('WallStatusCapsule', () => {
     expect(spies.openWallPreview).toHaveBeenCalledOnce();
   });
 
-  it('renders the wall climb name and grade', () => {
-    const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-    expect(container.querySelector('[data-pressable]')).not.toBeNull();
-    expect(getByText('Wax On')).not.toBeNull();
-    expect(getByText('V5 6C')).not.toBeNull();
-  });
-
-  it('puts the name over a grade · sends byline, like the accessory platter (#6902)', () => {
-    spies.sends = '1.4k sends';
+  it('shows the live climb as its name alone, so the angle keeps its bar slot (#7281)', () => {
     const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
     const lines = [...container.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
-    expect(lines).toEqual(['Wax On', 'V5 6C · 1.4k sends']);
-    // The live stats read the converted climb on the active board.
-    expect(spies.bylineArgs).toEqual({
-      climb: { uuid: 'wall-1', _converted: true },
-      boardConfig: { boardName: 'kilter', layoutId: 1 },
-      grade: 'V5 6C',
-      statsEnabled: true,
-    });
+    expect(lines).toEqual(['Wax On']);
+    // The grade is still spoken.
+    expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain('V5 6C');
   });
 
-  it("shows the grade alone when the reporter sent no angle, so no other angle's sends leak in", () => {
-    spies.sends = '1.4k sends';
-    const { container } = render(<WallStatusCapsule climb={makeClimb({ angle: null })} />);
-    const lines = [...container.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
-    expect(lines).toEqual(['Wax On', 'V5 6C']);
-  });
-
-  it('renders without crashing when the climb name is null (empty name, grade kept)', () => {
-    const { container, getByText } = render(<WallStatusCapsule climb={makeClimb({ name: null })} />);
+  it('renders without crashing when the climb name is null', () => {
+    const { container } = render(<WallStatusCapsule climb={makeClimb({ name: null })} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
-    expect(getByText('V5 6C')).not.toBeNull();
   });
 
-  it('omits the grade text when the climb grade is null (name and avatar kept)', () => {
+  it('keeps the name and avatar when the climb grade is null', () => {
     const { container, getByText } = render(<WallStatusCapsule climb={makeClimb({ grade: null })} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
     expect(getByText('Wax On')).not.toBeNull();
     expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
-    expect(container.textContent).not.toContain('V5 6C');
   });
 
   it('leads with the sender avatar as decoration within the single preview button', () => {
@@ -655,34 +606,35 @@ describe('WallStatusCapsule', () => {
     }
   });
 
-  it('labels disconnected history in its byline and spoken label without fetching hidden stats', () => {
-    spies.sends = '1.4k sends';
-    const { container, getByText } = render(
-      <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m' }} />,
+  it('puts the age under the name of a climb lit with no live link, so it never reads as live', () => {
+    const { container } = render(
+      <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }} />,
     );
-    expect(getByText('mobile.boardPresence.stripHistoryByline:20m,V5 6C')).toBeTruthy();
+    const lines = [...container.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
+    expect(lines).toEqual(['Wax On', '20m ago']);
     expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toBe(
       'mobile.boardPresence.stripHistoryA11yLabelWithSender:Wax On,V5 6C,20m,Casey',
     );
-    expect(spies.bylineArgs).toMatchObject({ statsEnabled: false });
-    expect(container.textContent).not.toContain('1.4k sends');
   });
 
-  it('shows historical recency when an older reporter has no grade', () => {
+  it('shows the age when an older reporter has no grade', () => {
     const { getByText } = render(
-      <WallStatusCapsule climb={makeClimb({ grade: null })} presentation={{ kind: 'history', ageLabel: 'now' }} />,
+      <WallStatusCapsule
+        climb={makeClimb({ grade: null })}
+        presentation={{ kind: 'history', ageLabel: 'now', ageByline: 'Just now' }}
+      />,
     );
-    expect(getByText('mobile.boardPresence.stripHistoryOverline:now')).toBeTruthy();
+    expect(getByText('Just now')).toBeTruthy();
   });
 
   it('does not announce history or its changing age as a new live climb', () => {
     vi.useFakeTimers();
     try {
       const { rerender } = render(
-        <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m' }} />,
+        <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }} />,
       );
       vi.advanceTimersByTime(600);
-      rerender(<WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '21m' }} />);
+      rerender(<WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '21m', ageByline: '21m ago' }} />);
       vi.advanceTimersByTime(600);
       expect(spies.announce).not.toHaveBeenCalled();
     } finally {
@@ -848,7 +800,7 @@ describe('WallStatusCapsule', () => {
 
     it('uses a historical overline while keeping the climb grade and sender', () => {
       const { container, getByText } = render(
-        <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m' }} />,
+        <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }} />,
       );
       expect(getByText('mobile.boardPresence.stripHistoryOverline:20m')).toBeTruthy();
       expect(getByText('V5 6C')).toBeTruthy();

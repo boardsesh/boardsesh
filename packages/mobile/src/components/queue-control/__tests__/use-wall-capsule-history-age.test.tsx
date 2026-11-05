@@ -20,7 +20,9 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string, options?: { count: number }) => `${key}:${options?.count ?? ''}` }),
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number; age?: string }) => `${key}:${options?.count ?? options?.age ?? ''}`,
+  }),
 }));
 
 import { useWallCapsuleHistoryAge } from '../use-wall-capsule-history-age';
@@ -40,14 +42,34 @@ afterEach(() => {
 describe('useWallCapsuleHistoryAge', () => {
   it('updates visible history once a minute and cleans up on unmount', () => {
     const { result, unmount } = renderHook(() => useWallCapsuleHistoryAge('2026-10-31T10:00:00Z', true));
-    expect(result.current).toBe('mobile.boardPresence.litAgoMinutes:20');
+    expect(result.current).toEqual({
+      label: 'mobile.boardPresence.litAgoMinutes:20',
+      byline: 'mobile.boardPresence.litAgoByline:mobile.boardPresence.litAgoMinutes:20',
+    });
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(result.current).toBe('mobile.boardPresence.litAgoMinutes:21');
+    expect(result.current?.label).toBe('mobile.boardPresence.litAgoMinutes:21');
     unmount();
     expect(vi.getTimerCount()).toBe(0);
     expect(controls.listeners.size).toBe(0);
+  });
+
+  it('says "Just now" under the name inside the first minute, not "now ago"', () => {
+    const { result } = renderHook(() => useWallCapsuleHistoryAge('2026-10-31T10:19:30Z', true));
+    expect(result.current).toEqual({
+      label: 'mobile.boardPresence.litAgoNow:',
+      byline: 'mobile.boardPresence.litAgoBylineNow:',
+    });
+  });
+
+  it.each([
+    ['2026-10-31T08:20:00Z', 'mobile.boardPresence.litAgoHours:2'],
+    ['2026-10-28T10:20:00Z', 'mobile.boardPresence.litAgoDays:3'],
+    ['2026-10-10T10:20:00Z', 'mobile.boardPresence.litAgoWeeks:3'],
+  ])('labels a climb lit at %s as %s', (sentAt, label) => {
+    const { result } = renderHook(() => useWallCapsuleHistoryAge(sentAt, true));
+    expect(result.current).toEqual({ label, byline: `mobile.boardPresence.litAgoByline:${label}` });
   });
 
   it('does no timed work while hidden, linked, invalid or covered', () => {
@@ -75,7 +97,7 @@ describe('useWallCapsuleHistoryAge', () => {
       controls.appState = 'active';
       controls.listeners.forEach((listener) => listener('active'));
     });
-    expect(result.current).toBe('mobile.boardPresence.litAgoMinutes:40');
+    expect(result.current?.label).toBe('mobile.boardPresence.litAgoMinutes:40');
     expect(vi.getTimerCount()).toBe(1);
   });
 });

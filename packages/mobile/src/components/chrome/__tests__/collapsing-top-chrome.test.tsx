@@ -20,10 +20,7 @@ vi.mock('../use-root-bar-items', () => {
       };
     },
     useBoardSwitcherBarItem: () => (ctrl.board ? stub('board') : null),
-    useClimbListBarItems: ({ angleRow }: { angleRow?: { label: string } | null }) => {
-      ctrl.climbListAngleRow = angleRow ?? null;
-      return [stub('history', 'root.boardHistory'), stub('list-menu')];
-    },
+    useClimbListBarItems: () => [stub('history', 'root.boardHistory'), stub('list-menu')],
     useLightbulbBarItem: () => (ctrl.bluetooth ? stub('lightbulb') : null),
     useBarItemsOnRail: () => ctrl.onRail,
   };
@@ -119,7 +116,6 @@ const ctrl = vi.hoisted(() => ({
   isPad: false,
   widthClass: 'compact' as 'compact' | 'regular',
   anglePickerOpenChange: null as ((open: boolean) => void) | null,
-  climbListAngleRow: null as { label: string } | null,
   openBoardControls: vi.fn(),
   nativeLeftItems: null as BarItemStandIn[] | null,
   nativeRightItems: null as BarItemStandIn[] | null,
@@ -275,6 +271,7 @@ vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
 vi.mock('../../Badge', () => ({ Badge: () => createElement('span', { 'data-badge-dot': 'true' }) }));
 
 import { CollapsingTopChrome } from '../CollapsingTopChrome';
+import { nativeItemsTitleMaxWidth } from '../native-title-bound';
 import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 function makeProps(over: Partial<Parameters<typeof CollapsingTopChrome>[0]> = {}) {
@@ -398,7 +395,6 @@ describe('CollapsingTopChrome', () => {
     ctrl.isPad = false;
     ctrl.widthClass = 'compact';
     ctrl.anglePickerOpenChange = null;
-    ctrl.climbListAngleRow = null;
     ctrl.openBoardControls.mockClear();
     haptics.light.mockClear();
   });
@@ -639,10 +635,10 @@ describe('CollapsingTopChrome', () => {
       });
 
       it.each([
-        [375, true],
-        [402, true],
-        [440, false],
-      ])('on a %ipt iPhone beside the wall capsule, moves the angle into the list menu: %s', (width, moved) => {
+        [375, 65],
+        [402, 92],
+        [440, 130],
+      ])('on a %ipt iPhone keeps the angle in the bar and gives the wall capsule %ipt (#7281)', (width, room) => {
         ctrl.frameWidth = width;
         ctrl.board = board;
         render(
@@ -651,20 +647,20 @@ describe('CollapsingTopChrome', () => {
             centerContent={<button>On the wall</button>}
           />,
         );
-        expect(labels(ctrl.nativeRightItems)).toEqual(
-          moved ? ['history', 'list-menu'] : ['40°', 'history', 'list-menu'],
-        );
-        expect(ctrl.climbListAngleRow).toEqual(moved ? expect.objectContaining({ label: 'Board angle, 40°' }) : null);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
+        // The capsule's bound counts the angle, so UIKit slides the capsule clear of it.
+        const sides = ctrl.nativeCenterItemSides;
+        expect(sides).toEqual({ leading: { customSlots: 2 }, trailing: { nativeItems: 3, titleItems: 1 } });
+        expect(sides && nativeItemsTitleMaxWidth(width, { left: 0, right: 0 }, sides)).toBe(room);
       });
 
-      it('keeps the angle in the bar when no capsule needs the room', () => {
+      it('keeps the angle in the bar when no capsule shows', () => {
         ctrl.frameWidth = 375;
         ctrl.board = board;
         render(
           <CollapsingTopChrome {...makeProps({ canCreate: true, hideLight: true, climbListBarActions: climbList })} />,
         );
         expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
-        expect(ctrl.climbListAngleRow).toBeNull();
       });
 
       it('anchors the showcase callout on the native history item, second from the end', () => {
@@ -696,9 +692,8 @@ describe('CollapsingTopChrome', () => {
         expect(container.querySelector('[data-native-angle-picker]')).not.toBeNull();
       });
 
-      it("moves the angle into the list menu when the stack's frame, not the window, is short of room", () => {
+      it('keeps the native angle in the bar beside the wall capsule', () => {
         ctrl.board = board;
-        // A wide window would leave the capsule room; the narrow frame is what the bar gets.
         ctrl.windowWidth = 1210;
         ctrl.frameWidth = 375;
         render(
@@ -707,8 +702,7 @@ describe('CollapsingTopChrome', () => {
             centerContent={<button>On the wall</button>}
           />,
         );
-        expect(labels(ctrl.nativeRightItems)).toEqual(['history', 'list-menu']);
-        expect(ctrl.climbListAngleRow).toEqual(expect.objectContaining({ label: 'Board angle, 40°' }));
+        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
       });
     });
 
@@ -752,7 +746,7 @@ describe('CollapsingTopChrome', () => {
         expect(ctrl.nativeCenterItemSides?.trailing).toEqual({ nativeItems: 3, titleItems: 0 });
       });
 
-      it('never moves the angle into the list menu, which could not anchor its popover', () => {
+      it('keeps the glass angle beside the wall capsule, where its popover can anchor', () => {
         ctrl.board = board;
         ctrl.frameWidth = 375;
         render(
@@ -762,7 +756,6 @@ describe('CollapsingTopChrome', () => {
           />,
         );
         expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
-        expect(ctrl.climbListAngleRow).toBeNull();
       });
 
       it('keeps the board switcher native and the glass bulb last on Discover', () => {

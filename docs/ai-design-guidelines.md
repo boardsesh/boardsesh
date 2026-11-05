@@ -665,9 +665,12 @@ collided with; the leading and trailing groups stay separate, as on the rail.
 - The centre capsule's width comes from the items' measured widths (`nativeItemsTitleMaxWidth`: a
   native item 44pt and 57pt for each one after it, a glass island 38pt a slot plus 8pt), so it
   ellipsizes before the trailing group. Climbs gets 134pt at 375pt, 161pt at 402pt and 199pt at
-  440pt. An adjustable angle beside history would leave 65, 92 and 130pt; under 96pt
-  (`CENTER_CONTENT_MIN_WIDTH`, about six letters and the grade) the angle moves to the top of the ⋯
-  menu while the capsule shows, so 375pt and 402pt keep 134pt and 161pt.
+  440pt. An adjustable angle beside history leaves 65, 92 and 130pt. The angle never leaves the bar
+  for the capsule (#7281): under 100pt the capsule goes compact instead (no face, no ×; a swipe
+  still hides it).
+- The Climbs capsule shows the climb's name only, so it fits beside the angle. A climb lit with no
+  live link adds its age under the name ("20m ago"), so it never reads as live. The grade and the
+  sender are spoken, not shown. The tab-bar platter keeps its grade · sends line.
 - Board history is a native item, so the showcase recorder's `board-history-button` anchor is a box
   drawn from the bar's geometry in screenshot mode (`NativeTrailingItemShowcaseAnchor`).
 - + (create) and the notifications bell keep `visibilityPriority: 'high'`, so they stay on screen
@@ -675,9 +678,8 @@ collided with; the leading and trailing groups stay separate, as on the rail.
 - The angle ("40°") stays a title-only item. An icon would hide the number on every iPhone, so it
   gives up its place on the Duo rail. On a regular-width iPad it stays the glass "40°" as a custom
   view, still first in the trailing group: its picker is a popover there (`useAnglePickerPopover`),
-  and a popover needs a React view to point at, which a UIKit bar item is not. For the same reason it
-  never moves into the ⋯ menu on a regular-width iPad. A compact-width iPad (Split View under 700pt)
-  behaves like an iPhone: the native title item opens the sheet and may move into the ⋯ menu. A width
+  and a popover needs a React view to point at, which a UIKit bar item is not. A compact-width iPad
+  (Split View under 700pt) behaves like an iPhone: the native title item opens the sheet. A width
   change while the picker is open closes it first, then swaps the trigger.
 - The capsule's room and the showcase anchor measure the navigation stack's frame
   (`useFrameSize`), not the window, so the iPad sidebar is left out.

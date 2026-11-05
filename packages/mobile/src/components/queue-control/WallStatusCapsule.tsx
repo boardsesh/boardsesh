@@ -11,9 +11,10 @@
 //
 // Two platform-native skins behind one stateful body (see selectByVariant below):
 //   - Liquid Glass (iOS): one regular native-glass pill with a warm "lit" amber
-//     tint, laid out like the tab-bar accessory platter: the face, then the name
-//     over "V7 · 1.4k sends" (#6902). Older devices and Reduce Transparency
-//     retain the opaque pill.
+//     tint: the face, then the name. No grade · sends line, so the angle keeps
+//     its bar slot beside it (#7281); a climb lit with no live link adds its age
+//     ("20m ago") under the name, so it never reads as live. Older devices and
+//     Reduce Transparency retain the opaque pill.
 //   - Material 3 (Android): a full-bleed titled status band — a tertiary accent
 //     rail + an "On the wall" overline (the lit semantic stated in words and
 //     carried by the tertiary colour role) + a bottom divider, ending in a 48dp
@@ -35,7 +36,6 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
-import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -43,7 +43,6 @@ import { PressableSurface } from '../PressableSurface';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
 import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
-import { useClimbByline } from './use-climb-byline';
 import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
 
 // The capsule's face stands in for the platter's board thumbnail, sized to the
@@ -70,7 +69,8 @@ type WallStatusCapsuleProps = {
   climb: BoardPresenceClimb;
   /** The board in scope, so the grade reads on its scale. The wall payload names no board. */
   boardName?: string | null;
-  presentation?: { kind: 'live' } | { kind: 'history'; ageLabel: string };
+  /** History: `ageLabel` ("20m") is spoken, `ageByline` ("20m ago") shows under the name. */
+  presentation?: { kind: 'live' } | { kind: 'history'; ageLabel: string; ageByline: string };
   occurrenceKey?: string;
   onDismiss?: (occurrenceKey: string) => void;
 };
@@ -85,7 +85,6 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
   const compact = useHeaderCapsuleCompact();
-  const { boardConfig } = useDrawerHost();
   const history = presentation?.kind === 'history' ? presentation : null;
   const swipe = useWallCapsuleDismiss({
     occurrenceKey: occurrenceKey ?? `${climb.seq}:${climb.sentAt}:${climb.climbUuid}`,
@@ -142,20 +141,13 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   }, [announceLabel]);
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
-  const climbForStats = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
-  // The platter's byline: the plain grade, then the sends (or the rating). An
-  // older reporter sends no angle, and the converted climb's 0° would read some
-  // other angle's sends, so that shows the grade alone. The Material band has
-  // no byline, so it skips the stats read.
-  const byline = useClimbByline(climbForStats, boardConfig, formattedGrade, {
-    statsEnabled: !isMaterial && !history && climb.angle != null,
-  });
+  const previewClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
 
   const { consumePanned, dismiss } = swipe;
   const handlePress = useCallback(() => {
     if (consumePanned()) return;
-    openWallPreview(climbForStats);
-  }, [consumePanned, openWallPreview, climbForStats]);
+    openWallPreview(previewClimb);
+  }, [consumePanned, openWallPreview, previewClimb]);
   // "Hide": the ×'s label and the screen-reader action's name.
   const hideLabel = t('mobile.boardPresence.stripDismiss');
   const accessibilityActions = onDismiss ? [{ name: 'dismiss', label: hideLabel }] : undefined;
@@ -326,13 +318,7 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
             )
           }
           name={name}
-          byline={
-            history
-              ? formattedGrade
-                ? t('mobile.boardPresence.stripHistoryByline', { age: history.ageLabel, grade: formattedGrade })
-                : t('mobile.boardPresence.stripHistoryOverline', { age: history.ageLabel })
-              : byline
-          }
+          byline={history ? history.ageByline : null}
           compact={compact}
           largeContentTitle={a11yLabel}
           onActivate={handlePress}

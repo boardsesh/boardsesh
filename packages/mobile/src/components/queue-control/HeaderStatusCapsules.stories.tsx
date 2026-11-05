@@ -14,11 +14,11 @@ import { Text } from '../Text';
 import { BoardHeldCapsule, HeldClimbCapsule } from './BoardHeldCapsule';
 import { WallStatusCapsule } from './WallStatusCapsule';
 
-// The Climbs header's status capsules, laid out like the tab-bar accessory
-// platter (#6902): a face, then the climb's name over "V7 · 1.4k sends".
-// Drawn inside the native header context at the width UIKit leaves the title
-// view on a 402pt iPhone, so the truncation matches the real header. The held
-// capsules' taps are inert here; the real one disconnects the board.
+// The Climbs header's status capsules: a face, then the climb's name, with
+// "20m ago" under it on a stale capsule (#7281). Drawn inside the native header
+// context; the narrow toggle shows the compact form a phone gets beside the
+// angle. The held capsules' taps are inert here; the real one disconnects the
+// board.
 
 // UIKit's title slot between the two bar groups on an iPhone 17 Pro.
 const TITLE_SLOT_WIDTH = 210;
@@ -136,7 +136,7 @@ function InteractiveWallCapsule() {
                   <WallStatusCapsule
                     climb={wallClimb({ name: 'Swans A-Swimming', seq: sequence })}
                     boardName="tension"
-                    presentation={history ? { kind: 'history', ageLabel: '20m' } : { kind: 'live' }}
+                    presentation={history ? { kind: 'history', ageLabel: '20m', ageByline: '20m ago' } : { kind: 'live' }}
                     occurrenceKey={`story-board:${sequence}`}
                     onDismiss={() => setDismissed(true)}
                   />
@@ -228,7 +228,7 @@ const stories: StoryModule = {
               <WallStatusCapsule
                 climb={wallClimb()}
                 boardName="kilter"
-                presentation={{ kind: 'history', ageLabel: '20m' }}
+                presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
               />
             </TitleSlot>
           </StoryVariant>

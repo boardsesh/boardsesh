@@ -541,6 +541,8 @@
       "litAgoHours": "{{count}}h",
       "litAgoDays": "{{count}}g",
       "litAgoWeeks": "{{count}}sett",
+      "litAgoByline": "{{age}} fa",
+      "litAgoBylineNow": "Proprio ora",
       "sentByLine": "Chiuso da {{name}}",
       "unnamedClimber": "Qualcuno",
       "emptyTitle": "Ancora nessuno su questo pannello",
@@ -623,7 +625,6 @@
         "exitA11y": "Esci dallo schermo parete"
       },
       "stripHistoryOverline": "Ultimo in parete · {{age}}",
-      "stripHistoryByline": "Ultimo in parete · {{age}} · {{grade}}",
       "stripHistoryA11yLabel": "Ultimo in parete · {{age}}: {{name}}, {{grade}}",
       "stripHistoryA11yLabelWithSender": "Ultimo in parete · {{age}}: {{name}}, {{grade}}, illuminato da {{sender}}",
       "stripDismiss": "Nascondi",

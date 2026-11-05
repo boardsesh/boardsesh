@@ -6,12 +6,7 @@ vi.mock('react-native', () => ({
   DynamicColorIOS: (colors: { light: string }) => colors.light,
   PlatformColor: (name: string) => name,
 }));
-import {
-  CENTER_CONTENT_MIN_WIDTH,
-  nativeBarSideWidth,
-  nativeItemsTitleMaxWidth,
-  nativeTrailingItemLeft,
-} from '../native-title-bound';
+import { nativeBarSideWidth, nativeItemsTitleMaxWidth, nativeTrailingItemLeft } from '../native-title-bound';
 
 const NO_INSETS = { left: 0, right: 0 };
 // Climbs in a horizontal bar: the glass avatar and + leading.
@@ -55,15 +50,16 @@ describe('nativeItemsTitleMaxWidth', () => {
     expect(frameWidth / 2 + width / 2).toBeLessThanOrEqual(trailingLeft);
   });
 
-  it('puts an angle under the minimum on 375pt and 402pt only, which is when the chrome moves it', () => {
-    const roomBesideAngle = (frameWidth: number) =>
-      nativeItemsTitleMaxWidth(frameWidth, NO_INSETS, {
-        leading: GLASS_AVATAR_AND_CREATE,
-        trailing: ANGLE_HISTORY_AND_MENU,
-      });
-    expect(roomBesideAngle(375)).toBeLessThan(CENTER_CONTENT_MIN_WIDTH);
-    expect(roomBesideAngle(402)).toBeLessThan(CENTER_CONTENT_MIN_WIDTH);
-    expect(roomBesideAngle(440)).toBeGreaterThanOrEqual(CENTER_CONTENT_MIN_WIDTH);
+  it.each([
+    [375, 65],
+    [402, 92],
+    [440, 130],
+  ])('leaves a %ipt iPhone capsule %ipt beside the angle, which stays in the bar (#7281)', (frameWidth, room) => {
+    const roomBesideAngle = nativeItemsTitleMaxWidth(frameWidth, NO_INSETS, {
+      leading: GLASS_AVATAR_AND_CREATE,
+      trailing: ANGLE_HISTORY_AND_MENU,
+    });
+    expect(roomBesideAngle).toBe(room);
   });
 
   it('never goes below zero', () => {

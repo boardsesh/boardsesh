@@ -51,7 +51,6 @@ import {
   useHeaderCapsuleCompact,
   type HeaderCapsuleDismiss,
 } from './HeaderStatusCapsule';
-import { useClimbByline } from './use-climb-byline';
 import { useClimbWallGlow } from './use-climb-wall-glow';
 import { useWallGlowLayer, wallGlowBlendFor, type WallGlowLayer } from '../play-drawer/use-wall-glow';
 import { wallGlowSurfaces } from '../../theme/colors';
@@ -252,8 +251,9 @@ type HeldClimbCapsuleProps = {
 };
 
 /**
- * Your face, then your climb over its byline. Split out so the stats read only
- * runs with a climb; exported for the header-capsules story.
+ * Your face, then your climb's name: no grade · sends line, so the angle keeps
+ * its bar slot (#7281). Split out so the glow only builds with a climb; exported
+ * for the header-capsules story.
  */
 export function HeldClimbCapsule({
   climb,
@@ -281,7 +281,6 @@ export function HeldClimbCapsule({
   }, []);
 
   const grade = resolveGrade(climb, boardConfig?.boardName).label;
-  const byline = useClimbByline(climb, boardConfig, grade);
   const accessibilityLabel = t(ledless ? 'ble.barControl.wallHeldWithClimb' : 'ble.barControl.youHaveBoardWithClimb', {
     name: climb.name,
     grade: grade ?? '',
@@ -321,7 +320,7 @@ export function HeldClimbCapsule({
           />
         }
         name={climb.name}
-        byline={byline}
+        byline={null}
         textColor={glowLayer?.surface.label}
         textStyle={glowLayer ? (glowLayer.surface.frost ? styles.glowShadowDark : styles.glowShadowLight) : undefined}
         compact={compact}

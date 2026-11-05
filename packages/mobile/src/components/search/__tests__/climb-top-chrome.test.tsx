@@ -198,12 +198,14 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { board?: string; count?: number }) =>
+    t: (key: string, options?: { board?: string; count?: number; age?: string }) =>
       key === 'mobile.listOptions.history'
         ? `Board history, ${options?.board}`
-        : options?.count === undefined
-          ? key
-          : `${key}:${options.count}`,
+        : options?.age !== undefined
+          ? `${key}(${options.age})`
+          : options?.count === undefined
+            ? key
+            : `${key}:${options.count}`,
   }),
 }));
 
@@ -503,7 +505,7 @@ vi.mock('../../queue-control/WallStatusCapsule', () => ({
     onDismiss,
   }: {
     climb: { climbUuid: string };
-    presentation: { kind: string; ageLabel?: string };
+    presentation: { kind: string; ageLabel?: string; ageByline?: string };
     occurrenceKey: string;
     onDismiss: (occurrenceKey: string) => void;
   }) =>
@@ -511,6 +513,7 @@ vi.mock('../../queue-control/WallStatusCapsule', () => ({
       'data-wall-capsule': climb.climbUuid,
       'data-presentation': presentation.kind,
       'data-age': presentation.ageLabel,
+      'data-age-byline': presentation.ageByline,
       onClick: () => onDismiss(occurrenceKey),
     }),
 }));
@@ -736,10 +739,17 @@ describe('ClimbTopChrome', () => {
     const capsule = container.querySelector('[data-wall-capsule]');
     expect(capsule?.getAttribute('data-presentation')).toBe('history');
     expect(capsule?.getAttribute('data-age')).toBe('mobile.boardPresence.litAgoMinutes:20');
+    // The iOS capsule's line under the name.
+    expect(capsule?.getAttribute('data-age-byline')).toBe(
+      'mobile.boardPresence.litAgoByline(mobile.boardPresence.litAgoMinutes:20)',
+    );
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
     expect(capsule?.getAttribute('data-age')).toBe('mobile.boardPresence.litAgoMinutes:21');
+    expect(capsule?.getAttribute('data-age-byline')).toBe(
+      'mobile.boardPresence.litAgoByline(mobile.boardPresence.litAgoMinutes:21)',
+    );
   });
 
   it('expires a mounted history capsule at one hour without another presence event', () => {

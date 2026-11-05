@@ -541,6 +541,8 @@
       "litAgoHours": "{{count}} Std.",
       "litAgoDays": "{{count}} Tg.",
       "litAgoWeeks": "{{count}} Wo.",
+      "litAgoByline": "vor {{age}}",
+      "litAgoBylineNow": "Gerade eben",
       "sentByLine": "Getoppt von {{name}}",
       "unnamedClimber": "Jemand",
       "emptyTitle": "Noch niemand an dieser Wand",
@@ -623,7 +625,6 @@
         "exitA11y": "Wandanzeige beenden"
       },
       "stripHistoryOverline": "Zuletzt an der Wand · {{age}}",
-      "stripHistoryByline": "Zuletzt an der Wand · {{age}} · {{grade}}",
       "stripHistoryA11yLabel": "Zuletzt an der Wand · {{age}}: {{name}}, {{grade}}",
       "stripHistoryA11yLabelWithSender": "Zuletzt an der Wand · {{age}}: {{name}}, {{grade}}, beleuchtet von {{sender}}",
       "stripDismiss": "Ausblenden",

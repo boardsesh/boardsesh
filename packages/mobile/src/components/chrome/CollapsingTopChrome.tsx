@@ -2,8 +2,6 @@ import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { type ReactElement, type ReactNode, isValidElement, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useFrameSize } from 'expo-router/react-navigation';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
@@ -35,7 +33,7 @@ import { MaterialTopAppBar } from './MaterialTopAppBar';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { iconMap } from '../icon-map';
 import { BOARD_HISTORY_ITEM_ID, barItemsFactory, symbolBarItem, type RootBarItem } from './root-bar-items';
-import { CENTER_CONTENT_MIN_WIDTH, nativeItemsTitleMaxWidth, type NativeBarSide } from './native-title-bound';
+import type { NativeBarSide } from './native-title-bound';
 import { NativeTrailingItemShowcaseAnchor } from './NativeTrailingItemShowcaseAnchor';
 import {
   useAccountRailItem,
@@ -393,9 +391,9 @@ type CollapsingNativeBarHeaderProps = Pick<
  *   to point at, which a UIKit bar item is not.
  * - The `centerContent` capsule and the controls under the bar, always.
  *
- * The capsule's room comes from the items' measured widths. Where it would drop
- * under `CENTER_CONTENT_MIN_WIDTH`, the angle moves to the top of the list's ⋯
- * menu for as long as the capsule shows.
+ * The angle never leaves the bar (#7281). The capsule takes the room left between
+ * the groups, from the items' measured widths, and goes compact (no face, no ×)
+ * where that room is narrow.
  */
 function CollapsingNativeBarHeader({
   canCreate,
@@ -416,9 +414,6 @@ function CollapsingNativeBarHeader({
   children,
 }: CollapsingNativeBarHeaderProps) {
   const onRail = useBarItemsOnRail();
-  const insets = useSafeAreaInsets();
-  // The stack's own frame: on iPad the sidebar takes part of the window.
-  const frameWidth = useFrameSize((frame) => frame.width);
   const accountItem = useAccountRailItem();
   // Swapping the glass angle for the native item unmounts whichever picker is
   // open. So a width-class flip waits while it is open: the picker sees the new
@@ -440,33 +435,12 @@ function CollapsingNativeBarHeader({
   const hasLeadingAction = isValidElement(leadingAction);
   const hasTrailingAction = isValidElement(trailingAction);
 
-  // In a horizontal bar: does the angle leave the capsule enough room?
   const leadingSide: NativeBarSide = { customSlots: 1 + (hasLeadingAction ? 1 : 0) + (canCreate ? 1 : 0) };
-  const trailingBesideAngle =
-    (climbListBarActions ? 2 : boardSwitcherItem ? 1 : 0) + (showsLight ? 1 : 0) + (hasTrailingAction ? 1 : 0);
-  const capsuleRoomWithAngle = nativeItemsTitleMaxWidth(frameWidth, insets, {
-    leading: leadingSide,
-    trailing: { nativeItems: trailingBesideAngle + 1, titleItems: 1 },
-  });
-  const angleInMenu =
-    !onRail &&
-    !angleAnchorsPopover &&
-    centerContent != null &&
-    angleItem != null &&
-    climbListBarActions != null &&
-    capsuleRoomWithAngle < CENTER_CONTENT_MIN_WIDTH;
-  const barAngle = angleInMenu || angleAnchorsPopover ? null : angleItem;
-  const angleRow = useMemo(
-    () =>
-      angleInMenu && angleItem
-        ? { label: angleItem.accessibilityLabel ?? angleItem.label, onPress: angleItem.onPress }
-        : null,
-    [angleInMenu, angleItem],
-  );
+  // The iPad's popover angle is a glass custom view instead (`glassAngle`).
+  const barAngle = angleAnchorsPopover ? null : angleItem;
   const climbListItems = useClimbListBarItems({
     onOpenHistory: climbListBarActions?.onOpenHistory ?? onOpenBoardSwitcher,
     badge: climbListBarActions?.badge ?? false,
-    angleRow,
   });
 
   const glassAngle = useMemo(
