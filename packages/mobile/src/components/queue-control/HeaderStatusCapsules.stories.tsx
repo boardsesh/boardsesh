@@ -136,7 +136,9 @@ function InteractiveWallCapsule() {
                   <WallStatusCapsule
                     climb={wallClimb({ name: 'Swans A-Swimming', seq: sequence })}
                     boardName="tension"
-                    presentation={history ? { kind: 'history', ageLabel: '20m', ageByline: '20m ago' } : { kind: 'live' }}
+                    presentation={
+                      history ? { kind: 'history', ageLabel: '20m', ageByline: '20m ago' } : { kind: 'live' }
+                    }
                     occurrenceKey={`story-board:${sequence}`}
                     onDismiss={() => setDismissed(true)}
                   />

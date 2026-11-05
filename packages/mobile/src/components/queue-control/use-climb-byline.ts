@@ -6,8 +6,7 @@ import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { formatQuality, formatSends } from '../../lib/format-climb-stats';
 
 /**
- * The line under a climb's name on the accessory platter and the Climbs header
- * capsules: grade · sends, or grade · rating when nobody has sent it; the grade
+ * The line under a climb's name on the accessory platter: grade · sends, or grade · rating when nobody has sent it; the grade
  * alone otherwise. `statsEnabled: false` skips the stats read and shows the
  * grade alone, for a climb whose angle is unknown or a surface that hides it.
  */

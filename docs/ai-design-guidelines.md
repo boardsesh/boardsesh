@@ -528,9 +528,9 @@ way it looks like this:
   The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;
   the reusable native `FrostedBokeh` component draws them while `WallGlow` owns the button's label fade.
   The Climbs header's board-held capsule uses the same `WallGlow` background, hold-role
-  colours and mirrored geometry for its current climb. Its two-line label uses the glow's readable
+  colours and mirrored geometry for its current climb. Its label uses the glow's readable
   foreground and shadow, with a full-width readability fade because the text reaches the pill's edges.
-  Its Hide × takes the same readable foreground. That capsule's frost means this phone holds the board,
+  That capsule's frost means this phone holds the board,
   including when a crew's swipes browse;
   read the Play drawer button's "You are driving the wall" label to identify driving.
   Missing hold data keeps the plain amber treatment. With no current climb, the held LED header uses just
@@ -666,8 +666,8 @@ collided with; the leading and trailing groups stay separate, as on the rail.
   native item 44pt and 57pt for each one after it, a glass island 38pt a slot plus 8pt), so it
   ellipsizes before the trailing group. Climbs gets 134pt at 375pt, 161pt at 402pt and 199pt at
   440pt. An adjustable angle beside history leaves 65, 92 and 130pt. The angle never leaves the bar
-  for the capsule (#7281): under 100pt the capsule goes compact instead (no face, no ×; a swipe
-  still hides it).
+  for the capsule (#7281): under 100pt the capsule drops its face instead. The capsules carry no ×:
+  a left swipe hides them, and VoiceOver gets a Hide action.
 - The Climbs capsule shows the climb's name only, so it fits beside the angle. A climb lit with no
   live link adds its age under the name ("20m ago"), so it never reads as live. The grade and the
   sender are spoken, not shown. The tab-bar platter keeps its grade · sends line.

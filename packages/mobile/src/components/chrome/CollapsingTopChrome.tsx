@@ -392,8 +392,8 @@ type CollapsingNativeBarHeaderProps = Pick<
  * - The `centerContent` capsule and the controls under the bar, always.
  *
  * The angle never leaves the bar (#7281). The capsule takes the room left between
- * the groups, from the items' measured widths, and goes compact (no face, no ×)
- * where that room is narrow.
+ * the groups, from the items' measured widths, and drops its face where that
+ * room is narrow.
  */
 function CollapsingNativeBarHeader({
   canCreate,
@@ -433,7 +433,6 @@ function CollapsingNativeBarHeader({
   const lightbulbItem = useLightbulbBarItem();
   const showsLight = lightbulbItem != null && !hideLight;
   const hasLeadingAction = isValidElement(leadingAction);
-  const hasTrailingAction = isValidElement(trailingAction);
 
   const leadingSide: NativeBarSide = { customSlots: 1 + (hasLeadingAction ? 1 : 0) + (canCreate ? 1 : 0) };
   // The iPad's popover angle is a glass custom view instead (`glassAngle`).

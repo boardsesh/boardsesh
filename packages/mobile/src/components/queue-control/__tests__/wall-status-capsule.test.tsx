@@ -529,9 +529,10 @@ describe('WallStatusCapsule', () => {
     expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain('V5 6C');
   });
 
-  it('renders without crashing when the climb name is null', () => {
-    const { container } = render(<WallStatusCapsule climb={makeClimb({ name: null })} />);
+  it('shows the grade in place of a missing climb name, never an empty capsule', () => {
+    const { container, getByText } = render(<WallStatusCapsule climb={makeClimb({ name: null })} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
+    expect(getByText('V5 6C')).not.toBeNull();
   });
 
   it('keeps the name and avatar when the climb grade is null', () => {
@@ -608,7 +609,10 @@ describe('WallStatusCapsule', () => {
 
   it('puts the age under the name of a climb lit with no live link, so it never reads as live', () => {
     const { container } = render(
-      <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }} />,
+      <WallStatusCapsule
+        climb={makeClimb()}
+        presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
+      />,
     );
     const lines = [...container.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
     expect(lines).toEqual(['Wax On', '20m ago']);
@@ -631,10 +635,18 @@ describe('WallStatusCapsule', () => {
     vi.useFakeTimers();
     try {
       const { rerender } = render(
-        <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }} />,
+        <WallStatusCapsule
+          climb={makeClimb()}
+          presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
+        />,
       );
       vi.advanceTimersByTime(600);
-      rerender(<WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '21m', ageByline: '21m ago' }} />);
+      rerender(
+        <WallStatusCapsule
+          climb={makeClimb()}
+          presentation={{ kind: 'history', ageLabel: '21m', ageByline: '21m ago' }}
+        />,
+      );
       vi.advanceTimersByTime(600);
       expect(spies.announce).not.toHaveBeenCalled();
     } finally {
@@ -658,12 +670,36 @@ describe('WallStatusCapsule', () => {
     expect(spies.openWallPreview).not.toHaveBeenCalled();
   });
 
-  describe('the Hide ×', () => {
+  it('has no × on Liquid Glass: a swipe or the screen-reader action hides it (#7281)', () => {
+    const onDismiss = vi.fn();
+    const { container } = render(
+      <WallStatusCapsule climb={makeClimb()} occurrenceKey="board:7:wall-1" onDismiss={onDismiss} />,
+    );
+    expect(container.querySelector('[data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
+    expect(container.querySelector('[data-icon="close"]')).toBeNull();
+    // The whole capsule is the swipe target.
+    expect(container.querySelector('[data-gesture-root]')).not.toBeNull();
+    // Without the ×, the text runs to the capsule's trailing inset.
+    const main = container.querySelector('[data-pressable]');
+    expect(JSON.parse(main?.getAttribute('data-style') ?? '{}').paddingEnd).toBe(10);
+  });
+
+  it('is not swipeable and offers no Hide when the capsule cannot be hidden', () => {
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    expect(container.querySelector('[data-gesture-root]')).toBeNull();
+    const pressable = container.querySelector('[data-pressable]');
+    expect(pressable?.getAttribute('data-actions')).toBeNull();
+    expect(pressable?.getAttribute('data-hint')).toBe('mobile.boardPresence.stripA11yHint');
+  });
+
+  describe("the Material band's ×", () => {
     const hideButton = (root: HTMLElement) =>
       root.querySelector('[data-label="mobile.boardPresence.stripDismiss"]') as HTMLElement | null;
+    beforeEach(() => {
+      spies.variant = 'material';
+    });
 
-    it.each(['liquidGlass', 'material'] as const)('hides only this lighting on %s, without opening it', (variant) => {
-      spies.variant = variant;
+    it('hides only this lighting, without opening it', () => {
       const onDismiss = vi.fn();
       const { container } = render(
         <WallStatusCapsule climb={makeClimb()} occurrenceKey="board:7:wall-1" onDismiss={onDismiss} />,
@@ -671,69 +707,32 @@ describe('WallStatusCapsule', () => {
       const button = hideButton(container)!;
       expect(button.getAttribute('data-role')).toBe('button');
       expect(button.querySelector('[data-icon="close"]')).not.toBeNull();
-      // Its own button beside the capsule's tap target, never inside it.
+      // Its own button beside the band's tap target, never inside it.
       expect(container.querySelector('[data-pressable] [data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
       fireEvent.click(button);
       expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
       expect(spies.openWallPreview).not.toHaveBeenCalled();
     });
 
-    it('reaches the 44 pt floor on Liquid Glass: 44 wide, the 38 pt bar plus its slop', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
-      const button = hideButton(container)!;
-      const style = JSON.parse(button.getAttribute('data-style') ?? '{}');
-      const slop = JSON.parse(button.getAttribute('data-hit-slop') ?? '{}');
-      expect(style.width).toBe(44);
-      expect(38 + slop.top + slop.bottom).toBe(44);
-      // The ×'s width is the capsule's trailing inset.
-      const main = container.querySelector('[data-pressable]');
-      expect(JSON.parse(main?.getAttribute('data-style') ?? '{}').paddingEnd).toBe(0);
-    });
-
-    it('is an M3 48dp icon button in the Material band', () => {
-      spies.variant = 'material';
+    it('is an M3 48dp icon button', () => {
       const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
       const style = JSON.parse(hideButton(container)?.getAttribute('data-style') ?? '{}');
       expect(style).toMatchObject({ width: 48, height: 48 });
     });
 
-    it.each(['liquidGlass', 'material'] as const)('is absent when the capsule cannot be hidden on %s', (variant) => {
-      spies.variant = variant;
+    it('is absent when the band cannot be hidden', () => {
       const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(hideButton(container)).toBeNull();
       expect(container.querySelector('[data-icon="close"]')).toBeNull();
-      const pressable = container.querySelector('[data-pressable]');
-      expect(pressable?.getAttribute('data-actions')).toBeNull();
-      expect(pressable?.getAttribute('data-hint')).toBe('mobile.boardPresence.stripA11yHint');
     });
 
-    it('drops out of a too-narrow title slot, keeping the screen-reader Hide', () => {
+    it('ignores the release of a swipe that started on the ×', () => {
+      spies.panConsumed = true;
       const onDismiss = vi.fn();
-      const { container } = render(
-        <NativeTitleMaxWidthContext.Provider value={58}>
-          <WallStatusCapsule climb={makeClimb()} occurrenceKey="board:7:wall-1" onDismiss={onDismiss} />
-        </NativeTitleMaxWidthContext.Provider>,
-      );
-      expect(hideButton(container)).toBeNull();
-      const pressable = container.querySelector('[data-pressable]')!;
-      expect(JSON.parse(pressable.getAttribute('data-actions') ?? 'null')).toEqual([
-        { name: 'dismiss', label: 'mobile.boardPresence.stripDismiss' },
-      ]);
-      fireEvent.keyDown(pressable);
-      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={onDismiss} />);
+      fireEvent.click(hideButton(container)!);
+      expect(onDismiss).not.toHaveBeenCalled();
     });
-
-    it.each(['liquidGlass', 'material'] as const)(
-      'ignores the release of a swipe that started on the × on %s',
-      (variant) => {
-        spies.variant = variant;
-        spies.panConsumed = true;
-        const onDismiss = vi.fn();
-        const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={onDismiss} />);
-        fireEvent.click(hideButton(container)!);
-        expect(onDismiss).not.toHaveBeenCalled();
-      },
-    );
   });
 
   it('drops the tap that follows an activated swipe', () => {
@@ -800,7 +799,10 @@ describe('WallStatusCapsule', () => {
 
     it('uses a historical overline while keeping the climb grade and sender', () => {
       const { container, getByText } = render(
-        <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }} />,
+        <WallStatusCapsule
+          climb={makeClimb()}
+          presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
+        />,
       );
       expect(getByText('mobile.boardPresence.stripHistoryOverline:20m')).toBeTruthy();
       expect(getByText('V5 6C')).toBeTruthy();

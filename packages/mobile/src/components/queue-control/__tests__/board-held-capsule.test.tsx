@@ -29,6 +29,28 @@ const spies = vi.hoisted(() => ({
   glowMirrored: false,
   layoutWidth: 210,
   layoutHeight: 38,
+  panConsumed: false,
+  swipeOptions: null as null | { occurrenceKey: string; onDismiss?: (occurrenceKey: string) => void },
+}));
+
+// The pan itself has its own suite (use-wall-capsule-dismiss.test.tsx); here it
+// records what the capsule hands it and whether a touch has panned.
+vi.mock('../use-wall-capsule-dismiss', () => ({
+  useWallCapsuleDismiss: (options: { occurrenceKey: string; onDismiss?: (occurrenceKey: string) => void }) => {
+    spies.swipeOptions = options;
+    return {
+      gesture: {},
+      animatedStyle: {},
+      onLayout: () => {},
+      consumePanned: () => spies.panConsumed,
+      dismiss: () => options.onDismiss?.(options.occurrenceKey),
+    };
+  },
+}));
+vi.mock('react-native-gesture-handler', () => ({
+  GestureHandlerRootView: ({ children }: { children?: ReactNode }) =>
+    createElement('div', { 'data-gesture-root': true }, children),
+  GestureDetector: ({ children }: { children?: ReactNode }) => children,
 }));
 
 vi.mock('../use-climb-wall-glow', () => ({
@@ -332,7 +354,7 @@ vi.mock('../../GlassSurface', () => ({
 }));
 
 import { BoardHeldCapsule, HeldClimbCapsule } from '../BoardHeldCapsule';
-import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../../chrome/native-header-action-context';
+import { NativeHeaderActionContext } from '../../chrome/native-header-action-context';
 import { wallGlowSurfaces } from '../../../theme/colors';
 
 const TEST_GLOW: WallGlowInput = {
@@ -653,63 +675,45 @@ describe('BoardHeldCapsule', () => {
 
   // While it draws the climb on the wall, the held capsule carries that climb's Hide.
   describe('Hide, while it draws the climb on the wall', () => {
-    const hideButton = (root: HTMLElement) =>
-      root.querySelector('[data-label="mobile.boardPresence.stripDismiss"]') as HTMLElement | null;
-
     beforeEach(() => {
       spies.currentClimb = { uuid: 'climb-1', name: 'Kish Mud Prison', difficulty: 'V7' };
+      spies.panConsumed = false;
+      spies.swipeOptions = null;
     });
 
-    // Review: the held capsule has no swipe, so in a narrow slot (an iPad in
-    // narrow Split View) the × is the only sighted way to hide it.
-    it('keeps its × in a too-narrow title slot, where it has no swipe to fall back on', () => {
-      const onDismiss = vi.fn();
-      const { container } = render(
-        <NativeTitleMaxWidthContext.Provider value={58}>
-          <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss }} />
-        </NativeTitleMaxWidthContext.Provider>,
-      );
-      fireEvent.click(hideButton(container)!);
-      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board-1:climb-1');
-    });
-
-    // Review: like the bar's other glyph-only controls, a long press at an
-    // accessibility text size names the × in the Large Content Viewer.
-    it('names the × "Hide" in the Large Content Viewer, and its lift hides', () => {
+    it('has no ×: a left swipe hides this lighting (#7281)', () => {
       const onDismiss = vi.fn();
       const { container } = render(
         <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss }} />,
       );
-      const viewer = hideButton(container)!.querySelector('[data-label-viewer]') as HTMLElement;
-      expect(viewer.getAttribute('data-viewer-title')).toBe('mobile.boardPresence.stripDismiss');
-      expect(viewer.getAttribute('data-viewer-image')).toBe('xmark');
-      expect(viewer.querySelector('[data-icon="close"]')).not.toBeNull();
-      fireEvent.doubleClick(viewer);
-      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board-1:climb-1');
-      expect(spies.lightbulbPress).not.toHaveBeenCalled();
-    });
-
-    it('has no × and no Hide action for a bare hold', () => {
-      const { container } = render(<BoardHeldCapsule ledless={false} />);
-      expect(hideButton(container)).toBeNull();
+      expect(container.querySelector('[data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
       expect(container.querySelector('[data-icon="close"]')).toBeNull();
+      expect(container.querySelector('[data-gesture-root]')).not.toBeNull();
+      expect(spies.swipeOptions).toMatchObject({ occurrenceKey: 'board-1:climb-1', onDismiss });
     });
 
-    it('ends in a 44 pt × that hides this lighting and never lets go of the board', () => {
-      const onDismiss = vi.fn();
+    it('never lets go of the board, or opens its controls, on a touch that swiped', () => {
+      spies.panConsumed = true;
       const { container } = render(
-        <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss }} />,
+        <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss: vi.fn() }} />,
       );
-      const button = hideButton(container)!;
-      expect(button.getAttribute('data-role')).toBe('button');
-      const style = JSON.parse(button.getAttribute('data-style') ?? '{}');
-      const slop = JSON.parse(button.getAttribute('data-hit-slop') ?? '{}');
-      expect(style.width).toBeGreaterThanOrEqual(44);
-      // The capsule is the bar's 38 pt; the slop above and below reaches the floor.
-      expect(38 + slop.top + slop.bottom).toBeGreaterThanOrEqual(44);
-      fireEvent.click(button);
-      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board-1:climb-1');
+      const capsule = container.querySelector('[data-pressable="true"]') as HTMLElement;
+      fireEvent.click(capsule);
+      fireEvent.contextMenu(capsule);
       expect(spies.lightbulbPress).not.toHaveBeenCalled();
+      expect(spies.lightbulbLongPress).not.toHaveBeenCalled();
+      // The next plain tap still lets go.
+      spies.panConsumed = false;
+      fireEvent.click(capsule);
+      expect(spies.lightbulbPress).toHaveBeenCalledOnce();
+    });
+
+    it('is not swipeable and has no Hide action for a bare hold', () => {
+      const { container } = render(<BoardHeldCapsule ledless={false} />);
+      expect(container.querySelector('[data-gesture-root]')).toBeNull();
+      expect(spies.swipeOptions?.onDismiss).toBeUndefined();
+      const capsule = container.querySelector('[data-pressable="true"]') as HTMLElement;
+      expect(capsule.getAttribute('data-actions')).not.toContain('dismiss');
     });
 
     it('offers Hide beside Board controls to screen readers', () => {
@@ -738,20 +742,6 @@ describe('BoardHeldCapsule', () => {
       expect(JSON.parse(capsule.getAttribute('data-actions') ?? 'null')).toEqual([
         { name: 'dismiss', label: 'mobile.boardPresence.stripDismiss' },
       ]);
-    });
-
-    it("draws the × in the hold pattern's checked foreground", () => {
-      spies.glowInput = TEST_GLOW;
-      const { container } = render(
-        <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss: vi.fn() }} />,
-      );
-      // Stands in for the native layout report that sizes the pattern.
-      fireEvent.doubleClick(container.firstElementChild!);
-      expect(container.querySelector('[data-wall-glow]')).not.toBeNull();
-      const glyph = container.querySelector('[data-icon="close"]');
-      expect(glyph).not.toBeNull();
-      const words = container.querySelector('[data-text]')?.getAttribute('data-color');
-      expect(glyph?.getAttribute('data-icon-color')).toBe(words);
     });
   });
 });

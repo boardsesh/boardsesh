@@ -2,8 +2,8 @@
 // physical board, whoever lit it and whatever the queue shows, while presence
 // trusts it (`resolveClimbsHeaderCapsule`). It sits in the centre of the
 // top-header islands row (iOS) / a slim band under the app bar (Android).
-// The climber can hide it until another climb goes up: an × at its trailing
-// end, a left swipe, or the screen-reader action "Hide".
+// The climber can hide it until another climb goes up: a left swipe, the
+// screen-reader action "Hide", or on Android the band's trailing ×.
 //
 // Leads with the sender's avatar so the climb and whoever lit it are visible
 // together. The avatar is inert here; the whole pill opens the wall preview,
@@ -26,7 +26,6 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { AccessibilityInfo, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -43,6 +42,7 @@ import { PressableSurface } from '../PressableSurface';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
 import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
+import { WallCapsuleSwipe } from './WallCapsuleSwipe';
 import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
 
 // The capsule's face stands in for the platter's board thumbnail, sized to the
@@ -148,7 +148,7 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
     if (consumePanned()) return;
     openWallPreview(previewClimb);
   }, [consumePanned, openWallPreview, previewClimb]);
-  // "Hide": the ×'s label and the screen-reader action's name.
+  // "Hide": the screen-reader action's name, and the Material band's ×'s label.
   const hideLabel = t('mobile.boardPresence.stripDismiss');
   const accessibilityActions = onDismiss ? [{ name: 'dismiss', label: hideLabel }] : undefined;
   const handleAccessibilityAction = useCallback(
@@ -157,7 +157,7 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
     },
     [dismiss],
   );
-  // A swipe that started on the × and sprang back must not hide on release.
+  // Material's ×: a swipe that started on it and sprang back must not hide on release.
   const handleDismissPress = useCallback(() => {
     if (consumePanned()) return;
     dismiss();
@@ -294,7 +294,6 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
         accessibilityHint={accessibilityHint}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={handleAccessibilityAction}
-        dismiss={onDismiss ? { label: hideLabel, onPress: handleDismissPress } : undefined}
         compact={compact}
       >
         {/* One tap target and one spoken label; profile navigation lives in the preview. */}
@@ -317,7 +316,8 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
               />
             )
           }
-          name={name}
+          // A reporter that sent no name still shows something: the grade.
+          name={name || formattedGrade || ''}
           byline={history ? history.ageByline : null}
           compact={compact}
           largeContentTitle={a11yLabel}
@@ -328,28 +328,16 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   }
 
   if (!onDismiss) return capsule;
-  // A native title view is reparented into UIKit's bar. Its own bounded gesture
-  // root keeps swipes working there without making the intrinsic title fill width.
-  const swipeContainerStyle = [styles.swipeContainer, isMaterial ? styles.bandWidth : null];
   return (
-    <GestureHandlerRootView style={swipeContainerStyle}>
-      <GestureDetector gesture={swipe.gesture} touchAction="pan-y">
-        <Animated.View style={[swipeContainerStyle, swipe.animatedStyle]} onLayout={swipe.onLayout}>
-          {capsule}
-        </Animated.View>
-      </GestureDetector>
-    </GestureHandlerRootView>
+    <WallCapsuleSwipe swipe={swipe} style={isMaterial ? styles.bandWidth : null}>
+      {capsule}
+    </WallCapsuleSwipe>
   );
 }
 
 export const WallStatusCapsule = memo(WallStatusCapsuleImpl);
 
 const styles = StyleSheet.create({
-  swipeContainer: {
-    flexShrink: 1,
-    minWidth: 0,
-    maxWidth: '100%',
-  },
   bandWidth: {
     width: '100%',
   },

@@ -271,7 +271,6 @@ vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
 vi.mock('../../Badge', () => ({ Badge: () => createElement('span', { 'data-badge-dot': 'true' }) }));
 
 import { CollapsingTopChrome } from '../CollapsingTopChrome';
-import { nativeItemsTitleMaxWidth } from '../native-title-bound';
 import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 function makeProps(over: Partial<Parameters<typeof CollapsingTopChrome>[0]> = {}) {
@@ -634,12 +633,8 @@ describe('CollapsingTopChrome', () => {
         expect(ctrl.openBoardControls).toHaveBeenCalledWith(expect.objectContaining({ surface: 'toolbar' }));
       });
 
-      it.each([
-        [375, 65],
-        [402, 92],
-        [440, 130],
-      ])('on a %ipt iPhone keeps the angle in the bar and gives the wall capsule %ipt (#7281)', (width, room) => {
-        ctrl.frameWidth = width;
+      it('keeps the angle in the bar beside the wall capsule, and counts it in the capsule bound (#7281)', () => {
+        ctrl.frameWidth = 375;
         ctrl.board = board;
         render(
           <CollapsingTopChrome
@@ -648,10 +643,11 @@ describe('CollapsingTopChrome', () => {
           />,
         );
         expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
-        // The capsule's bound counts the angle, so UIKit slides the capsule clear of it.
-        const sides = ctrl.nativeCenterItemSides;
-        expect(sides).toEqual({ leading: { customSlots: 2 }, trailing: { nativeItems: 3, titleItems: 1 } });
-        expect(sides && nativeItemsTitleMaxWidth(width, { left: 0, right: 0 }, sides)).toBe(room);
+        // UIKit slides the capsule clear of the angle; native-title-bound.test.ts has the widths.
+        expect(ctrl.nativeCenterItemSides).toEqual({
+          leading: { customSlots: 2 },
+          trailing: { nativeItems: 3, titleItems: 1 },
+        });
       });
 
       it('keeps the angle in the bar when no capsule shows', () => {

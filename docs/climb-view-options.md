@@ -364,12 +364,11 @@ holds the link, in a crew, or on iPad, the Duo or Material (`resolveClimbsHeader
 `climbs-header-capsule.ts`). One skin choice is left: while this phone holds the board where the iOS 26 accessory
 platter collapses (iPhone, or an iPad in a narrow Split View) and the wall shows your queue head, "You have the board"
 is that climb's capsule, with the hold-pattern frost and its tap to let go; anywhere else it is the "On the wall"
-capsule, live with a link and "Last on the wall · 20m" without one. Either can be hidden: the × at its trailing end
-(44 pt wide and the capsule's full 38 pt tall, with a 3 pt slop above and below toward 44 pt where UIKit's bar
-slot allows it, like the bar's own items; a 48 dp icon button in the Material band), a
-left swipe on the "On the wall" capsule, or the screen-reader action Hide on both. At an accessibility text size a
-long press on the Liquid Glass × shows "Hide" in the Large Content Viewer, like the bar's other glyph-only controls.
-The held capsule takes no swipe, because a swipe that ended as a tap would let go of the board.
+capsule. On iOS both show the climb's name only, plus "20m ago" under it when there is no live link, so the angle
+keeps its bar slot beside them (#7281). Either can be hidden with a left swipe or the screen-reader action Hide; the
+Material band also ends in a 48 dp × icon button. The iOS capsules carry no ×: every point it took came out of the
+climb's name. A touch that swiped is never a tap, so a swipe on the held capsule never lets go of the board or opens
+its controls.
 
 Hide lasts until a different climb goes up on that board, across relaunches (`wall-capsule-dismissal-store.ts`, one
 entry per board: the hidden climb and its lit time). The same climb reported again keeps it hidden: the server stamps a
@@ -379,9 +378,8 @@ or a Live Activity re-light would otherwise bring it back. A different climb lit
 Hide, so the hidden climb shows again if it comes back later; an older report never does. The held capsule draws the
 queue head without presence, so when the feed drops (a WebSocket drop, a backend deploy, weak gym signal) or "Turn
 off all lights" clears it, the slot stays empty while the queue head is the hidden climb: a hidden climb never comes
-back in the held skin, and never falls back to the bare "You have the board". In a title slot under 100 pt the "On the
-wall" capsule's × drops out with the face and the swipe and Hide stay; the held capsule keeps its ×, the only sighted
-way to hide it there.
+back in the held skin, and never falls back to the bare "You have the board". In a title slot under 100 pt the face
+drops out; the swipe and Hide stay.
 
 ### Swipe to drive (#7113)
 

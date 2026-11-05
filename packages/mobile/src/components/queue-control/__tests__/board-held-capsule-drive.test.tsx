@@ -90,7 +90,6 @@ vi.mock('../../../hooks/use-display-grade', () => ({
   useDisplayGrade: () => ({ resolveGrade: (climb: { difficulty: string }) => ({ label: climb.difficulty }) }),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: null }) }));
-vi.mock('../use-climb-byline', () => ({ useClimbByline: () => 'V7 · 1.4k sends' }));
 vi.mock('../use-climb-wall-glow', () => ({ useClimbWallGlow: () => null }));
 vi.mock('../../play-drawer/use-wall-glow', () => ({ useWallGlowLayer: () => null, wallGlowBlendFor: () => ({}) }));
 vi.mock('../../play-drawer/WallGlow', () => ({ WallGlow: () => null }));
@@ -98,6 +97,18 @@ vi.mock('../../../theme/colors', () => ({
   wallGlowSurfaces: { dark: { label: '#fff', base: '#000', border: '#111' }, light: { label: '#000' } },
 }));
 vi.mock('../../Avatar', () => ({ Avatar: () => null }));
+// The swipe-to-hide pan has its own suite; these drive tests only need the tap.
+vi.mock('react-native-reanimated', () => ({ useReducedMotion: () => false }));
+vi.mock('../use-wall-capsule-dismiss', () => ({
+  useWallCapsuleDismiss: () => ({
+    gesture: {},
+    animatedStyle: {},
+    onLayout: () => {},
+    consumePanned: () => false,
+    dismiss: () => {},
+  }),
+}));
+vi.mock('../WallCapsuleSwipe', () => ({ WallCapsuleSwipe: ({ children }: { children?: unknown }) => children }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
