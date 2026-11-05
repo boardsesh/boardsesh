@@ -51,7 +51,7 @@ export function SpraySetupOverlay({
       .join(''),
     strokeWidth: 2.5 / zoom.value,
   }));
-  const { cable, gaps, edges } = useMemo(() => {
+  const { cable, gaps, edges, gapEdges } = useMemo(() => {
     const byId = new Map(leds.map((point) => [point.id, point]));
     const edges: { from: TnutPoint; to: TnutPoint; gap: boolean }[] = [];
     let cable = '',
@@ -76,7 +76,10 @@ export function SpraySetupOverlay({
           gaps += segment;
         else cable += segment;
       }
-    return { cable, gaps, edges };
+    // Keep this predicate on the RN runtime: React Compiler hoists pure
+    // callbacks, which would turn a filter inside an animated updater into a
+    // synchronous remote-function call on the UI runtime.
+    return { cable, gaps, edges, gapEdges: edges.filter((edge) => edge.gap) };
   }, [leds, wiring, width, height]);
   const cableProps = useAnimatedProps(() => ({ strokeWidth: 2 / zoom.value }));
   const arrowProps = useAnimatedProps(() => ({
@@ -97,8 +100,7 @@ export function SpraySetupOverlay({
     strokeWidth: 2 / zoom.value,
   }));
   const gapProps = useAnimatedProps(() => ({
-    d: edges
-      .filter((edge) => edge.gap)
+    d: gapEdges
       .map(({ from, to }) => {
         const x = ((from.x + to.x) * width) / 2,
           y = ((from.y + to.y) * height) / 2,
