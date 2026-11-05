@@ -24,12 +24,14 @@ export async function startAppRouterHarness(options: {
   databaseUrl: string;
   nextAuthSecret?: string;
   compound?: { origin: string; secret: string };
+  webOAuthIdentity?: { origin: string; secret: string };
   faults?: {
     failEvent?: boolean;
     failEncode?: boolean;
     pauseBeforeEncode?: boolean;
     discardConflictResponse?: boolean;
     discardSuccessfulCompoundResponse?: boolean;
+    discardSuccessfulWebOAuthResponse?: boolean;
   };
   browserIdentity?: ConfiguredIdentity;
   sessionPublicationProof?: boolean;
@@ -108,6 +110,7 @@ export async function startAppRouterHarness(options: {
     databaseUrl: options.databaseUrl,
     secret,
     compound: options.compound,
+    webOAuthIdentity: options.webOAuthIdentity,
     faults: options.faults,
     browserIdentity: options.browserIdentity,
     sessionPublicationProof: options.sessionPublicationProof,
@@ -273,6 +276,11 @@ export class RouteExportBrowser {
     });
     const handoff = response;
     if (response.status === 303 && response.location?.startsWith(`${this.harness.origin}/__proof/continue/`))
+      response = await this.request(response.location);
+    if (
+      response.status === 303 &&
+      response.location?.startsWith(`${this.harness.origin}/api/auth/callback/apple?boardseshOAuthContinue=`)
+    )
       response = await this.request(response.location);
     return { response, authorization, callback, handoff };
   }

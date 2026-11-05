@@ -65,6 +65,7 @@ import {
 } from './handlers/native-auth';
 import { handleApnsStats } from './handlers/apns-stats';
 import { handleCurrentStoreWebAuth } from './handlers/current-store-web-auth';
+import { handleCurrentStoreWebOAuth } from './handlers/current-store-web-oauth';
 import { handleIntegrationOAuthStart, handleIntegrationOAuthCallback } from './handlers/integrations-oauth';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
@@ -654,6 +655,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
 
       // Default-off service commands. Browser cookies do not authorize them.
+      if (pathname.startsWith('/api/internal/auth/current-store/web-oauth/v1/')) {
+        await handleCurrentStoreWebOAuth(req, res);
+        return;
+      }
       if (
         pathname === '/api/internal/auth/current-store/register' ||
         pathname === '/api/internal/auth/current-store/password' ||

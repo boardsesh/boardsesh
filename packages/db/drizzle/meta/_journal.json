@@ -2052,6 +2052,13 @@
       "when": 1793861693412,
       "tag": "0292_auth_uid_password_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 293,
+      "version": "7",
+      "when": 1793876261919,
+      "tag": "0293_auth_web_oauth_identity",
+      "breakpoints": true
     }
   ]
 }

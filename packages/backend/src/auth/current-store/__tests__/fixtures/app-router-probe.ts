@@ -14,6 +14,7 @@ import type { NextRequest } from '../../../../../../web/node_modules/next/server
 import { ownedAppRouterDatabase } from './app-router-owned-db';
 import { installAppRouterFixtureDelegate } from './app-router-delegate';
 import { observeSessionPublication } from './session-publication-observer';
+import { installWebOAuthConsoleObserver } from './web-oauth-console-observer';
 
 const webRequire = createRequire(new URL('../../../../../../web/package.json', import.meta.url));
 const nextRequire = createRequire(webRequire.resolve('next-auth'));
@@ -34,6 +35,29 @@ const asRecord = (input: unknown): Record<string, unknown> => {
 };
 
 async function start(input: Record<string, unknown>) {
+  if (input.webOAuthIdentity && (input.compound || input.sessionPublicationProof))
+    throw new Error('Owned identity proof requires its independent route mode');
+  const webOAuthIdentity = input.webOAuthIdentity ? asRecord(input.webOAuthIdentity) : undefined;
+  const compound = input.compound ? asRecord(input.compound) : undefined;
+  for (const backend of [webOAuthIdentity, compound]) {
+    if (!backend) continue;
+    if (typeof backend.origin !== 'string') throw new Error('Owned backend origin required');
+    const destination = new URL(backend.origin);
+    if (
+      destination.origin !== backend.origin ||
+      destination.protocol !== 'http:' ||
+      destination.hostname !== '127.0.0.1' ||
+      !destination.port ||
+      Number(destination.port) < 1024 ||
+      destination.username ||
+      destination.password ||
+      destination.pathname !== '/' ||
+      destination.search ||
+      destination.hash
+    )
+      throw new Error('Unowned backend origin refused');
+  }
+  const webOAuthConsole = webOAuthIdentity ? installWebOAuthConsoleObserver() : undefined;
   phase = 'provider';
   const providers = await startConfiguredProviderTransport();
   let route: {
@@ -262,6 +286,9 @@ async function start(input: Record<string, unknown>) {
     READ_REPLICA_URL: database.href,
     DEBUG_SQL: 'false',
     CURRENT_STORE_WEB_AUTH_MODE: 'legacy',
+    CURRENT_STORE_WEB_OAUTH_MODE: webOAuthIdentity ? 'backend-staging' : 'legacy',
+    CURRENT_STORE_AUTH_BACKEND_ORIGIN: webOAuthIdentity ? String(webOAuthIdentity.origin) : '',
+    CURRENT_STORE_AUTH_RPC_SECRET: webOAuthIdentity ? String(webOAuthIdentity.secret) : '',
     GOOGLE_CLIENT_ID: providers.clients.google.id,
     GOOGLE_CLIENT_SECRET: providers.clients.google.secret,
     APPLE_ID: providers.clients.apple.id,
@@ -290,13 +317,21 @@ async function start(input: Record<string, unknown>) {
     throw new Error('Unowned HTTP request refused');
   });
   const originalFetch = globalThis.fetch;
-  const compound = input.compound ? asRecord(input.compound) : undefined;
   globalThis.fetch = async (address, settings) => {
     const destination = new URL(typeof address === 'string' || address instanceof URL ? address : address.url);
+    const allowedCompound =
+      compound &&
+      destination.origin === compound.origin &&
+      ['/intent', '/compound', '/abort', '/validate'].includes(destination.pathname);
+    const allowedWebIdentity =
+      webOAuthIdentity &&
+      destination.origin === webOAuthIdentity.origin &&
+      [
+        '/api/internal/auth/current-store/web-oauth/v1/intent',
+        '/api/internal/auth/current-store/web-oauth/v1/resolve',
+      ].includes(destination.pathname);
     if (
-      !compound ||
-      destination.origin !== compound.origin ||
-      !['/intent', '/compound', '/abort', '/validate'].includes(destination.pathname) ||
+      (!allowedCompound && !allowedWebIdentity) ||
       destination.search ||
       destination.hash ||
       destination.username ||
@@ -304,6 +339,16 @@ async function start(input: Record<string, unknown>) {
     )
       throw new Error('Unowned fetch refused');
     const response = await originalFetch(address, { ...settings, redirect: 'error' });
+    if (
+      allowedWebIdentity &&
+      destination.pathname.endsWith('/resolve') &&
+      response.status === 200 &&
+      input.faults &&
+      asRecord(input.faults).discardSuccessfulWebOAuthResponse === true
+    ) {
+      await response.arrayBuffer();
+      throw new Error('Owned web identity response discarded');
+    }
     if (
       destination.pathname === '/compound' &&
       input.faults &&
@@ -349,6 +394,8 @@ async function start(input: Record<string, unknown>) {
     },
     async signIn() {
       observations.events.push('signIn');
+      if (webOAuthIdentity && input.faults && asRecord(input.faults).failEvent === true)
+        throw new Error('Owned late sign-in event failed');
     },
   };
   options.logger = {
@@ -358,6 +405,14 @@ async function start(input: Record<string, unknown>) {
     warn() {},
     debug() {},
   };
+  if (webOAuthIdentity && input.faults && asRecord(input.faults).failEncode === true) {
+    options.jwt = {
+      ...options.jwt,
+      async encode() {
+        throw new Error('Owned late identity encode failed');
+      },
+    };
+  }
   if (input.sessionPublicationProof === true) publicationObserver = observeSessionPublication(options, jwt);
   if (compound) {
     const publicJwt = webRequire('next-auth/jwt') as {
@@ -448,6 +503,7 @@ async function start(input: Record<string, unknown>) {
             providerRequests: providers.observations,
             delegate: delegate?.facts,
             sessionPublication: publicationObserver?.snapshot(),
+            webOAuthConsole: webOAuthConsole?.snapshot(),
           },
         });
       if (command.action === 'decode')
@@ -487,6 +543,7 @@ async function start(input: Record<string, unknown>) {
         const { closePool, closeReadPool } = await import('@boardsesh/db/client');
         await Promise.allSettled([closePool(), closeReadPool()]);
         await providers.close();
+        webOAuthConsole?.restore();
         await send({ kind: 'stopped', quiescent: active.size === 0 });
         clearTimeout(deadline);
         process.exit(0);

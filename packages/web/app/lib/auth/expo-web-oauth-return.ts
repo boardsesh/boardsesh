@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { isAllowedAppOrigin } from './app-origin-allowlist';
+import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
 
 const RETURN_PROVIDER_PARAM = 'boardseshOAuthProvider';
 const RETURN_ATTEMPT_PARAM = 'boardseshOAuthAttempt';
@@ -9,6 +10,7 @@ const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const RETURN_MAX_AGE_MS = 10 * 60 * 1000;
 const COOKIE_PREFIX = 'boardsesh.oauth-return.';
 const KNOWN_ERROR_CODES = new Set([
+  AUTH_BACKEND_UNAVAILABLE,
   'AccessDenied',
   'Callback',
   'Configuration',

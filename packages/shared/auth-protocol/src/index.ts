@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from './client-errors';
+export * from './web-oauth-v1';
 
 export const AUTH_PROTOCOL_VERSION = 2;
 export const AUTH_COMMAND_PATHS = {

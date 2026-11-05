@@ -138,3 +138,27 @@ describe('password recovery configuration header precedence', () => {
     },
   );
 });
+
+describe('OAuth credential response configuration precedence', () => {
+  const paths = localePrefixes.flatMap((prefix) =>
+    ['google', 'apple', 'facebook'].flatMap((provider) =>
+      ['signin', 'callback'].map((action) => `${prefix}/api/auth/${action}/${provider}`),
+    ),
+  );
+  it.each(paths)('keeps %s private after the site-wide rule', async (pathname) => {
+    const response = await configuredHeaders(`${pathname}?state=owned-state&code=owned-provider-code`);
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+    expect(response.headers.get('Cache-Control')).toContain('no-store');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, follow');
+  });
+  it('protects the canonical opaque Apple continuation without affecting the session endpoint', async () => {
+    const response = await configuredHeaders('/api/auth/callback/apple?boardseshOAuthContinue=owned-scope');
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+    expect(response.headers.get('Cache-Control')).toContain('no-store');
+    expect((await configuredHeaders('/api/auth/session')).headers.get('Referrer-Policy')).toBe(
+      'strict-origin-when-cross-origin',
+    );
+  });
+});
