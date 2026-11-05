@@ -2,8 +2,8 @@
 // physical board, whoever lit it and whatever the queue shows, while presence
 // trusts it (`resolveClimbsHeaderCapsule`). It sits in the centre of the
 // top-header islands row (iOS) / a slim band under the app bar (Android).
-// The climber can hide it until another climb goes up: an × at its trailing
-// end, a left swipe, or the screen-reader action "Hide".
+// The climber can hide it until another climb goes up: a left swipe, the
+// screen-reader action "Hide", or on Android the band's trailing ×.
 //
 // Leads with the sender's avatar so the climb and whoever lit it are visible
 // together. The avatar is inert here; the whole pill opens the wall preview,
@@ -11,9 +11,11 @@
 //
 // Two platform-native skins behind one stateful body (see selectByVariant below):
 //   - Liquid Glass (iOS): one regular native-glass pill with a warm "lit" amber
-//     tint, laid out like the tab-bar accessory platter: the face, then the name
-//     over "V7 · 1.4k sends" (#6902). Older devices and Reduce Transparency
-//     retain the opaque pill.
+//     tint: the name over the grade and one fact (#7281). Someone else's climb
+//     says who lit it (their face where the capsule has room, their name after
+//     the grade); your own climb says its sends; a climb lit with no live link
+//     says how long ago ("V6 · 20m ago"), so it never reads as live. Older
+//     devices and Reduce Transparency retain the opaque pill.
 //   - Material 3 (Android): a full-bleed titled status band — a tertiary accent
 //     rail + an "On the wall" overline (the lit semantic stated in words and
 //     carried by the tertiary colour role) + a bottom divider, ending in a 48dp
@@ -25,7 +27,6 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { AccessibilityInfo, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -35,21 +36,29 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
-import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
-import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
-import { useClimbByline } from './use-climb-byline';
+import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useViewerUserId } from '../../hooks/use-viewer-user-id';
+import { useAuth } from '../../providers/auth-provider';
+import { useClimbStatsDetail } from './use-climb-byline';
+import {
+  HeaderCapsuleClimbLabel,
+  HeaderStatusCapsule,
+  useHeaderCapsuleCompact,
+  useHeaderCapsuleFaceFits,
+  type HeaderCapsuleByline,
+} from './HeaderStatusCapsule';
+import { WallCapsuleSwipe } from './WallCapsuleSwipe';
 import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
 
 // The capsule's face stands in for the platter's board thumbnail, sized to the
 // two-line name block beside it. Fixed — does not scale with Dynamic Type.
 const CAPSULE_AVATAR_SIZE = 24;
-const CAPSULE_ANON_GLYPH = 20;
 // 20pt reads unambiguously as a face above M3's ~18dp floor in the Material band.
 // Fixed — does not scale with Dynamic Type.
 const BAND_AVATAR_SIZE = 20;
@@ -70,7 +79,8 @@ type WallStatusCapsuleProps = {
   climb: BoardPresenceClimb;
   /** The board in scope, so the grade reads on its scale. The wall payload names no board. */
   boardName?: string | null;
-  presentation?: { kind: 'live' } | { kind: 'history'; ageLabel: string };
+  /** History: `ageLabel` ("20m") is spoken, `ageByline` ("20m ago") shows under the name. */
+  presentation?: { kind: 'live' } | { kind: 'history'; ageLabel: string; ageByline: string };
   occurrenceKey?: string;
   onDismiss?: (occurrenceKey: string) => void;
 };
@@ -84,7 +94,10 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const { resolveGrade } = useDisplayGrade();
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
-  const compact = useHeaderCapsuleCompact();
+  const faceFits = useHeaderCapsuleFaceFits();
+  const narrowTitle = useHeaderCapsuleCompact();
+  const { isAuthenticated } = useAuth();
+  const viewerUserId = useViewerUserId();
   const { boardConfig } = useDrawerHost();
   const history = presentation?.kind === 'history' ? presentation : null;
   const swipe = useWallCapsuleDismiss({
@@ -102,6 +115,14 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const gradeColor = resolvedGrade.color;
   const senderName = climb.sentByDisplayName?.trim() || null;
   const hasSenderIdentity = climb.sentByAvatarUrl != null || senderName != null;
+  // Someone else lit it, and has a name: their face and name say who. Your own
+  // climb, or an unnamed sender's, says its sends instead. While a signed-in
+  // climber's id is still loading, nobody can say whose it is: grade alone, so
+  // your own climb never flashes your face and name.
+  const senderIsYou = climb.sentByUserId != null && climb.sentByUserId === viewerUserId;
+  const senderPending = isAuthenticated && viewerUserId == null && climb.sentByUserId != null;
+  const namedOther = senderName != null && !senderIsYou && !senderPending;
+  const showFace = namedOther && hasSenderIdentity && faceFits;
 
   const a11yLabel = history
     ? senderName
@@ -142,21 +163,26 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   }, [announceLabel]);
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
-  const climbForStats = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
-  // The platter's byline: the plain grade, then the sends (or the rating). An
-  // older reporter sends no angle, and the converted climb's 0° would read some
-  // other angle's sends, so that shows the grade alone. The Material band has
-  // no byline, so it skips the stats read.
-  const byline = useClimbByline(climbForStats, boardConfig, formattedGrade, {
-    statsEnabled: !isMaterial && !history && climb.angle != null,
+  const previewClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
+  // The sends only where the byline says them: a live climb that is not someone
+  // else's. An older reporter sends no angle, and the converted climb's 0° would
+  // read some other angle's sends, so that shows the grade alone.
+  const statsDetail = useClimbStatsDetail(previewClimb, boardConfig, {
+    statsEnabled: !isMaterial && !history && !namedOther && !senderPending && climb.angle != null,
   });
+  // A climb with no name shows its grade as the name, so line 2 drops it. The age
+  // stays whole unless the title is too narrow for it (a 320pt Display Zoom bar).
+  const bylineGrade = name ? formattedGrade : null;
+  const byline: HeaderCapsuleByline = history
+    ? { grade: bylineGrade, detail: history.ageByline, fixed: !narrowTitle }
+    : { grade: bylineGrade, detail: namedOther ? senderName : statsDetail };
 
   const { consumePanned, dismiss } = swipe;
   const handlePress = useCallback(() => {
     if (consumePanned()) return;
-    openWallPreview(climbForStats);
-  }, [consumePanned, openWallPreview, climbForStats]);
-  // "Hide": the ×'s label and the screen-reader action's name.
+    openWallPreview(previewClimb);
+  }, [consumePanned, openWallPreview, previewClimb]);
+  // "Hide": the screen-reader action's name, and the Material band's ×'s label.
   const hideLabel = t('mobile.boardPresence.stripDismiss');
   const accessibilityActions = onDismiss ? [{ name: 'dismiss', label: hideLabel }] : undefined;
   const handleAccessibilityAction = useCallback(
@@ -165,7 +191,7 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
     },
     [dismiss],
   );
-  // A swipe that started on the × and sprang back must not hide on release.
+  // Material's ×: a swipe that started on it and sprang back must not hide on release.
   const handleDismissPress = useCallback(() => {
     if (consumePanned()) return;
     dismiss();
@@ -302,13 +328,12 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
         accessibilityHint={accessibilityHint}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={handleAccessibilityAction}
-        dismiss={onDismiss ? { label: hideLabel, onPress: handleDismissPress } : undefined}
-        compact={compact}
+        compact={!showFace}
       >
         {/* One tap target and one spoken label; profile navigation lives in the preview. */}
         <HeaderCapsuleClimbLabel
           avatar={
-            hasSenderIdentity ? (
+            showFace ? (
               <BoardDriverAvatar
                 uri={climb.sentByAvatarUrl}
                 name={senderName}
@@ -316,24 +341,12 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
                 size={CAPSULE_AVATAR_SIZE}
                 status="none"
               />
-            ) : (
-              <Icon
-                maxFontSizeMultiplier={1}
-                name="profile.fill"
-                size={CAPSULE_ANON_GLYPH}
-                color={brandColors.warning}
-              />
-            )
+            ) : null
           }
-          name={name}
-          byline={
-            history
-              ? formattedGrade
-                ? t('mobile.boardPresence.stripHistoryByline', { age: history.ageLabel, grade: formattedGrade })
-                : t('mobile.boardPresence.stripHistoryOverline', { age: history.ageLabel })
-              : byline
-          }
-          compact={compact}
+          // A reporter that sent no name still shows something: the grade.
+          name={name || formattedGrade || ''}
+          byline={byline}
+          compact={!showFace}
           largeContentTitle={a11yLabel}
           onActivate={handlePress}
         />
@@ -342,28 +355,16 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   }
 
   if (!onDismiss) return capsule;
-  // A native title view is reparented into UIKit's bar. Its own bounded gesture
-  // root keeps swipes working there without making the intrinsic title fill width.
-  const swipeContainerStyle = [styles.swipeContainer, isMaterial ? styles.bandWidth : null];
   return (
-    <GestureHandlerRootView style={swipeContainerStyle}>
-      <GestureDetector gesture={swipe.gesture} touchAction="pan-y">
-        <Animated.View style={[swipeContainerStyle, swipe.animatedStyle]} onLayout={swipe.onLayout}>
-          {capsule}
-        </Animated.View>
-      </GestureDetector>
-    </GestureHandlerRootView>
+    <WallCapsuleSwipe swipe={swipe} style={isMaterial ? styles.bandWidth : null}>
+      {capsule}
+    </WallCapsuleSwipe>
   );
 }
 
 export const WallStatusCapsule = memo(WallStatusCapsuleImpl);
 
 const styles = StyleSheet.create({
-  swipeContainer: {
-    flexShrink: 1,
-    minWidth: 0,
-    maxWidth: '100%',
-  },
   bandWidth: {
     width: '100%',
   },

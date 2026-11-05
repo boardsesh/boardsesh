@@ -541,6 +541,8 @@
       "litAgoHours": "{{count}}h",
       "litAgoDays": "{{count}}d",
       "litAgoWeeks": "{{count}}w",
+      "litAgoByline": "{{age}} ago",
+      "litAgoBylineNow": "Just now",
       "sentByLine": "Sent by {{name}}",
       "unnamedClimber": "Someone",
       "emptyTitle": "Nobody's on this wall yet",
@@ -623,7 +625,6 @@
         "exitA11y": "Exit wall display"
       },
       "stripHistoryOverline": "Last on the wall · {{age}}",
-      "stripHistoryByline": "Last on the wall · {{age}} · {{grade}}",
       "stripHistoryA11yLabel": "Last on the wall · {{age}}: {{name}}, {{grade}}",
       "stripHistoryA11yLabelWithSender": "Last on the wall · {{age}}: {{name}}, {{grade}}, lit by {{sender}}",
       "stripDismiss": "Hide",

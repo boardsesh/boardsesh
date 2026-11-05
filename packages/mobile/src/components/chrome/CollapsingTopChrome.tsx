@@ -2,8 +2,6 @@ import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { type ReactElement, type ReactNode, isValidElement, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useFrameSize } from 'expo-router/react-navigation';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
@@ -11,6 +9,7 @@ import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
 import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { shadows } from '../../theme/tokens';
 import { Icon } from '../Icon';
 import { GlassSurface } from '../GlassSurface';
@@ -25,7 +24,6 @@ import {
   toolbarGlyphSize,
 } from './GlassActionToolbar';
 import { AngleToolbarAction } from './AngleToolbarAction';
-import { useAnglePickerPopover } from './BoardAnglePicker';
 import { LightbulbToolbarAction } from './LightbulbToolbarAction';
 import { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardActions';
 import { CollapsingLargeTitleHeader } from './CollapsingLargeTitleHeader';
@@ -35,8 +33,9 @@ import { MaterialTopAppBar } from './MaterialTopAppBar';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { iconMap } from '../icon-map';
 import { BOARD_HISTORY_ITEM_ID, barItemsFactory, symbolBarItem, type RootBarItem } from './root-bar-items';
-import { CENTER_CONTENT_MIN_WIDTH, nativeItemsTitleMaxWidth, type NativeBarSide } from './native-title-bound';
+import type { NativeBarSide } from './native-title-bound';
 import { NativeTrailingItemShowcaseAnchor } from './NativeTrailingItemShowcaseAnchor';
+import { ClimbListBoardActions, climbListBoardActionCount } from './ClimbListBoardActions';
 import {
   useAccountRailItem,
   useAngleBarItem,
@@ -64,8 +63,9 @@ type CollapsingTopChromeProps = {
   /** Replace the default angle/board pair while retaining shared toolbar sizing. */
   boardControls?: { content: ReactNode; actionCount: number };
   /**
-   * The Climbs list's `boardControls` as native bar items: after the angle,
-   * board history and the list's ⋯ menu instead of the board switcher.
+   * The Climbs list's `boardControls` on the iOS 26 header: board history and
+   * the list's ⋯ menu instead of the board switcher. A glass island on iPhone,
+   * native items on iPad and the Duo rail.
    */
   climbListBarActions?: { onOpenHistory: () => void; badge: boolean };
   /** Report the measured chrome height so the list can inset its top padding. */
@@ -320,12 +320,14 @@ export function CollapsingTopChrome({
 }
 
 /**
- * The left island: the glass avatar (round photo, initials without one), an
- * optional leading action, then +. The floating chrome, the native header's
- * custom leading group and the native-item header's horizontal bar share it.
+ * The left island: the glass avatar (round photo, initials without one), the
+ * angle where the bar puts it here, an optional leading action, then +. The
+ * floating chrome, the native header's custom leading group and the
+ * native-item header's horizontal bar share it.
  */
 function LeadingIsland({
   actionCount,
+  angle,
   leadingAction,
   canCreate,
   onCreate,
@@ -333,6 +335,7 @@ function LeadingIsland({
   nativeHeader,
 }: {
   actionCount: number;
+  angle?: ReactNode;
   leadingAction?: ReactNode;
   canCreate: boolean;
   onCreate: () => void;
@@ -343,6 +346,7 @@ function LeadingIsland({
   return (
     <GlassActionToolbar actionCount={actionCount}>
       <UserAvatarToolbarAction variant="glass" />
+      {angle}
       {leadingAction}
       {canCreate ? (
         <GlassToolbarAction onPress={onCreate} accessibilityLabel={createAccessibilityLabel}>
@@ -376,26 +380,28 @@ type CollapsingNativeBarHeaderProps = Pick<
 > & { boardBadge: boolean; hideLight: boolean; anchorBoardButton: boolean };
 
 /**
- * The islands as native bar items, so iPhone Duo can put them on its side rail.
- * Same order as the islands: avatar and + leading; angle, then the board
- * switcher (Discover) or history and ⋯ (Climbs), then the bulb, trailing. +
- * keeps the highest visibility priority: it is the screen's defining action.
+ * The iOS 26 header. In a horizontal bar the two sides mirror each other
+ * (#7281): the leading island holds the avatar and the angle ("40°"), and on an
+ * iPhone the trailing group is a glass island of the same 38pt slots (history
+ * and ⋯ on Climbs, the board and the bulb on Discover), so the climb capsule
+ * sits centred between two matching groups. On Climbs in a compact-width bar,
+ * + leaves the bar for the first row of ⋯ ("Create a climb"): the capsule needs
+ * the room for a name over a byline. A regular-width iPad keeps + in the island.
  *
- * What stays a custom view, and where:
- * - In a horizontal bar the left island stays the glass avatar and + (round
- *   photo, initials without one). On the rail they are native items, the
- *   account as `person.crop.circle.badge.ellipsis` (`accountRailItem`).
- * - In a horizontal bar the bulb stays the glass bulb, which keeps its long
- *   press to Board controls: react-native-screens has no native item with both
- *   a tap and a long-press menu. On the rail it is a native item.
- * - On a regular-width iPad the angle stays the glass "40°", first in the
- *   trailing group: its picker is a popover there, and a popover needs a view
- *   to point at, which a UIKit bar item is not.
- * - The `centerContent` capsule and the controls under the bar, always.
+ * Where native UIKit items stay:
+ * - On the iPhone Duo rail every action is a native item, so UIKit can move it
+ *   onto the rail: account and + leading; the angle (a title item, which stays
+ *   in the bar), then history and ⋯ (Climbs) or the board switcher (Discover),
+ *   then the bulb, trailing. + keeps the highest visibility priority.
+ * - On an iPad the trailing group stays native items: UIKit lays them out
+ *   beside its sidebar button and the portrait top tab bar, which a custom
+ *   island collided with. The bulb stays the glass bulb there (its long press
+ *   opens Board controls; no native item has both a tap and a long press).
  *
- * The capsule's room comes from the items' measured widths. Where it would drop
- * under `CENTER_CONTENT_MIN_WIDTH`, the angle moves to the top of the list's ⋯
- * menu for as long as the capsule shows.
+ * The glass angle's picker is a sheet on iPhone and a popover on a
+ * regular-width iPad, which needs a React view to point at. Moving between the
+ * bar and the rail swaps the glass angle for the native item and would unmount
+ * an open picker, so that move waits until the picker closes.
  */
 function CollapsingNativeBarHeader({
   canCreate,
@@ -415,21 +421,15 @@ function CollapsingNativeBarHeader({
   onHeightChange,
   children,
 }: CollapsingNativeBarHeaderProps) {
-  const onRail = useBarItemsOnRail();
-  const insets = useSafeAreaInsets();
-  // The stack's own frame: on iPad the sidebar takes part of the window.
-  const frameWidth = useFrameSize((frame) => frame.width);
-  const accountItem = useAccountRailItem();
-  // Swapping the glass angle for the native item unmounts whichever picker is
-  // open. So a width-class flip waits while it is open: the picker sees the new
-  // width, closes itself, reports closed, and only then does the trigger swap.
   const [anglePickerOpen, setAnglePickerOpen] = useState(false);
+  const liveOnRail = useBarItemsOnRail();
+  const [heldOnRail, setHeldOnRail] = useState(liveOnRail);
+  if (!anglePickerOpen && heldOnRail !== liveOnRail) setHeldOnRail(liveOnRail);
+  const onRail = anglePickerOpen ? heldOnRail : liveOnRail;
+  const { isPad, widthClass } = useDeviceLayout();
+  const { data: activeBoard } = useActiveBoard();
+  const accountItem = useAccountRailItem();
   const { item: angleItem, picker: anglePicker } = useAngleBarItem({ onPickerOpenChange: setAnglePickerOpen });
-  const livePickerPopover = useAnglePickerPopover();
-  const [heldPickerPopover, setHeldPickerPopover] = useState(livePickerPopover);
-  if (!anglePickerOpen && heldPickerPopover !== livePickerPopover) setHeldPickerPopover(livePickerPopover);
-  const pickerPopover = anglePickerOpen ? heldPickerPopover : livePickerPopover;
-  const angleAnchorsPopover = pickerPopover && angleItem != null;
   const boardSwitcherItem = useBoardSwitcherBarItem({
     onPress: onOpenBoardSwitcher,
     accessibilityHint: boardPillAccessibilityHint,
@@ -438,47 +438,29 @@ function CollapsingNativeBarHeader({
   const lightbulbItem = useLightbulbBarItem();
   const showsLight = lightbulbItem != null && !hideLight;
   const hasLeadingAction = isValidElement(leadingAction);
-  const hasTrailingAction = isValidElement(trailingAction);
 
-  // In a horizontal bar: does the angle leave the capsule enough room?
-  const leadingSide: NativeBarSide = { customSlots: 1 + (hasLeadingAction ? 1 : 0) + (canCreate ? 1 : 0) };
-  const trailingBesideAngle =
-    (climbListBarActions ? 2 : boardSwitcherItem ? 1 : 0) + (showsLight ? 1 : 0) + (hasTrailingAction ? 1 : 0);
-  const capsuleRoomWithAngle = nativeItemsTitleMaxWidth(frameWidth, insets, {
-    leading: leadingSide,
-    trailing: { nativeItems: trailingBesideAngle + 1, titleItems: 1 },
-  });
-  const angleInMenu =
-    !onRail &&
-    !angleAnchorsPopover &&
-    centerContent != null &&
-    angleItem != null &&
-    climbListBarActions != null &&
-    capsuleRoomWithAngle < CENTER_CONTENT_MIN_WIDTH;
-  const barAngle = angleInMenu || angleAnchorsPopover ? null : angleItem;
-  const angleRow = useMemo(
-    () =>
-      angleInMenu && angleItem
-        ? { label: angleItem.accessibilityLabel ?? angleItem.label, onPress: angleItem.onPress }
-        : null,
-    [angleInMenu, angleItem],
+  // The native title item only on the rail; a horizontal bar has the glass "40°".
+  const islandAngle = !onRail && angleItem != null;
+  const barAngle = onRail ? angleItem : null;
+  // On Climbs in a compact bar, + becomes the first row of ⋯.
+  const createInMenu = climbListBarActions != null && canCreate && !onRail && widthClass === 'compact';
+  const createInIsland = canCreate && !createInMenu;
+  const createRow = useMemo(
+    () => (createInMenu ? { label: createAccessibilityLabel, onPress: onCreate } : null),
+    [createInMenu, createAccessibilityLabel, onCreate],
   );
+  // An iPhone's horizontal bar: the trailing group is a glass island like the leading one.
+  const trailingIsland = !onRail && !isPad;
+
+  const leadingSlots = 1 + (islandAngle ? 1 : 0) + (hasLeadingAction ? 1 : 0) + (createInIsland ? 1 : 0);
+  const leadingSide: NativeBarSide = { customSlots: leadingSlots };
   const climbListItems = useClimbListBarItems({
     onOpenHistory: climbListBarActions?.onOpenHistory ?? onOpenBoardSwitcher,
     badge: climbListBarActions?.badge ?? false,
-    angleRow,
+    createRow,
   });
 
-  const glassAngle = useMemo(
-    () => (
-      <NativeHeaderActionContext.Provider value={true}>
-        <GlassActionToolbar actionCount={1}>
-          <AngleToolbarAction onPickerOpenChange={setAnglePickerOpen} />
-        </GlassActionToolbar>
-      </NativeHeaderActionContext.Provider>
-    ),
-    [],
-  );
+  const glassAngle = useMemo(() => <AngleToolbarAction onPickerOpenChange={setAnglePickerOpen} />, []);
   const glassLightbulb = useMemo(
     () => (
       <NativeHeaderActionContext.Provider value={true}>
@@ -511,52 +493,88 @@ function CollapsingNativeBarHeader({
     return () => [...(factory?.() ?? []), { type: 'custom' as const, element: leadingAction }];
   }, [onRail, canCreate, accountItem, createItem, leadingAction]);
 
+  // The iPhone's trailing island: the same glass slots as the leading one.
+  const trailingIslandSlots = climbListBarActions
+    ? climbListBoardActionCount(activeBoard, { showAngle: false })
+    : (activeBoard ? 1 : 0) + (showsLight ? 1 : 0) + (isValidElement(trailingAction) ? 1 : 0);
+  const rightActions =
+    trailingIsland && trailingIslandSlots > 0 ? (
+      <GlassActionToolbar actionCount={trailingIslandSlots}>
+        {climbListBarActions ? (
+          <ClimbListBoardActions
+            onOpenHistory={climbListBarActions.onOpenHistory}
+            badge={climbListBarActions.badge}
+            showcaseAnchor={anchorBoardButton}
+            showAngle={false}
+            createRow={createRow ?? undefined}
+          />
+        ) : (
+          <>
+            {activeBoard ? (
+              <BoardToolbarAction
+                onPress={onOpenBoardSwitcher}
+                accessibilityHint={boardPillAccessibilityHint}
+                badge={boardBadge}
+              />
+            ) : null}
+            {showsLight ? <LightbulbToolbarAction /> : null}
+            {trailingAction}
+          </>
+        )}
+      </GlassActionToolbar>
+    ) : undefined;
+
+  // Native trailing items: the rail, and an iPad's horizontal bar.
   const rightItemList = useMemo(() => {
+    if (trailingIsland) return [];
     const items: RootBarItem[] = [];
     if (barAngle) items.push(barAngle);
     if (climbListBarActions) items.push(...climbListItems);
     else if (boardSwitcherItem) items.push(boardSwitcherItem);
     if (lightbulbItem && showsLight && onRail) items.push(lightbulbItem);
     return items;
-  }, [barAngle, climbListBarActions, climbListItems, boardSwitcherItem, lightbulbItem, showsLight, onRail]);
-  // Custom views before the native items (the iPad's glass angle keeps the
-  // angle's place at the front) and after them (the bulb, a trailing action).
-  const leadingCustomElements = useMemo(
-    () => (angleAnchorsPopover ? [glassAngle] : []),
-    [angleAnchorsPopover, glassAngle],
-  );
+  }, [
+    trailingIsland,
+    barAngle,
+    climbListBarActions,
+    climbListItems,
+    boardSwitcherItem,
+    lightbulbItem,
+    showsLight,
+    onRail,
+  ]);
+  // Custom views after the native items: the iPad's glass bulb, a trailing action.
   const rightCustomElements = useMemo(() => {
+    if (trailingIsland) return [];
     const elements: ReactElement[] = [];
     if (showsLight && !onRail) elements.push(glassLightbulb);
     if (isValidElement(trailingAction)) elements.push(trailingAction);
     return elements;
-  }, [showsLight, onRail, glassLightbulb, trailingAction]);
+  }, [trailingIsland, showsLight, onRail, glassLightbulb, trailingAction]);
   const rightItems = useMemo(() => {
+    if (trailingIsland) return undefined;
     const factory = barItemsFactory(rightItemList);
-    if (leadingCustomElements.length === 0 && rightCustomElements.length === 0) return factory;
+    if (rightCustomElements.length === 0) return factory;
     const toCustomItem = (element: ReactElement) => ({ type: 'custom' as const, element });
-    return () => [
-      ...leadingCustomElements.map(toCustomItem),
-      ...(factory?.() ?? []),
-      ...rightCustomElements.map(toCustomItem),
-    ];
-  }, [leadingCustomElements, rightItemList, rightCustomElements]);
+    return () => [...(factory?.() ?? []), ...rightCustomElements.map(toCustomItem)];
+  }, [trailingIsland, rightItemList, rightCustomElements]);
 
   // On the rail every item has left the bar, so the capsule has the whole bar.
   const centerItemSides = onRail
     ? { leading: {}, trailing: {} }
     : {
         leading: leadingSide,
-        trailing: {
-          nativeItems: leadingCustomElements.length + rightItemList.length + rightCustomElements.length,
-          titleItems: barAngle ? 1 : 0,
-        },
+        trailing: trailingIsland
+          ? { customSlots: trailingIslandSlots }
+          : { nativeItems: rightItemList.length + rightCustomElements.length, titleItems: 0 },
       };
-  // History is second from the end on Climbs (⋯ is last), where the showcase
-  // recorder's callout points. Not on the rail: the video is shot on iPhones.
+  // An iPad's native history is second from the end on Climbs (⋯ is last), where
+  // the showcase recorder's callout points. The iPhone island anchors its own
+  // glass history; the rail logs none (the video is shot on iPhones).
   const historyAnchored =
     anchorBoardButton &&
     !onRail &&
+    !trailingIsland &&
     climbListBarActions != null &&
     rightItemList.some((item) => item.identifier === BOARD_HISTORY_ITEM_ID);
 
@@ -567,16 +585,18 @@ function CollapsingNativeBarHeader({
         leftActions={
           onRail ? undefined : (
             <LeadingIsland
-              actionCount={leadingSide.customSlots ?? 1}
+              actionCount={leadingSlots}
+              angle={islandAngle ? glassAngle : undefined}
               leadingAction={leadingAction}
-              canCreate={canCreate}
+              canCreate={createInIsland}
               onCreate={onCreate}
               createAccessibilityLabel={createAccessibilityLabel}
               nativeHeader
             />
           )
         }
-        leftActionsStandalone={!canCreate && !hasLeadingAction}
+        leftActionsStandalone={leadingSlots === 1}
+        rightActions={rightActions}
         rightItems={rightItems}
         centerContent={centerContent}
         titleHidden={titleHidden}
@@ -586,7 +606,7 @@ function CollapsingNativeBarHeader({
       >
         {children}
       </NativeRootHeader>
-      {angleAnchorsPopover ? null : anglePicker}
+      {barAngle ? anglePicker : null}
       {historyAnchored ? <NativeTrailingItemShowcaseAnchor name="board-history-button" positionFromEnd={1} /> : null}
     </>
   );

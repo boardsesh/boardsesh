@@ -4,19 +4,14 @@
 // devices and Reduce Transparency keep an opaque pill with a tinted hairline.
 // The content row is the caller's; the shell owns the surface, the tap target,
 // the UIKit title-view rules and the entry fade. HeaderCapsuleClimbLabel is the
-// row both capsules use for a climb: a face, then the name over a grade · sends
-// byline, laid out like the tab-bar accessory platter.
+// row both capsules use for a climb: a face, then the name, over an optional
+// byline (a stale climb's "20m ago").
 // A held climb can supply the wall button's opaque patterned surface in place
 // of glass, keeping the same native title host and tap target.
-// A capsule that can be hidden ends in an ×: its own button beside the main tap
-// target, 44 pt wide and the capsule's full 38 pt tall, with a 3 pt slop above
-// and below toward the 44 pt floor. The 38 pt is UIKit's bar slot, and UIKit
-// owns hit testing at the bar's edges, as for the bar's own items (`glassSize.bar`).
-// Like the bar's other glyph-only controls, a long press at an accessibility
-// text size shows "Hide" in the Large Content Viewer, and the lift hides.
-// In a too-narrow title slot it drops out with the leading face where a swipe
-// still hides the capsule; a capsule with no swipe keeps it (`keepWhenCompact`),
-// so a sighted climber can always hide it. The screen-reader Hide stays either way.
+// No × (#7281): every room it took came out of the climb's name beside the
+// angle. A capsule that can be hidden is swiped left (`WallCapsuleSwipe`), and
+// the screen-reader Hide is its accessibility action. In a too-narrow title
+// slot the leading face drops out.
 
 import { useContext, useMemo, type ReactNode } from 'react';
 import {
@@ -38,12 +33,10 @@ import { glassSize } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
-import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { GlassSurface } from '../GlassSurface';
 import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../chrome/native-header-action-context';
 import { NATIVE_ACTION_SIZE } from '../chrome/GlassActionToolbar';
-import { iconMap } from '../icon-map';
 
 // The native header's bar height, so a name over a byline fits at the 1.2 font cap.
 const CAPSULE_HEIGHT = glassSize.bar;
@@ -52,35 +45,30 @@ const CAPSULE_HEIGHT = glassSize.bar;
 // scale has no 6 or 10.
 const CAPSULE_GAP = 6;
 const CAPSULE_PADDING_END = 10;
-// Under this title bound (a 320pt frame beside five bar slots leaves 58pt) a
-// leading avatar or glyph would squeeze the text to nothing, so it drops out.
+// Under this title bound (a 320pt Display Zoom frame leaves 96pt) a leading
+// glyph would squeeze the text to nothing, so it drops out, and an age may cut.
 const CAPSULE_COMPACT_BELOW = 100;
-// The ×: a full touch-floor-wide button, reaching the 44 pt floor in height
-// with a slop above and below the 38 pt capsule. The glyph stays small.
-const DISMISS_TARGET = glassSize.inline;
-const DISMISS_SLOP = (DISMISS_TARGET - CAPSULE_HEIGHT) / 2;
-const DISMISS_HIT_SLOP = { top: DISMISS_SLOP, bottom: DISMISS_SLOP };
-const DISMISS_GLYPH = 12;
-
-/** The trailing × of a capsule the climber can hide. */
-export type HeaderCapsuleDismiss = {
-  /** Spoken label, and the screen-reader action's name on the capsule ("Hide"). */
-  label: string;
-  onPress: () => void;
-  /** The glyph colour on a patterned surface; the secondary label colour otherwise. */
-  color?: ColorValue;
-  /**
-   * The capsule has no swipe to hide it (the held capsule, whose swipe could end
-   * as the tap that lets go of the board), so the × stays in a too-narrow slot.
-   */
-  keepWhenCompact?: boolean;
-};
-
+// A face costs the name 24pt, so it shows only where the name keeps room: from a
+// 130pt title bound. Between the iPhone's matched islands that is every phone
+// (375pt leaves 151pt) except a 320pt Display Zoom bar (96pt).
+const CAPSULE_FACE_MIN_WIDTH = 130;
 /** True when UIKit's title slot is too narrow for the capsule's leading element. */
 export function useHeaderCapsuleCompact(): boolean {
   const titleMaxWidth = useContext(NativeTitleMaxWidthContext);
   return titleMaxWidth != null && titleMaxWidth < CAPSULE_COMPACT_BELOW;
 }
+/** True when UIKit's title slot leaves the climb's name room beside a face. */
+export function useHeaderCapsuleFaceFits(): boolean {
+  const titleMaxWidth = useContext(NativeTitleMaxWidthContext);
+  return titleMaxWidth == null || titleMaxWidth >= CAPSULE_FACE_MIN_WIDTH;
+}
+
+/**
+ * The line under the climb's name: the grade, then one fact (sends, who lit it,
+ * or how long ago). The grade never cuts; the fact ends in "…" when the capsule
+ * runs out of room, unless `fixed` (an age, which a cut would make wrong).
+ */
+export type HeaderCapsuleByline = { grade: string | null; detail: string | null; fixed?: boolean };
 
 type HeaderStatusCapsuleProps = {
   /** The status tone: amber for lit LEDs, the brand tone for a wall with no lights. */
@@ -98,8 +86,6 @@ type HeaderStatusCapsuleProps = {
   compact: boolean;
   /** An opaque decorative surface, clipped to the capsule instead of glass/tint. */
   background?: { content: ReactNode; color: string; borderColor: string };
-  /** A trailing × that hides the capsule. Pair it with a matching screen-reader action. */
-  dismiss?: HeaderCapsuleDismiss;
   onLayout?: (event: LayoutChangeEvent) => void;
   testID?: string;
   children: ReactNode;
@@ -116,7 +102,6 @@ export function HeaderStatusCapsule({
   accessibilityHint,
   compact,
   background,
-  dismiss,
   onLayout,
   testID,
   children,
@@ -140,8 +125,7 @@ export function HeaderStatusCapsule({
       borderColor: background?.borderColor ?? withAlpha(tintColor, 0.35),
     },
   ];
-  const showDismiss = dismiss !== undefined && (!compact || dismiss.keepWhenCompact === true);
-  const rowStyle = [styles.row, compact && styles.rowCompact, showDismiss && styles.rowBeforeDismiss];
+  const rowStyle = [styles.row, compact && styles.rowCompact];
   const mainTarget = onPress ? (
     <PressableSurface
       onPress={onPress}
@@ -176,38 +160,7 @@ export function HeaderStatusCapsule({
       ) : showsGlass ? null : (
         <View pointerEvents="none" style={glassTintStyle} />
       )}
-      {showDismiss ? (
-        <View style={styles.dismissRow}>
-          {mainTarget}
-          {/* A sibling of the main target, not inside it: VoiceOver and TalkBack
-              reach it as its own button, and its press never opens the capsule. */}
-          <PressableSurface
-            onPress={dismiss.onPress}
-            feedback={nativeHeader ? 'none' : 'opacity'}
-            accessibilityRole="button"
-            accessibilityLabel={dismiss.label}
-            hitSlop={DISMISS_HIT_SLOP}
-            style={styles.dismissButton}
-            testID={testID ? `${testID}-dismiss` : undefined}
-          >
-            <LargeContentViewer
-              title={dismiss.label}
-              systemImage={iconMap.close.ios}
-              onActivate={dismiss.onPress}
-              style={styles.dismissGlyph}
-            >
-              <Icon
-                maxFontSizeMultiplier={1}
-                name="close"
-                size={DISMISS_GLYPH}
-                color={dismiss.color ?? systemColors.secondaryLabel}
-              />
-            </LargeContentViewer>
-          </PressableSurface>
-        </View>
-      ) : (
-        mainTarget
-      )}
+      {mainTarget}
     </>
   );
 
@@ -257,10 +210,10 @@ export function HeaderStatusCapsule({
 }
 
 type HeaderCapsuleClimbLabelProps = {
-  /** The face before the name; dropped when the capsule is compact. */
-  avatar: ReactNode;
+  /** The face before the name; none when null, and dropped when the capsule is compact. */
+  avatar: ReactNode | null;
   name: string;
-  byline: string | null;
+  byline: HeaderCapsuleByline | null;
   compact: boolean;
   /** Spoken by the Large Content Viewer when the text is too small to read. */
   largeContentTitle: string;
@@ -270,7 +223,7 @@ type HeaderCapsuleClimbLabelProps = {
   textStyle?: StyleProp<TextStyle>;
 };
 
-/** A face, then the climb's name over its byline: the accessory platter's row in a header capsule. */
+/** An optional face, then the climb's name over its grade and one fact. */
 export function HeaderCapsuleClimbLabel({
   avatar,
   name,
@@ -285,7 +238,7 @@ export function HeaderCapsuleClimbLabel({
   return (
     <>
       {/* One tap target and one spoken label: the face is decoration here. */}
-      {compact ? null : (
+      {compact || avatar == null ? null : (
         <View style={styles.climbAvatar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {avatar}
         </View>
@@ -301,17 +254,32 @@ export function HeaderCapsuleClimbLabel({
         >
           {name}
         </Text>
-        {byline ? (
-          <Text
-            variant="caption2"
-            color={textColor ?? systemColors.secondaryLabel}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={[styles.climbByline, textStyle]}
-          >
-            {byline}
-          </Text>
+        {byline && (byline.grade || byline.detail) ? (
+          <View style={styles.bylineRow}>
+            {byline.grade ? (
+              <Text
+                variant="caption2"
+                color={textColor ?? systemColors.secondaryLabel}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={[styles.climbByline, styles.bylineGrade, textStyle]}
+              >
+                {byline.grade}
+              </Text>
+            ) : null}
+            {byline.detail ? (
+              <Text
+                variant="caption2"
+                color={textColor ?? systemColors.secondaryLabel}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={[styles.climbByline, byline.fixed ? styles.bylineFixed : styles.bylineDetail, textStyle]}
+              >
+                {byline.grade ? ` · ${byline.detail}` : byline.detail}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
       </LargeContentViewer>
     </>
@@ -360,31 +328,6 @@ const styles = StyleSheet.create({
   rowCompact: {
     paddingStart: CAPSULE_PADDING_END,
   },
-  // The ×'s own width is the trailing inset.
-  rowBeforeDismiss: {
-    paddingEnd: 0,
-  },
-  dismissRow: {
-    flexShrink: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: '100%',
-  },
-  dismissButton: {
-    flexShrink: 0,
-    width: DISMISS_TARGET,
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // The viewer's long press covers the whole ×, not just its 12 pt glyph.
-  dismissGlyph: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   climbAvatar: {
     flexShrink: 0,
   },
@@ -401,5 +344,22 @@ const styles = StyleSheet.create({
   },
   climbByline: {
     fontVariant: ['tabular-nums'],
+  },
+  // The grade and its fact sit on one line; only the fact gives way.
+  bylineRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  bylineGrade: {
+    flexShrink: 0,
+  },
+  bylineFixed: {
+    flexShrink: 0,
+  },
+  bylineDetail: {
+    flexShrink: 1,
+    minWidth: 0,
   },
 });

@@ -3,6 +3,11 @@ vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarIte
 vi.mock('../use-root-bar-items', () => import('../../../../test/use-root-bar-items-stub'));
 // Screenshot mode only; this suite covers the glass capsules.
 vi.mock('../NativeTrailingItemShowcaseAnchor', () => ({ NativeTrailingItemShowcaseAnchor: () => null }));
+// Only the iOS 26 iPhone bar draws the list actions; this suite never reaches it.
+vi.mock('../ClimbListBoardActions', () => ({
+  ClimbListBoardActions: () => null,
+  climbListBoardActionCount: () => 0,
+}));
 // The native bar header reads the stack frame; this suite never reaches it.
 vi.mock('expo-router/react-navigation', () => ({ useFrameSize: () => 402 }));
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));

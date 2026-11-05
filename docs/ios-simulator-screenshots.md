@@ -181,9 +181,10 @@ that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
   - `play-next`: the Play next row in the long-press climb menu.
   - `profile-board-filter`: the Progress tab's Filter button.
   - `board-history-button`: the clock-arrow glyph beside the ellipsis at the top right of the
-    Climbs list (liquid glass chrome only), which opens the board sheet. On iOS 26 it is a native
-    UIKit bar item that no view can measure, so the app logs a box drawn from the bar's geometry
-    (`NativeTrailingItemShowcaseAnchor`).
+    Climbs list (liquid glass chrome only), which opens the board sheet. On an iPhone it is a glass
+    slot in the trailing island and reports its own rect (`ShowcaseAnchorView`). On an iOS 26 iPad
+    it is a native UIKit bar item that no view can measure, so the app logs a box drawn from the
+    bar's geometry (`NativeTrailingItemShowcaseAnchor`).
   - `now-on-wall`, `wall-history`: that sheet's lit-climb hero and its "Lit on this wall"
     header. Only the sheet reports them, never the iPad column or the Wall display.
   - `workout-type`: the selected type chip on the open workout block card in the Session tab.

@@ -5,8 +5,15 @@ import { useTranslation } from 'react-i18next';
 import { nowMs } from '../../lib/clock';
 import { compactAgoParts } from '../../lib/format-relative-time';
 
+/**
+ * How long ago the wall's climb was lit: `label` ("20m") for spoken labels and
+ * the Material overline, `byline` ("20m ago", "Just now") under the name in the
+ * iOS capsule.
+ */
+export type WallCapsuleHistoryAge = { label: string; byline: string };
+
 /** History chrome updates at most once a minute, only while it can be seen. */
-export function useWallCapsuleHistoryAge(sentAt: string | null, enabled: boolean): string | null {
+export function useWallCapsuleHistoryAge(sentAt: string | null, enabled: boolean): WallCapsuleHistoryAge | null {
   const { t } = useTranslation('session');
   const focused = useIsFocused();
   const [, refresh] = useReducer((revision: number) => revision + 1, 0);
@@ -39,16 +46,16 @@ export function useWallCapsuleHistoryAge(sentAt: string | null, enabled: boolean
 
   if (!enabled || !Number.isFinite(litAt)) return null;
   const { unit, count } = compactAgoParts(litAt, nowMs());
-  switch (unit) {
-    case 'now':
-      return t('mobile.boardPresence.litAgoNow');
-    case 'minutes':
-      return t('mobile.boardPresence.litAgoMinutes', { count });
-    case 'hours':
-      return t('mobile.boardPresence.litAgoHours', { count });
-    case 'days':
-      return t('mobile.boardPresence.litAgoDays', { count });
-    case 'weeks':
-      return t('mobile.boardPresence.litAgoWeeks', { count });
+  if (unit === 'now') {
+    return { label: t('mobile.boardPresence.litAgoNow'), byline: t('mobile.boardPresence.litAgoBylineNow') };
   }
+  const label =
+    unit === 'minutes'
+      ? t('mobile.boardPresence.litAgoMinutes', { count })
+      : unit === 'hours'
+        ? t('mobile.boardPresence.litAgoHours', { count })
+        : unit === 'days'
+          ? t('mobile.boardPresence.litAgoDays', { count })
+          : t('mobile.boardPresence.litAgoWeeks', { count });
+  return { label, byline: t('mobile.boardPresence.litAgoByline', { age: label }) };
 }

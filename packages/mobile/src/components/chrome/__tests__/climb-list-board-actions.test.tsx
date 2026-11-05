@@ -363,6 +363,27 @@ describe('Climb list angle, history and options', () => {
 
   // The Material title (screen name over the board) is BoardSwitcherButton's; its
   // suite covers when the subtitle keeps the angle.
+  it('leaves the angle to the leading island and puts Create a climb first in the menu (#7281)', () => {
+    const onCreate = vi.fn();
+    const { queryByRole } = render(
+      <ClimbListBoardActions
+        showAngle={false}
+        createRow={{ label: 'Create a climb', onPress: onCreate }}
+        onOpenHistory={vi.fn()}
+      />,
+    );
+    expect(queryByRole('button', { name: /Board angle/ })).toBeNull();
+    expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'Create a climb',
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.switchBoard',
+    ]);
+    expect(state.menu?.actions[0].systemIcon).toBe('plus');
+    state.menu?.onSelectIndex(0);
+    expect(onCreate).toHaveBeenCalledOnce();
+    expect(state.push).not.toHaveBeenCalled();
+  });
+
   it('leaves the Material angle to the filter chip: no angle button, M3 menu target', () => {
     state.os = 'android';
     const openHistory = vi.fn();
@@ -391,12 +412,15 @@ describe('climbListBoardActionCount', () => {
     ['a board with no angle', { ...BOARD, angle: null as unknown as number }],
   ] as const)('matches the slots the glass toolbar renders for %s', (_label, board) => {
     state.board = board;
-    const { container } = render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
-    // One slot each for the angle, history and the menu that actually render.
-    const slots =
-      container.querySelectorAll('button[aria-label^="Board angle"]').length +
-      container.querySelectorAll('button[aria-label^="Board history"]').length +
-      container.querySelectorAll('[data-menu]').length;
-    expect(slots).toBe(climbListBoardActionCount(board));
+    for (const showAngle of [true, false]) {
+      const { container, unmount } = render(<ClimbListBoardActions showAngle={showAngle} onOpenHistory={vi.fn()} />);
+      // One slot each for the angle, history and the menu that actually render.
+      const slots =
+        container.querySelectorAll('button[aria-label^="Board angle"]').length +
+        container.querySelectorAll('button[aria-label^="Board history"]').length +
+        container.querySelectorAll('[data-menu]').length;
+      expect(slots).toBe(climbListBoardActionCount(board, { showAngle }));
+      unmount();
+    }
   });
 });

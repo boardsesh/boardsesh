@@ -528,9 +528,9 @@ way it looks like this:
   The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;
   the reusable native `FrostedBokeh` component draws them while `WallGlow` owns the button's label fade.
   The Climbs header's board-held capsule uses the same `WallGlow` background, hold-role
-  colours and mirrored geometry for its current climb. Its two-line label uses the glow's readable
+  colours and mirrored geometry for its current climb. Its label uses the glow's readable
   foreground and shadow, with a full-width readability fade because the text reaches the pill's edges.
-  Its Hide × takes the same readable foreground. That capsule's frost means this phone holds the board,
+  That capsule's frost means this phone holds the board,
   including when a crew's swipes browse;
   read the Play drawer button's "You are driving the wall" label to identify driving.
   Missing hold data keeps the plain amber treatment. With no current climb, the held LED header uses just
@@ -645,43 +645,71 @@ keeps `systemColors.fill`. Do not apply a violet background to every content car
 
 ### Root header actions are native bar items
 
-On an iPhone or iPad running iOS 26 Liquid Glass, the root tabs' header buttons are native UIKit bar
-items (`root-bar-items.ts`, gated by `useNativeRootBarItems`), not custom glass capsules. iPhone Duo
-moves native items onto its side rail; a custom view never moves there, and neither does an item with
-a title but no icon. So every root action carries an SF Symbol and a title. UIKit shows the symbol in
-the bar and on the rail, and the title in the overflow menu and to VoiceOver. On iPad, UIKit lays the
-items out beside its own sidebar button and the portrait top tab bar, which the glass capsules
-collided with; the leading and trailing groups stay separate, as on the rail.
+On an iPhone or iPad running iOS 26 Liquid Glass, the root tabs' header buttons can be native UIKit
+bar items (`root-bar-items.ts`, gated by `useNativeRootBarItems`). iPhone Duo moves native items onto
+its side rail; a custom view never moves there, and neither does an item with a title but no icon. So
+every root action that can be a native item carries an SF Symbol and a title. UIKit shows the symbol
+in the bar and on the rail, and the title in the overflow menu and to VoiceOver. On iPad, UIKit lays
+the items out beside its own sidebar button and the portrait top tab bar, which glass capsules
+collided with.
 
-- In a horizontal bar the avatar stays the glass `UserAvatarToolbarAction` (round photo, initials
-  without one); on Climbs and Discover the glass island keeps + beside it. On the Duo rail the account
-  is a native item with `person.crop.circle.badge.ellipsis`, not the Profile tab's
-  `person.crop.circle`. A bar item's image is not clipped (a photo shows square), react-native-screens
-  loads any image source after it makes the item (a blank item on every header change, and the closed
-  Duo then kept it off the rail), and a bar item cannot draw initials.
-- The bulb is a native item only on the rail. In a horizontal bar it stays the glass bulb as a custom
-  view, because react-native-screens has no item with both a tap and a long-press menu, and the
-  long press opens Board controls.
-- The centre capsule's width comes from the items' measured widths (`nativeItemsTitleMaxWidth`: a
-  native item 44pt and 57pt for each one after it, a glass island 38pt a slot plus 8pt), so it
-  ellipsizes before the trailing group. Climbs gets 134pt at 375pt, 161pt at 402pt and 199pt at
-  440pt. An adjustable angle beside history would leave 65, 92 and 130pt; under 96pt
-  (`CENTER_CONTENT_MIN_WIDTH`, about six letters and the grade) the angle moves to the top of the ⋯
-  menu while the capsule shows, so 375pt and 402pt keep 134pt and 161pt.
-- Board history is a native item, so the showcase recorder's `board-history-button` anchor is a box
-  drawn from the bar's geometry in screenshot mode (`NativeTrailingItemShowcaseAnchor`).
+**The iPhone bar mirrors its sides (#7281).** Off the rail, Climbs and Discover draw two glass
+islands of the same 38pt slots (a 4pt hit slop takes each to 46pt, past the 44pt floor):
+
+```
+Climbs    (@ 40°)   [ Mid Range Game  ]   ((h) ...)
+                    [ V6 · 683 sends  ]
+Discover  (@ 40° +)                       ((board) (*))
+```
+
+- The leading island is the avatar, then the glass "40°", then + where it stays. The angle sits in the
+  same place on both tabs.
+- On Climbs in a compact-width bar, + is the first row of ⋯ ("Create a climb"), so the capsule gets
+  the slot. A regular-width iPad keeps + in the island. Discover keeps +: it
+  has no capsule and no ⋯.
+- The trailing island is history and ⋯ on Climbs (`ClimbListBoardActions` with `showAngle` off), the
+  board and the bulb on Discover. Equal islands centre the capsule: 151pt at 375pt, 178pt at 402pt,
+  216pt at 440pt (`nativeItemsTitleMaxWidth`).
+- Why not native items for the angle: a title-only item ("40°") got a capsule of its own, even with
+  `sharesBackground` (#7281 QA, iOS 27), and an icon would hide the number. Why not native items on
+  the trailing side: UIKit's 44pt items do not match the 38pt island slots.
+
+**Where native items stay:**
+
+- On the Duo rail every action is a native item: account (`person.crop.circle.badge.ellipsis`, not
+  the Profile tab's `person.crop.circle`) and + leading; the angle as a title item (it stays in the
+  bar), history and ⋯ or the board switcher, and the bulb, trailing. A bar item's image is not
+  clipped (a photo shows square), react-native-screens loads any image source after it makes the
+  item, and a bar item cannot draw initials, so the horizontal bar keeps the glass avatar.
+- On an iPad the trailing group stays native items (history and ⋯, or the board switcher) with the
+  glass bulb after them as a custom view: react-native-screens has no item with both a tap and a
+  long-press menu, and the long press opens Board controls. A compact-width iPad also moves + into
+  ⋯ on Climbs. The iPad's native history is where the showcase recorder's `board-history-button`
+  anchor points (`NativeTrailingItemShowcaseAnchor`); the iPhone island anchors its own glass history.
 - + (create) and the notifications bell keep `visibilityPriority: 'high'`, so they stay on screen
   longest. Board history is `'standard'`; the rest take the default.
-- The angle ("40°") stays a title-only item. An icon would hide the number on every iPhone, so it
-  gives up its place on the Duo rail. On a regular-width iPad it stays the glass "40°" as a custom
-  view, still first in the trailing group: its picker is a popover there (`useAnglePickerPopover`),
-  and a popover needs a React view to point at, which a UIKit bar item is not. For the same reason it
-  never moves into the ⋯ menu on a regular-width iPad. A compact-width iPad (Split View under 700pt)
-  behaves like an iPhone: the native title item opens the sheet and may move into the ⋯ menu. A width
-  change while the picker is open closes it first, then swaps the trigger.
-- The capsule's room and the showcase anchor measure the navigation stack's frame
-  (`useFrameSize`), not the window, so the iPad sidebar is left out.
-- Custom views stay custom: the Climbs "On the wall" capsule and the controls under the bar.
+
+**The angle's picker** is a sheet on iPhone and a popover on a regular-width iPad
+(`useAnglePickerPopover`), which needs a React view to point at: the glass "40°" is one. Moving between
+the bar and the rail swaps it for the native title item, so that move waits while the picker is open.
+
+**The Climbs capsule** (`WallStatusCapsule`, `BoardHeldCapsule`) is the climb's name over the grade
+and one fact:
+
+| State | Line 2 | Face |
+| --- | --- | --- |
+| Someone else lit it (with a name) | `V6 · Sam` | theirs, from a 130pt capsule (every iPhone but Display Zoom) |
+| Your own climb, or no named sender | `V6 · 683 sends` | none |
+| You hold the board | `V6 · 683 sends` | none (it would be yours) |
+| Lit with no live link | `V6 · 20m ago` | as above |
+
+The grade never cuts; the fact after it ends in "…" when room runs out, except the age, which a cut
+would make wrong (it may cut only in a 320pt Display Zoom bar). A climb with no name shows its grade
+as the name, and line 2 drops the grade. While a signed-in climber's id is still loading, the capsule
+shows the grade alone, so your own climb never flashes your face. The capsules carry no ×:
+a left swipe hides them, and VoiceOver gets a Hide action. The capsule's room and the showcase
+anchor measure the navigation stack's frame (`useFrameSize`), not the window, so the iPad sidebar is
+left out. The capsule and the controls under the bar are always custom views.
 
 iOS 18 and the Material variant keep the glass capsules.
 

@@ -184,6 +184,9 @@ function ClimbTopChromeComponent({
     liveWallClimb?.sentAt ?? null,
     !linked && dismissalLoaded && !dismissed && liveWallClimb !== null,
   );
+  // Strings, not the hook's fresh object, so the memo below holds between ticks.
+  const historyAgeLabel = historyAge?.label ?? '';
+  const historyAgeByline = historyAge?.byline ?? '';
   // "You have the board" is the slot's skin while this climber holds the board,
   // only where the iOS 26 accessory platter mounts on iPhone: that platter
   // collapses on scroll and drops its bulb, while the Material bar and the iOS
@@ -213,9 +216,21 @@ function ClimbTopChromeComponent({
     if (capsule === null || capsule.kind === 'held') return capsule;
     return {
       ...capsule,
-      presentation: linked ? { kind: 'live' as const } : { kind: 'history' as const, ageLabel: historyAge ?? '' },
+      presentation: linked
+        ? { kind: 'live' as const }
+        : { kind: 'history' as const, ageLabel: historyAgeLabel, ageByline: historyAgeByline },
     };
-  }, [trustedWall, dismissalLoaded, dismissed, heldCue, wallIsQueueHead, queueHeadHidden, linked, historyAge]);
+  }, [
+    trustedWall,
+    dismissalLoaded,
+    dismissed,
+    heldCue,
+    wallIsQueueHead,
+    queueHeadHidden,
+    linked,
+    historyAgeLabel,
+    historyAgeByline,
+  ]);
   const headerCapsule = useSettledHeaderValue(liveHeaderCapsule);
   const settledWall = headerCapsule?.wall ?? null;
   const handleDismissWallCapsule = useCallback(
@@ -264,7 +279,8 @@ function ClimbTopChromeComponent({
   }, [hasWallCapsule]);
 
   const handleOpenBoardSwitcher = useCallback(() => router.push('/boards'), [router]);
-  // The same history and ⋯ actions as native bar items on the iOS 26 iPhone header.
+  // The same history and ⋯ actions for the iOS 26 header: the iPhone's trailing
+  // glass island, or native items on iPad and the Duo rail.
   const climbListBarActions = useMemo(
     () => ({ onOpenHistory: onOpenBoardDetail, badge: showBoardBadge }),
     [onOpenBoardDetail, showBoardBadge],

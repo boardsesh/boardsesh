@@ -212,21 +212,13 @@ describe('useClimbListBarItems', () => {
     expect(ctrl.router.push.mock.calls).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
   });
 
-  it.each([false, true])('leaves Wall display out on a tablet with angle row %s', (withAngleRow) => {
+  it('leaves Wall display out on a tablet', () => {
     ctrl.isTablet = true;
-    const openAngle = vi.fn();
-    const { result } = renderHook(() =>
-      useClimbListBarItems({
-        onOpenHistory: vi.fn(),
-        badge: false,
-        angleRow: withAngleRow ? { label: 'Board angle, 40°', onPress: openAngle } : null,
-      }),
-    );
+    const { result } = renderHook(() => useClimbListBarItems({ onOpenHistory: vi.fn(), badge: false }));
     const menu = result.current.find((item) => item.type === 'menu');
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
     // A tablet opens it from the MiniPlayer's ⛶ or the board sheet.
     expect(menu.menu.items.map((item) => item.label)).toEqual([
-      ...(withAngleRow ? ['Board angle, 40°'] : []),
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
@@ -249,21 +241,21 @@ describe('useClimbListBarItems', () => {
     expect(ctrl.router.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
   });
 
-  it('puts the angle at the top of the menu when the bar has no room for it', () => {
-    const openAngle = vi.fn();
+  it('puts Create a climb first in ⋯ where + has left the bar (#7281)', () => {
+    const onCreate = vi.fn();
     const { result } = renderHook(() =>
       useClimbListBarItems({
         onOpenHistory: vi.fn(),
         badge: false,
-        angleRow: { label: 'Board angle, 40°', onPress: openAngle },
+        createRow: { label: 'Create a climb', onPress: onCreate },
       }),
     );
     const menu = result.current.find((item) => item.type === 'menu');
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
-    const [angle] = menu.menu.items;
-    expect(angle).toMatchObject({ label: 'Board angle, 40°', icon: { type: 'sfSymbol', name: 'angle' } });
-    if (angle?.type === 'action') angle.onPress();
-    expect(openAngle).toHaveBeenCalledTimes(1);
+    const [create] = menu.menu.items;
+    expect(create).toMatchObject({ label: 'Create a climb', icon: { type: 'sfSymbol', name: 'plus' } });
+    if (create?.type === 'action') create.onPress();
+    expect(onCreate).toHaveBeenCalledOnce();
   });
 
   it('keeps only the menu without a board', () => {

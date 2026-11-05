@@ -541,6 +541,8 @@
       "litAgoHours": "{{count}} h",
       "litAgoDays": "{{count}} d",
       "litAgoWeeks": "{{count}} sem",
+      "litAgoByline": "hace {{age}}",
+      "litAgoBylineNow": "Ahora mismo",
       "sentByLine": "Encadenado por {{name}}",
       "unnamedClimber": "Alguien",
       "emptyTitle": "Aún no hay nadie en este muro",
@@ -623,7 +625,6 @@
         "exitA11y": "Salir de la pantalla de muro"
       },
       "stripHistoryOverline": "Último en el muro · {{age}}",
-      "stripHistoryByline": "Último en el muro · {{age}} · {{grade}}",
       "stripHistoryA11yLabel": "Último en el muro · {{age}}: {{name}}, {{grade}}",
       "stripHistoryA11yLabelWithSender": "Último en el muro · {{age}}: {{name}}, {{grade}}, encendido por {{sender}}",
       "stripDismiss": "Ocultar",

@@ -191,18 +191,17 @@ export function useLightbulbBarItem(): RootBarButtonItem | null {
 /**
  * The Climbs list's trailing actions after the angle: board history (with the
  * onboarding cue) and the list's ⋯ menu (View options, Wall display on a tablet
- * with no native MiniPlayer, Switch board).
- * `angleRow` puts the angle at the top of that menu, for when the bar has no
- * room for the angle item beside the on-the-wall capsule.
+ * with no native MiniPlayer, Switch board). `createRow` puts "Create a climb"
+ * first, where + has left the bar to give the capsule room.
  */
 export function useClimbListBarItems({
   onOpenHistory,
   badge,
-  angleRow = null,
+  createRow = null,
 }: {
   onOpenHistory: () => void;
   badge: boolean;
-  angleRow?: { label: string; onPress: () => void } | null;
+  createRow?: { label: string; onPress: () => void } | null;
 }): RootBarItem[] {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
@@ -246,7 +245,7 @@ export function useClimbListBarItems({
         symbol: iconMap.more.ios,
         identifier: 'root.climbListMenu',
         rows: [
-          ...(angleRow ? [{ label: angleRow.label, symbol: iconMap.angle.ios, onPress: angleRow.onPress }] : []),
+          ...(createRow ? [{ label: createRow.label, symbol: iconMap.plus.ios, onPress: createRow.onPress }] : []),
           { label: t('mobile.listOptions.viewOptions'), symbol: iconMap['view.options'].ios, onPress: openViewOptions },
           ...(wallDisplayInMenu
             ? [
@@ -276,7 +275,7 @@ export function useClimbListBarItems({
     openViewOptions,
     openWallDisplay,
     openBoards,
-    angleRow,
+    createRow,
     wallDisplayInMenu,
   ]);
 }

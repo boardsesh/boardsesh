@@ -74,8 +74,9 @@ export function nativeBarSideWidth({ nativeItems = 0, titleItems = 0, customSlot
  * `nativeTitleMaxWidth` for a bar of native items. Each side gives up its
  * safe-area inset, the bar margin, its items' width and UIKit's title-view
  * clearance. Climbs on an iPhone 17 Pro (402pt), with the glass avatar and +
- * leading and history and ⋯ trailing, leaves 161pt; an adjustable angle beside
- * history takes it down to 92pt.
+ * leading and history and ⋯ trailing, leaves 161pt. The iPhone bar now mirrors
+ * its sides (#7281): avatar and angle leading, history and ⋯ trailing, both
+ * glass islands of two 38pt slots, which leaves 178pt (151pt at 375pt).
  */
 export function nativeItemsTitleMaxWidth(
   frameWidth: number,
@@ -90,14 +91,6 @@ export function nativeItemsTitleMaxWidth(
     2 * TITLE_VIEW_SPACING;
   return Math.min(CENTER_CONTENT_MAX_WIDTH, Math.max(0, freeWidth));
 }
-
-/**
- * The narrowest the on-the-wall capsule may get: its compact form (no avatar,
- * `HeaderStatusCapsule` drops it under 100pt) with about six letters of the
- * climb and the grade. Below this it would read as a grade with no name, so the
- * chrome moves the angle into the list menu to make room.
- */
-export const CENTER_CONTENT_MIN_WIDTH = 96;
 
 /**
  * Where a trailing native item sits, `positionFromEnd` items in from the

@@ -1143,10 +1143,10 @@ together while the player covers the native header.
 The current-climb capsule while you hold an LED board uses the same holds-based
 background as the play drawer's driving button, including your hold colours and
 mirror setting. It reads cached geometry without starting a board-art fetch. When
-that climb is the one on the wall it carries the same × and Hide action, but no
-swipe: its tap lets go of the board. Its × stays in a narrow title slot, since it is
-the only sighted way to hide it, and a hidden climb does not come back in this
-capsule when the presence feed drops or the lights are turned off.
+that climb is the one on the wall it hides the same way: a left swipe or the Hide
+action, no × (#7281). Its tap lets go of the board, so a touch that swiped is
+never a tap. A hidden climb does not come back in this capsule when the presence
+feed drops or the lights are turned off.
 
 The native story gallery shows the live and recent-history treatments side by side:
 [Liquid Glass dark](images/wall-capsule-glass-dark.png),
