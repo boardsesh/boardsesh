@@ -241,6 +241,23 @@ describe('useClimbListBarItems', () => {
     expect(ctrl.router.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
   });
 
+  it('puts Create a climb first in ⋯ where + has left the bar (#7281)', () => {
+    const onCreate = vi.fn();
+    const { result } = renderHook(() =>
+      useClimbListBarItems({
+        onOpenHistory: vi.fn(),
+        badge: false,
+        createRow: { label: 'Create a climb', onPress: onCreate },
+      }),
+    );
+    const menu = result.current.find((item) => item.type === 'menu');
+    if (menu?.type !== 'menu') throw new Error('expected the list menu');
+    const [create] = menu.menu.items;
+    expect(create).toMatchObject({ label: 'Create a climb', icon: { type: 'sfSymbol', name: 'plus' } });
+    if (create?.type === 'action') create.onPress();
+    expect(onCreate).toHaveBeenCalledOnce();
+  });
+
   it('keeps only the menu without a board', () => {
     const { result } = renderHook(() => useClimbListBarItems({ onOpenHistory: vi.fn(), badge: false }));
     expect(result.current.map((item) => item.type)).toEqual(['menu']);

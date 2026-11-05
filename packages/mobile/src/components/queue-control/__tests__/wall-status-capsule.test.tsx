@@ -19,6 +19,21 @@ const spies = vi.hoisted(() => ({
   nativeGlass: true,
   enterAnimation: vi.fn(() => ({})),
   panConsumed: false,
+  viewerUserId: 'u-me' as string | null,
+  // The sends after the grade; null leaves the grade alone, as for an unsent climb.
+  sends: null as string | null,
+  statsArgs: null as unknown,
+}));
+
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => spies.viewerUserId }));
+vi.mock('../../../providers/drawer-host-provider', () => ({
+  useDrawerHost: () => ({ boardConfig: { boardName: 'kilter', layoutId: 1 } }),
+}));
+vi.mock('../use-climb-byline', () => ({
+  useClimbStatsDetail: (climb: unknown, boardConfig: unknown, options: { statsEnabled?: boolean } = {}) => {
+    spies.statsArgs = { climb, boardConfig, statsEnabled: options.statsEnabled };
+    return options.statsEnabled === false ? null : spies.sends;
+  },
 }));
 
 vi.mock('../use-wall-capsule-dismiss', () => ({
@@ -327,6 +342,9 @@ describe('WallStatusCapsule', () => {
     spies.colorScheme = 'dark';
     spies.nativeGlass = true;
     spies.panConsumed = false;
+    spies.viewerUserId = 'u-me';
+    spies.sends = null;
+    spies.statsArgs = null;
   });
 
   it('keeps the climb name intrinsic and shrinkable inside the native header', () => {
@@ -432,14 +450,15 @@ describe('WallStatusCapsule', () => {
   });
 
   it.each([
-    // A 320pt frame (Display Zoom, iPad Slide Over) beside five bar slots.
-    [58, true],
-    [99, true],
-    // 375pt and up keep the face.
-    [100, false],
-    [113, false],
+    // A 320pt frame (Display Zoom) beside the matched islands.
+    [96, true],
+    [129, true],
+    // From a 130pt bound (402pt with the matched islands) the face says who lit it.
+    [130, false],
+    [151, false],
+    [178, false],
     [undefined, false],
-  ])('drops the avatar, never the name, when the title bound is %s (compact: %s)', (titleMaxWidth, compact) => {
+  ])("shows the sender's face only from a 130pt bound: %s (no face: %s)", (titleMaxWidth, compact) => {
     const { container, getByText } = render(
       <NativeHeaderActionContext.Provider value={true}>
         <NativeTitleMaxWidthContext.Provider value={titleMaxWidth}>
@@ -521,18 +540,55 @@ describe('WallStatusCapsule', () => {
     expect(spies.openWallPreview).toHaveBeenCalledOnce();
   });
 
-  it('shows the live climb as its name alone, so the angle keeps its bar slot (#7281)', () => {
+  const capsuleLines = (root: HTMLElement) =>
+    [...root.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
+
+  it("puts someone else's climb over its grade and who lit it, with no stats read (#7281)", () => {
+    spies.sends = '1.4k sends';
     const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-    const lines = [...container.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
-    expect(lines).toEqual(['Wax On']);
-    // The grade is still spoken.
-    expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain('V5 6C');
+    expect(capsuleLines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
+    expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-name')).toBe('Casey');
+    expect(spies.statsArgs).toMatchObject({ statsEnabled: false });
+  });
+
+  it('puts your own climb over its grade and sends, with no face (#7281)', () => {
+    spies.viewerUserId = 'u-casey';
+    spies.sends = '1.4k sends';
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    expect(capsuleLines(container)).toEqual(['Wax On', 'V5 6C', ' · 1.4k sends']);
+    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+    // The live stats read the converted climb on the active board.
+    expect(spies.statsArgs).toEqual({
+      climb: { uuid: 'wall-1', _converted: true },
+      boardConfig: { boardName: 'kilter', layoutId: 1 },
+      statsEnabled: true,
+    });
+  });
+
+  it('never cuts the grade: only the fact after it gives way', () => {
+    spies.viewerUserId = 'u-casey';
+    spies.sends = '1.4k sends';
+    const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
+    const grade = JSON.parse(getByText('V5 6C').getAttribute('data-style') ?? '{}');
+    const detail = [...container.querySelectorAll('[data-text]')].find(
+      (node) => node.textContent === ' · 1.4k sends',
+    ) as HTMLElement;
+    expect(grade.flexShrink).toBe(0);
+    expect(JSON.parse(detail.getAttribute('data-style') ?? '{}')).toMatchObject({ flexShrink: 1, minWidth: 0 });
+    expect(detail.getAttribute('data-lines')).toBe('1');
+    expect(detail.getAttribute('data-ellipsize')).toBe('tail');
+  });
+
+  it("shows the grade alone when the reporter sent no angle, so no other angle's sends leak in", () => {
+    spies.viewerUserId = 'u-casey';
+    spies.sends = '1.4k sends';
+    const { container } = render(<WallStatusCapsule climb={makeClimb({ angle: null })} />);
+    expect(capsuleLines(container)).toEqual(['Wax On', 'V5 6C']);
   });
 
   it('shows the grade in place of a missing climb name, never an empty capsule', () => {
-    const { container, getByText } = render(<WallStatusCapsule climb={makeClimb({ name: null })} />);
-    expect(container.querySelector('[data-pressable]')).not.toBeNull();
-    expect(getByText('V5 6C')).not.toBeNull();
+    const { container } = render(<WallStatusCapsule climb={makeClimb({ name: null })} />);
+    expect(capsuleLines(container)[0]).toBe('V5 6C');
   });
 
   it('keeps the name and avatar when the climb grade is null', () => {
@@ -573,12 +629,14 @@ describe('WallStatusCapsule', () => {
     expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
   });
 
-  it.each([null, 'u-only'])('uses a person glyph without a photo or name (userId: %s)', (sentByUserId) => {
+  it.each([null, 'u-only'])('draws no face for a sender with no photo or name (userId: %s)', (sentByUserId) => {
     const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId });
     const { container } = render(<WallStatusCapsule climb={climb} />);
     expect(container.querySelector('[data-driver-avatar]')).toBeNull();
-    expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
     expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
+    // Nothing says who lit it, so the name starts at the inset.
+    expect(container.querySelector('[data-pressable]')?.getAttribute('data-style')).toContain('"paddingStart":10');
   });
 
   it('opens the read-only wall preview (converted climb) on tap', () => {
@@ -607,7 +665,7 @@ describe('WallStatusCapsule', () => {
     }
   });
 
-  it('puts the age under the name of a climb lit with no live link, so it never reads as live', () => {
+  it('puts the grade and a whole age under the name of a climb lit with no live link, so it never reads as live', () => {
     const { container } = render(
       <WallStatusCapsule
         climb={makeClimb()}
@@ -615,7 +673,10 @@ describe('WallStatusCapsule', () => {
       />,
     );
     const lines = [...container.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
-    expect(lines).toEqual(['Wax On', '20m ago']);
+    expect(lines).toEqual(['Wax On', 'V5 6C', ' · 20m ago']);
+    // A cut age would be a wrong age: it never gives way.
+    const age = [...container.querySelectorAll('[data-text]')].find((node) => node.textContent === ' · 20m ago');
+    expect(JSON.parse(age?.getAttribute('data-style') ?? '{}').flexShrink).toBe(0);
     expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toBe(
       'mobile.boardPresence.stripHistoryA11yLabelWithSender:Wax On,V5 6C,20m,Casey',
     );

@@ -11,10 +11,11 @@
 //
 // Two platform-native skins behind one stateful body (see selectByVariant below):
 //   - Liquid Glass (iOS): one regular native-glass pill with a warm "lit" amber
-//     tint: the face, then the name. No grade · sends line, so the angle keeps
-//     its bar slot beside it (#7281); a climb lit with no live link adds its age
-//     ("20m ago") under the name, so it never reads as live. Older devices and
-//     Reduce Transparency retain the opaque pill.
+//     tint: the name over the grade and one fact (#7281). Someone else's climb
+//     says who lit it (their face where the capsule has room, their name after
+//     the grade); your own climb says its sends; a climb lit with no live link
+//     says how long ago ("V6 · 20m ago"), so it never reads as live. Older
+//     devices and Reduce Transparency retain the opaque pill.
 //   - Material 3 (Android): a full-bleed titled status band — a tertiary accent
 //     rail + an "On the wall" overline (the lit semantic stated in words and
 //     carried by the tertiary colour role) + a bottom divider, ending in a 48dp
@@ -41,14 +42,21 @@ import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
-import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
+import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useViewerUserId } from '../../hooks/use-viewer-user-id';
+import { useClimbStatsDetail } from './use-climb-byline';
+import {
+  HeaderCapsuleClimbLabel,
+  HeaderStatusCapsule,
+  useHeaderCapsuleFaceFits,
+  type HeaderCapsuleByline,
+} from './HeaderStatusCapsule';
 import { WallCapsuleSwipe } from './WallCapsuleSwipe';
 import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
 
 // The capsule's face stands in for the platter's board thumbnail, sized to the
 // two-line name block beside it. Fixed — does not scale with Dynamic Type.
 const CAPSULE_AVATAR_SIZE = 24;
-const CAPSULE_ANON_GLYPH = 20;
 // 20pt reads unambiguously as a face above M3's ~18dp floor in the Material band.
 // Fixed — does not scale with Dynamic Type.
 const BAND_AVATAR_SIZE = 20;
@@ -84,7 +92,9 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const { resolveGrade } = useDisplayGrade();
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
-  const compact = useHeaderCapsuleCompact();
+  const faceFits = useHeaderCapsuleFaceFits();
+  const viewerUserId = useViewerUserId();
+  const { boardConfig } = useDrawerHost();
   const history = presentation?.kind === 'history' ? presentation : null;
   const swipe = useWallCapsuleDismiss({
     occurrenceKey: occurrenceKey ?? `${climb.seq}:${climb.sentAt}:${climb.climbUuid}`,
@@ -101,6 +111,10 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const gradeColor = resolvedGrade.color;
   const senderName = climb.sentByDisplayName?.trim() || null;
   const hasSenderIdentity = climb.sentByAvatarUrl != null || senderName != null;
+  // Someone else lit it: their face and name say who. Your own climb (or an
+  // anonymous one) says its sends instead; your face would say nothing new.
+  const litByOther = climb.sentByUserId != null ? climb.sentByUserId !== viewerUserId : senderName != null;
+  const showFace = litByOther && hasSenderIdentity && faceFits;
 
   const a11yLabel = history
     ? senderName
@@ -142,6 +156,15 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const previewClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
+  // The sends only where the byline says them: a live climb that is not someone
+  // else's. An older reporter sends no angle, and the converted climb's 0° would
+  // read some other angle's sends, so that shows the grade alone.
+  const statsDetail = useClimbStatsDetail(previewClimb, boardConfig, {
+    statsEnabled: !isMaterial && !history && !litByOther && climb.angle != null,
+  });
+  const byline: HeaderCapsuleByline = history
+    ? { grade: formattedGrade, detail: history.ageByline, fixed: true }
+    : { grade: formattedGrade, detail: litByOther ? senderName : statsDetail };
 
   const { consumePanned, dismiss } = swipe;
   const handlePress = useCallback(() => {
@@ -294,12 +317,12 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
         accessibilityHint={accessibilityHint}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={handleAccessibilityAction}
-        compact={compact}
+        compact={!showFace}
       >
         {/* One tap target and one spoken label; profile navigation lives in the preview. */}
         <HeaderCapsuleClimbLabel
           avatar={
-            hasSenderIdentity ? (
+            showFace ? (
               <BoardDriverAvatar
                 uri={climb.sentByAvatarUrl}
                 name={senderName}
@@ -307,19 +330,12 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
                 size={CAPSULE_AVATAR_SIZE}
                 status="none"
               />
-            ) : (
-              <Icon
-                maxFontSizeMultiplier={1}
-                name="profile.fill"
-                size={CAPSULE_ANON_GLYPH}
-                color={brandColors.warning}
-              />
-            )
+            ) : null
           }
           // A reporter that sent no name still shows something: the grade.
           name={name || formattedGrade || ''}
-          byline={history ? history.ageByline : null}
-          compact={compact}
+          byline={byline}
+          compact={!showFace}
           largeContentTitle={a11yLabel}
           onActivate={handlePress}
         />

@@ -25,19 +25,27 @@ type ClimbListBoardActionsProps = {
   badge?: boolean;
   showcaseAnchor?: boolean;
   material?: boolean;
+  /** Draw the one-tap angle first. Off where the angle lives in the leading island. */
+  showAngle?: boolean;
+  /** "Create a climb" as the ⋯ menu's first row, where + has left the bar for the capsule. */
+  createRow?: { label: string; onPress: () => void };
 };
 
-type ListMenuRow = AppMenuAction & { id: 'viewOptions' | 'wallDisplay' | 'switchBoard' };
+type ListMenuRow = AppMenuAction & { id: 'create' | 'viewOptions' | 'wallDisplay' | 'switchBoard' };
 
 type CountedBoard = NonNullable<Parameters<typeof formatActiveBoardLabel>[0]> & BoardAngleFields;
 
 /**
  * How many glass toolbar slots `ClimbListBoardActions` fills for this board:
- * the angle (adjustable boards), history (any board with a label) and the ⋯
- * menu. Read from the same conditions the component renders on.
+ * the angle (adjustable boards, unless `showAngle` is off), history (any board
+ * with a label) and the ⋯ menu. Read from the same conditions the component
+ * renders on.
  */
-export function climbListBoardActionCount(activeBoard: CountedBoard | null | undefined): number {
-  const angle = canAdjustBoardAngle(activeBoard) ? 1 : 0;
+export function climbListBoardActionCount(
+  activeBoard: CountedBoard | null | undefined,
+  { showAngle = true }: { showAngle?: boolean } = {},
+): number {
+  const angle = showAngle && canAdjustBoardAngle(activeBoard) ? 1 : 0;
   const history = formatActiveBoardLabel(activeBoard) ? 1 : 0;
   return angle + history + 1;
 }
@@ -47,13 +55,16 @@ export function climbListBoardActionCount(activeBoard: CountedBoard | null | und
  * history, then the ⋯ menu (View options, Switch board, and the full-screen
  * Wall display on a tablet with no native MiniPlayer; one with it opens Wall
  * display from the bar's ⛶). Material leaves the angle to the filter row's
- * Angle chip, so it keeps history and the menu.
+ * Angle chip, so it keeps history and the menu. The iOS 26 iPhone bar draws the
+ * angle in its leading island (`showAngle` off) and puts + in this menu.
  */
 export function ClimbListBoardActions({
   onOpenHistory,
   badge = false,
   showcaseAnchor = false,
   material = false,
+  showAngle = true,
+  createRow,
 }: ClimbListBoardActionsProps) {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
@@ -70,6 +81,7 @@ export function ClimbListBoardActions({
   const boardLabel = formatActiveBoardLabel(activeBoard);
   const rows = useMemo<ListMenuRow[]>(
     () => [
+      ...(createRow ? [{ id: 'create' as const, label: createRow.label, systemIcon: iconMap.plus.ios }] : []),
       { id: 'viewOptions', label: t('mobile.listOptions.viewOptions'), systemIcon: iconMap['view.options'].ios },
       ...(wallDisplayInMenu
         ? [
@@ -87,7 +99,7 @@ export function ClimbListBoardActions({
         dividerBefore: true,
       },
     ],
-    [t, tSession, wallDisplayInMenu],
+    [createRow, t, tSession, wallDisplayInMenu],
   );
   const rowSignature = rows.map((row) => `${row.id}:${row.label}`).join('|');
   const handleOpenHistory = useCallback(() => {
@@ -97,7 +109,7 @@ export function ClimbListBoardActions({
 
   return (
     <>
-      {material ? null : <AngleToolbarAction />}
+      {material || !showAngle ? null : <AngleToolbarAction />}
       {boardLabel ? (
         <ShowcaseAnchorView name="board-history-button" enabled={showcaseAnchor}>
           <View>
@@ -144,6 +156,9 @@ export function ClimbListBoardActions({
           actions={rows}
           onSelectIndex={(index) => {
             switch (rows[index]?.id) {
+              case 'create':
+                createRow?.onPress();
+                break;
               case 'viewOptions':
                 router.push('/(tabs)/climbs/settings/climb-list');
                 break;

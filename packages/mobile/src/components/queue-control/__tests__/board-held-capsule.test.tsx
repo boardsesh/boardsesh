@@ -30,6 +30,7 @@ const spies = vi.hoisted(() => ({
   layoutWidth: 210,
   layoutHeight: 38,
   panConsumed: false,
+  sends: '1.4k sends' as string | null,
   swipeOptions: null as null | { occurrenceKey: string; onDismiss?: (occurrenceKey: string) => void },
   swipeWrapped: false,
 }));
@@ -48,6 +49,7 @@ vi.mock('../use-wall-capsule-dismiss', () => ({
     };
   },
 }));
+vi.mock('../use-climb-byline', () => ({ useClimbStatsDetail: () => spies.sends }));
 // A pass-through, so the capsule stays the rendered root the layout tests read.
 vi.mock('../WallCapsuleSwipe', () => ({
   WallCapsuleSwipe: ({ children }: { children?: ReactNode }) => {
@@ -374,6 +376,7 @@ const TEST_GLOW: WallGlowInput = {
 
 describe('BoardHeldCapsule', () => {
   beforeEach(() => {
+    spies.sends = '1.4k sends';
     spies.openControls.mockClear();
     spies.lightbulbPress.mockClear();
     spies.lightbulbLongPress.mockClear();
@@ -446,18 +449,23 @@ describe('BoardHeldCapsule', () => {
       spies.currentClimb = { uuid: 'climb-1', name: 'Kish Mud Prison', difficulty: 'V7' };
     });
 
-    it('shows your face, then the climb name alone, so the angle keeps its bar slot (#7281)', () => {
+    it('shows your climb over its grade and sends, with no face: it would be your own (#7281)', () => {
       const { container } = render(<BoardHeldCapsule ledless={false} />);
-      const avatar = container.querySelector('[data-avatar]');
-      expect(avatar?.getAttribute('data-uri')).toBe('https://example.com/me.png');
-      expect(avatar?.getAttribute('data-name')).toBe('Marco');
+      expect(container.querySelector('[data-avatar]')).toBeNull();
       const lines = [...container.querySelectorAll('[data-text]')].map((node) => node.textContent);
-      expect(lines).toEqual(['Kish Mud Prison']);
+      expect(lines).toEqual(['Kish Mud Prison', 'V7', ' · 1.4k sends']);
       expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
       // Still the amber "LEDs on" tone.
       expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-tint')).toBe(
         'rgba(251, 191, 36, 0.14)',
       );
+    });
+
+    it('shows the grade alone for a climb with no sends or rating', () => {
+      spies.sends = null;
+      const { container } = render(<BoardHeldCapsule ledless={false} />);
+      const lines = [...container.querySelectorAll('[data-text]')].map((node) => node.textContent);
+      expect(lines).toEqual(['Kish Mud Prison', 'V7']);
     });
 
     it('names the climb and the hold in one spoken label', () => {
@@ -579,7 +587,6 @@ describe('BoardHeldCapsule', () => {
             }}
             ledless={false}
             toneColor={WARNING}
-            compact={false}
             onPress={spies.lightbulbPress}
             onLongPress={spies.lightbulbLongPress}
             accessibilityActions={undefined}

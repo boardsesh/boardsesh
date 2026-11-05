@@ -48,11 +48,26 @@ const CAPSULE_PADDING_END = 10;
 // Under this title bound (a 320pt frame beside five bar slots leaves 58pt) a
 // leading avatar or glyph would squeeze the text to nothing, so it drops out.
 const CAPSULE_COMPACT_BELOW = 100;
+// A face costs the name 24pt, so it shows only where the name keeps room: from a
+// 130pt title bound (402pt with the matched islands, every iPhone off the rail).
+const CAPSULE_FACE_MIN_WIDTH = 130;
 /** True when UIKit's title slot is too narrow for the capsule's leading element. */
 export function useHeaderCapsuleCompact(): boolean {
   const titleMaxWidth = useContext(NativeTitleMaxWidthContext);
   return titleMaxWidth != null && titleMaxWidth < CAPSULE_COMPACT_BELOW;
 }
+/** True when UIKit's title slot leaves the climb's name room beside a face. */
+export function useHeaderCapsuleFaceFits(): boolean {
+  const titleMaxWidth = useContext(NativeTitleMaxWidthContext);
+  return titleMaxWidth == null || titleMaxWidth >= CAPSULE_FACE_MIN_WIDTH;
+}
+
+/**
+ * The line under the climb's name: the grade, then one fact (sends, who lit it,
+ * or how long ago). The grade never cuts; the fact ends in "…" when the capsule
+ * runs out of room, unless `fixed` (an age, which a cut would make wrong).
+ */
+export type HeaderCapsuleByline = { grade: string | null; detail: string | null; fixed?: boolean };
 
 type HeaderStatusCapsuleProps = {
   /** The status tone: amber for lit LEDs, the brand tone for a wall with no lights. */
@@ -194,10 +209,10 @@ export function HeaderStatusCapsule({
 }
 
 type HeaderCapsuleClimbLabelProps = {
-  /** The face before the name; dropped when the capsule is compact. */
-  avatar: ReactNode;
+  /** The face before the name; none when null, and dropped when the capsule is compact. */
+  avatar: ReactNode | null;
   name: string;
-  byline: string | null;
+  byline: HeaderCapsuleByline | null;
   compact: boolean;
   /** Spoken by the Large Content Viewer when the text is too small to read. */
   largeContentTitle: string;
@@ -207,7 +222,7 @@ type HeaderCapsuleClimbLabelProps = {
   textStyle?: StyleProp<TextStyle>;
 };
 
-/** A face, then the climb's name over its byline: the accessory platter's row in a header capsule. */
+/** An optional face, then the climb's name over its grade and one fact. */
 export function HeaderCapsuleClimbLabel({
   avatar,
   name,
@@ -222,7 +237,7 @@ export function HeaderCapsuleClimbLabel({
   return (
     <>
       {/* One tap target and one spoken label: the face is decoration here. */}
-      {compact ? null : (
+      {compact || avatar == null ? null : (
         <View style={styles.climbAvatar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {avatar}
         </View>
@@ -238,17 +253,32 @@ export function HeaderCapsuleClimbLabel({
         >
           {name}
         </Text>
-        {byline ? (
-          <Text
-            variant="caption2"
-            color={textColor ?? systemColors.secondaryLabel}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={[styles.climbByline, textStyle]}
-          >
-            {byline}
-          </Text>
+        {byline && (byline.grade || byline.detail) ? (
+          <View style={styles.bylineRow}>
+            {byline.grade ? (
+              <Text
+                variant="caption2"
+                color={textColor ?? systemColors.secondaryLabel}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={[styles.climbByline, styles.bylineGrade, textStyle]}
+              >
+                {byline.grade}
+              </Text>
+            ) : null}
+            {byline.detail ? (
+              <Text
+                variant="caption2"
+                color={textColor ?? systemColors.secondaryLabel}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={[styles.climbByline, byline.fixed ? styles.bylineFixed : styles.bylineDetail, textStyle]}
+              >
+                {byline.grade ? ` · ${byline.detail}` : byline.detail}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
       </LargeContentViewer>
     </>
@@ -313,5 +343,22 @@ const styles = StyleSheet.create({
   },
   climbByline: {
     fontVariant: ['tabular-nums'],
+  },
+  // The grade and its fact sit on one line; only the fact gives way.
+  bylineRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  bylineGrade: {
+    flexShrink: 0,
+  },
+  bylineFixed: {
+    flexShrink: 0,
+  },
+  bylineDetail: {
+    flexShrink: 1,
+    minWidth: 0,
   },
 });

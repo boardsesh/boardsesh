@@ -97,6 +97,7 @@ vi.mock('../../../theme/colors', () => ({
   wallGlowSurfaces: { dark: { label: '#fff', base: '#000', border: '#111' }, light: { label: '#000' } },
 }));
 vi.mock('../../Avatar', () => ({ Avatar: () => null }));
+vi.mock('../use-climb-byline', () => ({ useClimbStatsDetail: () => null }));
 // The swipe-to-hide pan has its own suite; these drive tests only need the tap.
 vi.mock('react-native-reanimated', () => ({ useReducedMotion: () => false }));
 vi.mock('../use-wall-capsule-dismiss', () => ({

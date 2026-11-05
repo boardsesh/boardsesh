@@ -68,14 +68,13 @@ function TitleSlot({ children, narrow = false }: { children: ReactNode; narrow?:
   );
 }
 
-function HeldClimb({ ledless, compact = false }: { ledless: boolean; compact?: boolean }) {
+function HeldClimb({ ledless }: { ledless: boolean }) {
   const { brandColors } = useTheme();
   return (
     <HeldClimbCapsule
       climb={heldClimb}
       ledless={ledless}
       toneColor={ledless ? brandColors.primary : brandColors.warning}
-      compact={compact}
       onPress={noop}
       onLongPress={noop}
       accessibilityActions={undefined}
@@ -203,7 +202,7 @@ const stories: StoryModule = {
       render: () => (
         <StoryVariant label="You're driving, compact title">
           <TitleSlot narrow>
-            <HeldClimb ledless={false} compact />
+            <HeldClimb ledless={false} />
           </TitleSlot>
         </StoryVariant>
       ),

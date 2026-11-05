@@ -6,9 +6,9 @@
 // the same thing with a mark on its thumbnail; this is the words for it, at the
 // top of the list where a collapsed platter has no room for the bulb.
 //
-// With a current climb it reads like the "On the wall" capsule: your face, then
-// the climb's name, with no grade · sends line so the angle keeps its bar slot
-// (#7281). Without one it falls back to the bulb and "You have the board".
+// With a current climb it reads like the "On the wall" capsule: the climb's name
+// over its grade and sends (#7281). No face: it would be your own, and the name
+// needs the room. Without a climb it falls back to the bulb and "You have the board".
 //
 // A lit climb carries the wall button's hold-colour frost, with amber as the
 // fallback before measurement or when holds are unavailable. With no climb,
@@ -33,7 +33,6 @@ import { useQueueData } from '../../providers/queue/queue-contexts';
 import { useTheme } from '../../providers/theme-provider';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
-import { useProfile } from '../../lib/graphql/hooks';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { hapticMedium } from '../../lib/haptics';
@@ -45,9 +44,9 @@ import { showsWallHoldLook } from './board-control-indicator-state';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { Avatar } from '../Avatar';
 import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
 import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
+import { useClimbStatsDetail } from './use-climb-byline';
 import { WallCapsuleSwipe } from './WallCapsuleSwipe';
 import { useClimbWallGlow } from './use-climb-wall-glow';
 import { useWallGlowLayer, wallGlowBlendFor, type WallGlowLayer } from '../play-drawer/use-wall-glow';
@@ -55,8 +54,6 @@ import { wallGlowSurfaces } from '../../theme/colors';
 import { WallGlow } from '../play-drawer/WallGlow';
 
 const CAPSULE_GLYPH_SIZE = 16;
-// The same face size as the "On the wall" capsule. Fixed — does not scale with Dynamic Type.
-const CAPSULE_AVATAR_SIZE = 24;
 
 /** Hide the climb on the wall for this lighting, as the "On the wall" capsule does. */
 export type HeldCapsuleDismiss = {
@@ -175,7 +172,6 @@ function BoardHeldCapsuleImpl({ ledless: ledlessBoard, dismiss }: BoardHeldCapsu
       climb={climb}
       ledless={ledless}
       toneColor={toneColor}
-      compact={compact}
       onPress={onPress}
       onLongPress={handleLongPress}
       accessibilityActions={accessibilityActions}
@@ -242,7 +238,6 @@ type HeldClimbCapsuleProps = {
   climb: Climb;
   ledless: boolean;
   toneColor: string;
-  compact: boolean;
   onPress: () => void;
   onLongPress: () => void;
   accessibilityActions: { name: string; label: string }[] | undefined;
@@ -251,15 +246,14 @@ type HeldClimbCapsuleProps = {
 };
 
 /**
- * Your face, then your climb's name: no grade · sends line, so the angle keeps
- * its bar slot (#7281). Split out so the glow only builds with a climb; exported
- * for the header-capsules story.
+ * Your climb's name over its grade and sends, no face (#7281). Split out so the
+ * glow and the stats read only run with a climb; exported for the
+ * header-capsules story.
  */
 export function HeldClimbCapsule({
   climb,
   ledless,
   toneColor,
-  compact,
   onPress,
   onLongPress,
   accessibilityActions,
@@ -269,7 +263,6 @@ export function HeldClimbCapsule({
   const { t } = useTranslation('settings');
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
-  const { data: profile } = useProfile();
   const { colorScheme } = useTheme();
   const [size, setSize] = useState({ width: 0, height: 0 });
   const glow = useClimbWallGlow(climb, boardConfig, !ledless);
@@ -280,6 +273,7 @@ export function HeldClimbCapsule({
   }, []);
 
   const grade = resolveGrade(climb, boardConfig?.boardName).label;
+  const sendsDetail = useClimbStatsDetail(climb, boardConfig);
   const accessibilityLabel = t(ledless ? 'ble.barControl.wallHeldWithClimb' : 'ble.barControl.youHaveBoardWithClimb', {
     name: climb.name,
     grade: grade ?? '',
@@ -295,7 +289,7 @@ export function HeldClimbCapsule({
       onAccessibilityAction={onAccessibilityAction}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      compact={compact}
+      compact
       onLayout={handleLayout}
       background={
         glowLayer
@@ -309,18 +303,12 @@ export function HeldClimbCapsule({
       testID="board-held-capsule"
     >
       <HeaderCapsuleClimbLabel
-        avatar={
-          <Avatar
-            uri={profile?.avatarUrl}
-            name={profile?.displayName ?? profile?.email ?? null}
-            size={CAPSULE_AVATAR_SIZE}
-          />
-        }
+        avatar={null}
         name={climb.name}
-        byline={null}
+        byline={{ grade: grade || null, detail: sendsDetail }}
         textColor={glowLayer?.surface.label}
         textStyle={glowLayer ? (glowLayer.surface.frost ? styles.glowShadowDark : styles.glowShadowLight) : undefined}
-        compact={compact}
+        compact
         largeContentTitle={accessibilityLabel}
         // The viewer takes the hold at accessibility sizes; its lift is the long
         // press (board controls), never the tap that lets go of the board.
