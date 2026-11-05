@@ -8,6 +8,7 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
+  type ListObjectsV2CommandOutput,
 } from '@aws-sdk/client-s3';
 import { ASSETS_STAGING_HOSTNAME, desiredR2Buckets } from '../infra/cloudflare/config';
 import { STATIC_ASSET_OBJECT_KEYS, STATIC_ASSET_ORIGIN } from '../packages/shared/static-assets/src';
@@ -63,22 +64,51 @@ function loadCurrentStaticAssetManifest(): StaticAssetManifest {
   return freshManifest;
 }
 
-async function listRemoteStaticAssets(
+const delay = (milliseconds: number): Promise<void> =>
+  new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+
+interface ListRetryOptions {
+  retryDelaysMs?: readonly number[];
+  sleep?: (milliseconds: number) => Promise<void>;
+}
+
+/**
+ * Waits before the second and third try of one listing page. R2 once answered a
+ * ListObjectsV2 with a body the SDK could not parse ("XML parse error: unexpected
+ * content", run 41641393063, 2026-11-03). The SDK's own retries never see that,
+ * because it fails while reading the response, after the retry decision. Listing
+ * is read-only, so retrying the page is safe.
+ */
+export const LIST_PAGE_RETRY_DELAYS_MS = [2_000, 8_000] as const;
+
+export async function listRemoteStaticAssets(
   client: S3Client,
   bucket: string,
   beforeRequest: RequestStartLimiter,
+  { retryDelaysMs = LIST_PAGE_RETRY_DELAYS_MS, sleep = delay }: ListRetryOptions = {},
 ): Promise<RemoteStaticAsset[]> {
   const objects: RemoteStaticAsset[] = [];
   let continuationToken: string | undefined;
   do {
-    await beforeRequest();
-    const response = await client.send(
-      new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: `${STATIC_ASSET_KEY_PREFIX}/`,
-        ContinuationToken: continuationToken,
-      }),
-    );
+    const command = new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: `${STATIC_ASSET_KEY_PREFIX}/`,
+      ContinuationToken: continuationToken,
+    });
+    let response: ListObjectsV2CommandOutput;
+    for (let attempt = 1; ; attempt += 1) {
+      await beforeRequest();
+      try {
+        response = await client.send(command);
+        break;
+      } catch (error) {
+        if (attempt > retryDelaysMs.length) throw error;
+        const delayMs = retryDelaysMs[attempt - 1]!;
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn(`Listing stored assets failed (${reason}); retrying in ${delayMs / 1000}s.`);
+        await sleep(delayMs);
+      }
+    }
     for (const object of response.Contents ?? []) {
       if (object.Key) objects.push({ key: object.Key, bytes: object.Size });
     }
@@ -116,9 +146,6 @@ async function uploadAsset(
     );
   });
 }
-
-const delay = (milliseconds: number): Promise<void> =>
-  new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 
 export async function validateRemoteAsset(
   client: S3Client,

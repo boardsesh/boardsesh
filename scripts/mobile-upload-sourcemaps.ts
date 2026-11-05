@@ -42,7 +42,7 @@ type JsonObject = Record<string, unknown>;
 type SpawnUploader = (
   executable: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; stdio: 'inherit' },
+  options: { cwd: string; env: NodeJS.ProcessEnv; stdio: 'inherit'; timeout: number; killSignal: 'SIGTERM' },
 ) => { status: number | null; error?: Error };
 
 export interface UploadSourceMapsOptions {
@@ -55,6 +55,30 @@ export interface UploadSourceMapsOptions {
 export interface UploadSourceMapsDependencies {
   resolveUploader?: (mobileDir: string) => string;
   spawnUploader?: SpawnUploader;
+  /** Waits before each retry of a nonzero uploader exit. Defaults to SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS. */
+  retryDelaysMs?: readonly number[];
+  sleepSync?: (milliseconds: number) => void;
+  attemptTimeoutMs?: number;
+}
+
+/**
+ * Sentry answered 504 mid-upload on two production deploys 15 minutes apart
+ * (runs 41466306839 and 41468592705, 2026-11-02), which left those OTAs without
+ * symbolicated stacks and turned the deploy red. Uploads are keyed by Debug ID,
+ * so sending the same bundle again is safe.
+ */
+export const SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS = [15_000, 45_000] as const;
+
+/**
+ * Those two failing attempts ran 9m51s and 8m46s before the 504, while healthy
+ * uploads took 5 s to 4m46s across the surrounding deploys. Cutting an attempt
+ * at 8 minutes leaves room to retry: three attempts plus both waits come to
+ * 25 minutes, inside the upload steps' 30-minute ceiling.
+ */
+export const SOURCE_MAP_UPLOAD_ATTEMPT_TIMEOUT_MS = 8 * 60_000;
+
+function blockFor(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
 export interface ValidatedSourceMapArtifact {
@@ -431,16 +455,33 @@ export function uploadMobileSourceMaps(
     // Sentry ships this uploader as a Node/CommonJS entrypoint. GitHub runners
     // and local vp installs provide Node, so keep the uploader runtime explicit
     // and identical on both paths.
-    const uploadResult = spawnUploader('node', [uploaderPath, stagingDirectory], {
-      cwd: temporaryWorkingDirectory,
-      env: uploaderEnvironment,
-      stdio: 'inherit',
-    });
-    if (uploadResult.error) {
-      throw new Error(`Could not start the official Sentry uploader: ${uploadResult.error.message}`);
-    }
-    if (uploadResult.status !== 0) {
-      throw new Error(`Official Sentry uploader failed with exit code ${uploadResult.status ?? 'unknown'}.`);
+    const retryDelaysMs = dependencies.retryDelaysMs ?? SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS;
+    const sleepSync = dependencies.sleepSync ?? blockFor;
+    const attemptTimeoutMs = dependencies.attemptTimeoutMs ?? SOURCE_MAP_UPLOAD_ATTEMPT_TIMEOUT_MS;
+    const attempts = retryDelaysMs.length + 1;
+    for (let attempt = 1; ; attempt += 1) {
+      const uploadResult = spawnUploader('node', [uploaderPath, stagingDirectory], {
+        cwd: temporaryWorkingDirectory,
+        env: uploaderEnvironment,
+        stdio: 'inherit',
+        timeout: attemptTimeoutMs,
+        killSignal: 'SIGTERM',
+      });
+      const timedOut = (uploadResult.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
+      // A missing node binary or uploader fails the same way every time.
+      if (uploadResult.error && !timedOut) {
+        throw new Error(`Could not start the official Sentry uploader: ${uploadResult.error.message}`);
+      }
+      if (uploadResult.status === 0 && !timedOut) break;
+      const outcome = timedOut
+        ? `timed out after ${attemptTimeoutMs / 60_000} minutes`
+        : `failed with exit code ${uploadResult.status ?? 'unknown'}`;
+      if (attempt >= attempts) throw new Error(`Official Sentry uploader ${outcome}.`);
+      const delayMs = retryDelaysMs[attempt - 1]!;
+      console.warn(
+        `[mobile:upload-sourcemaps] Uploader ${outcome} on attempt ${attempt} of ${attempts}; retrying in ${delayMs / 1000}s.`,
+      );
+      sleepSync(delayMs);
     }
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });

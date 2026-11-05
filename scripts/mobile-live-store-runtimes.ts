@@ -129,24 +129,66 @@ function requiredEnv(name: string): string {
   return configured;
 }
 
+const STORE_READ_FAILURE =
+  'Could not read exact public store builds; check Production store credentials and API responses';
+
+/** Waits before the second and third store read. Three attempts span about 40 s. */
+export const STORE_READ_RETRY_DELAYS_MS = [10_000, 30_000] as const;
+
+/**
+ * App Store Connect and Google Play each failed one read in about 22 production
+ * deploys (runs 41628271781 and 41641393063, 2026-11-03) and passed on the next
+ * push, so a single blip turned the whole deploy red. Retry the reads, never the
+ * credential parse: a bad key fails the same way every time. Store errors and
+ * response bodies are never copied into Actions logs, so only the attempt count is.
+ */
+export async function readStoreWithRetries<T>(
+  read: () => Promise<T>,
+  {
+    delaysMs = STORE_READ_RETRY_DELAYS_MS,
+    sleep = (milliseconds: number) => new Promise<void>((resolveSleep) => setTimeout(resolveSleep, milliseconds)),
+    log = (message: string) => console.warn(message),
+  }: {
+    delaysMs?: readonly number[];
+    sleep?: (milliseconds: number) => Promise<void>;
+    log?: (message: string) => void;
+  } = {},
+): Promise<T> {
+  const attempts = delaysMs.length + 1;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await read();
+    } catch {
+      if (attempt >= attempts) throw new Error(STORE_READ_FAILURE);
+      const delayMs = delaysMs[attempt - 1]!;
+      log(`Public store read attempt ${attempt} of ${attempts} failed; retrying in ${delayMs / 1000}s.`);
+      await sleep(delayMs);
+    }
+  }
+}
+
 async function main(): Promise<void> {
-  let iosVersions: JsonApiCollectionResponse<AppStoreVersionResource>;
-  let android: AcceptedBuild[];
+  let token: string;
+  let googleServiceAccount: ReturnType<typeof parseGoogleServiceAccount>;
   try {
-    const token = createAppStoreConnectJwt({
+    token = createAppStoreConnectJwt({
       keyId: requiredEnv('APP_STORE_CONNECT_API_KEY_ID'),
       issuerId: requiredEnv('APP_STORE_CONNECT_ISSUER_ID'),
       privateKey: decodePrivateKey(requiredEnv('APP_STORE_CONNECT_API_KEY_BASE64')),
     });
-    const appId = await resolveAppId(token);
-    [iosVersions, android] = await Promise.all([
-      getAppStoreVersions(token, appId, [PUBLIC_IOS_STATE]),
-      getAcceptedGoogleProductionBuilds(parseGoogleServiceAccount(requiredEnv('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'))),
-    ]);
+    googleServiceAccount = parseGoogleServiceAccount(requiredEnv('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'));
   } catch {
     // Store authentication and response bodies are never copied into Actions logs.
-    throw new Error('Could not read exact public store builds; check Production store credentials and API responses');
+    throw new Error(STORE_READ_FAILURE);
   }
+  const [iosVersions, android]: [JsonApiCollectionResponse<AppStoreVersionResource>, AcceptedBuild[]] =
+    await readStoreWithRetries(async () => {
+      const appId = await resolveAppId(token);
+      return Promise.all([
+        getAppStoreVersions(token, appId, [PUBLIC_IOS_STATE]),
+        getAcceptedGoogleProductionBuilds(googleServiceAccount),
+      ]);
+    });
   // Mapping errors name only version ids, so they stay outside the redacting catch.
   const ios = mapPublicIosBuilds(iosVersions);
   const tags = execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trim().split('\n');
