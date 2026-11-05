@@ -23,6 +23,24 @@ import {
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
+export type LocationSyncTransaction = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
+/** Synchronous cancellation/deadline check only; never perform I/O here. */
+export type LocationSyncAssertActive = () => void;
+export type LocationWriteOptions = {
+  logger?: LocationSyncLogger;
+  assertActive?: LocationSyncAssertActive;
+};
+
+async function checkedSql<Result>(
+  assertActive: LocationSyncAssertActive | undefined,
+  operation: () => PromiseLike<Result>,
+): Promise<Result> {
+  assertActive?.();
+  const result = await operation();
+  assertActive?.();
+  return result;
+}
+
 /**
  * A physical-match candidate enriched with the fields the guarded (150 m) tier
  * and the alias-and-leave-alone rule need: how far the pin is, who owns the gym,
@@ -66,15 +84,17 @@ export type ValidBoardLocation = PublicBoardLocationInput & {
   longitude: number;
 };
 
-async function ensureSystemUser(db: DrizzleDb): Promise<void> {
-  await db
-    .insert(users)
-    .values({
-      id: SYSTEM_USER_ID,
-      email: SYSTEM_USER_EMAIL,
-      name: 'Boardsesh',
-    })
-    .onConflictDoNothing({ target: users.id });
+async function ensureSystemUser(db: DrizzleDb, assertActive?: LocationSyncAssertActive): Promise<void> {
+  await checkedSql(assertActive, () =>
+    db
+      .insert(users)
+      .values({
+        id: SYSTEM_USER_ID,
+        email: SYSTEM_USER_EMAIL,
+        name: 'Boardsesh',
+      })
+      .onConflictDoNothing({ target: users.id }),
+  );
 }
 
 export function collectValidLocationRecords(records: PublicBoardLocationInput[]): {
@@ -142,91 +162,118 @@ export function buildBoardWriteIdentifiers(record: ValidBoardLocation): {
   };
 }
 
-async function upsertSourceAlias(db: DrizzleDb, sourceKey: string, gymId: number): Promise<void> {
-  await db
-    .insert(locationSyncGymSources)
-    .values({ sourceKey, gymId })
-    .onConflictDoUpdate({
-      target: locationSyncGymSources.sourceKey,
-      set: {
-        gymId,
+async function upsertSourceAlias(
+  db: DrizzleDb,
+  sourceKey: string,
+  gymId: number,
+  assertActive?: LocationSyncAssertActive,
+): Promise<void> {
+  await checkedSql(assertActive, () =>
+    db
+      .insert(locationSyncGymSources)
+      .values({ sourceKey, gymId })
+      .onConflictDoUpdate({
+        target: locationSyncGymSources.sourceKey,
+        set: {
+          gymId,
+          updatedAt: sql`NOW()`,
+        },
+      }),
+  );
+}
+
+async function refreshSyncedGymMetadata(
+  db: DrizzleDb,
+  gymId: number,
+  record: ValidBoardLocation,
+  assertActive?: LocationSyncAssertActive,
+): Promise<void> {
+  await checkedSql(assertActive, () =>
+    db
+      .update(gyms)
+      .set({
+        name: record.gymName,
+        address: sql`COALESCE(${record.gymAddress}, ${gyms.address})`,
+        latitude: record.latitude,
+        longitude: record.longitude,
+        isPublic: true,
         updatedAt: sql`NOW()`,
-      },
-    });
+        deletedAt: null,
+      })
+      // Never overwrite a gym a human has curated (edited, claimed, or deleted).
+      // The source alias / physical match still resolved the gym id, so boards
+      // keep linking — only the metadata refresh is skipped for a frozen row.
+      .where(and(eq(gyms.id, gymId), isNull(gyms.syncFrozenAt))),
+  );
 }
 
-async function refreshSyncedGymMetadata(db: DrizzleDb, gymId: number, record: ValidBoardLocation): Promise<void> {
-  await db
-    .update(gyms)
-    .set({
-      name: record.gymName,
-      address: sql`COALESCE(${record.gymAddress}, ${gyms.address})`,
-      latitude: record.latitude,
-      longitude: record.longitude,
-      isPublic: true,
-      updatedAt: sql`NOW()`,
-      deletedAt: null,
-    })
-    // Never overwrite a gym a human has curated (edited, claimed, or deleted).
-    // The source alias / physical match still resolved the gym id, so boards
-    // keep linking — only the metadata refresh is skipped for a frozen row.
-    .where(and(eq(gyms.id, gymId), isNull(gyms.syncFrozenAt)));
-}
-
-async function resurrectAliasedSystemGym(db: DrizzleDb, gymId: number, record: ValidBoardLocation): Promise<boolean> {
-  const resurrectedRows = await db
-    .update(gyms)
-    .set({
-      name: record.gymName,
-      address: sql`COALESCE(${record.gymAddress}, ${gyms.address})`,
-      latitude: record.latitude,
-      longitude: record.longitude,
-      isPublic: true,
-      updatedAt: sql`NOW()`,
-      deletedAt: null,
-    })
-    .where(
-      and(
-        eq(gyms.id, gymId),
-        eq(gyms.ownerId, SYSTEM_USER_ID),
-        isNull(gyms.syncFrozenAt),
-        isNotNull(gyms.deletedAt),
-        isNull(gyms.mergedIntoGymId),
-        sql`NOT EXISTS (
+async function resurrectAliasedSystemGym(
+  db: DrizzleDb,
+  gymId: number,
+  record: ValidBoardLocation,
+  assertActive?: LocationSyncAssertActive,
+): Promise<boolean> {
+  const resurrectedRows = await checkedSql(assertActive, () =>
+    db
+      .update(gyms)
+      .set({
+        name: record.gymName,
+        address: sql`COALESCE(${record.gymAddress}, ${gyms.address})`,
+        latitude: record.latitude,
+        longitude: record.longitude,
+        isPublic: true,
+        updatedAt: sql`NOW()`,
+        deletedAt: null,
+      })
+      .where(
+        and(
+          eq(gyms.id, gymId),
+          eq(gyms.ownerId, SYSTEM_USER_ID),
+          isNull(gyms.syncFrozenAt),
+          isNotNull(gyms.deletedAt),
+          isNull(gyms.mergedIntoGymId),
+          sql`NOT EXISTS (
           SELECT 1 FROM ${gymClaims} claim
           WHERE claim.gym_id = ${gyms.id} AND claim.status = 'approved'
         )`,
-      ),
-    )
-    .returning({ id: gyms.id });
+        ),
+      )
+      .returning({ id: gyms.id }),
+  );
 
   return resurrectedRows.length === 1;
 }
 
-async function findAliasedGym(db: DrizzleDb, sourceKey: string): Promise<AliasedGym | null> {
-  const [aliasedGym] = await db
-    .select({
-      id: gyms.id,
-      ownerId: gyms.ownerId,
-      deletedAt: gyms.deletedAt,
-      syncFrozenAt: gyms.syncFrozenAt,
-      mergedIntoGymId: gyms.mergedIntoGymId,
-      // Squat protection: a user-owned (or approved-claim) gym that the importer
-      // aliased earlier must keep its owner-curated fields. The alias-resolution
-      // path reads this so it never refreshes metadata into such a gym.
-      hasApprovedClaim: sql<boolean>`EXISTS (
+async function findAliasedGym(
+  db: DrizzleDb,
+  sourceKey: string,
+  assertActive?: LocationSyncAssertActive,
+): Promise<AliasedGym | null> {
+  const [aliasedGym] = await checkedSql(assertActive, () =>
+    db
+      .select({
+        id: gyms.id,
+        ownerId: gyms.ownerId,
+        deletedAt: gyms.deletedAt,
+        syncFrozenAt: gyms.syncFrozenAt,
+        mergedIntoGymId: gyms.mergedIntoGymId,
+        // Squat protection: a user-owned (or approved-claim) gym that the importer
+        // aliased earlier must keep its owner-curated fields. The alias-resolution
+        // path reads this so it never refreshes metadata into such a gym.
+        hasApprovedClaim: sql<boolean>`EXISTS (
         SELECT 1 FROM ${gymClaims} claim
         WHERE claim.gym_id = ${gyms.id} AND claim.status = 'approved'
       )`,
-    })
-    .from(locationSyncGymSources)
-    .innerJoin(gyms, eq(locationSyncGymSources.gymId, gyms.id))
-    // Keep deleted rows visible here. An alias is the durable identity link:
-    // excluding its deleted target would fall through and mint a second,
-    // deterministic gym instead of safely deciding whether the original row
-    // can be restored.
-    .where(eq(locationSyncGymSources.sourceKey, sourceKey))
-    .limit(1);
+      })
+      .from(locationSyncGymSources)
+      .innerJoin(gyms, eq(locationSyncGymSources.gymId, gyms.id))
+      // Keep deleted rows visible here. An alias is the durable identity link:
+      // excluding its deleted target would fall through and mint a second,
+      // deterministic gym instead of safely deciding whether the original row
+      // can be restored.
+      .where(eq(locationSyncGymSources.sourceKey, sourceKey))
+      .limit(1),
+  );
 
   if (!aliasedGym) {
     return null;
@@ -257,8 +304,13 @@ async function findAliasedGym(db: DrizzleDb, sourceKey: string): Promise<Aliased
  * query, so it uses the `${gymClaims}` table reference; the two intentionally
  * differ because one is raw SQL and the other is a query builder.
  */
-async function findGymMatchCandidates(db: DrizzleDb, record: ValidBoardLocation): Promise<GymMatchCandidate[]> {
-  const result = await db.execute(sql`
+async function findGymMatchCandidates(
+  db: DrizzleDb,
+  record: ValidBoardLocation,
+  assertActive?: LocationSyncAssertActive,
+): Promise<GymMatchCandidate[]> {
+  const result = await checkedSql(assertActive, () =>
+    db.execute(sql`
     WITH candidate_gyms AS (
       SELECT
         g.id,
@@ -351,7 +403,8 @@ async function findGymMatchCandidates(db: DrizzleDb, record: ValidBoardLocation)
     LEFT JOIN follower_counts ON follower_counts.gym_id = g.id
     LEFT JOIN comment_counts ON comment_counts.entity_id = g.uuid
     LEFT JOIN alias_source_keys ON alias_source_keys.gym_id = g.id
-  `);
+  `),
+  );
 
   return rowsFromResult<GymMatchCandidate>(result).map((candidate) => {
     if (!Array.isArray(candidate.aliasSourceKeys)) {
@@ -559,38 +612,41 @@ async function createOrUpdateSourceGym(
   db: DrizzleDb,
   sourceKey: string,
   record: ValidBoardLocation,
+  assertActive?: LocationSyncAssertActive,
 ): Promise<number | null> {
   const gymIdentifiers = buildGymWriteIdentifiers(sourceKey, record);
-  const [upsertedGym] = await db
-    .insert(gyms)
-    .values({
-      uuid: gymIdentifiers.uuid,
-      slug: gymIdentifiers.slug,
-      ownerId: SYSTEM_USER_ID,
-      name: record.gymName,
-      address: record.gymAddress,
-      latitude: record.latitude,
-      longitude: record.longitude,
-      isPublic: true,
-    })
-    .onConflictDoUpdate({
-      target: gyms.uuid,
-      // Never overwrite a gym a human has curated. A brand-new INSERT is
-      // unaffected (it has no syncFrozenAt); an existing frozen row keeps its
-      // human edits — the fallback below still resolves its id so boards link.
-      setWhere: isNull(gyms.syncFrozenAt),
-      set: {
-        slug: sql`COALESCE(${gyms.slug}, excluded.slug)`,
-        name: sql`excluded.name`,
-        address: sql`COALESCE(excluded.address, ${gyms.address})`,
-        latitude: sql`excluded.latitude`,
-        longitude: sql`excluded.longitude`,
+  const [upsertedGym] = await checkedSql(assertActive, () =>
+    db
+      .insert(gyms)
+      .values({
+        uuid: gymIdentifiers.uuid,
+        slug: gymIdentifiers.slug,
+        ownerId: SYSTEM_USER_ID,
+        name: record.gymName,
+        address: record.gymAddress,
+        latitude: record.latitude,
+        longitude: record.longitude,
         isPublic: true,
-        updatedAt: sql`NOW()`,
-        deletedAt: null,
-      },
-    })
-    .returning({ id: gyms.id });
+      })
+      .onConflictDoUpdate({
+        target: gyms.uuid,
+        // Never overwrite a gym a human has curated. A brand-new INSERT is
+        // unaffected (it has no syncFrozenAt); an existing frozen row keeps its
+        // human edits — the fallback below still resolves its id so boards link.
+        setWhere: isNull(gyms.syncFrozenAt),
+        set: {
+          slug: sql`COALESCE(${gyms.slug}, excluded.slug)`,
+          name: sql`excluded.name`,
+          address: sql`COALESCE(excluded.address, ${gyms.address})`,
+          latitude: sql`excluded.latitude`,
+          longitude: sql`excluded.longitude`,
+          isPublic: true,
+          updatedAt: sql`NOW()`,
+          deletedAt: null,
+        },
+      })
+      .returning({ id: gyms.id }),
+  );
 
   // A frozen conflicting row is blocked by setWhere, so the upsert returns no
   // row. Look it up by its deterministic uuid so the alias still points at it
@@ -601,16 +657,18 @@ async function createOrUpdateSourceGym(
   // deleted gym, undoing the delete. Skip it so the source stays unlinked.
   let gymId = upsertedGym?.id ?? null;
   if (gymId === null) {
-    const [existingGym] = await db
-      .select({ id: gyms.id })
-      .from(gyms)
-      .where(and(eq(gyms.uuid, gymIdentifiers.uuid), isNull(gyms.deletedAt)))
-      .limit(1);
+    const [existingGym] = await checkedSql(assertActive, () =>
+      db
+        .select({ id: gyms.id })
+        .from(gyms)
+        .where(and(eq(gyms.uuid, gymIdentifiers.uuid), isNull(gyms.deletedAt)))
+        .limit(1),
+    );
     gymId = existingGym?.id ?? null;
   }
 
   if (gymId !== null) {
-    await upsertSourceAlias(db, sourceKey, gymId);
+    await upsertSourceAlias(db, sourceKey, gymId, assertActive);
   }
 
   return gymId;
@@ -621,8 +679,9 @@ async function resolveGymIdForSource(
   sourceKey: string,
   record: ValidBoardLocation,
   logger: LocationSyncLogger,
+  assertActive?: LocationSyncAssertActive,
 ): Promise<number | null> {
-  const aliasedGym = await findAliasedGym(db, sourceKey);
+  const aliasedGym = await findAliasedGym(db, sourceKey, assertActive);
   if (aliasedGym !== null) {
     if (aliasedGym.mergedIntoGymId !== null) {
       logger.debug('location-sync alias points at a merged gym; source left unresolved', {
@@ -663,7 +722,7 @@ async function resolveGymIdForSource(
       // Re-check every protection in the UPDATE itself. Ownership, claims,
       // merges, or another human freeze can change after the alias SELECT; a
       // zero-row result leaves the deleted row untouched and prevents a twin.
-      const resurrected = await resurrectAliasedSystemGym(db, aliasedGym.id, record);
+      const resurrected = await resurrectAliasedSystemGym(db, aliasedGym.id, record, assertActive);
       if (!resurrected) {
         logger.debug('location-sync alias resurrection blocked by a concurrent protection change', {
           sourceKey,
@@ -678,11 +737,11 @@ async function resolveGymIdForSource(
       return aliasedGym.id;
     }
 
-    await refreshSyncedGymMetadata(db, aliasedGym.id, record);
+    await refreshSyncedGymMetadata(db, aliasedGym.id, record, assertActive);
     return aliasedGym.id;
   }
 
-  const candidates = await findGymMatchCandidates(db, record);
+  const candidates = await findGymMatchCandidates(db, record, assertActive);
   const classification = classifyGymMatch(sourceKey, record, candidates);
 
   for (const conflict of classification.sameProviderConflicts) {
@@ -740,7 +799,7 @@ async function resolveGymIdForSource(
   const { match } = classification;
   if (match) {
     const { candidate, tier } = match;
-    await upsertSourceAlias(db, sourceKey, candidate.id);
+    await upsertSourceAlias(db, sourceKey, candidate.id, assertActive);
 
     if (isOwnerCurated(candidate)) {
       // Alias-and-leave-alone: bind the source so future syncs resolve here, but
@@ -764,12 +823,12 @@ async function resolveGymIdForSource(
           distanceMeters: candidate.distanceMeters,
         });
       }
-      await refreshSyncedGymMetadata(db, candidate.id, record);
+      await refreshSyncedGymMetadata(db, candidate.id, record, assertActive);
     }
     return candidate.id;
   }
 
-  return createOrUpdateSourceGym(db, sourceKey, record);
+  return createOrUpdateSourceGym(db, sourceKey, record, assertActive);
 }
 
 async function resolveGymIdForSourceWithLock(
@@ -777,17 +836,24 @@ async function resolveGymIdForSourceWithLock(
   sourceKey: string,
   record: ValidBoardLocation,
   logger: LocationSyncLogger,
+  assertActive?: LocationSyncAssertActive,
 ): Promise<number | null> {
-  return db.transaction(async (transaction) => {
-    const transactionDb = transaction as unknown as DrizzleDb;
-    await transactionDb.execute(sql`
+  return checkedSql(assertActive, () =>
+    db.transaction(async (transaction) => {
+      const transactionDb = transaction as unknown as DrizzleDb;
+      await checkedSql(assertActive, () =>
+        transactionDb.execute(sql`
       SELECT pg_advisory_xact_lock(
         hashtext('boardsesh:location-sync:gym-name'),
         hashtext(lower(regexp_replace(trim(${record.gymName}), '[[:space:]]+', ' ', 'g')))
       )
-    `);
-    return resolveGymIdForSource(transactionDb, sourceKey, record, logger);
-  });
+    `),
+      );
+      const gymId = await resolveGymIdForSource(transactionDb, sourceKey, record, logger, assertActive);
+      assertActive?.();
+      return gymId;
+    }),
+  );
 }
 
 /**
@@ -804,16 +870,40 @@ async function resolveGymIdForSourceWithLock(
 export async function upsertPublicBoardLocations(
   db: DrizzleDb,
   records: PublicBoardLocationInput[],
-  options: { logger?: LocationSyncLogger } = {},
+  options: LocationWriteOptions = {},
 ): Promise<LocationSyncSummary> {
   const logger = options.logger ?? noopLocationSyncLogger;
-  await ensureSystemUser(db);
+  const assertActive = options.assertActive;
+  await ensureSystemUser(db, assertActive);
+  return applyLocationWrites(db, records, logger, assertActive);
+}
 
+/**
+ * Apply through the supplied transaction, whose caller must establish the owner
+ * first and decide commit/rollback. This never creates a user or opens an outer
+ * transaction; gym resolution retains its existing nested savepoints.
+ * Checkpoints do not interrupt an in-flight SQL statement or undo a commit.
+ */
+export async function applyPublicBoardLocationsInTransaction(
+  transaction: LocationSyncTransaction,
+  records: PublicBoardLocationInput[],
+  options: LocationWriteOptions = {},
+): Promise<LocationSyncSummary> {
+  return applyLocationWrites(transaction, records, options.logger ?? noopLocationSyncLogger, options.assertActive);
+}
+
+async function applyLocationWrites(
+  db: DrizzleDb,
+  records: PublicBoardLocationInput[],
+  logger: LocationSyncLogger,
+  assertActive?: LocationSyncAssertActive,
+): Promise<LocationSyncSummary> {
+  assertActive?.();
   const { validRecords, skipped, gymsBySource } = buildLocationUpsertPlan(records);
 
   const gymIdBySource = new Map<string, number>();
   for (const [sourceKey, record] of gymsBySource) {
-    const gymId = await resolveGymIdForSourceWithLock(db, sourceKey, record, logger);
+    const gymId = await resolveGymIdForSourceWithLock(db, sourceKey, record, logger, assertActive);
     if (gymId !== null) {
       // The PostGIS `location` geography is derived from lat/lng by the
       // gyms_set_location trigger (migration 0127), so resolving the gym row
@@ -828,59 +918,61 @@ export async function upsertPublicBoardLocations(
     const gymId = gymIdBySource.get(record.gymSourceKey) ?? null;
     const boardIdentifiers = buildBoardWriteIdentifiers(record);
 
-    const [upsertedBoard] = await db
-      .insert(userBoards)
-      .values({
-        uuid: boardIdentifiers.uuid,
-        slug: boardIdentifiers.slug,
-        ownerId: SYSTEM_USER_ID,
-        boardType: record.boardType,
-        layoutId: record.layoutId,
-        sizeId: record.sizeId,
-        setIds: record.setIds,
-        name: record.name,
-        locationName: record.locationName,
-        latitude: record.latitude,
-        longitude: record.longitude,
-        isPublic: true,
-        isUnlisted: false,
-        hideLocation: false,
-        isOwned: false,
-        angle: record.angle,
-        isAngleAdjustable: record.isAngleAdjustable,
-        serialNumber: record.serialNumber ?? null,
-        gymId,
-      })
-      .onConflictDoUpdate({
-        target: userBoards.uuid,
-        // Never overwrite a catalog board a human has curated (edited or
-        // soft-deleted). A frozen row is blocked here, so `returning()` yields
-        // nothing and it isn't counted in boardsUpserted — that's a cosmetic
-        // undercount in the summary telemetry, not a linking/correctness issue.
-        setWhere: isNull(userBoards.syncFrozenAt),
-        set: {
-          slug: sql`COALESCE(${userBoards.slug}, excluded.slug)`,
-          boardType: sql`excluded.board_type`,
-          layoutId: sql`excluded.layout_id`,
-          sizeId: sql`excluded.size_id`,
-          setIds: sql`excluded.set_ids`,
-          name: sql`excluded.name`,
-          locationName: sql`excluded.location_name`,
-          latitude: sql`excluded.latitude`,
-          longitude: sql`excluded.longitude`,
-          isPublic: sql`excluded.is_public`,
-          isUnlisted: sql`excluded.is_unlisted`,
-          hideLocation: sql`excluded.hide_location`,
-          isOwned: sql`excluded.is_owned`,
-          angle: sql`excluded.angle`,
-          isAngleAdjustable: sql`excluded.is_angle_adjustable`,
-          serialNumber: sql`excluded.serial_number`,
-          gymId: sql`excluded.gym_id`,
-          updatedAt: sql`NOW()`,
-          deletedAt: null,
-        },
-      })
-      .returning({ id: userBoards.id });
+    const [upsertedBoard] = await checkedSql(assertActive, () =>
+      db
+        .insert(userBoards)
+        .values({
+          uuid: boardIdentifiers.uuid,
+          slug: boardIdentifiers.slug,
+          ownerId: SYSTEM_USER_ID,
+          boardType: record.boardType,
+          layoutId: record.layoutId,
+          sizeId: record.sizeId,
+          setIds: record.setIds,
+          name: record.name,
+          locationName: record.locationName,
+          latitude: record.latitude,
+          longitude: record.longitude,
+          isPublic: true,
+          isUnlisted: false,
+          hideLocation: false,
+          isOwned: false,
+          angle: record.angle,
+          isAngleAdjustable: record.isAngleAdjustable,
+          serialNumber: record.serialNumber ?? null,
+          gymId,
+        })
+        .onConflictDoUpdate({
+          target: userBoards.uuid,
+          // Never overwrite a catalog board a human has curated (edited or
+          // soft-deleted). A frozen row is blocked here, so `returning()` yields
+          // nothing and it isn't counted in boardsUpserted — that's a cosmetic
+          // undercount in the summary telemetry, not a linking/correctness issue.
+          setWhere: isNull(userBoards.syncFrozenAt),
+          set: {
+            slug: sql`COALESCE(${userBoards.slug}, excluded.slug)`,
+            boardType: sql`excluded.board_type`,
+            layoutId: sql`excluded.layout_id`,
+            sizeId: sql`excluded.size_id`,
+            setIds: sql`excluded.set_ids`,
+            name: sql`excluded.name`,
+            locationName: sql`excluded.location_name`,
+            latitude: sql`excluded.latitude`,
+            longitude: sql`excluded.longitude`,
+            isPublic: sql`excluded.is_public`,
+            isUnlisted: sql`excluded.is_unlisted`,
+            hideLocation: sql`excluded.hide_location`,
+            isOwned: sql`excluded.is_owned`,
+            angle: sql`excluded.angle`,
+            isAngleAdjustable: sql`excluded.is_angle_adjustable`,
+            serialNumber: sql`excluded.serial_number`,
+            gymId: sql`excluded.gym_id`,
+            updatedAt: sql`NOW()`,
+            deletedAt: null,
+          },
+        })
+        .returning({ id: userBoards.id }),
+    );
 
     if (upsertedBoard) {
       // `location` is maintained by the user_boards_set_location trigger
@@ -902,17 +994,19 @@ export async function upsertPublicBoardLocations(
     // the freeze, and never touch layout/size/sets/name. Safe against the
     // per-owner serial unique index, which excludes the system catalog owner.
     if (record.serialNumber) {
-      await db
-        .update(userBoards)
-        .set({ serialNumber: record.serialNumber, updatedAt: new Date() })
-        .where(
-          and(
-            eq(userBoards.uuid, boardIdentifiers.uuid),
-            isNotNull(userBoards.syncFrozenAt),
-            isNull(userBoards.deletedAt),
-            or(isNull(userBoards.serialNumber), eq(userBoards.serialNumber, '')),
+      await checkedSql(assertActive, () =>
+        db
+          .update(userBoards)
+          .set({ serialNumber: record.serialNumber, updatedAt: new Date() })
+          .where(
+            and(
+              eq(userBoards.uuid, boardIdentifiers.uuid),
+              isNotNull(userBoards.syncFrozenAt),
+              isNull(userBoards.deletedAt),
+              or(isNull(userBoards.serialNumber), eq(userBoards.serialNumber, '')),
+            ),
           ),
-        );
+      );
     }
   }
 
@@ -934,6 +1028,26 @@ export type LocationWriteBatchRunner = <Result>(
 /** Gyms per write batch: small enough that one batch stays well under a minute over a slow link. */
 export const LOCATION_UPSERT_GYMS_PER_BATCH = 25;
 
+/** Preserve complete gyms, first-seen group order and every original record. */
+export function planLocationWriteBatches(
+  records: PublicBoardLocationInput[],
+  gymsPerBatch = LOCATION_UPSERT_GYMS_PER_BATCH,
+): PublicBoardLocationInput[][] {
+  if (!Number.isInteger(gymsPerBatch) || gymsPerBatch <= 0) throw new Error('Invalid gyms per batch');
+  const byGym = new Map<string, PublicBoardLocationInput[]>();
+  for (const record of records) {
+    const group = byGym.get(record.gymSourceKey) ?? [];
+    group.push(record);
+    byGym.set(record.gymSourceKey, group);
+  }
+  const groups = [...byGym.values()];
+  const batches: PublicBoardLocationInput[][] = [];
+  for (let start = 0; start < groups.length; start += gymsPerBatch) {
+    batches.push(groups.slice(start, start + gymsPerBatch).flat());
+  }
+  return batches;
+}
+
 /**
  * {@link upsertPublicBoardLocations} split into batches of whole gyms, each in
  * its own `runBatch` transaction. A background job passes its attempt fence:
@@ -947,17 +1061,9 @@ export const LOCATION_UPSERT_GYMS_PER_BATCH = 25;
 export async function upsertPublicBoardLocationsInBatches(
   runBatch: LocationWriteBatchRunner,
   records: PublicBoardLocationInput[],
-  options: { logger?: LocationSyncLogger; gymsPerBatch?: number; signal?: AbortSignal } = {},
+  options: LocationWriteOptions & { gymsPerBatch?: number; signal?: AbortSignal } = {},
 ): Promise<LocationSyncSummary> {
-  const gymsPerBatch = options.gymsPerBatch ?? LOCATION_UPSERT_GYMS_PER_BATCH;
-  if (!Number.isInteger(gymsPerBatch) || gymsPerBatch <= 0) throw new Error('Invalid gyms per batch');
-  const byGym = new Map<string, PublicBoardLocationInput[]>();
-  for (const record of records) {
-    const group = byGym.get(record.gymSourceKey) ?? [];
-    group.push(record);
-    byGym.set(record.gymSourceKey, group);
-  }
-  const groups = [...byGym.values()];
+  const batches = planLocationWriteBatches(records, options.gymsPerBatch ?? LOCATION_UPSERT_GYMS_PER_BATCH);
   const total: LocationSyncSummary = {
     boardsSeen: 0,
     boardsUpserted: 0,
@@ -966,12 +1072,15 @@ export async function upsertPublicBoardLocationsInBatches(
     gymsUpserted: 0,
     skipped: [],
   };
-  for (let start = 0; start < groups.length; start += gymsPerBatch) {
+  for (const batch of batches) {
     options.signal?.throwIfAborted();
-    const batch = groups.slice(start, start + gymsPerBatch).flat();
-    const summary = await runBatch((transaction) =>
-      upsertPublicBoardLocations(transaction, batch, { logger: options.logger }),
-    );
+    const assertActive = options.assertActive;
+    assertActive?.();
+    const summary = await runBatch(async (transaction) => {
+      const result = await upsertPublicBoardLocations(transaction, batch, { logger: options.logger, assertActive });
+      assertActive?.();
+      return result;
+    });
     total.boardsSeen += summary.boardsSeen;
     total.boardsUpserted += summary.boardsUpserted;
     total.boardsSkipped += summary.boardsSkipped;

@@ -20,6 +20,7 @@ This is the review entry point for [epic #6975](https://github.com/boardsesh/boa
 | [#7300](https://github.com/boardsesh/boardsesh/pull/7300) | Default-off backend web OAuth identity writes, durable flow binding and stateless Apple continuation | Stacked on #7299; migration 0293; no authority activation |
 | [#7301](https://github.com/boardsesh/boardsesh/pull/7301) | Independently opted-in fixed shared-board owner reservation and strict identity reuse | Stacked on #7300; no new schema or activation |
 | [#7302](https://github.com/boardsesh/boardsesh/pull/7302) | Fixed recommendations and hold-classifier identities under the actual durable job-attempt fence | Stacked on #7301; default-off; no new schema or grants |
+| [#7303](https://github.com/boardsesh/boardsesh/pull/7303) | Shared whole-gym planner, caller-owned location apply and cooperative SQL checkpoints | Stacked on #7302; existing callers preserved; no authority adoption |
 
 The [shared-board system owner slice](./better-auth-system-board-owner.md)
 adopts the fixed nonhuman user creation behind its own default-off selector.
@@ -45,8 +46,22 @@ Its 39-file patch replays unchanged onto #7301 and reproduces the exact qualifie
 main-based merge tree. All 59 clean-head type tasks pass with four cache hits.
 A fresh owned full-Next preview passes five baseline legacy-auth browser flows,
 with clean browser teardown and no unexpected traffic or console/page errors.
-Draft #7302 is published and current-head CI/review feedback is monitored.
+#7302 is ready at fc39334871 with green checks and completed no-finding Codex code review; feedback remains monitored.
 No production authority switch follows from these implementation results.
+
+The [shared location batch preparation](./better-auth-location-batch-preparation.md)
+extracts the whole-gym planner and caller-owned transaction apply path, with
+optional cooperative checks around SQL. Existing callers keep their owner
+ensure and commit boundaries. A compound location authority remains gated on
+all fixed-owner foreign-key lock orders; no location writer switches authority.
+The required PostgreSQL 18 project passes 89 cases across seven files with zero
+skips after canonical per-file bootstrap and actual Node journal reconciliation.
+The note retains the failed one-transaction bootstrap and its enum boundary. All six
+patch files replay unchanged onto #7302. The clean head passes all 59 canonical
+type tasks with no cache hits. A fresh owned full-schema legacy-auth preview
+passes five browser flows with clean teardown and no unexpected traffic/errors.
+Draft #7303 is published and feedback is monitored; no location writer switches
+authority.
 
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 
