@@ -276,6 +276,8 @@
       "cancel": "Jetzt nicht"
     },
     "gyms": {
+      "mapUnavailable": "Die Karte konnte nicht geladen werden. Du kannst weiterhin Hallen in der Liste finden.",
+      "retryMap": "Karte neu laden",
       "title": "Hallen in deiner Nähe",
       "subtitle": "Tipp auf eine Halle, um ihr Board zu nutzen",
       "locationNeeded": "Teil deinen Standort, um Hallen in der Nähe zu finden",

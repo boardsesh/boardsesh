@@ -276,6 +276,8 @@
       "cancel": "Not now"
     },
     "gyms": {
+      "mapUnavailable": "The map couldn’t load. You can still find gyms in the list.",
+      "retryMap": "Reload map",
       "title": "Gyms near you",
       "subtitle": "Tap a gym to use its board",
       "locationNeeded": "Share your location to find gyms nearby",

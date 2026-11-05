@@ -276,6 +276,8 @@
       "cancel": "Non ora"
     },
     "gyms": {
+      "mapUnavailable": "Impossibile caricare la mappa. Puoi comunque trovare le palestre nella lista.",
+      "retryMap": "Ricarica mappa",
       "title": "Palestre vicino a te",
       "subtitle": "Tocca una palestra per usare il suo pannello",
       "locationNeeded": "Condividi la tua posizione per trovare le palestre vicine",

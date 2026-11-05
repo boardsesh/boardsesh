@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Platform, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { nativeMaps as Maps } from './native-maps';
 
 export type GymMapMarker = {
   id: string;
@@ -39,10 +40,11 @@ type GymMapProps = {
   // `selectedTint` where the platform supports a marker colour (Apple Maps).
   selectedId?: string;
   selectedTint?: string;
-  // Fired once when the native map can't render at all (expo-maps module or the
-  // platform view is absent, or a mount throw). The screen biases the panel
-  // toward a list-only layout instead of peeking over a dead grey rectangle.
+  // Fired when the native map is missing, throws, or never finishes loading.
+  // The screen can give the gym list the space above a stalled map.
   onMapUnavailable?: () => void;
+  // Android may finish loading after the timeout (e.g. on a slow connection).
+  onMapReady?: () => void;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -54,16 +56,7 @@ type NativeMapHandle = {
 };
 
 const DEFAULT_ZOOM = 10;
-
-// Lazy-require so a native build that predates the expo-maps module degrades to
-// "no map" instead of crashing. The gym list is the primary interaction, so a
-// missing map is a soft loss.
-let Maps: typeof import('expo-maps') | null = null;
-try {
-  Maps = require('expo-maps');
-} catch {
-  Maps = null;
-}
+const MAP_LOAD_TIMEOUT_MS = 15_000;
 
 /**
  * Catches a render/mount throw from the native map (e.g. the expo-maps native
@@ -87,7 +80,7 @@ class MapErrorBoundary extends Component<{ children: ReactNode; onUnavailable?: 
 }
 
 const NativeGymMap = forwardRef<GymMapHandle, GymMapProps>(function NativeGymMap(
-  { center, markers, onRegionChange, onMarkerPress, selectedId, selectedTint, onMapUnavailable, style },
+  { center, markers, onRegionChange, onMarkerPress, selectedId, selectedTint, onMapUnavailable, onMapReady, style },
   ref,
 ) {
   // Keep a ref to the native view so the imperative handle can drive the camera.
@@ -115,16 +108,44 @@ const NativeGymMap = forwardRef<GymMapHandle, GymMapProps>(function NativeGymMap
 
   const MapView = Platform.OS === 'ios' ? Maps?.AppleMaps?.View : Maps?.GoogleMaps?.View;
 
-  // Report a missing native map exactly once (the module or platform view is
-  // absent — e.g. a build without expo-maps). Read through a ref so the effect
-  // stays mount-only and isn't torn down by a changing callback identity.
   const onMapUnavailableRef = useRef(onMapUnavailable);
   onMapUnavailableRef.current = onMapUnavailable;
-  useEffect(() => {
-    if (!Maps || !MapView) onMapUnavailableRef.current?.();
-    // Intentionally mount-only: availability is fixed for the component's life.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const onMapReadyRef = useRef(onMapReady);
+  onMapReadyRef.current = onMapReady;
+  const mapLoadedRef = useRef(false);
+  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearLoadTimeout = useCallback(() => {
+    if (loadTimeoutRef.current !== null) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
   }, []);
+
+  // Google Maps can mount successfully without ever rendering (native layout,
+  // authorization, or connectivity failures). None of those reaches the error
+  // boundary. Its load event is the signal that tiles actually became usable.
+  // Keep the native view mounted after the timeout so a late load can recover.
+  // Apple Maps doesn't expose this event, so only Android gets the watchdog.
+  useEffect(() => {
+    if (!Maps || !MapView) {
+      onMapUnavailableRef.current?.();
+      return;
+    }
+    if (Platform.OS !== 'android' || mapLoadedRef.current) return;
+    loadTimeoutRef.current = setTimeout(() => {
+      loadTimeoutRef.current = null;
+      console.warn('[gym-map] Google Maps did not finish loading; expanding the gym list');
+      onMapUnavailableRef.current?.();
+    }, MAP_LOAD_TIMEOUT_MS);
+    return clearLoadTimeout;
+  }, [MapView, clearLoadTimeout]);
+
+  const handleMapLoaded = useCallback(() => {
+    if (mapLoadedRef.current) return;
+    mapLoadedRef.current = true;
+    clearLoadTimeout();
+    onMapReadyRef.current?.();
+  }, [clearLoadTimeout]);
 
   // Markers only change on a refetch (or a selection change); rebuild the native
   // marker array then, not on the re-renders a changing `center` prop triggers
@@ -172,23 +193,25 @@ const NativeGymMap = forwardRef<GymMapHandle, GymMapProps>(function NativeGymMap
       markers={mapMarkers}
       onCameraMove={handleCameraMove}
       onMarkerClick={handleMarkerClick}
+      {...(Platform.OS === 'android' ? { onMapLoaded: handleMapLoaded } : {})}
     />
   );
 });
 
 /**
  * Renders nearby gyms as pins on the platform map (Apple Maps on iOS, Google
- * Maps on Android — the latter needs GOOGLE_MAPS_API_KEY + a native build, else
- * blank). Marker taps drive `onMarkerPress` (a map→list convenience); selection
+ * Maps on Android, with a working build-time GOOGLE_MAPS_API_KEY). Marker taps
+ * drive `onMarkerPress` (a map→list convenience); selection
  * itself lives in the gym list so the flow works identically whether or not the
  * map renders, and a missing/broken native map never crashes the screen (it
- * reports `onMapUnavailable` so the screen lays out list-only). Panning the map
+ * reports `onMapUnavailable` so the screen lays out list-only). Android maps
+ * that never load also fall back; a late load reports `onMapReady`. Panning the map
  * fires `onRegionChange`; a place search drives the camera via the
  * {@link GymMapHandle} ref. Both no-op when the native map is unavailable.
  */
 export const GymMap = memo(
   forwardRef<GymMapHandle, GymMapProps>(function GymMap(
-    { center, markers, onRegionChange, onMarkerPress, selectedId, selectedTint, onMapUnavailable, style },
+    { center, markers, onRegionChange, onMarkerPress, selectedId, selectedTint, onMapUnavailable, onMapReady, style },
     ref,
   ) {
     return (
@@ -202,6 +225,7 @@ export const GymMap = memo(
           selectedId={selectedId}
           selectedTint={selectedTint}
           onMapUnavailable={onMapUnavailable}
+          onMapReady={onMapReady}
           style={style}
         />
       </MapErrorBoundary>

@@ -91,6 +91,26 @@ vp run mobile:android-apk -- --build-local      # force a local Gradle build
 vp run mobile:android-apk -- --apk-tag rn-android-dev-42
 ```
 
+## Checking the gym finder map
+
+The cached development APK does not include `GOOGLE_MAPS_API_KEY`. It can
+exercise the gym list and stalled-map recovery, but a blank map in that APK
+does not reproduce a production authorization or rendering failure. Working
+Google Maps tiles require a native build containing the key, with its package
+name and signing certificate allowed by that key's Android restrictions.
+Setting the key only in Metro cannot configure an already-built APK.
+
+On Android, a map that has not emitted `onMapLoaded` within 15 seconds expands
+the gym list and offers **Reload map**. Search and board selection remain
+available. Reloading remounts the map at the current search location without
+clearing the results. The original map also stays mounted after a timeout, so
+a late load restores the map controls without pulling the expanded list down.
+
+For a production comparison, check the APK's supported ABIs before installing.
+The APK attached to build `2001310` is ARM64-only; its React Native loader fails
+on the x86_64 emulator even with Android's ARM translation. Use a matching
+device or an authorized x86_64 map-enabled build for a tile-rendering check.
+
 ## Login state
 
 By default `EXPO_PUBLIC_SCREENSHOT_MODE` is on: the app auto-logs-in the test account
