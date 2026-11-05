@@ -1182,13 +1182,13 @@ Organized by migration priority (pure reads first, then mutations, then proxies)
 | `/api/v1/angles/[board]/[layout]`                             | `query angles(board, layout)`   |
 | `/api/v1/grades/[board]`                                      | `query gradeSystem(board)`      |
 | `/api/v1/[board]/slugs/**`                                    | `query slugs(board, ...)`       |
-| `/api/internal/profile/[userId]`                              | `query profile(userId)`         |
+| ~~`/api/internal/profile/[userId]`~~ (deleted, #1884)         | `query publicProfile(userId)`   |
 
 #### Batch 2: Mutations
 
-| Current Route                      | GraphQL Mutation              |
-| ---------------------------------- | ----------------------------- |
-| `/api/internal/profile` (POST/PUT) | `mutation updateProfile(...)` |
+| Current Route                                           | GraphQL Mutation               |
+| ------------------------------------------------------- | ------------------------------ |
+| ~~`/api/internal/profile` (POST/PUT)~~ (deleted, #1884) | `mutation updateProfile(...)`  |
 
 #### Batch 3: Aurora API Proxies
 

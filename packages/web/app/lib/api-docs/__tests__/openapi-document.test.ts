@@ -88,15 +88,16 @@ describe('generated OpenAPI document', () => {
   it('still publishes the surviving public surface', () => {
     // Delete-safety half: an over-broad edit that empties the spec reds here.
     expect(paths.length).toBeGreaterThan(10);
-    expect(paths).toContain('/api/internal/profile');
+    expect(paths).toContain('/api/internal/ws-auth');
+    expect(paths).not.toContain('/api/internal/profile');
+    expect(paths).not.toContain('/api/internal/profile/{userId}');
   });
 
   it('never advertises an operation whose route file does not export that verb', () => {
-    // The path-only check below cannot see this. `/api/internal/profile` was
-    // published as a POST while the route exported GET and PUT, and
-    // `/api/auth/verify-email` as a JSON POST while the route was a GET that
-    // redirects — two operations on `/docs` and in the crawlable
-    // `/openapi.json` that answered 405 to anyone who believed them (#4662).
+    // The path-only check below cannot see this. `/api/auth/verify-email` was
+    // published as a JSON POST while the route was a GET that redirects — an
+    // operation on `/docs` and in the crawlable `/openapi.json` that answered
+    // 405 to anyone who believed it (#4662).
     // A wrong verb is worse than a missing entry: it reads as a working
     // contract.
     const wrong: string[] = [];
