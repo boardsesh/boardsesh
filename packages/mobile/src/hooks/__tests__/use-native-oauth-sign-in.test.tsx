@@ -121,8 +121,13 @@ describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
     expect(events).toContainEqual({ event: 'Login Failed', flow: 'native', reason: 'exception', recoverable: true });
   });
 
-  it('falls back when native Google returns a non-cancel failure', async () => {
-    signInWithGoogleMock.mockResolvedValue({ success: false, status: 401, error: 'invalid' });
+  it.each([
+    [400, 'invalid_request'],
+    [401, 'invalid_oauth_token'],
+    [409, 'http_error'],
+    [503, 'service_unavailable'],
+  ] as const)('falls back when native Google returns HTTP%s', async (status, reason) => {
+    signInWithGoogleMock.mockResolvedValue({ success: false, status, error: 'invalid' });
     signInWithGoogleWebMock.mockResolvedValue({ success: true });
 
     await runSignIn('google');
@@ -132,7 +137,7 @@ describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
     expect(trackedEvents()).toContainEqual({
       event: 'Login Failed',
       flow: 'native',
-      reason: 'invalid_oauth_token',
+      reason,
       recoverable: true,
     });
   });
@@ -345,8 +350,8 @@ describe('useNativeOAuthSignIn — Apple web fallback (iOS)', () => {
     });
   });
 
-  it('falls back and signs in when native Apple returns a non-cancel failure', async () => {
-    signInWithAppleMock.mockResolvedValue({ success: false, status: 401, error: 'invalid' });
+  it.each([400, 401, 409, 503])('falls back and signs in when native Apple returns HTTP%s', async (status) => {
+    signInWithAppleMock.mockResolvedValue({ success: false, status, error: 'invalid' });
     signInWithAppleWebMock.mockResolvedValue({ success: true });
 
     const setError = await runSignIn('apple');
@@ -549,10 +554,10 @@ describe('useNativeOAuthSignIn — Android Google config-class fallback (#3100)'
     });
   });
 
-  it('does not fall back when native Google RETURNS a non-cancel failure (result path stays iOS-only)', async () => {
+  it.each([400, 401, 409, 503])('does not fall back when native Google RETURNS HTTP%s on Android', async (status) => {
     // Config errors are throws, not returns; a returned backend failure on Android
     // isn't a native-SDK dead-end, so the result path keeps surfacing it.
-    signInWithGoogleMock.mockResolvedValue({ success: false, status: 401, error: 'invalid' });
+    signInWithGoogleMock.mockResolvedValue({ success: false, status, error: 'invalid' });
 
     const setError = await runSignIn('google');
 

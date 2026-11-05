@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { createRequire } from 'node:module';
-import { mock } from 'node:test';
 import { jwtVerify } from 'jose';
+import { mobileSourceRoot as mobileUrl, installNativeMobileHostBindings } from './native-mobile-host-io';
 
 // Dynamic source URLs keep mobile out of the backend production import/type
 // graph. Public Node module mocks replace native host bindings, not app logic.
@@ -12,107 +11,23 @@ interface NativeStore {
   getTokenExpiresAt(): Promise<Date | null>;
   captureAuthCredentialGeneration(): number;
 }
+type NativeAuthResult = {
+  success: boolean;
+  status?: number | null;
+  error?: string;
+  userId?: string;
+  accountCreation?: { userId: string; accountCreated: boolean; provider: string; createdAt: string };
+};
 interface NativeAuth {
-  registerWithCredentials(
+  registerWithCredentials(this: void, email: string, password: string, name?: string): Promise<NativeAuthResult>;
+  oauthNativeSignIn(
     this: void,
-    email: string,
-    password: string,
-    name?: string,
-  ): Promise<{
-    success: boolean;
-    status?: number | null;
-    error?: string;
-    userId?: string;
-    accountCreation?: { userId: string; accountCreated: boolean; provider: string; createdAt: string };
-  }>;
+    provider: 'apple' | 'google',
+    identityToken: string,
+    extra?: { nonce?: string; name?: { firstName?: string; lastName?: string } },
+  ): Promise<NativeAuthResult>;
 }
-type StoreOptions = { keychainService?: string };
-const mobileUrl = new URL('../../../../../../mobile/', import.meta.url);
-const mobileRequire = createRequire(new URL('package.json', mobileUrl));
-const secureValues = new Map<string, string>();
-const secureWrites: { key: string; namespace: string }[] = [];
-let unexpectedHostCalls = 0;
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
-const namespace = (options?: StoreOptions) => options?.keychainService ?? 'legacy';
-const secureKey = (key: string, options?: StoreOptions) => `${namespace(options)}\0${key}`;
-function unusedHost(): never {
-  unexpectedHostCalls += 1;
-  throw new Error('Unused native host boundary invoked');
-}
-function nativeModule(name: string, namedExports: Record<string, unknown>, defaultExport?: unknown) {
-  // Resolve through the actual mobile package; no backend/root fallback.
-  mock.module(mobileRequire.resolve(name), {
-    cache: true,
-    namedExports,
-    ...(defaultExport === undefined ? {} : { defaultExport }),
-  });
-}
-function installHostBindings() {
-  nativeModule('react-native', {
-    Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
-    AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
-    Linking: {
-      addEventListener: () => ({ remove() {} }),
-      getInitialURL: async () => null,
-      openURL: unusedHost,
-      canOpenURL: async () => false,
-    },
-  });
-  nativeModule('expo-secure-store', {
-    AFTER_FIRST_UNLOCK: 0,
-    getItemAsync: async (key: string, options?: StoreOptions) => secureValues.get(secureKey(key, options)) ?? null,
-    setItemAsync: async (key: string, value: string, options?: StoreOptions) => {
-      secureWrites.push({ key, namespace: namespace(options) });
-      secureValues.set(secureKey(key, options), value);
-    },
-    deleteItemAsync: async (key: string, options?: StoreOptions) => {
-      secureValues.delete(secureKey(key, options));
-    },
-  });
-  nativeModule('expo-application', {
-    nativeApplicationVersion: '0.0.0-proof',
-    nativeBuildVersion: '1',
-    getInstallationTimeAsync: async () => new Date('2026-01-01T00:00:00.000Z'),
-  });
-  nativeModule('expo-apple-authentication', {
-    signInAsync: unusedHost,
-    AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
-  });
-  nativeModule('expo-web-browser', {
-    openBrowserAsync: unusedHost,
-    openAuthSessionAsync: unusedHost,
-    dismissBrowser: unusedHost,
-    maybeCompleteAuthSession: unusedHost,
-  });
-  nativeModule('expo-crypto', {
-    getRandomBytes: (length: number) => randomBytes(length),
-    digestStringAsync: async (_algorithm: string, text: string) => hash(text),
-    CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
-    CryptoEncoding: { HEX: 'hex' },
-  });
-  nativeModule('@react-native-google-signin/google-signin', {
-    GoogleSignin: { configure: unusedHost, signIn: unusedHost, hasPlayServices: unusedHost },
-    statusCodes: { SIGN_IN_CANCELLED: 'SIGN_IN_CANCELLED' },
-  });
-  class DisabledNativePostHog {
-    constructor() {
-      unusedHost();
-    }
-  }
-  nativeModule('posthog-react-native', { PostHog: DisabledNativePostHog, PostHogPersistedProperty: {} });
-  nativeModule('posthog-react-native-session-replay', { setOptOut: unusedHost });
-  class UnusedNativeFile {
-    constructor() {
-      unusedHost();
-    }
-  }
-  nativeModule('expo-file-system', { File: UnusedNativeFile, Paths: { document: 'owned-native-proof' } });
-  nativeModule(
-    '@react-native-async-storage/async-storage',
-    {},
-    { getItem: unusedHost, setItem: unusedHost, removeItem: unusedHost },
-  );
-}
 
 const deadline = setTimeout(() => process.exit(2), 15_000);
 function complete(report: object, status: number) {
@@ -130,13 +45,23 @@ process.once('message', (message: unknown) => {
     if (!message || typeof message !== 'object' || Array.isArray(message))
       throw new Error('Invalid owned mobile probe');
     const input = message as Record<string, unknown>;
+    const operation = input.operation ?? 'register';
     if (
       typeof input.origin !== 'string' ||
-      typeof input.email !== 'string' ||
-      typeof input.password !== 'string' ||
-      typeof input.issuerVerificationSecret !== 'string'
+      typeof input.issuerVerificationSecret !== 'string' ||
+      (operation !== 'register' && operation !== 'oauth') ||
+      (operation === 'register' && (typeof input.email !== 'string' || typeof input.password !== 'string')) ||
+      (operation === 'oauth' &&
+        ((input.provider !== 'apple' && input.provider !== 'google') || typeof input.identityToken !== 'string'))
     )
       throw new Error('Invalid owned mobile probe');
+    const endpoint = operation === 'oauth' ? '/auth/native/oauth' : '/auth/native/register';
+    const expectedStatus = operation === 'oauth' ? 200 : 201;
+    const nonce = typeof input.nonce === 'string' ? input.nonce : undefined;
+    const name =
+      input.name && typeof input.name === 'object' && !Array.isArray(input.name)
+        ? (input.name as { firstName?: string; lastName?: string })
+        : undefined;
     const origin = new URL(input.origin);
     if (
       origin.protocol !== 'http:' ||
@@ -162,7 +87,8 @@ process.once('message', (message: unknown) => {
     for (const key of ['NEXTAUTH_SECRET', 'AUTH_SECRET', 'CRON_SECRET', 'CURRENT_STORE_AUTH_RPC_SECRET'])
       delete process.env[key];
     Object.assign(globalThis, { __DEV__: false });
-    installHostBindings();
+    const host = installNativeMobileHostBindings();
+    const { secureValues, secureWrites } = host;
     const realFetch = globalThis.fetch;
     const observations: Promise<void>[] = [];
     let observedStatus: number | null = null;
@@ -179,7 +105,7 @@ process.once('message', (message: unknown) => {
       // so even a redirect cannot send a probe request outside this listener.
       if (
         address.origin !== origin.origin ||
-        address.pathname !== '/auth/native/register' ||
+        address.pathname !== endpoint ||
         address.username ||
         address.password ||
         address.search ||
@@ -227,20 +153,28 @@ process.once('message', (message: unknown) => {
     secureWrites.length = 0;
     phase = 'register';
     let registrationThrew = false;
-    let result: Awaited<ReturnType<NativeAuth['registerWithCredentials']>> = { success: false };
+    let result: NativeAuthResult = { success: false };
     try {
-      result = (await Reflect.apply(auth.registerWithCredentials, undefined, [
-        input.email,
-        input.password,
-        '  Native Climber  ',
-        {
-          userId: 'attacker-selected-owner',
-          protocolVersion: 2,
-          requestId: 'attacker-request',
-          accountCreation: { userId: 'attacker-selected-owner', createdAt: '1900-01-01T00:00:00.000Z' },
-          rpcSecret: 'must-not-forward',
-        },
-      ])) as Awaited<ReturnType<NativeAuth['registerWithCredentials']>>;
+      const hostileMetadata = {
+        userId: 'attacker-selected-owner',
+        protocolVersion: 2,
+        requestId: 'attacker-request',
+        accountCreation: { userId: 'attacker-selected-owner', createdAt: '1900-01-01T00:00:00.000Z' },
+        rpcSecret: 'must-not-forward',
+      };
+      result =
+        operation === 'oauth'
+          ? ((await Reflect.apply(auth.oauthNativeSignIn, undefined, [
+              input.provider,
+              input.identityToken,
+              { ...hostileMetadata, nonce, name },
+            ])) as NativeAuthResult)
+          : ((await Reflect.apply(auth.registerWithCredentials, undefined, [
+              input.email,
+              input.password,
+              '  Native Climber  ',
+              hostileMetadata,
+            ])) as NativeAuthResult);
     } catch {
       registrationThrew = true;
     }
@@ -258,11 +192,27 @@ process.once('message', (message: unknown) => {
     const legacyWrites = secureWrites
       .filter((entry) => entry.namespace === 'legacy' && credentialKeys.includes(entry.key))
       .map((entry) => entry.key);
-    const noAuthority =
+    const payloadMatches =
       observedRequest !== undefined &&
-      Object.keys(observedRequest).sort().join(',') === 'email,name,password' &&
-      observedRequest.email === input.email &&
-      observedRequest.password === input.password &&
+      (operation === 'register'
+        ? Object.keys(observedRequest).sort().join(',') === 'email,name,password' &&
+          observedRequest.email === input.email &&
+          observedRequest.password === input.password
+        : Object.keys(observedRequest).sort().join(',') ===
+            [
+              'provider',
+              'identityToken',
+              ...(nonce !== undefined ? ['nonce'] : []),
+              ...(name !== undefined ? ['name'] : []),
+            ]
+              .sort()
+              .join(',') &&
+          observedRequest.provider === input.provider &&
+          observedRequest.identityToken === input.identityToken &&
+          observedRequest.nonce === nonce &&
+          JSON.stringify(observedRequest.name) === JSON.stringify(name));
+    const noAuthority =
+      payloadMatches &&
       requestHeaders?.get('authorization') === null &&
       requestHeaders?.get('cookie') === null &&
       ![...requestHeaders!.keys()].some((key) => /secret|request-id|protocol|authority/i.test(key));
@@ -273,7 +223,7 @@ process.once('message', (message: unknown) => {
       secureValues.size === beforeNamespaces.size &&
       [...beforeNamespaces].every(([key, value]) => secureValues.get(key) === value);
     const flat =
-      observedStatus === 201 &&
+      observedStatus === expectedStatus &&
       typeof observedBody?.jwt === 'string' &&
       typeof observedBody.refreshToken === 'string' &&
       typeof observedBody.expiresAt === 'string' &&
@@ -308,8 +258,8 @@ process.once('message', (message: unknown) => {
         typeof receipt === 'object' &&
         !Array.isArray(receipt) &&
         (receipt as Record<string, unknown>).userId === observedBody.userId &&
-        (receipt as Record<string, unknown>).provider === 'email' &&
-        (receipt as Record<string, unknown>).accountCreated === true &&
+        (receipt as Record<string, unknown>).provider === (operation === 'oauth' ? input.provider : 'email') &&
+        (receipt as Record<string, unknown>).accountCreated === (input.expectedCreated ?? true) &&
         typeof (receipt as Record<string, unknown>).createdAt === 'string' &&
         result.userId === observedBody.userId &&
         result.accountCreation?.userId === observedBody.userId &&
@@ -324,13 +274,14 @@ process.once('message', (message: unknown) => {
         failureStatus: result.success ? null : (result.status ?? null),
         networkFailure: !result.success && result.error === 'network',
         observed201: observedStatus === 201,
+        observed200: observedStatus === 200,
         flat,
         signatureValid,
         lifetimeValid,
         receiptMatches,
         noAuthority,
         exactlyOneRequest: requests === 1,
-        noExternalCalls: blockedRequests === 0 && unexpectedHostCalls === 0,
+        noExternalCalls: blockedRequests === 0 && host.unexpectedHostCalls === 0,
         nativeClientIdentity: requestHeaders?.get('x-boardsesh-client')?.startsWith('boardsesh-mobile/') === true,
         storedPairMatches:
           flat &&
