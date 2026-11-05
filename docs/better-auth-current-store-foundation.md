@@ -6,7 +6,7 @@ This is an additive, **unmounted foundation** for
 dependency, backfill, production route, active validator, issuer switch or
 credential mutation command. Existing native/web behavior is unchanged.
 
-The five tables are generated in `0289_auth_current_store_foundation.sql` through
+The five tables are generated in `0290_auth_current_store_foundation.sql` through
 the repository's standard Drizzle generation. The migration creates only new
 tables, their internal foreign keys, checks and indexes. Library imports run no
 DDL, preparation or activation.
