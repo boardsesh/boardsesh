@@ -35,7 +35,14 @@ const GYM_UUID = 'gym-uuid-1';
 const renderDialog = () =>
   render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <ClaimGymDialog gymUuid={GYM_UUID} gymName="Bonsist" website={null} open onClose={vi.fn()} />
+      <ClaimGymDialog
+        gymUuid={GYM_UUID}
+        gymName="Bonsist"
+        website={null}
+        canClaimByDomain={false}
+        open
+        onClose={vi.fn()}
+      />
     </QueryClientProvider>,
   );
 
@@ -86,5 +93,55 @@ describe('ClaimGymDialog — auto-approved claim', () => {
     await screen.findByText("Your claim is in the review queue. We'll email you as soon as it's decided.");
     // Nothing was transferred, so there is nothing to refresh.
     expect(mockRefresh).not.toHaveBeenCalled();
+  });
+});
+
+// A company-looking website is only half the rule: the gym's OWNER has to have
+// put it there. The dialog used to read the first half off `website` alone, so
+// an un-vouched listing opened the email form and the climber only heard "no"
+// after typing their work address (#4018).
+describe('ClaimGymDialog — which form opens comes from canClaimByDomain, not the website', () => {
+  const renderWithCapability = (canClaimByDomain: boolean) =>
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ClaimGymDialog
+          gymUuid={GYM_UUID}
+          gymName="Bonsist"
+          website="https://bonsist.bg"
+          canClaimByDomain={canClaimByDomain}
+          open
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+  it('opens admin review on an un-vouched gym, even though the website looks claimable', () => {
+    renderWithCapability(false);
+
+    // No jest-dom here, so assert on the queried node itself.
+    expect(screen.queryByLabelText('Work email')).toBeNull();
+    expect(screen.queryByText('Send verification email')).toBeNull();
+    // …and no offer to switch to a path that would be refused.
+    expect(screen.queryByText('Verify with a work email instead')).toBeNull();
+    expect(screen.getByLabelText('Message (optional)')).not.toBeNull();
+  });
+
+  it('sends an admin-review claim with no claimEmail from that state', async () => {
+    mockRequest.mockResolvedValueOnce({ requestGymClaim: { status: 'admin_review', email: null } });
+
+    renderWithCapability(false);
+    fireEvent.click(await screen.findByText('Request review'));
+
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+    const [, variables] = mockRequest.mock.calls[0] as [unknown, { input: Record<string, unknown> }];
+    expect(variables.input.gymUuid).toBe(GYM_UUID);
+    expect('claimEmail' in variables.input).toBe(false);
+  });
+
+  it('opens the email form on the same website once it is owner-vouched', async () => {
+    renderWithCapability(true);
+
+    expect(await screen.findByLabelText('Work email')).not.toBeNull();
+    expect(screen.queryByText('Send verification email')).not.toBeNull();
   });
 });
