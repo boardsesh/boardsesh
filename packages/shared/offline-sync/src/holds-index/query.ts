@@ -175,7 +175,7 @@ export function decodeSqliteBlobHex(input: unknown): Uint8Array | null {
 /** A climb's indexed holds, or null when the climb is not in the index. */
 export async function getHoldSet(db: SqlExecutor, uuid: string): Promise<HoldSetEntry[] | null> {
   const row = await db.getFirstAsync<{ holds: unknown }>(
-    `SELECT hex(hs.holds) AS holds FROM holds_index_climbs hic
+    `SELECT CASE WHEN typeof(hs.holds) = 'blob' THEN hex(hs.holds) ELSE NULL END AS holds FROM holds_index_climbs hic
      JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
      WHERE hic.uuid = ?`,
     [uuid],
@@ -226,7 +226,7 @@ export async function findSimilarClimbCandidates(
   for (let start = 0; start < targetHoldIds.length; start += IN_LIST_BATCH) {
     const batch = targetHoldIds.slice(start, start + IN_LIST_BATCH);
     const rows = await db.getAllAsync<{ climb_ids: unknown }>(
-      `SELECT hex(climb_ids) AS climb_ids FROM board_climb_hold_postings
+      `SELECT CASE WHEN typeof(climb_ids) = 'blob' THEN hex(climb_ids) ELSE NULL END AS climb_ids FROM board_climb_hold_postings
        WHERE board_type = ? AND layout_id = ? AND hold_id IN (${batch.map(() => '?').join(', ')})`,
       [params.boardType, params.layoutId, ...batch],
     );
