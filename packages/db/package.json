@@ -140,6 +140,7 @@
     "db:report-moonboard-reconciliation": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/report-moonboard-reconciliation.ts"
   },
   "dependencies": {
+    "@boardsesh/auth-protocol": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/board-look": "workspace:*",

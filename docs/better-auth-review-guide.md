@@ -19,6 +19,7 @@ This is the review entry point for [epic #6975](https://github.com/boardsesh/boa
 | [#7299](https://github.com/boardsesh/boardsesh/pull/7299) | Server encoding versus cookie publication, rolling renewal and delayed-response browser races | Stacked on #7290; test fixtures only |
 | [#7300](https://github.com/boardsesh/boardsesh/pull/7300) | Default-off backend web OAuth identity writes, durable flow binding and stateless Apple continuation | Stacked on #7299; migration 0293; no authority activation |
 | [#7301](https://github.com/boardsesh/boardsesh/pull/7301) | Independently opted-in fixed shared-board owner reservation and strict identity reuse | Stacked on #7300; no new schema or activation |
+| [#7302](https://github.com/boardsesh/boardsesh/pull/7302) | Fixed recommendations and hold-classifier identities under the actual durable job-attempt fence | Stacked on #7301; default-off; no new schema or grants |
 
 The [shared-board system owner slice](./better-auth-system-board-owner.md)
 adopts the fixed nonhuman user creation behind its own default-off selector.
@@ -30,7 +31,22 @@ new cases pass on PostgreSQL 18 and independently on PostgreSQL 15, along with 6
 typecheck tasks pass on the clean stacked head. A fresh owned default-legacy
 full-Next preview passed five baseline authentication flows in one Chromium run;
 that baseline is not staged fixed-owner browser or production authority proof.
-Draft #7301 is published and current-head CI/review feedback is monitored.
+#7301 is ready for review; current-head CI/review feedback remains monitored.
+
+The [batch-job system identity slice](./better-auth-batch-system-users.md)
+adopts recommendations and hold-classifier account creation through a dedicated
+machine command. The backend derives the fixed account under the real job fence;
+workers receive no auth-table privileges or backend database credential. Direct
+staging CLIs require the existing queued operator path. Location-sync writers
+retain a separate rollback/caller-adoption gate. Independent PostgreSQL 15 and
+author PostgreSQL 18 qualification cover actual HTTP, restricted workers,
+expiry/rollback and reply loss; the broader 689-case auth selection also passes.
+Its 39-file patch replays unchanged onto #7301 and reproduces the exact qualified
+main-based merge tree. All 59 clean-head type tasks pass with four cache hits.
+A fresh owned full-Next preview passes five baseline legacy-auth browser flows,
+with clean browser teardown and no unexpected traffic or console/page errors.
+Draft #7302 is published and current-head CI/review feedback is monitored.
+No production authority switch follows from these implementation results.
 
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 

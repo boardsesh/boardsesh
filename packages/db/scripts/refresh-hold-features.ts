@@ -8,10 +8,13 @@
  *        · --no-shadow (skip the user_hold_classifications shadow-write).
  */
 import { runRefreshHoldFeatures } from '../src/jobs/index.js';
+import { currentStoreBatchSystemUsersMode } from '@boardsesh/auth-protocol';
 import { createScriptDb } from './db-connection.js';
 import { cliAbortSignal, cliJobLogger } from './job-cli.js';
 
 async function main(argv: string[]): Promise<void> {
+  if (currentStoreBatchSystemUsersMode(process.env) !== 'legacy')
+    throw new Error('Batch system user authority requires running this job through the queue operator');
   const boardArgument = argv.find((argument) => argument.startsWith('--board='));
   const { db, close } = createScriptDb();
   try {

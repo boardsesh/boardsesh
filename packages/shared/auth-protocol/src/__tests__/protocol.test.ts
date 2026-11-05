@@ -183,7 +183,14 @@ describe('versioned four-command private contract', () => {
     ).toBe(false);
   });
   it('recognizes only the known non-verification identifier namespaces', () => {
-    for (const identifier of ['ba03-web-auth:hash', 'password-reset:email', 'ba03-flow:nonce', 'ba03-lineage:nonce']) {
+    for (const identifier of [
+      'ba03-web-auth:hash',
+      'password-reset:email',
+      'ba03-flow:nonce',
+      'ba03-lineage:nonce',
+      'ba03-batch-system-user:v1:hash',
+      'ba03-batch-system-user:v999:future',
+    ]) {
       expect(isReservedAuthRecordIdentifier(identifier)).toBe(true);
     }
     expect(isReservedAuthRecordIdentifier('unusual historical address')).toBe(false);

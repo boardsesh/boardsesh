@@ -20,11 +20,22 @@ export type JobLogger = {
   warn(message: string, details?: { title?: string }): void;
 };
 
+export type JobSystemUserKind = 'recommendations' | 'hold-classifier';
+
+/** The backend capability is bound to a claimed attempt; it runs outside data transactions. */
+export type JobSystemUserAuthority =
+  | { readonly mode: 'legacy' }
+  | {
+      readonly mode: 'backend-staging';
+      readonly ensure: (kind: JobSystemUserKind) => Promise<void>;
+    };
+
 /** What every job body takes. Reads go through `db`, writes through `transact`. */
 export type JobRunOptions = {
   db: JobDatabase;
   signal: AbortSignal;
   transact?: JobTransact;
+  systemUserAuthority?: JobSystemUserAuthority;
   log: JobLogger;
 };
 
