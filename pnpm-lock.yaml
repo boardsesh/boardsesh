@@ -428,6 +428,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@boardsesh/auth-protocol':
+        specifier: workspace:*
+        version: link:../shared/auth-protocol
       '@boardsesh/board-config':
         specifier: workspace:*
         version: link:../shared/board-config

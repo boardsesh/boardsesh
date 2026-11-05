@@ -8,10 +8,13 @@
  * POSTHOG_PROJECT_ID, POSTHOG_HOST. Without the key the send stats are skipped.
  */
 import { posthogConfigFromEnvironment, runRefreshRecommendations } from '../src/jobs/index.js';
+import { currentStoreBatchSystemUsersMode } from '@boardsesh/auth-protocol';
 import { createScriptDb } from './db-connection.js';
 import { cliAbortSignal, cliJobLogger } from './job-cli.js';
 
 async function main(): Promise<void> {
+  if (currentStoreBatchSystemUsersMode(process.env) !== 'legacy')
+    throw new Error('Batch system user authority requires running this job through the queue operator');
   const { db, close } = createScriptDb();
   try {
     await runRefreshRecommendations({
