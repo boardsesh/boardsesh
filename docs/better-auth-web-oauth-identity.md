@@ -160,7 +160,7 @@ The strengthened test also passed the repository's type-aware, type-checking
 `vp check`. After clean replay, all 59 canonical tasks passed again, with four
 cache hits; that run includes the final receipt assertions.
 
-Preview and PR publication remain in progress. No normal test result implies a real vendor UI, Safari/iPhone,
+PR publication remains in progress. No normal test result implies a real vendor UI, Safari/iPhone,
 installed native/watch client, production provider registration or SMTP proof.
 
 The HTTP fixture initially failed before server admission because a forced-close
@@ -228,6 +228,51 @@ final receipt assertions, with four cache hits. This final documentation update
 records that result; it changes no executable code. Main integration equality,
 runtime cases and clean-branch compilation are separate evidence, rather than
 an assumption that changing parents preserves qualification.
+
+## Isolated full-Next preview
+
+A fresh owned PostgreSQL 18 database contains one synthetic password account.
+The preview runs the final qualified executable source at `3d20a56f97`, with
+all four identity/password/native selectors explicitly legacy, providers and
+SMTP disabled, source secrets suppressed, and the normal memory guard retained.
+The startup log identifies the injected QA notes; the actual development metadata
+endpoint returns HTTP 200 with the correct branch and normalized notes. The
+previous owned preview remains running separately.
+
+One final bounded Chromium run passed all five flows: actual password login with
+matching fixture UID and stable SID across session reads; guarded sign-out and
+empty session; wrong-password 401 with a visible error; invalid recovery email
+with zero API requests; and invalid reset 400 with a visible error and no login.
+It observed eight structurally read-only GraphQL POSTs, five owned development
+HMR sockets, zero external or unexpected mutation requests, zero unexpected
+console/page errors, and exactly the expected one 401 and one 400 resource
+message. Context and browser cleanup both completed; the deadline did not fire.
+Independent review approved the counter-only artifact against the reviewed helper.
+This is default-legacy UI acceptance, separate from the staged route/browser
+qualification above; it sends no valid reset, SMTP or real vendor request.
+
+Earlier setup failures remain recorded. A plain-Node invocation acknowledged a
+new fixture but failed before hydration at an extensionless TypeScript import.
+A transport-denied, dead-environment import-only probe established the exact
+module-resolution error and proved the public TypeScript loader could import
+without calling setup. The claimed failed namespace and receipt were retained,
+with no reset, retry or deletion. The corrected creator requires that loader
+before any service I/O, and a separately reviewed fresh namespace then hydrated
+successfully.
+
+The first UI attempt stopped before authentication because it expected untrimmed
+notes and blocked the actual owned HMR path. Source-based corrections preserved
+exact metadata matching and restricted HMR to its canonical owned path. A second
+attempt passed all five functional checks but failed its overall guard after
+blocking nine background POSTs and counting nine console errors. Those requests
+were not retroactively declared harmless. A separate read-only diagnostic proved
+one anonymous-page request was a single GraphQL query sent by POST. The final
+helper permits only the exact owned GraphQL endpoint with a bounded 64 KiB JSON
+object, 2,000-token limit, one query operation and correlated operation name;
+mutations, subscriptions, batches and persisted-query shortcuts remain blocked.
+Its separately qualified pure guard cases passed 32/32 with no network attempts.
+The final fresh-context run then independently observed zero unexpected events.
+These helper corrections changed no product code, deadline or flow assertion.
 
 ## Gates that remain open
 
