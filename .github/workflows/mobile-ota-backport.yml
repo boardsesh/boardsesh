@@ -373,7 +373,7 @@ jobs:
         id: upload_sourcemaps
         if: ${{ !inputs.dry_run && steps.publish.outcome == 'success' }}
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 30
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           PLATFORM: ${{ matrix.platform }}

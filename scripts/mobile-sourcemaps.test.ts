@@ -23,6 +23,7 @@ import {
   createSentryUploadEnvironment,
   parseUploadArgs,
   resolveInstalledSentryUploader,
+  SOURCE_MAP_UPLOAD_ATTEMPT_TIMEOUT_MS,
   SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS,
   uploadMobileSourceMaps,
   validateSourceMapOutput,
@@ -731,6 +732,56 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
     expect(SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS).toEqual([15_000, 45_000]);
   });
 
+  it('cuts each attempt at 8 minutes and retries an attempt that timed out', () => {
+    const fixture = createMobileFixture('android');
+    const timeouts: number[] = [];
+    const results = [
+      { status: null, error: Object.assign(new Error('spawnSync node ETIMEDOUT'), { code: 'ETIMEDOUT' }) },
+      { status: 0 },
+    ];
+    const waits: number[] = [];
+
+    uploadMobileSourceMaps(
+      {
+        platform: 'android',
+        mobileDir: fixture.mobileDir,
+        outputDir: fixture.outputDir,
+        environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
+      },
+      {
+        resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
+        sleepSync: (milliseconds) => waits.push(milliseconds),
+        spawnUploader: (_executable, _args, options) => {
+          timeouts.push(options.timeout);
+          expect(options.killSignal).toBe('SIGTERM');
+          return results.shift() ?? { status: 99 };
+        },
+      },
+    );
+    expect(timeouts).toEqual([SOURCE_MAP_UPLOAD_ATTEMPT_TIMEOUT_MS, SOURCE_MAP_UPLOAD_ATTEMPT_TIMEOUT_MS]);
+    expect(SOURCE_MAP_UPLOAD_ATTEMPT_TIMEOUT_MS).toBe(8 * 60_000);
+    expect(waits).toEqual([SOURCE_MAP_UPLOAD_RETRY_DELAYS_MS[0]]);
+
+    expect(() =>
+      uploadMobileSourceMaps(
+        {
+          platform: 'android',
+          mobileDir: fixture.mobileDir,
+          outputDir: fixture.outputDir,
+          environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
+        },
+        {
+          resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
+          sleepSync: () => {},
+          spawnUploader: () => ({
+            status: null,
+            error: Object.assign(new Error('spawnSync node ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+          }),
+        },
+      ),
+    ).toThrow('Official Sentry uploader timed out after 8 minutes.');
+  });
+
   it('gives up after three nonzero exits and does not retry an uploader that cannot start', () => {
     const fixture = createMobileFixture('android');
     const uploadOptions = {
@@ -987,7 +1038,8 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     for (const stepName of ['Upload iOS OTA source maps to Sentry', 'Upload Android OTA source maps to Sentry']) {
       const step = workflowStep(workflow, stepName);
       expect(step).toContain('continue-on-error: true');
-      expect(step).toContain('timeout-minutes: 10');
+      // Three 8-minute attempts plus the 15 s and 45 s waits fit inside 30 minutes.
+      expect(step).toContain('timeout-minutes: 30');
       expect(step).toMatch(/^\s+SENTRY_AUTH_TOKEN:\s*\$\{\{ secrets\.SENTRY_AUTH_TOKEN \}\}$/m);
       expect(step).toContain('vp run mobile:upload-sourcemaps');
     }
@@ -1074,7 +1126,7 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     const uploadStep = workflowStep(workflow, 'Upload backport OTA source maps to Sentry');
     expect(uploadStep).toContain("!inputs.dry_run && steps.publish.outcome == 'success'");
     expect(uploadStep).toContain('continue-on-error: true');
-    expect(uploadStep).toContain('timeout-minutes: 10');
+    expect(uploadStep).toContain('timeout-minutes: 30');
     expect(uploadStep).toContain('run: node --import tsx scripts/mobile-upload-sourcemaps.ts');
     expect((workflow.match(/^\s+SENTRY_AUTH_TOKEN:/gm) ?? []).length).toBe(1);
     const backportGate = workflowStep(workflow, 'Require the published backport source-map upload');
