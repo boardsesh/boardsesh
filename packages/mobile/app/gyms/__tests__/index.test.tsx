@@ -21,7 +21,7 @@ vi.mock('../../../src/components/PressableSurface', async () => {
 // off".
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useEffect, type ReactNode } from 'react';
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
 import type { Coords } from '../../../src/lib/use-device-location';
 import type { WallFinderFilterChipsProps } from '../../../src/components/gym-directory/WallFinderFilterChips';
@@ -53,6 +53,10 @@ const captured = vi.hoisted(() => ({
   analyticsOptions: null as AnalyticsOptions | null,
   onActivateBoard: null as ((board: UserBoard) => void) | null,
   onRegionChange: null as ((center: Coords) => void) | null,
+  onMapUnavailable: null as (() => void) | null,
+  onMapReady: null as (() => void) | null,
+  mapAvailable: null as boolean | null,
+  mapMounts: 0,
   onPressGym: null as ((gym: Gym) => void) | null,
   chips: null as WallFinderFilterChipsProps | null,
   coords: undefined as Coords | undefined,
@@ -177,8 +181,17 @@ vi.mock('../../../src/components/ChromeIconButton', () => ({
 vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../../src/components/ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../../src/components/gym-directory/GymMap', () => ({
-  GymMap: (props: { onRegionChange: (center: Coords) => void }) => {
+  GymMap: (props: {
+    onRegionChange: (center: Coords) => void;
+    onMapUnavailable: () => void;
+    onMapReady: () => void;
+  }) => {
     captured.onRegionChange = props.onRegionChange;
+    captured.onMapUnavailable = props.onMapUnavailable;
+    captured.onMapReady = props.onMapReady;
+    useEffect(() => {
+      captured.mapMounts += 1;
+    }, []);
     return null;
   },
 }));
@@ -186,12 +199,14 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
   GymListPanel: (props: {
     onActivateBoard: (board: UserBoard) => void;
     onPressGym: (gym: Gym) => void;
+    mapAvailable: boolean;
     filterSlot?: ReactNode;
     placeCaption?: ReactNode;
     searchSlot?: ReactNode;
   }) => {
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
+    captured.mapAvailable = props.mapAvailable;
     return createElement('div', null, props.searchSlot, props.filterSlot, props.placeCaption);
   },
 }));
@@ -234,6 +249,10 @@ beforeEach(() => {
   captured.analyticsOptions = null;
   captured.onActivateBoard = null;
   captured.onRegionChange = null;
+  captured.onMapUnavailable = null;
+  captured.onMapReady = null;
+  captured.mapAvailable = null;
+  captured.mapMounts = 0;
   captured.onPressGym = null;
   captured.chips = null;
   captured.coords = undefined;
@@ -266,6 +285,33 @@ function distinctQueries(queryMock: typeof queryMocks.gyms) {
 }
 
 describe('picking a board on the gym finder', () => {
+  it('offers a fresh map attempt while keeping board selection usable after a map failure', () => {
+    captured.coords = { latitude: 40.76, longitude: -111.89 };
+    const { getByText, getByRole, queryByText } = render(<GymDiscovery />);
+    expect(captured.mapMounts).toBe(1);
+    act(() => captured.onMapUnavailable?.());
+    expect(captured.mapAvailable).toBe(false);
+    expect(getByText('mobile.gyms.mapUnavailable')).toBeTruthy();
+    captured.onActivateBoard?.(GYM_WALL);
+    expect(bindMock).toHaveBeenCalledWith(GYM_WALL, { pickSource: 'gym_finder' });
+
+    fireEvent.click(getByRole('button', { name: 'mobile.gyms.retryMap' }));
+    expect(captured.mapMounts).toBe(2);
+    expect(captured.mapAvailable).toBe(true);
+    expect(queryByText('mobile.gyms.mapUnavailable')).toBeNull();
+  });
+
+  it('restores map gestures and removes the message when a stalled map loads late', () => {
+    captured.coords = { latitude: 40.76, longitude: -111.89 };
+    const { queryByText } = render(<GymDiscovery />);
+    act(() => captured.onMapUnavailable?.());
+    expect(captured.mapAvailable).toBe(false);
+    act(() => captured.onMapReady?.());
+    expect(captured.mapAvailable).toBe(true);
+    expect(queryByText('mobile.gyms.mapUnavailable')).toBeNull();
+    expect(captured.mapMounts).toBe(1);
+  });
+
   it('lets the search field grow beyond its 44-point minimum', () => {
     const { container } = render(<GymDiscovery />);
     const input = container.querySelector('input');

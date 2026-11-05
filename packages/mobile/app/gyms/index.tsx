@@ -108,6 +108,7 @@ export default function GymDiscovery() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // When the native map can't render at all, lay out as a list-only surface.
   const [mapAvailable, setMapAvailable] = useState(true);
+  const [mapAttempt, setMapAttempt] = useState(0);
   const mapRef = useRef<GymMapHandle>(null);
   const panelRef = useRef<GymListPanelHandle>(null);
   // The gym an ownership claim is being started for. Set from an expanded row's
@@ -381,6 +382,11 @@ export default function GymDiscovery() {
   }, []);
 
   const handleMapUnavailable = useCallback(() => setMapAvailable(false), []);
+  const handleMapReady = useCallback(() => setMapAvailable(true), []);
+  const retryMap = useCallback(() => {
+    setMapAvailable(true);
+    setMapAttempt((attempt) => attempt + 1);
+  }, []);
 
   // Once we learn the native map can't render, bias the panel up to its full-list
   // detent — a half-height list over a blank background reads as broken.
@@ -536,7 +542,7 @@ export default function GymDiscovery() {
   );
 
   const placeCaption =
-    searchLabel || isUpdating || refreshFailed ? (
+    searchLabel || isUpdating || refreshFailed || !mapAvailable ? (
       <View style={[styles.placePill, { backgroundColor: systemColors.background }]}>
         {searchLabel ? (
           <Text variant="caption1" color={systemColors.secondaryLabel}>
@@ -547,6 +553,18 @@ export default function GymDiscovery() {
           <Text variant="caption1" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
             {t('mobile.gyms.updating')}
           </Text>
+        ) : null}
+        {!mapAvailable ? (
+          <>
+            <Text variant="caption1" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+              {t('mobile.gyms.mapUnavailable')}
+            </Text>
+            <PressableSurface onPress={retryMap} accessibilityRole="button" hitSlop={8}>
+              <Text variant="caption1" color={brandColors.primary}>
+                {t('mobile.gyms.retryMap')}
+              </Text>
+            </PressableSurface>
+          </>
         ) : null}
         {refreshFailed ? (
           <>
@@ -574,12 +592,14 @@ export default function GymDiscovery() {
       {screen}
       {center ? (
         <GymMap
+          key={mapAttempt}
           ref={mapRef}
           center={center}
           markers={markers}
           onRegionChange={handleRegionChange}
           onMarkerPress={onMarkerPress}
           onMapUnavailable={handleMapUnavailable}
+          onMapReady={handleMapReady}
           selectedId={selectedId ?? undefined}
           selectedTint={brandColors.primary}
           style={StyleSheet.absoluteFill}

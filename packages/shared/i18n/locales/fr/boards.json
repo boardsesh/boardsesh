@@ -276,6 +276,8 @@
       "cancel": "Pas maintenant"
     },
     "gyms": {
+      "mapUnavailable": "La carte n’a pas pu se charger. Tu peux toujours trouver des salles dans la liste.",
+      "retryMap": "Recharger la carte",
       "title": "Salles près de toi",
       "subtitle": "Touche une salle pour utiliser sa board",
       "locationNeeded": "Partage ta position pour trouver des salles à proximité",
