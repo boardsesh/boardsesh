@@ -15,14 +15,14 @@ one surface with one WLED controller. It does not illuminate climbs or map holds
    to solid white at 25% brightness. **Turn LEDs off** ends the test.
 5. **LED setup** opens the T-nut setup: choose grid, offset grid or custom spacing.
    For offset grids choose whether the top row starts inset. Match four rings to
-   the grid's outer corners, then set rows and columns (8 × 8 initially, 2–50
+   the grid's outer corners, then set rows and columns (8 × 8 initially, 1–50
    each). The preview updates as the rings move. Inset rows have one fewer hole
    than full rows; their missing outer corners are imaginary grid positions.
 6. Continue to add missing holes or remove unwanted ones by tapping the wall.
    Custom spacing starts here with an empty image. Undo reverses manual edits.
    Returning to the grid preserves manual edits unless its parameters change.
 7. Continue to save the hole positions on this device. Choose LEDs in the hold,
-   to its left and right, or below it. The selected diagram has a purple outline.
+   behind the hold, or below it. The selected diagram has a purple outline.
    Back reopens the hole editor; Done saves the choice and returns to the wall
    editor. Assigning LED numbers to positions is not implemented yet.
    No hardware commands are sent.
@@ -34,6 +34,25 @@ the three common placement choices remain available for every wall pattern.
 This saves the arrangement type only, not LED coordinates or wiring indices.
 
 ## Wall image and coordinates
+
+The alignment photo fills the available editor width. Pinch to zoom and drag the
+zoomed image to pan; the expand icon opens the same editor across the whole screen.
+Fullscreen follows device rotation, and closing it preserves all corner edits.
+Zoom changes only the viewport. Dashed, translucent guides and fixed-size handles
+keep the holes visible at higher magnification. Rotation refits the viewport
+without changing wall coordinates.
+
+With one row only the two upper anchors are active; with one column only the two
+left anchors are active. A 1 × 1 grid uses the upper-left anchor alone. Hidden
+anchors retain their positions when rows or columns are restored. A single inset
+row still uses imaginary full-row endpoints, half a spacing beyond its actual
+end holes. A single column has no offset.
+
+Fullscreen is an authenticated root `transparentModal` with an opaque canvas,
+avoiding `fullScreenModal` over the iOS native tabs. Its temporary session stays
+in memory and closes with the owning editor; route parameters never contain the
+photo URL. iPhone landscape support requires a native build with the updated
+orientation mask; ordinary iPhone screens keep their portrait orientation.
 
 Both the grid calibration and the manual editor use the existing **Wall only**
 photo transformation (`FlattenedSprayPhoto`), with no hold outlines or generated

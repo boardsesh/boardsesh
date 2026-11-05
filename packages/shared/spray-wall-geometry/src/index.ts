@@ -88,6 +88,7 @@ export {
   MIN_TNUT_DIMENSION,
   generateTnutGrid,
   isValidTnutCorners,
+  isValidTnutGrid,
   readTnutLayout,
   tnutGridPath,
   type TnutCorners,

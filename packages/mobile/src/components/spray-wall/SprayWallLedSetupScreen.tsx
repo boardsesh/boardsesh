@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import {
   DEFAULT_TNUT_CORNERS,
   generateTnutGrid,
-  isValidTnutCorners,
+  isValidTnutGrid,
   MAX_TNUT_HOLES,
   type Quad,
   type TnutLayout,
@@ -41,6 +41,8 @@ import {
 } from '../../lib/spray/spray-look-preview';
 import { loadSprayWallTnutLayout, saveSprayWallTnutLayout } from '../../lib/spray/spray-wall-tnut-store';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
+import { createTnutCalibrationSession, closeTnutCalibrationSession } from '../../lib/spray/tnut-calibration-session';
 import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
 import { BuilderTextInput } from '../board-discovery/BoardMetaFields';
@@ -160,6 +162,14 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const { t } = useTranslation('boards');
   const { systemColors, brandColors, spacing } = useTheme();
   const router = useRouter();
+  const viewerId = useViewerUserId();
+  const fullscreenSession = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (fullscreenSession.current) closeTnutCalibrationSession(fullscreenSession.current);
+    },
+    [],
+  );
   const headerInset = useTransparentHeaderInset();
   const bottomInset = useWindowBottomInset();
   const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
@@ -183,6 +193,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const [mode, setMode] = useState<'add' | 'remove'>('add');
   const [history, setHistory] = useState<TnutPoint[][]>([]);
   const [contentWidth, setContentWidth] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const busy = useRef(false);
   const finished = useRef(false);
   const mounted = useRef(true);
@@ -195,9 +206,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const generatedSignature = useRef(matchingSaved ? gridSignature(matchingSaved) : null);
   const parsedRows = Number(rowsText);
   const parsedColumns = Number(columnsText);
-  const validCount = (text: string) => /^\d+$/.test(text) && Number(text) >= 2 && Number(text) <= 50;
+  const validCount = (text: string) => /^\d+$/.test(text) && Number(text) >= 1 && Number(text) <= 50;
   const validCounts = validCount(rowsText) && validCount(columnsText);
-  const validCorners = isValidTnutCorners(layout.corners);
+  const validCorners = isValidTnutGrid({ ...layout, pattern: layout.pattern === 'offset' ? 'offset' : 'grid' });
   const maxWidth = Math.max(0, contentWidth - 44);
   const maxHeight = Math.max(180, Math.min(480, window.height * 0.43));
   const { source, photoUri } = loaded;
@@ -217,6 +228,42 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     setLayout((previous) => ({ ...previous, ...update }));
     setDirty(true);
     setSaveFailed(false);
+  }
+
+  function changeCorners([topLeft, topRight, bottomRight, bottomLeft]: Quad) {
+    changeLayout({
+      corners: {
+        topLeft: { x: topLeft[0] / photo.width, y: topLeft[1] / photo.height },
+        topRight: { x: topRight[0] / photo.width, y: topRight[1] / photo.height },
+        bottomLeft: { x: bottomLeft[0] / photo.width, y: bottomLeft[1] / photo.height },
+        bottomRight: { x: bottomRight[0] / photo.width, y: bottomRight[1] / photo.height },
+      },
+    });
+  }
+
+  function openFullscreen() {
+    if (!viewerId || dragging || busy.current || fullscreenSession.current) return;
+    Keyboard.dismiss();
+    const sessionId = createTnutCalibrationSession(
+      {
+        viewerId,
+        source,
+        photoUri,
+        quad,
+        grid: {
+          pattern: layout.pattern === 'offset' ? 'offset' : 'grid',
+          rows: layout.rows,
+          columns: layout.columns,
+          firstRowOffset: layout.firstRowOffset,
+        },
+      },
+      changeCorners,
+      () => {
+        fullscreenSession.current = null;
+      },
+    );
+    fullscreenSession.current = sessionId;
+    router.push({ pathname: '/spray-led-fullscreen', params: { sessionId } });
   }
 
   function previousStep() {
@@ -360,6 +407,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   return (
     <ScrollView
       ref={scrollRef}
+      onLayout={({ nativeEvent }) => setViewportWidth(nativeEvent.layout.width)}
       {...keyboardScroll}
       automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       style={[styles.fill, { backgroundColor: systemColors.background }]}
@@ -436,14 +484,26 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         {step === 'align' ? (
           <>
             <Text>
-              {layout.pattern === 'offset' ? t('sprayLedSetup.offsetAlignHint') : t('sprayLedSetup.gridHint')}
+              {layout.rows === 1 && layout.columns === 1
+                ? t('sprayLedSetup.singlePointHint')
+                : layout.rows === 1
+                  ? layout.pattern === 'offset' && layout.firstRowOffset
+                    ? t('sprayLedSetup.singleInsetRowHint')
+                    : t('sprayLedSetup.singleRowHint')
+                  : layout.columns === 1
+                    ? t('sprayLedSetup.singleColumnHint')
+                    : layout.pattern === 'offset'
+                      ? t('sprayLedSetup.offsetAlignHint')
+                      : t('sprayLedSetup.gridHint')}
             </Text>
-            <View style={styles.stage}>
+            <View style={[styles.stage, { width: viewportWidth, alignSelf: 'center' }]}>
               <SprayCornerMarker
                 photo={photo}
                 value={quad}
-                maxWidth={maxWidth}
-                maxHeight={maxHeight}
+                maxWidth={viewportWidth}
+                maxHeight={(viewportWidth * photo.height) / photo.width}
+                enableZoom
+                edgeToEdge
                 invalid={!validCorners}
                 renderBackdrop={renderBackdrop}
                 onDragActiveChange={setDragging}
@@ -453,18 +513,21 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                   columns: layout.columns,
                   firstRowOffset: layout.firstRowOffset,
                 }}
-                onChange={([topLeft, topRight, bottomRight, bottomLeft]) =>
-                  changeLayout({
-                    corners: {
-                      topLeft: { x: topLeft[0] / photo.width, y: topLeft[1] / photo.height },
-                      topRight: { x: topRight[0] / photo.width, y: topRight[1] / photo.height },
-                      bottomLeft: { x: bottomLeft[0] / photo.width, y: bottomLeft[1] / photo.height },
-                      bottomRight: { x: bottomRight[0] / photo.width, y: bottomRight[1] / photo.height },
-                    },
-                  })
-                }
+                onChange={changeCorners}
               />
+              <PressableSurface
+                accessibilityRole="button"
+                accessibilityLabel={t('sprayLedSetup.fullScreen')}
+                disabled={dragging}
+                onPress={openFullscreen}
+                style={[styles.fullscreen, { backgroundColor: systemColors.secondaryGroupedBackground }]}
+              >
+                <Icon name="expand" size={22} color={systemColors.label} />
+              </PressableSurface>
             </View>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayLedSetup.zoomHint')}
+            </Text>
             {!validCorners ? <Text color={brandColors.error}>{t('sprayLedSetup.invalidCorners')}</Text> : null}
             <CountControl
               label={t('sprayLedSetup.rows')}
@@ -657,7 +720,7 @@ function ChoiceCard({
 function CountControl({ label, value, onChange }: { label: string; value: string; onChange: (text: string) => void }) {
   const { t } = useTranslation('boards');
   const { spacing } = useTheme();
-  const count = Number(value) || 2;
+  const count = Number(value) || 1;
   return (
     <View style={{ gap: spacing[2] }}>
       <Text variant="headline">{label}</Text>
@@ -666,8 +729,8 @@ function CountControl({ label, value, onChange }: { label: string; value: string
           title="−"
           accessibilityLabel={t('sprayLedSetup.decrease', { label })}
           variant="outlined"
-          disabled={count <= 2}
-          onPress={() => onChange(String(Math.max(2, Math.min(50, count - 1))))}
+          disabled={count <= 1}
+          onPress={() => onChange(String(Math.max(1, Math.min(50, count - 1))))}
         />
         <View style={styles.countInput}>
           <BuilderTextInput
@@ -686,7 +749,7 @@ function CountControl({ label, value, onChange }: { label: string; value: string
           accessibilityLabel={t('sprayLedSetup.increase', { label })}
           variant="outlined"
           disabled={count >= 50}
-          onPress={() => onChange(String(Math.max(2, Math.min(50, count + 1))))}
+          onPress={() => onChange(String(Math.max(1, Math.min(50, count + 1))))}
         />
       </View>
     </View>
@@ -702,4 +765,14 @@ const styles = StyleSheet.create({
   thumbnail: { width: '100%', aspectRatio: 1 },
   cardLabel: { textAlign: 'center' },
   countInput: { flex: 1 },
+  fullscreen: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

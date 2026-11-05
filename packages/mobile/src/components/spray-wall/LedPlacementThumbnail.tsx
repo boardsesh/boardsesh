@@ -1,4 +1,16 @@
-import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
+import { useId } from 'react';
+import Svg, {
+  Circle,
+  ClipPath,
+  Defs,
+  Ellipse,
+  G,
+  LinearGradient,
+  Path,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import { generateTnutGrid, type SprayLedPlacement } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 
@@ -15,26 +27,16 @@ export function LedPlacementThumbnail({
 }) {
   const { systemColors, brandColors } = useTheme();
   if (placement === 'alternating') return <AlternatingThumbnail firstRowOffset={firstRowOffset} />;
-  const sideLighting = placement === 'sides';
-  const lights = sideLighting
-    ? [
-        [16, 50],
-        [84, 50],
-      ]
-    : placement === 'below'
-      ? [[50, 82]]
-      : [[50, 50]];
+  if (placement === 'sides') return <BehindHoldThumbnail />;
+  const lights = placement === 'below' ? [[50, 82]] : [[50, 50]];
   return (
     <Svg width="100%" height="100%" viewBox="0 0 100 100" accessible={false}>
       <Rect width={100} height={100} rx={8} fill={systemColors.tertiaryGroupedBackground} />
-      {sideLighting ? (
-        <Path d={holdOutline} fill={brandColors.primary} opacity={0.16} stroke={brandColors.primary} strokeWidth={10} />
-      ) : null}
       <Path
         d={holdOutline}
-        fill={sideLighting ? brandColors.primary : systemColors.secondaryLabel}
-        fillOpacity={sideLighting ? 0.2 : 0.22}
-        stroke={sideLighting ? brandColors.primary : systemColors.secondaryLabel}
+        fill={systemColors.secondaryLabel}
+        fillOpacity={0.22}
+        stroke={systemColors.secondaryLabel}
         strokeWidth={1.5}
       />
       <Path
@@ -59,6 +61,79 @@ export function LedPlacementThumbnail({
           <Circle cx={x} cy={y} r={1.4} fill={systemColors.tertiaryGroupedBackground} />
         </G>
       ))}
+    </Svg>
+  );
+}
+
+// Selected diagram: two lights behind the translucent sides, with a solid grip centre.
+const behindHoldOutline =
+  'M49 162C46 132 66 104 92 88C114 72 143 75 163 80C188 81 216 96 237 120C254 139 262 163 247 183C230 208 199 222 166 224C135 230 98 223 76 209C60 198 51 183 49 162Z';
+
+function BehindHoldThumbnail() {
+  const { systemColors, brandColors } = useTheme();
+  const idPrefix = `led-behind-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
+  const clipId = `${idPrefix}-clip`;
+  const materialId = `${idPrefix}-material`;
+  const lightId = `${idPrefix}-light`;
+  return (
+    <Svg width="100%" height="100%" viewBox="0 0 300 300" accessible={false}>
+      <Rect width={300} height={300} rx={24} fill={systemColors.tertiaryGroupedBackground} />
+      <Defs>
+        <ClipPath id={clipId}>
+          <Path d={behindHoldOutline} />
+        </ClipPath>
+        <LinearGradient id={materialId} x1="0%" y1="0%" x2="100%" y2="0%">
+          <Stop offset="0%" stopColor={brandColors.primary} stopOpacity={0.12} />
+          <Stop offset="23%" stopColor={brandColors.primary} stopOpacity={0.16} />
+          <Stop offset="43%" stopColor={systemColors.tertiaryLabel} stopOpacity={0.6} />
+          <Stop offset="57%" stopColor={systemColors.tertiaryLabel} stopOpacity={0.6} />
+          <Stop offset="78%" stopColor={brandColors.primary} stopOpacity={0.16} />
+          <Stop offset="100%" stopColor={brandColors.primary} stopOpacity={0.12} />
+        </LinearGradient>
+        <RadialGradient id={lightId}>
+          <Stop offset="0%" stopColor={brandColors.onPrimary} />
+          <Stop offset="12%" stopColor={brandColors.onPrimary} stopOpacity={0.95} />
+          <Stop offset="35%" stopColor={brandColors.primary} stopOpacity={0.9} />
+          <Stop offset="70%" stopColor={brandColors.primary} stopOpacity={0.4} />
+          <Stop offset="100%" stopColor={brandColors.primary} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <G clipPath={`url(#${clipId})`}>
+        {[92, 208].map((x) => (
+          <G key={x}>
+            <Circle cx={x} cy={160} r={32} fill={`url(#${lightId})`} />
+            <Rect
+              x={x - 5}
+              y={155}
+              width={10}
+              height={10}
+              rx={3}
+              fill={brandColors.onPrimary}
+              stroke={brandColors.primary}
+              strokeWidth={1}
+            />
+          </G>
+        ))}
+      </G>
+      <Path d={behindHoldOutline} fill={`url(#${materialId})`} stroke={systemColors.secondaryLabel} strokeWidth={2} />
+      <Path
+        d="M77 126C107 101 163 89 209 119"
+        fill="none"
+        stroke={systemColors.secondaryLabel}
+        strokeWidth={4}
+        strokeLinecap="round"
+        opacity={0.5}
+      />
+      <Ellipse cx={150} cy={162} rx={13} ry={12} fill={systemColors.secondaryLabel} opacity={0.3} />
+      <Circle
+        cx={150}
+        cy={159}
+        r={9}
+        fill={systemColors.tertiaryGroupedBackground}
+        stroke={systemColors.secondaryLabel}
+        strokeWidth={1.7}
+      />
+      <Circle cx={150} cy={159} r={4.7} fill={systemColors.secondaryLabel} />
     </Svg>
   );
 }

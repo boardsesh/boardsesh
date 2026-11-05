@@ -14,8 +14,9 @@ import { markStartup } from '../src/lib/profiling/startup-profile';
 import { initializeUserDataExportDownloads } from '../src/lib/user-data-export-download';
 import { startHoldShapeSystemDefaultSync } from '../src/lib/hold-shape-system-default';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { LogBox, Platform, StyleSheet } from 'react-native';
+import { Dimensions, LogBox, Platform, StyleSheet } from 'react-native';
 import { getPlayerRouteAnimation } from '../src/lib/player-route-animation';
+import { resolveIsTablet } from '../src/theme/size-class';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 57's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -331,6 +332,18 @@ function ObserveRuntimeConfigSync(): null {
   return null;
 }
 
+// Match the adaptive shell using the rotation-invariant physical screen, not a split window.
+// Android requires an explicit portrait fallback after fullscreen unlocks a phone.
+function normalScreenOrientation() {
+  const screen = Dimensions.get('screen');
+  const isTablet = resolveIsTablet({
+    platformOS: Platform.OS,
+    isPad: Platform.OS === 'ios' && Platform.isPad === true,
+    screenShortSide: Math.min(screen.width, screen.height),
+  });
+  return Platform.OS !== 'web' && !isTablet ? { orientation: 'portrait' as const } : {};
+}
+
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
@@ -558,6 +571,7 @@ function RootLayout() {
                                                                               ...glassStackScreenOptions,
                                                                               headerShown: false,
                                                                               contentStyle: undefined,
+                                                                              ...normalScreenOrientation(),
                                                                             }}
                                                                           >
                                                                             <Stack.Screen
@@ -632,6 +646,18 @@ function RootLayout() {
                                                       cover is decided here from the entry screen. iPad
                                                       never mounts NativeTabs, so rule 2 of
                                                       docs/mobile-sheets-vs-routes.md is not in play. */}
+                                                                            <Stack.Screen
+                                                                              name="spray-led-fullscreen"
+                                                                              options={{
+                                                                                presentation: 'transparentModal',
+                                                                                headerShown: false,
+                                                                                gestureEnabled: false,
+                                                                                orientation: 'all',
+                                                                                statusBarHidden: true,
+                                                                                navigationBarHidden: true,
+                                                                                autoHideHomeIndicator: true,
+                                                                              }}
+                                                                            />
                                                                             <Stack.Screen
                                                                               name="boards"
                                                                               options={{

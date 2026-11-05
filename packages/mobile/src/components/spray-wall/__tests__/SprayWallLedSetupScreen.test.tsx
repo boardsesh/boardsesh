@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
-import { createElement, useImperativeHandle, type ComponentProps, type ReactNode, type Ref } from 'react';
+import { createElement, useImperativeHandle, useEffect, type ComponentProps, type ReactNode, type Ref } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, type TnutLayout, type TnutPoint } from '@boardsesh/spray-wall-geometry';
+import { DEFAULT_TNUT_CORNERS, type Quad, type TnutLayout, type TnutPoint } from '@boardsesh/spray-wall-geometry';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 import type { SprayCornerMarker } from '../SprayCornerMarker';
 import type { TnutPhotoEditor } from '../TnutPhotoEditor';
+import {
+  readTnutCalibrationSession,
+  updateTnutCalibrationSession,
+  closeTnutCalibrationSession,
+} from '../../../lib/spray/tnut-calibration-session';
 
 type HeaderAction = { onPress: () => void; disabled?: boolean; label?: string };
 type HeaderActions = { leading: HeaderAction; trailing: HeaderAction };
@@ -17,6 +22,7 @@ const controls = vi.hoisted(() => ({
   authenticated: true,
   viewerId: 'viewer-1' as string | null,
   back: vi.fn(),
+  push: vi.fn(),
   alert: vi.fn(),
   scrollTo: vi.fn(),
 }));
@@ -29,7 +35,8 @@ const backend = vi.hoisted(() => ({
 }));
 const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ back: controls.back }) }));
+vi.mock('expo-router', () => ({ useRouter: () => ({ back: controls.back, push: controls.push }) }));
+vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 56 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => backend.client }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: controls.authenticated }) }));
@@ -73,7 +80,18 @@ vi.mock('react-native', () => ({
   TextInput: { State: { currentlyFocusedInput: () => undefined } },
   Platform: { OS: 'android' },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  ScrollView: ({ children, ref }: { children?: ReactNode; ref: Ref<{ scrollTo: typeof controls.scrollTo }> }) => {
+  ScrollView: ({
+    children,
+    ref,
+    onLayout,
+  }: {
+    children?: ReactNode;
+    ref: Ref<{ scrollTo: typeof controls.scrollTo }>;
+    onLayout: (event: { nativeEvent: { layout: { width: number } } }) => void;
+  }) => {
+    useEffect(() => {
+      onLayout({ nativeEvent: { layout: { width: 400 } } });
+    }, [onLayout]);
     useImperativeHandle(ref, () => ({ scrollTo: controls.scrollTo }));
     return createElement('div', null, children);
   },
@@ -240,6 +258,67 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('SprayWallLedSetupScreen', () => {
+  it('uses the full width and keeps fullscreen edits in canonical coordinates across reopen and owner cleanup', async () => {
+    const view = await open();
+    next();
+    expect(controls.corner).toMatchObject({ maxWidth: 400, maxHeight: 560, enableZoom: true, edgeToEdge: true });
+    fireEvent.click(button('fullScreen'));
+    const { sessionId } = controls.push.mock.calls[0][0].params as { sessionId: string };
+    expect(readTnutCalibrationSession(sessionId)).toMatchObject({
+      source: photoSource,
+      photoUri: 'file:///cache/wall.jpg',
+    });
+    const adjusted: Quad = [
+      [100, 140],
+      [400, 140],
+      [400, 560],
+      [100, 560],
+    ];
+    act(() => updateTnutCalibrationSession(sessionId, adjusted));
+    expect(controls.corner?.value).toEqual(adjusted);
+    fireEvent.click(button('fullScreen'));
+    expect(controls.push).toHaveBeenCalledOnce();
+    act(() => closeTnutCalibrationSession(sessionId));
+    fireEvent.click(button('fullScreen'));
+    const secondId = controls.push.mock.calls[1][0].params.sessionId as string;
+    expect(readTnutCalibrationSession(secondId)?.quad).toEqual(adjusted);
+    view.unmount();
+    expect(readTnutCalibrationSession(secondId)).toBeNull();
+  });
+
+  it('accepts one row or column and restores hidden corners without resetting them', async () => {
+    await open();
+    next();
+    const adjusted: Quad = [
+      [75, 100],
+      [425, 110],
+      [420, 610],
+      [65, 600],
+    ];
+    act(() => controls.corner?.onChange(adjusted));
+    fireEvent.change(field('rows'), { target: { value: '1' } });
+    expect(screen.getByText('sprayLedSetup.singleRowHint')).toBeTruthy();
+    expect(controls.header?.trailing.disabled).toBe(false);
+    next();
+    expectHoles(8);
+    back();
+    fireEvent.change(field('rows'), { target: { value: '8' } });
+    expect(controls.corner?.value).toEqual(adjusted);
+    fireEvent.change(field('columns'), { target: { value: '1' } });
+    expect(screen.getByText('sprayLedSetup.singleColumnHint')).toBeTruthy();
+    next();
+    expectHoles(8);
+    back();
+    fireEvent.change(field('rows'), { target: { value: '1' } });
+    expect(screen.getByText('sprayLedSetup.singlePointHint')).toBeTruthy();
+    next();
+    expectHoles(1);
+    back();
+    fireEvent.change(field('rows'), { target: { value: '8' } });
+    fireEvent.change(field('columns'), { target: { value: '8' } });
+    expect(controls.corner?.value).toEqual(adjusted);
+  });
+
   it('starts each new step at the top without resetting scroll while editing that step', async () => {
     await open();
     await waitFor(() => expect(controls.scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false }));
@@ -341,6 +420,20 @@ describe('SprayWallLedSetupScreen', () => {
     fireEvent.click(button('undo'));
     expectHoles(2);
     expect(controls.header?.trailing.disabled).toBe(false);
+  });
+
+  it('explains imaginary endpoints for one inset row and keeps its holes inside the anchors', async () => {
+    await open();
+    fireEvent.click(radio('offset'));
+    next();
+    fireEvent.click(radio('firstInset'));
+    next();
+    fireEvent.change(field('rows'), { target: { value: '1' } });
+    expect(screen.getByText('sprayLedSetup.singleInsetRowHint')).toBeTruthy();
+    next();
+    expectHoles(7);
+    expect(controls.editor?.holes[0].x).toBeGreaterThan(DEFAULT_TNUT_CORNERS.topLeft.x);
+    expect(controls.editor?.holes.at(-1)?.x).toBeLessThan(DEFAULT_TNUT_CORNERS.topRight.x);
   });
 
   it('preserves manual corrections through Back and Next while the grid is unchanged', async () => {

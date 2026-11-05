@@ -465,10 +465,13 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         CFBundleLocalizations: [...APP_LOCALIZATIONS],
-        // iPad rotates freely — landscape is the primary canvas for the sidebar +
-        // panes — while iPhone stays portrait-locked via the top-level
-        // `orientation: 'portrait'`. This `~ipad` key overrides the base
-        // UISupportedInterfaceOrientations for iPad only.
+        // Ordinary iPhone screens stay portrait through the navigation stack;
+        // fullscreen T-nut calibration can rotate. iPad remains freely rotatable.
+        UISupportedInterfaceOrientations: [
+          'UIInterfaceOrientationPortrait',
+          'UIInterfaceOrientationLandscapeLeft',
+          'UIInterfaceOrientationLandscapeRight',
+        ],
         'UISupportedInterfaceOrientations~ipad': [
           'UIInterfaceOrientationPortrait',
           'UIInterfaceOrientationPortraitUpsideDown',

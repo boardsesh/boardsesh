@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import { DEFAULT_TNUT_CORNERS, generateTnutGrid, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 
 const preferences = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), records: new Map<string, unknown>() }));
 vi.mock('../../preference-store', () => ({ getPreference: preferences.get, setPreference: preferences.set }));
@@ -51,7 +51,7 @@ describe('device-local T-nut layouts', () => {
     { version: 2 },
     { ...configured(), version: 2 },
     { ...configured(), holes: [{ x: 1.1, y: 0.5 }] },
-    { ...configured(), rows: 1 },
+    { ...configured(), rows: 0 },
     { ...configured(), photoKey: '' },
     'invalid JSON value',
   ])('fails closed on malformed or future layouts: %j', async (stored) => {
@@ -85,6 +85,21 @@ describe('device-local T-nut layouts', () => {
     expect(preferences.records.get(controllerKey)).toBe(controller);
     await expect(loadSprayWallTnutLayout('wall-one')).resolves.toEqual(configured());
     await expect(loadSprayWallTnutLayout('another-wall')).resolves.toBeNull();
+  });
+
+  it.each([
+    [1, 8],
+    [8, 1],
+    [1, 1],
+  ])('round-trips a %i×%i layout with its inactive corners preserved', async (rows, columns) => {
+    const layout = { ...configured(), pattern: 'grid' as const, rows, columns };
+    layout.corners.bottomRight = { x: 0.2, y: 0.2 };
+    layout.holes = generateTnutGrid(layout);
+    await saveSprayWallTnutLayout('wall-one', layout);
+    const reopened = await loadSprayWallTnutLayout('wall-one');
+    expect(reopened).toEqual(layout);
+    expect(reopened?.corners.bottomRight).toEqual({ x: 0.2, y: 0.2 });
+    expect(reopened?.holes).toHaveLength(rows * columns);
   });
 
   it('refuses invalid saves without touching the stored layout', async () => {

@@ -28,6 +28,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('react-native-svg', () => ({
   default: ({ children }: { children?: ReactNode }) => createElement('svg', null, children),
   Path: ({ stroke }: { stroke?: string }) => createElement('path', { 'data-stroke': stroke }),
+  Circle: () => createElement('circle'),
 }));
 vi.mock('../../../theme/tokens', () => ({ borderRadius: { lg: 12 } }));
 

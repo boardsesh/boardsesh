@@ -12,7 +12,7 @@ export type TnutPattern = 'grid' | 'offset' | 'custom';
 /** Placement choice only; physical LED indices are assigned separately. */
 export type SprayLedPlacement = 'center' | 'sides' | 'below' | 'alternating';
 
-export const MIN_TNUT_DIMENSION = 2;
+export const MIN_TNUT_DIMENSION = 1;
 export const MAX_TNUT_DIMENSION = 50;
 export const DEFAULT_TNUT_DIMENSION = 8;
 export const MAX_TNUT_HOLES = 3000;
@@ -66,19 +66,23 @@ function cornerQuad(corners: TnutCorners): Quad {
   return [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft].map(({ x, y }) => [x, y]);
 }
 
-/** Reject crossed, mirrored, concave and near-degenerate calibration frames. */
+/** Hidden corners remain stored, so even inactive points must stay in bounds. */
+function hasCornerPoints(candidate: unknown): candidate is TnutCorners {
+  'worklet';
+  return (
+    isRecord(candidate) &&
+    isPoint(candidate.topLeft) &&
+    isPoint(candidate.topRight) &&
+    isPoint(candidate.bottomLeft) &&
+    isPoint(candidate.bottomRight)
+  );
+}
+
+/** Reject crossed, mirrored, concave and near-degenerate two-dimensional frames. */
 export function isValidTnutCorners(candidate: unknown): candidate is TnutCorners {
   'worklet';
-  if (
-    !isRecord(candidate) ||
-    !isPoint(candidate.topLeft) ||
-    !isPoint(candidate.topRight) ||
-    !isPoint(candidate.bottomLeft) ||
-    !isPoint(candidate.bottomRight)
-  ) {
-    return false;
-  }
-  const quad = cornerQuad(candidate as TnutCorners);
+  if (!hasCornerPoints(candidate)) return false;
+  const quad = cornerQuad(candidate);
   // A tiny turn is numerically unstable even when the quad's total area is large.
   // Positive turns enforce convexity and TL/TR/BR/BL winding in wall-frame coordinates.
   return quad.every(([x, y], index) => {
@@ -86,6 +90,14 @@ export function isValidTnutCorners(candidate: unknown): candidate is TnutCorners
     const [afterX, afterY] = quad[(index + 2) % 4];
     return (nextX - x) * (afterY - nextY) - (nextY - y) * (afterX - nextX) >= 0.000001;
   });
+}
+
+function hasValidCalibration(corners: TnutCorners, rows: number, columns: number): boolean {
+  'worklet';
+  if (rows === 1 && columns === 1) return true;
+  if (rows === 1) return corners.topLeft.x !== corners.topRight.x || corners.topLeft.y !== corners.topRight.y;
+  if (columns === 1) return corners.topLeft.x !== corners.bottomLeft.x || corners.topLeft.y !== corners.bottomLeft.y;
+  return isValidTnutCorners(corners);
 }
 
 function isDimension(candidate: unknown): candidate is number {
@@ -123,6 +135,19 @@ function squareToWallFrame(corners: TnutCorners): number[] {
   ];
 }
 
+/** A single axis uses only its visible endpoints; hidden corners cannot bend it. */
+function gridToWallFrame(options: TnutGridOptions): number[] {
+  'worklet';
+  const { topLeft, topRight, bottomLeft } = options.corners;
+  if (options.rows === 1) {
+    return [topRight.x - topLeft.x, 0, topLeft.x, topRight.y - topLeft.y, 0, topLeft.y, 0, 0];
+  }
+  if (options.columns === 1) {
+    return [0, bottomLeft.x - topLeft.x, topLeft.x, 0, bottomLeft.y - topLeft.y, topLeft.y, 0, 0];
+  }
+  return squareToWallFrame(options.corners);
+}
+
 function projectPoint(matrix: number[], column: number, row: number): TnutPoint {
   'worklet';
   const denominator = matrix[6] * column + matrix[7] * row + 1;
@@ -133,14 +158,17 @@ function projectPoint(matrix: number[], column: number, row: number): TnutPoint 
   };
 }
 
-function isValidGrid(options: TnutGridOptions): boolean {
+/** Validate the active calibration while preserving all four stored corners. */
+export function isValidTnutGrid(options: unknown): options is TnutGridOptions {
   'worklet';
   return (
+    isRecord(options) &&
     (options.pattern === 'grid' || options.pattern === 'offset') &&
     isDimension(options.rows) &&
     isDimension(options.columns) &&
     typeof options.firstRowOffset === 'boolean' &&
-    isValidTnutCorners(options.corners)
+    hasCornerPoints(options.corners) &&
+    hasValidCalibration(options.corners, options.rows, options.columns)
   );
 }
 
@@ -148,19 +176,28 @@ function isValidGrid(options: TnutGridOptions): boolean {
  * Project an evenly spaced grid into its calibrated rectified wall frame. Offset rows have
  * one fewer hole and sit half a column inward on both sides; calibration corners
  * still describe the outer rectangle, even when a corner has no physical hole.
+ * A single row follows TL→TR; a single column follows TL→BL without alternating
+ * empty rows. A 1×1 grid is the top-left point, independent of the offset phase.
  */
 export function generateTnutGrid(options: TnutGridOptions): TnutPoint[] {
-  if (!isValidGrid(options)) {
+  if (!isValidTnutGrid(options)) {
     throw new RangeError('Invalid T-nut grid');
   }
-  const gridToWallFrame = squareToWallFrame(options.corners);
+  const projection = gridToWallFrame(options);
   const holes: TnutPoint[] = [];
   for (let row = 0; row < options.rows; row++) {
-    const inset = options.pattern === 'offset' && (row % 2 === 0 ? options.firstRowOffset : !options.firstRowOffset);
+    const inset =
+      options.columns > 1 &&
+      options.pattern === 'offset' &&
+      (row % 2 === 0 ? options.firstRowOffset : !options.firstRowOffset);
     const count = options.columns - (inset ? 1 : 0);
     for (let column = 0; column < count; column++) {
       holes.push(
-        projectPoint(gridToWallFrame, (column + (inset ? 0.5 : 0)) / (options.columns - 1), row / (options.rows - 1)),
+        projectPoint(
+          projection,
+          (column + (inset ? 0.5 : 0)) / Math.max(1, options.columns - 1),
+          row / Math.max(1, options.rows - 1),
+        ),
       );
     }
   }
@@ -171,7 +208,7 @@ export function generateTnutGrid(options: TnutGridOptions): TnutPoint[] {
 export function tnutGridPath(options: TnutGridOptions, width: number, height: number, radius: number): string {
   'worklet';
   if (
-    !isValidGrid(options) ||
+    !isValidTnutGrid(options) ||
     !Number.isFinite(width) ||
     width <= 0 ||
     !Number.isFinite(height) ||
@@ -180,16 +217,19 @@ export function tnutGridPath(options: TnutGridOptions, width: number, height: nu
     radius <= 0
   )
     return '';
-  const gridToWallFrame = squareToWallFrame(options.corners);
+  const projection = gridToWallFrame(options);
   const circle = `a${radius} ${radius} 0 1 0 ${radius * 2} 0a${radius} ${radius} 0 1 0 ${-radius * 2} 0z`;
   let path = '';
   for (let row = 0; row < options.rows; row++) {
-    const inset = options.pattern === 'offset' && (row % 2 === 0 ? options.firstRowOffset : !options.firstRowOffset);
+    const inset =
+      options.columns > 1 &&
+      options.pattern === 'offset' &&
+      (row % 2 === 0 ? options.firstRowOffset : !options.firstRowOffset);
     for (let column = 0; column < options.columns - (inset ? 1 : 0); column++) {
       const point = projectPoint(
-        gridToWallFrame,
-        (column + (inset ? 0.5 : 0)) / (options.columns - 1),
-        row / (options.rows - 1),
+        projection,
+        (column + (inset ? 0.5 : 0)) / Math.max(1, options.columns - 1),
+        row / Math.max(1, options.rows - 1),
       );
       path += `M${(point.x * width - radius).toFixed(2)} ${(point.y * height).toFixed(2)}${circle}`;
     }
@@ -212,7 +252,8 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     !isDimension(candidate.rows) ||
     !isDimension(candidate.columns) ||
     typeof candidate.firstRowOffset !== 'boolean' ||
-    !isValidTnutCorners(candidate.corners) ||
+    !hasCornerPoints(candidate.corners) ||
+    !hasValidCalibration(candidate.corners, candidate.rows, candidate.columns) ||
     !Array.isArray(candidate.holes) ||
     candidate.holes.length > MAX_TNUT_HOLES ||
     !candidate.holes.every(isPoint) ||

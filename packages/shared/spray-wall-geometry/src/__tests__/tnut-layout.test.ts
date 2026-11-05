@@ -4,6 +4,7 @@ import {
   DEFAULT_TNUT_CORNERS,
   generateTnutGrid,
   isValidTnutCorners,
+  isValidTnutGrid,
   MAX_TNUT_HOLES,
   readTnutLayout,
   tnutGridPath,
@@ -121,9 +122,138 @@ describe('T-nut grid projection', () => {
     expect(generateTnutGrid({ ...grid, rows: 50, columns: 50 })).toHaveLength(2500);
   });
 
-  it.each([0, 1, -1, 2.5, 51, Number.NaN, Number.POSITIVE_INFINITY])('rejects invalid counts %s', (count) => {
+  it.each([0, -1, 2.5, 51, Number.NaN, Number.POSITIVE_INFINITY])('rejects invalid counts %s', (count) => {
     expect(() => generateTnutGrid({ ...grid, rows: count })).toThrow(RangeError);
     expect(() => generateTnutGrid({ ...grid, columns: count })).toThrow(RangeError);
+  });
+});
+
+describe('single-axis T-nut grids', () => {
+  const corners: TnutCorners = {
+    topLeft: { x: 0.1, y: 0.2 },
+    topRight: { x: 0.9, y: 0.4 },
+    bottomLeft: { x: 0.3, y: 0.8 },
+    // Invalid as a 2D quadrilateral, but irrelevant to either single-axis grid.
+    bottomRight: { x: 0.4, y: 0.3 },
+  };
+
+  it('places one row linearly between the two top points, keeping hidden corners intact', () => {
+    const options = { ...grid, rows: 1, columns: 3, corners };
+    const before = structuredClone(options);
+    const holes = generateTnutGrid(options);
+    expect(isValidTnutGrid(options)).toBe(true);
+    expect(holes).toHaveLength(3);
+    expect(holes[0]).toEqual(corners.topLeft);
+    expect(holes[1].x).toBeCloseTo(0.5, 10);
+    expect(holes[1].y).toBeCloseTo(0.3, 10);
+    expect(holes[2].x).toBeCloseTo(corners.topRight.x, 10);
+    expect(holes[2].y).toBeCloseTo(corners.topRight.y, 10);
+    expect(options).toEqual(before);
+  });
+
+  it.each([false, true])('keeps every row in a single offset column with phase %s', (firstRowOffset) => {
+    const options = { ...grid, pattern: 'offset' as const, rows: 3, columns: 1, corners, firstRowOffset };
+    const holes = generateTnutGrid(options);
+    expect(holes).toHaveLength(3);
+    expect(holes[0]).toEqual(corners.topLeft);
+    expect(holes[1].x).toBeCloseTo(0.2, 10);
+    expect(holes[1].y).toBeCloseTo(0.5, 10);
+    expect(holes[2].x).toBeCloseTo(corners.bottomLeft.x, 10);
+    expect(holes[2].y).toBeCloseTo(corners.bottomLeft.y, 10);
+  });
+
+  it('insets a single offset row by half a column only when its phase is inset', () => {
+    const options = { ...grid, pattern: 'offset' as const, rows: 1, columns: 3, corners };
+    expect(generateTnutGrid({ ...options, firstRowOffset: false })).toHaveLength(3);
+    const holes = generateTnutGrid({ ...options, firstRowOffset: true });
+    expect(holes).toHaveLength(2);
+    expect(holes[0].x).toBeCloseTo(0.3, 10);
+    expect(holes[0].y).toBeCloseTo(0.25, 10);
+    expect(holes[1].x).toBeCloseTo(0.7, 10);
+    expect(holes[1].y).toBeCloseTo(0.35, 10);
+  });
+
+  it.each(['grid', 'offset'] as const)(
+    'uses just top-left for a 1×1 %s even with coincident inactive corners',
+    (pattern) => {
+      const coincident = {
+        topLeft: corners.topLeft,
+        topRight: corners.topLeft,
+        bottomLeft: corners.topLeft,
+        bottomRight: corners.topLeft,
+      };
+      for (const firstRowOffset of [false, true]) {
+        const options = { ...grid, pattern, rows: 1, columns: 1, corners: coincident, firstRowOffset };
+        expect(isValidTnutGrid(options)).toBe(true);
+        expect(generateTnutGrid(options)).toEqual([corners.topLeft]);
+      }
+    },
+  );
+
+  it.each([
+    [1, 1, false, 1],
+    [1, 1, true, 1],
+    [1, 2, true, 1],
+    [1, 50, false, 50],
+    [1, 50, true, 49],
+    [50, 1, false, 50],
+    [50, 1, true, 50],
+  ])('keeps SVG and generated positions identical at %i×%i, inset=%s', (rows, columns, firstRowOffset, count) => {
+    const options = { ...grid, pattern: 'offset' as const, rows, columns, firstRowOffset, corners };
+    const holes = generateTnutGrid(options);
+    const path = tnutGridPath(options, 320, 600, 3);
+    const centers = [...path.matchAll(/M(-?[\d.]+) (-?[\d.]+)/g)];
+    expect(holes).toHaveLength(count);
+    expect(centers).toHaveLength(count);
+    centers.forEach((center, index) => {
+      expect(Number(center[1]) + 3).toBeCloseTo(holes[index].x * 320, 1);
+      expect(Number(center[2])).toBeCloseTo(holes[index].y * 600, 1);
+    });
+    expect(path).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('rejects coincident active endpoints without imposing a 2D frame on single-axis layouts', () => {
+    for (const options of [
+      { ...grid, rows: 1, corners: { ...corners, topRight: corners.topLeft } },
+      { ...grid, columns: 1, corners: { ...corners, bottomLeft: corners.topLeft } },
+    ]) {
+      expect(isValidTnutGrid(options)).toBe(false);
+      expect(() => generateTnutGrid(options)).toThrow(RangeError);
+      expect(tnutGridPath(options, 320, 600, 3)).toBe('');
+    }
+  });
+
+  it('persists inactive corners unchanged and validates them again when restoring two dimensions', () => {
+    for (const dimensions of [
+      { rows: 1, columns: 8 },
+      { rows: 8, columns: 1 },
+      { rows: 1, columns: 1 },
+    ]) {
+      const layout = { ...saved, ...dimensions, corners };
+      const parsed = readTnutLayout(layout);
+      expect(parsed).toEqual(layout);
+      expect(parsed?.corners).not.toBe(corners);
+      const restored = { ...layout, pattern: 'grid' as const, rows: 8, columns: 8 };
+      expect(isValidTnutGrid(restored)).toBe(false);
+      expect(readTnutLayout(restored)).toBeNull();
+      expect(() => generateTnutGrid(restored)).toThrow(RangeError);
+    }
+    const unchanged = { ...saved, rows: 1 };
+    const parsed = readTnutLayout(unchanged);
+    expect(parsed?.corners).toEqual(DEFAULT_TNUT_CORNERS);
+    expect(generateTnutGrid({ ...unchanged, pattern: 'grid', rows: 8 })).toHaveLength(64);
+  });
+
+  it.each([
+    undefined,
+    { x: -0.1, y: 0.2 },
+    { x: 1.1, y: 0.2 },
+    { x: Number.NaN, y: 0.2 },
+    { x: 0.1, y: Number.POSITIVE_INFINITY },
+  ])('still rejects malformed or out-of-bounds inactive corner %j', (bottomRight) => {
+    const options = { ...grid, rows: 1, columns: 1, corners: { ...corners, bottomRight } };
+    expect(isValidTnutGrid(options)).toBe(false);
+    expect(readTnutLayout({ ...saved, ...options })).toBeNull();
   });
 });
 
