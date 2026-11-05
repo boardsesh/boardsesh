@@ -1,12 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { NextResponse } from 'next/server';
 import { GET } from '../route';
 
 // Mock the rate limiter so we can drive both the allowed and limited paths.
-const mockCheckRateLimit = vi.fn();
-const mockGetClientIp = vi.fn();
-vi.mock('@/app/lib/auth/rate-limiter', () => ({
-  checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
-  getClientIp: (...args: unknown[]) => mockGetClientIp(...args),
+const mockEnforcePublicApiRateLimit = vi.fn();
+vi.mock('@/app/lib/public-api-rate-limit.server', () => ({
+  enforcePublicApiRateLimit: (...args: unknown[]) => mockEnforcePublicApiRateLimit(...args),
 }));
 
 // Mock the data layer — the route's only job here is rate-limit + cache headers.
@@ -21,22 +20,10 @@ function callGet() {
 }
 
 describe('GET /api/v1/[board_name]/climb-stats/[climb_uuid]', () => {
-  let stdoutLines: string[];
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetClientIp.mockReturnValue('127.0.0.1');
-    mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
+    mockEnforcePublicApiRateLimit.mockResolvedValue(null);
     mockGetClimbStatsForAllAngles.mockResolvedValue([]);
-    stdoutLines = [];
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
-      stdoutLines.push(String(chunk));
-      return true;
-    });
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   it('returns 200 with an edge Cache-Control header when under the limit', async () => {
@@ -48,28 +35,17 @@ describe('GET /api/v1/[board_name]/climb-stats/[climb_uuid]', () => {
   });
 
   it('returns 429 with Retry-After and skips the DB when rate limited', async () => {
-    mockCheckRateLimit.mockReturnValue({ limited: true, retryAfterSeconds: 42 });
+    mockEnforcePublicApiRateLimit.mockResolvedValue(
+      NextResponse.json(
+        { error: 'Too many requests. Please slow down.' },
+        { status: 429, headers: { 'Retry-After': '42' } },
+      ),
+    );
 
     const res = await callGet();
 
     expect(res.status).toBe(429);
     expect(res.headers.get('Retry-After')).toBe('42');
     expect(mockGetClimbStatsForAllAngles).not.toHaveBeenCalled();
-    // The 429 is logged as attributes, not an interpolated string, so "which IP
-    // is hammering this endpoint" is a group-by rather than a regex.
-    const logged = stdoutLines.join('');
-    expect(logged).toContain('[info] rate limited');
-    expect(logged).toContain('"status":429');
-    expect(logged).toContain('"clientIp":"127.0.0.1"');
-    expect(logged).toContain('"route":"/api/v1/[board_name]/climb-stats/[climb_uuid]"');
-  });
-
-  it('never advertises a back-off below 1 second', async () => {
-    mockCheckRateLimit.mockReturnValue({ limited: true, retryAfterSeconds: 0 });
-
-    const res = await callGet();
-
-    expect(res.status).toBe(429);
-    expect(res.headers.get('Retry-After')).toBe('1');
   });
 });

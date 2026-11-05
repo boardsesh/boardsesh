@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { type SizeRow, getSizeBySlug } from '@/app/lib/slug-utils';
+import { enforcePublicApiRateLimit } from '@/app/lib/public-api-rate-limit.server';
 import type { BoardName } from '@/app/lib/types';
 
 export async function GET(
   req: Request,
   props: { params: Promise<{ board_name: string; layout_id: string; slug: string }> },
 ): Promise<NextResponse<SizeRow | { error: string }>> {
+  const rateLimitedResponse = await enforcePublicApiRateLimit(req);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const params = await props.params;
   const { board_name, layout_id, slug } = params;
 
