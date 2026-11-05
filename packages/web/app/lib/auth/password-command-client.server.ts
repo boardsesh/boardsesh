@@ -7,13 +7,16 @@ import {
   AUTH_COMMAND_REQUEST_BYTES,
   AUTH_COMMAND_RESPONSE_BYTES,
   AUTH_COMMAND_TIMEOUT_MS,
+  AUTH_PROTOCOL_VERSION,
+  authCommandReplySchema,
   authCommandReplyStatus,
   parseWebAuthMode,
-  passwordReplySchema,
-  registerReplySchema,
   type AuthCommand,
+  type AuthCommandReply,
   type PasswordReply,
   type RegisterReply,
+  type VerifyEmailReply,
+  type ResendVerificationReply,
 } from '@boardsesh/auth-protocol';
 
 type AuthEnvironment = Readonly<Record<string, string | undefined>>;
@@ -72,15 +75,19 @@ export type PasswordCommandClient = {
   register(payload: unknown): Promise<RegisterReply>;
   password(email: string, password: string): Promise<PasswordReply>;
 };
+export type EmailVerificationCommandClient = {
+  verifyEmail(token: string, email?: string): Promise<VerifyEmailReply>;
+  resendVerification(payload: unknown): Promise<ResendVerificationReply>;
+};
 
-/** Two fixed server-only commands. No retry: a lost reply may follow a commit. */
+/** Four fixed server-only commands. No retry: a lost reply may follow a commit. */
 export function createPasswordCommandClient(
   options: {
     environment?: AuthEnvironment;
     fetch?: typeof fetch;
     timeoutMs?: number;
   } = {},
-): PasswordCommandClient {
+): PasswordCommandClient & EmailVerificationCommandClient {
   const environment = options.environment ?? process.env;
   let origin: string;
   let secret: string;
@@ -100,7 +107,7 @@ export function createPasswordCommandClient(
   const send = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? AUTH_COMMAND_TIMEOUT_MS;
 
-  async function command(command: AuthCommand): Promise<RegisterReply | PasswordReply> {
+  async function command(command: AuthCommand): Promise<AuthCommandReply> {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -141,8 +148,7 @@ export function createPasswordCommandClient(
         }
         json += decoder.decode();
         const rawReply: unknown = JSON.parse(json);
-        const reply =
-          command.operation === 'register' ? registerReplySchema.parse(rawReply) : passwordReplySchema.parse(rawReply);
+        const reply = authCommandReplySchema.parse(rawReply);
         if (
           reply.requestId !== command.requestId ||
           reply.operation !== command.operation ||
@@ -172,6 +178,7 @@ export function createPasswordCommandClient(
   return {
     async register(payload) {
       return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'register',
         requestId: randomUUID(),
         issuedAt: Date.now(),
@@ -180,11 +187,30 @@ export function createPasswordCommandClient(
     },
     async password(email, password) {
       return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'password',
         requestId: randomUUID(),
         issuedAt: Date.now(),
         payload: { email, password },
       })) as PasswordReply;
+    },
+    async verifyEmail(token, email) {
+      return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'verify-email',
+        requestId: randomUUID(),
+        issuedAt: Date.now(),
+        payload: { token, ...(email !== undefined ? { email } : {}) },
+      })) as VerifyEmailReply;
+    },
+    async resendVerification(payload) {
+      return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'resend-verification',
+        requestId: randomUUID(),
+        issuedAt: Date.now(),
+        payload,
+      })) as ResendVerificationReply;
     },
   };
 }

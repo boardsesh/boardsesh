@@ -4,7 +4,7 @@ export async function sendVerificationEmail(email: string, token: string, baseUr
   // Validate email format before using in URL to prevent injection
   const validatedEmail = emailSchema.parse(email);
 
-  const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${token}&email=${encodeURIComponent(validatedEmail)}`;
+  const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(validatedEmail)}`;
   const safeVerifyUrl = escapeHtml(verifyUrl);
 
   await sendEmail({

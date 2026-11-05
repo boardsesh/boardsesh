@@ -656,7 +656,9 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // Default-off service commands. Browser cookies do not authorize them.
       if (
         pathname === '/api/internal/auth/current-store/register' ||
-        pathname === '/api/internal/auth/current-store/password'
+        pathname === '/api/internal/auth/current-store/password' ||
+        pathname === '/api/internal/auth/current-store/verify-email' ||
+        pathname === '/api/internal/auth/current-store/resend-verification'
       ) {
         await handleCurrentStoreWebAuth(req, res);
         return;

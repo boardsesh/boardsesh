@@ -6,17 +6,20 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
+import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
+import { resendVerificationWithCommand } from '@/app/lib/auth/email-verification-command.server';
+import { passwordCommandUnavailableResponse } from '@/app/lib/auth/register-password-command.server';
 
 // Zod schema for email validation
 const resendVerificationSchema = z.object({
   email: z.string().email('Invalid email address'),
 });
 
-// Minimum response time to prevent timing attacks
-// Balances security (covering typical email send variance) with UX
+// A response floor reduces small timing differences. It does not bound SMTP or
+// establish equal timing between eligible and ineligible recipients.
 const MIN_RESPONSE_TIME_MS = 1500;
 
-// Helper to introduce consistent delay to prevent timing attacks
+// Retain the existing response floor on every branch.
 async function consistentDelay(startTime: number): Promise<void> {
   const elapsed = Date.now() - startTime;
   const remaining = MIN_RESPONSE_TIME_MS - elapsed;
@@ -45,6 +48,12 @@ export async function POST(request: NextRequest) {
           },
         },
       );
+    }
+
+    if (webPasswordMode() === 'backend-staging') {
+      const response = await resendVerificationWithCommand(request);
+      await consistentDelay(startTime);
+      return response;
     }
 
     const body = await request.json();
@@ -103,6 +112,10 @@ export async function POST(request: NextRequest) {
     await consistentDelay(startTime);
     return NextResponse.json({ message: genericMessage }, { status: 200 });
   } catch (error) {
+    if (error instanceof AuthBackendUnavailableError) {
+      await consistentDelay(startTime);
+      return passwordCommandUnavailableResponse();
+    }
     console.error('Resend verification error:', error);
     Sentry.captureException(error, {
       tags: { area: 'auth', flow: 'resend-verification', phase: 'request' },

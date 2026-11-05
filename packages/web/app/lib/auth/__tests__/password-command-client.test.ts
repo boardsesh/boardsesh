@@ -44,7 +44,12 @@ afterAll(async () => {
 beforeEach(() => {
   received.length = 0;
   handle = (_request, response, body) =>
-    reply(response, { operation: 'password', requestId: body.requestId, outcome: 'invalid_credentials' });
+    reply(response, {
+      protocolVersion: 2,
+      operation: 'password',
+      requestId: body.requestId,
+      outcome: 'invalid_credentials',
+    });
 });
 
 describe('server-only password command transport', () => {
@@ -58,6 +63,7 @@ describe('server-only password command transport', () => {
     expect(received[0].headers.authorization).toBe(`Bearer ${environment().CURRENT_STORE_AUTH_RPC_SECRET}`);
     expect(received[0].headers.cookie).toBeUndefined();
     expect(received[0].body).toEqual({
+      protocolVersion: 2,
       operation: 'password',
       requestId: expect.stringMatching(/^[\da-f-]{36}$/),
       issuedAt: expect.any(Number),
@@ -102,7 +108,12 @@ describe('server-only password command transport', () => {
     'rejects %s and exposes no remote response or nested cause',
     async (fault) => {
       handle = (_request, response, command) => {
-        const body = { operation: 'password', requestId: command.requestId, outcome: 'invalid_credentials' };
+        const body = {
+          protocolVersion: 2,
+          operation: 'password',
+          requestId: command.requestId,
+          outcome: 'invalid_credentials',
+        };
         if (fault === 'wrong-id') body.requestId = '40b5df4e-ad28-4ce1-a8da-a5580f7d8a99';
         if (fault === 'wrong-operation') body.operation = 'register';
         if (fault === 'malformed-json' || fault === 'wrong-content-type') {
@@ -182,5 +193,41 @@ describe('server-only password command transport', () => {
       AUTH_BACKEND_UNAVAILABLE,
     );
     expect(registrationMailOrigin(origin, { NODE_ENV: 'test', BASE_URL: '' })).toBe(origin);
+  });
+  it.each(['verify-email', 'resend-verification'] as const)(
+    'uses the fixed %s path and body version2',
+    async (operation) => {
+      handle = (_request, response, body) =>
+        reply(response, {
+          protocolVersion: 2,
+          operation,
+          requestId: body.requestId,
+          outcome: operation === 'verify-email' ? 'verified' : 'accepted',
+        });
+      const client = createPasswordCommandClient({ environment: environment() });
+      if (operation === 'verify-email')
+        await expect(client.verifyEmail(`ev1_${'A'.repeat(43)}`)).resolves.toMatchObject({ outcome: 'verified' });
+      else
+        await expect(client.resendVerification({ email: 'Climber@example.com' })).resolves.toMatchObject({
+          outcome: 'accepted',
+        });
+      expect(received).toHaveLength(1);
+      expect(received[0].url).toBe(`/api/internal/auth/current-store/${operation}`);
+      expect(received[0].body).toMatchObject({ protocolVersion: 2, operation });
+      expect(received[0].headers.cookie).toBeUndefined();
+    },
+  );
+  it('rejects a well-formed reply from a different operation', async () => {
+    const client = createPasswordCommandClient({ environment: environment() });
+    // The default fixture emits a valid password reply with the correct nonce.
+    await expect(client.verifyEmail(`ev1_${'A'.repeat(43)}`)).rejects.toThrow(AUTH_BACKEND_UNAVAILABLE);
+    expect(received).toHaveLength(1);
+  });
+  it('rejects a v1 reply even when HTTP status and nonce otherwise match', async () => {
+    handle = (_request, response, body) =>
+      reply(response, { operation: 'password', requestId: body.requestId, outcome: 'invalid_credentials' });
+    await expect(createPasswordCommandClient({ environment: environment() }).password('x', 'y')).rejects.toThrow(
+      AUTH_BACKEND_UNAVAILABLE,
+    );
   });
 });

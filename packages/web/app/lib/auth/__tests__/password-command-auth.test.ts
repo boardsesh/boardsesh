@@ -7,6 +7,7 @@ vi.mock('server-only', () => ({}));
 import { createPasswordCommandAuthRequest } from '../password-command-auth.server';
 
 const reply: Extract<PasswordReply, { outcome: 'authenticated' }> = {
+  protocolVersion: 2,
   operation: 'password',
   requestId: 'e363934b-b7ba-41ba-a279-52185daa100e',
   outcome: 'authenticated',
@@ -93,7 +94,12 @@ describe('request-local backend password verdict', () => {
   it('only maps the explicit invalid_credentials verdict to authorize null', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
     const denied = createPasswordCommandAuthRequest(base(), () => ({
-      password: async () => ({ operation: 'password', requestId: reply.requestId, outcome: 'invalid_credentials' }),
+      password: async () => ({
+        protocolVersion: 2,
+        operation: 'password',
+        requestId: reply.requestId,
+        outcome: 'invalid_credentials',
+      }),
       register: vi.fn(),
     }));
     await expect(
@@ -101,7 +107,13 @@ describe('request-local backend password verdict', () => {
     ).resolves.toBeNull();
     expect(denied.unavailable()).toBe(false);
     const unavailable = createPasswordCommandAuthRequest(base(), () => ({
-      password: async () => ({ operation: 'password', requestId: reply.requestId, outcome: 'error', code: 'replayed' }),
+      password: async () => ({
+        protocolVersion: 2,
+        operation: 'password',
+        requestId: reply.requestId,
+        outcome: 'error',
+        code: 'replayed',
+      }),
       register: vi.fn(),
     }));
     await expect(

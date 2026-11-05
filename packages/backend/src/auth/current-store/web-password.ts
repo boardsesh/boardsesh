@@ -1,32 +1,19 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
-  AUTH_COMMAND_FUTURE_SKEW_MS,
-  AUTH_COMMAND_MAX_AGE_MS,
-  AUTH_COMMAND_TIMEOUT_MS,
+  AUTH_PROTOCOL_VERSION,
   REGISTRATION_VALIDATION_MESSAGES,
   type PasswordCommand,
   type PasswordReply,
   type RegisterCommand,
   type RegisterReply,
 } from '@boardsesh/auth-protocol';
-import {
-  authEmailReservations,
-  authSubjectCutoffs,
-  userCredentials,
-  users,
-  verificationTokens,
-} from '@boardsesh/db/schema/auth';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { authEmailReservations, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
+import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { normalizeAccountEmail } from '../normalize-email';
 import { reserveEnforcedEmail } from './email-reservations';
-import {
-  captureExpectedAuthority,
-  lockEnforcedProjection,
-  type CurrentStoreTransaction,
-  type ExpectedCurrentStoreAuthority,
-} from './foundation-context';
+import { lockEnforcedProjection, CurrentStoreFoundationError } from './foundation-context';
 import {
   insertCurrentStorePasswordIdentity,
   matchCurrentStorePasswordCandidate,
@@ -45,71 +32,16 @@ const registrationSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters').optional(),
 });
 
-export interface WebPasswordAuthority extends ExpectedCurrentStoreAuthority {
-  readonly emailVerificationEnabled: boolean;
-}
-
-export class WebPasswordCommandError extends Error {
-  constructor(readonly code: 'expired_request') {
-    super('Current-store command expired');
-    this.name = 'WebPasswordCommandError';
-  }
-}
-
-function captureAuthority(authority: WebPasswordAuthority): WebPasswordAuthority {
-  return { ...captureExpectedAuthority(authority), emailVerificationEnabled: authority.emailVerificationEnabled };
-}
-
-function isFresh(issuedAt: number) {
-  const now = Date.now();
-  return (
-    Number.isSafeInteger(issuedAt) &&
-    issuedAt >= 0 &&
-    issuedAt <= now + AUTH_COMMAND_FUTURE_SKEW_MS &&
-    now - issuedAt <= AUTH_COMMAND_MAX_AGE_MS
-  );
-}
-
-function assertFresh(issuedAt: number) {
-  if (!isFresh(issuedAt)) throw new WebPasswordCommandError('expired_request');
-}
-
-export function isWebPasswordCommandFresh(issuedAt: number): boolean {
-  return isFresh(issuedAt);
-}
-
-async function transactionSettings(transaction: CurrentStoreTransaction) {
-  await transaction.execute(sql`SET LOCAL statement_timeout = '5000ms'`);
-  await transaction.execute(sql`SET LOCAL lock_timeout = '4000ms'`);
-}
-
-/** No bcrypt work inside this short-lived global gate. Rechecked at commit. */
-async function preflight(database: DbInstance, authority: WebPasswordAuthority) {
-  await database.transaction(async (transaction) => {
-    await transactionSettings(transaction);
-    await lockEnforcedProjection(transaction, authority);
-  });
-}
-
-async function claimCommand(
-  transaction: CurrentStoreTransaction,
-  command: { readonly operation: 'register' | 'password'; readonly requestId: string; readonly issuedAt: number },
-) {
-  assertFresh(command.issuedAt);
-  const commandHash = createHash('sha256').update(`${command.operation}\0${command.requestId}`).digest('hex');
-  const claimed = await transaction
-    .insert(verificationTokens)
-    .values({
-      identifier: `ba03-web-auth:${commandHash}`,
-      token: commandHash,
-      expires: new Date(
-        command.issuedAt + AUTH_COMMAND_MAX_AGE_MS + AUTH_COMMAND_FUTURE_SKEW_MS + AUTH_COMMAND_TIMEOUT_MS,
-      ),
-    })
-    .onConflictDoNothing()
-    .returning({ token: verificationTokens.token });
-  return claimed.length === 1;
-}
+export { WebPasswordCommandError, isWebPasswordCommandFresh, type WebPasswordAuthority } from './command-context';
+import {
+  captureAuthority,
+  assertFresh,
+  preflight,
+  transactionSettings,
+  claimCommand,
+  type WebPasswordAuthority,
+} from './command-context';
+import { issueEmailVerification } from './email-verification';
 
 function validationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
   return (
@@ -138,9 +70,17 @@ export async function registerWebPassword(
     await lockEnforcedProjection(transaction, authority);
     const claimed = await claimCommand(transaction, { requestId, issuedAt, operation: 'register' });
     assertFresh(issuedAt);
-    if (!claimed) return { operation: 'register', requestId, outcome: 'error', code: 'replayed' };
+    if (!claimed)
+      return {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'register',
+        requestId,
+        outcome: 'error',
+        code: 'replayed',
+      };
     if (!registration || invalidMessage)
       return {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'register',
         requestId,
         outcome: 'error',
@@ -161,7 +101,13 @@ export async function registerWebPassword(
     // Every occupied normalized key is unavailable to a newly generated ID;
     // there is no existing-user takeover or collision-owner selection.
     if (!prepared || existing || reservation)
-      return { operation: 'register', requestId, outcome: 'error', code: 'exists' };
+      return {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'register',
+        requestId,
+        outcome: 'error',
+        code: 'exists',
+      };
     const userId = randomUUID();
     await reserveEnforcedEmail(transaction, { ...authority, requestedUserId: userId, rawEmail: registration.email });
     const identity = await insertCurrentStorePasswordIdentity(
@@ -173,6 +119,7 @@ export async function registerWebPassword(
     assertFresh(issuedAt);
     if (!authority.emailVerificationEnabled)
       return {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'register',
         requestId,
         outcome: 'created',
@@ -180,23 +127,18 @@ export async function registerWebPassword(
         createdAt: identity.createdAt.toISOString(),
         requiresVerification: false,
       };
-    const token = randomUUID();
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await transaction.insert(verificationTokens).values({ identifier: registration.email, token, expires });
+    const mailPlan = await issueEmailVerification(transaction, authority, userId);
+    if (!mailPlan) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     assertFresh(issuedAt);
     return {
+      protocolVersion: AUTH_PROTOCOL_VERSION,
       operation: 'register',
       requestId,
       outcome: 'created',
       userId,
       createdAt: identity.createdAt.toISOString(),
       requiresVerification: true,
-      mailPlan: {
-        recipient: registration.email,
-        identifier: registration.email,
-        token,
-        expiresAt: expires.toISOString(),
-      },
+      mailPlan,
     };
   });
 }
@@ -275,7 +217,14 @@ export async function authenticateWebPassword(
     await lockEnforcedProjection(transaction, authority);
     const claimed = await claimCommand(transaction, { requestId, issuedAt, operation: 'password' });
     assertFresh(issuedAt);
-    if (!claimed) return { operation: 'password', requestId, outcome: 'error', code: 'replayed' };
+    if (!claimed)
+      return {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'password',
+        requestId,
+        outcome: 'error',
+        code: 'replayed',
+      };
     // Manifest → users → credentials → cutoffs. Other participating commands
     // must take the same gate first; old writers are explicitly NOT assumed so.
     const currentUsers = await transaction
@@ -317,8 +266,14 @@ export async function authenticateWebPassword(
     const selected = matched ? currentUsers.find((user) => user.id === matched.userId) : undefined;
     assertFresh(issuedAt);
     if (!selected || !sameCredentialMembers(snapshot, current) || cutoffs.get(selected.id)?.deletedAt)
-      return { operation: 'password', requestId, outcome: 'invalid_credentials' };
+      return {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'password',
+        requestId,
+        outcome: 'invalid_credentials',
+      };
     return {
+      protocolVersion: AUTH_PROTOCOL_VERSION,
       operation: 'password',
       requestId,
       outcome: 'authenticated',

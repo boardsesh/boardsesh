@@ -8,6 +8,7 @@ import { compare, getRounds, hash } from 'bcryptjs';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
   AUTH_COMMAND_MAX_AGE_MS,
+  AUTH_PROTOCOL_VERSION,
   AUTH_COMMAND_PATHS,
   passwordReplySchema,
   registerReplySchema,
@@ -16,6 +17,8 @@ import {
 } from '@boardsesh/auth-protocol';
 import {
   authEmailProjection,
+  authEmailVerificationTokens,
+  authEmailVerificationState,
   authEmailReservationMembers,
   authEmailReservations,
   authSecurityMutationEvents,
@@ -71,6 +74,7 @@ function registerCommand(
   name?: string,
 ): RegisterCommand {
   return {
+    protocolVersion: AUTH_PROTOCOL_VERSION,
     operation: 'register',
     requestId: randomUUID(),
     issuedAt: Date.now(),
@@ -78,7 +82,13 @@ function registerCommand(
   };
 }
 function passwordCommand(email: string, password = 'original-password'): PasswordCommand {
-  return { operation: 'password', requestId: randomUUID(), issuedAt: Date.now(), payload: { email, password } };
+  return {
+    protocolVersion: AUTH_PROTOCOL_VERSION,
+    operation: 'password',
+    requestId: randomUUID(),
+    issuedAt: Date.now(),
+    payload: { email, password },
+  };
 }
 async function admin(statement: SQL) {
   return db.transaction(async (transaction) => {
@@ -175,7 +185,13 @@ async function actualWebClientProbe(email: string, password: string): Promise<un
       require.resolve('tsx'),
       fileURLToPath(new URL('./fixtures/web-password-client-probe.ts', import.meta.url)),
     ],
-    { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] },
+    {
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      env: {
+        ...process.env,
+        TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../../../../web/tsconfig.json', import.meta.url)),
+      },
+    },
   );
   let result: unknown;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -192,7 +208,7 @@ async function actualWebClientProbe(email: string, password: string): Promise<un
           typeof result === 'object' &&
           'phase' in result &&
           typeof result.phase === 'string' &&
-          ['input', 'load', 'register', 'password'].includes(result.phase)
+          ['input', 'load', 'register', 'password', 'mail', 'public-verify'].includes(result.phase)
             ? result.phase
             : 'unknown';
         reject(new Error(`Owned web client probe failed during ${phase}`));
@@ -273,6 +289,8 @@ describe('default-off staged web password commands against the current PostgreSQ
     comparison.afterRealCompare = undefined;
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    await db.delete(authEmailVerificationTokens);
+    await db.delete(authEmailVerificationState);
     await db.delete(verificationTokens);
     await db.delete(authEmailReservationMembers);
     await db.delete(authEmailReservations);
@@ -303,7 +321,7 @@ describe('default-off staged web password commands against the current PostgreSQ
         sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${verificationTokens} FROM ${sql.identifier(legacyRole)}`,
       );
       await transaction.execute(
-        sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${verificationTokens}, ${authEmailProjection}, ${authEmailReservations}, ${authEmailReservationMembers}, ${authSubjectCutoffs} TO ${sql.identifier(writerRole)}`,
+        sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${verificationTokens}, ${authEmailVerificationTokens}, ${authEmailVerificationState}, ${authEmailProjection}, ${authEmailReservations}, ${authEmailReservationMembers}, ${authSubjectCutoffs} TO ${sql.identifier(writerRole)}`,
       );
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
@@ -354,7 +372,7 @@ describe('default-off staged web password commands against the current PostgreSQ
       }
       try {
         await admin(
-          sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${verificationTokens}, ${authEmailProjection}, ${authEmailReservations}, ${authEmailReservationMembers}, ${authSubjectCutoffs} FROM ${sql.identifier(role)}`,
+          sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${verificationTokens}, ${authEmailVerificationTokens}, ${authEmailVerificationState}, ${authEmailProjection}, ${authEmailReservations}, ${authEmailReservationMembers}, ${authSubjectCutoffs} FROM ${sql.identifier(role)}`,
         );
       } catch {
         failures.push(new Error('Owned table grants cleanup failed'));
@@ -420,12 +438,13 @@ describe('default-off staged web password commands against the current PostgreSQ
     const reply = await registerWebPassword(writer, authority, command);
     expect(reply.outcome).toBe('created');
     if (reply.outcome !== 'created' || !reply.requiresVerification) throw new Error('Missing private mail fixture');
-    expect(reply.mailPlan).toMatchObject({ recipient: email, identifier: email });
-    const [legacyToken] = (await db.select().from(verificationTokens)).filter((token) => token.identifier === email);
-    expect(legacyToken.token === reply.mailPlan.token).toBe(true);
-    expect(legacyToken.expires.toISOString()).toBe(reply.mailPlan.expiresAt);
-    expect(legacyToken.expires.getTime() - before).toBeGreaterThanOrEqual(86_400_000);
-    expect(legacyToken.expires.getTime() - before).toBeLessThan(86_405_000);
+    expect(reply.mailPlan).toMatchObject({ kind: 'uid-email-verification-v1', recipient: email });
+    const [receipt] = await db.select().from(authEmailVerificationTokens);
+    expect(receipt.deliveredEmail).toBe(email);
+    expect(receipt.expiresAt.toISOString()).toBe(reply.mailPlan.expiresAt);
+    expect(receipt.expiresAt.getTime() - receipt.issuedAt.getTime()).toBe(86_400_000);
+    expect(receipt.expiresAt.getTime() - before).toBeGreaterThan(86_395_000);
+    expect(JSON.stringify(receipt).includes(reply.mailPlan.token)).toBe(false);
     const verdict = await authenticateWebPassword(
       writer,
       authority,
@@ -436,8 +455,7 @@ describe('default-off staged web password commands against the current PostgreSQ
       user: { id: reply.userId },
       verification: { userId: reply.userId, required: true, verified: false },
     });
-    const [legacyConsumerUser] = await db.select().from(users).where(eq(users.email, reply.mailPlan.identifier));
-    expect(legacyConsumerUser.id).toBe(reply.userId);
+    expect(receipt.userId).toBe(reply.userId);
   });
 
   it.each([
@@ -536,16 +554,24 @@ describe('default-off staged web password commands against the current PostgreSQ
     'connects the ACTUAL web strict client to private HTTP and PostgreSQL with verification %s',
     async (required) => {
       vi.stubEnv('EMAIL_VERIFICATION_ENABLED', required ? 'true' : 'false');
-      const result = await actualWebClientProbe(`Client.Mixed.${randomUUID()}@Example.TEST`, 'actual-client-password');
+      const result = await actualWebClientProbe(
+        `Client.Mixed.${randomUUID()}+Tag@Example.TEST`,
+        'actual-client-password',
+      );
       expect(result).toEqual({
         ok: true,
         ownerMatches: true,
         requiresVerification: required,
         verified: !required,
         mailIdentityMatches: required ? true : null,
+        templateRoundTrip: required ? true : null,
+        publicVerified: required ? true : null,
+        publicPrivacy: required ? true : null,
+        publicCookieUnchanged: required ? true : null,
+        verifiedAfterLink: required ? true : null,
       });
       expect(await db.select().from(users)).toHaveLength(1);
-      expect(await nonceCount()).toBe(2);
+      expect(await nonceCount()).toBe(required ? 4 : 2);
     },
     25_000,
   );
