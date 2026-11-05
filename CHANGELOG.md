@@ -4,6 +4,16 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-05
+
+### New
+
+- Get a key for your Spraywall's projector or display without picking a Kilter or Tension board. ([#7276](https://github.com/boardsesh/boardsesh/pull/7276))
+
+### Improved
+
+- Got a laser or LED box that lights climbs over the internet? Turn on "Lit by a wall device" in Edit board and your crew can put climbs up without Bluetooth ([#7271](https://github.com/boardsesh/boardsesh/pull/7271))
+
 ## 2026-11-03
 
 ### App update
