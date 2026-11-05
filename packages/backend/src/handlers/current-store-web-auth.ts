@@ -16,7 +16,7 @@ import {
   type AuthCommand,
 } from '@boardsesh/auth-protocol';
 import { db } from '../db/client';
-import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../auth/current-store/foundation-context';
+import { currentStoreAuthorityConfiguration } from '../auth/current-store/authority-configuration';
 import {
   authenticateWebPassword,
   isWebPasswordCommandFresh,
@@ -38,37 +38,21 @@ export function currentStoreWebAuthConfiguration(
   | { readonly mode: 'backend-staging'; readonly rpcSecret: string; readonly authority: WebPasswordAuthority } {
   const mode = parseWebAuthMode(environment[AUTH_COMMAND_ENV.mode]);
   if (mode === 'legacy') return { mode };
-  // The shared client's DEBUG_SQL logger prints bound parameters, including
-  // bcrypt hashes and verification secrets. Never run staged auth through it.
-  if (environment.DEBUG_SQL === 'true') throw new Error('Unsafe current-store auth SQL logging');
+  const authority = currentStoreAuthorityConfiguration(environment);
   const rpcSecret = environment[AUTH_COMMAND_ENV.secret];
-  const projectionId = environment.CURRENT_STORE_AUTH_PROJECTION_ID;
-  const epochText = environment.CURRENT_STORE_AUTH_WRITER_EPOCH;
   if (
     !rpcSecret ||
     rpcSecret !== rpcSecret.trim() ||
     Buffer.byteLength(rpcSecret, 'utf8') < 32 ||
     [environment.NEXTAUTH_SECRET, environment.CRON_SECRET].some(
       (secret) => Boolean(secret?.trim()) && secret === rpcSecret,
-    ) ||
-    !projectionId ||
-    projectionId !== projectionId.trim() ||
-    projectionId.length > 256 ||
-    !epochText ||
-    !/^[1-9]\d*$/.test(epochText) ||
-    !Number.isSafeInteger(Number(epochText)) ||
-    Number(epochText) > 2_147_483_647
+    )
   )
     throw new Error('Invalid current-store web auth configuration');
   return {
     mode,
     rpcSecret,
-    authority: {
-      expectedProjectionId: projectionId,
-      expectedNormalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
-      expectedWriterEpoch: Number(epochText),
-      emailVerificationEnabled: environment.EMAIL_VERIFICATION_ENABLED === 'true',
-    },
+    authority,
   };
 }
 
