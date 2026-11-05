@@ -18,12 +18,19 @@ This is the review entry point for [epic #6975](https://github.com/boardsesh/boa
 | [#7290](https://github.com/boardsesh/boardsesh/pull/7290) | Actual App Router/configured-provider callbacks and browser actor-cookie proof | Stacked on #7289; test fixtures only |
 | [#7299](https://github.com/boardsesh/boardsesh/pull/7299) | Server encoding versus cookie publication, rolling renewal and delayed-response browser races | Stacked on #7290; test fixtures only |
 | [#7300](https://github.com/boardsesh/boardsesh/pull/7300) | Default-off backend web OAuth identity writes, durable flow binding and stateless Apple continuation | Stacked on #7299; migration 0293; no authority activation |
+| [#7301](https://github.com/boardsesh/boardsesh/pull/7301) | Independently opted-in fixed shared-board owner reservation and strict identity reuse | Stacked on #7300; no new schema or activation |
 
-The next [shared-board system owner slice](./better-auth-system-board-owner.md)
+The [shared-board system owner slice](./better-auth-system-board-owner.md)
 adopts the fixed nonhuman user creation behind its own default-off selector.
 It validates the complete reservation/identity pair and rejects historical or
 authentication evidence without repair. Its scope excludes the separately
-attempt-fenced job writers and does not prove deployed writer fencing.
+attempt-fenced job writers and does not prove deployed writer fencing. Its 51
+new cases pass on PostgreSQL 18 and independently on PostgreSQL 15, along with 606 auth and
+187 board regression cases in separate overlapping selections. All 59 canonical
+typecheck tasks pass on the clean stacked head. A fresh owned default-legacy
+full-Next preview passed five baseline authentication flows in one Chromium run;
+that baseline is not staged fixed-owner browser or production authority proof.
+Draft #7301 is published and current-head CI/review feedback is monitored.
 
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 
