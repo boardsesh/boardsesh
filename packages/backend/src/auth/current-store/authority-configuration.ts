@@ -1,4 +1,4 @@
-import { CURRENT_EMAIL_NORMALIZER_VERSION } from './foundation-context';
+import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } from './foundation-context';
 import type { WebPasswordAuthority } from './command-context';
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -55,5 +55,16 @@ export function currentStoreNativeOAuthConfiguration(
   const mode = environment.CURRENT_STORE_NATIVE_OAUTH_MODE;
   if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
   if (mode !== 'reserved-staging') throw new Error('Invalid native OAuth mode');
+  return { mode, authority: currentStoreAuthorityConfiguration(environment) };
+}
+
+export function currentStoreSystemBoardOwnerConfiguration(
+  environment: Environment = process.env,
+):
+  | { readonly mode: 'legacy' }
+  | { readonly mode: 'reserved-staging'; readonly authority: ExpectedCurrentStoreAuthority } {
+  const mode = environment.CURRENT_STORE_SYSTEM_BOARD_OWNER_MODE;
+  if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
+  if (mode !== 'reserved-staging') throw new Error('Invalid system board owner mode');
   return { mode, authority: currentStoreAuthorityConfiguration(environment) };
 }

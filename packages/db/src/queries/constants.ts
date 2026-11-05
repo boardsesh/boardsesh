@@ -4,3 +4,4 @@
 // that validates a request.
 export { CONFIDENCE } from './grade-model/constants';
 export { MAX_SEARCH_PAGE } from './climbs/search-limits';
+export { SYSTEM_BOARD_OWNER_ID, SYSTEM_BOARD_OWNER_EMAIL, SYSTEM_BOARD_OWNER_NAME } from './system-account-constants';
