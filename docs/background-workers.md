@@ -111,6 +111,15 @@ Their legacy mode remains unchanged. Location-sync ownership, seed/operator
 writers, deployed grants and trustworthy queue provenance are separate gates.
 The existing worker user-INSERT grants are deliberately not removed in this
 compatibility slice: an enforced software manifest is not an old-writer fence.
+
+Location sync still uses its existing fixed-owner writer. The
+[shared transaction preparation](./better-auth-location-batch-preparation.md)
+retains each whole-gym batch and direct caller's existing commit behavior.
+Optional SQL checkpoints are cooperative checks, not running-query cancellation
+or a new transaction guarantee. Compound backend adoption remains separate
+because fixed-owner user locks must be ordered with every content-transfer and
+legacy location writer.
+
 See [the identity contract and qualification](./better-auth-batch-system-users.md)
 before any rollout. No production mode/grant change is authorized by this note.
 
