@@ -16,18 +16,12 @@ export function ownedAppRouterAdminDatabase(input: string | undefined): string {
   return database.href;
 }
 
-export function ownedAppRouterDatabase(
-  input: string,
-  environment: Partial<Pick<NodeJS.ProcessEnv, 'CI' | 'GITHUB_ACTIONS'>>,
-): URL {
+export function ownedAppRouterDatabase(input: string): URL {
   const database = new URL(input);
-  const ownedPort = ['15475', '15478'].includes(database.port);
-  const dedicatedGitHubService =
-    environment.CI === 'true' && environment.GITHUB_ACTIONS === 'true' && database.port === '5433';
   if (
     !['postgres:', 'postgresql:'].includes(database.protocol) ||
     !['127.0.0.1', 'localhost'].includes(database.hostname) ||
-    !(ownedPort || dedicatedGitHubService) ||
+    !['5433', '15475', '15478'].includes(database.port) ||
     !/^\/boardsesh_backend_test_w(?:0|[1-9]\d{0,15})(?:_[a-f0-9]{12})?$/.test(database.pathname) ||
     !/^ba03_router_(?:stock|browser|readonly)_[a-f0-9]{32}$/.test(database.username) ||
     !/^[a-f0-9]{64}$/.test(database.password) ||

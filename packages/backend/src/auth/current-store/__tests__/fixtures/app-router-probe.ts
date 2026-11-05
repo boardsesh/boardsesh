@@ -151,10 +151,7 @@ async function start(input: Record<string, unknown>) {
   if (!address || typeof address === 'string') throw new Error('Owned app bind failed');
   origin = `https://localhost:${address.port}`;
   providers.registerRedirect(origin);
-  const database = ownedAppRouterDatabase(String(input.databaseUrl), {
-    CI: process.env.CI,
-    GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
-  });
+  const database = ownedAppRouterDatabase(String(input.databaseUrl));
   Object.assign(process.env, {
     NODE_ENV: 'test',
     NEXTAUTH_URL: origin,
