@@ -9,6 +9,17 @@ import { createElement } from 'react';
 import type { Climb } from '@boardsesh/queue';
 import type { AppMenuProps } from '../../AppMenu.types';
 import type { MiniPlayerButtonId } from '../../../lib/mini-player-buttons';
+import type { MiniPlayerMenuAnchorProps } from '../MiniPlayerMenuAnchor.types';
+
+// Exercise the real wrapper fallback while marking this integration boundary:
+// restoring a direct AppMenu call must fail even when isolated anchor tests pass.
+vi.mock('../MiniPlayerMenuAnchor', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../MiniPlayerMenuAnchor')>();
+  return {
+    MiniPlayerMenuAnchor: (props: MiniPlayerMenuAnchorProps) =>
+      createElement('section', { 'data-root-menu-anchor': true }, createElement(original.MiniPlayerMenuAnchor, props)),
+  };
+});
 
 const menu = vi.hoisted(() => ({ props: null as AppMenuProps | null }));
 const rootOpeners = vi.hoisted(() => ({
@@ -215,6 +226,10 @@ describe('withPaletteRows', () => {
 });
 
 describe('MiniPlayerActionsMenu', () => {
+  it('uses the root-capable accessory anchor instead of mounting AppMenu in the platter', () => {
+    const { container } = renderMenu();
+    expect(container.querySelector('[data-root-menu-anchor] [data-icon="more"]')).not.toBeNull();
+  });
   it("offers Music's order, with a row for each bar button the bar is not showing", () => {
     const { container } = renderMenu();
     expect(labels(container)).toEqual([

@@ -60,3 +60,17 @@ index 8fc3ed6..39d3448 100644
    }
  
    @objc
+diff --git a/ios/Core/Functions/AsyncFunctionDefinition.swift b/ios/Core/Functions/AsyncFunctionDefinition.swift
+--- a/ios/Core/Functions/AsyncFunctionDefinition.swift
++++ b/ios/Core/Functions/AsyncFunctionDefinition.swift
+@@ -197,8 +197,8 @@
+         switch consume result {
+         case .success(let value):
+           promise.resolve(value)
+-        case .failure(let error as any Error):
+-          promise.reject(error)
++        case .failure(let error):
++          promise.reject(error as any Error)
+         }
+       }
+       return promiseValue
