@@ -1,5 +1,16 @@
 # Help page screenshots
 
+## Drive-state stills: 3 November 2026
+
+`drive-timed.webp` and `drive-open.webp` (the "Driving the wall" section of
+/help/board-and-bluetooth) are converted from the 2 November captures in
+`docs/images/7113/swipe-to-drive-timed-dark.png` and
+`swipe-to-drive-driving-dark.png`, with the same Sharp settings as
+`help:convert-shots` (1600 px tall, WebP quality 87). They sit outside the
+Maestro `HELP_SHOTS` table, like the spray-editor stills, so a full
+`help:publish-shots` run does not expect them. Re-cut them from fresh captures
+when the wall button changes.
+
 ## Help refresh: 2 November 2026 (#7208)
 
 The refreshed media uses application source `3b1d9be90cf99517947b5622618df7533864708c`

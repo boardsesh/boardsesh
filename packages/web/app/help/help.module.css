@@ -179,21 +179,12 @@
 }
 
 /* Prose keeps its reading measure; the card grid above does not. */
-.using,
 .content > section {
   max-width: 68ch;
 }
 
 .content > section:first-of-type {
   max-width: none;
-}
-
-.using {
-  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
-  margin-top: var(--spacing-12);
-  padding-bottom: var(--spacing-10);
-  margin-bottom: var(--spacing-10);
-  border-bottom: 1px solid var(--separator);
 }
 
 .content a {
@@ -236,9 +227,5 @@
   .topics .topicLink[aria-current] {
     color: var(--neutral-600);
     font-weight: 400;
-  }
-
-  .using {
-    margin-top: var(--spacing-10);
   }
 }

@@ -79,10 +79,10 @@ export function resolveExpoWebDevOrigin(rawOrigin) {
  *
  * `redirects()` runs before `middleware.ts`, and its sources are matched
  * literally: `/logbook` never matches `/es/logbook`. Every rule therefore ships
- * with its three locale twins (standing rule 4 of the web reposition), built by
+ * with its locale twins (standing rule 4 of the web reposition), built by
  * `expandLocaleRedirects` below so a hand-written rule can't forget them.
  */
-const PATH_LOCALE_PREFIXES = ['/es', '/fr', '/de'];
+const PATH_LOCALE_PREFIXES = ['/es', '/fr', '/de', '/it'];
 
 /**
  * Origin of the Expo-web app. Mirrors `DEFAULT_APP_ORIGIN` in
@@ -113,6 +113,23 @@ export const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_CONFIG_APP_
  * has to come before the `/:board/…` catch-all that would otherwise swallow it.
  */
 const BASE_REDIRECTS = [
+  // Help pages folded into their parent guides. The destination's own `#`
+  // survives the redirect; the old pages had no ids to carry over.
+  {
+    source: '/help/climb-actions',
+    destination: '/help/finding-climbs#climb-menu',
+    permanent: true,
+  },
+  {
+    source: '/help/playlists',
+    destination: '/help/finding-climbs#playlists',
+    permanent: true,
+  },
+  {
+    source: '/help/beta-videos',
+    destination: '/help/logbook#beta-videos',
+    permanent: true,
+  },
   // Legacy library / profile paths.
   {
     source: '/my-library',

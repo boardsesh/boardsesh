@@ -17,6 +17,8 @@ export type HelpShot =
   | 'climb-actions'
   | 'preview'
   | 'board-lighting'
+  | 'drive-timed'
+  | 'drive-open'
   | 'spray-editor-select'
   | 'spray-editor-draw'
   | 'spray-editor-corners';

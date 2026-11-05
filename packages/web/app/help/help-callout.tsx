@@ -20,7 +20,7 @@ export type HelpCalloutProps = {
  * icon is decorative. Server-safe: no hooks, strings arrive resolved.
  *
  * @example
- * <HelpCallout>{t('help.bluetooth.connect.p2')}</HelpCallout>
+ * <HelpCallout>{t('help.board.connect.otherBoard')}</HelpCallout>
  */
 export default function HelpCallout({ title, children }: HelpCalloutProps) {
   return (
