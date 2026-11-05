@@ -1,10 +1,8 @@
-import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
   AUTH_COMMAND_ENV,
   AUTH_COMMAND_PATHS,
-  AUTH_COMMAND_REQUEST_BYTES,
   AUTH_PROTOCOL_VERSION,
   authCommandReplySchema,
   authCommandReplyStatus,
@@ -18,7 +16,10 @@ import {
   type AuthCommand,
 } from '@boardsesh/auth-protocol';
 import { db } from '../db/client';
-import { currentStoreAuthorityConfiguration } from '../auth/current-store/authority-configuration';
+import {
+  currentStoreAuthorityConfiguration,
+  currentStoreRpcSecret,
+} from '../auth/current-store/authority-configuration';
 import {
   authenticateWebPassword,
   isWebPasswordCommandFresh,
@@ -30,7 +31,8 @@ import { consumeEmailVerification, resendEmailVerification } from '../auth/curre
 import { consumePasswordRecovery, requestPasswordRecovery } from '../auth/current-store/password-recovery';
 import { checkRateLimit, RateLimitError } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
-import { readJsonBody, sendJson } from './http-utils';
+import { sendJson } from './http-utils';
+import { authenticatesPrivateAuth, readPrivateAuthCommand } from './current-store-private-transport';
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -42,45 +44,12 @@ export function currentStoreWebAuthConfiguration(
   const mode = parseWebAuthMode(environment[AUTH_COMMAND_ENV.mode]);
   if (mode === 'legacy') return { mode };
   const authority = currentStoreAuthorityConfiguration(environment);
-  const rpcSecret = environment[AUTH_COMMAND_ENV.secret];
-  if (
-    !rpcSecret ||
-    rpcSecret !== rpcSecret.trim() ||
-    Buffer.byteLength(rpcSecret, 'utf8') < 32 ||
-    [environment.NEXTAUTH_SECRET, environment.CRON_SECRET].some(
-      (secret) => Boolean(secret?.trim()) && secret === rpcSecret,
-    )
-  )
-    throw new Error('Invalid current-store web auth configuration');
+  const rpcSecret = currentStoreRpcSecret(environment);
   return {
     mode,
     rpcSecret,
     authority,
   };
-}
-
-function authenticates(presented: string | undefined, secret: string) {
-  const actual = Buffer.from(presented ?? '');
-  const expected = Buffer.from(`Bearer ${secret}`);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
-async function readCommand(request: IncomingMessage): Promise<unknown> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const text = await Promise.race([
-      readJsonBody(request, AUTH_COMMAND_REQUEST_BYTES),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          request.destroy();
-          reject(new Error('Private auth request deadline'));
-        }, 2000);
-      }),
-    ]);
-    return JSON.parse(text);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 /** Default-off private service transport. No CORS/cookie/public-token authority. */
@@ -100,7 +69,10 @@ export async function handleCurrentStoreWebAuth(
     sendJson(response, 404, { error: 'disabled' });
     return;
   }
-  if (!authenticates(request.headers.authorization, configuration.rpcSecret) || request.headers.origin !== undefined) {
+  if (
+    !authenticatesPrivateAuth(request.headers.authorization, configuration.rpcSecret) ||
+    request.headers.origin !== undefined
+  ) {
     sendJson(response, 401, { error: 'unauthorized' });
     return;
   }
@@ -141,7 +113,7 @@ export async function handleCurrentStoreWebAuth(
               : operation === 'forgot-password'
                 ? forgotPasswordCommandSchema
                 : resetPasswordCommandSchema
-    ).safeParse(await readCommand(request));
+    ).safeParse(await readPrivateAuthCommand(request));
     if (!parsed.success) {
       sendJson(response, 400, { error: 'invalid_request' });
       return;

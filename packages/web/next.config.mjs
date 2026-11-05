@@ -484,6 +484,21 @@ const nextConfig = {
       },
       // Matching config headers can override a route handler's response. Keep
       // credential URLs after the site-wide default, including locale rewrites.
+      ...[
+        '/api/auth/signin/:path*',
+        '/api/auth/callback/:path*',
+        '/:locale/api/auth/signin/:path*',
+        '/:locale/api/auth/callback/:path*',
+      ].map((source) => ({
+        source,
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Cache-Control', value: 'private, no-store, max-age=0, must-revalidate' },
+          { key: 'CDN-Cache-Control', value: 'no-store' },
+          { key: 'Vercel-CDN-Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex, follow' },
+        ],
+      })),
       ...['/api/auth/verify-email', '/:locale/api/auth/verify-email'].map((source) => ({
         source,
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
