@@ -155,11 +155,12 @@ distinct coverage:
 | Actual migration-journal regressions | 14 passed, zero skipped; owned throwaway databases |
 | Whole repository check | Zero errors; 623 existing warnings across 9,230 files |
 
-The 59-task canonical run preceded the final assertion-only receipt helper.
+The first 59-task canonical run preceded the final assertion-only receipt helper.
 The strengthened test also passed the repository's type-aware, type-checking
-`vp check`. Clean review-stack qualification is recorded separately when complete.
+`vp check`. After clean replay, all 59 canonical tasks passed again, with four
+cache hits; that run includes the final receipt assertions.
 
-Final publication checks remain in progress. No normal test result implies a real vendor UI, Safari/iPhone,
+Preview and PR publication remain in progress. No normal test result implies a real vendor UI, Safari/iPhone,
 installed native/watch client, production provider registration or SMTP proof.
 
 The HTTP fixture initially failed before server admission because a forced-close
@@ -203,6 +204,30 @@ are asserted. Replacement actors are real public-codec fixture JWEs installed
 through browser cookie I/O, not a second completed password/UI login. The earlier
 publication investigation separately exercises that actual credentials-login
 boundary. Normal backend test discovery does not select this browser proof.
+
+## Clean review branch and reproduction
+
+Implementation began on fresh main `eceaa2d61e` with published prerequisite
+`3ffa23818f` merged in commit `7b33f34079`. The complete qualified source commit
+`b11406a589c23fb2ec853dc056fb6dc032247bf7` is preserved locally as
+`backup/6977-web-oauth-main-qualified-20261105`. Its tree is
+`e8f831a7b25b2ca460030f9012060ef10af91a06`. Actual pre-commit and commit-message
+hooks passed for all 45 staged files, including 40 TypeScript/JavaScript files.
+
+Only that implementation patch was replayed onto the published prerequisite,
+producing `b6746838ceed9264ec87d4280b321d64b972847e`. Both own patches contain
+the same 45 paths, and every file blob is identical. An independent reviewer
+confirmed the equality and reran `git merge-tree` with pinned main: the result
+is exactly the qualified tree above, without conflict resolution. The 27 excluded
+differences are incoming main mobile, OTA, workflow and changelog files. No auth
+source, dependency, lockfile or BLE change was discarded or introduced by replay.
+The changelog guard remains unchanged.
+
+The clean branch then passed all 59 canonical typecheck tasks, including the
+final receipt assertions, with four cache hits. This final documentation update
+records that result; it changes no executable code. Main integration equality,
+runtime cases and clean-branch compilation are separate evidence, rather than
+an assumption that changing parents preserves qualification.
 
 ## Gates that remain open
 
