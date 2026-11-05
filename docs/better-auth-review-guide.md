@@ -23,6 +23,8 @@ The [password recovery follow-up](./better-auth-password-recovery.md) records th
 
 The [actual App Router follow-up](./better-auth-app-router-oauth.md) adds a test-only proof of configured Google, Apple and Facebook callbacks, exact attempt/actor ownership and real browser cookie transport. Its 90 normal cases are included in a 474-case regression selection; four browser cases run separately. The compound adapter and same-origin continuation are explicitly synthetic fixtures, not mounted production behavior. Stock email linking, verification mutation and Apple actor-cookie loss remain documented migration requirements.
 
+The [session-publication follow-up](./better-auth-session-publication.md) separates actual server-side token encoding from browser cookie publication before adding authoritative source records. It characterizes the shipping one-argument server reader, actual GET/POST rolling renewal and delayed browser response ordering. It changes tests and documentation only; no new source schema or production adoption is implied.
+
 ## Decisions to review
 
 **User decision:** an authenticated password set/change keeps the requesting device signed in and revokes other credentials. Forgotten-password reset revokes every session. The isolated prototype proves atomic replacement while retaining original authentication age and expiry. Current production password routes have not adopted this policy yet.
@@ -58,6 +60,10 @@ The old heads remain backed up. The native extraction, public callback proof, na
 During repair, concurrent verification selections each passed 62/63 cases; the actual public verification did not redeem its link. The unchanged isolated case and full 31-case file passed, followed by serial **63/63** runs on PostgreSQL 18 (23.09 seconds) and 15 (23.10 seconds). The cause is unproved; a transport-timeout explanation remains a hypothesis. Assertions and deadlines are unchanged. Safe failure-only diagnostics were added, and heavy type graphs run one at a time to limit host contention.
 
 The shared local development database had already applied the original auth migrations. Its timestamp-based dev applier is not a hash-aware renumber reconciliation, so the repair leaves that database and its ledger untouched. Preview restart requires an isolated owned database with the repaired schema. Owned test-schema execution does not establish deployment or restored-database rollback safety.
+
+The repaired ten-candidate tree subsequently qualified on refreshed main `5237a01847` in unpublished automatic merge `aafca528`: **474 normal cases across 21 files (277.97 seconds), all 702 isolated proofs (66.02 seconds), 39 header cases (3.21 seconds), four separate real-browser cases (19.44 seconds), and all 60 canonical typecheck tasks with no cache hits**. Source and lock hashes stayed unchanged, with no manual merge resolution or lock regeneration. Both owned clusters began and ended with zero prototype databases and fixture roles; ordinary salted worker databases remained. Offline compiler placeholders do not establish a live-backend or device proof.
+
+A fresh isolated repaired-head full-Next preview qualified five bounded legacy-auth UI flows across two retained browser runs: login, actual guarded sign-out, wrong-password rejection, invalid-email recovery and invalid-reset rejection. The first run stopped after three qualified flows at a cold-form timeout; the later run separately observed React handler readiness before qualifying recovery errors. A separate negative-only replay classified the expected 401/400 console messages, with no unexpected console/page errors. Independent review approved the evidence. Browser contexts closed and the preview remained running; no valid reset, SMTP, provider/device or all-session revocation was tested.
 
 ## Remaining activation gates
 
