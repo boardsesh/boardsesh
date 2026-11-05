@@ -658,7 +658,9 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         pathname === '/api/internal/auth/current-store/register' ||
         pathname === '/api/internal/auth/current-store/password' ||
         pathname === '/api/internal/auth/current-store/verify-email' ||
-        pathname === '/api/internal/auth/current-store/resend-verification'
+        pathname === '/api/internal/auth/current-store/resend-verification' ||
+        pathname === '/api/internal/auth/current-store/forgot-password' ||
+        pathname === '/api/internal/auth/current-store/reset-password'
       ) {
         await handleCurrentStoreWebAuth(req, res);
         return;

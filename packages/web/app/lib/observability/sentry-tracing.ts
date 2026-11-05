@@ -9,6 +9,7 @@
 
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@boardsesh/i18n';
 import { carriesShareCapability } from '../share-capability';
+import { redactPasswordRecoveryUrls, scrubPasswordRecoveryEvent } from '@boardsesh/text-redaction';
 
 /**
  * Sample rate for a server transaction that isn't explicitly zeroed or
@@ -260,43 +261,49 @@ export type RedactableSpan = {
  *                   when they ride inside a sign-in page's encoded `callbackUrl`.
  */
 export function stripSensitiveQueryString(rawUrl: string): string {
-  const queryStart = rawUrl.indexOf('?');
-  if (queryStart === -1) return rawUrl;
+  const recoverySafe = redactPasswordRecoveryUrls(rawUrl);
+  const queryStart = recoverySafe.indexOf('?');
+  if (queryStart === -1) return recoverySafe;
 
   let parsedUrl: URL;
   try {
-    parsedUrl = new URL(rawUrl, 'http://sampler.invalid');
+    parsedUrl = new URL(recoverySafe, 'http://sampler.invalid');
   } catch {
-    return rawUrl;
+    return recoverySafe;
   }
 
   const isAuthCallback = parsedUrl.pathname === '/api/auth' || parsedUrl.pathname.startsWith('/api/auth/');
-  if (isAuthCallback || parsedUrl.searchParams.has('session') || carriesShareCapability(rawUrl.slice(queryStart))) {
-    return rawUrl.slice(0, queryStart);
+  if (
+    isAuthCallback ||
+    parsedUrl.searchParams.has('session') ||
+    carriesShareCapability(recoverySafe.slice(queryStart))
+  ) {
+    return recoverySafe.slice(0, queryStart);
   }
 
-  return rawUrl;
+  return recoverySafe;
 }
 
 /**
  * `beforeSendSpan` body: rewrite URL attributes in place and hand the span back.
  *
- * Mutates rather than clones because Sentry passes ownership of the span
- * payload to this callback, and cloning a `SpanJSON` would lose nothing but
- * cost an allocation on every span of every sampled request.
+ * Recovery scrubbing clones only changed payloads. Other spans retain their
+ * reference, and existing callback/session/share URL stripping edits that
+ * SDK-owned result in place.
  */
 export function redactSensitiveSpanUrls<TSpan extends RedactableSpan>(span: TSpan): TSpan {
+  const recoverySafe = scrubPasswordRecoveryEvent(span);
   for (const attributeKey of SENSITIVE_URL_SPAN_ATTRIBUTE_KEYS) {
-    const rawUrl = span.data[attributeKey];
+    const rawUrl = recoverySafe.data[attributeKey];
     if (typeof rawUrl !== 'string') continue;
 
     const strippedUrl = stripSensitiveQueryString(rawUrl);
     if (strippedUrl !== rawUrl) {
-      span.data[attributeKey] = strippedUrl;
+      recoverySafe.data[attributeKey] = strippedUrl;
     }
   }
 
-  return span;
+  return recoverySafe;
 }
 
 /** Header Railway's edge stamps on every request it forwards into the container. */

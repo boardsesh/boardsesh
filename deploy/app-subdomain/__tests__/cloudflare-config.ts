@@ -92,12 +92,12 @@ export function parseRedirectsFile(source: string): RedirectRule[] {
  * Does a Cloudflare path pattern match a concrete request path? `*` is a
  * wildcard that spans `/` (so `/*` really does cover `/index.html` and
  * `/wasm/renderer.wasm`) — which is exactly the case a pattern-name string
- * comparison would miss. `:placeholder` segments aren't used by either file
- * here, so they aren't handled.
+ * comparison would miss. Named placeholders match one nonempty path segment.
  */
 export function pathMatchesPattern(pattern: string, requestPath: string): boolean {
   const escaped = pattern.replaceAll(/[.+?^${}()|[\]\\]/g, String.raw`\$&`);
-  return new RegExp(`^${escaped.replaceAll('*', '.*')}$`).test(requestPath);
+  const placeholders = escaped.replaceAll(/:[A-Za-z]\w*/g, '[^/]+');
+  return new RegExp(`^${placeholders.replaceAll('*', '.*')}$`).test(requestPath);
 }
 
 export const headerBlocks = parseHeadersFile(readConfigFile('_headers'));

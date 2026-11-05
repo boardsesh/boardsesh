@@ -33,6 +33,13 @@ else falls through to the shell.
   static path" in `docs/expo-web-deployment.md`).
 - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`
   — standard hardening.
+- Reset-password documents override the referrer policy with `no-referrer` and
+  use private/no-store caching, including locale and legacy `/app` prefixes.
+  [Pages documents source-path header matching alongside 200 rewrites](https://developers.cloudflare.com/pages/configuration/redirects/#redirects-and-header-matching).
+  Matching values are [combined in file order](https://developers.cloudflare.com/pages/configuration/headers/),
+  so the stricter referrer policy follows the global rule. Configuration tests
+  cover this ordering; effective deployed Pages/ingress headers remain a rollout
+  probe, separate from those local tests.
 - `/_expo/*` and `/assets/*` → `Cache-Control: public, max-age=31536000, immutable`.
   These paths are **content-hashed** (the filename changes whenever the content
   does), so they're safe to cache forever.

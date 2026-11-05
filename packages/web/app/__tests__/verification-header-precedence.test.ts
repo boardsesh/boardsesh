@@ -1,6 +1,10 @@
 // @vitest-environment node
 import type { NextConfig } from 'next';
+import { IncomingMessage, ServerResponse } from 'node:http';
+import { Socket } from 'node:net';
 import { unstable_getResponseFromNextConfig } from 'next/experimental/testing/server';
+import RenderResult from 'next/dist/server/render-result';
+import { sendRenderResult } from 'next/dist/server/send-payload';
 import { afterAll, describe, expect, it, vi } from 'vite-plus/test';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@boardsesh/i18n';
 
@@ -18,6 +22,8 @@ const localePrefixes = SUPPORTED_LOCALES.map((locale) => (locale === DEFAULT_LOC
 async function configuredHeaders(pathname: string) {
   // Use Next's public route matcher and header precedence, rather than a
   // hand-written matcher or merely asserting that a rule exists in the array.
+  // This does not render an App Router page: Next's dev renderer can replace
+  // Cache-Control afterward. Its production sender is exercised below.
   return unstable_getResponseFromNextConfig({
     url: `https://www.boardsesh.com${pathname}`,
     nextConfig: { headers: nextConfig.headers },
@@ -32,7 +38,7 @@ describe('verification credential URL header precedence', () => {
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
-  it('protects the trailing-slash canonicalization response', async () => {
+  it('evaluates the configured rule for a trailing-slash path', async () => {
     expect((await configuredHeaders('/fr/api/auth/verify-email/')).headers.get('Referrer-Policy')).toBe('no-referrer');
   });
 
@@ -46,6 +52,89 @@ describe('verification credential URL header precedence', () => {
       expect((await configuredHeaders(pathname)).headers.get('Referrer-Policy')).toBe(
         'strict-origin-when-cross-origin',
       );
+    },
+  );
+});
+
+describe('pinned Next production render response cache policy', () => {
+  async function renderResponse(configured?: Headers) {
+    const socket = new Socket();
+    const request = new IncomingMessage(socket);
+    request.method = 'GET';
+    const response = new ServerResponse(request);
+    for (const [name, content] of configured ?? []) response.setHeader(name, content);
+    try {
+      // Exercise the installed response sender used by production rendering,
+      // without a build or a second application server. This is not full SSR.
+      await sendRenderResult({
+        req: request,
+        res: response,
+        result: RenderResult.fromStatic('<p>Owned cache fixture</p>', 'text/html; charset=utf-8'),
+        cacheControl: { revalidate: 0, expire: undefined },
+        generateEtags: false,
+        poweredByHeader: false,
+      });
+      return response.getHeaders();
+    } finally {
+      response.destroy();
+      request.destroy();
+      socket.destroy();
+    }
+  }
+
+  it('prevents storage with production dynamic cache settings and no configured header', async () => {
+    const headers = await renderResponse();
+    const directives = String(headers['cache-control'])
+      .split(',')
+      .map((directive) => directive.trim());
+    expect(directives).toContain('private');
+    expect(directives).toContain('no-store');
+  });
+
+  it('preserves configured recovery privacy headers through production response sending', async () => {
+    const configured = await configuredHeaders('/fr/auth/reset-password');
+    const headers = await renderResponse(configured.headers);
+    expect(headers['cache-control']).toBe(configured.headers.get('Cache-Control'));
+    expect(headers['cdn-cache-control']).toBe('no-store');
+    expect(headers['vercel-cdn-cache-control']).toBe('no-store');
+    expect(headers['referrer-policy']).toBe('no-referrer');
+  });
+});
+
+describe('password recovery configuration header precedence', () => {
+  const paths = localePrefixes.flatMap((prefix) =>
+    ['/auth/reset-password', '/api/auth/forgot-password', '/api/auth/reset-password'].map(
+      (pathname) => `${prefix}${pathname}`,
+    ),
+  );
+
+  it.each(paths)('protects %s after the global header rule', async (pathname) => {
+    const response = await configuredHeaders(`${pathname}?token=synthetic-capability&email=owner%40example.test`);
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store, max-age=0, must-revalidate');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, follow');
+    expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+
+  it.each(['/auth/reset-password/', '/fr/auth/reset-password/', '/es/api/auth/reset-password/'])(
+    'evaluates the configured trailing-slash rule at %s',
+    async (pathname) => {
+      // This public tester evaluates configuration, not the server's earlier
+      // automatic 308. Live first-hop redirect privacy remains an ingress gate.
+      const response = await configuredHeaders(pathname);
+      expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(response.headers.get('Cache-Control')).toContain('no-store');
+    },
+  );
+
+  it.each(['/auth/login', '/es/auth/login', '/auth/reset-password-help', '/api/auth/reset-password-extra'])(
+    'retains the unrelated site policy at %s',
+    async (pathname) => {
+      const response = await configuredHeaders(pathname);
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
     },
   );
 });

@@ -53,6 +53,29 @@ describe('sendPasswordResetEmail', () => {
     await expect(sendPasswordResetEmail('not-an-email', 'tok', 'https://boardsesh.com')).rejects.toThrow();
     expect(sendMail).not.toHaveBeenCalled();
   });
+  it.each([`pr1_${'A'.repeat(43)}`, 'a363934b-b7ba-41ba-a279-52185daa100e'])(
+    'round-trips %s and the committed email hint through real plain and HTML templates',
+    async (token) => {
+      const email = 'MixedCase+tag@example.test';
+      await sendPasswordResetEmail(email, token, 'https://www.boardsesh.test');
+      const mail = lastMail();
+      const text = mail.text.match(/https:\/\/www\.boardsesh\.test\/auth\/reset-password\?\S+/);
+      const html = mail.html.match(/href="([^"]+)"/);
+      expect(text).not.toBeNull();
+      expect(html).not.toBeNull();
+      for (const encoded of [text![0], html![1].replaceAll('&amp;', '&').replaceAll('&#39;', "'")]) {
+        const url = new URL(encoded);
+        expect(url.origin + url.pathname).toBe('https://www.boardsesh.test/auth/reset-password');
+        expect([...url.searchParams.keys()]).toEqual(['token', 'email']);
+        expect(url.searchParams.get('token')).toBe(token);
+        expect(url.searchParams.get('email')).toBe(email);
+        expect(url.hash).toBe('');
+      }
+      expect(mail.to).toBe(email);
+      expect(mail.text).toContain('expires in 1 hour');
+      expect(mail.html).toContain('expires in 1 hour');
+    },
+  );
 });
 
 describe('sendVerificationEmail token round trips', () => {
