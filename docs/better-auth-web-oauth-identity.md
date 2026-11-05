@@ -275,6 +275,23 @@ Its separately qualified pure guard cases passed 32/32 with no network attempts.
 The final fresh-context run then independently observed zero unexpected events.
 These helper corrections changed no product code, deadline or flow assertion.
 
+## Existing public-route unit fixture correction
+
+Initial published-head CI failed 21 existing public-route unit cases because
+their mocked `authOptions` object omitted the required `providers` array. The
+new OAuth wrapper reads configured providers before dispatch. The mock now
+supplies an empty provider list and explicitly pins both password and OAuth
+selectors to legacy for these wrapper-isolation cases. All original assertions
+remain unchanged; no production guard or fallback was relaxed.
+
+The original 347-case local auth-library selection did not include this separate
+API-route partition. Independent supplemental qualification now passes all 131
+auth API cases across ten files in 15.01 seconds, including all 21 previously
+failing cases. These cases cover existing sign-out, cookie clearing, Expo return,
+password delegation and recovery boundaries. This post-publication change adds
+one existing test fixture to the review diff; executable product source is
+unchanged. Current-head CI remains the readiness record.
+
 ## Gates that remain open
 
 Before activation, adopt and fence every identity and credential writer, resolve
