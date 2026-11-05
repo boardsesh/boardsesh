@@ -154,6 +154,8 @@ export function menuBarItem({
  * Apple: an item with a title and no icon never goes on the vertical rail. An
  * icon would replace the number in the horizontal bar, so this trade keeps the
  * glanceable angle on every iPhone and gives up its rail slot on iPhone Duo.
+ * UIKit can draw a title item in glass of its own; `sharesBackground` keeps it
+ * in the same glass as the symbol items beside it (#7281).
  */
 export function titleBarItem({
   label,
@@ -171,6 +173,7 @@ export function titleBarItem({
     label,
     labelStyle: { fontWeight: '700' },
     variant: 'plain',
+    sharesBackground: true,
     onPress,
     identifier,
     accessibilityLabel,

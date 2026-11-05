@@ -676,7 +676,8 @@ collided with; the leading and trailing groups stay separate, as on the rail.
 - + (create) and the notifications bell keep `visibilityPriority: 'high'`, so they stay on screen
   longest. Board history is `'standard'`; the rest take the default.
 - The angle ("40°") stays a title-only item. An icon would hide the number on every iPhone, so it
-  gives up its place on the Duo rail. On a regular-width iPad it stays the glass "40°" as a custom
+  gives up its place on the Duo rail. It sets `sharesBackground`, so it sits in the trailing group's
+  glass with history and ⋯ instead of a capsule of its own. On a regular-width iPad it stays the glass "40°" as a custom
   view, still first in the trailing group: its picker is a popover there (`useAnglePickerPopover`),
   and a popover needs a React view to point at, which a UIKit bar item is not. A compact-width iPad
   (Split View under 700pt) behaves like an iPhone: the native title item opens the sheet. A width
