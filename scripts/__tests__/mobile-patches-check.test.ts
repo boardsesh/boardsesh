@@ -633,6 +633,54 @@ describe('the shipped @expo/ui shared native touch-handler leases', () => {
   });
 });
 
+describe('the shipped @expo/ui Android lazy-list bridge', () => {
+  const nativeFiles = new Set([
+    'LazyListScrollController.kt',
+    'LazyColumnView.kt',
+    'LazyRowView.kt',
+    'ExpoUIModule.kt',
+    'ModifierRegistry.kt',
+    'SemanticsModifier.kt',
+  ]);
+  const bridgeRules = REAL_RULES.filter(
+    (rule) => rule.package === SCOPED_PKG && nativeFiles.has(rule.file.split('/').at(-1) ?? ''),
+  );
+  const fixtures = bridgeRules.map((rule) => ({
+    rule,
+    source: readFileSync(
+      resolve(import.meta.dirname, '../../packages/mobile/node_modules/@expo/ui', rule.file),
+      'utf8',
+    ),
+  }));
+
+  function checkBridgeSource(rule: PatchRule, source: string) {
+    return checkPatchesApplied(
+      [rule],
+      makeEnv({
+        patchedDependencies: { [rule.patchedKey]: SCOPED_PATCH_PATH },
+        versions: { [rule.package]: versionFromKey(rule.patchedKey) },
+        files: { [`${rule.package}::${rule.file}`]: source },
+      }),
+    );
+  }
+
+  it('guards all six installed native bridge files', () => {
+    expect(fixtures).toHaveLength(6);
+    for (const { rule, source } of fixtures) {
+      expect(checkBridgeSource(rule, source).errors, rule.file).toEqual([]);
+    }
+  });
+
+  it.each(fixtures.flatMap(({ rule, source }) => rule.sentinels.map((fragment) => ({ rule, source, fragment }))))(
+    'rejects losing $fragment',
+    ({ rule, source, fragment }) => {
+      const regressedSource = source.replaceAll(fragment, '__REMOVED_ANDROID_LAZY_LIST_GUARD__');
+      expect(regressedSource).not.toBe(source);
+      expect(checkBridgeSource(rule, regressedSource).errors).toContainEqual(expect.stringContaining('is missing'));
+    },
+  );
+});
+
 describe('the shipped expo-image local-asset guard', () => {
   const imageViewSource = readFileSync(
     resolve(import.meta.dirname, '../../packages/mobile/node_modules/expo-image/ios/ImageView.swift'),
