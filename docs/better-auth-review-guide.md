@@ -80,6 +80,13 @@ Draft #7307 is published and feedback is monitored; CI readiness is pending.
 It preserves wall-before-user locking and the existing client flow; no
 production account is deleted or authority activated.
 
+The [development identity seed guard](./better-auth-dev-auth-seed-guard.md)
+restricts the two development fixture entry points before target logging or
+client construction. It follows the installed driver's routing behavior while
+preserving ordinary local development image targets and the general script
+helpers. This removes an accidental remote identity-write path; deployed role
+fencing and all remaining current-store writers still require their own proof.
+
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 
 The [password recovery follow-up](./better-auth-password-recovery.md) records the paired UID-bound issuer/consumer and measured QA. Credential delegation remains default-off. Its reset-link headers, shared web/mobile Sentry redaction and fixed legacy-route diagnostics apply in every mode. Privacy coverage is partial: actual trailing-slash 308 first hops omit the configured headers, and the pinned development renderer overrides browser cache control. Production activation requires validated first-hop protection; canonical-page checks and telemetry tests do not close that gate.
