@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -10,6 +10,7 @@ import {
   type StrayBoardResult,
 } from '../graphql/resolvers/social/gym-stray-boards';
 import { resetAllRateLimits } from '../utils/rate-limiter';
+import { lockFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
 
 /**
  * Real-DB coverage for stray-board discovery + attach (the gym Boards tab's
@@ -27,6 +28,8 @@ const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
 const OWNER = 'stray-owner';
 const OTHER = 'stray-other';
 const ALL_USERS = [SYSTEM_OWNER, OWNER, OTHER];
+
+afterEach(() => vi.unstubAllEnvs());
 
 // Base point + latitude offsets (~111_320 m per degree of latitude).
 const BASE = { latitude: 47.0, longitude: 8.0 };
@@ -623,6 +626,58 @@ describe('attachBoardToGym — retiring the emptied source listing', () => {
     }
     return { listing, boards };
   };
+
+  it('keeps the committed move when captured staging retirement is busy', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+    await db.transaction(async (holder) => {
+      await lockFixedSystemOwnerTransaction(holder);
+      const attached = attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'legacy');
+      await expect(attached).resolves.toBe(true);
+    });
+    expect(await boardGymId(boards[0].uuid)).toBe(target.id);
+    expect((await gymRetireState(listing.id)).deletedAt).toBeNull();
+    expect(await mergeAuditRows(listing.id)).toEqual([]);
+  });
+
+  it('passes captured legacy mode to retirement after the board move commits', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'legacy');
+    await db.transaction(async (holder) => {
+      await lockFixedSystemOwnerTransaction(holder);
+      const attached = attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+      await expect(attached).resolves.toBe(true);
+    });
+    expect((await gymRetireState(listing.id)).mergedIntoGymId).toBe(target.id);
+  });
+
+  it('rejects an unknown selector before the first committed board move', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'unsupported');
+    await expect(
+      attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER)),
+    ).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
+    expect(await boardGymId(boards[0].uuid)).toBe(listing.id);
+    expect((await gymRetireState(listing.id)).deletedAt).toBeNull();
+  });
+
+  it('copies a historical fixed-owner follow into a fresh destination under staging', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    await db.execute(sql`INSERT INTO gym_follows (gym_id, user_id) VALUES (${listing.id}, ${SYSTEM_OWNER})`);
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+    await expect(attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER))).resolves.toBe(
+      true,
+    );
+    expect((await gymRetireState(listing.id)).mergedIntoGymId).toBe(target.id);
+    const follows = await db.execute(sql`SELECT user_id FROM gym_follows WHERE gym_id = ${target.id}`);
+    expect(Array.from(follows as Iterable<{ user_id: string }>)).toEqual([{ user_id: SYSTEM_OWNER }]);
+  });
 
   it('keeps the emptied source listing when merge consent is explicitly false', async () => {
     const target = await seedTargetGym();

@@ -1094,7 +1094,7 @@ async function ensureSystemBoardOwner(): Promise<void> {
   } catch {
     logger.warn('[board-presence] System board owner unavailable', { category: 'authority-or-database' });
     throw new GraphQLError('Shared board creation is temporarily unavailable.', {
-      extensions: { code: 'SERVICE_UNAVAILABLE' },
+      extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
     });
   }
   await db

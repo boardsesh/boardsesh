@@ -49,6 +49,10 @@ import { consumePasswordRecovery, requestPasswordRecovery } from '../password-re
 import { issueEmailVerification } from '../email-verification';
 import { AUTH_PROTOCOL_VERSION } from '@boardsesh/auth-protocol';
 import { executeFirstRow } from '@boardsesh/db/client';
+import {
+  lockFixedSystemOwnerTransaction,
+  type FixedSystemOwnerTransaction,
+} from '@boardsesh/db/fixed-system-owner-order';
 
 // Only post-commit external effects are replaced. All account/content/security
 // SQL and the mounted resolver, auth middleware, schema and retry are real.
@@ -398,6 +402,66 @@ describe('mounted account deletion and current-store authority', () => {
     if (failure === 'SQL logging') vi.stubEnv('DEBUG_SQL', 'true');
     await expectUnavailableUnchanged();
   });
+  it('rejects an invalid fixed-owner selector before entering the deletion transaction', async () => {
+    await seedPair({ system: true });
+    await seedBoard();
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'invalid-coordination-mode');
+    const before = await snapshot();
+    const enterTransaction = vi.spyOn(db, 'transaction');
+    await expect(remove()).rejects.toMatchObject({
+      extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+    });
+    expect(enterTransaction).not.toHaveBeenCalled();
+    expect(await snapshot()).toEqual(before);
+    expect(effects.publish).not.toHaveBeenCalled();
+    expect(effects.purge).not.toHaveBeenCalled();
+  });
+
+  it.each(['legacy', 'reserved-staging'])(
+    'rejects a busy fixed-owner key before the held account lock, without deletion or replay in %s',
+    async (mode) => {
+      await seedPair({ system: true });
+      await seedBoard();
+      vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', mode);
+      // Staged deletion always participates, even with conditional content off.
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', mode === 'legacy' ? 'cooperative-staging' : 'legacy');
+      const before = await snapshot();
+      const actualCode = postgresErrors.getPostgresErrorCode;
+      const observedFailureCodes: string[] = [];
+      const retryInspection = vi.spyOn(postgresErrors, 'getPostgresErrorCode').mockImplementation((error) => {
+        const code = actualCode(error);
+        if (code) observedFailureCodes.push(code);
+        return code;
+      });
+      const entered = barrier(),
+        release = barrier();
+      const held = track(
+        drizzle(blocker).transaction(async (transaction) => {
+          await lockFixedSystemOwnerTransaction(transaction as unknown as FixedSystemOwnerTransaction);
+          await lockSprayWallAccount(transaction, ownerId);
+          entered.release();
+          await release.promise;
+        }),
+      );
+      try {
+        await bounded(entered.promise);
+        await expect(bounded(remove(), 3_000)).rejects.toMatchObject({
+          extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+        });
+        expect(retryInspection).toHaveBeenCalledTimes(1);
+        // Staged core throws its domain error before the outer GraphQL catch;
+        // legacy content already passes through the GraphQL boundary adapter.
+        expect(observedFailureCodes).toEqual(mode === 'reserved-staging' ? ['busy'] : []);
+        expect(await snapshot()).toEqual(before);
+        expect(effects.publish).not.toHaveBeenCalled();
+        expect(effects.purge).not.toHaveBeenCalled();
+      } finally {
+        release.release();
+        await bounded(held);
+      }
+    },
+  );
+
   it('commits owned-key tombstone/event with the real users DELETE and refresh cascades', async () => {
     await seedPair();
     const before = await snapshot();

@@ -15,6 +15,7 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { and, eq, ne } from 'drizzle-orm';
+import { lockFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
 import { normalizeAccountEmail } from '../normalize-email';
 import { reserveEnforcedEmail } from './email-reservations';
 import {
@@ -73,6 +74,7 @@ export async function ensureReservedSystemIdentity(
   const { id: userId, email, name } = identities[kind];
   const key = normalizeAccountEmail(email);
   const manifest = await lockEnforcedProjection(transaction, authority);
+  await lockFixedSystemOwnerTransaction(transaction);
   const [cutoff] = await transaction
     .select()
     .from(authSubjectCutoffs)

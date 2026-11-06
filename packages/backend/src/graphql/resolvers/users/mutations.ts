@@ -43,6 +43,10 @@ import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/boa
 import { enqueuePosthogPersonDeletion } from '../../../services/analytics/posthog-person-deletion';
 import { currentStoreAccountDeletionConfiguration } from '../../../auth/current-store/authority-configuration';
 import {
+  captureFixedSystemOwnerOrderMode,
+  lockCooperativeFixedSystemOwnerTransaction,
+} from '../../../services/fixed-system-owner-order';
+import {
   beginReservedAccountDeletion,
   captureAccountDeletionCommand,
   recordReservedAccountDeletion,
@@ -277,6 +281,7 @@ export const userMutations = {
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
     validateInput(DeleteAccountInputSchema, input, 'input');
+    const ownerOrderMode = captureFixedSystemOwnerOrderMode();
 
     const userId = ctx.userId!;
 
@@ -288,7 +293,7 @@ export const userMutations = {
       }
     } catch {
       throw new GraphQLError('Account deletion is temporarily unavailable.', {
-        extensions: { code: 'SERVICE_UNAVAILABLE' },
+        extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
       });
     }
 
@@ -307,6 +312,7 @@ export const userMutations = {
           // migration from archiving favorites for an account being removed.
           await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
           if (deletionCommand) await beginReservedAccountDeletion(tx, deletionCommand);
+          else await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
           const sprayWalls = await deleteAccountSprayWalls(tx, userId);
           deletedWallIds = sprayWalls.wallIds;
           await withdrawDeletedAccountContent(tx, userId);
@@ -380,7 +386,7 @@ export const userMutations = {
         throw error;
       }
       throw new GraphQLError('Account deletion is temporarily unavailable.', {
-        extensions: { code: 'SERVICE_UNAVAILABLE' },
+        extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
       });
     }
 

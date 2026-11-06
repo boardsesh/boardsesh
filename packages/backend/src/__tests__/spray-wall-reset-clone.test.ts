@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import { retryFixtureReset } from './helpers/retry-fixture-reset';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { lockFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
+import { BATCH_SYSTEM_USERS, SYSTEM_BOARD_OWNER_ID } from '@boardsesh/db/queries/constants';
 
 /**
  * Archive and reset, end to end against the real database
@@ -79,6 +81,8 @@ const OWNER = 'reset-owner';
 const STRANGER = 'reset-stranger';
 const GYM_ADMIN = 'reset-gym-admin';
 const ALL_USERS = [OWNER, STRANGER, GYM_ADMIN];
+
+afterEach(() => vi.unstubAllEnvs());
 
 const ANCHORS: [number, number][] = [
   [100, 80],
@@ -680,6 +684,128 @@ describe('the clone’s audience at first publish', () => {
     expect(deleted.deleted_at).not.toBeNull();
     expect(deleted.archived_at).toBeNull();
   });
+});
+
+describe('cooperative fixed-owner publication', () => {
+  for (const operation of ['commit', 'publish'] as const) {
+    it(`captures staging for ${operation}, fails busy, then copies fresh fixed-identity rows on retry`, async () => {
+      const { wall: source } = await createPublishedWall(OWNER, { isPublic: true });
+      const clone = await resetWall(source.uuid, OWNER);
+      const draft = (await sprayWallMutations.createSprayWallVersion(
+        {},
+        { input: { wallUuid: clone.uuid, photoId: registerUploadedPhoto(clone.uuid), anchors: ANCHORS } },
+        ctxFor(OWNER),
+      )) as { id: string };
+      const fixedIds: string[] = [
+        SYSTEM_BOARD_OWNER_ID,
+        ...Object.values(BATCH_SYSTEM_USERS).map((identity) => identity.id),
+      ].sort();
+      for (const userId of fixedIds) {
+        await db.execute(sql`
+          INSERT INTO users (id, email, name) VALUES (${userId}, ${`${userId}@order-fixture.invalid`}, 'Fixed fixture')
+          ON CONFLICT (id) DO NOTHING
+        `);
+        await db.execute(sql`INSERT INTO board_follows (board_uuid, user_id) VALUES (${source.uuid}, ${userId})`);
+        await db.execute(sql`
+          INSERT INTO new_climb_subscriptions (board_type, layout_id, user_id)
+          VALUES ('spray', ${source.layoutId}, ${userId})
+        `);
+        await db.execute(sql`
+          INSERT INTO user_board_activity (board_uuid, user_id, pinned_at) VALUES (${source.uuid}, ${userId}, now())
+        `);
+      }
+      const destinationBefore = await db.execute(sql`
+        SELECT user_id FROM board_follows WHERE board_uuid = ${clone.uuid}
+        UNION ALL SELECT user_id FROM new_climb_subscriptions WHERE board_type = 'spray' AND layout_id = ${clone.layoutId}
+        UNION ALL SELECT user_id FROM user_board_activity WHERE board_uuid = ${clone.uuid}
+      `);
+      expect(
+        Array.from(destinationBefore as Iterable<{ user_id: string }>).filter((row) => fixedIds.includes(row.user_id)),
+      ).toEqual([]);
+      const publish = () =>
+        operation === 'publish'
+          ? sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: draft.id } }, ctxFor(OWNER))
+          : sprayWallMutations.commitSprayWallVersion(
+              {},
+              { input: { wallUuid: clone.uuid, versionId: draft.id, kept: [], removed: [], added: [] } },
+              ctxFor(OWNER),
+            );
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+      await db.transaction(async (holder) => {
+        await lockFixedSystemOwnerTransaction(holder);
+        const attempted = publish();
+        vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'legacy');
+        await expect(attempted).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
+      });
+      expect((await wallRow(source.uuid)).archived_at).toBeNull();
+
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+      await publish();
+      expect((await wallRow(source.uuid)).archived_at).not.toBeNull();
+      const follows = await db.execute(sql`SELECT user_id FROM board_follows WHERE board_uuid = ${clone.uuid}`);
+      const subscriptions = await db.execute(sql`
+        SELECT user_id FROM new_climb_subscriptions WHERE board_type = 'spray' AND layout_id = ${clone.layoutId}
+      `);
+      const pins = await db.execute(sql`
+        SELECT user_id FROM user_board_activity WHERE board_uuid = ${clone.uuid} AND pinned_at IS NOT NULL
+      `);
+      for (const rows of [follows, subscriptions, pins]) {
+        expect(
+          Array.from(rows as Iterable<{ user_id: string }>)
+            .map((row) => row.user_id)
+            .filter((userId) => fixedIds.includes(userId))
+            .sort(),
+        ).toEqual(fixedIds);
+      }
+    });
+
+    it(`keeps captured legacy ${operation} independent of a later mode change`, async () => {
+      const { wall: source } = await createPublishedWall(OWNER);
+      const clone = await resetWall(source.uuid, OWNER);
+      const draft = (await sprayWallMutations.createSprayWallVersion(
+        {},
+        { input: { wallUuid: clone.uuid, photoId: registerUploadedPhoto(clone.uuid) } },
+        ctxFor(OWNER),
+      )) as { id: string };
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'legacy');
+      await db.transaction(async (holder) => {
+        await lockFixedSystemOwnerTransaction(holder);
+        const attempted =
+          operation === 'publish'
+            ? sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: draft.id } }, ctxFor(OWNER))
+            : sprayWallMutations.commitSprayWallVersion(
+                {},
+                { input: { wallUuid: clone.uuid, versionId: draft.id, kept: [], removed: [], added: [] } },
+                ctxFor(OWNER),
+              );
+        vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+        await attempted;
+      });
+      expect((await wallRow(source.uuid)).archived_at).not.toBeNull();
+    });
+
+    it(`rejects an unknown selector for ${operation} before publishing`, async () => {
+      const { wall: source } = await createPublishedWall(OWNER);
+      const clone = await resetWall(source.uuid, OWNER);
+      const draft = (await sprayWallMutations.createSprayWallVersion(
+        {},
+        { input: { wallUuid: clone.uuid, photoId: registerUploadedPhoto(clone.uuid) } },
+        ctxFor(OWNER),
+      )) as { id: string };
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'unsupported');
+      const attempted =
+        operation === 'publish'
+          ? sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: draft.id } }, ctxFor(OWNER))
+          : sprayWallMutations.commitSprayWallVersion(
+              {},
+              { input: { wallUuid: clone.uuid, versionId: draft.id, kept: [], removed: [], added: [] } },
+              ctxFor(OWNER),
+            );
+      await expect(attempted).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
+      expect((await wallRow(source.uuid)).archived_at).toBeNull();
+      expect((await wallRow(clone.uuid)).current_version_id).toBeNull();
+    });
+  }
 });
 
 describe('archive through commitSprayWallVersion', () => {
