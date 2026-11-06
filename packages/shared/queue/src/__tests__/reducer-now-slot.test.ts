@@ -523,10 +523,12 @@ describe('dropSuggestedUpNext (issue #7304)', () => {
   });
 
   it('never drops on a server event', () => {
+    // The server points at the queued climb q, so only the guard keeps y.
     const next = queueReducer(stale(), {
       type: 'DELTA_UPDATE_CURRENT_CLIMB',
-      payload: { item: tapped, shouldAddToQueue: true, isServerEvent: true, dropSuggestedUpNext: true },
+      payload: { item: queuedOnPurpose, shouldAddToQueue: false, isServerEvent: true, dropSuggestedUpNext: true },
     });
+    expect(next.currentClimbQueueItem?.uuid).toBe('q');
     expect(uuids(next)).toContain('x');
     expect(uuids(next)).toContain('y');
   });

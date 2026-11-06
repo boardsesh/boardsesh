@@ -1064,4 +1064,61 @@ describe('QueueProvider now-slot mode (F3)', () => {
       });
     });
   });
+
+  describe('stale list leftovers (#7304)', () => {
+    const leftoverX = { ...makeQueueItem('x', 'climb-old-x'), suggested: true };
+    const leftoverY = { ...makeQueueItem('y', 'climb-old-y'), suggested: true };
+    const playNext = makeQueueItem('p', 'climb-play-next');
+
+    async function renderIdle(idleMs: number) {
+      // History A, Now B, Up next: two leftovers of an old list walk and one
+      // Play next climb. The climb on the wall last changed `idleMs` ago.
+      const items = [A, B, leftoverX, playNext, leftoverY];
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+        queue: items,
+        currentClimbQueueItem: B,
+        playlistSuggestionSource: null,
+        savedAt: new Date().toISOString(),
+        historyCount: 1,
+        lastCurrentChangeAt: new Date(Date.now() - idleMs).toISOString(),
+      } as StoredSnapshot);
+      const snapshots: Snapshot[] = [];
+      render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (s) => snapshots.push(s) })));
+      await waitFor(() => expect(uuidsOf(snapshots.at(-1))).toEqual(items.map(({ uuid }) => uuid)));
+      return () => snapshots.at(-1) as Snapshot;
+    }
+
+    function droppedEvents() {
+      return analytics.track.mock.calls.filter(([eventName]) => eventName === SHARED_EVENTS.QueueStaleLeftoversDropped);
+    }
+
+    it('a list pick after 4 h drops the leftovers and keeps the Play next climb', async () => {
+      const latest = await renderIdle(5 * 60 * 60 * 1000);
+      act(() => latest().setCurrentClimb(makeQueueItem('t', 'climb-new'), { playlistSuggestionSource: null }));
+      expect(uuidsOf(latest())).toEqual(['a', 'b', 't', 'p']);
+      expect(droppedEvents()).toHaveLength(1);
+      expect(droppedEvents()[0][1]).toMatchObject({ droppedCount: 2, idleHours: 5 });
+    });
+
+    it('a list pick of a climb History holds still drops them', async () => {
+      const latest = await renderIdle(5 * 60 * 60 * 1000);
+      act(() => latest().setCurrentClimb(makeQueueItem('a-again', A.climb.uuid), { playlistSuggestionSource: null }));
+      expect(latest().state.currentClimbQueueItem?.uuid).toBe('a');
+      expect(uuidsOf(latest())).toEqual(['b', 'a', 'p']);
+    });
+
+    it('keeps them when the climb on the wall changed under 4 h ago', async () => {
+      const latest = await renderIdle(60 * 60 * 1000);
+      act(() => latest().setCurrentClimb(makeQueueItem('t', 'climb-new'), { playlistSuggestionSource: null }));
+      expect(uuidsOf(latest())).toEqual(['a', 'b', 't', 'x', 'p', 'y']);
+      expect(droppedEvents()).toHaveLength(0);
+    });
+
+    it('keeps them on a step onto a queued climb', async () => {
+      const latest = await renderIdle(5 * 60 * 60 * 1000);
+      act(() => latest().setCurrentClimb(leftoverX, { playlistSuggestionSource: null }));
+      expect(latest().state.currentClimbQueueItem?.uuid).toBe('x');
+      expect(uuidsOf(latest())).toEqual(['a', 'b', 'x', 'p', 'y']);
+    });
+  });
 });

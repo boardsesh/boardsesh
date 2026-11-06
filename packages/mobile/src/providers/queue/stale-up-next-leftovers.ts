@@ -10,13 +10,17 @@ import { isStaleCurrentClimb, type CurrentChangeClock } from '../../lib/ble/stal
  *
  * Queue entries carry no time, so age is read off the #4979 clock: when the
  * climb on the wall has not changed for 4 h, nothing after it is younger than
- * that. Picking a climb that is not queued yet then drops the `suggested`
- * entries after it. Climbs queued on purpose (Play next, Play last, a workout)
- * are not `suggested` and stay.
+ * that. A pick (a uuid the queue doesn't hold yet, even when placement then
+ * resolves it onto a History copy of the same climb) drops the `suggested`
+ * entries after the new Now. Play next and Play last climbs are not
+ * `suggested` and stay; a workout's climbs are, so an unfinished workout left
+ * 4 h goes too.
  *
  * Solo only: in a crew the queue is the room's, and a local drop would only be
  * resynced back. A step that keeps the queue as Next does (`keepQueue`, #7227)
- * and a move onto an entry already queued (a Next onto Up next) never drop.
+ * and a step onto an entry already queued (Next, a queue row) never drop, and
+ * they restart the clock: a climber who swipes onto a leftover first keeps the
+ * leftovers.
  */
 export function countStaleUpNextLeftovers({
   inSession,

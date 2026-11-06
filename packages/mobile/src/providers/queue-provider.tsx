@@ -2848,7 +2848,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         keepQueue,
         queue: stateRef.current.queue,
         currentClimbQueueItem: stateRef.current.currentClimbQueueItem,
-        openedQueueItemUuid: item.uuid,
+        // The uuid as picked, before placement resolves it: a list tap on a
+        // climb History already holds resolves onto that entry, and still counts
+        // as a pick. Only a step onto a queued entry (Next, a queue row) keeps
+        // its own uuid.
+        openedQueueItemUuid: attributedItem.uuid,
         clock: lastCurrentChangeRef.current,
         now: openNow,
       });
