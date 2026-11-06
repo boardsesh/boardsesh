@@ -11,7 +11,7 @@ describe('player route animation', () => {
     const layout = readFileSync(new URL('../../../app/_layout.tsx', import.meta.url), 'utf8');
     const registration = layout.match(/<Stack\.Screen\s+name="play"[\s\S]*?\/>/)?.[0];
     expect(registration).toBeDefined();
-    expect(registration).toContain('animation: getPlayerRouteAnimation(Platform.OS)');
+    expect(registration).toMatch(/animation:\s*getPlayerRouteAnimation\(\s*Platform\.OS\s*,?\s*\)/);
     expect(layout).toContain("import { getPlayerRouteAnimation } from '../src/lib/player-route-animation'");
   });
 });
