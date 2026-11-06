@@ -119,6 +119,7 @@ export const ClimbFilterSurface = forwardRef<ClimbFilterSurfaceHandle, ClimbFilt
           ref={nativeRef}
           skipPartiallyExpanded={false}
           initialFullyExpanded={presentation.expanded}
+          recoverSettledTouches
           sheetGesturesEnabled
           showDragHandle
           onDismissRequest={() => finishClose(presentation.generation)}

@@ -684,6 +684,100 @@ describe('the shipped @expo/ui Android lazy-list bridge', () => {
   );
 });
 
+describe('the shipped @expo/ui opt-in settled sheet touch recovery', () => {
+  const nativeFile = 'android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt';
+  const recoveryRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === nativeFile);
+  if (!recoveryRule) throw new Error('no @expo/ui settled sheet touch recovery rule registered');
+  const nativeSource = readFileSync(
+    resolve(import.meta.dirname, '../../packages/mobile/node_modules/@expo/ui', nativeFile),
+    'utf8',
+  );
+
+  function checkRecovery(source: string) {
+    return checkPatchesApplied(
+      [recoveryRule!],
+      makeEnv({
+        patchedDependencies: { [recoveryRule!.patchedKey]: SCOPED_PATCH_PATH },
+        versions: { [SCOPED_PKG]: versionFromKey(recoveryRule!.patchedKey) },
+        files: { [`${SCOPED_PKG}::${nativeFile}`]: source },
+      }),
+    ).errors;
+  }
+
+  it('keeps recovery disabled by default in native and both JS entrypoints', () => {
+    expect(checkRecovery(nativeSource)).toEqual([]);
+    const entrypointRules = REAL_RULES.filter(
+      (rule) => rule.package === SCOPED_PKG && rule.file.includes('/ModalBottomSheet/index.'),
+    );
+    expect(entrypointRules).toHaveLength(2);
+    const installed = createNodeEnv(resolve(import.meta.dirname, '../../packages/mobile/package.json'), {
+      [recoveryRule!.patchedKey]: SCOPED_PATCH_PATH,
+    });
+    expect(checkPatchesApplied(entrypointRules, installed).errors).toEqual([]);
+    for (const rule of entrypointRules) {
+      const original = installed.readInstalledFile(rule.package, rule.file);
+      const regressed = original.replace('recoverSettledTouches ?? false', 'recoverSettledTouches ?? true');
+      expect(regressed).not.toBe(original);
+      expect(
+        checkPatchesApplied([rule], {
+          ...installed,
+          readInstalledFile: () => regressed,
+        }).errors,
+      ).toContainEqual(expect.stringContaining('is missing'));
+    }
+  });
+
+  it.each([
+    ['global default', 'val recoverSettledTouches: Boolean = false', 'val recoverSettledTouches: Boolean = true'],
+    ['disabled gate', 'if (!enabled) return@LaunchedEffect', ''],
+    ['recovery composition', 'RecoverSettledSheetTouches(sheetState, touchRecovery, recoverSettledTouches)', ''],
+    ['settled trigger', 'snapshotFlow { sheetState.currentValue }', 'snapshotFlow { sheetState.targetValue }'],
+    ['transition cancellation', '.collectLatest { settled ->', '.collect { settled ->'],
+    [
+      'initial and hidden states',
+      'previous == settled || previous == SheetValue.Hidden || settled == SheetValue.Hidden',
+      'false',
+    ],
+    ['active pointer wait', 'snapshotFlow { recovery.touching }.first { touching -> !touching }', ''],
+    ['pointer tracking', 'recovery.touching = true', ''],
+    ['current detent recheck', 'sheetState.currentValue != settled || ', ''],
+    ['target detent recheck', 'sheetState.targetValue != settled ||', 'false ||'],
+    ['animation recheck', '!sheetState.isAnimationRunning || ', ''],
+    ['command recheck', 'recovery.activeCommands != 0', 'false'],
+    ['command lifetime', 'activeCommands -= 1', 'activeCommands = 0'],
+    ['command hide exclusion', 'touchRecovery.runCommand { sheetState.hide() }', 'sheetState.hide()'],
+    ['command expand exclusion', 'touchRecovery.runCommand { sheetState.expand() }', 'sheetState.expand()'],
+    [
+      'command partial exclusion',
+      'touchRecovery.runCommand { sheetState.partialExpand() }',
+      'sheetState.partialExpand()',
+    ],
+    ['gesture cancellation cleanup', '} finally {\n          recovery.touching = false', '} finally {\n          Unit'],
+    ['pointer cancellation cleanup', '} finally {\n      recovery.touching = false', '} finally {\n      Unit'],
+    ['expanded recovery', 'SheetValue.Expanded -> sheetState.expand()', 'SheetValue.Expanded -> Unit'],
+    [
+      'partial recovery',
+      'SheetValue.PartiallyExpanded -> sheetState.partialExpand()',
+      'SheetValue.PartiallyExpanded -> Unit',
+    ],
+  ])('rejects a broken %s fixture', (_label, fragment, replacement) => {
+    const regressed = nativeSource.replaceAll(fragment, replacement);
+    expect(regressed).not.toBe(nativeSource);
+    expect(checkRecovery(regressed)).toContainEqual(expect.stringContaining('is missing'));
+  });
+
+  it.each([
+    ['consuming the touch', 'event.changes.forEach { it.consume() }'],
+    ['timed reset', 'delay(100)'],
+    ['blocking reset', 'Thread.sleep(100)'],
+    ['private-state mutation', 'sheetState.javaClass.getDeclaredField("dragTarget")'],
+    ['disabling gestures', 'sheetGesturesEnabled = false'],
+    ['temporary diagnostics', 'android.util.Log.i("Filters7312", "debug")'],
+  ])('rejects %s even when recovery sentinels remain', (_label, addition) => {
+    expect(checkRecovery(`${nativeSource}\n${addition}`)).toContainEqual(expect.stringContaining('forbidden'));
+  });
+});
+
 describe('the shipped expo-image local-asset guard', () => {
   const imageViewSource = readFileSync(
     resolve(import.meta.dirname, '../../packages/mobile/node_modules/expo-image/ios/ImageView.swift'),

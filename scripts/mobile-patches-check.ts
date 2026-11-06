@@ -594,6 +594,69 @@ export const RULES: readonly PatchRule[] = [
     sentinels: ['@Field val selected: Boolean? = null'],
     patchedKey: '@expo/ui@58.0.23',
   },
+  // Opt in only the Filters sheet: Foundation 1.12.1 can retain its animation
+  // flag after a settled drag, which makes the parent consume every touch down.
+  // Recovery must follow a changed visible settled detent, never an active drag.
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt',
+    sentinels: [
+      'val recoverSettledTouches: Boolean = false',
+      'props.recoverSettledTouches && props.sheetGesturesEnabled',
+      'LaunchedEffect(sheetState, enabled)',
+      'if (!enabled) return@LaunchedEffect',
+      'RecoverSettledSheetTouches(sheetState, touchRecovery, recoverSettledTouches)',
+      'awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)',
+      'recovery.touching = true',
+      '} while (event.changes.any { it.pressed })',
+      `} finally {
+          recovery.touching = false`,
+      `} finally {
+      recovery.touching = false`,
+      `activeCommands += 1
+    try {
+      command()
+    } finally {
+      activeCommands -= 1`,
+      `withContext(scope.coroutineContext) {
+        touchRecovery.runCommand { sheetState.hide() }`,
+      `withContext(scope.coroutineContext) {
+        touchRecovery.runCommand { sheetState.expand() }`,
+      `withContext(scope.coroutineContext) {
+        touchRecovery.runCommand { sheetState.partialExpand() }`,
+      `if (props.initialFullyExpanded && !props.skipPartiallyExpanded) {
+      try {
+        touchRecovery.runCommand { sheetState.expand() }`,
+      'Modifier.trackSheetRecoveryPointers(touchRecovery) else Modifier',
+    ],
+    orderedSentinels: [
+      'snapshotFlow { sheetState.currentValue }.collectLatest { settled ->',
+      'previousSettled = settled',
+      'if (previous == settled || previous == SheetValue.Hidden || settled == SheetValue.Hidden)',
+      'snapshotFlow { recovery.touching }.first { touching -> !touching }',
+      'if (sheetState.currentValue != settled || sheetState.targetValue != settled ||',
+      '!sheetState.isAnimationRunning || recovery.activeCommands != 0',
+      'SheetValue.Expanded -> sheetState.expand()',
+      'SheetValue.PartiallyExpanded -> sheetState.partialExpand()',
+    ],
+    forbiddenSubstrings: [
+      'Filters7312',
+      '.consume(',
+      'delay(',
+      'Thread.sleep(',
+      'getDeclaredField(',
+      'sheetGesturesEnabled = false',
+    ],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  ...(
+    ['src/jetpack-compose/ModalBottomSheet/index.tsx', 'build/jetpack-compose/ModalBottomSheet/index.js'] as const
+  ).map((file): PatchRule => ({
+    package: '@expo/ui',
+    file,
+    sentinels: ['recoverSettledTouches: props.recoverSettledTouches ?? false'],
+    patchedKey: '@expo/ui@58.0.23',
+  })),
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
   // hunk lives in the same patch) but silently never fires — LogAscentSheet,
