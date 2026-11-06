@@ -4,7 +4,7 @@ import { getPlayerRouteAnimation } from '../player-route-animation';
 
 describe('player route animation', () => {
   it.each(['android', 'ios', 'web'])('selects native motion for %s', (platform) => {
-    expect(getPlayerRouteAnimation(platform)).toBe(platform === 'android' ? 'fade' : 'slide_from_bottom');
+    expect(getPlayerRouteAnimation(platform)).toBe(platform === 'android' ? 'none' : 'slide_from_bottom');
   });
 
   it('uses the platform policy on the actual initial play route', () => {

@@ -1193,8 +1193,8 @@ The RN form owns the screen's single scroll surface. Select rows use standalone
 native menus so the eight Bluetooth timeout choices remain reachable; disabled
 select rows expose their current value without an interactive menu.
 
-Android's player uses the native fade for opening and button/Back closing
-(nominally 150 ms, scaled by system animation settings). Reopening and cancelled
-dismissals restore that same platform policy. iOS retains its native slide;
-swipe-down dismissal retains its UI-thread spring and removes the offscreen
-route without a second native animation.
+Android's player opens upward and closes downward with a 200 ms UI-thread
+transition, respecting the system reduced-motion setting. Its native route
+animation stays disabled so a second transition cannot run after it leaves
+the screen. Hardware Back follows the same close while the player is focused.
+iOS retains its native slide; swipe-down retains its existing spring.
