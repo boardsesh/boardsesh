@@ -290,6 +290,13 @@ neither failure mode had anything to bite. Adding either one makes the hook load
 with more than one detent should also pass `activeIndex` from the native `onChange`, so the bound
 tracks the resting detent instead of leaving dead space under the footer at the taller one.
 
+**Feedback forms on Android (#7310).** `FeedbackSheet` uses `androidContentSized`,
+including its rating mode. With fixed detents, focusing the description left only
+a clipped input above a large blank area; the screenshot picker could not be reached.
+The existing content-fitting column and shrinking scroll body keep the picker
+reachable while typing. Native QA must start from a fresh sheet presentation:
+hot-swapping the sizing mode on an already-open sheet retains stale native geometry.
+
 **Android gesture roots inside native dialogs.** Expo's Material 3 sheet hosts React Native
 content in a separate dialog window. The app-level `GestureHandlerRootView` does not cover
 that window. A sheet containing RNGH gestures must put a local `GestureHandlerRootView`

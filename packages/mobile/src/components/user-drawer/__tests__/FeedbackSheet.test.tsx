@@ -21,10 +21,24 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-type ModalSheetMockProps = { children?: ReactNode; header?: ReactNode };
+type ModalSheetMockProps = {
+  children?: ReactNode;
+  header?: ReactNode;
+  androidContentSized?: boolean;
+  scrollable?: boolean;
+};
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, header }: ModalSheetMockProps) =>
-    createElement('div', { 'data-modal-sheet': 'true' }, header, children),
+  ModalSheet: ({ children, header, androidContentSized, scrollable }: ModalSheetMockProps) =>
+    createElement(
+      'div',
+      {
+        'data-modal-sheet': 'true',
+        'data-android-content-sized': String(androidContentSized),
+        'data-scrollable': String(scrollable),
+      },
+      header,
+      children,
+    ),
 }));
 vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 
@@ -128,17 +142,14 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     value,
     onChangeText,
     placeholder,
-    disableFullscreenUI,
   }: {
     value?: string;
     onChangeText?: (text: string) => void;
     placeholder?: string;
-    disableFullscreenUI?: boolean;
   }) =>
     createElement('input', {
       value: value ?? '',
       placeholder,
-      'data-disable-fullscreen-ui': String(disableFullscreenUI),
       onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
     }),
 }));
@@ -225,11 +236,13 @@ describe('FeedbackSheet bug report contact consent', () => {
 });
 
 describe('FeedbackSheet screenshots', () => {
-  it.each(['bug', 'rating'] as const)('keeps %s editing inside the form on Android', (mode) => {
+  it.each(['bug', 'rating'] as const)('uses bounded content sizing for the Android %s form', (mode) => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { getByRole } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode={mode} />);
-    // Native input contract; jsdom cannot exercise Android's fullscreen IME.
-    expect(getByRole('textbox').getAttribute('data-disable-fullscreen-ui')).toBe('true');
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode={mode} />);
+    // Configuration guard; native before/after captures verify keyboard layout.
+    const sheet = container.querySelector('[data-modal-sheet]');
+    expect(sheet?.getAttribute('data-android-content-sized')).toBe('true');
+    expect(sheet?.getAttribute('data-scrollable')).toBe('true');
   });
 
   const picker = (root: HTMLElement) => root.querySelector('[data-screenshot-picker]') as HTMLButtonElement | null;
