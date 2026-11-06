@@ -1,0 +1,65 @@
+# Deleted-account credential admission
+
+This is a reader-adoption slice of [BA-04 #6978](https://github.com/boardsesh/boardsesh/issues/6978) and [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). It consumes the deletion transaction in [PR #7307](https://github.com/boardsesh/boardsesh/pull/7307). The epic remains open. This change does not activate a production authority, change production grants, merge accounts, or delete a real account.
+
+## Decision and mounted behavior
+
+Capable readers always check the primary database after verifying a human credential. The exact immutable user ID must still exist and must have no `auth_subject_cutoffs.deleted_at`. A missing user also denies admission, covering physical deletion by the legacy writer. A retained tombstone denies a recreated row with the same ID. Email is never an identity substitute.
+
+The existing token cache stores cryptographic evidence only. Every call to the direct web-JWE validator, direct mobile-JWS validator, or format dispatcher performs fresh admission, including cache hits. Cache entries bind the signing secret, so an unset or changed secret cannot reuse previous cryptographic evidence. Non-deletion generations alone do not deny a later genuine login: password-reset and per-session lineage enforcement remain separate work.
+
+A known invalid or deleted principal retains the existing unauthorized behavior. An unavailable database, missing signing secret, deadline, or exhausted admission capacity returns a fixed retryable error. REST adapters return 503; GraphQL returns `SERVICE_UNAVAILABLE` with its transport status. A valid optional credential does not silently become an anonymous viewer during uncertainty. Public requests without credentials retain their existing behavior.
+
+Primary reads have a one-second response deadline and at most eight actual unsettled reads per process. There is no waiting queue or positive authority cache. A timed-out read keeps its slot until the database operation really settles, and late results are discarded using a monotonic deadline. This bounds outstanding work; it does not cancel SQL or promise a wall-clock deadline during a stalled event loop. Write transactions never use this response race.
+
+## HTTP, native and watch issuance
+
+All human-token HTTP consumers use the same decision, including GraphQL, uploads, import/export handlers, and stateless watch/session requests. An unavailable response is terminal and cannot be overwritten by a later 401.
+
+Every native token-pair issuer runs inside an actual outer transaction. It verifies READ COMMITTED isolation and obtains the user's key-share lock before writing refresh-token rows. Refresh first obtains an unlocked user-ID hint from the exact token hash, then locks that user and rechecks the exact hash, owner, revocation and expiry while rotating. The hint cannot authorize issuance. This preserves user-before-refresh lock order against account deletion's user lock and credential cascade.
+
+[PostgreSQL row-lock permissions](https://www.postgresql.org/docs/current/sql-select.html) require UPDATE permission on at least one user column. Restricted qualification writers receive only `UPDATE(updated_at)` in addition to their existing grants. Actual rolled-back probes acquire key-share while identity-column changes and deletion still fail with permission denied. This is fixture evidence, not a production grant rollout; deployed issuer privileges need separate qualification.
+
+If issuance commits first, deletion removes its refresh row and subsequent admissions deny its access token. If deletion wins, issuance returns no pair. An already published response may still arrive later; its credential cannot authorize a new protected request after deletion. Token formats, lifetimes, installed-client URLs and response shapes remain compatible.
+
+Transfer exchange and watch pairing check authority before consuming their one-shot capability and again at transactional issuance. An interruption after one-shot consumption can still lose that capability. This existing limitation is not universal retryability, and an unknown commit must never trigger a compensating capability restoration.
+
+## Web and browser acceptance
+
+The protected `authenticatedUserId: ID!` query takes no identity argument. The web server sends the exact presented JWE as Bearer, decodes it using NextAuth's public codec, and requires the backend response to match its subject. Unknown fields from an old backend, malformed responses, mixed errors, unexpected identities and network failures remain unavailable. There is no legacy fallback or new shared secret.
+
+All server-session readers and raw-token forwarding readers use this boundary. Public NextAuth cookie reconstruction preserves both supported names and numbered chunks. Request-local options make the session core consume the same cookie family that was admitted; shared options are never mutated. Server rendering propagates uncertainty, and API readers map it to a retryable response.
+
+The real NextAuth GET and POST responses are buffered until newly emitted callback/renewal credentials are freshly admitted. Negative renewal and sign-out also recheck the captured credential before publication. Denied or unavailable results emit no cookie writes or clears. A genuine B login may complete while carrying a stale deleted A cookie, provided the newly issued B credential is admitted. Existing provider-link actor checks still apply. Native callback attempt markers expire after their existing bounded lifetime; late callbacks cannot clear a newer marker.
+
+An owned provider uses NextAuth's public `SessionContext`. It accepts session bodies only while their request sequence and sign-in/sign-out intent epoch remain current. An unavailable read preserves the accepted owner. Successful sign-in and guarded sign-out callers notify the provider, and the existing Expo bridge still broadcasts accepted identity changes. The Expo auth store already checks credential generation after both fetch and body consumption and preserves accepted credentials on session or ws-auth 503.
+
+These checks protect a known newer B identity from a delayed negative A result. They do not make browser `Set-Cookie` conditional or solve every positive renewal/account-switch race across origins and top-level callbacks. Origin-scoped locks, channels and epochs cannot establish that broader guarantee. The positive cookie-ordering gate in the migration remains open.
+
+## Existing WebSocket connections
+
+A private connection binding retains the exact human credential. Admission is checked before each operation and before authenticated payload emission. Known denial closes 4401; uncertainty closes 1013 without the original protected payload. A non-overlapping one-second sweep checks idle human connections in batches, using the same bounded primary runner. Excess capacity fails unavailable instead of queuing more reads.
+
+The intended observation window is one sweep interval plus one read-response deadline, subject to process scheduling. Operations already admitted before deletion may be in flight. This is not atomic coupling of arbitrary business operations or network publication to the deletion transaction.
+
+Controller-only sockets remain machine principals. This slice does not revoke controller keys, prove every controller-owner projection is refreshed, change BLE behavior, or revoke unrelated vendor credentials and previously issued media URLs.
+
+## Account-switch race found during implementation
+
+Two existing app boundaries needed correction. TanStack can await mutation setup after the confirmation tap but before calling the mutation function; capturing identity only inside that function could capture B. A successful A deletion could also finish after B became current, and the screen's later `signOut('account_deleted')` would capture B at invocation.
+
+The screen now captures credential generation synchronously at the confirmation tap. Local mutation metadata is removed before GraphQL dispatch, and a superseded intent fails before credential lookup or dispatch. Only a confirmed deletion returns a non-secret generation/owner intent. Deletion sign-out requires that completed intent and checks it before analytics cancellation, identity isolation, queue draining or credential cleanup. False results and delayed A results cannot sign B out. Manual sign-out keeps its current-owner contract.
+
+## Qualification and rollout gates
+
+The complete web selection passes 6,256 cases across 521 files with zero skips in 176.07 seconds. Its fresh owned PostgreSQL bootstrap forces the cross-writer integration to execute. The full mobile selection passes 28,156 cases across 1,868 files, with two existing skips, in 330.54 seconds. These full selections overlap the focused results below and must not be added together.
+
+The final mounted/pure deletion selection passes all 25 cases across two files in 25.25 seconds. It includes actual PostgreSQL/Redis/HTTP and two separate WebSocket child processes. The native compatibility selection passes all 85 cases across three files in 39.79 seconds, including the restricted-writer lock/permission probes. Final mobile caller qualification passes all 179 cases across four files in 19.40 seconds. After a Hermes-incompatible destructured rest parameter was moved into the function body, both iOS and Android bundles pass. Simulator and real-device behavior remain unqualified on this Linux host.
+
+Canonical checking completes with zero errors and 623 existing warnings. The final typecheck graph succeeds with 59 cache hits; an earlier complete graph ran without cache hits. Completed owned launchers require actual child closure, drained process groups and unchanged source fingerprints. Independent reviewers cover backend, web and mobile changes and re-review fixes.
+
+Failed runs remain part of the evidence. Initial web qualification exposed confined-runner URL assumptions, a missing partial GraphQL mock and absent test-database bootstrap; corrected full qualification passes. Native qualification exposed insufficient fixture row-lock privilege and an overly broad new error responder that intercepted existing reserved-writer diagnostics; both were corrected and independently re-reviewed. An earlier broader auth attempt reached its 600-second launcher deadline without complete totals. A later 753-case run completes in 544.21 seconds with 752 passes and one outdated missing-signing-key assertion. That test now expects the deliberate fixed 503 response and retains its actual database rollback check. Final clean-replay auth, browser and current-head CI qualification still need their own completion records.
+
+Deploy the additive foundation schema and capable backend readers before enabling web readers against that backend. An older backend without the query deliberately produces unavailable, preserving credentials. Required read privileges must exist first. Default-off writer selectors do not disable the capable readers, but rolling back to a binary that lacks these checks is unsafe; a supported rollback floor and deployed-writer fencing remain rollout gates.
+
+The user's password policy remains: authenticated password set/change keeps the proven requesting device and revokes other credentials; forgotten reset revokes every session. This deletion slice does not invent that device proof, original authentication age, positive session/publication lineage, provider reauthentication, partner revocation or production collision provenance. Those requirements, real-device/provider testing and the remaining epic milestones stay open.

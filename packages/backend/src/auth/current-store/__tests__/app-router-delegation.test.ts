@@ -132,7 +132,7 @@ describe('actual App Router providers with explicitly fixture-only compound dele
         sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${accounts}, ${userProfiles} FROM ${sql.identifier(readRole)}`,
       );
       await transaction.execute(
-        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles} TO ${sql.identifier(readRole)}`,
+        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles}, ${authSubjectCutoffs} TO ${sql.identifier(readRole)}`,
       );
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${sql.join(mutable, sql`, `)} TO ${sql.identifier(writerRole)}`,

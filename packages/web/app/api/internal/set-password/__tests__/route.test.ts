@@ -7,8 +7,8 @@ vi.mock('server-only', () => ({}));
 
 // Mock getServerSession
 const mockGetServerSession = vi.fn();
-vi.mock('next-auth/next', () => ({
-  getServerSession: (...args: unknown[]) => mockGetServerSession(...args),
+vi.mock('@/app/lib/auth/admitted-session.server', () => ({
+  getAdmittedServerSession: (...args: unknown[]) => mockGetServerSession(...args),
 }));
 
 // Mock auth options

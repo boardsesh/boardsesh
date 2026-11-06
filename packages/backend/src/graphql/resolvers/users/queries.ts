@@ -1,4 +1,5 @@
 import { eq, and, count } from 'drizzle-orm';
+import { GraphQLError } from 'graphql';
 import type {
   ConnectionContext,
   UserProfile,
@@ -15,6 +16,13 @@ import { loadProfileRoleFlags } from './role-flags';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
 
 export const userQueries = {
+  authenticatedUserId: (_: unknown, __: unknown, ctx: ConnectionContext): string => {
+    if (!ctx.isAuthenticated || !ctx.userId) {
+      throw new GraphQLError('Authentication required', { extensions: { code: 'UNAUTHENTICATED' } });
+    }
+    return ctx.userId;
+  },
+
   /**
    * Get the authenticated user's profile
    */

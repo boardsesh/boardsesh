@@ -145,6 +145,9 @@ describe('independently opted-in native registration with reserved current-store
         );
       }
       await transaction.execute(sql`GRANT INSERT ON TABLE ${mobileRefreshTokens} TO ${sql.identifier(nativeRole)}`);
+      // PostgreSQL row locks require UPDATE on at least one column. The
+      // issuer may lock users without gaining any identity-column mutation.
+      await transaction.execute(sql`GRANT UPDATE (updated_at) ON TABLE ${users} TO ${sql.identifier(nativeRole)}`);
       await transaction.execute(sql`GRANT SELECT, INSERT ON TABLE ${verificationTokens} TO ${sql.identifier(webRole)}`);
     });
     for (const role of [nativeRole, webRole, nativeRole]) {
@@ -262,6 +265,7 @@ describe('independently opted-in native registration with reserved current-store
         failures.push(new Error('Owned role lookup failed'));
       }
       try {
+        await administrator(sql`REVOKE UPDATE (updated_at) ON TABLE ${users} FROM ${sql.identifier(role)}`);
         await administrator(
           sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${mobileRefreshTokens}, ${authEmailProjection}, ${authEmailReservations}, ${authEmailReservationMembers}, ${authSubjectCutoffs}, ${verificationTokens} FROM ${sql.identifier(role)}`,
         );
@@ -280,6 +284,33 @@ describe('independently opted-in native registration with reserved current-store
       }
     }
     if (failures.length) throw new AggregateError(failures, 'Owned native fixture cleanup failed');
+  });
+
+  it('supports real user KEY SHARE with timestamp-only UPDATE and denies identity mutation or deletion', async () => {
+    const probeId = randomUUID();
+    const rollback = new Error('Owned row-lock probe rollback');
+    await expect(
+      nativeWriter.transaction(async (transaction) => {
+        await transaction.insert(users).values({ id: probeId, email: `${probeId}@lock-probe.example.test` });
+        const [subject] = await transaction
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, probeId))
+          .for('key share', { of: users });
+        expect(subject?.id).toBe(probeId);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await db.select({ id: users.id }).from(users).where(eq(users.id, probeId))).toEqual([]);
+    await expect(
+      nativeWriter.update(users).set({ id: randomUUID() }).where(eq(users.id, probeId)),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+    await expect(
+      nativeWriter.update(users).set({ email: 'forbidden@lock-probe.example.test' }).where(eq(users.id, probeId)),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+    await expect(nativeWriter.delete(users).where(eq(users.id, probeId))).rejects.toMatchObject({
+      cause: { code: '42501' },
+    });
   });
 
   it.each([false, true])(
@@ -545,13 +576,10 @@ describe('independently opted-in native registration with reserved current-store
     vi.stubEnv('NEXTAUTH_SECRET', '');
     const logging = vi.spyOn(logger, 'error').mockImplementation(() => logger);
     const response = await post({ email: `${randomUUID()}@example.test`, password });
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: 'Internal server error' });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'Authentication is temporarily unavailable' });
     expect(await counts()).toEqual(empty);
-    expect(logging).toHaveBeenCalledWith(
-      '[NativeAuth] Reserved registration failed',
-      expect.objectContaining({ message: 'Native registration internal failure' }),
-    );
+    expect(logging).not.toHaveBeenCalled();
     expect(JSON.stringify(logging.mock.calls)).not.toContain(password);
   });
   it('returns safe unavailability on an actual reservation-read permission outage without reaching legacy logging', async () => {

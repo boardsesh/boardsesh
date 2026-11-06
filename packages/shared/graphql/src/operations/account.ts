@@ -1,6 +1,16 @@
 import { gql } from 'graphql-request';
 import type { DeleteAccountInfo, DeleteAccountInput } from '@boardsesh/shared-schema';
 
+export const GET_AUTHENTICATED_USER_ID = gql`
+  query GetAuthenticatedUserId {
+    authenticatedUserId
+  }
+`;
+
+export type GetAuthenticatedUserIdQueryResponse = {
+  authenticatedUserId: string;
+};
+
 export const GET_DELETE_ACCOUNT_INFO = gql`
   query GetDeleteAccountInfo {
     deleteAccountInfo {

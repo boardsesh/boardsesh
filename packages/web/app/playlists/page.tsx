@@ -49,11 +49,8 @@ export default async function PlaylistsPage() {
   const authToken = await getServerAuthToken();
   let viewerId: string | null = null;
   if (authToken) {
-    const [{ getServerSession }, { authOptions }] = await Promise.all([
-      import('next-auth/next'),
-      import('@/app/lib/auth/auth-options'),
-    ]);
-    viewerId = (await getServerSession(authOptions))?.user?.id ?? null;
+    const { getAdmittedServerSession } = await import('@/app/lib/auth/admitted-session.server');
+    viewerId = (await getAdmittedServerSession())?.user?.id ?? null;
   }
 
   const streams = await cachedCommunityPlaylists(viewerId);

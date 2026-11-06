@@ -1,9 +1,10 @@
-import { getServerSession } from 'next-auth/next';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { authOptions } from '@/app/lib/auth/auth-options';
 
 // GET only. The PUT that used to live here had zero callers anywhere in the
 // repo — `/settings` reads this route and writes through GraphQL
@@ -14,7 +15,7 @@ import { authOptions } from '@/app/lib/auth/auth-options';
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getAdmittedServerSession();
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -60,6 +61,7 @@ export async function GET() {
         : null,
     });
   } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
     console.error('Failed to get profile:', error);
     return NextResponse.json({ error: 'Failed to get profile' }, { status: 500 });
   }
