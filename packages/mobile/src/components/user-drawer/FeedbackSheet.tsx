@@ -232,6 +232,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
           value={comment}
           onChangeText={setComment}
           multiline
+          disableFullscreenUI
           maxLength={COMMENT_MAX_LENGTH}
           textAlignVertical="top"
         />

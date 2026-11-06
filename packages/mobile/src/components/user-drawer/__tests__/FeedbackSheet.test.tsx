@@ -128,14 +128,17 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     value,
     onChangeText,
     placeholder,
+    disableFullscreenUI,
   }: {
     value?: string;
     onChangeText?: (text: string) => void;
     placeholder?: string;
+    disableFullscreenUI?: boolean;
   }) =>
     createElement('input', {
       value: value ?? '',
       placeholder,
+      'data-disable-fullscreen-ui': String(disableFullscreenUI),
       onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
     }),
 }));
@@ -222,6 +225,13 @@ describe('FeedbackSheet bug report contact consent', () => {
 });
 
 describe('FeedbackSheet screenshots', () => {
+  it.each(['bug', 'rating'] as const)('keeps %s editing inside the form on Android', (mode) => {
+    const sheetRef = createRef<ManagedSheetHandle>();
+    const { getByRole } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode={mode} />);
+    // Native input contract; jsdom cannot exercise Android's fullscreen IME.
+    expect(getByRole('textbox').getAttribute('data-disable-fullscreen-ui')).toBe('true');
+  });
+
   const picker = (root: HTMLElement) => root.querySelector('[data-screenshot-picker]') as HTMLButtonElement | null;
   const typeReport = (getByPlaceholderText: (text: string) => HTMLElement) => {
     fireEvent.change(getByPlaceholderText('feedbackForm.bugPlaceholder'), {
@@ -255,19 +265,23 @@ describe('FeedbackSheet screenshots', () => {
     expect(picker(container)).toBeNull();
   });
 
-  it('uploads the picked shots and sends their keys with the report', async () => {
+  it('preserves the typed report when attaching screenshots after focusing the input', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
     const { container, getByPlaceholderText } = render(
       <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
     );
-    fireEvent.click(picker(container)!);
+    fireEvent.focus(getByPlaceholderText('feedbackForm.bugPlaceholder'));
     typeReport(getByPlaceholderText);
+    fireEvent.click(picker(container)!);
     fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
 
     await vi.waitFor(() => expect(feedbackMutation.mutateAsync).toHaveBeenCalledTimes(1));
     expect(uploadFeedbackScreenshots).toHaveBeenCalledWith(['file:///shot-0.jpg']);
     expect(feedbackMutation.mutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ screenshotKeys: ['feedback-screenshots/one.jpg'] }),
+      expect.objectContaining({
+        comment: 'the board disconnects on start',
+        screenshotKeys: ['feedback-screenshots/one.jpg'],
+      }),
     );
   });
 
