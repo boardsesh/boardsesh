@@ -14,9 +14,17 @@ authentication authority.
 
 ## Run the proof
 
-Install the pinned workspace dependencies first. Docker must already have a local
-PostgreSQL 18.6/PostGIS image. Supply its exact local `sha256:` image ID; the proof
-never pulls or builds an image and accepts no floating tag or database URL.
+Install the pinned workspace dependencies first. Docker must already have an
+unseeded PostgreSQL 18.6 image with PostGIS 3.6.4 libraries available. Provision
+the repository's **portable** artifact from
+[the image digest manifest](./postgres-image-digests.json) separately, then bind
+its registry digest and platform to its exact local `sha256:` image ID. Record
+the actual published build revision with the result.
+
+The image must begin without application objects or extra template databases.
+The upstream PostGIS distribution image initializes extensions and
+`template_postgis`, so it fails this prerequisite. The proof never pulls or
+builds an image and accepts no floating tag or database URL.
 
 Choose clean source and harness commits and a new private output path:
 
