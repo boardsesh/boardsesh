@@ -296,6 +296,9 @@ a clipped input above a large blank area; the screenshot picker could not be rea
 The existing content-fitting column and shrinking scroll body keep the picker
 reachable while typing. Native QA must start from a fresh sheet presentation:
 hot-swapping the sizing mode on an already-open sheet retains stale native geometry.
+Android API 36 captures: [before](images/feedback-keyboard-before.png),
+[after](images/feedback-keyboard-after.png). With the corrected sizing, selecting
+an image and cancelling another selection both retain the description and attachment.
 
 **Android gesture roots inside native dialogs.** Expo's Material 3 sheet hosts React Native
 content in a separate dialog window. The app-level `GestureHandlerRootView` does not cover
