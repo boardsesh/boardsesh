@@ -195,8 +195,8 @@ describe('native password service over the current authoritative Postgres store'
       request.emit('data', Buffer.from(JSON.stringify({ email, password: 'missing-signing-key-password' })));
       request.emit('end');
       await registering;
-      expect(captured.statusCode).toBe(500);
-      expect(JSON.parse(captured.body)).toEqual({ error: 'Internal server error' });
+      expect(captured.statusCode).toBe(503);
+      expect(JSON.parse(captured.body)).toEqual({ error: 'Authentication is temporarily unavailable' });
       expect(await db.select({ id: users.id }).from(users).where(eq(users.email, email))).toEqual([]);
     } finally {
       if (previousSecret === undefined) delete process.env.NEXTAUTH_SECRET;

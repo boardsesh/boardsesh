@@ -9,7 +9,14 @@ import { notificationDevices } from '@boardsesh/db/schema/app';
 import { db } from '../db/client';
 import { redisClientManager } from '../redis/client';
 import { applyCorsHeaders } from './cors';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
+import {
+  AuthAdmissionUnavailableError,
+  AuthSubjectDeniedError,
+  isAuthAdmissionUnavailable,
+  isHumanSubjectActive,
+  requireHumanSubjectForIssuance,
+} from '../auth/human-admission';
 import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import {
@@ -291,10 +298,7 @@ type TransferPayload = {
 
 function verifyTransferToken(token: string): { userId: string; accountCreation?: AccountCreationReceipt } | null {
   const secret = process.env.NEXTAUTH_SECRET;
-  if (!secret) {
-    logger.warn('[NativeAuth] NEXTAUTH_SECRET not configured');
-    return null;
-  }
+  if (!secret) throw new AuthAdmissionUnavailableError();
 
   const parts = token.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
@@ -372,17 +376,17 @@ function accountCreationReceipt(
 
 async function generateTokenPair(
   userId: string,
-  txOrDb: { insert: typeof db.insert } = db,
+  transaction: Parameters<Parameters<DbInstance['transaction']>[0]>[0],
 ): Promise<{
   jwt: string;
   refreshToken: string;
   expiresAt: string;
   userId: string;
 }> {
+  await transactionSettings(transaction);
+  await requireHumanSubjectForIssuance(transaction, userId);
   const signingSecret = getSigningSecret();
-  if (!signingSecret) {
-    throw new Error('NEXTAUTH_SECRET is not configured');
-  }
+  if (!signingSecret) throw new AuthAdmissionUnavailableError();
 
   // Generate JWT
   const jwtExpiresAt = new Date(Date.now() + JWT_EXPIRY_MS);
@@ -398,7 +402,7 @@ async function generateTokenPair(
   const refreshToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
-  await txOrDb.insert(mobileRefreshTokens).values({
+  await transaction.insert(mobileRefreshTokens).values({
     userId,
     tokenHash,
     expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
@@ -410,6 +414,28 @@ async function generateTokenPair(
     refreshToken,
     expiresAt: jwtExpiresAt.toISOString(),
   };
+}
+
+async function issueTokenPair(userId: string) {
+  return db.transaction((transaction) => generateTokenPair(userId, transaction));
+}
+
+function respondNativeAdmissionFailure(response: ServerResponse, error: unknown): boolean {
+  if (error instanceof AuthSubjectDeniedError) {
+    sendJson(response, 401, { error: 'Account is not available' });
+    return true;
+  }
+  if (isAuthAdmissionUnavailable(error) || isNativeAuthInfrastructureFailure(error)) {
+    sendJson(response, 503, { error: 'Authentication is temporarily unavailable' });
+    return true;
+  }
+  return false;
+}
+
+/** Keep the reserved writers' existing infrastructure messages and safe logs. */
+function respondReservedNativeAdmissionFailure(response: ServerResponse, error: unknown): boolean {
+  if (!(error instanceof AuthSubjectDeniedError) && !isAuthAdmissionUnavailable(error)) return false;
+  return respondNativeAdmissionFailure(response, error);
 }
 
 // ---------------------------------------------------------------------------
@@ -473,10 +499,28 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
   }
 
   // Verify the HMAC transfer token
-  const verified = verifyTransferToken(transferToken);
+  let verified: ReturnType<typeof verifyTransferToken>;
+  try {
+    verified = verifyTransferToken(transferToken);
+  } catch (error) {
+    if (respondNativeAdmissionFailure(res, error)) return;
+    throw error;
+  }
   if (!verified) {
     logger.warn('[NativeAuth] Transfer token verification failed');
     sendJson(res, 401, { error: 'Invalid or expired transfer token' });
+    return;
+  }
+
+  // Do not consume the one-shot transfer capability during a known authority
+  // outage. The real issuer checks again under the user lock in its transaction.
+  try {
+    if (!(await isHumanSubjectActive(verified.userId))) {
+      sendJson(res, 401, { error: 'Account is not available' });
+      return;
+    }
+  } catch (error) {
+    if (!respondNativeAdmissionFailure(res, error)) sendJson(res, 500, { error: 'Internal server error' });
     return;
   }
 
@@ -495,13 +539,14 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
   }
 
   try {
-    const tokenPair = await generateTokenPair(verified.userId);
+    const tokenPair = await issueTokenPair(verified.userId);
     logger.info(`[NativeAuth] Token exchange successful for user ${verified.userId}`);
     sendJson(res, 200, {
       ...tokenPair,
       ...(verified.accountCreation ? { accountCreation: verified.accountCreation } : {}),
     });
   } catch (error) {
+    if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] Token generation failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
   }
@@ -560,11 +605,12 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
     }
 
     const authenticatedUserId = authenticatedUser.userId;
-    const tokenPair = await generateTokenPair(authenticatedUserId);
+    const tokenPair = await issueTokenPair(authenticatedUserId);
     logger.info(`[NativeAuth] Credentials sign-in successful for user ${authenticatedUserId}`);
     const accountCreation = accountCreationReceipt(authenticatedUserId, false, 'email', authenticatedUser.createdAt);
     sendJson(res, 200, { ...tokenPair, ...(accountCreation ? { accountCreation } : {}) });
   } catch (error) {
+    if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] Credentials sign-in failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
   }
@@ -682,6 +728,7 @@ export async function handleNativeAuthRegister(
       sendJson(res, 409, { error: 'An account with this email already exists' });
       return;
     }
+    if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] Registration failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
   }
@@ -748,6 +795,7 @@ async function handleReservedNativeRegistration(
     logger.info('[NativeAuth] Reserved registration successful', { category: 'created' });
     sendJson(response, 201, { ...result.tokenPair, accountCreation: result.accountCreation });
   } catch (error) {
+    if (respondReservedNativeAdmissionFailure(response, error)) return;
     const unavailable = isNativeAuthInfrastructureFailure(error);
     // Never pass the original query/error/cause/parameters into logs or Sentry.
     // This branch returns before the unchanged legacy raw-error handler.
@@ -998,6 +1046,8 @@ async function findOrCreateOAuthUser(
         .limit(1);
       const matched = matchedRows[0];
       if (matched) {
+        await transactionSettings(tx);
+        await requireHumanSubjectForIssuance(tx, matched.id);
         await tx
           .insert(accounts)
           .values({ userId: matched.id, type: 'oauth', provider, providerAccountId: identity.sub })
@@ -1152,12 +1202,14 @@ export async function handleNativeAuthOAuth(
       ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
     });
   } catch (error) {
+    if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] OAuth sign-in failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
   }
 }
 
 function reportReservedNativeOAuthFailure(response: ServerResponse, error: unknown) {
+  if (respondReservedNativeAdmissionFailure(response, error)) return;
   if (isNativeAuthInfrastructureFailure(error)) {
     logger.warn('[NativeAuth] Reserved OAuth unavailable', { category: 'authority-or-database' });
     sendJson(response, 503, { error: 'Service temporarily unavailable' });
@@ -1259,7 +1311,20 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
   const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
   try {
+    // A non-locking hint is not token admission. Acquire the user lock before
+    // touching refresh rows, then recheck the exact hash/UID and current state.
+    const [hint] = await db
+      .select({ userId: mobileRefreshTokens.userId })
+      .from(mobileRefreshTokens)
+      .where(eq(mobileRefreshTokens.tokenHash, tokenHash))
+      .limit(1);
+    if (!hint) {
+      sendJson(res, 401, { error: 'Invalid refresh token' });
+      return;
+    }
     const result = await db.transaction(async (tx) => {
+      await transactionSettings(tx);
+      await requireHumanSubjectForIssuance(tx, hint.userId);
       // Atomically revoke the token and return it in a single query.
       // This prevents TOCTOU races: if two concurrent requests present the same
       // refresh token, only one will get the row back — the other gets an empty
@@ -1267,7 +1332,13 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
       const revokedRows = await tx
         .update(mobileRefreshTokens)
         .set({ revokedAt: new Date() })
-        .where(and(eq(mobileRefreshTokens.tokenHash, tokenHash), isNull(mobileRefreshTokens.revokedAt)))
+        .where(
+          and(
+            eq(mobileRefreshTokens.tokenHash, tokenHash),
+            eq(mobileRefreshTokens.userId, hint.userId),
+            isNull(mobileRefreshTokens.revokedAt),
+          ),
+        )
         .returning();
 
       const revokedToken = revokedRows[0];
@@ -1291,6 +1362,7 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
     logger.info(`[NativeAuth] Token refresh successful for user ${result.userId}`);
     sendJson(res, 200, result.tokenPair);
   } catch (error) {
+    if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] Token refresh failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
   }
@@ -1453,7 +1525,9 @@ export async function handleWatchPairCode(req: IncomingMessage, res: ServerRespo
     return;
   }
   const token = headerValue.slice(7).trim();
-  const auth = token ? await validateToken(token) : null;
+  const admission = token ? await validateHttpAuthToken(token, res) : { available: true as const, auth: null };
+  if (!admission.available) return;
+  const auth = admission.auth;
   if (!auth) {
     sendJson(res, 401, { error: 'Unauthorized' });
     return;
@@ -1564,17 +1638,36 @@ export async function handleWatchPair(req: IncomingMessage, res: ServerResponse)
 
   try {
     const { publisher } = redisClientManager.getClients();
-    // GETDEL: atomic read-and-delete so a code can only be redeemed once.
-    const userId = await publisher.getdel(`${WATCH_PAIR_CODE_REDIS_PREFIX}${normalized}`);
-    if (!userId) {
+    const pendingUserId = await publisher.get(`${WATCH_PAIR_CODE_REDIS_PREFIX}${normalized}`);
+    if (!pendingUserId || !(await isHumanSubjectActive(pendingUserId))) {
+      sendJson(res, 401, { error: 'Invalid or expired pairing code' });
+      return;
+    }
+    // Admission awaited the primary. An expired/replaced code must not let
+    // this older request consume a newer owner's capability at the same key.
+    let userId: unknown;
+    try {
+      userId = await publisher.eval(
+        "local owner = redis.call('GET', KEYS[1]); if owner == ARGV[1] then redis.call('DEL', KEYS[1]); return owner end; return false",
+        1,
+        `${WATCH_PAIR_CODE_REDIS_PREFIX}${normalized}`,
+        pendingUserId,
+      );
+    } catch {
+      // Redis errors can retain command arguments. Keep them out of logs and
+      // never restore a claim after an uncertain atomic command outcome.
+      throw new AuthAdmissionUnavailableError();
+    }
+    if (!userId || userId !== pendingUserId) {
       sendJson(res, 401, { error: 'Invalid or expired pairing code' });
       return;
     }
 
-    const tokenPair = await generateTokenPair(userId);
+    const tokenPair = await issueTokenPair(userId);
     logger.info(`[WatchPair] Pairing successful for user ${userId}`);
     sendJson(res, 200, tokenPair);
   } catch (error) {
+    if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[WatchPair] Pairing failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
   }

@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { GraphQLError } from 'graphql';
 import { applyCorsHeaders } from './cors';
 import { pipeStreamToResponse } from './http-utils';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { isAuroraBoardType } from '../services/user-data-export-format';
 import {
   getDownloadableUserDataExport,
@@ -28,7 +28,9 @@ async function authenticate(req: IncomingMessage, res: ServerResponse): Promise<
     return null;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return null;
+  const authResult = admission.auth;
   if (!authResult) {
     sendJson(res, 401, { error: 'Invalid or expired token' });
     return null;

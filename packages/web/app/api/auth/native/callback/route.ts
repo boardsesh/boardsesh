@@ -1,6 +1,7 @@
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
 import { NextResponse, type NextRequest } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/lib/auth/auth-options';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import {
   issueNativeOAuthTransferToken,
   NATIVE_OAUTH_ATTEMPT_COOKIE,
@@ -39,17 +40,13 @@ const deepLinkRedirect = (url: string) => {
       headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     },
   );
-  response.cookies.set(NATIVE_OAUTH_ATTEMPT_COOKIE, '', {
-    path: '/api/auth/native',
-    maxAge: 0,
-    httpOnly: true,
-    sameSite: 'lax',
-  });
+  // Attempts expire naturally. A delayed callback must not clear the shared
+  // attempt cookie written by a newer native login.
   return response;
 };
 
-export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+async function nativeCallback(request: NextRequest) {
+  const session = await getAdmittedServerSession();
   if (!session?.user?.id) {
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);
   }
@@ -86,4 +83,13 @@ export async function GET(request: NextRequest) {
 
   const redirectUrl = `${NATIVE_OAUTH_CALLBACK_SCHEME}?transferToken=${encodeURIComponent(transferToken)}&next=${encodeURIComponent(nextPath)}`;
   return deepLinkRedirect(redirectUrl);
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    return await nativeCallback(request);
+  } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
+    throw error;
+  }
 }

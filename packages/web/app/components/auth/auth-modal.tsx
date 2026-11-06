@@ -17,7 +17,7 @@ import MailOutlined from '@mui/icons-material/MailOutlined';
 import Favorite from '@mui/icons-material/Favorite';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
-import { signIn } from 'next-auth/react';
+import { signInWithSessionIntent as signIn } from '@/app/lib/auth/web-session-events';
 import { isAuthBackendUnavailable } from '@boardsesh/auth-protocol/client-errors';
 import { useTranslation } from 'react-i18next';
 import SocialLoginButtons from '@/app/components/auth/social-login-buttons';

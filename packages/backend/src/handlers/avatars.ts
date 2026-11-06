@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import { mkdir, writeFile, unlink } from 'fs/promises';
 import { applyCorsHeaders } from './cors';
 import { guardUploadFileStream } from './http-utils';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
 import { buildStaticAvatarUrl } from '../lib/avatar-url';
@@ -125,7 +125,9 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
     return;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return;
+  const authResult = admission.auth;
   if (!authResult) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid or expired token' }));

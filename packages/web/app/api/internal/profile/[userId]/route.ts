@@ -1,6 +1,7 @@
-import { getServerSession } from 'next-auth/next';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { type NextRequest, NextResponse } from 'next/server';
-import { authOptions } from '@/app/lib/auth/auth-options';
 import { getProfileData } from '@/app/profile/[user_id]/server-profile-data';
 
 type RouteParams = {
@@ -10,7 +11,7 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { userId } = await params;
-    const session = await getServerSession(authOptions);
+    const session = await getAdmittedServerSession();
     const viewerUserId = session?.user?.id;
 
     const profileData = await getProfileData(userId, viewerUserId);
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(profileData);
   } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
     console.error('Failed to get profile:', error);
     return NextResponse.json({ error: 'Failed to get profile' }, { status: 500 });
   }

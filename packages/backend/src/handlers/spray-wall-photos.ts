@@ -14,7 +14,7 @@ import {
   validateGymUuid as isWellFormedUuid,
 } from './gym-image-upload';
 import { detectImageMimeType } from '../lib/image-mime';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { deleteFromS3, isS3Configured, uploadToS3 } from '../storage/s3';
 import { writeImageVariants } from '../lib/image-resize';
 import { db } from '../db/client';
@@ -344,7 +344,9 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
     return;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return;
+  const authResult = admission.auth;
   if (!authResult) {
     respondJson(res, 401, { error: 'Invalid or expired token' });
     return;

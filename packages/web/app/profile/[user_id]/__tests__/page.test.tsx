@@ -23,8 +23,8 @@ vi.mock('@/app/lib/auth/server-auth', () => ({
   getServerAuthToken: profilePageTestState.getServerAuthTokenMock,
 }));
 
-vi.mock('next-auth/next', () => ({
-  getServerSession: profilePageTestState.getServerSessionMock,
+vi.mock('@/app/lib/auth/admitted-session.server', () => ({
+  getAdmittedServerSession: profilePageTestState.getServerSessionMock,
 }));
 
 vi.mock('@/app/lib/auth/auth-options', () => ({

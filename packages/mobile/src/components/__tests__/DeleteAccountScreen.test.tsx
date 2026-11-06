@@ -24,6 +24,7 @@ import { createElement, type ReactNode } from 'react';
 // stub the leaf components + providers so this stays a focused unit test.
 
 const ctrl = vi.hoisted(() => ({
+  credentialGeneration: 1,
   infoData: undefined as number | undefined,
   infoLoading: false,
   mutateAsync: vi.fn(),
@@ -31,6 +32,11 @@ const ctrl = vi.hoisted(() => ({
   showToast: vi.fn(),
   back: vi.fn(),
   reportError: vi.fn(),
+}));
+
+vi.mock('../../lib/auth-store', () => ({
+  captureAuthCredentialGeneration: () => ctrl.credentialGeneration,
+  isAuthCredentialGenerationCurrent: (generation: number) => generation === ctrl.credentialGeneration,
 }));
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
@@ -165,11 +171,15 @@ const CONFIRM_BTN = 'deleteAccount.dialog.confirm';
 const CONFIRM_PLACEHOLDER = 'deleteAccount.dialog.confirmPlaceholder';
 
 beforeEach(() => {
+  ctrl.credentialGeneration = 1;
   keyboard.platform = 'ios';
   keyboard.listeners.clear();
   ctrl.infoData = 0;
   ctrl.infoLoading = false;
-  ctrl.mutateAsync.mockReset().mockResolvedValue(true);
+  ctrl.mutateAsync.mockReset().mockResolvedValue({
+    deleted: true,
+    intent: { credentialGeneration: 1, userId: 'owner-a' },
+  });
   ctrl.signOut.mockReset().mockResolvedValue(undefined);
   ctrl.showToast.mockReset();
   ctrl.back.mockReset();
@@ -255,8 +265,73 @@ describe('DeleteAccountScreen', () => {
     typeConfirm(getByPlaceholderText, 'DELETE');
     fireEvent.click(getByTestId(CONFIRM_BTN));
 
-    await waitFor(() => expect(ctrl.signOut).toHaveBeenCalledWith('account_deleted'));
-    expect(ctrl.mutateAsync).toHaveBeenCalledWith({ input: { removeSetterName: true } });
+    await waitFor(() =>
+      expect(ctrl.signOut).toHaveBeenCalledWith('account_deleted', {
+        credentialGeneration: 1,
+        userId: 'owner-a',
+      }),
+    );
+    expect(ctrl.mutateAsync).toHaveBeenCalledWith({ input: { removeSetterName: true }, credentialGeneration: 1 });
+  });
+
+  it('does not sign out when the server did not confirm deletion', async () => {
+    ctrl.mutateAsync.mockResolvedValue({ deleted: false });
+    const { getByTestId, getByPlaceholderText } = render(<DeleteAccountScreen />);
+    typeConfirm(getByPlaceholderText, 'DELETE');
+    fireEvent.click(getByTestId(CONFIRM_BTN));
+
+    await waitFor(() => expect(ctrl.showToast).toHaveBeenCalledWith('deleteAccount.error', 'error'));
+    expect(ctrl.signOut).not.toHaveBeenCalled();
+    expect((getByTestId(CONFIRM_BTN) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('does not sign out B when A deletion succeeds after the credential owner changes', async () => {
+    let finishDeletion: (result: {
+      deleted: true;
+      intent: { credentialGeneration: number; userId: string };
+    }) => void = () => {};
+    ctrl.mutateAsync.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishDeletion = resolve;
+        }),
+    );
+    const { getByTestId, getByPlaceholderText } = render(<DeleteAccountScreen />);
+    typeConfirm(getByPlaceholderText, 'DELETE');
+    fireEvent.click(getByTestId(CONFIRM_BTN));
+    ctrl.credentialGeneration = 2;
+
+    await act(async () => {
+      finishDeletion({ deleted: true, intent: { credentialGeneration: 1, userId: 'owner-a' } });
+    });
+
+    expect(ctrl.signOut).not.toHaveBeenCalled();
+    expect(ctrl.showToast).not.toHaveBeenCalled();
+    expect((getByPlaceholderText(CONFIRM_PLACEHOLDER) as HTMLInputElement).value).toBe('');
+    expect((getByTestId(CONFIRM_BTN) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('discards A deletion error after B takes ownership instead of changing B confirmation', async () => {
+    let rejectDeletion: (error: Error) => void = () => {};
+    ctrl.mutateAsync.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDeletion = reject;
+        }),
+    );
+    const { getByTestId, getByPlaceholderText } = render(<DeleteAccountScreen />);
+    typeConfirm(getByPlaceholderText, 'DELETE');
+    fireEvent.click(getByTestId(CONFIRM_BTN));
+    ctrl.credentialGeneration = 2;
+
+    await act(async () => {
+      rejectDeletion(new Error('old A request failed'));
+    });
+
+    expect(ctrl.signOut).not.toHaveBeenCalled();
+    expect(ctrl.showToast).not.toHaveBeenCalled();
+    expect(ctrl.reportError).not.toHaveBeenCalled();
+    expect((getByPlaceholderText(CONFIRM_PLACEHOLDER) as HTMLInputElement).value).toBe('');
   });
 
   it('does not show a deletion-failed toast when only the post-delete signOut fails', async () => {

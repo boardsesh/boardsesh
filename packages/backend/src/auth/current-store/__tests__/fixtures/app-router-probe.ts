@@ -67,6 +67,8 @@ async function start(input: Record<string, unknown>) {
   let origin = '';
   let peerOrigin = '';
   let peerServer: https.Server | undefined;
+  let admissionServer: http.Server | undefined;
+  let admissionOrigin = '';
   let delegate: ReturnType<typeof installAppRouterFixtureDelegate> | undefined;
   let publicationObserver: ReturnType<typeof observeSessionPublication> | undefined;
   let releaseEncode: (() => void) | undefined;
@@ -87,6 +89,12 @@ async function start(input: Record<string, unknown>) {
       clearingAuthCookies: boolean;
       released: boolean;
     }[],
+    admission: {
+      statuses: [] as number[],
+      unavailableResponses: 0,
+      activityPermissionDeniedLogs: 0,
+      activityOtherFailure: 0,
+    },
   };
   const server = https.createServer(providers.tls, (request, response) => {
     if (!accepting) {
@@ -283,7 +291,8 @@ async function start(input: Record<string, unknown>) {
     VERCEL_URL: '',
     AUTH_TRUST_HOST: '1',
     DATABASE_URL: database.href,
-    READ_REPLICA_URL: database.href,
+    // Authentication must use this role's primary, never an accidental replica.
+    READ_REPLICA_URL: 'postgresql://owned:unused@127.0.0.1:1/unused',
     DEBUG_SQL: 'false',
     CURRENT_STORE_WEB_AUTH_MODE: 'legacy',
     CURRENT_STORE_WEB_OAUTH_MODE: webOAuthIdentity ? 'backend-staging' : 'legacy',
@@ -300,6 +309,41 @@ async function start(input: Record<string, unknown>) {
     SMTP_USER: 'owned@example.test',
     SMTP_PASSWORD: 'unused',
   });
+  let yoga: ReturnType<typeof import('../../../../graphql/yoga').createYogaInstance> | undefined;
+  admissionServer = http.createServer((request, response) => {
+    if (!accepting || request.method !== 'POST' || request.url !== '/graphql') {
+      response.writeHead(404).end();
+      return;
+    }
+    response.once('finish', () => observations.admission.statuses.push(response.statusCode));
+    const pending = (async () => {
+      try {
+        const currentYoga = yoga;
+        if (!currentYoga) throw new Error('Owned admission is not ready');
+        await currentYoga.handle(request, response);
+      } catch {
+        if (!response.headersSent) response.writeHead(503, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ error: 'unavailable' }));
+      }
+    })();
+    active.add(pending);
+    void pending.finally(() => active.delete(pending));
+  });
+  admissionServer.requestTimeout = 5000;
+  admissionServer.headersTimeout = 5000;
+  admissionServer.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve, reject) => {
+    admissionServer!.once('error', reject);
+    admissionServer!.listen(0, '127.0.0.1', resolve);
+  });
+  const admissionAddress = admissionServer.address();
+  if (!admissionAddress || typeof admissionAddress === 'string') throw new Error('Owned admission bind failed');
+  admissionOrigin = `http://127.0.0.1:${admissionAddress.port}`;
+  process.env.BACKEND_INTERNAL_URL = `${admissionOrigin}/graphql`;
+  process.env.NEXT_PUBLIC_WS_URL = `${admissionOrigin.replace('http:', 'ws:')}/graphql`;
   phase = 'transport';
   // Public HTTP customization only; do not import or patch NextAuth core.
   const oidc = nextRequire('openid-client') as { custom: { setHttpOptionsDefaults(options: object): void } };
@@ -330,8 +374,10 @@ async function start(input: Record<string, unknown>) {
         '/api/internal/auth/current-store/web-oauth/v1/intent',
         '/api/internal/auth/current-store/web-oauth/v1/resolve',
       ].includes(destination.pathname);
+    const allowedAdmission =
+      destination.origin === admissionOrigin && destination.pathname === '/graphql' && settings?.method === 'POST';
     if (
-      (!allowedCompound && !allowedWebIdentity) ||
+      (!allowedCompound && !allowedWebIdentity && !allowedAdmission) ||
       destination.search ||
       destination.hash ||
       destination.username ||
@@ -339,6 +385,17 @@ async function start(input: Record<string, unknown>) {
     )
       throw new Error('Unowned fetch refused');
     const response = await originalFetch(address, { ...settings, redirect: 'error' });
+    if (allowedAdmission && response.status === 503) {
+      const result = asRecord(await response.clone().json());
+      if (
+        Array.isArray(result.errors) &&
+        result.errors.some((error: unknown) => {
+          const extensions = asRecord(asRecord(error).extensions);
+          return extensions.code === 'SERVICE_UNAVAILABLE';
+        })
+      )
+        observations.admission.unavailableResponses += 1;
+    }
     if (
       allowedWebIdentity &&
       destination.pathname.endsWith('/resolve') &&
@@ -362,6 +419,24 @@ async function start(input: Record<string, unknown>) {
     }
     return response;
   };
+  phase = 'admission-load';
+  // The real transport, crypto validation, fresh primary deletion read, and
+  // mounted resolver all run in this restricted-role child. Importing Yoga
+  // does not initialize the backend server's Redis or background services.
+  const { createYogaInstance } = await import('../../../../graphql/yoga');
+  const { logger } = await import('../../../../utils/logger');
+  const { getPostgresErrorCode } = await import('../../../../utils/postgres-errors');
+  // Observe instrumentation failures without retaining SQL, owners, or tokens.
+  // The activity recorder is deliberately denied INSERT by the existing role.
+  const observeActivityFailure = (entry: Record<string | symbol, unknown>) => {
+    if (typeof entry.message !== 'string' || !entry.message.startsWith('[UserActivity] Failed to record user activity'))
+      return;
+    const error = entry[Symbol.for('boardsesh.errorInstance')] ?? entry;
+    if (getPostgresErrorCode(error) === '42501') observations.admission.activityPermissionDeniedLogs += 1;
+    else observations.admission.activityOtherFailure += 1;
+  };
+  logger.on('data', observeActivityFailure);
+  yoga = createYogaInstance();
   const nextIo = webRequire('next/headers') as {
     headers(): Promise<Headers>;
     cookies(): Promise<{ getAll(): { name: string; value: string }[] }>;
@@ -536,10 +611,13 @@ async function start(input: Record<string, unknown>) {
         for (const gate of responseGates.values()) gate.release();
         server.closeAllConnections();
         peerServer?.closeAllConnections();
+        admissionServer?.closeAllConnections();
         for (const socket of sockets) socket.destroy();
         await new Promise<void>((resolve) => server.close(() => resolve()));
         if (peerServer) await new Promise<void>((resolve) => peerServer!.close(() => resolve()));
+        if (admissionServer) await new Promise<void>((resolve) => admissionServer!.close(() => resolve()));
         await Promise.allSettled(active);
+        logger.removeListener('data', observeActivityFailure);
         const { closePool, closeReadPool } = await import('@boardsesh/db/client');
         await Promise.allSettled([closePool(), closeReadPool()]);
         await providers.close();

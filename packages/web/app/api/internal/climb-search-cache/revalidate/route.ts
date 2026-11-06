@@ -1,7 +1,8 @@
-import { getServerSession } from 'next-auth/next';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { authOptions } from '@/app/lib/auth/auth-options';
 import { revalidateClimbSearchTags } from '@/app/lib/climb-search-cache.server';
 
 // `layoutId` is still accepted — the client sends it (climb-search-cache.ts) —
@@ -14,7 +15,7 @@ const revalidateClimbSearchSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getAdmittedServerSession();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ revalidated: true });
   } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid request data', details: error.issues }, { status: 400 });
     }

@@ -5,7 +5,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 
-import { signIn } from 'next-auth/react';
+import { signInWithSessionIntent as signIn } from '@/app/lib/auth/web-session-events';
 import { useTranslation } from 'react-i18next';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
 import { buildNativeOAuthSignInUrl } from '@/app/lib/auth/native-oauth-url';
@@ -83,7 +83,7 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
       });
   }, []);
 
-  const handleSocialSignIn = (provider: string) => {
+  const handleSocialSignIn = (provider: 'apple' | 'google' | 'facebook') => {
     const flow = isCapacitorApp ? 'native' : 'web';
     track('Login Attempted', {
       auth_method: provider,

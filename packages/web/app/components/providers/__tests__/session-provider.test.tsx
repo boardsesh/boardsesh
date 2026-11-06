@@ -3,6 +3,7 @@ import type { Session } from 'next-auth';
 import { useSession } from 'next-auth/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SessionProviderWrapper from '../session-provider';
+import { requestWebSessionRefresh, signInWithSessionIntent } from '@/app/lib/auth/web-session-events';
 
 const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.state-v1');
 
@@ -197,5 +198,65 @@ describe('SessionProviderWrapper auth bridge', () => {
     await act(async () => Promise.resolve());
     expect(fetchMock).toHaveBeenCalledTimes(fetchCountBeforeMessages);
     expect(screen.getByText('authenticated:user-a:login-a')).toBeTruthy();
+  });
+});
+
+describe('owned session response acceptance', () => {
+  it('preserves the accepted owner on authority outage or malformed body', async () => {
+    serverSession = session('user-b', 'login-b');
+    await renderSettledSession('authenticated:user-b:login-b');
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }));
+    act(() => requestWebSessionRefresh());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    fetchMock.mockResolvedValueOnce(Response.json(null));
+    act(() => requestWebSessionRefresh());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+  });
+
+  it('discards a delayed empty A body after a real public-client B sign-in', async () => {
+    serverSession = session('user-a', 'login-a');
+    await renderSettledSession('authenticated:user-a:login-a');
+    let releaseOldBody!: (body: unknown) => void;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        new Promise<unknown>((resolve) => {
+          releaseOldBody = resolve;
+        }),
+    } as Response);
+    act(() => requestWebSessionRefresh());
+    await vi.waitFor(() => expect(releaseOldBody).toBeTypeOf('function'));
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const endpoint = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (endpoint.endsWith('/providers'))
+        return Response.json({
+          credentials: { id: 'credentials', type: 'credentials', name: 'Credentials', signinUrl: '', callbackUrl: '' },
+        });
+      if (endpoint.endsWith('/csrf')) return Response.json({ csrfToken: 'fixture-csrf' });
+      if (endpoint.endsWith('/callback/credentials')) return Response.json({ url: 'http://localhost:3000/' });
+      return Response.json(session('user-b', 'login-b'));
+    });
+    let loginResult: Awaited<ReturnType<typeof signInWithSessionIntent>>;
+    await act(async () => {
+      loginResult = await signInWithSessionIntent('credentials', {
+        redirect: false,
+        email: 'fixture@example.invalid',
+        password: 'fixture-only',
+      });
+    });
+    expect(loginResult?.ok).toBe(true);
+    await waitFor(() => expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy());
+    await act(async () => {
+      releaseOldBody({});
+    });
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
   });
 });

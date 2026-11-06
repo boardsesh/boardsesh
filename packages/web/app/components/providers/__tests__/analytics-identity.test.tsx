@@ -155,7 +155,7 @@ describe('AnalyticsIdentity', () => {
 
     vi.doMock('server-only', () => ({}));
     vi.doMock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));
-    vi.doMock('next-auth/next', () => ({ getServerSession: async () => session }));
+    vi.doMock('@/app/lib/auth/admitted-session.server', () => ({ getAdmittedServerSession: async () => session }));
     const { getPosthogDistinctId } = await import('@/app/lib/feature-flags/server-distinct-id');
     const serverDistinctId = await getPosthogDistinctId();
 

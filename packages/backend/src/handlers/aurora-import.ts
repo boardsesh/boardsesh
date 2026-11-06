@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { auroraExportSchema, importJsonExportData, type ImportProgressEvent } from '@boardsesh/aurora-sync/json-import';
 import { applyCorsHeaders } from './cors';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
 
@@ -30,7 +30,9 @@ async function authenticate(req: IncomingMessage, res: ServerResponse): Promise<
     return null;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return null;
+  const authResult = admission.auth;
   if (!authResult) {
     sendJson(res, 401, { error: 'Invalid or expired token' });
     return null;

@@ -1,3 +1,4 @@
+import { withAuthResponseAdmission } from '@/app/lib/auth/auth-response-admission.server';
 import NextAuth from 'next-auth';
 import type { NextAuthOptions } from 'next-auth';
 import { getToken } from 'next-auth/jwt';
@@ -236,8 +237,10 @@ async function getAuth(
 }
 
 async function routeAuth(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  return withWebOAuthIdentity(request, context, authOptions, (current, options) =>
-    current.method === 'POST' ? postAuth(current, context, options) : getAuth(current, context, options),
+  return withAuthResponseAdmission(request, context, () =>
+    withWebOAuthIdentity(request, context, authOptions, (current, options) =>
+      current.method === 'POST' ? postAuth(current, context, options) : getAuth(current, context, options),
+    ),
   );
 }
 
