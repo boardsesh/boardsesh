@@ -21,6 +21,7 @@ This is the review entry point for [epic #6975](https://github.com/boardsesh/boa
 | [#7301](https://github.com/boardsesh/boardsesh/pull/7301) | Independently opted-in fixed shared-board owner reservation and strict identity reuse | Stacked on #7300; no new schema or activation |
 | [#7302](https://github.com/boardsesh/boardsesh/pull/7302) | Fixed recommendations and hold-classifier identities under the actual durable job-attempt fence | Stacked on #7301; default-off; no new schema or grants |
 | [#7303](https://github.com/boardsesh/boardsesh/pull/7303) | Shared whole-gym planner, caller-owned location apply and cooperative SQL checkpoints | Stacked on #7302; existing callers preserved; no authority adoption |
+| [#7307](https://github.com/boardsesh/boardsesh/pull/7307) | Atomic deletion cutoff/event and retained email reservations in the existing GraphQL flow | Stacked on #7303; independently selected; no schema, grants or activation |
 
 The [shared-board system owner slice](./better-auth-system-board-owner.md)
 adopts the fixed nonhuman user creation behind its own default-off selector.
@@ -66,12 +67,16 @@ passing cases, zero failures and six skips. Current-head Codex code review
 completed without findings. Feedback remains monitored; no
 location writer switches authority.
 
-The next [account deletion slice](./better-auth-account-deletion.md) adds a
+The [account deletion slice](./better-auth-account-deletion.md) adds a
 separately selected cutoff/event and retained reservation to the existing
 backend deletion transaction. Its source and 43 new PostgreSQL cases have
 independent review. The broader 732-case auth selection, a separately enabled
-42-case published-climb matrix and 20 mobile caller units pass. Clean-head type
-checking and a new baseline preview remain pending.
+42-case published-climb matrix and 20 mobile caller units pass. All 59 canonical
+type tasks pass on clean stacked source `104c6a06a3`, with zero cache hits. Its
+six-file replay is byte-identical and reproduces the qualified main-based tree.
+Five independent browser flows pass against a separately attested recovered
+legacy-auth runtime; the original TLS-cache startup rejection remains recorded.
+Draft #7307 is published and feedback is monitored; CI readiness is pending.
 It preserves wall-before-user locking and the existing client flow; no
 production account is deleted or authority activated.
 
