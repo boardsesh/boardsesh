@@ -7,6 +7,7 @@ import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-f
 import {
   beginWebSessionIntent,
   captureWebSessionEpoch,
+  requestWebSessionRefresh,
   WEB_SESSION_REFRESH_EVENT,
 } from '../../lib/auth/web-session-events';
 
@@ -32,6 +33,33 @@ function parseSession(candidate: unknown): Session | null {
   return candidate as Session;
 }
 
+async function readSessionJson(response: Response, signal: AbortSignal): Promise<unknown> {
+  if (!response.body) return response.json();
+  const reader = response.body.getReader();
+  const cancelBody = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal.addEventListener('abort', cancelBody, { once: true });
+  try {
+    if (signal.aborted) {
+      cancelBody();
+      throw new Error('Session authority is unavailable');
+    }
+    const decoder = new TextDecoder();
+    let contents = '';
+    while (true) {
+      const chunk = await reader.read();
+      if (signal.aborted) throw new Error('Session authority is unavailable');
+      if (chunk.done) break;
+      contents += decoder.decode(chunk.value, { stream: true });
+    }
+    return JSON.parse(contents + decoder.decode());
+  } finally {
+    signal.removeEventListener('abort', cancelBody);
+    reader.releaseLock();
+  }
+}
+
 type SessionProviderWrapperProps = {
   children: ReactNode;
   enableExpoAuthBridge?: boolean;
@@ -49,8 +77,12 @@ export default function SessionProviderWrapper({
 }: SessionProviderWrapperProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [settled, setSettled] = useState(false);
+  const settledRef = useRef(false);
   const sessionRef = useRef<Session | null>(null);
   const requestSequenceRef = useRef(0);
+  const activeControllerRef = useRef<AbortController | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDelayRef = useRef(1000);
   const mountedRef = useRef(false);
   const broadcastIdentityRef = useRef<string | null>(null);
 
@@ -61,18 +93,39 @@ export default function SessionProviderWrapper({
   }, []);
 
   const update = useCallback(async (payload?: unknown): Promise<Session | null> => {
+    if (retryTimerRef.current !== null) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     const sequence = ++requestSequenceRef.current;
+    activeControllerRef.current?.abort();
     const epoch = captureWebSessionEpoch();
     const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), 15_000);
+    activeControllerRef.current = controller;
     const ownsResult = () =>
       mountedRef.current && requestSequenceRef.current === sequence && captureWebSessionEpoch() === epoch;
+    const scheduleInitialRetry = () => {
+      if (!ownsResult() || settledRef.current || retryTimerRef.current !== null) return;
+      const retryDelay = retryDelayRef.current;
+      retryDelayRef.current = Math.min(retryDelay * 2, 30_000);
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        if (ownsResult() && !settledRef.current) requestWebSessionRefresh(epoch);
+      }, retryDelay);
+    };
+    const deadline = setTimeout(() => {
+      controller.abort();
+      // A body reader can outlive abort. Initial recovery must not depend on
+      // that old promise settling; its eventual result still has to be owned.
+      scheduleInitialRetry();
+    }, 15_000);
     try {
       let requestInit: RequestInit = { cache: 'no-store', signal: controller.signal };
       if (payload !== undefined) {
         const csrfResponse = await fetch('/api/auth/csrf', requestInit);
-        const csrfBody: unknown = await csrfResponse.json();
+        const csrfBody = await readSessionJson(csrfResponse, controller.signal);
         if (!ownsResult()) return sessionRef.current;
+        if (controller.signal.aborted) throw new Error('Session update is unavailable');
         if (
           !csrfResponse.ok ||
           typeof csrfBody !== 'object' ||
@@ -90,20 +143,30 @@ export default function SessionProviderWrapper({
         };
       }
       const response = await fetch('/api/auth/session', requestInit);
-      const body: unknown = await response.json();
-      if (!ownsResult() || controller.signal.aborted) return sessionRef.current;
+      const body = await readSessionJson(response, controller.signal);
+      if (!ownsResult()) return sessionRef.current;
+      if (controller.signal.aborted) throw new Error('Session authority is unavailable');
       if (!response.ok) throw new Error('Session authority is unavailable');
       const acceptedSession = parseSession(body);
       sessionRef.current = acceptedSession;
+      settledRef.current = true;
+      retryDelayRef.current = 1000;
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       setSession(acceptedSession);
       setSettled(true);
       return acceptedSession;
     } catch {
       // Uncertainty leaves both the accepted owner and credential state intact.
-      // A first load remains loading until a later successful read.
+      // Only an unknown initial owner retries, and the timer always reads GET
+      // through the public refresh event instead of replaying an update POST.
+      scheduleInitialRetry();
       return sessionRef.current;
     } finally {
       clearTimeout(deadline);
+      if (activeControllerRef.current === controller) activeControllerRef.current = null;
     }
   }, []);
 
@@ -138,6 +201,12 @@ export default function SessionProviderWrapper({
     return () => {
       mountedRef.current = false;
       ++requestSequenceRef.current;
+      activeControllerRef.current?.abort();
+      activeControllerRef.current = null;
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       window.removeEventListener(WEB_SESSION_REFRESH_EVENT, refresh);
       window.removeEventListener('storage', storageRefresh);
       window.removeEventListener('online', refresh);
