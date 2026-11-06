@@ -3,11 +3,17 @@
 The Better Auth writer migration needs an actual catalog before it can claim a
 complete fixed-owner lock inventory. Drizzle reflection alone misses the manually
 managed `board_beta_links.created_by_user_id` foreign key from migration 0093.
+The applied history also retains two controller-owner constraints: migration
+0041 creates an inline FK, then 0052 adds the separately named canonical FK.
 The backend worker test schema also reconstructs only selected historical SQL.
 
 `test:db:user-reference-catalog` applies every migration to its own new PostgreSQL
 18 cluster and compares physical inbound references to `public.users` against the
 selected checkout's Drizzle declarations and that explicit migration exception.
+The controller artifact adds one expected constraint when the canonical identity
+has a single declaration. It does not manufacture an absent relation or add a
+third constraint when both are already declared. Both actual constraints remain
+in the multiset; an additional unreviewed duplicate or changed semantics fails.
 It also captures the declared routine, trigger and dependency surfaces needed to
 continue the writer audit. It does not change application locks or activate an
 authentication authority.

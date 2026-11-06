@@ -110,6 +110,60 @@ void describe('canonical user-reference contract', () => {
     assert.deepEqual(betaReferences[0], MANUAL_USER_REFERENCES[0]);
   });
 
+  void it('accounts for the retained controller artifact and still rejects missing, third or altered constraints', () => {
+    const expected = readExpectedUserReferences(schema);
+    const grouped = new Map<string, UserReference[]>();
+    for (const entry of expected) {
+      const identity = referenceIdentity(entry);
+      grouped.set(identity, [...(grouped.get(identity) ?? []), entry]);
+    }
+    const duplicates = [...grouped.values()].filter((entries) => entries.length > 1);
+    assert.equal(duplicates.length, 1);
+    const controllers = duplicates[0];
+    assert.equal(controllers[0].table, 'esp32_controllers');
+    assert.deepEqual(controllers[0].columns, ['user_id']);
+    assert.equal(controllers.length, 2);
+    assert.deepEqual(compareUserReferences(controllers, controllers), []);
+    assert.equal(compareUserReferences(controllers, controllers.slice(0, 1))[0].kind, 'missing');
+    assert.equal(compareUserReferences(controllers, [...controllers, controllers[0]])[0].kind, 'unexpected');
+    for (const changed of [
+      { ...controllers[1], validated: false },
+      { ...controllers[1], onDelete: 'set null' as const },
+    ]) {
+      assert.equal(compareUserReferences(controllers, [controllers[0], changed])[0].kind, 'different');
+    }
+  });
+
+  void it('does not manufacture controller support when the canonical identity is absent', () => {
+    const users = pgTable('users', { id: text('id') });
+    const comments = pgTable('comments', { userId: text('user_id').references(() => users.id) });
+    assert.equal(
+      readExpectedUserReferences({ users, comments }).some((entry) => entry.table === 'esp32_controllers'),
+      false,
+    );
+  });
+
+  void it('does not add a third controller constraint when both are declared canonically', () => {
+    const users = pgTable('users', { id: text('id') });
+    const controllers = pgTable(
+      'esp32_controllers',
+      {
+        userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+      },
+      (table) => [
+        foreignKey({
+          name: 'esp32_controllers_user_id_fkey',
+          columns: [table.userId],
+          foreignColumns: [users.id],
+        }).onDelete('cascade'),
+      ],
+    );
+    assert.equal(
+      readExpectedUserReferences({ users, controllers }).filter((entry) => entry.table === 'esp32_controllers').length,
+      2,
+    );
+  });
+
   void it('reflects ordered composite keys and actions, deduplicating aliased exports', () => {
     const users = pgTable('users', { id: text('id'), tenantId: text('tenant_id') });
     const comments = pgTable('comments', { userId: text('user_id'), tenantId: text('tenant_id') }, (table) => [

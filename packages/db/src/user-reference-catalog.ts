@@ -147,6 +147,25 @@ export const MANUAL_USER_REFERENCES: readonly UserReference[] = [
   },
 ];
 
+/** 0041 creates an inline FK; 0052 retains it and adds the separately named canonical FK. */
+const LEGACY_DUPLICATE_USER_REFERENCES: readonly UserReference[] = [
+  {
+    schema: 'public',
+    table: 'esp32_controllers',
+    columns: ['user_id'],
+    referencedSchema: 'public',
+    referencedTable: 'users',
+    referencedColumns: ['id'],
+    onUpdate: 'no action',
+    onDelete: 'cascade',
+    match: 'simple',
+    validated: true,
+    deferrable: false,
+    initiallyDeferred: false,
+    deleteSetColumns: null,
+  },
+];
+
 export function readExpectedUserReferences(schemaExports: Record<string, unknown>): UserReference[] {
   const references: UserReference[] = [];
   const visitedTables = new Set<PgTable>();
@@ -180,6 +199,16 @@ export function readExpectedUserReferences(schemaExports: Record<string, unknown
   for (const manual of MANUAL_USER_REFERENCES) {
     if (!references.some((reference) => referenceIdentity(reference) === referenceIdentity(manual))) {
       references.push({ ...manual, columns: [...manual.columns], referencedColumns: [...manual.referencedColumns] });
+    }
+  }
+  for (const legacy of LEGACY_DUPLICATE_USER_REFERENCES) {
+    const canonicalMatches = references.filter(
+      (reference) => referenceIdentity(reference) === referenceIdentity(legacy),
+    );
+    // An absent declaration does not manufacture a supported legacy relation.
+    // If a future schema declares both constraints, do not count the artifact again.
+    if (canonicalMatches.length === 1) {
+      references.push({ ...legacy, columns: [...legacy.columns], referencedColumns: [...legacy.referencedColumns] });
     }
   }
   return references.sort((left, right) => referenceIdentity(left).localeCompare(referenceIdentity(right)));
