@@ -498,3 +498,45 @@ describe('legacy mode is today’s reducer', () => {
     expect(live.historyCount).toBeNull();
   });
 });
+
+describe('dropSuggestedUpNext (issue #7304)', () => {
+  const leftoverX = { ...item('x'), suggested: true };
+  const leftoverY = { ...item('y'), suggested: true };
+  const queuedOnPurpose = item('q');
+  const tapped = item('t');
+
+  // History A, Now B, Up next: two swipe leftovers from an older list and one
+  // climb queued on purpose.
+  const stale = (): QueueState =>
+    nowSlotState({ queue: [A, B, leftoverX, queuedOnPurpose, leftoverY], currentClimbQueueItem: B, historyCount: 1 });
+
+  it('drops the suggested entries after the new current climb and keeps the rest', () => {
+    const next = openLocally(stale(), tapped, { dropSuggestedUpNext: true });
+    expect(uuids(next)).toEqual(['a', 'b', 't', 'q']);
+    expect(next.currentClimbQueueItem?.uuid).toBe('t');
+    expect(next.historyCount).toBe(2);
+  });
+
+  it('leaves Up next alone without the flag, which is what played the leftovers first', () => {
+    const next = openLocally(stale(), tapped);
+    expect(uuids(next)).toEqual(['a', 'b', 't', 'x', 'q', 'y']);
+  });
+
+  it('never drops on a server event', () => {
+    const next = queueReducer(stale(), {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: tapped, shouldAddToQueue: true, isServerEvent: true, dropSuggestedUpNext: true },
+    });
+    expect(uuids(next)).toContain('x');
+    expect(uuids(next)).toContain('y');
+  });
+
+  it('drops in legacy mode too, with no list on the open', () => {
+    const legacy = { ...initialState({}), queue: [A, B, leftoverX, queuedOnPurpose], currentClimbQueueItem: B };
+    const next = queueReducer(legacy, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: tapped, shouldAddToQueue: true, insertAfterCurrent: true, dropSuggestedUpNext: true },
+    });
+    expect(uuids(next)).toEqual(['a', 'b', 't', 'q']);
+  });
+});

@@ -180,6 +180,13 @@ the list and swipes would walk past it (#7247). The move is the usual reorder; t
 in a second write for that one entry, so a crewmate's changes in the same moment stand.
 A preview opened from a list walks only that list. A look off the climb on the wall, a swipe
 outside a drive, plays Up next and then the list, as Next does (#7227).
+Climbs a walk committed stay in the queue flagged `suggested`, and an older list's leftovers
+count as Up next like anything queued. They don't outlive a long break: solo, when the climb on
+the wall has not changed for 4 hours (the #4979 clock), picking a climb that is not queued yet
+drops every `suggested` climb after it, so the list just picked plays first. Climbs queued on
+purpose stay. Before this, leftovers from a list walked days earlier on the same board (or on a
+board the climber came back to) played ahead of every pick (#7304,
+`countStaleUpNextLeftovers`, the anomaly-only `Queue Stale Leftovers Dropped` event).
 
 ### Crew, swipes and long-press
 

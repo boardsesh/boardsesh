@@ -154,6 +154,7 @@ import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
 import { useQueueClimbReads } from './queue/use-queue-climb-reads';
 import { useQueuePersistence } from './queue/use-queue-persistence';
 import { useCurrentChangeClock } from './queue/use-current-change-clock';
+import { countStaleUpNextLeftovers } from './queue/stale-up-next-leftovers';
 import { useSessionCommands } from './queue/use-session-commands';
 import {
   useSessionRealtime,
@@ -367,6 +368,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     seedCurrentChange,
     dispatch,
   } = useCurrentChangeClock(state.currentClimbQueueItem?.uuid ?? null, reducerDispatch);
+  // Read at open time to age Up next's swipe leftovers (#7304).
+  const lastCurrentChangeRef = useRef(lastCurrentChange);
+  lastCurrentChangeRef.current = lastCurrentChange;
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   // F3 now-slot mode (docs/current-climb-outside-queue.md, section 7). Solo it
@@ -2835,6 +2839,28 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const placement = nowSlotMode ? (requestedPlacement ?? 'NOW') : undefined;
       const nowSlotOpen = placement ? placeLocally(stateRef.current, attributedItem, placement, historyCopy) : null;
       const item = nowSlotOpen?.resolvedItem ?? attributedItem;
+      // #7304: an older list's swipe leftovers stop playing as Up next once the
+      // climb on the wall has sat for 4 h. Read before the dispatch, against
+      // the queue and climb the open starts from.
+      const openNow = nowMs();
+      const staleLeftovers = countStaleUpNextLeftovers({
+        inSession: sessionIdRef.current != null,
+        keepQueue,
+        queue: stateRef.current.queue,
+        currentClimbQueueItem: stateRef.current.currentClimbQueueItem,
+        openedQueueItemUuid: item.uuid,
+        clock: lastCurrentChangeRef.current,
+        now: openNow,
+      });
+      if (staleLeftovers > 0) {
+        const { changedAt } = lastCurrentChangeRef.current;
+        track(SHARED_EVENTS.QueueStaleLeftoversDropped, {
+          droppedCount: staleLeftovers,
+          idleHours: Math.floor((openNow - changedAt) / 3_600_000),
+          nowSlotMode,
+          boardName: activeBoardRef.current?.boardType ?? null,
+        });
+      }
       const correlationId = suppliedCorrelationId ?? coordinator.generateCorrelationId();
       // Skip the broadcast for an unresolved climb (#2527), see below.
       const broadcasts = isClimbResolved(item.climb);
@@ -2866,6 +2892,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           playlistSuggestionSource,
           insertAfterCurrent,
           pruneSuggestedAfterCurrent: sessionIdRef.current == null && !keepQueue,
+          dropSuggestedUpNext: staleLeftovers > 0,
           sessionId: broadcasts ? (sessionIdRef.current ?? undefined) : undefined,
           placement,
           // Solo, the phone trims History itself; in a session only the server

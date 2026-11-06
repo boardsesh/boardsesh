@@ -539,6 +539,14 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
          */
         pruneSuggestedAfterCurrent?: boolean;
         /**
+         * Drop every `suggested` entry after the new current climb, in now-slot
+         * mode too and with or without a list (issue #7304). The provider sets
+         * it solo when the climb that was up had not changed for 4 h or more, so
+         * an older list's swipe leftovers stop playing as Up next ahead of the
+         * list just picked. Local-only, like the prune above.
+         */
+        dropSuggestedUpNext?: boolean;
+        /**
          * Local moves only: the party session a setCurrentClimb mutation for
          * this move is being sent to. Set it only when that mutation really goes
          * out; the reducer then records the move as unconfirmed (see

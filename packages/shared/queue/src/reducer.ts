@@ -537,6 +537,7 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         serverCorrelationId,
         playlistSuggestionSource,
         pruneSuggestedAfterCurrent = true,
+        dropSuggestedUpNext = false,
         sessionId,
         placement = 'NOW',
         capHistory: trimHistory = false,
@@ -639,9 +640,14 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         if (!isServerEvent && item && correlationId) {
           pendingUpdates = [...pendingUpdates, correlationId].slice(-50);
         }
-        const changed = isServerEvent
+        const placed = isServerEvent
           ? pointAtServerCurrent(state, item)
           : placeLocally(state, item, placement, trimHistory);
+        // Removing entries after the climb on the wall leaves the line where it is.
+        const changed =
+          !isServerEvent && dropSuggestedUpNext && placed.currentClimbQueueItem
+            ? { ...placed, queue: pruneSuggestedQueueItemsAfterCurrent(placed.queue, placed.currentClimbQueueItem) }
+            : placed;
         return {
           ...state,
           ...changed,
@@ -678,7 +684,7 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       return {
         ...state,
         queue:
-          playlistSuggestionSource && item && pruneSuggestedAfterCurrent
+          item && ((playlistSuggestionSource && pruneSuggestedAfterCurrent) || dropSuggestedUpNext)
             ? pruneSuggestedQueueItemsAfterCurrent(newQueue, item)
             : newQueue,
         currentClimbQueueItem: item,

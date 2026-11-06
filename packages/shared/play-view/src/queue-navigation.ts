@@ -235,7 +235,9 @@ export function resolveTrackListClimbUuid(
  * those climbs sit in the queue after it; they are the list, walked by the
  * list's own rule, and never Up next ahead of it. A `suggested` climb from
  * another list (a workout's climbs, an older list's leftovers) is not on this
- * track, so it is Up next like anything else queued (issue #6777).
+ * track, so it is Up next like anything else queued (issue #6777). Solo, the
+ * provider drops those leftovers on the first pick after the climb on the wall
+ * sat 4 h (issue #7304), so a stale list can't play ahead of a new one.
  */
 function isListWalkEntry(item: ClimbQueueItem, source: PlaylistSuggestionSource): boolean {
   const climbUuid = item.climb?.uuid;
