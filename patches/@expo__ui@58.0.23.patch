@@ -681,17 +681,10 @@ new file mode 100644
 +  return state
 +}
 diff --git a/android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt b/android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt
-index 9ca0932..2fbc281 100644
+index 9ca0932..e1dd209 100644
 --- a/android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt
 +++ b/android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt
-@@ -8,20 +8,32 @@ import android.content.Context
- import android.graphics.Color
- import android.view.KeyEvent
- import android.view.inputmethod.InputMethodManager
-+import androidx.compose.foundation.gestures.awaitEachGesture
-+import androidx.compose.foundation.gestures.awaitFirstDown
- import androidx.compose.material3.BottomSheetDefaults
- import androidx.compose.material3.ExperimentalMaterial3Api
+@@ -13,16 +13,30 @@ import androidx.compose.material3.ExperimentalMaterial3Api
  import androidx.compose.material3.MaterialTheme
  import androidx.compose.material3.ModalBottomSheet
  import androidx.compose.material3.ModalBottomSheetProperties
@@ -712,12 +705,17 @@ index 9ca0932..2fbc281 100644
  import androidx.compose.ui.graphics.Color as ComposeColor
  import androidx.compose.ui.graphics.luminance
  import androidx.compose.ui.graphics.takeOrElse
++import androidx.compose.ui.input.pointer.PointerEvent
 +import androidx.compose.ui.input.pointer.PointerEventPass
-+import androidx.compose.ui.input.pointer.pointerInput
++import androidx.compose.ui.node.ModifierNodeElement
++import androidx.compose.ui.node.PointerInputModifierNode
++import androidx.compose.ui.platform.InspectorInfo
  import androidx.compose.ui.platform.LocalView
++import androidx.compose.ui.unit.IntSize
  import androidx.compose.ui.window.DialogWindowProvider
  import expo.modules.kotlin.records.Field
-@@ -31,6 +43,8 @@ import expo.modules.kotlin.views.AsyncFunctionHandle
+ import expo.modules.kotlin.records.Record
+@@ -31,6 +45,8 @@ import expo.modules.kotlin.views.AsyncFunctionHandle
  import expo.modules.kotlin.views.ComposeProps
  import expo.modules.kotlin.views.FunctionalComposableScope
  import expo.modules.kotlin.views.OptimizedComposeProps
@@ -726,7 +724,7 @@ index 9ca0932..2fbc281 100644
  import kotlinx.coroutines.withContext
  import kotlin.coroutines.cancellation.CancellationException
 
-@@ -44,6 +58,7 @@ data class ModalBottomSheetPropertiesRecord(
+@@ -44,6 +60,7 @@ data class ModalBottomSheetPropertiesRecord(
  data class ModalBottomSheetViewProps(
    val skipPartiallyExpanded: Boolean = false,
    val initialFullyExpanded: Boolean = false,
@@ -734,16 +732,84 @@ index 9ca0932..2fbc281 100644
    val containerColor: Color? = null,
    val contentColor: Color? = null,
    val scrimColor: Color? = null,
-@@ -94,6 +109,77 @@ private fun ForwardKeyEventsToActivity(activity: Activity?) {
+@@ -94,6 +111,227 @@ private fun ForwardKeyEventsToActivity(activity: Activity?) {
    }
  }
 
++private data class SheetGestureCapture(
++  val observer: SheetTouchObserverNode,
++  val sheetState: SheetState,
++  val generation: Long,
++  val startDetent: SheetValue
++)
++
++private data class CancelledSheetGesture(val epoch: Long, val gesture: SheetGestureCapture)
++
 +private class SheetTouchRecoveryState {
 +  var touching by mutableStateOf(false)
++    private set
++  var recovering by mutableStateOf(false)
++    private set
++  var cancelledGesture by mutableStateOf<CancelledSheetGesture?>(null)
++    private set
 +  var activeCommands = 0
 +    private set
++  private var attachedObserver: SheetTouchObserverNode? = null
++  private var generation = 0L
++  private var cancellationEpoch = 0L
++  private var gesture: SheetGestureCapture? = null
++
++  private fun invalidateGesture() {
++    generation += 1
++    gesture = null
++    cancelledGesture = null
++  }
++
++  fun attach(observer: SheetTouchObserverNode) {
++    invalidateGesture()
++    attachedObserver = observer
++    touching = false
++  }
++
++  fun reset(observer: SheetTouchObserverNode, detached: Boolean = false) {
++    if (attachedObserver !== observer) return
++    invalidateGesture()
++    touching = false
++    if (detached) attachedObserver = null
++  }
++
++  fun pointersChanged(observer: SheetTouchObserverNode, sheetState: SheetState, pressed: Boolean) {
++    if (attachedObserver !== observer) return
++    if (pressed && !touching) {
++      invalidateGesture()
++      val startDetent = sheetState.currentValue
++      if (startDetent != SheetValue.Hidden) {
++        gesture = SheetGestureCapture(observer, sheetState, generation, startDetent)
++      }
++    }
++    touching = pressed
++    // A normal UP never requests cancellation rollback.
++    if (!pressed) gesture = null
++  }
++
++  fun cancelGesture(observer: SheetTouchObserverNode) {
++    if (attachedObserver !== observer) return
++    val captured = gesture
++    val wasTouching = touching
++    touching = false
++    gesture = null
++    if (!wasTouching || captured == null || captured.generation != generation || activeCommands != 0) return
++    cancellationEpoch += 1
++    cancelledGesture = CancelledSheetGesture(cancellationEpoch, captured)
++  }
++
++  fun owns(request: CancelledSheetGesture, sheetState: SheetState): Boolean =
++    cancelledGesture === request && request.gesture.generation == generation &&
++      request.gesture.sheetState === sheetState && attachedObserver === request.gesture.observer &&
++      request.gesture.observer.isAttached && !touching && activeCommands == 0
 +
 +  suspend fun runCommand(command: suspend () -> Unit) {
++    invalidateGesture()
 +    activeCommands += 1
 +    try {
 +      command()
@@ -751,26 +817,106 @@ index 9ca0932..2fbc281 100644
 +      activeCommands -= 1
 +    }
 +  }
-+}
 +
-+private fun Modifier.trackSheetRecoveryPointers(recovery: SheetTouchRecoveryState): Modifier =
-+  pointerInput(recovery) {
++  suspend fun runRecovery(command: suspend () -> Unit) {
++    recovering = true
 +    try {
-+      awaitEachGesture {
-+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-+        recovery.touching = true
-+        try {
-+          do {
-+            val event = awaitPointerEvent(PointerEventPass.Initial)
-+          } while (event.changes.any { it.pressed })
-+        } finally {
-+          recovery.touching = false
-+        }
-+      }
++      command()
 +    } finally {
-+      recovery.touching = false
++      recovering = false
 +    }
 +  }
++}
++
++private data class SheetTouchObserverElement(
++  val recovery: SheetTouchRecoveryState,
++  val sheetState: SheetState
++) : ModifierNodeElement<SheetTouchObserverNode>() {
++  override fun create() = SheetTouchObserverNode(recovery, sheetState)
++
++  override fun update(node: SheetTouchObserverNode) {
++    node.update(recovery, sheetState)
++  }
++
++  override fun InspectorInfo.inspectableProperties() {
++    name = "sheetTouchRecovery"
++  }
++}
++
++/** Observe the framework's real cancellation signal; an ordinary UP is not cancellation. */
++private class SheetTouchObserverNode(
++  private var recovery: SheetTouchRecoveryState,
++  private var sheetState: SheetState
++) : Modifier.Node(), PointerInputModifierNode {
++  override fun onAttach() {
++    recovery.attach(this)
++  }
++
++  override fun onReset() {
++    recovery.reset(this)
++  }
++
++  override fun onDetach() {
++    recovery.reset(this, detached = true)
++  }
++
++  fun update(nextRecovery: SheetTouchRecoveryState, nextSheetState: SheetState) {
++    if (recovery === nextRecovery && sheetState === nextSheetState) return
++    if (isAttached) recovery.reset(this, detached = true)
++    recovery = nextRecovery
++    sheetState = nextSheetState
++    if (isAttached) recovery.attach(this)
++  }
++
++  override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {
++    if (pass == PointerEventPass.Initial) {
++      recovery.pointersChanged(this, sheetState, pointerEvent.changes.any { it.pressed })
++    }
++  }
++
++  override fun onCancelPointerInput() {
++    recovery.cancelGesture(this)
++  }
++}
++
++private fun Modifier.trackSheetRecoveryPointers(recovery: SheetTouchRecoveryState, sheetState: SheetState): Modifier =
++  then(SheetTouchObserverElement(recovery, sheetState))
++
++/** A truly canceled active gesture returns to its captured visible start detent, once. */
++@Composable
++private fun RecoverCancelledSheetGesture(
++  sheetState: SheetState,
++  recovery: SheetTouchRecoveryState,
++  enabled: Boolean
++) {
++  LaunchedEffect(sheetState, enabled) {
++    if (!enabled) return@LaunchedEffect
++    var consumedEpoch = 0L
++    snapshotFlow { recovery.cancelledGesture }.collectLatest { request ->
++      if (request == null || request.epoch <= consumedEpoch) return@collectLatest
++      snapshotFlow { !recovery.touching && !recovery.recovering }.first { it }
++      if (!recovery.owns(request, sheetState)) return@collectLatest
++      val startDetent = request.gesture.startDetent
++      val anchorAvailable = when (startDetent) {
++        SheetValue.Expanded -> sheetState.hasExpandedState
++        SheetValue.PartiallyExpanded -> sheetState.hasPartiallyExpandedState
++        SheetValue.Hidden -> false
++      }
++      if (!anchorAvailable) return@collectLatest
++      // Consume locally: clearing the observed request would cancel our own collectLatest action.
++      consumedEpoch = request.epoch
++      // Back and scrim dismissal bypass the explicit command counter and must keep priority.
++      if (!sheetState.isVisible || sheetState.targetValue == SheetValue.Hidden) return@collectLatest
++      recovery.runRecovery {
++        when (startDetent) {
++          SheetValue.Expanded -> sheetState.expand()
++          SheetValue.PartiallyExpanded -> sheetState.partialExpand()
++          SheetValue.Hidden -> Unit
++        }
++      }
++    }
++  }
++}
 +
 +/**
 + * Foundation 1.12.1 can retain dragTarget after an anchor update during a targetless drag.
@@ -796,14 +942,16 @@ index 9ca0932..2fbc281 100644
 +      // Waiting never makes pointer release a trigger; another settled transition cancels this one.
 +      snapshotFlow { recovery.touching }.first { touching -> !touching }
 +      if (sheetState.currentValue != settled || sheetState.targetValue != settled ||
-+        !sheetState.isAnimationRunning || recovery.activeCommands != 0
++        !sheetState.isAnimationRunning || recovery.activeCommands != 0 || recovery.recovering
 +      ) {
 +        return@collectLatest
 +      }
-+      when (settled) {
-+        SheetValue.Expanded -> sheetState.expand()
-+        SheetValue.PartiallyExpanded -> sheetState.partialExpand()
-+        SheetValue.Hidden -> Unit
++      recovery.runRecovery {
++        when (settled) {
++          SheetValue.Expanded -> sheetState.expand()
++          SheetValue.PartiallyExpanded -> sheetState.partialExpand()
++          SheetValue.Hidden -> Unit
++        }
 +      }
 +    }
 +  }
@@ -812,13 +960,14 @@ index 9ca0932..2fbc281 100644
  @Composable
  fun FunctionalComposableScope.ModalBottomSheetContent(
    props: ModalBottomSheetViewProps,
-@@ -104,11 +190,14 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+@@ -104,11 +342,15 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
  ) {
    val sheetState = rememberModalBottomSheetState(props.skipPartiallyExpanded)
    val scope = rememberCoroutineScope()
-+  val touchRecovery = remember { SheetTouchRecoveryState() }
++  val touchRecovery = remember(sheetState) { SheetTouchRecoveryState() }
 +  val recoverSettledTouches = props.recoverSettledTouches && props.sheetGesturesEnabled
 +  RecoverSettledSheetTouches(sheetState, touchRecovery, recoverSettledTouches)
++  RecoverCancelledSheetGesture(sheetState, touchRecovery, recoverSettledTouches)
 
    hide.handle {
      try {
@@ -828,7 +977,7 @@ index 9ca0932..2fbc281 100644
        }
      } catch (_: CancellationException) {
        // Swipe-dismiss may cancel the coroutine scope while hide() is in-flight.
-@@ -119,7 +208,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+@@ -119,7 +361,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
    expand.handle {
      try {
        withContext(scope.coroutineContext) {
@@ -837,7 +986,7 @@ index 9ca0932..2fbc281 100644
        }
      } catch (_: CancellationException) {
        // Swipe-dismiss may cancel the coroutine scope while expand() is in-flight.
-@@ -130,7 +219,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+@@ -130,7 +372,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
    partialExpand.handle {
      try {
        withContext(scope.coroutineContext) {
@@ -846,15 +995,15 @@ index 9ca0932..2fbc281 100644
        }
      } catch (_: CancellationException) {
        // Swipe-dismiss may cancel the coroutine scope while partialExpand() is in-flight.
-@@ -175,6 +264,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+@@ -175,6 +417,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
        shouldDismissOnClickOutside = props.properties.shouldDismissOnClickOutside
      ),
      modifier = ModifierRegistry.applyModifiers(props.modifiers, appContext, composableScope, globalEventDispatcher)
-+      .then(if (recoverSettledTouches) Modifier.trackSheetRecoveryPointers(touchRecovery) else Modifier)
++      .then(if (recoverSettledTouches) Modifier.trackSheetRecoveryPointers(touchRecovery, sheetState) else Modifier)
    ) {
      ForwardKeyEventsToActivity(appContext.currentActivity)
      Children(UIComposableScope(), filter = { !isSlotView(it) })
-@@ -183,7 +273,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+@@ -183,7 +426,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
    LaunchedEffect(Unit) {
      if (props.initialFullyExpanded && !props.skipPartiallyExpanded) {
        try {
@@ -864,16 +1013,17 @@ index 9ca0932..2fbc281 100644
          // Dismissal can cancel the expand animation.
        } catch (_: Exception) {
 diff --git a/src/jetpack-compose/ModalBottomSheet/index.tsx b/src/jetpack-compose/ModalBottomSheet/index.tsx
-index c3225b1..68b74f3 100644
+index c3225b1..40330e9 100644
 --- a/src/jetpack-compose/ModalBottomSheet/index.tsx
 +++ b/src/jetpack-compose/ModalBottomSheet/index.tsx
-@@ -69,6 +69,14 @@ export interface ModalBottomSheetProps {
+@@ -69,6 +69,15 @@ export interface ModalBottomSheetProps {
     * @platform android
     */
    initialFullyExpanded?: boolean;
 +  /**
 +   * Restores touch handling after a visible drag settles with a stale animation flag.
-+   * Applies only to changed, visible detents; it does not interrupt an active pointer or command.
++   * Also returns a genuinely canceled active gesture to its visible starting detent.
++   * Ordinary release and fling behavior stay unchanged; explicit commands take precedence.
 +   * Requires the Boardsesh native Expo UI patch.
 +   * @default false
 +   * @platform android
@@ -882,7 +1032,7 @@ index c3225b1..68b74f3 100644
    /**
     * The background color of the bottom sheet.
     */
-@@ -119,6 +127,7 @@ function transformProps(props: ModalBottomSheetProps): NativeModalBottomSheetPro
+@@ -119,6 +128,7 @@ function transformProps(props: ModalBottomSheetProps): NativeModalBottomSheetPro
      ...restProps,
      skipPartiallyExpanded: props.skipPartiallyExpanded ?? false,
      initialFullyExpanded: props.initialFullyExpanded ?? false,
@@ -891,16 +1041,17 @@ index c3225b1..68b74f3 100644
        onDismissRequest?.();
      },
 diff --git a/build/jetpack-compose/ModalBottomSheet/index.d.ts b/build/jetpack-compose/ModalBottomSheet/index.d.ts
-index 6d3806c..45eb57f 100644
+index 6d3806c..0f02af6 100644
 --- a/build/jetpack-compose/ModalBottomSheet/index.d.ts
 +++ b/build/jetpack-compose/ModalBottomSheet/index.d.ts
-@@ -55,6 +55,14 @@ export interface ModalBottomSheetProps {
+@@ -55,6 +55,15 @@ export interface ModalBottomSheetProps {
       * @platform android
       */
      initialFullyExpanded?: boolean;
 +    /**
 +     * Restores touch handling after a visible drag settles with a stale animation flag.
-+     * Applies only to changed, visible detents; it does not interrupt an active pointer or command.
++     * Also returns a genuinely canceled active gesture to its visible starting detent.
++     * Ordinary release and fling behavior stay unchanged; explicit commands take precedence.
 +     * Requires the Boardsesh native Expo UI patch.
 +     * @default false
 +     * @platform android

@@ -596,7 +596,8 @@ export const RULES: readonly PatchRule[] = [
   },
   // Opt in only the Filters sheet: Foundation 1.12.1 can retain its animation
   // flag after a settled drag, which makes the parent consume every touch down.
-  // Recovery must follow a changed visible settled detent, never an active drag.
+  // Recover changed visible settlements, or roll back a genuinely canceled
+  // active gesture. Normal UP/fling and newer interactions keep control.
   {
     package: '@expo/ui',
     file: 'android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt',
@@ -606,18 +607,55 @@ export const RULES: readonly PatchRule[] = [
       'LaunchedEffect(sheetState, enabled)',
       'if (!enabled) return@LaunchedEffect',
       'RecoverSettledSheetTouches(sheetState, touchRecovery, recoverSettledTouches)',
-      'awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)',
-      'recovery.touching = true',
-      '} while (event.changes.any { it.pressed })',
-      `} finally {
-          recovery.touching = false`,
-      `} finally {
-      recovery.touching = false`,
+      'RecoverCancelledSheetGesture(sheetState, touchRecovery, recoverSettledTouches)',
+      'val touchRecovery = remember(sheetState) { SheetTouchRecoveryState() }',
+      ') : Modifier.Node(), PointerInputModifierNode',
+      `override fun onAttach() {
+    recovery.attach(this)`,
+      'attachedObserver = observer',
+      `override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {
+    if (pass == PointerEventPass.Initial) {
+      recovery.pointersChanged(this, sheetState, pointerEvent.changes.any { it.pressed })`,
+      `override fun onCancelPointerInput() {
+    recovery.cancelGesture(this)`,
+      `override fun onReset() {
+    recovery.reset(this)`,
+      `override fun onDetach() {
+    recovery.reset(this, detached = true)`,
+      `private fun invalidateGesture() {
+    generation += 1
+    gesture = null
+    cancelledGesture = null`,
+      `if (pressed && !touching) {
+      invalidateGesture()`,
+      'touching = pressed',
+      `val wasTouching = touching
+    touching = false
+    gesture = null`,
+      `if (attachedObserver !== observer) return
+    invalidateGesture()
+    touching = false
+    if (detached) attachedObserver = null`,
+      'gesture = SheetGestureCapture(observer, sheetState, generation, startDetent)',
+      'if (startDetent != SheetValue.Hidden)',
+      'if (!pressed) gesture = null',
+      'if (!wasTouching || captured == null || captured.generation != generation || activeCommands != 0) return',
+      'cancelledGesture = CancelledSheetGesture(cancellationEpoch, captured)',
+      'cancelledGesture === request && request.gesture.generation == generation',
+      'request.gesture.sheetState === sheetState && attachedObserver === request.gesture.observer',
+      'request.gesture.observer.isAttached && !touching && activeCommands == 0',
+      `suspend fun runCommand(command: suspend () -> Unit) {
+    invalidateGesture()`,
       `activeCommands += 1
     try {
       command()
     } finally {
       activeCommands -= 1`,
+      `recovering = true
+    try {
+      command()
+    } finally {
+      recovering = false`,
       `withContext(scope.coroutineContext) {
         touchRecovery.runCommand { sheetState.hide() }`,
       `withContext(scope.coroutineContext) {
@@ -627,17 +665,37 @@ export const RULES: readonly PatchRule[] = [
       `if (props.initialFullyExpanded && !props.skipPartiallyExpanded) {
       try {
         touchRecovery.runCommand { sheetState.expand() }`,
-      'Modifier.trackSheetRecoveryPointers(touchRecovery) else Modifier',
+      'Modifier.trackSheetRecoveryPointers(touchRecovery, sheetState) else Modifier',
+      'SheetValue.Expanded -> sheetState.hasExpandedState',
+      'SheetValue.PartiallyExpanded -> sheetState.hasPartiallyExpandedState',
+      'SheetValue.Hidden -> false',
+      `when (startDetent) {
+          SheetValue.Expanded -> sheetState.expand()
+          SheetValue.PartiallyExpanded -> sheetState.partialExpand()
+          SheetValue.Hidden -> Unit`,
+      `when (settled) {
+          SheetValue.Expanded -> sheetState.expand()
+          SheetValue.PartiallyExpanded -> sheetState.partialExpand()
+          SheetValue.Hidden -> Unit`,
     ],
     orderedSentinels: [
+      'snapshotFlow { recovery.cancelledGesture }.collectLatest { request ->',
+      'if (request == null || request.epoch <= consumedEpoch) return@collectLatest',
+      'snapshotFlow { !recovery.touching && !recovery.recovering }.first { it }',
+      'if (!recovery.owns(request, sheetState)) return@collectLatest',
+      'if (!anchorAvailable) return@collectLatest',
+      'consumedEpoch = request.epoch',
+      'if (!sheetState.isVisible || sheetState.targetValue == SheetValue.Hidden) return@collectLatest',
+      `recovery.runRecovery {
+        when (startDetent) {`,
       'snapshotFlow { sheetState.currentValue }.collectLatest { settled ->',
       'previousSettled = settled',
       'if (previous == settled || previous == SheetValue.Hidden || settled == SheetValue.Hidden)',
       'snapshotFlow { recovery.touching }.first { touching -> !touching }',
       'if (sheetState.currentValue != settled || sheetState.targetValue != settled ||',
-      '!sheetState.isAnimationRunning || recovery.activeCommands != 0',
-      'SheetValue.Expanded -> sheetState.expand()',
-      'SheetValue.PartiallyExpanded -> sheetState.partialExpand()',
+      '!sheetState.isAnimationRunning || recovery.activeCommands != 0 || recovery.recovering',
+      `recovery.runRecovery {
+        when (settled) {`,
     ],
     forbiddenSubstrings: [
       'Filters7312',

@@ -626,10 +626,24 @@ causing the sheet to consume later taps. After an established visible detent
 changes, the patch waits for released pointers and checks that the sheet is
 settled at its target with no explicit command running. It then enters that
 same detent through Material3's public API once. Initial presentation, Hidden
-and same-detent releases do not trigger recovery. This uses no timed reset or
-private state; other sheets retain Expo's default behavior. Native QA must cover
-repeated expand/collapse, taps after each drag, fast reversal at an anchor,
+and same-detent releases do not trigger this recovery.
+
+An actual native cancellation during a pressed gesture, such as rotation,
+instead returns Filters to the visible detent captured on the first DOWN.
+The nonconsuming observer uses `PointerInputModifierNode.onCancelPointerInput`;
+ordinary UP and fling never request this rollback. A new gesture, explicit
+command, reset or detach invalidates it. Rollback runs once while the same
+observer and sheet remain attached, pointers are released and no command is
+active; it skips a starting anchor that is no longer available and gives native
+Back or scrim dismissal priority. It does not
+wait for an animation flag or override a newer interaction. Both recovery paths
+use public Material3 methods, with no timed reset or private state; other sheets
+retain Expo's default behavior. Native QA must cover repeated expand/collapse,
+taps after each drag, fast reversal at an anchor, rotation during a held drag,
 keyboard expansion, swipe dismissal and picker suspension/return.
+
+Native drags do not report their detent to the coordinator. Picker return preserves
+the scroll offset but may reopen halfway after a dragged expansion.
 
 **Filter sheet parts are shared.** The sheet is built from the parts in
 `src/components/filter-sheet/`: `FilterSheetSection` (headline group), `FilterLabelRow` (muted
