@@ -1,9 +1,133 @@
 # Boardsesh 2.7.0: release health and the Crew browse alert
 
-Analysis date: **2026-11-05 UTC**. Completed-day results stop at **2026-11-05 00:00 UTC**.
-The separate live incident check ran around **06:20 UTC**.
+Initial analysis: **2026-11-05 UTC**, completed-day cutoff **2026-11-05 00:00 UTC**;
+its separate live incident check ran around **06:20 UTC**.
+Follow-up: **2026-11-06 UTC**, completed-day cutoff **2026-11-06 00:00 UTC**.
 
-## Decision
+## November 6 follow-up
+
+Checked around **14:30 UTC on November 6**. Completed-day comparisons below use
+**November 3–5 UTC**, with an exclusive cutoff of **November 6 00:00 UTC**.
+The original November 5 snapshot remains below; historical totals have since
+changed slightly, so its figures should be read as the earlier observation.
+
+**The legacy alert still has a broken baseline. Android now needs a targeted
+connect-to-first-light investigation before using this analysis to justify
+further rollout expansion.** This is a recommendation, not a change to store
+rollout settings; the current store rollout percentage was not checked.
+
+### The extra completed day confirms the denominator problem
+
+For November 5, the old alert recorded **0.750307287093942** and remained firing.
+The internal-account-excluded diagnostic reproduces it as:
+
+| Successful writes | All active events | Fresh picks | Navigation | Saves | Original ratio | Fresh-pick ratio |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4,272 | 5,694 | 2,125 | 3,544 | 25 | 0.750 | 2.010 |
+
+Navigation represents **62.2%** of the active-event denominator. Removing it and
+saves again puts the diagnostic near the historical 2.05 baseline. The fresh-pick
+ratio remains an event-volume diagnostic, not a conversion rate.
+[Saved diagnostic](https://us.posthog.com/project/412845/insights/HPqz525k).
+
+### Recent-build evidence now covers November 3–5
+
+Native production, known internal accounts and emulators excluded. iPadOS is
+folded into iOS. These are the same completed days for each comparison.
+
+| Version / build / OS | Connecting people | Successful connects / attempts | Connecting sessions that lit | Board-active people | Successful writes / failures |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2.6.0 / 18 / iOS | 330 | 1,435 / 1,447 (99.2%) | 495 / 500 (99.0%) | 330 | 10,178 / 0 |
+| 2.7.0 / 13 / iOS | 21 | 75 / 79 (94.9%) | 25 / 25 (100%) | 21 | 388 / 0 |
+| 2.6.0 / 2001310 / Android | 127 | 507 / 553 (91.7%) | 163 / 167 (97.6%) | 126 | 3,640 / 0 |
+| 2.7.0 / 2001566 / Android | 14 | 38 / 45 (84.4%) | 12 / 14 (85.7%) | 11 | 288 / 0 |
+
+Android's connection deficit is **7.2 percentage points** in this fixed three-day
+comparison. Its connect-success sample now exceeds 20 attempts and 10 people.
+Its first-light result still has only 14 connecting sessions, below that metric's
+20-session floor. The dashboard therefore shows its connect-success rate but
+keeps its first-light rate null.
+
+iOS build 13 now has enough connecting sessions and people for the first-light
+metric: all 25 connecting sessions had a subsequent observed write. Its
+three-day connection rate is 4.2 points below the contemporary 2.6.0 iOS rate.
+Those facts support a more specific interpretation than either blanket
+"healthy" or blanket "broken."
+
+The zero write-failure counts do not explain sessions without any write event.
+A success rate computed only from recorded success/failure outcomes cannot
+certify that every Put on board press reached the write stage.
+
+[Connection evidence](https://us.posthog.com/project/412845/insights/0mwxxmDn)
+and [write outcomes](https://us.posthog.com/project/412845/insights/z3JHNIVp):
+select **November 3–5** to reproduce the table.
+
+### Two Android sessions warrant a connect-handoff check
+
+Two build-2001566 sessions had successful connections and deliberate Put on board
+activations but no observed successful writes. None of the three activations
+carried a crew session ID; the maximum reported participant count was zero. This removes the
+obvious alternate-controller explanation from the captured event context.
+
+| Board | Put-on-board activation | Successful connect | Observed write outcomes |
+| --- | --- | --- | --- |
+| Tension | Nov 4, 14:37:30.605 UTC | Nov 4, 14:37:42.715 UTC | No success, failure or skipped-write event |
+| Kilter | Nov 5, 01:10:20.856 and 01:25:25.011 UTC | Nov 5, 01:15:13.927 and 01:25:33.606 UTC | No success, failure or skipped-write event |
+
+There were also no `BLE Implicit Relight Suppressed` events in those sessions.
+The Tension activation preceded its connection by about 12 seconds. The last
+Kilter activation preceded its second connection by about 9 seconds. Do not
+describe these as proven failed writes over an already-live connection.
+
+The next focused check is **Put on board → connect/reconnect → first light on
+Android**, including first-connect confirmation and app/background timing.
+The event evidence does not establish a code defect, failed physical LEDs or
+why a write outcome is missing. No recording or hardware reproduction was used.
+
+### The iOS incidents remain concentrated
+
+All **39** empty picker observations on November 5 still belong to the same
+Tension session, from **04:21:39 to 06:02:23 UTC**. They did not expand into
+39 different affected people. The full day's build-13 picker sample contained
+50 observations from 12 people.
+
+The four new non-cancelled iOS connection failures all came from **one MoonBoard
+session**, between **18:08:18 and 18:15:24 UTC**. That same session and board also
+recorded nine successful connections and 19 successful writes, with its last
+write at **18:15:32 UTC**. This was a session with retries and subsequent observed
+lighting, not evidence of four different people being unable to connect.
+
+One build-13 iOS person had a single `paint_timeout` on the play surface at
+**18:00:01 UTC**. That updates the initial snapshot's absence of foreground
+render failures; it does not by itself establish a rendering regression.
+
+### Live rolling watch: keep the window and build differences explicit
+
+A forced refresh of the existing
+[seven-day alert source](https://us.posthog.com/project/412845/insights/dZeLB6pv)
+around 14:27 UTC returned:
+
+| OS | Connect-success deficit | First-light deficit | Empty-picker rise |
+| --- | ---: | ---: | ---: |
+| Android | 4.7 points | 13.5 points | -9.9 points |
+| iOS | 8.1 points | -0.6 points | 29.3 points |
+
+Positive deficits mean the release performed worse. The source's nonzero
+Android first-light deficit passes its aggregate sample gates and exceeds its
+3-point threshold. The iOS connect and empty-picker comparisons also exceed
+their configured thresholds. These are **live pooled-version warnings**: they
+include the current day, older release builds and versions 2.7.0 and above.
+They do not isolate build 2001566, build 13 or one OTA.
+
+In particular, the completed-three-day Android connect deficit of 7.2 points
+does **not** reproduce the rolling-seven-day connect deficit of 4.7 points.
+Do not substitute one window for the other or claim the latter crossed 5 points.
+
+All four connection alerts were still **disabled** when rechecked. No alert,
+threshold, dashboard definition or rollout setting was changed in this follow-up.
+The dashboard already incorporates the newer completed day.
+
+## Decision (initial November 5 snapshot)
 
 **The 0.66 alert is arithmetically correct, but its historical threshold no longer measures release health.**
 Navigation now adds thousands of events to its denominator. On November 4,
@@ -158,7 +282,7 @@ native crash telemetry, unseen renders and physical LED output were not verified
 [Connection evidence by build](https://us.posthog.com/project/412845/insights/0mwxxmDn)
 and [writes, drive drops and foreground render issues](https://us.posthog.com/project/412845/insights/z3JHNIVp).
 
-## Current-day incident worth inspecting
+## November 5 incident (original live check)
 
 The live check around November 5, 06:20 UTC found **39 empty picker observations**
 from **one person in one app session**, on a physical iOS device running
