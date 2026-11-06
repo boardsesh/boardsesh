@@ -17,7 +17,7 @@ import {
 import { createRequire, registerHooks } from 'node:module';
 import { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type postgres from 'postgres';
 
@@ -260,6 +260,10 @@ export async function snapshotCatalogSource(rootInput: string, expectedHead: str
 /** Include entire resolved packages, so dynamically selected runtime files cannot escape a short import list. */
 export function catalogExecutionManifest(sources: readonly SourceSnapshot[]): Record<string, string> {
   const files: Record<string, string> = Object.assign({}, ...sources.map((source) => source.files));
+  const admittedRoots = sources.flatMap((source) => [
+    realpathSync(source.root),
+    realpathSync(join(source.root, 'node_modules')),
+  ]);
   const packages = new Set<string>();
   let bytes = 0;
   let fileCount = Object.keys(files).length;
@@ -280,15 +284,37 @@ export function catalogExecutionManifest(sources: readonly SourceSnapshot[]): Re
     }
   }
   function visitPackage(name: string, context: string, optional: boolean): void {
-    let entry: string;
+    const resolver = createRequire(context);
+    let entry: string | undefined;
     try {
-      entry = createRequire(context).resolve(name);
+      entry = resolver.resolve(name);
     } catch {
-      requireCatalog(optional);
-      return;
+      try {
+        entry = resolver.resolve(`${name}/package.json`);
+      } catch {
+        // Type-only and native packages can lack a root entry or hide metadata
+        // behind exports. Locate only their exact metadata through Node's paths.
+        requireCatalog(/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(name) && name !== '.' && name !== '..');
+        for (const searchDirectory of resolver.resolve.paths(name) ?? []) {
+          const metadataPath = join(searchDirectory, name, 'package.json');
+          try {
+            requireCatalog(lstatSync(metadataPath).isFile());
+            entry = metadataPath;
+            break;
+          } catch (error) {
+            if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'))
+              throw error;
+          }
+        }
+        if (entry === undefined) {
+          requireCatalog(optional);
+          return;
+        }
+      }
     }
     let directory = dirname(realpathSync(entry));
     while (directory !== dirname(directory)) {
+      requireCatalog(admittedRoots.some((root) => directory === root || directory.startsWith(`${root}${sep}`)));
       try {
         const metadata = JSON.parse(regularFile(join(directory, 'package.json')).toString()) as {
           name?: unknown;
@@ -302,7 +328,9 @@ export function catalogExecutionManifest(sources: readonly SourceSnapshot[]): Re
           visitDirectory(directory);
           for (const dependency of Object.keys(metadata.dependencies ?? {}))
             visitPackage(dependency, join(directory, 'package.json'), false);
-          for (const dependency of Object.keys({ ...metadata.optionalDependencies, ...metadata.peerDependencies }))
+          // Explicit primary packages cover supported peers; unknown actual imports
+          // still fail the import guard instead of admitting unrelated adapters.
+          for (const dependency of Object.keys(metadata.optionalDependencies ?? {}))
             visitPackage(dependency, join(directory, 'package.json'), true);
           return;
         }

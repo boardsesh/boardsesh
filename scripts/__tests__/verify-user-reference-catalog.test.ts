@@ -1,6 +1,7 @@
 import { describe, it } from 'vite-plus/test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { createServer, Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -8,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { cutoffBootstrapSql, parseCatalogOptions, requireCatalogInvocation } from '../verify-user-reference-catalog';
 import {
   CatalogCommandFailure,
+  catalogExecutionManifest,
   digest,
   guardCatalogSocket,
   runCatalogCommand,
@@ -182,6 +184,49 @@ describe('owned user-reference proof input and source boundary', () => {
       validArguments.map((argument) => (argument === '--source-head' ? '--harness-head' : argument)),
     ])
       assert.throws(() => parseCatalogOptions(rejected), /rejected/);
+  });
+
+  it('accepts only one task forwarding separator immediately after --run', () => {
+    const forwardedArguments = ['--run', '--', ...validArguments.slice(1)];
+    assert.deepEqual(parseCatalogOptions(forwardedArguments), parseCatalogOptions(validArguments));
+    for (const rejected of [
+      ['--run', '--', '--', ...validArguments.slice(1)],
+      ['--', ...validArguments],
+      [...validArguments.slice(0, 3), '--', ...validArguments.slice(3)],
+      [...validArguments, '--'],
+      validArguments.map((argument, index) => (index === 2 ? '--' : argument)),
+      forwardedArguments.map((argument, index) => (index === 3 ? '--' : argument)),
+      ['--plan', '--'],
+    ])
+      assert.throws(() => parseCatalogOptions(rejected), /rejected/);
+  });
+
+  it('binds the actual installed native compiler and type-only dependency contents', () => {
+    const manifest = catalogExecutionManifest([{ root, head, files: {}, sha256: digest('{}') }]);
+    const rootRequire = createRequire(join(root, 'package.json'));
+    const tsxRequire = createRequire(rootRequire.resolve('tsx'));
+    const esbuildRequire = createRequire(tsxRequire.resolve('esbuild'));
+    const nativePackage = `@esbuild/${process.platform}-${process.arch}`;
+    const nativeExecutable = process.platform === 'win32' ? 'esbuild.exe' : 'bin/esbuild';
+    const compiler = realpathSync(esbuildRequire.resolve(`${nativePackage}/${nativeExecutable}`));
+    assert.equal(manifest[compiler], digest(readFileSync(compiler)));
+    for (const name of [nativePackage, 'type-fest', 'tagged-tag']) {
+      const metadataPath = Object.keys(manifest).find((path) =>
+        path.endsWith(join('node_modules', name, 'package.json')),
+      );
+      assert.ok(metadataPath, `Missing installed package metadata: ${name}`);
+      assert.equal(manifest[metadataPath], digest(readFileSync(metadataPath)));
+      if (name !== nativePackage) {
+        const metadata = JSON.parse(readFileSync(metadataPath, 'utf8')) as {
+          types?: unknown;
+          exports?: { types?: unknown };
+        };
+        const declarationEntry = metadata.types ?? metadata.exports?.types;
+        assert.ok(typeof declarationEntry === 'string');
+        const declarations = join(dirname(metadataPath), declarationEntry);
+        assert.equal(manifest[declarations], digest(readFileSync(declarations)));
+      }
+    }
   });
 
   it('copies the actual helper body and rejects changed bootstrap literal contracts', () => {

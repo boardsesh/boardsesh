@@ -28,12 +28,15 @@ export interface CatalogOptions {
 
 export function parseCatalogOptions(arguments_: readonly string[]): CatalogOptions | null {
   if (arguments_.length === 0 || (arguments_.length === 1 && arguments_[0] === '--plan')) return null;
-  requireCatalog(arguments_[0] === '--run' && arguments_.length === 11);
+  // vp preserves its forwarding separator after the task's fixed --run flag.
+  const runArguments =
+    arguments_[0] === '--run' && arguments_[1] === '--' ? [arguments_[0], ...arguments_.slice(2)] : arguments_;
+  requireCatalog(runArguments[0] === '--run' && runArguments.length === 11 && !runArguments.includes('--'));
   const allowed = ['--source-root', '--source-head', '--harness-head', '--out', '--image'];
   const selected = new Map<string, string>();
-  for (let index = 1; index < arguments_.length; index += 2) {
-    const option = arguments_[index],
-      contents = arguments_[index + 1];
+  for (let index = 1; index < runArguments.length; index += 2) {
+    const option = runArguments[index],
+      contents = runArguments[index + 1];
     requireCatalog(allowed.includes(option) && contents && !selected.has(option));
     selected.set(option, contents);
   }

@@ -46,6 +46,14 @@ before selected runtime imports and checked throughout execution. A source chang
 invalidates the result. A main checkout and an unmerged auth stack need separate
 reports; their migration and reference counts need not match.
 
+The execution manifest follows declared runtime dependencies and installed
+optional dependencies, including the actual esbuild platform binary. Runtime
+peers used by this proof are admitted explicitly, including `postgres` for the
+Drizzle adapter. Each selected runtime import must resolve to an already
+fingerprinted file. Missing required packages or an unadmitted actual peer
+prevent completion. Package metadata lookup supports type-only and binary-only
+packages while retaining package-name, real-root and content checks.
+
 ## Fixture boundary
 
 Each run claims a new container, a uniquely named PostgreSQL volume and a private
