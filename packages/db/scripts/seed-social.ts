@@ -11,7 +11,12 @@ import { boardClimbs, boardClimbStats, boardDifficultyGrades } from '../src/sche
 import { notifications } from '../src/schema/app/notifications.js';
 import { comments, votes } from '../src/schema/app/social.js';
 import { feedItems } from '../src/schema/app/feed.js';
-import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
+import {
+  assertDevelopmentAuthSeedTarget,
+  createScriptDb,
+  describeDatabaseHost,
+  getScriptDatabaseUrl,
+} from './db-connection.js';
 import { pickTickComment, pickSocialComment, pickThread, type TickStatus } from './fixtures/comment-templates.js';
 import {
   FIXTURE_USERS,
@@ -131,7 +136,8 @@ const NUM_BOARDS = 20;
 
 async function seedSocialData() {
   const databaseUrl = getScriptDatabaseUrl();
-  const dbHost = databaseUrl.split('@')[1]?.split('/')[0] || 'unknown';
+  assertDevelopmentAuthSeedTarget(databaseUrl);
+  const dbHost = describeDatabaseHost(databaseUrl);
   console.info(`Seeding social data to: ${dbHost}`);
 
   // Use deterministic seed for idempotent output
