@@ -1,9 +1,8 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import { posthogConfigFromEnvironment, runRefreshRecommendations } from '@boardsesh/db/jobs';
-import { fencedTransact, jobLogger } from './batch-job';
+import { fencedTransact, jobLogger, systemUserAuthorityForContext } from './batch-job';
+import { refreshRecommendationsPayload as payload } from './batch-system-user-payloads';
 import type { BackgroundJobFamilyModule } from './types';
-
-const payload = z.object({}).strict();
 
 /**
  * Nightly setter stats, PostHog send stats, cohort playlists and the weekly
@@ -34,6 +33,7 @@ export const refreshRecommendationsFamily: BackgroundJobFamilyModule<z.infer<typ
       db: context.database,
       signal: context.signal,
       transact: fencedTransact(context),
+      systemUserAuthority: systemUserAuthorityForContext(context),
       log: jobLogger(context),
       posthog: posthogConfigFromEnvironment(process.env),
     });

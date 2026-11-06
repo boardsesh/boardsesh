@@ -1,4 +1,5 @@
 import 'server-only';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import { GET_USER_BETA_LINKS } from '@boardsesh/graphql/operations/beta-links';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
@@ -13,7 +14,8 @@ export async function getUserBetaLinks(userId: string, limit = 50): Promise<Rece
       await getServerAuthToken(),
     );
     return result.userBetaLinks;
-  } catch {
+  } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) throw error;
     return [];
   }
 }

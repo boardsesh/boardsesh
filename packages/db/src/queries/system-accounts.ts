@@ -1,10 +1,7 @@
 import { SYSTEM_USER_ID } from './boards/serial-dedupe';
+import { HOLD_CLASSIFIER_USER_ID, RECOMMENDATIONS_USER_ID } from './system-account-constants';
 
-/** The reserved account the recommendations job owns its generated cohort playlists under. */
-export const RECOMMENDATIONS_USER_ID = 'system-recommendations';
-
-/** The reserved account the hold-classifier job writes its shadow hold classifications under. */
-export const HOLD_CLASSIFIER_USER_ID = 'system-hold-classifier';
+export { HOLD_CLASSIFIER_USER_ID, RECOMMENDATIONS_USER_ID } from './system-account-constants';
 
 /**
  * Every account nobody signs in to: the system catalogue account

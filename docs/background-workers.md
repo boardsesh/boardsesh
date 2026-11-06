@@ -88,6 +88,41 @@ listed under "Batch families", the provider roles' below. Runtime users must
 never be migration owners. The existing runtime and detector grant contracts
 remain supported.
 
+### Default-off batch identity delegation
+
+`CURRENT_STORE_BATCH_SYSTEM_USERS_MODE` defaults to `legacy`. Independently
+opting the backend and batch worker into `backend-staging` delegates only the
+recommendations and hold-classifier system-account writes to the backend. The
+worker needs `CURRENT_STORE_BATCH_SYSTEM_USERS_ORIGIN` and the dedicated
+`CURRENT_STORE_BATCH_SYSTEM_USERS_RPC_SECRET`; the backend also needs the
+existing projection/writer-epoch authority configuration. Do not give the
+worker a human auth RPC secret, backend database login or auth-foundation grants.
+
+The machine HTTP call runs before the worker's data transactions. The backend
+owns the actual run/pg-boss fence and identity/reservation transaction together;
+stale, expired, malformed or unavailable commands cannot fall back to a worker
+INSERT. The original initial ensure transaction and classifier dry-run/no-shadow
+condition are preserved. Later failed batches retain a committed owner.
+
+The direct recommendations/hold-features scripts reject this staging mode before
+opening their database. Use the existing queue operator to obtain a real attempt;
+do not invent a token or use the worker secret for an unqueued manual operation.
+Their legacy mode remains unchanged. Location-sync ownership, seed/operator
+writers, deployed grants and trustworthy queue provenance are separate gates.
+The existing worker user-INSERT grants are deliberately not removed in this
+compatibility slice: an enforced software manifest is not an old-writer fence.
+
+Location sync still uses its existing fixed-owner writer. The
+[shared transaction preparation](./better-auth-location-batch-preparation.md)
+retains each whole-gym batch and direct caller's existing commit behavior.
+Optional SQL checkpoints are cooperative checks, not running-query cancellation
+or a new transaction guarantee. Compound backend adoption remains separate
+because fixed-owner user locks must be ordered with every content-transfer and
+legacy location writer.
+
+See [the identity contract and qualification](./better-auth-batch-system-users.md)
+before any rollout. No production mode/grant change is authorized by this note.
+
 ### A new worker image can start before the migrator has run
 
 A push to `main` starts two workflows that do not wait for each other:

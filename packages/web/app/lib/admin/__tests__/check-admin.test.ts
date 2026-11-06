@@ -3,8 +3,8 @@ import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 vi.mock('server-only', () => ({}));
 
 const mockGetServerSession = vi.fn();
-vi.mock('next-auth/next', () => ({
-  getServerSession: (...args: unknown[]) => mockGetServerSession(...args),
+vi.mock('@/app/lib/auth/admitted-session.server', () => ({
+  getAdmittedServerSession: (...args: unknown[]) => mockGetServerSession(...args),
 }));
 
 vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));

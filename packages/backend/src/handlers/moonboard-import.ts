@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
 import type { MoonBoardImportProgressEvent } from '@boardsesh/shared-schema';
 import { applyCorsHeaders } from './cors';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { db } from '../db/client';
 import { importMoonBoardExportData } from '../services/moonboard-import';
 import { logger } from '../utils/logger';
@@ -58,7 +58,9 @@ async function authenticate(req: IncomingMessage, res: ServerResponse): Promise<
     return null;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return null;
+  const authResult = admission.auth;
   if (!authResult) {
     sendJson(res, 401, { error: 'Invalid or expired token' });
     return null;

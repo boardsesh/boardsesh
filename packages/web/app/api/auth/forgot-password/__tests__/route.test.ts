@@ -180,13 +180,26 @@ describe('POST /api/auth/forgot-password', () => {
   it('reports the SMTP failure to Sentry while keeping the response generic', async () => {
     mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
     mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
-    const smtpError = new Error('smtp failed');
+    const smtpError = new Error('smtp private-password fixture-token fixture@example.test');
     mockSendPasswordResetEmail.mockRejectedValue(smtpError);
-
-    const response = await POST(createRequest({ email: 'test@example.com' }));
-
-    expect(response.status).toBe(200);
-    expect(mockCaptureException).toHaveBeenCalledWith(smtpError, expect.objectContaining({ tags: expect.anything() }));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const response = await POST(createRequest({ email: 'test@example.com' }));
+      expect(response.status).toBe(200);
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ tags: expect.anything() }),
+      );
+      const captured = mockCaptureException.mock.calls[0][0] as Error;
+      expect(captured).not.toBe(smtpError);
+      expect(captured.message).toBe('Password recovery email delivery failed');
+      expect(captured.cause).toBeUndefined();
+      expect(captured.stack).not.toContain('fixture-token');
+      expect(errorLog).toHaveBeenCalledWith('Password recovery email delivery failed');
+      expect(JSON.stringify(errorLog.mock.calls)).not.toContain('private-password');
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 
   it('returns 500 when database transaction fails', async () => {

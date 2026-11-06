@@ -1,3 +1,5 @@
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
 import { NextResponse } from 'next/server';
 import { gql } from 'graphql-request';
 import { parseNamedBoardPath } from '@boardsesh/board-config';
@@ -62,6 +64,7 @@ async function visibleBoardPath(sessionId: string, storedPath: string): Promise<
     );
     if (response.session?.boardPath) return response.session.boardPath;
   } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) throw error;
     console.error(`[/api/internal/join] could not read session ${sessionId}'s board path:`, error);
   }
   const [board] = await dbz
@@ -129,7 +132,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
     return new NextResponse('Session not found', { status: 404 });
   }
 
-  const boardPath = await visibleBoardPath(validatedSessionId, session[0].boardPath);
+  let boardPath: string | null;
+  try {
+    boardPath = await visibleBoardPath(validatedSessionId, session[0].boardPath);
+  } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
+    throw error;
+  }
   const cleanPath = boardPath?.replace(/^\/+/, '') ?? '';
   const redirectPath = boardPath ? ensureViewSegment(cleanPath) : null;
 

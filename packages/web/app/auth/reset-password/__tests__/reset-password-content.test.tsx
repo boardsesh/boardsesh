@@ -148,4 +148,21 @@ describe('ResetPasswordContent', () => {
     expect(mockShowMessage).not.toHaveBeenCalled();
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });
+  it('accepts a versioned capability with its released email hint and keeps uncertain reset retryable', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'AuthBackendUnavailable' }),
+    });
+    const token = `pr1_${'A'.repeat(43)}`;
+    renderWithParams(token, 'Climber+tag@example.test');
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'SecurePass1!' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'SecurePass1!' } });
+    submitForm();
+    expect(await screen.findByText('Authentication failed. Please try again.')).toBeTruthy();
+    expect(screen.queryByText('AuthBackendUnavailable')).toBeNull();
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({ token, email: 'Climber+tag@example.test' });
+    expect(mockRouterReplace).not.toHaveBeenCalled();
+    expect(mockShowMessage).not.toHaveBeenCalled();
+  });
 });

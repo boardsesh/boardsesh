@@ -1,6 +1,7 @@
 'use client';
 
 import { getSession } from 'next-auth/react';
+import { beginWebSessionIntent, requestWebSessionRefresh } from './web-session-events';
 
 export const NEXTAUTH_COOKIE_LOCK_NAME = 'boardsesh-nextauth-cookie-v1';
 
@@ -303,6 +304,7 @@ export async function guardedNextAuthSignOut(
   const callbackUrl = options.callbackUrl ?? window.location.href;
   const boundedSignal = createBoundedAuthSignal();
   let signOutStarted = false;
+  let signOutEpoch: number | undefined;
   let result: GuardedNextAuthSignOutResult;
   try {
     result = await runWithCookieLock(
@@ -325,6 +327,7 @@ export async function guardedNextAuthSignOut(
         }
 
         signOutStarted = true;
+        signOutEpoch = beginWebSessionIntent();
         broadcastExpoAuthChange({ type: 'signout-started', identity });
         const csrfResponse = await originalFetch.call(globalThis, NEXTAUTH_CSRF_PATH, {
           headers: { 'Content-Type': 'application/json' },
@@ -361,6 +364,7 @@ export async function guardedNextAuthSignOut(
   } catch (error) {
     if (signOutStarted) {
       broadcastExpoAuthChange({ type: 'credential-rotation' });
+      requestWebSessionRefresh(signOutEpoch);
       await getSession();
     }
     throw error;
@@ -376,6 +380,7 @@ export async function guardedNextAuthSignOut(
   // BroadcastChannel reaches Expo and the current NextAuth bridge. Always dual
   // publish NextAuth's storage refresh for already-open pre-deploy tabs and
   // browser message loss, after releasing the non-reentrant outer lock.
+  requestWebSessionRefresh(signOutEpoch);
   await getSession();
   if (options.redirect ?? true) redirectTo(result.url);
   return result;

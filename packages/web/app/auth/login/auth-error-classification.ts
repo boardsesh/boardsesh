@@ -1,3 +1,5 @@
+import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
+
 // NextAuth's documented error codes. The ?error= query param is user-supplied
 // (anyone can craft a URL), so we whitelist before forwarding to analytics so
 // the failure_reason property doesn't carry arbitrary attacker-controlled
@@ -17,6 +19,7 @@ const KNOWN_AUTH_ERRORS: ReadonlySet<string> = new Set([
   'Callback',
   'CredentialsSignin',
   'SessionRequired',
+  AUTH_BACKEND_UNAVAILABLE,
 ]);
 
 export function safeAuthError(value: string | null | undefined): string {
@@ -30,5 +33,5 @@ export function safeAuthError(value: string | null | undefined): string {
 // Without this branch, ?error=CredentialsSignin events would be miscounted in
 // the OAuth conversion funnel.
 export function authMethodFromError(value: string | null | undefined): 'credentials' | 'oauth' {
-  return value === 'CredentialsSignin' ? 'credentials' : 'oauth';
+  return value === 'CredentialsSignin' || value === AUTH_BACKEND_UNAVAILABLE ? 'credentials' : 'oauth';
 }

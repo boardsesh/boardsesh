@@ -331,6 +331,8 @@ jobs:
               - 'packages/moonboard-ocr/**'
               - 'packages/shared-schema/**'
               - 'packages/shared/analytics/**'
+              - 'packages/shared/auth-protocol/**'
+              - 'packages/shared/text-redaction/**'
               - 'packages/shared/consent/**'
               - 'packages/shared/ble-protocol/**'
               - 'packages/shared/board-config/**'

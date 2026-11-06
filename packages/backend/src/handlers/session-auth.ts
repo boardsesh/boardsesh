@@ -1,7 +1,8 @@
 import type { IncomingMessage } from 'http';
 import { validateToken } from '../middleware/auth';
+import { isAuthAdmissionUnavailable } from '../auth/human-admission';
 
-export type SessionAuthResult = { ok: true; userId: string } | { ok: false; status: 401; error: string };
+export type SessionAuthResult = { ok: true; userId: string } | { ok: false; status: 401 | 503; error: string };
 
 /**
  * Authenticate a stateless HTTP session request by its `Authorization: Bearer`
@@ -23,9 +24,12 @@ export async function authenticateSessionRequest(req: IncomingMessage): Promise<
   if (!token) {
     return { ok: false, status: 401, error: 'Unauthorized' };
   }
-  const auth = await validateToken(token);
-  if (!auth) {
-    return { ok: false, status: 401, error: 'Unauthorized' };
+  try {
+    const auth = await validateToken(token);
+    if (!auth) return { ok: false, status: 401, error: 'Unauthorized' };
+    return { ok: true, userId: auth.userId };
+  } catch (error) {
+    if (!isAuthAdmissionUnavailable(error)) throw error;
+    return { ok: false, status: 503, error: 'Authentication is temporarily unavailable' };
   }
-  return { ok: true, userId: auth.userId };
 }

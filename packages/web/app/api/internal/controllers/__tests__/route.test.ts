@@ -1,10 +1,11 @@
+vi.mock('server-only', () => ({}));
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { NextRequest } from 'next/server';
 
 const insertedValues = vi.hoisted(() => vi.fn());
 
-vi.mock('next-auth/next', () => ({
-  getServerSession: async () => ({ user: { id: 'user-1' } }),
+vi.mock('@/app/lib/auth/admitted-session.server', () => ({
+  getAdmittedServerSession: async () => ({ user: { id: 'user-1' } }),
 }));
 vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));
 vi.mock('@/app/lib/db/db', () => ({

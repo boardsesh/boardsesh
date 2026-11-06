@@ -1,7 +1,14 @@
+import { withAuthResponseAdmission } from '@/app/lib/auth/auth-response-admission.server';
 import NextAuth from 'next-auth';
+import type { NextAuthOptions } from 'next-auth';
 import { getToken } from 'next-auth/jwt';
 import { type NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
+import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
+import {
+  createPasswordCommandAuthRequest,
+  unavailablePasswordAuthResponse,
+} from '@/app/lib/auth/password-command-auth.server';
 import {
   appendLegacyHostOnlySessionCookieClear,
   appendSignOutSessionCookieClears,
@@ -29,6 +36,9 @@ type ExpectedSignOutIdentity = {
 };
 
 const handler = NextAuth(authOptions) as NextAuthHandler;
+function handlerFor(options: NextAuthOptions): NextAuthHandler {
+  return options === authOptions ? handler : (NextAuth(options) as NextAuthHandler);
+}
 const OAUTH_SIGNIN_PATH_PATTERN = /\/api\/auth\/signin\/(apple|google)\/?$/;
 const OAUTH_CALLBACK_PATH_PATTERN = /\/api\/auth\/callback\/(apple|google)\/?$/;
 
@@ -70,6 +80,7 @@ async function handleExpoOAuthPost(
   request: NextRequest,
   context: NextAuthRouteContext,
   pathname: string,
+  handler: NextAuthHandler,
 ): Promise<Response | null> {
   const signInProvider = oauthProviderForPath(pathname, 'signin');
   if (signInProvider) {
@@ -145,13 +156,29 @@ function clearLegacyCookieIfSessionWritten(response: Response): Response {
   return response;
 }
 
-export async function POST(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+async function postAuth(
+  request: NextRequest,
+  context: NextAuthRouteContext,
+  options: NextAuthOptions,
+): Promise<Response> {
+  const handler = handlerFor(options);
+  // Match the public NextAuth App Router dispatch exactly. URL suffixes can
+  // differ from decoded catch-all parameters (and may contain extra segments).
+  const [action, provider] = (await context.params).nextauth;
   const pathname = request.nextUrl.pathname.endsWith('/')
     ? request.nextUrl.pathname.slice(0, -1)
     : request.nextUrl.pathname;
-  const expoOAuthResponse = await handleExpoOAuthPost(request, context, pathname);
-  if (expoOAuthResponse) return expoOAuthResponse;
-  if (!pathname.endsWith('/api/auth/signout')) {
+  if (action === 'callback' && provider === 'credentials') {
+    const commandRequest = createPasswordCommandAuthRequest(options);
+    const commandHandler = NextAuth(commandRequest.options) as NextAuthHandler;
+    const response = await commandHandler(request, context);
+    return commandRequest.unavailable()
+      ? unavailablePasswordAuthResponse(request.url)
+      : clearLegacyCookieIfSessionWritten(response);
+  }
+  if (action !== 'signout') {
+    const expoOAuthResponse = await handleExpoOAuthPost(request, context, pathname, handler);
+    if (expoOAuthResponse) return expoOAuthResponse;
     return clearLegacyCookieIfSessionWritten(await handler(request, context));
   }
 
@@ -191,7 +218,12 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
   return response;
 }
 
-export async function GET(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+async function getAuth(
+  request: NextRequest,
+  context: NextAuthRouteContext,
+  options: NextAuthOptions,
+): Promise<Response> {
+  const handler = handlerFor(options);
   const callbackProvider = oauthProviderForPath(request.nextUrl.pathname, 'callback');
   const state = request.nextUrl.searchParams.get('state');
   if (callbackProvider && state) {
@@ -202,4 +234,20 @@ export async function GET(request: NextRequest, context: NextAuthRouteContext): 
     }
   }
   return clearLegacyCookieIfSessionWritten(await handler(request, context));
+}
+
+async function routeAuth(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+  return withAuthResponseAdmission(request, context, () =>
+    withWebOAuthIdentity(request, context, authOptions, (current, options) =>
+      current.method === 'POST' ? postAuth(current, context, options) : getAuth(current, context, options),
+    ),
+  );
+}
+
+export async function GET(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+  return routeAuth(request, context);
+}
+
+export async function POST(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+  return routeAuth(request, context);
 }

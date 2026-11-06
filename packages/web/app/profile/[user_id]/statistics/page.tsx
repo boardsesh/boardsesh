@@ -1,7 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/lib/auth/auth-options';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { fetchProfileStatsData } from '../server-profile-stats';
 import AnalyticsContent from './analytics-content';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -20,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function ProfileStatisticsPage({ params }: PageProps) {
   const { user_id } = await params;
-  const session = await getServerSession(authOptions);
+  const session = await getAdmittedServerSession();
   const viewerUserId = session?.user?.id;
 
   const statsData = await fetchProfileStatsData(user_id);

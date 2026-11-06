@@ -1,5 +1,6 @@
 import { BOARD_INVITE_PARAM } from './board-invite';
 import { WALL_CAPABILITY_PARAM } from './spray/spray-visibility';
+import { redactPasswordRecoveryUrls, scrubPasswordRecoveryEvent } from '@boardsesh/text-redaction';
 
 /**
  * The query params whose value IS an access capability: whoever holds the URL
@@ -50,7 +51,9 @@ export function carriesShareCapability(text: string): boolean {
 
 /** The same text with every capability value replaced, for anything that leaves the app. */
 export function redactShareCapabilities(text: string): string {
-  return text.replace(CAPABILITY_PAIR, '$1[redacted]').replace(WALL_UUID_PATH, '$1[redacted]');
+  return redactPasswordRecoveryUrls(
+    text.replace(CAPABILITY_PAIR, '$1[redacted]').replace(WALL_UUID_PATH, '$1[redacted]'),
+  );
 }
 
 function decodeParamName(rawName: string): string {
@@ -145,5 +148,5 @@ function scrubDeep(value: unknown, ancestors: WeakSet<object> = new WeakSet()): 
  */
 export function scrubShareCapabilitiesFromEvent<TEvent extends object>(event: TEvent | null): TEvent | null {
   if (!event) return event;
-  return scrubDeep(event) as TEvent;
+  return scrubPasswordRecoveryEvent(scrubDeep(event)) as TEvent;
 }

@@ -17,7 +17,8 @@ import MailOutlined from '@mui/icons-material/MailOutlined';
 import Favorite from '@mui/icons-material/Favorite';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
-import { signIn } from 'next-auth/react';
+import { signInWithSessionIntent as signIn } from '@/app/lib/auth/web-session-events';
+import { isAuthBackendUnavailable } from '@boardsesh/auth-protocol/client-errors';
 import { useTranslation } from 'react-i18next';
 import SocialLoginButtons from '@/app/components/auth/social-login-buttons';
 import { FormShell, FormSection, FormField, FormActions, focusFirstInvalidAfterRender } from '@/app/components/form';
@@ -82,7 +83,9 @@ export default function AuthModal({ open, onClose, onSuccess, title, description
       });
 
       if (result?.error) {
-        setLoginServerError(t('login.toasts.invalidCredentials'));
+        setLoginServerError(
+          isAuthBackendUnavailable(result.error) ? t('login.toasts.authFailed') : t('login.toasts.invalidCredentials'),
+        );
       } else if (result?.ok) {
         showMessage(t('login.toasts.loggedIn'), 'success');
         setLoginValues(initialLoginValues);
@@ -130,7 +133,11 @@ export default function AuthModal({ open, onClose, onSuccess, title, description
       const data = await response.json();
 
       if (!response.ok) {
-        setRegisterServerError(data.error || t('login.toasts.registrationFailed'));
+        setRegisterServerError(
+          isAuthBackendUnavailable(data.error)
+            ? t('login.toasts.authFailed')
+            : data.error || t('login.toasts.registrationFailed'),
+        );
         return;
       }
 
@@ -161,7 +168,8 @@ export default function AuthModal({ open, onClose, onSuccess, title, description
       } else {
         setActiveTab('login');
         setLoginValues((prev) => ({ ...prev, email: registerValues.email }));
-        showMessage(t('login.toasts.loginAfterCreate'), 'info');
+        if (isAuthBackendUnavailable(loginResult?.error)) setLoginServerError(t('login.toasts.authFailed'));
+        else showMessage(t('login.toasts.loginAfterCreate'), 'info');
       }
     } catch (error) {
       console.error('Registration error:', error);

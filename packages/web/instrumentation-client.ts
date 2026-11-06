@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/nextjs';
 import { isAutomatedCrawlerUserAgent } from './app/lib/is-crawler';
 import { isProductionHost } from './app/lib/production-hosts';
 import { redactShareCapabilitiesFromEvent } from './app/lib/observability/redact-share-capabilities';
+import { redactSensitiveSpanUrls } from './app/lib/observability/sentry-tracing';
 
 // Only enable Sentry on the production boardsesh.com hosts. Exact-host match
 // (see production-hosts.ts for why), NOT a substring: preview deploys run at
@@ -66,6 +67,7 @@ Sentry.init({
   // 10%, not the server's 25%: a page load fans out into many more spans
   // (resource timings, fetches, navigations) than a server transaction.
   tracesSampleRate: 0.1,
+  beforeSendSpan: redactSensitiveSpanUrls,
 
   // `tracePropagationTargets` is deliberately LEFT UNSET here.
   //

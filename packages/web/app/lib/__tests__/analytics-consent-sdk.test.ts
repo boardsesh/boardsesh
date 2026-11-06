@@ -177,4 +177,34 @@ describe('share-link capabilities with the installed PostHog SDK', () => {
       expect(() => JSON.parse(body)).not.toThrow();
     }
   });
+  it.each(['?', '#'])(
+    'keeps recovery current/referrer and nested person URLs with marker%s out of actual flags transport',
+    async (marker) => {
+      const token = 'a363934b-b7ba-41ba-a279-52185daa100e';
+      const url = `https://boardsesh.com/auth/reset-password${marker}%74oken=${token}&%65mail=Climber%40example.test&src=mail`;
+      Object.defineProperty(window, 'location', { configurable: true, value: new URL(url) });
+      Object.defineProperty(document, 'referrer', { configurable: true, value: url });
+      const analytics = await import('../analytics');
+      analytics.setAnalyticsFlagAccountId('account-a');
+      analytics.identify('account-a');
+      let nestedReturn = url;
+      for (let depth = 0; depth < 6; depth += 1) nestedReturn = encodeURIComponent(nestedReturn);
+      analytics.setPersonProperties({
+        recovery_url: url,
+        referring_url: document.referrer,
+        nested_return: `/auth/login?callbackUrl=${nestedReturn}`,
+      });
+      const bodies = () =>
+        vi
+          .mocked(fetch)
+          .mock.calls.filter(([address]) => typeof address === 'string' && address.includes('/flags'))
+          .map(([, options]) => (typeof options?.body === 'string' ? options.body : ''));
+      await vi.waitFor(() => expect(bodies().some((body) => body.includes('nested_return'))).toBe(true));
+      for (const body of bodies()) {
+        expect(body).not.toContain(token);
+        expect(body).not.toContain('Climber');
+        expect(() => JSON.parse(body)).not.toThrow();
+      }
+    },
+  );
 });

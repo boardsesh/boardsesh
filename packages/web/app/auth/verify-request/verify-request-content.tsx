@@ -13,6 +13,7 @@ import Stack from '@mui/material/Stack';
 import MailOutlined from '@mui/icons-material/MailOutlined';
 import CancelOutlined from '@mui/icons-material/CancelOutlined';
 import { useSearchParams } from 'next/navigation';
+import { isAuthBackendUnavailable } from '@boardsesh/auth-protocol/client-errors';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import Logo from '@/app/components/brand/logo';
@@ -78,7 +79,11 @@ export default function VerifyRequestContent() {
       if (response.ok) {
         showMessage(t('verifyRequest.toasts.sent'), 'success');
       } else {
-        setFormError(data.error || t('verifyRequest.toasts.failed'));
+        setFormError(
+          isAuthBackendUnavailable(data.error)
+            ? t('verifyRequest.toasts.failed')
+            : data.error || t('verifyRequest.toasts.failed'),
+        );
       }
     } catch (err) {
       console.error('Resend error:', err);

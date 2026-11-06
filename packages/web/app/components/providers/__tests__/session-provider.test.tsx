@@ -1,8 +1,13 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { Session } from 'next-auth';
 import { useSession } from 'next-auth/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SessionProviderWrapper from '../session-provider';
+import {
+  beginWebSessionIntent,
+  requestWebSessionRefresh,
+  signInWithSessionIntent,
+} from '@/app/lib/auth/web-session-events';
 
 const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.state-v1');
 
@@ -89,9 +94,309 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
   clearLockInstallation();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+async function advanceSessionClock(milliseconds: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(milliseconds);
+  });
+}
+
+function renderInitialSession() {
+  return render(
+    <SessionProviderWrapper>
+      <SessionState />
+    </SessionProviderWrapper>,
+  );
+}
+
+describe('initial session read recovery', () => {
+  it.each([
+    ['authenticated', session('user-b', 'login-b'), 'authenticated:user-b:login-b'],
+    ['anonymous', null, 'unauthenticated:none:none'],
+  ] as const)(
+    'automatically recovers to %s without online or focus events, then stops polling',
+    async (_label, recoveredSession, expectedState) => {
+      vi.useFakeTimers();
+      serverSession = recoveredSession;
+      fetchMock.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }));
+      renderInitialSession();
+      await advanceSessionClock(0);
+      expect(screen.getByText('loading:none:none')).toBeTruthy();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await advanceSessionClock(999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await advanceSessionClock(1);
+      expect(screen.getByText(expectedState)).toBeTruthy();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(fetchMock.mock.calls.every(([, options]) => options?.method === undefined)).toBe(true);
+
+      await advanceSessionClock(120_000);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('backs off from one second to a thirty-second cap during a long outage and recovers', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(async () => Response.json({ error: 'unavailable' }, { status: 503 }));
+    renderInitialSession();
+    await advanceSessionClock(0);
+    let expectedReads = 1;
+    for (const interval of [1000, 2000, 4000, 8000, 16_000, 30_000, 30_000]) {
+      expect(vi.getTimerCount()).toBe(1);
+      await advanceSessionClock(interval - 1);
+      expect(fetchMock).toHaveBeenCalledTimes(expectedReads);
+      await advanceSessionClock(1);
+      expect(fetchMock).toHaveBeenCalledTimes(++expectedReads);
+      expect(screen.getByText('loading:none:none')).toBeTruthy();
+    }
+    fetchMock.mockImplementation(async () => Response.json(session('user-b', 'login-b')));
+    await advanceSessionClock(29_999);
+    expect(fetchMock).toHaveBeenCalledTimes(expectedReads);
+    await advanceSessionClock(1);
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(expectedReads + 1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('recovers when a timed-out body ignores abort and discards its late anonymous result', async () => {
+    vi.useFakeTimers();
+    let releaseBody!: (body: unknown) => void;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        new Promise<unknown>((resolve) => {
+          releaseBody = resolve;
+        }),
+    } as Response);
+    serverSession = session('user-b', 'login-b');
+    renderInitialSession();
+    await advanceSessionClock(0);
+    expect(releaseBody).toBeTypeOf('function');
+    await advanceSessionClock(15_000);
+    expect(screen.getByText('loading:none:none')).toBeTruthy();
+    expect(vi.getTimerCount()).toBe(1);
+    await advanceSessionClock(1000);
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    await act(async () => {
+      releaseBody({});
+    });
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([false, true])(
+    'cancels an actual hanging response stream before retrying (pending cancellation: %s)',
+    async (cancelRemainsPending) => {
+      vi.useFakeTimers();
+      const cancelBody = vi.fn(() => (cancelRemainsPending ? new Promise<void>(() => {}) : undefined));
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"user":'));
+        },
+        cancel: cancelBody,
+      });
+      fetchMock.mockResolvedValueOnce(new Response(body));
+      serverSession = session('user-b', 'login-b');
+      renderInitialSession();
+      await advanceSessionClock(0);
+      expect(body.locked).toBe(true);
+      await advanceSessionClock(15_000);
+      expect(cancelBody).toHaveBeenCalledOnce();
+      expect(body.locked).toBe(false);
+      expect(screen.getByText('loading:none:none')).toBeTruthy();
+      expect(vi.getTimerCount()).toBe(1);
+      await advanceSessionClock(1000);
+      expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+      expect(vi.getTimerCount()).toBe(0);
+      await advanceSessionClock(120_000);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(cancelBody).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('treats an owned body arriving after abort as unavailable rather than successful anonymous', async () => {
+    vi.useFakeTimers();
+    let releaseBody!: (body: unknown) => void;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        new Promise<unknown>((resolve) => {
+          releaseBody = resolve;
+        }),
+    } as Response);
+    serverSession = session('user-b', 'login-b');
+    renderInitialSession();
+    await advanceSessionClock(0);
+    await advanceSessionClock(15_000);
+    await act(async () => {
+      releaseBody({});
+    });
+    expect(screen.getByText('loading:none:none')).toBeTruthy();
+    expect(vi.getTimerCount()).toBe(1);
+    await advanceSessionClock(1000);
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['new update', 'unmount'])('cancels the active response body immediately on %s', async (action) => {
+    vi.useFakeTimers();
+    const cancelBody = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"user":'));
+      },
+      cancel: cancelBody,
+    });
+    fetchMock.mockResolvedValueOnce(new Response(body));
+    const { unmount } = renderInitialSession();
+    await advanceSessionClock(0);
+    expect(body.locked).toBe(true);
+    if (action === 'unmount') {
+      unmount();
+    } else {
+      serverSession = session('user-b', 'login-b');
+      act(() => requestWebSessionRefresh());
+    }
+    await advanceSessionClock(0);
+    expect(cancelBody).toHaveBeenCalledOnce();
+    expect(body.locked).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    if (action === 'new update') expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    await advanceSessionClock(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(action === 'unmount' ? 1 : 2);
+  });
+
+  it('cancels a pending retry on a new update and never replays its POST payload', async () => {
+    vi.useFakeTimers();
+    let updateSession!: (payload?: unknown) => Promise<Session | null>;
+    function SessionUpdater() {
+      updateSession = useSession().update;
+      return <SessionState />;
+    }
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }));
+    render(
+      <SessionProviderWrapper>
+        <SessionUpdater />
+      </SessionProviderWrapper>,
+    );
+    await advanceSessionClock(0);
+    await advanceSessionClock(500);
+    fetchMock.mockResolvedValueOnce(Response.json({ csrfToken: 'fixture-csrf' }));
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }));
+    await act(async () => {
+      await updateSession({ name: 'fixture update' });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(1);
+    await advanceSessionClock(500);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    serverSession = session('user-b', 'login-b');
+    await advanceSessionClock(1500);
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls[3]?.[1]?.method).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('cancels the retry timer on unmount', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }));
+    const { unmount } = renderInitialSession();
+    await advanceSessionClock(0);
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await advanceSessionClock(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a retry from an old intent read or override the replacement login', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }));
+    renderInitialSession();
+    await advanceSessionClock(0);
+    act(() => {
+      beginWebSessionIntent();
+    });
+    await advanceSessionClock(1000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    serverSession = session('user-b', 'login-b');
+    act(() => requestWebSessionRefresh());
+    await advanceSessionClock(0);
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores an old initial error after B settles and preserves B through later outages', async () => {
+    vi.useFakeTimers();
+    let rejectBody!: (cause: Error) => void;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        new Promise<unknown>((_resolve, reject) => {
+          rejectBody = reject;
+        }),
+    } as Response);
+    serverSession = session('user-b', 'login-b');
+    renderInitialSession();
+    await advanceSessionClock(0);
+    act(() => {
+      beginWebSessionIntent();
+      requestWebSessionRefresh();
+    });
+    await advanceSessionClock(0);
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    await act(async () => {
+      rejectBody(new Error('old unavailable read'));
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }));
+    act(() => requestWebSessionRefresh());
+    await advanceSessionClock(0);
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    expect(vi.getTimerCount()).toBe(0);
+    await advanceSessionClock(120_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not schedule a late initial error from an old intent before the new read starts', async () => {
+    vi.useFakeTimers();
+    let rejectBody!: (cause: Error) => void;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        new Promise<unknown>((_resolve, reject) => {
+          rejectBody = reject;
+        }),
+    } as Response);
+    renderInitialSession();
+    await advanceSessionClock(0);
+    act(() => {
+      beginWebSessionIntent();
+    });
+    await act(async () => {
+      rejectBody(new Error('old unavailable read'));
+    });
+    expect(screen.getByText('loading:none:none')).toBeTruthy();
+    expect(vi.getTimerCount()).toBe(0);
+    await advanceSessionClock(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    serverSession = session('user-b', 'login-b');
+    act(() => requestWebSessionRefresh());
+    await advanceSessionClock(0);
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+  });
 });
 
 async function renderSettledSession(expectedState: string) {
@@ -197,5 +502,65 @@ describe('SessionProviderWrapper auth bridge', () => {
     await act(async () => Promise.resolve());
     expect(fetchMock).toHaveBeenCalledTimes(fetchCountBeforeMessages);
     expect(screen.getByText('authenticated:user-a:login-a')).toBeTruthy();
+  });
+});
+
+describe('owned session response acceptance', () => {
+  it('preserves the accepted owner on authority outage or malformed body', async () => {
+    serverSession = session('user-b', 'login-b');
+    await renderSettledSession('authenticated:user-b:login-b');
+    fetchMock.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 503 }));
+    act(() => requestWebSessionRefresh());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+    fetchMock.mockResolvedValueOnce(Response.json(null));
+    act(() => requestWebSessionRefresh());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
+  });
+
+  it('discards a delayed empty A body after a real public-client B sign-in', async () => {
+    serverSession = session('user-a', 'login-a');
+    await renderSettledSession('authenticated:user-a:login-a');
+    let releaseOldBody!: (body: unknown) => void;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        new Promise<unknown>((resolve) => {
+          releaseOldBody = resolve;
+        }),
+    } as Response);
+    act(() => requestWebSessionRefresh());
+    await vi.waitFor(() => expect(releaseOldBody).toBeTypeOf('function'));
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const endpoint = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (endpoint.endsWith('/providers'))
+        return Response.json({
+          credentials: { id: 'credentials', type: 'credentials', name: 'Credentials', signinUrl: '', callbackUrl: '' },
+        });
+      if (endpoint.endsWith('/csrf')) return Response.json({ csrfToken: 'fixture-csrf' });
+      if (endpoint.endsWith('/callback/credentials')) return Response.json({ url: 'http://localhost:3000/' });
+      return Response.json(session('user-b', 'login-b'));
+    });
+    let loginResult: Awaited<ReturnType<typeof signInWithSessionIntent>>;
+    await act(async () => {
+      loginResult = await signInWithSessionIntent('credentials', {
+        redirect: false,
+        email: 'fixture@example.invalid',
+        password: 'fixture-only',
+      });
+    });
+    expect(loginResult?.ok).toBe(true);
+    await waitFor(() => expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy());
+    await act(async () => {
+      releaseOldBody({});
+    });
+    expect(screen.getByText('authenticated:user-b:login-b')).toBeTruthy();
   });
 });
