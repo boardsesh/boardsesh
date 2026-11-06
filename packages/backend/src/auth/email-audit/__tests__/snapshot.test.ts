@@ -12,6 +12,7 @@ import { accounts, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { getWorkerDatabaseUrl } from '../../../__tests__/worker-db';
 import { auditAccountEmailSnapshot } from '../snapshot';
 import { EMAIL_AUDIT_LIMITS, EmailAuditError } from '../report';
+import { hydrateAccountsFixtureSchema } from './fixtures/accounts-schema';
 import {
   emailAuditConnectionOptions,
   parseEmailAuditArguments,
@@ -139,22 +140,7 @@ describe.sequential('actual read-only account email snapshot and CLI', () => {
         queries.push(query);
       },
     });
-    // The backend worker schema omits NextAuth's accounts table. Hydrate only
-    // its generated table and foreign key in this fresh owned fixture database.
-    const accountsTablePattern = /^CREATE TABLE IF NOT EXISTS "accounts" \(/;
-    const accountsForeignKeyPattern =
-      /^DO \$\$ BEGIN\s+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_userId_users_id_fk" FOREIGN KEY/;
-    const accountsStatements = readFileSync(join(checkoutRoot, 'packages/db/drizzle/0016_exotic_valkyrie.sql'), 'utf8')
-      .split('--> statement-breakpoint')
-      .map((statement) => statement.trim())
-      .filter((statement) => accountsTablePattern.test(statement) || accountsForeignKeyPattern.test(statement));
-    if (
-      accountsStatements.length !== 2 ||
-      !accountsTablePattern.test(accountsStatements[0] ?? '') ||
-      !accountsForeignKeyPattern.test(accountsStatements[1] ?? '')
-    )
-      throw new Error('Generated accounts fixture migration is unavailable.');
-    for (const statement of accountsStatements) await writer.unsafe(statement);
+    await hydrateAccountsFixtureSchema(writer);
     const database = drizzle(writer);
     await database.insert(users).values([
       { id: firstId, email: collisionEmail, emailVerified: new Date('2020-01-02T03:04:05Z') },
