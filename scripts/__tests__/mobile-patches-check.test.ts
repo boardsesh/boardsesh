@@ -684,7 +684,7 @@ describe('the shipped @expo/ui Android lazy-list bridge', () => {
   );
 });
 
-describe('the shipped @expo/ui opt-in settled sheet touch recovery', () => {
+describe('the shipped @expo/ui opt-in sheet touch recovery and native cancellation rollback', () => {
   const nativeFile = 'android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt';
   const recoveryRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === nativeFile);
   if (!recoveryRule) throw new Error('no @expo/ui settled sheet touch recovery rule registered');
@@ -739,7 +739,11 @@ describe('the shipped @expo/ui opt-in settled sheet touch recovery', () => {
       'false',
     ],
     ['active pointer wait', 'snapshotFlow { recovery.touching }.first { touching -> !touching }', ''],
-    ['pointer tracking', 'recovery.touching = true', ''],
+    [
+      'native pointer tracking',
+      'recovery.pointersChanged(this, sheetState, pointerEvent.changes.any { it.pressed })',
+      '',
+    ],
     ['current detent recheck', 'sheetState.currentValue != settled || ', ''],
     ['target detent recheck', 'sheetState.targetValue != settled ||', 'false ||'],
     ['animation recheck', '!sheetState.isAnimationRunning || ', ''],
@@ -752,8 +756,10 @@ describe('the shipped @expo/ui opt-in settled sheet touch recovery', () => {
       'touchRecovery.runCommand { sheetState.partialExpand() }',
       'sheetState.partialExpand()',
     ],
-    ['gesture cancellation cleanup', '} finally {\n          recovery.touching = false', '} finally {\n          Unit'],
-    ['pointer cancellation cleanup', '} finally {\n      recovery.touching = false', '} finally {\n      Unit'],
+    ['native reset cleanup', 'recovery.reset(this)', ''],
+    ['native detach cleanup', 'recovery.reset(this, detached = true)', ''],
+    ['recovery lifetime cleanup', 'recovering = false', ''],
+    ['overlapping recovery guard', ' || recovery.recovering', ''],
     ['expanded recovery', 'SheetValue.Expanded -> sheetState.expand()', 'SheetValue.Expanded -> Unit'],
     [
       'partial recovery',
@@ -761,6 +767,61 @@ describe('the shipped @expo/ui opt-in settled sheet touch recovery', () => {
       'SheetValue.PartiallyExpanded -> Unit',
     ],
   ])('rejects a broken %s fixture', (_label, fragment, replacement) => {
+    const regressed = nativeSource.replaceAll(fragment, replacement);
+    expect(regressed).not.toBe(nativeSource);
+    expect(checkRecovery(regressed)).toContainEqual(expect.stringContaining('is missing'));
+  });
+
+  it.each([
+    ['cancel composition', 'RecoverCancelledSheetGesture(sheetState, touchRecovery, recoverSettledTouches)', ''],
+    ['observer attach', 'recovery.attach(this)', ''],
+    ['observer registration', 'attachedObserver = observer', ''],
+    ['real native cancel callback', 'recovery.cancelGesture(this)', ''],
+    ['normal release is not cancellation', 'if (!pressed) gesture = null', 'if (!pressed) cancelGesture(observer)'],
+    ['new DOWN invalidation', 'if (pressed && !touching) {\n      invalidateGesture()', 'if (pressed && !touching) {'],
+    ['generation invalidation', 'generation += 1', ''],
+    ['request invalidation', 'cancelledGesture = null', ''],
+    ['pointer state update', 'touching = pressed', ''],
+    ['cancellation pointer reset', 'val wasTouching = touching\n    touching = false', 'val wasTouching = touching'],
+    [
+      'explicit command invalidation',
+      'suspend fun runCommand(command: suspend () -> Unit) {\n    invalidateGesture()',
+      'suspend fun runCommand(command: suspend () -> Unit) {',
+    ],
+    [
+      'captured start detent',
+      'gesture = SheetGestureCapture(observer, sheetState, generation, startDetent)',
+      'gesture = null',
+    ],
+    ['hidden start guard', 'if (startDetent != SheetValue.Hidden)', 'if (true)'],
+    ['active gesture guard', '!wasTouching || ', ''],
+    ['cancel request emission', 'cancelledGesture = CancelledSheetGesture(cancellationEpoch, captured)', ''],
+    ['current request identity', 'cancelledGesture === request && ', ''],
+    ['gesture generation', 'request.gesture.generation == generation', 'true'],
+    ['sheet identity', 'request.gesture.sheetState === sheetState && ', ''],
+    ['observer identity', 'attachedObserver === request.gesture.observer', 'true'],
+    ['attached observer', 'request.gesture.observer.isAttached && ', ''],
+    ['released pointers', '!touching && activeCommands == 0', 'activeCommands == 0'],
+    ['command priority', 'activeCommands == 0', 'true'],
+    ['cancellation observation', 'snapshotFlow { recovery.cancelledGesture }', 'snapshotFlow { null }'],
+    ['duplicate cancellation guard', 'request.epoch <= consumedEpoch', 'false'],
+    ['overlap wait', 'snapshotFlow { !recovery.touching && !recovery.recovering }.first { it }', ''],
+    ['cancellation ownership recheck', 'if (!recovery.owns(request, sheetState)) return@collectLatest', ''],
+    [
+      'expanded anchor availability',
+      'SheetValue.Expanded -> sheetState.hasExpandedState',
+      'SheetValue.Expanded -> true',
+    ],
+    [
+      'partial anchor availability',
+      'SheetValue.PartiallyExpanded -> sheetState.hasPartiallyExpandedState',
+      'SheetValue.PartiallyExpanded -> true',
+    ],
+    ['unavailable anchor guard', 'if (!anchorAvailable) return@collectLatest', ''],
+    ['local one-shot consumption', 'consumedEpoch = request.epoch', ''],
+    ['hidden sheet priority', '!sheetState.isVisible || ', ''],
+    ['native dismissal priority', 'sheetState.targetValue == SheetValue.Hidden', 'false'],
+  ])('rejects a broken cancellation %s fixture', (_label, fragment, replacement) => {
     const regressed = nativeSource.replaceAll(fragment, replacement);
     expect(regressed).not.toBe(nativeSource);
     expect(checkRecovery(regressed)).toContainEqual(expect.stringContaining('is missing'));
