@@ -20,6 +20,10 @@ import { validateInput, applyRateLimit } from '../shared/helpers';
 import { requireAdmin } from './roles';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import {
+  captureFixedSystemOwnerOrderMode,
+  lockCooperativeFixedSystemOwnerTransaction,
+} from '../../../services/fixed-system-owner-order';
+import {
   DuplicateGymClustersInputSchema,
   OrphanGymsInputSchema,
   MergeGymsInputSchema,
@@ -529,6 +533,7 @@ function toKioskWarnings(warnings: MergeWarning[]) {
 
 export const socialGymDuplicateMutations = {
   mergeGyms: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    const ownerOrderMode = captureFixedSystemOwnerOrderMode();
     await requireAdmin(ctx);
     await applyRateLimit(ctx, 30, 'mergeGyms');
     const validatedInput = validateInput(MergeGymsInputSchema, input, 'input');
@@ -542,6 +547,7 @@ export const socialGymDuplicateMutations = {
     }
 
     const results = await db.transaction(async (tx) => {
+      await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
       const canonical = await loadLiveMergeCandidate(tx, validatedInput.canonicalGymUuid);
       if (!canonical) {
         throw new GraphQLError('The canonical gym is not a live, un-merged gym.', {

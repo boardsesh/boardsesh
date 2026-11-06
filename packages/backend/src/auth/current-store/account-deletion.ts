@@ -5,6 +5,7 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { and, eq } from 'drizzle-orm';
+import { lockFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
 import { normalizeAccountEmail } from '../normalize-email';
 import { transactionSettings } from './command-context';
 import {
@@ -40,13 +41,14 @@ export function captureAccountDeletionCommand(
   return Object.freeze({ ...captureExpectedAuthority(authority), userId, operationId });
 }
 
-/** Enter before content locks. Do not take a subject/user lock before wall locks. */
+/** Enter manifest then fixed-owner key before content; keep human subject/user locks after walls. */
 export async function beginReservedAccountDeletion(
   transaction: CurrentStoreTransaction,
   command: CapturedAccountDeletionCommand,
 ): Promise<void> {
   await transactionSettings(transaction);
   await lockEnforcedProjection(transaction, command);
+  await lockFixedSystemOwnerTransaction(transaction);
 }
 
 async function requireRepresentedDeletionEmail(

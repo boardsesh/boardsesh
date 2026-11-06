@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { lockFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
 import { socialGymDuplicateQueries, socialGymDuplicateMutations } from '../graphql/resolvers/social/gym-duplicates';
 
 /**
@@ -23,6 +24,8 @@ const CLAIMANT_BOTH = 'gd-claimant-both';
 const CLAIMANT_DUP_ONLY = 'gd-claimant-dup';
 
 const ALL_USERS = [SYSTEM_OWNER, ADMIN, PLAIN_USER, GYM_OWNER, CLAIMANT_BOTH, CLAIMANT_DUP_ONLY];
+
+afterEach(() => vi.unstubAllEnvs());
 
 const authCtx = (userId: string): ConnectionContext =>
   ({ connectionId: `conn-${userId}`, isAuthenticated: true, userId }) as ConnectionContext;
@@ -110,6 +113,61 @@ beforeEach(async () => {
   `);
   await Promise.all(ALL_USERS.map(insertUser));
   await insertAdminRole(ADMIN);
+});
+
+describe('cooperative fixed-owner merge order', () => {
+  it('captures staging before admin lookup, rejects contention, then permits an explicit retry', async () => {
+    const canonical = await insertGym({ ownerId: GYM_OWNER, name: 'Order gym', latitude: 47, longitude: 8 });
+    const duplicate = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Order gym', latitude: 47, longitude: 8 });
+    await db.execute(sql`INSERT INTO gym_follows (gym_id, user_id) VALUES (${duplicate.id}, ${SYSTEM_OWNER})`);
+    const input = { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] };
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+
+    await db.transaction(async (holder) => {
+      await lockFixedSystemOwnerTransaction(holder);
+      const merge = socialGymDuplicateMutations.mergeGyms(null, { input }, authCtx(ADMIN));
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'legacy');
+      await expect(merge).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
+      expect((await gymRow(duplicate.uuid))?.merged_into_gym_id).toBeNull();
+    });
+
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+    await socialGymDuplicateMutations.mergeGyms(null, { input }, authCtx(ADMIN));
+    expect(Number((await gymRow(duplicate.uuid))?.merged_into_gym_id)).toBe(canonical.id);
+    const copied = await db.execute(sql`SELECT user_id FROM gym_follows WHERE gym_id = ${canonical.id}`);
+    expect(Array.from(copied as Iterable<{ user_id: string }>)).toEqual([{ user_id: SYSTEM_OWNER }]);
+  });
+
+  it('preserves a captured legacy operation when staging becomes enabled during admin lookup', async () => {
+    const canonical = await insertGym({ ownerId: GYM_OWNER, name: 'Legacy order', latitude: 47, longitude: 8 });
+    const duplicate = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Legacy order', latitude: 47, longitude: 8 });
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'legacy');
+    await db.transaction(async (holder) => {
+      await lockFixedSystemOwnerTransaction(holder);
+      const merge = socialGymDuplicateMutations.mergeGyms(
+        null,
+        { input: { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] } },
+        authCtx(ADMIN),
+      );
+      vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+      await merge;
+    });
+    expect(Number((await gymRow(duplicate.uuid))?.merged_into_gym_id)).toBe(canonical.id);
+  });
+
+  it('rejects an unknown selector before changing the candidate gyms', async () => {
+    const canonical = await insertGym({ ownerId: GYM_OWNER, name: 'Invalid order', latitude: 47, longitude: 8 });
+    const duplicate = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Invalid order', latitude: 47, longitude: 8 });
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'unsupported');
+    await expect(
+      socialGymDuplicateMutations.mergeGyms(
+        null,
+        { input: { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] } },
+        authCtx(ADMIN),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
+    expect((await gymRow(duplicate.uuid))?.deleted_at).toBeNull();
+  });
 });
 
 describe('admin gate', () => {
