@@ -614,7 +614,11 @@ key and the grade rail position before suspension, then restores them on return.
 Grade tap/range rules are shared with the React Native rail; Android uses its
 system long-press timing. Centering stops when the user touches the rail. These
 native bridge additions require a matching app binary; an old cached client cannot
-verify them.
+verify them. Android SDK 58 matches source-build patterns against Gradle
+project names: keep both `@expo/ui` (iOS) and `expo-ui` (Android) in
+`expo.autolinking.buildFromSource`. The Expo UI Android patch guard checks this;
+a valid native build selects the source dependency and runs
+`:expo-ui:compileDebugKotlin` in its APK assemble graph.
 
 **Filter sheet parts are shared.** The sheet is built from the parts in
 `src/components/filter-sheet/`: `FilterSheetSection` (headline group), `FilterLabelRow` (muted

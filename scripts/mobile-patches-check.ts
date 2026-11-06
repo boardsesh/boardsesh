@@ -61,7 +61,9 @@
  * in `expo.autolinking.buildFromSource`, or depending (through its installed
  * spm.config.json `externalDependencies`) on one that is, which is the cascade
  * precompiled_modules.rb applies as `dependency_unavailable`. See
- * {@link checkIosPatchesBuildFromSource}.
+ * {@link checkIosPatchesBuildFromSource}. SDK 58 also ships prebuilt Android AARs;
+ * {@link checkExpoUiAndroidPatchesBuildFromSource} checks their Gradle project names
+ * for the Filters Expo UI patch separately, because `@expo/ui` does not match `expo-ui`.
  *
  * Usage: vp run check:mobile-patches
  */
@@ -922,6 +924,74 @@ export function checkIosPatchesBuildFromSource(input: BuildFromSourceInput): str
   return errors;
 }
 
+/** Android project metadata consumed by Expo's Gradle publication resolver. */
+export interface AndroidModuleConfig {
+  android?: {
+    name?: string;
+    path?: string;
+    publication?: { repository?: string } | null;
+    projects?: readonly {
+      name: string;
+      path: string;
+      publication?: { repository?: string } | null;
+    }[];
+  };
+}
+
+/**
+ * SDK 58 Android matches source patterns against Gradle project names, whereas
+ * iOS matches npm package names. A scoped package can need both entries:
+ * `@expo/ui` for iOS and `expo-ui` for Android. SettingsManager.kt uses a full
+ * Regex.matches(project.name); ExpoAutolinkingPlugin.kt prints the package icon
+ * only for prebuilt AAR dependencies, which never compile a Kotlin patch.
+ * This guard is scoped to the Filters Expo UI patch (#7312); it does not audit
+ * other Android libraries or change their source selection.
+ */
+export function checkExpoUiAndroidPatchesBuildFromSource(input: {
+  rules: readonly PatchRule[];
+  buildFromSource: readonly string[];
+  readAndroidModuleConfig(pkg: string): AndroidModuleConfig | null;
+}): string[] {
+  const errors: string[] = [];
+  const checkedProjects = new Set<string>();
+  for (const rule of input.rules) {
+    if (rule.package !== '@expo/ui' || !rule.file.startsWith('android/')) continue;
+    const androidConfig = input.readAndroidModuleConfig(rule.package)?.android;
+    // Ordinary native libraries and Expo projects without publications already
+    // compile from source; no additional source-list entry is needed.
+    if (!androidConfig) continue;
+    const defaultProjectName = rule.package.replace(/^@/g, '').replace(/\W+/g, '-');
+    const projects = [
+      {
+        name: androidConfig.name ?? defaultProjectName,
+        path: androidConfig.path ?? 'android',
+        publication: androidConfig.publication,
+      },
+      ...(androidConfig.projects ?? []),
+    ];
+    for (const project of projects) {
+      if (!project.publication || !rule.file.startsWith(`${project.path}/`)) continue;
+      const projectKey = `${rule.package}:${project.name}`;
+      if (checkedProjects.has(projectKey)) continue;
+      checkedProjects.add(projectKey);
+      const buildsFromSource = input.buildFromSource.some((pattern) => {
+        try {
+          return new RegExp(`^(?:${pattern})$`).test(project.name);
+        } catch {
+          return false;
+        }
+      });
+      if (buildsFromSource) continue;
+      errors.push(
+        `${rule.package}: patch edits ${rule.file}, but Android project "${project.name}" can link a prebuilt AAR. ` +
+          `Add "${project.name}" to expo.autolinking.buildFromSource in packages/mobile/package.json; ` +
+          `Android matches Gradle project names, not npm package names.`,
+      );
+    }
+  }
+  return errors;
+}
+
 /**
  * I/O abstracted so {@link checkPatchesApplied} can be unit-tested without a
  * real node_modules tree. The real implementation is {@link createNodeEnv}.
@@ -1128,6 +1198,20 @@ export function readSpmConfigFrom(env: Pick<PatchCheckEnv, 'readInstalledFile'>,
   return JSON.parse(raw) as SpmConfig;
 }
 
+/** Read only Expo module metadata; non-Expo packages need no publication check. */
+export function readAndroidModuleConfigFrom(
+  env: Pick<PatchCheckEnv, 'readInstalledFile'>,
+  pkg: string,
+): AndroidModuleConfig | null {
+  let raw: string;
+  try {
+    raw = env.readInstalledFile(pkg, 'expo-module.config.json');
+  } catch {
+    return null;
+  }
+  return JSON.parse(raw) as AndroidModuleConfig;
+}
+
 /** Wire the real filesystem and run the check. Returns the process exit code. */
 export function main(): number {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1166,11 +1250,13 @@ export function main(): number {
     allowUnguarded: UNGUARDED_PATCHES,
   });
   let buildFromSource: string[];
+  let androidBuildFromSource: string[];
   try {
     const mobileManifest = JSON.parse(readFileSync(mobilePackageJson, 'utf8')) as {
-      expo?: { autolinking?: { buildFromSource?: string[] } };
+      expo?: { autolinking?: { buildFromSource?: string[]; android?: { buildFromSource?: string[] } } };
     };
     buildFromSource = mobileManifest.expo?.autolinking?.buildFromSource ?? [];
+    androidBuildFromSource = mobileManifest.expo?.autolinking?.android?.buildFromSource ?? buildFromSource;
   } catch (error) {
     console.error(`[mobile-patches] FAILED — cannot read packages/mobile/package.json: ${(error as Error).message}`);
     return 1;
@@ -1181,7 +1267,19 @@ export function main(): number {
     readSpmConfig: (pkg) => readSpmConfigFrom(env, pkg),
   });
 
-  const allErrors = [...errors, ...webResult.errors, ...inventoryErrors, ...buildFromSourceErrors];
+  const expoUiAndroidBuildFromSourceErrors = checkExpoUiAndroidPatchesBuildFromSource({
+    rules: RULES,
+    buildFromSource: androidBuildFromSource,
+    readAndroidModuleConfig: (pkg) => readAndroidModuleConfigFrom(env, pkg),
+  });
+
+  const allErrors = [
+    ...errors,
+    ...webResult.errors,
+    ...inventoryErrors,
+    ...buildFromSourceErrors,
+    ...expoUiAndroidBuildFromSourceErrors,
+  ];
 
   if (allErrors.length > 0) {
     console.error('[mobile-patches] FAILED — patch(es) not applied:');
