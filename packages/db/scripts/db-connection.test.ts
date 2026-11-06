@@ -2,11 +2,154 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
 import {
+  assertDevelopmentAuthSeedTarget,
   describeDatabaseHost,
   isLocalDatabaseUrl,
   resolveScriptDatabaseUrl,
   scriptDatabaseConnectionOptions,
 } from './db-connection.js';
+
+const authSeedTargetError = 'Development authentication seeds require an unambiguous local development PostgreSQL URL';
+
+void test('auth seeds accept the actual Docker image target and supported development hosts', () => {
+  const targets = [
+    'postgresql://postgres@localhost/main',
+    'postgres://postgres:password@postgres:5432/main',
+    'postgresql://user:p%40ss%2Fword@LOCALHOST:5432/main',
+    'postgresql://user@127.0.1.1/main',
+    'postgresql://user@127.255.255.255/main',
+    'postgresql://user@localtest.me/main',
+    'postgresql://user@app.localtest.me/main',
+    'postgresql://user@dev-box.tailnet.ts.net/main',
+    'postgresql://user@100.64.0.1/main',
+    'postgresql://user@100.127.255.255/main',
+    'postgresql://user@localhost/main?sslmode=disable',
+    'postgresql://user@localhost/main?sslmode=verify-full&sslrootcert=system',
+    'postgresql://user@localhost/main?application_name=dev-seed:local',
+  ];
+  for (const target of targets) assert.doesNotThrow(() => assertDevelopmentAuthSeedTarget(target, {}));
+});
+
+void test('auth seeds reject remote, ambiguous and startup-overridden targets with one safe error', () => {
+  const targets = [
+    '',
+    'not a URL',
+    'https://user:seed-secret@localhost/main',
+    'postgresql://user:seed-secret@reserved.invalid/main',
+    'postgresql://localhost:seed-secret@reserved.invalid/main',
+    'postgresql://user:seed-secret@localhost.reserved.invalid/main',
+    'postgresql:///main',
+    'postgresql://user@localhost',
+    'postgresql://user@localhost/',
+    'postgresql://user@localhost/main/other',
+    'postgresql://user@localhost/main#',
+    'postgresql://user@localhost/main#seed-secret',
+    'postgresql://user:seed-secret@localhost@localhost/main',
+    'postgresql://user@reserved.invalid,localhost/main',
+    'postgresql://user@reserved.invalid%2Clocalhost/main',
+    'postgresql://user@%2Ftmp%2Fpostgres.localtest.me/main',
+    'postgresql://user@[::1]/main',
+    'postgresql://user@100.064.0.1/main',
+    'postgresql://user@127.000.0.1/main',
+    'postgresql://user@localhost:00001/main',
+    'postgresql://user@localhost:65536/main',
+    'postgresql://user:seed-secret@local\nhost/main',
+    'postgresql://user:seed-secret@localhost/main ',
+    'postgresql://user:%00seed-secret@localhost/main',
+    'postgresql://user:%ZZseed-secret@localhost/main',
+    'postgresql://user:%FFseed-secret@localhost/main',
+    'postgresql://user@localhost/seed%00secret',
+    'postgresql://user@localhost/main?host=reserved.invalid',
+    'postgresql://user@localhost/main?%68ost=reserved.invalid',
+    'postgresql://user@localhost/main?port=1',
+    'postgresql://user@localhost/main?service=seed-secret',
+    'postgresql://user@localhost/main?user=seed-secret',
+    'postgresql://user@localhost/main?database=seed-secret',
+    'postgresql://user@localhost/main?options=-csearch_path%3Dseed_secret',
+    'postgresql://user@localhost/main?search_path=seed_secret',
+    'postgresql://user@localhost/main?ssl=disable',
+    'postgresql://user@localhost/main?sslmode=disable&sslmode=require',
+    'postgresql://user@localhost/main?sslrootcert=system&sslrootcert=system',
+    'postgresql://user@localhost/main?sslmode=unknown',
+    'postgresql://user@localhost/main?sslrootcert=%2Fseed-secret',
+    'postgresql://user@localhost/main?application_name=seed%00secret',
+  ];
+  for (const target of targets) {
+    assert.throws(
+      () => assertDevelopmentAuthSeedTarget(target, {}),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.message, authSeedTargetError);
+        assert.equal(error.cause, undefined);
+        assert.equal('input' in error, false);
+        assert.equal(String(error).includes('seed-secret'), false);
+        return true;
+      },
+    );
+  }
+});
+
+void test('auth seed guard accounts for the driver PGPORT fallback without changing explicit routes', () => {
+  for (const port of ['1', '5432', '65535']) {
+    assert.doesNotThrow(() => assertDevelopmentAuthSeedTarget('postgresql://user@localhost/main', { PGPORT: port }));
+  }
+  for (const port of ['0', '65536', '-1', '05432', '5432,5433', 'service', '5432\n']) {
+    assert.throws(() => assertDevelopmentAuthSeedTarget('postgresql://user@localhost/main', { PGPORT: port }), {
+      message: authSeedTargetError,
+    });
+  }
+  assert.doesNotThrow(() =>
+    assertDevelopmentAuthSeedTarget('postgresql://user@localhost:5432/main', {
+      PGPORT: 'not-a-port',
+      PGHOST: 'reserved.invalid',
+      PGDATABASE: 'different_database',
+    }),
+  );
+});
+
+void test('the new auth seed boundary preserves the shared IPv6 classifier while refusing the current driver route', async () => {
+  const target = 'postgresql://user@[::1]:5432/main';
+  assert.equal(isLocalDatabaseUrl(target), true);
+  const client = postgres(target, { max: 1 });
+  try {
+    // No query: inspect the installed driver parsing without opening a socket.
+    assert.deepEqual(client.options.host, ['[']);
+    assert.throws(() => assertDevelopmentAuthSeedTarget(target, {}), { message: authSeedTargetError });
+  } finally {
+    await client.end();
+  }
+});
+
+void test('the installed driver keeps query host out of routing but forwards query identity and options to startup', async () => {
+  const client = postgres(
+    'postgresql://user@localhost/main?host=reserved.invalid&user=other&database=other&options=-csearch_path%3Dother',
+    { max: 1 },
+  );
+  try {
+    // These assertions do not run SQL. Unknown query fields are connection
+    // startup parameters; user/database can override the selected identity.
+    assert.deepEqual(client.options.host, ['localhost']);
+    assert.equal(client.options.database, 'main');
+    assert.equal(client.options.connection.host, 'reserved.invalid');
+    assert.equal(client.options.connection.user, 'other');
+    assert.equal(client.options.connection.database, 'other');
+    assert.equal(client.options.connection.options, '-csearch_path=other');
+  } finally {
+    await client.end();
+  }
+});
+
+void test('auth seed guard rejects an encoded multi-host route accepted by the broader hostname classifier', async () => {
+  const target = 'postgresql://user@reserved.invalid%2Cbox.localtest.me/main';
+  assert.equal(isLocalDatabaseUrl(target), true);
+  const client = postgres(target, { max: 1 });
+  try {
+    assert.deepEqual(client.options.host, ['reserved.invalid', 'box.localtest.me']);
+    assert.throws(() => assertDevelopmentAuthSeedTarget(target, {}), { message: authSeedTargetError });
+  } finally {
+    await client.end();
+  }
+});
 
 // Real automation paths this must recognize as local, verified against the
 // repo (see db-connection.ts's doc comment for the file:line evidence):

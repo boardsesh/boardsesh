@@ -176,6 +176,78 @@ export function isLocalDatabaseUrl(databaseUrl: string): boolean {
 }
 
 /**
+ * Only the development identity seeds use this stricter target boundary.
+ * postgres-js 3.4.9 decodes the authority before selecting comma-separated
+ * hosts, and forwards unknown URL query keys into the startup message (where
+ * `user`/`database` can replace those selected from the URL). Accept one explicit
+ * development host/database and only reviewed routing-neutral query options.
+ * This is a URL guard, not proof against a local tunnel or a SQL role fence.
+ */
+export function assertDevelopmentAuthSeedTarget(
+  databaseUrl: string,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): void {
+  try {
+    const containsControlCharacters = (contents: string): boolean => {
+      for (let index = 0; index < contents.length; index++) {
+        const code = contents.charCodeAt(index);
+        if (code < 32 || code === 127) return true;
+      }
+      return false;
+    };
+    if (
+      typeof databaseUrl !== 'string' ||
+      /\s/u.test(databaseUrl) ||
+      containsControlCharacters(databaseUrl) ||
+      /%(?![\da-f]{2})/i.test(databaseUrl)
+    ) {
+      throw new Error();
+    }
+    const parsed = new URL(databaseUrl);
+    if (
+      !['postgres:', 'postgresql:'].includes(parsed.protocol) ||
+      !isLocalDatabaseUrl(databaseUrl) ||
+      !parsed.hostname ||
+      !/^\/[^/]+$/.test(parsed.pathname) ||
+      databaseUrl.includes('#')
+    )
+      throw new Error();
+    const authority = /^postgres(?:ql)?:\/\/([^/?#]+)/i.exec(databaseUrl)?.[1];
+    if (!authority || authority.split('@').length > 2) throw new Error();
+    const hostAndPort = authority.slice(authority.indexOf('@') + 1);
+    if (!/^[a-z\d.-]+(?::[1-9]\d{0,4})?$/i.test(hostAndPort) || hostAndPort.toLowerCase() !== parsed.host.toLowerCase())
+      throw new Error();
+    if (/^[\d.]+$/.test(parsed.hostname) && parsed.hostname.split('.').some((octet) => String(Number(octet)) !== octet))
+      throw new Error();
+    // Keep the shared ::1 classifier intact. This installed driver splits its
+    // bracketed URL hostname at ':', producing '[' rather than an IPv6 route;
+    // the narrowly scoped seeds must reject that unsupported representation.
+    const port = parsed.port || environment.PGPORT || '5432';
+    if (!/^[1-9]\d{0,4}$/.test(port) || Number(port) > 65535) throw new Error();
+    for (const encoded of [parsed.username, parsed.password, parsed.pathname]) {
+      if (containsControlCharacters(decodeURIComponent(encoded))) throw new Error();
+    }
+    const seen = new Set<string>();
+    for (const [name, contents] of parsed.searchParams) {
+      if (seen.has(name)) throw new Error();
+      seen.add(name);
+      if (name === 'sslmode') {
+        if (!['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'].includes(contents))
+          throw new Error();
+      } else if (name === 'sslrootcert') {
+        if (contents !== 'system') throw new Error();
+      } else if (name === 'application_name') {
+        if (!/^[a-z\d_.:-]{1,128}$/i.test(contents)) throw new Error();
+      } else throw new Error();
+    }
+  } catch {
+    // Parsing and driver errors may retain URL input or credentials. Never
+    // expose their cause, the URL, or a configurable remote-override switch.
+    throw new Error('Development authentication seeds require an unambiguous local development PostgreSQL URL');
+  }
+}
+
+/**
  * One-shot database scripts may use plaintext only for the repo's known local
  * development hosts. Force TLS for remote URLs that omit it or permit
  * plaintext, while preserving URL modes that also verify certificates.
