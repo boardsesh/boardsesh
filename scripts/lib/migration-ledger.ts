@@ -34,10 +34,53 @@
  * drift from what the migrator actually inserts.
  */
 
+/** Env var that controls the journal-vs-ledger check in `packages/db/scripts/migrate.ts`. */
+export const VERIFY_MIGRATION_JOURNAL_ENV = 'VERIFY_MIGRATION_JOURNAL';
+
+/** The one value that turns the check off. Anything else — including unset — leaves it on. */
+export const VERIFY_MIGRATION_JOURNAL_OFF = '0';
+
+/**
+ * Whether `migrate.ts` runs the per-entry check. On by default since #3978.
+ *
+ * It shipped opt-in (`=1`) for one reason: the `boardsesh-dev-db` image was
+ * missing `0187_sad_freak`'s ledger row, so a default-on check would have
+ * reddened every developer's `vp run db:migrate` for a defect in the image
+ * rather than in their branch. Since #4474 the image applies every migration
+ * with its ledger row, and its build fails unless the ledger row count equals
+ * the journal entry count. `vp run db:up` applies only a verified contiguous
+ * suffix before `db:migrate` runs, and stops on any gap with no SQL run (#3979).
+ * So the condition that justified the opt-in is gone. Leaving it opt-in means
+ * the check is off in exactly the place a gap is created: a developer's machine,
+ * on the branch that creates it.
+ *
+ * `0` remains an escape hatch for the one shape this cannot help — a database
+ * with a gap nobody can repair right now, where the operator needs `db:migrate`
+ * to run anyway. The three workflows that already pass the literal `1`
+ * (`ci.yml`, `production-deploy.yml`, `db-migration-renumber.yml`) keep working
+ * unchanged.
+ *
+ * Lives here, in a dependency-free module, so the decision has unit coverage in
+ * the `scripts` Vitest project — `packages/db` runs on `tsx --test` and is not
+ * part of the CI test graph.
+ */
+export function isMigrationJournalGateArmed(env: Record<string, string | undefined>): boolean {
+  return env[VERIFY_MIGRATION_JOURNAL_ENV] !== VERIFY_MIGRATION_JOURNAL_OFF;
+}
+
 /** One journal entry paired with the hash drizzle would record for its `.sql`. */
 export interface ExpectedMigration {
   tag: string;
   hash: string;
+}
+
+/**
+ * An `ExpectedMigration` plus the journal's `when`, which drizzle stamps into
+ * `created_at`. The dev-db applier needs it to write the row drizzle would have
+ * written; selection still keys on `hash`.
+ */
+export interface ExpectedMigrationWithWhen extends ExpectedMigration {
+  when: number;
 }
 
 /**
