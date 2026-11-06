@@ -15,7 +15,8 @@ const bridge = vi.hoisted(() => ({
   gestures: [] as Array<Record<string, (...args: unknown[]) => void>>,
   cancelAnimation: vi.fn(),
 }));
-vi.mock('react-native', () => ({ useWindowDimensions: () => ({ height: 900, width: 400 }) }));
+const platform = vi.hoisted(() => ({ OS: 'ios' }));
+vi.mock('react-native', () => ({ Platform: platform, useWindowDimensions: () => ({ height: 900, width: 400 }) }));
 vi.mock('expo-router', () => ({ useNavigation: () => navigation, useRouter: () => router }));
 vi.mock('react-native-reanimated', async () => {
   const { useRef } = await import('react');
@@ -81,6 +82,7 @@ function releaseGesture() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  platform.OS = 'ios';
   bridge.queued.length = bridge.springs.length = bridge.gestures.length = 0;
   frames.clear();
   nextFrame = 0;
@@ -262,6 +264,48 @@ describe('closing the player pops only the player', () => {
     flushFrame();
     flushFrame();
     expect(bridge.springs).toHaveLength(0);
+    expect(router.dismiss).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe.each(['android', 'ios', 'web'])('player animation on %s', (platformName) => {
+  const expectedAnimation = platformName === 'android' ? 'fade' : 'slide_from_bottom';
+
+  it('restores platform motion when a new target reopens the player', () => {
+    platform.OS = platformName;
+    const { rerender } = renderHook(({ nonce }) => usePlaySwipeDismiss(nonce), { initialProps: { nonce: 1 } });
+    rerender({ nonce: 2 });
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({ animation: expectedAnimation });
+  });
+
+  it('restores platform motion after an aborted native dismissal', async () => {
+    platform.OS = platformName;
+    const { result } = renderHook(() => usePlaySwipeDismiss(1));
+    await act(async () => {
+      await result.current.dismissAndWait(async () => ({ status: 'aborted' }));
+    });
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({ animation: expectedAnimation });
+  });
+
+  it('restores platform motion when another route covers a completed swipe', () => {
+    platform.OS = platformName;
+    const { result } = renderHook(() => usePlaySwipeDismiss(1));
+    act(() => result.current.swipeDismiss.onComplete());
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({ animation: 'none' });
+    navigation.isFocused.mockReturnValue(false);
+    flushFrame();
+    flushFrame();
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({ animation: expectedAnimation });
+    expect(router.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('removes an offscreen player without a second native animation', () => {
+    platform.OS = platformName;
+    const { result } = renderHook(() => usePlaySwipeDismiss(1));
+    act(() => result.current.swipeDismiss.onComplete());
+    flushFrame();
+    flushFrame();
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({ animation: 'none' });
     expect(router.dismiss).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { Platform, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { getPlayerRouteAnimation } from '../../lib/player-route-animation';
 import { useNavigation, useRouter } from 'expo-router';
 import {
   cancelAnimation,
@@ -97,7 +98,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
     appliedRestorationRef.current = restorationVersion;
     removalRequestedRef.current = false;
     setOffscreenRevision(null);
-    navigation.setOptions({ animation: 'slide_from_bottom' });
+    navigation.setOptions({ animation: getPlayerRouteAnimation(Platform.OS) });
     runOnUI((revision: number) => {
       'worklet';
       dismissRevision.value = revision;
@@ -153,7 +154,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
         } else {
           // A different modal covered /play while JS was busy. Restore this
           // player underneath it instead of popping that newer route.
-          navigation.setOptions({ animation: 'slide_from_bottom' });
+          navigation.setOptions({ animation: getPlayerRouteAnimation(Platform.OS) });
           translateY.value = withSpring(0, springs.interactive);
           isDismissing.value = false;
           removalRequestedRef.current = false;

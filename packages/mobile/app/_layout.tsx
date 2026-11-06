@@ -14,7 +14,8 @@ import { markStartup } from '../src/lib/profiling/startup-profile';
 import { initializeUserDataExportDownloads } from '../src/lib/user-data-export-download';
 import { startHoldShapeSystemDefaultSync } from '../src/lib/hold-shape-system-default';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { LogBox, StyleSheet } from 'react-native';
+import { LogBox, Platform, StyleSheet } from 'react-native';
+import { getPlayerRouteAnimation } from '../src/lib/player-route-animation';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 57's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -772,7 +773,9 @@ function RootLayout() {
                                                                                 // RNGH pull-down (use-drawer-dismiss-gesture) drives
                                                                                 // dismissal from the whole surface instead.
                                                                                 gestureEnabled: false,
-                                                                                animation: 'slide_from_bottom',
+                                                                                animation: getPlayerRouteAnimation(
+                                                                                  Platform.OS,
+                                                                                ),
                                                                               }}
                                                                             />
                                                                           </Stack>

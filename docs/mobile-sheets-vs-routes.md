@@ -1192,3 +1192,9 @@ report the expected height while drawing blank on Android. iOS keeps its native 
 The RN form owns the screen's single scroll surface. Select rows use standalone
 native menus so the eight Bluetooth timeout choices remain reachable; disabled
 select rows expose their current value without an interactive menu.
+
+Android's player uses the native fade for opening and button/Back closing
+(nominally 150 ms, scaled by system animation settings). Reopening and cancelled
+dismissals restore that same platform policy. iOS retains its native slide;
+swipe-down dismissal retains its UI-thread spring and removes the offscreen
+route without a second native animation.
