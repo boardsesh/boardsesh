@@ -60,8 +60,20 @@ The note retains the failed one-transaction bootstrap and its enum boundary. All
 patch files replay unchanged onto #7302. The clean head passes all 59 canonical
 type tasks with no cache hits. A fresh owned full-schema legacy-auth preview
 passes five browser flows with clean teardown and no unexpected traffic/errors.
-Draft #7303 is published and feedback is monitored; no location writer switches
-authority.
+#7303 is ready for review at `7a7c3937b1`: all 19 checks passed with no pending
+or failing checks and no unresolved threads. The main CI report records 3,480
+passing cases, zero failures and six skips. Current-head Codex code review
+completed without findings. Feedback remains monitored; no
+location writer switches authority.
+
+The next [account deletion slice](./better-auth-account-deletion.md) adds a
+separately selected cutoff/event and retained reservation to the existing
+backend deletion transaction. Its source and 43 new PostgreSQL cases have
+independent review. The broader 732-case auth selection, a separately enabled
+42-case published-climb matrix and 20 mobile caller units pass. Clean-head type
+checking and a new baseline preview remain pending.
+It preserves wall-before-user locking and the existing client flow; no
+production account is deleted or authority activated.
 
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 
