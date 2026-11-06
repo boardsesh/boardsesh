@@ -184,8 +184,9 @@ Climbs a walk committed stay in the queue flagged `suggested`, and an older list
 count as Up next like anything queued. They don't outlive a long break: solo, when the climb on
 the wall has not changed for 4 hours (the #4979 clock), picking a climb from a list or search
 (History may hold it already) drops every `suggested` climb after it, so the list just picked
-plays first. Play next and Play last climbs stay; an unfinished workout's climbs are `suggested`
-and go too. A step onto a queued climb (Next, a queue row) drops nothing and restarts the clock,
+plays first. Play next and Play last climbs stay, and so do a workout's climbs while it runs
+(the run in `workout-run-store`); once its session ends they age out like any leftover. Up next
+carries across boards on purpose, so a board switch drops nothing: age is the only trigger. A step onto a queued climb (Next, a queue row) drops nothing and restarts the clock,
 so a climber who swipes onto a leftover first keeps them. Before this, leftovers from a list walked days earlier on the same board (or on a
 board the climber came back to) played ahead of every pick (#7304,
 `countStaleUpNextLeftovers`, the anomaly-only `Queue Stale Leftovers Dropped` event).

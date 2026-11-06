@@ -21,7 +21,7 @@ are addressed.
 | Opening a climb from any list inserts it into Up next. Climbs you looked at pile up there. | Opening a climb puts it on the wall. When you move on it goes to History. Up next only changes when someone adds to it. |
 | With A, B (current) and C queued, tapping C in the logbook gives A, B, C′ (current), C. Next lands on C again (`shared/queue/src/reducer.ts:289-299`). | The same tap gives A, B in History and C current. No copy. Next goes past C. |
 | Connecting a board after days away lights the climb that was current when you left (#4979). | The board stays dark. The app shows that climb, when it was last on the wall ("Last on the wall Tuesday") and Put on the wall, one tap away. |
-| Coming back after days away (or to a board you left), the climbs a list walk left in Up next play before the list you just picked (#7304). | Solo, the first pick from a list or search after the climb on the wall sat 4 h drops those `suggested` leftovers. Play next and Play last climbs stay. |
+| Coming back after days away (or to a board you left), the climbs a list walk left in Up next play before the list you just picked (#7304). | Solo, the first pick from a list or search after the climb on the wall sat 4 h drops those `suggested` leftovers. Play next and Play last climbs stay, and so does a workout until its session ends. A board switch drops nothing. |
 | Tapping a History row rewinds to it: every climb after it becomes Up next. | The tap moves that one climb into Now (decision 3). To rewind, long-press the row → Replay from here: the climbs after it are Up next again, in order. |
 
 Out of scope: web (no climbing UI since W-16, #4435), and workouts, which keep "add to queue"

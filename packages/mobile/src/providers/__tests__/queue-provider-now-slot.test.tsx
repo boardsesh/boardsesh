@@ -194,6 +194,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFee
 import { QueueProvider, useQueue, useQueueSessionId } from '../queue-provider';
 import { resetQueueServerProbeReportForTests } from '../queue/now-slot-server';
 import { clearRelayReceipt, takeRelayReceipt } from '../../lib/relay-receipt';
+import { resetWorkoutRunStoreForTests, setWorkoutRun } from '../../lib/workout-run-store';
 
 type Queue = ReturnType<typeof useQueue>;
 type Snapshot = Pick<
@@ -1066,6 +1067,8 @@ describe('QueueProvider now-slot mode (F3)', () => {
   });
 
   describe('stale list leftovers (#7304)', () => {
+    beforeEach(() => resetWorkoutRunStoreForTests());
+
     const leftoverX = { ...makeQueueItem('x', 'climb-old-x'), suggested: true };
     const leftoverY = { ...makeQueueItem('y', 'climb-old-y'), suggested: true };
     const playNext = makeQueueItem('p', 'climb-play-next');
@@ -1112,6 +1115,22 @@ describe('QueueProvider now-slot mode (F3)', () => {
       act(() => latest().setCurrentClimb(makeQueueItem('t', 'climb-new'), { playlistSuggestionSource: null }));
       expect(uuidsOf(latest())).toEqual(['a', 'b', 't', 'x', 'p', 'y']);
       expect(droppedEvents()).toHaveLength(0);
+    });
+
+    it("keeps a running workout's climbs", async () => {
+      // y belongs to a workout still running on this phone; x is a list leftover.
+      setWorkoutRun('session-w', { stages: [{ id: 'stage-1', kind: 'volume', itemUuids: ['y'] }] });
+      const latest = await renderIdle(5 * 60 * 60 * 1000);
+      act(() => latest().setCurrentClimb(makeQueueItem('t', 'climb-new'), { playlistSuggestionSource: null }));
+      expect(uuidsOf(latest())).toEqual(['a', 'b', 't', 'p', 'y']);
+    });
+
+    it("drops an ended workout's climbs like any leftover", async () => {
+      // The session ended: its run left the live store.
+      resetWorkoutRunStoreForTests();
+      const latest = await renderIdle(5 * 60 * 60 * 1000);
+      act(() => latest().setCurrentClimb(makeQueueItem('t', 'climb-new'), { playlistSuggestionSource: null }));
+      expect(uuidsOf(latest())).toEqual(['a', 'b', 't', 'p']);
     });
 
     it('keeps them on a step onto a queued climb', async () => {

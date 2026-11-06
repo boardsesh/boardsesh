@@ -13,21 +13,25 @@ import { isStaleCurrentClimb, type CurrentChangeClock } from '../../lib/ble/stal
  * that. A pick (a uuid the queue doesn't hold yet, even when placement then
  * resolves it onto a History copy of the same climb) drops the `suggested`
  * entries after the new Now. Play next and Play last climbs are not
- * `suggested` and stay; a workout's climbs are, so an unfinished workout left
- * 4 h goes too.
+ * `suggested` and stay. A workout's climbs are, so they stay only while their
+ * workout runs (`liveWorkoutQueueItemUuids`): once its session ends they age
+ * out like any leftover.
  *
  * Solo only: in a crew the queue is the room's, and a local drop would only be
  * resynced back. A step that keeps the queue as Next does (`keepQueue`, #7227)
  * and a step onto an entry already queued (Next, a queue row) never drop, and
  * they restart the clock: a climber who swipes onto a leftover first keeps the
  * leftovers.
+ *
+ * Returns the queue-item uuids to drop, in queue order; empty for none.
  */
-export function countStaleUpNextLeftovers({
+export function findStaleUpNextLeftovers({
   inSession,
   keepQueue,
   queue,
   currentClimbQueueItem,
   openedQueueItemUuid,
+  liveWorkoutQueueItemUuids,
   clock,
   now,
 }: {
@@ -36,17 +40,20 @@ export function countStaleUpNextLeftovers({
   queue: ClimbQueue;
   currentClimbQueueItem: ClimbQueueItem | null;
   openedQueueItemUuid: string;
+  /** The queue items of the workout still running on this phone. */
+  liveWorkoutQueueItemUuids: ReadonlySet<string>;
   clock: CurrentChangeClock | null;
   now: number;
-}): number {
-  if (inSession || keepQueue || !currentClimbQueueItem) return 0;
-  if (!isStaleCurrentClimb(clock, currentClimbQueueItem.uuid, now)) return 0;
+}): string[] {
+  if (inSession || keepQueue || !currentClimbQueueItem) return [];
+  if (!isStaleCurrentClimb(clock, currentClimbQueueItem.uuid, now)) return [];
   const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
-  if (currentIndex < 0) return 0;
-  if (queue.some(({ uuid }) => uuid === openedQueueItemUuid)) return 0;
-  let leftovers = 0;
+  if (currentIndex < 0) return [];
+  if (queue.some(({ uuid }) => uuid === openedQueueItemUuid)) return [];
+  const leftovers: string[] = [];
   for (let index = currentIndex + 1; index < queue.length; index += 1) {
-    if (queue[index].suggested === true) leftovers += 1;
+    const { uuid, suggested } = queue[index];
+    if (suggested === true && !liveWorkoutQueueItemUuids.has(uuid)) leftovers.push(uuid);
   }
   return leftovers;
 }

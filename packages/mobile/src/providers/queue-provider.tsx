@@ -154,7 +154,8 @@ import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
 import { useQueueClimbReads } from './queue/use-queue-climb-reads';
 import { useQueuePersistence } from './queue/use-queue-persistence';
 import { useCurrentChangeClock } from './queue/use-current-change-clock';
-import { countStaleUpNextLeftovers } from './queue/stale-up-next-leftovers';
+import { findStaleUpNextLeftovers } from './queue/stale-up-next-leftovers';
+import { getWorkoutRunState } from '../lib/workout-run-store';
 import { useSessionCommands } from './queue/use-session-commands';
 import {
   useSessionRealtime,
@@ -2843,7 +2844,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // climb on the wall has sat for 4 h. Read before the dispatch, against
       // the queue and climb the open starts from.
       const openNow = nowMs();
-      const staleLeftovers = countStaleUpNextLeftovers({
+      const staleLeftovers = findStaleUpNextLeftovers({
         inSession: sessionIdRef.current != null,
         keepQueue,
         queue: stateRef.current.queue,
@@ -2853,13 +2854,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // as a pick. Only a step onto a queued entry (Next, a queue row) keeps
         // its own uuid.
         openedQueueItemUuid: attributedItem.uuid,
+        // A workout's climbs are `suggested` too; they stay until its session
+        // ends and the run leaves this store.
+        liveWorkoutQueueItemUuids: new Set(
+          getWorkoutRunState()?.run.stages.flatMap(({ itemUuids }) => itemUuids) ?? [],
+        ),
         clock: lastCurrentChangeRef.current,
         now: openNow,
       });
-      if (staleLeftovers > 0) {
+      if (staleLeftovers.length > 0) {
         const { changedAt } = lastCurrentChangeRef.current;
         track(SHARED_EVENTS.QueueStaleLeftoversDropped, {
-          droppedCount: staleLeftovers,
+          droppedCount: staleLeftovers.length,
           idleHours: Math.floor((openNow - changedAt) / 3_600_000),
           nowSlotMode,
           boardName: activeBoardRef.current?.boardType ?? null,
@@ -2896,7 +2902,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           playlistSuggestionSource,
           insertAfterCurrent,
           pruneSuggestedAfterCurrent: sessionIdRef.current == null && !keepQueue,
-          dropSuggestedUpNext: staleLeftovers > 0,
+          dropUpNextQueueItemUuids: staleLeftovers,
           sessionId: broadcasts ? (sessionIdRef.current ?? undefined) : undefined,
           placement,
           // Solo, the phone trims History itself; in a session only the server
