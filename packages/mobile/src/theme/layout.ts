@@ -4,7 +4,7 @@
  * The persistent climb toolbar is rendered by variant:
  *
  *   Liquid Glass / fallback — floating glass capsule + standalone log tick
- *   Material                — docked opaque active-context bar above the tab bar
+ *   Material                — floating rounded tonal mini-player above the tab bar
  *
  * Screens reserve it via `useBottomChromeMetrics()` so native-accessory screens
  * do not keep padding for a JS toolbar that is not mounted. Owned here (rather
@@ -110,7 +110,7 @@ export const REST_TIMER_PILL_HEIGHT = glassSize.capsule;
 export const REST_TIMER_RESERVE = REST_TIMER_PILL_HEIGHT + TOOLBAR_GAP_ABOVE_TABBAR;
 
 /**
- * Window-coordinate `bottom` of the floating (Liquid Glass) active-context bar —
+ * Window-coordinate `bottom` of a floating active-context bar —
  * the tray that holds the climb capsule and the log-ascent tick.
  *
  * `ActiveContextBar` positions itself with this, and the #3967 regression tests
@@ -120,21 +120,16 @@ export const REST_TIMER_RESERVE = REST_TIMER_PILL_HEIGHT + TOOLBAR_GAP_ABOVE_TAB
  * (that would pull react-native into an otherwise pure suite). Move the tray by
  * editing this, and the guard moves with it.
  *
- * Docking (the Material variant) is deliberately NOT here — it keys off the tab
- * bar's *measured* height, which only the component has.
+ * Material passes the measured tab-bar height from its component.
  */
 export const floatingContextBarBottom = (tabBarBottom: number, gapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR) =>
   tabBarBottom + gapAboveTabBar;
 
-/** Height of the Material active-context bar docked directly above the tab bar. */
+/** Height of the rounded Material mini-player. */
 export const MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT = glassSize.standard;
 
-/** One logical px the docked Material bar tucks under the tab bar's top hairline.
- *  Because the bar now docks against the tab bar's *measured* height (not the
- *  `TAB_BAR_HEIGHT` constant), this only has to cover the hairline border / sub-pixel
- *  rounding — not absorb a constant-vs-reality mismatch — so it stays a fixed hairline
- *  instead of a hand-tuned per-device offset. */
-export const TABBAR_SEAM_OVERLAP = 1;
+/** Space reserved above the tabs for the Material mini-player and its gap. */
+export const MATERIAL_MINI_PLAYER_RESERVE = MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT + TOOLBAR_GAP_ABOVE_TABBAR;
 
 /** Width of the iPad adaptive-shell sidebar rail (the glass left rail that
  *  replaces the bottom tab bar at `regular` width — see `size-class.ts`). An

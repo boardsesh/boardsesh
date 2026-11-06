@@ -4,7 +4,7 @@ import type { UiVariant } from '../theme/resolve-ui-variant';
 // this module's pure, react-native-free unit test. select-by-variant is type-only.
 import { selectByVariant } from '../theme/variants/select-by-variant';
 import {
-  MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
+  MATERIAL_MINI_PLAYER_RESERVE,
   MATERIAL_TAB_BAR_HEIGHT,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT,
   REST_TIMER_RESERVE,
@@ -459,12 +459,8 @@ export function computeBottomChromeMetrics({
   // synthetic "sidebar + native tab signal" call must not consume the in-tab
   // measurement or its reconstruction — hence the `!usesSidebar` term.
   const tabBarOverlaysContent = insideTabs && usesNativeTabBar && !usesSidebar;
-  // The Material bar reserves its full height even though it's tucked ~2px into the
-  // tab bar (MATERIAL_TABBAR_OVERLAP in persistent-queue-bar), so its visible height
-  // above the tab bar is ~2px less. The resulting 2px of extra scroll padding is
-  // intentional slack — imperceptible, and not worth threading the overlap through
-  // this pure arbitration. Don't "fix" it by subtracting the overlap here.
-  const jsQueueToolbarReserve = uiVariant === 'material' ? MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT : TOOLBAR_RESERVE;
+  // Floating Material chrome reserves its height and the gap above the tabs.
+  const jsQueueToolbarReserve = uiVariant === 'material' ? MATERIAL_MINI_PLAYER_RESERVE : TOOLBAR_RESERVE;
   const jsQueueReserve = jsQueueToolbarVisible ? jsQueueToolbarReserve : 0;
   // A native accessory is UIKit-owned and already folded into `insetsBottom` on
   // the real NativeTabs path. Keep this field as an *additional* reserve so every

@@ -1506,3 +1506,13 @@ Device QA remains required: iPhone/iPad AX1–AX5 plus Bold Text, VoiceOver/Talk
 hold editing and queue boundaries, native slider drag/accessibility commits,
 keyboard-visible form submission, RTL semantic navigation, and Reduce Motion.
 Linux typechecking/tests/bundles cannot validate UIKit/SwiftUI layout or gestures.
+
+### Material climb controls
+
+The Material wall status sits below the Climbs app bar in a rounded 48dp capsule,
+with 16dp side gutters. Its name sits above grade and sender, sends, or history age.
+The separate 48dp dismiss target remains available alongside swipe dismissal.
+The Material mini-player floats 10dp above the measured tab bar with 16dp side gutters.
+Its 48dp rounded tonal surface carries a 32dp thumbnail, name and grade/byline,
+with independent 48dp board and logging controls. Reserve 58dp above the tab bar.
+Use neutral Material text roles for readable grades in both colour schemes.

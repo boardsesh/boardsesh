@@ -11,7 +11,7 @@
  *     centered capsule + standalone hero tick (tap = PlayDrawer)
  *
  *   Material                  [ ▢ grade · name              ✓ ]
- *     one full-width opaque active-context bar docked above the tab bar
+ *     one rounded opaque mini-player floating above the tab bar
  *
  * On the Liquid Glass variant on iOS 26 the native bottom accessory owns this
  * pair (iPhone and iPad), so `useCurrentClimbSurface` answers `nativeAccessory`
@@ -19,7 +19,13 @@
  */
 
 import { useSegments } from 'expo-router';
-import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
+import {
+  MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
+  TOOLBAR_RESERVE,
+  TOOLBAR_SIDE_MARGIN,
+  TAB_BAR_HEIGHT,
+  glassSize,
+} from '../../theme/layout';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
@@ -69,15 +75,17 @@ export function PersistentQueueBar() {
     return (
       <ActiveContextBar
         fillPrimary
-        dockToTabBar
-        horizontalInset={0}
+        followMeasuredTabBar
+        horizontalInset={TOOLBAR_SIDE_MARGIN}
         primary={
           <ClimbCapsule
             fillWidth
             height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
-            surfaceTreatment="docked"
-            endAction={<LogAscentToolbarButton climb={currentClimb} isMirror={pickMirrored} size={glassSize.inline} />}
-            endActionSize={glassSize.inline}
+            surfaceTreatment="floating"
+            endAction={
+              <LogAscentToolbarButton climb={currentClimb} isMirror={pickMirrored} size={glassSize.standard} />
+            }
+            endActionSize={glassSize.standard}
           />
         }
       />

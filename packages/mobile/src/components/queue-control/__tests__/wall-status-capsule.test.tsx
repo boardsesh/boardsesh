@@ -209,7 +209,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       onSurfaceVariant: '#A9A2B6',
       outlineVariant: '#4A4458',
     },
-    m3SurfaceContainers: { high: '#2A2142', highest: '#322748' },
+    m3SurfaceContainers: { base: '#221A33', high: '#2A2142', highest: '#322748' },
   }),
 }));
 // The capsule renders whatever `resolveGrade` returns (the app-wide "Show Boardsesh
@@ -233,18 +233,21 @@ vi.mock('../../Text', () => ({
     numberOfLines,
     ellipsizeMode,
     variant,
+    color,
   }: {
     children?: ReactNode;
     style?: unknown;
     numberOfLines?: number;
     ellipsizeMode?: string;
     variant?: string;
+    color?: string;
   }) =>
     createElement(
       'span',
       {
         'data-text': 'true',
         'data-variant': variant,
+        'data-color': color,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-lines': numberOfLines,
         'data-ellipsize': ellipsizeMode,
@@ -889,53 +892,70 @@ describe('WallStatusCapsule', () => {
       spies.variant = 'material';
     });
 
-    it('renders a Material status band via PressableSurface (native ripple), not the glass Pressable', () => {
+    it('renders a Material capsule via PressableSurface with native ripple', () => {
       const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(container.querySelector('[data-pressable-surface]')).not.toBeNull();
       expect(getByText('Wax On')).not.toBeNull();
       expect(getByText('V5 6C')).not.toBeNull();
     });
 
-    it('names the sender in the "On the wall" overline (no lightbulb)', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
+    it('shows the sender after the protected grade below the climb name', () => {
+      const { container, getByText, queryByText } = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
-      // The overline carries "lit + who" in words; the bottom queue bar owns the bulb.
-      expect(getByText('mobile.boardPresence.stripOverlineWithSender:Casey')).not.toBeNull();
-      expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
-      // The person glyph belongs to the anonymous fallback, not a known sender.
-      expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
+      expect(getByText('· Casey')).toBeTruthy();
+      expect(queryByText('mobile.boardPresence.stripOverlineWithSender:Casey')).toBeNull();
+      expect(getByText('Wax On').getAttribute('data-variant')).toBe('subheadline');
+      expect(getByText('V5 6C').getAttribute('data-variant')).toBe('footnote');
+      expect(JSON.parse(getByText('V5 6C').getAttribute('data-style') ?? '{}').flexShrink).toBe(0);
     });
 
-    it('uses a historical overline while keeping the climb grade and sender', () => {
-      const { container, getByText } = render(
+    it('uses a rounded 48dp opaque Material capsule without a rail or divider', () => {
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+      const style = JSON.parse(container.querySelector('[data-animated]')?.getAttribute('data-style') ?? '{}');
+      expect(style).toMatchObject({ height: 48, borderRadius: 24, backgroundColor: '#221A33', maxWidth: '100%' });
+      expect(style.width).toBeUndefined();
+      expect(style.borderBottomWidth).toBeUndefined();
+      expect(container.querySelector('[data-glass-surface]')).toBeNull();
+    });
+
+    it('keeps a historical age whole below the name without announcing it', () => {
+      const { container, getByText, queryByText } = render(
         <WallStatusCapsule
           climb={makeClimb()}
           presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
         />,
       );
-      expect(getByText('mobile.boardPresence.stripHistoryOverline:20m')).toBeTruthy();
-      expect(getByText('V5 6C')).toBeTruthy();
+      const age = getByText('· 20m ago');
+      expect(JSON.parse(age.getAttribute('data-style') ?? '{}').flexShrink).toBe(0);
+      expect(queryByText('mobile.boardPresence.stripHistoryOverline:20m')).toBeNull();
       expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-name')).toBe('Casey');
       expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain(
         'stripHistoryA11yLabel',
       );
     });
 
-    it('falls back to the bare overline + a neutral person glyph for an anonymous sender', () => {
+    it('shows sends for an anonymous sender without a decorative person glyph', () => {
+      spies.sends = '683 sends';
       const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId: null });
       const { container, getByText } = render(<WallStatusCapsule climb={climb} />);
-      // No sender to name — the overline drops the "· {sender}" suffix gracefully.
-      expect(getByText('mobile.boardPresence.stripOverline')).not.toBeNull();
+      expect(getByText('· 683 sends')).toBeTruthy();
+      expect(spies.statsArgs).toMatchObject({ statsEnabled: true });
       expect(container.querySelector('[data-driver-avatar]')).toBeNull();
-      expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
-      expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
+      expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
     });
 
-    it('keeps the band at its own 20dp face and subheadline text', () => {
+    it('keeps the 24dp face beside readable Material typography', () => {
       const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('20');
+      expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('24');
       expect(getByText('Wax On').getAttribute('data-variant')).toBe('subheadline');
-      expect(getByText('V5 6C').getAttribute('data-variant')).toBe('subheadline');
+      expect(getByText('V5 6C').getAttribute('data-variant')).toBe('footnote');
+    });
+
+    it.each(['light', 'dark'] as const)('uses neutral text roles in %s mode instead of raw grade colour', (scheme) => {
+      spies.colorScheme = scheme;
+      const { getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
+      expect(getByText('Wax On').getAttribute('data-color')).toBe('#F5F2FB');
+      expect(getByText('V5 6C').getAttribute('data-color')).toBe('#A9A2B6');
     });
 
     it('opens the read-only wall preview on tap', () => {

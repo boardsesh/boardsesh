@@ -90,6 +90,7 @@ vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
 vi.mock('../../../theme/layout', () => ({
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT: 48,
+  MATERIAL_MINI_PLAYER_RESERVE: 58,
   MATERIAL_TAB_BAR_HEIGHT: 80,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT: 56,
   TAB_BAR_HEIGHT: 49,
@@ -102,7 +103,7 @@ vi.mock('../../../theme/layout', () => ({
   SIDEBAR_WIDTH: 96,
   // Mirrors the real implementation — ActiveContextBar's floating branch calls it.
   floatingContextBarBottom: (tabBarBottom: number, gapAboveTabBar = 10) => tabBarBottom + gapAboveTabBar,
-  glassSize: { hero: 64, inline: 44 },
+  glassSize: { hero: 64, inline: 44, standard: 48 },
 }));
 // The docked Material bar reads the tab bar's measured height to position itself.
 vi.mock('../../../providers/tab-bar-height-provider', () => ({
@@ -297,20 +298,22 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).not.toBeNull();
   });
 
-  it('uses a docked full-width inline-action bar on Material', () => {
+  it('uses a rounded floating inline-action bar on Material', () => {
     cfg.variant = 'material';
     const { container } = renderBar();
     const capsule = container.querySelector('[data-capsule]');
     expect(capsule).not.toBeNull();
     expect(capsule?.getAttribute('data-fill-width')).toBe('true');
     expect(capsule?.getAttribute('data-height')).toBe('48');
-    expect(capsule?.getAttribute('data-surface-treatment')).toBe('docked');
+    expect(capsule?.getAttribute('data-surface-treatment')).toBe('floating');
     // Positioning lives on the outer plain View shell (parentElement of the
     // Animated.View), not on the Animated.View itself — the Reanimated entering
     // bug was fixed by separating the positioning View from the animated View.
-    expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain('"left":0');
     expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain(
-      '"right":0',
+      '"left":16',
+    );
+    expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain(
+      '"right":16',
     );
     expect(container.querySelector('[data-tick-inline]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
@@ -325,13 +328,13 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
-  it('docks the Material bar on the measured tab-bar top, tucked under the hairline', () => {
-    // Measured tab bar = 80px tall → the docked bar sits at 80 - TABBAR_SEAM_OVERLAP(1).
+  it('floats the Material bar 10dp above the measured tab-bar top', () => {
+    // A measured 80dp bar plus the shared 10dp gap.
     cfg.variant = 'material';
     cfg.measuredTabBarHeight = 80;
     const { container } = renderBar();
     expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain(
-      '"bottom":79',
+      '"bottom":90',
     );
   });
 

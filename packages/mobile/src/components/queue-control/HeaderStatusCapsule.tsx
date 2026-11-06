@@ -221,6 +221,9 @@ type HeaderCapsuleClimbLabelProps = {
   /** Patterned surfaces use their contrast-checked foreground for both lines. */
   textColor?: ColorValue;
   textStyle?: StyleProp<TextStyle>;
+  nameVariant?: 'caption1' | 'subheadline';
+  bylineVariant?: 'caption2' | 'footnote';
+  bylineColor?: ColorValue;
 };
 
 /** An optional face, then the climb's name over its grade and one fact. */
@@ -233,6 +236,9 @@ export function HeaderCapsuleClimbLabel({
   onActivate,
   textColor,
   textStyle,
+  nameVariant = 'caption1',
+  bylineVariant = 'caption2',
+  bylineColor,
 }: HeaderCapsuleClimbLabelProps) {
   const { systemColors } = useTheme();
   return (
@@ -245,7 +251,7 @@ export function HeaderCapsuleClimbLabel({
       )}
       <LargeContentViewer title={largeContentTitle} onActivate={onActivate} style={styles.climbLines}>
         <Text
-          variant="caption1"
+          variant={nameVariant}
           color={textColor ?? systemColors.label}
           numberOfLines={1}
           ellipsizeMode="tail"
@@ -258,8 +264,8 @@ export function HeaderCapsuleClimbLabel({
           <View style={styles.bylineRow}>
             {byline.grade ? (
               <Text
-                variant="caption2"
-                color={textColor ?? systemColors.secondaryLabel}
+                variant={bylineVariant}
+                color={bylineColor ?? textColor ?? systemColors.secondaryLabel}
                 numberOfLines={1}
                 maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
                 style={[styles.climbByline, styles.bylineGrade, textStyle]}
@@ -269,8 +275,8 @@ export function HeaderCapsuleClimbLabel({
             ) : null}
             {byline.detail ? (
               <Text
-                variant="caption2"
-                color={textColor ?? systemColors.secondaryLabel}
+                variant={bylineVariant}
+                color={bylineColor ?? textColor ?? systemColors.secondaryLabel}
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}

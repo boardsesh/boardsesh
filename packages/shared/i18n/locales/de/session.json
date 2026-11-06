@@ -527,8 +527,6 @@
       "stripA11yLabel": "An der Wand: {{name}}, {{grade}}",
       "stripA11yLabelWithSender": "An der Wand: {{name}}, {{grade}}, beleuchtet von {{sender}}",
       "stripA11yHint": "Öffnet den Boulder an der Wand",
-      "stripOverline": "An der Wand",
-      "stripOverlineWithSender": "An der Wand · {{sender}}",
       "stripAnnounce": "Jetzt an der Wand: {{name}}, {{grade}}",
       "stripAnnounceWithSender": "Jetzt an der Wand: {{name}}, {{grade}}, beleuchtet von {{sender}}",
       "switchBoard": "Board wechseln",
@@ -624,7 +622,6 @@
         "exit": "Beenden",
         "exitA11y": "Wandanzeige beenden"
       },
-      "stripHistoryOverline": "Zuletzt an der Wand · {{age}}",
       "stripHistoryA11yLabel": "Zuletzt an der Wand · {{age}}: {{name}}, {{grade}}",
       "stripHistoryA11yLabelWithSender": "Zuletzt an der Wand · {{age}}: {{name}}, {{grade}}, beleuchtet von {{sender}}",
       "stripDismiss": "Ausblenden",
