@@ -6,6 +6,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type RefObject,
 } from 'react';
 import { Keyboard } from 'react-native';
@@ -29,6 +30,7 @@ import {
   defaultMinSize,
   fillMaxWidth,
   height,
+  onSizeChanged,
   padding,
   semantics,
   Shapes,
@@ -166,6 +168,13 @@ function GradeRow({
   const seenBoundRef = useRef(bound);
   const requestIdRef = useRef(0);
   const lastTargetRef = useRef<number | null>(null);
+  const allowAfterInteractionRef = useRef(false);
+  const [railSize, setRailSize] = useState<{ width: number; height: number } | null>(null);
+  const failedCenterRef = useRef<{ targetIndex: number; layout: typeof railSize } | null>(null);
+  const handleRailSizeChanged = useCallback((size: { width: number; height: number }) => {
+    if (size.width <= 0 || size.height <= 0) return;
+    setRailSize((previous) => (previous?.width === size.width && previous.height === size.height ? previous : size));
+  }, []);
   const interactedRef = useRef(false);
   const restoredRef = useRef(initialPosition !== undefined);
   const markInteracted = useCallback(() => {
@@ -185,6 +194,7 @@ function GradeRow({
     seenBoundRef.current = bound;
     if (changed && ownBoundRef.current && isSameGradeBound(ownBoundRef.current, bound)) {
       ownBoundRef.current = null;
+      allowAfterInteractionRef.current = false;
       lastTargetRef.current = targetIndex;
       return;
     }
@@ -192,29 +202,46 @@ function GradeRow({
       ownBoundRef.current = null;
       interactedRef.current = false;
       restoredRef.current = false;
+      allowAfterInteractionRef.current = true;
     }
     if (
+      railSize === null ||
       restoredRef.current ||
       interactedRef.current ||
       targetIndex < 0 ||
+      (!changed &&
+        failedCenterRef.current?.targetIndex === targetIndex &&
+        failedCenterRef.current.layout === railSize) ||
       (!changed && lastTargetRef.current === targetIndex)
     )
       return;
     lastTargetRef.current = targetIndex;
     const requestId = ++requestIdRef.current;
+    const allowAfterInteraction = allowAfterInteractionRef.current;
     void Promise.resolve()
       .then(() =>
         railRef.current?.scrollToItem({
           index: targetIndex + 1,
           alignment: 'center',
           requestId,
-          ...(changed ? { allowAfterInteraction: true } : {}),
+          ...(allowAfterInteraction ? { allowAfterInteraction: true } : {}),
         }),
       )
+      .then(() => {
+        if (requestIdRef.current === requestId) {
+          allowAfterInteractionRef.current = false;
+          failedCenterRef.current = null;
+        }
+      })
       .catch((error: unknown) => {
+        // Retry only after another genuine layout or selection change, never a polling loop.
+        if (requestIdRef.current === requestId) {
+          lastTargetRef.current = null;
+          failedCenterRef.current = { targetIndex, layout: railSize };
+        }
         if (__DEV__) console.warn('[filters] grade centering unavailable', error);
       });
-  }, [bound, targetIndex, railRef]);
+  }, [bound, targetIndex, railRef, railSize]);
   const chip = (
     key: string,
     label: string,
@@ -256,42 +283,44 @@ function GradeRow({
     );
   };
   return (
-    <LazyRow
-      ref={railRef}
-      initialScrollPosition={initialPosition}
-      modifiers={[fillMaxWidth(), height(72)]}
-      verticalAlignment="center"
-      horizontalArrangement={{ spacedBy: spacing[2] }}
-      contentPadding={{ start: spacing[3], end: spacing[3] }}
-    >
-      {chip(
-        'any',
-        t('mobile.search.gradeClear'),
-        interaction.anySelected,
-        false,
-        t(interaction.anySelected ? 'mobile.gradeRail.anyGradeAria' : 'mobile.gradeRail.clearFilterAria'),
-        interaction.handleClear,
-      )}
-      {stops.map((stop) => {
-        const selected = isGradeStopEnd(bound, stop);
-        const ranged = isGradeStopInRange(bound, stop);
-        const description = selected
-          ? t('mobile.gradeRail.selectedFilterAria', { grade: stop.label })
-          : ranged
-            ? t('mobile.gradeRail.rangeFilterAria', { grade: stop.label })
-            : t('mobile.gradeRail.setFilterAria', { grade: stop.label });
-        return chip(
-          String(stop.minGradeId),
-          stop.label,
-          selected,
-          ranged,
-          `${description}. ${t('mobile.gradeRail.rangeHoldHint')}`,
-          () => interaction.handleTapStop(stop),
-          () => interaction.handleHoldStop(stop),
-          stop.gradeColor,
-        );
-      })}
-    </LazyRow>
+    <Box modifiers={[fillMaxWidth(), height(72), onSizeChanged(handleRailSizeChanged)]}>
+      <LazyRow
+        ref={railRef}
+        initialScrollPosition={initialPosition}
+        modifiers={[fillMaxWidth(), height(72)]}
+        verticalAlignment="center"
+        horizontalArrangement={{ spacedBy: spacing[2] }}
+        contentPadding={{ start: spacing[3], end: spacing[3] }}
+      >
+        {chip(
+          'any',
+          t('mobile.search.gradeClear'),
+          interaction.anySelected,
+          false,
+          t(interaction.anySelected ? 'mobile.gradeRail.anyGradeAria' : 'mobile.gradeRail.clearFilterAria'),
+          interaction.handleClear,
+        )}
+        {stops.map((stop) => {
+          const selected = isGradeStopEnd(bound, stop);
+          const ranged = isGradeStopInRange(bound, stop);
+          const description = selected
+            ? t('mobile.gradeRail.selectedFilterAria', { grade: stop.label })
+            : ranged
+              ? t('mobile.gradeRail.rangeFilterAria', { grade: stop.label })
+              : t('mobile.gradeRail.setFilterAria', { grade: stop.label });
+          return chip(
+            String(stop.minGradeId),
+            stop.label,
+            selected,
+            ranged,
+            `${description}. ${t('mobile.gradeRail.rangeHoldHint')}`,
+            () => interaction.handleTapStop(stop),
+            () => interaction.handleHoldStop(stop),
+            stop.gradeColor,
+          );
+        })}
+      </LazyRow>
+    </Box>
   );
 }
 

@@ -153,7 +153,16 @@ export const ClimbFilterSurface = forwardRef<ClimbFilterSurfaceHandle, ClimbFilt
               ref={formRef}
               model={model}
               initialScrollPosition={initialScrollPosition}
-              onNameFocus={() => snapToIndex(1)}
+              onNameFocus={() => {
+                if (
+                  !mountedRef.current ||
+                  !openRef.current ||
+                  closingRef.current ||
+                  presentation.generation !== generationRef.current
+                )
+                  return;
+                snapToIndex(1);
+              }}
             />
           </Column>
         </ModalBottomSheet>

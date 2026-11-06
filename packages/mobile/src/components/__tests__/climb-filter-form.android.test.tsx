@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, createRef, forwardRef, useImperativeHandle, useRef, type ReactNode } from 'react';
+import { createElement, createRef, forwardRef, useImperativeHandle, useRef, useEffect, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Grade } from '@boardsesh/shared-schema';
@@ -17,10 +17,12 @@ vi.hoisted(() => {
 const native = vi.hoisted(() => ({
   column: null as Record<string, unknown> | null,
   row: null as Record<string, unknown> | null,
+  railContainer: null as { modifiers: Modifier[] } | null,
   columnPosition: vi.fn(),
   rowPosition: vi.fn(),
   center: vi.fn(),
   name: null as Record<string, unknown> | null,
+  autoLayout: true,
 }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
@@ -61,6 +63,7 @@ vi.mock('@expo/ui/jetpack-compose/modifiers', () => {
         'defaultMinSize',
         'fillMaxWidth',
         'height',
+        'onSizeChanged',
         'padding',
         'semantics',
         'weight',
@@ -90,11 +93,17 @@ vi.mock('@expo/ui/jetpack-compose', () => {
       return state.current;
     },
     Box: ({ children, modifiers }: { children?: ReactNode; modifiers: Modifier[] }) => {
+      const sizeHandler = modifiers.find((modifier) => modifier.kind === 'onSizeChanged')?.arguments[0];
+      if (typeof sizeHandler === 'function') native.railContainer = { modifiers };
+      useEffect(() => {
+        if (native.autoLayout && typeof sizeHandler === 'function') sizeHandler({ width: 320, height: 72 });
+      }, [sizeHandler]);
       const gesture = modifiers.find((modifier) => modifier.kind === 'combinedClickable')?.arguments[0] as {
         onClick: () => void;
         onLongClick?: () => void;
       };
       const state = modifiers.find((modifier) => modifier.kind === 'semantics')?.arguments[0] as { selected: boolean };
+      if (!gesture) return createElement('div', null, children);
       return createElement(
         'button',
         { onClick: gesture.onClick, onContextMenu: gesture.onLongClick, 'aria-pressed': state.selected },
@@ -162,12 +171,42 @@ function model(bound: Partial<GradeBound>, onChange = vi.fn()): ClimbFilterFormM
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  native.autoLayout = true;
+  native.center.mockReset();
   native.center.mockResolvedValue(undefined);
   native.columnPosition.mockResolvedValue({ index: 2, offsetDp: 14 });
   native.rowPosition.mockResolvedValue({ index: 1, offsetDp: 8 });
 });
 afterEach(cleanup);
+function reportRailSize(width: number, height: number) {
+  const modifiers = native.railContainer?.modifiers ?? [];
+  const handler = modifiers.find((modifier) => modifier.kind === 'onSizeChanged')?.arguments[0];
+  if (typeof handler !== 'function') throw new Error('Expected native rail size callback');
+  handler({ width, height });
+}
 describe('Android native filter form', () => {
+  it('waits for a nonzero native measurement before centering', async () => {
+    native.autoLayout = false;
+    render(<ClimbFilterForm model={model({})} onNameFocus={vi.fn()} />);
+    await act(async () => {});
+    expect(native.center).not.toHaveBeenCalled();
+    await act(async () => reportRailSize(0, 72));
+    expect(native.center).not.toHaveBeenCalled();
+    await act(async () => reportRailSize(320, 72));
+    expect(native.center).toHaveBeenCalledExactlyOnceWith({ index: 2, alignment: 'center', requestId: 1 });
+  });
+  it('retries a rejected center only after a genuine layout change', async () => {
+    native.center.mockRejectedValueOnce(new Error('Unable to find LazyRowView with tag'));
+    const view = render(<ClimbFilterForm model={model({})} onNameFocus={vi.fn()} />);
+    await act(async () => {});
+    expect(native.center).toHaveBeenCalledTimes(1);
+    view.rerender(<ClimbFilterForm model={model({})} onNameFocus={vi.fn()} />);
+    await act(async () => reportRailSize(320, 72));
+    expect(native.center).toHaveBeenCalledTimes(1);
+    await act(async () => reportRailSize(400, 72));
+    expect(native.center).toHaveBeenCalledTimes(2);
+    expect(native.center).toHaveBeenLastCalledWith({ index: 2, alignment: 'center', requestId: 2 });
+  });
   it('restores by section identity after preceding sections change', () => {
     const current = model({});
     current.sections.shift();
