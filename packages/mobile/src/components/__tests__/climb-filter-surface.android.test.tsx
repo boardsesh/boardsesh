@@ -122,6 +122,30 @@ describe('native Android filter sheet', () => {
     });
     expect(native.expand).toHaveBeenCalledTimes(2);
   });
+  it('ignores name focus while its native hide is pending', async () => {
+    native.hide.mockImplementation(() => new Promise<void>(() => {}));
+    const { ref, onChange } = setup();
+    act(() => ref.current?.present());
+    const focus = native.form?.onNameFocus as () => void;
+    act(() => {
+      ref.current?.dismiss();
+      focus();
+    });
+    await act(async () => {});
+    expect(native.expand).not.toHaveBeenCalled();
+    expect(onChange.mock.calls.map(([index]) => index)).toEqual([0]);
+  });
+  it('ignores a queued name focus from an older presentation', async () => {
+    const { ref, onChange } = setup();
+    act(() => ref.current?.present());
+    const staleFocus = native.form?.onNameFocus as () => void;
+    await act(async () => ref.current?.dismiss());
+    act(() => ref.current?.present());
+    onChange.mockClear();
+    await act(async () => staleFocus());
+    expect(native.expand).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
   it('deduplicates native dismissal against a pending hide completion', async () => {
     let finishHide: (() => void) | undefined;
     native.hide.mockImplementation(
