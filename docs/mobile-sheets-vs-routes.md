@@ -620,6 +620,17 @@ project names: keep both `@expo/ui` (iOS) and `expo-ui` (Android) in
 a valid native build selects the source dependency and runs
 `:expo-ui:compileDebugKotlin` in its APK assemble graph.
 
+Filters alone opts into the Expo UI `recoverSettledTouches` patch. Foundation
+1.12.1 can retain its animation flag after an anchor changes during a drag,
+causing the sheet to consume later taps. After an established visible detent
+changes, the patch waits for released pointers and checks that the sheet is
+settled at its target with no explicit command running. It then enters that
+same detent through Material3's public API once. Initial presentation, Hidden
+and same-detent releases do not trigger recovery. This uses no timed reset or
+private state; other sheets retain Expo's default behavior. Native QA must cover
+repeated expand/collapse, taps after each drag, fast reversal at an anchor,
+keyboard expansion, swipe dismissal and picker suspension/return.
+
 **Filter sheet parts are shared.** The sheet is built from the parts in
 `src/components/filter-sheet/`: `FilterSheetSection` (headline group), `FilterLabelRow` (muted
 sub-label with an optional pin and description; the iOS SwiftUI Filters form has no pins, and which

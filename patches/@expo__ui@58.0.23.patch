@@ -680,3 +680,244 @@ new file mode 100644
 +  }
 +  return state
 +}
+diff --git a/android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt b/android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt
+index 9ca0932..2fbc281 100644
+--- a/android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt
++++ b/android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt
+@@ -8,20 +8,32 @@ import android.content.Context
+ import android.graphics.Color
+ import android.view.KeyEvent
+ import android.view.inputmethod.InputMethodManager
++import androidx.compose.foundation.gestures.awaitEachGesture
++import androidx.compose.foundation.gestures.awaitFirstDown
+ import androidx.compose.material3.BottomSheetDefaults
+ import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.ModalBottomSheet
+ import androidx.compose.material3.ModalBottomSheetProperties
++import androidx.compose.material3.SheetState
++import androidx.compose.material3.SheetValue
+ import androidx.compose.material3.contentColorFor
+ import androidx.compose.material3.rememberModalBottomSheetState
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.DisposableEffect
+ import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
+ import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.runtime.setValue
++import androidx.compose.runtime.snapshotFlow
++import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Color as ComposeColor
+ import androidx.compose.ui.graphics.luminance
+ import androidx.compose.ui.graphics.takeOrElse
++import androidx.compose.ui.input.pointer.PointerEventPass
++import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.platform.LocalView
+ import androidx.compose.ui.window.DialogWindowProvider
+ import expo.modules.kotlin.records.Field
+@@ -31,6 +43,8 @@ import expo.modules.kotlin.views.AsyncFunctionHandle
+ import expo.modules.kotlin.views.ComposeProps
+ import expo.modules.kotlin.views.FunctionalComposableScope
+ import expo.modules.kotlin.views.OptimizedComposeProps
++import kotlinx.coroutines.flow.collectLatest
++import kotlinx.coroutines.flow.first
+ import kotlinx.coroutines.withContext
+ import kotlin.coroutines.cancellation.CancellationException
+
+@@ -44,6 +58,7 @@ data class ModalBottomSheetPropertiesRecord(
+ data class ModalBottomSheetViewProps(
+   val skipPartiallyExpanded: Boolean = false,
+   val initialFullyExpanded: Boolean = false,
++  val recoverSettledTouches: Boolean = false,
+   val containerColor: Color? = null,
+   val contentColor: Color? = null,
+   val scrimColor: Color? = null,
+@@ -94,6 +109,77 @@ private fun ForwardKeyEventsToActivity(activity: Activity?) {
+   }
+ }
+
++private class SheetTouchRecoveryState {
++  var touching by mutableStateOf(false)
++  var activeCommands = 0
++    private set
++
++  suspend fun runCommand(command: suspend () -> Unit) {
++    activeCommands += 1
++    try {
++      command()
++    } finally {
++      activeCommands -= 1
++    }
++  }
++}
++
++private fun Modifier.trackSheetRecoveryPointers(recovery: SheetTouchRecoveryState): Modifier =
++  pointerInput(recovery) {
++    try {
++      awaitEachGesture {
++        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
++        recovery.touching = true
++        try {
++          do {
++            val event = awaitPointerEvent(PointerEventPass.Initial)
++          } while (event.changes.any { it.pressed })
++        } finally {
++          recovery.touching = false
++        }
++      }
++    } finally {
++      recovery.touching = false
++    }
++  }
++
++/**
++ * Foundation 1.12.1 can retain dragTarget after an anchor update during a targetless drag.
++ * Material3 then reports an animation forever and consumes every subsequent touch down.
++ * A changed visible settledValue is an end-of-transaction signal, unlike targetValue.
++ * Re-enter only that already-settled anchor through the public targeted API to clear it.
++ */
++@Composable
++private fun RecoverSettledSheetTouches(
++  sheetState: SheetState,
++  recovery: SheetTouchRecoveryState,
++  enabled: Boolean
++) {
++  LaunchedEffect(sheetState, enabled) {
++    if (!enabled) return@LaunchedEffect
++    var previousSettled = sheetState.currentValue
++    snapshotFlow { sheetState.currentValue }.collectLatest { settled ->
++      val previous = previousSettled
++      previousSettled = settled
++      if (previous == settled || previous == SheetValue.Hidden || settled == SheetValue.Hidden) {
++        return@collectLatest
++      }
++      // Waiting never makes pointer release a trigger; another settled transition cancels this one.
++      snapshotFlow { recovery.touching }.first { touching -> !touching }
++      if (sheetState.currentValue != settled || sheetState.targetValue != settled ||
++        !sheetState.isAnimationRunning || recovery.activeCommands != 0
++      ) {
++        return@collectLatest
++      }
++      when (settled) {
++        SheetValue.Expanded -> sheetState.expand()
++        SheetValue.PartiallyExpanded -> sheetState.partialExpand()
++        SheetValue.Hidden -> Unit
++      }
++    }
++  }
++}
++
+ @Composable
+ fun FunctionalComposableScope.ModalBottomSheetContent(
+   props: ModalBottomSheetViewProps,
+@@ -104,11 +190,14 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+ ) {
+   val sheetState = rememberModalBottomSheetState(props.skipPartiallyExpanded)
+   val scope = rememberCoroutineScope()
++  val touchRecovery = remember { SheetTouchRecoveryState() }
++  val recoverSettledTouches = props.recoverSettledTouches && props.sheetGesturesEnabled
++  RecoverSettledSheetTouches(sheetState, touchRecovery, recoverSettledTouches)
+
+   hide.handle {
+     try {
+       withContext(scope.coroutineContext) {
+-        sheetState.hide()
++        touchRecovery.runCommand { sheetState.hide() }
+       }
+     } catch (_: CancellationException) {
+       // Swipe-dismiss may cancel the coroutine scope while hide() is in-flight.
+@@ -119,7 +208,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+   expand.handle {
+     try {
+       withContext(scope.coroutineContext) {
+-        sheetState.expand()
++        touchRecovery.runCommand { sheetState.expand() }
+       }
+     } catch (_: CancellationException) {
+       // Swipe-dismiss may cancel the coroutine scope while expand() is in-flight.
+@@ -130,7 +219,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+   partialExpand.handle {
+     try {
+       withContext(scope.coroutineContext) {
+-        sheetState.partialExpand()
++        touchRecovery.runCommand { sheetState.partialExpand() }
+       }
+     } catch (_: CancellationException) {
+       // Swipe-dismiss may cancel the coroutine scope while partialExpand() is in-flight.
+@@ -175,6 +264,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+       shouldDismissOnClickOutside = props.properties.shouldDismissOnClickOutside
+     ),
+     modifier = ModifierRegistry.applyModifiers(props.modifiers, appContext, composableScope, globalEventDispatcher)
++      .then(if (recoverSettledTouches) Modifier.trackSheetRecoveryPointers(touchRecovery) else Modifier)
+   ) {
+     ForwardKeyEventsToActivity(appContext.currentActivity)
+     Children(UIComposableScope(), filter = { !isSlotView(it) })
+@@ -183,7 +273,7 @@ fun FunctionalComposableScope.ModalBottomSheetContent(
+   LaunchedEffect(Unit) {
+     if (props.initialFullyExpanded && !props.skipPartiallyExpanded) {
+       try {
+-        sheetState.expand()
++        touchRecovery.runCommand { sheetState.expand() }
+       } catch (_: CancellationException) {
+         // Dismissal can cancel the expand animation.
+       } catch (_: Exception) {
+diff --git a/src/jetpack-compose/ModalBottomSheet/index.tsx b/src/jetpack-compose/ModalBottomSheet/index.tsx
+index c3225b1..68b74f3 100644
+--- a/src/jetpack-compose/ModalBottomSheet/index.tsx
++++ b/src/jetpack-compose/ModalBottomSheet/index.tsx
+@@ -69,6 +69,14 @@ export interface ModalBottomSheetProps {
+    * @platform android
+    */
+   initialFullyExpanded?: boolean;
++  /**
++   * Restores touch handling after a visible drag settles with a stale animation flag.
++   * Applies only to changed, visible detents; it does not interrupt an active pointer or command.
++   * Requires the Boardsesh native Expo UI patch.
++   * @default false
++   * @platform android
++   */
++  recoverSettledTouches?: boolean;
+   /**
+    * The background color of the bottom sheet.
+    */
+@@ -119,6 +127,7 @@ function transformProps(props: ModalBottomSheetProps): NativeModalBottomSheetPro
+     ...restProps,
+     skipPartiallyExpanded: props.skipPartiallyExpanded ?? false,
+     initialFullyExpanded: props.initialFullyExpanded ?? false,
++    recoverSettledTouches: props.recoverSettledTouches ?? false,
+     onDismissRequest: () => {
+       onDismissRequest?.();
+     },
+diff --git a/build/jetpack-compose/ModalBottomSheet/index.d.ts b/build/jetpack-compose/ModalBottomSheet/index.d.ts
+index 6d3806c..45eb57f 100644
+--- a/build/jetpack-compose/ModalBottomSheet/index.d.ts
++++ b/build/jetpack-compose/ModalBottomSheet/index.d.ts
+@@ -55,6 +55,14 @@ export interface ModalBottomSheetProps {
+      * @platform android
+      */
+     initialFullyExpanded?: boolean;
++    /**
++     * Restores touch handling after a visible drag settles with a stale animation flag.
++     * Applies only to changed, visible detents; it does not interrupt an active pointer or command.
++     * Requires the Boardsesh native Expo UI patch.
++     * @default false
++     * @platform android
++     */
++    recoverSettledTouches?: boolean;
+     /**
+      * The background color of the bottom sheet.
+      */
+diff --git a/build/jetpack-compose/ModalBottomSheet/index.js b/build/jetpack-compose/ModalBottomSheet/index.js
+index ba36efa..3713df4 100644
+--- a/build/jetpack-compose/ModalBottomSheet/index.js
++++ b/build/jetpack-compose/ModalBottomSheet/index.js
+@@ -12,6 +12,7 @@ function transformProps(props) {
+         ...restProps,
+         skipPartiallyExpanded: props.skipPartiallyExpanded ?? false,
+         initialFullyExpanded: props.initialFullyExpanded ?? false,
++        recoverSettledTouches: props.recoverSettledTouches ?? false,
+         onDismissRequest: ()=>{
+             onDismissRequest?.();
+         }

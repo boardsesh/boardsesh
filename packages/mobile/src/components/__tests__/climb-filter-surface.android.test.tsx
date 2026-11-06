@@ -103,6 +103,7 @@ describe('native Android filter sheet', () => {
     expect(native.modal).toMatchObject({
       skipPartiallyExpanded: false,
       initialFullyExpanded: false,
+      recoverSettledTouches: true,
       sheetGesturesEnabled: true,
       properties: { shouldDismissOnBackPress: true, shouldDismissOnClickOutside: true },
     });
