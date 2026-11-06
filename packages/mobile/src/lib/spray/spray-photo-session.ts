@@ -4,6 +4,9 @@ export type SprayPhotoSession = {
   viewerId: string;
   canvas: Omit<SprayPhotoCanvasProps, 'maxWidth' | 'maxHeight'>;
   tools: ReactNode;
+  fullScreenRail?: ReactNode;
+  overlayTools?: ReactNode;
+  accessoryTools?: ReactNode;
 };
 const entries = new Map<string, { snapshot: SprayPhotoSession; onClose: () => void }>();
 const listeners = new Set<() => void>();

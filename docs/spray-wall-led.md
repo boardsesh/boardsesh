@@ -18,29 +18,48 @@ one surface with one WLED controller. It does not illuminate climbs or map holds
    the grid's outer corners, then set rows and columns (8 × 8 initially, 1–50 rows and up to 99 offset columns). The preview updates as the rings move. Count every distinct vertical position for offset columns: 8 + 7 holes means
    15 columns. Existing saved counts migrate without moving any holes. Missing
    outer corners remain imaginary grid positions.
-6. Continue to add missing holes or remove unwanted ones by tapping the wall.
-   Custom spacing starts here with an empty image. Undo reverses manual edits.
+6. Continue to correct the holes. Choose **Add**, **Move** or **Remove** before
+   editing. No editing tool is active when this screen opens. Move drags an
+   existing mark without changing its identity. Custom spacing starts here with
+   an empty image. Undo reverses manual edits.
    Returning to the grid preserves manual edits unless its parameters change.
 7. Continue to save the holes on this device and choose LEDs in, behind or below
-   the hold. Next opens the LED editor: add/remove individual positions with the
-   same full-width, zoomable, fullscreen photo. Orange rings mark holes and purple
+   the hold. Next opens the LED editor: choose Add, Move or Remove to edit
+   individual positions with the same full-width, zoomable, fullscreen photo.
+   Its tools also start inactive. Orange rings mark holes and purple
    dots mark LEDs, including coincident positions. Below shifts by half a row in
    the calibrated grid plane, then projects through its homography. Behind the
-   hold uses two positions a quarter of a column spacing to either side. Custom
+   hold uses two positions one tenth of a column spacing to either side. Custom
    hole layouts estimate spacing from the median nearest-neighbor distance
-   (single-hole fallback: 10% of the normalized frame). Out-of-image generated
-   positions are omitted rather than clamped onto an edge; manual edits stay valid.
+   (single-hole fallback: 10% of the normalized frame). Generated
+   positions outside the image are omitted. Manual edits stay within the image.
 8. Choose horizontal, vertical or custom cable layout. Horizontal/vertical ask
    for one of four start corners and generate a single serpentine run. Custom
-   opens an empty cable editor directly. Drag across LEDs to join free cable ends;
-   use Move image for panning and pinch in any mode. Select two connected LEDs to
-   cut their edge or insert skipped physical LED numbers; select free endpoints
-   to reconnect sections. The preview shows direction arrows, highlighted
-   selections and dashed gap segments with diamond markers. Undo restores edits.
-9. Done saves positions and wiring on this device. Partial wiring can be saved;
-   its status reports connected LEDs and separate cable sections. The assigned
-   zero-based indices include skipped LEDs. No climb illumination or automatic
-   hold-to-hole associations are activated by this setup.
+   starts with no cable. Both continue to **Skip the first LEDs** before wiring.
+   Enter the unused physical LED count before the first marked position. Zero
+   starts at physical index 0. The count is separate from gaps between positions.
+9. In the cable editor, choose **Lay cable**, then tap LEDs or drag across them.
+   New LEDs append to the existing cable end in stroke order. Revisiting a wired
+   LED does not branch, reverse or create another start. After an explicit cut,
+   drawing extends the last cable section. Choose **Select two LEDs** to cut a
+   connection, reconnect free endpoints or edit the skipped LED count between
+   adjacent positions. Set that count to zero to remove the gap. Orange marks
+   show holes, purple marks LEDs, turquoise lines the cable and red markers the
+   skipped LEDs. Direction arrows, numbered positions and highlighted selections
+   make the order visible. Undo restores edits. **Light selected LEDs** is an
+   optional physical preview of the selected positions using their assigned
+   WLED indices, including initial and intermediate skips.
+10. Next opens **Test LEDs**. Light the full configured strip or start a quick
+    row-by-row test of wired positions from the upper left. Every row starts on
+    the left, regardless of the cable's serpentine order. Unwired positions do
+    not participate. **Stop lighting** ends the test. These controls require
+    enabled LEDs and a saved WLED address. Indices outside the controller's LED
+    count produce an error rather than addressing a different LED.
+11. Done saves positions and wiring on this device. Partial wiring can be saved.
+    Its status reports connected LEDs and separate cable sections. The assigned
+    zero-based indices include skipped LEDs. All physical previews belong to
+    setup only. No climb illumination or automatic hold-to-hole associations are
+    activated by this setup.
 
 Offset grids also offer **Complementary positions**: LEDs occupy the opposite
 phase of the staggered hold grid, as in CRUX. The diagram follows the chosen
@@ -50,9 +69,12 @@ LED positions and cable paths are stored alongside the placement choice.
 
 ## Wall image and coordinates
 
-The alignment photo fills the available editor width. Pinch to zoom and drag the
-zoomed image to pan; the expand icon opens the same editor across the whole screen.
+The alignment photo fills the available editor width. Use two fingers to pan and
+pinch to zoom in every editing mode. When zoomed, dragging blank space with one
+finger pans without moving a point or extending the cable. The expand icon opens
+the same editor across the whole screen.
 Fullscreen follows device rotation, and closing it preserves all corner edits.
+Its compact tool rail keeps editing controls and legends beside the photo.
 The shared `SprayPhotoStage` is the default for setup-photo editors, backed by
 `SprayPhotoCanvas` for gestures. Use it for future setup images. Zoom changes only
 the viewport. Dashed, translucent guides and fixed-size handles
@@ -97,7 +119,10 @@ off** to turn off a running test.
 ## Controller boundary
 
 `@boardsesh/led-controller` owns URL validation and transport, with a driver registry
-and `probe`, `lightAll` and `turnOff` operations. Add future systems as drivers,
+and `probe`, `lightAll`, `turnOff` and `createPreview` operations. The preview
+transport accepts physical LED indices through `show`, plus full-strip and off
+commands. Serialized preview sessions prevent overlapping animation commands.
+Add future systems as drivers,
 then extend the versioned settings discriminator and provider selection UI. The
 editor does not contain WLED request payloads. No database migration or backend
 proxy is needed: requests originate on the phone/browser in the controller's LAN.

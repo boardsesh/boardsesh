@@ -38,3 +38,26 @@ export function activeTnutCorners(rows: number, columns: number): readonly numbe
   if (columns === 1) return [0, 3];
   return [0, 1, 2, 3];
 }
+
+/** Hit testing is measured in screen points even when the photo is zoomed. */
+export function nearestPhotoPointIndex(
+  points: readonly { x: number; y: number }[],
+  target: { x: number; y: number },
+  width: number,
+  height: number,
+  radius: number,
+): number {
+  'worklet';
+  let nearest = -1;
+  let distanceSquared = radius * radius;
+  for (let index = 0; index < points.length; index++) {
+    const dx = (points[index].x - target.x) * width;
+    const dy = (points[index].y - target.y) * height;
+    const candidate = dx * dx + dy * dy;
+    if (candidate < distanceSquared) {
+      nearest = index;
+      distanceSquared = candidate;
+    }
+  }
+  return nearest;
+}

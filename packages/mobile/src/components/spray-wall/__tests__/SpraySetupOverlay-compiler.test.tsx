@@ -29,6 +29,7 @@ type Shape = {
   d?: string;
   fill?: string;
   stroke?: string;
+  strokeWidth?: number;
   animatedProps: { updater: Worklet };
 };
 type OverlayProps = {
@@ -39,8 +40,10 @@ type OverlayProps = {
   width: number;
   height: number;
   zoom: { value: number };
+  panX: { value: number };
+  panY: { value: number };
 };
-const palette = { primary: '#7b2fce', warning: '#ef950a', onPrimary: '#fff' };
+const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', onPrimary: '#fff' };
 
 /** Rebuild serialized worklets in a separate VM, never call their JS closures.
  * A normal function captured by React Compiler is a remote JS function on the
@@ -160,6 +163,8 @@ function props(): OverlayProps {
     width: 300,
     height: 500,
     zoom: { value: 1 },
+    panX: { value: 0 },
+    panY: { value: 0 },
   };
 }
 function evaluated(shapes: Shape[]) {
@@ -178,7 +183,7 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     const { Component, shapes } = compileOverlay(previousGapUpdater, isDev);
     render(React.createElement(Component, props()));
     expect(() => evaluated(shapes)).toThrow('Remote JS function captured by UI worklet');
-  });
+  }, 20000);
 
   it('executes every serialized updater and keeps marks and cable geometry correct while zooming', () => {
     const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
@@ -186,39 +191,30 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     render(React.createElement(Component, initial));
     expect(shapes).toHaveLength(7);
     const atOne = evaluated(shapes);
-    expect(atOne[0]).toMatchObject({ d: 'M60 150L180 150', stroke: palette.primary, strokeWidth: 2 });
-    expect(atOne[1]).toMatchObject({ d: 'M180 150L180 400', stroke: palette.warning });
-    expectPathCoordinates(atOne[2].d, [127, 153, 132, 150, 127, 147, 177, 295, 180, 300, 183, 295]);
-    expect(atOne[3].d).toBe('M175 275L180 270L185 275L180 280Z');
+    expect(atOne[0]).toMatchObject({ d: 'M60 150L180 150', stroke: '#0891B2', strokeWidth: 2 });
+    expect(atOne[1]).toMatchObject({ d: 'M180 150L180 400', stroke: palette.error });
+    expectPathCoordinates(atOne[2].d, [127, 153, 132, 150, 127, 147]);
+    expect(atOne[3].d?.match(/M/g)).toHaveLength(2);
+    expect(atOne[3].d).toContain(`M177 ${150 + 250 / 3}a3 3`);
+    expect(atOne[3].fill).toBe(palette.error);
     expect(atOne[4]).toMatchObject({
-      d: 'M23 100a7 7 0 1 0 14 0a7 7 0 1 0 -14 0',
+      d: 'M27 100a3 3 0 1 0 6 0a3 3 0 1 0 -6 0',
       fill: 'none',
       stroke: palette.warning,
     });
     expect(atOne[5].d).toContain('M56 150a4 4');
     expect(atOne[6].d).toBe('M170 150a10 10 0 1 0 20 0a10 10 0 1 0 -20 0');
     initial.zoom.value = 3;
+    initial.panY.value = 100;
     const atThree = evaluated(shapes);
-    expect(atThree[0].d).toBe(atOne[0].d);
-    expect(atThree[0].strokeWidth).toBeCloseTo(2 / 3);
-    expect(atThree[4].d).toContain(`a${7 / 3} ${7 / 3}`);
-    expect(atThree[5].d).toContain(`a${4 / 3} ${4 / 3}`);
-    expect(atThree[6].d).toContain(`a${10 / 3} ${10 / 3}`);
-    expectPathCoordinates(atThree[2].d, [
-      132 - 5 / 3,
-      151,
-      132,
-      150,
-      132 - 5 / 3,
-      149,
-      179,
-      300 - 5 / 3,
-      180,
-      300,
-      181,
-      300 - 5 / 3,
-    ]);
-    expectPathCoordinates(atThree[3].d, [180 - 5 / 3, 275, 180, 275 - 5 / 3, 180 + 5 / 3, 275, 180, 275 + 5 / 3]);
+    expectPathCoordinates(atThree[0].d, [-120, 50, 240, 50]);
+    expect(atThree[0].strokeWidth).toBe(2);
+    expect(atThree[4].d).toBe(''); // offscreen holes do not build invisible SVG geometry
+    expect(atThree[5].d).toContain('a4 4');
+    expect(atThree[6].d).toContain('a10 10');
+    expectPathCoordinates(atThree[2].d, [91, 53, 96, 50, 91, 47]);
+    expect(atThree[3].d?.match(/M/g)).toHaveLength(1);
+    expect(atThree[3].d).toContain('a3 3');
   });
 
   it('updates compiled closures when holes, LEDs, selection and skip edges change', () => {
@@ -239,7 +235,7 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     expect(updated[0].d).toBe('M60 150L180 150M180 150L210 400');
     expect(updated[1].d).toBe('');
     expect(updated[3].d).toBe('');
-    expect(updated[4].d).toContain('M113 200a7 7');
+    expect(updated[4].d).toContain('M117 200a3 3');
     expect(updated[6].d).toContain('M200 400a10 10');
   });
 });

@@ -69,8 +69,8 @@ describe('LED positions in the calibrated wall frame', () => {
     expect(generateLedPositions(configured).map(({ x, y }) => ({ x, y }))).toEqual(configured.holes);
     const behind = generateLedPositions({ ...configured, ledPlacement: 'sides' });
     expect(behind).toHaveLength(4);
-    expect(behind[0].x).toBeCloseTo(0.425);
-    expect(behind[1].x).toBeCloseTo(0.575);
+    expect(behind[0].x).toBeCloseTo(0.47);
+    expect(behind[1].x).toBeCloseTo(0.53);
     expect(behind[0].y).toBeCloseTo(0.5);
     expect(new Set(behind.map(({ id }) => id)).size).toBe(4);
     expect(configured.holes[0]).toEqual({ x: 0.5, y: 0.5 });
@@ -209,6 +209,7 @@ describe('cable order and edits', () => {
     expect(first.paths).toEqual([['a', 'b', 'c']]);
     expect(connectWiring(first, 'b', 'd')).toBe(first);
     expect(connectWiring(first, 'c', 'a')).toBe(first);
+    expect(connectWiring(first, 'd', 'e')).toBe(first);
     expect(initial.paths).toEqual([]);
   });
 

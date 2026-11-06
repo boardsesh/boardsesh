@@ -115,7 +115,7 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
     }
   }
 
-  return {
+  const driver: LedControllerDriver = {
     async probe(url, signal) {
       return readInfo(await request(url, 'info', signal));
     },
@@ -158,7 +158,82 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
     async turnOff(url, signal) {
       await send(url, { on: false, tt: 0, live: false, udpn: { nn: true } }, signal);
     },
+    createPreview(url) {
+      let count: number | null = null;
+      let previous: number[] = [];
+      let mayBeLit = false;
+      return {
+        async show(indices) {
+          if (indices.some((index) => !Number.isSafeInteger(index) || index < 0)) {
+            throw new LedControllerError('invalid-indices');
+          }
+          const next = [...new Set(indices)];
+          const ledCount = count ?? (await driver.probe(url)).ledCount;
+          if (next.some((index) => index >= ledCount)) throw new LedControllerError('invalid-indices');
+          if (count === null) {
+            const ids = segmentIds(await request(url, 'state'));
+            // Individual indices are segment-relative. Reset segment 0 to the
+            // whole cable and suspend overlapping segments without deleting them.
+            // WLED requires waking/brightness BEFORE an individual-colour request.
+            mayBeLit = true;
+            await send(url, {
+              on: true,
+              bri: 64,
+              tt: 0,
+              live: false,
+              lor: 1,
+              nl: { on: false },
+              udpn: { nn: true },
+              seg: ids.map((id) =>
+                id === 0
+                  ? {
+                      id,
+                      start: 0,
+                      stop: ledCount,
+                      on: true,
+                      bri: 255,
+                      fx: 0,
+                      pal: 0,
+                      grp: 1,
+                      spc: 0,
+                      of: 0,
+                      rev: false,
+                      mi: false,
+                      frz: false,
+                      col: [[0, 0, 0, 0]],
+                    }
+                  : { id, on: false },
+              ),
+            });
+          }
+          const colors: (number | string)[] = count === null ? [0, ledCount, '00000000'] : [];
+          for (const index of previous) colors.push(index, '00000000');
+          for (const index of next) colors.push(index, 'FFFFFFFF');
+          // Keep requests below WLED's JSON buffer even for a large selection.
+          for (let offset = 0; offset < colors.length; offset += offset === 0 && count === null ? 259 : 256) {
+            const size = offset === 0 && count === null ? 259 : 256;
+            await send(url, { tt: 0, udpn: { nn: true }, seg: [{ id: 0, i: colors.slice(offset, offset + size) }] });
+          }
+          count = ledCount;
+          previous = next;
+        },
+        async lightAll() {
+          count = null;
+          previous = [];
+          mayBeLit = true;
+          await driver.lightAll(url);
+        },
+        async turnOff() {
+          if (!mayBeLit) return;
+          count = null;
+          previous = [];
+          await driver.turnOff(url);
+          mayBeLit = false;
+        },
+      };
+    },
   };
+  return driver;
 }
 
 export const wledDriver = createWledDriver();

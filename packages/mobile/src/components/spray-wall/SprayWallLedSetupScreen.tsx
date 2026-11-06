@@ -10,6 +10,10 @@ import {
   generateLedPositions,
   migrateTnutLayoutColumns,
   createWiring,
+  rowMajorLedIndices,
+  setWiringInitialSkip,
+  MAX_WIRING_SKIP,
+  MAX_WIRING_TOTAL_SKIPS,
   type CableDirection,
   type CableStartCorner,
   isValidTnutGrid,
@@ -49,6 +53,9 @@ import { LedPlacementThumbnail } from './LedPlacementThumbnail';
 import { SprayPhotoStage } from './SprayPhotoStage';
 import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { SprayLedMapEditor } from './SprayLedMapEditor';
+import { SprayLedLightingStep } from './SprayLedLightingStep';
+import { SprayPointToolbar, type SprayPointMode } from './SprayPointToolbar';
+import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 import { CablePatternThumbnail } from './CablePatternThumbnail';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 
@@ -62,7 +69,9 @@ type Step =
   | 'ledPositions'
   | 'cablePattern'
   | 'cableStart'
-  | 'wiring';
+  | 'initialSkip'
+  | 'wiring'
+  | 'lighting';
 
 /** Private photos use the same managed cache and perspective warp as Wall only. */
 export function SprayWallLedSetupScreen({ wallUuid }: { wallUuid: string }) {
@@ -208,7 +217,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [mode, setMode] = useState<'add' | 'remove'>('add');
+  const [mode, setMode] = useState<SprayPointMode | null>(null);
+  useEffect(() => {
+    if (step === 'holes') setMode(null);
+  }, [step]);
   const [history, setHistory] = useState<TnutPoint[][]>([]);
   const [viewportWidth, setViewportWidth] = useState(0);
   const busy = useRef(false);
@@ -222,6 +234,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   }, []);
   const [direction, setDirection] = useState<CableDirection>(layout.wiring?.direction ?? 'horizontal');
   const [startCorner, setStartCorner] = useState<CableStartCorner>(layout.wiring?.startCorner ?? 'tl');
+  const [initialSkipText, setInitialSkipText] = useState(String(layout.wiring?.initialSkip ?? 0));
   const ledSignature = (draft: TnutLayout) =>
     JSON.stringify([
       draft.holes,
@@ -234,10 +247,21 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     ]);
   const generatedLeds = useRef(layout.ledPositions ? ledSignature(layout) : null);
   const wiringSignature = (draft: TnutLayout, axis: CableDirection, corner: CableStartCorner) =>
-    JSON.stringify([draft.ledPositions, axis, corner]);
+    JSON.stringify([draft.ledPositions?.map(({ id }) => id), axis, corner]);
   const generatedWiring = useRef(
     layout.wiring ? wiringSignature(layout, layout.wiring.direction, layout.wiring.startCorner) : null,
   );
+  const preserveWiring = Boolean(
+    layout.wiring && generatedWiring.current === wiringSignature(layout, direction, startCorner),
+  );
+  const skipLimit = preserveWiring
+    ? Math.min(
+        MAX_WIRING_SKIP,
+        MAX_WIRING_TOTAL_SKIPS - (layout.wiring?.skips.reduce((total, gap) => total + gap.count, 0) ?? 0),
+      )
+    : MAX_WIRING_SKIP;
+  const initialSkip = Number(initialSkipText);
+  const validInitialSkip = /^\d+$/.test(initialSkipText) && initialSkip <= skipLimit;
   const generatedSignature = useRef(matchingSaved ? gridSignature(matchingSaved) : null);
   const parsedRows = Number(rowsText);
   const parsedColumns = Number(columnsText);
@@ -311,7 +335,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else if (step === 'ledPositions') setStep('led');
     else if (step === 'cablePattern') setStep('ledPositions');
     else if (step === 'cableStart') setStep('cablePattern');
-    else if (step === 'wiring') setStep(direction === 'custom' ? 'cablePattern' : 'cableStart');
+    else if (step === 'initialSkip') setStep(direction === 'custom' ? 'cablePattern' : 'cableStart');
+    else if (step === 'wiring') setStep('initialSkip');
+    else if (step === 'lighting') setStep('wiring');
     else router.back();
   }
 
@@ -374,21 +400,28 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       return;
     }
     if (step === 'cablePattern' || step === 'cableStart') {
-      if (step === 'cablePattern' && direction !== 'custom') {
-        setStep('cableStart');
-        return;
-      }
+      setStep(step === 'cablePattern' && direction !== 'custom' ? 'cableStart' : 'initialSkip');
+      return;
+    }
+    if (step === 'initialSkip') {
+      if (!validInitialSkip) return;
       const signature = wiringSignature(layout, direction, startCorner);
-      if (generatedWiring.current !== signature) {
-        changeLayout({ wiring: createWiring(layout.ledPositions ?? [], direction, startCorner, layout) });
-        generatedWiring.current = signature;
-      }
+      const wiring =
+        preserveWiring && layout.wiring
+          ? layout.wiring
+          : createWiring(layout.ledPositions ?? [], direction, startCorner, layout);
+      changeLayout({ wiring: setWiringInitialSkip(wiring, initialSkip) });
+      generatedWiring.current = signature;
       setStep('wiring');
       return;
     }
-    if (step === 'holes' || step === 'wiring') {
+    if (step === 'wiring') {
+      if (layout.wiring && layout.ledPositions?.length) setStep('lighting');
+      return;
+    }
+    if (step === 'holes' || step === 'lighting') {
       if (!layout.holes.length) return;
-      if (step === 'wiring' && (!layout.ledPositions?.length || !layout.wiring)) return;
+      if (step === 'lighting' && (!layout.ledPositions?.length || !layout.wiring)) return;
       busy.current = true;
       setSaving(true);
       setSaveFailed(false);
@@ -419,41 +452,57 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     (step !== 'align' || (validCounts && validCorners)) &&
     (step !== 'holes' || layout.holes.length > 0) &&
     (step !== 'led' || Boolean(layout.ledPlacement)) &&
+    (step !== 'initialSkip' || validInitialSkip) &&
     ((step !== 'ledPositions' && step !== 'wiring') || Boolean(layout.ledPositions?.length));
   useHeaderActions({
     leading: { kind: 'back', onPress: previousStep, accessibilityLabel: t('sprayLedSetup.back'), disabled: saving },
     trailing: {
-      label: step === 'wiring' ? t('sprayLedSetup.done') : t('sprayLedSetup.next'),
+      label: step === 'lighting' ? t('sprayLedSetup.done') : t('sprayLedSetup.next'),
       onPress: () => void next(),
       disabled: !canContinue,
     },
     clearOnUnmount: true,
   });
 
-  const tapHole = useCallback(
-    (point: TnutPoint, width: number, height: number) => {
-      if (busy.current) return;
-      let nearest = -1;
-      let distance = 18;
-      layout.holes.forEach((hole, index) => {
-        const candidate = Math.hypot((hole.x - point.x) * width, (hole.y - point.y) * height);
-        if (candidate < distance) {
-          distance = candidate;
-          nearest = index;
-        }
-      });
-      if (mode === 'remove' && nearest < 0) return;
-      if (mode === 'add' && (layout.holes.length >= MAX_TNUT_HOLES || distance < 8)) return;
-      setHistory((previous) => [...previous.slice(-29), layout.holes]);
-      setLayout((previous) => ({
-        ...previous,
-        holes: mode === 'add' ? [...previous.holes, point] : previous.holes.filter((_, index) => index !== nearest),
-      }));
-      setDirty(true);
-      setSaveFailed(false);
+  function updateHoles(holes: TnutPoint[]) {
+    if (busy.current) return;
+    setHistory((previous) => [...previous.slice(-29), layout.holes]);
+    changeLayout({ holes });
+  }
+
+  function tapHole(point: TnutPoint, width: number, height: number) {
+    if (mode === 'remove') {
+      const index = nearestPhotoPointIndex(layout.holes, point, width, height, 18);
+      if (index >= 0) updateHoles(layout.holes.filter((_, entry) => entry !== index));
+    } else if (
+      mode === 'add' &&
+      layout.holes.length < MAX_TNUT_HOLES &&
+      nearestPhotoPointIndex(layout.holes, point, width, height, 8) < 0
+    ) {
+      updateHoles([...layout.holes, point]);
+    }
+  }
+
+  function moveHole(start: TnutPoint, end: TnutPoint, width: number, height: number) {
+    if (mode !== 'move') return;
+    const index = nearestPhotoPointIndex(layout.holes, start, width, height, 22);
+    const occupied = nearestPhotoPointIndex(layout.holes, end, width, height, 6);
+    if (index >= 0 && (occupied < 0 || occupied === index)) {
+      updateHoles(layout.holes.map((hole, entry) => (entry === index ? end : hole)));
+    }
+  }
+
+  const holeTools = {
+    mode,
+    onModeChange: setMode,
+    canUndo: history.length > 0 && !saving,
+    onUndo: () => {
+      const previous = history.at(-1);
+      if (!previous || busy.current) return;
+      changeLayout({ holes: previous });
+      setHistory((entries) => entries.slice(0, -1));
     },
-    [layout.holes, mode],
-  );
+  };
 
   const renderBackdrop = useCallback(
     (width: number, height: number) => (
@@ -478,7 +527,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                   ? t('sprayLedSetup.cablePatternTitle')
                   : step === 'cableStart'
                     ? t('sprayLedSetup.cableStartTitle')
-                    : t('sprayLedSetup.wiringTitle');
+                    : step === 'initialSkip'
+                      ? t('sprayLedSetup.initialSkipTitle')
+                      : step === 'lighting'
+                        ? t('sprayLedSetup.lightingTitle')
+                        : t('sprayLedSetup.wiringTitle');
 
   return (
     <ScrollView
@@ -640,56 +693,29 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
           <>
             <Text>{layout.pattern === 'custom' ? t('sprayLedSetup.customHint') : t('sprayLedSetup.refineHint')}</Text>
             {layout.pattern !== 'custom' ? <Text variant="footnote">{t('sprayLedSetup.customHint')}</Text> : null}
-            <View style={[styles.row, { gap: spacing[3], flexWrap: 'wrap' }]}>
-              <Button
-                title={t('sprayLedSetup.add')}
-                variant={mode === 'add' ? 'filled' : 'outlined'}
-                onPress={() => setMode('add')}
-                disabled={saving}
-              />
-              <Button
-                title={t('sprayLedSetup.remove')}
-                variant={mode === 'remove' ? 'filled' : 'outlined'}
-                onPress={() => setMode('remove')}
-                disabled={saving}
-              />
-              <Button
-                title={t('sprayLedSetup.undo')}
-                variant="text"
-                disabled={!history.length || saving}
-                onPress={() => {
-                  const previous = history[history.length - 1];
-                  if (previous) {
-                    changeLayout({ holes: previous });
-                    setHistory((entries) => entries.slice(0, -1));
-                  }
-                }}
-              />
-            </View>
+            <SprayPointToolbar {...holeTools} />
             <SprayPhotoStage
               width={viewportWidth}
-              tools={
-                <View style={{ flexDirection: 'row', gap: spacing[2] }}>
-                  <Button
-                    title={t('sprayLedSetup.add')}
-                    onPress={() => setMode('add')}
-                    variant={mode === 'add' ? 'filled' : 'outlined'}
-                  />
-                  <Button
-                    title={t('sprayLedSetup.remove')}
-                    onPress={() => setMode('remove')}
-                    variant={mode === 'remove' ? 'filled' : 'outlined'}
-                  />
-                </View>
-              }
+              tools={<SprayPointToolbar {...holeTools} />}
+              fullScreenRail={<SprayPointToolbar {...holeTools} icons />}
               canvas={{
                 source,
                 photoUri,
-                mode: 'tap',
+                mode: mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
                 onTap: tapHole,
+                onMove: moveHole,
+                dragPoints: layout.holes,
+                draftColor: brandColors.warning,
                 onInteractionChange: setDragging,
-                renderOverlay: (width, height, zoom) => (
-                  <SpraySetupOverlay holes={layout.holes} width={width} height={height} zoom={zoom} />
+                renderOverlay: (width, height, zoom, panX, panY) => (
+                  <SpraySetupOverlay
+                    holes={layout.holes}
+                    width={width}
+                    height={height}
+                    zoom={zoom}
+                    panX={panX}
+                    panY={panY}
+                  />
                 ),
               }}
             />
@@ -754,6 +780,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             key={step}
             kind={step === 'wiring' ? 'wiring' : 'positions'}
             layout={layout}
+            wallUuid={wallUuid}
             onChange={changeLayout}
             source={source}
             photoUri={photoUri}
@@ -806,6 +833,29 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
               ))}
             </View>
           </>
+        ) : null}
+        {step === 'initialSkip' ? (
+          <>
+            <Text>{t('sprayLedSetup.initialSkipHint')}</Text>
+            <Text variant="footnote">{t('sprayLedSetup.initialSkipLabel')}</Text>
+            <BuilderTextInput
+              accessibilityLabel={t('sprayLedSetup.initialSkipLabel')}
+              value={initialSkipText}
+              onChangeText={setInitialSkipText}
+              keyboardType="number-pad"
+              maxLength={5}
+              selectTextOnFocus
+            />
+            {!validInitialSkip ? (
+              <Text color={brandColors.error}>{t('sprayLedSetup.skipCountRange', { max: skipLimit })}</Text>
+            ) : null}
+          </>
+        ) : null}
+        {step === 'lighting' && layout.wiring ? (
+          <SprayLedLightingStep
+            wallUuid={wallUuid}
+            orderedIndices={rowMajorLedIndices(layout.ledPositions ?? [], layout.wiring, layout)}
+          />
         ) : null}
       </View>
     </ScrollView>

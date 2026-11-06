@@ -1,264 +1,389 @@
-import { useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
   assignLedIndices,
   connectWiring,
   cutWiring,
+  extendWiring,
   setWiringSkip,
   traceLedPath,
   MAX_LED_POSITIONS,
+  MAX_WIRING_SKIP,
+  type LedPosition,
   type TnutLayout,
   type TnutPoint,
-  type TnutWiring,
 } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import type { SprayLookPreviewSource } from '../../lib/spray/spray-look-preview';
+import { useSprayLedPreview } from '../../lib/spray/use-spray-led-preview';
 import { Button } from '../Button';
+import { Icon } from '../Icon';
+import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { BuilderTextInput } from '../board-discovery/BoardMetaFields';
 import { SprayPhotoStage } from './SprayPhotoStage';
-import { SpraySetupOverlay } from './SpraySetupOverlay';
+import { SpraySetupOverlay, SPRAY_CABLE_COLOR } from './SpraySetupOverlay';
+import { SprayPointToolbar, SprayUndoButton, type SprayPointMode } from './SprayPointToolbar';
+import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
-export function SprayLedMapEditor({
-  layout,
-  onChange,
-  kind,
-  source,
-  photoUri,
-  width,
-  onInteractionChange,
-}: {
+const NO_LEDS: LedPosition[] = [];
+type MapEditorProps = {
   layout: TnutLayout;
   onChange: (update: Partial<TnutLayout>) => void;
   kind: 'positions' | 'wiring';
+  wallUuid: string;
   source: SprayLookPreviewSource;
   photoUri: string;
   width: number;
   onInteractionChange: (active: boolean) => void;
-}) {
-  const { t } = useTranslation('boards');
-  const { spacing, brandColors } = useTheme();
-  const [mode, setMode] = useState<'add' | 'remove' | 'pan' | 'draw' | 'select'>(kind === 'wiring' ? 'draw' : 'add');
-  const [selected, setSelected] = useState<string[]>([]);
-  const [skipText, setSkipText] = useState('1');
+};
+
+export function SprayLedMapEditor(props: MapEditorProps) {
+  return props.kind === 'positions' ? <LedPositionsEditor {...props} /> : <CableEditor {...props} />;
+}
+
+function useEditorHistory(layout: TnutLayout, onChange: MapEditorProps['onChange']) {
   const [history, setHistory] = useState<TnutLayout[]>([]);
-  const leds = layout.ledPositions ?? [];
-  const wiring = layout.wiring;
-  const indices = useMemo(
-    () => new Map(wiring ? assignLedIndices(wiring).map((entry) => [entry.id, entry.index]) : []),
-    [wiring],
-  );
-  const edge =
-    selected.length === 2 &&
-    Boolean(
-      wiring?.paths.some((path) =>
-        path.some(
-          (id, index) =>
-            index + 1 < path.length &&
-            ((id === selected[0] && path[index + 1] === selected[1]) ||
-              (id === selected[1] && path[index + 1] === selected[0])),
-        ),
-      ),
-    );
-  function change(update: Partial<TnutLayout>) {
-    setHistory((previous) => [...previous.slice(-29), layout]);
-    onChange(update);
-  }
+  return {
+    canUndo: history.length > 0,
+    change: (update: Partial<TnutLayout>) => {
+      setHistory((previous) => [...previous.slice(-29), layout]);
+      onChange(update);
+    },
+    undo: () => {
+      const previous = history.at(-1);
+      if (!previous) return;
+      onChange(previous);
+      setHistory((entries) => entries.slice(0, -1));
+    },
+  };
+}
+
+function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInteractionChange }: MapEditorProps) {
+  const { t } = useTranslation('boards');
+  const { brandColors } = useTheme();
+  const [mode, setMode] = useState<SprayPointMode | null>(null);
+  const { change, undo, canUndo } = useEditorHistory(layout, onChange);
+  const leds = layout.ledPositions ?? NO_LEDS;
+
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
-    let nearest = -1,
-      distance = 22;
-    leds.forEach((led, index) => {
-      const candidate = Math.hypot((led.x - point.x) * renderWidth, (led.y - point.y) * renderHeight);
-      if (candidate < distance) {
-        nearest = index;
-        distance = candidate;
-      }
-    });
-    if (kind === 'wiring') {
-      if (nearest < 0) return;
-      const id = leds[nearest].id;
-      setSelected((previous) =>
-        previous.includes(id) ? previous.filter((entry) => entry !== id) : [...previous.slice(-1), id],
-      );
-      return;
-    }
     if (mode === 'remove') {
-      if (nearest < 0) return;
-      change({ ledPositions: leds.filter((_, index) => index !== nearest), wiring: undefined });
-    } else if (mode === 'add' && leds.length < MAX_LED_POSITIONS && distance >= 8) {
-      let serial = 0;
+      const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
+      if (index >= 0) change({ ledPositions: leds.filter((_, entry) => entry !== index), wiring: undefined });
+    } else if (
+      mode === 'add' &&
+      leds.length < MAX_LED_POSITIONS &&
+      nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 8) < 0
+    ) {
       const ids = new Set(leds.map((led) => led.id));
+      let serial = 0;
       while (ids.has(`manual-${serial}`)) serial++;
       change({ ledPositions: [...leds, { ...point, id: `manual-${serial}` }], wiring: undefined });
     }
   }
-  function trace(points: TnutPoint[], tolerance: number) {
-    if (!wiring) return;
-    const ids = traceLedPath(leds, points, tolerance);
-    if (!ids.length) return;
-    let next: TnutWiring = wiring;
-    if (ids.length === 1 && !next.paths.some((path) => path.includes(ids[0])))
-      next = { ...next, paths: [...next.paths, [ids[0]]] };
-    for (let index = 1; index < ids.length; index++) next = connectWiring(next, ids[index - 1], ids[index]);
-    if (next !== wiring) change({ wiring: next });
+
+  function move(start: TnutPoint, end: TnutPoint, renderWidth: number, renderHeight: number) {
+    if (mode !== 'move') return;
+    const index = nearestPhotoPointIndex(leds, start, renderWidth, renderHeight, 22);
+    const occupied = nearestPhotoPointIndex(leds, end, renderWidth, renderHeight, 6);
+    if (index < 0 || (occupied >= 0 && occupied !== index)) return;
+    change({ ledPositions: leds.map((led, entry) => (entry === index ? { ...led, ...end } : led)) });
   }
-  const tools = (
-    <View style={{ gap: spacing[3], paddingVertical: spacing[2] }}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] }}>
-        {(kind === 'positions' ? (['add', 'remove', 'pan'] as const) : (['draw', 'select', 'pan'] as const)).map(
-          (choice) => (
-            <Button
-              key={choice}
-              title={
-                choice === 'add'
-                  ? t('sprayLedSetup.add')
-                  : choice === 'remove'
-                    ? t('sprayLedSetup.remove')
-                    : choice === 'pan'
-                      ? t('sprayLedSetup.pan')
-                      : choice === 'draw'
-                        ? t('sprayLedSetup.drawCable')
-                        : t('sprayLedSetup.selectLeds')
-              }
-              variant={mode === choice ? 'filled' : 'outlined'}
-              onPress={() => setMode(choice)}
-            />
-          ),
-        )}
-        <Button
-          title={t('sprayLedSetup.undo')}
-          variant="text"
-          disabled={!history.length}
-          onPress={() => {
-            const previous = history.at(-1);
-            if (previous) {
-              onChange(previous);
-              setHistory((entries) => entries.slice(0, -1));
-              setSelected([]);
-            }
-          }}
-        />
-      </View>
-      <Text variant="footnote">{t('sprayLedSetup.legend')}</Text>
-      {kind === 'positions' ? (
-        <Text>{t('sprayLedSetup.ledCount', { count: leds.length })}</Text>
-      ) : (
-        <>
-          <Text>
-            {t('sprayLedSetup.wiringStatus', {
-              wired: indices.size,
-              total: leds.length,
-              paths: wiring?.paths.length ?? 0,
-            })}
-          </Text>
-          <Text variant="footnote">{t('sprayLedSetup.wiringHint')}</Text>
-          {selected.length ? (
-            <Text accessibilityLiveRegion="polite">
-              {t('sprayLedSetup.selectedLeds', {
-                ids: selected
-                  .map((id) =>
-                    indices.has(id) ? String(indices.get(id)) : String(leds.findIndex((led) => led.id === id) + 1),
-                  )
-                  .join(' → '),
-              })}
-            </Text>
-          ) : null}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] }}>
-            <Button
-              title={t('sprayLedSetup.cutCable')}
-              disabled={!edge}
-              onPress={() => {
-                if (wiring) change({ wiring: cutWiring(wiring, selected[0], selected[1]) });
-              }}
-            />
-            <Button
-              title={t('sprayLedSetup.connectCable')}
-              disabled={selected.length !== 2 || !wiring || connectWiring(wiring, selected[0], selected[1]) === wiring}
-              onPress={() => {
-                if (wiring) change({ wiring: connectWiring(wiring, selected[0], selected[1]) });
-              }}
-            />
-          </View>
-          <BuilderTextInput
-            accessibilityLabel={t('sprayLedSetup.skipCount')}
-            value={skipText}
-            onChangeText={setSkipText}
-            keyboardType="number-pad"
-            maxLength={5}
-          />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] }}>
-            <Button
-              title={t('sprayLedSetup.insertSkips')}
-              disabled={!edge || !/^\d+$/.test(skipText) || Number(skipText) < 1 || Number(skipText) > 10000}
-              onPress={() => {
-                if (!wiring) return;
-                const previous = wiring.skips.find(
-                  (skip) =>
-                    (skip.from === selected[0] && skip.to === selected[1]) ||
-                    (skip.from === selected[1] && skip.to === selected[0]),
-                );
-                change({
-                  wiring: setWiringSkip(wiring, selected[0], selected[1], (previous?.count ?? 0) + Number(skipText)),
-                });
-              }}
-            />
-            <Button
-              title={t('sprayLedSetup.removeSkips')}
-              variant="text"
-              disabled={!edge}
-              onPress={() => {
-                if (wiring) change({ wiring: setWiringSkip(wiring, selected[0], selected[1], 0) });
-              }}
-            />
-          </View>
-          {edge &&
-          wiring?.skips.some(
-            (skip) =>
-              (skip.from === selected[0] && skip.to === selected[1]) ||
-              (skip.from === selected[1] && skip.to === selected[0]),
-          ) ? (
-            <Text color={brandColors.warning}>
-              {t('sprayLedSetup.gapLabel', {
-                count: wiring.skips.find(
-                  (skip) =>
-                    (skip.from === selected[0] && skip.to === selected[1]) ||
-                    (skip.from === selected[1] && skip.to === selected[0]),
-                )?.count,
-              })}
-            </Text>
-          ) : null}
-        </>
-      )}
-    </View>
-  );
+
+  const toolbar = { mode, onModeChange: setMode, onUndo: undo, canUndo };
+  const tools = <SprayPointToolbar {...toolbar} />;
   return (
     <>
-      <Text>{kind === 'positions' ? t('sprayLedSetup.editLedsHint') : t('sprayLedSetup.cableEditorHint')}</Text>
+      <Text>{t('sprayLedSetup.editLedsHint')}</Text>
       {tools}
       <SprayPhotoStage
         width={width}
         tools={tools}
+        fullScreenRail={<SprayPointToolbar {...toolbar} icons />}
         canvas={{
           source,
           photoUri,
-          mode: mode === 'pan' ? 'pan' : mode === 'draw' ? 'draw' : 'tap',
-          onTap: tap,
-          onTrace: trace,
           onInteractionChange,
-          renderOverlay: (renderWidth, renderHeight, zoom) => (
+          mode: mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
+          onTap: tap,
+          onMove: move,
+          dragPoints: leds,
+          draftColor: brandColors.primary,
+          renderOverlay: (renderWidth, renderHeight, zoom, panX, panY) => (
             <SpraySetupOverlay
               holes={layout.holes}
               leds={leds}
-              wiring={kind === 'wiring' ? wiring : undefined}
-              selected={selected}
               width={renderWidth}
               height={renderHeight}
               zoom={zoom}
+              panX={panX}
+              panY={panY}
             />
           ),
         }}
       />
+      <Text variant="footnote">{t('sprayLedSetup.legend')}</Text>
+      <Text>{t('sprayLedSetup.ledCount', { count: leds.length })}</Text>
     </>
   );
 }
+
+function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onInteractionChange }: MapEditorProps) {
+  const { t } = useTranslation('boards');
+  const { spacing, brandColors } = useTheme();
+  const [mode, setMode] = useState<'draw' | 'select' | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [highlight, setHighlight] = useState(false);
+  const [skipText, setSkipText] = useState<string | null>(null);
+  const { change, undo, canUndo } = useEditorHistory(layout, onChange);
+  const leds = layout.ledPositions ?? NO_LEDS;
+  const wiring = layout.wiring;
+  const indices = useMemo(
+    () => new Map(wiring ? assignLedIndices(wiring).map(({ id, index }) => [id, index]) : []),
+    [wiring],
+  );
+  const physicalSelection = useMemo(
+    () =>
+      selected.flatMap((id) => {
+        const index = indices.get(id);
+        return index === undefined ? [] : [index];
+      }),
+    [selected, indices],
+  );
+  const preview = useSprayLedPreview(wallUuid);
+  const { available, show, stop } = preview;
+  useEffect(() => {
+    if (!available || !highlight) return;
+    if (mode === 'select' && physicalSelection.length) void show(physicalSelection);
+    else void stop();
+  }, [available, highlight, mode, physicalSelection, show, stop]);
+
+  const pair = mode === 'select' && selected.length === 2 ? selected : null;
+  const cut = wiring && pair ? cutWiring(wiring, pair[0], pair[1]) : wiring;
+  const joined = wiring && pair ? connectWiring(wiring, pair[0], pair[1]) : wiring;
+  const edge = Boolean(cut && cut !== wiring);
+  const gapCount = pair
+    ? (wiring?.skips.find(
+        ({ from, to }) => (from === pair[0] && to === pair[1]) || (from === pair[1] && to === pair[0]),
+      )?.count ?? 0)
+    : 0;
+  const newSkip = skipText === null ? NaN : Number(skipText);
+  const validSkip = skipText !== null && /^\d+$/.test(skipText) && newSkip <= MAX_WIRING_SKIP;
+  const skipped = wiring && pair && validSkip ? setWiringSkip(wiring, pair[0], pair[1], newSkip) : wiring;
+  const canApplySkip = edge && validSkip && (newSkip === gapCount || skipped !== wiring);
+
+  function extend(ids: string[]) {
+    if (mode !== 'draw' || !wiring) return;
+    const next = extendWiring(wiring, ids);
+    if (next !== wiring) change({ wiring: next });
+  }
+
+  function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
+    const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
+    if (index < 0) return;
+    const id = leds[index].id;
+    if (mode === 'draw') extend([id]);
+    else if (mode === 'select')
+      setSelected((previous) =>
+        previous.includes(id) ? previous.filter((entry) => entry !== id) : [...previous.slice(-1), id],
+      );
+  }
+
+  const tools = (
+    <View style={[styles.row, { gap: spacing[2] }]}>
+      <Button
+        title={t('sprayLedSetup.drawCable')}
+        variant={mode === 'draw' ? 'filled' : 'outlined'}
+        onPress={() => setMode(mode === 'draw' ? null : 'draw')}
+      />
+      <Button
+        title={t('sprayLedSetup.selectLeds')}
+        variant={mode === 'select' ? 'filled' : 'outlined'}
+        onPress={() => setMode(mode === 'select' ? null : 'select')}
+      />
+    </View>
+  );
+  const accessoryTools = (
+    <View style={{ gap: spacing[2] }}>
+      <Text variant="footnote">{t('sprayLedSetup.wiringLegend')}</Text>
+      <Text>
+        {t('sprayLedSetup.wiringStatus', { wired: indices.size, total: leds.length, paths: wiring?.paths.length ?? 0 })}
+      </Text>
+      {mode === 'select' ? (
+        <>
+          <Text variant="footnote">{t('sprayLedSetup.wiringHint')}</Text>
+          <PressableSurface
+            accessibilityRole="checkbox"
+            accessibilityLabel={t('sprayLedSetup.lightSelected')}
+            accessibilityState={{ checked: highlight }}
+            disabled={!available}
+            onPress={() => {
+              if (highlight) void stop();
+              setHighlight(!highlight);
+            }}
+            style={[styles.row, { alignItems: 'center', minHeight: 44, gap: spacing[2] }]}
+          >
+            <View style={[styles.checkbox, { borderColor: brandColors.primary }]}>
+              {highlight ? <Icon name="check.small" size={18} color={brandColors.primary} /> : null}
+            </View>
+            <Text>{t('sprayLedSetup.lightSelected')}</Text>
+          </PressableSurface>
+          {!available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
+          {preview.error ? (
+            <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
+              {preview.error === 'invalid-indices' ? t('sprayLedSetup.lightingRangeError') : t('sprayLed.lightFailed')}
+            </Text>
+          ) : null}
+          {selected.length ? (
+            <Text accessibilityLiveRegion="polite">
+              {t('sprayLedSetup.selectedLeds', { ids: selected.map((id) => indices.get(id) ?? '—').join(' → ') })}
+            </Text>
+          ) : null}
+          {pair ? (
+            <>
+              <View style={[styles.row, { gap: spacing[2] }]}>
+                <Button
+                  title={t('sprayLedSetup.cutCable')}
+                  disabled={!edge}
+                  onPress={() => {
+                    if (cut && edge) change({ wiring: cut });
+                  }}
+                />
+                <Button
+                  title={t('sprayLedSetup.connectCable')}
+                  disabled={joined === wiring}
+                  onPress={() => {
+                    if (joined && joined !== wiring) change({ wiring: joined });
+                  }}
+                />
+                <Button
+                  title={t('sprayLedSetup.insertSkips')}
+                  disabled={!edge}
+                  onPress={() => setSkipText(String(gapCount || 1))}
+                />
+              </View>
+              {gapCount ? (
+                <Text color={brandColors.error}>{t('sprayLedSetup.gapLabel', { count: gapCount })}</Text>
+              ) : null}
+            </>
+          ) : null}
+          {skipText !== null ? (
+            <SkipCountDialog
+              value={skipText}
+              onChange={setSkipText}
+              onClose={() => setSkipText(null)}
+              canApply={canApplySkip}
+              onApply={() => {
+                if (!canApplySkip) return;
+                if (skipped && newSkip !== gapCount) change({ wiring: skipped });
+                setSkipText(null);
+              }}
+            />
+          ) : null}
+        </>
+      ) : null}
+    </View>
+  );
+  return (
+    <>
+      <Text>{t('sprayLedSetup.cableEditorHint')}</Text>
+      {tools}
+      <SprayPhotoStage
+        width={width}
+        tools={tools}
+        accessoryTools={accessoryTools}
+        overlayTools={
+          <SprayUndoButton
+            disabled={!canUndo}
+            onPress={() => {
+              undo();
+              setSelected([]);
+            }}
+          />
+        }
+        canvas={{
+          source,
+          photoUri,
+          onInteractionChange,
+          mode: mode === 'draw' ? 'draw' : mode === 'select' ? 'tap' : 'pan',
+          onTap: tap,
+          onTrace: (points, tolerance) => extend(traceLedPath(leds, points, tolerance)),
+          dragPoints: leds,
+          draftColor: SPRAY_CABLE_COLOR,
+          renderOverlay: (renderWidth, renderHeight, zoom, panX, panY) => (
+            <SpraySetupOverlay
+              holes={layout.holes}
+              leds={leds}
+              wiring={wiring}
+              selected={mode === 'select' ? selected : undefined}
+              width={renderWidth}
+              height={renderHeight}
+              zoom={zoom}
+              panX={panX}
+              panY={panY}
+            />
+          ),
+        }}
+      />
+      {accessoryTools}
+    </>
+  );
+}
+
+function SkipCountDialog({
+  value,
+  onChange,
+  onClose,
+  onApply,
+  canApply,
+}: {
+  value: string;
+  onChange: (text: string) => void;
+  onClose: () => void;
+  onApply: () => void;
+  canApply: boolean;
+}) {
+  const focused = useIsFocused();
+  const { t } = useTranslation('boards');
+  const { systemColors, spacing } = useTheme();
+  return (
+    <Modal
+      transparent
+      animationType="fade"
+      visible={focused}
+      onRequestClose={onClose}
+      supportedOrientations={['portrait', 'landscape-left', 'landscape-right']}
+    >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.scrim}>
+        <View
+          accessibilityViewIsModal
+          style={[styles.dialog, { backgroundColor: systemColors.background, padding: spacing[4], gap: spacing[3] }]}
+        >
+          <Text variant="headline">{t('sprayLedSetup.skipCount')}</Text>
+          <BuilderTextInput
+            accessibilityLabel={t('sprayLedSetup.skipCount')}
+            value={value}
+            onChangeText={onChange}
+            keyboardType="number-pad"
+            maxLength={5}
+            selectTextOnFocus
+          />
+          <Text variant="footnote">{t('sprayLedSetup.skipCountRange', { max: MAX_WIRING_SKIP })}</Text>
+          <View style={[styles.row, { gap: spacing[2] }]}>
+            <Button title={t('sprayLedSetup.cancelSkip')} variant="text" onPress={onClose} />
+            <Button title={t('sprayLed.confirm')} disabled={!canApply} onPress={onApply} />
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: { flexDirection: 'row', flexWrap: 'wrap' },
+  checkbox: { width: 22, height: 22, borderWidth: 2, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
+  scrim: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.5)' },
+  dialog: { width: '100%', maxWidth: 360, borderRadius: 16 },
+});

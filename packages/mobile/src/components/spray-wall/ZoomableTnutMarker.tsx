@@ -81,18 +81,19 @@ export function ZoomableTnutMarker({
     useSprayPhotoViewport(width, height, onDragActiveChange, true, failures);
   const outlineProps = useAnimatedProps(() => {
     const active = activeTnutCorners(rows, columns);
+    let path = '';
+    if (active.length >= 2) {
+      for (const corner of active) {
+        const x = cornerScreenCoordinate(corners.value[corner][0], width, zoom.value, panX.value);
+        const y = cornerScreenCoordinate(corners.value[corner][1], height, zoom.value, panY.value);
+        path += `${path ? 'L' : 'M'}${x} ${y}`;
+      }
+      if (active.length === 4) path += 'Z';
+    }
     return {
-      d:
-        active.length < 2
-          ? ''
-          : active
-              .map(
-                (corner, index) =>
-                  `${index === 0 ? 'M' : 'L'}${corners.value[corner][0] * width} ${corners.value[corner][1] * height}`,
-              )
-              .join('') + (active.length === 4 ? 'Z' : ''),
-      strokeWidth: 1.5 / zoom.value,
-      strokeDasharray: [6 / zoom.value, 5 / zoom.value],
+      d: path,
+      strokeWidth: 1.5,
+      strokeDasharray: [6, 5],
     };
   });
   const gridProps = useAnimatedProps(() => ({
@@ -107,12 +108,14 @@ export function ZoomableTnutMarker({
               bottomLeft: { x: corners.value[3][0], y: corners.value[3][1] },
             },
           },
-          width,
-          height,
-          4 / zoom.value,
+          width * zoom.value,
+          height * zoom.value,
+          4,
+          cornerScreenCoordinate(0, width, zoom.value, panX.value),
+          cornerScreenCoordinate(0, height, zoom.value, panY.value),
         )
       : '',
-    strokeWidth: 2 / zoom.value,
+    strokeWidth: 2,
   }));
   const color = invalid ? brandColorsDark.error : brandColorsDark.tint;
   const labels = [
@@ -131,16 +134,16 @@ export function ZoomableTnutMarker({
             ) : (
               <Image source={{ uri: photo.uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
             )}
-            <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
-              <AnimatedPath animatedProps={outlineProps} stroke={color} fill="none" opacity={0.6} />
-              <AnimatedPath
-                animatedProps={gridProps}
-                fill={brandColorsDark.tint}
-                stroke="rgba(0,0,0,0.4)"
-                opacity={0.95}
-              />
-            </Svg>
           </Animated.View>
+          <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
+            <AnimatedPath animatedProps={outlineProps} stroke={color} fill="none" opacity={0.6} />
+            <AnimatedPath
+              animatedProps={gridProps}
+              fill={brandColorsDark.tint}
+              stroke="rgba(0,0,0,0.4)"
+              opacity={0.95}
+            />
+          </Svg>
           {activeCorners.map((corner) => (
             <ZoomCorner
               key={corner}

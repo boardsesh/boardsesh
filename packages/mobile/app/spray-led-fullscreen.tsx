@@ -12,6 +12,7 @@ import { Icon } from '../src/components/Icon';
 import { SprayCornerMarker } from '../src/components/spray-wall/SprayCornerMarker';
 import { FlattenedSprayPhoto } from '../src/components/spray-wall/FlattenedSprayPhoto';
 import { SprayPhotoCanvas } from '../src/components/spray-wall/SprayPhotoCanvas';
+import { shouldUseSprayPhotoRail } from '../src/components/spray-wall/spray-fullscreen-layout';
 import {
   closeSprayPhotoSession,
   readSprayPhotoSession,
@@ -51,6 +52,9 @@ function SprayLedFullscreen() {
   const { systemColors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const [box, setBox] = useState({ width: 0, height: 0 });
+  const [available, setAvailable] = useState({ width: 0, height: 0 });
+  const [toolsHeight, setToolsHeight] = useState(0);
+  const [accessoryHeight, setAccessoryHeight] = useState(0);
   const [dragging, setDragging] = useState(false);
   const closing = useRef(false);
   useSprayWizardLeaveGuard((leave) => {
@@ -68,22 +72,34 @@ function SprayLedFullscreen() {
       accessibilityLabel={t('sprayLedSetup.closeFullScreen')}
       disabled={dragging}
       onPress={() => router.back()}
-      style={[
-        styles.close,
-        {
-          top: insets.top + spacing[2],
-          right: insets.right + spacing[2],
-          backgroundColor: systemColors.secondaryGroupedBackground,
-        },
-      ]}
+      style={[styles.close, { backgroundColor: systemColors.secondaryGroupedBackground }]}
     >
       <Icon name="fit.screen" size={22} color={systemColors.label} />
     </PressableSurface>
   );
-  if (photoSnapshot)
+  if (photoSnapshot) {
+    const { frame } = photoSnapshot.canvas.source;
+    const rail =
+      Boolean(photoSnapshot.fullScreenRail) &&
+      shouldUseSprayPhotoRail(available.width, available.height, frame.width, frame.height);
     return (
-      <View style={{ flex: 1, backgroundColor: systemColors.background }}>
-        <View style={styles.canvas} onLayout={({ nativeEvent }) => setBox(nativeEvent.layout)}>
+      <View
+        testID="spray-fullscreen-layout"
+        style={{
+          flex: 1,
+          backgroundColor: systemColors.background,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
+          paddingBottom: insets.bottom,
+          paddingTop: insets.top,
+        }}
+        onLayout={({ nativeEvent }) => setAvailable(nativeEvent.layout)}
+      >
+        <View
+          testID="spray-fullscreen-canvas"
+          style={styles.canvas}
+          onLayout={({ nativeEvent }) => setBox(nativeEvent.layout)}
+        >
           <SprayPhotoCanvas
             {...photoSnapshot.canvas}
             maxWidth={box.width}
@@ -91,15 +107,59 @@ function SprayLedFullscreen() {
             onInteractionChange={setDragging}
           />
         </View>
-        <ScrollView
-          style={{ height: '28%', flexGrow: 0, paddingBottom: insets.bottom, paddingHorizontal: spacing[4] }}
-          scrollEnabled={!dragging}
+        {!rail && (
+          <ScrollView
+            testID="spray-fullscreen-bottom-tools"
+            style={{
+              height: Math.min(toolsHeight, available.height * 0.35),
+              flexGrow: 0,
+              paddingHorizontal: spacing[4],
+            }}
+            onContentSizeChange={(_width, height) => setToolsHeight(height)}
+            scrollEnabled={!dragging}
+          >
+            {photoSnapshot.tools}
+          </ScrollView>
+        )}
+        {photoSnapshot.accessoryTools && (
+          <ScrollView
+            style={{
+              height: Math.min(accessoryHeight, available.height * 0.25),
+              flexGrow: 0,
+              paddingHorizontal: spacing[4],
+            }}
+            onContentSizeChange={(_width, height) => setAccessoryHeight(height)}
+            scrollEnabled={!dragging}
+          >
+            {photoSnapshot.accessoryTools}
+          </ScrollView>
+        )}
+        <View
+          style={[
+            styles.overlay,
+            {
+              top: insets.top + spacing[2],
+              right: insets.right + spacing[2],
+              maxHeight: Math.max(0, available.height - insets.top - insets.bottom - 16),
+            },
+          ]}
         >
-          {photoSnapshot.tools}
-        </ScrollView>
-        {closeButton}
+          {closeButton}
+          {photoSnapshot.overlayTools}
+          {rail && (
+            <ScrollView
+              testID="spray-fullscreen-rail"
+              style={{ flexGrow: 0 }}
+              scrollEnabled={!dragging}
+              contentContainerStyle={{ gap: 8, alignItems: 'center' }}
+            >
+              {photoSnapshot.fullScreenRail}
+            </ScrollView>
+          )}
+        </View>
       </View>
     );
+  }
   if (!snapshot) return null;
   const { source, photoUri, quad, grid } = snapshot;
   const corners = {
@@ -135,6 +195,7 @@ function SprayLedFullscreen() {
         onPress={() => router.back()}
         style={[
           styles.close,
+          { position: 'absolute' },
           {
             top: insets.top + spacing[2],
             right: insets.right + spacing[2],
@@ -151,13 +212,13 @@ function SprayLedFullscreen() {
 const styles = StyleSheet.create({
   canvas: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   close: {
-    position: 'absolute',
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  overlay: { position: 'absolute', gap: 8, alignItems: 'center' },
 });
 
 export default holdUntilLaunchReady(SprayLedFullscreen);

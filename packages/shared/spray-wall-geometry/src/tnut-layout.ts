@@ -225,7 +225,14 @@ export function generateTnutGrid(options: TnutGridOptions): TnutPoint[] {
 }
 
 /** One worklet-safe SVG path for the live overlay; no JS-thread callback per drag frame. */
-export function tnutGridPath(options: TnutGridOptions, width: number, height: number, radius: number): string {
+export function tnutGridPath(
+  options: TnutGridOptions,
+  width: number,
+  height: number,
+  radius: number,
+  offsetX = 0,
+  offsetY = 0,
+): string {
   'worklet';
   if (
     !isValidTnutGrid(options) ||
@@ -253,7 +260,7 @@ export function tnutGridPath(options: TnutGridOptions, width: number, height: nu
         (all ? column * 2 + (inset ? 1 : 0) : column + (inset ? 0.5 : 0)) / Math.max(1, options.columns - 1),
         row / Math.max(1, options.rows - 1),
       );
-      path += `M${(point.x * width - radius).toFixed(2)} ${(point.y * height).toFixed(2)}${circle}`;
+      path += `M${(point.x * width + offsetX - radius).toFixed(2)} ${(point.y * height + offsetY).toFixed(2)}${circle}`;
     }
   }
   return path;

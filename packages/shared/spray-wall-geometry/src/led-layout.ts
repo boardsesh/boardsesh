@@ -9,8 +9,14 @@ export type TnutWiring = {
   startCorner: CableStartCorner;
   paths: string[][];
   skips: { from: string; to: string; count: number }[];
+  /** Unused physical LEDs before the first visible LED. Missing in older saves. */
+  initialSkip?: number;
 };
 export const MAX_LED_POSITIONS = 6000;
+export const MAX_WIRING_SKIP = 10000;
+export const MAX_WIRING_TOTAL_SKIPS = 1000000;
+const validSkipCount = (count: unknown): count is number =>
+  typeof count === 'number' && Number.isInteger(count) && count >= 0 && count <= MAX_WIRING_SKIP;
 const boundedPoint = (point: TnutPoint) =>
   Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
 const record = (candidate: unknown): candidate is Record<string, unknown> =>
@@ -49,6 +55,7 @@ export function readTnutWiring(candidate: unknown, leds: LedPosition[]): TnutWir
     !['tl', 'tr', 'bl', 'br'].includes(candidate.startCorner) ||
     !Array.isArray(candidate.paths) ||
     !Array.isArray(candidate.skips) ||
+    (candidate.initialSkip !== undefined && !validSkipCount(candidate.initialSkip)) ||
     candidate.paths.length > leds.length ||
     candidate.skips.length > leds.length
   )
@@ -69,7 +76,7 @@ export function readTnutWiring(candidate: unknown, leds: LedPosition[]): TnutWir
   const edges = edgeSet(paths);
   const seen = new Set<string>();
   const skips: TnutWiring['skips'] = [];
-  let total = 0;
+  let total = (candidate.initialSkip as number | undefined) ?? 0;
   for (const skip of candidate.skips) {
     if (
       !record(skip) ||
@@ -78,12 +85,12 @@ export function readTnutWiring(candidate: unknown, leds: LedPosition[]): TnutWir
       typeof skip.count !== 'number' ||
       !Number.isInteger(skip.count) ||
       skip.count < 1 ||
-      skip.count > 10000
+      skip.count > MAX_WIRING_SKIP
     )
       return null;
     const key = edgeKey(skip.from, skip.to);
     total += skip.count;
-    if (!edges.has(key) || seen.has(key) || total > 1000000) return null;
+    if (!edges.has(key) || seen.has(key) || total > MAX_WIRING_TOTAL_SKIPS) return null;
     seen.add(key);
     skips.push({ from: skip.from, to: skip.to, count: skip.count });
   }
@@ -92,6 +99,7 @@ export function readTnutWiring(candidate: unknown, leds: LedPosition[]): TnutWir
     startCorner: candidate.startCorner as CableStartCorner,
     paths,
     skips,
+    ...(candidate.initialSkip !== undefined ? { initialSkip: candidate.initialSkip as number } : {}),
   };
 }
 function wallFrame(layout: TnutLayout) {
@@ -129,11 +137,11 @@ export function generateLedPositions(layout: TnutLayout): LedPosition[] {
       (layout.pattern === 'offset' && layout.columnConvention === 'all' ? 2 : 1) / Math.max(1, layout.columns - 1);
     const rowStep = 1 / Math.max(1, layout.rows - 1);
     for (const hole of layout.holes) {
-      const offsets = layout.ledPlacement === 'sides' ? [-columnStep / 4, columnStep / 4] : [0];
+      const offsets = layout.ledPlacement === 'sides' ? [-columnStep / 10, columnStep / 10] : [0];
       for (const offset of offsets) {
         if (layout.pattern === 'custom' && layout.ledPlacement !== 'center') {
           points.push({
-            x: hole.x + (layout.ledPlacement === 'sides' ? (Math.sign(offset) * customSpacing) / 4 : 0),
+            x: hole.x + (layout.ledPlacement === 'sides' ? (Math.sign(offset) * customSpacing) / 10 : 0),
             y: hole.y + (layout.ledPlacement === 'below' ? customSpacing / 2 : 0),
           });
           continue;
@@ -179,14 +187,8 @@ export function generateLedPositions(layout: TnutLayout): LedPosition[] {
     .slice(0, MAX_LED_POSITIONS)
     .map((point) => ({ ...point, id: `led-${point.x.toFixed(8)}-${point.y.toFixed(8)}` }));
 }
-export function createWiring(
-  leds: LedPosition[],
-  direction: CableDirection,
-  startCorner: CableStartCorner,
-  layout?: TnutLayout,
-): TnutWiring {
-  const wiring: TnutWiring = { direction, startCorner, paths: [], skips: [] };
-  if (direction === 'custom' || !leds.length) return wiring;
+/** Calibrated row/column grouping shared by cable order and the row-major LED test. */
+function ledGroups(leds: LedPosition[], direction: 'horizontal' | 'vertical', layout?: TnutLayout) {
   const frame = layout ? wallFrame(layout) : null;
   const projected = leds.map((point) => {
     const [x, y] = frame ? mapPoint(frame.toUnit, point.x, point.y) : [point.x, point.y];
@@ -194,8 +196,6 @@ export function createWiring(
   });
   const primary = direction === 'horizontal' ? 'y' : 'x';
   const secondary = direction === 'horizontal' ? 'x' : 'y';
-  const reversePrimary = direction === 'horizontal' ? startCorner[0] === 'b' : startCorner[1] === 'r';
-  const reverseSecondary = direction === 'horizontal' ? startCorner[1] === 'r' : startCorner[0] === 'b';
   const sorted = projected.sort((left, right) => left[primary] - right[primary] || left[secondary] - right[secondary]);
   const tolerance = layout ? 0.2 / Math.max(1, (direction === 'horizontal' ? layout.rows : layout.columns) - 1) : 0.01;
   const groups: (typeof projected)[] = [];
@@ -204,15 +204,44 @@ export function createWiring(
     if (!group || Math.abs(point[primary] - group[0][primary]) > tolerance) groups.push([point]);
     else group.push(point);
   }
+  for (const group of groups) group.sort((left, right) => left[secondary] - right[secondary]);
+  return groups;
+}
+export function createWiring(
+  leds: LedPosition[],
+  direction: CableDirection,
+  startCorner: CableStartCorner,
+  layout?: TnutLayout,
+): TnutWiring {
+  const wiring: TnutWiring = { direction, startCorner, paths: [], skips: [] };
+  if (direction === 'custom' || !leds.length) return wiring;
+  const groups = ledGroups(leds, direction, layout);
+  const reversePrimary = direction === 'horizontal' ? startCorner[0] === 'b' : startCorner[1] === 'r';
+  const reverseSecondary = direction === 'horizontal' ? startCorner[1] === 'r' : startCorner[0] === 'b';
   if (reversePrimary) groups.reverse();
   const path: string[] = [];
   groups.forEach((group, index) => {
-    group.sort((left, right) => left[secondary] - right[secondary]);
     if (reverseSecondary !== (index % 2 === 1)) group.reverse();
     path.push(...group.map((point) => point.id));
   });
   wiring.paths = [path];
   return wiring;
+}
+/** Append one trace to the existing tail, never start another section or revisit an LED. */
+export function extendWiring(wiring: TnutWiring, ids: string[]): TnutWiring {
+  const used = new Set(wiring.paths.flat());
+  const additions: string[] = [];
+  for (const id of ids) {
+    if (used.size >= MAX_LED_POSITIONS) break;
+    if (!id || id.length > 100 || used.has(id)) continue;
+    used.add(id);
+    additions.push(id);
+  }
+  if (!additions.length) return wiring;
+  const paths = wiring.paths.slice();
+  if (paths.length) paths[paths.length - 1] = [...paths[paths.length - 1], ...additions];
+  else paths.push(additions);
+  return { ...wiring, paths };
 }
 function withPaths(wiring: TnutWiring, paths: string[][]): TnutWiring {
   const edges = edgeSet(paths);
@@ -224,6 +253,7 @@ export function connectWiring(wiring: TnutWiring, from: string, to: string): Tnu
   const paths = wiring.paths.map((path) => [...path]);
   let first = paths.findIndex((path) => path.includes(from));
   let second = paths.findIndex((path) => path.includes(to));
+  if (paths.length && first < 0 && second < 0) return wiring;
   if (first < 0) {
     paths.push([from]);
     first = paths.length - 1;
@@ -257,13 +287,12 @@ export function cutWiring(wiring: TnutWiring, from: string, to: string): TnutWir
   return wiring;
 }
 export function setWiringSkip(wiring: TnutWiring, from: string, to: string, count: number): TnutWiring {
-  if (!Number.isInteger(count) || count < 0 || count > 10000 || !edgeSet(wiring.paths).has(edgeKey(from, to)))
-    return wiring;
+  if (!validSkipCount(count) || !edgeSet(wiring.paths).has(edgeKey(from, to))) return wiring;
   const aggregate =
     wiring.skips
       .filter((skip) => edgeKey(skip.from, skip.to) !== edgeKey(from, to))
-      .reduce((total, skip) => total + skip.count, 0) + count;
-  if (aggregate > 1000000) return wiring;
+      .reduce((total, skip) => total + skip.count, wiring.initialSkip ?? 0) + count;
+  if (aggregate > MAX_WIRING_TOTAL_SKIPS) return wiring;
   return {
     ...wiring,
     skips: [
@@ -272,9 +301,15 @@ export function setWiringSkip(wiring: TnutWiring, from: string, to: string, coun
     ],
   };
 }
+/** Invalid edits are no-ops, matching edge-gap edits and persisted bounds. */
+export function setWiringInitialSkip(wiring: TnutWiring, count: number): TnutWiring {
+  if (!validSkipCount(count) || (wiring.initialSkip ?? 0) === count) return wiring;
+  if (wiring.skips.reduce((total, skip) => total + skip.count, count) > MAX_WIRING_TOTAL_SKIPS) return wiring;
+  return { ...wiring, initialSkip: count };
+}
 export function assignLedIndices(wiring: TnutWiring): { id: string; index: number }[] {
   const skips = new Map(wiring.skips.map((skip) => [edgeKey(skip.from, skip.to), skip.count]));
-  let index = 0;
+  let index = wiring.initialSkip ?? 0;
   return wiring.paths.flatMap((path) =>
     path.map((id, position) => {
       if (position) index += skips.get(edgeKey(path[position - 1], id)) ?? 0;
@@ -282,34 +317,66 @@ export function assignLedIndices(wiring: TnutWiring): { id: string; index: numbe
     }),
   );
 }
+/** Physical LED indices in top-to-bottom rows, left-to-right within every row. */
+export function rowMajorLedIndices(leds: LedPosition[], wiring: TnutWiring, layout?: TnutLayout): number[] {
+  const indices = new Map(assignLedIndices(wiring).map(({ id, index }) => [id, index]));
+  const ordered: number[] = [];
+  for (const group of ledGroups(leds, 'horizontal', layout)) {
+    for (const point of group) {
+      const index = indices.get(point.id);
+      if (index !== undefined) ordered.push(index);
+    }
+  }
+  return ordered;
+}
 /** Hits along the stroke are ordered by traversal, with each LED visited once. */
 export function traceLedPath(leds: LedPosition[], polyline: TnutPoint[], tolerance: number): string[] {
+  if (!(tolerance >= 0) || !polyline.length || !leds.length) return [];
   const hits: string[] = [];
   const seen = new Set<string>();
+  // Index once per completed gesture. Each short segment only visits LEDs in
+  // its padded x-range, instead of allocating a candidate for every LED.
+  const byX = leds.map((point, order) => ({ point, order })).sort((left, right) => left.point.x - right.point.x);
+  const toleranceSquared = tolerance * tolerance;
   for (let index = 0; index < polyline.length; index++) {
     const start = polyline[Math.max(0, index - 1)],
       end = polyline[index];
+    const minX = Math.min(start.x, end.x) - tolerance,
+      maxX = Math.max(start.x, end.x) + tolerance;
+    const minY = Math.min(start.y, end.y) - tolerance,
+      maxY = Math.max(start.y, end.y) + tolerance;
+    let first = 0,
+      last = byX.length;
+    while (first < last) {
+      const middle = (first + last) >>> 1;
+      if (byX[middle].point.x < minX) first = middle + 1;
+      else last = middle;
+    }
     const dx = end.x - start.x,
       dy = end.y - start.y,
-      den = dx * dx + dy * dy;
-    const candidates = leds
-      .map((point) => {
-        const progress = den
-          ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / den))
-          : 0;
-        return {
-          point,
-          progress,
-          distance: Math.hypot(point.x - start.x - progress * dx, point.y - start.y - progress * dy),
-        };
-      })
-      .filter((hit) => hit.distance <= tolerance)
-      .sort((left, right) => left.progress - right.progress || left.distance - right.distance);
-    for (const hit of candidates)
-      if (!seen.has(hit.point.id)) {
-        seen.add(hit.point.id);
-        hits.push(hit.point.id);
-      }
+      lengthSquared = dx * dx + dy * dy;
+    const candidates: { id: string; order: number; progress: number; distanceSquared: number }[] = [];
+    for (let candidate = first; candidate < byX.length; candidate++) {
+      const { point, order } = byX[candidate];
+      if (point.x > maxX) break;
+      if (point.y < minY || point.y > maxY || seen.has(point.id)) continue;
+      const progress = lengthSquared
+        ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared))
+        : 0;
+      const offsetX = point.x - start.x - progress * dx,
+        offsetY = point.y - start.y - progress * dy;
+      const distanceSquared = offsetX * offsetX + offsetY * offsetY;
+      if (distanceSquared <= toleranceSquared) candidates.push({ id: point.id, order, progress, distanceSquared });
+    }
+    candidates.sort(
+      (left, right) =>
+        left.progress - right.progress || left.distanceSquared - right.distanceSquared || left.order - right.order,
+    );
+    for (const hit of candidates) {
+      if (seen.has(hit.id)) continue;
+      seen.add(hit.id);
+      hits.push(hit.id);
+    }
   }
   return hits;
 }

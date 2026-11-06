@@ -26,17 +26,31 @@ const controls = vi.hoisted(() => ({
   marker: null as ComponentProps<typeof SprayCornerMarker> | null,
   leave: null as ((confirm: () => void) => void) | null,
   back: vi.fn(),
+  surfaces: new Map<
+    string,
+    {
+      onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+      onContentSizeChange?: (width: number, height: number) => void;
+      style?: { height?: number };
+    }
+  >(),
 }));
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ sessionId: controls.id, photoSessionId: controls.photoId }),
   useRouter: () => ({ back: controls.back }),
   Redirect: ({ href }: { href: string }) => createElement('div', { 'data-testid': 'redirect' }, href),
 }));
-vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { create: (styles: unknown) => styles },
-}));
+vi.mock('react-native', () => {
+  const Surface = ({ children, testID, ...props }: { children?: ReactNode; testID?: string }) => {
+    if (testID) controls.surfaces.set(testID, props);
+    return createElement('div', { 'data-testid': testID }, children);
+  };
+  return {
+    View: Surface,
+    ScrollView: Surface,
+    StyleSheet: { create: (styles: unknown) => styles },
+  };
+});
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 20, bottom: 20, left: 0, right: 0 }),
 }));
@@ -127,6 +141,7 @@ beforeEach(() => {
   controls.marker = null;
   controls.leave = null;
   controls.back.mockReset();
+  controls.surfaces.clear();
 });
 afterEach(() => {
   cleanup();
@@ -201,6 +216,49 @@ describe('fullscreen T-nut calibration route', () => {
 });
 
 describe('fullscreen point/cable editors', () => {
+  it('uses a side rail in matching orientation, retains accessory actions, and fits the measured canvas box', () => {
+    const { snapshot } = open();
+    controls.id = undefined;
+    const id = createSprayPhotoSession(
+      {
+        viewerId: 'viewer-one',
+        canvas: { source: snapshot.source, photoUri: snapshot.photoUri },
+        tools: createElement('span', null, 'bottom tools'),
+        fullScreenRail: createElement('span', null, 'rail tools'),
+        overlayTools: createElement('span', null, 'undo'),
+        accessoryTools: createElement('span', null, 'gap editor'),
+      },
+      vi.fn(),
+    );
+    controls.photoId = id;
+    render(createElement(SprayLedFullscreen));
+    act(() =>
+      controls.surfaces
+        .get('spray-fullscreen-layout')
+        ?.onLayout?.({ nativeEvent: { layout: { width: 400, height: 800 } } }),
+    );
+    expect(screen.getByText('rail tools')).toBeTruthy();
+    expect(screen.queryByText('bottom tools')).toBeNull();
+    expect(screen.getByText('undo')).toBeTruthy();
+    expect(screen.getByText('gap editor')).toBeTruthy();
+    act(() =>
+      controls.surfaces
+        .get('spray-fullscreen-canvas')
+        ?.onLayout?.({ nativeEvent: { layout: { width: 340, height: 710 } } }),
+    );
+    expect(controls.canvas?.maxWidth).toBe(340);
+    expect(controls.canvas?.maxHeight).toBe(710);
+    act(() =>
+      controls.surfaces
+        .get('spray-fullscreen-layout')
+        ?.onLayout?.({ nativeEvent: { layout: { width: 1100, height: 600 } } }),
+    );
+    expect(screen.getByText('bottom tools')).toBeTruthy();
+    expect(screen.queryByText('rail tools')).toBeNull();
+    act(() => controls.surfaces.get('spray-fullscreen-bottom-tools')?.onContentSizeChange?.(1100, 64));
+    expect(controls.surfaces.get('spray-fullscreen-bottom-tools')?.style?.height).toBe(64);
+    act(() => closeSprayPhotoSession(id));
+  });
   it('shares the rectified frame and live tools without exposing photo URLs in navigation', () => {
     const { snapshot } = open();
     controls.id = undefined;

@@ -14,9 +14,9 @@ import { markStartup } from '../src/lib/profiling/startup-profile';
 import { initializeUserDataExportDownloads } from '../src/lib/user-data-export-download';
 import { startHoldShapeSystemDefaultSync } from '../src/lib/hold-shape-system-default';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { Dimensions, LogBox, Platform, StyleSheet } from 'react-native';
+import { LogBox, Platform, StyleSheet } from 'react-native';
 import { getPlayerRouteAnimation } from '../src/lib/player-route-animation';
-import { resolveIsTablet } from '../src/theme/size-class';
+import { RootNavigationStack } from '../src/components/navigation/RootNavigationStack';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 57's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -73,7 +73,6 @@ import { useActiveBoardSelfHeal } from '../src/lib/boards/use-active-board-self-
 import { useActiveBoardFollowHeal } from '../src/lib/boards/use-active-board-follow-heal';
 import { ScreenshotBoardAutoActivator } from '../src/components/screenshot-board-auto-activator';
 import { iosDarkColors } from '../src/theme/ios-colors';
-import { glassStackScreenOptions } from '../src/theme/navigation';
 import { ensurePlayDrawerSectionsLoaded } from '../src/lib/play-drawer-sections-preference';
 import { ensureClimbRowLegacySynced } from '../src/lib/climb-row-display-preference';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
@@ -332,18 +331,6 @@ function ObserveRuntimeConfigSync(): null {
   return null;
 }
 
-// Match the adaptive shell using the rotation-invariant physical screen, not a split window.
-// Android requires an explicit portrait fallback after fullscreen unlocks a phone.
-function normalScreenOrientation() {
-  const screen = Dimensions.get('screen');
-  const isTablet = resolveIsTablet({
-    platformOS: Platform.OS,
-    isPad: Platform.OS === 'ios' && Platform.isPad === true,
-    screenShortSide: Math.min(screen.width, screen.height),
-  });
-  return Platform.OS !== 'web' && !isTablet ? { orientation: 'portrait' as const } : {};
-}
-
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
@@ -560,19 +547,13 @@ function RootLayout() {
                                                                       <UserDrawerProvider>
                                                                         <NavigationScopePublisher />
                                                                         <ThemedNavigation>
-                                                                          <Stack
-                                                                            // Root scenes keep the opaque, theme-aware nav background so a dark
-                                                                            // backstop sits behind the tab screens (the tab stacks paint their own
-                                                                            // transparent content over it). glassStackScreenOptions' transparent
-                                                                            // contentStyle would expose the light window background at the top of the
-                                                                            // screen in dark mode, where the floating chrome leaves it uncovered.
-                                                                            // The header props still apply to root-level pushed screens (session, about).
-                                                                            screenOptions={{
-                                                                              ...glassStackScreenOptions,
-                                                                              headerShown: false,
-                                                                              contentStyle: undefined,
-                                                                              ...normalScreenOrientation(),
-                                                                            }}
+                                                                          <RootNavigationStack
+                                                                          // Root scenes keep the opaque, theme-aware nav background so a dark
+                                                                          // backstop sits behind the tab screens (the tab stacks paint their own
+                                                                          // transparent content over it). glassStackScreenOptions' transparent
+                                                                          // contentStyle would expose the light window background at the top of the
+                                                                          // screen in dark mode, where the floating chrome leaves it uncovered.
+                                                                          // The header props still apply to root-level pushed screens (session, about).
                                                                           >
                                                                             <Stack.Screen
                                                                               name="privacy-consent"
@@ -806,7 +787,7 @@ function RootLayout() {
                                                                                 ),
                                                                               }}
                                                                             />
-                                                                          </Stack>
+                                                                          </RootNavigationStack>
                                                                         </ThemedNavigation>
                                                                         <PersistentQueueBar />
                                                                         {/* Opens the Android nav bar's hide-on-scroll gate and shows the bar again on every route change. Null render. */}

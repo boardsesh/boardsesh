@@ -4,6 +4,7 @@ export type LedControllerErrorCode =
   | 'not-wled'
   | 'timeout'
   | 'command-failed'
+  | 'invalid-indices'
   | 'cancelled';
 
 export class LedControllerError extends Error {
@@ -24,4 +25,12 @@ export interface LedControllerDriver {
   probe(url: string, signal?: AbortSignal): Promise<LedControllerInfo>;
   lightAll(url: string, signal?: AbortSignal): Promise<void>;
   turnOff(url: string, signal?: AbortSignal): Promise<void>;
+  createPreview(url: string): LedControllerPreviewTransport;
+}
+
+/** A single serialized preview owns its cached count and previously lit LEDs. */
+export interface LedControllerPreviewTransport {
+  show(indices: readonly number[]): Promise<void>;
+  lightAll(): Promise<void>;
+  turnOff(): Promise<void>;
 }

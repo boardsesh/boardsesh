@@ -5,6 +5,54 @@ import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reani
 import type { LedPosition, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+// Cable colour is separate from the orange holes and violet addressable LEDs.
+export const SPRAY_CABLE_COLOR = '#0891B2';
+type Edge = { from: TnutPoint; to: TnutPoint; skip: number };
+function screenPoint(
+  point: TnutPoint,
+  width: number,
+  height: number,
+  zoom: number,
+  panX: number,
+  panY: number,
+): TnutPoint {
+  'worklet';
+  return {
+    x: width / 2 + (point.x - 0.5) * width * zoom + panX,
+    y: height / 2 + (point.y - 0.5) * height * zoom + panY,
+  };
+}
+function circlePath(x: number, y: number, radius: number): string {
+  'worklet';
+  return `M${x - radius} ${y}a${radius} ${radius} 0 1 0 ${radius * 2} 0a${radius} ${radius} 0 1 0 ${-radius * 2} 0`;
+}
+function circles(
+  points: readonly TnutPoint[],
+  width: number,
+  height: number,
+  zoom: number,
+  panX: number,
+  panY: number,
+  radius: number,
+): string {
+  'worklet';
+  let path = '';
+  for (const point of points) {
+    const screen = screenPoint(point, width, height, zoom, panX, panY);
+    if (screen.x < -radius || screen.y < -radius || screen.x > width + radius || screen.y > height + radius) continue;
+    path += circlePath(screen.x, screen.y, radius);
+  }
+  return path;
+}
+function visibleEdge(from: TnutPoint, to: TnutPoint, width: number, height: number): boolean {
+  'worklet';
+  return (
+    Math.max(from.x, to.x) >= 0 &&
+    Math.min(from.x, to.x) <= width &&
+    Math.max(from.y, to.y) >= 0 &&
+    Math.min(from.y, to.y) <= height
+  );
+}
 export function SpraySetupOverlay({
   holes,
   leds = [],
@@ -13,6 +61,8 @@ export function SpraySetupOverlay({
   width,
   height,
   zoom,
+  panX,
+  panY,
 }: {
   holes: TnutPoint[];
   leds?: LedPosition[];
@@ -21,110 +71,121 @@ export function SpraySetupOverlay({
   width: number;
   height: number;
   zoom: SharedValue<number>;
+  panX: SharedValue<number>;
+  panY: SharedValue<number>;
 }) {
   const { brandColors } = useTheme();
-  const holeProps = useAnimatedProps(() => ({
-    d: holes
-      .map(({ x, y }) => {
-        const radius = 7 / zoom.value;
-        return `M${x * width - radius} ${y * height}a${radius} ${radius} 0 1 0 ${radius * 2} 0a${radius} ${radius} 0 1 0 ${-radius * 2} 0`;
-      })
-      .join(''),
-    strokeWidth: 1.5 / zoom.value,
-  }));
-  const ledProps = useAnimatedProps(() => ({
-    d: leds
-      .map(({ x, y }) => {
-        const radius = 4 / zoom.value;
-        return `M${x * width - radius} ${y * height}a${radius} ${radius} 0 1 0 ${radius * 2} 0a${radius} ${radius} 0 1 0 ${-radius * 2} 0`;
-      })
-      .join(''),
-    strokeWidth: 1.8 / zoom.value,
-  }));
-  const selectedProps = useAnimatedProps(() => ({
-    d: leds
-      .filter((point) => selected.includes(point.id))
-      .map(({ x, y }) => {
-        const radius = 10 / zoom.value;
-        return `M${x * width - radius} ${y * height}a${radius} ${radius} 0 1 0 ${radius * 2} 0a${radius} ${radius} 0 1 0 ${-radius * 2} 0`;
-      })
-      .join(''),
-    strokeWidth: 2.5 / zoom.value,
-  }));
-  const { cable, gaps, edges, gapEdges } = useMemo(() => {
+  const { edges, gapEdges, selectedLeds } = useMemo(() => {
     const byId = new Map(leds.map((point) => [point.id, point]));
-    const edges: { from: TnutPoint; to: TnutPoint; gap: boolean }[] = [];
-    let cable = '',
-      gaps = '';
+    const skips = new Map<string, number>();
+    for (const skip of wiring?.skips ?? []) {
+      skips.set(JSON.stringify([skip.from, skip.to]), skip.count);
+      skips.set(JSON.stringify([skip.to, skip.from]), skip.count);
+    }
+    const edges: Edge[] = [],
+      gapEdges: Edge[] = [];
     for (const path of wiring?.paths ?? [])
       for (let index = 1; index < path.length; index++) {
-        const a = byId.get(path[index - 1]),
-          b = byId.get(path[index]);
-        if (!a || !b) continue;
-        const isGap = Boolean(
-          wiring?.skips.some(
-            (skip) => (skip.from === a.id && skip.to === b.id) || (skip.from === b.id && skip.to === a.id),
-          ),
-        );
-        edges.push({ from: a, to: b, gap: isGap });
-        const segment = `M${a.x * width} ${a.y * height}L${b.x * width} ${b.y * height}`;
-        if (
-          wiring?.skips.some(
-            (skip) => (skip.from === a.id && skip.to === b.id) || (skip.from === b.id && skip.to === a.id),
-          )
-        )
-          gaps += segment;
-        else cable += segment;
+        const from = byId.get(path[index - 1]),
+          to = byId.get(path[index]);
+        if (!from || !to) continue;
+        const edge = { from, to, skip: skips.get(JSON.stringify([from.id, to.id])) ?? 0 };
+        edges.push(edge);
+        if (edge.skip > 0) gapEdges.push(edge);
       }
-    // Keep this predicate on the RN runtime: React Compiler hoists pure
-    // callbacks, which would turn a filter inside an animated updater into a
-    // synchronous remote-function call on the UI runtime.
-    return { cable, gaps, edges, gapEdges: edges.filter((edge) => edge.gap) };
-  }, [leds, wiring, width, height]);
-  const cableProps = useAnimatedProps(() => ({ strokeWidth: 2 / zoom.value }));
-  const arrowProps = useAnimatedProps(() => ({
-    d: edges
-      .map(({ from, to }) => {
-        const dx = (to.x - from.x) * width,
-          dy = (to.y - from.y) * height,
-          length = Math.hypot(dx, dy);
-        if (length < 12 / zoom.value) return '';
-        const x = from.x * width + dx * 0.6,
-          y = from.y * height + dy * 0.6,
-          size = 5 / zoom.value,
-          ux = dx / length,
-          uy = dy / length;
-        return `M${x - ux * size - uy * size * 0.6} ${y - uy * size + ux * size * 0.6}L${x} ${y}L${x - ux * size + uy * size * 0.6} ${y - uy * size - ux * size * 0.6}`;
-      })
-      .join(''),
-    strokeWidth: 2 / zoom.value,
+    const selection = new Set(selected);
+    return { edges, gapEdges, selectedLeds: leds.filter((point) => selection.has(point.id)) };
+  }, [leds, wiring, selected]);
+  const holeRadius = wiring ? 3 : 7;
+  const holeProps = useAnimatedProps(() => ({
+    d: circles(holes, width, height, zoom.value, panX.value, panY.value, holeRadius),
   }));
-  const gapProps = useAnimatedProps(() => ({
-    d: gapEdges
-      .map(({ from, to }) => {
-        const x = ((from.x + to.x) * width) / 2,
-          y = ((from.y + to.y) * height) / 2,
-          size = 5 / zoom.value;
-        return `M${x - size} ${y}L${x} ${y - size}L${x + size} ${y}L${x} ${y + size}Z`;
-      })
-      .join(''),
-    strokeWidth: 1.5 / zoom.value,
+  const ledProps = useAnimatedProps(() => ({ d: circles(leds, width, height, zoom.value, panX.value, panY.value, 4) }));
+  const selectedProps = useAnimatedProps(() => ({
+    d: circles(selectedLeds, width, height, zoom.value, panX.value, panY.value, 10),
   }));
+  const cableProps = useAnimatedProps(() => {
+    let path = '';
+    for (const edge of edges) {
+      if (edge.skip) continue;
+      const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
+        to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
+      if (visibleEdge(from, to, width, height)) path += `M${from.x} ${from.y}L${to.x} ${to.y}`;
+    }
+    return { d: path };
+  });
+  const gapLineProps = useAnimatedProps(() => {
+    let path = '';
+    for (const edge of gapEdges) {
+      const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
+        to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
+      if (visibleEdge(from, to, width, height)) path += `M${from.x} ${from.y}L${to.x} ${to.y}`;
+    }
+    return { d: path };
+  });
+  const arrowProps = useAnimatedProps(() => {
+    let path = '';
+    for (const edge of edges) {
+      if (edge.skip) continue;
+      const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
+        to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
+      const dx = to.x - from.x,
+        dy = to.y - from.y,
+        length = Math.hypot(dx, dy);
+      if (length < 12 || !visibleEdge(from, to, width, height)) continue;
+      const x = from.x + dx * 0.6,
+        y = from.y + dy * 0.6,
+        ux = dx / length,
+        uy = dy / length;
+      path += `M${x - ux * 5 - uy * 3} ${y - uy * 5 + ux * 3}L${x} ${y}L${x - ux * 5 + uy * 3} ${y - uy * 5 - ux * 3}`;
+    }
+    return { d: path };
+  });
+  const gapProps = useAnimatedProps(() => {
+    let path = '',
+      rendered = 0;
+    for (const edge of gapEdges) {
+      const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
+        to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
+      if (!visibleEdge(from, to, width, height)) continue;
+      const length = Math.hypot(to.x - from.x, to.y - from.y);
+      // Keep true integer LED slots. At dense zoom levels, omit overlapping dots;
+      // zooming in reveals them. The cable and stored count remain exact.
+      const spacing = length / (edge.skip + 1);
+      const radius = Math.max(0.6, Math.min(3, spacing * 0.38));
+      const stride = Math.max(1, Math.ceil(1.5 / Math.max(0.1, spacing)));
+      for (let index = 1; index <= edge.skip && rendered < 4096; index += stride) {
+        const fraction = index / (edge.skip + 1),
+          x = from.x + (to.x - from.x) * fraction,
+          y = from.y + (to.y - from.y) * fraction;
+        if (x < -3 || y < -3 || x > width + 3 || y > height + 3) continue;
+        path += circlePath(x, y, radius);
+        rendered++;
+      }
+      if (rendered >= 4096) break;
+    }
+    return { d: path };
+  });
   return (
     <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
-      <AnimatedPath d={cable} animatedProps={cableProps} fill="none" stroke={brandColors.primary} />
+      <AnimatedPath animatedProps={cableProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
+      <AnimatedPath animatedProps={gapLineProps} fill="none" stroke={brandColors.error} strokeWidth={2} />
+      <AnimatedPath animatedProps={arrowProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
+      <AnimatedPath animatedProps={gapProps} fill={brandColors.error} stroke={brandColors.onPrimary} strokeWidth={1} />
       <AnimatedPath
-        d={gaps}
-        animatedProps={cableProps}
+        animatedProps={holeProps}
         fill="none"
         stroke={brandColors.warning}
-        strokeDasharray="5 4"
+        strokeWidth={wiring ? 1 : 1.5}
+        opacity={wiring ? 0.45 : 1}
       />
-      <AnimatedPath animatedProps={arrowProps} fill="none" stroke={brandColors.primary} />
-      <AnimatedPath animatedProps={gapProps} fill={brandColors.warning} stroke={brandColors.onPrimary} />
-      <AnimatedPath animatedProps={holeProps} fill="none" stroke={brandColors.warning} />
-      <AnimatedPath animatedProps={ledProps} fill={brandColors.primary} stroke={brandColors.onPrimary} />
-      <AnimatedPath animatedProps={selectedProps} fill="none" stroke={brandColors.primary} />
+      <AnimatedPath
+        animatedProps={ledProps}
+        fill={brandColors.primary}
+        stroke={brandColors.onPrimary}
+        strokeWidth={1.8}
+      />
+      <AnimatedPath animatedProps={selectedProps} fill="none" stroke={brandColors.primary} strokeWidth={2.5} />
     </Svg>
   );
 }

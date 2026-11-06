@@ -6,7 +6,7 @@ export function CablePatternThumbnail({ direction }: { direction: CableDirection
   const { systemColors, brandColors } = useTheme();
   const horizontal = 'M20 20H80V50H20V80H80';
   const vertical = 'M20 20V80H50V20H80V80';
-  const custom = 'M20 20L50 50L80 20V80L20 80';
+  const custom = 'M50 20H20L50 50L80 20V50V80H50L20 50V80';
   return (
     <Svg width="100%" height="100%" viewBox="0 0 100 100">
       <Rect width={100} height={100} rx={8} fill={systemColors.tertiaryGroupedBackground} />

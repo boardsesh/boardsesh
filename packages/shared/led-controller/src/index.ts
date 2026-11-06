@@ -3,6 +3,7 @@ import { wledDriver } from './wled';
 
 export * from './types';
 export { normalizeControllerUrl } from './url';
+export { createLedPreviewSession, type LedPreviewSession } from './preview';
 export { createWledDriver, wledDriver, type WledDriverOptions } from './wled';
 
 const drivers = { wled: wledDriver } satisfies Record<string, LedControllerDriver>;

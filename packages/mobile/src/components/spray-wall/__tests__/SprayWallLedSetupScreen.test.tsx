@@ -53,7 +53,20 @@ const backend = vi.hoisted(() => ({
 }));
 const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ back: controls.back, push: controls.push }) }));
+vi.mock('expo-router', () => ({
+  useRouter: () => ({ back: controls.back, push: controls.push }),
+  useIsFocused: () => true,
+}));
+const preview = vi.hoisted(() => ({
+  available: true,
+  state: 'idle',
+  error: null,
+  show: vi.fn(),
+  stop: vi.fn(),
+  lightAll: vi.fn(),
+  chase: vi.fn(),
+}));
+vi.mock('../../../lib/spray/use-spray-led-preview', () => ({ useSprayLedPreview: () => preview }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 56 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => backend.client }));
@@ -97,6 +110,9 @@ vi.mock('react-native', () => ({
   Keyboard: { dismiss: vi.fn() },
   TextInput: { State: { currentlyFocusedInput: () => undefined } },
   Platform: { OS: 'android' },
+  Modal: ({ visible, children }: { visible: boolean; children?: ReactNode }) =>
+    visible ? createElement('div', { role: 'dialog' }, children) : null,
+  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   ScrollView: ({
     children,
@@ -204,19 +220,21 @@ vi.mock('../SprayCornerMarker', () => ({
   },
 }));
 vi.mock('../CablePatternThumbnail', () => ({ CablePatternThumbnail: () => null }));
-vi.mock('../SpraySetupOverlay', () => ({ SpraySetupOverlay: () => null }));
+vi.mock('../SpraySetupOverlay', () => ({ SpraySetupOverlay: () => null, SPRAY_CABLE_COLOR: '#0891B2' }));
 vi.mock('../SprayPhotoStage', () => ({
   SprayPhotoStage: ({
     canvas,
     width,
+    overlayTools,
   }: {
+    overlayTools?: ReactNode;
     canvas: Omit<SprayPhotoCanvasProps, 'maxWidth' | 'maxHeight'>;
     width: number;
   }) => {
     controls.canvas = canvas;
-    const overlay = canvas.renderOverlay?.(500, 700, {
-      value: 1,
-    } as import('react-native-reanimated').SharedValue<number>) as ReactElement<{
+    const zoom = { value: 1 } as import('react-native-reanimated').SharedValue<number>;
+    const pan = { value: 0 } as import('react-native-reanimated').SharedValue<number>;
+    const overlay = canvas.renderOverlay?.(500, 700, zoom, pan, pan) as ReactElement<{
       holes: TnutPoint[];
       leds?: LedPosition[];
     }>;
@@ -228,11 +246,15 @@ vi.mock('../SprayPhotoStage', () => ({
       maxHeight: width * 1.4,
       onTap: canvas.onTap ?? (() => {}),
     };
-    return createElement('div', {
-      'data-testid': 'hole-editor',
-      'data-count': overlay.props.holes.length,
-      'data-led-count': overlay.props.leds?.length ?? 0,
-    });
+    return createElement(
+      'div',
+      {
+        'data-testid': 'hole-editor',
+        'data-count': overlay.props.holes.length,
+        'data-led-count': overlay.props.leds?.length ?? 0,
+      },
+      overlayTools,
+    );
   },
 }));
 
@@ -271,9 +293,11 @@ function advanceToWiring() {
   next();
   next();
   next();
+  next();
 }
 function finish() {
   advanceToWiring();
+  next();
   next();
 }
 function back() {
@@ -322,7 +346,7 @@ describe('SprayWallLedSetupScreen', () => {
     expect(controls.editor?.holes).toEqual(savedLayout().holes);
   });
 
-  it('edits LED positions, draws a custom cable, cuts/reconnects it and inserts skipped indices', async () => {
+  it('starts tools inactive, extends one cable, and tests with physical indices including skips', async () => {
     const holes = [
       { x: 0.2, y: 0.3 },
       { x: 0.5, y: 0.3 },
@@ -336,43 +360,63 @@ describe('SprayWallLedSetupScreen', () => {
     await screen.findByText('sprayLedSetup.ledHint');
     fireEvent.click(radio('ledCenter'));
     next();
-    expect(screen.getByText('sprayLedSetup.ledPositionsTitle')).toBeTruthy();
-    fireEvent.click(button('remove'));
-    tap({ x: 0.8, y: 0.3 });
-    fireEvent.click(button('add'));
-    tap({ x: 0.8, y: 0.6 });
+    expect(controls.canvas?.mode).toBe('pan');
+    tap({ x: 0.1, y: 0.8 });
+    expect(screen.getByTestId('hole-editor').getAttribute('data-led-count')).toBe('3');
+    fireEvent.click(button('movePoint'));
+    act(() => controls.canvas?.onMove?.({ x: 0.8, y: 0.3 }, { x: 0.8, y: 0.6 }, 500, 700));
     next();
     fireEvent.click(radio('customCable'));
     next();
     expect(screen.queryByText('sprayLedSetup.cableStartTitle')).toBeNull();
+    expect(field('initialSkipLabel').value).toBe('0');
+    fireEvent.change(field('initialSkipLabel'), { target: { value: '2' } });
+    next();
+    expect(controls.canvas?.mode).toBe('pan');
+    expect(screen.queryByRole('button', { name: 'sprayLedSetup.cutCable' })).toBeNull();
+    fireEvent.click(button('drawCable'));
+    tap({ x: 0.2, y: 0.3 });
     act(() =>
       controls.canvas?.onTrace?.(
         [
-          { x: 0.2, y: 0.3 },
           { x: 0.5, y: 0.3 },
+          { x: 0.8, y: 0.6 },
         ],
         0.001,
       ),
     );
     fireEvent.click(button('selectLeds'));
+    const checkbox = () => screen.getByRole('checkbox', { name: 'sprayLedSetup.lightSelected' });
+    expect(checkbox().getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(checkbox());
     tap({ x: 0.2, y: 0.3 });
     tap({ x: 0.5, y: 0.3 });
-    expect((button('cutCable') as HTMLButtonElement).disabled).toBe(false);
+    expect(preview.show).toHaveBeenLastCalledWith([2, 3]);
+    expect(checkbox().getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('textbox', { name: 'sprayLedSetup.skipCount' })).toBeNull();
     fireEvent.click(button('cutCable'));
     fireEvent.click(button('connectCable'));
     fireEvent.click(button('insertSkips'));
-    back();
+    fireEvent.change(field('skipCount'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'sprayLed.confirm' }));
     next();
-    expect((button('cutCable') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('sprayLedSetup.lightingTitle')).toBeTruthy();
+    fireEvent.click(button('lightingChase'));
+    expect(preview.chase).toHaveBeenLastCalledWith([2, 5, 6]);
+    back();
+    fireEvent.click(button('selectLeds'));
+    expect(checkbox().getAttribute('aria-checked')).toBe('false');
+    next();
     next();
     await waitFor(() => expect(controls.back).toHaveBeenCalledOnce());
     const saved = storage.save.mock.calls.at(-1)?.[1] as TnutLayout;
     expect(saved.holes).toEqual(holes);
-    expect(saved.ledPositions).toHaveLength(3);
     expect(saved.ledPositions).toContainEqual(expect.objectContaining({ x: 0.8, y: 0.6 }));
     expect(saved.wiring?.direction).toBe('custom');
-    expect(saved.wiring?.paths[0]).toHaveLength(2);
-    expect(saved.wiring?.skips[0].count).toBe(1);
+    expect(saved.wiring?.initialSkip).toBe(2);
+    expect(saved.wiring?.paths).toHaveLength(1);
+    expect(saved.wiring?.paths[0]).toHaveLength(3);
+    expect(saved.wiring?.skips[0].count).toBe(2);
   });
 
   it('uses the full width and keeps fullscreen edits in canonical coordinates across reopen and owner cleanup', async () => {
@@ -524,6 +568,9 @@ describe('SprayWallLedSetupScreen', () => {
     expect(controls.header?.trailing.disabled).toBe(true);
     next();
     expect(storage.save).not.toHaveBeenCalled();
+    tap({ x: 0.2, y: 0.3 });
+    expectHoles(0);
+    fireEvent.click(button('add'));
     tap({ x: 0.2, y: 0.3 });
     tap({ x: 0.2, y: 0.3 });
     expectHoles(1);
@@ -716,7 +763,10 @@ describe('SprayWallLedSetupScreen', () => {
       fireEvent.click(radio(pattern));
       next();
       if (pattern === 'grid') next();
-      else tap({ x: 0.5, y: 0.5 });
+      else {
+        fireEvent.click(button('add'));
+        tap({ x: 0.5, y: 0.5 });
+      }
       next();
       await screen.findByText('sprayLedSetup.ledHint');
       expect(screen.queryByRole('radio', { name: 'sprayLedSetup.ledAlternating' })).toBeNull();
@@ -738,6 +788,7 @@ describe('SprayWallLedSetupScreen', () => {
     fireEvent.click(radio('ledSides'));
     advanceToWiring();
     expect(screen.getByText('sprayLedSetup.wiringTitle')).toBeTruthy();
+    next();
     storage.save.mockRejectedValueOnce(new Error('Disk full'));
     next();
     await screen.findByText('sprayLedSetup.saveFailed');
@@ -778,6 +829,7 @@ describe('SprayWallLedSetupScreen', () => {
     expect(controls.alert).toHaveBeenCalledOnce();
     fireEvent.click(radio('custom'));
     next();
+    fireEvent.click(button('add'));
     tap({ x: 0.5, y: 0.5 });
     next();
     await screen.findByText('sprayLedSetup.ledHint');

@@ -101,12 +101,17 @@ export {
 export { migrateTnutLayoutColumns } from './tnut-layout';
 export {
   MAX_LED_POSITIONS,
+  MAX_WIRING_SKIP,
+  MAX_WIRING_TOTAL_SKIPS,
   generateLedPositions,
   createWiring,
   connectWiring,
+  extendWiring,
   cutWiring,
   setWiringSkip,
+  setWiringInitialSkip,
   assignLedIndices,
+  rowMajorLedIndices,
   traceLedPath,
   type LedPosition,
   type TnutWiring,

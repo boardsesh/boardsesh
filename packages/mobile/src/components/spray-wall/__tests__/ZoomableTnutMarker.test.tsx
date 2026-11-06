@@ -13,6 +13,7 @@ type Event = {
   scale: number;
   numberOfTouches: number;
   numberOfPointers: number;
+  changedTouches: { x: number; y: number }[];
   x: number;
   y: number;
 };
@@ -60,7 +61,15 @@ vi.mock('react-native-reanimated', async () => {
         ),
       createAnimatedComponent: (component: unknown) => component,
     },
-    useSharedValue: (initial: unknown) => useRef({ value: initial }).current,
+    useSharedValue: (initial: unknown) => {
+      const state = useRef({
+        value: initial,
+        modify: (fn: (value: unknown) => unknown) => {
+          state.current.value = fn(state.current.value);
+        },
+      });
+      return state.current;
+    },
     useAnimatedStyle: (compute: () => Record<string, unknown>) => {
       const entry = useRef<{ compute: () => Record<string, unknown> } | null>(null);
       if (!entry.current) {
@@ -159,6 +168,7 @@ const event = (overrides: Partial<Event> = {}): Event => ({
   scale: 1,
   numberOfTouches: 1,
   numberOfPointers: 1,
+  changedTouches: [{ x: 150, y: 225 }],
   x: 150,
   y: 225,
   ...overrides,
@@ -213,9 +223,15 @@ describe('SprayPhotoCanvas', () => {
       photoUri: 'file:///cached-wall.jpg',
       tile: { width: 300, height: 450 },
     });
-    expect(renderOverlay).toHaveBeenCalledWith(300, 450, expect.objectContaining({ value: 1 }));
+    expect(renderOverlay).toHaveBeenCalledWith(
+      300,
+      450,
+      expect.objectContaining({ value: 1 }),
+      expect.objectContaining({ value: 0 }),
+      expect.objectContaining({ value: 0 }),
+    );
     pinchTo(2);
-    expect(renderOverlay.mock.calls[0][2]).toEqual({ value: 2 });
+    expect(renderOverlay.mock.calls[0][2].value).toBe(2);
   });
 
   it('inverts zoom and pan for taps and keeps screen-distance hit tolerance', () => {
@@ -238,7 +254,7 @@ describe('SprayPhotoCanvas', () => {
     render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'draw', onTrace, onInteractionChange: lock })));
     pinchTo(2);
     const pan = runtime.gestures[1];
-    expect(fire(pan, 'onTouchesMove').fail).toHaveBeenCalledOnce();
+    expect(pan.options.requireExternalGestureToFail).toHaveLength(1);
     const draw = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
     fire(draw, 'onStart', { x: 90, y: 135 });
     const bridges = runtime.bridges;
@@ -271,6 +287,52 @@ describe('SprayPhotoCanvas', () => {
     fire(tap, 'onTouchesDown', { numberOfTouches: 1 });
     end(tap);
     expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.5, y: 0.5 }, 600, 900);
+  });
+
+  it('moves a marker in normalized coordinates after zoom and pan, committing only at release', () => {
+    const onMove = vi.fn();
+    render(
+      createElement(
+        SprayPhotoCanvas,
+        canvasProps({ mode: 'move', onMove, dragPoints: [{ x: 0.4, y: 0.4 }], draftColor: '#0891B2' }),
+      ),
+    );
+    pinchTo(2);
+    const pan = runtime.gestures[1];
+    fire(pan, 'onStart');
+    fire(pan, 'onUpdate', { translationX: 60, translationY: 90 });
+    fire(pan, 'onFinalize');
+    const move = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    expect(fire(move, 'onTouchesDown', { changedTouches: [{ x: 150, y: 225 }] }).fail).not.toHaveBeenCalled();
+    fire(move, 'onStart', { x: 156, y: 231 });
+    const bridges = runtime.bridges;
+    fire(move, 'onUpdate', { x: 270, y: 405 });
+    expect(runtime.bridges).toBe(bridges);
+    expect(onMove).not.toHaveBeenCalled();
+    expect(runtime.shapes[0].compute().d).toBe('M264 405a6 6 0 1 0 12 0a6 6 0 1 0 -12 0');
+    end(move, { x: 270, y: 405 });
+    expect(onMove).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, { x: 0.6, y: 0.6 }, 600, 900);
+    fire(move, 'onFinalize');
+    expect(runtime.shapes[0].compute().d).toBe('');
+  });
+
+  it.each(['move', 'draw'] as const)('gives empty-space %s drags to the photo pan', (mode) => {
+    const onMove = vi.fn(),
+      onTrace = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode, onMove, onTrace, dragPoints: [{ x: 0.5, y: 0.5 }] })));
+    pinchTo(2);
+    const pan = runtime.gestures[1];
+    const edit = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    expect(pan.options.requireExternalGestureToFail).toEqual(edit.options.withRef);
+    expect(fire(edit, 'onTouchesDown', { changedTouches: [{ x: 30, y: 45 }] }).fail).toHaveBeenCalledOnce();
+    fire(edit, 'onFinalize');
+    expect(fire(pan, 'onTouchesMove').activate).toHaveBeenCalledOnce();
+    fire(pan, 'onStart');
+    fire(pan, 'onUpdate', { translationX: 10, translationY: 15 });
+    fire(pan, 'onFinalize');
+    expect(runtime.styles[0].compute()).toEqual({ transform: [{ translateX: 10 }, { translateY: 15 }, { scale: 2 }] });
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onTrace).not.toHaveBeenCalled();
   });
 
   it('cancels a cable trace interrupted by pinching and balances overlapping scroll locks', () => {
@@ -373,7 +435,8 @@ describe('ZoomableTnutMarker', () => {
     fire(topLeft, 'onUpdate', { translationX: 60, translationY: 90 });
     expect(runtime.bridges).toBe(bridges);
     expect(onChange).not.toHaveBeenCalled();
-    expect(runtime.shapes[0].compute().d).toContain('M120 180');
+    expect(runtime.shapes[0].compute().d).toContain('M150 225');
+    expect(runtime.shapes[1].compute().d).toContain('M146.00 225.00a4 4');
     fire(topLeft, 'onFinalize');
     expect(onChange).toHaveBeenCalledExactlyOnceWith([[400, 600], ...quad.slice(1)]);
   });
