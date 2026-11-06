@@ -621,6 +621,21 @@ single secondary subtitle in the existing `SheetTopBar`, not an action or a sepa
 The body starts with Climb name, without an introductory explanation block. No Search, Show or
 Done button is needed to commit the filters.
 
+**Android Filters uses one native Compose tree.** Its Material modal sheet contains
+its own pinned header, grouped form and horizontal grade rail. It opens partially
+expanded and lets Compose hand vertical scroll gestures to the sheet. Do not wrap
+this form in the community sheet's React Native host: that separates the native
+scroll owners. The shared filter model and live-selection handlers remain in
+`ClimbFilterSheet`; iOS and browser presentation stay unchanged.
+
+The Expo UI lazy-list bridge patch supplies scroll snapshots, initial position
+restoration and native centering. Picker navigation snapshots the form's section
+key and the grade rail position before suspension, then restores them on return.
+Grade tap/range rules are shared with the React Native rail; Android uses its
+system long-press timing. Centering stops when the user touches the rail. These
+native bridge additions require a matching app binary; an old cached client cannot
+verify them.
+
 **Filter sheet parts are shared.** The sheet is built from the parts in
 `src/components/filter-sheet/`: `FilterSheetSection` (headline group), `FilterLabelRow` (muted
 sub-label with an optional pin and description; the iOS SwiftUI Filters form has no pins, and which

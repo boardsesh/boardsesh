@@ -28,9 +28,9 @@ index eb34427..28b0aa0 100644
 +// handler this helper created, so releasing one owner keeps the others tappable.
 +// A React-owned handler has no lease count and must never be detached here.
 +static char ExpoUITouchHandlerLeaseCountKey;
- 
+
  @implementation ExpoUITouchHandlerHelper
- 
+
  + (nullable UIGestureRecognizer *)createAndAttachTouchHandlerForView:(UIView *)view {
    for (UIGestureRecognizer *recognizer in [view.gestureRecognizers copy]) {
      if ([recognizer isKindOfClass:[RCTSurfaceTouchHandler class]]) {
@@ -49,7 +49,7 @@ index eb34427..28b0aa0 100644
    [touchHandler attachToView:view];
    return touchHandler;
  }
- 
+
  + (void)detachTouchHandler:(UIGestureRecognizer *)touchHandler fromView:(UIView *)view {
 -  if ([touchHandler isKindOfClass:[RCTSurfaceTouchHandler class]]) {
 -    [(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];
@@ -68,16 +68,16 @@ index eb34427..28b0aa0 100644
 +  objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 +  [(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];
  }
- 
+
  @end
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
 index 419edef..ec73805 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,26 @@ import { parseSnapPoint } from './types';
- 
+
  export { useBottomSheet } from './context';
- 
+
 +// `expand()` / `partialExpand()` / `hide()` are native AsyncFunctions on
 +// `ModalBottomSheetView`. Their handlers exist only while Compose content is
 +// registered. A lifecycle race (already dismissed, unmounted, or backgrounded
@@ -103,7 +103,7 @@ index 419edef..ec73805 100644
  ): string | undefined {
 @@ -125,13 +145,26 @@ export function BottomSheet(props: BottomSheetProps) {
    }, [fireCloseCallbacks]);
- 
+
    const methods: BottomSheetMethods = useMemo(() => {
 -    const snapToIndex = (index: number) => {
 -      if (index === -1) {
@@ -145,7 +145,7 @@ index 419edef..ec73805 100644
        }
        onChangeRef.current?.(clampedIndex);
      };
- 
+
 -    const close = () => {
 -      sheetRef.current?.hide().then(() => {
 -        setIsOpen(false);
@@ -154,7 +154,7 @@ index 419edef..ec73805 100644
 -      });
 -    };
 +    const close = hideSwallowingMissingNativeHandler;
- 
+
      return {
        snapToIndex,
 diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
@@ -175,7 +175,7 @@ index ee198cf..4d108d7 100644
    onDismissRef.current = onDismiss;
 +  const onFullyDismissedRef = useRef(onFullyDismissed);
 +  onFullyDismissedRef.current = onFullyDismissed;
- 
+
    const detents = useMemo<PresentationDetent[]>(() => {
      if (!snapPointsProp || snapPointsProp.length === 0) return ['medium', 'large'];
 @@ -126,6 +129,10 @@ export function BottomSheet(props: BottomSheetProps) {
@@ -187,7 +187,7 @@ index ee198cf..4d108d7 100644
 +    // settle window before the native post-animation signal resolves it.
 +    onFullyDismissedRef.current?.();
    }, []);
- 
+
    // Sync with external index prop changes
 diff --git a/src/community/bottom-sheet/types.ts b/src/community/bottom-sheet/types.ts
 index 51326fb..7674ed7 100644
@@ -196,7 +196,7 @@ index 51326fb..7674ed7 100644
 @@ -178,6 +178,12 @@ export interface BottomSheetProps {
     */
    onDismiss?: () => void;
- 
+
 +  /**
 +   * Callback fired after the native dismiss animation has fully settled.
 +   * iOS only: Android uses the Boardsesh coordinator's bounded fallback timer.
@@ -204,5 +204,479 @@ index 51326fb..7674ed7 100644
 +  onFullyDismissed?: () => void;
 +
    // --- Behavior ---
- 
+
    /**
+diff --git a/android/src/main/java/expo/modules/ui/LazyRowView.kt b/android/src/main/java/expo/modules/ui/LazyRowView.kt
+--- a/android/src/main/java/expo/modules/ui/LazyRowView.kt
++++ b/android/src/main/java/expo/modules/ui/LazyRowView.kt
+@@ -28,6 +28,7 @@
+   val horizontalArrangement: MutableState<HorizontalArrangement?> = mutableStateOf(null),
+   val verticalAlignment: MutableState<VerticalAlignment?> = mutableStateOf(null),
+   val contentPadding: MutableState<ContentPadding?> = mutableStateOf(null),
++  val initialScrollPosition: MutableState<LazyListScrollPosition?> = mutableStateOf(null),
+   val modifiers: MutableState<ModifierList> = mutableStateOf(emptyList())
+ ) : ComposeProps
+
+@@ -35,6 +36,7 @@
+ class LazyRowView(context: Context, appContext: AppContext) :
+   ExpoComposeView<LazyRowProps>(context, appContext) {
+   override val props = LazyRowProps()
++  val scrollController = LazyListScrollController()
+
+   private val composableChildCount: MutableIntState = mutableIntStateOf(0)
+
+@@ -51,6 +53,7 @@
+   @Composable
+   override fun ComposableScope.Content() {
+     recomposeScope = currentRecomposeScope
++    val listState = rememberControlledLazyListState(scrollController, props.initialScrollPosition.value)
+     val horizontalArrangement = props.horizontalArrangement.value?.toComposeArrangement() ?: Arrangement.Start
+
+     val verticalAlignment = props.verticalAlignment.value?.toComposeAlignment() ?: Alignment.Top
+@@ -58,8 +61,10 @@
+     val padding = props.contentPadding.value
+
+     LazyRow(
++      state = listState,
+       modifier = ModifierRegistry.applyModifiers(props.modifiers.value, appContext, this@Content, globalEventDispatcher)
+-        .lazyRecycledItemsCrossAxis(this@LazyRowView, isVertical = false),
++        .lazyRecycledItemsCrossAxis(this@LazyRowView, isVertical = false)
++        .then(scrollController.cancelScrollOnTouch()),
+       horizontalArrangement = horizontalArrangement,
+       verticalAlignment = verticalAlignment,
+       contentPadding = PaddingValues(
+diff --git a/android/src/main/java/expo/modules/ui/LazyColumnView.kt b/android/src/main/java/expo/modules/ui/LazyColumnView.kt
+--- a/android/src/main/java/expo/modules/ui/LazyColumnView.kt
++++ b/android/src/main/java/expo/modules/ui/LazyColumnView.kt
+@@ -39,6 +39,7 @@
+   val verticalArrangement: MutableState<VerticalArrangement?> = mutableStateOf(null),
+   val horizontalAlignment: MutableState<HorizontalAlignment?> = mutableStateOf(null),
+   val contentPadding: MutableState<ContentPadding?> = mutableStateOf(null),
++  val initialScrollPosition: MutableState<LazyListScrollPosition?> = mutableStateOf(null),
+   val modifiers: MutableState<ModifierList> = mutableStateOf(emptyList())
+ ) : ComposeProps
+
+@@ -46,6 +47,7 @@
+ class LazyColumnView(context: Context, appContext: AppContext) :
+   ExpoComposeView<LazyColumnProps>(context, appContext) {
+   override val props = LazyColumnProps()
++  val scrollController = LazyListScrollController()
+
+   private val composableChildCount: MutableIntState = mutableIntStateOf(0)
+
+@@ -62,6 +64,7 @@
+   @Composable
+   override fun ComposableScope.Content() {
+     recomposeScope = currentRecomposeScope
++    val listState = rememberControlledLazyListState(scrollController, props.initialScrollPosition.value)
+     val verticalArrangement = props.verticalArrangement.value?.toComposeArrangement() ?: Arrangement.Top
+
+     val horizontalAlignment = props.horizontalAlignment.value?.toComposeAlignment() ?: Alignment.Start
+@@ -69,8 +72,10 @@
+     val padding = props.contentPadding.value
+
+     LazyColumn(
++      state = listState,
+       modifier = ModifierRegistry.applyModifiers(props.modifiers.value, appContext, this@Content, globalEventDispatcher)
+-        .lazyRecycledItemsCrossAxis(this@LazyColumnView, isVertical = true),
++        .lazyRecycledItemsCrossAxis(this@LazyColumnView, isVertical = true)
++        .then(scrollController.cancelScrollOnTouch()),
+       verticalArrangement = verticalArrangement,
+       horizontalAlignment = horizontalAlignment,
+       contentPadding = PaddingValues(
+diff --git a/android/src/main/java/expo/modules/ui/ExpoUIModule.kt b/android/src/main/java/expo/modules/ui/ExpoUIModule.kt
+--- a/android/src/main/java/expo/modules/ui/ExpoUIModule.kt
++++ b/android/src/main/java/expo/modules/ui/ExpoUIModule.kt
+@@ -9,6 +9,7 @@
+ import androidx.compose.material3.ToggleButtonDefaults
+ import androidx.compose.ui.graphics.toArgb
+ import expo.modules.kotlin.exception.Exceptions
++import expo.modules.kotlin.functions.Coroutine
+ import expo.modules.kotlin.modules.Module
+ import expo.modules.kotlin.modules.ModuleDefinition
+ import expo.modules.ui.colors.MaterialColorsOptions
+@@ -208,8 +209,28 @@
+     View(ImageView::class) {
+       Events("onLoad", "onError")
+     }
+-    View(LazyColumnView::class)
+-    View(LazyRowView::class)
++    View(LazyColumnView::class) {
++      AsyncFunction("getScrollPosition") Coroutine { view: LazyColumnView ->
++        view.scrollController.getScrollPosition(view.props.initialScrollPosition.value)
++      }
++      AsyncFunction("scrollToItem") Coroutine { view: LazyColumnView, request: LazyListScrollRequest ->
++        view.scrollController.scrollToItem(request)
++      }
++      OnViewDestroys { view: LazyColumnView ->
++        view.scrollController.destroy()
++      }
++    }
++    View(LazyRowView::class) {
++      AsyncFunction("getScrollPosition") Coroutine { view: LazyRowView ->
++        view.scrollController.getScrollPosition(view.props.initialScrollPosition.value)
++      }
++      AsyncFunction("scrollToItem") Coroutine { view: LazyRowView, request: LazyListScrollRequest ->
++        view.scrollController.scrollToItem(request)
++      }
++      OnViewDestroys { view: LazyRowView ->
++        view.scrollController.destroy()
++      }
++    }
+     View(LazyItemsView::class) {
+       Events("onWindowChange")
+
+diff --git a/android/src/main/java/expo/modules/ui/ModifierRegistry.kt b/android/src/main/java/expo/modules/ui/ModifierRegistry.kt
+--- a/android/src/main/java/expo/modules/ui/ModifierRegistry.kt
++++ b/android/src/main/java/expo/modules/ui/ModifierRegistry.kt
+@@ -71,6 +71,7 @@
+ import androidx.compose.ui.semantics.contentDescription
+ import androidx.compose.ui.semantics.contentType
+ import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.semantics.selected
+ import androidx.compose.ui.unit.DpOffset
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.zIndex
+@@ -738,12 +739,14 @@
+       val params = recordFromMap<SemanticsParams>(map, appContext)
+       val type = params.contentType.toContentType()
+       val description = params.contentDescription
+-      if (type == null && description == null) {
++      val isSelected = params.selected
++      if (type == null && description == null && isSelected == null) {
+         Modifier
+       } else {
+         Modifier.semantics {
+           type?.let { contentType = it }
+           description?.let { contentDescription = it }
++          isSelected?.let { selected = it }
+         }
+       }
+     }
+diff --git a/android/src/main/java/expo/modules/ui/SemanticsModifier.kt b/android/src/main/java/expo/modules/ui/SemanticsModifier.kt
+--- a/android/src/main/java/expo/modules/ui/SemanticsModifier.kt
++++ b/android/src/main/java/expo/modules/ui/SemanticsModifier.kt
+@@ -8,7 +8,8 @@
+ @OptimizedRecord
+ internal data class SemanticsParams(
+   @Field val contentType: String? = null,
+-  @Field val contentDescription: String? = null
++  @Field val contentDescription: String? = null,
++  @Field val selected: Boolean? = null
+ ) : Record
+
+ internal fun String?.toContentType(): ContentType? = when (this) {
+diff --git a/src/jetpack-compose/LazyRow/index.tsx b/src/jetpack-compose/LazyRow/index.tsx
+--- a/src/jetpack-compose/LazyRow/index.tsx
++++ b/src/jetpack-compose/LazyRow/index.tsx
+@@ -1,13 +1,19 @@
+ import { requireNativeView } from 'expo';
+
+ import type { ExpoModifier } from '../../types';
+-import { type ContentPadding } from '../LazyColumn';
++import { type ContentPadding, type LazyListRef, type LazyListScrollPosition } from '../LazyColumn';
+ import { createLazyItems } from '../LazyItems';
+ import { createViewModifierEventListener } from '../modifiers/utils';
+
+ export { LazyItems, type LazyItemsProps } from '../LazyItems';
+
++export type LazyRowRef = LazyListRef;
++
+ export interface LazyRowProps {
++  /** Android-only native scroll methods. */
++  ref?: import('react').Ref<LazyListRef>;
++  /** Android-only position restored on the native list's first composition. */
++  initialScrollPosition?: LazyListScrollPosition;
+   /**
+    * The content to display inside the lazy row.
+    */
+diff --git a/src/jetpack-compose/LazyColumn/index.tsx b/src/jetpack-compose/LazyColumn/index.tsx
+--- a/src/jetpack-compose/LazyColumn/index.tsx
++++ b/src/jetpack-compose/LazyColumn/index.tsx
+@@ -28,7 +28,21 @@
+   bottom?: number;
+ };
+
++/** Android lazy-list position, with the native scroll offset expressed in dp. */
++export type LazyListScrollPosition = { index: number; offsetDp: number };
++/** Request ids increase for each list instance; obsolete requests are ignored. */
++export type LazyListScrollRequest = { index: number; alignment: 'start' | 'center'; requestId: number; allowAfterInteraction?: boolean };
++export type LazyListRef = {
++  getScrollPosition: () => Promise<LazyListScrollPosition>;
++  scrollToItem: (request: LazyListScrollRequest) => Promise<void>;
++};
++export type LazyColumnRef = LazyListRef;
++
+ export interface LazyColumnProps {
++  /** Android-only native scroll methods. */
++  ref?: import('react').Ref<LazyListRef>;
++  /** Android-only position restored on the native list's first composition. */
++  initialScrollPosition?: LazyListScrollPosition;
+   /**
+    * The content to display inside the lazy column.
+    */
+diff --git a/build/jetpack-compose/LazyRow/index.d.ts b/build/jetpack-compose/LazyRow/index.d.ts
+--- a/build/jetpack-compose/LazyRow/index.d.ts
++++ b/build/jetpack-compose/LazyRow/index.d.ts
+@@ -1,7 +1,13 @@
+ import type { ExpoModifier } from '../../types';
+-import { type ContentPadding } from '../LazyColumn';
++import { type ContentPadding, type LazyListRef, type LazyListScrollPosition } from '../LazyColumn';
+ export { LazyItems, type LazyItemsProps } from '../LazyItems';
++export type LazyRowRef = LazyListRef;
++
+ export interface LazyRowProps {
++  /** Android-only native scroll methods. */
++  ref?: import('react').Ref<LazyListRef>;
++  /** Android-only position restored on the native list's first composition. */
++  initialScrollPosition?: LazyListScrollPosition;
+     /**
+      * The content to display inside the lazy row.
+      */
+diff --git a/build/jetpack-compose/LazyColumn/index.d.ts b/build/jetpack-compose/LazyColumn/index.d.ts
+--- a/build/jetpack-compose/LazyColumn/index.d.ts
++++ b/build/jetpack-compose/LazyColumn/index.d.ts
+@@ -21,7 +21,21 @@
+      */
+     bottom?: number;
+ };
++/** Android lazy-list position, with the native scroll offset expressed in dp. */
++export type LazyListScrollPosition = { index: number; offsetDp: number };
++/** Request ids increase for each list instance; obsolete requests are ignored. */
++export type LazyListScrollRequest = { index: number; alignment: 'start' | 'center'; requestId: number; allowAfterInteraction?: boolean };
++export type LazyListRef = {
++  getScrollPosition: () => Promise<LazyListScrollPosition>;
++  scrollToItem: (request: LazyListScrollRequest) => Promise<void>;
++};
++export type LazyColumnRef = LazyListRef;
++
+ export interface LazyColumnProps {
++  /** Android-only native scroll methods. */
++  ref?: import('react').Ref<LazyListRef>;
++  /** Android-only position restored on the native list's first composition. */
++  initialScrollPosition?: LazyListScrollPosition;
+     /**
+      * The content to display inside the lazy column.
+      */
+diff --git a/src/jetpack-compose/modifiers/index.ts b/src/jetpack-compose/modifiers/index.ts
+--- a/src/jetpack-compose/modifiers/index.ts
++++ b/src/jetpack-compose/modifiers/index.ts
+@@ -488,6 +488,8 @@
+    * content does not read well aloud, as with an abbreviation or a glyph.
+    */
+   contentDescription?: string;
++  /** Whether TalkBack announces this item as selected. */
++  selected?: boolean;
+ };
+
+ /**
+diff --git a/build/jetpack-compose/modifiers/index.d.ts b/build/jetpack-compose/modifiers/index.d.ts
+--- a/build/jetpack-compose/modifiers/index.d.ts
++++ b/build/jetpack-compose/modifiers/index.d.ts
+@@ -344,6 +344,8 @@
+      * content does not read well aloud, as with an abbreviation or a glyph.
+      */
+     contentDescription?: string;
++  /** Whether TalkBack announces this item as selected. */
++  selected?: boolean;
+ };
+ /**
+  * Applies semantic properties. Wraps `Modifier.semantics { ... }`.
+diff --git a/android/src/main/java/expo/modules/ui/LazyListScrollController.kt b/android/src/main/java/expo/modules/ui/LazyListScrollController.kt
+new file mode 100644
+--- /dev/null
++++ b/android/src/main/java/expo/modules/ui/LazyListScrollController.kt
+@@ -0,0 +1,193 @@
++package expo.modules.ui
++
++import androidx.compose.foundation.gestures.awaitEachGesture
++import androidx.compose.foundation.gestures.awaitFirstDown
++import androidx.compose.foundation.gestures.scrollBy
++import androidx.compose.foundation.lazy.LazyListState
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.SideEffect
++import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.runtime.snapshotFlow
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.input.pointer.PointerEventPass
++import androidx.compose.ui.input.pointer.pointerInput
++import androidx.compose.ui.platform.LocalDensity
++import androidx.compose.ui.unit.Density
++import expo.modules.kotlin.records.Field
++import expo.modules.kotlin.records.Record
++import expo.modules.kotlin.types.OptimizedRecord
++import kotlinx.coroutines.CoroutineStart
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.Job
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++import kotlinx.coroutines.withTimeoutOrNull
++import kotlin.math.roundToInt
++
++@OptimizedRecord
++data class LazyListScrollPosition(
++  @Field val index: Int = 0,
++  @Field val offsetDp: Double = 0.0
++) : Record
++
++@OptimizedRecord
++data class LazyListScrollRequest(
++  @Field val index: Int = 0,
++  @Field val alignment: String = "start",
++  @Field val requestId: Int = 0,
++  @Field val allowAfterInteraction: Boolean = false
++) : Record
++
++// A bounded layout wait avoids leaving a JS promise pending if a sheet disappears
++// before its lazy list is measured. Touches cancel native work without a JS round trip.
++private const val LAZY_LIST_LAYOUT_TIMEOUT_MS = 2000L
++
++class LazyListScrollController {
++  private data class Binding(
++    val state: LazyListState,
++    val scope: CoroutineScope,
++    val density: Density
++  )
++
++  private val binding = MutableStateFlow<Binding?>(null)
++  // A section can be virtualized by its parent LazyColumn while this native
++  // child view remains mounted. Its scroll state belongs to the view, not that
++  // temporary composition, and is still readable before a picker handoff.
++  private var retainedState: LazyListState? = null
++  private var densityScale = 1f
++
++  internal fun obtainState(initialPosition: LazyListScrollPosition?, density: Density): LazyListState {
++    retainedState?.let { return it }
++    densityScale = density.density
++    val initialOffsetDp = initialPosition?.offsetDp?.takeIf { it.isFinite() && it >= 0 } ?: 0.0
++    return LazyListState(
++      (initialPosition?.index ?: 0).coerceAtLeast(0),
++      (initialOffsetDp * densityScale).roundToInt()
++    ).also { retainedState = it }
++  }
++  private data class PendingRequest(val request: LazyListScrollRequest, val touchGeneration: Int)
++  private var pendingScroll: Job? = null
++  private var desiredRequest: PendingRequest? = null
++  private var latestRequestId = Int.MIN_VALUE
++  private var touching = false
++  private var userInteracted = false
++  private var touchGeneration = 0
++
++  internal fun attach(state: LazyListState, scope: CoroutineScope, density: Density) {
++    densityScale = density.density
++    val current = Binding(state, scope, density)
++    binding.value = current
++    val desired = desiredRequest
++    if (desired != null && pendingScroll == null && !touching) scheduleScroll(current, desired)
++  }
++
++  internal fun detach() {
++    pendingScroll?.cancel()
++    pendingScroll = null
++    binding.value = null
++    touching = false
++  }
++
++  internal fun destroy() {
++    desiredRequest = null
++    detach()
++  }
++
++  suspend fun getScrollPosition(initialPosition: LazyListScrollPosition?): Map<String, Number> = withContext(Dispatchers.Main.immediate) {
++    val current = retainedState
++    mapOf(
++      "index" to (current?.firstVisibleItemIndex ?: initialPosition?.index ?: 0),
++      "offsetDp" to (current?.firstVisibleItemScrollOffset?.toDouble()?.div(densityScale) ?: initialPosition?.offsetDp ?: 0.0)
++    )
++  }
++
++  suspend fun scrollToItem(request: LazyListScrollRequest): Unit = withContext(Dispatchers.Main.immediate) {
++    require(request.alignment == "start" || request.alignment == "center") { "Unsupported lazy-list alignment" }
++    if (request.requestId <= latestRequestId) return@withContext
++    if (request.alignment == "center" && userInteracted && !request.allowAfterInteraction) return@withContext
++    latestRequestId = request.requestId
++    pendingScroll?.cancel()
++    if (touching) return@withContext
++    if (request.allowAfterInteraction) userInteracted = false
++    val desired = PendingRequest(request, touchGeneration)
++    desiredRequest = desired
++    val current = binding.value ?: return@withContext
++    scheduleScroll(current, desired).join()
++    Unit
++  }
++
++  private fun scheduleScroll(current: Binding, desired: PendingRequest): Job {
++    // As with HorizontalPager, use the composition scope for its frame clock.
++    // Lazy start registers the job before an immediate completion can clear it.
++    val scrollJob = current.scope.launch(start = CoroutineStart.LAZY) {
++      try {
++        val completed = withTimeoutOrNull(LAZY_LIST_LAYOUT_TIMEOUT_MS) {
++          val measured = snapshotFlow { current.state.layoutInfo }.first {
++            it.totalItemsCount > 0 && it.viewportSize.width > 0 && it.viewportSize.height > 0
++          }
++          if (touching || touchGeneration != desired.touchGeneration || desiredRequest !== desired) {
++            return@withTimeoutOrNull false
++          }
++          val request = desired.request
++          val targetIndex = request.index.coerceIn(0, measured.totalItemsCount - 1)
++          current.state.scrollToItem(targetIndex)
++          if (request.alignment == "center") {
++            val target = snapshotFlow {
++              current.state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
++            }.first { it != null }!!
++            val layout = current.state.layoutInfo
++            val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
++            current.state.scrollBy(target.offset + target.size / 2f - viewportCenter)
++          }
++          true
++        } ?: false
++        if (completed && desiredRequest === desired) desiredRequest = null
++        // An offscreen/unmeasured item keeps its desired request. Its next
++        // composition or child-layout update retries without polling or a
++        // pending JS promise. Touch and view destruction cancel it explicitly.
++      } finally {
++        if (pendingScroll === coroutineContext[Job]) pendingScroll = null
++      }
++    }
++    pendingScroll = scrollJob
++    scrollJob.start()
++    return scrollJob
++  }
++
++  internal fun cancelScrollOnTouch(): Modifier = Modifier.pointerInput(this) {
++    awaitEachGesture {
++      awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
++      touching = true
++      userInteracted = true
++      desiredRequest = null
++      touchGeneration += 1
++      pendingScroll?.cancel()
++      try {
++        do {
++          val pointerEvent = awaitPointerEvent(PointerEventPass.Initial)
++        } while (pointerEvent.changes.any { it.pressed })
++      } finally {
++        touching = false
++      }
++    }
++  }
++}
++
++@Composable
++internal fun rememberControlledLazyListState(
++  controller: LazyListScrollController,
++  initialPosition: LazyListScrollPosition?
++): LazyListState {
++  val density = LocalDensity.current
++  val scope = rememberCoroutineScope()
++  val state = controller.obtainState(initialPosition, density)
++  SideEffect { controller.attach(state, scope, density) }
++  DisposableEffect(controller) {
++    onDispose { controller.detach() }
++  }
++  return state
++}

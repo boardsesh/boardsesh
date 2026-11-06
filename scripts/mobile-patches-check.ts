@@ -530,6 +530,68 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: '@expo/ui@58.0.23',
   },
+  // Native Android filters keep the sheet and both scroll axes in one Compose
+  // tree. Without these hooks an upgrade silently loses picker restoration,
+  // rail centering or cancellation underneath a user's finger (#7312).
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/LazyListScrollController.kt',
+    sentinels: [
+      'private const val LAZY_LIST_LAYOUT_TIMEOUT_MS = 2000L',
+      'request.requestId <= latestRequestId',
+      'touchGeneration != desired.touchGeneration',
+      'desiredRequest = desired',
+      'desired != null && pendingScroll == null && !touching',
+      'if (completed && desiredRequest === desired) desiredRequest = null',
+      'request.index.coerceIn(0, measured.totalItemsCount - 1)',
+      'current.scope.launch(start = CoroutineStart.LAZY)',
+      'target.offset + target.size / 2f - viewportCenter',
+      'awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)',
+      'pendingScroll?.cancel()',
+      'current?.firstVisibleItemScrollOffset?.toDouble()?.div(densityScale) ?: initialPosition?.offsetDp',
+      'request.alignment == "center" && userInteracted && !request.allowAfterInteraction',
+      'userInteracted = true',
+      'initialOffsetDp * densityScale',
+      'retainedState?.let { return it }',
+      'controller.obtainState(initialPosition, density)',
+    ],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  ...['LazyColumn', 'LazyRow'].map((kind): PatchRule => ({
+    package: '@expo/ui',
+    file: `android/src/main/java/expo/modules/ui/${kind}View.kt`,
+    sentinels: [
+      'rememberControlledLazyListState(scrollController, props.initialScrollPosition.value)',
+      'state = listState',
+      '.then(scrollController.cancelScrollOnTouch())',
+    ],
+    patchedKey: '@expo/ui@58.0.23',
+  })),
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/ExpoUIModule.kt',
+    sentinels: [
+      'AsyncFunction("getScrollPosition") Coroutine { view: LazyColumnView ->',
+      'AsyncFunction("getScrollPosition") Coroutine { view: LazyRowView ->',
+      'AsyncFunction("scrollToItem") Coroutine { view: LazyColumnView, request: LazyListScrollRequest ->',
+      'AsyncFunction("scrollToItem") Coroutine { view: LazyRowView, request: LazyListScrollRequest ->',
+      'OnViewDestroys { view: LazyRowView ->',
+      'OnViewDestroys { view: LazyColumnView ->',
+    ],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/ModifierRegistry.kt',
+    sentinels: ['val isSelected = params.selected', 'isSelected?.let { selected = it }'],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/SemanticsModifier.kt',
+    sentinels: ['@Field val selected: Boolean? = null'],
+    patchedKey: '@expo/ui@58.0.23',
+  },
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
   // hunk lives in the same patch) but silently never fires — LogAscentSheet,

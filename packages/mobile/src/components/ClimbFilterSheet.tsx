@@ -35,6 +35,8 @@ import {
 import { Button } from './Button';
 import { SheetTopBar } from './SheetTopBar';
 import { ClimbFilterForm } from './ClimbFilterForm';
+import { ClimbFilterSurface } from './ClimbFilterSurface';
+import type { ClimbFilterSurfaceHandle, ClimbFilterScrollPosition } from './ClimbFilterSurface.types';
 import { buildClimbFilterFormModel } from './filter-sheet/climb-filter-form-model';
 import { keyboardDetentIndex } from './sheet-scroll-into-view';
 import { SegmentedControl } from './SegmentedControl';
@@ -327,9 +329,11 @@ export function ClimbFilterSheet({
   const { t: tCommon } = useTranslation('common');
   const theme = useTheme();
   const { systemColors, variant } = theme;
-  // iOS with Liquid Glass draws the body as a SwiftUI Form (ClimbFilterForm.ios,
-  // #6872). Android and the Material variant keep the RN body below.
-  const nativeForm = Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
+  // Android uses its native Material form; iOS Liquid Glass uses SwiftUI.
+  // The browser and iOS Material variant retain the React Native body.
+  const nativeForm =
+    Platform.OS === 'android' ||
+    (Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false }));
   const { fontScale } = useWindowDimensions();
   const sheetBackgroundStyle = useSheetBackgroundStyle();
   const { isAuthenticated } = useAuth();
@@ -340,6 +344,9 @@ export function ClimbFilterSheet({
   // end of the scroll body, so the last row scrolls clear of the home indicator.
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetModal>(null);
+  const androidSurfaceRef = useRef<ClimbFilterSurfaceHandle | null>(null);
+  const androidScrollRef = useRef<ClimbFilterScrollPosition | undefined>(undefined);
+  const pickerOpeningRef = useRef(false);
   const presentationBoardKeyRef = useRef(boardKeyOf(boardConfig));
   const boardKeyRef = useRef(boardKeyOf(boardConfig));
   boardKeyRef.current = boardKeyOf(boardConfig);
@@ -452,6 +459,10 @@ export function ClimbFilterSheet({
   // search) would otherwise present this hidden sheet over that route.
   const raiseToKeyboardDetent = useCallback(() => {
     if (isAwaitingReturn() || closingRef.current) return;
+    if (Platform.OS === 'android') {
+      sheetRef.current?.expand();
+      return;
+    }
     const next = keyboardDetentIndex(activeIndexRef.current, detentSnapPoints.length - 1);
     if (next != null) sheetRef.current?.snapToIndex(next);
   }, [detentSnapPoints.length, isAwaitingReturn]);
@@ -833,48 +844,70 @@ export function ClimbFilterSheet({
   // Each sub-picker opener starts with beginSubPickerSuspend: it snapshots the
   // scroll offset for the post-remount restore, then dismisses the native sheet
   // without unmounting (see useSheetSubRoute).
+  const openPicker = useCallback(
+    async (push: () => void) => {
+      if (pickerOpeningRef.current || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
+      pickerOpeningRef.current = true;
+      try {
+        if (Platform.OS === 'android') {
+          androidScrollRef.current = await androidSurfaceRef.current?.captureScrollPosition();
+        }
+        if (!isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
+        beginSubPickerSuspend();
+        push();
+      } catch (error: unknown) {
+        if (__DEV__) console.warn('[filters] picker snapshot unavailable', error);
+      } finally {
+        pickerOpeningRef.current = false;
+      }
+    },
+    [beginSubPickerSuspend, isCurrentPresentation, isAwaitingReturn],
+  );
+
   const openSetters = useCallback(() => {
     if (!isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
     const selectedSetters = JSON.stringify(selectedFiltersRef.current.setter ?? []);
     if (setterList) {
-      beginSubPickerSuspend();
-      router.push({
-        pathname: pickerPaths.setters,
-        params: { ...playlistSetterSourceParams(setterList), setters: selectedSetters, handoffId },
-      });
+      void openPicker(() =>
+        router.push({
+          pathname: pickerPaths.setters,
+          params: { ...playlistSetterSourceParams(setterList), setters: selectedSetters, handoffId },
+        }),
+      );
       return;
     }
     // Discover's setters picker lists one list's setters; with no list there
     // is nothing for it to show, and the catalogue picker lives in Climbs.
     if (pickers.stack === 'discover') return;
     if (!boardConfig) return;
-    beginSubPickerSuspend();
-    router.push({
-      pathname: pickerPaths.setters,
-      params: {
-        boardName: boardConfig.boardName,
-        layoutId: String(boardConfig.layoutId),
-        sizeId: String(boardConfig.sizeId),
-        setIds: boardConfig.setIds,
-        angle: String(boardConfig.angle),
-        setters: selectedSetters,
-        handoffId,
-        // The current count input, so the route's "Show N climbs" button counts
-        // the same search, with its own picks swapped in.
-        // Read from the latest-selection refs so this callback stays stable across
-        // name keystrokes and filter edits.
-        countInput: JSON.stringify(
-          buildCountPreviewInput(
-            selectedFiltersRef.current,
-            selectedBoardFiltersRef.current,
-            boardConfig,
-            nameDraftRef.current,
+    void openPicker(() =>
+      router.push({
+        pathname: pickerPaths.setters,
+        params: {
+          boardName: boardConfig.boardName,
+          layoutId: String(boardConfig.layoutId),
+          sizeId: String(boardConfig.sizeId),
+          setIds: boardConfig.setIds,
+          angle: String(boardConfig.angle),
+          setters: selectedSetters,
+          handoffId,
+          // The current count input, so the route's "Show N climbs" button counts
+          // the same search, with its own picks swapped in.
+          // Read from the latest-selection refs so this callback stays stable across
+          // name keystrokes and filter edits.
+          countInput: JSON.stringify(
+            buildCountPreviewInput(
+              selectedFiltersRef.current,
+              selectedBoardFiltersRef.current,
+              boardConfig,
+              nameDraftRef.current,
+            ),
           ),
-        ),
-      },
-    });
+        },
+      }),
+    );
   }, [
-    beginSubPickerSuspend,
+    openPicker,
     boardConfig,
     isAwaitingReturn,
     isCurrentPresentation,
@@ -887,33 +920,34 @@ export function ClimbFilterSheet({
 
   const openHoldFilter = useCallback(() => {
     if (!boardConfig || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
-    beginSubPickerSuspend();
-    router.push({
-      pathname: pickerPaths.holds,
-      params: {
-        boardName: boardConfig.boardName,
-        layoutId: String(boardConfig.layoutId),
-        sizeId: String(boardConfig.sizeId),
-        setIds: boardConfig.setIds,
-        angle: String(boardConfig.angle),
-        holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
-        handoffId,
-        // The selection the heatmap counts over (it drops the hold picks itself).
-        // Read from the latest-selection refs, like the setters route's count input.
-        // A list the heatmap cannot describe sends none, and turns the flame off.
-        ...(heatmapOffered
-          ? {
-              heatmapSearch: JSON.stringify({
-                filters: selectedFiltersRef.current,
-                boardFilters: selectedBoardFiltersRef.current,
-                searchText: nameDraftRef.current,
-              }),
-            }
-          : { heatmap: 'off' }),
-      },
-    });
+    void openPicker(() =>
+      router.push({
+        pathname: pickerPaths.holds,
+        params: {
+          boardName: boardConfig.boardName,
+          layoutId: String(boardConfig.layoutId),
+          sizeId: String(boardConfig.sizeId),
+          setIds: boardConfig.setIds,
+          angle: String(boardConfig.angle),
+          holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
+          handoffId,
+          // The selection the heatmap counts over (it drops the hold picks itself).
+          // Read from the latest-selection refs, like the setters route's count input.
+          // A list the heatmap cannot describe sends none, and turns the flame off.
+          ...(heatmapOffered
+            ? {
+                heatmapSearch: JSON.stringify({
+                  filters: selectedFiltersRef.current,
+                  boardFilters: selectedBoardFiltersRef.current,
+                  searchText: nameDraftRef.current,
+                }),
+              }
+            : { heatmap: 'off' }),
+        },
+      }),
+    );
   }, [
-    beginSubPickerSuspend,
+    openPicker,
     boardConfig,
     isAwaitingReturn,
     isCurrentPresentation,
@@ -925,31 +959,31 @@ export function ClimbFilterSheet({
 
   const openZoneFilter = useCallback(() => {
     if (!boardConfig || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
-    beginSubPickerSuspend();
-    router.push({
-      pathname: pickerPaths.zone,
-      params: {
-        boardName: boardConfig.boardName,
-        layoutId: String(boardConfig.layoutId),
-        sizeId: String(boardConfig.sizeId),
-        setIds: boardConfig.setIds,
-        angle: String(boardConfig.angle),
-        zoneBox: JSON.stringify(selectedBoardFiltersRef.current.zoneBox ?? null),
-        zoneMode: selectedBoardFiltersRef.current.zoneMode ?? 'allHolds',
-        holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
-        handoffId,
-      },
-    });
-  }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router, pickerPaths, handoffId]);
+    void openPicker(() =>
+      router.push({
+        pathname: pickerPaths.zone,
+        params: {
+          boardName: boardConfig.boardName,
+          layoutId: String(boardConfig.layoutId),
+          sizeId: String(boardConfig.sizeId),
+          setIds: boardConfig.setIds,
+          angle: String(boardConfig.angle),
+          zoneBox: JSON.stringify(selectedBoardFiltersRef.current.zoneBox ?? null),
+          zoneMode: selectedBoardFiltersRef.current.zoneMode ?? 'allHolds',
+          holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
+          handoffId,
+        },
+      }),
+    );
+  }, [openPicker, boardConfig, isAwaitingReturn, isCurrentPresentation, router, pickerPaths, handoffId]);
 
   // Settings › Quick filters, from the iOS Form's last row. The pins are a
   // device-wide store, so nothing is handed back: the sheet re-presents and the
   // chip row follows the store.
   const openQuickFilters = useCallback(() => {
     if (!isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
-    beginSubPickerSuspend();
-    router.push(pickerPaths.quickFilters);
-  }, [beginSubPickerSuspend, isAwaitingReturn, isCurrentPresentation, router, pickerPaths]);
+    void openPicker(() => router.push(pickerPaths.quickFilters));
+  }, [openPicker, isAwaitingReturn, isCurrentPresentation, router, pickerPaths]);
 
   // useSheetSubRoute re-presents the sheet when a sub-picker route pops (back
   // chevron OR swipe-back both re-focus this screen). The setters route's "Show N
@@ -1117,6 +1151,17 @@ export function ClimbFilterSheet({
             />
           ),
           height: gradeRailRowHeight(fontScale),
+          ...(Platform.OS === 'android'
+            ? {
+                native: {
+                  grades: grades ?? [],
+                  bound: { minGradeId: selectedFilters.minGrade, maxGradeId: selectedFilters.maxGrade },
+                  lastUsedGradeId,
+                  boardName: gradesBoardName,
+                  onChange: handleGradeChange,
+                },
+              }
+            : {}),
         },
         accuracy: { options: accuracyOptions, onSelect: handleAccuracyChange },
         progress:
@@ -1198,6 +1243,28 @@ export function ClimbFilterSheet({
         setFiltersPatch,
       })
     : null;
+
+  if (Platform.OS === 'android' && formModel) {
+    return (
+      <ClimbFilterSurface
+        key={presentEpoch}
+        ref={(handle) => {
+          sheetRef.current = handle;
+          androidSurfaceRef.current = handle;
+        }}
+        model={formModel}
+        title={t('mobile.filter.title')}
+        subtitle={previewCount != null ? t('mobile.filter.matchingCount', { count: previewCount }) : undefined}
+        closeLabel={t('mobile.filter.close')}
+        resetLabel={t('mobile.filter.reset')}
+        resetDisabled={!anyActive}
+        onClosePress={handleClose}
+        onReset={handleReset}
+        onChange={handleSheetChange}
+        initialScrollPosition={androidScrollRef.current}
+      />
+    );
+  }
 
   return (
     <BottomSheetModal
