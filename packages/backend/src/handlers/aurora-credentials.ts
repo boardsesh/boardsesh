@@ -5,7 +5,7 @@ import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { circuitPlaylistSyncWireFields } from '@boardsesh/shared-schema/sync-error-codes';
 import { KILTER_BOARD_TYPE } from '@boardsesh/kilter-sync/api';
 import { applyCorsHeaders } from './cors';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import {
   deleteAuroraCredential,
   DuplicateBoardLinkError,
@@ -42,7 +42,9 @@ async function authenticate(req: IncomingMessage, res: ServerResponse): Promise<
     return null;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return null;
+  const authResult = admission.auth;
   if (!authResult) {
     sendJson(res, 401, { error: 'Invalid or expired token' });
     return null;

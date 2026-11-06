@@ -248,6 +248,7 @@ describe('actual installed mobile registration client and auth-store against own
         sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${mobileRefreshTokens} FROM ${sql.identifier(oldRole)}`,
       );
       await transaction.execute(sql`GRANT SELECT, INSERT ON TABLE ${users} TO ${sql.identifier(writerRole)}`);
+      await transaction.execute(sql`GRANT UPDATE (updated_at) ON TABLE ${users} TO ${sql.identifier(writerRole)}`);
       await transaction.execute(
         sql`GRANT INSERT ON TABLE ${userCredentials}, ${userProfiles}, ${mobileRefreshTokens} TO ${sql.identifier(writerRole)}`,
       );
@@ -308,6 +309,7 @@ describe('actual installed mobile registration client and auth-store against own
         failures.push(new Error('Owned native role lookup cleanup failed'));
       }
       try {
+        await admin(sql`REVOKE UPDATE (updated_at) ON TABLE ${users} FROM ${sql.identifier(role)}`);
         await admin(
           sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${mobileRefreshTokens}, ${authEmailProjection}, ${authSubjectCutoffs}, ${authEmailReservations}, ${authEmailReservationMembers} FROM ${sql.identifier(role)}`,
         );
@@ -326,6 +328,31 @@ describe('actual installed mobile registration client and auth-store against own
       }
     }
     if (failures.length) throw new AggregateError(failures, 'Owned mobile client fixture cleanup failed');
+  });
+
+  it('supports writer user KEY SHARE while identity-column changes and deletion remain denied', async () => {
+    const probeId = randomUUID();
+    const rollback = new Error('Owned mobile row-lock probe rollback');
+    await expect(
+      writer.transaction(async (transaction) => {
+        await transaction.insert(users).values({ id: probeId, email: `${probeId}@mobile-lock-probe.example.test` });
+        const [subject] = await transaction
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, probeId))
+          .for('key share', { of: users });
+        expect(subject?.id).toBe(probeId);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await db.select({ id: users.id }).from(users).where(eq(users.id, probeId))).toEqual([]);
+    await expect(writer.update(users).set({ id: randomUUID() }).where(eq(users.id, probeId))).rejects.toMatchObject({
+      cause: { code: '42501' },
+    });
+    await expect(
+      writer.update(users).set({ email: 'forbidden@mobile-lock-probe.example.test' }).where(eq(users.id, probeId)),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+    await expect(writer.delete(users).where(eq(users.id, probeId))).rejects.toMatchObject({ cause: { code: '42501' } });
   });
 
   it.each(['false', 'true'])(
@@ -427,11 +454,11 @@ describe('actual installed mobile registration client and auth-store against own
     expect(report.registrationThrew).toBe(false);
     expect(await db.select().from(users)).toEqual([]);
   }, 22000);
-  it('keeps the old pair on a real signing500 and leaves no partial registration', async () => {
+  it('keeps the old pair on signing-secret503 and leaves no partial registration', async () => {
     vi.stubEnv('NEXTAUTH_SECRET', '');
     const report = await mobileProbe(`failed.${randomUUID()}@example.test`);
     preserved(report);
-    expect(report.failureStatus).toBe(500);
+    expect(report.failureStatus).toBe(503);
     expect(report.registrationThrew).toBe(false);
     expect(await db.select().from(users)).toEqual([]);
     expect(await db.select().from(mobileRefreshTokens)).toEqual([]);

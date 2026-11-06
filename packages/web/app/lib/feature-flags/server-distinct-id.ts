@@ -1,6 +1,5 @@
 import 'server-only';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/lib/auth/auth-options';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 
 /**
  * The distinct id PostHog knows the current visitor by, or `null` when nobody
@@ -18,6 +17,6 @@ import { authOptions } from '@/app/lib/auth/auth-options';
  * the answer is per-person by construction.
  */
 export async function getPosthogDistinctId(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
+  const session = await getAdmittedServerSession();
   return session?.user?.id ?? null;
 }

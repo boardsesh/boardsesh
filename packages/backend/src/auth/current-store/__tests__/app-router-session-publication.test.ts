@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { userCredentials, userProfiles, users } from '@boardsesh/db/schema/auth';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { authSubjectCutoffs, userCredentials, userProfiles, users } from '@boardsesh/db/schema/auth';
 import { sql, type SQL } from 'drizzle-orm';
 import type { NextAuthOptions } from '../../../../../web/node_modules/next-auth';
 import type * as PublicJwt from '../../../../../web/node_modules/next-auth/jwt';
@@ -13,7 +13,7 @@ import { observeSessionPublication } from './fixtures/session-publication-observ
 type Observations = ReturnType<ReturnType<typeof observeSessionPublication>['snapshot']>;
 const role = `ba03_router_readonly_${randomUUID().replaceAll('-', '')}`;
 const password = randomBytes(32).toString('hex');
-const readTables = [users, userProfiles, userCredentials];
+const readTables = [users, userProfiles, userCredentials, authSubjectCutoffs];
 const ownerId = randomUUID();
 const sessionId = randomUUID();
 const thirtyDays = 30 * 24 * 60 * 60;
@@ -226,15 +226,65 @@ describe('actual server reads versus public cookie publication', () => {
     ]);
   });
 
-  it('the same invalid cookie at the public session route publishes a deletion', async () => {
+  it('the public session route denies an invalid cookie without publishing a cleanup', async () => {
     const before = await snapshot();
     const result = await ownedHarness().request('/api/auth/session', { cookie: `${cookieName}=invalid-owned-jwe` });
     expect(result.status).toBe(200);
     expect(JSON.parse(result.body)).toEqual({});
-    expect(result.cookies.some((header) => header.startsWith(`${cookieName}=`) && /Max-Age=0/i.test(header))).toBe(
-      true,
-    );
+    expect(result.cookies).toEqual([]);
     expect((await snapshot()).encodes.length).toBe(before.encodes.length);
+  });
+
+  it('uses actual primary admission while the readonly role denies activity writes', async () => {
+    const current = browser(await parent());
+    const before = await db.select().from(users);
+    const response = await current.request('/api/auth/session');
+    expect(response.status).toBe(200);
+    expect((JSON.parse(response.body) as { user: { id: string } }).user.id).toBe(ownerId);
+    await vi.waitFor(async () => {
+      const observed = (await ownedHarness().call('snapshot')) as {
+        admission: { statuses: number[]; activityPermissionDeniedLogs: number; activityOtherFailure: number };
+      };
+      expect(observed.admission.statuses).toContain(200);
+      expect(observed.admission.activityPermissionDeniedLogs).toBeGreaterThan(0);
+      expect(observed.admission.activityOtherFailure).toBe(0);
+    });
+    expect(await db.select().from(users)).toEqual(before);
+  });
+
+  it('keeps the current cookie and auth rows when real cutoff SELECT permission is denied', async () => {
+    const current = browser(await parent());
+    const originalCookie = current.header();
+    const before = await Promise.all([
+      db.select().from(users),
+      db.select().from(userProfiles),
+      db.select().from(userCredentials),
+      db.select().from(authSubjectCutoffs),
+    ]);
+    await admin(sql`REVOKE SELECT ON TABLE ${authSubjectCutoffs} FROM ${sql.identifier(role)}`);
+    try {
+      const response = await current.request('/api/auth/session');
+      expect(response.status).toBe(503);
+      expect(response.cookies).toEqual([]);
+      expect(current.header()).toBe(originalCookie);
+      expect(JSON.parse(response.body)).toEqual({ error: 'Credential authority is temporarily unavailable' });
+      const observed = (await ownedHarness().call('snapshot')) as {
+        admission: { statuses: number[]; unavailableResponses: number };
+      };
+      expect(observed.admission.statuses.at(-1)).toBe(503);
+      expect(observed.admission.unavailableResponses).toBeGreaterThan(0);
+      expect(
+        await Promise.all([
+          db.select().from(users),
+          db.select().from(userProfiles),
+          db.select().from(userCredentials),
+          db.select().from(authSubjectCutoffs),
+        ]),
+      ).toEqual(before);
+    } finally {
+      await admin(sql`GRANT SELECT ON TABLE ${authSubjectCutoffs} TO ${sql.identifier(role)}`);
+    }
+    expect((await current.request('/api/auth/session')).status).toBe(200);
   });
 });
 

@@ -1,3 +1,4 @@
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import 'server-only';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from './server-graphql';
@@ -234,7 +235,8 @@ export async function serverUserProfileStats(
       await getServerAuthToken(),
     );
     return result.userProfileStats;
-  } catch {
+  } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) throw error;
     return null;
   }
 }
@@ -253,7 +255,8 @@ export async function cachedUserClimbPercentile(
       await getServerAuthToken(),
     );
     return result.userClimbPercentile;
-  } catch {
+  } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) throw error;
     return null;
   }
 }
@@ -284,7 +287,8 @@ export async function serverUserTicks(
       await getServerAuthToken(),
     );
     return result.userTicks;
-  } catch {
+  } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) throw error;
     return null;
   }
 }

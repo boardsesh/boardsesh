@@ -1,6 +1,6 @@
 # Better Auth implementation review guide
 
-This is the review entry point for [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). Updated 2026-11-05. The accepted direction is in [better-auth-migration.md](./better-auth-migration.md). **No production authority switch, identity backfill, account merge, account deletion or production grant change has been performed. The epic and its child issues remain open.**
+This is the review entry point for [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). Updated 2026-11-06. The accepted direction is in [better-auth-migration.md](./better-auth-migration.md). **No production authority switch, identity backfill, account merge, account deletion or production grant change has been performed. The epic and its child issues remain open.**
 
 ## Review order
 
@@ -22,6 +22,7 @@ This is the review entry point for [epic #6975](https://github.com/boardsesh/boa
 | [#7302](https://github.com/boardsesh/boardsesh/pull/7302) | Fixed recommendations and hold-classifier identities under the actual durable job-attempt fence | Stacked on #7301; default-off; no new schema or grants |
 | [#7303](https://github.com/boardsesh/boardsesh/pull/7303) | Shared whole-gym planner, caller-owned location apply and cooperative SQL checkpoints | Stacked on #7302; existing callers preserved; no authority adoption |
 | [#7307](https://github.com/boardsesh/boardsesh/pull/7307) | Atomic deletion cutoff/event and retained email reservations in the existing GraphQL flow | Stacked on #7303; independently selected; no schema, grants or activation |
+| [#7316](https://github.com/boardsesh/boardsesh/pull/7316) | Primary deletion admission, native issuance and active sockets; web acceptance and original-account mobile deletion | Stacked on #7307; capable backend required before web readers |
 
 The [shared-board system owner slice](./better-auth-system-board-owner.md)
 adopts the fixed nonhuman user creation behind its own default-off selector.
@@ -76,9 +77,23 @@ type tasks pass on clean stacked source `104c6a06a3`, with zero cache hits. Its
 six-file replay is byte-identical and reproduces the qualified main-based tree.
 Five independent browser flows pass against a separately attested recovered
 legacy-auth runtime; the original TLS-cache startup rejection remains recorded.
-Draft #7307 is published and feedback is monitored; CI readiness is pending.
+#7307 is ready at `d02873d10c`: current-head CI is green and Codex code review completed without findings. Feedback remains monitored.
 It preserves wall-before-user locking and the existing client flow; no
 production account is deleted or authority activated.
+
+The [deleted-account reader adoption](./better-auth-deletion-readers.md) makes
+primary deletion admission mandatory for existing human credentials, native
+issuance and active WebSockets. It also adopts web cookie/session readers and
+binds mobile deletion to its original account intent. Its decision record keeps
+positive cookie ordering, machine credentials, non-deletion session lineage,
+production grants and rollback fencing as separate open gates. All 105 patch
+paths replay unchanged onto #7307. Clean stacked source `71901baf87` passes all
+753 auth cases with zero skips and all 59 canonical type tasks, with 53 cache
+hits. Full web/mobile selections, focused deletion/native/mobile cases and both
+native bundles pass. A fresh isolated, runtime-attested preview passes five
+independent baseline browser flows; actual deletion UI and real-device behavior
+remain separate gates. [#7316](https://github.com/boardsesh/boardsesh/pull/7316)
+carries the current-head CI/review record, and feedback remains monitored.
 
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 

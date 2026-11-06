@@ -23,6 +23,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('next-auth/react', () => ({
+  getSession: vi.fn().mockResolvedValue(null),
   signIn: vi.fn(),
 }));
 

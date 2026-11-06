@@ -542,3 +542,9 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
   });
 });
+
+// These tests isolate the existing dispatch/password contract; admission has
+// its own public-codec and mounted-handler publication coverage.
+vi.mock('@/app/lib/auth/auth-response-admission.server', () => ({
+  withAuthResponseAdmission: (_request: unknown, _context: unknown, invoke: () => Promise<Response>) => invoke(),
+}));

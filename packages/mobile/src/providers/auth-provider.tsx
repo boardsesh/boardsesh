@@ -18,6 +18,7 @@ import { SHARED_EVENTS, loginProviderProperties } from '@boardsesh/analytics';
 import { AppLoadingSplash } from '../components/AppLoadingSplash';
 import { resolveAuthSession, type AuthSessionResult } from '../lib/auth-session';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
+import { isAccountDeletionIntentCurrent, type SignOutRequest } from '../lib/account-deletion-intent';
 import { userIdFromJwt } from '../lib/jwt-user-id';
 import { subscribeAuthTokenChanges } from '../lib/auth-token-events';
 import { bumpAuthTransportRevision } from '../lib/auth-transport-revision';
@@ -87,7 +88,7 @@ type AuthState = {
   signInWithAppleWeb: (isRegistration?: boolean) => Promise<OAuthSignInResult>;
   signInWithCredentials: (email: string, password: string) => Promise<CredentialsSignInResult>;
   register: (email: string, password: string, name?: string) => Promise<RegistrationResult>;
-  signOut: (method?: 'manual' | 'account_deleted') => Promise<void>;
+  signOut: (...request: SignOutRequest) => Promise<void>;
   refreshAuthState: () => Promise<void>;
 };
 
@@ -1116,9 +1117,19 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // server revocation is best-effort, while durable credential cleanup failures
   // remain visible to callers after local account isolation has completed.
   const signOut = useCallback(
-    async (method: 'manual' | 'account_deleted' = 'manual') => {
+    async (...request: SignOutRequest) => {
+      const [method = 'manual', deletionIntent] = request;
+      if (method === 'account_deleted') {
+        if (!deletionIntent || !(await isAccountDeletionIntentCurrent(deletionIntent))) return;
+        // The owner can change in the microtask between the awaited ownership
+        // check and this continuation. No cleanup side effect precedes this.
+        if (!isAuthCredentialGenerationCurrent(deletionIntent.credentialGeneration)) return;
+      }
       cancelAuthAnalyticsHandoffs();
-      const credentialGeneration = captureAuthCredentialGeneration();
+      const credentialGeneration =
+        method === 'account_deleted' && deletionIntent
+          ? deletionIntent.credentialGeneration
+          : captureAuthCredentialGeneration();
       const transitionEpoch = beginAuthTransition();
       updateNativeSessionDegraded(false);
       track(SHARED_EVENTS.Logout, { method });

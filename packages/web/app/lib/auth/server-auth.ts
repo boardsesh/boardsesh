@@ -1,9 +1,7 @@
 import 'server-only';
-import { cookies } from 'next/headers';
+import { getAdmittedRawServerToken } from './admitted-session.server';
 
+/** Forward only the exact chunk-aware credential admitted by the backend. */
 export async function getServerAuthToken(): Promise<string | undefined> {
-  const cookieStore = await cookies();
-  return (
-    cookieStore.get('__Secure-next-auth.session-token')?.value ?? cookieStore.get('next-auth.session-token')?.value
-  );
+  return getAdmittedRawServerToken();
 }

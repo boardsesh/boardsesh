@@ -189,6 +189,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     # ============================================
 
     """
+    Immutable identity admitted from this request's presented credential.
+    Returns UNAUTHENTICATED when the credential cannot authorize the request.
+    Authority failures return SERVICE_UNAVAILABLE instead of an identity.
+    """
+    authenticatedUserId: ID!
+
+    """
     Get the currently authenticated user's profile.
     Returns null if not authenticated.
     """

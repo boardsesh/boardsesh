@@ -1,9 +1,11 @@
 import { jwtVerify } from 'jose';
+import { createHash } from 'node:crypto';
 import { db } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 import { decryptLegacyWebJwe } from '../auth/legacy-web-jwe';
+import { AuthAdmissionUnavailableError, isHumanSubjectActive } from '../auth/human-admission';
 
 export type AuthResult = {
   userId: string;
@@ -27,16 +29,44 @@ const TOKEN_CACHE_TTL_MS = 60_000; // 60 seconds
 type TokenCacheEntry = {
   result: AuthResult;
   expiresAt: number;
+  format: 'jwe' | 'jws';
+  secretDigest: string;
 };
 const tokenCache = new Map<string, TokenCacheEntry>();
 
 // Periodically evict stale entries so the map doesn't grow unbounded.
-setInterval(() => {
+const cacheCleanup = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of tokenCache) {
     if (entry.expiresAt <= now) tokenCache.delete(key);
   }
 }, TOKEN_CACHE_TTL_MS);
+cacheCleanup.unref();
+
+function requireSigningSecret(): string {
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new AuthAdmissionUnavailableError();
+  return secret;
+}
+
+function secretDigest(secret: string): string {
+  return createHash('sha256').update(secret).digest('hex');
+}
+
+function cacheCryptoResult(token: string, result: AuthResult, format: TokenCacheEntry['format'], secret: string) {
+  tokenCache.set(token, {
+    result: Object.freeze(result),
+    format,
+    secretDigest: secretDigest(secret),
+    expiresAt: Math.min(Date.now() + TOKEN_CACHE_TTL_MS, (result.credentialExpiresAt ?? Infinity) + 60_000),
+  });
+}
+
+async function admitCryptoResult(result: AuthResult | null): Promise<AuthResult | null> {
+  // Keep database uncertainty OUTSIDE cryptographic catches. Every invocation,
+  // including a warm cache and either direct exported validator, checks primary.
+  return result && (await isHumanSubjectActive(result.userId)) ? result : null;
+}
 
 /**
  * Validate a NextAuth JWT token.
@@ -49,20 +79,14 @@ setInterval(() => {
  * @param token - The JWT token from the client
  * @returns Auth result with userId if valid, null if invalid
  */
-export async function validateNextAuthToken(token: string): Promise<AuthResult | null> {
+async function verifyNextAuthToken(token: string, secret: string): Promise<AuthResult | null> {
   const now = Date.now();
   const cached = tokenCache.get(token);
-  if (cached && cached.expiresAt > now) {
+  if (cached?.format === 'jwe' && cached.expiresAt > now && cached.secretDigest === secretDigest(secret)) {
     return cached.result;
   }
 
   try {
-    const secret = process.env.NEXTAUTH_SECRET;
-    if (!secret) {
-      logger.warn('[Auth] NEXTAUTH_SECRET not configured');
-      return null;
-    }
-
     const { payload } = await decryptLegacyWebJwe(token, secret, 60);
 
     const userId = payload.sub;
@@ -76,7 +100,7 @@ export async function validateNextAuthToken(token: string): Promise<AuthResult |
       isAuthenticated: true,
       ...(typeof payload.exp === 'number' ? { credentialExpiresAt: payload.exp * 1000 } : {}),
     };
-    tokenCache.set(token, { result, expiresAt: now + TOKEN_CACHE_TTL_MS });
+    cacheCryptoResult(token, result, 'jwe', secret);
     return result;
   } catch (error) {
     if (error instanceof Error) {
@@ -84,6 +108,10 @@ export async function validateNextAuthToken(token: string): Promise<AuthResult |
     }
     return null;
   }
+}
+
+export async function validateNextAuthToken(token: string): Promise<AuthResult | null> {
+  return admitCryptoResult(await verifyNextAuthToken(token, requireSigningSecret()));
 }
 
 /**
@@ -94,14 +122,11 @@ export async function validateNextAuthToken(token: string): Promise<AuthResult |
  * @param token - The JWS token from the mobile client
  * @returns Auth result with userId if valid, null if invalid
  */
-export async function validateMobileJwt(token: string): Promise<AuthResult | null> {
+async function verifyMobileJwt(token: string, secret: string): Promise<AuthResult | null> {
+  const cached = tokenCache.get(token);
+  if (cached?.format === 'jws' && cached.expiresAt > Date.now() && cached.secretDigest === secretDigest(secret))
+    return cached.result;
   try {
-    const secret = process.env.NEXTAUTH_SECRET;
-    if (!secret) {
-      logger.warn('[Auth] NEXTAUTH_SECRET not configured');
-      return null;
-    }
-
     const secretKey = new TextEncoder().encode(secret);
     const { payload } = await jwtVerify(token, secretKey, {
       clockTolerance: 60,
@@ -115,17 +140,23 @@ export async function validateMobileJwt(token: string): Promise<AuthResult | nul
       return null;
     }
 
-    return {
+    const result: AuthResult = {
       userId,
       isAuthenticated: true,
       ...(typeof payload.exp === 'number' ? { credentialExpiresAt: payload.exp * 1000 } : {}),
     };
+    cacheCryptoResult(token, result, 'jws', secret);
+    return result;
   } catch (error) {
     if (error instanceof Error) {
       logger.warn('[Auth] Mobile JWT validation failed:', error.message);
     }
     return null;
   }
+}
+
+export async function validateMobileJwt(token: string): Promise<AuthResult | null> {
+  return admitCryptoResult(await verifyMobileJwt(token, requireSigningSecret()));
 }
 
 /**
@@ -140,32 +171,15 @@ export async function validateMobileJwt(token: string): Promise<AuthResult | nul
  * @returns Auth result with userId if valid, null if invalid
  */
 export async function validateToken(token: string): Promise<AuthResult | null> {
-  const now = Date.now();
-  const cached = tokenCache.get(token);
-  if (cached && cached.expiresAt > now) {
-    return cached.result;
-  }
-
-  let result: AuthResult | null = null;
-
   // JWE tokens (NextAuth) have 5 dot-separated segments,
   // JWS tokens (mobile JWT) have 3 segments.
   const segments = token.split('.').length;
   if (segments === 5) {
-    result = await validateNextAuthToken(token);
+    return validateNextAuthToken(token);
   } else if (segments === 3) {
-    result = await validateMobileJwt(token);
+    return validateMobileJwt(token);
   }
-
-  // Cache successful results only (validateNextAuthToken already caches
-  // internally, but for mobile JWTs this is the only caching layer).
-  // Null results are not cached so transient failures (e.g. secret unset
-  // during restart) don't persist as permanent rejections.
-  if (segments === 3 && result) {
-    tokenCache.set(token, { result, expiresAt: now + TOKEN_CACHE_TTL_MS });
-  }
-
-  return result;
+  return null;
 }
 
 /**
