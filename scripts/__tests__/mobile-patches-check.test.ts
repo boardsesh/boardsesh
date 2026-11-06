@@ -5,15 +5,18 @@ import {
   RULES as REAL_RULES,
   UNGUARDED_PATCHES,
   WEB_RULES,
+  checkExpoUiAndroidPatchesBuildFromSource,
   checkIosPatchesBuildFromSource,
   checkPatchInventory,
   checkPatchesApplied,
   createNodeEnv,
   extractObjCMethodBody,
   packageFromExternalDependency,
+  readAndroidModuleConfigFrom,
   readSpmConfigFrom,
   sourceBuildChain,
   versionFromKey,
+  type AndroidModuleConfig,
   type PatchCheckEnv,
   type PatchRule,
   type SpmConfig,
@@ -1576,6 +1579,94 @@ describe('checkIosPatchesBuildFromSource', () => {
   });
 });
 
+describe('checkExpoUiAndroidPatchesBuildFromSource', () => {
+  const androidRule: PatchRule = {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/LazyRowView.kt',
+    sentinels: [],
+    patchedKey: '@expo/ui@58.0.23',
+  };
+  const published: AndroidModuleConfig = { android: { publication: { repository: 'local-maven-repo' } } };
+
+  function checkSelection(buildFromSource: string[], config: AndroidModuleConfig | null = published) {
+    return checkExpoUiAndroidPatchesBuildFromSource({
+      rules: [androidRule],
+      buildFromSource,
+      readAndroidModuleConfig: () => config,
+    });
+  }
+
+  it('rejects the iOS-only scoped package entry that silently ships an unpatched Android AAR', () => {
+    expect(checkSelection(['@expo/ui'])).toEqual([
+      expect.stringContaining('Android project "expo-ui" can link a prebuilt AAR'),
+    ]);
+    expect(checkSelection(['@expo/ui', 'expo-ui'])).toEqual([]);
+  });
+
+  it('matches full Gradle names and grouped regex alternatives like Regex.matches', () => {
+    expect(checkSelection(['expo'])).toHaveLength(1);
+    expect(checkSelection(['expo-ui-extra|other'])).toHaveLength(1);
+    expect(checkSelection(['expo-ui|other'])).toEqual([]);
+    expect(checkSelection(['expo-.*'])).toEqual([]);
+  });
+
+  it('honors explicit Android project names instead of guessing from the npm package', () => {
+    const config = { android: { name: 'native-filters', publication: { repository: 'local-maven-repo' } } };
+    expect(checkSelection(['expo-ui'], config)).toHaveLength(1);
+    expect(checkSelection(['native-filters'], config)).toEqual([]);
+  });
+
+  it('checks a published subproject only when the patched path belongs to it', () => {
+    const config: AndroidModuleConfig = {
+      android: {
+        projects: [
+          { name: 'filter-widgets', path: 'android/widgets', publication: { repository: 'local-maven-repo' } },
+        ],
+      },
+    };
+    const input = {
+      rules: [{ ...androidRule, file: 'android/widgets/src/Filter.kt' }],
+      buildFromSource: [],
+      readAndroidModuleConfig: () => config,
+    };
+    expect(checkExpoUiAndroidPatchesBuildFromSource(input)).toEqual([expect.stringContaining('"filter-widgets"')]);
+    expect(checkSelection([], config)).toEqual([]);
+  });
+
+  it('does not reject non-Expo libraries or Expo projects without prebuilt publications', () => {
+    expect(checkSelection([], null)).toEqual([]);
+    expect(checkSelection([], { android: { name: 'expo-ui' } })).toEqual([]);
+    expect(checkSelection([], { android: { publication: null } })).toEqual([]);
+  });
+
+  it('leaves other native libraries outside the Filters Expo UI source-selection guard', () => {
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: [{ ...androidRule, package: 'expo-sqlite' }],
+        buildFromSource: [],
+        readAndroidModuleConfig: () => published,
+      }),
+    ).toEqual([]);
+  });
+
+  it('ignores iOS and JavaScript patches and reports each Android project only once', () => {
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: [androidRule, androidRule, { ...androidRule, file: 'ios/Filter.swift' }],
+        buildFromSource: [],
+        readAndroidModuleConfig: () => published,
+      }),
+    ).toHaveLength(1);
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: [{ ...androidRule, file: 'src/Filter.tsx' }],
+        buildFromSource: [],
+        readAndroidModuleConfig: () => published,
+      }),
+    ).toEqual([]);
+  });
+});
+
 // Reads the REAL packages/mobile/package.json and the installed spm.config.json
 // files: remove "expo-modules-core" from buildFromSource and this goes red for
 // the expo-image and expo-sqlite patches that ride its cascade.
@@ -1590,6 +1681,28 @@ describe('the shipped buildFromSource list', () => {
 
   it('builds every ios/-patched pod from source, so each patch reaches the binary', () => {
     expect(checkIosPatchesBuildFromSource({ rules: REAL_RULES, buildFromSource, readSpmConfig })).toEqual([]);
+  });
+
+  it('builds the Filters Expo UI Kotlin patch from source on Android', () => {
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: REAL_RULES,
+        buildFromSource,
+        readAndroidModuleConfig: (pkg) => readAndroidModuleConfigFrom(env, pkg),
+      }),
+    ).toEqual([]);
+  });
+
+  it('goes red when only the Android expo-ui entry is removed, despite retaining @expo/ui', () => {
+    const brokenSelection = buildFromSource.filter((name) => name !== 'expo-ui');
+    expect(brokenSelection).toContain('@expo/ui');
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: REAL_RULES.filter((rule) => rule.package === '@expo/ui'),
+        buildFromSource: brokenSelection,
+        readAndroidModuleConfig: (pkg) => readAndroidModuleConfigFrom(env, pkg),
+      }),
+    ).toEqual([expect.stringContaining('Android project "expo-ui"')]);
   });
 
   it.each(['expo-image', 'expo-sqlite'])('builds %s from source through the expo-modules-core cascade', (pkg) => {
