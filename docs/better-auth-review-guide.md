@@ -22,6 +22,7 @@ This is the review entry point for [epic #6975](https://github.com/boardsesh/boa
 | [#7302](https://github.com/boardsesh/boardsesh/pull/7302) | Fixed recommendations and hold-classifier identities under the actual durable job-attempt fence | Stacked on #7301; default-off; no new schema or grants |
 | [#7303](https://github.com/boardsesh/boardsesh/pull/7303) | Shared whole-gym planner, caller-owned location apply and cooperative SQL checkpoints | Stacked on #7302; existing callers preserved; no authority adoption |
 | [#7307](https://github.com/boardsesh/boardsesh/pull/7307) | Atomic deletion cutoff/event and retained email reservations in the existing GraphQL flow | Stacked on #7303; independently selected; no schema, grants or activation |
+| [#7316](https://github.com/boardsesh/boardsesh/pull/7316) | Primary deletion admission, native issuance and active sockets; web acceptance and original-account mobile deletion | Stacked on #7307; capable backend required before web readers |
 
 The [shared-board system owner slice](./better-auth-system-board-owner.md)
 adopts the fixed nonhuman user creation behind its own default-off selector.
@@ -85,8 +86,14 @@ primary deletion admission mandatory for existing human credentials, native
 issuance and active WebSockets. It also adopts web cookie/session readers and
 binds mobile deletion to its original account intent. Its decision record keeps
 positive cookie ordering, machine credentials, non-deletion session lineage,
-production grants and rollback fencing as separate open gates. Final
-qualification of this branch is recorded in that note.
+production grants and rollback fencing as separate open gates. All 105 patch
+paths replay unchanged onto #7307. Clean stacked source `71901baf87` passes all
+753 auth cases with zero skips and all 59 canonical type tasks, with 53 cache
+hits. Full web/mobile selections, focused deletion/native/mobile cases and both
+native bundles pass. A fresh isolated, runtime-attested preview passes five
+independent baseline browser flows; actual deletion UI and real-device behavior
+remain separate gates. [#7316](https://github.com/boardsesh/boardsesh/pull/7316)
+carries the current-head CI/review record, and feedback remains monitored.
 
 The [development identity seed guard](./better-auth-dev-auth-seed-guard.md)
 restricts the two development fixture entry points before target logging or
