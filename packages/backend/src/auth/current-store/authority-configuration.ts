@@ -100,3 +100,14 @@ export function currentStoreSystemBoardOwnerConfiguration(
   if (mode !== 'reserved-staging') throw new Error('Invalid system board owner mode');
   return { mode, authority: currentStoreAuthorityConfiguration(environment) };
 }
+
+export function currentStoreAccountDeletionConfiguration(
+  environment: Environment = process.env,
+):
+  | { readonly mode: 'legacy' }
+  | { readonly mode: 'reserved-staging'; readonly authority: ExpectedCurrentStoreAuthority } {
+  const mode = environment.CURRENT_STORE_ACCOUNT_DELETION_MODE;
+  if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
+  if (mode !== 'reserved-staging') throw new Error('Invalid account deletion mode');
+  return { mode, authority: currentStoreAuthorityConfiguration(environment) };
+}
