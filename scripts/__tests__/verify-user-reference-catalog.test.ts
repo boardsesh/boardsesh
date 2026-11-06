@@ -1,6 +1,6 @@
 import { describe, it } from 'vite-plus/test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createServer, Socket } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -290,6 +290,38 @@ describe('owned user-reference proof input and source boundary', () => {
       }),
       'native-import-guard-closed',
     );
+  });
+
+  it('excludes a tracked dangling native alias while binding Node files and rejecting other aliases', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'catalog-native-scope-'));
+    const git = (arguments_: string[]) => runCatalogCommand('git', arguments_, { cwd: directory });
+    const commit = async () => {
+      await git(['add', '.']);
+      await git([
+        '-c',
+        'user.name=CatalogProof',
+        '-c',
+        'user.email=catalog@example.invalid',
+        '-c',
+        'core.hooksPath=/dev/null',
+        'commit',
+        '--quiet',
+        '-m',
+        'fixture',
+      ]);
+      return git(['rev-parse', 'HEAD']);
+    };
+    await git(['init', '--quiet']);
+    const inputPath = join(directory, 'input.ts');
+    const contents = 'export const identity = 1;\n';
+    writeFileSync(inputPath, contents, { flag: 'wx', mode: 0o600 });
+    const nativeDirectory = join(directory, 'embedded/test/lib/climb-history');
+    mkdirSync(nativeDirectory, { recursive: true });
+    symlinkSync('missing-native-library.json', join(nativeDirectory, 'library.json'));
+    const admitted = await snapshotCatalogSource(directory, await commit());
+    assert.deepEqual(admitted.files, { [inputPath]: digest(contents) });
+    symlinkSync('missing-node-library.json', join(directory, 'library.json'));
+    await assert.rejects(snapshotCatalogSource(directory, await commit()));
   });
 
   it('rejects changed assume-unchanged input despite an actually clean Git status', async () => {

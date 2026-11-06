@@ -242,6 +242,9 @@ export async function snapshotCatalogSource(rootInput: string, expectedHead: str
     requireCatalog(separator > 0);
     const [mode, kind, blob] = entry.slice(0, separator).split(' ');
     const name = entry.slice(separator + 1);
+    // Native fixtures are outside this Node proof; any actual import still
+    // requires an admitted manifest entry through the import guard.
+    if (name.startsWith('embedded/')) continue;
     if (!/\.(?:[cm]?[jt]sx?|json|sql|sh|ya?ml|toml|patch)$/.test(name) && name !== 'pnpm-lock.yaml') continue;
     // Private environment files are neither read nor importable through the guard below.
     if (name.split('/').some((part) => /^\.env(?:\.|$)/.test(part))) continue;

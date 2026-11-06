@@ -54,6 +54,10 @@ fingerprinted file. Missing required packages or an unadmitted actual peer
 prevent completion. Package metadata lookup supports type-only and binary-only
 packages while retaining package-name, real-root and content checks.
 
+The Node input manifest excludes top-level `embedded/` fixtures. Admitted inputs
+retain HEAD blob and mode validation, and runtime imports remain closed to the
+fingerprinted files. A dangling input inside the Node source still fails.
+
 ## Fixture boundary
 
 Each run claims a new container, a uniquely named PostgreSQL volume and a private
