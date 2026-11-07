@@ -18,6 +18,19 @@ This is the review entry point for [epic #6975](https://github.com/boardsesh/boa
 | [#7290](https://github.com/boardsesh/boardsesh/pull/7290) | Actual App Router/configured-provider callbacks and browser actor-cookie proof | Stacked on #7289; test fixtures only |
 | [#7299](https://github.com/boardsesh/boardsesh/pull/7299) | Server encoding versus cookie publication, rolling renewal and delayed-response browser races | Stacked on #7290; test fixtures only |
 | [#7300](https://github.com/boardsesh/boardsesh/pull/7300) | Default-off backend web OAuth identity writes, durable flow binding and stateless Apple continuation | Stacked on #7299; migration 0293; no authority activation |
+| [#7301](https://github.com/boardsesh/boardsesh/pull/7301) | Independently opted-in fixed shared-board owner reservation and strict identity reuse | Stacked on #7300; no new schema or activation |
+
+The [shared-board system owner slice](./better-auth-system-board-owner.md)
+adopts the fixed nonhuman user creation behind its own default-off selector.
+It validates the complete reservation/identity pair and rejects historical or
+authentication evidence without repair. Its scope excludes the separately
+attempt-fenced job writers and does not prove deployed writer fencing. Its 51
+new cases pass on PostgreSQL 18 and independently on PostgreSQL 15, along with 606 auth and
+187 board regression cases in separate overlapping selections. All 59 canonical
+typecheck tasks pass on the clean stacked head. A fresh owned default-legacy
+full-Next preview passed five baseline authentication flows in one Chromium run;
+that baseline is not staged fixed-owner browser or production authority proof.
+Draft #7301 is published and current-head CI/review feedback is monitored.
 
 These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
 
@@ -27,7 +40,7 @@ The [actual App Router follow-up](./better-auth-app-router-oauth.md) adds a test
 
 The [session-publication follow-up](./better-auth-session-publication.md) separates actual server-side token encoding from browser cookie publication before adding authoritative source records. It characterizes the shipping one-argument server reader, actual GET/POST rolling renewal and delayed browser response ordering. It changes tests and documentation only; no new source schema or production adoption is implied.
 
-The [web OAuth identity implementation](./better-auth-web-oauth-identity.md) moves staged Google, Apple and Facebook identity writes into the backend, independently of password/native selectors. It adds generated migration 0293, durable flow consumption, a request-local adapter that denies web writes, and an encrypted stateless Apple continuation. Known provider subjects retain their owners; occupied emails cannot auto-link. Sensitive linking still requires genuine reauthentication. Actual configured-provider route integration and Chromium transport pass independently on PostgreSQL 15 and 18. The full 567-case auth selection, 347 web auth units and all 59 canonical typecheck tasks passed. Clean replay preserves every one of its 45 patch files and reproduces the exact main-based qualified tree; a fresh clean-branch 59-task run passed with four cache hits. A fresh default-legacy full-Next preview passed five bounded UI flows in one final Chromium run, with no unexpected traffic or console/page errors; earlier helper failures remain documented. Draft #7300 is published and current-head CI/review feedback is monitored; no continuing credential authority or production activation is implied. This leaf contains 294 journal entries, preserving the preceding 293.
+The [web OAuth identity implementation](./better-auth-web-oauth-identity.md) moves staged Google, Apple and Facebook identity writes into the backend, independently of password/native selectors. It adds generated migration 0293, durable flow consumption, a request-local adapter that denies web writes, and an encrypted stateless Apple continuation. Known provider subjects retain their owners; occupied emails cannot auto-link. Sensitive linking still requires genuine reauthentication. Actual configured-provider route integration and Chromium transport pass independently on PostgreSQL 15 and 18. The full 567-case auth selection, 347 web auth units and all 59 canonical typecheck tasks passed. Clean replay preserves every one of its 45 patch files and reproduces the exact main-based qualified tree; a fresh clean-branch 59-task run passed with four cache hits. A fresh default-legacy full-Next preview passed five bounded UI flows in one final Chromium run, with no unexpected traffic or console/page errors; earlier helper failures remain documented. PR #7300 is ready for review at `d1a26add39`, with 9,497 CI cases passing, zero failures, 11 skips and current-head cloud review reporting no findings. Feedback continues to be monitored; no continuing credential authority or production activation is implied. This leaf contains 294 journal entries, preserving the preceding 293.
 
 ## Decisions to review
 
