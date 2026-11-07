@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-11-07
 
+### New
+
+- On Android, the climb you're on now sits in a floating card with the same controls as iPhone. ([#7326](https://github.com/boardsesh/boardsesh/pull/7326))
+
 ### Fixed
 
 - Open climbs quickly on Android while keeping the sheet motion. ([#7317](https://github.com/boardsesh/boardsesh/pull/7317))

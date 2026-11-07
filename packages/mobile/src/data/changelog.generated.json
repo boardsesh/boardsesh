@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-07T15:34:04.906Z",
+  "generatedAt": "2026-11-07T16:12:45.402Z",
   "entries": [
+    {
+      "prNumber": 7326,
+      "category": "new",
+      "title": "On Android, the climb you're on now sits in a floating card with the same controls as iPhone.",
+      "mergedAt": "2026-11-07T16:08:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7326"
+    },
     {
       "prNumber": 7317,
       "category": "fixed",
