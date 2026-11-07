@@ -988,6 +988,15 @@ describe('NativeAccessoryClimbRow', () => {
       },
     );
 
+    // `AccessoryPlacement` is UIKit's platter placement and is sent only from the
+    // platter: a tap on the Material card must keep reading as a JS-bar tap.
+    it('sends no analytics placement from the bulb or the tick on the Material card', () => {
+      const climb = queue.state.currentClimbQueueItem?.climb as Climb;
+      const { container } = render(<NativeAccessoryClimbRow climb={climb} placement="regular" host="materialCard" />);
+      expect(container.querySelector('[data-board-control]')?.getAttribute('data-placement')).toBe('');
+      expect(container.querySelector('[data-tick="true"]')?.getAttribute('data-placement')).toBe('');
+    });
+
     it.each([
       // The platter beside iPhone Duo's side tab rail in the closed shots.
       ['290pt (iPhone Duo outer display)', 290, 466, true],

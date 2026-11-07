@@ -16,16 +16,6 @@ const queue = vi.hoisted(() => ({
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
 
 // --- RN surface: View → div ---------------------------------------------------
-// Forward testID and the resolved backgroundColor so a test can assert the leading
-// grade-accent stripe paints the current climb's grade colour.
-function backgroundOf(style: unknown): string {
-  const entries = (Array.isArray(style) ? style.flat(Infinity) : [style]) as Array<Record<string, unknown> | undefined>;
-  for (let i = entries.length - 1; i >= 0; i -= 1) {
-    const entry = entries[i];
-    if (entry && typeof entry === 'object' && typeof entry.backgroundColor === 'string') return entry.backgroundColor;
-  }
-  return '';
-}
 type LayoutHandler = (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
 vi.mock('../AccessoryPlayLink', () => ({
   AccessoryPlayLink: ({
@@ -38,23 +28,13 @@ vi.mock('../AccessoryPlayLink', () => ({
   }) => createElement('div', { 'aria-label': accessibilityLabel, 'data-accessory-play-link': true }, children),
 }));
 vi.mock('react-native', () => ({
-  View: ({
-    children,
-    testID,
-    style,
-    onLayout,
-  }: {
-    children?: ReactNode;
-    testID?: string;
-    style?: unknown;
-    onLayout?: LayoutHandler;
-  }) => {
+  View: ({ children, testID, onLayout }: { children?: ReactNode; testID?: string; onLayout?: LayoutHandler }) => {
     // jsdom never lays out, so simulate the swipe viewport being measured —
     // otherwise width stays 0, canPeek is false, and the peek slots never render.
     useEffect(() => {
       onLayout?.({ nativeEvent: { layout: { width: 400, height: 48 } } });
     }, [onLayout]);
-    return createElement('div', { 'data-testid': testID, 'data-bg': backgroundOf(style) }, children);
+    return createElement('div', { 'data-testid': testID }, children);
   },
   StyleSheet: {
     create: (styles: Record<string, unknown>) => styles,

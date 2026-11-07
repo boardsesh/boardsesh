@@ -420,6 +420,11 @@ export function NativeAccessoryClimbRow({
 
   const angleClimbUuid =
     climbBoardName === playerBoardName && climbLayoutId === playerLayoutId ? climb.uuid : undefined;
+  // The bulb's and the tick's analytics placement is UIKit's platter placement,
+  // sent only from the platter (`AccessoryPlacement`): a tap on the Material card
+  // sends none, so it reads as a JS-bar tap and the iOS open/collapsed split
+  // stays clean.
+  const platterPlacement = host === 'nativeAccessory' ? placement : undefined;
   const bluetoothConnected = bluetooth?.isConnected ?? false;
   // The climber's buttons, or Fell / Sent in a timed block. Before the climb on
   // a wide bar, as Music puts its transport; after it elsewhere.
@@ -587,14 +592,14 @@ export function NativeAccessoryClimbRow({
                     iconSize={22}
                     solidGlyphs
                     enableLongPress
-                    placement={placement}
+                    placement={platterPlacement}
                     litBulb={
                       <BoardControlIndicator
                         size={glassSize.inline}
                         iconSize={22}
                         enableLongPress
                         solidGlyphs
-                        placement={placement}
+                        placement={platterPlacement}
                       />
                     }
                   />
@@ -604,7 +609,7 @@ export function NativeAccessoryClimbRow({
                     iconSize={22}
                     enableLongPress
                     solidGlyphs
-                    placement={placement}
+                    placement={platterPlacement}
                   />
                 )
               ) : (
@@ -617,7 +622,7 @@ export function NativeAccessoryClimbRow({
                   size={glassSize.inline}
                   iconSize={wideLayout ? WIDE_LOG_GLYPH_SIZE : geometry.logGlyphSize}
                   appearance={wideLayout ? 'hero' : 'plain'}
-                  placement={placement}
+                  placement={platterPlacement}
                 />
               )}
             </View>

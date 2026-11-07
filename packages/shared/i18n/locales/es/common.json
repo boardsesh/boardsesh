@@ -917,7 +917,7 @@
           "wallDisplay": "Pantalla de muro"
         },
         "fixedNote": "Luz del plafón siempre está, junto a Registrar. Registrar va siempre al final, bajo tu pulgar.",
-        "footer": "En el móvil la barra tiene sitio para uno de estos junto a Luz del plafón y Registrar: el primero que esté activado.",
+        "footer": "En el teléfono la barra tiene sitio para uno de estos junto a Luz del plafón y Registrar: el primero que esté activado.",
         "open": "Abierta",
         "collapsed": "Reducida",
         "previewLabel": "Vista previa, barra {{shape}}: {{buttons}}",

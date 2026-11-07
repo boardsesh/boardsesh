@@ -76,7 +76,7 @@ export const PHONE_MINI_PLAYER_MAX_SLOTS = 3;
  * This includes UIKit's platter margins and content padding, separately from
  * our internal insets above. It is a phone sizing budget, not a UIKit API.
  */
-export const PHONE_ACCESSORY_CONTENT_GUTTER = 42;
+const PHONE_ACCESSORY_CONTENT_GUTTER = 42;
 
 /**
  * The Material MiniPlayer card's side inset (`FloatingMiniPlayerCard`): the card
