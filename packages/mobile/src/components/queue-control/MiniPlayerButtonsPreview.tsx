@@ -15,23 +15,27 @@ import {
   accessoryPlatterGeometry,
   accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
+  miniPlayerPhoneGutter,
   miniPlayerSlotCount,
   miniPlayerUsesWideLayout,
   resolveMiniPlayerControls,
   type MiniPlayerControls,
+  type MiniPlayerHost,
 } from './mini-player-controls';
 
-/** Tall enough for both bars and their captions; fixed so a native form can host it. */
+/** Tall enough for both bars and their captions; fixed so a native form can host it. The card draws one bar. */
 export const MINI_PLAYER_PREVIEW_HEIGHT = 124;
 
 /**
  * The widths the preview stands for before the bar has ever drawn: a 375pt
- * iPhone's 343pt bar, and an iPad in portrait. Once the bar has drawn, the preview
- * uses the width it measured on this device. The slot counts come from the real
- * `miniPlayerSlotCount`.
+ * iPhone's 343pt bar, a 360dp Android phone's card, and an iPad in portrait.
+ * Once the bar has drawn, the preview uses the width it measured on this device.
+ * The slot counts come from the real `miniPlayerSlotCount`.
  */
 export const PREVIEW_PHONE_ROW_WIDTH = 343;
+export const PREVIEW_CARD_WINDOW_WIDTH = 360;
 export const PREVIEW_WIDE_ROW_WIDTH = 995;
+const PREVIEW_CARD_ROW_WIDTH = PREVIEW_CARD_WINDOW_WIDTH - miniPlayerPhoneGutter('materialCard');
 // The row's insets and artwork on an iPhone's 48pt platter and on iPad's taller one.
 const PHONE_WIDTH_BESIDE_NAME = accessoryWidthBesideName(accessoryPlatterGeometry(glassSize.standard), true);
 const WIDE_WIDTH_BESIDE_NAME = accessoryWidthBesideName(accessoryPlatterGeometry(TALL_PLATTER_MIN_HEIGHT), true);
@@ -64,6 +68,11 @@ type MiniPlayerButtonsPreviewProps = {
   signedIn: boolean;
   /** An iPad or an Android tablet: the only bar with Wall display. */
   tablet: boolean;
+  /**
+   * The bar this device draws (`useMiniPlayerHost`). The Material card is never
+   * collapsed, so it previews one bar, and it fits a phone's window less its insets.
+   */
+  host: MiniPlayerHost;
 };
 
 /**
@@ -79,6 +88,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
   wide,
   signedIn,
   tablet,
+  host,
 }: MiniPlayerButtonsPreviewProps) {
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -114,11 +124,13 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
     (placement: 'regular' | 'inline') =>
       miniPlayerSlotCount({
         placement,
-        rowWidth: measuredBar?.rowWidth ?? (wide ? PREVIEW_WIDE_ROW_WIDTH : PREVIEW_PHONE_ROW_WIDTH),
+        rowWidth:
+          measuredBar?.rowWidth ??
+          (wide ? PREVIEW_WIDE_ROW_WIDTH : host === 'materialCard' ? PREVIEW_CARD_ROW_WIDTH : PREVIEW_PHONE_ROW_WIDTH),
         widthBesideName: measuredBar?.widthBesideName ?? (wide ? WIDE_WIDTH_BESIDE_NAME : PHONE_WIDTH_BESIDE_NAME),
         wide,
       }),
-    [wide, measuredBar],
+    [wide, measuredBar, host],
   );
   const openControls = useMemo(() => resolve(slotCountAt('regular'), 'regular'), [resolve, slotCountAt]);
   const collapsedControls = useMemo(() => resolve(slotCountAt('inline'), 'inline'), [resolve, slotCountAt]);
@@ -202,24 +214,33 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
     );
   };
 
+  const collapses = host === 'nativeAccessory';
   return (
     <View
       testID="mini-player-buttons-preview"
-      style={[styles.frame, { backgroundColor: systemColors.secondaryBackground }]}
+      style={[
+        styles.frame,
+        collapses ? styles.frameTwoBars : null,
+        { backgroundColor: systemColors.secondaryBackground },
+      ]}
     >
       {bar(openCaption, openShape, openControls, openWideLayout, 'mini-player-preview-open')}
-      {bar(collapsedCaption, collapsedShape, collapsedControls, false, 'mini-player-preview-collapsed')}
+      {collapses
+        ? bar(collapsedCaption, collapsedShape, collapsedControls, false, 'mini-player-preview-collapsed')
+        : null}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
   frame: {
-    height: MINI_PLAYER_PREVIEW_HEIGHT,
     borderRadius: borderRadius.lg,
     padding: spacing[2],
     gap: spacing[2],
     overflow: 'hidden',
+  },
+  frameTwoBars: {
+    height: MINI_PLAYER_PREVIEW_HEIGHT,
   },
   barBlock: {
     gap: 2,

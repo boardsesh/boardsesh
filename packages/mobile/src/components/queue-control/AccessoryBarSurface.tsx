@@ -6,8 +6,6 @@ import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode'
 import { shadows } from '../../theme/tokens';
 import { withAlpha } from '../../theme/colors';
 
-export type AccessoryBarSurfaceTreatment = 'floating' | 'docked';
-
 /** Visual emphasis: `connected` lights the bar up when you're driving the wall. */
 export type AccessoryBarSurfaceEmphasis = 'none' | 'connected';
 
@@ -15,8 +13,6 @@ type AccessoryBarSurfaceProps = {
   /** Surface height; the default radius is a full pill (`height / 2`). */
   height: number;
   borderRadius?: number;
-  /** Material can dock the surface to the tab bar instead of rendering a floating pill. */
-  treatment?: AccessoryBarSurfaceTreatment;
   /**
    * `connected` = this device holds the board's BLE link. Expressed per platform:
    * a violet M3 tonal container + a level-3 cast on Material (matching the active
@@ -34,7 +30,7 @@ type AccessoryBarSurfaceProps = {
  * occupant content stays variant-agnostic:
  *
  *   glass    → Liquid Glass pill (native edge — no border/shadow)
- *   material → opaque M3 tonal surface (floating pill or docked bar)
+ *   material → opaque M3 tonal surface (a floating pill or the MiniPlayer card)
  *   blur/solid → frosted/solid fill + hairline border + separation shadow
  *
  * Reduce Transparency is handled inside `GlassSurface`/`useEffectiveSurfaceMode`
@@ -44,14 +40,13 @@ type AccessoryBarSurfaceProps = {
 export function AccessoryBarSurface({
   height,
   borderRadius,
-  treatment = 'floating',
   emphasis = 'none',
   style,
   children,
 }: AccessoryBarSurfaceProps) {
   const mode = useEffectiveSurfaceMode();
   const { systemColors, variant, m3, m3SurfaceContainers, materialElevation, brandColors } = useTheme();
-  const radius = treatment === 'docked' ? 0 : (borderRadius ?? height / 2);
+  const radius = borderRadius ?? height / 2;
   const shape: ViewStyle = { height, borderRadius: radius };
   const connected = emphasis === 'connected';
   // A soft warm tint for the iOS glass/blur/solid capsule when you hold control —
@@ -80,24 +75,15 @@ export function AccessoryBarSurface({
   // check (surface capability OR aesthetic variant) — see theme/variants/README.md.
   if (mode === 'material' || variant === 'material') {
     // M3 bottom-bar surface: the `surfaceContainer` tone + a level-2 cast (the
-    // canonical nav/bottom-bar role). Docked adds a hairline top separator;
-    // floating is the same tone as a lifted pill. The grade colour lives in the
-    // bar's leading accent, not here. No clip on this View, so the cast shows.
+    // canonical nav/bottom-bar role), lifted as a pill or a card. No clip on
+    // this View, so the cast shows.
     // When you hold control, step the cast to level-3 and composite the violet
     // `secondaryContainer` tone OVER the opaque base (this codebase maps that role
     // to a low-alpha violet meant to layer, so painting it as the sole background
     // would let the list bleed through). M3 expresses "active" through tone +
     // elevation, not a drop-shadow glow.
     const surfaceElevation = connected ? materialElevation.level3 : materialElevation.level2;
-    const materialSurfaceStyle: ViewStyle =
-      treatment === 'docked'
-        ? {
-            backgroundColor: m3SurfaceContainers.base,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: systemColors.separator,
-            ...surfaceElevation,
-          }
-        : { backgroundColor: m3SurfaceContainers.base, ...surfaceElevation };
+    const materialSurfaceStyle: ViewStyle = { backgroundColor: m3SurfaceContainers.base, ...surfaceElevation };
     return (
       <View style={[shape, materialSurfaceStyle, style]}>
         {connected ? (

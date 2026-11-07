@@ -302,44 +302,18 @@ describe('ClimbCapsule', () => {
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
   });
 
-  it('marks the docked bar with a leading grade-colour accent stripe, keeping text neutral', () => {
-    // The docked Material bar stays on a neutral surface: the grade rides a vivid
-    // leading accent stripe + the colorized grade number, NOT a full coloured fill,
-    // so the name stays the neutral label and the grade keeps its hue.
+  it('colours the grade like the list rows and keeps the name neutral', () => {
     const item = makeItem(makeClimb({ difficulty: 'V6', name: 'The Crimp Ladder' }));
     queue.state.currentClimbQueueItem = item;
     queue.state.queue = [item];
 
-    const { container } = render(<ClimbCapsule surfaceTreatment="docked" />);
-
-    const accent = container.querySelector('[data-testid="grade-accent"]');
-    expect(accent).not.toBeNull();
-    expect(accent?.getAttribute('data-bg')).toBe('#FF0000');
+    const { container } = render(<ClimbCapsule />);
 
     const texts = Array.from(container.querySelectorAll('[data-text]'));
     const gradeNode = texts.find((node) => (node.textContent ?? '').includes('6C'));
     const nameNode = texts.find((node) => (node.textContent ?? '').includes('Crimp'));
     expect(gradeNode?.getAttribute('data-color')).toBe('#FF0000');
     expect(nameNode?.getAttribute('data-color')).toBe('#111111');
-  });
-
-  it('uses the gray fallback for the accent stripe of an unknown grade', () => {
-    const item = makeItem(makeClimb({ difficulty: 'V99', name: 'Mystery' }));
-    queue.state.currentClimbQueueItem = item;
-    queue.state.queue = [item];
-
-    const { container } = render(<ClimbCapsule surfaceTreatment="docked" />);
-    expect(container.querySelector('[data-testid="grade-accent"]')?.getAttribute('data-bg')).toBe('#808080');
-  });
-
-  it('omits the accent stripe on the non-docked floating capsule', () => {
-    // The stripe is a docked-bar treatment; the floating capsule keeps its plain pill.
-    const item = makeItem(makeClimb({ difficulty: 'V6', name: 'The Crimp Ladder' }));
-    queue.state.currentClimbQueueItem = item;
-    queue.state.queue = [item];
-
-    const { container } = render(<ClimbCapsule />);
-    expect(container.querySelector('[data-testid="grade-accent"]')).toBeNull();
   });
 
   it('renders a single climb label (no peek neighbours)', () => {

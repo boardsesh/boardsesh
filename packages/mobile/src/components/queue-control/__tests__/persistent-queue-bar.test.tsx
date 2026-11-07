@@ -89,7 +89,8 @@ vi.mock('../../../providers/queue-provider', () => ({
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
 vi.mock('../../../theme/layout', () => ({
-  MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT: 48,
+  MATERIAL_MINI_PLAYER_CARD_GAP: 8,
+  MATERIAL_MINI_PLAYER_CARD_RESERVE: 56,
   MATERIAL_TAB_BAR_HEIGHT: 80,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT: 56,
   TAB_BAR_HEIGHT: 49,
@@ -98,13 +99,12 @@ vi.mock('../../../theme/layout', () => ({
   TOOLBAR_GAP: 8,
   TOOLBAR_FAB_SIZE: 56,
   TOOLBAR_GAP_ABOVE_TABBAR: 10,
-  TABBAR_SEAM_OVERLAP: 1,
   SIDEBAR_WIDTH: 96,
   // Mirrors the real implementation — ActiveContextBar's floating branch calls it.
   floatingContextBarBottom: (tabBarBottom: number, gapAboveTabBar = 10) => tabBarBottom + gapAboveTabBar,
   glassSize: { hero: 64, inline: 44 },
 }));
-// The docked Material bar reads the tab bar's measured height to position itself.
+// The Material card reads the tab bar's measured height to position itself.
 vi.mock('../../../providers/tab-bar-height-provider', () => ({
   useMeasuredTabBarHeight: () => cfg.measuredTabBarHeight,
   useSetMeasuredTabBarHeight: () => vi.fn(),
@@ -128,38 +128,22 @@ vi.mock('../../../hooks/use-bottom-accessory', () => ({
   }),
 }));
 vi.mock('../ClimbCapsule', () => ({
-  ClimbCapsule: ({
-    fillWidth,
-    height,
-    surfaceTreatment,
-    endAction,
-    endActionSize,
-  }: {
-    fillWidth?: boolean;
-    height?: number;
-    surfaceTreatment?: string;
-    endAction?: ReactNode;
-    endActionSize?: number;
-  }) =>
+  ClimbCapsule: ({ endAction, endActionSize }: { endAction?: ReactNode; endActionSize?: number }) =>
     createElement(
       'div',
       {
         'data-capsule': 'true',
-        'data-fill-width': fillWidth ? 'true' : 'false',
-        'data-height': height == null ? '' : String(height),
-        'data-surface-treatment': surfaceTreatment ?? '',
         'data-end-action-size': endActionSize == null ? '' : String(endActionSize),
       },
       endAction,
     ),
 }));
+vi.mock('../../navigation/FloatingMiniPlayerCard', () => ({
+  FloatingMiniPlayerCard: () => createElement('div', { 'data-mini-player-card': 'true' }),
+}));
 vi.mock('../LogAscentFab', () => ({
   LogAscentFab: ({ climb }: { climb: { uuid: string } }) =>
     createElement('div', { 'data-tick': 'true', 'data-climb-uuid': climb.uuid }),
-}));
-vi.mock('../LogAscentToolbarButton', () => ({
-  LogAscentToolbarButton: ({ climb }: { climb: { uuid: string } }) =>
-    createElement('div', { 'data-tick-inline': 'true', 'data-climb-uuid': climb.uuid }),
 }));
 vi.mock('../ReturnToSessionButton', () => ({
   ReturnToSessionButton: () => createElement('div', { 'data-return-to-session': 'true' }),
@@ -297,23 +281,30 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).not.toBeNull();
   });
 
-  it('uses a docked full-width inline-action bar on Material', () => {
+  it('floats the MiniPlayer card 8dp in from each edge on Material, with no glass capsule or tick', () => {
     cfg.variant = 'material';
     const { container } = renderBar();
-    const capsule = container.querySelector('[data-capsule]');
-    expect(capsule).not.toBeNull();
-    expect(capsule?.getAttribute('data-fill-width')).toBe('true');
-    expect(capsule?.getAttribute('data-height')).toBe('48');
-    expect(capsule?.getAttribute('data-surface-treatment')).toBe('docked');
+    expect(container.querySelector('[data-mini-player-card]')).not.toBeNull();
+    expect(container.querySelector('[data-capsule]')).toBeNull();
     // Positioning lives on the outer plain View shell (parentElement of the
     // Animated.View), not on the Animated.View itself — the Reanimated entering
     // bug was fixed by separating the positioning View from the animated View.
-    expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain('"left":0');
-    expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain(
-      '"right":0',
-    );
-    expect(container.querySelector('[data-tick-inline]')).not.toBeNull();
+    const shellStyle = container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style');
+    expect(shellStyle).toContain('"left":8');
+    expect(shellStyle).toContain('"right":8');
+    // The card's row holds ✓, so no standalone tick floats beside it.
     expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('keeps every gate on Material: no card on a pushed sub-route or without a climb', () => {
+    cfg.variant = 'material';
+    cfg.onTopLevelTab = false;
+    cfg.onAccessorySurface = false;
+    expect(renderBar().container.querySelector('[data-mini-player-card]')).toBeNull();
+    cfg.onTopLevelTab = true;
+    cfg.onAccessorySurface = true;
+    cfg.currentClimbQueueItem = null;
+    expect(renderBar().container.querySelector('[data-mini-player-card]')).toBeNull();
   });
 
   it('renders nothing when the local queue is empty — the wall climb lives in the top strip now', () => {
@@ -325,13 +316,13 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
-  it('docks the Material bar on the measured tab-bar top, tucked under the hairline', () => {
-    // Measured tab bar = 80px tall → the docked bar sits at 80 - TABBAR_SEAM_OVERLAP(1).
+  it('floats the Material card one 8dp gap above the measured tab-bar top', () => {
+    // Measured tab bar = 80px tall → the card sits at 80 + MATERIAL_MINI_PLAYER_CARD_GAP(8).
     cfg.variant = 'material';
     cfg.measuredTabBarHeight = 80;
     const { container } = renderBar();
     expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain(
-      '"bottom":79',
+      '"bottom":88',
     );
   });
 
@@ -407,14 +398,13 @@ describe('PersistentQueueBar', () => {
       expect(capsule?.querySelector('[data-return-to-session]')).toBeNull();
     });
 
-    it('keeps the Material docked bar on the inline log-ascent tick regardless of session state', () => {
+    it('keeps the Material card free of the return-to-session button during a session', () => {
       cfg.variant = 'material';
       cfg.sessionId = 'session-1';
       cfg.activeSegment = 'home';
       const { container } = renderBar();
-      const capsule = container.querySelector('[data-capsule]');
-      expect(capsule?.querySelector('[data-tick-inline]')).not.toBeNull();
-      expect(capsule?.querySelector('[data-return-to-session]')).toBeNull();
+      expect(container.querySelector('[data-mini-player-card]')).not.toBeNull();
+      expect(container.querySelector('[data-return-to-session]')).toBeNull();
     });
   });
 });

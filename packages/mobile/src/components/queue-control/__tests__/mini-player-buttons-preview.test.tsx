@@ -54,6 +54,13 @@ import { FALLBACK_PREVIEW_BOARD } from '../../player-buttons/PlayerButtonsPrevie
 import { MiniPlayerButtonsPreview } from '../MiniPlayerButtonsPreview';
 import { publishMeasuredMiniPlayerBar, resetMeasuredMiniPlayerBar } from '../../../lib/mini-player-measured-bar-store';
 import { DEFAULT_MINI_PLAYER_BUTTONS } from '../../../lib/mini-player-buttons';
+import {
+  accessoryPlatterGeometry,
+  accessoryWidthBesideName,
+  miniPlayerCapacityWidth,
+  miniPlayerPhoneGutter,
+  miniPlayerSlotCount,
+} from '../mini-player-controls';
 
 afterEach(() => {
   cleanup();
@@ -72,13 +79,15 @@ function preview(overrides: Partial<Parameters<typeof MiniPlayerButtonsPreview>[
       wide: false,
       signedIn: true,
       tablet: false,
+      host: 'nativeAccessory',
       ...overrides,
     }),
   );
+  const collapsedBar = screen.queryByTestId('mini-player-preview-collapsed');
   return {
     screen,
     open: iconsIn(screen.getByTestId('mini-player-preview-open')),
-    collapsed: iconsIn(screen.getByTestId('mini-player-preview-collapsed')),
+    collapsed: collapsedBar ? iconsIn(collapsedBar) : null,
   };
 }
 
@@ -223,6 +232,31 @@ describe('MiniPlayerButtonsPreview', () => {
     const { open, collapsed } = preview();
     expect(open).toEqual(['lightbulb']);
     expect(collapsed).toEqual(['lightbulb']);
+  });
+
+  it('draws one bar for the Material card, which never collapses', () => {
+    const { open, collapsed } = preview({ host: 'materialCard' });
+    expect(open).toEqual(['skip.next', 'lightbulb', 'tick.outline']);
+    expect(collapsed).toBeNull();
+  });
+
+  // What the card's row publishes on a 360dp and a 412dp Android phone: the
+  // preview's slot count is the bar's own.
+  it.each([360, 412])('matches the Material card on a %s dp phone', (windowWidth) => {
+    const widthBesideName = accessoryWidthBesideName(accessoryPlatterGeometry(48), true);
+    const rowWidth = miniPlayerCapacityWidth({
+      windowWidth,
+      rowWidth: null,
+      wide: false,
+      verticalTabBar: false,
+      gutter: miniPlayerPhoneGutter('materialCard'),
+    });
+    expect(rowWidth).not.toBeNull();
+    const slots = miniPlayerSlotCount({ placement: 'regular', rowWidth, widthBesideName, wide: false });
+    publishMeasuredMiniPlayerBar({ rowWidth: rowWidth ?? 0, widthBesideName });
+    const { open } = preview({ host: 'materialCard' });
+    expect(slots).toBe(3);
+    expect(open).toHaveLength(slots);
   });
 
   it('falls back to the representative widths when the bar has not drawn', () => {

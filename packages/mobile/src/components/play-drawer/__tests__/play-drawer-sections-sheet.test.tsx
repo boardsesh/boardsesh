@@ -90,15 +90,26 @@ vi.mock('../../../lib/mini-player-buttons-preference', () => ({
   useMiniPlayerButtonsEditor: () => miniPlayer,
 }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
-const tabChrome = vi.hoisted(() => ({ nativeAccessory: true }));
-vi.mock('../../../hooks/use-bottom-accessory', () => ({ useTabChrome: () => tabChrome }));
+const tabChrome = vi.hoisted(() => ({
+  miniPlayerHost: 'nativeAccessory' as 'nativeAccessory' | 'materialCard' | null,
+}));
+vi.mock('../../../hooks/use-mini-player-host', () => ({ useMiniPlayerHost: () => tabChrome.miniPlayerHost }));
 const deviceLayout = vi.hoisted(() => ({ isTablet: false, phoneSplit: false }));
 vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => deviceLayout }));
 vi.mock('../../queue-control/MiniPlayerButtonsPreview', () => ({
-  MiniPlayerButtonsPreview: ({ wide, board }: { wide: boolean; board: { supportsMirroring: boolean } }) =>
+  MiniPlayerButtonsPreview: ({
+    wide,
+    board,
+    host,
+  }: {
+    wide: boolean;
+    board: { supportsMirroring: boolean };
+    host: string;
+  }) =>
     createElement('figure', {
       'data-testid': 'mini-player-buttons-preview',
       'data-wide': String(wide),
+      'data-host': host,
       'data-mirror': String(board.supportsMirroring),
     }),
 }));
@@ -360,7 +371,7 @@ beforeEach(() => {
   miniPlayer.isDefault = true;
   deviceLayout.isTablet = false;
   deviceLayout.phoneSplit = false;
-  tabChrome.nativeAccessory = true;
+  tabChrome.miniPlayerHost = 'nativeAccessory';
   for (const action of [miniPlayer.setVisible, miniPlayer.move, miniPlayer.restoreDefaults]) action.mockClear();
   for (const action of [
     playerButtons.setVisible,
@@ -671,8 +682,15 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(screen.getByText('mobile.settings.miniPlayer.footer').closest('footer')).toBeTruthy();
   });
 
-  it('has no Mini player tab where there is no native bottom accessory to draw it', () => {
-    tabChrome.nativeAccessory = false;
+  it('offers the Mini player tab on the Material card and previews the card', () => {
+    tabChrome.miniPlayerHost = 'materialCard';
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    expect(screen.getByTestId('mini-player-buttons-preview').getAttribute('data-host')).toBe('materialCard');
+  });
+
+  it('has no Mini player tab where no MiniPlayer bar draws it', () => {
+    tabChrome.miniPlayerHost = null;
     const screen = render(sheet());
     expect(screen.queryByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' })).toBeNull();
     expect(screen.getAllByRole('radio')).toHaveLength(2);
@@ -682,7 +700,7 @@ describe('PlayDrawerSectionsSheet', () => {
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
     expect(screen.getByTestId('mini-player-buttons-preview')).toBeTruthy();
-    tabChrome.nativeAccessory = false;
+    tabChrome.miniPlayerHost = null;
     screen.rerender(sheet());
     expect(screen.queryByTestId('mini-player-buttons-preview')).toBeNull();
     expect(screen.getByTestId('play-drawer-sections-show-all')).toBeTruthy();
