@@ -75,4 +75,18 @@ describe('VerifyRequestContent — inline resend errors', () => {
     expect(alert.textContent).toMatch(/Failed to send verification email/i);
     expect((screen.getByRole('button', { name: /resend/i }) as HTMLButtonElement).disabled).toBe(false);
   });
+  it('translates retryable backend failure without exposing its implementation code', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'AuthBackendUnavailable' }),
+    });
+    render(<VerifyRequestContent />);
+    await submitResend();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Failed to send verification email/i);
+    expect(alert.textContent).not.toContain('AuthBackendUnavailable');
+    expect((screen.getByRole('button', { name: /resend/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });

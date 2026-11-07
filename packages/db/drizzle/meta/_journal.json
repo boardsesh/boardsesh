@@ -2038,6 +2038,13 @@
       "when": 1793858050860,
       "tag": "0290_auth_current_store_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 291,
+      "version": "7",
+      "when": 1793860606563,
+      "tag": "0291_auth_uid_email_verification",
+      "breakpoints": true
     }
   ]
 }
