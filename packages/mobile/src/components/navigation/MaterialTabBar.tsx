@@ -24,12 +24,12 @@ import { isLiveTabBadge } from './tab-badge';
 export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, insets }: BottomTabBarProps) {
   const { systemColors, brandColors, m3 } = useTheme();
   // M3 navigation bar roles: the focused destination's icon sits on a
-  // secondaryContainer active-indicator circle (onSecondaryContainer glyph), its
-  // label lifts to onSurface, and inactive destinations use onSurfaceVariant for
+  // secondaryContainer active-indicator pill (onSecondaryContainer glyph), its
+  // label takes secondary (M3 ItemActiveLabelTextColor), and inactive destinations use onSurfaceVariant for
   // both icon and label. These read correctly on the tonal M3 surface in both
   // schemes (the Paper palette resolves per scheme) — no manual alpha tinting.
   const activeIconColor = m3.onSecondaryContainer;
-  const activeLabelColor = m3.onSurface;
+  const activeLabelColor = m3.secondary;
   const inactiveColor = m3.onSurfaceVariant;
   const indicatorColor = m3.secondaryContainer;
 
@@ -123,6 +123,7 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
               color={labelColor}
               numberOfLines={1}
               maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+              style={styles.label}
             >
               {label}
             </Text>
@@ -165,12 +166,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: material.navBar.activeIndicatorRadius,
   },
-  // Dot on the icon's top-right corner: the 24dp icon sits centred in the 56×32
+  // M3 LabelMedium (12/16, weight 500), the nav bar label role; caption2 is 11sp.
+  label: { fontSize: 12, lineHeight: 16 },
+  // Dot on the icon's top-end corner: the 24dp icon sits centred in the 56×32
   // pill (x 16–40, y 4–28), so the dot straddles that corner.
   badge: {
     position: 'absolute',
     top: 2,
-    right: 12,
+    end: 12,
     width: 9,
     height: 9,
     borderRadius: 5,
