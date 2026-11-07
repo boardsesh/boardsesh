@@ -76,7 +76,7 @@ describe('computeBottomChromeMetrics', () => {
 
   it('clears the JS Material tab bar for Liquid Glass on a non-capable device', () => {
     // Older iPhone / Android on Liquid Glass: the variant is liquidGlass (floating
-    // island queue chrome → TOOLBAR_RESERVE) but the rendered bar is the 80dp JS
+    // island queue chrome → TOOLBAR_RESERVE) but the rendered bar is the 64dp JS
     // MaterialTabBar, which sits in flow rather than overlaying content.
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
@@ -108,7 +108,7 @@ describe('computeBottomChromeMetrics', () => {
     });
     expect(metrics.jsQueueToolbarVisible).toBe(true);
     expect(metrics.jsQueueReserve).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
-    // Material clears its taller M3 nav bar (80) — not the iOS 49.
+    // Material clears its taller M3 short nav bar (64) — not the iOS 49.
     expect(metrics.scrollBottomPadding).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
     expect(metrics.floatingControlBottom).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
     expect(metrics.fixedFooterBottom).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);

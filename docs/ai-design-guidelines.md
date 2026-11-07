@@ -413,8 +413,8 @@ baseline correction. Its row keeps the same 60pt height by using 4pt top padding
 Other inline buttons keep their existing sizes. The default row is Mirror (Angle on adjustable boards without
 mirroring), Favorite, Log, Share, Queue. Previous and next remain available in View options.
 
-**Tab bar.** `TAB_BAR_HEIGHT` = 49 (Liquid Glass / native iOS). `MATERIAL_TAB_BAR_HEIGHT` = 80 (M3
-80dp bar fitting the active-indicator pill + icon + label).
+**Tab bar.** `TAB_BAR_HEIGHT` = 49 (Liquid Glass / native iOS). `MATERIAL_TAB_BAR_HEIGHT` = 64 (M3
+Expressive short navigation bar: a 56×32 active-indicator pill, icon above a label capped at 1.2× font scale).
 
 **Floating toolbar.** `TOOLBAR_FAB_SIZE` 48 · `TOOLBAR_CAPSULE_HEIGHT` 44 · `TOOLBAR_CAPSULE_MAX_WIDTH`
 260 · `TOOLBAR_SIDE_MARGIN` 16 · `TOOLBAR_GAP` 8 · `TOOLBAR_GAP_ABOVE_TABBAR` 10 · `TOOLBAR_RESERVE`

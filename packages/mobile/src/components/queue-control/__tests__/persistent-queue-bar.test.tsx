@@ -90,7 +90,7 @@ vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
 vi.mock('../../../theme/layout', () => ({
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT: 48,
-  MATERIAL_TAB_BAR_HEIGHT: 80,
+  MATERIAL_TAB_BAR_HEIGHT: 64,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT: 56,
   TAB_BAR_HEIGHT: 49,
   TOOLBAR_RESERVE: 74,
@@ -326,12 +326,12 @@ describe('PersistentQueueBar', () => {
   });
 
   it('docks the Material bar on the measured tab-bar top, tucked under the hairline', () => {
-    // Measured tab bar = 80px tall → the docked bar sits at 80 - TABBAR_SEAM_OVERLAP(1).
+    // Measured tab bar = 64px tall → the docked bar sits at 64 - TABBAR_SEAM_OVERLAP(1).
     cfg.variant = 'material';
-    cfg.measuredTabBarHeight = 80;
+    cfg.measuredTabBarHeight = 64;
     const { container } = renderBar();
     expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain(
-      '"bottom":79',
+      '"bottom":63',
     );
   });
 
