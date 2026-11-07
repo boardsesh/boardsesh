@@ -133,6 +133,7 @@ export const schemaSQL = `
   DROP TABLE IF EXISTS "board_sessions" CASCADE;
   DROP TABLE IF EXISTS "user_climb_percentiles" CASCADE;
   DROP TABLE IF EXISTS "user_credentials" CASCADE;
+  DROP TABLE IF EXISTS "accounts" CASCADE;
   DROP TABLE IF EXISTS "users" CASCADE;
 
   CREATE TABLE IF NOT EXISTS "users" (
