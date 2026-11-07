@@ -29,6 +29,7 @@
     "@aws-sdk/client-s3": "^3.1101.0",
     "@boardsesh/analytics": "workspace:*",
     "@boardsesh/aurora-sync": "workspace:*",
+    "@boardsesh/auth-protocol": "workspace:*",
     "@boardsesh/ble-protocol": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
