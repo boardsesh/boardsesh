@@ -89,6 +89,25 @@ type NowSlotCurrentChange = {
 };
 
 /**
+ * `queue` without the entries after `current` whose uuid `dropUuids` names
+ * (issue #7304). History and the current climb are never touched, so the line
+ * stays where it is. Returns `queue` itself when nothing goes.
+ */
+function withoutUpNextEntries(
+  queue: ClimbQueueItem[],
+  current: ClimbQueueItem | null,
+  dropUuids: readonly string[] | undefined,
+): ClimbQueueItem[] {
+  if (!current || !dropUuids || dropUuids.length === 0) return queue;
+  const currentIndex = queue.findIndex(({ uuid }) => uuid === current.uuid);
+  if (currentIndex < 0) return queue;
+  const dropped = new Set(dropUuids);
+  const upNext = queue.slice(currentIndex + 1);
+  const kept = upNext.filter(({ uuid }) => !dropped.has(uuid));
+  return kept.length === upNext.length ? queue : [...queue.slice(0, currentIndex + 1), ...kept];
+}
+
+/**
  * A local open in now-slot mode: the one placement rule the server runs
  * (`placeOnWall`), so a climb already in the queue moves into the Now slot
  * instead of being copied. Solo, History is trimmed here too; in a session the
@@ -537,6 +556,7 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         serverCorrelationId,
         playlistSuggestionSource,
         pruneSuggestedAfterCurrent = true,
+        dropUpNextQueueItemUuids,
         sessionId,
         placement = 'NOW',
         capHistory: trimHistory = false,
@@ -639,9 +659,16 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         if (!isServerEvent && item && correlationId) {
           pendingUpdates = [...pendingUpdates, correlationId].slice(-50);
         }
-        const changed = isServerEvent
+        const placed = isServerEvent
           ? pointAtServerCurrent(state, item)
           : placeLocally(state, item, placement, trimHistory);
+        // Removing entries after the climb on the wall leaves the line where it is.
+        const changed = isServerEvent
+          ? placed
+          : {
+              ...placed,
+              queue: withoutUpNextEntries(placed.queue, placed.currentClimbQueueItem, dropUpNextQueueItemUuids),
+            };
         return {
           ...state,
           ...changed,
@@ -675,12 +702,13 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         pendingUpdates = [...pendingUpdates, correlationId].slice(-50); // Still bound to 50 items for safety
       }
 
+      const prunedQueue =
+        playlistSuggestionSource && item && pruneSuggestedAfterCurrent
+          ? pruneSuggestedQueueItemsAfterCurrent(newQueue, item)
+          : newQueue;
       return {
         ...state,
-        queue:
-          playlistSuggestionSource && item && pruneSuggestedAfterCurrent
-            ? pruneSuggestedQueueItemsAfterCurrent(newQueue, item)
-            : newQueue,
+        queue: withoutUpNextEntries(prunedQueue, item, dropUpNextQueueItemUuids),
         currentClimbQueueItem: item,
         playlistSuggestionSource:
           playlistSuggestionSource === undefined ? state.playlistSuggestionSource : playlistSuggestionSource,

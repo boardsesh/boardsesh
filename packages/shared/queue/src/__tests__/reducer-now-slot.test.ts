@@ -498,3 +498,52 @@ describe('legacy mode is today’s reducer', () => {
     expect(live.historyCount).toBeNull();
   });
 });
+
+describe('dropUpNextQueueItemUuids (issue #7304)', () => {
+  const leftoverX = { ...item('x'), suggested: true };
+  const leftoverY = { ...item('y'), suggested: true };
+  const queuedOnPurpose = item('q');
+  const tapped = item('t');
+
+  // History A, Now B, Up next: two swipe leftovers from an older list and one
+  // climb queued on purpose.
+  const stale = (): QueueState =>
+    nowSlotState({ queue: [A, B, leftoverX, queuedOnPurpose, leftoverY], currentClimbQueueItem: B, historyCount: 1 });
+
+  it('drops the named entries after the new current climb and keeps the rest', () => {
+    const next = openLocally(stale(), tapped, { dropUpNextQueueItemUuids: ['x', 'y'] });
+    expect(uuids(next)).toEqual(['a', 'b', 't', 'q']);
+    expect(next.currentClimbQueueItem?.uuid).toBe('t');
+    expect(next.historyCount).toBe(2);
+  });
+
+  it('never drops History or the current climb, even when named', () => {
+    const next = openLocally(stale(), tapped, { dropUpNextQueueItemUuids: ['a', 'b', 't', 'y'] });
+    expect(uuids(next)).toEqual(['a', 'b', 't', 'x', 'q']);
+  });
+
+  it('leaves Up next alone without the list, which is what played the leftovers first', () => {
+    const next = openLocally(stale(), tapped);
+    expect(uuids(next)).toEqual(['a', 'b', 't', 'x', 'q', 'y']);
+  });
+
+  it('never drops on a server event', () => {
+    // The server points at the queued climb q, so only the guard keeps y.
+    const next = queueReducer(stale(), {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: queuedOnPurpose, shouldAddToQueue: false, isServerEvent: true, dropUpNextQueueItemUuids: ['y'] },
+    });
+    expect(next.currentClimbQueueItem?.uuid).toBe('q');
+    expect(uuids(next)).toContain('x');
+    expect(uuids(next)).toContain('y');
+  });
+
+  it('drops in legacy mode too, with no list on the open', () => {
+    const legacy = { ...initialState({}), queue: [A, B, leftoverX, queuedOnPurpose], currentClimbQueueItem: B };
+    const next = queueReducer(legacy, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: tapped, shouldAddToQueue: true, insertAfterCurrent: true, dropUpNextQueueItemUuids: ['x'] },
+    });
+    expect(uuids(next)).toEqual(['a', 'b', 't', 'q']);
+  });
+});
