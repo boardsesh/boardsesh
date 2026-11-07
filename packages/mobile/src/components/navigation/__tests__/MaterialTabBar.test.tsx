@@ -107,10 +107,10 @@ vi.mock('../../../providers/theme-provider', () => ({
     // prove the dot fill comes from the static (light) brand instead.
     brandColors: { primary: '#A78BFA', success: '#34D399', live: '#FBBF24' },
     // M3 navigation-bar roles: active icon on a secondaryContainer pill, active
-    // label onSurface, inactive icon+label onSurfaceVariant.
+    // label secondary, inactive icon+label onSurfaceVariant.
     m3: {
       onSecondaryContainer: '#E8DEF8',
-      onSurface: '#E6E1E5',
+      secondary: '#CCC2DC',
       onSurfaceVariant: '#CAC4D0',
       secondaryContainer: FOCUSED_INDICATOR_COLOR,
     },
