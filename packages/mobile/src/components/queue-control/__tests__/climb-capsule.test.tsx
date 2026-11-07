@@ -14,6 +14,8 @@ const queue = vi.hoisted(() => ({
   previousClimb: vi.fn(),
 }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
+const appearance = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
+vi.mock('../use-climb-byline', () => ({ useClimbStatsDetail: () => '10 sends' }));
 
 // --- RN surface: View → div ---------------------------------------------------
 // Forward testID and the resolved backgroundColor so a test can assert the leading
@@ -114,14 +116,22 @@ function readColor(props: TextMockProps): string {
 }
 vi.mock('../../Text', () => ({
   Text: (props: TextMockProps) =>
-    createElement('span', { 'data-text': 'true', 'data-color': readColor(props) }, props.children),
+    createElement(
+      'span',
+      { 'data-text': 'true', 'data-color': readColor(props), 'data-variant': props.variant },
+      props.children,
+    ),
 }));
 
 // MarqueeText (the scrolling climb-name label) has its own unit test; here it's
 // just a coloured text node so the capsule's layout/colour assertions hold.
 vi.mock('../../MarqueeText', () => ({
   MarqueeText: (props: TextMockProps) =>
-    createElement('span', { 'data-text': 'true', 'data-color': readColor(props) }, props.children),
+    createElement(
+      'span',
+      { 'data-text': 'true', 'data-color': readColor(props), 'data-variant': props.variant },
+      props.children,
+    ),
 }));
 
 vi.mock('../../GlassSurface', () => ({
@@ -131,7 +141,8 @@ vi.mock('../../GlassSurface', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { label: '#111111', separator: '#cccccc', elevatedSurface: '#f0f0f0' },
+    variant: appearance.variant,
+    systemColors: { label: '#111111', secondaryLabel: '#555555', separator: '#cccccc', elevatedSurface: '#f0f0f0' },
     brandColors: { primary: '#6D28D9', warning: '#FBBF24' },
   }),
 }));
@@ -183,7 +194,11 @@ vi.mock('../../../hooks/use-display-grade', () => ({
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 
 vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => `${color}29` }));
-vi.mock('../../../theme/layout', () => ({ TOOLBAR_CAPSULE_HEIGHT: 52, TOOLBAR_CAPSULE_MAX_WIDTH: 260 }));
+vi.mock('../../../theme/layout', () => ({
+  TOOLBAR_CAPSULE_HEIGHT: 52,
+  TOOLBAR_CAPSULE_MAX_WIDTH: 260,
+  glassSize: { inline: 44, standard: 48 },
+}));
 vi.mock('../../../theme/tokens', () => ({
   shadows: { sm: {} },
   spacing: { 1: 4, 2: 8, 4: 16 },
@@ -219,6 +234,7 @@ function makeItem(climb: Climb): ClimbQueueItem {
 
 describe('ClimbCapsule', () => {
   beforeEach(() => {
+    appearance.variant = 'liquidGlass';
     queue.state.currentClimbQueueItem = null;
     queue.state.queue = [];
     drawer.openPlayDrawer.mockClear();
@@ -302,34 +318,18 @@ describe('ClimbCapsule', () => {
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
   });
 
-  it('marks the docked bar with a leading grade-colour accent stripe, keeping text neutral', () => {
-    // The docked Material bar stays on a neutral surface: the grade rides a vivid
-    // leading accent stripe + the colorized grade number, NOT a full coloured fill,
-    // so the name stays the neutral label and the grade keeps its hue.
+  it('uses a separate neutral grade and sends byline below the Material name without a stripe', () => {
+    appearance.variant = 'material';
     const item = makeItem(makeClimb({ difficulty: 'V6', name: 'The Crimp Ladder' }));
     queue.state.currentClimbQueueItem = item;
     queue.state.queue = [item];
-
-    const { container } = render(<ClimbCapsule surfaceTreatment="docked" />);
-
-    const accent = container.querySelector('[data-testid="grade-accent"]');
-    expect(accent).not.toBeNull();
-    expect(accent?.getAttribute('data-bg')).toBe('#FF0000');
-
-    const texts = Array.from(container.querySelectorAll('[data-text]'));
-    const gradeNode = texts.find((node) => (node.textContent ?? '').includes('6C'));
-    const nameNode = texts.find((node) => (node.textContent ?? '').includes('Crimp'));
-    expect(gradeNode?.getAttribute('data-color')).toBe('#FF0000');
-    expect(nameNode?.getAttribute('data-color')).toBe('#111111');
-  });
-
-  it('uses the gray fallback for the accent stripe of an unknown grade', () => {
-    const item = makeItem(makeClimb({ difficulty: 'V99', name: 'Mystery' }));
-    queue.state.currentClimbQueueItem = item;
-    queue.state.queue = [item];
-
-    const { container } = render(<ClimbCapsule surfaceTreatment="docked" />);
-    expect(container.querySelector('[data-testid="grade-accent"]')?.getAttribute('data-bg')).toBe('#808080');
+    const { container } = render(<ClimbCapsule height={48} fillWidth />);
+    const byline = container.querySelector('[data-testid="material-climb-byline"]');
+    expect(byline?.textContent).toBe('V6 6C· 10 sends');
+    expect(byline?.querySelector('[data-text]')?.getAttribute('data-color')).toBe('#555555');
+    expect(byline?.querySelector('[data-text]')?.getAttribute('data-variant')).toBe('footnote');
+    expect(byline?.textContent).not.toContain('The Crimp Ladder');
+    expect(container.querySelector('[data-testid="grade-accent"]')).toBeNull();
   });
 
   it('omits the accent stripe on the non-docked floating capsule', () => {

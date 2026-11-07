@@ -1,6 +1,6 @@
 // The toolbar's center element: a floating pill showing the current climb's name
-// with the grade colorized on the right — the same treatment as the climb list
-// rows. Tap opens the PlayDrawer. The pill's background adapts to the UI variant
+// with the grade colorized on the right on Liquid Glass, or a neutral grade and
+// sends byline below its name on Material. Tap opens the PlayDrawer. The pill's background adapts to the UI variant
 // (Liquid Glass / Material / fallback) via AccessoryBarSurface; the tap-to-open
 // behaviour is shared with the native accessory via useAccessoryClimbTap.
 
@@ -10,6 +10,8 @@ import { DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import type { Climb } from '@boardsesh/queue';
 import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
+import { selectByVariant } from '../../theme/variants';
+import { useClimbStatsDetail } from './use-climb-byline';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { Text } from '../Text';
@@ -36,9 +38,65 @@ type ClimbLabelProps = {
   gradeColor: string;
   showThumbnail: boolean;
   boardConfig: BoardConfig | null;
+  material?: boolean;
 };
 
-function ClimbLabel({ climb, labelColor, formattedGrade, gradeColor, showThumbnail, boardConfig }: ClimbLabelProps) {
+function MaterialClimbLabel({ climb, formattedGrade, showThumbnail, boardConfig }: ClimbLabelProps) {
+  const { systemColors } = useTheme();
+  const detail = useClimbStatsDetail(climb, boardConfig);
+  return (
+    <View style={styles.labelInner}>
+      {showThumbnail ? <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} size={32} /> : null}
+      <View style={styles.titleBlock}>
+        <View style={styles.labelInner}>
+          <MarqueeText
+            active
+            variant="subheadline"
+            color={systemColors.label}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.name}
+            textStyle={styles.nameText}
+          >
+            {climb.name}
+          </MarqueeText>
+          {climb.is_draft === true ? (
+            <DraftChip maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE} testID="capsule-climb-draft" />
+          ) : null}
+        </View>
+        {formattedGrade || detail ? (
+          <View style={styles.labelInner} testID="material-climb-byline">
+            {formattedGrade ? (
+              <Text
+                variant="footnote"
+                color={systemColors.secondaryLabel}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.bylineGrade}
+              >
+                {formattedGrade}
+              </Text>
+            ) : null}
+            {detail ? (
+              <Text
+                variant="footnote"
+                color={systemColors.secondaryLabel}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.bylineDetail}
+              >
+                {formattedGrade ? `· ${detail}` : detail}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function ClimbLabel(props: ClimbLabelProps) {
+  const { climb, labelColor, formattedGrade, gradeColor, showThumbnail, boardConfig, material } = props;
+  if (material) return <MaterialClimbLabel {...props} />;
   return (
     <View style={styles.labelInner}>
       {showThumbnail ? <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} /> : null}
@@ -80,7 +138,7 @@ type ClimbCapsuleProps = {
   /** Action floated inside the capsule on the right, outside the swipe target (e.g. the tick). */
   endAction?: ReactNode;
   endActionSize?: number;
-  /** Surface silhouette; Material docks this row while other variants float it. */
+  /** Surface silhouette for the floating climb capsule. */
   surfaceTreatment?: AccessoryBarSurfaceTreatment;
 };
 
@@ -91,7 +149,9 @@ export function ClimbCapsule({
   endActionSize = 0,
   surfaceTreatment = 'floating',
 }: ClimbCapsuleProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, variant } = useTheme();
+  const material = selectByVariant(variant, { material: true, liquidGlass: false });
+  const actionSize = material ? glassSize.standard : glassSize.inline;
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
   const { openPlay, preparePlay, currentItem, pick } = useAccessoryClimbTap();
@@ -132,16 +192,8 @@ export function ClimbCapsule({
   const labelRight = spacing[4] + endActionReservedWidth;
   // Reserve room on the LEFT for the board control, symmetric to the tick, so the
   // climb name never slides under it.
-  const leadingReservedWidth = hasBoardControl ? glassSize.inline + spacing[2] : 0;
+  const leadingReservedWidth = hasBoardControl ? actionSize + spacing[2] : 0;
   const labelLeft = spacing[4] + leadingReservedWidth;
-
-  // The docked Material bar stays on a neutral M3 surface (a step above the tab bar
-  // via elevation) and marks the grade with a vivid leading colour stripe — distinct
-  // from the tab bar without painting a full grade-coloured band. The grade number
-  // keeps its per-grade colour, matching the list rows. When you hold control the
-  // stripe recolors to the brand violet so it reads as a control-on edge marker.
-  const showGradeAccent = surfaceTreatment === 'docked';
-  const gradeAccentColor = connected ? brandColors.primary : grades.currentColor;
 
   return (
     <AccessoryBarSurface
@@ -151,13 +203,6 @@ export function ClimbCapsule({
       emphasis={connected ? 'connected' : 'none'}
       style={[styles.capsule, fillWidth ? null : styles.capsuleCap]}
     >
-      {showGradeAccent ? (
-        <View
-          testID="grade-accent"
-          pointerEvents="none"
-          style={[styles.gradeAccent, { backgroundColor: gradeAccentColor }]}
-        />
-      ) : null}
       <AccessoryPlayLink
         testID={`mini-player-current-${currentClimb.uuid}`}
         style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
@@ -177,6 +222,7 @@ export function ClimbCapsule({
             gradeColor={grades.currentColor}
             showThumbnail={showThumbnail}
             boardConfig={boardConfig}
+            material={material}
           />
         </LargeContentViewer>
       </AccessoryPlayLink>
@@ -189,12 +235,12 @@ export function ClimbCapsule({
             <PickBulbSlot
               pick={pick}
               bulb={pickBulb}
-              size={glassSize.inline}
+              size={actionSize}
               enableLongPress
-              litBulb={<BoardControlIndicator size={glassSize.inline} enableLongPress />}
+              litBulb={<BoardControlIndicator size={actionSize} enableLongPress />}
             />
           ) : (
-            <BoardControlIndicator size={glassSize.inline} enableLongPress />
+            <BoardControlIndicator size={actionSize} enableLongPress />
           )}
         </View>
       ) : null}
@@ -207,16 +253,9 @@ const styles = StyleSheet.create({
   capsule: {
     flex: 1,
   },
-  // Leading grade marker on the docked Material bar: a vivid full-height stripe in
-  // the raw grade colour, sitting in the label's left padding so it never overlaps
-  // text. Distinguishes the bar from the tab bar and reads grade at a glance.
-  gradeAccent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: spacing[1],
-  },
+  titleBlock: { flex: 1, minWidth: 0 },
+  bylineGrade: { flexShrink: 0, fontVariant: ['tabular-nums'] },
+  bylineDetail: { flexShrink: 1, minWidth: 0 },
   // Centered-pill cap; omitted on the full-width Material bar.
   capsuleCap: {
     maxWidth: TOOLBAR_CAPSULE_MAX_WIDTH,

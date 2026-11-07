@@ -71,9 +71,9 @@ describe('ToastOffsetPublisher', () => {
       bottom: 34 + 80 + 8,
     },
     {
-      name: 'Material, climb on the wall: also clears the 48dp queue bar',
+      name: 'Material, climb selected: clears the 48dp mini-player and its 10dp floating gap',
       chrome: { hasCurrentClimb: true },
-      bottom: 34 + 80 + 48 + 8,
+      bottom: 34 + 80 + 48 + 10 + 8,
     },
     {
       name: 'Material, pushed tab route: no queue bar there, so none reserved',

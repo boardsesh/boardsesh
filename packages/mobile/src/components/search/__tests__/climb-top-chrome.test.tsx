@@ -730,6 +730,19 @@ describe('ClimbTopChrome', () => {
     expect(container.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
   });
 
+  it('centres the Material wall capsule with 16dp gutters and 4dp vertical spacing', () => {
+    ctrl.variant = 'material';
+    ctrl.board = typedBoard;
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
+    const { container } = render(<ClimbTopChrome {...makeProps()} />);
+    const row = container.querySelector('[data-wall-capsule="wall-9"]')?.parentElement;
+    expect(JSON.parse(row?.getAttribute('data-style') ?? '{}')).toMatchObject({
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 4,
+    });
+  });
+
   it.each(['liquidGlass', 'material'] as const)('labels a recent disconnected climb as history on %s', (variant) => {
     vi.useFakeTimers();
     vi.setSystemTime('2026-10-31T10:20:00Z');

@@ -1,6 +1,6 @@
 /**
  * ActiveContextBar — the content-agnostic bar that sits above the tab
- * bar. It owns ONLY the layout (absolute lift/docking above the tab bar, the
+ * bar. It owns ONLY the layout (absolute positioning above the tab bar, the
  * leading / primary / trailing slot rhythm, fade-in) — not what fills it. Today
  * the primary slot holds the climb capsule; a later workout rep-timer drops into
  * the same slot with no changes here.
@@ -21,7 +21,6 @@ import {
   TOOLBAR_GAP,
   TOOLBAR_FAB_SIZE,
   TOOLBAR_GAP_ABOVE_TABBAR,
-  TABBAR_SEAM_OVERLAP,
   floatingContextBarBottom,
   glassSize,
 } from '../../theme/layout';
@@ -38,15 +37,14 @@ type ActiveContextBarProps = {
   trailing?: ReactNode;
   /** Width of the trailing slot (defaults to the hero size). */
   trailingWidth?: number;
-  /** Render the primary edge-to-edge (no leading/trailing slots) — the Material
-   *  full-width bar, where the trailing action lives inside the primary. */
+  /** Render the primary without leading/trailing slots — the Material
+   *  mini-player, where the trailing action lives inside the primary. */
   fillPrimary?: boolean;
   /** Lift above the tab bar (defaults to TOOLBAR_GAP_ABOVE_TABBAR). Floating only. */
   gapAboveTabBar?: number;
-  /** Dock flush against the tab bar (Material) rather than floating above it. Positions
-   *  the bar's bottom on the tab bar's *measured* top, tucked under its hairline. */
-  dockToTabBar?: boolean;
-  /** Horizontal inset from the screen edge; Material uses 0 for a docked bar. */
+  /** Follow the Material tab bar's measured height, retaining the floating gap. */
+  followMeasuredTabBar?: boolean;
+  /** Horizontal inset from the screen edge. */
   horizontalInset?: number;
 };
 
@@ -57,20 +55,20 @@ export function ActiveContextBar({
   trailingWidth = glassSize.hero,
   fillPrimary = false,
   gapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR,
-  dockToTabBar = false,
+  followMeasuredTabBar = false,
   horizontalInset = TOOLBAR_SIDE_MARGIN,
 }: ActiveContextBarProps) {
   const reduceMotion = useReduceMotion();
   const bottomChrome = useBottomChromeMetrics();
   const measuredTabBarHeight = useMeasuredTabBarHeight();
 
-  // Docked (Material): sit on the tab bar's REAL measured top, tucked under its hairline
-  // by one px. Before the first measurement, fall back to the constant-estimated top
+  // Material follows the tab bar's measured top with a floating gap. Before the
+  // first measurement, fall back to the constant-estimated top
   // (≤2px off for a single frame, then it snaps to the truth). Floating (glass) keeps
   // its lift above the tab bar — shared with the #3967 tray-clearance tests via
   // `floatingContextBarBottom`, so the tray can't move without moving that guard.
-  const bottom = dockToTabBar
-    ? (measuredTabBarHeight ?? bottomChrome.tabBarBottom) - TABBAR_SEAM_OVERLAP
+  const bottom = followMeasuredTabBar
+    ? floatingContextBarBottom(measuredTabBarHeight ?? bottomChrome.tabBarBottom, gapAboveTabBar)
     : floatingContextBarBottom(bottomChrome.tabBarBottom, gapAboveTabBar);
 
   // Outer shell: plain View so `pointerEvents="box-none"` is respected on Android.
@@ -123,7 +121,7 @@ const styles = StyleSheet.create({
   toolbar: {
     position: 'absolute',
     // `bottom` is set inline from the safe-area inset + tab-bar height so the
-    // bar can either float above or dock to the tab bar.
+    // bar floats above the tab bar.
   },
   row: {
     flexDirection: 'row',

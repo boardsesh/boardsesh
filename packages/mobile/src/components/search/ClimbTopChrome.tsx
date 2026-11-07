@@ -328,7 +328,7 @@ function ClimbTopChromeComponent({
         scrollEdge={scrollEdge}
         below={
           <>
-            {/* "On the wall" status — a full-bleed band under the app bar (M3 has no
+            {/* "On the wall" capsule under the app bar (M3 has no
             centre slot in the bar) while the wall's climb is trusted and not hidden. */}
             {wallCapsule ? (
               <View pointerEvents="box-none" style={styles.materialWallStatusRow}>
@@ -494,9 +494,10 @@ export const ClimbTopChrome = memo(ClimbTopChromeComponent);
 
 const styles = StyleSheet.create({
   materialWallStatusRow: {
-    // Full-bleed "On the wall" status band — it owns its own padding, accent rail
-    // and bottom divider, so the wrapper adds no inset.
     width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[1],
   },
   materialFilterStack: {
     paddingHorizontal: spacing[4],
