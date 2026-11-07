@@ -22,7 +22,7 @@ interface PasswordRegistration {
   readonly name?: string;
 }
 
-interface PreparedPasswordRegistration {
+export interface PreparedPasswordRegistration {
   readonly email: string;
   readonly passwordHash: string;
   readonly name?: string;
@@ -135,8 +135,8 @@ export async function insertCurrentStorePasswordIdentity(
   reservedUserId?: string,
 ): Promise<{ userId: string; createdAt: Date }> {
   const { email, name, passwordHash } = registration;
-  // Only a trusted backend command may supply the ID it just reserved. Native
-  // callers retain the existing server-generated ID and insertion behavior.
+  // Only a trusted backend stage may supply the ID it just reserved. Legacy
+  // callers omit it and retain the existing server-generated ID behavior.
   const userId = reservedUserId ?? crypto.randomUUID();
   const createdAt = new Date();
   await transaction.insert(users).values({
