@@ -177,6 +177,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         enablePanDownToClose={guard.enablePanDownToClose}
         snapPoints={snapPoints}
         scrollable
+        androidContentSized
         contentContainerStyle={styles.content}
         header={
           <SheetTopBar
