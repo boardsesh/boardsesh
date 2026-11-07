@@ -119,7 +119,7 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
               ) : null}
             </View>
             <Text
-              variant="caption2"
+              variant="footnote"
               color={labelColor}
               numberOfLines={1}
               maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
@@ -166,8 +166,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: material.navBar.activeIndicatorRadius,
   },
-  // M3 LabelMedium (12/16, weight 500), the nav bar label role; caption2 is 11sp.
-  label: { fontSize: 12, lineHeight: 16 },
+  // M3 LabelMedium (12/16, weight 500), the nav bar label role: the Material
+  // footnote token is 12/16 at 400, so only the weight is lifted here.
+  label: { fontWeight: '500' },
   // Dot on the icon's top-end corner: the 24dp icon sits centred in the 56×32
   // pill (x 16–40, y 4–28), so the dot straddles that corner.
   badge: {
