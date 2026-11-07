@@ -139,6 +139,32 @@ describe('deploy/app-subdomain/_headers', () => {
     expect(robotsTags.join(', ')).toContain('noindex');
   });
 
+  it.each([
+    '/auth/reset-password',
+    '/auth/reset-password/',
+    '/es/auth/reset-password',
+    '/fr/auth/reset-password',
+    '/de/auth/reset-password',
+    '/it/auth/reset-password',
+    '/app/auth/reset-password',
+  ])('keeps reset capabilities private at %s', (pathname) => {
+    // Pages combines matching header values; browsers use the last valid
+    // Referrer-Policy token. Check effective ordering, not mere presence.
+    const policies = effectiveHeaderValues(pathname, 'Referrer-Policy').join(', ').split(',');
+    expect(policies.at(-1)?.trim()).toBe('no-referrer');
+    const cacheControl = effectiveHeaderValues(pathname, 'Cache-Control').join(', ');
+    expect(cacheControl).toContain('private');
+    expect(cacheControl).toContain('no-store');
+    expect(effectiveHeaderValues(pathname, 'X-Robots-Tag').join(', ')).toContain('noindex');
+  });
+
+  it.each(['/climbs', '/auth/login', '/es/auth/login', '/auth/reset-password-help'])(
+    'retains the unrelated referrer policy at %s',
+    (pathname) => {
+      expect(effectiveHeaderValues(pathname, 'Referrer-Policy').join(', ')).toBe('strict-origin-when-cross-origin');
+    },
+  );
+
   // Asserted against concrete request paths rather than block names, so the
   // check follows what Cloudflare would actually send. `/*` spans `/`, so a
   // cache rule parked there reaches every path below.

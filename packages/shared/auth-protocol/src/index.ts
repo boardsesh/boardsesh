@@ -8,6 +8,8 @@ export const AUTH_COMMAND_PATHS = {
   password: '/api/internal/auth/current-store/password',
   'verify-email': '/api/internal/auth/current-store/verify-email',
   'resend-verification': '/api/internal/auth/current-store/resend-verification',
+  'forgot-password': '/api/internal/auth/current-store/forgot-password',
+  'reset-password': '/api/internal/auth/current-store/reset-password',
 } as const;
 export const AUTH_COMMAND_ENV = {
   mode: 'CURRENT_STORE_WEB_AUTH_MODE',
@@ -38,6 +40,11 @@ const protocolVersion = z.literal(AUTH_PROTOCOL_VERSION);
 const commandMetadata = { protocolVersion, requestId, issuedAt };
 
 export const emailVerificationTokenSchema = z.string().regex(/^ev1_[A-Za-z0-9_-]{43}$/);
+export const passwordRecoveryTokenSchema = z.string().regex(/^pr1_[A-Za-z0-9_-]{43}$/);
+/** Reserve current, malformed and future recovery tokens before legacy dispatch. */
+export function isVersionedPasswordRecoveryToken(token: unknown): boolean {
+  return typeof token === 'string' && /^pr\d+_/i.test(token);
+}
 /** Reserve the namespace before any legacy dispatch, including future/malformed versions. */
 export function isVersionedEmailVerificationToken(token: unknown): boolean {
   return typeof token === 'string' && /^ev\d+_/i.test(token);
@@ -80,11 +87,21 @@ export const resendVerificationCommandSchema = z
   })
   .strict()
   .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+export const forgotPasswordCommandSchema = z
+  .object({ ...commandMetadata, operation: z.literal('forgot-password'), payload: z.unknown() })
+  .strict()
+  .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+export const resetPasswordCommandSchema = z
+  .object({ ...commandMetadata, operation: z.literal('reset-password'), payload: z.unknown() })
+  .strict()
+  .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
 export const authCommandSchema = z.union([
   registerCommandSchema,
   passwordCommandSchema,
   verifyEmailCommandSchema,
   resendVerificationCommandSchema,
+  forgotPasswordCommandSchema,
+  resetPasswordCommandSchema,
 ]);
 
 /** Private RPC data. Public HTTP adapters must project a separate response. */
@@ -97,6 +114,14 @@ export const registrationMailPlanSchema = z
   })
   .strict();
 export const emailVerificationMailPlanSchema = registrationMailPlanSchema;
+export const passwordRecoveryMailPlanSchema = z
+  .object({
+    kind: z.literal('uid-password-reset-v1'),
+    recipient: z.email(),
+    token: passwordRecoveryTokenSchema,
+    expiresAt: isoTimestamp,
+  })
+  .strict();
 
 export const REGISTRATION_VALIDATION_MESSAGES = [
   'Invalid email address',
@@ -116,6 +141,11 @@ export const REGISTRATION_VALIDATION_MESSAGES = [
   'Invalid input: expected object, received boolean',
   'Invalid input: expected object, received string',
   'Invalid input: expected object, received array',
+] as const;
+export const PASSWORD_RECOVERY_VALIDATION_MESSAGES = [
+  ...REGISTRATION_VALIDATION_MESSAGES,
+  'Invalid reset token',
+  'Passwords do not match',
 ] as const;
 
 function transportErrorReplySchema<const Operation extends keyof typeof AUTH_COMMAND_PATHS>(operation: Operation) {
@@ -217,24 +247,68 @@ export const resendVerificationReplySchema = z.union([
     .strict(),
   transportErrorReplySchema('resend-verification'),
 ]);
+function recoveryValidationReply<const Operation extends 'forgot-password' | 'reset-password'>(operation: Operation) {
+  return z
+    .object({
+      protocolVersion,
+      operation: z.literal(operation),
+      requestId,
+      outcome: z.literal('error'),
+      code: z.literal('validation_error'),
+      message: z.enum(PASSWORD_RECOVERY_VALIDATION_MESSAGES),
+    })
+    .strict();
+}
+export const forgotPasswordReplySchema = z.union([
+  z
+    .object({
+      protocolVersion,
+      operation: z.literal('forgot-password'),
+      requestId,
+      outcome: z.literal('accepted'),
+      mailPlan: passwordRecoveryMailPlanSchema.optional(),
+    })
+    .strict(),
+  recoveryValidationReply('forgot-password'),
+  transportErrorReplySchema('forgot-password'),
+]);
+export const resetPasswordReplySchema = z.union([
+  z
+    .object({
+      protocolVersion,
+      operation: z.literal('reset-password'),
+      requestId,
+      outcome: z.enum(['reset', 'invalid_or_expired', 'legacy_unbound']),
+    })
+    .strict(),
+  recoveryValidationReply('reset-password'),
+  transportErrorReplySchema('reset-password'),
+]);
 export const authCommandReplySchema = z.union([
   registerReplySchema,
   passwordReplySchema,
   verifyEmailReplySchema,
   resendVerificationReplySchema,
+  forgotPasswordReplySchema,
+  resetPasswordReplySchema,
 ]);
 
 export type RegisterCommand = z.infer<typeof registerCommandSchema>;
 export type PasswordCommand = z.infer<typeof passwordCommandSchema>;
 export type VerifyEmailCommand = z.infer<typeof verifyEmailCommandSchema>;
 export type ResendVerificationCommand = z.infer<typeof resendVerificationCommandSchema>;
+export type ForgotPasswordCommand = z.infer<typeof forgotPasswordCommandSchema>;
+export type ResetPasswordCommand = z.infer<typeof resetPasswordCommandSchema>;
 export type AuthCommand = z.infer<typeof authCommandSchema>;
 export type RegistrationMailPlan = z.infer<typeof registrationMailPlanSchema>;
 export type RegisterReply = z.infer<typeof registerReplySchema>;
 export type PasswordReply = z.infer<typeof passwordReplySchema>;
 export type VerifyEmailReply = z.infer<typeof verifyEmailReplySchema>;
 export type ResendVerificationReply = z.infer<typeof resendVerificationReplySchema>;
-export type AuthCommandReply = RegisterReply | PasswordReply | VerifyEmailReply | ResendVerificationReply;
+export type ForgotPasswordReply = z.infer<typeof forgotPasswordReplySchema>;
+export type ResetPasswordReply = z.infer<typeof resetPasswordReplySchema>;
+export type PasswordRecoveryMailPlan = z.infer<typeof passwordRecoveryMailPlanSchema>;
+export type AuthCommandReply = z.infer<typeof authCommandReplySchema>;
 
 export function authCommandReplyStatus(reply: AuthCommandReply): number {
   if (reply.outcome === 'legacy_unbound') return 503;

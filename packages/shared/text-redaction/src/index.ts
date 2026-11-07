@@ -14,6 +14,7 @@
  * structured identity fields (usernames, ids, emails) into a public payload in
  * the first place.
  */
+export { redactPasswordRecoveryUrls, scrubPasswordRecoveryEvent } from './password-recovery';
 
 /** Matches `<@123>`, `<@!123>` (nickname form), `<@&123>` (role) and `<#123>` (channel). */
 const DISCORD_MENTION_PATTERN = /<(@[!&]?|#)(\d{15,25})>/g;

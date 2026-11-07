@@ -1,4 +1,5 @@
 import { carriesShareCapability, redactShareCapabilities } from '../share-capability';
+import { scrubPasswordRecoveryEvent } from '@boardsesh/text-redaction';
 
 /**
  * Sentry event processor: a share link's capability (a home board's `?invite=`
@@ -14,12 +15,13 @@ import { carriesShareCapability, redactShareCapabilities } from '../share-capabi
  * all of them) comes back untouched.
  */
 export function redactShareCapabilitiesFromEvent<TEvent>(event: TEvent): TEvent {
+  const recoverySafe = scrubPasswordRecoveryEvent(event);
   let serialized: string | undefined;
   try {
-    serialized = JSON.stringify(event);
+    serialized = JSON.stringify(recoverySafe);
   } catch {
-    return event;
+    return recoverySafe;
   }
-  if (!serialized || !carriesShareCapability(serialized)) return event;
+  if (!serialized || !carriesShareCapability(serialized)) return recoverySafe;
   return JSON.parse(redactShareCapabilities(serialized)) as TEvent;
 }

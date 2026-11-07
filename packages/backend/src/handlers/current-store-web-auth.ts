@@ -13,6 +13,8 @@ import {
   registerCommandSchema,
   verifyEmailCommandSchema,
   resendVerificationCommandSchema,
+  forgotPasswordCommandSchema,
+  resetPasswordCommandSchema,
   type AuthCommand,
 } from '@boardsesh/auth-protocol';
 import { db } from '../db/client';
@@ -25,6 +27,7 @@ import {
   type WebPasswordAuthority,
 } from '../auth/current-store/web-password';
 import { consumeEmailVerification, resendEmailVerification } from '../auth/current-store/email-verification';
+import { consumePasswordRecovery, requestPasswordRecovery } from '../auth/current-store/password-recovery';
 import { checkRateLimit, RateLimitError } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
 import { readJsonBody, sendJson } from './http-utils';
@@ -115,7 +118,11 @@ export async function handleCurrentStoreWebAuth(
           ? 'verify-email'
           : path === AUTH_COMMAND_PATHS['resend-verification']
             ? 'resend-verification'
-            : undefined;
+            : path === AUTH_COMMAND_PATHS['forgot-password']
+              ? 'forgot-password'
+              : path === AUTH_COMMAND_PATHS['reset-password']
+                ? 'reset-password'
+                : undefined;
   if (!operation) {
     sendJson(response, 404, { error: 'disabled' });
     return;
@@ -129,7 +136,11 @@ export async function handleCurrentStoreWebAuth(
           ? passwordCommandSchema
           : operation === 'verify-email'
             ? verifyEmailCommandSchema
-            : resendVerificationCommandSchema
+            : operation === 'resend-verification'
+              ? resendVerificationCommandSchema
+              : operation === 'forgot-password'
+                ? forgotPasswordCommandSchema
+                : resetPasswordCommandSchema
     ).safeParse(await readCommand(request));
     if (!parsed.success) {
       sendJson(response, 400, { error: 'invalid_request' });
@@ -155,7 +166,11 @@ export async function handleCurrentStoreWebAuth(
           ? await authenticateWebPassword(database, configuration.authority, command)
           : command.operation === 'verify-email'
             ? await consumeEmailVerification(database, configuration.authority, command)
-            : await resendEmailVerification(database, configuration.authority, command),
+            : command.operation === 'resend-verification'
+              ? await resendEmailVerification(database, configuration.authority, command)
+              : command.operation === 'forgot-password'
+                ? await requestPasswordRecovery(database, configuration.authority, command)
+                : await consumePasswordRecovery(database, configuration.authority, command),
     );
     sendJson(response, authCommandReplyStatus(result), result);
   } catch (error) {

@@ -16,6 +16,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { themeTokens } from '@/app/theme/theme-config';
 import { EMAIL_REGEX } from '@/app/components/auth/validate-fields';
 import { FormShell, FormField, FormActions, focusFirstInvalidAfterRender } from '@/app/components/form';
+import { isAuthBackendUnavailable } from '@boardsesh/auth-protocol/client-errors';
 
 export default function ForgotPasswordContent() {
   const { t } = useTranslation('auth');
@@ -51,7 +52,11 @@ export default function ForgotPasswordContent() {
       const data = await response.json();
 
       if (!response.ok) {
-        setFormError(data.error || t('forgotPassword.toasts.failed'));
+        setFormError(
+          isAuthBackendUnavailable(data.error)
+            ? t('login.toasts.authFailed')
+            : data.error || t('forgotPassword.toasts.failed'),
+        );
         return;
       }
 
