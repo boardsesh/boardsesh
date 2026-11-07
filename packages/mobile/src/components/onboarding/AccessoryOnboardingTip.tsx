@@ -7,6 +7,7 @@ import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage
 import { useStickyAccessoryPresence } from '../../hooks/use-sticky-accessory-presence';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../theme/tokens';
+import { TabBarHideFollower } from '../navigation/TabBarHideFollower';
 
 /**
  * One-time tip teaching what the bottom accessory bar (the MiniPlayer) holds:
@@ -62,18 +63,20 @@ export function AccessoryOnboardingTip() {
   if (!tipVisible || !hasCurrentClimb || !barVisible) return null;
 
   return (
-    <View
-      pointerEvents="box-none"
-      style={[styles.overlay, { bottom: bottomChrome.floatingControlBottom + spacing[2] }]}
-    >
-      <OnboardingTipBanner
-        text={t('mobile.onboarding.tips.accessory')}
-        dismissLabel={t('actions.close')}
-        onDismiss={dismissTip}
-        icon="chevron.down"
-        solid
-      />
-    </View>
+    <TabBarHideFollower zIndex={100}>
+      <View
+        pointerEvents="box-none"
+        style={[styles.overlay, { bottom: bottomChrome.floatingControlBottom + spacing[2] }]}
+      >
+        <OnboardingTipBanner
+          text={t('mobile.onboarding.tips.accessory')}
+          dismissLabel={t('actions.close')}
+          onDismiss={dismissTip}
+          icon="chevron.down"
+          solid
+        />
+      </View>
+    </TabBarHideFollower>
   );
 }
 

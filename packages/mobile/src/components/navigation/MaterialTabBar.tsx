@@ -167,7 +167,7 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
 // The overlay bar's scrim: clear at the top edge, 92% surface from just above
 // the labels down through the gesture inset, so the labels always read.
 const OVERLAY_SCRIM_ALPHA = 0.92;
-const OVERLAY_SCRIM_LOCATIONS = [0, 0.6] as const;
+const OVERLAY_SCRIM_LOCATIONS = [0, 0.35] as const;
 
 const styles = StyleSheet.create({
   bar: {

@@ -120,7 +120,7 @@ export function RootRestTimerPillHost() {
   }
 
   return (
-    <TabBarHideFollower>
+    <TabBarHideFollower zIndex={90}>
       <View
         pointerEvents="box-none"
         style={[

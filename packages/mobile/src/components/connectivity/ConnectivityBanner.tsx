@@ -169,7 +169,7 @@ function ConnectivityBannerContent() {
   const exiting = reduceMotion ? undefined : FadeOut.duration(150);
 
   return (
-    <TabBarHideFollower>
+    <TabBarHideFollower zIndex={100}>
       <View
         pointerEvents="box-none"
         style={[styles.overlay, { bottom: bottomChrome.connectivityBannerBottom + spacing[2] }]}

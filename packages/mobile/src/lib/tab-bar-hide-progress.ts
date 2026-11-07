@@ -1,7 +1,7 @@
 import { makeMutable, withTiming, type SharedValue } from 'react-native-reanimated';
 import { motionByVariant } from '../theme/animations';
 import { timingFor } from '../theme/motion-config';
-import { getTabBarHidden, getTabBarReduceMotion, subscribeTabBarHidden } from './tab-bar-visibility-store';
+import { getTabBarHidden, getTabBarFlipInstant, subscribeTabBarHidden } from './tab-bar-visibility-store';
 
 /**
  * 0 = the Android nav bar is shown, 1 = hidden. The bar, the MiniPlayer card, the
@@ -19,5 +19,5 @@ const SLIDE_TIMING = timingFor(motionByVariant.material.standard);
 
 subscribeTabBarHidden(() => {
   const target = getTabBarHidden() ? 1 : 0;
-  tabBarHiddenProgress.value = getTabBarReduceMotion() ? target : withTiming(target, SLIDE_TIMING);
+  tabBarHiddenProgress.value = getTabBarFlipInstant() ? target : withTiming(target, SLIDE_TIMING);
 });

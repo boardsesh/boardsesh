@@ -21,11 +21,14 @@ let reduceMotion = true;
 let hidden = false;
 /** Bumped by every reset; a list whose memory predates it starts over. */
 let epoch = 0;
+/** The last flip came from a route change or a closed gate, not a scroll. */
+let lastFlipInstant = false;
 const listeners = new Set<() => void>();
 
-function publishHidden(next: boolean): void {
+function publishHidden(next: boolean, instant = false): void {
   if (next === hidden) return;
   hidden = next;
+  lastFlipInstant = instant;
   for (const listener of listeners) listener();
 }
 
@@ -33,13 +36,15 @@ function publishHidden(next: boolean): void {
 export function configureTabBarVisibility(next: { enabled: boolean; reduceMotion: boolean }): void {
   gateOpen = next.enabled;
   reduceMotion = next.reduceMotion;
-  if (!gateOpen) publishHidden(false);
+  // Instant: the gate closes on a push, where the bar snaps back in flow, and
+  // the chrome must not trail it.
+  if (!gateOpen) publishHidden(false, true);
 }
 
 /** Tab focus or route change: show the bar and forget every list's offset. */
 export function resetTabBarVisibility(): void {
   epoch += 1;
-  publishHidden(false);
+  publishHidden(false, true);
 }
 
 /** A list's memory, tagged with the reset it belongs to. */
@@ -62,9 +67,13 @@ export function getTabBarHidden(): boolean {
   return hidden;
 }
 
-/** Whether the slide should be skipped (Reduce Motion, or not read yet). */
-export function getTabBarReduceMotion(): boolean {
-  return reduceMotion;
+/**
+ * Whether the last flip should skip the slide: Reduce Motion (or not read yet),
+ * or a show forced by a route change or a closed gate. On a push the bar snaps
+ * back in flow at once, so the floating chrome has to snap with it.
+ */
+export function getTabBarFlipInstant(): boolean {
+  return reduceMotion || lastFlipInstant;
 }
 
 /**
@@ -80,5 +89,6 @@ export function resetTabBarVisibilityForTests(): void {
   gateOpen = false;
   reduceMotion = true;
   hidden = false;
+  lastFlipInstant = false;
   epoch = 0;
 }

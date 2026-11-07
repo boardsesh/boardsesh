@@ -77,11 +77,15 @@ describe('tab-bar visibility store', () => {
     expect(getTabBarHidden()).toBe(true);
   });
 
-  it('shows the bar on a route change and forgets every offset', () => {
+  it('shows the bar on a route change, at once, and forgets every offset', () => {
     const list = newSlot();
     scroll(list, [50, 80]);
+    timing.calls = 0;
     resetTabBarVisibility();
     expect(getTabBarHidden()).toBe(false);
+    // No slide: the bar snaps in flow on a push, so the chrome snaps with it.
+    expect(timing.calls).toBe(0);
+    expect(tabBarHiddenProgress.value).toBe(0);
     // The old offset no longer counts: 80 -> 90 after the reset is a first event.
     scroll(list, [90]);
     expect(getTabBarHidden()).toBe(false);
