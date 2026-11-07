@@ -44,6 +44,8 @@ export type SwipeDismissAnimation = {
   translateY: SharedValue<number>;
   height: SharedValue<number>;
   isDismissing: SharedValue<boolean>;
+  /** Entry owns the transform until its short opening animation finishes. */
+  isOpening?: SharedValue<boolean>;
   /** Opening ownership captured at touch-down; absent for standalone hosts. */
   revision?: SharedValue<number>;
   /** Called after the surface has finished sliding offscreen. */
@@ -95,6 +97,7 @@ export function useDrawerDismissGesture({
   const translateY = swipeDismiss?.translateY ?? localTranslateY;
   const isDismissing = swipeDismiss?.isDismissing ?? localIsDismissing;
   const dismissHeight = swipeDismiss?.height;
+  const isOpening = swipeDismiss?.isOpening;
   const dismissRevision = swipeDismiss?.revision;
   // Stable across renders, populated by RNGH when the detector attaches. Handed
   // to the zoomed board's pan so it can block this dismiss.
@@ -126,7 +129,7 @@ export function useDrawerDismissGesture({
       .failOffsetX([-DISMISS_FAIL_OFFSET_X, DISMISS_FAIL_OFFSET_X])
       .onBegin(() => {
         'worklet';
-        if (isDismissing.value) return;
+        if (isDismissing.value || isOpening?.value) return;
         startedRevision.value = dismissRevision?.value ?? null;
         cancelAnimation(translateY);
         startedAtTop.value = scrollYSV.value <= 0;
@@ -134,7 +137,7 @@ export function useDrawerDismissGesture({
       .onUpdate((event) => {
         'worklet';
         if (dismissRevision && startedRevision.value !== dismissRevision.value) return;
-        if (isDismissing.value) return;
+        if (isDismissing.value || isOpening?.value) return;
         // Once the carousel owns the gesture as a horizontal swipe (offset non-zero)
         // or is still settling a fling, block the vertical dismiss entirely — a
         // downward drift while quickly swapping climbs must not pull the drawer down.
@@ -152,7 +155,7 @@ export function useDrawerDismissGesture({
       .onEnd((event) => {
         'worklet';
         if (dismissRevision && startedRevision.value !== dismissRevision.value) return;
-        if (isDismissing.value) return;
+        if (isDismissing.value || isOpening?.value) return;
         // Same guard as onUpdate, and it must run BEFORE the velocity check: a fast
         // horizontal flick carries vertical velocity, so without this an accidental
         // down-component could satisfy velocityY > threshold and commit a dismiss
@@ -201,12 +204,13 @@ export function useDrawerDismissGesture({
           isDismissing.value = false;
           return;
         }
-        if (!success && !isDismissing.value) translateY.value = withSpring(0, springs.interactive);
+        if (!success && !isDismissing.value && !isOpening?.value) translateY.value = withSpring(0, springs.interactive);
       });
     return scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan;
   }, [
     translateY,
     isDismissing,
+    isOpening,
     dismissHeight,
     dismissRevision,
     startedAtTop,

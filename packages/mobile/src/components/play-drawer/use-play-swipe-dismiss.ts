@@ -1,25 +1,31 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { BackHandler, Platform, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { ANDROID_PLAYER_TRANSITION_MS, getPlayerRouteAnimation } from '../../lib/player-route-animation';
 import { useNavigation, useRouter } from 'expo-router';
 import {
   cancelAnimation,
+  Easing,
+  ReduceMotion,
   runOnJS,
   runOnUI,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { springs } from '../../theme/animations';
 import type { SwipeDismissAnimation } from './use-drawer-dismiss-gesture';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 
-/** Route-local motion: native open/button close, continuous UI-thread swipe close. */
+/** Native motion on iOS; short Android sheet motion and swipe close on the UI thread. */
 export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
+  const androidSheetMotion = Platform.OS === 'android';
   const navigation = useNavigation();
   const router = useRouter();
   const { height: windowHeight } = useWindowDimensions();
-  const translateY = useSharedValue(0);
+  const translateY = useSharedValue(Platform.OS === 'android' ? windowHeight : 0);
   const height = useSharedValue(windowHeight);
+  const isOpening = useSharedValue(androidSheetMotion);
   const isDismissing = useSharedValue(false);
   const dismissRevision = useSharedValue(0);
   const openingRef = useRef({ nonce: openTargetNonce, revision: 0 });
@@ -35,6 +41,27 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
   const [offscreenRevision, setOffscreenRevision] = useState<number | null>(null);
   const [restorationVersion, setRestorationVersion] = useState(0);
   const appliedRestorationRef = useRef(0);
+
+  useLayoutEffect(() => {
+    if (Platform.OS !== 'android') return;
+    runOnUI(() => {
+      'worklet';
+      isOpening.value = true;
+      translateY.value = height.value;
+      translateY.value = withTiming(
+        0,
+        {
+          duration: ANDROID_PLAYER_TRANSITION_MS,
+          easing: Easing.out(Easing.cubic),
+          reduceMotion: ReduceMotion.System,
+        },
+        (finished) => {
+          if (finished) isOpening.value = false;
+        },
+      );
+    })();
+    return () => cancelAnimation(translateY);
+  }, [height, translateY, isOpening]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -97,15 +124,16 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
     appliedRestorationRef.current = restorationVersion;
     removalRequestedRef.current = false;
     setOffscreenRevision(null);
-    navigation.setOptions({ animation: 'slide_from_bottom' });
+    navigation.setOptions({ animation: getPlayerRouteAnimation(Platform.OS) });
     runOnUI((revision: number) => {
       'worklet';
       dismissRevision.value = revision;
       cancelAnimation(translateY);
+      isOpening.value = false;
       translateY.value = 0;
       isDismissing.value = false;
     })(openingRevision);
-  }, [openingRevision, restorationVersion, navigation, dismissRevision, translateY, isDismissing]);
+  }, [openingRevision, restorationVersion, navigation, dismissRevision, translateY, isDismissing, isOpening]);
 
   const onLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -153,7 +181,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
         } else {
           // A different modal covered /play while JS was busy. Restore this
           // player underneath it instead of popping that newer route.
-          navigation.setOptions({ animation: 'slide_from_bottom' });
+          navigation.setOptions({ animation: getPlayerRouteAnimation(Platform.OS) });
           translateY.value = withSpring(0, springs.interactive);
           isDismissing.value = false;
           removalRequestedRef.current = false;
@@ -182,14 +210,58 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
   );
 
   const close = useCallback(() => {
-    // A chevron tap retains the native close, but cannot race a released swipe.
+    // A button close cannot race a released swipe. Android uses the short sheet
+    // motion; iOS keeps its native close.
     runOnUI(() => {
       'worklet';
       if (isDismissing.value || dismissRevision.value !== openingRevision) return;
       isDismissing.value = true;
-      runOnJS(dismissNative)(openingRevision);
+      if (androidSheetMotion) {
+        isOpening.value = false;
+        translateY.value = withTiming(
+          height.value,
+          {
+            duration: ANDROID_PLAYER_TRANSITION_MS,
+            easing: Easing.out(Easing.cubic),
+            reduceMotion: ReduceMotion.System,
+          },
+          (finished) => {
+            if (finished && dismissRevision.value === openingRevision) runOnJS(onComplete)(openingRevision);
+          },
+        );
+      } else runOnJS(dismissNative)(openingRevision);
     })();
-  }, [openingRevision, dismissRevision, isDismissing, dismissNative]);
+  }, [
+    openingRevision,
+    dismissRevision,
+    isDismissing,
+    dismissNative,
+    translateY,
+    height,
+    onComplete,
+    androidSheetMotion,
+    isOpening,
+  ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    let active = true;
+    let subscription: ReturnType<typeof BackHandler.addEventListener> | undefined;
+    // Register after the navigator's passive effects, including cold deep links.
+    // BackHandler invokes the most recently registered listener first.
+    queueMicrotask(() => {
+      if (!active) return;
+      subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (!navigation.isFocused()) return false;
+        close();
+        return true;
+      });
+    });
+    return () => {
+      active = false;
+      subscription?.remove();
+    };
+  }, [close, navigation]);
 
   const canConsumeTarget = useCallback(
     (nonce: number) => nativeRemovalRevisionRef.current == null && nonce === openingRef.current.nonce,
@@ -234,8 +306,8 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
   const swipeDismiss = useMemo<SwipeDismissAnimation>(
-    () => ({ translateY, height, isDismissing, revision: dismissRevision, onComplete }),
-    [translateY, height, isDismissing, dismissRevision, onComplete],
+    () => ({ translateY, height, isOpening, isDismissing, revision: dismissRevision, onComplete }),
+    [translateY, height, isOpening, isDismissing, dismissRevision, onComplete],
   );
 
   return { swipeDismiss, animatedStyle, onLayout, close, canConsumeTarget, dismissAndWait };
