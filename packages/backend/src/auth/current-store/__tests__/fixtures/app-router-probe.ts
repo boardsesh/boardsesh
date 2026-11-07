@@ -10,10 +10,10 @@ import {
   type ConfiguredProviderFaults,
 } from './app-router-providers';
 import type { NextAuthOptions } from '../../../../../../web/node_modules/next-auth';
-import type { JWT } from '../../../../../../web/node_modules/next-auth/jwt';
 import type { NextRequest } from '../../../../../../web/node_modules/next/server';
 import { ownedAppRouterDatabase } from './app-router-owned-db';
 import { installAppRouterFixtureDelegate } from './app-router-delegate';
+import { observeSessionPublication } from './session-publication-observer';
 
 const webRequire = createRequire(new URL('../../../../../../web/package.json', import.meta.url));
 const nextRequire = createRequire(webRequire.resolve('next-auth'));
@@ -41,8 +41,13 @@ async function start(input: Record<string, unknown>) {
     POST(request: NextRequest, context: object): Promise<Response>;
   };
   let origin = '';
+  let peerOrigin = '';
+  let peerServer: https.Server | undefined;
   let delegate: ReturnType<typeof installAppRouterFixtureDelegate> | undefined;
+  let publicationObserver: ReturnType<typeof observeSessionPublication> | undefined;
   let releaseEncode: (() => void) | undefined;
+  let armedResponseGate: string | undefined;
+  const responseGates = new Map<string, { pending: Promise<void>; release(): void }>();
   const observations = {
     events: [] as string[],
     logs: [] as string[],
@@ -50,6 +55,14 @@ async function start(input: Record<string, unknown>) {
     transports: [] as { method: string; path: string; session: boolean; state: boolean; pkce: boolean }[],
     providerRedirects: [] as { official: boolean; cookiesPreserved: boolean; count: number }[],
     forwardedCookies: [] as { preserved: boolean; count: number }[],
+    responseGates: [] as {
+      gateId: string;
+      headersSent: boolean;
+      status: number;
+      authCookieCount: number;
+      clearingAuthCookies: boolean;
+      released: boolean;
+    }[],
   };
   const server = https.createServer(providers.tls, (request, response) => {
     if (!accepting) {
@@ -57,7 +70,16 @@ async function start(input: Record<string, unknown>) {
       return;
     }
     const pending = (async () => {
-      if (!request.url?.startsWith('/api/auth/') && !request.url?.startsWith('/__proof/continue/')) {
+      const requestUrl = request.url;
+      if (!requestUrl) {
+        response.writeHead(404).end();
+        return;
+      }
+      const proofPath =
+        input.sessionPublicationProof === true &&
+        ['/__proof/server-session', '/__proof/page'].includes(requestUrl.split('?')[0]) &&
+        request.method === 'GET';
+      if (!requestUrl.startsWith('/api/auth/') && !requestUrl.startsWith('/__proof/continue/') && !proofPath) {
         response.writeHead(404).end();
         return;
       }
@@ -76,7 +98,7 @@ async function start(input: Record<string, unknown>) {
       }
       headers.set('x-forwarded-host', new URL(origin).host);
       headers.set('x-forwarded-proto', 'https');
-      let current = new RequestConstructor(new URL(request.url, origin), {
+      let current = new RequestConstructor(new URL(requestUrl, origin), {
         method: request.method,
         headers,
         ...(['GET', 'HEAD'].includes(request.method ?? 'GET') ? {} : { body: Buffer.concat(chunks).toString('utf8') }),
@@ -105,7 +127,56 @@ async function start(input: Record<string, unknown>) {
         .map((segment) => decodeURIComponent(segment));
       const context = { params: Promise.resolve({ nextauth: parameters }) };
       const invoke = () => (current.method === 'POST' ? route.POST(current, context) : route.GET(current, context));
-      const result = await requestStorage.run(current, () => (delegate ? delegate.run(current, invoke) : invoke()));
+      const result = await requestStorage.run(current, async () => {
+        if (input.sessionPublicationProof === true && current.nextUrl.pathname === '/__proof/server-session') {
+          const { getServerSession } = webRequire(
+            'next-auth/next',
+          ) as typeof import('../../../../../../web/node_modules/next-auth/next');
+          return Response.json(await getServerSession(options));
+        }
+        if (input.sessionPublicationProof === true && current.nextUrl.pathname === '/__proof/page')
+          return new Response('<!doctype html><html><body>Owned publication proof page</body></html>', {
+            headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+          });
+        return delegate ? delegate.run(current, invoke) : invoke();
+      });
+      if (
+        input.sessionPublicationProof === true &&
+        armedResponseGate &&
+        current.method === 'GET' &&
+        current.nextUrl.pathname === '/api/auth/session'
+      ) {
+        const gateId = armedResponseGate;
+        armedResponseGate = undefined;
+        const gate = responseGates.get(gateId);
+        if (!gate) throw new Error('Missing owned publication response gate');
+        const authCookies = result.headers
+          .getSetCookie()
+          .filter((header) => /^(?:__Secure-)?next-auth\.session-token(?:\.\d+)?=/.test(header));
+        const observation = {
+          gateId,
+          headersSent: response.headersSent,
+          status: result.status,
+          authCookieCount: authCookies.length,
+          clearingAuthCookies: authCookies.some((header) => /;\s*Max-Age=0(?:;|$)/i.test(header)),
+          released: false,
+        };
+        observations.responseGates.push(observation);
+        await send({ kind: 'response-checkpoint', ...observation });
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            gate.pending,
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(() => reject(new Error('Owned publication response gate deadline')), 5000);
+            }),
+          ]);
+          observation.released = true;
+        } finally {
+          if (timer) clearTimeout(timer);
+          responseGates.delete(gateId);
+        }
+      }
       if (input.browserIdentity && current.nextUrl.pathname === '/api/auth/signin/apple' && result.status === 302) {
         const originalCookies = result.headers.getSetCookie();
         const authorization = result.headers.get('Location');
@@ -150,6 +221,32 @@ async function start(input: Record<string, unknown>) {
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Owned app bind failed');
   origin = `https://localhost:${address.port}`;
+  if (input.sessionPublicationProof === true) {
+    if (input.compound) throw new Error('Publication proof requires unchanged stock authority');
+    // A second same-site origin supplies only an owned browser page. Actual
+    // authentication still reaches the first listener's public route exports.
+    peerServer = https.createServer(providers.tls, (request, response) => {
+      if (!accepting || request.method !== 'GET' || request.url !== '/__proof/page') {
+        response.writeHead(404).end();
+        return;
+      }
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      response.end('<!doctype html><html><body>Owned same-site peer page</body></html>');
+    });
+    peerServer.requestTimeout = 8000;
+    peerServer.headersTimeout = 8000;
+    peerServer.on('connection', (socket) => {
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+    });
+    await new Promise<void>((resolve, reject) => {
+      peerServer!.once('error', reject);
+      peerServer!.listen(0, '127.0.0.1', resolve);
+    });
+    const peerAddress = peerServer.address();
+    if (!peerAddress || typeof peerAddress === 'string') throw new Error('Owned peer bind failed');
+    peerOrigin = `https://localhost:${peerAddress.port}`;
+  }
   providers.registerRedirect(origin);
   const database = ownedAppRouterDatabase(String(input.databaseUrl));
   Object.assign(process.env, {
@@ -231,6 +328,7 @@ async function start(input: Record<string, unknown>) {
     new URL('../../../../../../web/app/lib/auth/auth-options.ts', import.meta.url).href
   )) as { authOptions: NextAuthOptions };
   const options = loaded.authOptions;
+  const jwt = webRequire('next-auth/jwt') as typeof import('../../../../../../web/node_modules/next-auth/jwt');
   const originalSignIn = options.callbacks?.signIn;
   options.callbacks = {
     ...options.callbacks,
@@ -260,6 +358,7 @@ async function start(input: Record<string, unknown>) {
     warn() {},
     debug() {},
   };
+  if (input.sessionPublicationProof === true) publicationObserver = observeSessionPublication(options, jwt);
   if (compound) {
     const publicJwt = webRequire('next-auth/jwt') as {
       encode: Parameters<typeof installAppRouterFixtureDelegate>[0]['encode'];
@@ -295,15 +394,39 @@ async function start(input: Record<string, unknown>) {
   route = (await import(
     new URL('../../../../../../web/app/api/auth/[...nextauth]/route.ts', import.meta.url).href
   )) as typeof route;
-  const jwt = webRequire('next-auth/jwt') as {
-    encode(options: { token: JWT; secret: string; maxAge?: number }): Promise<string>;
-    decode(options: { token: string; secret: string }): Promise<JWT | null>;
-  };
   phase = 'ready';
   process.on('message', (message: unknown) => {
     void (async () => {
       const command = asRecord(message);
       const id = command.id;
+      if (command.action === 'arm-session-response') {
+        if (
+          input.sessionPublicationProof !== true ||
+          armedResponseGate ||
+          responseGates.size ||
+          typeof command.gateId !== 'string' ||
+          !/^[a-f0-9-]{36}$/i.test(command.gateId)
+        )
+          throw new Error('Invalid owned publication gate');
+        let release = () => {};
+        const pending = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        responseGates.set(command.gateId, { pending, release });
+        armedResponseGate = command.gateId;
+        return send({ kind: 'reply', id, result: true });
+      }
+      if (command.action === 'release-session-response') {
+        if (input.sessionPublicationProof !== true || typeof command.gateId !== 'string')
+          throw new Error('Invalid owned publication release');
+        const gate = responseGates.get(String(command.gateId));
+        if (armedResponseGate === command.gateId) {
+          armedResponseGate = undefined;
+          responseGates.delete(command.gateId);
+        }
+        gate?.release();
+        return send({ kind: 'reply', id, result: Boolean(gate) });
+      }
       if (command.action === 'resume-encode') {
         releaseEncode?.();
         return send({ kind: 'reply', id, result: true });
@@ -320,7 +443,12 @@ async function start(input: Record<string, unknown>) {
         return send({
           kind: 'reply',
           id,
-          result: { ...observations, providerRequests: providers.observations, delegate: delegate?.facts },
+          result: {
+            ...observations,
+            providerRequests: providers.observations,
+            delegate: delegate?.facts,
+            sessionPublication: publicationObserver?.snapshot(),
+          },
         });
       if (command.action === 'decode')
         return send({
@@ -328,17 +456,33 @@ async function start(input: Record<string, unknown>) {
           id,
           result: await jwt.decode({ token: String(command.token), secret: String(input.secret) }),
         });
-      if (command.action === 'encode')
+      if (command.action === 'encode') {
+        let maxAge = 3600;
+        if (command.maxAge !== undefined) {
+          if (
+            input.sessionPublicationProof !== true ||
+            typeof command.maxAge !== 'number' ||
+            !Number.isFinite(command.maxAge) ||
+            command.maxAge < -86400 ||
+            command.maxAge > 2592000
+          )
+            throw new Error('Invalid owned encode lifetime');
+          maxAge = command.maxAge;
+        }
         return send({
           kind: 'reply',
           id,
-          result: await jwt.encode({ token: asRecord(command.claims), secret: String(input.secret), maxAge: 3600 }),
+          result: await jwt.encode({ token: asRecord(command.claims), secret: String(input.secret), maxAge }),
         });
+      }
       if (command.action === 'stop') {
         accepting = false;
+        for (const gate of responseGates.values()) gate.release();
         server.closeAllConnections();
+        peerServer?.closeAllConnections();
         for (const socket of sockets) socket.destroy();
         await new Promise<void>((resolve) => server.close(() => resolve()));
+        if (peerServer) await new Promise<void>((resolve) => peerServer!.close(() => resolve()));
         await Promise.allSettled(active);
         const { closePool, closeReadPool } = await import('@boardsesh/db/client');
         await Promise.allSettled([closePool(), closeReadPool()]);
@@ -352,7 +496,7 @@ async function start(input: Record<string, unknown>) {
       void send({ kind: 'failure', phase });
     });
   });
-  await send({ kind: 'ready', origin, providerOrigin: providers.origin });
+  await send({ kind: 'ready', origin, providerOrigin: providers.origin, ...(peerOrigin ? { peerOrigin } : {}) });
 }
 
 process.once('message', (message) => {
