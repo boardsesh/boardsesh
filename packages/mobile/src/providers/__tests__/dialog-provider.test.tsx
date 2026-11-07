@@ -5,7 +5,7 @@ import { createElement, type ReactNode } from 'react';
 
 const ctrl = vi.hoisted(() => ({
   variant: 'material' as 'material' | 'liquidGlass',
-  os: 'android' as 'ios' | 'android',
+  os: 'android' as 'ios' | 'android' | 'web',
 }));
 type AlertButton = { text: string; style?: string; onPress?: () => void };
 type ActionSheetCall = {
@@ -23,10 +23,10 @@ const actionSheetMock = vi.hoisted(() => ({ calls: [] as ActionSheetCall[] }));
 const alertMock = vi.hoisted(() => ({
   calls: [] as Array<{ title: string; message?: string; buttons: AlertButton[]; onDismiss?: () => void }>,
 }));
+const nativeModalMock = vi.hoisted(() => ({ onRequestClose: undefined as (() => void) | undefined }));
 
 // The provider needs Alert + Platform + StyleSheet from react-native; mock them
-// (Platform.OS is controllable because the Paper dialog is Android-Material-only
-// — iOS uses Alert).
+// (Platform.OS controls the Android native host, web Portal, and iOS Alert).
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
@@ -34,6 +34,22 @@ vi.mock('react-native', () => ({
     },
   },
   StyleSheet: { create: (sheet: Record<string, unknown>) => sheet },
+  Modal: ({
+    children,
+    visible,
+    transparent,
+    onRequestClose,
+  }: {
+    children?: ReactNode;
+    visible?: boolean;
+    transparent?: boolean;
+    onRequestClose?: () => void;
+  }) => {
+    nativeModalMock.onRequestClose = onRequestClose;
+    return visible
+      ? createElement('div', { 'data-native-modal': 'true', 'data-transparent': String(transparent) }, children)
+      : null;
+  },
   ActionSheetIOS: {
     showActionSheetWithOptions: (options: ActionSheetCall['options'], callback: ActionSheetCall['callback']) => {
       actionSheetMock.calls.push({ options, callback });
@@ -51,15 +67,15 @@ vi.mock('react-native', () => ({
   },
 }));
 
-// Lightweight Paper stubs: Dialog renders its children inline (Portal is a
-// pass-through), Buttons are real <button>s so we can click them.
+// Mark the two possible hosts separately: a root Portal cannot draw above an
+// Android native sheet window. Buttons remain clickable for queue behavior.
 vi.mock('react-native-paper', () => {
   const Dialog = ({ children }: { children?: ReactNode }) => createElement('div', { 'data-dialog': 'true' }, children);
   Dialog.Title = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
   Dialog.Content = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
   Dialog.Actions = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
   return {
-    Portal: ({ children }: { children?: ReactNode }) => children,
+    Portal: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-paper-portal': 'true' }, children),
     Dialog,
     Button: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
       createElement('button', { onClick: onPress }, children),
@@ -110,9 +126,44 @@ beforeEach(() => {
   ctrl.os = 'android';
   alertMock.calls = [];
   actionSheetMock.calls = [];
+  nativeModalMock.onRequestClose = undefined;
 });
 
 describe('useConfirm — Android Material (Paper Dialog)', () => {
+  it('hosts the Paper dialog directly in a transparent native window above sheets', () => {
+    const { container } = setup();
+    act(() => {
+      void confirmFn(OPTS);
+    });
+    const host = container.querySelector('[data-native-modal]');
+    expect(host).not.toBeNull();
+    expect(host?.getAttribute('data-transparent')).toBe('true');
+    expect(host?.querySelector('[data-dialog]')).not.toBeNull();
+    expect(container.querySelector('[data-paper-portal]')).toBeNull();
+    expect(alertMock.calls).toHaveLength(0);
+  });
+
+  it('cancels only the current prompt on Android back and presents the next', async () => {
+    const { container } = setup();
+    let first!: Promise<boolean>;
+    let second!: Promise<boolean>;
+    act(() => {
+      first = confirmFn({ ...OPTS, confirmLabel: 'First' });
+      second = confirmFn({ ...OPTS, confirmLabel: 'Second' });
+    });
+    const dismissFirst = nativeModalMock.onRequestClose;
+    expect(dismissFirst).toBeDefined();
+    act(() => {
+      dismissFirst?.();
+      dismissFirst?.();
+    });
+    await expect(first).resolves.toBe(false);
+    expect(container.querySelector('[data-native-modal] [data-dialog]')).not.toBeNull();
+    act(() => materialButton(container, 'Second').click());
+    await expect(second).resolves.toBe(true);
+    expect(container.querySelector('[data-native-modal]')).toBeNull();
+  });
+
   it('resolves true when the confirm action is pressed', async () => {
     const { container } = setup();
     let promise!: Promise<boolean>;
@@ -169,6 +220,21 @@ describe('useConfirm — Android Material (Paper Dialog)', () => {
     // The second confirm survived and still resolves on its own.
     act(() => materialButton(container, 'Second').click());
     await expect(second).resolves.toBe(true);
+  });
+});
+
+describe('useConfirm — web Material', () => {
+  it('keeps the Paper dialog in the web Portal', async () => {
+    ctrl.os = 'web';
+    const { container } = setup();
+    let promise!: Promise<boolean>;
+    act(() => {
+      promise = confirmFn(OPTS);
+    });
+    expect(container.querySelector('[data-paper-portal] [data-dialog]')).not.toBeNull();
+    expect(container.querySelector('[data-native-modal]')).toBeNull();
+    act(() => materialButton(container, 'Delete').click());
+    await expect(promise).resolves.toBe(true);
   });
 });
 

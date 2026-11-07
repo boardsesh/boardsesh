@@ -41,13 +41,26 @@ vi.mock('../../ModalSheet', () => ({
     children,
     header,
     onFullyDismissed,
+    androidContentSized,
+    scrollable,
   }: {
     children?: ReactNode;
     header?: ReactNode;
     onFullyDismissed?: () => void;
+    androidContentSized?: boolean;
+    scrollable?: boolean;
   }) => {
     sheet.onFullyDismissed = onFullyDismissed ?? null;
-    return createElement('div', { 'data-modal-sheet': 'true' }, header, children);
+    return createElement(
+      'div',
+      {
+        'data-modal-sheet': 'true',
+        'data-android-content-sized': String(androidContentSized),
+        'data-scrollable': String(scrollable),
+      },
+      header,
+      children,
+    );
   },
 }));
 const actions = vi.hoisted(() => ({
@@ -872,15 +885,31 @@ describe('QaVerdictSheet when the surf back fails', () => {
 });
 
 describe('QaVerdictSheet screenshots', () => {
-  it('uploads the picked shots and files their keys with the verdict', async () => {
+  it('uses bounded content sizing for the scrollable Android form', () => {
     const { container } = renderSheet();
+    // Configuration guard; native before/after captures verify keyboard layout.
+    const modalSheet = container.querySelector('[data-modal-sheet]');
+    expect(modalSheet?.getAttribute('data-android-content-sized')).toBe('true');
+    expect(modalSheet?.getAttribute('data-scrollable')).toBe('true');
+  });
+
+  it('preserves the typed verdict when attaching screenshots after focusing the input', async () => {
+    const { container, getByPlaceholderText } = renderSheet();
+    const commentInput = getByPlaceholderText('Anything worth noting? (optional)') as HTMLInputElement;
+    fireEvent.focus(commentInput);
+    fireEvent.change(commentInput, { target: { value: 'the wall lit the wrong holds' } });
     fireEvent.click(pickerButton(container));
+    expect(commentInput.value).toBe('the wall lit the wrong holds');
+    expect(pickerButton(container).getAttribute('data-screenshot-picker')).toBe('file:///shot-0.jpg');
     fireEvent.click(submitButton(container));
 
     await vi.waitFor(() => expect(previews.mutateAsync).toHaveBeenCalledTimes(1));
     expect(uploadFeedbackScreenshots).toHaveBeenCalledWith(['file:///shot-0.jpg']);
     expect(previews.mutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ screenshotKeys: ['feedback-screenshots/one.jpg'] }),
+      expect.objectContaining({
+        comment: 'the wall lit the wrong holds',
+        screenshotKeys: ['feedback-screenshots/one.jpg'],
+      }),
     );
   });
 

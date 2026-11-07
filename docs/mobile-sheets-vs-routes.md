@@ -290,8 +290,8 @@ neither failure mode had anything to bite. Adding either one makes the hook load
 with more than one detent should also pass `activeIndex` from the native `onChange`, so the bound
 tracks the resting detent instead of leaving dead space under the footer at the taller one.
 
-**Feedback forms on Android (#7310).** `FeedbackSheet` uses `androidContentSized`,
-including its rating mode. With fixed detents, focusing the description left only
+**Feedback forms on Android (#7310).** `FeedbackSheet` (including its rating mode)
+and `QaVerdictSheet` use `androidContentSized`. With fixed detents, focusing the description left only
 a clipped input above a large blank area; the screenshot picker could not be reached.
 The existing content-fitting column and shrinking scroll body keep the picker
 reachable while typing. Native QA must start from a fresh sheet presentation:
@@ -1110,7 +1110,13 @@ Full Keyboard Access, so those users still get the zoom and its missing tree.
 dismissing, so dirty or submitting forms disable pan/backdrop dismissal. Cancel
 asks Discard changes / Keep editing while preserving the visible form; submissions
 bypass that guard after success. A late confirmation cannot dismiss a reopened
-form or a different record. Coordinator displacement remains a separate host
+form or a different record. On Android, `DialogProvider` hosts the Paper dialog
+directly inside a transparent React Native `Modal`: a root Paper `Portal` renders
+below Expo’s separate native sheet window and makes the discard prompt unreachable.
+Do not put that Portal inside the modal; it still renders back at the app root.
+Android Back and the dialog scrim cancel only the current queued prompt. Web keeps
+the Portal and iOS keeps its native alerts/action sheets.
+Coordinator displacement remains a separate host
 notification, so it never attempts to reopen a sheet during native handoff.
 
 **Submit failures stay in their sheet:** use an uncapped, wrapping error row inside the
