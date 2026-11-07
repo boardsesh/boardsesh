@@ -5,6 +5,7 @@ import { useHorizontalSafeArea } from '../../../src/hooks/use-horizontal-safe-ar
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
 import { useListChromeClearance } from '../../../src/hooks/use-list-chrome-clearance';
 import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../../src/hooks/use-hide-on-scroll';
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
 import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { useTabReselect } from '../../../src/hooks/use-tab-reselect';
@@ -906,6 +907,9 @@ function ClimbListInner() {
   // Legacy backdrop consumers attach to this store. Native capsules draw their
   // own glass; forwarding its optional callbacks never renders this screen.
   const scrollEdge = useScrollEdgeBackdrop();
+  // The Android nav bar hides as the list scrolls down; chained in front of the
+  // chrome-clearance handler, which forwards every event to it.
+  const hideOnScroll = useHideOnScroll(scrollEdge.list?.listProps.onScroll);
   // The full measured controls include the expanded Grade rail. At the top,
   // disclosure moves results below it; farther down, keep the same rows in place.
   const {
@@ -918,7 +922,7 @@ function ClimbListInner() {
     initialHeight: insets.top + 60,
     topOffset: listTopOffset,
     listRef: climbListRef,
-    onScroll: scrollEdge.list?.listProps.onScroll,
+    onScroll: hideOnScroll,
   });
   // What covers the list's top edge: the native header's inset, plus the filter
   // controls when they sit over the list instead of above its clip.

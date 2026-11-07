@@ -11,6 +11,7 @@ import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent } from '../theme/variants';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import type { QueueAddedSnackbarOptions } from '../providers/queue-snackbar-provider';
+import { TabBarHideFollower } from './navigation/TabBarHideFollower';
 
 const DEFAULT_DURATION = 4000;
 
@@ -74,20 +75,22 @@ function QueueAddedSnackbarMaterial({
   const wrapperStyle: ViewStyle = { bottom };
 
   return (
-    <Snackbar
-      key={nonce}
-      visible={visible}
-      onDismiss={onDismiss}
-      duration={duration}
-      wrapperStyle={wrapperStyle}
-      action={{
-        label: t('mobile.queueSnackbar.open'),
-        onPress: onOpen,
-        accessibilityLabel: t('mobile.queueSnackbar.openAria'),
-      }}
-    >
-      {snackbarMessage(t, queueAdded)}
-    </Snackbar>
+    <TabBarHideFollower>
+      <Snackbar
+        key={nonce}
+        visible={visible}
+        onDismiss={onDismiss}
+        duration={duration}
+        wrapperStyle={wrapperStyle}
+        action={{
+          label: t('mobile.queueSnackbar.open'),
+          onPress: onOpen,
+          accessibilityLabel: t('mobile.queueSnackbar.openAria'),
+        }}
+      >
+        {snackbarMessage(t, queueAdded)}
+      </Snackbar>
+    </TabBarHideFollower>
   );
 }
 
@@ -115,31 +118,33 @@ function QueueAddedSnackbarGlass({
   const bottom = bottomChrome.floatingControlBottom + spacing[2];
 
   return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      {visible ? (
-        <Animated.View
-          key={nonce}
-          entering={FadeInDown.duration(220)}
-          exiting={FadeOutDown.duration(180)}
-          style={[styles.snackbar, { bottom, backgroundColor: systemColors.secondaryBackground }]}
-          accessibilityRole="alert"
-        >
-          <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={1}>
-            {snackbarMessage(t, queueAdded)}
-          </Text>
-          <PressableSurface
-            onPress={onOpen}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.queueSnackbar.openAria')}
+    <TabBarHideFollower>
+      <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+        {visible ? (
+          <Animated.View
+            key={nonce}
+            entering={FadeInDown.duration(220)}
+            exiting={FadeOutDown.duration(180)}
+            style={[styles.snackbar, { bottom, backgroundColor: systemColors.secondaryBackground }]}
+            accessibilityRole="alert"
           >
-            <Text variant="subheadline" color={brandColors.primary} style={styles.open}>
-              {t('mobile.queueSnackbar.open')}
+            <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={1}>
+              {snackbarMessage(t, queueAdded)}
             </Text>
-          </PressableSurface>
-        </Animated.View>
-      ) : null}
-    </View>
+            <PressableSurface
+              onPress={onOpen}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.queueSnackbar.openAria')}
+            >
+              <Text variant="subheadline" color={brandColors.primary} style={styles.open}>
+                {t('mobile.queueSnackbar.open')}
+              </Text>
+            </PressableSurface>
+          </Animated.View>
+        ) : null}
+      </View>
+    </TabBarHideFollower>
   );
 }
 

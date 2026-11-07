@@ -300,6 +300,12 @@ iOS, the tablet and Duo bar) keeps the climb you most recently opened, a preview
 the queue's current climb when **that** changes after it, whichever happened last. No extra
 marking: the bulb says whether the climb is lit. The same rule holds solo and in a crew.
 
+On an Android phone the MiniPlayer is a card floating 8dp above the nav bar. Scrolling a tab's
+list down 24dp tucks the bar away and drops the card to 8dp above the gesture inset, controls
+intact; scrolling up 24dp, reaching the top or changing tab brings the bar back. Never with
+TalkBack on, the keyboard open, or on a pushed page (see `docs/ai-design-guidelines.md`, Android
+phones hide the bar on scroll).
+
 - **What counts as a pick.** Every open the player applies (a list row, a search result, a
   deep link, the wall capsule's climb), and every later change of what the player shows: a
   swipe to another preview, its mirror flip, a similar climb. Back to your climb and Put on board

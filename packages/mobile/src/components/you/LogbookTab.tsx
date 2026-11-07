@@ -1,6 +1,7 @@
 import { ReadableColumn } from '../ReadableColumn';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
 import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
 import { PressableSurface } from '../PressableSurface';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -218,6 +219,9 @@ export function LogbookTab({
   scrollEdge,
 }: LogbookTabProps) {
   const nativeRootHeader = useNativeRootHeader();
+  // On the Profile tab the Android nav bar hides as this list scrolls down; each
+  // sub-tab is its own scroll source, so switching sub-tabs never reads as a jump.
+  const handleScroll = useHideOnScroll(scrollEdge?.listProps.onScroll);
   const [headerHeight, setHeaderHeight] = useState(0);
   const hasComposedHeader = renderHeader != null;
   const headerMeasured = !hasComposedHeader || headerHeight > 0;
@@ -919,6 +923,7 @@ export function LogbookTab({
                 keyExtractor={keyExtractor}
                 getItemType={getRowType}
                 {...scrollEdge?.listProps}
+                onScroll={handleScroll}
                 // The native controls are measured after this list mounts. Keeping
                 // a row anchored would scroll away the padding added for them.
                 maintainVisibleContentPosition={hasComposedHeader && nativeRootHeader ? { disabled: true } : undefined}

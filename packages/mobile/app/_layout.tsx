@@ -60,6 +60,7 @@ import { PlaylistsAdapterWrapper } from '../src/providers/playlists-adapter';
 import { BoardProvider } from '@boardsesh/board-react';
 import { toBoardName } from '@boardsesh/board-config';
 import { PersistentQueueBar } from '../src/components/queue-control/persistent-queue-bar';
+import { TabBarVisibilityController } from '../src/components/navigation/TabBarVisibilityController';
 import { UserDrawerProvider } from '../src/components/user-drawer/UserDrawerProvider';
 import { OfflineSyncBridge, OfflineEngineFlagSync } from '../src/components/offline-sync-bridge';
 import { OfflineDownloadKeepAwake } from '../src/components/offline-download-keep-awake';
@@ -781,6 +782,8 @@ function RootLayout() {
                                                                           </Stack>
                                                                         </ThemedNavigation>
                                                                         <PersistentQueueBar />
+                                                                        {/* Opens the Android nav bar's hide-on-scroll gate and shows the bar again on every route change. Null render. */}
+                                                                        <TabBarVisibilityController />
                                                                         <OfflineSyncBridge />
                                                                         {/* Holds the screen awake while a board download the
                                                             climber started is running (#4310). Renders nothing

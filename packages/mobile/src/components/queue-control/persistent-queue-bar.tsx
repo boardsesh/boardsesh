@@ -31,6 +31,7 @@ import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
 import { MATERIAL_MINI_PLAYER_CARD_INSET } from './mini-player-controls';
 import { FloatingMiniPlayerCard } from '../navigation/FloatingMiniPlayerCard';
+import { TabBarHideFollower } from '../navigation/TabBarHideFollower';
 import { ReturnToSessionButton } from './ReturnToSessionButton';
 import { useBarClimb } from './use-bar-climb';
 
@@ -69,15 +70,19 @@ export function PersistentQueueBar() {
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   if (isMaterial) {
     // The card logs and lights from its own row, so it needs neither the tick
-    // nor the return-to-session button the glass capsule floats beside it.
+    // nor the return-to-session button the glass capsule floats beside it. On an
+    // Android phone it follows the nav bar down when the bar hides on scroll,
+    // landing 8dp above the gesture inset with every control still there.
     return (
-      <ActiveContextBar
-        fillPrimary
-        anchorToMeasuredTabBar
-        gapAboveTabBar={MATERIAL_MINI_PLAYER_CARD_GAP}
-        horizontalInset={MATERIAL_MINI_PLAYER_CARD_INSET}
-        primary={<FloatingMiniPlayerCard />}
-      />
+      <TabBarHideFollower>
+        <ActiveContextBar
+          fillPrimary
+          anchorToMeasuredTabBar
+          gapAboveTabBar={MATERIAL_MINI_PLAYER_CARD_GAP}
+          horizontalInset={MATERIAL_MINI_PLAYER_CARD_INSET}
+          primary={<FloatingMiniPlayerCard />}
+        />
+      </TabBarHideFollower>
     );
   }
 

@@ -1,6 +1,7 @@
 import { ReadableColumn } from '../ReadableColumn';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
 import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
@@ -49,6 +50,9 @@ const EMPTY_PEOPLE: SocialPerson[] = [];
 
 export function SocialTab({ userId, scrollEdge, topInset = 0, registerScrollToTop }: SocialTabProps) {
   const nativeRootHeader = useNativeRootHeader();
+  // On the Profile tab the Android nav bar hides as this list scrolls down; each
+  // sub-tab is its own scroll source, so switching sub-tabs never reads as a jump.
+  const handleScroll = useHideOnScroll(scrollEdge?.listProps.onScroll);
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
@@ -209,6 +213,7 @@ export function SocialTab({ userId, scrollEdge, topInset = 0, registerScrollToTo
         renderItem={renderItem}
         keyExtractor={(person) => person.id}
         {...scrollEdge?.listProps}
+        onScroll={handleScroll}
         scrollEventThrottle={16}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         onEndReached={handleEndReached}

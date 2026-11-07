@@ -27,6 +27,7 @@ import { useToast } from '../../../providers/toast-provider';
 import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
 import { useScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../../hooks/use-hide-on-scroll';
 import { useVariantValue } from '../../../theme/variants';
 import { reportError } from '../../../lib/error-reporting';
 import { RecordTopChrome } from '../RecordTopChrome';
@@ -161,6 +162,8 @@ export function PreSessionView({
   const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
   // Tells the Material app bar when the preview has scrolled under it.
   const scrollEdge = useScrollEdgeBackdrop();
+  // The Android nav bar hides as the plan scrolls down (`useHideOnScroll`).
+  const handleScroll = useHideOnScroll(scrollEdge.list?.listProps.onScroll);
   // Material's app bar names the tab ("Session"); UIKit's header keeps the call to action.
   const chromeTitle = useVariantValue({
     liquidGlass: t('mobile.session.headerStart'),
@@ -585,6 +588,7 @@ export function PreSessionView({
         // build otherwise reports little more than the start and end of a scroll).
         scrollEventThrottle={16}
         {...scrollEdge.list?.listProps}
+        onScroll={handleScroll}
       />
 
       {showChrome ? (

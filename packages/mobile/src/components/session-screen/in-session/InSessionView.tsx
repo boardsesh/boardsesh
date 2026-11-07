@@ -44,6 +44,7 @@ import { useTickListActivation } from '../../../lib/playlists/use-tick-list-acti
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
 import { useScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../../hooks/use-hide-on-scroll';
 import { withAlpha } from '../../../theme/colors';
 import { springs } from '../../../theme/animations';
 import { borderRadius, spacing } from '../../../theme/tokens';
@@ -460,7 +461,8 @@ export function InSessionView({
   const startedAtTop = useSharedValue(true);
   // Tells the Material app bar when the session list has scrolled under it.
   const scrollEdge = useScrollEdgeBackdrop();
-  const edgeOnScroll = scrollEdge.list?.listProps.onScroll;
+  // The Android nav bar hides as the session list scrolls down.
+  const edgeOnScroll = useHideOnScroll(scrollEdge.list?.listProps.onScroll);
   // FlashList forwards a plain JS scroll event (it isn't a reanimated host
   // component), so we mirror the offset into the shared value here. The dismiss
   // gesture only reads `scrollOffset.value <= 0` on start, so JS-thread latency

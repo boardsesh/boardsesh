@@ -214,6 +214,11 @@ diagnostic) applies on native. The whole surface lives in three files:
   because the heal is a one-shot server write at launch: acting on the
   unresolved first frame would send the follow before a set switch could stop
   it.
+  `tab-bar-hide-on-scroll-kill` is a kill switch (read through
+  `useTabBarHideOnScrollEnabled`, unresolved = enabled) for the Android phone
+  nav bar's hide-on-scroll and the translucent overlay bar it needs. On, the bar
+  sits opaque below every screen and never moves, as before; it is also the QA
+  switch for comparing the two.
   Three more kill switches cover the launch surfaces #5654 woke up. From 2.2.0
   until that fix, all of them sat behind a `ready` prop frozen at `false` under
   `DatabaseProvider` (expo-sqlite's memo'd provider never re-renders its

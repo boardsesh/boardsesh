@@ -11,6 +11,7 @@ import { borderRadius, spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent } from '../theme/variants';
 import { usePublishedToastBottomOffset } from '../lib/toast-offset-store';
+import { TabBarHideFollower } from './navigation/TabBarHideFollower';
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 
@@ -85,24 +86,26 @@ function ToastMaterial({ toast, onDismiss }: ToastProps) {
   );
 
   return (
-    <Snackbar
-      visible
-      onDismiss={() => onDismiss(toast.id)}
-      duration={toast.duration}
-      wrapperStyle={wrapperStyle}
-      style={{ backgroundColor }}
-    >
-      {/* role + assertive live region sit on our content node, not the Snackbar
+    <TabBarHideFollower>
+      <Snackbar
+        visible
+        onDismiss={() => onDismiss(toast.id)}
+        duration={toast.duration}
+        wrapperStyle={wrapperStyle}
+        style={{ backgroundColor }}
+      >
+        {/* role + assertive live region sit on our content node, not the Snackbar
           root (Paper owns that and sets its own polite region). The glass path
           puts them on its container; here the content View is the equivalent
           announced node, so TalkBack reads the message assertively either way. */}
-      <View style={styles.materialContent} accessibilityRole="alert" accessibilityLiveRegion="assertive">
-        <Icon name={config.icon} size={18} color={variantColor} />
-        <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={2}>
-          {toast.message}
-        </Text>
-      </View>
-    </Snackbar>
+        <View style={styles.materialContent} accessibilityRole="alert" accessibilityLiveRegion="assertive">
+          <Icon name={config.icon} size={18} color={variantColor} />
+          <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={2}>
+            {toast.message}
+          </Text>
+        </View>
+      </Snackbar>
+    </TabBarHideFollower>
   );
 }
 
@@ -127,25 +130,27 @@ function ToastGlass({ toast, onDismiss }: ToastProps) {
   const tintColor = withAlpha(variantColor, colorScheme === 'dark' ? 0.24 : 0.15);
 
   return (
-    <Animated.View
-      entering={FadeIn.duration(200)}
-      exiting={FadeOut.duration(200)}
-      style={[
-        styles.container,
-        {
-          bottom: bottomOffset,
-          backgroundColor: systemColors.secondaryBackground,
-        },
-      ]}
-      accessibilityRole="alert"
-      accessibilityLiveRegion="assertive"
-    >
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]} />
-      <Icon name={config.icon} size={18} color={variantColor} />
-      <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={2}>
-        {toast.message}
-      </Text>
-    </Animated.View>
+    <TabBarHideFollower>
+      <Animated.View
+        entering={FadeIn.duration(200)}
+        exiting={FadeOut.duration(200)}
+        style={[
+          styles.container,
+          {
+            bottom: bottomOffset,
+            backgroundColor: systemColors.secondaryBackground,
+          },
+        ]}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="assertive"
+      >
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]} />
+        <Icon name={config.icon} size={18} color={variantColor} />
+        <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={2}>
+          {toast.message}
+        </Text>
+      </Animated.View>
+    </TabBarHideFollower>
   );
 }
 

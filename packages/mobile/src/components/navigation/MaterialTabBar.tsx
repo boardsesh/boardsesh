@@ -1,11 +1,16 @@
 import { useCallback } from 'react';
 import { type LayoutChangeEvent, Platform, StyleSheet, View } from 'react-native';
 import type { BottomTabBarProps } from 'expo-router/tabs';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { Text } from '../Text';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { useSetMeasuredTabBarHeight } from '../../providers/tab-bar-height-provider';
-import { brandColors as staticBrandColors } from '../../theme/colors';
+import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { tabBarHiddenProgress } from '../../lib/tab-bar-hide-progress';
+import { useTabBarHidden } from '../../lib/tab-bar-visibility-store';
+import { brandColors as staticBrandColors, withAlpha } from '../../theme/colors';
 import { material } from '../../theme/tokens';
 import { MATERIAL_TAB_BAR_HEIGHT } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
@@ -41,19 +46,44 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
     [setMeasuredTabBarHeight],
   );
 
+  // On an Android phone's tab root the bar is drawn over the screen so it can
+  // slide away on scroll (the metrics decide, so the reserves always agree).
+  // There it is translucent, Spotify-style: a surface gradient from clear at
+  // the top to 92% at the bottom, no hairline, no shadow; icons and labels keep
+  // full contrast. Everywhere else it sits in flow, opaque, as before.
+  const { jsBarOverlaysContent: overlay } = useBottomChromeMetrics();
+  const hidden = useTabBarHidden() && overlay;
+  const barHeight = MATERIAL_TAB_BAR_HEIGHT + insets.bottom;
+  const slideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: overlay ? tabBarHiddenProgress.value * barHeight : 0 }],
+  }));
+
   return (
-    <View
+    <Animated.View
       onLayout={handleLayout}
+      // A hidden bar is off screen: no touches, and out of the TalkBack order.
+      pointerEvents={hidden ? 'none' : 'auto'}
+      importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
       style={[
         styles.bar,
-        {
-          backgroundColor: systemColors.elevatedSurface,
-          borderTopColor: systemColors.separator,
-          paddingBottom: insets.bottom,
-          height: MATERIAL_TAB_BAR_HEIGHT + insets.bottom,
-        },
+        overlay
+          ? styles.overlayBar
+          : {
+              backgroundColor: systemColors.elevatedSurface,
+              borderTopColor: systemColors.separator,
+            },
+        { paddingBottom: insets.bottom, height: barHeight },
+        slideStyle,
       ]}
     >
+      {overlay ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[withAlpha(m3.surface, 0), withAlpha(m3.surface, OVERLAY_SCRIM_ALPHA)]}
+          locations={OVERLAY_SCRIM_LOCATIONS}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         // expo-router turns a screen's `href: null` into `tabBarItemStyle:
@@ -130,9 +160,14 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
           </PressableSurface>
         );
       })}
-    </View>
+    </Animated.View>
   );
 }
+
+// The overlay bar's scrim: clear at the top edge, 92% surface from just above
+// the labels down through the gesture inset, so the labels always read.
+const OVERLAY_SCRIM_ALPHA = 0.92;
+const OVERLAY_SCRIM_LOCATIONS = [0, 0.6] as const;
 
 const styles = StyleSheet.create({
   bar: {
@@ -143,6 +178,16 @@ const styles = StyleSheet.create({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.08, shadowRadius: 8 },
       default: {},
     }),
+  },
+  // Drawn over the tab root: absolute, clear, flat. The gradient paints it.
+  overlayBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
+    elevation: 0,
   },
   item: {
     flex: 1,

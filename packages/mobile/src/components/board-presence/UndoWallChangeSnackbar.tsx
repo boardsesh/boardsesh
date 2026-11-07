@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { spacing } from '../../theme/tokens';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { UndoSnackbar } from '../UndoSnackbar';
+import { TabBarHideFollower } from '../navigation/TabBarHideFollower';
 
 // Held longer than the queue-added snackbar (someone may be mid-route on the
 // wall the user just changed) — the accidental-takeover safety net.
@@ -30,14 +31,16 @@ export function UndoWallChangeSnackbar({ duration = UNDO_DURATION, ...props }: U
   const bottomChrome = useBottomChromeMetrics();
   return (
     <Portal>
-      <UndoSnackbar
-        {...props}
-        duration={duration}
-        bottom={bottomChrome.floatingControlBottom + spacing[2]}
-        message={t('mobile.boardPresence.wallChanged')}
-        undoLabel={t('mobile.boardPresence.undo')}
-        undoAccessibilityLabel={t('mobile.boardPresence.undoAria')}
-      />
+      <TabBarHideFollower>
+        <UndoSnackbar
+          {...props}
+          duration={duration}
+          bottom={bottomChrome.floatingControlBottom + spacing[2]}
+          message={t('mobile.boardPresence.wallChanged')}
+          undoLabel={t('mobile.boardPresence.undo')}
+          undoAccessibilityLabel={t('mobile.boardPresence.undoAria')}
+        />
+      </TabBarHideFollower>
     </Portal>
   );
 }

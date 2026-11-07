@@ -41,6 +41,7 @@ import { useTheme } from '../../../src/providers/theme-provider';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
 import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../../src/hooks/use-hide-on-scroll';
 import { OfflineState } from '../../../src/components/OfflineState';
 import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
 import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
@@ -101,6 +102,8 @@ export default function HomeTab() {
   // Tells the Material app bar when the feed has scrolled under it. `list` stays
   // undefined, and the feed listener-free, until a bar attaches.
   const scrollEdge = useScrollEdgeBackdrop();
+  // The Android nav bar hides as the feed scrolls down (`useHideOnScroll`).
+  const handleScroll = useHideOnScroll(scrollEdge.list?.listProps.onScroll);
 
   // Which sections the climber shows, and in what order (Customize Home). Read
   // synchronously, so a hidden section never mounts and its queries never start.
@@ -596,6 +599,7 @@ export default function HomeTab() {
           // build otherwise reports little more than the start and end of a scroll).
           scrollEventThrottle={16}
           {...scrollEdge.list?.listProps}
+          onScroll={handleScroll}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           ListHeaderComponent={header}

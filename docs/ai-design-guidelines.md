@@ -79,6 +79,20 @@ older iPhone is the variant with the chrome degraded, not Material.
   - `nativeTabBar` (`useNativeTabBar()`): Liquid Glass on any iPhone or iPad, iOS 18 included, gets
     the system UIKit tab bar through `NativeTabs` (HIG, Tab bars); on iPad it adapts to a sidebar.
     Material, Android and the JS tablet shell keep the JS `Tabs` + `MaterialTabBar` / rail.
+  - **Android phones hide the bar on scroll** (M3 hide-on-scroll, the counterpart of iOS 26's
+    minimize). On a top-level tab root the bar is drawn over the content, and scrolling down 24dp
+    slides it off screen while the MiniPlayer card drops to 8dp above the gesture inset with all its
+    controls. Scrolling up 24dp, reaching the top, switching tabs or changing route brings it back.
+    It never hides on pushed sub-routes (the bar sits in flow there), on tablets, on filter boards,
+    with the keyboard open or with TalkBack or another accessibility service on. Reduce Motion
+    swaps it without the slide. The card, the rest pill, the connectivity banner, the Discover
+    create button, the Start button, snackbars and toasts move with it on one shared value
+    (`tabBarHiddenProgress`, `TabBarHideFollower`); `bottom` never animates. The bottom-chrome
+    metrics describe the shown bar, as on iOS. Kill switch: `tab-bar-hide-on-scroll-kill`.
+  - **Translucent where it overlays** (Spotify's bar): on those tab roots its background is an
+    `m3.surface` gradient from clear at the top edge to 92% under the labels, with no blur, no top
+    hairline and no shadow; icons and labels keep full contrast. The in-flow bar on sub-routes stays
+    opaque, and the MiniPlayer card is always opaque.
   - `liquidGlassTabBar`: the iOS 26 extras on that bar, also gated on `useGlassCapability()` —
     minimize-on-scroll. Climbs stays an ordinary labelled tab, the rightmost one, like Apple
     Music's Search tab, not a separated `role="search"` tab. On an iOS 27 iPhone it is the
@@ -217,7 +231,9 @@ which are the explicit hexes — iOS uses `PlatformColor` for the same roles):
 Material tonal surfaces (`materialSurfaces`) are the same shape with M3-specific values
 (`background` `#F3EFFA` light / `#15101E` dark, `secondaryBackground` `#FFFFFF` / `#221A33`, etc.).
 The neutrals are tinted toward the brand violet so Material reads as the same product as Liquid Glass
-— the Material feel comes from elevation, ripple and the nav pill, not from a different palette.
+— the Material feel comes from elevation, ripple and the nav pill, not from a different palette. The
+Android phone nav bar is the one translucent Material surface: over a tab root it fades from clear to
+92% `m3.surface` so it can hide on scroll (see `useTabChrome()` above).
 
 When the Material variant is active, `theme.m3` also exposes the full MD3 colour-role palette
 (`primaryContainer`, `onSurfaceVariant`, `outlineVariant`, the `elevation.level0–5` ladder) for app
@@ -415,6 +431,7 @@ mirroring), Favorite, Log, Share, Queue. Previous and next remain available in V
 
 **Tab bar.** `TAB_BAR_HEIGHT` = 49 (Liquid Glass / native iOS). `MATERIAL_TAB_BAR_HEIGHT` = 64 (M3
 Expressive short navigation bar: a 56×32 active-indicator pill, icon above a label capped at 1.2× font scale).
+On an Android phone's tab root it overlays the content and hides on scroll; elsewhere it sits in flow.
 
 **Floating toolbar.** `TOOLBAR_FAB_SIZE` 48 · `TOOLBAR_CAPSULE_HEIGHT` 44 · `TOOLBAR_CAPSULE_MAX_WIDTH`
 260 · `TOOLBAR_SIDE_MARGIN` 16 · `TOOLBAR_GAP` 8 · `TOOLBAR_GAP_ABOVE_TABBAR` 10 · `TOOLBAR_RESERVE`

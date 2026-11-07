@@ -233,6 +233,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     variants: ['treatment', 'control'],
   },
   {
+    key: 'tab-bar-hide-on-scroll-kill',
+    label: 'Keep the Android tab bar in place',
+    description:
+      'Kill switch for hide-on-scroll on Android phones: scrolling down a tab slides the tab bar away and drops the MiniPlayer card to the bottom; scrolling up brings it back. With it on, the bar sits below the screen, opaque, and never moves, exactly as before. Also the QA switch for comparing the two. Unresolved reads as enabled.',
+  },
+  {
     key: 'early-updates',
     label: 'Early updates',
     description:
@@ -519,6 +525,15 @@ export function useActiveBoardFollowHealEnabled(): boolean {
  */
 export function useConnectivityBannerEnabled(): boolean {
   return useFeatureFlag('connectivity-banner-kill') !== true;
+}
+
+/**
+ * Kill switch for the Android phone nav bar's hide-on-scroll (and the translucent
+ * bar it overlays tab roots with). Unresolved reads as enabled; switched on, the
+ * bar goes back to sitting opaque below every screen.
+ */
+export function useTabBarHideOnScrollEnabled(): boolean {
+  return useFeatureFlag('tab-bar-hide-on-scroll-kill') !== true;
 }
 
 export function useQaTesterGateEnabled(): boolean {

@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
 import { useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
@@ -32,6 +32,8 @@ import {
   type ExpandedTabContentInset,
 } from './bottom-chrome-metrics';
 import { shouldThrowOnMissingProvider } from './bottom-chrome-provider-gate';
+import { resolveHideOnScrollTabBar } from '../lib/tab-bar-visibility';
+import { useTabBarHideOnScrollEnabled } from '../providers/feature-flags-provider';
 import { reportHandledError } from '../lib/error-reporting';
 
 // The rest-timer store publishes a whole state object, and this provider cares
@@ -176,6 +178,14 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
     getRestTimerArmedServerSnapshot,
   );
   const restTimerIdleHiddenRoute = isRestTimerPillHiddenRoute(segments);
+  // The Android phone nav bar overlays its tab roots and hides on scroll, behind
+  // the `tab-bar-hide-on-scroll-kill` switch. Off, the bar stays in flow.
+  const hideOnScrollFlagEnabled = useTabBarHideOnScrollEnabled();
+  const hideOnScrollTabBar = resolveHideOnScrollTabBar({
+    platformOS: Platform.OS,
+    isTablet,
+    flagEnabled: hideOnScrollFlagEnabled,
+  });
 
   return useMemo(
     () =>
@@ -199,6 +209,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         expandedTabContentInsetBottom,
         measuredTabContentInsetLeft,
         measuredTabContentInsetRight,
+        hideOnScrollTabBar,
       }),
     [
       tabBarAtBottom,
@@ -220,6 +231,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       expandedTabContentInsetBottom,
       measuredTabContentInsetLeft,
       measuredTabContentInsetRight,
+      hideOnScrollTabBar,
     ],
   );
 }

@@ -1,5 +1,6 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, RefreshControl, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -99,6 +100,9 @@ function SessionCardSkeleton() {
 
 export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabProps) {
   const nativeRootHeader = useNativeRootHeader();
+  // On the Profile tab the Android nav bar hides as this list scrolls down; each
+  // sub-tab is its own scroll source, so switching sub-tabs never reads as a jump.
+  const handleScroll = useHideOnScroll(scrollEdge?.listProps.onScroll);
   const { t } = useTranslation('you');
   const { t: tSession } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
@@ -283,6 +287,7 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
         getItemType={(row) => row.type}
         keyExtractor={(row) => (row.type === 'header' ? `header-${row.bucket}` : row.item.sessionId)}
         {...scrollEdge?.listProps}
+        onScroll={handleScroll}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}

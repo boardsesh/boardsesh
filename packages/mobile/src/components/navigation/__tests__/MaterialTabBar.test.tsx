@@ -5,6 +5,9 @@ import { createElement, type ReactNode } from 'react';
 
 const ctrl = vi.hoisted(() => ({
   os: 'ios' as string,
+  // The Android phone bar over a tab root (hide-on-scroll), and whether it is hidden.
+  overlay: false,
+  hidden: false,
 }));
 
 // Shared with the theme-provider mock below, so the assertion can't drift from it.
@@ -43,16 +46,38 @@ vi.mock('react-native', () => ({
         ...Object.fromEntries(
           Object.entries(props).filter(([k]) => k.startsWith('data-') || k === 'accessibilityRole'),
         ),
+        ...(props.pointerEvents ? { 'data-pointer-events': props.pointerEvents } : {}),
+        ...(props.importantForAccessibility ? { 'data-a11y': props.importantForAccessibility } : {}),
       },
       children,
     ),
 }));
 
-vi.mock('react-native-reanimated', () => ({
-  default: { createAnimatedComponent: (component: unknown) => component },
-  useAnimatedStyle: () => ({}),
-  useSharedValue: (value: number) => ({ value }),
-  withSpring: (value: number) => value,
+vi.mock('react-native-reanimated', async () => {
+  const { View } = await import('react-native');
+  return {
+    default: { createAnimatedComponent: (component: unknown) => component, View },
+    useAnimatedStyle: () => ({}),
+    useSharedValue: (value: number) => ({ value }),
+    withSpring: (value: number) => value,
+  };
+});
+
+vi.mock('expo-linear-gradient', () => ({
+  LinearGradient: ({ colors }: { colors: string[] }) =>
+    createElement('div', { 'data-testid': 'scrim', 'data-colors': JSON.stringify(colors) }),
+}));
+
+vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ jsBarOverlaysContent: ctrl.overlay }),
+}));
+
+vi.mock('../../../lib/tab-bar-hide-progress', () => ({ tabBarHiddenProgress: { value: 0 } }));
+
+vi.mock('../../../lib/tab-bar-visibility-store', () => ({ useTabBarHidden: () => ctrl.hidden }));
+
+vi.mock('../../../providers/tab-bar-height-provider', () => ({
+  useSetMeasuredTabBarHeight: () => () => {},
 }));
 
 vi.mock('../../PressableSurface', () => ({
@@ -113,6 +138,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       secondary: '#CCC2DC',
       onSurfaceVariant: '#CAC4D0',
       secondaryContainer: FOCUSED_INDICATOR_COLOR,
+      surface: '#141218',
     },
   }),
 }));
@@ -121,6 +147,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 // badge dot is a FILL, so it stays on these in both schemes.
 vi.mock('../../../theme/colors', () => ({
   brandColors: { primary: '#6D28D9', success: '#047857', live: '#B45309' },
+  withAlpha: (color: string, alpha: number) => `${color}@${alpha}`,
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -196,6 +223,8 @@ function makeProps(overrides: {
 
 beforeEach(() => {
   ctrl.os = 'ios';
+  ctrl.overlay = false;
+  ctrl.hidden = false;
 });
 
 describe('MaterialTabBar', () => {
@@ -418,6 +447,45 @@ describe('MaterialTabBar', () => {
       };
       const { getByRole } = render(<MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />);
       expect(getByRole('tab').getAttribute('aria-label')).toBe('boards');
+    });
+  });
+
+  describe('hide on scroll (Android phone tab roots)', () => {
+    const renderBar = () =>
+      render(<MaterialTabBar {...(makeProps({}) as unknown as Parameters<typeof MaterialTabBar>[0])} />);
+    const barOf = (container: HTMLElement) => container.firstElementChild as HTMLElement;
+
+    it('stays an opaque in-flow bar when it does not overlay content', () => {
+      const { container, queryByTestId } = renderBar();
+      expect(queryByTestId('scrim')).toBeNull();
+      const style = barOf(container).getAttribute('data-style') ?? '';
+      expect(style).toContain('"backgroundColor":"#2C2C2E"');
+      expect(style).not.toContain('"position":"absolute"');
+    });
+
+    it('draws over the tab root with a surface scrim, no hairline and no fill', () => {
+      ctrl.overlay = true;
+      const { container, getByTestId } = renderBar();
+      expect(getByTestId('scrim').getAttribute('data-colors')).toBe(JSON.stringify(['#141218@0', '#141218@0.92']));
+      const style = barOf(container).getAttribute('data-style') ?? '';
+      expect(style).toContain('"position":"absolute"');
+      expect(style).toContain('"borderTopWidth":0');
+      expect(style).not.toContain('#2C2C2E');
+    });
+
+    it('takes a hidden bar out of touch and the TalkBack order', () => {
+      ctrl.overlay = true;
+      ctrl.hidden = true;
+      const { container } = renderBar();
+      expect(barOf(container).getAttribute('data-pointer-events')).toBe('none');
+      expect(barOf(container).getAttribute('data-a11y')).toBe('no-hide-descendants');
+    });
+
+    it('keeps a shown bar reachable', () => {
+      ctrl.overlay = true;
+      const { container } = renderBar();
+      expect(barOf(container).getAttribute('data-pointer-events')).toBe('auto');
+      expect(barOf(container).getAttribute('data-a11y')).toBe('auto');
     });
   });
 });

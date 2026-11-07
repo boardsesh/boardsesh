@@ -46,6 +46,8 @@ import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../../src/hooks/use-hide-on-scroll';
+import { TabBarHideFollower } from '../../../src/components/navigation/TabBarHideFollower';
 import { iconMap } from '../../../src/components/icon-map';
 import { selectByVariant } from '../../../src/theme/variants';
 import { spacing } from '../../../src/theme/tokens';
@@ -115,12 +117,14 @@ export default function DiscoverLibrary() {
   const { brandColors, systemColors, variant } = useTheme();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const bottomChrome = useBottomChromeMetrics();
-  // The FAB only renders on Material, where the JS tab bar sits in flow and the
-  // screen ends at the bar's top edge. `fixedFooterBottom` is the offset measured
-  // from exactly there: on the in-flow bar it carries no tab-bar term, only the
-  // docked queue bar while one shows plus the rest-timer pill while it is armed
-  // (see bottom-chrome-metrics). `floatingControlBottom` is for root overlays and
-  // would add the tab bar a second time. 16dp gap on top.
+  // The FAB only renders on Material. `fixedFooterBottom` is measured from the
+  // screen's floor: the bar's top edge where the JS tab bar sits in flow, the
+  // window bottom where the Android phone bar overlays the tab root (then it
+  // carries the bar's height). On top of that, the MiniPlayer card while one
+  // shows and the rest-timer pill while it is armed (see bottom-chrome-metrics).
+  // `floatingControlBottom` is for root overlays and would add the tab bar a
+  // second time on the in-flow bar. 16dp gap on top. It follows the bar down
+  // when the bar hides on scroll (`TabBarHideFollower`).
   const createFabBottom = bottomChrome.fixedFooterBottom + spacing[4];
   const insets = useSafeAreaInsets();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
@@ -167,6 +171,8 @@ export default function DiscoverLibrary() {
   // Tells the Material app bar when the shelves have scrolled under it. `list`
   // stays undefined, and the ScrollView listener-free, until a bar attaches.
   const scrollEdge = useScrollEdgeBackdrop();
+  // The Android nav bar hides as the page scrolls down (`useHideOnScroll`).
+  const handleScroll = useHideOnScroll(scrollEdge.list?.listProps.onScroll);
 
   const {
     data: smartCounts,
@@ -670,6 +676,7 @@ export default function DiscoverLibrary() {
           // build otherwise reports little more than the start and end of a scroll).
           scrollEventThrottle={16}
           {...scrollEdge.list?.listProps}
+          onScroll={handleScroll}
         >
           {/* The floating glass header has no title slot, so the page carries one.
               UIKit's native header and the Material app bar both name the tab. */}
@@ -868,17 +875,19 @@ export default function DiscoverLibrary() {
           a screen's "new" action. Liquid Glass keeps the create "+" island in the
           floating chrome (via CollapsingTopChrome), so the FAB is material-only. */}
       {isMaterial && isAuthenticated ? (
-        <FAB
-          icon={iconMap.plus.android}
-          onPress={handleCreatePress}
-          accessibilityLabel={t('library.createFab.ariaLabel')}
-          // Solid brand fill (the app's filled-button colour), not Paper's default
-          // `primaryContainer` tonal variant — that muted tone reads as washed-out /
-          // semi-transparent over the dark feed.
-          color={brandColors.onPrimary as string}
-          mode="elevated"
-          style={[styles.createFab, { bottom: createFabBottom, backgroundColor: brandColors.primaryFill }]}
-        />
+        <TabBarHideFollower>
+          <FAB
+            icon={iconMap.plus.android}
+            onPress={handleCreatePress}
+            accessibilityLabel={t('library.createFab.ariaLabel')}
+            // Solid brand fill (the app's filled-button colour), not Paper's default
+            // `primaryContainer` tonal variant — that muted tone reads as washed-out /
+            // semi-transparent over the dark feed.
+            color={brandColors.onPrimary as string}
+            mode="elevated"
+            style={[styles.createFab, { bottom: createFabBottom, backgroundColor: brandColors.primaryFill }]}
+          />
+        </TabBarHideFollower>
       ) : null}
 
       <PlaylistFormSheet
