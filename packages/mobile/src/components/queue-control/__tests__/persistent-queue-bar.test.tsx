@@ -91,7 +91,7 @@ vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 }
 vi.mock('../../../theme/layout', () => ({
   MATERIAL_MINI_PLAYER_CARD_GAP: 8,
   MATERIAL_MINI_PLAYER_CARD_RESERVE: 56,
-  MATERIAL_TAB_BAR_HEIGHT: 80,
+  MATERIAL_TAB_BAR_HEIGHT: 64,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT: 56,
   TAB_BAR_HEIGHT: 49,
   TOOLBAR_RESERVE: 74,
