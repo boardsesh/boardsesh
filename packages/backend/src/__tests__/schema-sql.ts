@@ -4,6 +4,22 @@
  */
 
 import { readFileSync } from 'node:fs';
+// Reuse the existing generated account table and FK for actual social writes.
+const legacyAccountsSchema = readFileSync(
+  new URL('../../../db/drizzle/0016_exotic_valkyrie.sql', import.meta.url),
+  'utf8',
+)
+  .split('--> statement-breakpoint')
+  .filter(
+    (statement) =>
+      statement.trimStart().startsWith('CREATE TABLE IF NOT EXISTS "accounts"') ||
+      statement.includes('ALTER TABLE "accounts" ADD CONSTRAINT'),
+  )
+  .join('\n');
+const authCurrentStoreFoundationSchema = readFileSync(
+  new URL('../../../db/drizzle/0290_auth_current_store_foundation.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -133,6 +149,7 @@ export const schemaSQL = `
   DROP TABLE IF EXISTS "board_sessions" CASCADE;
   DROP TABLE IF EXISTS "user_climb_percentiles" CASCADE;
   DROP TABLE IF EXISTS "user_credentials" CASCADE;
+  DROP TABLE IF EXISTS "accounts" CASCADE;
   DROP TABLE IF EXISTS "users" CASCADE;
 
   CREATE TABLE IF NOT EXISTS "users" (
@@ -144,6 +161,8 @@ export const schemaSQL = `
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
+
+  ${legacyAccountsSchema}
 
   CREATE TABLE IF NOT EXISTS "user_credentials" (
     "user_id" text PRIMARY KEY NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
@@ -2227,4 +2246,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sharedSprayDraftsSchema}
   ${climbMutationReceiptsSchema}
   ${deletedUpstreamPlaylistsSchema}
+  DROP TABLE IF EXISTS auth_email_reservation_members;
+  DROP TABLE IF EXISTS auth_email_reservations;
+  DROP TABLE IF EXISTS auth_email_projection;
+  DROP TABLE IF EXISTS auth_security_mutation_events;
+  DROP TABLE IF EXISTS auth_subject_cutoffs;
+  ${authCurrentStoreFoundationSchema}
 `;
