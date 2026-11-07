@@ -4,6 +4,12 @@ This guide describes the current authentication system. The accepted replacement
 and its compatibility requirements are in [Better Auth migration](./better-auth-migration.md);
 that migration is planned, not yet deployed.
 
+The [implementation review guide](./better-auth-review-guide.md) and
+[native OAuth staging note](./better-auth-native-oauth.md) track the default-off
+replacement work. Existing provider registrations and the released browser
+fallback remain unchanged; native endpoint staging alone does not fence those
+web credential writers.
+
 This guide covers setting up OAuth authentication providers (Google, Apple, Facebook) and email verification for Boardsesh.
 
 ## Table of Contents
