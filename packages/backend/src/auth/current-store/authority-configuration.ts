@@ -3,6 +3,20 @@ import type { WebPasswordAuthority } from './command-context';
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
+export function currentStoreRpcSecret(environment: Environment): string {
+  const rpcSecret = environment.CURRENT_STORE_AUTH_RPC_SECRET;
+  if (
+    !rpcSecret ||
+    rpcSecret !== rpcSecret.trim() ||
+    Buffer.byteLength(rpcSecret, 'utf8') < 32 ||
+    [environment.NEXTAUTH_SECRET, environment.CRON_SECRET].some(
+      (secret) => Boolean(secret?.trim()) && secret === rpcSecret,
+    )
+  )
+    throw new Error('Invalid current-store web auth configuration');
+  return rpcSecret;
+}
+
 /** Invoked only after the caller explicitly selects its own staging mode. */
 export function currentStoreAuthorityConfiguration(environment: Environment): WebPasswordAuthority {
   if (environment.DEBUG_SQL === 'true') throw new Error('Unsafe current-store auth SQL logging');

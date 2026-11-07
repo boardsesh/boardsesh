@@ -13,7 +13,7 @@ vi.mock('next-auth', () => ({
 vi.mock('next-auth/jwt', () => ({
   getToken: (...args: unknown[]) => getTokenMock(...args),
 }));
-vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));
+vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: { providers: [] } }));
 // Use the REAL secure-cookies helpers (no copy-pasted stub to drift against the
 // production logic). VERCEL_ENV=production (set in beforeEach) puts them in the
 // secure-context branch, so the cookie names carry the `__Secure-` prefix.
@@ -55,6 +55,8 @@ describe('POST /api/auth/[...nextauth]', () => {
     vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
     vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
     vi.stubEnv('NEXTAUTH_SECRET', 'test-nextauth-secret');
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'legacy');
     nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
   });
 

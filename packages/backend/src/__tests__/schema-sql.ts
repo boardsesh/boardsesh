@@ -42,6 +42,10 @@ const authUidPasswordRecoverySchema = readFileSync(
   new URL('../../../db/drizzle/0292_auth_uid_password_recovery.sql', import.meta.url),
   'utf8',
 );
+const authWebOAuthIdentitySchema = readFileSync(
+  new URL('../../../db/drizzle/0293_auth_web_oauth_identity.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2283,4 +2287,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS auth_password_recovery_tokens;
   DROP TABLE IF EXISTS auth_password_recovery_state;
   ${authUidPasswordRecoverySchema}
+  DROP TABLE IF EXISTS auth_web_oauth_intents;
+  DROP TABLE IF EXISTS auth_web_oauth_commands;
+  ${authWebOAuthIdentitySchema}
 `;

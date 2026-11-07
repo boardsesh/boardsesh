@@ -1,9 +1,9 @@
-import { jwtDecrypt, jwtVerify } from 'jose';
-import { hkdf } from '@panva/hkdf';
+import { jwtVerify } from 'jose';
 import { db } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
+import { decryptLegacyWebJwe } from '../auth/legacy-web-jwe';
 
 export type AuthResult = {
   userId: string;
@@ -20,21 +20,6 @@ export type ControllerAuthResult = {
   sizeId: number;
   setIds: string;
 };
-
-// Cache the derived encryption key — it only changes if NEXTAUTH_SECRET changes,
-// which requires a process restart anyway.
-let cachedEncryptionKey: Uint8Array | null = null;
-let cachedSecret: string | null = null;
-
-async function deriveEncryptionKey(secret: string): Promise<Uint8Array> {
-  if (cachedEncryptionKey && cachedSecret === secret) {
-    return cachedEncryptionKey;
-  }
-  const encoder = new TextEncoder();
-  cachedEncryptionKey = await hkdf('sha256', encoder.encode(secret), '', 'NextAuth.js Generated Encryption Key', 32);
-  cachedSecret = secret;
-  return cachedEncryptionKey;
-}
 
 // Short-lived in-process cache for validated tokens: token → { result, expiresAt }
 // Avoids repeated JWE decryption for the same token across rapid requests.
@@ -78,11 +63,7 @@ export async function validateNextAuthToken(token: string): Promise<AuthResult |
       return null;
     }
 
-    const encryptionKey = await deriveEncryptionKey(secret);
-
-    const { payload } = await jwtDecrypt(token, encryptionKey, {
-      clockTolerance: 60,
-    });
+    const { payload } = await decryptLegacyWebJwe(token, secret, 60);
 
     const userId = payload.sub;
     if (!userId) {
