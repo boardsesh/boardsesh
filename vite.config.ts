@@ -839,6 +839,9 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/web run typecheck',
         dependsOn: ['build:web'],
       },
+      'typecheck:auth-prototype-browser': {
+        command: 'tsc -p packages/web/auth-prototype/tsconfig.json --noEmit',
+      },
       'typecheck:ble-protocol': {
         command: 'pnpm --filter @boardsesh/ble-protocol run typecheck',
         dependsOn: ['codegen'],
@@ -1045,6 +1048,7 @@ export default defineConfig({
           'build:db',
           'build:backend',
           'typecheck:web',
+          'typecheck:auth-prototype-browser',
           'typecheck:ble-protocol',
           'typecheck:queue',
           'typecheck:privacy',
@@ -1112,6 +1116,15 @@ export default defineConfig({
       // CI runs them the same way (unsharded, after the sharded backend step).
       'test:backend': {
         command: 'vp test run --project backend && vp test run --project backend-serial',
+        cache: false,
+      },
+      'test:auth-prototype': {
+        command: 'vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent',
+        cache: false,
+      },
+      'test:auth-prototype:browser': {
+        command: 'cd packages/web && vp exec playwright test --config=playwright.auth-prototype.config.ts',
+        dependsOn: ['typecheck:auth-prototype-browser'],
         cache: false,
       },
       // The offline-sync engine suites live in their own Vitest project

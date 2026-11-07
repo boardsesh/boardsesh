@@ -135,6 +135,9 @@ jobs:
               - 'packages/web/**'
             backend:
               - 'packages/backend/**'
+              # The HTTPS auth proof runs with the backend's disposable Postgres.
+              - 'packages/web/auth-prototype/**'
+              - 'packages/web/playwright.auth-prototype.config.ts'
             mobile:
               - 'packages/mobile/**'
               - 'packages/board-renderer/wasm/pkg/**'
@@ -1251,7 +1254,10 @@ jobs:
     # sharedDeps filter note in the `changes` job before narrowing that gate.
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A full PR suite plus serial/prototype tests used 18 minutes in run
+    # 41891846044, leaving under 2 minutes for Chromium's cold apt/browser
+    # install and the HTTPS proof. Keep room for that install as well as tests.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: ${{ github.event_name == 'pull_request' && 1 || 2 }}
@@ -1368,6 +1374,21 @@ jobs:
           vp test run --project backend-serial \
             --reporter=verbose --reporter=github-actions \
             --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-serial.xml
+      - name: Run Better Auth compatibility prototype
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
+        run: vp run test:auth-prototype
+      - name: Install Chromium for auth compatibility proof
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        working-directory: packages/web
+        run: vp exec playwright install --with-deps chromium
+      - name: Run HTTPS auth browser proof
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-prototype:browser
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()

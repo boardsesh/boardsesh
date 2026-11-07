@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1793814893552,
+      "tag": "0000_ba01_disposable_prototype",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793815136371,
+      "tag": "0001_ba01_lifecycle_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793815388034,
+      "tag": "0002_ba01_native_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793819352371,
+      "tag": "0003_ba01_durable_migration_epoch",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793819416178,
+      "tag": "0004_ba01_refresh_ancestry",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793822267099,
+      "tag": "0005_ba01_session_generation",
+      "breakpoints": true
+    }
+  ]
+}

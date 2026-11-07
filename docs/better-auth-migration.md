@@ -15,6 +15,15 @@ owns first-party identity, credentials, compatibility, and the migration. The
 [mobile auth flow](./mobile-auth-flow.md) and [OAuth setup guide](./oauth-setup.md)
 describe the current system until implementation changes them.
 
+Implementation evidence, decisions and the current no-go gate are recorded in
+[the implementation ledger](./better-auth-implementation.md). The isolated
+[OAuth prototype](./better-auth-prototype.md) and
+[writer/installed-client inventory](./better-auth-writer-inventory.md) are
+supporting evidence, alongside the [HTTPS browser](./better-auth-browser-proof.md),
+[process replacement](./better-auth-process-proof.md) and
+[pre-cutover refresh](./better-auth-legacy-refresh-proof.md) proofs. They do not
+imply a production authority switch.
+
 ## Decisions and completion criteria
 
 | Decision | Required outcome |
