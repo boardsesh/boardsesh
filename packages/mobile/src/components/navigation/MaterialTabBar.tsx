@@ -8,14 +8,16 @@ import { useSetMeasuredTabBarHeight } from '../../providers/tab-bar-height-provi
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { material } from '../../theme/tokens';
 import { MATERIAL_TAB_BAR_HEIGHT } from '../../theme/layout';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { isLiveTabBadge } from './tab-badge';
 
 /**
- * Material 3 bottom navigation bar — the JS tab bar for the Material UI variant
- * (the Liquid Glass variant uses the native `NativeTabs` instead). Built from the
- * existing design tokens so it reads as the same product: an opaque elevated
- * surface, a tonal circular active indicator behind the focused icon, label
- * below, and a status dot for the Record tab. Icons/labels/badges come from
+ * Material 3 Expressive short navigation bar — the JS tab bar for the Material UI
+ * variant (the Liquid Glass variant uses the native `NativeTabs` instead). Built
+ * from the existing design tokens so it reads as the same product: a 64dp opaque
+ * elevated surface, a 56×32 tonal pill behind the focused icon, label below
+ * (capped at CHROME_LABEL_MAX_FONT_SCALE so it fits the fixed height; the full
+ * label stays in the accessibility label), and a status dot for the Record tab. Icons/labels/badges come from
  * each screen's React Navigation options, so this stays a generic custom tab
  * bar.
  */
@@ -116,7 +118,12 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
                 />
               ) : null}
             </View>
-            <Text variant="caption2" color={labelColor} numberOfLines={1}>
+            <Text
+              variant="caption2"
+              color={labelColor}
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            >
               {label}
             </Text>
           </PressableSurface>
@@ -140,10 +147,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 6,
     gap: 4,
   },
-  // Active-indicator circle — fixed size, centers the icon over the fill layer below.
+  // Active-indicator pill — fixed size, centers the icon over the fill layer below.
   indicator: {
     width: material.navBar.activeIndicatorWidth,
     height: material.navBar.activeIndicatorHeight,
@@ -159,10 +165,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: material.navBar.activeIndicatorRadius,
   },
+  // Dot on the icon's top-right corner: the 24dp icon sits centred in the 56×32
+  // pill (x 16–40, y 4–28), so the dot straddles that corner.
   badge: {
     position: 'absolute',
     top: 2,
-    right: 10,
+    right: 12,
     width: 9,
     height: 9,
     borderRadius: 5,

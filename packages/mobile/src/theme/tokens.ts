@@ -165,10 +165,11 @@ export const material = {
   disabledContentOpacity: 0.38,
   disabledContainerOpacity: 0.12,
   navBar: {
-    /** Tonal circle behind the focused tab's icon (40×40, 20px radius). */
-    activeIndicatorWidth: 40,
-    activeIndicatorHeight: 40,
-    activeIndicatorRadius: 20,
+    /** Tonal pill behind the focused tab's icon (M3 Expressive short navigation
+     *  bar: 56×32, fully rounded — the same pill the navigation rail uses). */
+    activeIndicatorWidth: 56,
+    activeIndicatorHeight: 32,
+    activeIndicatorRadius: 16,
     /** Resting elevation of the solid Android nav surface (M3 nav bar = level 2). */
     surfaceElevation: 2,
   },
