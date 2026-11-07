@@ -16,6 +16,20 @@ const legacyAccountsSchema = readFileSync(
       statement.includes('ALTER TABLE "accounts" ADD CONSTRAINT'),
   )
   .join('\n');
+// Public NextAuth callback proof: reuse legacy generated receipt tables. The
+// namespaced verification-token tombstones intentionally have no users FK.
+const legacyWebSessionSchema = readFileSync(
+  new URL('../../../db/drizzle/0016_exotic_valkyrie.sql', import.meta.url),
+  'utf8',
+)
+  .split('--> statement-breakpoint')
+  .filter(
+    (statement) =>
+      statement.trimStart().startsWith('CREATE TABLE IF NOT EXISTS "sessions"') ||
+      statement.trimStart().startsWith('CREATE TABLE IF NOT EXISTS "verificationTokens"') ||
+      statement.includes('ALTER TABLE "sessions" ADD CONSTRAINT'),
+  )
+  .join('\n');
 const authCurrentStoreFoundationSchema = readFileSync(
   new URL('../../../db/drizzle/0290_auth_current_store_foundation.sql', import.meta.url),
   'utf8',
@@ -150,6 +164,8 @@ export const schemaSQL = `
   DROP TABLE IF EXISTS "user_climb_percentiles" CASCADE;
   DROP TABLE IF EXISTS "user_credentials" CASCADE;
   DROP TABLE IF EXISTS "accounts" CASCADE;
+  DROP TABLE IF EXISTS "sessions";
+  DROP TABLE IF EXISTS "verificationTokens";
   DROP TABLE IF EXISTS "users" CASCADE;
 
   CREATE TABLE IF NOT EXISTS "users" (
@@ -163,6 +179,7 @@ export const schemaSQL = `
   );
 
   ${legacyAccountsSchema}
+  ${legacyWebSessionSchema}
 
   CREATE TABLE IF NOT EXISTS "user_credentials" (
     "user_id" text PRIMARY KEY NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
