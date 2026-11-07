@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActionSheetIOS, Alert, Platform, StyleSheet } from 'react-native';
+import { ActionSheetIOS, Alert, Modal as NativeModal, Platform, StyleSheet } from 'react-native';
 import { Button, Dialog, Portal, Text } from 'react-native-paper';
 import { useTheme } from './theme-provider';
 
@@ -96,8 +96,8 @@ const styles = StyleSheet.create({
 
 /**
  * One imperative dialog for the whole app, rendered the right way per UI
- * variant: a Material 3 Paper `Dialog` (in a `Portal`) on Material, and the native
- * iOS `Alert` on Liquid Glass — behind `useConfirm()` (yes/no) and `useChoose()`
+ * variant: a Material 3 Paper `Dialog` on Material, and the native `Alert` on
+ * Liquid Glass — behind `useConfirm()` (yes/no) and `useChoose()`
  * (two or three named actions), which return promises so callers can
  * `if (await confirm(...))` / `switch (await choose(...))`.
  *
@@ -112,8 +112,13 @@ const styles = StyleSheet.create({
  * variant guard, so the `variant ===` branch here is the sanctioned place to
  * resolve it.
  *
- * The Paper `Dialog` is used on **Android Material only**. On iOS we always fall back
- * to the native `Alert` — even on the Material variant — because prompts are often
+ * On Android the Paper `Dialog` lives inside a React Native `Modal`, above the
+ * separate native window used by Expo's bottom sheets. A root Paper `Portal`
+ * would render underneath an open sheet and leave its prompt unreachable. Web
+ * keeps the Paper `Portal` host.
+ *
+ * On iOS we always fall back to the native `Alert` — even on the Material
+ * variant — because prompts are often
  * launched from a sheet rendered in a `FullWindowOverlay` (iOS-only), and the Paper
  * `Portal` lives in the normal React tree *underneath* that overlay: the dialog would
  * be invisible and its promise would never resolve. The native `Alert` always sits on
@@ -123,7 +128,7 @@ const styles = StyleSheet.create({
  * A destructive `confirm` on iOS skips the Alert for a confirmation dialog (an
  * action sheet, see `showConfirmationDialog`); `choose` stays an Alert.
  *
- * Concurrent prompts queue (one Android dialog shows at a time; the native Alert
+ * Concurrent prompts queue (one Material dialog shows at a time; the native Alert
  * queues itself). Each prompt settles exactly once, by id — a double-tap, or an
  * action racing `onDismiss`, can't drop a different queued prompt or leave a caller
  * awaiting forever. Scrim / back dismiss resolves `cancelValue`.
@@ -137,7 +142,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const settledIdsRef = useRef<Set<number>>(new Set());
 
   // Native Alert on Liquid Glass everywhere, and on iOS regardless of variant (see
-  // the FullWindowOverlay note above). The Paper dialog queue is Android-Material only.
+  // the FullWindowOverlay note above). Android/web Material uses the Paper queue.
   const useNativeAlert = variant === 'liquidGlass' || Platform.OS === 'ios';
 
   const choose = useCallback(
@@ -212,35 +217,48 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   }, [queue]);
 
   const current = queue[0];
+  const dialog = current ? (
+    <Dialog visible onDismiss={() => settle(current, current.cancelValue)}>
+      <Dialog.Title>{current.title}</Dialog.Title>
+      {current.message ? (
+        <Dialog.Content>
+          <Text variant="bodyMedium">{current.message}</Text>
+        </Dialog.Content>
+      ) : null}
+      <Dialog.Actions style={styles.actions}>
+        {current.options.map((option) => (
+          <Button
+            key={option.value}
+            textColor={option.destructive ? m3.error : undefined}
+            onPress={() => settle(current, option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </Dialog.Actions>
+    </Dialog>
+  ) : null;
 
   return (
     <DialogContext value={value}>
       {children}
-      {/* Only the Android-Material path ever queues a prompt; guarding on the same
+      {/* Only the Android/web Material path ever queues a prompt; guarding on the same
           `!useNativeAlert` condition keeps the Paper dialog off Liquid Glass / iOS
           even if the variant flips while a prompt is mid-flight. */}
       {!useNativeAlert && current ? (
-        <Portal>
-          <Dialog visible onDismiss={() => settle(current, current.cancelValue)}>
-            <Dialog.Title>{current.title}</Dialog.Title>
-            {current.message ? (
-              <Dialog.Content>
-                <Text variant="bodyMedium">{current.message}</Text>
-              </Dialog.Content>
-            ) : null}
-            <Dialog.Actions style={styles.actions}>
-              {current.options.map((option) => (
-                <Button
-                  key={option.value}
-                  textColor={option.destructive ? m3.error : undefined}
-                  onPress={() => settle(current, option.value)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </Dialog.Actions>
-          </Dialog>
-        </Portal>
+        Platform.OS === 'android' ? (
+          <NativeModal
+            visible
+            transparent
+            statusBarTranslucent
+            navigationBarTranslucent
+            onRequestClose={() => settle(current, current.cancelValue)}
+          >
+            {dialog}
+          </NativeModal>
+        ) : (
+          <Portal>{dialog}</Portal>
+        )
       ) : null}
     </DialogContext>
   );

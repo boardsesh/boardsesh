@@ -21,10 +21,24 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-type ModalSheetMockProps = { children?: ReactNode; header?: ReactNode };
+type ModalSheetMockProps = {
+  children?: ReactNode;
+  header?: ReactNode;
+  androidContentSized?: boolean;
+  scrollable?: boolean;
+};
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, header }: ModalSheetMockProps) =>
-    createElement('div', { 'data-modal-sheet': 'true' }, header, children),
+  ModalSheet: ({ children, header, androidContentSized, scrollable }: ModalSheetMockProps) =>
+    createElement(
+      'div',
+      {
+        'data-modal-sheet': 'true',
+        'data-android-content-sized': String(androidContentSized),
+        'data-scrollable': String(scrollable),
+      },
+      header,
+      children,
+    ),
 }));
 vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 
@@ -222,6 +236,15 @@ describe('FeedbackSheet bug report contact consent', () => {
 });
 
 describe('FeedbackSheet screenshots', () => {
+  it.each(['bug', 'rating'] as const)('uses bounded content sizing for the Android %s form', (mode) => {
+    const sheetRef = createRef<ManagedSheetHandle>();
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode={mode} />);
+    // Configuration guard; native before/after captures verify keyboard layout.
+    const sheet = container.querySelector('[data-modal-sheet]');
+    expect(sheet?.getAttribute('data-android-content-sized')).toBe('true');
+    expect(sheet?.getAttribute('data-scrollable')).toBe('true');
+  });
+
   const picker = (root: HTMLElement) => root.querySelector('[data-screenshot-picker]') as HTMLButtonElement | null;
   const typeReport = (getByPlaceholderText: (text: string) => HTMLElement) => {
     fireEvent.change(getByPlaceholderText('feedbackForm.bugPlaceholder'), {
@@ -255,19 +278,23 @@ describe('FeedbackSheet screenshots', () => {
     expect(picker(container)).toBeNull();
   });
 
-  it('uploads the picked shots and sends their keys with the report', async () => {
+  it('preserves the typed report when attaching screenshots after focusing the input', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
     const { container, getByPlaceholderText } = render(
       <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
     );
-    fireEvent.click(picker(container)!);
+    fireEvent.focus(getByPlaceholderText('feedbackForm.bugPlaceholder'));
     typeReport(getByPlaceholderText);
+    fireEvent.click(picker(container)!);
     fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
 
     await vi.waitFor(() => expect(feedbackMutation.mutateAsync).toHaveBeenCalledTimes(1));
     expect(uploadFeedbackScreenshots).toHaveBeenCalledWith(['file:///shot-0.jpg']);
     expect(feedbackMutation.mutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ screenshotKeys: ['feedback-screenshots/one.jpg'] }),
+      expect.objectContaining({
+        comment: 'the board disconnects on start',
+        screenshotKeys: ['feedback-screenshots/one.jpg'],
+      }),
     );
   });
 

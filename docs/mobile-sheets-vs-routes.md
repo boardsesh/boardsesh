@@ -290,6 +290,20 @@ neither failure mode had anything to bite. Adding either one makes the hook load
 with more than one detent should also pass `activeIndex` from the native `onChange`, so the bound
 tracks the resting detent instead of leaving dead space under the footer at the taller one.
 
+**Feedback forms on Android (#7310).** `FeedbackSheet` (including its rating mode)
+and `QaVerdictSheet` use `androidContentSized`. With fixed detents, focusing the description left only
+a clipped input above a large blank area; the screenshot picker could not be reached.
+The existing content-fitting column and shrinking scroll body keep the picker
+reachable while typing. Native QA must start from a fresh sheet presentation:
+hot-swapping the sizing mode on an already-open sheet retains stale native geometry.
+Android API 36 captures: [before](images/feedback-keyboard-before.png),
+[after](images/feedback-keyboard-after.png). With the corrected sizing, selecting
+an image and cancelling another selection both retain the description and attachment.
+The verdict form has the same regression: [before](images/qa-verdict-keyboard-before.png),
+[after](images/qa-verdict-keyboard-after.png). These verdict captures exercise the actual
+form through a temporary local opener on a dev client; they do not verify OTA entry,
+verdict submission, or returning to the previous update track.
+
 **Android gesture roots inside native dialogs.** Expo's Material 3 sheet hosts React Native
 content in a separate dialog window. The app-level `GestureHandlerRootView` does not cover
 that window. A sheet containing RNGH gestures must put a local `GestureHandlerRootView`
@@ -1100,7 +1114,18 @@ Full Keyboard Access, so those users still get the zoom and its missing tree.
 dismissing, so dirty or submitting forms disable pan/backdrop dismissal. Cancel
 asks Discard changes / Keep editing while preserving the visible form; submissions
 bypass that guard after success. A late confirmation cannot dismiss a reopened
-form or a different record. Coordinator displacement remains a separate host
+form or a different record. On Android, `DialogProvider` hosts the Paper dialog
+directly inside a transparent React Native `Modal`: a root Paper `Portal` renders
+below Expo’s separate native sheet window and makes the discard prompt unreachable.
+Do not put that Portal inside the modal; it still renders back at the app root.
+Android Back and the dialog scrim cancel only the current queued prompt. Web keeps
+the Portal and iOS keeps its native alerts/action sheets. Native Android API 36
+QA at 1080×1920 and 130% text shows the difference after Close:
+[unreachable prompt](images/feedback-discard-before.png),
+[visible warning](images/feedback-discard-after.png). Keep editing, Android Back,
+and tapping outside retain the draft; Discard closes the sheet and reopening is empty.
+Opening the warning directly while the keyboard is visible also works.
+Coordinator displacement remains a separate host
 notification, so it never attempts to reopen a sheet during native handoff.
 
 **Submit failures stay in their sheet:** use an uncapped, wrapping error row inside the
