@@ -335,6 +335,12 @@ export default defineConfig({
       'test:db': {
         command: 'pnpm --filter @boardsesh/db run test',
       },
+      'test:db:user-reference-catalog': {
+        command: 'node --import tsx scripts/verify-user-reference-catalog.ts --run',
+        // Creates its own offline cluster; never starts or adopts the shared development DB.
+        // Explicit source/head/image/output arguments are required. A missing argument fails.
+        cache: false,
+      },
       // The migration-journal node:test suite CI runs (from ci.yml's db-migrations
       // job, against its current PostgreSQL service). It builds its own throwaway
       // migrations folder and database, so it needs no board data and no db:up.
