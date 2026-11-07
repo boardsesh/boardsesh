@@ -1,48 +1,24 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
-import { compare, hash } from 'bcryptjs';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
-import { eq, and, isNull, lt, or, isNotNull, sql } from 'drizzle-orm';
-import { mobileRefreshTokens, users, userCredentials, accounts, userProfiles } from '@boardsesh/db/schema/auth';
+import { eq, and, isNull, lt, or, isNotNull } from 'drizzle-orm';
+import { mobileRefreshTokens, users, accounts, userProfiles } from '@boardsesh/db/schema/auth';
 import { notificationDevices } from '@boardsesh/db/schema/app';
 import { db } from '../db/client';
 import { redisClientManager } from '../redis/client';
 import { applyCorsHeaders } from './cors';
 import { validateToken } from '../middleware/auth';
 import { logger } from '../utils/logger';
-
-/**
- * Fixed dummy bcrypt hash used to keep the credentials handler's response
- * time roughly constant for unknown emails / OAuth-only users. Without it,
- * an attacker could enumerate registered accounts by timing the response.
- * The plaintext is irrelevant — `compare` always returns false against it.
- */
-const DUMMY_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfRzC2VyM4dy';
+import {
+  authenticateCurrentStorePassword,
+  parseCurrentStorePasswordRegistration,
+  prepareCurrentStorePasswordRegistration,
+  insertCurrentStorePasswordIdentity,
+} from '../auth/current-store/password-identity';
 
 /** Generic error returned for all credential validation failures. */
 const INVALID_CREDENTIALS_ERROR = 'Invalid email or password';
-
-/**
- * Bound duplicate-by-case password checks so malformed legacy account groups
- * cannot turn one rate-limited login attempt into unbounded bcrypt work. The
- * current production maximum is six; leave headroom while account cleanup and
- * a case-insensitive unique index remain separate work.
- */
-const MAX_CREDENTIAL_CANDIDATES = 8;
-
-/**
- * Registration field bounds — mirror the web register route's Zod schema
- * (packages/web/app/api/auth/register/route.ts) so both signup paths accept
- * exactly the same inputs. The email regex is the same lax shape the web/mobile
- * client validators use: it rejects nothing the server would otherwise accept.
- */
-const REGISTER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_MAX_LENGTH = 128;
-const NAME_MAX_LENGTH = 100;
-/** bcrypt cost factor — matches the web register route. */
-const BCRYPT_COST = 12;
 
 // Transfer tokens are short-lived (120s) and exchanged between our own
 // servers, so 5s tolerance is sufficient. Long-lived JWTs use 60s in
@@ -561,66 +537,13 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
     return;
   }
 
-  // Normalize the email to match how NextAuth's adapter stores it.
-  const normalizedEmail = email.trim().toLowerCase();
-
   try {
-    // Legacy web accounts may retain mixed-case emails, and users.email is not
-    // currently unique case-insensitively. Load every exact case-insensitive
-    // match so duplicate-by-case accounts can each authenticate with their own
-    // password. Using LOWER rather than ILIKE avoids treating valid email
-    // characters such as `_` as pattern wildcards.
-    const credentialCandidates = await db
-      .select({
-        userId: users.id,
-        passwordHash: userCredentials.passwordHash,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .innerJoin(userCredentials, eq(userCredentials.userId, users.id))
-      .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
-      .limit(MAX_CREDENTIAL_CANDIDATES + 1);
-
-    if (credentialCandidates.length === 0) {
-      // Unknown emails and OAuth-only accounts take one dummy comparison and
-      // return the same generic response.
-      await compare(password, DUMMY_PASSWORD_HASH);
+    const authenticatedUser = await authenticateCurrentStorePassword(db, email, password);
+    if (!authenticatedUser) {
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
     }
 
-    if (credentialCandidates.length > MAX_CREDENTIAL_CANDIDATES) {
-      // Keep oversized groups bounded while matching the work performed for
-      // the largest supported group, so the limit sentinel is not observable
-      // through a sudden drop to one bcrypt comparison.
-      await Promise.all(
-        credentialCandidates
-          .slice(0, MAX_CREDENTIAL_CANDIDATES)
-          .map((candidate) => compare(password, candidate.passwordHash)),
-      );
-      sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
-      return;
-    }
-
-    // Check every available hash. Aside from supporting duplicate-by-case
-    // accounts, avoiding an early exit keeps success timing independent of a
-    // matching candidate's position in the result set.
-    const passwordMatchResults = await Promise.all(
-      credentialCandidates.map((candidate) => compare(password, candidate.passwordHash)),
-    );
-    const matchingCredentialIndexes = passwordMatchResults.reduce<number[]>((indexes, passwordMatches, index) => {
-      if (passwordMatches) indexes.push(index);
-      return indexes;
-    }, []);
-
-    // Duplicate-by-case accounts can share a password. Without an unambiguous
-    // match there is no safe account to issue the session for.
-    if (matchingCredentialIndexes.length !== 1) {
-      sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
-      return;
-    }
-
-    const authenticatedUser = credentialCandidates[matchingCredentialIndexes[0]];
     const authenticatedUserId = authenticatedUser.userId;
     const tokenPair = await generateTokenPair(authenticatedUserId);
     logger.info(`[NativeAuth] Credentials sign-in successful for user ${authenticatedUserId}`);
@@ -687,84 +610,31 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
     return;
   }
 
-  const { email, password, name } = body as Record<string, unknown>;
-
-  // Email: present, a string, and matching the lax client-side shape. Validate
-  // against the trimmed/lowercased form so a trailing space can't sneak past.
-  if (typeof email !== 'string' || email.trim().length === 0) {
-    sendJson(res, 400, { error: 'email and password are required' });
+  const validation = parseCurrentStorePasswordRegistration(body as Record<string, unknown>);
+  if (!validation.ok) {
+    sendJson(res, 400, { error: validation.error });
     return;
-  }
-  const normalizedEmail = email.trim().toLowerCase();
-  if (!REGISTER_EMAIL_REGEX.test(normalizedEmail)) {
-    sendJson(res, 400, { error: 'Invalid email address' });
-    return;
-  }
-
-  // Password: present, a string, within bounds (mirrors the web Zod schema).
-  if (typeof password !== 'string' || password.length === 0) {
-    sendJson(res, 400, { error: 'email and password are required' });
-    return;
-  }
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    sendJson(res, 400, { error: 'Password must be at least 8 characters' });
-    return;
-  }
-  if (password.length > PASSWORD_MAX_LENGTH) {
-    sendJson(res, 400, { error: 'Password must be less than 128 characters' });
-    return;
-  }
-
-  // Name: optional. An empty/whitespace-only string is treated as absent; the
-  // display name then falls back to the email local-part (matches web).
-  let trimmedName: string | undefined;
-  if (name !== undefined && name !== null) {
-    if (typeof name !== 'string') {
-      sendJson(res, 400, { error: 'name must be a string' });
-      return;
-    }
-    const candidate = name.trim();
-    if (candidate.length > NAME_MAX_LENGTH) {
-      sendJson(res, 400, { error: 'Name must be less than 100 characters' });
-      return;
-    }
-    if (candidate.length > 0) trimmedName = candidate;
   }
 
   try {
-    // Pre-check keeps the clean 409 message without relying on a DB constraint
-    // (users.email currently has no unique index — see the catch below).
-    const existingRows = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
-    if (existingRows[0]) {
+    const prepared = await prepareCurrentStorePasswordRegistration(db, validation.registration);
+    if (!prepared) {
       sendJson(res, 409, {
         error: 'An account with this email already exists. Please sign in with your existing account.',
       });
       return;
     }
 
-    const passwordHash = await hash(password, BCRYPT_COST);
     // Mirror web: unverified when the verification gate is on, verified otherwise.
     const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
     const result = await db.transaction(async (tx) => {
-      const newUserId = crypto.randomUUID();
-      const createdAt = new Date();
-      await tx.insert(users).values({
-        id: newUserId,
-        createdAt,
-        email: normalizedEmail,
-        name: trimmedName ?? normalizedEmail.split('@')[0],
-        emailVerified: emailVerificationEnabled ? null : new Date(),
-      });
-      await tx.insert(userCredentials).values({ userId: newUserId, passwordHash });
-      // Mirror the web createUser event: every user gets a profile row. New
-      // accounts start public (the column defaults); Private is opt-in.
-      await tx.insert(userProfiles).values({ userId: newUserId }).onConflictDoNothing();
-      const tokenPair = await generateTokenPair(newUserId, tx);
+      const identity = await insertCurrentStorePasswordIdentity(tx, prepared, emailVerificationEnabled);
+      const tokenPair = await generateTokenPair(identity.userId, tx);
       return {
-        userId: newUserId,
+        userId: identity.userId,
         tokenPair,
-        accountCreation: accountCreationReceipt(newUserId, true, 'email', createdAt),
+        accountCreation: accountCreationReceipt(identity.userId, true, 'email', identity.createdAt),
       };
     });
 
