@@ -1,3 +1,5 @@
+import type { ComponentProps } from 'react';
+import type { GradeRangeRail } from './grade/GradeRail';
 import type { MoreRow, MoreSection } from './MoreForm.types';
 
 /**
@@ -33,7 +35,14 @@ export type FilterMenuRow = {
   onSelect: (key: string) => void;
 };
 
-export type ClimbFilterFormRow = MoreRow | FilterNameRow | FilterMenuRow;
+export type FilterGradeRow = {
+  kind: 'grade';
+  key: string;
+  height: number;
+  grade: ComponentProps<typeof GradeRangeRail>;
+};
+
+export type ClimbFilterFormRow = MoreRow | FilterNameRow | FilterMenuRow | FilterGradeRow;
 
 export type ClimbFilterFormSection = Omit<MoreSection, 'rows'> & { rows: ClimbFilterFormRow[] };
 

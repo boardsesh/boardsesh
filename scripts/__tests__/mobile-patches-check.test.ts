@@ -5,15 +5,18 @@ import {
   RULES as REAL_RULES,
   UNGUARDED_PATCHES,
   WEB_RULES,
+  checkExpoUiAndroidPatchesBuildFromSource,
   checkIosPatchesBuildFromSource,
   checkPatchInventory,
   checkPatchesApplied,
   createNodeEnv,
   extractObjCMethodBody,
   packageFromExternalDependency,
+  readAndroidModuleConfigFrom,
   readSpmConfigFrom,
   sourceBuildChain,
   versionFromKey,
+  type AndroidModuleConfig,
   type PatchCheckEnv,
   type PatchRule,
   type SpmConfig,
@@ -630,6 +633,209 @@ describe('the shipped @expo/ui shared native touch-handler leases', () => {
     const regressedSource = installedSource.replace(fragment, '__REMOVED_NATIVE_LEASE_GUARD__');
     expect(regressedSource).not.toBe(installedSource);
     expect(checkSource(regressedSource).errors).toContainEqual(expect.stringContaining('is missing'));
+  });
+});
+
+describe('the shipped @expo/ui Android lazy-list bridge', () => {
+  const nativeFiles = new Set([
+    'LazyListScrollController.kt',
+    'LazyColumnView.kt',
+    'LazyRowView.kt',
+    'ExpoUIModule.kt',
+    'ModifierRegistry.kt',
+    'SemanticsModifier.kt',
+  ]);
+  const bridgeRules = REAL_RULES.filter(
+    (rule) => rule.package === SCOPED_PKG && nativeFiles.has(rule.file.split('/').at(-1) ?? ''),
+  );
+  const fixtures = bridgeRules.map((rule) => ({
+    rule,
+    source: readFileSync(
+      resolve(import.meta.dirname, '../../packages/mobile/node_modules/@expo/ui', rule.file),
+      'utf8',
+    ),
+  }));
+
+  function checkBridgeSource(rule: PatchRule, source: string) {
+    return checkPatchesApplied(
+      [rule],
+      makeEnv({
+        patchedDependencies: { [rule.patchedKey]: SCOPED_PATCH_PATH },
+        versions: { [rule.package]: versionFromKey(rule.patchedKey) },
+        files: { [`${rule.package}::${rule.file}`]: source },
+      }),
+    );
+  }
+
+  it('guards all six installed native bridge files', () => {
+    expect(fixtures).toHaveLength(6);
+    for (const { rule, source } of fixtures) {
+      expect(checkBridgeSource(rule, source).errors, rule.file).toEqual([]);
+    }
+  });
+
+  it.each(fixtures.flatMap(({ rule, source }) => rule.sentinels.map((fragment) => ({ rule, source, fragment }))))(
+    'rejects losing $fragment',
+    ({ rule, source, fragment }) => {
+      const regressedSource = source.replaceAll(fragment, '__REMOVED_ANDROID_LAZY_LIST_GUARD__');
+      expect(regressedSource).not.toBe(source);
+      expect(checkBridgeSource(rule, regressedSource).errors).toContainEqual(expect.stringContaining('is missing'));
+    },
+  );
+});
+
+describe('the shipped @expo/ui opt-in sheet touch recovery and native cancellation rollback', () => {
+  const nativeFile = 'android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt';
+  const recoveryRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === nativeFile);
+  if (!recoveryRule) throw new Error('no @expo/ui settled sheet touch recovery rule registered');
+  const nativeSource = readFileSync(
+    resolve(import.meta.dirname, '../../packages/mobile/node_modules/@expo/ui', nativeFile),
+    'utf8',
+  );
+
+  function checkRecovery(source: string) {
+    return checkPatchesApplied(
+      [recoveryRule!],
+      makeEnv({
+        patchedDependencies: { [recoveryRule!.patchedKey]: SCOPED_PATCH_PATH },
+        versions: { [SCOPED_PKG]: versionFromKey(recoveryRule!.patchedKey) },
+        files: { [`${SCOPED_PKG}::${nativeFile}`]: source },
+      }),
+    ).errors;
+  }
+
+  it('keeps recovery disabled by default in native and both JS entrypoints', () => {
+    expect(checkRecovery(nativeSource)).toEqual([]);
+    const entrypointRules = REAL_RULES.filter(
+      (rule) => rule.package === SCOPED_PKG && rule.file.includes('/ModalBottomSheet/index.'),
+    );
+    expect(entrypointRules).toHaveLength(2);
+    const installed = createNodeEnv(resolve(import.meta.dirname, '../../packages/mobile/package.json'), {
+      [recoveryRule!.patchedKey]: SCOPED_PATCH_PATH,
+    });
+    expect(checkPatchesApplied(entrypointRules, installed).errors).toEqual([]);
+    for (const rule of entrypointRules) {
+      const original = installed.readInstalledFile(rule.package, rule.file);
+      const regressed = original.replace('recoverSettledTouches ?? false', 'recoverSettledTouches ?? true');
+      expect(regressed).not.toBe(original);
+      expect(
+        checkPatchesApplied([rule], {
+          ...installed,
+          readInstalledFile: () => regressed,
+        }).errors,
+      ).toContainEqual(expect.stringContaining('is missing'));
+    }
+  });
+
+  it.each([
+    ['global default', 'val recoverSettledTouches: Boolean = false', 'val recoverSettledTouches: Boolean = true'],
+    ['disabled gate', 'if (!enabled) return@LaunchedEffect', ''],
+    ['recovery composition', 'RecoverSettledSheetTouches(sheetState, touchRecovery, recoverSettledTouches)', ''],
+    ['settled trigger', 'snapshotFlow { sheetState.currentValue }', 'snapshotFlow { sheetState.targetValue }'],
+    ['transition cancellation', '.collectLatest { settled ->', '.collect { settled ->'],
+    [
+      'initial and hidden states',
+      'previous == settled || previous == SheetValue.Hidden || settled == SheetValue.Hidden',
+      'false',
+    ],
+    ['active pointer wait', 'snapshotFlow { recovery.touching }.first { touching -> !touching }', ''],
+    [
+      'native pointer tracking',
+      'recovery.pointersChanged(this, sheetState, pointerEvent.changes.any { it.pressed })',
+      '',
+    ],
+    ['current detent recheck', 'sheetState.currentValue != settled || ', ''],
+    ['target detent recheck', 'sheetState.targetValue != settled ||', 'false ||'],
+    ['animation recheck', '!sheetState.isAnimationRunning || ', ''],
+    ['command recheck', 'recovery.activeCommands != 0', 'false'],
+    ['command lifetime', 'activeCommands -= 1', 'activeCommands = 0'],
+    ['command hide exclusion', 'touchRecovery.runCommand { sheetState.hide() }', 'sheetState.hide()'],
+    ['command expand exclusion', 'touchRecovery.runCommand { sheetState.expand() }', 'sheetState.expand()'],
+    [
+      'command partial exclusion',
+      'touchRecovery.runCommand { sheetState.partialExpand() }',
+      'sheetState.partialExpand()',
+    ],
+    ['native reset cleanup', 'recovery.reset(this)', ''],
+    ['native detach cleanup', 'recovery.reset(this, detached = true)', ''],
+    ['recovery lifetime cleanup', 'recovering = false', ''],
+    ['overlapping recovery guard', ' || recovery.recovering', ''],
+    ['expanded recovery', 'SheetValue.Expanded -> sheetState.expand()', 'SheetValue.Expanded -> Unit'],
+    [
+      'partial recovery',
+      'SheetValue.PartiallyExpanded -> sheetState.partialExpand()',
+      'SheetValue.PartiallyExpanded -> Unit',
+    ],
+  ])('rejects a broken %s fixture', (_label, fragment, replacement) => {
+    const regressed = nativeSource.replaceAll(fragment, replacement);
+    expect(regressed).not.toBe(nativeSource);
+    expect(checkRecovery(regressed)).toContainEqual(expect.stringContaining('is missing'));
+  });
+
+  it.each([
+    ['cancel composition', 'RecoverCancelledSheetGesture(sheetState, touchRecovery, recoverSettledTouches)', ''],
+    ['observer attach', 'recovery.attach(this)', ''],
+    ['observer registration', 'attachedObserver = observer', ''],
+    ['real native cancel callback', 'recovery.cancelGesture(this)', ''],
+    ['normal release is not cancellation', 'if (!pressed) gesture = null', 'if (!pressed) cancelGesture(observer)'],
+    ['new DOWN invalidation', 'if (pressed && !touching) {\n      invalidateGesture()', 'if (pressed && !touching) {'],
+    ['generation invalidation', 'generation += 1', ''],
+    ['request invalidation', 'cancelledGesture = null', ''],
+    ['pointer state update', 'touching = pressed', ''],
+    ['cancellation pointer reset', 'val wasTouching = touching\n    touching = false', 'val wasTouching = touching'],
+    [
+      'explicit command invalidation',
+      'suspend fun runCommand(command: suspend () -> Unit) {\n    invalidateGesture()',
+      'suspend fun runCommand(command: suspend () -> Unit) {',
+    ],
+    [
+      'captured start detent',
+      'gesture = SheetGestureCapture(observer, sheetState, generation, startDetent)',
+      'gesture = null',
+    ],
+    ['hidden start guard', 'if (startDetent != SheetValue.Hidden)', 'if (true)'],
+    ['active gesture guard', '!wasTouching || ', ''],
+    ['cancel request emission', 'cancelledGesture = CancelledSheetGesture(cancellationEpoch, captured)', ''],
+    ['current request identity', 'cancelledGesture === request && ', ''],
+    ['gesture generation', 'request.gesture.generation == generation', 'true'],
+    ['sheet identity', 'request.gesture.sheetState === sheetState && ', ''],
+    ['observer identity', 'attachedObserver === request.gesture.observer', 'true'],
+    ['attached observer', 'request.gesture.observer.isAttached && ', ''],
+    ['released pointers', '!touching && activeCommands == 0', 'activeCommands == 0'],
+    ['command priority', 'activeCommands == 0', 'true'],
+    ['cancellation observation', 'snapshotFlow { recovery.cancelledGesture }', 'snapshotFlow { null }'],
+    ['duplicate cancellation guard', 'request.epoch <= consumedEpoch', 'false'],
+    ['overlap wait', 'snapshotFlow { !recovery.touching && !recovery.recovering }.first { it }', ''],
+    ['cancellation ownership recheck', 'if (!recovery.owns(request, sheetState)) return@collectLatest', ''],
+    [
+      'expanded anchor availability',
+      'SheetValue.Expanded -> sheetState.hasExpandedState',
+      'SheetValue.Expanded -> true',
+    ],
+    [
+      'partial anchor availability',
+      'SheetValue.PartiallyExpanded -> sheetState.hasPartiallyExpandedState',
+      'SheetValue.PartiallyExpanded -> true',
+    ],
+    ['unavailable anchor guard', 'if (!anchorAvailable) return@collectLatest', ''],
+    ['local one-shot consumption', 'consumedEpoch = request.epoch', ''],
+    ['hidden sheet priority', '!sheetState.isVisible || ', ''],
+    ['native dismissal priority', 'sheetState.targetValue == SheetValue.Hidden', 'false'],
+  ])('rejects a broken cancellation %s fixture', (_label, fragment, replacement) => {
+    const regressed = nativeSource.replaceAll(fragment, replacement);
+    expect(regressed).not.toBe(nativeSource);
+    expect(checkRecovery(regressed)).toContainEqual(expect.stringContaining('is missing'));
+  });
+
+  it.each([
+    ['consuming the touch', 'event.changes.forEach { it.consume() }'],
+    ['timed reset', 'delay(100)'],
+    ['blocking reset', 'Thread.sleep(100)'],
+    ['private-state mutation', 'sheetState.javaClass.getDeclaredField("dragTarget")'],
+    ['disabling gestures', 'sheetGesturesEnabled = false'],
+    ['temporary diagnostics', 'android.util.Log.i("Filters7312", "debug")'],
+  ])('rejects %s even when recovery sentinels remain', (_label, addition) => {
+    expect(checkRecovery(`${nativeSource}\n${addition}`)).toContainEqual(expect.stringContaining('forbidden'));
   });
 });
 
@@ -1528,6 +1734,94 @@ describe('checkIosPatchesBuildFromSource', () => {
   });
 });
 
+describe('checkExpoUiAndroidPatchesBuildFromSource', () => {
+  const androidRule: PatchRule = {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/LazyRowView.kt',
+    sentinels: [],
+    patchedKey: '@expo/ui@58.0.23',
+  };
+  const published: AndroidModuleConfig = { android: { publication: { repository: 'local-maven-repo' } } };
+
+  function checkSelection(buildFromSource: string[], config: AndroidModuleConfig | null = published) {
+    return checkExpoUiAndroidPatchesBuildFromSource({
+      rules: [androidRule],
+      buildFromSource,
+      readAndroidModuleConfig: () => config,
+    });
+  }
+
+  it('rejects the iOS-only scoped package entry that silently ships an unpatched Android AAR', () => {
+    expect(checkSelection(['@expo/ui'])).toEqual([
+      expect.stringContaining('Android project "expo-ui" can link a prebuilt AAR'),
+    ]);
+    expect(checkSelection(['@expo/ui', 'expo-ui'])).toEqual([]);
+  });
+
+  it('matches full Gradle names and grouped regex alternatives like Regex.matches', () => {
+    expect(checkSelection(['expo'])).toHaveLength(1);
+    expect(checkSelection(['expo-ui-extra|other'])).toHaveLength(1);
+    expect(checkSelection(['expo-ui|other'])).toEqual([]);
+    expect(checkSelection(['expo-.*'])).toEqual([]);
+  });
+
+  it('honors explicit Android project names instead of guessing from the npm package', () => {
+    const config = { android: { name: 'native-filters', publication: { repository: 'local-maven-repo' } } };
+    expect(checkSelection(['expo-ui'], config)).toHaveLength(1);
+    expect(checkSelection(['native-filters'], config)).toEqual([]);
+  });
+
+  it('checks a published subproject only when the patched path belongs to it', () => {
+    const config: AndroidModuleConfig = {
+      android: {
+        projects: [
+          { name: 'filter-widgets', path: 'android/widgets', publication: { repository: 'local-maven-repo' } },
+        ],
+      },
+    };
+    const input = {
+      rules: [{ ...androidRule, file: 'android/widgets/src/Filter.kt' }],
+      buildFromSource: [],
+      readAndroidModuleConfig: () => config,
+    };
+    expect(checkExpoUiAndroidPatchesBuildFromSource(input)).toEqual([expect.stringContaining('"filter-widgets"')]);
+    expect(checkSelection([], config)).toEqual([]);
+  });
+
+  it('does not reject non-Expo libraries or Expo projects without prebuilt publications', () => {
+    expect(checkSelection([], null)).toEqual([]);
+    expect(checkSelection([], { android: { name: 'expo-ui' } })).toEqual([]);
+    expect(checkSelection([], { android: { publication: null } })).toEqual([]);
+  });
+
+  it('leaves other native libraries outside the Filters Expo UI source-selection guard', () => {
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: [{ ...androidRule, package: 'expo-sqlite' }],
+        buildFromSource: [],
+        readAndroidModuleConfig: () => published,
+      }),
+    ).toEqual([]);
+  });
+
+  it('ignores iOS and JavaScript patches and reports each Android project only once', () => {
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: [androidRule, androidRule, { ...androidRule, file: 'ios/Filter.swift' }],
+        buildFromSource: [],
+        readAndroidModuleConfig: () => published,
+      }),
+    ).toHaveLength(1);
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: [{ ...androidRule, file: 'src/Filter.tsx' }],
+        buildFromSource: [],
+        readAndroidModuleConfig: () => published,
+      }),
+    ).toEqual([]);
+  });
+});
+
 // Reads the REAL packages/mobile/package.json and the installed spm.config.json
 // files: remove "expo-modules-core" from buildFromSource and this goes red for
 // the expo-image and expo-sqlite patches that ride its cascade.
@@ -1542,6 +1836,28 @@ describe('the shipped buildFromSource list', () => {
 
   it('builds every ios/-patched pod from source, so each patch reaches the binary', () => {
     expect(checkIosPatchesBuildFromSource({ rules: REAL_RULES, buildFromSource, readSpmConfig })).toEqual([]);
+  });
+
+  it('builds the Filters Expo UI Kotlin patch from source on Android', () => {
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: REAL_RULES,
+        buildFromSource,
+        readAndroidModuleConfig: (pkg) => readAndroidModuleConfigFrom(env, pkg),
+      }),
+    ).toEqual([]);
+  });
+
+  it('goes red when only the Android expo-ui entry is removed, despite retaining @expo/ui', () => {
+    const brokenSelection = buildFromSource.filter((name) => name !== 'expo-ui');
+    expect(brokenSelection).toContain('@expo/ui');
+    expect(
+      checkExpoUiAndroidPatchesBuildFromSource({
+        rules: REAL_RULES.filter((rule) => rule.package === '@expo/ui'),
+        buildFromSource: brokenSelection,
+        readAndroidModuleConfig: (pkg) => readAndroidModuleConfigFrom(env, pkg),
+      }),
+    ).toEqual([expect.stringContaining('Android project "expo-ui"')]);
   });
 
   it.each(['expo-image', 'expo-sqlite'])('builds %s from source through the expo-modules-core cascade', (pkg) => {

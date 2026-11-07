@@ -61,7 +61,9 @@
  * in `expo.autolinking.buildFromSource`, or depending (through its installed
  * spm.config.json `externalDependencies`) on one that is, which is the cascade
  * precompiled_modules.rb applies as `dependency_unavailable`. See
- * {@link checkIosPatchesBuildFromSource}.
+ * {@link checkIosPatchesBuildFromSource}. SDK 58 also ships prebuilt Android AARs;
+ * {@link checkExpoUiAndroidPatchesBuildFromSource} checks their Gradle project names
+ * for the Filters Expo UI patch separately, because `@expo/ui` does not match `expo-ui`.
  *
  * Usage: vp run check:mobile-patches
  */
@@ -530,6 +532,189 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: '@expo/ui@58.0.23',
   },
+  // Native Android filters keep the sheet and both scroll axes in one Compose
+  // tree. Without these hooks an upgrade silently loses picker restoration,
+  // rail centering or cancellation underneath a user's finger (#7312).
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/LazyListScrollController.kt',
+    sentinels: [
+      'private const val LAZY_LIST_LAYOUT_TIMEOUT_MS = 2000L',
+      'request.requestId <= latestRequestId',
+      'touchGeneration != desired.touchGeneration',
+      'desiredRequest = desired',
+      'desired != null && pendingScroll == null && !touching',
+      'if (completed && desiredRequest === desired) desiredRequest = null',
+      'request.index.coerceIn(0, measured.totalItemsCount - 1)',
+      'current.scope.launch(start = CoroutineStart.LAZY)',
+      'target.offset + target.size / 2f - viewportCenter',
+      'awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)',
+      'pendingScroll?.cancel()',
+      'current?.firstVisibleItemScrollOffset?.toDouble()?.div(densityScale) ?: initialPosition?.offsetDp',
+      'request.alignment == "center" && userInteracted && !request.allowAfterInteraction',
+      'userInteracted = true',
+      'initialOffsetDp * densityScale',
+      'retainedState?.let { return it }',
+      'controller.obtainState(initialPosition, density)',
+    ],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  ...['LazyColumn', 'LazyRow'].map((kind): PatchRule => ({
+    package: '@expo/ui',
+    file: `android/src/main/java/expo/modules/ui/${kind}View.kt`,
+    sentinels: [
+      'rememberControlledLazyListState(scrollController, props.initialScrollPosition.value)',
+      'state = listState',
+      '.then(scrollController.cancelScrollOnTouch())',
+    ],
+    patchedKey: '@expo/ui@58.0.23',
+  })),
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/ExpoUIModule.kt',
+    sentinels: [
+      'AsyncFunction("getScrollPosition") Coroutine { view: LazyColumnView ->',
+      'AsyncFunction("getScrollPosition") Coroutine { view: LazyRowView ->',
+      'AsyncFunction("scrollToItem") Coroutine { view: LazyColumnView, request: LazyListScrollRequest ->',
+      'AsyncFunction("scrollToItem") Coroutine { view: LazyRowView, request: LazyListScrollRequest ->',
+      'OnViewDestroys { view: LazyRowView ->',
+      'OnViewDestroys { view: LazyColumnView ->',
+    ],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/ModifierRegistry.kt',
+    sentinels: ['val isSelected = params.selected', 'isSelected?.let { selected = it }'],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/SemanticsModifier.kt',
+    sentinels: ['@Field val selected: Boolean? = null'],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  // Opt in only the Filters sheet: Foundation 1.12.1 can retain its animation
+  // flag after a settled drag, which makes the parent consume every touch down.
+  // Recover changed visible settlements, or roll back a genuinely canceled
+  // active gesture. Normal UP/fling and newer interactions keep control.
+  {
+    package: '@expo/ui',
+    file: 'android/src/main/java/expo/modules/ui/ModalBottomSheetView.kt',
+    sentinels: [
+      'val recoverSettledTouches: Boolean = false',
+      'props.recoverSettledTouches && props.sheetGesturesEnabled',
+      'LaunchedEffect(sheetState, enabled)',
+      'if (!enabled) return@LaunchedEffect',
+      'RecoverSettledSheetTouches(sheetState, touchRecovery, recoverSettledTouches)',
+      'RecoverCancelledSheetGesture(sheetState, touchRecovery, recoverSettledTouches)',
+      'val touchRecovery = remember(sheetState) { SheetTouchRecoveryState() }',
+      ') : Modifier.Node(), PointerInputModifierNode',
+      `override fun onAttach() {
+    recovery.attach(this)`,
+      'attachedObserver = observer',
+      `override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {
+    if (pass == PointerEventPass.Initial) {
+      recovery.pointersChanged(this, sheetState, pointerEvent.changes.any { it.pressed })`,
+      `override fun onCancelPointerInput() {
+    recovery.cancelGesture(this)`,
+      `override fun onReset() {
+    recovery.reset(this)`,
+      `override fun onDetach() {
+    recovery.reset(this, detached = true)`,
+      `private fun invalidateGesture() {
+    generation += 1
+    gesture = null
+    cancelledGesture = null`,
+      `if (pressed && !touching) {
+      invalidateGesture()`,
+      'touching = pressed',
+      `val wasTouching = touching
+    touching = false
+    gesture = null`,
+      `if (attachedObserver !== observer) return
+    invalidateGesture()
+    touching = false
+    if (detached) attachedObserver = null`,
+      'gesture = SheetGestureCapture(observer, sheetState, generation, startDetent)',
+      'if (startDetent != SheetValue.Hidden)',
+      'if (!pressed) gesture = null',
+      'if (!wasTouching || captured == null || captured.generation != generation || activeCommands != 0) return',
+      'cancelledGesture = CancelledSheetGesture(cancellationEpoch, captured)',
+      'cancelledGesture === request && request.gesture.generation == generation',
+      'request.gesture.sheetState === sheetState && attachedObserver === request.gesture.observer',
+      'request.gesture.observer.isAttached && !touching && activeCommands == 0',
+      `suspend fun runCommand(command: suspend () -> Unit) {
+    invalidateGesture()`,
+      `activeCommands += 1
+    try {
+      command()
+    } finally {
+      activeCommands -= 1`,
+      `recovering = true
+    try {
+      command()
+    } finally {
+      recovering = false`,
+      `withContext(scope.coroutineContext) {
+        touchRecovery.runCommand { sheetState.hide() }`,
+      `withContext(scope.coroutineContext) {
+        touchRecovery.runCommand { sheetState.expand() }`,
+      `withContext(scope.coroutineContext) {
+        touchRecovery.runCommand { sheetState.partialExpand() }`,
+      `if (props.initialFullyExpanded && !props.skipPartiallyExpanded) {
+      try {
+        touchRecovery.runCommand { sheetState.expand() }`,
+      'Modifier.trackSheetRecoveryPointers(touchRecovery, sheetState) else Modifier',
+      'SheetValue.Expanded -> sheetState.hasExpandedState',
+      'SheetValue.PartiallyExpanded -> sheetState.hasPartiallyExpandedState',
+      'SheetValue.Hidden -> false',
+      `when (startDetent) {
+          SheetValue.Expanded -> sheetState.expand()
+          SheetValue.PartiallyExpanded -> sheetState.partialExpand()
+          SheetValue.Hidden -> Unit`,
+      `when (settled) {
+          SheetValue.Expanded -> sheetState.expand()
+          SheetValue.PartiallyExpanded -> sheetState.partialExpand()
+          SheetValue.Hidden -> Unit`,
+    ],
+    orderedSentinels: [
+      'snapshotFlow { recovery.cancelledGesture }.collectLatest { request ->',
+      'if (request == null || request.epoch <= consumedEpoch) return@collectLatest',
+      'snapshotFlow { !recovery.touching && !recovery.recovering }.first { it }',
+      'if (!recovery.owns(request, sheetState)) return@collectLatest',
+      'if (!anchorAvailable) return@collectLatest',
+      'consumedEpoch = request.epoch',
+      'if (!sheetState.isVisible || sheetState.targetValue == SheetValue.Hidden) return@collectLatest',
+      `recovery.runRecovery {
+        when (startDetent) {`,
+      'snapshotFlow { sheetState.currentValue }.collectLatest { settled ->',
+      'previousSettled = settled',
+      'if (previous == settled || previous == SheetValue.Hidden || settled == SheetValue.Hidden)',
+      'snapshotFlow { recovery.touching }.first { touching -> !touching }',
+      'if (sheetState.currentValue != settled || sheetState.targetValue != settled ||',
+      '!sheetState.isAnimationRunning || recovery.activeCommands != 0 || recovery.recovering',
+      `recovery.runRecovery {
+        when (settled) {`,
+    ],
+    forbiddenSubstrings: [
+      'Filters7312',
+      '.consume(',
+      'delay(',
+      'Thread.sleep(',
+      'getDeclaredField(',
+      'sheetGesturesEnabled = false',
+    ],
+    patchedKey: '@expo/ui@58.0.23',
+  },
+  ...(
+    ['src/jetpack-compose/ModalBottomSheet/index.tsx', 'build/jetpack-compose/ModalBottomSheet/index.js'] as const
+  ).map((file): PatchRule => ({
+    package: '@expo/ui',
+    file,
+    sentinels: ['recoverSettledTouches: props.recoverSettledTouches ?? false'],
+    patchedKey: '@expo/ui@58.0.23',
+  })),
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
   // hunk lives in the same patch) but silently never fires — LogAscentSheet,
@@ -860,6 +1045,74 @@ export function checkIosPatchesBuildFromSource(input: BuildFromSourceInput): str
   return errors;
 }
 
+/** Android project metadata consumed by Expo's Gradle publication resolver. */
+export interface AndroidModuleConfig {
+  android?: {
+    name?: string;
+    path?: string;
+    publication?: { repository?: string } | null;
+    projects?: readonly {
+      name: string;
+      path: string;
+      publication?: { repository?: string } | null;
+    }[];
+  };
+}
+
+/**
+ * SDK 58 Android matches source patterns against Gradle project names, whereas
+ * iOS matches npm package names. A scoped package can need both entries:
+ * `@expo/ui` for iOS and `expo-ui` for Android. SettingsManager.kt uses a full
+ * Regex.matches(project.name); ExpoAutolinkingPlugin.kt prints the package icon
+ * only for prebuilt AAR dependencies, which never compile a Kotlin patch.
+ * This guard is scoped to the Filters Expo UI patch (#7312); it does not audit
+ * other Android libraries or change their source selection.
+ */
+export function checkExpoUiAndroidPatchesBuildFromSource(input: {
+  rules: readonly PatchRule[];
+  buildFromSource: readonly string[];
+  readAndroidModuleConfig(pkg: string): AndroidModuleConfig | null;
+}): string[] {
+  const errors: string[] = [];
+  const checkedProjects = new Set<string>();
+  for (const rule of input.rules) {
+    if (rule.package !== '@expo/ui' || !rule.file.startsWith('android/')) continue;
+    const androidConfig = input.readAndroidModuleConfig(rule.package)?.android;
+    // Ordinary native libraries and Expo projects without publications already
+    // compile from source; no additional source-list entry is needed.
+    if (!androidConfig) continue;
+    const defaultProjectName = rule.package.replace(/^@/g, '').replace(/\W+/g, '-');
+    const projects = [
+      {
+        name: androidConfig.name ?? defaultProjectName,
+        path: androidConfig.path ?? 'android',
+        publication: androidConfig.publication,
+      },
+      ...(androidConfig.projects ?? []),
+    ];
+    for (const project of projects) {
+      if (!project.publication || !rule.file.startsWith(`${project.path}/`)) continue;
+      const projectKey = `${rule.package}:${project.name}`;
+      if (checkedProjects.has(projectKey)) continue;
+      checkedProjects.add(projectKey);
+      const buildsFromSource = input.buildFromSource.some((pattern) => {
+        try {
+          return new RegExp(`^(?:${pattern})$`).test(project.name);
+        } catch {
+          return false;
+        }
+      });
+      if (buildsFromSource) continue;
+      errors.push(
+        `${rule.package}: patch edits ${rule.file}, but Android project "${project.name}" can link a prebuilt AAR. ` +
+          `Add "${project.name}" to expo.autolinking.buildFromSource in packages/mobile/package.json; ` +
+          `Android matches Gradle project names, not npm package names.`,
+      );
+    }
+  }
+  return errors;
+}
+
 /**
  * I/O abstracted so {@link checkPatchesApplied} can be unit-tested without a
  * real node_modules tree. The real implementation is {@link createNodeEnv}.
@@ -1066,6 +1319,20 @@ export function readSpmConfigFrom(env: Pick<PatchCheckEnv, 'readInstalledFile'>,
   return JSON.parse(raw) as SpmConfig;
 }
 
+/** Read only Expo module metadata; non-Expo packages need no publication check. */
+export function readAndroidModuleConfigFrom(
+  env: Pick<PatchCheckEnv, 'readInstalledFile'>,
+  pkg: string,
+): AndroidModuleConfig | null {
+  let raw: string;
+  try {
+    raw = env.readInstalledFile(pkg, 'expo-module.config.json');
+  } catch {
+    return null;
+  }
+  return JSON.parse(raw) as AndroidModuleConfig;
+}
+
 /** Wire the real filesystem and run the check. Returns the process exit code. */
 export function main(): number {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1104,11 +1371,13 @@ export function main(): number {
     allowUnguarded: UNGUARDED_PATCHES,
   });
   let buildFromSource: string[];
+  let androidBuildFromSource: string[];
   try {
     const mobileManifest = JSON.parse(readFileSync(mobilePackageJson, 'utf8')) as {
-      expo?: { autolinking?: { buildFromSource?: string[] } };
+      expo?: { autolinking?: { buildFromSource?: string[]; android?: { buildFromSource?: string[] } } };
     };
     buildFromSource = mobileManifest.expo?.autolinking?.buildFromSource ?? [];
+    androidBuildFromSource = mobileManifest.expo?.autolinking?.android?.buildFromSource ?? buildFromSource;
   } catch (error) {
     console.error(`[mobile-patches] FAILED — cannot read packages/mobile/package.json: ${(error as Error).message}`);
     return 1;
@@ -1119,7 +1388,19 @@ export function main(): number {
     readSpmConfig: (pkg) => readSpmConfigFrom(env, pkg),
   });
 
-  const allErrors = [...errors, ...webResult.errors, ...inventoryErrors, ...buildFromSourceErrors];
+  const expoUiAndroidBuildFromSourceErrors = checkExpoUiAndroidPatchesBuildFromSource({
+    rules: RULES,
+    buildFromSource: androidBuildFromSource,
+    readAndroidModuleConfig: (pkg) => readAndroidModuleConfigFrom(env, pkg),
+  });
+
+  const allErrors = [
+    ...errors,
+    ...webResult.errors,
+    ...inventoryErrors,
+    ...buildFromSourceErrors,
+    ...expoUiAndroidBuildFromSourceErrors,
+  ];
 
   if (allErrors.length > 0) {
     console.error('[mobile-patches] FAILED — patch(es) not applied:');
