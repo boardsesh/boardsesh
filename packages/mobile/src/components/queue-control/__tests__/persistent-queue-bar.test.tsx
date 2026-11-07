@@ -91,7 +91,7 @@ vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 }
 vi.mock('../../../theme/layout', () => ({
   MATERIAL_MINI_PLAYER_CARD_GAP: 8,
   MATERIAL_MINI_PLAYER_CARD_RESERVE: 56,
-  MATERIAL_TAB_BAR_HEIGHT: 80,
+  MATERIAL_TAB_BAR_HEIGHT: 64,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT: 56,
   TAB_BAR_HEIGHT: 49,
   TOOLBAR_RESERVE: 74,
@@ -317,12 +317,12 @@ describe('PersistentQueueBar', () => {
   });
 
   it('floats the Material card one 8dp gap above the measured tab-bar top', () => {
-    // Measured tab bar = 80px tall → the card sits at 80 + MATERIAL_MINI_PLAYER_CARD_GAP(8).
+    // Measured tab bar = 64px tall → the card sits at 64 + MATERIAL_MINI_PLAYER_CARD_GAP(8).
     cfg.variant = 'material';
-    cfg.measuredTabBarHeight = 80;
+    cfg.measuredTabBarHeight = 64;
     const { container } = renderBar();
     expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain(
-      '"bottom":88',
+      '"bottom":72',
     );
   });
 

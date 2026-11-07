@@ -1221,12 +1221,12 @@ describe('DiscoverLibrary Material create FAB', () => {
   it('sits 16dp above the fixed-footer offset, which already carries the queue bar and rest pill', () => {
     chromeState.variant = 'material';
     // Material, climb on the wall, rest timer armed: 48dp queue bar + 54dp pill.
-    // floatingControlBottom also carries the 80dp in-flow tab bar plus the inset,
+    // floatingControlBottom also carries the 64dp in-flow tab bar plus the inset,
     // which this screen already sits above, so the FAB must not read it.
     chromeState.metrics = {
       scrollBottomPadding: 0,
       fixedFooterBottom: 48 + 54,
-      floatingControlBottom: 24 + 80 + 48 + 54,
+      floatingControlBottom: 24 + 64 + 48 + 54,
     };
     const { container } = renderHub();
     expect(readFabBottom(container)).toBe(48 + 54 + 16);

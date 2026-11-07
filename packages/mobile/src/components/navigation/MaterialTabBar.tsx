@@ -8,26 +8,28 @@ import { useSetMeasuredTabBarHeight } from '../../providers/tab-bar-height-provi
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { material } from '../../theme/tokens';
 import { MATERIAL_TAB_BAR_HEIGHT } from '../../theme/layout';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { isLiveTabBadge } from './tab-badge';
 
 /**
- * Material 3 bottom navigation bar — the JS tab bar for the Material UI variant
- * (the Liquid Glass variant uses the native `NativeTabs` instead). Built from the
- * existing design tokens so it reads as the same product: an opaque elevated
- * surface, a tonal circular active indicator behind the focused icon, label
- * below, and a status dot for the Record tab. Icons/labels/badges come from
+ * Material 3 Expressive short navigation bar — the JS tab bar for the Material UI
+ * variant (the Liquid Glass variant uses the native `NativeTabs` instead). Built
+ * from the existing design tokens so it reads as the same product: a 64dp opaque
+ * elevated surface, a 56×32 tonal pill behind the focused icon, label below
+ * (capped at CHROME_LABEL_MAX_FONT_SCALE so it fits the fixed height; the full
+ * label stays in the accessibility label), and a status dot for the Record tab. Icons/labels/badges come from
  * each screen's React Navigation options, so this stays a generic custom tab
  * bar.
  */
 export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, insets }: BottomTabBarProps) {
   const { systemColors, brandColors, m3 } = useTheme();
   // M3 navigation bar roles: the focused destination's icon sits on a
-  // secondaryContainer active-indicator circle (onSecondaryContainer glyph), its
-  // label lifts to onSurface, and inactive destinations use onSurfaceVariant for
+  // secondaryContainer active-indicator pill (onSecondaryContainer glyph), its
+  // label takes secondary (M3 ItemActiveLabelTextColor), and inactive destinations use onSurfaceVariant for
   // both icon and label. These read correctly on the tonal M3 surface in both
   // schemes (the Paper palette resolves per scheme) — no manual alpha tinting.
   const activeIconColor = m3.onSecondaryContainer;
-  const activeLabelColor = m3.onSurface;
+  const activeLabelColor = m3.secondary;
   const inactiveColor = m3.onSurfaceVariant;
   const indicatorColor = m3.secondaryContainer;
 
@@ -116,7 +118,13 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
                 />
               ) : null}
             </View>
-            <Text variant="caption2" color={labelColor} numberOfLines={1}>
+            <Text
+              variant="footnote"
+              color={labelColor}
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+              style={styles.label}
+            >
               {label}
             </Text>
           </PressableSurface>
@@ -140,10 +148,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 6,
     gap: 4,
   },
-  // Active-indicator circle — fixed size, centers the icon over the fill layer below.
+  // Active-indicator pill — fixed size, centers the icon over the fill layer below.
   indicator: {
     width: material.navBar.activeIndicatorWidth,
     height: material.navBar.activeIndicatorHeight,
@@ -159,10 +166,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: material.navBar.activeIndicatorRadius,
   },
+  // M3 LabelMedium (12/16, weight 500), the nav bar label role: the Material
+  // footnote token is 12/16 at 400, so only the weight is lifted here.
+  label: { fontWeight: '500' },
+  // Dot on the icon's top-end corner: the 24dp icon sits centred in the 56×32
+  // pill (x 16–40, y 4–28), so the dot straddles that corner.
   badge: {
     position: 'absolute',
     top: 2,
-    right: 10,
+    end: 12,
     width: 9,
     height: 9,
     borderRadius: 5,

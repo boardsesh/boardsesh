@@ -89,8 +89,11 @@ vi.mock('../../PressableSurface', () => ({
 }));
 
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, maxFontSizeMultiplier }: { children?: ReactNode; maxFontSizeMultiplier?: number }) =>
+    createElement('span', { 'data-max-font-scale': maxFontSizeMultiplier }, children),
 }));
+
+vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -104,10 +107,10 @@ vi.mock('../../../providers/theme-provider', () => ({
     // prove the dot fill comes from the static (light) brand instead.
     brandColors: { primary: '#A78BFA', success: '#34D399', live: '#FBBF24' },
     // M3 navigation-bar roles: active icon on a secondaryContainer pill, active
-    // label onSurface, inactive icon+label onSurfaceVariant.
+    // label secondary, inactive icon+label onSurfaceVariant.
     m3: {
       onSecondaryContainer: '#E8DEF8',
-      onSurface: '#E6E1E5',
+      secondary: '#CCC2DC',
       onSurfaceVariant: '#CAC4D0',
       secondaryContainer: FOCUSED_INDICATOR_COLOR,
     },
@@ -124,15 +127,15 @@ vi.mock('../../../theme/tokens', () => ({
   material: {
     navBar: {
       surfaceElevation: 2,
-      activeIndicatorWidth: 40,
-      activeIndicatorHeight: 40,
-      activeIndicatorRadius: 20,
+      activeIndicatorWidth: 56,
+      activeIndicatorHeight: 32,
+      activeIndicatorRadius: 16,
     },
   },
 }));
 
 vi.mock('../../../theme/layout', () => ({
-  MATERIAL_TAB_BAR_HEIGHT: 80,
+  MATERIAL_TAB_BAR_HEIGHT: 64,
 }));
 
 import { MaterialTabBar } from '../MaterialTabBar';
@@ -386,6 +389,20 @@ describe('MaterialTabBar', () => {
       );
       const tabs = getAllByRole('tab');
       expect(tabs[0].getAttribute('aria-label')).toBe('Home');
+    });
+
+    // The bar is a fixed 64dp, so the visible label caps at the chrome scale;
+    // the full label still reaches screen readers through accessibilityLabel.
+    it('caps the visible label at the chrome font scale and keeps it in the a11y label', () => {
+      const props = makeProps({ activeIndex: 0, title: 'Climbs' });
+      const { getAllByRole } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const tab = getAllByRole('tab')[0];
+      expect(tab.getAttribute('aria-label')).toBe('Climbs');
+      const label = tab.querySelector('span[data-max-font-scale]');
+      expect(label?.getAttribute('data-max-font-scale')).toBe('1.2');
+      expect(label?.textContent).toBe('Climbs');
     });
 
     it('falls back to route name when no title is provided', () => {
