@@ -1,14 +1,13 @@
 appId: ${APP_ID}
-name: Reopen the exact committed climb from the real mini-player
+name: Close the last-look preview and reopen the queue's committed player
 ---
 - tapOn:
     id: play-drawer-close
 - extendedWaitUntil:
-    visible:
-      id: mini-player-current-${CURRENT_CLIMB_UUID}
+    notVisible:
+      id: play-drawer-header-accessibility
     timeout: 10000
-- tapOn:
-    id: mini-player-current-${CURRENT_CLIMB_UUID}
+- openLink: ${APP_SCHEME}://play
 - extendedWaitUntil:
     visible:
       id: play-drawer-header-accessibility
