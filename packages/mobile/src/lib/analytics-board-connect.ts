@@ -36,7 +36,8 @@ export type BoardConnectSurface =
 /**
  * Where the iOS 26 tab-bar accessory platter sits: open above the bar, or
  * collapsed inline with it. Sent only by the platter's own controls, so a
- * `board_control_indicator` tap without it came from the floating JS capsule.
+ * `board_control_indicator` tap without it came from a JS bar: the floating
+ * glass capsule or the Material MiniPlayer card.
  */
 export type AccessoryPlacement = 'regular' | 'inline';
 

@@ -126,15 +126,16 @@ export const REST_TIMER_RESERVE = REST_TIMER_PILL_HEIGHT + TOOLBAR_GAP_ABOVE_TAB
 export const floatingContextBarBottom = (tabBarBottom: number, gapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR) =>
   tabBarBottom + gapAboveTabBar;
 
-/** Height of the Material active-context bar docked directly above the tab bar. */
-export const MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT = glassSize.standard;
+/** Height of the Material MiniPlayer card (`FloatingMiniPlayerCard`): the iPhone
+ *  accessory platter's 48, so the shared row lays out with the same geometry and
+ *  holds the same controls. */
+export const MATERIAL_MINI_PLAYER_CARD_HEIGHT = glassSize.standard;
 
-/** One logical px the docked Material bar tucks under the tab bar's top hairline.
- *  Because the bar now docks against the tab bar's *measured* height (not the
- *  `TAB_BAR_HEIGHT` constant), this only has to cover the hairline border / sub-pixel
- *  rounding — not absorb a constant-vs-reality mismatch — so it stays a fixed hairline
- *  instead of a hand-tuned per-device offset. */
-export const TABBAR_SEAM_OVERLAP = 1;
+/** Gap between the Material MiniPlayer card and the top of the tab bar below it. */
+export const MATERIAL_MINI_PLAYER_CARD_GAP = 8;
+
+/** Bottom room the Material MiniPlayer card takes above the tab bar: its height plus its gap. */
+export const MATERIAL_MINI_PLAYER_CARD_RESERVE = MATERIAL_MINI_PLAYER_CARD_HEIGHT + MATERIAL_MINI_PLAYER_CARD_GAP;
 
 /** Width of the iPad adaptive-shell sidebar rail (the glass left rail that
  *  replaces the bottom tab bar at `regular` width — see `size-class.ts`). An

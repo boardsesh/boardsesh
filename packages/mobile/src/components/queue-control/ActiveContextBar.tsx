@@ -21,7 +21,6 @@ import {
   TOOLBAR_GAP,
   TOOLBAR_FAB_SIZE,
   TOOLBAR_GAP_ABOVE_TABBAR,
-  TABBAR_SEAM_OVERLAP,
   floatingContextBarBottom,
   glassSize,
 } from '../../theme/layout';
@@ -39,14 +38,14 @@ type ActiveContextBarProps = {
   /** Width of the trailing slot (defaults to the hero size). */
   trailingWidth?: number;
   /** Render the primary edge-to-edge (no leading/trailing slots) — the Material
-   *  full-width bar, where the trailing action lives inside the primary. */
+   *  MiniPlayer card, whose controls live inside the primary. */
   fillPrimary?: boolean;
-  /** Lift above the tab bar (defaults to TOOLBAR_GAP_ABOVE_TABBAR). Floating only. */
+  /** Lift above the tab bar (defaults to TOOLBAR_GAP_ABOVE_TABBAR). */
   gapAboveTabBar?: number;
-  /** Dock flush against the tab bar (Material) rather than floating above it. Positions
-   *  the bar's bottom on the tab bar's *measured* top, tucked under its hairline. */
-  dockToTabBar?: boolean;
-  /** Horizontal inset from the screen edge; Material uses 0 for a docked bar. */
+  /** Lift from the tab bar's *measured* top (the Material JS bar, in flow) rather
+   *  than from the constant-derived `tabBarBottom`. */
+  anchorToMeasuredTabBar?: boolean;
+  /** Horizontal inset from the screen edge. */
   horizontalInset?: number;
 };
 
@@ -57,21 +56,22 @@ export function ActiveContextBar({
   trailingWidth = glassSize.hero,
   fillPrimary = false,
   gapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR,
-  dockToTabBar = false,
+  anchorToMeasuredTabBar = false,
   horizontalInset = TOOLBAR_SIDE_MARGIN,
 }: ActiveContextBarProps) {
   const reduceMotion = useReduceMotion();
   const bottomChrome = useBottomChromeMetrics();
   const measuredTabBarHeight = useMeasuredTabBarHeight();
 
-  // Docked (Material): sit on the tab bar's REAL measured top, tucked under its hairline
-  // by one px. Before the first measurement, fall back to the constant-estimated top
-  // (≤2px off for a single frame, then it snaps to the truth). Floating (glass) keeps
-  // its lift above the tab bar — shared with the #3967 tray-clearance tests via
+  // Material: lift from the tab bar's REAL measured top. Before the first
+  // measurement, fall back to the constant-estimated top (a few px off for a
+  // single frame, then it snaps to the truth). Glass keeps its lift above the
+  // constant-derived top — shared with the #3967 tray-clearance tests via
   // `floatingContextBarBottom`, so the tray can't move without moving that guard.
-  const bottom = dockToTabBar
-    ? (measuredTabBarHeight ?? bottomChrome.tabBarBottom) - TABBAR_SEAM_OVERLAP
-    : floatingContextBarBottom(bottomChrome.tabBarBottom, gapAboveTabBar);
+  const bottom = floatingContextBarBottom(
+    anchorToMeasuredTabBar ? (measuredTabBarHeight ?? bottomChrome.tabBarBottom) : bottomChrome.tabBarBottom,
+    gapAboveTabBar,
+  );
 
   // Outer shell: plain View so `pointerEvents="box-none"` is respected on Android.
   // Reanimated's `entering` animations ignore pointerEvents on the animated view
@@ -92,8 +92,8 @@ export function ActiveContextBar({
     >
       {/* Android: drop the `entering` animation entirely. Even this content-sized inner
           Animated.View absorbs touches once it runs an `entering` layout animation —
-          Reanimated #5728 ignores pointerEvents on API 36, and in the full-width Material
-          variant (fillPrimary) the band spans the screen, freezing the top + bottom bars
+          Reanimated #5728 ignores pointerEvents on API 36, and in the near-full-width Material
+          card (fillPrimary) the band spans the screen, freezing the top + bottom bars
           the moment a climb is selected and the bar mounts. iOS honors pointerEvents, so
           it keeps the fade. (#3060 split the outer View out but kept this inner fade.) */}
       <Animated.View entering={reduceMotion || Platform.OS === 'android' ? undefined : FadeIn.duration(timing.normal)}>
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: TOOLBAR_GAP,
   },
-  // Full-width primary (Material bar): the single occupant spans the toolbar.
+  // Full-width primary (Material card): the single occupant spans the toolbar.
   fillRow: {
     flexDirection: 'row',
     alignItems: 'center',

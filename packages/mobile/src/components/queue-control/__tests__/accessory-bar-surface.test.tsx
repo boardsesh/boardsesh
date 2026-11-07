@@ -55,9 +55,9 @@ describe('AccessoryBarSurface', () => {
     ctrl.variant = 'material';
   });
 
-  it('renders the Material docked treatment as an opaque full-width bar surface', () => {
+  it('renders the Material MiniPlayer card as an opaque rounded surface at level 2', () => {
     const { container } = render(
-      <AccessoryBarSurface height={48} treatment="docked">
+      <AccessoryBarSurface height={48} borderRadius={12}>
         child
       </AccessoryBarSurface>,
     );
@@ -65,35 +65,35 @@ describe('AccessoryBarSurface', () => {
     const surface = container.querySelector('[data-view]');
     const style = surface?.getAttribute('data-style') ?? '';
     expect(style).toContain('"height":48');
-    expect(style).toContain('"borderRadius":0');
+    expect(style).toContain('"borderRadius":12');
     // M3 bottom-bar surface: the surfaceContainer tone (not the old elevatedSurface).
     expect(style).toContain('"backgroundColor":"#2A2138"');
-    expect(style).toContain('"borderTopWidth":1');
-    expect(style).toContain('"borderTopColor":"#CCCCCC"');
-    // The docked bar lifts one elevation step above the tab bar (M3 nav-bar = level 2).
+    // A floating card draws no hairline seam; its cast separates it.
+    expect(style).not.toContain('borderTopWidth');
     expect(style).toContain('"elevation":2');
     expect(container.querySelector('[data-glass]')).toBeNull();
+  });
+
+  it('defaults to a full pill', () => {
+    const { container } = render(<AccessoryBarSurface height={44}>child</AccessoryBarSurface>);
+    expect(container.querySelector('[data-view]')?.getAttribute('data-style')).toContain('"borderRadius":22');
   });
 
   it('keeps Material on the opaque surface path when reduce-transparency resolves mode to solid', () => {
     ctrl.mode = 'solid';
     ctrl.variant = 'material';
-    const { container } = render(
-      <AccessoryBarSurface height={48} treatment="docked">
-        child
-      </AccessoryBarSurface>,
-    );
+    const { container } = render(<AccessoryBarSurface height={48}>child</AccessoryBarSurface>);
 
     expect(container.querySelector('[data-glass]')).toBeNull();
     expect(container.querySelector('[data-view]')?.getAttribute('data-style')).toContain('"backgroundColor":"#2A2138"');
   });
 
-  it('lights the Material docked bar: opaque base + a violet tint overlay + a higher elevation when connected', () => {
+  it('lights the Material card: opaque base + a violet tint overlay + a higher elevation when connected', () => {
     // "You have control" reads as the active-tab violet tonal + a level-3 cast.
     // The base stays OPAQUE so the list never bleeds through; the violet (a
     // low-alpha role here) is composited as an overlay on top.
     const { container } = render(
-      <AccessoryBarSurface height={48} treatment="docked" emphasis="connected">
+      <AccessoryBarSurface height={48} emphasis="connected">
         child
       </AccessoryBarSurface>,
     );

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeBottomChromeMetrics, trackExpandedTabContentInset } from '../bottom-chrome-metrics';
 import {
-  MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
+  MATERIAL_MINI_PLAYER_CARD_RESERVE,
   MATERIAL_TAB_BAR_HEIGHT,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT,
   REST_TIMER_PILL_HEIGHT,
@@ -96,7 +96,7 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.fixedFooterBottom).toBe(TOOLBAR_RESERVE);
   });
 
-  it('reserves the docked Material bar when the JS toolbar is visible', () => {
+  it('reserves the Material MiniPlayer card and its gap when the JS toolbar is visible', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'material',
       usesNativeTabBar: false,
@@ -107,11 +107,13 @@ describe('computeBottomChromeMetrics', () => {
       nativeAccessoryPresented: false,
     });
     expect(metrics.jsQueueToolbarVisible).toBe(true);
-    expect(metrics.jsQueueReserve).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
+    expect(metrics.jsQueueReserve).toBe(MATERIAL_MINI_PLAYER_CARD_RESERVE);
+    // The 48dp card plus the 8dp gap it floats above the tab bar.
+    expect(MATERIAL_MINI_PLAYER_CARD_RESERVE).toBe(56);
     // Material clears its taller M3 nav bar (80) — not the iOS 49.
-    expect(metrics.scrollBottomPadding).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
-    expect(metrics.floatingControlBottom).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
-    expect(metrics.fixedFooterBottom).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
+    expect(metrics.scrollBottomPadding).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_MINI_PLAYER_CARD_RESERVE);
+    expect(metrics.floatingControlBottom).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_MINI_PLAYER_CARD_RESERVE);
+    expect(metrics.fixedFooterBottom).toBe(MATERIAL_MINI_PLAYER_CARD_RESERVE);
   });
 
   it('anchors every native-tab offset to the measured in-tab inset, including the 139pt accessory anchor (#3973)', () => {
@@ -1282,7 +1284,7 @@ describe('computeBottomChromeMetrics', () => {
         restTimerArmed: true,
       });
 
-      expect(armed.fixedFooterBottom).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT + REST_TIMER_RESERVE);
+      expect(armed.fixedFooterBottom).toBe(MATERIAL_MINI_PLAYER_CARD_RESERVE + REST_TIMER_RESERVE);
       expect(armed.inSessionListBottom).toBe(armed.fixedFooterBottom);
       expect(armed.preSessionFooterBottom).toBe(armed.fixedFooterBottom);
     });

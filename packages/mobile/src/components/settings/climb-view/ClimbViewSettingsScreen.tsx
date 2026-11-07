@@ -9,7 +9,7 @@ import {
   PlayerButtonsPreview,
   type PlayerButtonsPreviewBoard,
 } from '../../player-buttons/PlayerButtonsPreview';
-import { useTabChrome } from '../../../hooks/use-bottom-accessory';
+import { useMiniPlayerHost } from '../../../hooks/use-mini-player-host';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../../lib/haptics';
 import { withSettingTracking } from '../../../lib/settings-analytics';
@@ -21,8 +21,9 @@ import { buildClimbViewModel } from './climb-view-model';
 export function ClimbViewSettingsScreen() {
   const { settingsSection: belowTheClimb } = usePlayDrawerSectionControls();
   const playerButtons = usePlayerButtonControls();
-  // No native bottom accessory (Android, the Material shell, before iOS 26): no MiniPlayer bar, so no section.
-  const { nativeAccessory } = useTabChrome();
+  // No MiniPlayer bar (the glass capsule, the tablet pane): no section. The iOS 26
+  // accessory and the Material card both honour these buttons (`useMiniPlayerHost`).
+  const miniPlayerHost = useMiniPlayerHost();
   const {
     title: miniPlayerTitle,
     settingsFooter: miniPlayerSettingsFooter,
@@ -101,27 +102,28 @@ export function ClimbViewSettingsScreen() {
             preview,
             previewHeight: PLAYER_BUTTONS_PREVIEW_HEIGHT,
           },
-          miniPlayer: nativeAccessory
-            ? {
-                title: miniPlayerTitle,
-                settingsFooter: miniPlayerSettingsFooter,
-                controls: miniPlayerControls,
-                onVisibleChange: (buttonId, visible) => {
-                  hapticSelection();
-                  onMiniPlayerVisibleChange(buttonId, visible);
-                },
-                restoreDefaultsLabel: miniPlayerRestoreLabel,
-                canRestoreDefaults: canRestoreMiniPlayer,
-                onRestoreDefaults: restoreMiniPlayer,
-              }
-            : null,
+          miniPlayer:
+            miniPlayerHost !== null
+              ? {
+                  title: miniPlayerTitle,
+                  settingsFooter: miniPlayerSettingsFooter,
+                  controls: miniPlayerControls,
+                  onVisibleChange: (buttonId, visible) => {
+                    hapticSelection();
+                    onMiniPlayerVisibleChange(buttonId, visible);
+                  },
+                  restoreDefaultsLabel: miniPlayerRestoreLabel,
+                  canRestoreDefaults: canRestoreMiniPlayer,
+                  onRestoreDefaults: restoreMiniPlayer,
+                }
+              : null,
           belowTheClimb,
         }),
         'climbView',
       ),
     [
       playerButtons,
-      nativeAccessory,
+      miniPlayerHost,
       miniPlayerTitle,
       miniPlayerSettingsFooter,
       miniPlayerControls,

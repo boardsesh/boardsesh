@@ -16,16 +16,6 @@ const queue = vi.hoisted(() => ({
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
 
 // --- RN surface: View → div ---------------------------------------------------
-// Forward testID and the resolved backgroundColor so a test can assert the leading
-// grade-accent stripe paints the current climb's grade colour.
-function backgroundOf(style: unknown): string {
-  const entries = (Array.isArray(style) ? style.flat(Infinity) : [style]) as Array<Record<string, unknown> | undefined>;
-  for (let i = entries.length - 1; i >= 0; i -= 1) {
-    const entry = entries[i];
-    if (entry && typeof entry === 'object' && typeof entry.backgroundColor === 'string') return entry.backgroundColor;
-  }
-  return '';
-}
 type LayoutHandler = (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
 vi.mock('../AccessoryPlayLink', () => ({
   AccessoryPlayLink: ({
@@ -38,23 +28,13 @@ vi.mock('../AccessoryPlayLink', () => ({
   }) => createElement('div', { 'aria-label': accessibilityLabel, 'data-accessory-play-link': true }, children),
 }));
 vi.mock('react-native', () => ({
-  View: ({
-    children,
-    testID,
-    style,
-    onLayout,
-  }: {
-    children?: ReactNode;
-    testID?: string;
-    style?: unknown;
-    onLayout?: LayoutHandler;
-  }) => {
+  View: ({ children, testID, onLayout }: { children?: ReactNode; testID?: string; onLayout?: LayoutHandler }) => {
     // jsdom never lays out, so simulate the swipe viewport being measured —
     // otherwise width stays 0, canPeek is false, and the peek slots never render.
     useEffect(() => {
       onLayout?.({ nativeEvent: { layout: { width: 400, height: 48 } } });
     }, [onLayout]);
-    return createElement('div', { 'data-testid': testID, 'data-bg': backgroundOf(style) }, children);
+    return createElement('div', { 'data-testid': testID }, children);
   },
   StyleSheet: {
     create: (styles: Record<string, unknown>) => styles,
@@ -302,44 +282,18 @@ describe('ClimbCapsule', () => {
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
   });
 
-  it('marks the docked bar with a leading grade-colour accent stripe, keeping text neutral', () => {
-    // The docked Material bar stays on a neutral surface: the grade rides a vivid
-    // leading accent stripe + the colorized grade number, NOT a full coloured fill,
-    // so the name stays the neutral label and the grade keeps its hue.
+  it('colours the grade like the list rows and keeps the name neutral', () => {
     const item = makeItem(makeClimb({ difficulty: 'V6', name: 'The Crimp Ladder' }));
     queue.state.currentClimbQueueItem = item;
     queue.state.queue = [item];
 
-    const { container } = render(<ClimbCapsule surfaceTreatment="docked" />);
-
-    const accent = container.querySelector('[data-testid="grade-accent"]');
-    expect(accent).not.toBeNull();
-    expect(accent?.getAttribute('data-bg')).toBe('#FF0000');
+    const { container } = render(<ClimbCapsule />);
 
     const texts = Array.from(container.querySelectorAll('[data-text]'));
     const gradeNode = texts.find((node) => (node.textContent ?? '').includes('6C'));
     const nameNode = texts.find((node) => (node.textContent ?? '').includes('Crimp'));
     expect(gradeNode?.getAttribute('data-color')).toBe('#FF0000');
     expect(nameNode?.getAttribute('data-color')).toBe('#111111');
-  });
-
-  it('uses the gray fallback for the accent stripe of an unknown grade', () => {
-    const item = makeItem(makeClimb({ difficulty: 'V99', name: 'Mystery' }));
-    queue.state.currentClimbQueueItem = item;
-    queue.state.queue = [item];
-
-    const { container } = render(<ClimbCapsule surfaceTreatment="docked" />);
-    expect(container.querySelector('[data-testid="grade-accent"]')?.getAttribute('data-bg')).toBe('#808080');
-  });
-
-  it('omits the accent stripe on the non-docked floating capsule', () => {
-    // The stripe is a docked-bar treatment; the floating capsule keeps its plain pill.
-    const item = makeItem(makeClimb({ difficulty: 'V6', name: 'The Crimp Ladder' }));
-    queue.state.currentClimbQueueItem = item;
-    queue.state.queue = [item];
-
-    const { container } = render(<ClimbCapsule />);
-    expect(container.querySelector('[data-testid="grade-accent"]')).toBeNull();
   });
 
   it('renders a single climb label (no peek neighbours)', () => {

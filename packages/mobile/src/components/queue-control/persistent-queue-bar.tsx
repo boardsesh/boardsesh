@@ -10,8 +10,9 @@
  *   Liquid Glass / fallback   [ grade · name ]        [ ✓ tick ]
  *     centered capsule + standalone hero tick (tap = PlayDrawer)
  *
- *   Material                  [ ▢ grade · name              ✓ ]
- *     one full-width opaque active-context bar docked above the tab bar
+ *   Material                 ╭ ▢ name · byline   ⏭  💡  ✓ ╮
+ *     the MiniPlayer card (`FloatingMiniPlayerCard`): the iOS accessory's row
+ *     on a rounded M3 card, 8dp in from each edge and 8dp above the tab bar
  *
  * On the Liquid Glass variant on iOS 26 the native bottom accessory owns this
  * pair (iPhone and iPad), so `useCurrentClimbSurface` answers `nativeAccessory`
@@ -19,7 +20,7 @@
  */
 
 import { useSegments } from 'expo-router';
-import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
+import { MATERIAL_MINI_PLAYER_CARD_GAP, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
@@ -28,7 +29,8 @@ import { useCurrentClimbSurface } from '../../hooks/use-current-climb-surface';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
-import { LogAscentToolbarButton } from './LogAscentToolbarButton';
+import { MATERIAL_MINI_PLAYER_CARD_INSET } from './mini-player-controls';
+import { FloatingMiniPlayerCard } from '../navigation/FloatingMiniPlayerCard';
 import { ReturnToSessionButton } from './ReturnToSessionButton';
 import { useBarClimb } from './use-bar-climb';
 
@@ -66,20 +68,15 @@ export function PersistentQueueBar() {
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   if (isMaterial) {
+    // The card logs and lights from its own row, so it needs neither the tick
+    // nor the return-to-session button the glass capsule floats beside it.
     return (
       <ActiveContextBar
         fillPrimary
-        dockToTabBar
-        horizontalInset={0}
-        primary={
-          <ClimbCapsule
-            fillWidth
-            height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
-            surfaceTreatment="docked"
-            endAction={<LogAscentToolbarButton climb={currentClimb} isMirror={pickMirrored} size={glassSize.inline} />}
-            endActionSize={glassSize.inline}
-          />
-        }
+        anchorToMeasuredTabBar
+        gapAboveTabBar={MATERIAL_MINI_PLAYER_CARD_GAP}
+        horizontalInset={MATERIAL_MINI_PLAYER_CARD_INSET}
+        primary={<FloatingMiniPlayerCard />}
       />
     );
   }

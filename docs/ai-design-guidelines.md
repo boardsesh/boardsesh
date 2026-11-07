@@ -418,8 +418,11 @@ mirroring), Favorite, Log, Share, Queue. Previous and next remain available in V
 
 **Floating toolbar.** `TOOLBAR_FAB_SIZE` 48 · `TOOLBAR_CAPSULE_HEIGHT` 44 · `TOOLBAR_CAPSULE_MAX_WIDTH`
 260 · `TOOLBAR_SIDE_MARGIN` 16 · `TOOLBAR_GAP` 8 · `TOOLBAR_GAP_ABOVE_TABBAR` 10 · `TOOLBAR_RESERVE`
-66 (bottom padding screens reserve so the last row clears the toolbar). Material docks an opaque
-active-context bar instead (`MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT` 48, `TABBAR_SEAM_OVERLAP` 1).
+66 (bottom padding screens reserve so the last row clears the toolbar). Material floats the MiniPlayer
+card instead (`FloatingMiniPlayerCard`): the iPhone accessory's row (art, name, the climber's buttons,
+Board light, Log) on an opaque `surfaceContainer` card with a 12dp corner and level-2 elevation,
+`MATERIAL_MINI_PLAYER_CARD_INSET` 8 from each edge, `MATERIAL_MINI_PLAYER_CARD_GAP` 8 above the measured
+tab bar, `MATERIAL_MINI_PLAYER_CARD_HEIGHT` 48 (the platter's height, so it holds the same controls).
 
 **Sheet chrome** resolves per variant via `theme.sheet` (`sheetChromeByVariant`), so `Sheet`,
 `ModalSheet` and `PlayDrawer` never drift:

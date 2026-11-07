@@ -153,10 +153,10 @@ const DRIVES = [
 // Both bars draw this one component; only their props differ.
 const BARS = [
   [
-    'the iOS 26 accessory (NativeAccessoryClimbRow)',
+    'the iOS 26 accessory and the Material card (NativeAccessoryClimbRow)',
     { size: 44, iconSize: 22, enableLongPress: true, solidGlyphs: true, placement: 'regular' as const },
   ],
-  ['the floating Material / JS bar (ClimbCapsule)', { size: 44, enableLongPress: true }],
+  ['the floating glass capsule (ClimbCapsule)', { size: 44, enableLongPress: true }],
 ] as const;
 
 beforeEach(() => {

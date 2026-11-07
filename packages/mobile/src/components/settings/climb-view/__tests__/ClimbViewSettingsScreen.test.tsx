@@ -56,8 +56,8 @@ vi.mock('../../../MoreForm', () => ({
     return null;
   },
 }));
-const tabChrome = vi.hoisted(() => ({ nativeAccessory: true }));
-vi.mock('../../../../hooks/use-bottom-accessory', () => ({ useTabChrome: () => tabChrome }));
+const miniPlayer = vi.hoisted(() => ({ host: 'nativeAccessory' as 'nativeAccessory' | 'materialCard' | null }));
+vi.mock('../../../../hooks/use-mini-player-host', () => ({ useMiniPlayerHost: () => miniPlayer.host }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ isTablet: false }) }));
@@ -106,7 +106,7 @@ afterEach(() => {
   cleanup();
   screen.platform = 'android';
   screen.nativeModel = null;
-  tabChrome.nativeAccessory = true;
+  miniPlayer.host = 'nativeAccessory';
 });
 
 describe('ClimbViewSettingsScreen renderer routing', () => {
@@ -128,13 +128,18 @@ describe('ClimbViewSettingsScreen renderer routing', () => {
     expect(screen.nativeModel?.sections[0].rows[0].kind).toBe('custom');
   });
 
-  it('lists the Mini player section only where the native bottom accessory draws the bar', () => {
+  it('lists the Mini player section only where a MiniPlayer bar draws its buttons', () => {
     screen.platform = 'ios';
     const withAccessory = render(<ClimbViewSettingsScreen />);
     expect(screen.nativeModel?.sections.map((section) => section.key)).toContain('miniPlayer');
     withAccessory.unmount();
 
-    tabChrome.nativeAccessory = false;
+    miniPlayer.host = 'materialCard';
+    const withCard = render(<ClimbViewSettingsScreen />);
+    expect(screen.nativeModel?.sections.map((section) => section.key)).toContain('miniPlayer');
+    withCard.unmount();
+
+    miniPlayer.host = null;
     render(<ClimbViewSettingsScreen />);
     expect(screen.nativeModel?.sections.map((section) => section.key)).not.toContain('miniPlayer');
   });

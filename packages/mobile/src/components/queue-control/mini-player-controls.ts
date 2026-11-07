@@ -79,24 +79,48 @@ export const PHONE_MINI_PLAYER_MAX_SLOTS = 3;
 const PHONE_ACCESSORY_CONTENT_GUTTER = 42;
 
 /**
+ * The Material MiniPlayer card's side inset (`FloatingMiniPlayerCard`): the card
+ * floats 8dp in from each screen edge, like Spotify's and YouTube Music's.
+ */
+export const MATERIAL_MINI_PLAYER_CARD_INSET = 8;
+
+/**
+ * Who draws the bar around the row: UIKit's tab-bar accessory platter (iOS 26),
+ * or the Material card the JS shell floats above its own tab bar.
+ */
+export type MiniPlayerHost = 'nativeAccessory' | 'materialCard';
+
+/**
+ * The window width a phone's bar does not get. The card has no content padding
+ * beyond the row's own insets (`accessoryWidthBesideName`), so only its two side
+ * insets come off the window.
+ */
+export function miniPlayerPhoneGutter(host: MiniPlayerHost): number {
+  return host === 'materialCard' ? MATERIAL_MINI_PLAYER_CARD_INSET * 2 : PHONE_ACCESSORY_CONTENT_GUTTER;
+}
+
+/**
  * Both pre-mounted placement trees receive the same changing wrapper width.
  * Horizontal phones therefore size regular controls from the stable viewport,
  * so the hidden regular tree stays ready while the wrapper is inline. The
  * returned width is only a control budget; UIKit still sizes the actual row.
  * Rails, tablets and split layouts keep their real container measurements.
+ * `gutter` is the host's share of the window (`miniPlayerPhoneGutter`).
  */
 export function miniPlayerCapacityWidth({
   windowWidth,
   rowWidth,
   wide,
   verticalTabBar,
+  gutter,
 }: {
   windowWidth: number;
   rowWidth: number | null;
   wide: boolean;
   verticalTabBar: boolean;
+  gutter: number;
 }): number | null {
-  return wide || verticalTabBar ? rowWidth : Math.max(0, windowWidth - PHONE_ACCESSORY_CONTENT_GUTTER);
+  return wide || verticalTabBar ? rowWidth : Math.max(0, windowWidth - gutter);
 }
 
 /**

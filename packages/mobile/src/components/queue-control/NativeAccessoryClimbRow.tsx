@@ -37,6 +37,7 @@ import {
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
   miniPlayerPaneMode,
+  miniPlayerPhoneGutter,
   miniPlayerSlotCount,
   miniPlayerUsesWideLayout,
   recordRowWidth,
@@ -45,6 +46,7 @@ import {
   trailingSlotFrame,
   wideRowCapacityWidth,
   type MeasuredRowWidth,
+  type MiniPlayerHost,
   type TrailingControlSlot,
 } from './mini-player-controls';
 import { useNativeTabContentInsetLeft, useNativeTabContentInsetRight } from '../../lib/native-tab-content-inset-store';
@@ -83,6 +85,12 @@ type NativeAccessoryClimbRowProps = {
    */
   pick?: LastPick | null;
   placement: AccessoryPlacement;
+  /**
+   * Who draws the bar around the row: UIKit's accessory platter (iOS 26), or the
+   * Material card (`FloatingMiniPlayerCard`). It sets the phone's control budget
+   * (`miniPlayerPhoneGutter`), and only the platter keeps the zoom source.
+   */
+  host?: MiniPlayerHost;
   testID?: string;
 };
 
@@ -178,7 +186,8 @@ function ClimbLabel({
 }
 
 /**
- * Content for the iOS 26 tab-bar bottom accessory (Liquid Glass variant only).
+ * Content for the iOS 26 tab-bar bottom accessory, and for the Material card
+ * (`FloatingMiniPlayerCard`, `host="materialCard"`), which draws the same row.
  * UIKit supplies the glass platter, so this stays bare: the current climb, the
  * climber's MiniPlayer buttons (#6940), then the lightbulb and the tick at the
  * trailing edge. In a timed workout block the climber's buttons step aside for
@@ -200,6 +209,7 @@ export function NativeAccessoryClimbRow({
   queueItemUuid,
   pick = null,
   placement,
+  host = 'nativeAccessory',
   testID,
 }: NativeAccessoryClimbRowProps) {
   const { width: windowWidth } = useWindowDimensions();
@@ -289,7 +299,13 @@ export function NativeAccessoryClimbRow({
   // The open wide bar draws Music's iPad layout: ⏮ ⏭ first, ⋯ before 💡 ✓.
   const wideLayout = miniPlayerUsesWideLayout({ wide, placement });
   const rowWidth = wide ? wideRowCapacityWidth(measuredRowWidth, layoutKey) : (measuredRowWidth?.latest ?? null);
-  const capacityWidth = miniPlayerCapacityWidth({ windowWidth, rowWidth, wide, verticalTabBar });
+  const capacityWidth = miniPlayerCapacityWidth({
+    windowWidth,
+    rowWidth,
+    wide,
+    verticalTabBar,
+    gutter: miniPlayerPhoneGutter(host),
+  });
   const slotCount = miniPlayerSlotCount({ placement, rowWidth: capacityWidth, widthBesideName, wide });
   // Tell the View options preview what this device's open bar measures.
   useEffect(() => {
@@ -404,6 +420,11 @@ export function NativeAccessoryClimbRow({
 
   const angleClimbUuid =
     climbBoardName === playerBoardName && climbLayoutId === playerLayoutId ? climb.uuid : undefined;
+  // The bulb's and the tick's analytics placement is UIKit's platter placement,
+  // sent only from the platter (`AccessoryPlacement`): a tap on the Material card
+  // sends none, so it reads as a JS-bar tap and the iOS open/collapsed split
+  // stays clean.
+  const platterPlacement = host === 'nativeAccessory' ? placement : undefined;
   const bluetoothConnected = bluetooth?.isConnected ?? false;
   // The climber's buttons, or Fell / Sent in a timed block. Before the climb on
   // a wide bar, as Music puts its transport; after it elsewhere.
@@ -483,7 +504,7 @@ export function NativeAccessoryClimbRow({
         accessibilityValue={connectionValue}
         onOpen={openPlay}
         onPrepare={preparePlay}
-        zoomSourceRetained
+        zoomSourceRetained={host === 'nativeAccessory'}
       >
         <LargeContentViewer
           style={styles.labelSlot}
@@ -571,14 +592,14 @@ export function NativeAccessoryClimbRow({
                     iconSize={22}
                     solidGlyphs
                     enableLongPress
-                    placement={placement}
+                    placement={platterPlacement}
                     litBulb={
                       <BoardControlIndicator
                         size={glassSize.inline}
                         iconSize={22}
                         enableLongPress
                         solidGlyphs
-                        placement={placement}
+                        placement={platterPlacement}
                       />
                     }
                   />
@@ -588,7 +609,7 @@ export function NativeAccessoryClimbRow({
                     iconSize={22}
                     enableLongPress
                     solidGlyphs
-                    placement={placement}
+                    placement={platterPlacement}
                   />
                 )
               ) : (
@@ -601,7 +622,7 @@ export function NativeAccessoryClimbRow({
                   size={glassSize.inline}
                   iconSize={wideLayout ? WIDE_LOG_GLYPH_SIZE : geometry.logGlyphSize}
                   appearance={wideLayout ? 'hero' : 'plain'}
-                  placement={placement}
+                  placement={platterPlacement}
                 />
               )}
             </View>

@@ -645,7 +645,7 @@
           "wallDisplay": "Schermo parete"
         },
         "fixedNote": "Luce del pannello c’è sempre, accanto a Registra. Registra resta sempre ultimo, sotto il tuo pollice.",
-        "footer": "Su iPhone la barra ha posto per uno solo di questi accanto a Luce del pannello e Registra: il primo attivo.",
+        "footer": "Sul telefono la barra ha posto per uno solo di questi accanto a Luce del pannello e Registra: il primo attivo.",
         "open": "Aperta",
         "collapsed": "Ridotta",
         "previewLabel": "Anteprima, barra {{shape}}: {{buttons}}",

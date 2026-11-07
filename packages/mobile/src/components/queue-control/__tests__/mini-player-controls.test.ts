@@ -8,6 +8,7 @@ import {
   accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
+  miniPlayerPhoneGutter,
   miniPlayerPaneMode,
   playerMirroredByMiniPlayer,
   miniPlayerSlotCount,
@@ -28,6 +29,8 @@ import {
 
 // 16pt leading inset + 32pt artwork + 8pt gap + 4pt label padding + 8pt trailing inset.
 const WIDTH_BESIDE_NAME = 68;
+const IOS_GUTTER = miniPlayerPhoneGutter('nativeAccessory');
+const CARD_GUTTER = miniPlayerPhoneGutter('materialCard');
 
 function phone(rowWidth: number | null, placement: 'regular' | 'inline' = 'regular') {
   return miniPlayerSlotCount({ placement, rowWidth, widthBesideName: WIDTH_BESIDE_NAME, wide: false });
@@ -48,6 +51,7 @@ describe('miniPlayerCapacityWidth', () => {
       rowWidth,
       wide: false,
       verticalTabBar: false,
+      gutter: IOS_GUTTER,
     });
 
     expect(capacityWidth).toBe(360);
@@ -63,6 +67,7 @@ describe('miniPlayerCapacityWidth', () => {
       rowWidth: 222,
       wide: false,
       verticalTabBar: false,
+      gutter: IOS_GUTTER,
     });
 
     expect(measuredCapacity).toBe(capacityWidth);
@@ -71,7 +76,7 @@ describe('miniPlayerCapacityWidth', () => {
 
   it('recomputes phone capacity when the window shrinks and grows', () => {
     const capacities = [402, 375, 320, 402].map((windowWidth) =>
-      miniPlayerCapacityWidth({ windowWidth, rowWidth: 222, wide: false, verticalTabBar: false }),
+      miniPlayerCapacityWidth({ windowWidth, rowWidth: 222, wide: false, verticalTabBar: false, gutter: IOS_GUTTER }),
     );
 
     expect(capacities).toEqual([360, 333, 278, 360]);
@@ -86,15 +91,48 @@ describe('miniPlayerCapacityWidth', () => {
     ({ wide, verticalTabBar }) => {
       const measuredWidths = [995, 290, 180, null];
       const capacities = measuredWidths.map((rowWidth) =>
-        miniPlayerCapacityWidth({ windowWidth: 1200, rowWidth, wide, verticalTabBar }),
+        miniPlayerCapacityWidth({ windowWidth: 1200, rowWidth, wide, verticalTabBar, gutter: IOS_GUTTER }),
       );
 
       expect(capacities).toEqual(measuredWidths);
     },
   );
 
+  it('keeps the iOS platter gutter at 42pt', () => {
+    expect(IOS_GUTTER).toBe(42);
+  });
+
+  // The Material card floats 8dp in from each edge and adds no padding of its
+  // own, so a 360dp phone keeps three controls, as a 402pt iPhone does.
+  it.each([
+    { windowWidth: 360, capacityWidth: 344, slots: 3 },
+    { windowWidth: 412, capacityWidth: 396, slots: 3 },
+  ])(
+    'fits $slots controls on the Material card in a $windowWidth dp window',
+    ({ windowWidth, capacityWidth, slots }) => {
+      const capacity = miniPlayerCapacityWidth({
+        windowWidth,
+        rowWidth: 222,
+        wide: false,
+        verticalTabBar: false,
+        gutter: CARD_GUTTER,
+      });
+
+      expect(capacity).toBe(capacityWidth);
+      expect(phone(capacity)).toBe(slots);
+    },
+  );
+
   it('keeps a phone capacity nonnegative when the window is narrower than its insets', () => {
-    expect(miniPlayerCapacityWidth({ windowWidth: 32, rowWidth: null, wide: false, verticalTabBar: false })).toBe(0);
+    expect(
+      miniPlayerCapacityWidth({
+        windowWidth: 32,
+        rowWidth: null,
+        wide: false,
+        verticalTabBar: false,
+        gutter: IOS_GUTTER,
+      }),
+    ).toBe(0);
   });
 });
 
