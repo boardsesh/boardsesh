@@ -6925,6 +6925,12 @@ export type Query = {
    */
   auroraCredentials: Array<AuroraCredentialStatus>;
   /**
+   * Immutable identity admitted from this request's presented credential.
+   * Returns UNAUTHENTICATED when the credential cannot authorize the request.
+   * Authority failures return SERVICE_UNAVAILABLE instead of an identity.
+   */
+  authenticatedUserId: Scalars['ID']['output'];
+  /**
    * Live preview metadata for a shared Instagram/TikTok URL, before it's
    * attached. Powers the mobile share flow: shows the post thumbnail/caption and
    * lets the client auto-match the climb from the caption. Best-effort — returns
@@ -12550,6 +12556,10 @@ export type ZoneBoxInput = {
  */
 export type ZoneMatchMode = 'allHolds' | 'anyHold';
 
+export type GetAuthenticatedUserIdQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetAuthenticatedUserIdQuery = { __typename?: 'Query'; authenticatedUserId: string };
+
 export type GetDeleteAccountInfoQueryVariables = Exact<{ [key: string]: never }>;
 
 export type GetDeleteAccountInfoQuery = {
@@ -17599,6 +17609,20 @@ export const UserDataExportStatusFieldsFragmentDoc = {
     },
   ],
 } as unknown as DocumentNode<UserDataExportStatusFieldsFragment, unknown>;
+export const GetAuthenticatedUserIdDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetAuthenticatedUserId' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [{ kind: 'Field', name: { kind: 'Name', value: 'authenticatedUserId' } }],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetAuthenticatedUserIdQuery, GetAuthenticatedUserIdQueryVariables>;
 export const GetDeleteAccountInfoDocument = {
   kind: 'Document',
   definitions: [

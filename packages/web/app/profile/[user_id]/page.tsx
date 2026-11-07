@@ -2,8 +2,7 @@ import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/lib/auth/auth-options';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import ProfilePageContent from './profile-page-content';
 import ProfileJsonLd from './profile-json-ld';
 import { getProfileData } from './server-profile-data';
@@ -78,7 +77,7 @@ export default async function ProfilePage({ params }: PageProps) {
   const authToken = await getServerAuthToken();
   let viewerUserId: string | undefined;
   if (authToken) {
-    const session = await getServerSession(authOptions);
+    const session = await getAdmittedServerSession();
     viewerUserId = session?.user?.id;
   }
 

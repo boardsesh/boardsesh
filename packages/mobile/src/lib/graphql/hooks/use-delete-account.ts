@@ -7,8 +7,8 @@ import {
   type DeleteAccountMutationResponse,
 } from '@boardsesh/graphql/operations/account';
 import { getHttpClient } from '../client';
-import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../../auth-store';
-import { userIdFromJwt } from '../../jwt-user-id';
+import { isAuthCredentialGenerationCurrent } from '../../auth-store';
+import { captureAccountDeletionIntent, type AccountDeletionResult } from '../../account-deletion-intent';
 import { forgetSignupConversion } from '../../signup-conversion';
 
 /**
@@ -37,27 +37,24 @@ export function useDeleteAccountInfo(options?: { enabled?: boolean }) {
  */
 export function useDeleteAccount() {
   return useMutation({
-    mutationFn: async (variables: DeleteAccountMutationVariables) => {
-      const credentialGeneration = captureAuthCredentialGeneration();
-      let deletingUserId: string | undefined;
-      try {
-        deletingUserId = userIdFromJwt(await getAuthToken());
-      } catch {
-        // Marker cleanup is best-effort; the mutation still authenticates server-side.
-      }
+    retry: false,
+    mutationFn: async ({
+      credentialGeneration,
+      ...variables
+    }: DeleteAccountMutationVariables & { credentialGeneration: number }): Promise<AccountDeletionResult> => {
+      // This generation belongs to the confirm tap, before TanStack's awaited
+      // onMutate boundary. It is local metadata and never reaches GraphQL.
+      const intent = await captureAccountDeletionIntent(credentialGeneration);
       if (!isAuthCredentialGenerationCurrent(credentialGeneration)) {
         throw new Error('Account credentials changed before account deletion');
       }
       const response = await getHttpClient().request<DeleteAccountMutationResponse>(DELETE_ACCOUNT, variables);
-      if (
-        response.deleteAccount === true &&
-        deletingUserId &&
-        isAuthCredentialGenerationCurrent(credentialGeneration)
-      ) {
+      if (response.deleteAccount !== true) return { deleted: false };
+      if (isAuthCredentialGenerationCurrent(credentialGeneration)) {
         // A delayed/rejected local delete must not block sign-out after server deletion.
-        void forgetSignupConversion(deletingUserId).catch(() => {});
+        void forgetSignupConversion(intent.userId).catch(() => {});
       }
-      return response.deleteAccount;
+      return { deleted: true, intent };
     },
   });
 }

@@ -1,3 +1,8 @@
+import {
+  admitPresentedWebCredential,
+  CredentialAuthorityUnavailable,
+} from '@/app/lib/auth/credential-admission.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
 import { type NextRequest, NextResponse } from 'next/server';
 import { decode, getToken, type JWT } from 'next-auth/jwt';
 import { isSecureCookieContext, sessionCookieNameCandidates } from '@/app/lib/auth/secure-cookies';
@@ -49,10 +54,7 @@ export async function GET(request: NextRequest) {
 
     const nextAuthSecret = process.env.NEXTAUTH_SECRET;
     if (!nextAuthSecret) {
-      // Server misconfiguration: without the secret the cookie can't be
-      // validated. Warn loudly and fail closed to an anonymous response.
-      log.warn('NEXTAUTH_SECRET is not configured; treating the request as anonymous.');
-      return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
+      return unavailableCredentialResponse();
     }
 
     let decodedToken: JWT | null;
@@ -64,6 +66,10 @@ export async function GET(request: NextRequest) {
       decodedToken = null;
     }
     if (!decodedToken || typeof decodedToken.sub !== 'string' || !decodedToken.sub.trim()) {
+      return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
+    }
+
+    if (!(await admitPresentedWebCredential(token))) {
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
     }
 
@@ -82,6 +88,7 @@ export async function GET(request: NextRequest) {
       { headers: PRIVATE_NO_STORE_HEADERS },
     );
   } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
     reportHandledError(error, { logger: log, message: 'Failed to read the WebSocket auth token' });
     return NextResponse.json(
       { token: null, authenticated: false, error: 'Failed to get token' },

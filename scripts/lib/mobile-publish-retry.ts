@@ -73,13 +73,14 @@ export const SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM =
   PREVIEW_RUNTIME_RESOLUTION_BUDGET_MINUTES;
 
 /**
- * Everything a publish job does around the publish steps themselves. Dominated
- * by the two source-map uploads, which carry their own `timeout-minutes` in the
- * workflow; the rest (checkout, setup-vp, `vp install`, changelog, health
- * check) measured ~3 minutes in run 30855435091. mobile-ota-publish-workflow.test.ts
- * re-reads those step timeouts and fails if they outgrow this allowance.
+ * Everything a publish job does around the publish steps themselves. Each of
+ * the two source-map uploads reserves 30 minutes in the workflow. Keep the
+ * remaining 10 minutes for checkout, setup-vp, `vp install`, changelog and the
+ * health check, which measured ~3 minutes in run 30855435091.
+ * mobile-ota-publish-workflow.test.ts re-reads those step timeouts and fails if
+ * they outgrow this allowance.
  */
-export const SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES = 30;
+export const SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES = 70;
 
 /** Direct production/backport publishers await a bounded main-only unlock before uploading. */
 export const PRODUCTION_OTA_UNLOCK_BUDGET_MINUTES = 25;

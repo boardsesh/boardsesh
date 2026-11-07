@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/react-native';
 import { installGlobalErrorCapture } from './global-error-capture';
 import { resolveAppEnvironment } from './app-environment';
 import type { InterruptedLiveActivityIntentDiagnostic } from './live-activity/live-activity-plugin';
+import { scrubPasswordRecoveryEvent } from '@boardsesh/text-redaction';
 
 /**
  * Triage context attached to a reported error. Defined here (not in
@@ -148,16 +149,19 @@ if (isSentryEnabled) {
       if (isExpoUiSheetNoHandlerRejection(event, hint?.originalException)) return null;
       delete event.user;
       if (event.contexts?.device) delete event.contexts.device.id;
-      return applyChunkLoadFingerprint(
-        applyCapturedValueNormalization(event, hint?.originalException),
-        hint?.originalException,
+      return scrubPasswordRecoveryEvent(
+        applyChunkLoadFingerprint(
+          applyCapturedValueNormalization(event, hint?.originalException),
+          hint?.originalException,
+        ),
       );
     },
     beforeSendTransaction(event) {
       delete event.user;
       if (event.contexts?.device) delete event.contexts.device.id;
-      return event;
+      return scrubPasswordRecoveryEvent(event);
     },
+    beforeSendSpan: (span) => scrubPasswordRecoveryEvent(span),
     // Explicit so a future option change can't silently turn either off. Native
     // crash handling persists SIGABRT / native exceptions across the crash and
     // uploads them on the next launch — the coverage gap PostHog (JS-only)

@@ -6928,6 +6928,12 @@ export type Query = {
    */
   auroraCredentials: Array<AuroraCredentialStatus>;
   /**
+   * Immutable identity admitted from this request's presented credential.
+   * Returns UNAUTHENTICATED when the credential cannot authorize the request.
+   * Authority failures return SERVICE_UNAVAILABLE instead of an identity.
+   */
+  authenticatedUserId: Scalars['ID']['output'];
+  /**
    * Live preview metadata for a shared Instagram/TikTok URL, before it's
    * attached. Powers the mobile share flow: shows the post thumbnail/caption and
    * lets the client auto-match the climb from the caption. Best-effort — returns
@@ -17510,6 +17516,7 @@ export type QueryResolvers<
     RequireFields<QueryAuroraCredentialArgs, 'boardType'>
   >;
   auroraCredentials?: Resolver<Array<ResolversTypes['AuroraCredentialStatus']>, ParentType, ContextType>;
+  authenticatedUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   betaLinkPreview?: Resolver<
     ResolversTypes['BetaLinkPreview'],
     ParentType,

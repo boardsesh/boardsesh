@@ -8,12 +8,19 @@ import { v4 as uuidv4 } from 'uuid';
 import type { BoardConnectionHolder, ResolvedBoard } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
 import { executeRows } from '@boardsesh/db/client';
+import {
+  SYSTEM_BOARD_OWNER_ID,
+  SYSTEM_BOARD_OWNER_EMAIL,
+  SYSTEM_BOARD_OWNER_NAME,
+} from '@boardsesh/db/queries/constants';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { ProjectionGym } from '../../../services/board-location-projection';
 import { pubsub } from '../../../pubsub/index';
 import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
+import { currentStoreSystemBoardOwnerConfiguration } from '../../../auth/current-store/authority-configuration';
+import { ensureReservedSystemBoardOwner } from '../../../auth/current-store/system-board-owner';
 import { assertKnownBoardConfig } from './board-catalog';
 import { lockBoardSerialWrite, type BoardSerialWriteCommandDb } from '../board-serial-write-lock';
 import {
@@ -34,8 +41,7 @@ export function assertValidBoardId(boardId: number): number {
   return boardId;
 }
 
-export const SYSTEM_BOARD_OWNER_ID = '00000000-0000-0000-0000-000000000000';
-const SYSTEM_BOARD_OWNER_EMAIL = 'system@boardsesh.com';
+export { SYSTEM_BOARD_OWNER_ID };
 
 export type ActivePresenceBoard = Pick<
   typeof dbSchema.userBoards.$inferSelect,
@@ -1078,12 +1084,25 @@ export async function resolveBoardHolder(boardId: number): Promise<BoardConnecti
 }
 
 async function ensureSystemBoardOwner(): Promise<void> {
+  let configuration: ReturnType<typeof currentStoreSystemBoardOwnerConfiguration>;
+  try {
+    configuration = currentStoreSystemBoardOwnerConfiguration();
+    if (configuration.mode === 'reserved-staging') {
+      await ensureReservedSystemBoardOwner(db, configuration.authority);
+      return;
+    }
+  } catch {
+    logger.warn('[board-presence] System board owner unavailable', { category: 'authority-or-database' });
+    throw new GraphQLError('Shared board creation is temporarily unavailable.', {
+      extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+    });
+  }
   await db
     .insert(dbSchema.users)
     .values({
       id: SYSTEM_BOARD_OWNER_ID,
       email: SYSTEM_BOARD_OWNER_EMAIL,
-      name: 'Boardsesh',
+      name: SYSTEM_BOARD_OWNER_NAME,
       createdAt: new Date(),
       updatedAt: new Date(),
     })

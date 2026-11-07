@@ -1,18 +1,8 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import { runRefreshHoldFeatures } from '@boardsesh/db/jobs';
-import { fencedTransact, jobLogger } from './batch-job';
+import { fencedTransact, jobLogger, systemUserAuthorityForContext } from './batch-job';
+import { refreshHoldFeaturesPayload as payload } from './batch-system-user-payloads';
 import type { BackgroundJobFamilyModule } from './types';
-
-const payload = z
-  .object({
-    board: z
-      .string()
-      .regex(/^[a-z][a-z0-9-]{0,31}$/)
-      .default('kilter'),
-    dryRun: z.boolean().optional(),
-    shadow: z.boolean().optional(),
-  })
-  .strict();
 
 /**
  * Nightly per-hold features for one board (`@boardsesh/db/jobs`). Each layout's
@@ -39,6 +29,7 @@ export const refreshHoldFeaturesFamily: BackgroundJobFamilyModule<z.infer<typeof
       db: context.database,
       signal: context.signal,
       transact: fencedTransact(context),
+      systemUserAuthority: systemUserAuthorityForContext(context),
       log: jobLogger(context),
       board,
       dryRun: dryRun ?? false,

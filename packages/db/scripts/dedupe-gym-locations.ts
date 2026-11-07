@@ -24,6 +24,10 @@
 import { sql, type SQLWrapper } from 'drizzle-orm';
 import { pathToFileURL } from 'node:url';
 import { createScriptDb } from './db-connection.js';
+import {
+  captureFixedSystemOwnerOrderMode,
+  lockCooperativeFixedSystemOwnerTransaction,
+} from '@boardsesh/db/fixed-system-owner-order';
 import { executeRows } from '../src/client/index.js';
 import {
   distanceMeters,
@@ -641,6 +645,7 @@ async function runPointerBackfill(commandDb: ScriptDbInstance, scriptArgs: Scrip
 }
 
 async function main(): Promise<void> {
+  const ownerOrderMode = captureFixedSystemOwnerOrderMode();
   const scriptArgs = parseArgs(process.argv.slice(2));
   if (scriptArgs.help) {
     printHelp();
@@ -666,6 +671,7 @@ async function main(): Promise<void> {
     }
 
     const { totalCounts, warnings } = await db.transaction(async (transaction) => {
+      await lockCooperativeFixedSystemOwnerTransaction(transaction, ownerOrderMode);
       await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext('boardsesh:gym-location-dedupe'))`);
 
       let aggregateCounts = emptyMergeCounts();

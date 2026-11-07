@@ -1,4 +1,9 @@
-import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
+import {
+  assertDevelopmentAuthSeedTarget,
+  createScriptDb,
+  describeDatabaseHost,
+  getScriptDatabaseUrl,
+} from './db-connection.js';
 import { users } from '../src/schema/auth/users.js';
 import { userCredentials, userProfiles } from '../src/schema/auth/credentials.js';
 import { playlists, playlistOwnership, userPlaylistPins } from '../src/schema/app/playlists.js';
@@ -197,7 +202,8 @@ async function seedTestUserPlaylists(db: ReturnType<typeof createScriptDb>['db']
 
 async function createTestUser() {
   const databaseUrl = getScriptDatabaseUrl();
-  const dbHost = databaseUrl.split('@')[1]?.split('/')[0] || 'unknown';
+  assertDevelopmentAuthSeedTarget(databaseUrl);
+  const dbHost = describeDatabaseHost(databaseUrl);
   console.info(`Creating test user on: ${dbHost}`);
 
   const { db, close } = createScriptDb(databaseUrl);

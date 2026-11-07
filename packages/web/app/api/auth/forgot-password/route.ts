@@ -7,6 +7,12 @@ import * as schema from '@/app/lib/db/schema';
 import { sendPasswordResetEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
+import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
+import {
+  forgotPasswordWithCommand,
+  passwordRecoveryUnavailableResponse,
+} from '@/app/lib/auth/password-recovery-command.server';
+import { withEmailVerificationPrivacy } from '@/app/lib/auth/email-verification-response.server';
 
 const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -15,8 +21,13 @@ const forgotPasswordSchema = z.object({
 const MIN_RESPONSE_TIME_MS = 1500;
 
 export async function POST(request: NextRequest) {
+  return withEmailVerificationPrivacy(await handleForgotPassword(request));
+}
+
+async function handleForgotPassword(request: NextRequest) {
   const startTime = Date.now();
   const genericMessage = 'If an account exists for this email, a reset link will be sent.';
+  let staged = false;
 
   try {
     const clientIp = getClientIp(request);
@@ -38,7 +49,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    staged = webPasswordMode() === 'backend-staging';
+    const body: unknown = await request.json();
+    if (staged) {
+      const response = await forgotPasswordWithCommand(request, body);
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+      return response;
+    }
     const validationResult = forgotPasswordSchema.safeParse(body);
 
     if (!validationResult.success) {
@@ -99,12 +116,12 @@ export async function POST(request: NextRequest) {
     // ("account exists but email failed" vs "no account").
     try {
       await sendPasswordResetEmail(email, token, baseUrl);
-    } catch (emailError) {
+    } catch {
       // Swallow so the response stays generic (no user enumeration), but surface
       // the failure to Sentry — a misconfigured SMTP credential would otherwise
       // fail silently for every user with no signal in observability tooling.
-      console.error('Failed to send password reset email:', emailError);
-      Sentry.captureException(emailError, {
+      console.error('Password recovery email delivery failed');
+      Sentry.captureException(new Error('Password recovery email delivery failed'), {
         tags: { area: 'auth', flow: 'forgot-password', phase: 'send-email' },
       });
     }
@@ -112,7 +129,11 @@ export async function POST(request: NextRequest) {
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
     return NextResponse.json({ message: genericMessage }, { status: 200 });
   } catch (error) {
-    console.error('Forgot password error:', error);
+    if (staged || error instanceof AuthBackendUnavailableError) {
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+      return passwordRecoveryUnavailableResponse();
+    }
+    console.error('Forgot password request failed');
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
     return NextResponse.json({ error: 'Failed to process password reset request' }, { status: 500 });
   }

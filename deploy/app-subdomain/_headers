@@ -12,6 +12,23 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 
+# Capability documents must not refer their token/email to another request.
+# Pages applies these source-path rules alongside the SPA 200 rewrite; matching
+# header values are combined, so keep no-referrer after the global policy.
+# https://developers.cloudflare.com/pages/configuration/redirects/#redirects-and-header-matching
+/auth/reset-password
+  Referrer-Policy: no-referrer
+  Cache-Control: private, no-store, max-age=0, must-revalidate
+/auth/reset-password/
+  Referrer-Policy: no-referrer
+  Cache-Control: private, no-store, max-age=0, must-revalidate
+/:locale/auth/reset-password
+  Referrer-Policy: no-referrer
+  Cache-Control: private, no-store, max-age=0, must-revalidate
+/:locale/auth/reset-password/
+  Referrer-Policy: no-referrer
+  Cache-Control: private, no-store, max-age=0, must-revalidate
+
 # Content-hashed assets (filenames change when content changes) — cache forever.
 /_expo/*
   Cache-Control: public, max-age=31536000, immutable

@@ -19,6 +19,7 @@
  */
 
 import { formatBoardDisplayName, normaliseSetIds } from '@boardsesh/board-config';
+import { SYSTEM_BOARD_OWNER_ID } from '../system-account-constants';
 
 /**
  * The minimal board shape the grouping/selection helpers need. The script
@@ -61,7 +62,7 @@ export type SerialCluster = {
   skipReason: 'distinct-configs' | null;
 };
 
-export const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+export const SYSTEM_USER_ID = SYSTEM_BOARD_OWNER_ID;
 
 /**
  * The identity of a board's climbing configuration. Two boards with the same

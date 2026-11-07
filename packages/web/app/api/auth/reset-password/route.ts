@@ -6,6 +6,14 @@ import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
+import { isVersionedPasswordRecoveryToken, passwordRecoveryTokenSchema } from '@boardsesh/auth-protocol';
+import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
+import {
+  INVALID_PASSWORD_RESET_MESSAGE,
+  passwordRecoveryUnavailableResponse,
+  resetPasswordWithCommand,
+} from '@/app/lib/auth/password-recovery-command.server';
+import { withEmailVerificationPrivacy } from '@/app/lib/auth/email-verification-response.server';
 
 const resetPasswordSchema = z
   .object({
@@ -25,7 +33,12 @@ const resetPasswordSchema = z
 const MIN_RESPONSE_TIME_MS = 1500;
 
 export async function POST(request: NextRequest) {
+  return withEmailVerificationPrivacy(await handleResetPassword(request));
+}
+
+async function handleResetPassword(request: NextRequest) {
   const startTime = Date.now();
+  let staged = false;
   try {
     const clientIp = getClientIp(request);
     // NOTE: checkRateLimit is in-memory and not shared across serverless instances.
@@ -46,7 +59,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    const mode = webPasswordMode();
+    staged = mode === 'backend-staging';
+    const body: unknown = await request.json();
+    const submittedToken: unknown =
+      typeof body === 'object' && body !== null && 'token' in body ? body.token : undefined;
+    if (isVersionedPasswordRecoveryToken(submittedToken)) {
+      if (!staged || typeof submittedToken !== 'string' || !/^pr1_/i.test(submittedToken)) {
+        await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+        return passwordRecoveryUnavailableResponse();
+      }
+      if (!passwordRecoveryTokenSchema.safeParse(submittedToken).success) {
+        await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+        return withEmailVerificationPrivacy(
+          NextResponse.json({ error: INVALID_PASSWORD_RESET_MESSAGE }, { status: 400 }),
+        );
+      }
+    }
+    if (staged) {
+      const response = await resetPasswordWithCommand(body);
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+      return response;
+    }
     const validationResult = resetPasswordSchema.safeParse(body);
 
     if (!validationResult.success) {
@@ -133,7 +167,11 @@ export async function POST(request: NextRequest) {
       message: 'Password reset successful. You can now sign in with your new password.',
     });
   } catch (error) {
-    console.error('Reset password error:', error);
+    if (staged || error instanceof AuthBackendUnavailableError) {
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+      return passwordRecoveryUnavailableResponse();
+    }
+    console.error('Password reset request failed');
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
     return NextResponse.json({ error: 'Failed to reset password' }, { status: 500 });
   }

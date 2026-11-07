@@ -1,7 +1,6 @@
 import 'server-only';
-import { getServerSession } from 'next-auth/next';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { eq, and } from 'drizzle-orm';
-import { authOptions } from '@/app/lib/auth/auth-options';
 import { getDb } from '@/app/lib/db/db';
 import { communityRoles } from '@/app/lib/db/schema';
 import { rolesGrantAdmin } from '@boardsesh/community-roles';
@@ -20,7 +19,7 @@ export type CheckAdminOptions = {
 };
 
 export async function checkAdmin(options: CheckAdminOptions = {}): Promise<AdminCheck> {
-  const session = await getServerSession(authOptions);
+  const session = await getAdmittedServerSession();
   const userId = session?.user?.id;
   if (!userId) return { authenticated: false };
 

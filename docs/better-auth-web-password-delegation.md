@@ -1,0 +1,71 @@
+# Staged web password delegation to the current backend store
+
+This implementation-only BA-03 slice moves web registration and password verification together behind a default-off staging mode. It does not switch authority to Better Auth, migrate identities or complete the single-writer boundary. Production activation remains **NO-GO**.
+
+## Contracts and ownership
+
+`CURRENT_STORE_WEB_AUTH_MODE` defaults to `legacy`. Only the explicit `backend-staging` value selects delegation. Default-off mode does not require the new service secret, backend address, projection metadata or SMTP changes. A malformed enabled configuration, disabled backend, timeout, redirect or malformed reply cannot select legacy DB access or bcrypt as an availability fallback.
+
+Enabled backend mode rejects `DEBUG_SQL=true` before command work because the shared database logger prints SQL bound parameters. Default-off mode still tolerates that flag. This is an explicit staging configuration guard, not a claim that production logging or observability has been independently audited.
+
+| Setting | Owner and requirement in enabled mode |
+| --- | --- |
+| `CURRENT_STORE_WEB_AUTH_MODE` | Both services: explicit `backend-staging`; absent/empty/`legacy` retains the existing paths. |
+| `CURRENT_STORE_AUTH_BACKEND_ORIGIN` | Web only: pinned origin, HTTPS except owned local development/test loopback. No public WebSocket fallback. |
+| `CURRENT_STORE_AUTH_RPC_SECRET` | Both: at least 32 UTF-8 bytes, no surrounding whitespace, distinct from NextAuth and cron secrets. |
+| `CURRENT_STORE_AUTH_PROJECTION_ID` | Backend: exact already-enforced projection ID. Configuration cannot create/enforce it. |
+| `CURRENT_STORE_AUTH_WRITER_EPOCH` | Backend: exact positive writer epoch of that projection. |
+| `EMAIL_VERIFICATION_ENABLED` | Backend password policy: only literal `true` requires verification. |
+| `BASE_URL` / `NEXTAUTH_URL` | Web mail link origin: configured trusted canonical origin; only owned local development/test fallback is allowed. |
+
+These values describe implementation prerequisites, not instructions to activate a deployment. The actual writer-role/issuer fence is a separate prerequisite that environment values and the enforced marker cannot establish.
+
+The shared `@boardsesh/auth-protocol` package describes the two private POST commands, metadata and strict replies. It contains no credential policy, database code or secrets. The web client is server-only, uses a pinned configured backend origin and a distinct RPC secret, and correlates operation and request ID. Browser cookies, NextAuth secrets and native access tokens do not authorize these private commands.
+
+The backend owns user, password, profile, normalized reservation, verification-token and command-replay writes. Every active command requires captured enforced projection metadata; that marker is a software prerequisite, not proof of a production role fence. No production activation or projection-building API is added. The bounded actual-role fixtures establish local test privileges only.
+
+Web registration retains its existing Zod field bounds and raw validated email/name. It does not use the native parser's trimming or name normalization. The reservation uses the exact shared JS normalizer while `users.email` retains the original submitted spelling. A trusted backend command generates the new user ID, reserves it and uses the existing bcrypt12 and identity inserts inside the same transaction.
+
+Password sign-in deliberately retains an exact stored-email selector for this transitional web path. It shares the native bounded comparison engine, checks every admitted hash and accepts exactly one matching owner. It does not retain the web route's arbitrary first-row choice for duplicate exact addresses. Native's existing LOWER-only lookup, bounds, dummy comparison and response contracts remain unchanged. This is not activation of the final normalized lookup policy.
+
+## Verification and mail compatibility
+
+The password result carries the selected immutable user ID and that user's verification verdict. Request-local NextAuth options consume it without querying by email again. Neither a browser boolean nor another request's result can authorize sign-in. Invalid credentials remain separate from retryable service unavailability.
+
+Registration's private mail plan contains the exact committed `users.email` as both recipient and legacy verification identifier. It must not use the normalized reservation key: doing so would break the unchanged exact-email verification consumer for mixed-case addresses. The UUID token and its original 24-hour deadline commit with identity creation. Public registration JSON manually projects only the existing message, `requiresVerification` and conditional `emailSent` fields; it never proxies private mail data or user IDs.
+
+Web retains the existing SMTP delivery adapter and template in this slice. Delivery occurs after the backend commit, and failed delivery retains the created account/token and the current successful-registration response. The mail plan must never enter browser JSON, NextAuth user/session/JWT metadata, logs, Sentry or exception text. Active mail delivery requires a trusted canonical origin or validated owned local origin; caller Host/body values cannot choose a credential-link destination.
+
+The existing SMTP implementation remains unbounded. A bounded RPC request does not bound or cancel the subsequent SMTP send. This compatibility choice is not production-ready mail operations. Backend SMTP migration and hard cancellation require separate configuration evidence and an owned hung/drip-socket proof.
+
+The current verification and resend consumers are still email-keyed, and verification can update multiple matching users. These are legacy tokens, **not UID-bound verification proofs**. Verification-enabled production activation remains blocked until a compatible UID-aware consumer/resend path or equivalent reviewed binding is implemented. Issued legacy links must remain safely usable for their original lifetime.
+
+## Transactions, replay and races
+
+An authenticated web server generates a fresh command request ID and timestamp; browser input cannot select an account ID, verification policy or token. A purpose-namespaced hash-only replay record in the existing no-users-FK `verificationTokens` table commits atomically with each authoritative outcome. Its retention exceeds the original timestamp's whole acceptance window plus skew and request budget. A committed request cannot be acknowledged again during that lifetime; after expired-record cleanup, the original timestamp remains rejected. This is bounded replay protection, not unbounded idempotency history: a trusted caller must never re-date or reuse an old ID. No automatic registration retry or idempotent success receipt is introduced. A lost reply may mean creation committed; it cannot authorize compensating deletion, a repeated success claim or an overwrite.
+
+Bcrypt comparison runs outside the global projection lock. The backend then takes the enforced manifest lock and rechecks the complete bounded exact-email cohort, credential hashes and cutoff generations under locks before accepting. Verification is read from the current selected user row. Lock order is manifest, user, credential, cutoff. Serialization/deadlock failures are unavailable; code cannot continue with a stale comparison result. Unfenced old writers are not claimed to participate, and their phantom inserts or other bypasses remain an activation blocker.
+
+The reply is a one-request UID/verification snapshot. It is **not an ongoing source credential or proof that later cookie publication is revocation-safe**. Reset after a successful backend verdict and before NextAuth JWE encoding can still produce an accepted cookie through existing validators. This slice does not add an unused signed lineage claim or claim to close that race. Backend-owned issuance lineage, every validator/cache, renewal and legacy writer adoption must close it before production activation.
+
+## Web behavior and remaining gates
+
+Both password entry points select the same mode. The NextAuth route records request-local unavailability before the library catches an authorization exception, preserves existing session cookies and returns a safe retryable result. Both login forms distinguish the allowlisted unavailable code from rejected credentials and use the existing retry message; errors and analytics never reflect raw backend messages or URLs. Registration success and subsequent auto-login failure remain separate outcomes.
+
+The private controller clamps a rate-limited reply to a minimum one-second delay for both JSON and `Retry-After`. The shared limiter can report zero exactly at its reset boundary; this local adaptation preserves the strict protocol without changing the existing limiter's behavior elsewhere.
+
+OAuth linking, recovery, verification/resend, password set/change/reset, deletion, native/watch issuance and other credential writers remain later work. Production writer roles, service authentication, canonical origins, SMTP, collision handling, rollback and validator adoption remain unverified activation prerequisites. No production traffic, environment configuration, migration activation or identity reassignment is authorized by this slice.
+
+## Validation
+
+The author passed the final **31/31 backend cases on PostgreSQL18.6**, 17.62 seconds total (11.68 seconds in cases), on the fresh owned local service. Independent review passed the final **31/31 on PostgreSQL15**, 17.17 seconds total (11.74 seconds in cases), with clean teardown. Backend TypeScript passes. Independent selected checks of five backend source/test files reported zero lint/format warnings or errors, and the diff check is clean. Both independent source reviewers approved the final controller rate-limit fix and its real HTTP regression; no actionable source findings remain.
+
+These cases use actual authenticated non-superuser writer connections and real private HTTP. They cover atomic identity/reservation/token/nonce rollback, concurrent registration and replay, exact duplicate-owner verification, legacy password bytes, credential/group/generation changes during real bcrypt, immutable inputs, and a PostgreSQL-observed lock wait followed by expiry and nonce rollback. A bounded test-only child loads the **actual server-only web strict client → authenticated HTTP → LOGIN PostgreSQL** through public `tsx` and Node's `react-server` condition, using synthetic credentials over IPC, with verification both disabled and enabled. Its output contains only verdict booleans; it does not add a production import or Docker context dependency on web source. Expired replay-record cleanup is tested with rejection of the original issued timestamp. The exact rate-limit reset-boundary case validates the actual HTTP `429`, strict reply schema, positive matching header and absence of credential/nonce writes.
+
+The frontend/protocol author passed the focused **183 distinct cases**. Independent review passed the initial **181/181 in 5.99 seconds**, then independently passed the final **19/19 form cases in 5.95 seconds**, including the two additions; that subset is not an additional 19 distinct cases. The frontend selection covers canonical mail configuration, strict transport replies and both forms. Its public NextAuth App Router cases use a transport stub and exercise actual JWT/CSRF/cookies, selected-UID verification and unavailable-cookie preservation. The separate child tests above use the actual strict client and backend. They establish both pieces; they do not claim one test exercised a complete public NextAuth callback through the real backend. A second source review of the paired frontend/backend contracts found no remaining actionable issue after fixes were re-reviewed.
+
+Root verification passed all **59 aggregate typecheck tasks** before the final controller-only rate-limit fix, then passed the **13 backend typecheck tasks** after it. Repository lint/format reported **zero errors and 623 existing warnings**, and **184 existing native/current-store/foundation/public-handler regressions passed in 17.99 seconds**. Packaging passed **23 cases**; focused discovery and translation checks also passed. The local development server's QA metadata confirmed the branch and notes. An actual default-mode public NextAuth CSRF → credentials callback → authenticated session smoke succeeded, and the new backend endpoint returned `404` while disabled. Cookies remained in memory and were not printed. These checks did not activate production configuration or change production identities.
+
+One initial final-suite attempt failed before its test bodies because the shared `SKIP_TEST_INFRA=1` setup swallowed an opaque schema-initialization rejection and the worker lacked tables. Its original cause is unknown. The fixture now explicitly awaits the same exported, cached readiness promise before creating any cluster roles, so an initializer failure is surfaced rather than proceeding with fixture DDL. A later attempt surfaced a distinct explicit PostgreSQL `No space left on device` error before all 31 test bodies. Read-only inspection found the owned PostgreSQL18 container's one-GiB tmpfs full; host disk remained available. `SKIP_TEST_INFRA=1` skips the existing stale-worker cleanup, and repeated randomly salted QA databases had accumulated. This diagnosis does not retroactively establish the earlier opaque error's cause.
+
+Root chose nondestructive recovery: provision a fresh owned PostgreSQL18.6 container on local port `15478` with a four-GiB tmpfs and update only the ignored local QA configuration. The old full container on `15477` remains intact; no existing database or user data was deleted. PostgreSQL15 remained on its healthy owned local service. Failed setup attempts were not counted as passing tests. The explicit readiness assertion improves failure reporting, not production infrastructure or automatic cleanup behavior.

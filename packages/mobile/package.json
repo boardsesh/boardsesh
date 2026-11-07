@@ -44,6 +44,7 @@
     "@boardsesh/queue-runtime": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/spray-wall-geometry": "workspace:*",
+    "@boardsesh/text-redaction": "workspace:*",
     "@boardsesh/velvet-tokens": "workspace:*",
     "@boardsesh/watch-pairing": "workspace:*",
     "@boardsesh/workout-summary": "workspace:*",

@@ -12,6 +12,10 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { lockWallForWrite } from '../../../services/spray-wall-lock';
 export { lockWallForWrite } from '../../../services/spray-wall-lock';
 import { lockSprayWallAccount } from '../../../services/spray-account-lock';
+import {
+  captureFixedSystemOwnerOrderMode,
+  lockCooperativeFixedSystemOwnerTransaction,
+} from '../../../services/fixed-system-owner-order';
 import { SPRAY_WALL_ARCHIVED_CODE, SPRAY_WALL_ARCHIVED_MESSAGE } from '../../../services/spray-wall-archive';
 import { markDeletedSprayWallPhotoRetry } from '../../../services/spray-photo-erasure-retry';
 import {
@@ -3350,6 +3354,7 @@ export const sprayWallMutations = {
   },
 
   commitSprayWallVersion: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    const ownerOrderMode = captureFixedSystemOwnerOrderMode();
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, PUBLISH_RATE_LIMIT, 'commitSprayWallVersion');
 
@@ -3357,6 +3362,7 @@ export const sprayWallMutations = {
     const { wall, board } = await loadEditableWall(ctx, validated.wallUuid);
 
     const committed = await db.transaction(async (tx) => {
+      await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
       await lockWallForWrite(tx, wall.id);
       await assertSprayWallNotArchivedUnderLock(tx, wall.id);
       const version = await loadDraftVersion(tx, wall.id, validated.versionId);
@@ -3397,6 +3403,7 @@ export const sprayWallMutations = {
   },
 
   publishSprayWallVersion: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    const ownerOrderMode = captureFixedSystemOwnerOrderMode();
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, PUBLISH_RATE_LIMIT, 'publishSprayWallVersion');
 
@@ -3428,6 +3435,7 @@ export const sprayWallMutations = {
     }
 
     const publishedDraft = await db.transaction(async (tx) => {
+      await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
       // Stated here as well as inside the helper. `pg_advisory_xact_lock` is
       // re-entrant within a transaction, so the second take costs nothing, and a
       // reader of this resolver sees the rule where the transaction opens rather

@@ -6,7 +6,7 @@ import { mkdir, writeFile, unlink } from 'fs/promises';
 import { eq, and, isNull } from 'drizzle-orm';
 import { applyCorsHeaders } from './cors';
 import { guardUploadFileStream } from './http-utils';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import { detectImageMimeType, MIME_TO_EXT } from '../lib/image-mime';
 import {
@@ -166,7 +166,9 @@ export function createGymImageUploadHandler(
       return;
     }
 
-    const authResult = await validateToken(token);
+    const admission = await validateHttpAuthToken(token, res);
+    if (!admission.available) return;
+    const authResult = admission.auth;
     if (!authResult) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid or expired token' }));

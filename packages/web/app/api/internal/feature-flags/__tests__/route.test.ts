@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
+
+vi.mock('server-only', () => ({}));
 
 const checkAdmin = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/admin/check-admin', () => ({ checkAdmin }));
@@ -44,6 +47,28 @@ beforeEach(() => {
 });
 
 describe('GET /api/internal/feature-flags', () => {
+  it.each(['admin', 'viewer'] as const)(
+    'returns a retryable response when %s admission is unavailable',
+    async (stage) => {
+      const unavailable = new CredentialAuthorityUnavailable();
+      if (stage === 'admin') checkAdmin.mockRejectedValue(unavailable);
+      else getPosthogDistinctId.mockRejectedValue(unavailable);
+
+      const response = await GET(request());
+      expect(response.status).toBe(503);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(getServerFeatureFlagResolution).not.toHaveBeenCalled();
+      expect(probeServerFeatureFlag).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves unexpected errors for the normal server error boundary', async () => {
+    const unexpected = new Error('Unexpected diagnostic failure');
+    checkAdmin.mockRejectedValue(unexpected);
+    await expect(GET(request())).rejects.toBe(unexpected);
+  });
+
   it('turns a signed-out caller away', async () => {
     checkAdmin.mockResolvedValue({ authenticated: false });
     const response = await GET(request());

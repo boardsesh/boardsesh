@@ -15,7 +15,9 @@ import MuiDivider from '@mui/material/Divider';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import MailOutlined from '@mui/icons-material/MailOutlined';
-import { signIn, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { signInWithSessionIntent as signIn } from '@/app/lib/auth/web-session-events';
+import { isAuthBackendUnavailable } from '@boardsesh/auth-protocol/client-errors';
 import { useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
@@ -124,7 +126,9 @@ export default function AuthPageContent() {
       });
 
       if (result?.error) {
-        setLoginServerError(t('login.toasts.invalidCredentials'));
+        setLoginServerError(
+          isAuthBackendUnavailable(result.error) ? t('login.toasts.authFailed') : t('login.toasts.invalidCredentials'),
+        );
         track('Login Failed', {
           auth_method: 'credentials',
           failure_reason: safeAuthError(result.error),
@@ -172,7 +176,11 @@ export default function AuthPageContent() {
       const data = await response.json();
 
       if (!response.ok) {
-        setRegisterServerError(data.error || t('login.toasts.registrationFailed'));
+        setRegisterServerError(
+          isAuthBackendUnavailable(data.error)
+            ? t('login.toasts.authFailed')
+            : data.error || t('login.toasts.registrationFailed'),
+        );
         return;
       }
 
@@ -222,7 +230,8 @@ export default function AuthPageContent() {
       } else {
         setActiveTab('login');
         setLoginValues((prev) => ({ ...prev, email: registerValues.email }));
-        showMessage(t('login.toasts.loginAfterCreate'), 'info');
+        if (isAuthBackendUnavailable(loginResult?.error)) setLoginServerError(t('login.toasts.authFailed'));
+        else showMessage(t('login.toasts.loginAfterCreate'), 'info');
       }
     } catch (error) {
       console.error('Registration error:', error);

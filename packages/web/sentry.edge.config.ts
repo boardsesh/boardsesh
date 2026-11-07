@@ -9,6 +9,7 @@ import {
   resolveWebTracesSampleRate,
   WEB_IGNORED_SPANS,
   WEB_TRACE_PROPAGATION_TARGETS,
+  redactSensitiveSpanUrls,
 } from './app/lib/observability/sentry-tracing';
 import { redactShareCapabilitiesFromEvent } from './app/lib/observability/redact-share-capabilities';
 
@@ -49,6 +50,7 @@ Sentry.init({
 
   // Node defaults this to *every* host. Must be set. See the constant.
   tracePropagationTargets: WEB_TRACE_PROPAGATION_TARGETS,
+  beforeSendSpan: redactSensitiveSpanUrls,
 
   // Same list as the server config. The edge SDK (@sentry/vercel-edge) ships
   // no Graphql integration, so there is nothing to filter out of
