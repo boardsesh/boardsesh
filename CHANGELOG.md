@@ -8,10 +8,12 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The Android tab bar is slimmer, so you see more climbs. ([#7325](https://github.com/boardsesh/boardsesh/pull/7325))
 - On Android, the climb you're on now sits in a floating card with the same controls as iPhone. ([#7326](https://github.com/boardsesh/boardsesh/pull/7326))
 
 ### Fixed
 
+- Add screenshots while typing reports or test notes, and close drafts without getting stuck. ([#7314](https://github.com/boardsesh/boardsesh/pull/7314))
 - Open climbs quickly on Android while keeping the sheet motion. ([#7317](https://github.com/boardsesh/boardsesh/pull/7317))
 
 ## 2026-11-05

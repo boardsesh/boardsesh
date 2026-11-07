@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-11-07T16:12:45.402Z",
+  "generatedAt": "2026-11-07T18:42:56.476Z",
   "entries": [
+    {
+      "prNumber": 7314,
+      "category": "fixed",
+      "title": "Add screenshots while typing reports or test notes, and close drafts without getting stuck.",
+      "mergedAt": "2026-11-07T18:27:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7314"
+    },
+    {
+      "prNumber": 7325,
+      "category": "new",
+      "title": "The Android tab bar is slimmer, so you see more climbs.",
+      "mergedAt": "2026-11-07T18:26:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7325"
+    },
     {
       "prNumber": 7326,
       "category": "new",
