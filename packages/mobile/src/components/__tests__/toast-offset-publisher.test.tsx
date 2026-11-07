@@ -66,27 +66,27 @@ describe('ToastOffsetPublisher', () => {
   // queue snackbars leave, so a toast and a snackbar never sit apart.
   it.each([
     {
-      name: 'Material, no climb: clears the 80dp nav bar, reserves no queue bar',
+      name: 'Material, no climb: clears the 64dp nav bar, reserves no queue bar',
       chrome: {},
-      bottom: 34 + 80 + 8,
+      bottom: 34 + 64 + 8,
     },
     {
       name: 'Material, climb on the wall: also clears the 48dp MiniPlayer card and its 8dp gap',
       chrome: { hasCurrentClimb: true },
-      bottom: 34 + 80 + 48 + 8 + 8,
+      bottom: 34 + 64 + 48 + 8 + 8,
     },
     {
       name: 'Material, pushed tab route: no queue bar there, so none reserved',
       segments: ['(tabs)', 'home', 'session', '[sessionId]'],
       chrome: { hasCurrentClimb: true },
-      bottom: 34 + 80 + 8,
+      bottom: 34 + 64 + 8,
     },
     {
-      // Keyed on the bar actually rendered: the JS fallback bar is 80pt tall,
+      // Keyed on the bar actually rendered: the JS fallback bar is 64pt tall,
       // not the 49pt native one.
-      name: 'Liquid Glass JS fallback, climb: 80pt JS bar + 66pt floating queue bar',
+      name: 'Liquid Glass JS fallback, climb: 64pt JS bar + 66pt floating queue bar',
       chrome: { uiVariant: 'liquidGlass', hasCurrentClimb: true },
-      bottom: 34 + 80 + 66 + 8,
+      bottom: 34 + 64 + 66 + 8,
     },
     {
       name: 'iOS 26 NativeTabs, no climb, measured 83pt in-tab inset',
@@ -122,12 +122,12 @@ describe('ToastOffsetPublisher', () => {
     {
       name: 'Material, rest timer armed: lifts over the 54pt pill',
       chrome: { restTimerArmed: true },
-      bottom: 34 + 80 + 54 + 8,
+      bottom: 34 + 64 + 54 + 8,
     },
     {
       name: 'connectivity banner showing: lifts over its measured height',
       chrome: { connectivityBannerHeight: 40 },
-      bottom: 34 + 80 + 40 + 8,
+      bottom: 34 + 64 + 40 + 8,
     },
     {
       name: 'off the tabs: home indicator + gap only, even with the timer armed',

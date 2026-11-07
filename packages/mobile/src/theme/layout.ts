@@ -17,11 +17,11 @@
 export const TAB_BAR_HEIGHT = 49;
 
 /** M3 navigation-bar content height (excludes the safe-area inset). The Material
- *  variant's JS tab bar is taller than the iOS 49 — M3 spec is an 80dp bar that
- *  fits the active-indicator pill, icon and label with room to breathe. Only the
- *  Material variant reads this (in MaterialTabBar and the bottom-chrome metrics);
- *  Liquid Glass stays on TAB_BAR_HEIGHT. */
-export const MATERIAL_TAB_BAR_HEIGHT = 80;
+ *  variant's JS tab bar follows the M3 Expressive short navigation bar: 64dp,
+ *  fitting the 32dp active-indicator pill, a 4dp gap and the label (capped at
+ *  1.2× font scale). Only the Material variant reads this (in MaterialTabBar and
+ *  the bottom-chrome metrics); Liquid Glass stays on TAB_BAR_HEIGHT. */
+export const MATERIAL_TAB_BAR_HEIGHT = 64;
 
 /**
  * One height ladder for every glass FAB / capsule / pill, so the floating chrome
