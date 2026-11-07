@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-11-05T06:04:31.058Z",
+  "generatedAt": "2026-11-07T15:34:04.906Z",
   "entries": [
+    {
+      "prNumber": 7317,
+      "category": "fixed",
+      "title": "Open climbs quickly on Android while keeping the sheet motion.",
+      "mergedAt": "2026-11-07T15:30:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7317"
+    },
+    {
+      "prNumber": 7295,
+      "category": "fixed",
+      "title": "The board angle stays on the Climbs header, next to your avatar",
+      "mergedAt": "2026-11-05T13:12:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7295",
+      "body": "The climb on the wall shows its name, grade and who lit it; swipe it left to hide it\nNew climb is in the ⋯ menu on Climbs"
+    },
+    {
+      "prNumber": 7292,
+      "category": "fixed",
+      "title": "Keep finding nearby gyms when the Android map won't load, with a larger list and a map retry.",
+      "mergedAt": "2026-11-05T07:29:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7292"
+    },
     {
       "prNumber": 7271,
       "category": "improved",

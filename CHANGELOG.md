@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-07
+
+### Fixed
+
+- Open climbs quickly on Android while keeping the sheet motion. ([#7317](https://github.com/boardsesh/boardsesh/pull/7317))
+
 ## 2026-11-05
 
 ### New
@@ -13,6 +19,13 @@ manual changes). See docs/mobile-ota-updates.md.
 ### Improved
 
 - Got a laser or LED box that lights climbs over the internet? Turn on "Lit by a wall device" in Edit board and your crew can put climbs up without Bluetooth ([#7271](https://github.com/boardsesh/boardsesh/pull/7271))
+
+### Fixed
+
+- The board angle stays on the Climbs header, next to your avatar ([#7295](https://github.com/boardsesh/boardsesh/pull/7295))
+  The climb on the wall shows its name, grade and who lit it; swipe it left to hide it
+  New climb is in the ⋯ menu on Climbs
+- Keep finding nearby gyms when the Android map won't load, with a larger list and a map retry. ([#7292](https://github.com/boardsesh/boardsesh/pull/7292))
 
 ## 2026-11-03
 
