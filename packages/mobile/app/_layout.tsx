@@ -94,6 +94,7 @@ import { AnalyticsGymProperties } from '../src/components/analytics/AnalyticsGym
 import { BoardOpenRecorder } from '../src/components/board-activity/BoardOpenRecorder';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { LowPowerModeTracker } from '../src/components/analytics/LowPowerModeTracker';
+import { ThemeAnalyticsTracker } from '../src/components/analytics/ThemeAnalyticsTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { AppleAdsAttributionTracker } from '../src/components/analytics/AppleAdsAttributionTracker';
 import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceMigration';
@@ -895,6 +896,7 @@ function RootLayout() {
                                                                     <ImageCacheTabSweeper />
                                                                     <OtaUpdateTracker />
                                                                     <LowPowerModeTracker />
+                                                                    <ThemeAnalyticsTracker />
                                                                     <InstallReferrerTracker />
                                                                     <AppleAdsAttributionTracker />
                                                                     <KeychainNamespaceMigration />

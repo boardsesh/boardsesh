@@ -227,6 +227,36 @@ describe('enabled mobile SDK consent lifecycle', () => {
     expect(sdk.registrations).toContainEqual(properties);
     expect(sdk.registrations).toContainEqual({ connectivity: 'online', offline_reason: null });
   });
+  it('restores the launch-scoped super properties after each consent-path reset', async () => {
+    const theme = await import('../analytics-theme');
+    const lowPower = await import('../analytics-low-power-mode');
+    // analytics.ts installs the restore list on load, as the app does at boot.
+    await import('../analytics');
+    const consent = await import('../consent-state');
+    consent.updateConsentState({ loaded: true, settled: true, flagsResolved: true, record: grant, authSettled: false });
+    const posthog = await import('../posthog-client');
+    await posthog.initializePosthogClient();
+    theme.registerThemeProperties({ color_scheme: 'dark', ui_variant: 'material' });
+    lowPower.registerLowPowerMode(true);
+
+    // Granted, but the client is still on a stale account: the identity reset.
+    sdk.registrations.length = 0;
+    consent.updateConsentState({ authSettled: true, accountResolved: true, accountId: 'account-b' });
+    await posthog.applyPosthogConsent();
+    expect(sdk.calls).toContain('reset');
+    expect(sdk.registrations).toContainEqual({ color_scheme: 'dark', ui_variant: 'material' });
+    expect(sdk.registrations).toContainEqual({ low_power_mode: true });
+
+    // Not granted: the withdrawal reset. A later grant without a reset keeps
+    // whatever is registered here, so it must already be back.
+    sdk.registrations.length = 0;
+    sdk.calls.length = 0;
+    consent.updateConsentState({ record: { ...grant, analytics: 'denied' } });
+    await posthog.applyPosthogConsent();
+    expect(sdk.calls).toContain('reset');
+    expect(sdk.registrations).toContainEqual({ color_scheme: 'dark', ui_variant: 'material' });
+    expect(sdk.registrations).toContainEqual({ low_power_mode: true });
+  });
   it('constructs one memory flags client while account authority is unresolved, preserving consented disk identity', async () => {
     const consent = await import('../consent-state');
     consent.updateConsentState({ loaded: true, settled: true, flagsResolved: true, record: grant, authSettled: false });

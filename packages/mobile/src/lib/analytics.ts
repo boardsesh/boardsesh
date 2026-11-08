@@ -6,7 +6,9 @@ import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
 import { reregisterActiveGym } from './analytics-gym';
 import { reregisterLowPowerMode } from './analytics-low-power-mode';
+import { reregisterThemeProperties } from './analytics-theme';
 import { reregisterConnectStepArm } from './analytics-connect-step-arm';
+import { subscribeSuperPropertiesCleared } from './analytics-super-properties-cleared';
 import { isProductAnalyticsGranted } from './consent-state';
 import { notifyAnalyticsIdentityChanged } from './analytics-identity-events';
 import { applyPosthogConsent, subscribePosthogInitialized, clearPosthogQueues } from './posthog-client';
@@ -313,6 +315,19 @@ export function registerRenderSuperProperties(effective: {
   });
 }
 
+/** Puts back the launch-scoped super properties a `client.reset([])` wiped. */
+function reregisterLaunchSuperProperties(client: PostHog): void {
+  reregisterOfflineEngineState(client);
+  reregisterActiveGym(client);
+  reregisterLowPowerMode(client);
+  reregisterThemeProperties(client);
+  reregisterConnectStepArm(client);
+}
+
+// The consent path in posthog-client.ts resets the client too (a withdrawal, or
+// a granted client still on a stale identity); restore the same list there.
+subscribeSuperPropertiesCleared(reregisterLaunchSuperProperties);
+
 // PostHog's reset() clears the distinct id AND every registered super property,
 // but getPostHogClient() caches the singleton, so the registrations it does at
 // construction never run again. Re-register the build-level ones straight after
@@ -361,10 +376,7 @@ export function reset(): boolean {
   if (client) {
     registerAppSuperProperties(client);
     registerConnectivitySuperProperty(client);
-    reregisterOfflineEngineState(client);
-    reregisterActiveGym(client);
-    reregisterLowPowerMode(client);
-    reregisterConnectStepArm(client);
+    reregisterLaunchSuperProperties(client);
   }
   return didReset;
 }

@@ -1,4 +1,5 @@
 import { PostHog, PostHogPersistedProperty, type PostHogOptions } from 'posthog-react-native';
+import { notifySuperPropertiesCleared } from './analytics-super-properties-cleared';
 import { resolveAnalyticsUserAgent } from './analytics-user-agent';
 import { resolveAppEnvironment } from './app-environment';
 import {
@@ -393,6 +394,7 @@ export async function applyPosthogConsent(): Promise<void> {
         clearPosthogQueues(client);
         registerAppSuperProperties(client);
         registerConnectivitySuperProperty(client);
+        notifySuperPropertiesCleared(client);
       }
       await client.optIn();
       await nativePrivacy;
@@ -416,6 +418,7 @@ export async function applyPosthogConsent(): Promise<void> {
       void client.optOut();
       registerAppSuperProperties(client);
       registerConnectivitySuperProperty(client);
+      notifySuperPropertiesCleared(client);
     }
   }
   await storageUpdate;
