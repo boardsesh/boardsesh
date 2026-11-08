@@ -108,7 +108,11 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   const tools = <SprayPointToolbar {...toolbar} />;
   return (
     <>
-      <Text>{t('sprayLedSetup.editLedsHint')}</Text>
+      <Text>
+        {layout.ledPlacement === 'below'
+          ? `${t('sprayLedSetup.editLedsHint')} ${t('sprayLedSetup.editLedsBelowHint')}`
+          : t('sprayLedSetup.editLedsHint')}
+      </Text>
       {tools}
       <SprayPhotoStage
         width={width}
