@@ -14,7 +14,7 @@ import { borderRadius } from '../../theme/tokens';
  * The card owns only the surface: the M3 `surfaceContainer` tone at level-2
  * elevation, stepping to the violet tonal wash and level 3 while this phone
  * drives the wall, as the active tab pill does. `PersistentQueueBar` positions
- * it (8dp from each edge, 8dp above the measured tab bar) and decides when it
+ * it (8dp from each edge, straight on the measured tab bar) and decides when it
  * shows. It is never collapsed, so the row always gets the `regular` placement.
  */
 export function FloatingMiniPlayerCard() {

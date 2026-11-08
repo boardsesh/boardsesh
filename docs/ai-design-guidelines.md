@@ -81,7 +81,7 @@ older iPhone is the variant with the chrome degraded, not Material.
     Material, Android and the JS tablet shell keep the JS `Tabs` + `MaterialTabBar` / rail.
   - **Android phones hide the bar on scroll** (M3 hide-on-scroll, the counterpart of iOS 26's
     minimize). On a top-level tab root the bar is drawn over the content, and scrolling down 24dp
-    slides it off screen while the MiniPlayer card drops to 8dp above the gesture inset with all its
+    slides it off screen while the MiniPlayer card drops onto the gesture inset with all its
     controls. Scrolling up 24dp, reaching the top, switching tabs or changing route brings it back.
     It never hides on pushed sub-routes (the bar sits in flow there), on tablets, on filter boards,
     with the keyboard open or with TalkBack or another accessibility service on. Reduce Motion
@@ -89,10 +89,12 @@ older iPhone is the variant with the chrome degraded, not Material.
     create button, the Start button, snackbars and toasts move with it on one shared value
     (`tabBarHiddenProgress`, `TabBarHideFollower`); `bottom` never animates. The bottom-chrome
     metrics describe the shown bar, as on iOS. Kill switch: `tab-bar-hide-on-scroll-kill`.
-  - **Translucent where it overlays** (Spotify's bar): on those tab roots its background is an
-    `m3.surface` gradient from clear at the top edge to 92% under the labels, with no blur, no top
-    hairline and no shadow; icons and labels keep full contrast. The in-flow bar on sub-routes stays
-    opaque, and the MiniPlayer card is always opaque.
+  - **Fades in where it overlays** (Spotify's bar): on those tab roots the bar is 85% `m3.surface`
+    behind the icons, labels and gesture inset (`OVERLAY_SURFACE_ALPHA`), so content is faint there
+    and never legible. A 24dp fade above its top edge runs from clear to that same fill, so content dissolves into the
+    bar; it takes no touches and slides away with the bar. No blur, no top hairline, no shadow. The
+    in-flow bar on sub-routes stays opaque, and the MiniPlayer card is always opaque and draws over
+    the fade.
   - `liquidGlassTabBar`: the iOS 26 extras on that bar, also gated on `useGlassCapability()` —
     minimize-on-scroll. Climbs stays an ordinary labelled tab, the rightmost one, like Apple
     Music's Search tab, not a separated `role="search"` tab. On an iOS 27 iPhone it is the
@@ -232,8 +234,8 @@ Material tonal surfaces (`materialSurfaces`) are the same shape with M3-specific
 (`background` `#F3EFFA` light / `#15101E` dark, `secondaryBackground` `#FFFFFF` / `#221A33`, etc.).
 The neutrals are tinted toward the brand violet so Material reads as the same product as Liquid Glass
 — the Material feel comes from elevation, ripple and the nav pill, not from a different palette. The
-Android phone nav bar is the one translucent Material surface: over a tab root it fades from clear to
-92% `m3.surface` so it can hide on scroll (see `useTabChrome()` above).
+Android phone nav bar overlays its tab roots so it can hide on scroll: it is 85% `m3.surface`
+with a 24dp fade above its top edge (see `useTabChrome()` above).
 
 When the Material variant is active, `theme.m3` also exposes the full MD3 colour-role palette
 (`primaryContainer`, `onSurfaceVariant`, `outlineVariant`, the `elevation.level0–5` ladder) for app
@@ -438,8 +440,8 @@ On an Android phone's tab root it overlays the content and hides on scroll; else
 66 (bottom padding screens reserve so the last row clears the toolbar). Material floats the MiniPlayer
 card instead (`FloatingMiniPlayerCard`): the iPhone accessory's row (art, name, the climber's buttons,
 Board light, Log) on an opaque `surfaceContainer` card with a 12dp corner and level-2 elevation,
-`MATERIAL_MINI_PLAYER_CARD_INSET` 8 from each edge, `MATERIAL_MINI_PLAYER_CARD_GAP` 8 above the measured
-tab bar, `MATERIAL_MINI_PLAYER_CARD_HEIGHT` 48 (the platter's height, so it holds the same controls).
+`MATERIAL_MINI_PLAYER_CARD_INSET` 8 from each edge, `MATERIAL_MINI_PLAYER_CARD_GAP` 0 so it sits
+straight on the measured tab bar (and on the gesture inset while the bar hides), `MATERIAL_MINI_PLAYER_CARD_HEIGHT` 48 (the platter's height, so it holds the same controls).
 
 **Sheet chrome** resolves per variant via `theme.sheet` (`sheetChromeByVariant`), so `Sheet`,
 `ModalSheet` and `PlayDrawer` never drift:

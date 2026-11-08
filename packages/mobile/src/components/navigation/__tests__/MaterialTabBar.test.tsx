@@ -64,8 +64,13 @@ vi.mock('react-native-reanimated', async () => {
 });
 
 vi.mock('expo-linear-gradient', () => ({
-  LinearGradient: ({ colors }: { colors: string[] }) =>
-    createElement('div', { 'data-testid': 'scrim', 'data-colors': JSON.stringify(colors) }),
+  LinearGradient: ({ colors, pointerEvents, style }: { colors: string[]; pointerEvents?: string; style?: unknown }) =>
+    createElement('div', {
+      'data-testid': 'fade',
+      'data-colors': JSON.stringify(colors),
+      'data-pointer-events': pointerEvents,
+      'data-style': JSON.stringify(style),
+    }),
 }));
 
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
@@ -457,20 +462,31 @@ describe('MaterialTabBar', () => {
 
     it('stays an opaque in-flow bar when it does not overlay content', () => {
       const { container, queryByTestId } = renderBar();
-      expect(queryByTestId('scrim')).toBeNull();
+      expect(queryByTestId('fade')).toBeNull();
       const style = barOf(container).getAttribute('data-style') ?? '';
       expect(style).toContain('"backgroundColor":"#2C2C2E"');
       expect(style).not.toContain('"position":"absolute"');
     });
 
-    it('draws over the tab root with a surface scrim, no hairline and no fill', () => {
+    it('draws over the tab root on a mostly opaque surface, no hairline, no elevated fill', () => {
       ctrl.overlay = true;
-      const { container, getByTestId } = renderBar();
-      expect(getByTestId('scrim').getAttribute('data-colors')).toBe(JSON.stringify(['#141218@0', '#141218@0.92']));
+      const { container } = renderBar();
       const style = barOf(container).getAttribute('data-style') ?? '';
       expect(style).toContain('"position":"absolute"');
       expect(style).toContain('"borderTopWidth":0');
+      expect(style).toContain('"backgroundColor":"#141218@0.85"');
       expect(style).not.toContain('#2C2C2E');
+    });
+
+    it('fades 24dp above its top edge into the surface, without taking touches', () => {
+      ctrl.overlay = true;
+      const { getByTestId } = renderBar();
+      const fade = getByTestId('fade');
+      expect(fade.getAttribute('data-colors')).toBe(JSON.stringify(['#141218@0', '#141218@0.85']));
+      expect(fade.getAttribute('data-pointer-events')).toBe('none');
+      const fadeStyle = fade.getAttribute('data-style') ?? '';
+      expect(fadeStyle).toContain('"top":-24');
+      expect(fadeStyle).toContain('"height":24');
     });
 
     it('takes a hidden bar out of touch and the TalkBack order', () => {

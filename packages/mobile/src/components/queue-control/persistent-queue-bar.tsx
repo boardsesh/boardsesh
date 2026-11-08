@@ -12,7 +12,7 @@
  *
  *   Material                 ╭ ▢ name · byline   ⏭  💡  ✓ ╮
  *     the MiniPlayer card (`FloatingMiniPlayerCard`): the iOS accessory's row
- *     on a rounded M3 card, 8dp in from each edge and 8dp above the tab bar
+ *     on a rounded M3 card, 8dp in from each edge, sitting straight on the tab bar
  *
  * On the Liquid Glass variant on iOS 26 the native bottom accessory owns this
  * pair (iPhone and iPad), so `useCurrentClimbSurface` answers `nativeAccessory`
@@ -72,7 +72,7 @@ export function PersistentQueueBar() {
     // The card logs and lights from its own row, so it needs neither the tick
     // nor the return-to-session button the glass capsule floats beside it. On an
     // Android phone it follows the nav bar down when the bar hides on scroll,
-    // landing 8dp above the gesture inset with every control still there.
+    // landing straight on the gesture inset with every control still there.
     return (
       <TabBarHideFollower>
         <ActiveContextBar
@@ -92,15 +92,21 @@ export function PersistentQueueBar() {
   const onRecordTab = tabsActiveSegment(segments) === 'record';
   const showReturnToSession = sessionId !== null && !onRecordTab;
 
+  // The capsule follows the nav bar too: an Android phone with the Liquid Glass
+  // preference still gets the Material bar, which still hides on scroll, and the
+  // rest pill above the capsule moves with it. Wrapping both branches keeps every
+  // floating control in step (on iOS and the web the follower is a passthrough).
   return (
-    <ActiveContextBar
-      primary={
-        <ClimbCapsule
-          endAction={showReturnToSession ? <ReturnToSessionButton /> : undefined}
-          endActionSize={showReturnToSession ? glassSize.inline : undefined}
-        />
-      }
-      trailing={<LogAscentFab climb={currentClimb} isMirror={pickMirrored} />}
-    />
+    <TabBarHideFollower>
+      <ActiveContextBar
+        primary={
+          <ClimbCapsule
+            endAction={showReturnToSession ? <ReturnToSessionButton /> : undefined}
+            endActionSize={showReturnToSession ? glassSize.inline : undefined}
+          />
+        }
+        trailing={<LogAscentFab climb={currentClimb} isMirror={pickMirrored} />}
+      />
+    </TabBarHideFollower>
   );
 }

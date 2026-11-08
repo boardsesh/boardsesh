@@ -196,7 +196,7 @@ export type BottomChromeInputs = {
   /**
    * The Android phone nav bar with hide-on-scroll on (`resolveHideOnScrollTabBar`:
    * Android, not a tablet, flag on). On a tab root that bar is drawn over the
-   * content, translucent, so it can slide away; everywhere else it stays in flow.
+   * content (opaque, with a fade above it) so it can slide away; everywhere else it stays in flow.
    * Platform-keyed, not variant-keyed: an Android dev or screenshot build on
    * Liquid Glass draws the same JS bar.
    */

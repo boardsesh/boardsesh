@@ -528,9 +528,9 @@ export function useConnectivityBannerEnabled(): boolean {
 }
 
 /**
- * Kill switch for the Android phone nav bar's hide-on-scroll (and the translucent
- * bar it overlays tab roots with). Unresolved reads as enabled; switched on, the
- * bar goes back to sitting opaque below every screen.
+ * Kill switch for the Android phone nav bar's hide-on-scroll (and the overlay
+ * bar it draws over tab roots). Unresolved reads as enabled; switched on, the
+ * bar goes back to sitting in flow below every screen.
  */
 export function useTabBarHideOnScrollEnabled(): boolean {
   return useFeatureFlag('tab-bar-hide-on-scroll-kill') !== true;

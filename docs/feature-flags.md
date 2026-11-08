@@ -216,7 +216,7 @@ diagnostic) applies on native. The whole surface lives in three files:
   it.
   `tab-bar-hide-on-scroll-kill` is a kill switch (read through
   `useTabBarHideOnScrollEnabled`, unresolved = enabled) for the Android phone
-  nav bar's hide-on-scroll and the translucent overlay bar it needs. On, the bar
+  nav bar's hide-on-scroll and the overlay bar it needs. On, the bar
   sits opaque below every screen and never moves, as before; it is also the QA
   switch for comparing the two.
   Three more kill switches cover the launch surfaces #5654 woke up. From 2.2.0

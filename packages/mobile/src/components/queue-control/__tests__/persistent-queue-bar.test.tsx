@@ -89,8 +89,8 @@ vi.mock('../../../providers/queue-provider', () => ({
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
 vi.mock('../../../theme/layout', () => ({
-  MATERIAL_MINI_PLAYER_CARD_GAP: 8,
-  MATERIAL_MINI_PLAYER_CARD_RESERVE: 56,
+  MATERIAL_MINI_PLAYER_CARD_GAP: 0,
+  MATERIAL_MINI_PLAYER_CARD_RESERVE: 48,
   MATERIAL_TAB_BAR_HEIGHT: 64,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT: 56,
   TAB_BAR_HEIGHT: 49,
@@ -147,6 +147,13 @@ vi.mock('../LogAscentFab', () => ({
 }));
 vi.mock('../ReturnToSessionButton', () => ({
   ReturnToSessionButton: () => createElement('div', { 'data-return-to-session': 'true' }),
+}));
+
+// Marks what follows the hiding Android nav bar, so a test can tell a wrapped
+// control from one left behind.
+vi.mock('../../navigation/TabBarHideFollower', () => ({
+  TabBarHideFollower: ({ children }: { children?: ReactNode }) =>
+    createElement('div', { 'data-follower': 'true' }, children),
 }));
 
 import { PersistentQueueBar } from '../persistent-queue-bar';
@@ -316,13 +323,13 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
-  it('floats the Material card one 8dp gap above the measured tab-bar top', () => {
-    // Measured tab bar = 64px tall → the card sits at 64 + MATERIAL_MINI_PLAYER_CARD_GAP(8).
+  it('sits the Material card straight on the measured tab-bar top, no gap', () => {
+    // Measured tab bar = 64px tall → the card sits at 64 + MATERIAL_MINI_PLAYER_CARD_GAP(0).
     cfg.variant = 'material';
     cfg.measuredTabBarHeight = 64;
     const { container } = renderBar();
     expect(container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style')).toContain(
-      '"bottom":72',
+      '"bottom":64',
     );
   });
 
@@ -405,6 +412,23 @@ describe('PersistentQueueBar', () => {
       const { container } = renderBar();
       expect(container.querySelector('[data-mini-player-card]')).not.toBeNull();
       expect(container.querySelector('[data-return-to-session]')).toBeNull();
+    });
+  });
+
+  describe('follows the hiding Android nav bar', () => {
+    it('moves the Material card with the bar', () => {
+      cfg.variant = 'material';
+      const { container } = renderBar();
+      expect(container.querySelector('[data-follower] [data-mini-player-card]')).not.toBeNull();
+    });
+
+    it('moves the glass capsule and tick with the bar, so the rest pill above never lands on them', () => {
+      // An Android phone with the Liquid Glass preference still gets the
+      // Material bar and hide-on-scroll; the rest pill follows it, so must this.
+      cfg.variant = 'liquidGlass';
+      const { container } = renderBar();
+      expect(container.querySelector('[data-follower] [data-capsule]')).not.toBeNull();
+      expect(container.querySelector('[data-follower] [data-tick]')).not.toBeNull();
     });
   });
 });

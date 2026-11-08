@@ -48,9 +48,11 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
 
   // On an Android phone's tab root the bar is drawn over the screen so it can
   // slide away on scroll (the metrics decide, so the reserves always agree).
-  // There it is translucent, Spotify-style: a surface gradient from clear at
-  // the top to 92% at the bottom, no hairline, no shadow; icons and labels keep
-  // full contrast. Everywhere else it sits in flow, opaque, as before.
+  // There it reads like Spotify's bar: a mostly opaque m3.surface fill behind
+  // the icons and labels (content is faint there, never legible), no hairline, no
+  // shadow, and a 24dp fade above its top edge so the list dissolves into the
+  // bar instead of running under its labels. Everywhere else it sits in flow,
+  // opaque, as before.
   const { jsBarOverlaysContent: overlay } = useBottomChromeMetrics();
   const hidden = useTabBarHidden() && overlay;
   const barHeight = MATERIAL_TAB_BAR_HEIGHT + insets.bottom;
@@ -67,7 +69,7 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
       style={[
         styles.bar,
         overlay
-          ? styles.overlayBar
+          ? [styles.overlayBar, { backgroundColor: withAlpha(m3.surface, OVERLAY_SURFACE_ALPHA) }]
           : {
               backgroundColor: systemColors.elevatedSurface,
               borderTopColor: systemColors.separator,
@@ -77,11 +79,12 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
       ]}
     >
       {overlay ? (
+        // A child of the bar, so it slides away with it; it never takes a touch.
         <LinearGradient
+          testID="tab-bar-fade"
           pointerEvents="none"
-          colors={[withAlpha(m3.surface, 0), withAlpha(m3.surface, OVERLAY_SCRIM_ALPHA)]}
-          locations={OVERLAY_SCRIM_LOCATIONS}
-          style={StyleSheet.absoluteFill}
+          colors={[withAlpha(m3.surface, 0), withAlpha(m3.surface, OVERLAY_SURFACE_ALPHA)]}
+          style={styles.overlayFade}
         />
       ) : null}
       {state.routes.map((route, index) => {
@@ -164,10 +167,12 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
   );
 }
 
-// The overlay bar's scrim: clear at the top edge, 92% surface from just above
-// the labels down through the gesture inset, so the labels always read.
-const OVERLAY_SCRIM_ALPHA = 0.92;
-const OVERLAY_SCRIM_LOCATIONS = [0, 0.35] as const;
+// How opaque the overlay bar's surface is: content stays faintly visible behind
+// the icons and labels but never legible. Tune here; the fade above ends on it.
+const OVERLAY_SURFACE_ALPHA = 0.85;
+// The soft edge above the overlay bar: clear at the top, the bar's own fill
+// where it meets the bar, so content fades out before it reaches the labels.
+const OVERLAY_FADE_HEIGHT = 24;
 
 const styles = StyleSheet.create({
   bar: {
@@ -179,15 +184,22 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  // Drawn over the tab root: absolute, clear, flat. The gradient paints it.
+  // Drawn over the tab root: absolute, flat, a mostly opaque surface (set inline).
   overlayBar: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'transparent',
     borderTopWidth: 0,
     elevation: 0,
+  },
+  // Hangs above the bar's top edge; the bar does not clip it.
+  overlayFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -OVERLAY_FADE_HEIGHT,
+    height: OVERLAY_FADE_HEIGHT,
   },
   item: {
     flex: 1,
