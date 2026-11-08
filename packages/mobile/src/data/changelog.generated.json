@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-07T18:42:56.476Z",
+  "generatedAt": "2026-11-08T07:10:38.542Z",
   "entries": [
+    {
+      "prNumber": 7328,
+      "category": "new",
+      "title": "On Android, the tab bar tucks away while you scroll climbs, so you see more of the list. Scroll up to get it back.",
+      "mergedAt": "2026-11-08T07:06:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7328"
+    },
     {
       "prNumber": 7314,
       "category": "fixed",
