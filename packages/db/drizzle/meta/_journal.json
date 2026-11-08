@@ -2031,6 +2031,13 @@
       "when": 1793712417163,
       "tag": "0289_board_lit_by_wall_device",
       "breakpoints": true
+    },
+    {
+      "idx": 290,
+      "version": "7",
+      "when": 1794162086974,
+      "tag": "0290_posthog_daily_signups",
+      "breakpoints": true
     }
   ]
 }
