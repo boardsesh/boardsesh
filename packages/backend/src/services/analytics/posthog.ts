@@ -22,6 +22,8 @@ export type BackendAnalyticsEvent =
   // The daily first-party DAU/WAU/MAU counts from user_activity_days. Counts
   // only, on one fixed system id. See docs/analytics-consent.md.
   | 'Active Users Snapshot'
+  // Versioned historical action-proxy counts; never substitute for request MAU.
+  | 'Historical Active Users Snapshot'
   // Once-a-minute per-replica count of GraphQL operations per client app
   // (services/client-usage.ts). One event per (client, version, transport).
   | 'Client Usage Summary'
