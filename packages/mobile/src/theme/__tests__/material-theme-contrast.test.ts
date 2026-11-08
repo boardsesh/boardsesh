@@ -232,9 +232,9 @@ describe.each(SCHEMES)('Graphite Material theme (%s)', (scheme) => {
       surfaceDim: toComposeRgbaHex(scheme === 'dark' ? surfaces.background : containers.highest),
       surfaceBright: toComposeRgbaHex(scheme === 'dark' ? containers.highest : surfaces.secondaryBackground),
       surfaceContainerLowest: toComposeRgbaHex(containers.lowest),
-      surfaceContainerLow: toComposeRgbaHex(containers.low),
-      surfaceContainer: toComposeRgbaHex(containers.base),
-      surfaceContainerHigh: toComposeRgbaHex(containers.high),
+      surfaceContainerLow: toComposeRgbaHex(scheme === 'dark' ? surfaces.secondaryBackground : containers.low),
+      surfaceContainer: toComposeRgbaHex(scheme === 'dark' ? containers.high : containers.base),
+      surfaceContainerHigh: toComposeRgbaHex(scheme === 'dark' ? containers.level4 : containers.high),
       surfaceContainerHighest: toComposeRgbaHex(containers.highest),
       surfaceVariant: toComposeRgbaHex(m3.surfaceVariant),
       onSurface: toComposeRgbaHex(surfaces.label),
@@ -247,6 +247,17 @@ describe.each(SCHEMES)('Graphite Material theme (%s)', (scheme) => {
     // And every role converted, none fell back to the seeded (lilac) palette.
     expect(Object.values(overrides).every((color) => typeof color === 'string')).toBe(true);
     expect(Object.keys(overrides)).toHaveLength(16);
+  });
+
+  it('floats Compose menus and dialogs on a container that reads against the card', () => {
+    const overrides = composeSurfaceColorOverrides(m3, containers, scheme);
+    const card = surfaces.secondaryBackground;
+    const menu = scheme === 'dark' ? containers.high : containers.base;
+    expect(overrides.surfaceContainer).toBe(toComposeRgbaHex(menu));
+    // Dark lifts above the card (M3's dark direction); light sinks below white.
+    if (scheme === 'dark')
+      expect(relativeLuminance(parseColor(menu))).toBeGreaterThan(relativeLuminance(parseColor(card)));
+    else expect(relativeLuminance(parseColor(menu))).toBeLessThan(relativeLuminance(parseColor(card)));
   });
 });
 

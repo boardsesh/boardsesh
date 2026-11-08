@@ -60,6 +60,7 @@ vi.mock('expo-glass-effect', () => ({
 }));
 
 import { ThemeProvider, useTheme } from '../theme-provider';
+import { useNeutralRippleInk } from '../../theme/neutral-ripple-context';
 import { THEME_OVERRIDE_KEY, UI_VARIANT_KEY } from '@boardsesh/key-value-storage';
 
 const wrapper = ({ children }: { children: ReactNode }) => <ThemeProvider>{children}</ThemeProvider>;
@@ -256,6 +257,20 @@ describe('ThemeProvider', () => {
       // Liquid Glass off iOS keeps its violet tertiary fill.
       expect(result.current.systemColors.tertiaryFill).toBe('rgba(109, 40, 217, 0.06)');
       expect(setMock).toHaveBeenCalledWith(UI_VARIANT_KEY, 'liquidGlass');
+    });
+
+    it('gives Material pressables a neutral onSurface ripple and Liquid Glass none', async () => {
+      const { result } = renderHook(() => ({ theme: useTheme(), rippleInk: useNeutralRippleInk() }), { wrapper });
+      await waitFor(() => expect(getMock).toHaveBeenCalledWith(UI_VARIANT_KEY));
+      expect(result.current.theme.variant).toBe('material');
+      expect(result.current.rippleInk).toBe(result.current.theme.m3.onSurface);
+
+      await act(async () => {
+        await result.current.theme.setUiVariant('liquidGlass');
+      });
+
+      // null keeps PressableSurface's brand-tint ripple on Liquid Glass.
+      expect(result.current.rippleInk).toBeNull();
     });
 
     it('hydrates a stored variant preference on mount', async () => {

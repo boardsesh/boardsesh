@@ -108,6 +108,7 @@ export type MaterialContainerTones = {
   low: string;
   base: string;
   high: string;
+  level4: string;
   highest: string;
 };
 
@@ -177,7 +178,8 @@ export function toComposeRgbaHex(color: string): ComposeRgbaHex | null {
  * Compose menus, dialogs and text fields would sit violet on our grey Graphite
  * screens. These overrides pin them to the same ladder the RN surfaces use.
  *
- * `surfaceTint` is the surface itself, so Compose's tonal elevation (which lays
+ * In dark the container roles step up from the card (see the inline note);
+ * in light they follow the RN ladder. `surfaceTint` is the surface itself, so Compose's tonal elevation (which lays
  * `surfaceTint` over `surface`) adds no colour. `surfaceDim` / `surfaceBright`
  * are the darker and lighter ends of the ladder for the scheme. A role whose
  * theme value is not a hex or `rgba()` string is left out, so it keeps its
@@ -196,9 +198,14 @@ export function composeSurfaceColorOverrides(
     surfaceDim: isDark ? m3.background : containers.highest,
     surfaceBright: isDark ? containers.highest : m3.surface,
     surfaceContainerLowest: containers.lowest,
-    surfaceContainerLow: containers.low,
-    surfaceContainer: containers.base,
-    surfaceContainerHigh: containers.high,
+    // Dark: Compose floats menus on `surfaceContainer` and dialogs on
+    // `surfaceContainerHigh` over our cards (`surface`, #1E1E1E), so those roles
+    // step UP from the card as M3's dark baseline does. Mapped straight onto the
+    // RN ladder they sat below it (a #1A1A1A menu on a #1E1E1E card, 1.04:1).
+    // Light keeps the RN ladder: containers darken below the white card there.
+    surfaceContainerLow: isDark ? m3.surface : containers.low,
+    surfaceContainer: isDark ? containers.high : containers.base,
+    surfaceContainerHigh: isDark ? containers.level4 : containers.high,
     surfaceContainerHighest: containers.highest,
     surfaceVariant: m3.surfaceVariant,
     onSurface: m3.onSurface,

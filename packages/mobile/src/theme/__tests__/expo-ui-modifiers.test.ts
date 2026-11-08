@@ -140,7 +140,14 @@ describe('composeSurfaceColorOverrides', () => {
     outline: '#7A7A7A',
     outlineVariant: 'rgba(0, 0, 0, 0.12)',
   };
-  const LIGHT_CONTAINERS = { lowest: '#EEEEEE', low: '#EAEAEA', base: '#E4E4E4', high: '#DFDFDF', highest: '#D9D9D9' };
+  const LIGHT_CONTAINERS = {
+    lowest: '#EEEEEE',
+    low: '#EAEAEA',
+    base: '#E4E4E4',
+    high: '#DFDFDF',
+    level4: '#DCDCDC',
+    highest: '#D9D9D9',
+  };
 
   it('maps the light ladder: dim is the darkest container, bright the white card', () => {
     expect(composeSurfaceColorOverrides(LIGHT_SURFACES, LIGHT_CONTAINERS, 'light')).toEqual({
@@ -161,6 +168,29 @@ describe('composeSurfaceColorOverrides', () => {
       outlineVariant: '#0000001F',
       surfaceTint: '#FFFFFFFF',
     });
+  });
+
+  it('lifts the dark menu and dialog containers above the card', () => {
+    const darkSurfaces = {
+      ...LIGHT_SURFACES,
+      background: '#0E0E0E',
+      surface: '#1E1E1E',
+      onSurface: '#EDEDED',
+      onBackground: '#EDEDED',
+    };
+    const darkContainers = {
+      lowest: '#121212',
+      low: '#161616',
+      base: '#1A1A1A',
+      high: '#262626',
+      level4: '#2A2A2A',
+      highest: '#2E2E2E',
+    };
+    const overrides = composeSurfaceColorOverrides(darkSurfaces, darkContainers, 'dark');
+    expect(overrides.surfaceContainerLow).toBe('#1E1E1EFF');
+    expect(overrides.surfaceContainer).toBe('#262626FF');
+    expect(overrides.surfaceContainerHigh).toBe('#2A2A2AFF');
+    expect(overrides.surfaceContainerHighest).toBe('#2E2E2EFF');
   });
 
   it('leaves out a role whose theme value it cannot convert', () => {
