@@ -192,7 +192,7 @@ type Theme = {
    */
   heatRamp: HeatRamp;
   /**
-   * Opaque ground for form sheets (`surface="solid"`). MUST be a plain string —
+   * Opaque ground every Android and web sheet paints (`useSheetBackgroundStyle`). MUST be a plain string —
    * @expo/ui reads `backgroundStyle.backgroundColor` with `typeof === 'string'`
    * and silently drops a PlatformColor, handing you glass back with no error.
    */

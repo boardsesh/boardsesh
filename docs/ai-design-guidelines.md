@@ -512,11 +512,13 @@ straight on the measured tab bar (and on the gesture inset while the bar hides),
 | Top corners   | soft (glass background) | 28dp             |
 
 **Sheet backgrounds.** On iOS with the Apple variant, let the native sheet presentation
-draw its background, including when a caller requests `surface="solid"`. iOS 26 uses
+draw its background. iOS 26 uses
 the system glass material; earlier iOS versions use the system sheet appearance.
 Material 3 on iOS uses the opaque `theme.sheetSurface` tonal colour, and Reduce
-Transparency uses that opaque surface regardless of variant. Android and web keep
-their existing sheet backgrounds. A form or list may still paint a semantic content
+Transparency uses that opaque surface regardless of variant. Android and web always
+paint an opaque colour, `theme.sheetSurface` unless a sheet picks another theme
+surface (`LogbookEntryChooserSheet` uses `systemColors.background`), so a sheet never
+picks up the phone wallpaper's Material You colours. A form or list may still paint a semantic content
 surface inside the sheet for legibility; do not use that content surface to replace
 the presentation background. The same split applies to `modal` page routes: keep
 the system presentation and paint only content that needs an opaque ground.

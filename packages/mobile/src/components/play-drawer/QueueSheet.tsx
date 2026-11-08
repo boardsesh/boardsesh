@@ -11,7 +11,7 @@ import { useQueueData } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
 import { sanitizeQueueSnapshot } from '../../lib/queue-privacy';
-import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
+import { useSheetBackgroundStyle } from '../use-sheet-background-style';
 import { useLogAscentSheetHost } from '../tick/use-log-ascent-sheet-host';
 import type { QueueHistoryTickHandler } from './use-queue-sheet-handlers';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
@@ -52,7 +52,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   ref,
 ) {
   const { sheet } = useTheme();
-  const iosBackgroundStyle = useIosSheetBackgroundStyle();
+  const sheetBackgroundStyle = useSheetBackgroundStyle();
   const sheetRef = useRef<BottomSheetModal>(null);
   const bodyRef = useRef<QueueListBodyHandle>(null);
   const resetTickRef = useRef<() => void>(() => {});
@@ -211,7 +211,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
       onChange={handleSheetChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={sheet.handleStyle}
-      backgroundStyle={iosBackgroundStyle}
+      backgroundStyle={sheetBackgroundStyle}
       style={styles.sheet}
     >
       {Platform.OS === 'android' ? (

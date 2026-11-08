@@ -50,12 +50,15 @@ describe('useIosSheetBackgroundStyle', () => {
     expect(typeof result.current?.backgroundColor).toBe('string');
   });
 
-  it.each(['android', 'web'])('leaves %s background behavior to its existing sheet path', (platform) => {
-    state.platform = platform;
-    state.surfaceMode = 'material';
+  it.each(['android', 'web'])(
+    'returns nothing on %s, where useSheetBackgroundStyle paints the sheet surface',
+    (platform) => {
+      state.platform = platform;
+      state.surfaceMode = 'material';
 
-    const { result } = renderHook(() => useIosSheetBackgroundStyle());
+      const { result } = renderHook(() => useIosSheetBackgroundStyle());
 
-    expect(result.current).toBeUndefined();
-  });
+      expect(result.current).toBeUndefined();
+    },
+  );
 });

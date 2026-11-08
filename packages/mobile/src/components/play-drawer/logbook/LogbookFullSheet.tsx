@@ -92,7 +92,6 @@ export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angl
     <ModalSheet
       visible={visible && climbUuid !== null}
       snapPoints={SNAP_POINTS}
-      surface="solid"
       onClose={onClose}
       header={
         <View style={[styles.header, { borderBottomColor: systemColors.separator }]}>

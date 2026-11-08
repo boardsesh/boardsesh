@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 //
-// Both wrappers share the iOS sheet background rule. A caller's `surface`
-// preference cannot override the native Apple presentation; Material and
-// Reduce Transparency use an opaque plain-string colour. The resolver's mode
-// selection is tested separately in use-ios-sheet-background-style.test.tsx.
+// Both wrappers share one sheet background rule (useSheetBackgroundStyle). On
+// iOS the native Apple presentation shows unless Material or Reduce
+// Transparency picks an opaque plain-string colour. On Android and web every
+// sheet paints the opaque `sheetSurface`: an unset colour lets Android's
+// Compose sheet fall back to the phone wallpaper's colours. The iOS resolver's mode selection is
+// tested separately in use-ios-sheet-background-style.test.tsx.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, forwardRef, type ComponentType, type ReactNode, type Ref } from 'react';
 
-// What the wrappers hand the native sheet: the background style (the `surface`
-// decision), the chrome column's style (the #3330 detent bound), the
+// What the wrappers hand the native sheet: the background style, the chrome column's style (the #3330 detent bound), the
 // scroll body's style, and every plain View style (the footer bar is found
 // among them by its hairline top border).
 const captures = vi.hoisted(() => ({
@@ -20,6 +21,8 @@ const captures = vi.hoisted(() => ({
   viewStyles: [] as unknown[],
 }));
 const iosBackground = vi.hoisted(() => ({ style: undefined as { backgroundColor: string } | undefined }));
+// Read on every render, so a test can switch platform after the imports.
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' | 'web' }));
 
 type SheetMockProps = { children?: ReactNode; backgroundStyle?: unknown };
 type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
@@ -54,9 +57,11 @@ vi.mock('react-native', () => ({
   // numeric detent bound, which is the thing the header test checks lands on a
   // single in-flow child.
   Platform: {
-    OS: 'ios',
+    get OS() {
+      return platform.OS;
+    },
     Version: '26.1',
-    select: (options: { ios?: unknown; android?: unknown }) => options.ios,
+    select: (options: Record<string, unknown>) => options[platform.OS] ?? options.default,
   },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
@@ -139,7 +144,6 @@ const theme = makeThemeMock();
 // vs ManagedSheetHandle), which is irrelevant here — none of these tests take a ref.
 type SheetLikeProps = {
   children?: ReactNode;
-  surface?: 'glass' | 'solid';
   footerSurface?: 'plate' | 'flush';
   footer?: ReactNode;
   header?: ReactNode;
@@ -159,6 +163,7 @@ function footerBarStyle(): Record<string, unknown> {
 }
 
 beforeEach(() => {
+  platform.OS = 'ios';
   iosBackground.style = undefined;
   captures.backgroundStyle = undefined;
   captures.columnRendered = false;
@@ -168,17 +173,7 @@ beforeEach(() => {
 });
 
 describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
-  describe('surface', () => {
-    it('leaves the native Apple background untouched when solid is requested', () => {
-      render(
-        <SheetLike surface="solid">
-          <div>body</div>
-        </SheetLike>,
-      );
-
-      expect(captures.backgroundStyle).toBeUndefined();
-    });
-
+  describe('background', () => {
     it('leaves the native Apple background untouched by default', () => {
       render(
         <SheetLike>
@@ -189,23 +184,13 @@ describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
       expect(captures.backgroundStyle).toBeUndefined();
     });
 
-    it('leaves the native Apple background untouched when explicitly glass', () => {
-      render(
-        <SheetLike surface="glass">
-          <div>body</div>
-        </SheetLike>,
-      );
-
-      expect(captures.backgroundStyle).toBeUndefined();
-    });
-
-    it.each(['glass', 'solid'] as const)('uses an opaque plain-string iOS override for %s', (surface) => {
+    it('uses an opaque plain-string iOS override', () => {
       // The real resolver selects this override for Material or Reduce
       // Transparency. @expo/ui silently ignores non-string colours.
       iosBackground.style = { backgroundColor: theme.sheetSurface };
 
       render(
-        <SheetLike surface={surface}>
+        <SheetLike>
           <div>body</div>
         </SheetLike>,
       );
@@ -213,6 +198,38 @@ describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
       const background = flattenStyle(captures.backgroundStyle);
       expect(background.backgroundColor).toBe(theme.sheetSurface);
       expect(typeof background.backgroundColor).toBe('string');
+    });
+
+    describe.each(['android', 'web'] as const)('on %s', (os) => {
+      beforeEach(() => {
+        platform.OS = os;
+      });
+
+      it('paints the opaque sheet surface', () => {
+        // Left unset, @expo/ui's Android sheet hands Compose no container
+        // colour and the sheet takes the phone wallpaper's colours.
+        render(
+          <SheetLike>
+            <div>body</div>
+          </SheetLike>,
+        );
+
+        const background = flattenStyle(captures.backgroundStyle);
+        expect(background.backgroundColor).toBe(theme.sheetSurface);
+        expect(typeof background.backgroundColor).toBe('string');
+      });
+
+      it('ignores the iOS-only override', () => {
+        iosBackground.style = { backgroundColor: '#123456' };
+
+        render(
+          <SheetLike>
+            <div>body</div>
+          </SheetLike>,
+        );
+
+        expect(flattenStyle(captures.backgroundStyle).backgroundColor).toBe(theme.sheetSurface);
+      });
     });
   });
 
@@ -231,10 +248,10 @@ describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
     });
 
     it('goes transparent when flush, keeping the hairline top border', () => {
-      // Flush footers sit on a `surface="solid"` sheet: the plate would read as
-      // a second ground, but the seam still needs its hairline.
+      // Flush footers sit on an opaque sheet: the plate would read as a second
+      // ground, but the seam still needs its hairline.
       render(
-        <SheetLike surface="solid" footerSurface="flush" footer={<div>save</div>}>
+        <SheetLike footerSurface="flush" footer={<div>save</div>}>
           <div>body</div>
         </SheetLike>,
       );

@@ -216,7 +216,6 @@ export function ReportClimbSheet({
       visible={visible && !!climb}
       snapPoints={SNAP_POINTS}
       scrollable
-      surface="solid"
       androidContentSized
       onDisplaced={onClose}
       onClose={guard.requestClose}

@@ -574,7 +574,6 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
     <ModalSheet
       visible={visible && climb !== null}
       snapPoints={SNAP_POINTS}
-      surface="solid"
       onClose={onClose}
       onFullyDismissed={handleFullyDismissed}
       header={

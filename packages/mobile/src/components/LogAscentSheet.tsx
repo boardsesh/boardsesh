@@ -216,7 +216,6 @@ function LogAscentSheetContent({
       onFooterLayout={onFooterLayout}
       onChange={handleDetentChange}
       scrollable
-      surface="solid"
       footerSurface="flush"
       // Android's ~50% partial state can't fit this form under a pinned footer
       // (#4723), and a near-full single detent leaves ~310 dp of void below it
