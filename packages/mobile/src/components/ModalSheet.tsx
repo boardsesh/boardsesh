@@ -49,7 +49,7 @@ import {
   useSheetScrollIntoViewHost,
 } from './sheet-scroll-into-view';
 import { useDetentDragHaptic } from './sheet-detent-haptic';
-import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
+import { useSheetBackgroundStyle } from './use-sheet-background-style';
 import { SheetKeyboardCalibration } from './sheet-keyboard-calibration';
 import { useSheetKeyboardCalibrationEnabled } from '../lib/sheet-keyboard-calibration-store';
 import {
@@ -88,9 +88,6 @@ type ModalSheetProps = {
   /** Composers and LogAscentSheet only: form actions go in a SheetTopBar through
    * `header` (no-bottom-footers.test.ts holds the list of files allowed a footer). */
   footer?: ReactNode;
-  /** Android/web sheet ground. iOS follows the native Apple presentation unless
-   * Material is selected or Reduce Transparency is enabled. */
-  surface?: 'glass' | 'solid';
   /** Pinned-footer ground. `plate` (default) keeps the raised
    * `secondaryBackground` plate. `flush` makes it transparent; the hairline top
    * border stays either way. */
@@ -134,7 +131,6 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     scrollable = false,
     contentContainerStyle,
     footer,
-    surface = 'glass',
     footerSurface = 'plate',
     header,
     onHeaderLayout,
@@ -143,11 +139,9 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   },
   ref,
 ) {
-  const { systemColors, sheet, sheetSurface } = useTheme();
-  const iosBackgroundStyle = useIosSheetBackgroundStyle();
+  const { systemColors, sheet } = useTheme();
+  const backgroundStyle = useSheetBackgroundStyle();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
-  // Expo's native backgroundColor extraction needs a plain string.
-  const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
 
   // On Android, `androidContentSized` swaps the `%` detents for `@expo/ui`'s
   // content-fitting path (no snap points at all reach the native sheet).
@@ -360,7 +354,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
       enableDynamicSizing={useContentFitting}
       enablePanDownToClose={enablePanDownToClose}
       handleIndicatorStyle={sheet.handleStyle}
-      backgroundStyle={Platform.OS === 'ios' ? iosBackgroundStyle : surface === 'solid' ? solidBackground : undefined}
+      backgroundStyle={backgroundStyle}
       onChange={handleChange}
       onFullyDismissed={managed.onFullyDismissed}
       style={styles.sheet}

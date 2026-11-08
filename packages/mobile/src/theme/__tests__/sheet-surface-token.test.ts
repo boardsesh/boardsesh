@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// `theme.sheetSurface` is the opaque ground a `surface="solid"` sheet paints.
+// `theme.sheetSurface` is the opaque ground every Android and web sheet paints.
 // Two properties matter and neither is enforced by the type system:
 //
 //  1. It must be a PLAIN STRING. @expo/ui's `extractBackgroundColor`

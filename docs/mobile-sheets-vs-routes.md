@@ -20,11 +20,14 @@ Wrapped by two helpers so they don't drift (both supply the scrim, drag handle, 
 background natively, plus JS-side keyboard avoidance for the `header` / `footer` column):
 
 **Background rule.** On iOS with the Apple variant, leave the sheet's native
-`backgroundStyle` unset, even when `surface="solid"` is requested. The system
+`backgroundStyle` unset. The system
 then draws the appropriate sheet appearance for the OS. Explicit Material 3 and
-Reduce Transparency use an opaque `theme.sheetSurface` instead. Apply this rule
-to raw `BottomSheet`/`BottomSheetModal` users too, through the shared sheet
-background resolver. Android and web retain their current behavior. For a
+Reduce Transparency use an opaque `theme.sheetSurface` instead. Android and web
+always paint `theme.sheetSurface`: left unset, the
+Android sheet takes its colour from the phone wallpaper (Material You), or
+stock M3 purple before Android 12. Raw `BottomSheet`/`BottomSheetModal` users
+pass `useSheetBackgroundStyle()` (`src/components/use-sheet-background-style.ts`)
+as `backgroundStyle` to get the same rule. For a
 `modal` page route, leave presentation chrome native and use semantic backgrounds
 on content such as a form or list when needed for readability.
 

@@ -69,7 +69,6 @@ export function SectionLayoutSheetFrame({
       onClose={onClose}
       snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       scrollable={false}
-      surface="solid"
       header={
         <View>
           <SheetTopBar title={title} leading={{ kind: 'close', onPress: onClose }} />

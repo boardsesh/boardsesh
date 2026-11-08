@@ -244,7 +244,6 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
       ref={sheetRef}
       snapPoints={EDIT_TICK_SNAP_POINTS}
       scrollable={!boardPickerOpen}
-      surface="solid"
       // See the identical fix on the create-tick sheet (`LogAscentSheet`,
       // #4723 / #4720): the edit sheet is the same tall form, so it gets the
       // same Android content-fitting opt-in.

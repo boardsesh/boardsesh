@@ -60,7 +60,7 @@ import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
-import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
+import { useSheetBackgroundStyle } from './use-sheet-background-style';
 import { selectByVariant } from '../theme/variants';
 import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
@@ -331,7 +331,7 @@ export function ClimbFilterSheet({
   // #6872). Android and the Material variant keep the RN body below.
   const nativeForm = Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
   const { fontScale } = useWindowDimensions();
-  const iosBackgroundStyle = useIosSheetBackgroundStyle();
+  const sheetBackgroundStyle = useSheetBackgroundStyle();
   const { isAuthenticated } = useAuth();
   // The WINDOW inset, not this mount point's: this sheet lives in the climbs
   // tab, whose per-tab provider folds the iOS 26 tab bar + accessory into
@@ -1210,7 +1210,7 @@ export function ClimbFilterSheet({
       onChange={handleSheetChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={[styles.indicator, { backgroundColor: systemColors.separator }]}
-      backgroundStyle={iosBackgroundStyle}
+      backgroundStyle={sheetBackgroundStyle}
     >
       {/* #3922 instrumentation, dev builds only. The sentinel is in-flow but
           zero-height and the probe is absolutely positioned, so neither adds

@@ -206,7 +206,7 @@ describe('LogbookFullSheet', () => {
   it('is a tall, solid sheet that reports a pan-down close', () => {
     const onClose = vi.fn();
     renderSheet({ onClose });
-    expect(sheet.props).toMatchObject({ visible: true, surface: 'solid', snapPoints: ['90%'], onClose });
+    expect(sheet.props).toMatchObject({ visible: true, snapPoints: ['90%'], onClose });
   });
 
   it('closes from the header button', () => {
