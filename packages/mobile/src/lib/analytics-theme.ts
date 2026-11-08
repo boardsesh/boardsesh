@@ -11,9 +11,6 @@ import { getPostHogClient } from './posthog-client';
  * survive `analytics.reset()`: PostHog's reset clears every registered super
  * property, and the theme only changes when the climber changes it.
  */
-export const COLOR_SCHEME_SUPER_PROPERTY = 'color_scheme';
-export const UI_VARIANT_SUPER_PROPERTY = 'ui_variant';
-
 export type ThemeSuperProperties = {
   color_scheme: 'light' | 'dark';
   ui_variant: 'liquidGlass' | 'material';

@@ -104,9 +104,12 @@ sessions were in it). Split `Board Render Failed` by it before reading a
 
 `color_scheme` (`light` | `dark`) and `ui_variant` (`liquidGlass` | `material`) are
 super properties too, registered by `ThemeAnalyticsTracker` from the resolved
-theme (after the in-app Appearance override) on launch and on every change, and
-restored after `analytics.reset()`. Use them to split any metric by light/dark
-and by UI variant.
+theme (after the in-app Appearance override) on launch and on every change. They
+are written again once the PostHog client finishes initialising, after
+`analytics.reset()`, and after every consent-path reset in `applyPosthogConsent`
+(`analytics-super-properties-cleared.ts`), so a fresh install that grants consent
+mid-launch still carries them. Use them to split any metric by light/dark and by
+UI variant.
 
 ## `Board Render Failed` — when the board does not draw
 
