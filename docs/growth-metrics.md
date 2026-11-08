@@ -57,6 +57,51 @@ counts (see [analytics-consent.md](./analytics-consent.md)).
   flags until someone runs "Reset deleted person" for it; until then they are
   missing from people-based numbers even though their events arrive.
 
+### Historical active-account reconstruction
+
+The monthly active-account history before the first fully covered request-based
+30-day window is a separate database reconstruction. It is a lower-bound proxy
+for recorded activity, not historical proof of every app open or backend request.
+
+For dates before **2026-10-09**, count accounts that saved a tick with
+`origin = native`, created an explicit board session, or joined an explicit
+board session. Use tick `created_at`, session `created_at`, and participant
+`joined_at`: a backdated `climbed_at` is not evidence of app use on that day.
+Exclude imported ticks, inferred sessions, timestamps before account creation,
+and future actions. A native tick stays eligible after upload to an upstream
+logbook; a populated upstream ID alone does not make it an import.
+
+From **2026-10-09**, use `user_activity_days`. Each historical monthly point
+counts distinct accounts over the complete 30-day source union ending on the
+last UTC day of the month. Never sum daily or platform counts. October is a
+mixed action-proxy/request-history window. The reconstruction stops at October
+2026; ordinary `Active Users Snapshot` observations from **2026-11-07** onward
+supply the fully request-tracked windows.
+
+`packages/backend/src/services/historical-active-users.ts` owns this query and
+the export contract. The operator entry point is:
+
+```sh
+vp exec node --import tsx scripts/posthog/backfill-historical-active-users.ts
+vp exec node --import tsx scripts/posthog/backfill-historical-active-users.ts --apply
+```
+
+The first command is a read-only dry run. The explicit apply sends one
+`Historical Active Users Snapshot` per historical month, on
+`system:historical-active-users`, with a versioned deterministic UUID and noon
+UTC timestamp on the window's final day. Only window dates, count, method,
+version and source labels leave the database. No account identifiers or
+individual activity records are exported. A successful queue/flush attempt is
+not delivery evidence: verify the emitted aggregate rows in PostHog.
+
+Computation uses one repeatable-read, read-only transaction. It refuses the
+whole run if a mixed October window cannot be reconstructed from the retained
+request-day boundaries. This prevents a later retry, after the retention sweep,
+from publishing an artificially lower historical count. Preserved aggregate
+events let the chart retain history after source rows expire. Monthly chart
+queries keep the historical proxy, October transition, and request-based
+observations labelled separately.
+
 ## Populations
 
 A PostHog event says who sent it through two properties: `$lib` (which SDK) and
