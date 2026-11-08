@@ -457,8 +457,9 @@ draw its background. iOS 26 uses
 the system glass material; earlier iOS versions use the system sheet appearance.
 Material 3 on iOS uses the opaque `theme.sheetSurface` tonal colour, and Reduce
 Transparency uses that opaque surface regardless of variant. Android and web always
-paint `theme.sheetSurface`, so a sheet never picks up the phone wallpaper's Material
-You colours. A form or list may still paint a semantic content
+paint an opaque colour, `theme.sheetSurface` unless a sheet picks another theme
+surface (`LogbookEntryChooserSheet` uses `systemColors.background`), so a sheet never
+picks up the phone wallpaper's Material You colours. A form or list may still paint a semantic content
 surface inside the sheet for legibility; do not use that content surface to replace
 the presentation background. The same split applies to `modal` page routes: keep
 the system presentation and paint only content that needs an opaque ground.

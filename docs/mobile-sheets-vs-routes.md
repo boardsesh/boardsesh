@@ -27,7 +27,10 @@ always paint `theme.sheetSurface`: left unset, the
 Android sheet takes its colour from the phone wallpaper (Material You), or
 stock M3 purple before Android 12. Raw `BottomSheet`/`BottomSheetModal` users
 pass `useSheetBackgroundStyle()` (`src/components/use-sheet-background-style.ts`)
-as `backgroundStyle` to get the same rule. For a
+as `backgroundStyle` to get the same rule; never pass the bare
+`useIosSheetBackgroundStyle()` value, which is `undefined` off iOS
+(`sheet-background-discipline.test.ts` fails on it). `BoardSheet` and
+`LogbookEntryChooserSheet` build their own opaque Android colour. For a
 `modal` page route, leave presentation chrome native and use semantic backgrounds
 on content such as a form or list when needed for readability.
 
