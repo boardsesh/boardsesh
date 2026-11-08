@@ -13,7 +13,15 @@ vi.mock('expo-battery', () => ({
   isLowPowerModeEnabledAsync: batteryMocks.isLowPowerModeEnabledAsync,
   addLowPowerModeListener: batteryMocks.addLowPowerModeListener,
 }));
-vi.mock('../../../lib/analytics-low-power-mode', () => ({ registerLowPowerMode }));
+const reregisterLowPowerMode = vi.hoisted(() => vi.fn<() => void>());
+const initializedListeners = vi.hoisted(() => new Set<() => void>());
+vi.mock('../../../lib/analytics-low-power-mode', () => ({ registerLowPowerMode, reregisterLowPowerMode }));
+vi.mock('../../../lib/posthog-client', () => ({
+  subscribePosthogInitialized: (initializedListener: () => void) => {
+    initializedListeners.add(initializedListener);
+    return () => initializedListeners.delete(initializedListener);
+  },
+}));
 
 // Imported after the mocks (vi.mock is hoisted above imports).
 import { LowPowerModeTracker } from '../LowPowerModeTracker';
@@ -33,6 +41,7 @@ describe('LowPowerModeTracker', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    initializedListeners.clear();
     listener = null;
     batteryMocks.addLowPowerModeListener.mockImplementation((nextListener) => {
       listener = nextListener;
@@ -85,5 +94,17 @@ describe('LowPowerModeTracker', () => {
     });
     expect(() => render(createElement(LowPowerModeTracker))).not.toThrow();
     await vi.waitFor(() => expect(registerLowPowerMode).toHaveBeenCalledWith(false));
+  });
+
+  it('writes the remembered value once the PostHog client finishes initialising', () => {
+    batteryMocks.isLowPowerModeEnabledAsync.mockReturnValue(deferred().promise);
+    const { unmount } = render(createElement(LowPowerModeTracker));
+    expect(reregisterLowPowerMode).not.toHaveBeenCalled();
+
+    for (const initializedListener of initializedListeners) initializedListener();
+    expect(reregisterLowPowerMode).toHaveBeenCalledTimes(1);
+
+    unmount();
+    expect(initializedListeners.size).toBe(0);
   });
 });

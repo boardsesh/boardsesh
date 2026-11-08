@@ -102,6 +102,12 @@ holds drew seconds late only in Low Power Mode, and no event could say which
 sessions were in it). Split `Board Render Failed` by it before reading a
 `render_stalled` or `paint_timeout` rate as a fleet-wide number.
 
+`color_scheme` (`light` | `dark`) and `ui_variant` (`liquidGlass` | `material`) are
+super properties too, registered by `ThemeAnalyticsTracker` from the resolved
+theme (after the in-app Appearance override) on launch and on every change, and
+restored after `analytics.reset()`. Use them to split any metric by light/dark
+and by UI variant.
+
 ## `Board Render Failed` — when the board does not draw
 
 Every other event on this page describes a render that worked. This one is the

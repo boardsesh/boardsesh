@@ -123,6 +123,23 @@ describe('analytics reset', () => {
     expect(fakeClient.register).toHaveBeenCalledWith({ low_power_mode: true });
   });
 
+  // The theme only changes when the climber changes it, so a sign-out that
+  // dropped `color_scheme` / `ui_variant` would leave the rest of the launch
+  // unsplittable by light/dark and variant.
+  it('re-registers the theme properties after resetting the client', async () => {
+    const fakeClient = createClientFixture();
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { registerThemeProperties, _resetThemePropertiesForTests } = await import('../analytics-theme');
+    _resetThemePropertiesForTests();
+    registerThemeProperties({ color_scheme: 'dark', ui_variant: 'material' });
+    fakeClient.register.mockClear();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).toHaveBeenCalledWith({ color_scheme: 'dark', ui_variant: 'material' });
+  });
+
   it('registers no low power mode when the tracker has not read one yet', async () => {
     const fakeClient = createClientFixture();
     posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { addLowPowerModeListener, isLowPowerModeEnabledAsync } from 'expo-battery';
-import { registerLowPowerMode } from '../../lib/analytics-low-power-mode';
+import { registerLowPowerMode, reregisterLowPowerMode } from '../../lib/analytics-low-power-mode';
+import { subscribePosthogInitialized } from '../../lib/posthog-client';
 
 /**
  * Keeps the `low_power_mode` super property in step with the phone's power
@@ -12,6 +13,10 @@ import { registerLowPowerMode } from '../../lib/analytics-low-power-mode';
  * `false`; a simulator answers `false` too. Neither is worth a warning.
  */
 export function LowPowerModeTracker(): null {
+  // The PostHog client is created asynchronously, usually after this mounts;
+  // a value read before then had no client to land on, so write it once the
+  // client exists.
+  useEffect(() => subscribePosthogInitialized(() => reregisterLowPowerMode()), []);
   useEffect(() => {
     let cancelled = false;
     // A listener event that lands while the initial read is still in flight is

@@ -6,6 +6,7 @@ import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
 import { reregisterActiveGym } from './analytics-gym';
 import { reregisterLowPowerMode } from './analytics-low-power-mode';
+import { reregisterThemeProperties } from './analytics-theme';
 import { reregisterConnectStepArm } from './analytics-connect-step-arm';
 import { isProductAnalyticsGranted } from './consent-state';
 import { notifyAnalyticsIdentityChanged } from './analytics-identity-events';
@@ -364,6 +365,7 @@ export function reset(): boolean {
     reregisterOfflineEngineState(client);
     reregisterActiveGym(client);
     reregisterLowPowerMode(client);
+    reregisterThemeProperties(client);
     reregisterConnectStepArm(client);
   }
   return didReset;
