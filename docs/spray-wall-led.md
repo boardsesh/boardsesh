@@ -52,9 +52,14 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    LED does not branch, reverse or create another start. After an explicit cut,
    drawing extends the last cable section. Choose **Select two LEDs** to cut a
    connection, reconnect free endpoints or edit the skipped LED count between
-   adjacent positions. Set that count to zero to remove the gap. Orange marks
-   show holes, purple marks LEDs, turquoise lines the cable and red markers the
-   skipped LEDs. Direction arrows, numbered positions and highlighted selections
+   adjacent positions. Set that count to zero to remove the gap. Lay cable and
+   Light and tap only extend the cable's end, so they are disabled while every
+   LED is already on the cable (a generated horizontal or vertical run, or a
+   finished custom one); a cut keeps every LED on a section, so rerouting is Cut
+   and Connect. Orange marks show holes, purple marks LEDs, turquoise lines the
+   cable and red markers the skipped LEDs. A green ring and arrow mark where the
+   cable starts, a purple ring where it ends (where laying continues), and red
+   rings the section ends a cut left unconnected. Direction arrows, numbered positions and highlighted selections
    make the order visible. Undo restores edits. **Light selected LEDs** is an
    optional physical preview of the selected positions using their assigned
    WLED indices, including initial and intermediate skips.

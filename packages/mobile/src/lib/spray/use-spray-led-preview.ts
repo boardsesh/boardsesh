@@ -29,11 +29,17 @@ export function useSprayLedPreviewForSettings(
   const [state, setState] = useState<SprayLedPreviewState>('idle');
   const [error, setError] = useState<LedControllerErrorCode | null>(null);
   const [available, setAvailable] = useState(false);
+  // What the wall shows, so the screen can draw it: every LED after Light all,
+  // or the one LED the row-by-row test has reached.
+  const [allLit, setAllLit] = useState(false);
+  const [chaseIndex, setChaseIndex] = useState<number | null>(null);
 
   useEffect(() => {
     setState('idle');
     setError(null);
     setAvailable(false);
+    setAllLit(false);
+    setChaseIndex(null);
     if (!enabled || !url) return;
     let session: LedPreviewSession;
     try {
@@ -47,6 +53,8 @@ export function useSprayLedPreviewForSettings(
     const subscription = AppState.addEventListener('change', (next) => {
       if (next === 'active') return;
       const generation = ++current.generation;
+      setAllLit(false);
+      setChaseIndex(null);
       void session
         .stop()
         .then(() => {
@@ -79,13 +87,20 @@ export function useSprayLedPreviewForSettings(
       const generation = ++current.generation;
       setError(null);
       setState(nextState);
+      setAllLit(false);
+      setChaseIndex(null);
       try {
         const completed = await operation(current, generation);
-        if (current.active && current.generation === generation) setState(completed ? finishedState : 'idle');
+        if (current.active && current.generation === generation) {
+          setState(completed ? finishedState : 'idle');
+          // A finished or interrupted row test no longer lights one LED.
+          setChaseIndex(null);
+        }
         return completed;
       } catch (failure) {
         if (current.active && current.generation === generation) {
           setState('idle');
+          setChaseIndex(null);
           setError(failure instanceof LedControllerError ? failure.code : 'unavailable');
         }
         return false;
@@ -98,7 +113,19 @@ export function useSprayLedPreviewForSettings(
       run('sending', (current) => current.session.show(indices), indices.length ? 'lit' : 'idle'),
     [run],
   );
-  const lightAll = useCallback(() => run('sending', (current) => current.session.lightAll(), 'lit'), [run]);
+  const lightAll = useCallback(
+    () =>
+      run(
+        'sending',
+        async (current, generation) => {
+          const completed = await current.session.lightAll();
+          if (completed && current.active && current.generation === generation) setAllLit(true);
+          return completed;
+        },
+        'lit',
+      ),
+    [run],
+  );
   const clear = useCallback(() => run('stopping', (current) => current.session.clear(), 'idle'), [run]);
   const stop = useCallback(() => run('stopping', (current) => current.session.stop(), 'idle'), [run]);
   const chase = useCallback(
@@ -112,6 +139,7 @@ export function useSprayLedPreviewForSettings(
             if (position > 0 && !current.session.isOwner()) return false;
             const started = Date.now();
             if (!(await current.session.show([index]))) return false;
+            if (current.active && current.generation === generation) setChaseIndex(index);
             const delay = Math.max(0, 100 - (Date.now() - started));
             if (delay) await new Promise<void>((resolve) => setTimeout(resolve, delay));
           }
@@ -124,5 +152,5 @@ export function useSprayLedPreviewForSettings(
     [run],
   );
 
-  return { available, state, error, show, lightAll, clear, stop, chase };
+  return { available, state, error, allLit, chaseIndex, show, lightAll, clear, stop, chase };
 }

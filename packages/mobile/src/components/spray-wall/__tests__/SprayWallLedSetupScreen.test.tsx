@@ -534,6 +534,51 @@ describe('SprayWallLedSetupScreen', () => {
     expect(preview.stop).toHaveBeenCalled();
   });
 
+  it('offers Lay cable and Light and tap only while some LEDs are not on the cable', async () => {
+    const holes = [
+      { x: 0.2, y: 0.3 },
+      { x: 0.5, y: 0.3 },
+      { x: 0.8, y: 0.3 },
+    ];
+    storage.load.mockResolvedValue({ ...savedLayout(), rows: 2, columns: 3, holes });
+    await open();
+    next();
+    next();
+    next();
+    await screen.findByText('sprayLedSetup.ledHint');
+    fireEvent.click(radio('ledCenter'));
+    next();
+    next();
+    fireEvent.click(radio('customCable'));
+    next();
+    next();
+    const wired = () => screen.getByTestId('hole-editor').getAttribute('data-wired');
+    const disabled = (name: string) => (button(name) as HTMLButtonElement).disabled;
+    expect(disabled('drawCable')).toBe(false);
+    expect(screen.queryByText('sprayLedSetup.cableComplete')).toBeNull();
+    // Light and tap wires the last LED: the cable is complete, so its LED goes dark
+    // and both tools that only extend the cable step aside.
+    fireEvent.click(button('lightAndTap'));
+    tap({ x: 0.2, y: 0.3 });
+    tap({ x: 0.5, y: 0.3 });
+    preview.stop.mockClear();
+    tap({ x: 0.8, y: 0.3 });
+    expect(wired()).toBe('3');
+    await waitFor(() => expect(preview.stop).toHaveBeenCalled());
+    expect(disabled('drawCable')).toBe(true);
+    expect(disabled('lightAndTap')).toBe(true);
+    expect(controls.canvas?.mode).toBe('pan');
+    expect(screen.getByText('sprayLedSetup.cableComplete')).toBeTruthy();
+    // A cut keeps every LED on one of the two sections: rerouting is Cut and
+    // Connect, so the extending tools stay aside.
+    fireEvent.click(button('selectLeds'));
+    tap({ x: 0.5, y: 0.3 });
+    tap({ x: 0.8, y: 0.3 });
+    fireEvent.click(button('cutCable'));
+    expect(disabled('drawCable')).toBe(true);
+    expect(screen.getByText('sprayLedSetup.cableComplete')).toBeTruthy();
+  });
+
   it('uses the full width and keeps fullscreen edits in canonical coordinates across reopen and owner cleanup', async () => {
     const view = await open();
     next();

@@ -87,11 +87,27 @@ describe('spray LED preview lifecycle', () => {
     });
     expect(result.current.state).toBe('chasing');
     expect(mocks.show.mock.calls).toEqual([[[7]]]);
-    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(result.current.chaseIndex).toBe(7);
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    expect(result.current.chaseIndex).toBe(2);
+    await act(() => vi.advanceTimersByTimeAsync(200));
     expect(await completion).toBe(true);
     expect(mocks.show.mock.calls).toEqual([[[7]], [[2]], [[9]]]);
     expect(mocks.stop).toHaveBeenCalledTimes(1);
     expect(result.current.state).toBe('idle');
+    expect(result.current.chaseIndex).toBeNull();
+  });
+
+  it('remembers that every LED is lit until another command replaces it', async () => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    expect(result.current.allLit).toBe(false);
+    await act(() => result.current.lightAll());
+    expect(result.current.allLit).toBe(true);
+    await act(() => result.current.stop());
+    expect(result.current.allLit).toBe(false);
+    await act(() => result.current.lightAll());
+    await act(() => result.current.show([1]));
+    expect(result.current.allLit).toBe(false);
   });
 
   it('stop cancels the chase without advancing another LED', async () => {
@@ -117,6 +133,7 @@ describe('spray LED preview lifecycle', () => {
     expect(mocks.show).toHaveBeenCalledTimes(1);
     expect(mocks.stop).not.toHaveBeenCalled();
     expect(result.current.state).toBe('idle');
+    expect(result.current.chaseIndex).toBeNull();
   });
 
   it('backgrounding clears owned illumination and cancels future chase ticks', async () => {

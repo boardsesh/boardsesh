@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import {
+  assignLedIndices,
   buildSprayLedMapping,
   findSprayHoldAtPoint,
   type CanonicalSprayHold,
@@ -87,6 +88,27 @@ export function SprayLedLightingStep({
     if (indicesKey) void show(indicesKey.split(',').map(Number));
     else void stop();
   }, [available, indicesKey, show, stop]);
+  // Draw what the wall shows: every LED after Light all, the LED the row-by-row
+  // test has reached, or otherwise the selection's LEDs.
+  const ledIdByIndex = useMemo(
+    () => new Map(layout.wiring ? assignLedIndices(layout.wiring).map(({ id, index }) => [index, id]) : []),
+    [layout.wiring],
+  );
+  const chasing = typeof preview.chaseIndex === 'number';
+  const chaseLedId = typeof preview.chaseIndex === 'number' ? ledIdByIndex.get(preview.chaseIndex) : undefined;
+  const litLedIds = preview.allLit
+    ? (layout.ledPositions ?? []).map((led) => led.id)
+    : chasing
+      ? chaseLedId === undefined
+        ? []
+        : [chaseLedId]
+      : selectedLedIds;
+  /** Light all and the row test replace the selection on the wall, so they clear it on screen too. */
+  function clearSelection() {
+    setSelected([]);
+    // An emptied selection must not switch off what is about to light.
+    lastLit.current = '';
+  }
   const options = [
     { key: 'holes' as const, label: t('sprayLedSetup.selectHoles') },
     { key: 'holds' as const, label: t('sprayLedSetup.selectHolds') },
@@ -152,7 +174,7 @@ export function SprayLedLightingStep({
             <SpraySetupOverlay
               holes={kind === 'holes' ? layout.holes : []}
               leds={layout.ledPositions}
-              selected={selectedLedIds}
+              selected={litLedIds}
               selectedHoles={selectedHoles}
               holdRings={kind === 'holds' ? rings : undefined}
               selectedHoldIds={kind === 'holds' ? selected : []}
@@ -169,7 +191,9 @@ export function SprayLedLightingStep({
         }}
       />
       <Text variant="footnote" accessibilityLiveRegion="polite">
-        {t('sprayLedSetup.selectionSummary', { count: selected.length, leds: indices.length })}
+        {preview.allLit
+          ? t('sprayLedSetup.allLitSummary', { count: layout.ledPositions?.length ?? 0 })
+          : t('sprayLedSetup.selectionSummary', { count: selected.length, leds: indices.length })}
       </Text>
       {missing ? (
         <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
@@ -179,16 +203,26 @@ export function SprayLedLightingStep({
       <Text variant="footnote">{t('sprayLedSetup.lightingHint')}</Text>
       {!preview.available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
       <Button
-        title={t('sprayLed.lightAll')}
+        title={preview.allLit ? t('sprayLed.turnOff') : t('sprayLed.lightAll')}
         variant="outlined"
         disabled={!preview.available}
-        onPress={() => void preview.lightAll()}
+        onPress={() => {
+          if (preview.allLit) {
+            void preview.stop();
+            return;
+          }
+          clearSelection();
+          void preview.lightAll();
+        }}
       />
       <Button
         title={t('sprayLedSetup.lightingChase')}
         variant="outlined"
         disabled={!preview.available || orderedIndices.length === 0}
-        onPress={() => void preview.chase(orderedIndices)}
+        onPress={() => {
+          clearSelection();
+          void preview.chase(orderedIndices);
+        }}
       />
       {preview.state !== 'idle' ? (
         <Text variant="footnote" accessibilityLiveRegion="polite">
