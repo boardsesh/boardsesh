@@ -393,6 +393,27 @@ describe('Climb list angle, history and options', () => {
     fireEvent.click(getByRole('button', { name: 'Board history, Garage wall • 35°' }));
     expect(openHistory).toHaveBeenCalledOnce();
   });
+
+  it('puts Create a climb first in the Material ⋮ on a compact bar, before Switch board', () => {
+    state.os = 'android';
+    state.nativeAccessory = false;
+    const onCreate = vi.fn();
+    const { getByRole } = render(
+      <ClimbListBoardActions
+        material
+        createRow={{ label: 'Create a climb', onPress: onCreate }}
+        onOpenHistory={vi.fn()}
+      />,
+    );
+    expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'Create a climb',
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.switchBoard',
+    ]);
+    fireEvent.click(getByRole('button', { name: 'Create a climb' }));
+    expect(onCreate).toHaveBeenCalledOnce();
+    expect(state.push).not.toHaveBeenCalled();
+  });
 });
 
 describe('climbListBoardActionCount', () => {

@@ -6,7 +6,7 @@ vi.mock('../../AccessibleTextInput', async () => {
 vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useEffect, type ReactNode } from 'react';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { WallCapsuleDismissOptions } from '../use-wall-capsule-dismiss';
 
@@ -24,6 +24,8 @@ const spies = vi.hoisted(() => ({
   // The sends after the grade; null leaves the grade alone, as for an unsent climb.
   sends: null as string | null,
   statsArgs: null as unknown,
+  // The width the app-bar pill measures (Animated.View onLayout); undefined: no layout yet.
+  layoutWidth: undefined as number | undefined,
 }));
 
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => spies.viewerUserId }));
@@ -114,18 +116,32 @@ vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: spies.announce },
 }));
 
+type LayoutHandler = (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+function MockAnimatedView({
+  children,
+  style,
+  onLayout,
+}: {
+  children?: ReactNode;
+  style?: unknown;
+  onLayout?: LayoutHandler;
+}) {
+  // Native onLayout supplies the slot's width; jsdom has no Yoga layout.
+  useEffect(() => {
+    if (onLayout && spies.layoutWidth !== undefined)
+      onLayout({ nativeEvent: { layout: { width: spies.layoutWidth, height: 48 } } });
+  }, [onLayout]);
+  return createElement(
+    'div',
+    {
+      'data-animated': 'true',
+      'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+    },
+    children,
+  );
+}
 vi.mock('react-native-reanimated', () => ({
-  default: {
-    View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-      createElement(
-        'div',
-        {
-          'data-animated': 'true',
-          'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
-        },
-        children,
-      ),
-  },
+  default: { View: MockAnimatedView },
   FadeIn: { duration: spies.enterAnimation },
   useReducedMotion: () => spies.reduceMotion,
 }));
@@ -348,6 +364,7 @@ describe('WallStatusCapsule', () => {
     spies.isAuthenticated = true;
     spies.sends = null;
     spies.statsArgs = null;
+    spies.layoutWidth = undefined;
   });
 
   it('keeps the climb name intrinsic and shrinkable inside the native header', () => {
@@ -956,6 +973,143 @@ describe('WallStatusCapsule', () => {
       expect(pressable?.getAttribute('data-role')).toBe('button');
       expect(pressable?.getAttribute('data-label')).toContain('Wax On');
       expect(pressable?.getAttribute('data-label')).toContain('Casey');
+    });
+  });
+  describe('Material app-bar pill (the Android Climbs bar)', () => {
+    beforeEach(() => {
+      spies.variant = 'material';
+    });
+    const pill = (root: HTMLElement) => root.querySelector('[data-animated]') as HTMLElement;
+    const styleOf = (element: Element | null | undefined) =>
+      JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    const lines = (root: HTMLElement) =>
+      [...root.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
+
+    it('is one 48dp full-radius M3 pill, filling the slot up to 280dp', () => {
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      expect(styleOf(pill(container))).toMatchObject({
+        height: 48,
+        width: '100%',
+        maxWidth: 280,
+        borderRadius: 9999,
+        overflow: 'hidden',
+        backgroundColor: '#2A2142',
+      });
+      // The tertiary rail carries the band's "lit" accent.
+      expect(container.querySelector('[data-style*="#FF8A3D"]')).not.toBeNull();
+      // No overline, no band divider: the byline states the fact.
+      expect(container.textContent).not.toContain('stripOverlineWithSender');
+      expect(container.querySelectorAll('button')).toHaveLength(1);
+    });
+
+    it('puts the name in titleSmall over grade · who lit it, in tertiary labelMedium', () => {
+      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
+      expect(getByText('Wax On').getAttribute('data-variant')).toBe('label');
+      expect(styleOf(getByText('Wax On'))).toMatchObject({ fontWeight: '500' });
+      expect(getByText('V5 6C').getAttribute('data-variant')).toBe('footnote');
+      expect(styleOf(getByText('V5 6C'))).toMatchObject({ fontWeight: '500' });
+      // No stats read on Android.
+      expect(spies.statsArgs).toMatchObject({ statsEnabled: false });
+    });
+
+    it('says "On the wall" for your own climb, and the age for a climb lit with no live link', () => {
+      spies.viewerUserId = 'u-casey';
+      spies.sends = '1.4k sends';
+      const live = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      expect(lines(live.container)).toEqual(['Wax On', 'V5 6C', ' · mobile.boardPresence.stripOverline']);
+      live.unmount();
+      const history = render(
+        <WallStatusCapsule
+          climb={makeClimb()}
+          materialLayout="appBar"
+          presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
+        />,
+      );
+      expect(lines(history.container)).toEqual(['Wax On', 'V5 6C', ' · 20m ago']);
+    });
+
+    it('never cuts the grade: only the fact after it gives way', () => {
+      const { container, getByText } = render(
+        <WallStatusCapsule
+          climb={makeClimb({ name: 'A very long climb name that will not fit', sentByDisplayName: 'Alexandra' })}
+          materialLayout="appBar"
+        />,
+      );
+      expect(styleOf(getByText('V5 6C')).flexShrink).toBe(0);
+      const detail = [...container.querySelectorAll('[data-text]')].find(
+        (node) => node.textContent === ' · Alexandra',
+      ) as HTMLElement;
+      expect(styleOf(detail)).toMatchObject({ flexShrink: 1, minWidth: 0 });
+      expect(detail.getAttribute('data-ellipsize')).toBe('tail');
+    });
+
+    it.each([
+      [undefined, true],
+      [200, true],
+      [130, true],
+      [129, false],
+      [96, false],
+    ])("shows the sender's 24dp face only in a pill from 130dp wide: %s (face: %s)", (width, face) => {
+      spies.layoutWidth = width;
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      const avatar = container.querySelector('[data-driver-avatar]');
+      expect(avatar != null).toBe(face);
+      if (face) expect(avatar?.getAttribute('data-size')).toBe('24');
+    });
+
+    it('lets the age cut only in a pill too narrow for it', () => {
+      spies.layoutWidth = 96;
+      const { container } = render(
+        <WallStatusCapsule
+          climb={makeClimb()}
+          materialLayout="appBar"
+          presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
+        />,
+      );
+      const age = [...container.querySelectorAll('[data-text]')].find((node) => node.textContent === ' · 20m ago');
+      expect(styleOf(age)).toMatchObject({ flexShrink: 1, minWidth: 0 });
+    });
+
+    it('opens the read-only wall preview on tap', () => {
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      fireEvent.click(container.querySelector('[data-pressable-surface]')!);
+      expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-1', _converted: true });
+    });
+
+    it('hides by swipe or the screen-reader action, with no × button', () => {
+      const onDismiss = vi.fn();
+      const { container } = render(
+        <WallStatusCapsule
+          climb={makeClimb()}
+          materialLayout="appBar"
+          occurrenceKey="board:7:wall-1"
+          onDismiss={onDismiss}
+        />,
+      );
+      expect(container.querySelector('[data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
+      expect(container.querySelector('[data-icon="close"]')).toBeNull();
+      expect(container.querySelectorAll('button')).toHaveLength(1);
+      // The swipe wrapper fills the slot under the same 280dp cap.
+      expect(styleOf(container.querySelector('[data-gesture-root]'))).toMatchObject({
+        width: '100%',
+        maxWidth: 280,
+      });
+      const pressable = container.querySelector('[data-pressable-surface]')!;
+      expect(pressable.getAttribute('data-role')).toBe('button');
+      expect(pressable.getAttribute('data-label')).toContain('Wax On');
+      expect(pressable.getAttribute('data-hint')).toBe('mobile.boardPresence.stripDismissHint');
+      expect(JSON.parse(pressable.getAttribute('data-actions') ?? '[]')).toEqual([
+        { name: 'dismiss', label: 'mobile.boardPresence.stripDismiss' },
+      ]);
+      fireEvent.keyDown(pressable);
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
+      expect(spies.openWallPreview).not.toHaveBeenCalled();
+    });
+
+    it('keeps the band as the Material default for other callers', () => {
+      const { getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
+      expect(getByText('mobile.boardPresence.stripOverlineWithSender:Casey')).toBeTruthy();
     });
   });
 });

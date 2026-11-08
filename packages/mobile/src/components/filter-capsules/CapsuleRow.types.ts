@@ -135,4 +135,10 @@ export type Capsule = SheetCapsule | RailCapsule | MenuCapsule | ToggleCapsule |
 export type CapsuleRowProps = {
   /** Rendered in order. Build the array in a `useMemo` so the row can skip re-renders. */
   capsules: readonly Capsule[];
+  /**
+   * Android only: drop the row's 8dp vertical padding. Compose already sizes each
+   * 32dp chip to its 48dp touch target, so the dense row is 48dp tall. The
+   * Material Climbs bar sets it; iOS and the web ignore it.
+   */
+  dense?: boolean;
 };

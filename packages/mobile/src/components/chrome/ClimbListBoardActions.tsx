@@ -27,7 +27,7 @@ type ClimbListBoardActionsProps = {
   material?: boolean;
   /** Draw the one-tap angle first. Off where the angle lives in the leading island. */
   showAngle?: boolean;
-  /** "Create a climb" as the ⋯ menu's first row, where + has left the bar for the capsule. */
+  /** "Create a climb" as the ⋯ menu's first row, where + has left a compact bar (iPhone, Material phone). */
   createRow?: { label: string; onPress: () => void };
 };
 
@@ -56,7 +56,8 @@ export function climbListBoardActionCount(
  * Wall display on a tablet with no native MiniPlayer; one with it opens Wall
  * display from the bar's ⛶). Material leaves the angle to the filter row's
  * Angle chip, so it keeps history and the menu. The iOS 26 iPhone bar draws the
- * angle in its leading island (`showAngle` off) and puts + in this menu.
+ * angle in its leading island (`showAngle` off) and puts + in this menu; so does
+ * a compact Material bar.
  */
 export function ClimbListBoardActions({
   onOpenHistory,

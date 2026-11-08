@@ -126,4 +126,10 @@ export type FilterChipRowProps = {
    * false, matching Liquid Glass, where no list but Climbs carries an angle control.
    */
   showAngle?: boolean;
+
+  /**
+   * The Climbs bar's 48dp row: no vertical padding around the Compose chips
+   * (CapsuleRow `dense`). Only the Android row honours it.
+   */
+  dense?: boolean;
 };

@@ -1,9 +1,10 @@
 // The "On the wall" status capsule — surfaces the climb currently LIT on the
 // physical board, whoever lit it and whatever the queue shows, while presence
 // trusts it (`resolveClimbsHeaderCapsule`). It sits in the centre of the
-// top-header islands row (iOS) / a slim band under the app bar (Android).
-// The climber can hide it until another climb goes up: a left swipe, the
-// screen-reader action "Hide", or on Android the band's trailing ×.
+// top-header islands row (iOS), in the Climbs app bar's title slot (Android,
+// `materialLayout="appBar"`), or as a slim band under an app bar (the Material
+// default, `band`). The climber can hide it until another climb goes up: a left
+// swipe, the screen-reader action "Hide", or the band's trailing ×.
 //
 // Leads with the sender's avatar so the climb and whoever lit it are visible
 // together. The avatar is inert here; the whole pill opens the wall preview,
@@ -16,17 +17,30 @@
 //     the grade); your own climb says its sends; a climb lit with no live link
 //     says how long ago ("V6 · 20m ago"), so it never reads as live. Older
 //     devices and Reduce Transparency retain the opaque pill.
-//   - Material 3 (Android): a full-bleed titled status band — a tertiary accent
-//     rail + an "On the wall" overline (the lit semantic stated in words and
-//     carried by the tertiary colour role) + a bottom divider, ending in a 48dp
-//     × icon button. No floating pill, no border, no lightbulb (the bottom
-//     queue bar already owns that glyph).
+//   - Material 3 app-bar pill (`appBar`, the Android Climbs bar): the glass
+//     capsule's content in M3 dress. A 48dp full-radius `surfaceContainerHigh`
+//     pill with a tertiary "live" rail, the face (dropped under a 130dp slot),
+//     the name in titleSmall over "grade · one fact" in tertiary labelMedium:
+//     who lit it, "On the wall" for your own or an unnamed climb, or the age.
+//     No ×: like iOS it hides by swipe or the screen-reader action, so the bar
+//     keeps one control here.
+//   - Material 3 band (`band`, the default): a full-bleed titled status band — a
+//     tertiary accent rail + an "On the wall" overline (the lit semantic stated
+//     in words and carried by the tertiary colour role) + a bottom divider,
+//     ending in a 48dp × icon button. No floating pill, no border, no lightbulb
+//     (the bottom queue bar already owns that glyph).
 // The data, grade derivation, tap handler and the debounced a11y announcement all
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates.
 
-import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { AccessibilityInfo, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  AccessibilityInfo,
+  StyleSheet,
+  View,
+  type AccessibilityActionEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -46,9 +60,12 @@ import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { useAuth } from '../../providers/auth-provider';
 import { useClimbStatsDetail } from './use-climb-byline';
+import { CENTER_CONTENT_MAX_WIDTH } from '../chrome/native-title-bound';
 import {
   HeaderCapsuleClimbLabel,
   HeaderStatusCapsule,
+  headerCapsuleCompact,
+  headerCapsuleFaceFits,
   useHeaderCapsuleCompact,
   useHeaderCapsuleFaceFits,
   type HeaderCapsuleByline,
@@ -70,6 +87,11 @@ const BAND_MIN_HEIGHT = 56;
 // The band's ×: an M3 icon button, a 48dp target around a 24dp-class glyph.
 const BAND_DISMISS_TARGET = 48;
 const BAND_DISMISS_GLYPH = 20;
+// Material app-bar pill: its own 48dp touch target, with a short tertiary rail
+// at the leading edge carrying the band's "live" accent.
+const APP_BAR_PILL_HEIGHT = 48;
+const APP_BAR_RAIL_WIDTH = 4;
+const APP_BAR_RAIL_HEIGHT = 20;
 // Debounce assistive-tech announcements so a fast party session (rapid wall
 // changes) doesn't spam the speech queue.
 const ANNOUNCE_DEBOUNCE_MS = 600;
@@ -83,19 +105,43 @@ type WallStatusCapsuleProps = {
   presentation?: { kind: 'live' } | { kind: 'history'; ageLabel: string; ageByline: string };
   occurrenceKey?: string;
   onDismiss?: (occurrenceKey: string) => void;
+  /**
+   * Material only. `band` (default): the full-bleed status band under an app
+   * bar. `appBar`: the compact pill that fills an app bar's title slot (the
+   * Climbs bar), capped at 280dp. Liquid Glass ignores it.
+   */
+  materialLayout?: 'band' | 'appBar';
 };
 
 // memo'd so a ClimbTopChrome re-render (filter/board/search change) doesn't rebuild
 // the capsule's hooks while the wall climb is unchanged — the `climb` prop is the
 // stable BoardPresenceClimb from the wall-climb context (changes only on a wall event).
-function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, onDismiss }: WallStatusCapsuleProps) {
+function WallStatusCapsuleImpl({
+  climb,
+  boardName,
+  presentation,
+  occurrenceKey,
+  onDismiss,
+  materialLayout = 'band',
+}: WallStatusCapsuleProps) {
   const { t } = useTranslation('session');
   const { variant, colorScheme, brandColors, m3, m3SurfaceContainers } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
-  const faceFits = useHeaderCapsuleFaceFits();
-  const narrowTitle = useHeaderCapsuleCompact();
+  const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
+  const appBarPill = isMaterial && materialLayout === 'appBar';
+  // UIKit hands the glass capsule its title bound; the app-bar pill fills its
+  // slot, so its own measured width is that bound, under the same rules.
+  const [appBarWidth, setAppBarWidth] = useState<number | undefined>(undefined);
+  const handleAppBarLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width } = event.nativeEvent.layout;
+    setAppBarWidth((previous) => (previous === width ? previous : width));
+  }, []);
+  const nativeFaceFits = useHeaderCapsuleFaceFits();
+  const nativeNarrowTitle = useHeaderCapsuleCompact();
+  const faceFits = appBarPill ? headerCapsuleFaceFits(appBarWidth) : nativeFaceFits;
+  const narrowTitle = appBarPill ? headerCapsuleCompact(appBarWidth) : nativeNarrowTitle;
   const { isAuthenticated } = useAuth();
   const viewerUserId = useViewerUserId();
   const { boardConfig } = useDrawerHost();
@@ -162,7 +208,6 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
     return () => clearTimeout(handle);
   }, [announceLabel]);
 
-  const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const previewClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
   // The sends only where the byline says them: a live climb that is not someone
   // else's. An older reporter sends no angle, and the converted climb's 0° would
@@ -172,10 +217,13 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   });
   // A climb with no name shows its grade as the name, so line 2 drops it. The age
   // stays whole unless the title is too narrow for it (a 320pt Display Zoom bar).
+  // The app-bar pill reads no stats: its fact for your own or an unnamed climb
+  // is "On the wall", the words the band's overline carried.
   const bylineGrade = name ? formattedGrade : null;
+  const liveDetail = namedOther ? senderName : appBarPill ? t('mobile.boardPresence.stripOverline') : statsDetail;
   const byline: HeaderCapsuleByline = history
     ? { grade: bylineGrade, detail: history.ageByline, fixed: !narrowTitle }
-    : { grade: bylineGrade, detail: namedOther ? senderName : statsDetail };
+    : { grade: bylineGrade, detail: liveDetail };
 
   const { consumePanned, dismiss } = swipe;
   const handlePress = useCallback(() => {
@@ -200,8 +248,53 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
     ? t('mobile.boardPresence.stripDismissHint')
     : t('mobile.boardPresence.stripA11yHint');
   let capsule: ReactNode;
+  // One tap target and one spoken label; profile navigation lives in the preview.
+  const climbLabelAvatar = showFace ? (
+    <BoardDriverAvatar
+      uri={climb.sentByAvatarUrl}
+      name={senderName}
+      userId={null}
+      size={CAPSULE_AVATAR_SIZE}
+      status="none"
+    />
+  ) : null;
 
-  if (isMaterial) {
+  if (appBarPill) {
+    capsule = (
+      <Animated.View
+        key={climbUuid}
+        entering={reduceMotion ? undefined : FadeIn.duration(180)}
+        onLayout={handleAppBarLayout}
+        style={[styles.appBarPill, { backgroundColor: m3SurfaceContainers.high }]}
+      >
+        <PressableSurface
+          onPress={handlePress}
+          // Android rides its native ripple, clipped by the pill's radius.
+          feedback="none"
+          rippleColor={m3.onSurface}
+          accessibilityRole="button"
+          accessibilityLabel={a11yLabel}
+          accessibilityHint={accessibilityHint}
+          accessibilityActions={accessibilityActions}
+          onAccessibilityAction={handleAccessibilityAction}
+          style={styles.appBarRow}
+        >
+          {/* The "lit" accent the band's rail carried, at pill scale. */}
+          <View pointerEvents="none" style={[styles.appBarRail, { backgroundColor: m3.tertiary }]} />
+          <HeaderCapsuleClimbLabel
+            skin="material"
+            avatar={climbLabelAvatar}
+            // A reporter that sent no name still shows something: the grade.
+            name={name || formattedGrade || ''}
+            byline={byline}
+            compact={!showFace}
+            largeContentTitle={a11yLabel}
+            onActivate={handlePress}
+          />
+        </PressableSurface>
+      </Animated.View>
+    );
+  } else if (isMaterial) {
     // The grade sits on the app-bar surface (the band body is transparent). In the
     // light scheme that surface is near-white, where bright hues (e.g. V0 #FFD400)
     // fail 4.5:1 — so wrap the grade in a neutral tonal pill there. Dark scheme keeps
@@ -330,19 +423,8 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
         onAccessibilityAction={handleAccessibilityAction}
         compact={!showFace}
       >
-        {/* One tap target and one spoken label; profile navigation lives in the preview. */}
         <HeaderCapsuleClimbLabel
-          avatar={
-            showFace ? (
-              <BoardDriverAvatar
-                uri={climb.sentByAvatarUrl}
-                name={senderName}
-                userId={null}
-                size={CAPSULE_AVATAR_SIZE}
-                status="none"
-              />
-            ) : null
-          }
+          avatar={climbLabelAvatar}
           // A reporter that sent no name still shows something: the grade.
           name={name || formattedGrade || ''}
           byline={byline}
@@ -356,7 +438,7 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
 
   if (!onDismiss) return capsule;
   return (
-    <WallCapsuleSwipe swipe={swipe} style={isMaterial ? styles.bandWidth : null}>
+    <WallCapsuleSwipe swipe={swipe} style={appBarPill ? styles.appBarWidth : isMaterial ? styles.bandWidth : null}>
       {capsule}
     </WallCapsuleSwipe>
   );
@@ -367,6 +449,33 @@ export const WallStatusCapsule = memo(WallStatusCapsuleImpl);
 const styles = StyleSheet.create({
   bandWidth: {
     width: '100%',
+  },
+  // --- Material 3 app-bar pill (the Android Climbs bar) ---
+  // Fills the title slot, never past the glass capsule's 280 cap.
+  appBarWidth: {
+    width: '100%',
+    maxWidth: CENTER_CONTENT_MAX_WIDTH,
+  },
+  appBarPill: {
+    width: '100%',
+    maxWidth: CENTER_CONTENT_MAX_WIDTH,
+    height: APP_BAR_PILL_HEIGHT,
+    borderRadius: borderRadius.full,
+    overflow: 'hidden',
+  },
+  appBarRow: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[3],
+  },
+  appBarRail: {
+    flexShrink: 0,
+    width: APP_BAR_RAIL_WIDTH,
+    height: APP_BAR_RAIL_HEIGHT,
+    borderRadius: APP_BAR_RAIL_WIDTH / 2,
   },
   grade: {
     flexShrink: 0,

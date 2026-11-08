@@ -118,17 +118,24 @@ function CapsuleChip({
   );
 }
 
-function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
+function CapsuleRowComponent({ capsules, dense = false }: CapsuleRowProps) {
   const { brandColors, m3 } = useTheme();
   const colors = useMemo(() => filterChipBrandColors(brandColors, m3), [brandColors, m3]);
   const borders = useMemo(() => filterChipBorders(m3), [m3]);
+  // Dense: Compose's 48dp minimum touch size already leaves 8dp around each 32dp
+  // chip, so the row's own vertical padding would only add empty space.
+  const verticalPadding = dense ? 0 : spacing[2];
   return (
     // `matchContents={{ vertical: true }}` (NOT the boolean form) fills the parent
     // width so the Row's `fillMaxWidth()` has a bounded width to scroll within, while
     // height tracks the chip content (mirrors SwitchRow / SegmentedControl).
     <ComposeHost matchContents={{ vertical: true }} style={styles.host}>
       <Row
-        modifiers={[fillMaxWidth(), horizontalScroll(), padding(spacing[4], spacing[2], spacing[4], spacing[2])]}
+        modifiers={[
+          fillMaxWidth(),
+          horizontalScroll(),
+          padding(spacing[4], verticalPadding, spacing[4], verticalPadding),
+        ]}
         verticalAlignment="center"
       >
         {/* A padded Spacer between chips (the SwitcherForm / MoreForm pattern): on device

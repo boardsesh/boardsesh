@@ -1000,6 +1000,26 @@ Source: `src/theme/top-bar.ts` (`topBarFor(variant)`), the `label` text variant,
 - **Header tint** is the theme's label colour (`useStackScreenOptions`, and the root navigation theme's
   `primary`), so no bar glyph falls back to React Navigation's iOS blue.
 
+### Material Climbs bar
+
+The Android Climbs header (`ClimbTopChrome`, Material branch) follows the iOS bar: avatar, title
+slot, then history and ⋮. It is about 112dp under the status bar (a 64dp app bar over a 48dp chip
+row), with or without a climb on the wall. Only Climbs looks like this; the other root tabs keep
+their titled bars.
+
+- **Empty title slot.** No "Climbs", no board name. The slot is an empty `header` view whose spoken
+  label is "Climbs", so TalkBack still names the screen. Boards are switched from ⋮ → Switch board.
+- **The climb on the wall** fills the title slot as a compact M3 pill (`WallStatusCapsule`,
+  `materialLayout="appBar"`): 48dp tall, full radius, `surfaceContainerHigh`, a short tertiary rail
+  for "lit". The name sits in titleSmall over "grade · one fact" in tertiary labelMedium (who lit it,
+  "On the wall", or how long ago). The grade never cuts. The face drops under a 130dp slot, and the
+  pill stops at 280dp. Tap opens the wall preview; a left swipe or the screen-reader Hide hides it.
+  There is no ×. Other Material callers keep the full-bleed `band` layout.
+- **Create** is ⋮'s first row on a compact width, as on iOS. A regular-width tablet keeps + in the bar.
+- **Chips stay pinned.** The chip row is `dense`: no vertical padding, so Compose's 48dp chip touch
+  targets are the row's whole height (8dp visible above and below each 32dp chip). Nothing pads under
+  it. The Logbook and playlist rows keep their 8dp padding.
+
 **Material building blocks** (`tokens.ts` → `material`, Android branches only): nav active-indicator
 pill 64 × 32 (radius 16), surface elevation 3, pressed state-layer opacity 0.12. `androidRipple(color,
 borderless)` builds a Pressable `android_ripple` config at that state-layer opacity.

@@ -141,6 +141,8 @@ type ViewMockProps = {
   pointerEvents?: string;
   testID?: string;
   style?: unknown;
+  accessibilityRole?: string;
+  accessibilityLabel?: string;
 };
 vi.mock('react-native', () => ({
   AppState: { currentState: 'active', addEventListener: () => ({ remove: vi.fn() }) },
@@ -148,13 +150,15 @@ vi.mock('react-native', () => ({
   Keyboard: { dismiss: vi.fn() },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress, 'data-scrim': 'true' }, children),
-  View: ({ children, onLayout, pointerEvents, testID, style }: ViewMockProps) =>
+  View: ({ children, onLayout, pointerEvents, testID, style, accessibilityRole, accessibilityLabel }: ViewMockProps) =>
     createElement(
       'div',
       {
         'data-has-layout': onLayout ? 'true' : 'false',
         'data-testid': testID,
         'data-pointer': pointerEvents ?? '',
+        'data-role': accessibilityRole,
+        'data-a11y-label': accessibilityLabel,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         onClick: onLayout
           ? () => onLayout({ nativeEvent: { layout: { height: nativeChrome.measuredChromeHeight } } })
@@ -503,14 +507,17 @@ vi.mock('../../queue-control/WallStatusCapsule', () => ({
     presentation,
     occurrenceKey,
     onDismiss,
+    materialLayout,
   }: {
     climb: { climbUuid: string };
     presentation: { kind: string; ageLabel?: string; ageByline?: string };
     occurrenceKey: string;
     onDismiss: (occurrenceKey: string) => void;
+    materialLayout?: string;
   }) =>
     createElement('button', {
       'data-wall-capsule': climb.climbUuid,
+      'data-material-layout': materialLayout,
       'data-presentation': presentation.kind,
       'data-age': presentation.ageLabel,
       'data-age-byline': presentation.ageByline,
@@ -1048,12 +1055,55 @@ describe('ClimbTopChrome', () => {
     });
   });
 
-  it('mounts the "On the wall" capsule under the Material app bar when a wall climb is live', () => {
+  it('mounts the "On the wall" capsule in the Material app bar\'s title slot, not as a band under it', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
     ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    expect(container.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
+    const pill = container.querySelector('[data-appbar-header] [data-wall-capsule="wall-9"]');
+    expect(pill).not.toBeNull();
+    expect(pill?.getAttribute('data-material-layout')).toBe('appBar');
+    expect(container.querySelectorAll('[data-wall-capsule]')).toHaveLength(1);
+    // The pill takes the slot the a11y-only header holds when nothing is lit.
+    expect(container.querySelector('[data-role="header"]')).toBeNull();
+    const slotStyle = JSON.parse(pill?.parentElement?.getAttribute('data-style') ?? '{}');
+    expect(slotStyle).toMatchObject({ flex: 1, minWidth: 0 });
+  });
+
+  describe('Material create', () => {
+    const appBarCreate = (root: HTMLElement) =>
+      root.querySelector('[data-appbar-action="mobile.create.fab.ariaLabel"]') as HTMLButtonElement | null;
+    const menuRows = (root: HTMLElement) =>
+      [...root.querySelectorAll('[data-menu="mobile.listOptions.title"] button')].map((row) => row.textContent);
+
+    beforeEach(() => {
+      ctrl.variant = 'material';
+      ctrl.board = typedBoard;
+    });
+
+    it("moves + into ⋮'s first row on a compact width, as on iOS", () => {
+      const onCreate = vi.fn();
+      const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true, onCreate })} />);
+      expect(appBarCreate(container)).toBeNull();
+      expect(menuRows(container)[0]).toBe('mobile.create.fab.ariaLabel');
+      fireEvent.click(container.querySelector('[data-menu="mobile.listOptions.title"] button')!);
+      expect(onCreate).toHaveBeenCalledOnce();
+    });
+
+    it('keeps + in the bar on a regular-width tablet', () => {
+      ctrl.widthClass = 'regular';
+      const onCreate = vi.fn();
+      const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true, onCreate })} />);
+      expect(menuRows(container)).not.toContain('mobile.create.fab.ariaLabel');
+      fireEvent.click(appBarCreate(container)!);
+      expect(onCreate).toHaveBeenCalledOnce();
+    });
+
+    it('offers create nowhere when the climber cannot create', () => {
+      const { container } = render(<ClimbTopChrome {...makeProps()} />);
+      expect(appBarCreate(container)).toBeNull();
+      expect(menuRows(container)).not.toContain('mobile.create.fab.ariaLabel');
+    });
   });
 
   it('hides the angle selector for fixed-angle boards', () => {
@@ -1249,10 +1299,11 @@ describe('ClimbTopChrome', () => {
     expect(getByText('Sheet-only filter tokens').parentElement).toBe(chipCarrier);
     expect(styleOf(chipCarrier)).not.toHaveProperty('paddingHorizontal');
     expect(styleOf(railCarrier)).not.toHaveProperty('paddingHorizontal');
-    // Same vertical rhythm as when the chips sat inside the search stack: 8dp
-    // above and between the rows, 12dp below.
-    expect(styleOf(chipCarrier)).toMatchObject({ gap: 8, paddingBottom: 12 });
-    expect(styleOf(chipCarrier?.previousElementSibling)).toMatchObject({ paddingHorizontal: 16, paddingBottom: 8 });
+    // The dense chip row is 48dp of chip targets: nothing pads under it, 8dp
+    // between it and the token row.
+    expect(styleOf(chipCarrier)).toMatchObject({ gap: 8, paddingBottom: 0 });
+    // No empty filter stack between the bar and the chips: the row follows the bar.
+    expect(chipCarrier?.previousElementSibling?.hasAttribute('data-appbar-header')).toBe(true);
   });
 
   it('removes only the grade panel backing when floating native glass is allowed', () => {
@@ -1277,7 +1328,7 @@ describe('ClimbTopChrome', () => {
     ).toBe('#010203');
   });
 
-  it('renders Material with a static board title, separate history and grade controls, and no search field', () => {
+  it('renders Material with an empty title slot, separate history and grade controls, and no search field', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
     const onOpenBoardDetail = vi.fn();
@@ -1296,13 +1347,15 @@ describe('ClimbTopChrome', () => {
     );
 
     expect(container.querySelector('[data-gradient]')).toBeNull();
-    // "Climbs" names the tab; the board is its subtitle. The Angle chip shows an
-    // adjustable board's angle, so the subtitle drops it.
-    const title = container.querySelector('[data-pressable="mobile.nav.climbs, Display:kilter • 12x12"]');
-    expect(title?.getAttribute('data-hint')).toBe('boardPill.switchHint');
-    fireEvent.click(title!);
-    expect(routerPush).toHaveBeenCalledWith('/boards');
-    haptics.light.mockClear();
+    // As on iOS the bar draws no title: no "Climbs", no board switcher (⋮ has
+    // Switch board). TalkBack still reads the screen's name from the empty slot.
+    expect(container.querySelector('[data-pressable^="mobile.nav.climbs"]')).toBeNull();
+    expect(container.querySelector('[data-appbar-content]')).toBeNull();
+    expect(container.textContent).not.toContain('mobile.nav.climbs');
+    const header = container.querySelector('[data-appbar-header] [data-role="header"]');
+    expect(header?.getAttribute('data-a11y-label')).toBe('mobile.nav.climbs');
+    expect(JSON.parse(header?.getAttribute('data-style') ?? '{}')).toMatchObject({ flex: 1, minWidth: 0 });
+    expect(routerPush).not.toHaveBeenCalled();
     const history = capsule(container);
     expect(history?.getAttribute('data-capsule')).toBe('Board history, Display:kilter • 12x12 • 40°');
     expect(container.querySelector('input')).toBeNull();
