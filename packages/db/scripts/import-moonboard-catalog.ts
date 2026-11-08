@@ -1,21 +1,18 @@
-import { mergeCatalogCharacteristicsSql } from '../src/queries/climbs/catalog-characteristics.js';
-import { CLIMB_CHARACTERISTICS, isMethodCharacteristic } from '@boardsesh/shared-schema/characteristics';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { sql, eq, and, isNull, inArray } from 'drizzle-orm';
-import { boardClimbs, boardClimbStats, boardClimbHolds, boardClimbAliases } from '../src/schema/boards/unified.js';
-import { blendedQualityAverageSql } from '../src/queries/climb-stats/quality-blend.js';
+import { eq, and, isNull } from 'drizzle-orm';
+import { boardClimbs, boardClimbAliases } from '../src/schema/boards/unified.js';
 import { fingerprintFromHolds } from './moonboard-2024-helpers.js';
 import {
   HOLDSETUP_TO_LAYOUT,
   buildExistingCatalogMatchIndex,
-  catalogAliasConflictUpdate,
   type MoonBoardCatalogFile,
 } from './moonboard-catalog-helpers.js';
 import { stageCatalogBatch } from './moonboard-catalog-batch.js';
+import { writeMoonBoardCatalogBatch } from '../src/moonboard/catalog.js';
 import { describeDatabaseHost, resolveScriptDatabaseUrl } from './db-connection.js';
 import { formatUnmappedMoonBoardGrades } from './moonboard-helpers.js';
 import {
@@ -106,9 +103,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // =============================================================================
 
 const DEFAULT_DIR = path.join(__dirname, '../data/moonboard/app-catalog');
-// 2000 rows/insert keeps every table under Postgres's 65,535 bind-param limit
-// (widest is board_climbs at ~24 cols) while cutting round-trips ~4× vs 500.
-const BATCH_SIZE = 2000;
 
 /**
  * Build the in-memory match index for the non-destructive merge:
@@ -535,112 +529,13 @@ async function importMoonBoardCatalog() {
                 throw new Error(`Run lock lost inside the board transaction for ${file}: ${txLockCheck.reason}`);
               }
 
-              // Climbs — for matched rows the identity columns are already correct, so
-              // refresh only the method-derived fields (characteristics/description).
-              for (let i = 0; i < climbRecords.length; i += BATCH_SIZE) {
-                await tx
-                  .insert(boardClimbs)
-                  .values(climbRecords.slice(i, i + BATCH_SIZE))
-                  .onConflictDoUpdate({
-                    target: boardClimbs.uuid,
-                    setWhere: isNull(boardClimbs.userId),
-                    set: {
-                      characteristics: mergeCatalogCharacteristicsSql(
-                        boardClimbs.characteristics,
-                        sql`excluded.characteristics`,
-                        Object.values(CLIMB_CHARACTERISTICS).filter(isMethodCharacteristic),
-                      ),
-                      description: sql`excluded.description`,
-                    },
-                  });
-              }
-
-              // Stats — monotonic merge: take the new grade/benchmark, but never null
-              // out an existing grade/quality or shrink the upstream count. The total is
-              // rebuilt as upstream + existing Boardsesh, so re-running the import repairs
-              // any climb whose count was previously clobbered by a tick recompute without
-              // dropping the ticks it has since accrued.
-              //
-              // The NEW upstream count this upsert resolves to: monotonic GREATEST of the
-              // stored and incoming snapshot. Defined ONCE and reused for the count SET,
-              // the total, AND the blend weight — a SET expression reads the OLD value of
-              // a bare column, so the blend must weight by this NEW resolved count. Single
-              // source keeps the three in lockstep if the count policy ever changes.
-              const resolvedUpstreamAscensionistCount = sql`greatest(coalesce(excluded.upstream_ascensionist_count, 0), coalesce(${boardClimbStats.upstreamAscensionistCount}, 0))`;
-              const blendedQuality = blendedQualityAverageSql({
-                upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
-                upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
-                boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
-                boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
+              unlistedThisFile = await writeMoonBoardCatalogBatch(tx, {
+                climbs: climbRecords,
+                stats: statsRecords,
+                holds: holdsRecords,
+                aliases: aliasRecords,
+                withdrawnClimbUuids,
               });
-              for (let i = 0; i < statsRecords.length; i += BATCH_SIZE) {
-                await tx
-                  .insert(boardClimbStats)
-                  .values(statsRecords.slice(i, i + BATCH_SIZE))
-                  .onConflictDoUpdate({
-                    target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
-                    // Existing-side refs must be table-qualified — a bare column name is
-                    // ambiguous between the target row and `excluded` in ON CONFLICT.
-                    set: {
-                      displayDifficulty: sql`coalesce(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
-                      benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
-                      difficultyAverage: sql`coalesce(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
-                      upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
-                      ascensionistCount: sql`${resolvedUpstreamAscensionistCount} + coalesce(${boardClimbStats.boardseshAscensionistCount}, 0)`,
-                      // Manufacturer average lands in upstream_quality_average; quality_average
-                      // is the blend of it and Boardsesh's own votes.
-                      upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
-                      qualityAverage: blendedQuality,
-                      qualityNormalized: sql`true`,
-                      upstreamSyncedAt: sql`excluded.upstream_synced_at`,
-                    },
-                  });
-              }
-
-              for (let i = 0; i < holdsRecords.length; i += BATCH_SIZE) {
-                await tx
-                  .insert(boardClimbHolds)
-                  .values(holdsRecords.slice(i, i + BATCH_SIZE))
-                  .onConflictDoNothing();
-              }
-
-              // Self-aliases so resolveCanonicalClimbUuid always hits, plus id-based
-              // aliases (moonboard:{id}:{angle} → canonical) so problem-id lookups from
-              // the logbook importer resolve merged/legacy climbs.
-              for (let i = 0; i < aliasRecords.length; i += BATCH_SIZE) {
-                await tx
-                  .insert(boardClimbAliases)
-                  .values(aliasRecords.slice(i, i + BATCH_SIZE))
-                  .onConflictDoUpdate({
-                    target: [boardClimbAliases.boardType, boardClimbAliases.aliasUuid],
-                    set: catalogAliasConflictUpdate(),
-                  });
-              }
-
-              // Stop listing climbs whose problem upstream has withdrawn. Rows,
-              // holds, aliases, ticks and beta links all stay — the climb just leaves
-              // search, matching what the MoonBoard app itself shows.
-              //
-              // `user_id IS NULL` is the same fence buildExistingIndex applies: a
-              // Boardsesh-native climb is never collateral, even if a withdrawn
-              // problem's alias chain somehow pointed at one. The IS DISTINCT FROM
-              // predicate makes a re-run a no-op instead of rewriting rows that are
-              // already unlisted, so the returned count is "what actually changed".
-              for (let i = 0; i < withdrawnClimbUuids.length; i += BATCH_SIZE) {
-                const unlistedRows = await tx
-                  .update(boardClimbs)
-                  .set({ isListed: false })
-                  .where(
-                    and(
-                      eq(boardClimbs.boardType, 'moonboard'),
-                      isNull(boardClimbs.userId),
-                      inArray(boardClimbs.uuid, withdrawnClimbUuids.slice(i, i + BATCH_SIZE)),
-                      sql`${boardClimbs.isListed} IS DISTINCT FROM false`,
-                    ),
-                  )
-                  .returning({ uuid: boardClimbs.uuid });
-                unlistedThisFile += unlistedRows.length;
-              }
 
               if (dryRun) throw DRY_RUN_ROLLBACK;
             });

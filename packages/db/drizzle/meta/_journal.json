@@ -2038,6 +2038,13 @@
       "when": 1794162086974,
       "tag": "0290_posthog_daily_signups",
       "breakpoints": true
+    },
+    {
+      "idx": 291,
+      "version": "7",
+      "when": 1794163033033,
+      "tag": "0291_moonboard_sync_daemon",
+      "breakpoints": true
     }
   ]
 }
