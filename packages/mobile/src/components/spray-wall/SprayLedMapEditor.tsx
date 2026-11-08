@@ -14,6 +14,7 @@ import {
   type LedPosition,
   type TnutLayout,
   type TnutPoint,
+  type TnutWiring,
 } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import type { SprayLookPreviewSource } from '../../lib/spray/spray-look-preview';
@@ -44,13 +45,23 @@ export function SprayLedMapEditor(props: MapEditorProps) {
   return props.kind === 'positions' ? <LedPositionsEditor {...props} /> : <CableEditor {...props} />;
 }
 
+// Enough for one Undo per LED on a long cable run.
+const HISTORY_LIMIT = 300;
 function useEditorHistory(layout: TnutLayout, onChange: MapEditorProps['onChange']) {
   const [history, setHistory] = useState<TnutLayout[]>([]);
   return {
     canUndo: history.length > 0,
     change: (update: Partial<TnutLayout>) => {
-      setHistory((previous) => [...previous.slice(-29), layout]);
+      setHistory((previous) => [...previous, layout].slice(-HISTORY_LIMIT));
       onChange(update);
+    },
+    /** Apply several updates at once, but let Undo step back through each one. */
+    changeSteps: (updates: Partial<TnutLayout>[]) => {
+      if (!updates.length) return;
+      const states = [layout];
+      for (const update of updates.slice(0, -1)) states.push({ ...states[states.length - 1], ...update });
+      setHistory((previous) => [...previous, ...states].slice(-HISTORY_LIMIT));
+      onChange(updates[updates.length - 1]);
     },
     undo: () => {
       const previous = history.at(-1);
@@ -127,11 +138,13 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
           onMove: move,
           dragPoints: leds,
           draftColor: brandColors.primary,
-          renderOverlay: (renderWidth, renderHeight, zoom, panX, panY) => (
+          renderOverlay: (renderWidth, renderHeight, zoom, panX, panY, liveDrag) => (
             <SpraySetupOverlay
               holes={layout.holes}
               leds={leds}
               compactHoles
+              liveDrag={liveDrag}
+              liveDragTarget="leds"
               width={renderWidth}
               height={renderHeight}
               zoom={zoom}
@@ -154,7 +167,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const [selected, setSelected] = useState<string[]>([]);
   const [highlight, setHighlight] = useState(false);
   const [skipText, setSkipText] = useState<string | null>(null);
-  const { change, undo, canUndo } = useEditorHistory(layout, onChange);
+  const { change, changeSteps, undo, canUndo } = useEditorHistory(layout, onChange);
+  const [previewWiring, setPreviewWiring] = useState<TnutWiring | null>(null);
   const leds = layout.ledPositions ?? NO_LEDS;
   const wiring = layout.wiring;
   const indices = useMemo(
@@ -192,9 +206,24 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const canApplySkip = edge && validSkip && (newSkip === gapCount || skipped !== wiring);
 
   function extend(ids: string[]) {
+    setPreviewWiring(null);
     if (mode !== 'draw' || !wiring) return;
-    const next = extendWiring(wiring, ids);
-    if (next !== wiring) change({ wiring: next });
+    // One history step per LED, so Undo removes only the last connection.
+    const steps: Partial<TnutLayout>[] = [];
+    let current = wiring;
+    for (const id of ids) {
+      const next = extendWiring(current, [id]);
+      if (next === current) continue;
+      steps.push({ wiring: next });
+      current = next;
+    }
+    changeSteps(steps);
+  }
+
+  function previewTrace(points: TnutPoint[], tolerance: number) {
+    if (mode !== 'draw' || !wiring) return;
+    const next = extendWiring(wiring, traceLedPath(leds, points, tolerance));
+    setPreviewWiring(next === wiring ? null : next);
   }
 
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
@@ -323,17 +352,22 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
         canvas={{
           source,
           photoUri,
-          onInteractionChange,
+          onInteractionChange: (active) => {
+            // A trace cancelled by a pinch never commits; drop its preview.
+            if (!active) setPreviewWiring(null);
+            onInteractionChange(active);
+          },
           mode: mode === 'draw' ? 'draw' : mode === 'select' ? 'tap' : 'pan',
           onTap: tap,
           onTrace: (points, tolerance) => extend(traceLedPath(leds, points, tolerance)),
+          onTraceProgress: previewTrace,
           dragPoints: leds,
           draftColor: SPRAY_CABLE_COLOR,
           renderOverlay: (renderWidth, renderHeight, zoom, panX, panY) => (
             <SpraySetupOverlay
               holes={layout.holes}
               leds={leds}
-              wiring={wiring}
+              wiring={previewWiring ?? wiring}
               selected={mode === 'select' ? selected : undefined}
               width={renderWidth}
               height={renderHeight}
@@ -365,6 +399,7 @@ function SkipCountDialog({
   const focused = useIsFocused();
   const { t } = useTranslation('boards');
   const { systemColors, spacing } = useTheme();
+  const count = /^\d+$/.test(value) ? Number(value) : 0;
   return (
     <Modal
       transparent
@@ -379,14 +414,32 @@ function SkipCountDialog({
           style={[styles.dialog, { backgroundColor: systemColors.background, padding: spacing[4], gap: spacing[3] }]}
         >
           <Text variant="headline">{t('sprayLedSetup.skipCount')}</Text>
-          <BuilderTextInput
-            accessibilityLabel={t('sprayLedSetup.skipCount')}
-            value={value}
-            onChangeText={onChange}
-            keyboardType="number-pad"
-            maxLength={5}
-            selectTextOnFocus
-          />
+          <View style={[styles.row, { alignItems: 'center', flexWrap: 'nowrap', gap: spacing[2] }]}>
+            <View style={styles.skipInput}>
+              <BuilderTextInput
+                accessibilityLabel={t('sprayLedSetup.skipCount')}
+                value={value}
+                onChangeText={onChange}
+                keyboardType="number-pad"
+                maxLength={5}
+                selectTextOnFocus
+              />
+            </View>
+            <Button
+              title="−"
+              accessibilityLabel={t('sprayLedSetup.decrease', { label: t('sprayLedSetup.skipCount') })}
+              variant="outlined"
+              disabled={count <= 0}
+              onPress={() => onChange(String(Math.max(0, Math.min(MAX_WIRING_SKIP, count - 1))))}
+            />
+            <Button
+              title="+"
+              accessibilityLabel={t('sprayLedSetup.increase', { label: t('sprayLedSetup.skipCount') })}
+              variant="outlined"
+              disabled={count >= MAX_WIRING_SKIP}
+              onPress={() => onChange(String(Math.max(0, Math.min(MAX_WIRING_SKIP, count + 1))))}
+            />
+          </View>
           <Text variant="footnote">{t('sprayLedSetup.skipCountRange', { max: MAX_WIRING_SKIP })}</Text>
           <View style={[styles.row, { gap: spacing[2] }]}>
             <Button title={t('sprayLedSetup.cancelSkip')} variant="text" onPress={onClose} />
@@ -403,4 +456,5 @@ const styles = StyleSheet.create({
   checkbox: { width: 22, height: 22, borderWidth: 2, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
   scrim: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.5)' },
   dialog: { width: '100%', maxWidth: 360, borderRadius: 16 },
+  skipInput: { flex: 1 },
 });

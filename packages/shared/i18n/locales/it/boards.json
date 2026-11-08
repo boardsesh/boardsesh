@@ -1508,7 +1508,7 @@
     "selectHoles": "Fori",
     "selectHolds": "Prese",
     "lightSelection": "Illumina la selezione",
-    "mappingHint": "Scegli fori o prese e toccali nella foto. Illumina la selezione per verificare i LED associati. Tocca di nuovo per deselezionare.",
+    "mappingHint": "Scegli fori o prese e toccali nella foto. I loro LED si accendono subito. Tocca di nuovo per deselezionare. I contorni rossi tratteggiati non hanno LED.",
     "mappingSummary": "Prese collegate a LED cablati {{mapped}} / {{total}}",
     "selectionSummary": "Selezionati {{count}} · LED {{leds}}",
     "selectionUnmapped": "Posizioni selezionate senza LED cablati {{count}}",

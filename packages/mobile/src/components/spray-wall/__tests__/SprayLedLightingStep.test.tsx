@@ -146,12 +146,36 @@ describe('final lighting test', () => {
     render(<SprayLedLightingStep {...props} />);
     const light = screen.getByText('sprayLedSetup.lightSelection');
     expect(light.hasAttribute('disabled')).toBe(true);
-    tap(hole.x, hole.y);
     expect(preview.show).not.toHaveBeenCalled();
+    tap(hole.x, hole.y);
+    // Selecting lights the selection straight away; the button re-sends it.
+    expect(preview.show).toHaveBeenCalledExactlyOnceWith([2, 5]);
     fireEvent.click(light);
     expect(preview.show).toHaveBeenLastCalledWith([2, 5]);
     tap(hole.x, hole.y);
     expect(light.hasAttribute('disabled')).toBe(true);
+    expect(preview.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks holes and holds without a wired LED and fades the LED dots', () => {
+    render(<SprayLedLightingStep {...props} />);
+    const overlayProps = () => {
+      const renderOverlay = canvas.current?.renderOverlay;
+      if (!renderOverlay) throw new Error('No overlay');
+      const overlay = renderOverlay(
+        500,
+        700,
+        { value: 1 } as never,
+        { value: 0 } as never,
+        { value: 0 } as never,
+        { value: null } as never,
+      ) as ReactElement<{ unmappedHoles: unknown[]; unmappedHoldIds: number[]; subtleLeds: boolean }>;
+      return overlay.props;
+    };
+    expect(overlayProps().subtleLeds).toBe(true);
+    expect(overlayProps().unmappedHoles).toEqual([{ x: 0.8, y: 0.3 }]);
+    fireEvent.click(screen.getByText('sprayLedSetup.selectHolds'));
+    expect(overlayProps().unmappedHoldIds).toEqual([20]);
   });
 
   it('selects canonical hold contours, clears the selection on switching, and reports unwired positions', () => {
@@ -165,6 +189,7 @@ describe('final lighting test', () => {
       { value: 1 } as never,
       { value: 0 } as never,
       { value: 0 } as never,
+      { value: null } as never,
     ) as ReactElement<{ selectedHoldIds: number[] }>;
     expect(overlay.props.selectedHoldIds).toEqual([10]);
     fireEvent.click(screen.getByText('sprayLedSetup.lightSelection'));

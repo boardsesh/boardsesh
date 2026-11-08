@@ -1508,7 +1508,7 @@
     "selectHoles": "Bohrlöcher",
     "selectHolds": "Griffe",
     "lightSelection": "Auswahl beleuchten",
-    "mappingHint": "Wähle Bohrlöcher oder Griffe und tippe sie im Bild an. Beleuchte die Auswahl, um die zugehörigen LEDs zu prüfen. Erneutes Antippen hebt die Auswahl auf.",
+    "mappingHint": "Wähle Bohrlöcher oder Griffe und tippe sie im Bild an. Ihre LEDs leuchten sofort. Erneutes Antippen hebt die Auswahl auf. Rot gestrichelte Umrisse haben keine LED.",
     "mappingSummary": "Griffe mit verdrahteten LEDs {{mapped}} / {{total}}",
     "selectionSummary": "Ausgewählt {{count}} · LEDs {{leds}}",
     "selectionUnmapped": "Ausgewählte Positionen ohne verdrahtete LEDs {{count}}",

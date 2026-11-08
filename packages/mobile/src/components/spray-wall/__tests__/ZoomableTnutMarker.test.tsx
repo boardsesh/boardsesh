@@ -239,6 +239,7 @@ describe('SprayPhotoCanvas', () => {
       expect.objectContaining({ value: 1 }),
       expect.objectContaining({ value: 0 }),
       expect.objectContaining({ value: 0 }),
+      expect.objectContaining({ value: null }),
     );
     pinchTo(2);
     expect(renderOverlay.mock.calls[0][2].value).toBe(2);
@@ -301,12 +302,20 @@ describe('SprayPhotoCanvas', () => {
 
   it('moves a marker in normalized coordinates after zoom and pan, committing only at release', () => {
     const onMove = vi.fn();
+    const renderOverlay = vi.fn<NonNullable<SprayPhotoCanvasProps['renderOverlay']>>(() => createElement('div'));
     render(
       createElement(
         SprayPhotoCanvas,
-        canvasProps({ mode: 'move', onMove, dragPoints: [{ x: 0.4, y: 0.4 }], draftColor: '#0891B2' }),
+        canvasProps({
+          mode: 'move',
+          onMove,
+          renderOverlay,
+          dragPoints: [{ x: 0.4, y: 0.4 }],
+          draftColor: '#0891B2',
+        }),
       ),
     );
+    const liveDrag = renderOverlay.mock.calls[0][5];
     pinchTo(2);
     const pan = runtime.gestures[1];
     fire(pan, 'onStart');
@@ -320,6 +329,8 @@ describe('SprayPhotoCanvas', () => {
     expect(runtime.bridges).toBe(bridges);
     expect(onMove).not.toHaveBeenCalled();
     expect(runtime.shapes[0].compute().d).toBe('M264 405a6 6 0 1 0 12 0a6 6 0 1 0 -12 0');
+    // The marker itself follows the finger before the move is committed.
+    expect(liveDrag.value).toEqual({ index: 0, x: 0.6, y: 0.6 });
     end(move, { x: 270, y: 405 });
     expect(onMove).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, { x: 0.6, y: 0.6 }, 600, 900);
     fire(move, 'onFinalize');

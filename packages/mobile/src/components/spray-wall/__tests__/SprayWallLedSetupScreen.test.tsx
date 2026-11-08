@@ -244,9 +244,11 @@ vi.mock('../SprayPhotoStage', () => ({
     controls.canvas = canvas;
     const zoom = { value: 1 } as import('react-native-reanimated').SharedValue<number>;
     const pan = { value: 0 } as import('react-native-reanimated').SharedValue<number>;
-    const overlay = canvas.renderOverlay?.(500, 700, zoom, pan, pan) as ReactElement<{
+    const drag = { value: null } as never;
+    const overlay = canvas.renderOverlay?.(500, 700, zoom, pan, pan, drag) as ReactElement<{
       holes: TnutPoint[];
       leds?: LedPosition[];
+      wiring?: { paths: string[][] };
     }>;
     controls.editor = {
       source: canvas.source,
@@ -262,6 +264,7 @@ vi.mock('../SprayPhotoStage', () => ({
         'data-testid': 'hole-editor',
         'data-count': overlay.props.holes.length,
         'data-led-count': overlay.props.leds?.length ?? 0,
+        'data-wired': overlay.props.wiring?.paths.flat().length ?? 0,
       },
       overlayTools,
     );
@@ -447,6 +450,46 @@ describe('SprayWallLedSetupScreen', () => {
     expect(saved.wiring?.paths).toHaveLength(1);
     expect(saved.wiring?.paths[0]).toHaveLength(3);
     expect(saved.wiring?.skips[0].count).toBe(2);
+  });
+
+  it('previews the cable while drawing and undoes one LED connection at a time', async () => {
+    const holes = [
+      { x: 0.2, y: 0.3 },
+      { x: 0.5, y: 0.3 },
+      { x: 0.8, y: 0.3 },
+    ];
+    storage.load.mockResolvedValue({ ...savedLayout(), rows: 2, columns: 3, holes });
+    await open();
+    next();
+    next();
+    next();
+    await screen.findByText('sprayLedSetup.ledHint');
+    fireEvent.click(radio('ledCenter'));
+    next();
+    next();
+    fireEvent.click(radio('customCable'));
+    next();
+    next();
+    const wired = () => screen.getByTestId('hole-editor').getAttribute('data-wired');
+    fireEvent.click(button('drawCable'));
+    tap({ x: 0.2, y: 0.3 });
+    expect(wired()).toBe('1');
+    const stroke = [
+      { x: 0.5, y: 0.3 },
+      { x: 0.8, y: 0.3 },
+    ];
+    // While the finger is still down the cable already snaps to the LEDs it passed.
+    act(() => controls.canvas?.onTraceProgress?.(stroke, 0.001));
+    expect(wired()).toBe('3');
+    // A stroke cancelled by a pinch leaves no preview behind.
+    act(() => controls.canvas?.onInteractionChange?.(false));
+    expect(wired()).toBe('1');
+    act(() => controls.canvas?.onTrace?.(stroke, 0.001));
+    expect(wired()).toBe('3');
+    fireEvent.click(button('undo'));
+    expect(wired()).toBe('2');
+    fireEvent.click(button('undo'));
+    expect(wired()).toBe('1');
   });
 
   it('uses the full width and keeps fullscreen edits in canonical coordinates across reopen and owner cleanup', async () => {

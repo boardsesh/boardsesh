@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
@@ -70,6 +70,23 @@ export function SprayLedLightingStep({
   const selectedLedIds = [...new Set(chosen.flatMap((entry) => entry.ledIds))];
   const selectedHoles = kind === 'holes' ? layout.holes.filter((_, index) => selection.has(index)) : [];
   const missing = chosen.filter((entry) => !entry.indices.length).length;
+  const { unmappedHoles, unmappedHoldIds } = useMemo(
+    () => ({
+      unmappedHoles: mapping.holes.filter((hole) => !hole.indices.length).map((hole) => layout.holes[hole.holeIndex]),
+      unmappedHoldIds: mapping.holds.filter((hold) => !hold.indices.length).map((hold) => hold.holdId),
+    }),
+    [mapping, layout.holes],
+  );
+  // Selecting holds or holes lights them straight away; clearing the selection turns them off.
+  const indicesKey = indices.join(',');
+  const lastLit = useRef('');
+  const { available, show, stop } = preview;
+  useEffect(() => {
+    if (!available || indicesKey === lastLit.current) return;
+    lastLit.current = indicesKey;
+    if (indicesKey) void show(indicesKey.split(',').map(Number));
+    else void stop();
+  }, [available, indicesKey, show, stop]);
   const options = [
     { key: 'holes' as const, label: t('sprayLedSetup.selectHoles') },
     { key: 'holds' as const, label: t('sprayLedSetup.selectHolds') },
@@ -77,6 +94,7 @@ export function SprayLedLightingStep({
   function selectKind(next: 'holes' | 'holds') {
     setKind(next);
     setSelected([]);
+    lastLit.current = '';
     void preview.stop();
   }
   function tap(point: TnutPoint, photoWidth: number, photoHeight: number) {
@@ -138,6 +156,9 @@ export function SprayLedLightingStep({
               selectedHoles={selectedHoles}
               holdRings={kind === 'holds' ? rings : undefined}
               selectedHoldIds={kind === 'holds' ? selected : []}
+              subtleLeds
+              unmappedHoles={kind === 'holes' ? unmappedHoles : []}
+              unmappedHoldIds={kind === 'holds' ? unmappedHoldIds : []}
               width={photoWidth}
               height={photoHeight}
               zoom={zoom}

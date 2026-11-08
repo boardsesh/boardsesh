@@ -1508,7 +1508,7 @@
     "selectHoles": "Holes",
     "selectHolds": "Holds",
     "lightSelection": "Light selection",
-    "mappingHint": "Choose holes or holds, then tap the photo to select them. Light the selection to check which LEDs belong to it. Tap again to deselect.",
+    "mappingHint": "Choose holes or holds, then tap the photo to select them. Their LEDs light up straight away. Tap again to deselect. Red dashed outlines have no LED.",
     "mappingSummary": "Holds linked to wired LEDs {{mapped}} / {{total}}",
     "selectionSummary": "Selected {{count}} · LEDs {{leds}}",
     "selectionUnmapped": "Selected positions without wired LEDs {{count}}",

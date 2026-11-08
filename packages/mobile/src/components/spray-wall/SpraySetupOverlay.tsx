@@ -4,6 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
 import type { LedPosition, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
+import type { SprayLiveDrag } from './SprayPhotoCanvas';
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 // Cable colour is separate from the orange holes and violet addressable LEDs.
 export const SPRAY_CABLE_COLOR = '#0891B2';
@@ -35,10 +36,12 @@ function circles(
   panX: number,
   panY: number,
   radius: number,
+  override: SprayLiveDrag | null = null,
 ): string {
   'worklet';
   let path = '';
-  for (const point of points) {
+  for (let index = 0; index < points.length; index++) {
+    const point = override && override.index === index ? override : points[index];
     const screen = screenPoint(point, width, height, zoom, panX, panY);
     if (screen.x < -radius || screen.y < -radius || screen.x > width + radius || screen.y > height + radius) continue;
     path += circlePath(screen.x, screen.y, radius);
@@ -94,6 +97,11 @@ export function SpraySetupOverlay({
   selectedHoldIds = [],
   selectedHoles = [],
   compactHoles = false,
+  liveDrag,
+  liveDragTarget,
+  subtleLeds = false,
+  unmappedHoles = [],
+  unmappedHoldIds = [],
   width,
   height,
   zoom,
@@ -101,8 +109,17 @@ export function SpraySetupOverlay({
   panY,
 }: {
   holes: TnutPoint[];
+  /** Fade the LED dots so holds and selections stay readable (Test LEDs). */
+  subtleLeds?: boolean;
+  /** Holes with no LED; drawn with a red ring. */
+  unmappedHoles?: TnutPoint[];
+  /** Holds with no LED; their outline is drawn red. */
+  unmappedHoldIds?: number[];
   /** Draw holes small and faded so the LEDs stay readable (LED and cable editors). */
   compactHoles?: boolean;
+  /** A point being dragged right now; drawn at the finger until the move commits. */
+  liveDrag?: SharedValue<SprayLiveDrag | null>;
+  liveDragTarget?: 'holes' | 'leds';
   leds?: LedPosition[];
   wiring?: TnutWiring;
   selected?: string[];
@@ -147,8 +164,22 @@ export function SpraySetupOverlay({
     const selection = new Set(selectedHoldIds);
     return holdRings?.filter((ring) => selection.has(ring.id)) ?? [];
   }, [holdRings, selectedHoldIds]);
+  const { mappedRings, unmappedRings } = useMemo(() => {
+    const unmapped = new Set(unmappedHoldIds);
+    const rings = holdRings ?? [];
+    return {
+      mappedRings: rings.filter((ring) => !unmapped.has(ring.id)),
+      unmappedRings: rings.filter((ring) => unmapped.has(ring.id)),
+    };
+  }, [holdRings, unmappedHoldIds]);
   const outlineProps = useAnimatedProps(() => ({
-    d: outlinePath(holdRings ?? [], width, height, zoom.value, panX.value, panY.value),
+    d: outlinePath(mappedRings, width, height, zoom.value, panX.value, panY.value),
+  }));
+  const unmappedOutlineProps = useAnimatedProps(() => ({
+    d: outlinePath(unmappedRings, width, height, zoom.value, panX.value, panY.value),
+  }));
+  const unmappedHoleProps = useAnimatedProps(() => ({
+    d: circles(unmappedHoles, width, height, zoom.value, panX.value, panY.value, 9),
   }));
   const selectedOutlineProps = useAnimatedProps(() => ({
     d: outlinePath(selectedRings, width, height, zoom.value, panX.value, panY.value),
@@ -157,9 +188,29 @@ export function SpraySetupOverlay({
     d: circles(selectedHoles, width, height, zoom.value, panX.value, panY.value, 11),
   }));
   const holeProps = useAnimatedProps(() => ({
-    d: circles(holes, width, height, zoom.value, panX.value, panY.value, holeRadius),
+    d: circles(
+      holes,
+      width,
+      height,
+      zoom.value,
+      panX.value,
+      panY.value,
+      holeRadius,
+      liveDragTarget === 'holes' ? (liveDrag?.value ?? null) : null,
+    ),
   }));
-  const ledProps = useAnimatedProps(() => ({ d: circles(leds, width, height, zoom.value, panX.value, panY.value, 4) }));
+  const ledProps = useAnimatedProps(() => ({
+    d: circles(
+      leds,
+      width,
+      height,
+      zoom.value,
+      panX.value,
+      panY.value,
+      4,
+      liveDragTarget === 'leds' ? (liveDrag?.value ?? null) : null,
+    ),
+  }));
   const selectedProps = useAnimatedProps(() => ({
     d: circles(selectedLeds, width, height, zoom.value, panX.value, panY.value, 10),
   }));
@@ -250,7 +301,17 @@ export function SpraySetupOverlay({
         fill={brandColors.primary}
         stroke={brandColors.onPrimary}
         strokeWidth={1.8}
+        opacity={subtleLeds ? 0.4 : 1}
       />
+      {unmappedHoles.length ? (
+        <AnimatedPath
+          animatedProps={unmappedHoleProps}
+          fill="none"
+          stroke={brandColors.error}
+          strokeWidth={2}
+          strokeDasharray={[3, 2]}
+        />
+      ) : null}
       {cableStarts.length ? (
         <>
           <AnimatedPath animatedProps={startRingProps} fill="none" stroke={brandColors.success} strokeWidth={2.5} />
@@ -261,6 +322,13 @@ export function SpraySetupOverlay({
       {holdRings ? (
         <>
           <AnimatedPath animatedProps={outlineProps} fill="none" stroke={brandColors.warning} strokeWidth={1.5} />
+          <AnimatedPath
+            animatedProps={unmappedOutlineProps}
+            fill="none"
+            stroke={brandColors.error}
+            strokeWidth={2}
+            strokeDasharray={[4, 3]}
+          />
           <AnimatedPath
             animatedProps={selectedOutlineProps}
             fill={brandColors.primary}

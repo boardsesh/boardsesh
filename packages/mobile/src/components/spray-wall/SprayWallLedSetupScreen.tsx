@@ -808,9 +808,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                 dragPoints: layout.holes,
                 draftColor: brandColors.warning,
                 onInteractionChange: setDragging,
-                renderOverlay: (width, height, zoom, panX, panY) => (
+                renderOverlay: (width, height, zoom, panX, panY, liveDrag) => (
                   <SpraySetupOverlay
                     holes={layout.holes}
+                    liveDrag={liveDrag}
+                    liveDragTarget="holes"
                     width={width}
                     height={height}
                     zoom={zoom}

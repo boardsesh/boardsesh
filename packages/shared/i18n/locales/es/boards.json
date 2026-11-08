@@ -1508,7 +1508,7 @@
     "selectHoles": "Orificios",
     "selectHolds": "Presas",
     "lightSelection": "Iluminar selección",
-    "mappingHint": "Elige orificios o presas y tócalos en la foto. Ilumina la selección para comprobar los LED asociados. Toca de nuevo para deseleccionar.",
+    "mappingHint": "Elige orificios o presas y tócalos en la foto. Sus LED se encienden al momento. Toca de nuevo para deseleccionar. Los contornos rojos discontinuos no tienen LED.",
     "mappingSummary": "Presas con LED cableados {{mapped}} / {{total}}",
     "selectionSummary": "Seleccionados {{count}} · LED {{leds}}",
     "selectionUnmapped": "Posiciones seleccionadas sin LED cableados {{count}}",
