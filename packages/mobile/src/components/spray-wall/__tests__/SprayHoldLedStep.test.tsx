@@ -180,6 +180,33 @@ describe('holds and LEDs step', () => {
     expect(overlay().selected).toEqual(['a', 'b']);
   });
 
+  it('before the cable, counts LED positions as linked and says the wall lights up later', () => {
+    function Unwired() {
+      const [layout, setLayout] = useState<TnutLayout>({ ...initial, wiring: undefined });
+      return (
+        <SprayHoldLedStep
+          wallUuid="wall"
+          layout={layout}
+          holds={holds}
+          source={source}
+          photoUri="file:///photo"
+          width={400}
+          onChange={(update) => setLayout((previous) => ({ ...previous, ...update }))}
+          onInteractionChange={vi.fn()}
+        />
+      );
+    }
+    render(<Unwired />);
+    expect(screen.getByText('sprayLedSetup.holdLedsNotWired')).toBeTruthy();
+    expect(overlay().unmappedHoldIds).toEqual([]);
+    tap(left);
+    expect(overlay().selected).toEqual(['a', 'b']);
+    // No physical LED numbers yet, so nothing lights.
+    expect(preview.show).not.toHaveBeenCalled();
+    tap(right);
+    expect(overlay().unmappedHoldIds).toEqual([20]);
+  });
+
   it('picks another hold when a tap in LED mode misses every LED', () => {
     render(<Harness />);
     tap(left);

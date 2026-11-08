@@ -29,7 +29,8 @@ const NO_LEDS: NonNullable<TnutLayout['ledPositions']> = [];
  * Check and fix which LEDs light each hold. The app links them from the photo
  * geometry; where that is wrong, the climber picks a hold and taps its LEDs,
  * which stores a hand-made link that every later lighting (Test LEDs and
- * routes) follows.
+ * routes) follows. It runs before the cable, so the wall only lights the
+ * chosen hold once a cable exists (when the climber comes back to it).
  */
 export function SprayHoldLedStep({
   wallUuid,
@@ -59,10 +60,13 @@ export function SprayHoldLedStep({
   const leds = layout.ledPositions ?? NO_LEDS;
   const mapping = useMemo(() => buildSprayLedMapping(layout, source.frame, holds), [layout, source.frame, holds]);
   const rings = useMemo(() => sprayHoldRings(holds, source.frame), [holds, source.frame]);
+  // This step comes before the cable, so a hold counts as linked when it has LED
+  // positions, wired or not; Test LEDs later reports the wired ones.
   const unmappedHoldIds = useMemo(
-    () => mapping.holds.filter((hold) => !hold.indices.length).map((hold) => hold.holdId),
+    () => mapping.holds.filter((hold) => !hold.ledIds.length).map((hold) => hold.holdId),
     [mapping],
   );
+  const wired = Boolean(layout.wiring?.paths.some((path) => path.length));
   const entry = holdId === null ? undefined : mapping.holds.find((hold) => hold.holdId === holdId);
   const linkedByHand = holdId !== null && (layout.holdLeds ?? []).some((link) => link.holdId === holdId);
 
@@ -117,7 +121,7 @@ export function SprayHoldLedStep({
     onChange({ holdLeds: previous });
   }
 
-  const mapped = mapping.holds.length - unmappedHoldIds.length;
+  const linked = mapping.holds.length - unmappedHoldIds.length;
   const tools = (
     <View style={{ gap: spacing[2] }}>
       <SegmentedControl
@@ -151,7 +155,7 @@ export function SprayHoldLedStep({
   return (
     <View style={{ gap: spacing[3] }}>
       <Text>{t('sprayLedSetup.holdLedsHint')}</Text>
-      <Text variant="footnote">{t('sprayLedSetup.mappingSummary', { mapped, total: holds.length })}</Text>
+      <Text variant="footnote">{t('sprayLedSetup.holdLedsSummary', { linked, total: holds.length })}</Text>
       {tools}
       <SprayPhotoStage
         width={width}
@@ -188,7 +192,11 @@ export function SprayHoldLedStep({
           : t('sprayLedSetup.holdLedsNoHold')}
       </Text>
       {target === 'leds' && entry ? <Text variant="footnote">{t('sprayLedSetup.holdLedsLedHint')}</Text> : null}
-      {!preview.available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
+      {!wired ? (
+        <Text variant="footnote">{t('sprayLedSetup.holdLedsNotWired')}</Text>
+      ) : !preview.available ? (
+        <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text>
+      ) : null}
     </View>
   );
 }

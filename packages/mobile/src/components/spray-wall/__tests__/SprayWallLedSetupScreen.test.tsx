@@ -302,15 +302,15 @@ function next() {
   act(() => controls.header?.trailing.onPress());
 }
 function advanceToWiring() {
-  next();
-  next();
-  next();
-  next();
-  next();
+  next(); // LED positions
+  next(); // holds and LEDs
+  next(); // cable pattern
+  next(); // cable start
+  next(); // initial skip
+  next(); // cable editor
 }
 function finish() {
   advanceToWiring();
-  next(); // holds and LEDs
   next(); // Test LEDs
   next(); // save
 }
@@ -400,6 +400,9 @@ describe('SprayWallLedSetupScreen', () => {
     fireEvent.click(button('movePoint'));
     act(() => controls.canvas?.onMove?.({ x: 0.8, y: 0.3 }, { x: 0.8, y: 0.6 }, 500, 700));
     next();
+    // Holds are linked to LED positions before the cable is laid.
+    expect(screen.getByText('sprayLedSetup.holdLedsTitle')).toBeTruthy();
+    next();
     fireEvent.click(radio('customCable'));
     next();
     expect(screen.queryByText('sprayLedSetup.cableStartTitle')).toBeNull();
@@ -434,16 +437,12 @@ describe('SprayWallLedSetupScreen', () => {
     fireEvent.change(field('skipCount'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'sprayLed.confirm' }));
     next();
-    expect(screen.getByText('sprayLedSetup.holdLedsTitle')).toBeTruthy();
-    next();
     expect(screen.getByText('sprayLedSetup.lightingTitle')).toBeTruthy();
     fireEvent.click(button('lightingChase'));
     expect(preview.chase).toHaveBeenLastCalledWith([2, 5, 6]);
     back();
-    back();
     fireEvent.click(button('selectLeds'));
     expect(checkbox().getAttribute('aria-checked')).toBe('false');
-    next();
     next();
     next();
     await waitFor(() => expect(controls.back).toHaveBeenCalledOnce());
@@ -470,6 +469,7 @@ describe('SprayWallLedSetupScreen', () => {
     next();
     await screen.findByText('sprayLedSetup.ledHint');
     fireEvent.click(radio('ledCenter'));
+    next();
     next();
     next();
     fireEvent.click(radio('customCable'));
@@ -512,6 +512,7 @@ describe('SprayWallLedSetupScreen', () => {
     fireEvent.click(radio('ledCenter'));
     next();
     next();
+    next();
     fireEvent.click(radio('customCable'));
     next();
     next();
@@ -552,6 +553,7 @@ describe('SprayWallLedSetupScreen', () => {
     next();
     await screen.findByText('sprayLedSetup.ledHint');
     fireEvent.click(radio('ledCenter'));
+    next();
     next();
     next();
     fireEvent.click(radio('customCable'));
@@ -953,7 +955,6 @@ describe('SprayWallLedSetupScreen', () => {
     fireEvent.click(radio('ledSides'));
     advanceToWiring();
     expect(screen.getByText('sprayLedSetup.wiringTitle')).toBeTruthy();
-    next();
     next();
     storage.save.mockRejectedValueOnce(new Error('Disk full'));
     next();

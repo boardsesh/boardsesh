@@ -79,21 +79,21 @@ type Step =
   | 'holes'
   | 'led'
   | 'ledPositions'
+  | 'holdLeds'
   | 'cablePattern'
   | 'cableStart'
   | 'initialSkip'
   | 'wiring'
-  | 'holdLeds'
   | 'lighting';
 
 /** Leaving these keeps the work on disk. Choosing a placement is not work yet, and stays discardable. */
 const LED_WORK_STEPS: ReadonlySet<Step> = new Set<Step>([
   'ledPositions',
+  'holdLeds',
   'cablePattern',
   'cableStart',
   'initialSkip',
   'wiring',
-  'holdLeds',
   'lighting',
 ]);
 
@@ -411,12 +411,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else if (step === 'holes') setStep(layout.pattern === 'custom' ? 'pattern' : 'align');
     else if (step === 'led') setStep('holes');
     else if (step === 'ledPositions') setStep('led');
-    else if (step === 'cablePattern') setStep('ledPositions');
+    else if (step === 'holdLeds') setStep('ledPositions');
+    else if (step === 'cablePattern') setStep('holdLeds');
     else if (step === 'cableStart') setStep('cablePattern');
     else if (step === 'initialSkip') setStep(direction === 'custom' ? 'cablePattern' : 'cableStart');
     else if (step === 'wiring') setStep('initialSkip');
-    else if (step === 'holdLeds') setStep('wiring');
-    else if (step === 'lighting') setStep('holdLeds');
+    else if (step === 'lighting') setStep('wiring');
     else router.back();
   }
 
@@ -495,6 +495,13 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     if (step === 'ledPositions') {
       if (!layout.ledPositions?.length) return;
       saveWork(layout);
+      // Holds are linked to LED positions before the cable: the links depend on
+      // where the LEDs are, not on how the strip runs.
+      setStep('holdLeds');
+      return;
+    }
+    if (step === 'holdLeds') {
+      saveWork(layout);
       setStep('cablePattern');
       return;
     }
@@ -520,11 +527,6 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     }
     if (step === 'wiring') {
       if (!layout.wiring || !layout.ledPositions?.length) return;
-      saveWork(layout);
-      setStep('holdLeds');
-      return;
-    }
-    if (step === 'holdLeds') {
       saveWork(layout);
       setStep('lighting');
       return;

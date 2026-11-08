@@ -42,12 +42,27 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    hole layouts estimate spacing from the median nearest-neighbor distance
    (single-hole fallback: 10% of the normalized frame). Generated
    positions outside the image are omitted. Manual edits stay within the image.
-8. Choose horizontal, vertical or custom cable layout. Horizontal/vertical ask
+8. Next opens **Holds and LEDs**, which checks and fixes which LEDs belong to
+   each hold before the cable is laid: the links depend on where the LEDs are,
+   not on how the strip runs. Tapping a hold selects it and rings its LEDs on
+   the photo; holds outlined in red have no LED position. The tap target then
+   switches to **LEDs**: tapping an LED adds it to the hold or takes it away,
+   and a tap away from the LEDs picks the hold under it. That stores a
+   hand-made link (`holdLeds` in the layout) which replaces the automatic,
+   geometry-based assignment for that hold everywhere: Test LEDs and route
+   lighting. An LED linked by hand leaves the hold the geometry gave it.
+   **Next hold without LEDs** steps through the red holds top to bottom;
+   **Back to automatic** drops a hold's link; Undo reverts link edits. Before
+   the cable exists the LEDs have no physical index, so the wall cannot light
+   the chosen hold; coming back to this step after the cable does light it.
+   Regenerating the LED positions clears all links, because the new LEDs reuse
+   the old ids.
+9. Choose horizontal, vertical or custom cable layout. Horizontal/vertical ask
    for one of four start corners and generate a single serpentine run. Custom
    starts with no cable. Both continue to **Skip the first LEDs** before wiring.
    Enter the unused physical LED count before the first marked position. Zero
    starts at physical index 0. The count is separate from gaps between positions.
-9. In the cable editor, choose **Lay cable**, then tap LEDs or drag across them.
+10. In the cable editor, choose **Lay cable**, then tap LEDs or drag across them.
    New LEDs append to the existing cable end in stroke order. Revisiting a wired
    LED does not branch, reverse or create another start. After an explicit cut,
    drawing extends the last cable section. Choose **Select two LEDs** to cut a
@@ -63,17 +78,6 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    make the order visible. Undo restores edits. **Light selected LEDs** is an
    optional physical preview of the selected positions using their assigned
    WLED indices, including initial and intermediate skips.
-10. Next opens **Holds and LEDs**, which checks and fixes which LEDs light each
-    hold. Tapping a hold selects it, rings its LEDs on the photo and lights them
-    on the wall; holds outlined in red have no LED. The tap target then switches
-    to **LEDs**: tapping an LED adds it to the hold or takes it away, and a tap
-    away from the LEDs picks the hold under it. That stores a hand-made link
-    (`holdLeds` in the layout) which replaces the automatic, geometry-based
-    assignment for that hold everywhere: Test LEDs and route lighting. An LED
-    linked by hand leaves the hold the geometry gave it. **Next hold without
-    LEDs** steps through the unlit holds top to bottom; **Back to automatic**
-    drops a hold's link; Undo reverts link edits. Regenerating the LED
-    positions clears all links, because the new LEDs reuse the old ids.
 11. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
     photo to select positions. **Light selection** tests their assigned LEDs.
     Tap a selected position again to remove it. The page reports holds linked
