@@ -527,7 +527,6 @@
       "stripA11yLabel": "An der Wand: {{name}}, {{grade}}",
       "stripA11yLabelWithSender": "An der Wand: {{name}}, {{grade}}, beleuchtet von {{sender}}",
       "stripA11yHint": "Öffnet den Boulder an der Wand",
-      "stripOverline": "An der Wand",
       "stripAnnounce": "Jetzt an der Wand: {{name}}, {{grade}}",
       "stripAnnounceWithSender": "Jetzt an der Wand: {{name}}, {{grade}}, beleuchtet von {{sender}}",
       "switchBoard": "Board wechseln",

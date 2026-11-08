@@ -527,7 +527,6 @@
       "stripA11yLabel": "In parete: {{name}}, {{grade}}",
       "stripA11yLabelWithSender": "In parete: {{name}}, {{grade}}, illuminato da {{sender}}",
       "stripA11yHint": "Apre il blocco in parete",
-      "stripOverline": "In parete",
       "stripAnnounce": "Ora in parete: {{name}}, {{grade}}",
       "stripAnnounceWithSender": "Ora in parete: {{name}}, {{grade}}, illuminato da {{sender}}",
       "switchBoard": "Cambia pannello",

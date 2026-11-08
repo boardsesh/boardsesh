@@ -924,16 +924,28 @@ describe('WallStatusCapsule', () => {
         const node = [...container.querySelectorAll('[data-text]')].find((line) => line.textContent === text);
         expect(node?.getAttribute('data-color')).toBe('#341100');
       }
-      // No stats read on Android.
+      // Someone else's climb reads no stats, as on glass.
       expect(spies.statsArgs).toMatchObject({ statsEnabled: false });
     });
 
-    it('says "On the wall" for your own climb, and the age for a climb lit with no live link', () => {
+    it("says the same facts as glass: your own or an unnamed climb's sends, the age for history", () => {
       spies.viewerUserId = 'u-casey';
       spies.sends = '1.4k sends';
-      const live = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(lines(live.container)).toEqual(['Wax On', 'V5 6C', ' · mobile.boardPresence.stripOverline']);
-      live.unmount();
+      const own = render(<WallStatusCapsule climb={makeClimb()} />);
+      expect(lines(own.container)).toEqual(['Wax On', 'V5 6C', ' · 1.4k sends']);
+      expect(spies.statsArgs).toMatchObject({ statsEnabled: true });
+      own.unmount();
+      spies.viewerUserId = 'u-me';
+      const unnamed = render(
+        <WallStatusCapsule climb={makeClimb({ sentByDisplayName: null, sentByUserId: 'u-unnamed' })} />,
+      );
+      expect(lines(unnamed.container)).toEqual(['Wax On', 'V5 6C', ' · 1.4k sends']);
+      unnamed.unmount();
+      spies.viewerUserId = null;
+      const pending = render(<WallStatusCapsule climb={makeClimb()} />);
+      expect(lines(pending.container)).toEqual(['Wax On', 'V5 6C']);
+      pending.unmount();
+      spies.viewerUserId = 'u-casey';
       const history = render(
         <WallStatusCapsule
           climb={makeClimb()}
@@ -958,35 +970,56 @@ describe('WallStatusCapsule', () => {
     });
 
     it.each([
-      // Before its first layout the pill shows no thumbnail, so a narrow slot never flashes one.
-      [undefined, false],
-      [200, true],
-      [130, true],
-      [129, false],
-      [96, false],
-    ])('leads with the climb thumbnail only in a pill from 130dp wide: %s (thumbnail: %s)', (width, shown) => {
+      // Before its first layout neither shows, so a narrow slot never flashes one.
+      [undefined, false, false],
+      [96, false, false],
+      [129, false, false],
+      // Room for the thumbnail, not both: the byline still names the sender.
+      [130, true, false],
+      [179, true, false],
+      // From 180dp the sender's face joins the thumbnail.
+      [180, true, true],
+      [200, true, true],
+    ])('leads with the thumbnail from 130dp and adds the face from 180dp: %s', (width, thumbnailShown, faceShown) => {
       spies.layoutWidth = width;
       const { container } = render(<WallStatusCapsule climb={litClimb({ mirrored: true })} />);
       const thumbnail = container.querySelector('[data-thumbnail]');
-      expect(thumbnail != null).toBe(shown);
-      // The thumbnail replaces the sender's face; the byline still names them.
-      expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+      const face = container.querySelector('[data-driver-avatar]');
+      expect(thumbnail != null).toBe(thumbnailShown);
+      expect(face != null).toBe(faceShown);
       expect(lines(container)).toContain(' · Casey');
-      if (shown) {
+      if (thumbnail) {
         // The lit climb's own holds and mirror flag, on the board presence is scoped to,
-        // in the MiniPlayer's default 40dp slot.
-        expect(thumbnail?.getAttribute('data-thumbnail')).toBe('p1r12p2r13');
-        expect(thumbnail?.getAttribute('data-mirrored')).toBe('true');
-        expect(thumbnail?.getAttribute('data-board')).toBe('kilter');
-        expect(thumbnail?.getAttribute('data-size')).toBeNull();
-        expect(thumbnail?.parentElement?.getAttribute('data-a11y-hidden')).toBe('true');
+        // in the MiniPlayer's default 40dp slot, decoration inside the one button.
+        expect(thumbnail.getAttribute('data-thumbnail')).toBe('p1r12p2r13');
+        expect(thumbnail.getAttribute('data-mirrored')).toBe('true');
+        expect(thumbnail.getAttribute('data-board')).toBe('kilter');
+        expect(thumbnail.getAttribute('data-size')).toBeNull();
+        expect(thumbnail.closest('[data-a11y-hidden="true"]')).not.toBeNull();
+      }
+      if (face) {
+        // Glass's face: the same avatar and size, after the thumbnail.
+        expect(face.getAttribute('data-size')).toBe('24');
+        expect(face.getAttribute('data-name')).toBe('Casey');
+        expect(thumbnail?.compareDocumentPosition(face)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
       }
     });
 
-    it('shows no thumbnail for a reporter that sent no holds', () => {
+    it('shows no face for your own climb, only the thumbnail and its sends', () => {
       spies.layoutWidth = 200;
+      spies.viewerUserId = 'u-casey';
+      spies.sends = '406 sends';
+      const { container } = render(<WallStatusCapsule climb={litClimb()} />);
+      expect(container.querySelector('[data-thumbnail]')).not.toBeNull();
+      expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+      expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · 406 sends']);
+    });
+
+    it('shows no thumbnail for a reporter that sent no holds, and the face on glass terms', () => {
+      spies.layoutWidth = 130;
       const { container } = render(<WallStatusCapsule climb={makeClimb({ frames: null })} />);
       expect(container.querySelector('[data-thumbnail]')).toBeNull();
+      expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
       expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
     });
 

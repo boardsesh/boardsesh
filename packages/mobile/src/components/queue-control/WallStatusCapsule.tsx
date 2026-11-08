@@ -16,20 +16,26 @@
 //     the grade); your own climb says its sends; a climb lit with no live link
 //     says how long ago ("V6 · 20m ago"), so it never reads as live. Older
 //     devices and Reduce Transparency retain the opaque pill.
-//   - Material 3 (the Android Climbs bar): the same content in M3 dress. A 48dp
-//     full-radius pill in the amber `tertiaryContainer` (the "lit" tone, as the
-//     iOS capsule's warm tint) that fills the app bar's title slot (up to
-//     280dp). It leads with the climb's board-art thumbnail, the MiniPlayer's
-//     (only once the pill has measured at least 130dp), then the name in
-//     titleSmall over "grade · one fact" in labelMedium, all in
-//     `onTertiaryContainer`: who lit it, "On the wall" for your own or an unnamed
-//     climb, or the age. The sender's face is iOS-only; here the byline names them.
+//   - Material 3 (the Android Climbs bar): the same content in M3 dress, plus
+//     the climb's board art. A 48dp full-radius pill in the amber
+//     `tertiaryContainer` (the "lit" tone, as the iOS capsule's warm tint) that
+//     fills the app bar's title slot (up to 280dp). It leads with the MiniPlayer's
+//     board-art thumbnail (from a 130dp pill), then the sender's face where glass
+//     would show it (from a 180dp pill beside the thumbnail), then the name in
+//     titleSmall over the same "grade · one fact" byline as glass, in
+//     labelMedium, all in `onTertiaryContainer`.
 // The data, grade derivation, tap handler and the debounced a11y announcement all
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
+import {
+  AccessibilityInfo,
+  StyleSheet,
+  View,
+  type AccessibilityActionEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -65,6 +71,10 @@ const CAPSULE_AVATAR_SIZE = 24;
 // Material pill: its own 48dp touch target. The leading thumbnail is the
 // MiniPlayer's 40dp slot (a portrait board fits about 32×40, radius 10).
 const APP_BAR_PILL_HEIGHT = 48;
+// Thumbnail and face together cost the name 72dp, so the face joins the
+// thumbnail only from a 180dp pill (a 360dp phone's bar leaves about 200dp);
+// a narrower pill keeps the thumbnail and its byline still names the sender.
+const MATERIAL_FACE_BESIDE_THUMBNAIL_MIN_WIDTH = 180;
 // Debounce assistive-tech announcements so a fast party session (rapid wall
 // changes) doesn't spam the speech queue.
 const ANNOUNCE_DEBOUNCE_MS = 600;
@@ -129,12 +139,17 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const senderIsYou = climb.sentByUserId != null && climb.sentByUserId === viewerUserId;
   const senderPending = isAuthenticated && viewerUserId == null && climb.sentByUserId != null;
   const namedOther = senderName != null && !senderIsYou && !senderPending;
-  const showFace = namedOther && hasSenderIdentity && leadingFits;
-  // Material leads with the climb's board art instead, on the board this list
-  // (and presence) is scoped to: the presence payload carries the frames and
-  // mirror flag, and the drawer host the board.
+  // Material leads with the climb's board art, on the board this list (and
+  // presence) is scoped to: the presence payload carries the frames and mirror
+  // flag, and the drawer host the board.
   const thumbnailFrames = climb.frames ?? '';
   const showThumbnail = isMaterial && leadingFits && thumbnailFrames !== '' && boardConfig != null;
+  // The face follows glass's rule; beside a thumbnail it needs the wider pill.
+  const faceFits =
+    isMaterial && showThumbnail
+      ? materialWidth !== undefined && materialWidth >= MATERIAL_FACE_BESIDE_THUMBNAIL_MIN_WIDTH
+      : leadingFits;
+  const showFace = namedOther && hasSenderIdentity && faceFits;
 
   const a11yLabel = history
     ? senderName
@@ -179,17 +194,14 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   // else's. An older reporter sends no angle, and the converted climb's 0° would
   // read some other angle's sends, so that shows the grade alone.
   const statsDetail = useClimbStatsDetail(previewClimb, boardConfig, {
-    statsEnabled: !isMaterial && !history && !namedOther && !senderPending && climb.angle != null,
+    statsEnabled: !history && !namedOther && !senderPending && climb.angle != null,
   });
   // A climb with no name shows its grade as the name, so line 2 drops it. The age
   // stays whole unless the title is too narrow for it (a 320pt Display Zoom bar).
-  // The Material pill reads no stats: its fact for your own or an unnamed climb
-  // is "On the wall".
   const bylineGrade = name ? formattedGrade : null;
-  const liveDetail = namedOther ? senderName : isMaterial ? t('mobile.boardPresence.stripOverline') : statsDetail;
   const byline: HeaderCapsuleByline = history
     ? { grade: bylineGrade, detail: history.ageByline, fixed: !narrowTitle }
-    : { grade: bylineGrade, detail: liveDetail };
+    : { grade: bylineGrade, detail: namedOther ? senderName : statsDetail };
 
   const { consumePanned, dismiss } = swipe;
   const handlePress = useCallback(() => {
@@ -239,24 +251,32 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
           accessibilityHint={accessibilityHint}
           accessibilityActions={accessibilityActions}
           onAccessibilityAction={handleAccessibilityAction}
-          style={[styles.appBarRow, showThumbnail ? styles.appBarRowWithThumbnail : null]}
+          style={[
+            styles.appBarRow,
+            showThumbnail ? styles.appBarRowWithThumbnail : showFace ? styles.appBarRowWithFace : null,
+          ]}
         >
           <HeaderCapsuleClimbLabel
             skin="material"
             avatar={
-              showThumbnail ? (
-                // Through the shared render scheduler (BoardImageNative ->
-                // useNativeClimbRender), never a play surface.
-                <AccessoryClimbThumbnail
-                  climb={{ frames: thumbnailFrames, mirrored: climb.mirrored }}
-                  boardConfig={boardConfig}
-                />
+              showThumbnail || showFace ? (
+                <View style={styles.appBarLeading}>
+                  {showThumbnail ? (
+                    // Through the shared render scheduler (BoardImageNative ->
+                    // useNativeClimbRender), never a play surface.
+                    <AccessoryClimbThumbnail
+                      climb={{ frames: thumbnailFrames, mirrored: climb.mirrored }}
+                      boardConfig={boardConfig}
+                    />
+                  ) : null}
+                  {climbLabelAvatar}
+                </View>
               ) : null
             }
             // A reporter that sent no name still shows something: the grade.
             name={name || formattedGrade || ''}
             byline={byline}
-            compact={!showThumbnail}
+            compact={!showThumbnail && !showFace}
             largeContentTitle={a11yLabel}
             onActivate={handlePress}
           />
@@ -323,5 +343,14 @@ const styles = StyleSheet.create({
   // The 40dp thumbnail slot already insets the art from the pill's curve.
   appBarRowWithThumbnail: {
     paddingStart: spacing[1],
+  },
+  // A round face sits in the curve like the glass capsule's.
+  appBarRowWithFace: {
+    paddingStart: spacing[3],
+  },
+  appBarLeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
   },
 });
