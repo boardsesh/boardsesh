@@ -128,7 +128,9 @@ export { authedFetch, ensureOk };
 // Catalog read surface (Flow A)
 //
 // Verified live 2026-06-02 against a real Kilter account. The documented
-// `/climbs/climbdetails/{productName}/edges` paging does NOT exist (404).
+// GET `/climbs/climbdetails/{productName}/edges` returned 404. The app
+// instead POSTs to the literal `/climbs/climbdetails/productName/edges`;
+// see fetchCatalogDelta below for its timestamp-filtered read contract.
 // The real catalog read is per-product-layout and unpaginated:
 //   GET /api/climbs/all/{productLayoutUuid}        → full climb array
 //   GET /api/climb-stat/all/{productLayoutUuid}    → full stat array
@@ -204,7 +206,12 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 // 429. Returns the parsed JSON array. Non-429 errors propagate immediately.
 // A caller's signal (a background job's shutdown or lost lease) cuts the
 // request and any backoff short, and surfaces as itself, not as a timeout.
-async function catalogGet<T>(path: string, accessToken: string, signal?: AbortSignal): Promise<T[]> {
+async function catalogGet<T>(
+  path: string,
+  accessToken: string,
+  signal?: AbortSignal,
+  query?: KilterCatalogDeltaQuery,
+): Promise<T[]> {
   let attempt = 0;
   for (;;) {
     signal?.throwIfAborted();
@@ -212,7 +219,13 @@ async function catalogGet<T>(path: string, accessToken: string, signal?: AbortSi
     try {
       const timeout = AbortSignal.timeout(CATALOG_TIMEOUT_MS);
       response = await fetch(`https://${KILTER_PORTAL_HOST}${path}`, {
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+        method: query ? 'POST' : 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+          ...(query ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(query ? { body: JSON.stringify(query) } : {}),
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
     } catch (err) {
@@ -246,7 +259,17 @@ async function catalogGet<T>(path: string, accessToken: string, signal?: AbortSi
     }
 
     await ensureOk(path, response);
-    return (await response.json()) as T[];
+    try {
+      const rows = (await response.json()) as T[];
+      signal?.throwIfAborted();
+      return rows;
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+        throw new KilterApiError('timeout', `${path} body timed out after ${CATALOG_TIMEOUT_MS}ms`);
+      }
+      throw new KilterApiError('unknown', `${path} returned an unreadable JSON response`);
+    }
   }
 }
 
@@ -279,4 +302,143 @@ export function fetchLayoutClimbStats(
 /** UUIDs Kilter has deleted server-side, for deletion reconciliation. */
 export function fetchDeletedClimbUuids(accessToken: string, signal?: AbortSignal): Promise<string[]> {
   return catalogGet<string>('/api/climbs/delteduuids', accessToken, signal);
+}
+
+/** The app's literal POST route: productName is a body field, not a path parameter. */
+export type KilterCatalogDeltaQuery = {
+  productName: string;
+  edgeLeft: number;
+  edgeRight: number;
+  edgeBottom: number;
+  edgeTop: number;
+  limit: number;
+  offset: number;
+  excludeProductLayoutUuid: string | null;
+  prioritizedProductLayoutUuid: string | null;
+  /** UTC request-start watermark with the caller's overlap; null requests metadata bootstrap. */
+  lastUpdatedAt: string | null;
+};
+
+export type KilterCatalogDeltaRow = Omit<KilterCatalogClimb, 'description' | 'isDeleted' | 'origin'> & {
+  description?: string | null;
+  isDeleted?: boolean;
+  origin?: string | null;
+  /** The climb's original angle; this is NOT the inline statistic's angle. */
+  angle?: number;
+  derivativeAngle?: number;
+  ascentCount?: number;
+  currentDifficultyId?: number | null;
+  officialKilterDifficulty?: number;
+  difficultyAverage?: number | null;
+  qualityAverage?: number | null;
+  faUsername?: string | null;
+  faAt?: string | null;
+};
+
+export type KilterCatalogDeltaRecord = {
+  climb: KilterCatalogClimb;
+  stat: KilterCatalogStat | null;
+  /** Complete response row for durable deferral and replay. */
+  raw: KilterCatalogDeltaRow;
+};
+
+function deltaResponseError(rowIndex: number, field: string): never {
+  throw new KilterApiError('unknown', `catalog delta row ${rowIndex}: invalid ${field}`);
+}
+
+function parseDeltaRow(raw: unknown, rowIndex: number): KilterCatalogDeltaRecord {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) deltaResponseError(rowIndex, 'row');
+  const fields = raw as Record<string, unknown>;
+  for (const field of [
+    'climbUuid',
+    'climbConcat',
+    'name',
+    'productName',
+    'productLayoutUuid',
+    'createdAt',
+    'updatedAt',
+  ]) {
+    if (typeof fields[field] !== 'string') deltaResponseError(rowIndex, field);
+  }
+  for (const field of ['edgeLeft', 'edgeRight', 'edgeBottom', 'edgeTop', 'frameCount', 'framesPace']) {
+    if (typeof fields[field] !== 'number' || !Number.isFinite(fields[field])) deltaResponseError(rowIndex, field);
+  }
+  for (const field of ['allowMatch', 'isDraft', 'isListed']) {
+    if (typeof fields[field] !== 'boolean') deltaResponseError(rowIndex, field);
+  }
+  for (const field of ['description', 'origin', 'username', 'userUuid', 'faUsername', 'faAt']) {
+    if (fields[field] != null && typeof fields[field] !== 'string') deltaResponseError(rowIndex, field);
+  }
+  for (const field of [
+    'accumulatedHoldSetValue',
+    'angle',
+    'currentDifficultyId',
+    'difficultyAverage',
+    'qualityAverage',
+  ]) {
+    if (fields[field] != null && (typeof fields[field] !== 'number' || !Number.isFinite(fields[field]))) {
+      deltaResponseError(rowIndex, field);
+    }
+  }
+  if (fields.isDeleted !== undefined && typeof fields.isDeleted !== 'boolean')
+    deltaResponseError(rowIndex, 'isDeleted');
+  const hasStat = fields.derivativeAngle !== undefined;
+  if (hasStat) {
+    if (!Number.isInteger(fields.derivativeAngle)) deltaResponseError(rowIndex, 'derivativeAngle');
+    if (!Number.isSafeInteger(fields.ascentCount) || (fields.ascentCount as number) < 0) {
+      deltaResponseError(rowIndex, 'ascentCount');
+    }
+    for (const field of ['currentDifficultyId', 'difficultyAverage', 'qualityAverage']) {
+      if (fields[field] === undefined) deltaResponseError(rowIndex, field);
+    }
+  } else if (fields.ascentCount !== undefined) {
+    deltaResponseError(rowIndex, 'derivativeAngle');
+  }
+  const row = raw as KilterCatalogDeltaRow;
+  return {
+    raw: row,
+    climb: {
+      ...row,
+      description: row.description ?? '',
+      userUuid: row.userUuid ?? null,
+      username: row.username ?? null,
+      accumulatedHoldSetValue: row.accumulatedHoldSetValue ?? null,
+      isDeleted: row.isDeleted ?? false,
+      origin: row.origin ?? null,
+    },
+    stat: hasStat
+      ? {
+          climbUuid: row.climbUuid,
+          angle: row.derivativeAngle!,
+          ascentCount: row.ascentCount!,
+          currentDifficultyId: row.currentDifficultyId ?? null,
+          difficultyAverage: row.difficultyAverage ?? null,
+          qualityAverage: row.qualityAverage ?? null,
+          faUsername: row.faUsername ?? null,
+          faAt: row.faAt ?? null,
+        }
+      : null,
+  };
+}
+
+/**
+ * Consume the complete timestamp response. On 2026-11-08 a request with limit=1
+ * returned 4,156 rows, including statistics-only changes to old climbs. Do not
+ * slice to limit, page by offset, or derive a cursor from climb.updatedAt.
+ * Call through the catalog's withToken helper to refresh rejected credentials.
+ */
+export async function fetchCatalogDelta(
+  accessToken: string,
+  query: KilterCatalogDeltaQuery,
+  signal?: AbortSignal,
+): Promise<KilterCatalogDeltaRecord[]> {
+  const rows: unknown = await catalogGet<unknown>(
+    '/api/climbs/climbdetails/productName/edges',
+    accessToken,
+    signal,
+    query,
+  );
+  signal?.throwIfAborted();
+  if (!Array.isArray(rows)) throw new KilterApiError('unknown', 'catalog delta response must be an array');
+  return rows.map(parseDeltaRow);
 }

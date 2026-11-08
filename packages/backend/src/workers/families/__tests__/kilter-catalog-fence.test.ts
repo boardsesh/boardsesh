@@ -1,6 +1,6 @@
 process.env.AURORA_CREDENTIALS_SECRET = process.env.AURORA_CREDENTIALS_SECRET ?? 'test-aurora-secret';
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb } from '@boardsesh/db/client';
@@ -12,7 +12,7 @@ import {
 } from '@boardsesh/db/queries';
 import type { BackgroundJobContext } from '../types';
 import { kilterCatalogSyncFamily } from '../kilter-catalog-sync';
-import { createSetterSyncNotifications } from '@boardsesh/kilter-sync/sync';
+import { createSetterSyncNotifications, syncKilterCatalog } from '@boardsesh/kilter-sync/sync';
 import { DonorRelinkedError, getStoredKilterAccessToken } from '@boardsesh/kilter-sync/api';
 import { insertLinkedKilterAccount, removeFixtures } from './provider-sync-fixtures';
 
@@ -42,7 +42,15 @@ function json(body: unknown): Response {
 }
 
 /** Kilter's reference stream (one product layout) and its REST catalog (one climb and its stats). */
-function stubKilter() {
+function stubKilter(
+  overrides: {
+    name?: string;
+    description?: string;
+    framesPace?: number;
+    climbConcat?: string;
+    ascentCount?: number;
+  } = {},
+) {
   const reference = [
     JSON.stringify({
       data: {
@@ -81,19 +89,20 @@ function stubKilter() {
         return new Response(reference, { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
       }
       if (pathname === '/api/climbs/delteduuids') return json([]);
+      if (pathname === '/api/climbs/climbdetails/productName/edges') return json([]);
       if (pathname === `/api/climbs/all/${PLU}`) {
         return json([
           {
             climbUuid: CATALOG_CLIMB,
-            climbConcat: HOLES.map((hole, index) => `h${hole}p${12 + index}`).join(''),
-            name: 'Fence climb',
-            description: '',
+            climbConcat: overrides.climbConcat ?? HOLES.map((hole, index) => `h${hole}p${12 + index}`).join(''),
+            name: overrides.name ?? 'Fence climb',
+            description: overrides.description ?? '',
             edgeLeft: 0,
             edgeRight: 100,
             edgeBottom: 0,
             edgeTop: 150,
             frameCount: 1,
-            framesPace: 0,
+            framesPace: overrides.framesPace ?? 0,
             userUuid: null,
             username: SETTER,
             productName: PRODUCT,
@@ -114,7 +123,7 @@ function stubKilter() {
           {
             climbUuid: CATALOG_CLIMB,
             angle: 40,
-            ascentCount: 3,
+            ascentCount: overrides.ascentCount ?? 3,
             currentDifficultyId: 20,
             difficultyAverage: 20,
             qualityAverage: 3,
@@ -169,6 +178,14 @@ const setterNotifications = () =>
              WHERE recipient_id = ${FOLLOWER} AND type = 'new_climbs_synced'`);
 
 async function cleanup() {
+  const scopeKey = createHash('sha256')
+    .update(JSON.stringify([PRODUCT, 0, 100, 0, 150]))
+    .digest('hex');
+  await database.execute(sql`DELETE FROM kilter_catalog_checkpoints WHERE scope_key = ${scopeKey}`);
+  await database.execute(
+    sql`DELETE FROM kilter_catalog_source_stats WHERE source_uuid = ${CATALOG_CLIMB.toLowerCase()}`,
+  );
+  await database.execute(sql`DELETE FROM kilter_catalog_deferred WHERE source_uuid = ${CATALOG_CLIMB.toLowerCase()}`);
   await database.execute(sql`DELETE FROM notifications WHERE recipient_id = ${FOLLOWER}`);
   await database.execute(sql`DELETE FROM setter_follows WHERE follower_id = ${FOLLOWER}`);
   await database.execute(sql`DELETE FROM users WHERE id = ${FOLLOWER}`);
@@ -189,6 +206,7 @@ async function cleanup() {
 beforeEach(async () => {
   await cleanup();
   vi.stubEnv('KILTER_OAUTH_CLIENT_ID', 'fence-test-client');
+  vi.stubEnv('KILTER_CATALOG_INCREMENTAL_ENABLED', 'false');
   await insertLinkedKilterAccount(database, DONOR, DONOR_CLIMB);
   await database.execute(sql`
     INSERT INTO users (id, email, name, created_at, updated_at)
@@ -238,8 +256,8 @@ describe('kilter-catalog-sync behind the attempt fence', () => {
   });
 
   it("announces a flush's new climb in the flush itself, so a later lost attempt cannot drop it", async () => {
-    // The claim and the first layout flush commit; everything after is lost.
-    const { context } = fencedContext(2);
+    // Cooldown claim, writer lease, baseline start, then the first atomic layout flush.
+    const { context } = fencedContext(4);
 
     await expect(kilterCatalogSyncFamily.execute(context, {})).rejects.toBeInstanceOf(BackgroundJobAttemptLostError);
 
@@ -252,8 +270,8 @@ describe('kilter-catalog-sync behind the attempt fence', () => {
   });
 
   it('stops at the first flush once the attempt is lost, and writes nothing further', async () => {
-    // The claim commits; the attempt is lost before the first layout flush.
-    const { context } = fencedContext(1);
+    // Cooldown claim, writer lease and baseline start commit; the layout flush is refused.
+    const { context } = fencedContext(3);
 
     await expect(kilterCatalogSyncFamily.execute(context, {})).rejects.toBeInstanceOf(BackgroundJobAttemptLostError);
 
@@ -265,6 +283,112 @@ describe('kilter-catalog-sync behind the attempt fence', () => {
       SELECT last_synchronized_at AS value FROM board_shared_syncs
        WHERE board_type = 'kilter' AND table_name = '__local_catalog_sync__'`);
     expect(cursor.value).toContain('#claim:');
+  });
+});
+
+describe('imported metadata ownership and geometry on PostgreSQL', () => {
+  const refresh = () =>
+    syncKilterCatalog({
+      db: database,
+      mode: 'full',
+      tokenProvider: async () => 'kilter-access',
+      suppressNotifications: true,
+    });
+  const climbRows = () =>
+    database.execute<{
+      name: string;
+      description: string;
+      frames_pace: number;
+      is_listed: boolean;
+      sync_seq: number;
+      updated_at: string;
+      hold_fingerprint: string;
+    }>(sql`SELECT name, description, frames_pace, is_listed, sync_seq,
+             updated_at::text AS updated_at, hold_fingerprint
+        FROM board_climbs WHERE uuid = ${CATALOG_CLIMB}`);
+
+  it('refreshes source-owned scalars, preserves local visibility and reaches the client sync cursor', async () => {
+    await refresh();
+    await database.execute(sql`UPDATE board_climbs SET is_listed = false WHERE uuid = ${CATALOG_CLIMB}`);
+    const [before] = await climbRows();
+    stubKilter({ name: 'Fresh source name', description: 'Fresh source beta', framesPace: 250 });
+
+    await refresh();
+
+    const [after] = await climbRows();
+    expect(after).toMatchObject({
+      name: 'Fresh source name',
+      description: 'Fresh source beta',
+      frames_pace: 250,
+      is_listed: false,
+    });
+    expect(Number(after.sync_seq)).toBeGreaterThan(Number(before.sync_seq));
+    expect(Date.parse(after.updated_at)).toBeGreaterThanOrEqual(Date.parse(before.updated_at));
+    expect(after.hold_fingerprint).toBe(before.hold_fingerprint);
+  });
+
+  it.each(['user', 'retained-origin'] as const)(
+    'protects authored scalar fields through %s ownership',
+    async (ownership) => {
+      await refresh();
+      if (ownership === 'user') {
+        await database.execute(
+          sql`UPDATE board_climbs SET user_id = ${DONOR}, is_boardsesh_authored = false WHERE uuid = ${CATALOG_CLIMB}`,
+        );
+      } else {
+        await database.execute(
+          sql`UPDATE board_climbs SET user_id = NULL, is_boardsesh_authored = true WHERE uuid = ${CATALOG_CLIMB}`,
+        );
+      }
+      const [before] = await climbRows();
+      stubKilter({ name: 'Must not replace local name', description: 'Must not replace local beta', framesPace: 999 });
+
+      await refresh();
+
+      const [after] = await climbRows();
+      expect(after.name).toBe(before.name);
+      expect(after.description).toBe(before.description);
+      expect(after.frames_pace).toBe(before.frames_pace);
+      expect(after.sync_seq).toBe(before.sync_seq);
+    },
+  );
+
+  it('durably defers changed geometry and keeps its statistics off the old holds', async () => {
+    await refresh();
+    const [before] = await climbRows();
+    const changedConcat = `h${HOLES[0]}p12h${HOLES[1]}p14`;
+    stubKilter({
+      name: 'New geometry name',
+      description: 'Changed geometry beta',
+      climbConcat: changedConcat,
+      ascentCount: 99,
+    });
+
+    await refresh();
+
+    const [after] = await climbRows();
+    expect(after.name).toBe(before.name);
+    expect(after.hold_fingerprint).toBe(before.hold_fingerprint);
+    const [cached] = await database.execute<{ payload: { ascentCount: number } }>(sql`
+      SELECT payload FROM kilter_catalog_source_stats WHERE source_uuid = ${CATALOG_CLIMB.toLowerCase()} AND angle = 40`);
+    expect(cached.payload.ascentCount).toBe(3);
+    const [aggregate] = await database.execute<{ upstream_ascensionist_count: number }>(sql`
+      SELECT upstream_ascensionist_count FROM board_climb_stats WHERE climb_uuid = ${CATALOG_CLIMB} AND angle = 40`);
+    expect(Number(aggregate.upstream_ascensionist_count)).toBe(3);
+    const [deferred] = await database.execute<{
+      payload: {
+        climb: { name: string; climbConcat: string; description: string };
+        stats: Array<{ angle: number; ascentCount: number }>;
+      };
+      reason: string;
+    }>(sql`SELECT payload, reason FROM kilter_catalog_deferred WHERE source_uuid = ${CATALOG_CLIMB.toLowerCase()}`);
+    expect(deferred.reason).toBe('unresolved_geometry_or_alias');
+    expect(deferred.payload.climb).toMatchObject({
+      name: 'New geometry name',
+      description: 'Changed geometry beta',
+      climbConcat: changedConcat,
+    });
+    expect(deferred.payload.stats).toContainEqual(expect.objectContaining({ angle: 40, ascentCount: 99 }));
   });
 });
 

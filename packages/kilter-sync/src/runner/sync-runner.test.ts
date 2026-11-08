@@ -113,7 +113,6 @@ type SyncRunnerPrivates = {
     currentToken: string,
     signal?: AbortSignal,
   ) => Promise<void>;
-  maybeRepairKilterStats: (...args: unknown[]) => Promise<void>;
   maybeSnapshotHistory: (...args: unknown[]) => Promise<void>;
 };
 
@@ -560,7 +559,7 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
     mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const privates = runner as unknown as SyncRunnerPrivates;
-    const repair = vi.spyOn(privates, 'maybeRepairKilterStats').mockResolvedValue(undefined);
+    const history = vi.spyOn(privates, 'maybeSnapshotHistory').mockResolvedValue(undefined);
     const errors: Error[] = [];
     (runner as unknown as { handleError: (error: Error) => void }).handleError = (error) => errors.push(error);
     const { db } = createDbShim();
@@ -574,7 +573,7 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
     expect(mockSyncKilterCatalog.mock.calls[0][0]).toMatchObject({ signal: controller.signal });
     // The abort stops the run before the weekly maintenance, and a shutdown is
     // not reported as a catalog failure; the slot is still re-stamped.
-    expect(repair).not.toHaveBeenCalled();
+    expect(history).not.toHaveBeenCalled();
     expect(errors).toEqual([]);
     expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
   });
@@ -625,7 +624,6 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
     });
     const privates = runner as unknown as SyncRunnerPrivates;
     const { db } = createDbShim();
-    vi.spyOn(privates, 'maybeRepairKilterStats').mockResolvedValue(undefined);
     vi.spyOn(privates, 'maybeSnapshotHistory').mockResolvedValue(undefined);
 
     await expect(privates.maybeRunCatalogSync(db, credential(), 'access-token')).resolves.toBeUndefined();
@@ -769,19 +767,32 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
     expect(mockSnapshotHistory).toHaveBeenCalledWith(db, KILTER_BOARD_TYPE, expect.any(Function));
   });
 
-  it('runs the weekly stats repair when its cursor is due and marks it done', async () => {
+  it('keeps weekly history without downloading full statistics twice', async () => {
     mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
     mockIsWeeklyCursorDue.mockResolvedValue(true);
     const { runner } = injectedRunner();
 
     await runner.runCatalogSyncJob({ environment: noPasswordEnv });
 
-    expect(mockRepairKilterCatalogStats).toHaveBeenCalledWith(expect.objectContaining({ apply: true }));
-    expect(mockMarkWeeklyCursorDone).toHaveBeenCalledWith(
-      expect.anything(),
-      KILTER_BOARD_TYPE,
-      '__local_kilter_stats_repair__',
-    );
+    expect(mockRepairKilterCatalogStats).not.toHaveBeenCalled();
+    expect(mockSnapshotHistory).toHaveBeenCalled();
+  });
+
+  it('uses auto cache reconciliation without downloading weekly statistics twice', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    mockIsWeeklyCursorDue.mockResolvedValue(true);
+    const { runner } = injectedRunner();
+    await runner.runCatalogSyncJob({ environment: { KILTER_CATALOG_INCREMENTAL_ENABLED: 'true' } });
+    expect(mockSyncKilterCatalog).toHaveBeenCalledWith(expect.objectContaining({ mode: 'auto' }));
+    expect(mockRepairKilterCatalogStats).not.toHaveBeenCalled();
+    expect(mockSnapshotHistory).toHaveBeenCalled();
+  });
+
+  it('rolls auto back to full when incremental rollout is disabled', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    const { runner } = injectedRunner();
+    await runner.runCatalogSyncJob({ environment: noPasswordEnv, mode: 'auto' });
+    expect(mockSyncKilterCatalog).toHaveBeenCalledWith(expect.objectContaining({ mode: 'full' }));
   });
 
   it('reports catalog completion separately from maintenance and stops reporting on abort', async () => {
@@ -791,7 +802,7 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
     const onCatalogPhase = vi.fn();
     const { db } = createDbShim();
     const runner = new SyncRunner({ db, onLog: () => {}, onCatalogPhase });
-    mockRepairKilterCatalogStats.mockImplementationOnce(async () => {
+    mockSyncKilterCatalog.mockImplementationOnce(async () => {
       controller.abort(new Error('lease expired'));
       throw controller.signal.reason;
     });
@@ -802,8 +813,6 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
 
     expect(onCatalogPhase.mock.calls.map(([progress]) => progress)).toEqual([
       { phase: 'catalog', status: 'started', elapsedMs: 0 },
-      { phase: 'catalog', status: 'finished', elapsedMs: expect.any(Number) },
-      { phase: 'stats-repair', status: 'started', elapsedMs: 0 },
     ]);
     expect(mockSnapshotHistory).not.toHaveBeenCalled();
     expect(mockMarkWeeklyCursorDone).not.toHaveBeenCalled();

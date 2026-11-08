@@ -232,6 +232,10 @@ const ROUTINE_PROVIDER_EXTRA_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'board_climb_aliases', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
   { table: 'board_layout_aliases', privileges: CATALOG_WRITE },
   { table: 'board_climb_ingest_skips', privileges: CATALOG_WRITE },
+  { table: 'kilter_catalog_control', privileges: CATALOG_WRITE },
+  { table: 'kilter_catalog_checkpoints', privileges: CATALOG_WRITE },
+  { table: 'kilter_catalog_source_stats', privileges: CATALOG_WRITE },
+  { table: 'kilter_catalog_deferred', privileges: CATALOG_WRITE },
   // "New climbs from a setter you follow": who follows whom, and the notification.
   { table: 'setter_follows', privileges: ['SELECT'] },
   { table: 'user_follows', privileges: ['SELECT'] },

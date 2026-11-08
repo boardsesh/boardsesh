@@ -26,6 +26,8 @@ export type BackgroundJobContext = {
    * its own, earlier deadline from this.
    */
   expiresAt: number;
+  /** Time waiting before this attempt, separate from execution duration. */
+  queueDelayMs?: number;
   database: DbInstance;
   transaction<T>(callback: (transaction: BackgroundJobTransaction) => Promise<T>): Promise<T>;
   /**

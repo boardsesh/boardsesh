@@ -4,6 +4,8 @@ import { getTableName, type Table } from 'drizzle-orm';
 import type { KilterCatalogClimb, KilterCatalogStat } from '../api/kilter-rest';
 import { KilterApiError } from '../api/errors';
 import type { KilterReferencePull } from './reference-pull';
+import { decodeGripsClimbConcat } from './catalog-parse';
+import { fingerprintFromHolds } from './fingerprint';
 
 // The REST layer and the three side-effect passes are mocked so a whole
 // syncKilterCatalog cycle can run against a fake database. vi.hoisted keeps the
@@ -22,7 +24,7 @@ vi.mock('./deletions', () => deletionMocks);
 vi.mock('./locations-sync', () => locationMocks);
 vi.mock('./notifications', () => notificationMocks);
 
-const { syncKilterCatalog } = await import('./catalog-sync');
+const { syncFullKilterCatalog: syncKilterCatalog } = await import('./catalog-sync');
 
 const SOURCE_LAYOUT_ID = 1;
 const TARGET_LAYOUT_ID = 8;
@@ -302,5 +304,136 @@ void describe('a failed /delteduuids fetch', () => {
     const { db } = createFakeDb(baseQueues());
 
     return expect(runCatalog(db)).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 3_600_000 });
+  });
+});
+
+describe('reroute through the source-stat cache hooks', () => {
+  const stat: KilterCatalogStat = {
+    climbUuid: 'MISTAGGED',
+    angle: 40,
+    ascentCount: 12,
+    currentDifficultyId: 20,
+    difficultyAverage: 20,
+    qualityAverage: 3,
+    faUsername: null,
+    faAt: null,
+  };
+
+  function hookedRun(queues: TableQueues = {}) {
+    const { db, inserts, updates } = createFakeDb(
+      baseQueues({
+        board_climbs: [[], [], []],
+        board_climb_aliases: [[], [], []],
+        ...queues,
+      }),
+    );
+    const applyStats = vi.fn(async (rows: unknown[]) => ({ sent: rows.length, written: rows.length }));
+    const acceptedClimbs = vi.fn();
+    const rejectedClimbs = vi.fn();
+    const run = () =>
+      syncKilterCatalog({
+        db,
+        tokenProvider: async () => 'token',
+        reference: referencePull(),
+        layoutUuids: ['27'],
+        catalogIO: {
+          climbs: async () => [catalogClimb()],
+          stats: async () => [stat],
+          applyStats,
+          acceptedClimbs,
+          rejectedClimbs,
+        },
+      });
+    return { run, inserts, updates, applyStats, acceptedClimbs, rejectedClimbs };
+  }
+
+  it('reroutes a new mislabeled climb and atomically caches its source statistics', async () => {
+    const { run, inserts, applyStats, acceptedClimbs } = hookedRun();
+    const summary = await run();
+    expect(summary.climbsRerouted).toBe(1);
+    expect(inserts.find((entry) => entry.table === 'board_climbs')?.values[0]).toMatchObject({
+      uuid: 'MISTAGGED',
+      layoutId: TARGET_LAYOUT_ID,
+    });
+    expect(applyStats).toHaveBeenLastCalledWith([{ stat, canonicalUuid: 'MISTAGGED' }]);
+    expect(acceptedClimbs).toHaveBeenLastCalledWith(['mistagged']);
+  });
+
+  it('replays an existing rerouted UUID and preserves source contributions when folded', async () => {
+    const decoded = decodeGripsClimbConcat(MISTAGGED_CONCAT, new Map([[4000, 900]]), 1);
+    if (!decoded.ok) throw new Error('fixture should decode');
+    const fingerprint = fingerprintFromHolds(decoded.holds);
+    const canonical = {
+      uuid: 'canonical',
+      layoutId: TARGET_LAYOUT_ID,
+      fingerprint,
+      isListed: false,
+      userId: null,
+      isDraft: false,
+    };
+    const { run, applyStats, acceptedClimbs, updates } = hookedRun({
+      board_climbs: [[], [], [canonical]],
+      board_climb_aliases: [[], [], [{ ...canonical, aliasUuid: 'MISTAGGED', canonicalUuid: 'canonical' }]],
+    });
+    expect((await run()).climbsRerouted).toBe(0);
+    expect(applyStats).toHaveBeenLastCalledWith([{ stat, canonicalUuid: 'canonical' }]);
+    expect(acceptedClimbs).toHaveBeenLastCalledWith(['mistagged']);
+    expect(updates.some((entry) => entry.table === 'board_climbs')).toBe(false);
+  });
+
+  it('refuses changed geometry for a rerouted UUID and leaves statistics deferred', async () => {
+    const { run, applyStats, acceptedClimbs, rejectedClimbs } = hookedRun({
+      board_climbs: [
+        [],
+        [
+          {
+            uuid: 'MISTAGGED',
+            layoutId: TARGET_LAYOUT_ID,
+            fingerprint: 'old-geometry',
+            isListed: true,
+            userId: null,
+            isDraft: false,
+          },
+        ],
+        [],
+      ],
+    });
+    const summary = await run();
+    expect(summary.climbsRerouted).toBe(0);
+    expect(applyStats.mock.calls.every(([rows]) => rows.length === 0)).toBe(true);
+    expect(acceptedClimbs.mock.calls.flat()).not.toContainEqual(['mistagged']);
+    expect(rejectedClimbs).toHaveBeenCalledWith(['mistagged']);
+  });
+
+  it('rejects a cross-layout alias before its statistics reach the cache', async () => {
+    const { run, applyStats, rejectedClimbs } = hookedRun({
+      board_climb_aliases: [
+        [],
+        [],
+        [
+          {
+            aliasUuid: 'MISTAGGED',
+            canonicalUuid: 'elsewhere',
+            layoutId: 99,
+            fingerprint: 'other',
+            isListed: true,
+            userId: null,
+            isDraft: false,
+          },
+        ],
+      ],
+    });
+    expect((await run()).climbsRerouted).toBe(0);
+    expect(applyStats.mock.calls.every(([rows]) => rows.length === 0)).toBe(true);
+    expect(rejectedClimbs).toHaveBeenCalledWith(['mistagged']);
+  });
+
+  it('propagates failed rerouted cache writes so a checkpoint cannot advance', async () => {
+    const { run, applyStats } = hookedRun();
+    applyStats.mockImplementation(async (rows) => {
+      if (rows.length > 0) throw new Error('cache transaction failed');
+      return { sent: 0, written: 0 };
+    });
+    await expect(run()).rejects.toThrow('cache transaction failed');
   });
 });

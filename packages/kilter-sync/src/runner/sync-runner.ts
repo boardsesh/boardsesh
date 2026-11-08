@@ -19,9 +19,7 @@ import {
   releaseDaemonLease,
   snapshotClimbStatsHistoryIfDue,
   stampSharedSyncFinished,
-  isWeeklyCursorDue,
   isSyncFenceError,
-  markWeeklyCursorDone,
   type SharedSyncClaimToken,
   type SyncBatchRunner,
 } from '@boardsesh/db/queries';
@@ -537,12 +535,7 @@ export class SyncRunner {
         signal,
       });
 
-      // After a fresh catalog pull, run the two weekly board-wide maintenance
-      // jobs (each self-gated by a 7-day watermark, so calling them every
-      // catalog cycle is cheap). A failure in either must not poison the
-      // catalog result — the counts already committed.
-      signal?.throwIfAborted();
-      await this.maybeRepairKilterStats(db, tokenProvider, { signal });
+      // The full refresh already reconciled cached statistics without a second download.
       signal?.throwIfAborted();
       await this.maybeSnapshotHistory(db, { signal });
     } catch (error) {
@@ -608,8 +601,8 @@ export class SyncRunner {
    *    test account from `KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD`, else
    *    `no_donor` with nothing claimed.
    * 2. Claim the catalog cooldown slot the daemon uses; refused is `cooldown`.
-   * 3. Catalog sync (deletions applied as the daemon does), then the weekly
-   *    stats repair and history snapshot, each gated by its own 7-day cursor.
+   * 3. Catalog refresh (weekly full reconciliation inside auto mode), then
+   *    the existing weekly history snapshot.
    * 4. Re-stamp the slot: the full cooldown measured from the claim on success
    *    or a permanent Kilter failure (the marker is backdated by the run's
    *    length), five minutes from the end otherwise so the retry runs.
@@ -620,6 +613,8 @@ export class SyncRunner {
   async runCatalogSyncJob(options: CatalogSyncJobOptions = {}): Promise<CatalogSyncJobResult> {
     const { db } = this.getClient();
     const environment = options.environment ?? process.env;
+    const incrementalEnabled = environment.KILTER_CATALOG_INCREMENTAL_ENABLED === 'true';
+    const mode = options.mode === 'full' || !incrementalEnabled ? 'full' : (options.mode ?? 'auto');
     const donor = await findSharedSyncDonorCredential(db, {
       boardType: KILTER_BOARD_TYPE,
       candidateFilter: syncableKilterCredentialsFilter(),
@@ -659,7 +654,7 @@ export class SyncRunner {
     const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
     let nextCooldownMs = cooldownMs;
     let providerHoldMs: number | undefined;
-    const runPhase = async (phase: 'catalog' | 'stats-repair' | 'history', work: () => Promise<unknown>) => {
+    const runPhase = async (phase: 'catalog' | 'history', work: () => Promise<unknown>) => {
       signal?.throwIfAborted();
       const phaseStartedAt = Date.now();
       this.config.onCatalogPhase?.({ phase, status: 'started', elapsedMs: 0 });
@@ -672,6 +667,7 @@ export class SyncRunner {
       await runPhase('catalog', () =>
         syncKilterCatalog({
           db,
+          mode,
           tokenProvider,
           log: (message) => this.log(message),
           applyDeletions: this.config.applyCatalogDeletions ?? true,
@@ -681,9 +677,9 @@ export class SyncRunner {
           // Keys the run's setter notifications, so a retry of this run does not
           // notify anyone twice.
           runKey: options.runId,
+          onTelemetry: this.config.onCatalogMetrics,
         }),
       );
-      await runPhase('stats-repair', () => this.maybeRepairKilterStats(db, tokenProvider, { transaction, signal }));
       await runPhase('history', () => this.maybeSnapshotHistory(db, { transaction, signal }));
       nextCooldownMs = fromStart();
       return { status: 'synced', tokenSource };
@@ -748,50 +744,6 @@ export class SyncRunner {
     }
   }
 
-  // Synthetic board_shared_syncs cursor gating the weekly stats-repair.
-  private static readonly KILTER_STATS_REPAIR_CURSOR = '__local_kilter_stats_repair__';
-
-  /**
-   * Weekly kilter stats-repair (repairKilterCatalogStats with --apply): the
-   * downward count reconciliation + alias-fold drift fix that had no scheduler.
-   * Gated by a 7-day board_shared_syncs watermark, run after the catalog sync
-   * with the same token provider. Errors are swallowed (logged) so a repair
-   * failure never fails the catalog cycle.
-   */
-  async maybeRepairKilterStats(
-    db: RunnerDb,
-    tokenProvider: KilterTokenProvider,
-    options: Pick<CatalogSyncJobOptions, 'transaction' | 'signal'> = {},
-  ): Promise<void> {
-    if (!(await isWeeklyCursorDue(db, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR))) {
-      return;
-    }
-    this.log('[kilter-stats-repair] weekly reconciliation is due — applying');
-    const write: SyncBatchRunner = options.transaction ?? ((callback) => callback(db));
-    try {
-      const summary = await repairKilterCatalogStats({
-        db,
-        tokenProvider,
-        apply: true,
-        log: (message) => this.log(message),
-        signal: options.signal,
-        transaction: options.transaction,
-      });
-      // Commit the watermark only on success so a failed repair retries next
-      // cycle instead of skipping the week.
-      await write((tx) => markWeeklyCursorDone(tx, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR));
-      this.log(
-        `[kilter-stats-repair] applied — ${summary.changedKilterRows} count rows, ` +
-          `${summary.formulaRowsRecomputed} formula rows`,
-      );
-    } catch (error) {
-      // A lost attempt fence or an abort stops the job; anything else is the
-      // repair's own failure and must not fail the catalog run.
-      if (options.signal?.aborted || isSyncFenceError(error)) throw error;
-      this.handleError(error instanceof Error ? error : new Error(String(error)), { board: KILTER_BOARD_TYPE });
-    }
-  }
-
   /** Weekly board_climb_stats_history snapshot for kilter (see item 5). */
   async maybeSnapshotHistory(
     db: RunnerDb,
@@ -820,6 +772,7 @@ export class SyncRunner {
       deleteBatchLimit?: number;
       layoutUuids?: string[];
       suppressNotifications?: boolean;
+      mode?: 'auto' | 'incremental' | 'full';
     } = {},
   ): Promise<KilterCatalogSummary> {
     const { db } = this.getClient();
@@ -827,6 +780,7 @@ export class SyncRunner {
       db,
       tokenProvider,
       log: (message) => this.log(message),
+      mode: opts.mode ?? 'full',
       applyDeletions: opts.applyDeletions,
       deleteBatchLimit: opts.deleteBatchLimit,
       layoutUuids: opts.layoutUuids,
