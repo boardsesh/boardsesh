@@ -9,8 +9,12 @@ import { AURORA_USER_SYNC_BOARDS } from './aurora-user-sync';
 /** One `aurora-shared-sync` attempt's lease, its retries and the wait before one. */
 export const AURORA_SHARED_SYNC_BUDGET = { expireInSeconds: 3600, retryLimit: 1, retryDelay: 300 } as const;
 
-/** The same for `kilter-catalog-sync`, queued at :23 behind the :07 fan-out. */
-export const KILTER_CATALOG_SYNC_BUDGET = { expireInSeconds: 3600, retryLimit: 1, retryDelay: 300 } as const;
+/**
+ * Kilter pulls the full catalog and, when due, re-fetches its stats for repair.
+ * The old hour-long lease repeatedly expired before this combined work finished.
+ * Keep a hard ceiling, with room for both passes and provider retries.
+ */
+export const KILTER_CATALOG_SYNC_BUDGET = { expireInSeconds: 7200, retryLimit: 1, retryDelay: 300 } as const;
 
 /** Room for the routine cycles that share the one-at-a-time worker with the fan-out. */
 const FAN_OUT_SLACK_SECONDS = 3600;

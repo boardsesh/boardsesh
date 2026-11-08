@@ -70,6 +70,8 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
       db: context.database,
       signal: context.signal,
       onLog: (message) => logger.debug(message, { runId: context.runId, family: context.family }),
+      onCatalogPhase: (progress) =>
+        logger.info('[worker] catalog sync phase', { runId: context.runId, family: context.family, ...progress }),
       // A step the runner swallows (a crawl, the weekly repair) still leaves a
       // trace: the error's class and SQLSTATE, never its message.
       onError: (error) =>

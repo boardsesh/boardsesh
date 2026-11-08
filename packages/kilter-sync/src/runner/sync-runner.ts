@@ -614,10 +614,8 @@ export class SyncRunner {
    *    or a permanent Kilter failure (the marker is backdated by the run's
    *    length), five minutes from the end otherwise so the retry runs.
    *
-   * The writes go straight to the database, as the daemon's do: the claim is
-   * the single-writer guarantee, and the catalog interleaves provider requests
-   * with its writes too finely to put each behind an attempt fence. The signal
-   * stops it between layout groups.
+   * The worker fences every write batch through `options.transaction`;
+   * provider requests run between batches and honour the abort signal.
    */
   async runCatalogSyncJob(options: CatalogSyncJobOptions = {}): Promise<CatalogSyncJobResult> {
     const { db } = this.getClient();
@@ -661,24 +659,32 @@ export class SyncRunner {
     const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
     let nextCooldownMs = cooldownMs;
     let providerHoldMs: number | undefined;
+    const runPhase = async (phase: 'catalog' | 'stats-repair' | 'history', work: () => Promise<unknown>) => {
+      signal?.throwIfAborted();
+      const phaseStartedAt = Date.now();
+      this.config.onCatalogPhase?.({ phase, status: 'started', elapsedMs: 0 });
+      await work();
+      signal?.throwIfAborted();
+      this.config.onCatalogPhase?.({ phase, status: 'finished', elapsedMs: Date.now() - phaseStartedAt });
+    };
     try {
       this.log(`[kilter-catalog] scheduled catalog sync (${tokenSource} token)`);
-      await syncKilterCatalog({
-        db,
-        tokenProvider,
-        log: (message) => this.log(message),
-        applyDeletions: this.config.applyCatalogDeletions ?? true,
-        deleteBatchLimit: this.config.deleteBatchLimit,
-        signal,
-        transaction,
-        // Keys the run's setter notifications, so a retry of this run does not
-        // notify anyone twice.
-        runKey: options.runId,
-      });
-      signal?.throwIfAborted();
-      await this.maybeRepairKilterStats(db, tokenProvider, { transaction, signal });
-      signal?.throwIfAborted();
-      await this.maybeSnapshotHistory(db, { transaction, signal });
+      await runPhase('catalog', () =>
+        syncKilterCatalog({
+          db,
+          tokenProvider,
+          log: (message) => this.log(message),
+          applyDeletions: this.config.applyCatalogDeletions ?? true,
+          deleteBatchLimit: this.config.deleteBatchLimit,
+          signal,
+          transaction,
+          // Keys the run's setter notifications, so a retry of this run does not
+          // notify anyone twice.
+          runKey: options.runId,
+        }),
+      );
+      await runPhase('stats-repair', () => this.maybeRepairKilterStats(db, tokenProvider, { transaction, signal }));
+      await runPhase('history', () => this.maybeSnapshotHistory(db, { transaction, signal }));
       nextCooldownMs = fromStart();
       return { status: 'synced', tokenSource };
     } catch (error) {

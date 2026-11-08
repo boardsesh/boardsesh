@@ -184,7 +184,7 @@ describe('family contracts', () => {
         role: 'routine-provider',
         cron: '23 */6 * * *',
         options: {
-          expireInSeconds: 3600,
+          expireInSeconds: 7200,
           retryLimit: 1,
           retryDelay: 300,
           deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
