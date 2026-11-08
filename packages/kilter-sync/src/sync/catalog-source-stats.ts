@@ -184,7 +184,21 @@ async function recomputeCachedKeys(
           inArray(sql`lower(${boardClimbs.uuid})`, activeDeferred),
         ),
       );
-    for (const entry of [...aliasMappings, ...ownMappings]) protectedCanonicals.add(entry.canonicalUuid);
+    // The alias graph may already have been rewired when a source is deferred.
+    // Its cached contribution still belongs to the old geometry, which must
+    // retain the same protection until the source is reconciled explicitly.
+    const cachedMappings = await transaction
+      .select({ canonicalUuid: kilterCatalogSourceStats.canonicalUuid })
+      .from(kilterCatalogSourceStats)
+      .where(
+        and(
+          inArray(kilterCatalogSourceStats.canonicalUuid, canonicalUuids),
+          inArray(kilterCatalogSourceStats.sourceUuid, activeDeferred),
+        ),
+      );
+    for (const entry of [...aliasMappings, ...ownMappings, ...cachedMappings]) {
+      protectedCanonicals.add(entry.canonicalUuid);
+    }
   }
   let written = 0;
   for (const authoritative of [true, false]) {

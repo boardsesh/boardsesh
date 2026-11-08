@@ -65,7 +65,7 @@ function database(
     ]),
   );
   const db = {
-    select: () => ({
+    select: (columns?: Record<string, unknown>) => ({
       from: (table: Parameters<typeof getTableName>[0]) => ({
         where: () => {
           const tableName = getTableName(table);
@@ -75,7 +75,11 @@ function database(
               : tableName === 'board_climb_stats'
                 ? existing
                 : tableName === 'kilter_catalog_source_stats'
-                  ? [...cache.values()].map((entry) => ({ ...entry, stat: entry.payload }))
+                  ? columns && Object.keys(columns).length === 1 && 'canonicalUuid' in columns
+                    ? [...cache.values()]
+                        .filter((entry) => deferred.includes(entry.sourceUuid))
+                        .map((entry) => ({ canonicalUuid: entry.canonicalUuid }))
+                    : [...cache.values()].map((entry) => ({ ...entry, stat: entry.payload }))
                   : [];
           return Object.assign(Promise.resolve(selected), {
             limit: async (count: number) =>
@@ -229,6 +233,22 @@ describe('catalog source statistics', () => {
       completeCoverage: true,
       confirmedAt: '2026-11-08T12:00:00Z',
     });
+    expect(upsert.mock.calls[0][2]).toEqual({ policy: 'raise-only', syncedAt: null });
+  });
+
+  it('protects the old cached canonical after a deferred source alias points elsewhere', async () => {
+    const { db } = database(
+      [source('Canonical', 10), source('alias', 7)],
+      [],
+      'new-baseline',
+      ['alias'],
+      ['new-canonical'],
+    );
+    await applyCatalogSourceStats(db as never, [source('Canonical', 3)], {
+      completeCoverage: true,
+      confirmedAt: '2026-11-08T12:00:00Z',
+    });
+    expect(upsert.mock.calls[0][1]).toMatchObject([{ climbUuid: 'Canonical', upstreamAscensionistCount: 10 }]);
     expect(upsert.mock.calls[0][2]).toEqual({ policy: 'raise-only', syncedAt: null });
   });
 

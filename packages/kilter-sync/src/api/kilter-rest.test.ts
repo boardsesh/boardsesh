@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KilterApiError } from './errors';
-import { fetchCatalogDelta, fetchLayoutClimbs } from './kilter-rest';
+import { fetchCatalogDelta, fetchLayoutClimbs, fetchLayoutClimbStats } from './kilter-rest';
 import fixture from './__fixtures__/catalog-delta.json';
 
 afterEach(() => {
@@ -147,5 +147,98 @@ describe('timestamp catalog POST', () => {
     controller.abort(reason);
     await expect(fetchCatalogDelta('token', fixture.request, controller.signal)).rejects.toBe(reason);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('full catalog response validation', () => {
+  function respond(body: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(body))),
+    );
+  }
+
+  it('validates retained metadata and preserves missing nullable field defaults', async () => {
+    respond(fixture.bootstrapRows);
+    const [climb] = await fetchLayoutClimbs('token', '27');
+    expect(climb).toMatchObject({ ...fixture.bootstrapRows[0], isDeleted: false, origin: null });
+    respond([
+      {
+        ...fixture.bootstrapRows[0],
+        description: undefined,
+        username: undefined,
+        userUuid: undefined,
+        accumulatedHoldSetValue: undefined,
+      },
+    ]);
+    await expect(fetchLayoutClimbs('token', '27')).resolves.toEqual([
+      expect.objectContaining({
+        description: '',
+        username: null,
+        userUuid: null,
+        accumulatedHoldSetValue: null,
+      }),
+    ]);
+  });
+
+  it.each([
+    { climbs: [] },
+    null,
+    [null],
+    [{ ...fixture.bootstrapRows[0], frameCount: '1' }],
+    [{ ...fixture.bootstrapRows[0], climbConcat: null }],
+    [{ ...fixture.bootstrapRows[0], isListed: 1 }],
+  ])('rejects malformed full metadata before returning a baseline (%j)', async (body) => {
+    respond(body);
+    await expect(fetchLayoutClimbs('token', '27')).rejects.toMatchObject({ code: 'unknown' });
+  });
+
+  it('validates retained inline statistics as full-source rows using their statistic angle', async () => {
+    const row = fixture.rows[0];
+    respond([{ ...row, angle: row.derivativeAngle }]);
+    await expect(fetchLayoutClimbStats('token', '27')).resolves.toEqual([
+      {
+        climbUuid: row.climbUuid,
+        angle: 20,
+        ascentCount: 166,
+        currentDifficultyId: row.currentDifficultyId,
+        difficultyAverage: row.difficultyAverage,
+        qualityAverage: row.qualityAverage,
+        faUsername: row.faUsername,
+        faAt: row.faAt,
+      },
+    ]);
+  });
+
+  it('accepts zero counts and normalizes omitted nullable statistic fields', async () => {
+    respond([{ climbUuid: 'mixed-CASE', angle: 0, ascentCount: 0 }]);
+    await expect(fetchLayoutClimbStats('token', '27')).resolves.toEqual([
+      {
+        climbUuid: 'mixed-CASE',
+        angle: 0,
+        ascentCount: 0,
+        currentDifficultyId: null,
+        difficultyAverage: null,
+        qualityAverage: null,
+        faUsername: null,
+        faAt: null,
+      },
+    ]);
+  });
+
+  it.each([
+    { statistics: [] },
+    [null],
+    [{ climbUuid: 42, angle: 40, ascentCount: 1 }],
+    [{ climbUuid: 'source', angle: 40.5, ascentCount: 1 }],
+    [{ climbUuid: 'source', angle: 40, ascentCount: -1 }],
+    [{ climbUuid: 'source', angle: 40, ascentCount: Number.MAX_SAFE_INTEGER + 1 }],
+    [{ climbUuid: 'source', angle: 40, ascentCount: 1, qualityAverage: '3.5' }],
+    [{ climbUuid: 'source', angle: 40, ascentCount: 1, currentDifficultyId: {} }],
+    [{ climbUuid: 'source', angle: 40, ascentCount: 1, faUsername: 123 }],
+    [{ climbUuid: 'source', angle: 40, ascentCount: 1, faAt: [] }],
+  ])('rejects malformed full statistics before returning a baseline (%j)', async (body) => {
+    respond(body);
+    await expect(fetchLayoutClimbStats('token', '27')).rejects.toMatchObject({ code: 'unknown' });
   });
 });

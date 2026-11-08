@@ -260,11 +260,13 @@ async function catalogGet<T>(
 
     await ensureOk(path, response);
     try {
-      const rows = (await response.json()) as T[];
+      const rows: unknown = await response.json();
       signal?.throwIfAborted();
-      return rows;
+      if (!Array.isArray(rows)) throw new KilterApiError('unknown', `${path} response must be an array`);
+      return rows as T[];
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
+      if (error instanceof KilterApiError) throw error;
       if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
         throw new KilterApiError('timeout', `${path} body timed out after ${CATALOG_TIMEOUT_MS}ms`);
       }
@@ -274,29 +276,31 @@ async function catalogGet<T>(
 }
 
 /** All climbs for one product layout (the catalog read path). */
-export function fetchLayoutClimbs(
+export async function fetchLayoutClimbs(
   accessToken: string,
   productLayoutUuid: string,
   signal?: AbortSignal,
 ): Promise<KilterCatalogClimb[]> {
-  return catalogGet<KilterCatalogClimb>(
+  const rows = await catalogGet<unknown>(
     `/api/climbs/all/${encodeURIComponent(productLayoutUuid)}`,
     accessToken,
     signal,
   );
+  return rows.map((row, rowIndex) => parseDeltaRow(row, rowIndex).climb);
 }
 
 /** All (climb, angle) stats for one product layout. */
-export function fetchLayoutClimbStats(
+export async function fetchLayoutClimbStats(
   accessToken: string,
   productLayoutUuid: string,
   signal?: AbortSignal,
 ): Promise<KilterCatalogStat[]> {
-  return catalogGet<KilterCatalogStat>(
+  const rows = await catalogGet<unknown>(
     `/api/climb-stat/all/${encodeURIComponent(productLayoutUuid)}`,
     accessToken,
     signal,
   );
+  return rows.map(parseCatalogStat);
 }
 
 /** UUIDs Kilter has deleted server-side, for deletion reconciliation. */
@@ -344,6 +348,37 @@ export type KilterCatalogDeltaRecord = {
 
 function deltaResponseError(rowIndex: number, field: string): never {
   throw new KilterApiError('unknown', `catalog delta row ${rowIndex}: invalid ${field}`);
+}
+
+/** Validate full-source statistics before any batch can certify a baseline. */
+function parseCatalogStat(raw: unknown, rowIndex: number): KilterCatalogStat {
+  const invalid = (field: string): never => {
+    throw new KilterApiError('unknown', `catalog statistic row ${rowIndex}: invalid ${field}`);
+  };
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) invalid('row');
+  const fields = raw as Record<string, unknown>;
+  if (typeof fields.climbUuid !== 'string') invalid('climbUuid');
+  if (!Number.isInteger(fields.angle)) invalid('angle');
+  if (!Number.isSafeInteger(fields.ascentCount) || (fields.ascentCount as number) < 0) invalid('ascentCount');
+  for (const field of ['currentDifficultyId', 'difficultyAverage', 'qualityAverage']) {
+    if (fields[field] != null && (typeof fields[field] !== 'number' || !Number.isFinite(fields[field]))) {
+      invalid(field);
+    }
+  }
+  for (const field of ['faUsername', 'faAt']) {
+    if (fields[field] != null && typeof fields[field] !== 'string') invalid(field);
+  }
+  const row = raw as KilterCatalogStat;
+  return {
+    climbUuid: row.climbUuid,
+    angle: row.angle,
+    ascentCount: row.ascentCount,
+    currentDifficultyId: row.currentDifficultyId ?? null,
+    difficultyAverage: row.difficultyAverage ?? null,
+    qualityAverage: row.qualityAverage ?? null,
+    faUsername: row.faUsername ?? null,
+    faAt: row.faAt ?? null,
+  };
 }
 
 function parseDeltaRow(raw: unknown, rowIndex: number): KilterCatalogDeltaRecord {

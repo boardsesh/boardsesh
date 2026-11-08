@@ -332,41 +332,56 @@ describeIntegration('catalog writer fencing against PostgreSQL', () => {
     expect(aggregate).toMatchObject({ upstreamAscensionistCount: 2, displayDifficulty: 20 });
   });
 
-  it('withholds authoritative decreases and freshness while an alias geometry is deferred', async () => {
-    const database = getDb();
-    const canonicalUuid = 'deferred-canonical';
-    await database.insert(boardClimbs).values({ uuid: canonicalUuid, boardType: 'kilter', layoutId: 1 });
-    await database
-      .insert(boardClimbAliases)
-      .values({ boardType: 'kilter', aliasUuid: 'deferred-alias', canonicalUuid, source: 'kilter' });
-    await withCatalogWriterLease({ db: database }, async ({ write }) => {
-      await write((transaction) =>
-        applyCatalogSourceStats(
-          transaction,
-          [
-            { canonicalUuid, stat: sourceStat(canonicalUuid, 10, 20) },
-            { canonicalUuid, stat: sourceStat('deferred-alias', 5, 25) },
-          ],
-          { completeCoverage: true, confirmedAt: '2026-11-08T12:00:00Z' },
-        ),
-      );
-      await write((transaction) =>
-        transaction
-          .insert(kilterCatalogDeferred)
-          .values({ sourceUuid: 'deferred-alias', reason: 'changed_geometry', payload: {} }),
-      );
-      await write((transaction) =>
-        applyCatalogSourceStats(transaction, [{ canonicalUuid, stat: sourceStat(canonicalUuid, 1, 20) }], {
-          completeCoverage: true,
-          confirmedAt: '2026-11-08T12:15:00Z',
-        }),
-      );
-    });
-    const [aggregate] = await database
-      .select()
-      .from(boardClimbStats)
-      .where(eq(boardClimbStats.climbUuid, canonicalUuid));
-    expect(aggregate.upstreamAscensionistCount).toBe(15);
-    expect(aggregate.upstreamSyncedAt).toMatch(/^2026-11-08[ T]12:00:00/);
-  });
+  it.each([false, true])(
+    'withholds decreases and freshness for deferred geometry, rewired alias: %s',
+    async (rewired) => {
+      const database = getDb();
+      const canonicalUuid = rewired ? 'deferred-rewired-canonical' : 'deferred-canonical';
+      const aliasUuid = `${canonicalUuid}-alias`;
+      await database.insert(boardClimbs).values({ uuid: canonicalUuid, boardType: 'kilter', layoutId: 1 });
+      await database
+        .insert(boardClimbAliases)
+        .values({ boardType: 'kilter', aliasUuid: aliasUuid, canonicalUuid, source: 'kilter' });
+      await withCatalogWriterLease({ db: database }, async ({ write }) => {
+        await write((transaction) =>
+          applyCatalogSourceStats(
+            transaction,
+            [
+              { canonicalUuid, stat: sourceStat(canonicalUuid, 10, 20) },
+              { canonicalUuid, stat: sourceStat(aliasUuid, 5, 25) },
+            ],
+            { completeCoverage: true, confirmedAt: '2026-11-08T12:00:00Z' },
+          ),
+        );
+        await write((transaction) =>
+          transaction
+            .insert(kilterCatalogDeferred)
+            .values({ sourceUuid: aliasUuid, reason: 'changed_geometry', payload: {} }),
+        );
+        if (rewired) {
+          await write(async (transaction) => {
+            await transaction
+              .insert(boardClimbs)
+              .values({ uuid: 'new-alias-canonical', boardType: 'kilter', layoutId: 1 });
+            await transaction
+              .update(boardClimbAliases)
+              .set({ canonicalUuid: 'new-alias-canonical' })
+              .where(eq(boardClimbAliases.aliasUuid, aliasUuid));
+          });
+        }
+        await write((transaction) =>
+          applyCatalogSourceStats(transaction, [{ canonicalUuid, stat: sourceStat(canonicalUuid, 1, 20) }], {
+            completeCoverage: true,
+            confirmedAt: '2026-11-08T12:15:00Z',
+          }),
+        );
+      });
+      const [aggregate] = await database
+        .select()
+        .from(boardClimbStats)
+        .where(eq(boardClimbStats.climbUuid, canonicalUuid));
+      expect(aggregate.upstreamAscensionistCount).toBe(15);
+      expect(aggregate.upstreamSyncedAt).toMatch(/^2026-11-08[ T]12:00:00/);
+    },
+  );
 });
