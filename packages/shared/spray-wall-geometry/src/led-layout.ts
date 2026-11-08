@@ -1,7 +1,13 @@
 import { homographyFromAnchors, invert, mapPoint } from './homography';
 import { generateTnutGrid, isValidTnutCorners, type TnutLayout, type TnutPoint } from './tnut-layout';
 
-export type LedPosition = TnutPoint & { id: string };
+export type LedPosition = TnutPoint & {
+  id: string;
+  /** Original mounting hole. Moving an LED keeps its logical association. */
+  hole?: TnutPoint;
+  /** Original complementary slot, which can belong to more than one mounting hole. */
+  origin?: TnutPoint;
+};
 export type CableDirection = 'horizontal' | 'vertical' | 'custom';
 export type CableStartCorner = 'tl' | 'tr' | 'bl' | 'br';
 export type TnutWiring = {
@@ -34,11 +40,29 @@ export function readLedPositions(candidate: unknown): LedPosition[] | null {
       ids.has(point.id) ||
       typeof point.x !== 'number' ||
       typeof point.y !== 'number' ||
-      !boundedPoint({ x: point.x, y: point.y })
+      !boundedPoint({ x: point.x, y: point.y }) ||
+      (point.hole !== undefined &&
+        (!record(point.hole) ||
+          typeof point.hole.x !== 'number' ||
+          typeof point.hole.y !== 'number' ||
+          !boundedPoint({ x: point.hole.x, y: point.hole.y }))) ||
+      (point.origin !== undefined &&
+        (!record(point.origin) ||
+          typeof point.origin.x !== 'number' ||
+          typeof point.origin.y !== 'number' ||
+          !boundedPoint({ x: point.origin.x, y: point.origin.y })))
     )
       return null;
     ids.add(point.id);
-    result.push({ id: point.id, x: point.x, y: point.y });
+    result.push({
+      id: point.id,
+      x: point.x,
+      y: point.y,
+      ...(point.hole !== undefined ? { hole: { x: (point.hole as TnutPoint).x, y: (point.hole as TnutPoint).y } } : {}),
+      ...(point.origin !== undefined
+        ? { origin: { x: (point.origin as TnutPoint).x, y: (point.origin as TnutPoint).y } }
+        : {}),
+    });
   }
   return result;
 }
@@ -114,7 +138,7 @@ function wallFrame(layout: TnutLayout) {
 /** Offsets are applied in the calibrated grid plane, as in CRUX, before projection. */
 export function generateLedPositions(layout: TnutLayout): LedPosition[] {
   if (!layout.ledPlacement) return [];
-  let points: TnutPoint[] = [];
+  let points: (TnutPoint & { hole?: TnutPoint })[] = [];
   if (layout.ledPlacement === 'alternating' && layout.pattern === 'offset')
     points = generateTnutGrid({ ...layout, pattern: 'offset', firstRowOffset: !layout.firstRowOffset });
   else {
@@ -143,11 +167,12 @@ export function generateLedPositions(layout: TnutLayout): LedPosition[] {
           points.push({
             x: hole.x + (layout.ledPlacement === 'sides' ? (Math.sign(offset) * customSpacing) / 10 : 0),
             y: hole.y + (layout.ledPlacement === 'below' ? customSpacing / 2 : 0),
+            hole: { ...hole },
           });
           continue;
         }
         if (layout.ledPlacement === 'center') {
-          points.push(hole);
+          points.push({ ...hole, hole: { ...hole } });
           continue;
         }
         if (frame) {
@@ -157,12 +182,13 @@ export function generateLedPositions(layout: TnutLayout): LedPosition[] {
             x + offset,
             y + (layout.ledPlacement === 'below' ? rowStep / 2 : 0),
           );
-          points.push({ x: mappedX, y: mappedY });
+          points.push({ x: mappedX, y: mappedY, hole: { ...hole } });
         } else {
           const horizontal = layout.corners.topRight;
           const vertical = layout.corners.bottomLeft;
           const origin = layout.corners.topLeft;
           points.push({
+            hole: { ...hole },
             x:
               hole.x +
               offset * (horizontal.x - origin.x) +

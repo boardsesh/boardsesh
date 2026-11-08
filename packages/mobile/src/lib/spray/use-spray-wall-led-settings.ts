@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getPreference, setPreference } from '../preference-store';
+import { notifySprayLedConfiguration } from './spray-led-config-events';
 
 export type SprayWallLedSettings = {
   version: 1;
@@ -58,6 +59,11 @@ function readSettings(stored: unknown): SprayWallLedSettings {
   };
 }
 
+export async function loadSprayWallLedSettings(wallUuid: string): Promise<SprayWallLedSettings> {
+  await pendingWrites.get(wallUuid)?.catch(() => undefined);
+  return readSettings(await getPreference<unknown>(storageKey(wallUuid), { strictParsing: true }));
+}
+
 /** A LAN controller belongs to this device and wall, never the shared board payload. */
 export function useSprayWallLedSettings(wallUuid: string) {
   const [state, setState] = useState<SettingsState>(() => initialState(wallUuid));
@@ -68,9 +74,7 @@ export function useSprayWallLedSettings(wallUuid: string) {
     session.loading = true;
     setState(initialState(session.wallUuid));
     try {
-      await pendingWrites.get(session.wallUuid)?.catch(() => undefined);
-      const stored = await getPreference<unknown>(storageKey(session.wallUuid), { strictParsing: true });
-      const settings = readSettings(stored);
+      const settings = await loadSprayWallLedSettings(session.wallUuid);
       if (!session.active || session.generation !== generation) return;
       session.settings = settings;
       session.loading = false;
@@ -130,6 +134,7 @@ export function useSprayWallLedSettings(wallUuid: string) {
         } finally {
           if (pendingWrites.get(wallUuid) === write) pendingWrites.delete(wallUuid);
         }
+        notifySprayLedConfiguration(wallUuid);
         if (!session.active) return false;
         session.settings = settings;
         setState({ wallUuid, settings, loading: false, saving: false, error: null });

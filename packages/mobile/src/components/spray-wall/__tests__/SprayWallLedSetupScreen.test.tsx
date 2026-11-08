@@ -68,6 +68,9 @@ const preview = vi.hoisted(() => ({
 }));
 vi.mock('../../../lib/spray/use-spray-led-preview', () => ({ useSprayLedPreview: () => preview }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../SegmentedControl', () => ({
+  SegmentedControl: () => null,
+}));
 vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 56 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => backend.client }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: controls.authenticated }) }));
@@ -326,7 +329,7 @@ beforeEach(() => {
   backend.source = structuredClone(photoSource);
   backend.fetch
     .mockReset()
-    .mockResolvedValue({ wall: { viewerCanEdit: true, layoutId: 12, currentVersion: { id: 34 } } });
+    .mockResolvedValue({ wall: { viewerCanEdit: true, layoutId: 12, currentVersion: { id: 34 } }, holds: [] });
   backend.sourceFromRenderData.mockReset().mockImplementation(() => backend.source);
   backend.cache.mockReset().mockResolvedValue('/cache/wall.jpg');
   backend.client.invalidateQueries.mockReset().mockResolvedValue(undefined);

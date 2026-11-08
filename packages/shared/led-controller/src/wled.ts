@@ -1,5 +1,6 @@
 import { LedControllerError, type LedControllerDriver, type LedControllerInfo } from './types';
 import { normalizeControllerUrl } from './url';
+import { snapshotLedPixels } from './led-pixels';
 
 export interface WledDriverOptions {
   fetch?: typeof globalThis.fetch;
@@ -163,11 +164,20 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
       let previous: number[] = [];
       let mayBeLit = false;
       return {
-        async show(indices) {
-          if (indices.some((index) => !Number.isSafeInteger(index) || index < 0)) {
-            throw new LedControllerError('invalid-indices');
-          }
+        async show(indices, pixels) {
+          const pixelSnapshot = snapshotLedPixels(indices, pixels);
           const next = [...new Set(indices)];
+          const pixelColors = new Map<number, string>();
+          for (const pixel of pixelSnapshot ?? []) {
+            // The fourth channel stays off so WLED RGBW strips retain route hues.
+            pixelColors.set(
+              pixel.index,
+              pixel.color
+                .map((channel) => channel.toString(16).padStart(2, '0'))
+                .join('')
+                .toUpperCase() + '00',
+            );
+          }
           const ledCount = count ?? (await driver.probe(url)).ledCount;
           if (next.some((index) => index >= ledCount)) throw new LedControllerError('invalid-indices');
           if (count === null) {
@@ -208,7 +218,7 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
           }
           const colors: (number | string)[] = count === null ? [0, ledCount, '00000000'] : [];
           for (const index of previous) colors.push(index, '00000000');
-          for (const index of next) colors.push(index, 'FFFFFFFF');
+          for (const index of next) colors.push(index, pixelColors.get(index) ?? 'FFFFFFFF');
           // Keep requests below WLED's JSON buffer even for a large selection.
           for (let offset = 0; offset < colors.length; offset += offset === 0 && count === null ? 259 : 256) {
             const size = offset === 0 && count === null ? 259 : 256;

@@ -8,6 +8,7 @@ import {
   DEFAULT_TNUT_CORNERS,
   generateTnutGrid,
   generateLedPositions,
+  bindLedPositionsToHoles,
   migrateTnutLayoutColumns,
   createWiring,
   rowMajorLedIndices,
@@ -22,6 +23,7 @@ import {
   type TnutLayout,
   type TnutPattern,
   type TnutPoint,
+  type CanonicalSprayHold,
 } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import { useHeaderActions } from '../../hooks/use-header-actions';
@@ -40,6 +42,7 @@ import {
   type SprayLookPreviewSource,
 } from '../../lib/spray/spray-look-preview';
 import { loadSprayWallTnutLayout, saveSprayWallTnutLayout } from '../../lib/spray/spray-wall-tnut-store';
+import { sprayLedPhotoKey } from '../../lib/spray/spray-led-photo-key';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { createTnutCalibrationSession, closeTnutCalibrationSession } from '../../lib/spray/tnut-calibration-session';
@@ -59,7 +62,13 @@ import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 import { CablePatternThumbnail } from './CablePatternThumbnail';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 
-type LoadedSetup = { source: SprayLookPreviewSource; photoUri: string; photoKey: string; saved: TnutLayout | null };
+type LoadedSetup = {
+  source: SprayLookPreviewSource;
+  photoUri: string;
+  photoKey: string;
+  saved: TnutLayout | null;
+  holds: readonly CanonicalSprayHold[];
+};
 type Step =
   | 'pattern'
   | 'offset'
@@ -121,8 +130,15 @@ function SetupLoader({ wallUuid }: { wallUuid: string }) {
         );
         if (!photoUri) throw new Error('Missing wall photo');
         // Include the frame and calibration: no stale coordinates after a photo/reset/anchor change.
-        const photoKey = JSON.stringify([source.versionId, source.frame.width, source.frame.height, source.homography]);
-        if (active) setLoaded({ source, photoUri, photoKey, saved });
+        const photoKey = sprayLedPhotoKey(source);
+        if (active)
+          setLoaded({
+            source,
+            photoUri,
+            photoKey,
+            saved,
+            holds: payload.holds.map(({ id, cx, cy, r, outline }) => ({ id, cx, cy, r, outline })),
+          });
       } catch {
         if (active) setFailure('load');
       }
@@ -206,7 +222,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     [loaded.saved, loaded.photoKey],
   );
   const [photoChanged, setPhotoChanged] = useState(Boolean(loaded.saved && !matchingSaved));
-  const [layout, setLayout] = useState<TnutLayout>(() => matchingSaved ?? defaultLayout(loaded.photoKey));
+  const [layout, setLayout] = useState<TnutLayout>(() => {
+    const initial = matchingSaved ?? defaultLayout(loaded.photoKey);
+    return initial.ledPositions
+      ? { ...initial, ledPositions: bindLedPositionsToHoles(initial, loaded.source.frame) }
+      : initial;
+  });
   const [step, setStep] = useState<Step>('pattern');
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -283,7 +304,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
 
   function changeLayout(update: Partial<TnutLayout>) {
     if (busy.current) return;
-    setLayout((previous) => ({ ...previous, ...update }));
+    setLayout((previous) => {
+      const next = { ...previous, ...update };
+      return update.ledPositions ? { ...next, ledPositions: bindLedPositionsToHoles(next, source.frame) } : next;
+    });
     setDirty(true);
     setSaveFailed(false);
   }
@@ -855,6 +879,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
           <SprayLedLightingStep
             wallUuid={wallUuid}
             orderedIndices={rowMajorLedIndices(layout.ledPositions ?? [], layout.wiring, layout)}
+            layout={layout}
+            holds={loaded.holds}
+            source={source}
+            photoUri={photoUri}
+            width={viewportWidth}
+            onInteractionChange={setDragging}
           />
         ) : null}
       </View>

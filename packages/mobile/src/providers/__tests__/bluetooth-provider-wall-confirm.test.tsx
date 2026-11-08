@@ -11,6 +11,11 @@ import type { BleConnectionEnded, BleConnectionHandle, PickerState } from '../..
 import type { CurrentChangeClock } from '../../lib/ble/stale-current-hold';
 import { setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
 
+vi.mock('../../lib/spray/use-spray-led-route-sender', () => {
+  const sender = { send: async () => null, stop: () => undefined };
+  return { useSprayLedRouteSender: () => sender };
+});
+
 type TestResolvedBoard = { boardId: number };
 
 type BluetoothHookOptions = {

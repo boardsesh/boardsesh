@@ -42,6 +42,9 @@ type OverlayProps = {
   zoom: { value: number };
   panX: { value: number };
   panY: { value: number };
+  holdRings?: { id: number; points: TnutPoint[] }[];
+  selectedHoldIds?: number[];
+  selectedHoles?: TnutPoint[];
 };
 const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', onPrimary: '#fff' };
 
@@ -237,5 +240,35 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     expect(updated[3].d).toBe('');
     expect(updated[4].d).toContain('M117 200a3 3');
     expect(updated[6].d).toContain('M200 400a10 10');
+  });
+
+  it('serializes selectable hold contours and highlighted holes in the rectified viewport', () => {
+    const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
+    const initial = {
+      ...props(),
+      holdRings: [
+        {
+          id: 42,
+          points: [
+            { x: 0.2, y: 0.3 },
+            { x: 0.6, y: 0.3 },
+            { x: 0.6, y: 0.8 },
+          ],
+        },
+      ],
+      selectedHoldIds: [42],
+      selectedHoles: [{ x: 0.1, y: 0.2 }],
+    };
+    render(React.createElement(Component, initial));
+    const paths = evaluated(shapes);
+    expect(paths).toHaveLength(10);
+    expect(paths[7].d).toBe('M60 150L180 150L180 400Z');
+    expect(paths[8].d).toBe(paths[7].d);
+    expect(paths[9].d).toContain('M19 100a11 11');
+    initial.zoom.value = 3;
+    initial.panY.value = 100;
+    const zoomed = evaluated(shapes);
+    expectPathCoordinates(zoomed[7].d, [-120, 50, 240, 50, 240, 800]);
+    expect(zoomed[8].strokeWidth).toBe(3);
   });
 });

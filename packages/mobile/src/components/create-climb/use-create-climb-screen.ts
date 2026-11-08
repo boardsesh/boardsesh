@@ -1086,15 +1086,17 @@ export function useCreateClimbScreen({
   const [handedOff, setHandedOff] = useState(false);
   const reclaimWall = useCallback(() => setHandedOff(false), []);
 
-  // ---- BLE preview (debounced) while connected. ----
+  // Preview through the active wall transport while this phone drives it.
   const sendFramesRef = useRef(bluetooth?.sendFramesToBoard);
   sendFramesRef.current = bluetooth?.sendFramesToBoard;
   const wallMatchesEditor =
-    board.boardName !== 'woods' ||
+    (board.boardName !== 'woods' && board.boardName !== 'spray') ||
     (bluetooth?.boardName === board.boardName &&
       bluetooth.layoutId === board.layoutId &&
       bluetooth.sizeId === board.sizeId);
-  const bleConnected = (bluetooth?.isConnected ?? false) && wallMatchesEditor;
+  const bleConnected =
+    Boolean(bluetooth?.isConnected || (bluetooth?.boardName === 'spray' && bluetooth.canDriveWall)) &&
+    wallMatchesEditor;
   const invalidateWallState = bluetooth?.invalidateWallState;
   const invalidateWallStateRef = useRef(invalidateWallState);
   invalidateWallStateRef.current = invalidateWallState;
@@ -1511,9 +1513,14 @@ export function useCreateClimbScreen({
       void bluetooth.disconnect();
       return;
     }
+    if (board.boardName === 'spray') {
+      if (bluetooth.virtualWallHeld) bluetooth.releaseVirtualWall();
+      else bluetooth.takeVirtualWall();
+      return;
+    }
     trackBoardConnectTapped({ surface: 'create_climb', boardName: bluetooth.boardName, reconnect: false });
     void bluetooth.connect(currentFrameBleString());
-  }, [bluetooth, currentFrameBleString, wallMatchesEditor, editSizeMismatch, showToast, t]);
+  }, [bluetooth, board.boardName, currentFrameBleString, wallMatchesEditor, editSizeMismatch, showToast, t]);
 
   // ---- Save state machine. ----
   const editLocked = computeEditLocked(savedClimb);

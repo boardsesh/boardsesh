@@ -100,6 +100,14 @@ export {
 } from './tnut-layout';
 export { migrateTnutLayoutColumns } from './tnut-layout';
 export {
+  bindLedPositionsToHoles,
+  buildSprayLedMapping,
+  findSprayHoldAtPoint,
+  type SprayHoleLedMapping,
+  type SprayHoldLedMapping,
+  type SprayLedMapping,
+} from './hold-led-mapping';
+export {
   MAX_LED_POSITIONS,
   MAX_WIRING_SKIP,
   MAX_WIRING_TOTAL_SKIPS,

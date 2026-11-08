@@ -8,6 +8,7 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
 // Cable colour is separate from the orange holes and violet addressable LEDs.
 export const SPRAY_CABLE_COLOR = '#0891B2';
 type Edge = { from: TnutPoint; to: TnutPoint; skip: number };
+export type SprayHoldRing = { id: number; points: TnutPoint[] };
 function screenPoint(
   point: TnutPoint,
   width: number,
@@ -53,11 +54,33 @@ function visibleEdge(from: TnutPoint, to: TnutPoint, width: number, height: numb
     Math.min(from.y, to.y) <= height
   );
 }
+function outlinePath(
+  rings: readonly SprayHoldRing[],
+  width: number,
+  height: number,
+  zoom: number,
+  panX: number,
+  panY: number,
+): string {
+  'worklet';
+  let path = '';
+  for (const ring of rings) {
+    for (let index = 0; index < ring.points.length; index++) {
+      const point = screenPoint(ring.points[index], width, height, zoom, panX, panY);
+      path += `${index === 0 ? 'M' : 'L'}${point.x} ${point.y}`;
+    }
+    path += 'Z';
+  }
+  return path;
+}
 export function SpraySetupOverlay({
   holes,
   leds = [],
   wiring,
   selected = [],
+  holdRings,
+  selectedHoldIds = [],
+  selectedHoles = [],
   width,
   height,
   zoom,
@@ -68,6 +91,9 @@ export function SpraySetupOverlay({
   leds?: LedPosition[];
   wiring?: TnutWiring;
   selected?: string[];
+  holdRings?: SprayHoldRing[];
+  selectedHoldIds?: number[];
+  selectedHoles?: TnutPoint[];
   width: number;
   height: number;
   zoom: SharedValue<number>;
@@ -97,6 +123,19 @@ export function SpraySetupOverlay({
     return { edges, gapEdges, selectedLeds: leds.filter((point) => selection.has(point.id)) };
   }, [leds, wiring, selected]);
   const holeRadius = wiring ? 3 : 7;
+  const selectedRings = useMemo(() => {
+    const selection = new Set(selectedHoldIds);
+    return holdRings?.filter((ring) => selection.has(ring.id)) ?? [];
+  }, [holdRings, selectedHoldIds]);
+  const outlineProps = useAnimatedProps(() => ({
+    d: outlinePath(holdRings ?? [], width, height, zoom.value, panX.value, panY.value),
+  }));
+  const selectedOutlineProps = useAnimatedProps(() => ({
+    d: outlinePath(selectedRings, width, height, zoom.value, panX.value, panY.value),
+  }));
+  const selectedHoleProps = useAnimatedProps(() => ({
+    d: circles(selectedHoles, width, height, zoom.value, panX.value, panY.value, 11),
+  }));
   const holeProps = useAnimatedProps(() => ({
     d: circles(holes, width, height, zoom.value, panX.value, panY.value, holeRadius),
   }));
@@ -186,6 +225,21 @@ export function SpraySetupOverlay({
         strokeWidth={1.8}
       />
       <AnimatedPath animatedProps={selectedProps} fill="none" stroke={brandColors.primary} strokeWidth={2.5} />
+      {holdRings ? (
+        <>
+          <AnimatedPath animatedProps={outlineProps} fill="none" stroke={brandColors.warning} strokeWidth={1.5} />
+          <AnimatedPath
+            animatedProps={selectedOutlineProps}
+            fill={brandColors.primary}
+            fillOpacity={0.2}
+            stroke={brandColors.primary}
+            strokeWidth={3}
+          />
+        </>
+      ) : null}
+      {selectedHoles.length ? (
+        <AnimatedPath animatedProps={selectedHoleProps} fill="none" stroke={brandColors.warning} strokeWidth={3} />
+      ) : null}
     </Svg>
   );
 }

@@ -90,6 +90,7 @@ import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
 import { SHEET_SETTLE_MS } from './sheet-presentation-provider';
 import { useStaleCurrentHoldEnabled } from './feature-flags-provider';
+import { useSprayLedRouteSender } from '../lib/spray/use-spray-led-route-sender';
 
 export type ReassertWallOptions = {
   /** A press whose own connect brought the link up: carry the ask to that link. */
@@ -1071,6 +1072,9 @@ export function BluetoothProvider({
     useQueueSessionControls();
   const { t } = useTranslation('settings');
   const { t: tSession } = useTranslation('session');
+  const { t: tBoards } = useTranslation('boards');
+  const sprayTranslationRef = useRef(tBoards);
+  sprayTranslationRef.current = tBoards;
   // Board presence ("now on the wall"). Always-on now (the board-presence flag
   // was removed). `enabled` is true while the provider is mounted and false only
   // for the outside-provider DISABLED_CONTROLS fallback, where `boardId` is null
@@ -1195,6 +1199,7 @@ export function BluetoothProvider({
   // write path (auto-sender, undo, kiosk relight). Shared with the AutoSender so
   // its dedup-report branch never confirms a queue climb the wall isn't showing.
   const lastPhysicalFramesRef = useRef<string | null>(null);
+  const [reassertNonce, setReassertNonce] = useState(0);
   const queueMirrorFor = useCallback(
     (climbUuid: string | undefined) => unambiguousQueueMirror(getQueueSnapshot(), climbUuid),
     [getQueueSnapshot],
@@ -1690,6 +1695,21 @@ export function BluetoothProvider({
     isConnected,
   });
 
+  const invalidateSprayLedFrames = useCallback((retry = false) => {
+    lastPhysicalFramesRef.current = null;
+    if (retry) setReassertNonce((nonce) => nonce + 1);
+  }, []);
+  const reportSprayLedFailure = useCallback(() => {
+    showToast(sprayTranslationRef.current('sprayLed.lightFailed'), 'error');
+  }, [showToast]);
+  const { send: sendSprayLedFrames, stop: stopSprayLedFrames } = useSprayLedRouteSender({
+    boardName,
+    layoutId,
+    colorOverrides: bluetoothColorOverrides,
+    onInvalidated: invalidateSprayLedFrames,
+    onFailure: reportSprayLedFailure,
+  });
+
   /**
    * The single commit seam for "put this climb on the wall". Two backends, one
    * pipeline: everything downstream of a `true` — the latest-wins coalescing
@@ -1711,17 +1731,20 @@ export function BluetoothProvider({
       // physical write does, then report the climb as up.
       const virtualHold = virtualWallHoldRef.current;
       if (virtualHold) {
-        return settleVirtualWallWrite(VIRTUAL_WALL_SETTLE_MS, signal, virtualHold.controller.signal).then(
-          (settled) =>
-            settled &&
-            virtualWallHoldRef.current === virtualHold &&
-            boardUuidRef.current === virtualHold.boardUuid &&
-            !bleConnectedRef.current,
-        );
+        const stillHeld = () =>
+          virtualWallHoldRef.current === virtualHold &&
+          boardUuidRef.current === virtualHold.boardUuid &&
+          !bleConnectedRef.current;
+        return sendSprayLedFrames(frames, mirrored, signal).then(async (written) => {
+          if (!stillHeld()) return false;
+          if (written !== null) return written;
+          const settled = await settleVirtualWallWrite(VIRTUAL_WALL_SETTLE_MS, signal, virtualHold.controller.signal);
+          return settled && stillHeld();
+        });
       }
       return Promise.resolve(false);
     },
-    [isConnected, sendFramesToBoard],
+    [isConnected, sendFramesToBoard, sendSprayLedFrames],
   );
 
   /**
@@ -1785,6 +1808,7 @@ export function BluetoothProvider({
       wallOperationEpochRef.current += 1;
       virtualWallHoldRef.current = null;
       virtualHold.controller.abort();
+      stopSprayLedFrames();
       virtualWallHeldRef.current = false;
       setVirtualWallHeld(false);
       pendingReportSignatureRef.current = null;
@@ -1822,7 +1846,7 @@ export function BluetoothProvider({
         boardId: boardId ?? undefined,
       });
     },
-    [clearPendingWallReportAndUndoToastArm, noLightKit, wallDevice, showToast, tSession],
+    [clearPendingWallReportAndUndoToastArm, noLightKit, wallDevice, showToast, stopSprayLedFrames, tSession],
   );
 
   const releaseVirtualWallForUser = useCallback(() => releaseVirtualWall('user'), [releaseVirtualWall]);
@@ -2561,8 +2585,8 @@ export function BluetoothProvider({
   );
 
   const clearBoard = useCallback(
-    () => sendFramesToBoard('', false, undefined, { sendSource: 'clear' }),
-    [sendFramesToBoard],
+    () => commitWallFrames('', false, undefined, { sendSource: 'clear' }),
+    [commitWallFrames],
   );
 
   // Blank the wall, keep the link, and tell the feed (#7015, #7047). The link
@@ -2656,8 +2680,8 @@ export function BluetoothProvider({
       // stays untagged (no sendSource): the user didn't press Clear Lights, so it
       // must not count towards Board Lights Cleared.
       const clearWall = () => {
-        blankWallAndReportClear(() => sendFramesToBoard('')).catch((error: unknown) =>
-          console.warn('[bluetooth] clearing the wall after a spill skip failed', error),
+        blankWallAndReportClear(() => (isConnected ? sendFramesToBoard('') : commitWallFrames(''))).catch(
+          (error: unknown) => console.warn('[bluetooth] clearing the wall after a spill skip failed', error),
         );
       };
       // A climb on a board at this gym is not a spill. The climber moved onto
@@ -2706,7 +2730,7 @@ export function BluetoothProvider({
         clearWall();
       }
     },
-    [blankWallAndReportClear, setCurrentClimb, showToast, sendFramesToBoard, t],
+    [blankWallAndReportClear, setCurrentClimb, showToast, isConnected, sendFramesToBoard, commitWallFrames, t],
   );
 
   // The auto-sender reached the current climb but it has no frames yet — a
@@ -2801,7 +2825,6 @@ export function BluetoothProvider({
 
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current
   // climb once, bypassing the byte-identical dedup.
-  const [reassertNonce, setReassertNonce] = useState(0);
   // A reassert is the climber asking for the climb on the wall, so it is also
   // what releases a #4979 hold: released here, before the nonce reaches the
   // auto-sender, whose pending reassert then lets the write through.
@@ -2898,7 +2921,7 @@ export function BluetoothProvider({
       connectAfterBoardSwitch,
       hasRememberedDeviceForBoard,
       disconnect: wrappedDisconnect,
-      sendFramesToBoard,
+      sendFramesToBoard: commitWallFrames,
       clearBoard,
       turnOffAllLights,
       reassertWall,
@@ -2931,7 +2954,7 @@ export function BluetoothProvider({
       connectAfterBoardSwitch,
       hasRememberedDeviceForBoard,
       wrappedDisconnect,
-      sendFramesToBoard,
+      commitWallFrames,
       clearBoard,
       turnOffAllLights,
       reassertWall,

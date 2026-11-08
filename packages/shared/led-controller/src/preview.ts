@@ -1,5 +1,6 @@
-import { type LedControllerDriver, type LedControllerPreviewTransport } from './types';
+import { type LedControllerDriver, type LedControllerPreviewTransport, type LedPixel } from './types';
 import { normalizeControllerUrl } from './url';
+import { snapshotLedPixels } from './led-pixels';
 
 type Lane = {
   tail: Promise<unknown>;
@@ -65,11 +66,19 @@ export function createLedPreviewSession(driver: LedControllerDriver, controllerU
 
   return {
     isOwner: () => lane.owner === token,
-    show: (indices: readonly number[]) => {
+    show: async (indices: readonly number[], colors?: readonly LedPixel[]) => {
       const snapshot = [...indices];
-      return snapshot.length ? run((preview) => preview.show(snapshot)) : stop();
+      const colorSnapshot = snapshotLedPixels(snapshot, colors);
+      return snapshot.length ? run((preview) => preview.show(snapshot, colorSnapshot)) : stop();
     },
     lightAll: () => run((preview) => preview.lightAll()),
+    // A deliberate clear also addresses lights left on by another app/session.
+    clear: () =>
+      run(async () => {
+        await driver.turnOff(url);
+        // The next individual command must wake and reinitialize the controller.
+        lane.transport = null;
+      }),
     stop,
     async close() {
       if (closed) return;

@@ -2,7 +2,8 @@
 
 Edit an existing spray wall and expand **LEDs**, immediately above **More options**.
 Enable LEDs to show the WLED address and setup controls. This first version supports
-one surface with one WLED controller. It does not illuminate climbs or map holds yet.
+one surface with one WLED controller. The saved setup links detected holds to
+holes and their wired LEDs for the app's normal route lighting controls.
 
 ## Using it
 
@@ -49,7 +50,11 @@ one surface with one WLED controller. It does not illuminate climbs or map holds
    make the order visible. Undo restores edits. **Light selected LEDs** is an
    optional physical preview of the selected positions using their assigned
    WLED indices, including initial and intermediate skips.
-10. Next opens **Test LEDs**. Light the full configured strip or start a quick
+10. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
+    photo to select positions. **Light selection** tests their assigned LEDs.
+    Tap a selected position again to remove it. The page reports holds linked
+    to wired LEDs and selected positions with no LED assignment. These controls
+    also work in the zoomable fullscreen photo. Light the full strip or start a quick
     row-by-row test of wired positions from the upper left. Every row starts on
     the left, regardless of the cable's serpentine order. Unwired positions do
     not participate. **Stop lighting** ends the test. These controls require
@@ -57,9 +62,36 @@ one surface with one WLED controller. It does not illuminate climbs or map holds
     count produce an error rather than addressing a different LED.
 11. Done saves positions and wiring on this device. Partial wiring can be saved.
     Its status reports connected LEDs and separate cable sections. The assigned
-    zero-based indices include skipped LEDs. All physical previews belong to
-    setup only. No climb illumination or automatic hold-to-hole associations are
-    activated by this setup.
+    zero-based indices include skipped LEDs. The normal wall controls use the
+    saved setup to illuminate routes after you deliberately take the wall.
+
+## Hold mapping and route lighting
+
+Hole positions are normalized in the rectified wall frame. Matching converts
+them into canonical pixels, where the detected holds already live. Every hole
+inside a hold outline belongs to that hold. Without a valid outline the stored
+hold radius is used. Overlaps resolve by normalized center distance, then hold
+ID. A large hold can own several holes. Holes outside a hold remain unassigned.
+
+Generated LEDs retain their hole association when moved. Older generated IDs
+recover their original positions. Manual LEDs bind to nearby placement slots
+within a bounded distance. Complementary positions use the nearest opposite-phase
+slots and retain their original positions after movement. Physical indices use
+the saved cable order, initial skips and gaps. Unwired positions have no index.
+
+Enable LEDs, finish setup and take the wall through the usual lightbulb control.
+Routes illuminate their mapped LEDs using the existing start, hand, foot and
+finish colors, including saved color overrides. Route playback and creator
+previews use the same wall sender. All used holds must have wired LED mappings.
+An incomplete or stale setup produces an error instead of confirming the route.
+The setup photo identity must match the current wall version and calibration.
+Mirrored spray routes are rejected because the wall has no defined mirror map.
+
+Clear, release, backgrounding, account changes and access withdrawal cancel the
+owned lighting session. Changes to the saved layout or controller settings clear
+the old session and refresh the next route write. A controller acknowledgement
+is required before the existing wall-presence flow reports a successful write.
+The setup test remains white and can take control of the same serialized lane.
 
 Offset grids also offer **Complementary positions**: LEDs occupy the opposite
 phase of the staggered hold grid, as in CRUX. The diagram follows the chosen
@@ -106,21 +138,20 @@ four selected anchors, and updates on the UI thread while dragging. The saved
 identity includes the immutable wall version, canonical dimensions and homography.
 A changed identity starts a new setup while preserving the previous saved setup
 until the user explicitly continues. Layout data has a separate local storage key
-from WLED connection settings. Unsaved changes are protected on leaving the flow;
-the setup does not yet associate detected holds with holes. Generated LED offsets
-are editable estimates, not recognition results.
+from WLED connection settings. Unsaved changes are protected on leaving the flow.
+The generated LED offsets remain editable estimates.
 
 These settings save immediately on this device, separately for each wall. Turning
 the setting off hides the remaining controls and retains the saved controller URL.
 An unconfirmed address draft is not saved on leaving the screen. Disabling LED
-support is a configuration change; it sends no hardware command. Use **Turn LEDs
-off** to turn off a running test.
+support stops an owned route-lighting session. Use **Turn LEDs off** to turn off
+a running setup test.
 
 ## Controller boundary
 
 `@boardsesh/led-controller` owns URL validation and transport, with a driver registry
 and `probe`, `lightAll`, `turnOff` and `createPreview` operations. The preview
-transport accepts physical LED indices through `show`, plus full-strip and off
+transport accepts physical LED indices and optional RGB colors through `show`, plus full-strip and off
 commands. Serialized preview sessions prevent overlapping animation commands.
 Add future systems as drivers,
 then extend the versioned settings discriminator and provider selection UI. The
@@ -140,8 +171,8 @@ light change still needs device QA.
 The design follows the separation used in
 [CRUX WLED Bridge](https://github.com/Spikeystrike/cruxwledbridge): a hold, a wall
 hole and a physical LED are different things. No CRUX source was copied, and no
-mapping is guessed in this MVP. Later setup can add those layers without changing
-the controller transport.
+controller-specific mapping is embedded in the UI. Shared geometry owns the
+hold-to-hole-to-LED associations, while the driver owns the physical transport.
 
 The lighting test requires a **1D WLED strip configuration**. It covers the
 configured LED count, resets segment 0 to the full cable, and puts existing

@@ -20,6 +20,9 @@ export interface LedControllerInfo {
   ledCount: number;
 }
 
+/** An RGB route colour for one physical LED on the configured cable. */
+export type LedPixel = { index: number; color: readonly [number, number, number] };
+
 /** Drivers own transport and hardware details; the wall editor owns settings. */
 export interface LedControllerDriver {
   probe(url: string, signal?: AbortSignal): Promise<LedControllerInfo>;
@@ -30,7 +33,7 @@ export interface LedControllerDriver {
 
 /** A single serialized preview owns its cached count and previously lit LEDs. */
 export interface LedControllerPreviewTransport {
-  show(indices: readonly number[]): Promise<void>;
+  show(indices: readonly number[], colors?: readonly LedPixel[]): Promise<void>;
   lightAll(): Promise<void>;
   turnOff(): Promise<void>;
 }

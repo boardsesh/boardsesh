@@ -60,6 +60,8 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
   bluetooth: {
     isConnected: true,
+    boardName: 'kilter',
+    canDriveWall: false,
     sendFramesToBoard: vi.fn() as ReturnType<typeof vi.fn>,
   },
   sendCalls: [] as SendCall[],
@@ -141,6 +143,8 @@ beforeEach(() => {
   mocks.lastEngineInput.current = null;
   mocks.playbackEventListeners.clear();
   mocks.bluetooth.isConnected = true;
+  mocks.bluetooth.boardName = 'kilter';
+  mocks.bluetooth.canDriveWall = false;
   mocks.sendCalls = [];
   // Each write returns a deferred promise so a test can hold a write "in flight".
   mocks.bluetooth.sendFramesToBoard = vi.fn((frame: string, mirrored?: boolean) => {
@@ -209,6 +213,17 @@ async function setFrame(
 }
 
 describe('useMobilePlayback — BLE drain', () => {
+  it('writes playback through the held spray wall LAN transport', async () => {
+    mocks.bluetooth.isConnected = false;
+    mocks.bluetooth.boardName = 'spray';
+    mocks.bluetooth.canDriveWall = true;
+    const climb = climbWith('spray-route');
+    const { rerender } = renderPlayback(climb);
+    await setFrame(rerender, climb, 'F1');
+    expect(mocks.sendCalls[0]?.frame).toBe('F1');
+    await act(async () => mocks.sendCalls[0].resolve(true));
+  });
+
   // The Browsing chrome promises "the wall stays put": while the drawer shows a
   // preview, playback animates on-screen but not one frame may reach the board.
   it('viewOnly keeps every frame off the wall, then resumes when it lifts', async () => {

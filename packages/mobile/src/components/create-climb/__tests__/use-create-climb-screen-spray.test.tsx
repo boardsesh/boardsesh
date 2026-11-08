@@ -168,6 +168,51 @@ afterEach(() => {
   clearSprayWallRegistry();
 });
 
+describe('spray wall LAN preview', () => {
+  it('takes the virtual wall and previews through LAN without opening Bluetooth', async () => {
+    const connect = vi.fn();
+    const takeVirtualWall = vi.fn();
+    const releaseVirtualWall = vi.fn();
+    const sendFramesToBoard = vi.fn().mockResolvedValue(true);
+    ble.context = {
+      boardName: 'spray',
+      layoutId: SPRAY_BOARD.layoutId,
+      sizeId: SPRAY_BOARD.sizeId,
+      isConnected: false,
+      canDriveWall: false,
+      virtualWallHeld: false,
+      loading: false,
+      connect,
+      takeVirtualWall,
+      releaseVirtualWall,
+      sendFramesToBoard,
+    };
+    const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+    act(() => result.current.handleToggleBle());
+    expect(takeVirtualWall).toHaveBeenCalledOnce();
+    expect(connect).not.toHaveBeenCalled();
+    ble.context = { ...ble.context, virtualWallHeld: true, canDriveWall: true };
+    rerender();
+    expect(result.current.bleConnected).toBe(true);
+    await waitFor(() => expect(sendFramesToBoard).toHaveBeenCalledWith('p1r1p2r3'));
+    act(() => result.current.handleToggleBle());
+    expect(releaseVirtualWall).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a different spray wall out of the creator preview', () => {
+    ble.context = {
+      boardName: 'spray',
+      layoutId: SPRAY_BOARD.layoutId + 1,
+      sizeId: SPRAY_BOARD.sizeId,
+      isConnected: false,
+      canDriveWall: true,
+      virtualWallHeld: true,
+    };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+    expect(result.current.bleConnected).toBe(false);
+  });
+});
+
 describe('publishing a wall climb, with no grade (#5971)', () => {
   it('starts a wall climb on publish, and a catalogue climb on draft', () => {
     // #5954: a draft is left out of the Climbs list, so a wall climb that saved

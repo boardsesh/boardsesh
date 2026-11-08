@@ -1,5 +1,6 @@
 import { readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 import { getPreference, setPreference } from '../preference-store';
+import { notifySprayLedConfiguration } from './spray-led-config-events';
 
 const keyFor = (wallUuid: string) => `sprayWallTnutLayout:${wallUuid}`;
 const pendingWrites = new Map<string, Promise<void>>();
@@ -24,6 +25,7 @@ export async function saveSprayWallTnutLayout(wallUuid: string, layout: TnutLayo
   pendingWrites.set(wallUuid, write);
   try {
     await write;
+    notifySprayLedConfiguration(wallUuid);
   } finally {
     if (pendingWrites.get(wallUuid) === write) pendingWrites.delete(wallUuid);
   }

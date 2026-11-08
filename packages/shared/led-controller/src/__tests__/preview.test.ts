@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createLedPreviewSession } from '../preview';
 import { createWledDriver } from '../wled';
+import type { LedPixel } from '../types';
 
 const json = (payload: unknown) => new Response(JSON.stringify(payload));
 function fixture() {
@@ -21,6 +22,65 @@ function fixture() {
 }
 
 describe('WLED individual preview', () => {
+  it('writes distinct RGB route colors and clears old colors before a later white selection', async () => {
+    const { driver, commands } = fixture();
+    const preview = driver.createPreview('route-colors.local');
+    await preview.show(
+      [7, 9, 10],
+      [
+        { index: 7, color: [255, 128, 0] },
+        { index: 9, color: [0, 17, 255] },
+      ],
+    );
+    expect(commands().at(-1)).toMatchObject({
+      seg: [{ i: [0, 1000, '00000000', 7, 'FF800000', 9, '0011FF00', 10, 'FFFFFFFF'] }],
+    });
+    await preview.show([9]);
+    expect(commands().at(-1)).toMatchObject({
+      seg: [{ i: [7, '00000000', 9, '00000000', 10, '00000000', 9, 'FFFFFFFF'] }],
+    });
+  });
+
+  it.each([
+    [{ index: 2, color: [1, 2, 3] }],
+    [{ index: 1, color: [-1, 2, 3] }],
+    [{ index: 1, color: [256, 2, 3] }],
+    [{ index: 1, color: [1.5, 2, 3] }],
+    [{ index: 1, color: [NaN, 2, 3] }],
+    [{ index: 1, color: [1, 2] }],
+    [{ index: 1, color: [1, 2, 3, 4] }],
+    [{ index: 1, color: 'red' }],
+    [
+      { index: 1, color: [1, 2, 3] },
+      { index: 1, color: [4, 5, 6] },
+    ],
+  ])('rejects invalid or unrelated route colors before controller access: %j', async (...pixels) => {
+    const { driver, fetchController } = fixture();
+    await expect(
+      driver.createPreview('invalid-colors.local').show([1], pixels as unknown as LedPixel[]),
+    ).rejects.toMatchObject({ code: 'invalid-indices' });
+    expect(fetchController).not.toHaveBeenCalled();
+  });
+
+  it('retains color pairs when a large route is split into sequential requests', async () => {
+    const { driver, commands } = fixture();
+    const indices = Array.from({ length: 400 }, (_, index) => index);
+    await driver.createPreview('large-color.local').show(
+      indices,
+      indices.map((index) => ({ index, color: [0, index % 256, 255] })),
+    );
+    const chunks = commands()
+      .slice(1)
+      .map((command) => (command.seg as { i: (number | string)[] }[])[0].i);
+    expect(chunks.flat()).toEqual([
+      0,
+      1000,
+      '00000000',
+      ...indices.flatMap((index) => [index, `00${(index % 256).toString(16).padStart(2, '0').toUpperCase()}FF00`]),
+    ]);
+    for (const chunk of chunks.slice(1)) expect(chunk.length % 2).toBe(0);
+  });
+
   it('wakes separately, clears the full cable, then updates only old/new LEDs', async () => {
     const { driver, commands, fetchController } = fixture();
     const preview = driver.createPreview('wall.local');
@@ -93,6 +153,88 @@ describe('WLED individual preview', () => {
 });
 
 describe('serialized LED preview ownership', () => {
+  it('explicitly clears existing lights without a prior selection and wakes on the next selection', async () => {
+    const { driver, commands, fetchController } = fixture();
+    const session = createLedPreviewSession(driver, 'explicit-clear.local');
+    expect(await session.clear()).toBe(true);
+    expect(fetchController).toHaveBeenCalledTimes(1);
+    expect(commands()).toEqual([expect.objectContaining({ on: false })]);
+    await session.show([1]);
+    await session.clear();
+    fetchController.mockClear();
+    await session.show([2]);
+    expect(commands()).toEqual([
+      expect.objectContaining({ on: true }),
+      expect.objectContaining({ seg: [{ id: 0, i: [0, 1000, '00000000', 2, 'FFFFFFFF'] }] }),
+    ]);
+    await session.close();
+  });
+
+  it('waits for an in-flight selection before an explicit clear takes ownership', async () => {
+    const { driver, commands, fetchController } = fixture();
+    let release!: () => void;
+    fetchController.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(json({ name: 'Wall', ver: '0.15', leds: { count: 1000 } }));
+        }),
+    );
+    const selecting = createLedPreviewSession(driver, 'queued-clear.local');
+    const clearing = createLedPreviewSession(driver, 'queued-clear.local');
+    const selection = selecting.show([1]);
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const cleared = clearing.clear();
+    release();
+    expect(await selection).toBe(false);
+    expect(await cleared).toBe(true);
+    expect(commands().at(-1)).toMatchObject({ on: false });
+    expect(clearing.isOwner()).toBe(true);
+    const count = commands().length;
+    await selecting.close();
+    expect(commands()).toHaveLength(count);
+    await clearing.close();
+    expect(commands()).toHaveLength(count);
+  });
+
+  it('snapshots route indices and nested RGB tuples while waiting for another write', async () => {
+    const { driver, commands, fetchController } = fixture();
+    let release!: () => void;
+    fetchController.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(json({ name: 'Wall', ver: '0.15', leds: { count: 1000 } }));
+        }),
+    );
+    const session = createLedPreviewSession(driver, 'snapshot-colors.local');
+    const first = session.show([1]);
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const indices = [2];
+    const pixels = [{ index: 2, color: [1, 128, 255] as [number, number, number] }];
+    const next = session.show(indices, pixels);
+    indices[0] = 3;
+    pixels[0].index = 3;
+    pixels[0].color[0] = 255;
+    release();
+    expect(await first).toBe(false);
+    expect(await next).toBe(true);
+    expect(commands().at(-1)).toMatchObject({ seg: [{ i: [1, '00000000', 2, '0180FF00'] }] });
+    await session.close();
+  });
+
+  it('rejects invalid colors before taking ownership or stopping the current lights', async () => {
+    const { driver, commands } = fixture();
+    const active = createLedPreviewSession(driver, 'preflight-colors.local');
+    const other = createLedPreviewSession(driver, 'preflight-colors.local');
+    await active.show([1]);
+    const commandCount = commands().length;
+    await expect(other.show([], [{ index: 1, color: [255, 0, 0] }])).rejects.toMatchObject({ code: 'invalid-indices' });
+    expect(active.isOwner()).toBe(true);
+    expect(other.isOwner()).toBe(false);
+    expect(commands()).toHaveLength(commandCount);
+    await other.close();
+    await active.close();
+  });
+
   it('does not turn off existing lights when a first selection fails preflight', async () => {
     const { driver, commands } = fixture();
     const session = createLedPreviewSession(driver, 'invalid-preview.local');
