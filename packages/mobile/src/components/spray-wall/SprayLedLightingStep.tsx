@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import {
   assignLedIndices,
   buildSprayLedMapping,
@@ -17,7 +16,8 @@ import { Button } from '../Button';
 import { Text } from '../Text';
 import { SegmentedControl } from '../SegmentedControl';
 import { SprayPhotoStage } from './SprayPhotoStage';
-import { SpraySetupOverlay, type SprayHoldRing } from './SpraySetupOverlay';
+import { SpraySetupOverlay } from './SpraySetupOverlay';
+import { sprayHoldRings } from './spray-hold-rings';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
 export function SprayLedLightingStep({
@@ -45,25 +45,7 @@ export function SprayLedLightingStep({
   const [kind, setKind] = useState<'holes' | 'holds'>('holes');
   const [selected, setSelected] = useState<number[]>([]);
   const mapping = useMemo(() => buildSprayLedMapping(layout, source.frame, holds), [layout, source.frame, holds]);
-  const rings = useMemo<SprayHoldRing[]>(
-    () =>
-      holds.map((hold) => {
-        const outline = isValidOutlineRing(hold.outline)
-          ? hold.outline
-          : Array.from({ length: 64 }, (_, index) => {
-              const angle = Math.floor(index / 2) * (Math.PI / 16);
-              return index % 2 ? Math.sin(angle) : Math.cos(angle);
-            });
-        const points: TnutPoint[] = [];
-        for (let index = 0; index + 1 < outline.length; index += 2)
-          points.push({
-            x: (hold.cx + outline[index] * hold.r) / source.frame.width,
-            y: (hold.cy + outline[index + 1] * hold.r) / source.frame.height,
-          });
-        return { id: hold.id, points };
-      }),
-    [holds, source.frame],
-  );
+  const rings = useMemo(() => sprayHoldRings(holds, source.frame), [holds, source.frame]);
   const entries = kind === 'holes' ? mapping.holes : mapping.holds;
   const selection = new Set(selected);
   const chosen = entries.filter((entry) => selection.has('holeIndex' in entry ? entry.holeIndex : entry.holdId));

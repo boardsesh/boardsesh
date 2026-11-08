@@ -59,6 +59,7 @@ import { SprayPhotoStage } from './SprayPhotoStage';
 import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { SprayLedMapEditor } from './SprayLedMapEditor';
 import { SprayLedLightingStep } from './SprayLedLightingStep';
+import { SprayHoldLedStep } from './SprayHoldLedStep';
 import { SprayPointToolbar, type SprayPointMode } from './SprayPointToolbar';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 import { CablePatternThumbnail } from './CablePatternThumbnail';
@@ -82,6 +83,7 @@ type Step =
   | 'cableStart'
   | 'initialSkip'
   | 'wiring'
+  | 'holdLeds'
   | 'lighting';
 
 /** Leaving these keeps the work on disk. Choosing a placement is not work yet, and stays discardable. */
@@ -91,6 +93,7 @@ const LED_WORK_STEPS: ReadonlySet<Step> = new Set<Step>([
   'cableStart',
   'initialSkip',
   'wiring',
+  'holdLeds',
   'lighting',
 ]);
 
@@ -412,7 +415,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else if (step === 'cableStart') setStep('cablePattern');
     else if (step === 'initialSkip') setStep(direction === 'custom' ? 'cablePattern' : 'cableStart');
     else if (step === 'wiring') setStep('initialSkip');
-    else if (step === 'lighting') setStep('wiring');
+    else if (step === 'holdLeds') setStep('wiring');
+    else if (step === 'lighting') setStep('holdLeds');
     else router.back();
   }
 
@@ -469,7 +473,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       }
       const rebuildLeds = () => {
         const ledPositions = generateLedPositions(layout);
-        const draft = withUpdate(layout, { ledPositions, wiring: undefined });
+        // Regenerated LEDs reuse ids, so hand-made hold links would point at the wrong ones.
+        const draft = withUpdate(layout, { ledPositions, wiring: undefined, holdLeds: undefined });
         untouchedLeds.current = ledPositions;
         generatedLeds.current = signature;
         generatedWiring.current = null;
@@ -515,6 +520,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     }
     if (step === 'wiring') {
       if (!layout.wiring || !layout.ledPositions?.length) return;
+      saveWork(layout);
+      setStep('holdLeds');
+      return;
+    }
+    if (step === 'holdLeds') {
       saveWork(layout);
       setStep('lighting');
       return;
@@ -632,7 +642,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                       ? t('sprayLedSetup.initialSkipTitle')
                       : step === 'lighting'
                         ? t('sprayLedSetup.lightingTitle')
-                        : t('sprayLedSetup.wiringTitle');
+                        : step === 'holdLeds'
+                          ? t('sprayLedSetup.holdLedsTitle')
+                          : t('sprayLedSetup.wiringTitle');
 
   return (
     <ScrollView
@@ -953,6 +965,18 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
               <Text color={brandColors.error}>{t('sprayLedSetup.skipCountRange', { max: skipLimit })}</Text>
             ) : null}
           </>
+        ) : null}
+        {step === 'holdLeds' ? (
+          <SprayHoldLedStep
+            wallUuid={wallUuid}
+            layout={layout}
+            holds={loaded.holds}
+            source={source}
+            photoUri={photoUri}
+            width={viewportWidth}
+            onChange={changeLayout}
+            onInteractionChange={setDragging}
+          />
         ) : null}
         {step === 'lighting' && layout.wiring ? (
           <SprayLedLightingStep
