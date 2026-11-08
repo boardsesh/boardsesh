@@ -207,6 +207,19 @@ export const materialSurfaceContainers = {
 } as const;
 
 /**
+ * The Material floating accessory bar (MiniPlayer card, climb capsule, rest
+ * timer). It floats over cards, so in dark it takes the top container step:
+ * the `base` step (#1A1A1A) sat darker than the #1E1E1E feed cards beneath it
+ * (1.04:1) and read as a hole in the card (QA verdict 166). #2E2E2E is 1.23:1
+ * on a card and 1.42:1 on the page, and `AccessoryBarSurface` adds a hairline
+ * edge. Light keeps `base`, which already sits darker than the white cards.
+ */
+export const materialFloatingBarSurface = {
+  light: materialSurfaceContainers.light.base,
+  dark: materialSurfaceContainers.dark.highest,
+} as const;
+
+/**
  * Opaque M3 tonal containers, the one place Material keeps a violet surface: the
  * selected or current state (nav pill, selected chip, Stepper, tonal button,
  * connected MiniPlayer). Opaque so they read the same over any ground; a

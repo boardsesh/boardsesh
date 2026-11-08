@@ -16,6 +16,7 @@ vi.mock('react-native-paper', () => ({
 
 import { blendOpaque } from '@boardsesh/velvet-tokens';
 import {
+  materialFloatingBarSurface,
   materialSurfaceContainers,
   materialSurfaces,
   materialTonalContainers,
@@ -247,6 +248,20 @@ describe.each(SCHEMES)('Graphite Material theme (%s)', (scheme) => {
     // And every role converted, none fell back to the seeded (lilac) palette.
     expect(Object.values(overrides).every((color) => typeof color === 'string')).toBe(true);
     expect(Object.keys(overrides)).toHaveLength(16);
+  });
+
+  it('keeps the floating accessory bar readable and lifted off the cards it floats over', () => {
+    const bar = materialFloatingBarSurface[scheme];
+    expect(contrast(surfaces.label, bar)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(surfaces.secondaryLabel, bar)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(surfaces.accent, bar)).toBeGreaterThanOrEqual(4.5);
+    // Dark: lighter than the card and the page, so it never reads as a hole.
+    if (scheme === 'dark') {
+      expect(relativeLuminance(parseColor(bar))).toBeGreaterThan(
+        relativeLuminance(parseColor(surfaces.secondaryBackground)),
+      );
+      expect(contrast(bar, surfaces.secondaryBackground)).toBeGreaterThanOrEqual(1.2);
+    }
   });
 
   it('floats Compose menus and dialogs on a container that reads against the card', () => {
