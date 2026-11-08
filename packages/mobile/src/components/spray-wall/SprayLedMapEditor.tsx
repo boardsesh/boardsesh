@@ -7,6 +7,7 @@ import {
   connectWiring,
   cutWiring,
   extendWiring,
+  setWiringInitialSkip,
   setWiringSkip,
   traceLedPath,
   MAX_LED_POSITIONS,
@@ -163,7 +164,9 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
 function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onInteractionChange }: MapEditorProps) {
   const { t } = useTranslation('boards');
   const { spacing, brandColors } = useTheme();
-  const [mode, setMode] = useState<'draw' | 'select' | null>(null);
+  const [mode, setMode] = useState<'draw' | 'select' | 'light' | null>(null);
+  // "Light and tap": physical LEDs counted as not on the photo since the last tap.
+  const [pendingSkip, setPendingSkip] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [highlight, setHighlight] = useState(false);
   const [skipText, setSkipText] = useState<string | null>(null);
@@ -186,10 +189,39 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const preview = useSprayLedPreview(wallUuid);
   const { available, show, stop } = preview;
   useEffect(() => {
-    if (!available || !highlight) return;
+    if (!available || !highlight || mode === 'light') return;
     if (mode === 'select' && physicalSelection.length) void show(physicalSelection);
     else void stop();
   }, [available, highlight, mode, physicalSelection, show, stop]);
+
+  // The physical LED "Light and tap" asks about: the one after the last wired LED,
+  // plus any the climber said are not on the wall.
+  const lastWired = useMemo(() => (wiring ? assignLedIndices(wiring).at(-1) : undefined), [wiring]);
+  const litIndex = (lastWired ? lastWired.index + 1 : (wiring?.initialSkip ?? 0)) + pendingSkip;
+  useEffect(() => {
+    if (mode === 'light' && available) void show([litIndex]);
+  }, [mode, available, litIndex, show]);
+
+  function chooseMode(next: typeof mode) {
+    if (mode === 'light' && next !== 'light') void stop();
+    if (next === 'light') setHighlight(false);
+    setPendingSkip(0);
+    setMode(next);
+  }
+
+  /** Assign the lit LED to the marker the climber tapped. One Undo step per LED. */
+  function assignLit(id: string) {
+    if (!wiring || indices.has(id)) return;
+    let next = extendWiring(wiring, [id]);
+    if (next === wiring) return;
+    if (pendingSkip) {
+      next = lastWired
+        ? setWiringSkip(next, lastWired.id, id, pendingSkip)
+        : setWiringInitialSkip(next, (wiring.initialSkip ?? 0) + pendingSkip);
+    }
+    change({ wiring: next });
+    setPendingSkip(0);
+  }
 
   const pair = mode === 'select' && selected.length === 2 ? selected : null;
   const cut = wiring && pair ? cutWiring(wiring, pair[0], pair[1]) : wiring;
@@ -231,6 +263,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     if (index < 0) return;
     const id = leds[index].id;
     if (mode === 'draw') extend([id]);
+    else if (mode === 'light') assignLit(id);
     else if (mode === 'select')
       setSelected((previous) =>
         previous.includes(id) ? previous.filter((entry) => entry !== id) : [...previous.slice(-1), id],
@@ -242,12 +275,17 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       <Button
         title={t('sprayLedSetup.drawCable')}
         variant={mode === 'draw' ? 'filled' : 'outlined'}
-        onPress={() => setMode(mode === 'draw' ? null : 'draw')}
+        onPress={() => chooseMode(mode === 'draw' ? null : 'draw')}
+      />
+      <Button
+        title={t('sprayLedSetup.lightAndTap')}
+        variant={mode === 'light' ? 'filled' : 'outlined'}
+        onPress={() => chooseMode(mode === 'light' ? null : 'light')}
       />
       <Button
         title={t('sprayLedSetup.selectLeds')}
         variant={mode === 'select' ? 'filled' : 'outlined'}
-        onPress={() => setMode(mode === 'select' ? null : 'select')}
+        onPress={() => chooseMode(mode === 'select' ? null : 'select')}
       />
     </View>
   );
@@ -257,6 +295,39 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       <Text>
         {t('sprayLedSetup.wiringStatus', { wired: indices.size, total: leds.length, paths: wiring?.paths.length ?? 0 })}
       </Text>
+      {mode === 'light' ? (
+        <>
+          {available ? (
+            <Text accessibilityLiveRegion="polite">{t('sprayLedSetup.lightAndTapHint', { index: litIndex })}</Text>
+          ) : (
+            <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text>
+          )}
+          {pendingSkip ? (
+            <Text variant="footnote" accessibilityLiveRegion="polite">
+              {t('sprayLedSetup.lightAndTapSkipped', { skipped: pendingSkip })}
+            </Text>
+          ) : null}
+          <View style={[styles.row, { gap: spacing[2] }]}>
+            <Button
+              title={t('sprayLedSetup.lightAndTapSkip')}
+              variant="outlined"
+              disabled={!available || pendingSkip >= MAX_WIRING_SKIP}
+              onPress={() => setPendingSkip((count) => count + 1)}
+            />
+            <Button
+              title={t('sprayLedSetup.lightAndTapUnskip')}
+              variant="text"
+              disabled={!pendingSkip}
+              onPress={() => setPendingSkip((count) => Math.max(0, count - 1))}
+            />
+          </View>
+          {preview.error ? (
+            <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
+              {preview.error === 'invalid-indices' ? t('sprayLedSetup.lightAndTapEnd') : t('sprayLed.lightFailed')}
+            </Text>
+          ) : null}
+        </>
+      ) : null}
       {mode === 'select' ? (
         <>
           <Text variant="footnote">{t('sprayLedSetup.wiringHint')}</Text>
@@ -346,6 +417,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
             onPress={() => {
               undo();
               setSelected([]);
+              setPendingSkip(0);
             }}
           />
         }
@@ -357,7 +429,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
             if (!active) setPreviewWiring(null);
             onInteractionChange(active);
           },
-          mode: mode === 'draw' ? 'draw' : mode === 'select' ? 'tap' : 'pan',
+          mode: mode === 'draw' ? 'draw' : mode === 'select' || mode === 'light' ? 'tap' : 'pan',
           onTap: tap,
           onTrace: (points, tolerance) => extend(traceLedPath(leds, points, tolerance)),
           onTraceProgress: previewTrace,

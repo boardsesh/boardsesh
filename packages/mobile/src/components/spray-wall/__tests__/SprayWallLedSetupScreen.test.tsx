@@ -492,6 +492,48 @@ describe('SprayWallLedSetupScreen', () => {
     expect(wired()).toBe('1');
   });
 
+  it('maps the cable by lighting each LED and tapping where it is, with skips and undo', async () => {
+    const holes = [
+      { x: 0.2, y: 0.3 },
+      { x: 0.5, y: 0.3 },
+      { x: 0.8, y: 0.3 },
+    ];
+    storage.load.mockResolvedValue({ ...savedLayout(), rows: 2, columns: 3, holes });
+    await open();
+    next();
+    next();
+    next();
+    await screen.findByText('sprayLedSetup.ledHint');
+    fireEvent.click(radio('ledCenter'));
+    next();
+    next();
+    fireEvent.click(radio('customCable'));
+    next();
+    next();
+    const wired = () => screen.getByTestId('hole-editor').getAttribute('data-wired');
+    fireEvent.click(button('lightAndTap'));
+    expect(controls.canvas?.mode).toBe('tap');
+    // Nothing is wired yet, so the first LED on the strip lights up.
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([0]));
+    tap({ x: 0.2, y: 0.3 });
+    expect(wired()).toBe('1');
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([1]));
+    // LED 1 sits behind a gap: skip it, so LED 2 lights next.
+    fireEvent.click(button('lightAndTapSkip'));
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([2]));
+    tap({ x: 0.5, y: 0.3 });
+    expect(wired()).toBe('2');
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([3]));
+    // Tapping an LED that is already on the cable changes nothing.
+    tap({ x: 0.2, y: 0.3 });
+    expect(wired()).toBe('2');
+    fireEvent.click(button('undo'));
+    expect(wired()).toBe('1');
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([1]));
+    fireEvent.click(button('lightAndTap'));
+    expect(preview.stop).toHaveBeenCalled();
+  });
+
   it('uses the full width and keeps fullscreen edits in canonical coordinates across reopen and owner cleanup', async () => {
     const view = await open();
     next();
