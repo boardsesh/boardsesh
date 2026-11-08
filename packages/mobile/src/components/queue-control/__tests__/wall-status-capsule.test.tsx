@@ -221,6 +221,8 @@ vi.mock('../../../providers/theme-provider', () => ({
     m3: {
       tertiary: '#FF8A3D',
       onTertiary: '#3A1D00',
+      tertiaryContainer: '#FFDBCA',
+      onTertiaryContainer: '#341100',
       onSurface: '#F5F2FB',
       onSurfaceVariant: '#A9A2B6',
       outlineVariant: '#4A4458',
@@ -249,24 +251,44 @@ vi.mock('../../Text', () => ({
     numberOfLines,
     ellipsizeMode,
     variant,
+    color,
   }: {
     children?: ReactNode;
     style?: unknown;
     numberOfLines?: number;
     ellipsizeMode?: string;
     variant?: string;
+    color?: string;
   }) =>
     createElement(
       'span',
       {
         'data-text': 'true',
         'data-variant': variant,
+        'data-color': color,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-lines': numberOfLines,
         'data-ellipsize': ellipsizeMode,
       },
       children,
     ),
+}));
+vi.mock('../AccessoryClimbThumbnail', () => ({
+  AccessoryClimbThumbnail: ({
+    climb,
+    boardConfig,
+    size,
+  }: {
+    climb: { frames: string; mirrored?: boolean | null };
+    boardConfig: { boardName: string } | null;
+    size?: number;
+  }) =>
+    createElement('span', {
+      'data-thumbnail': climb.frames,
+      'data-mirrored': String(climb.mirrored),
+      'data-board': boardConfig?.boardName,
+      'data-size': size,
+    }),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../../LargeContentViewer', () => ({
@@ -292,10 +314,12 @@ vi.mock('../../PressableSurface', () => ({
     onAccessibilityAction,
     hitSlop,
     style,
+    rippleColor,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     feedback?: string;
+    rippleColor?: string;
     accessibilityRole?: string;
     accessibilityLabel?: string;
     accessibilityHint?: string;
@@ -310,6 +334,7 @@ vi.mock('../../PressableSurface', () => ({
         'data-pressable': 'true',
         'data-pressable-surface': 'true',
         'data-feedback': feedback,
+        'data-ripple': rippleColor,
         'data-role': accessibilityRole,
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
@@ -867,31 +892,38 @@ describe('WallStatusCapsule', () => {
       JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
     const lines = (root: HTMLElement) =>
       [...root.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
+    const litClimb = (over: Partial<BoardPresenceClimb> = {}) => makeClimb({ frames: 'p1r12p2r13', ...over });
 
-    it('is one 48dp full-radius M3 pill, filling the slot up to 280dp', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    it('is one 48dp full-radius pill in the amber tertiary container, filling the slot up to 280dp', () => {
+      const { container } = render(<WallStatusCapsule climb={litClimb()} />);
       expect(styleOf(pill(container))).toMatchObject({
         height: 48,
         width: '100%',
         maxWidth: 280,
         borderRadius: 9999,
         overflow: 'hidden',
-        backgroundColor: '#2A2142',
+        backgroundColor: '#FFDBCA',
       });
-      // The tertiary rail carries the "lit" accent.
-      expect(container.querySelector('[data-style*="#FF8A3D"]')).not.toBeNull();
-      // No overline: the byline states the fact.
+      // The fill carries "lit": no accent rail, no overline.
+      expect(container.querySelector('[data-style*="#FF8A3D"]')).toBeNull();
       expect(container.textContent).not.toContain('stripOverlineWithSender');
       expect(container.querySelectorAll('button')).toHaveLength(1);
+      // The M3 state layer is the container's ink, so the ripple shows on amber.
+      expect(container.querySelector('[data-pressable-surface]')?.getAttribute('data-ripple')).toBe('#341100');
     });
 
-    it('puts the name in titleSmall over grade · who lit it, in tertiary labelMedium', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
+    it('puts the name in titleSmall over grade · who lit it in labelMedium, all in onTertiaryContainer', () => {
+      const { container, getByText } = render(<WallStatusCapsule climb={litClimb()} />);
       expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
       expect(getByText('Wax On').getAttribute('data-variant')).toBe('label');
       expect(styleOf(getByText('Wax On'))).toMatchObject({ fontWeight: '500' });
       expect(getByText('V5 6C').getAttribute('data-variant')).toBe('footnote');
       expect(styleOf(getByText('V5 6C'))).toMatchObject({ fontWeight: '500' });
+      // The grade reads in the container's ink, never its own hue on the amber fill.
+      for (const text of ['Wax On', 'V5 6C', ' · Casey']) {
+        const node = [...container.querySelectorAll('[data-text]')].find((line) => line.textContent === text);
+        expect(node?.getAttribute('data-color')).toBe('#341100');
+      }
       // No stats read on Android.
       expect(spies.statsArgs).toMatchObject({ statsEnabled: false });
     });
@@ -905,7 +937,6 @@ describe('WallStatusCapsule', () => {
       const history = render(
         <WallStatusCapsule
           climb={makeClimb()}
-
           presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
         />,
       );
@@ -927,18 +958,36 @@ describe('WallStatusCapsule', () => {
     });
 
     it.each([
-      // Before its first layout the pill shows no face, so a narrow slot never flashes one.
+      // Before its first layout the pill shows no thumbnail, so a narrow slot never flashes one.
       [undefined, false],
       [200, true],
       [130, true],
       [129, false],
       [96, false],
-    ])("shows the sender's 24dp face only in a pill from 130dp wide: %s (face: %s)", (width, face) => {
+    ])('leads with the climb thumbnail only in a pill from 130dp wide: %s (thumbnail: %s)', (width, shown) => {
       spies.layoutWidth = width;
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-      const avatar = container.querySelector('[data-driver-avatar]');
-      expect(avatar != null).toBe(face);
-      if (face) expect(avatar?.getAttribute('data-size')).toBe('24');
+      const { container } = render(<WallStatusCapsule climb={litClimb({ mirrored: true })} />);
+      const thumbnail = container.querySelector('[data-thumbnail]');
+      expect(thumbnail != null).toBe(shown);
+      // The thumbnail replaces the sender's face; the byline still names them.
+      expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+      expect(lines(container)).toContain(' · Casey');
+      if (shown) {
+        // The lit climb's own holds and mirror flag, on the board presence is scoped to,
+        // in the MiniPlayer's default 40dp slot.
+        expect(thumbnail?.getAttribute('data-thumbnail')).toBe('p1r12p2r13');
+        expect(thumbnail?.getAttribute('data-mirrored')).toBe('true');
+        expect(thumbnail?.getAttribute('data-board')).toBe('kilter');
+        expect(thumbnail?.getAttribute('data-size')).toBeNull();
+        expect(thumbnail?.parentElement?.getAttribute('data-a11y-hidden')).toBe('true');
+      }
+    });
+
+    it('shows no thumbnail for a reporter that sent no holds', () => {
+      spies.layoutWidth = 200;
+      const { container } = render(<WallStatusCapsule climb={makeClimb({ frames: null })} />);
+      expect(container.querySelector('[data-thumbnail]')).toBeNull();
+      expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
     });
 
     it('lets the age cut only in a pill too narrow for it', () => {
@@ -946,7 +995,6 @@ describe('WallStatusCapsule', () => {
       const { container } = render(
         <WallStatusCapsule
           climb={makeClimb()}
-
           presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
         />,
       );

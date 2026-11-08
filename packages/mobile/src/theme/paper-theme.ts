@@ -69,6 +69,12 @@ export function buildPaperTheme(colorScheme: ColorScheme, dynamic?: MD3Theme['co
       // be near-white in dark and illegible on the accent.
       tertiary: brand.accent,
       onTertiary: materialSurfaces.light.label as string,
+      // The amber accent's own tonal container (M3 tones 90 / 30 of #FF8A3D's hue,
+      // with tones 10 / 90 as ink). Paper's default here is a pink from its
+      // baseline palette, which says nothing about "lit". The Climbs bar's wall
+      // pill fills with it: ink contrast 13.2:1 in light, 7.2:1 in dark.
+      tertiaryContainer: isDark ? '#773300' : '#FFDBCA',
+      onTertiaryContainer: isDark ? '#FFDBCA' : '#341100',
       background: surfaces.background as string,
       onBackground: onSurface,
       surface: surfaces.secondaryBackground as string,

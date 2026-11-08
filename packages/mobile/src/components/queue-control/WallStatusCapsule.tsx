@@ -17,23 +17,19 @@
 //     says how long ago ("V6 · 20m ago"), so it never reads as live. Older
 //     devices and Reduce Transparency retain the opaque pill.
 //   - Material 3 (the Android Climbs bar): the same content in M3 dress. A 48dp
-//     full-radius `surfaceContainerHigh` pill that fills the app bar's title
-//     slot (up to 280dp), a tertiary "live" rail, the face (only once the pill
-//     has measured at least 130dp), and the name in titleSmall over "grade · one
-//     fact" in tertiary labelMedium: who lit it, "On the wall" for your own or an
-//     unnamed climb, or the age.
+//     full-radius pill in the amber `tertiaryContainer` (the "lit" tone, as the
+//     iOS capsule's warm tint) that fills the app bar's title slot (up to
+//     280dp). It leads with the climb's board-art thumbnail, the MiniPlayer's
+//     (only once the pill has measured at least 130dp), then the name in
+//     titleSmall over "grade · one fact" in labelMedium, all in
+//     `onTertiaryContainer`: who lit it, "On the wall" for your own or an unnamed
+//     climb, or the age. The sender's face is iOS-only; here the byline names them.
 // The data, grade derivation, tap handler and the debounced a11y announcement all
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import {
-  AccessibilityInfo,
-  StyleSheet,
-  View,
-  type AccessibilityActionEvent,
-  type LayoutChangeEvent,
-} from 'react-native';
+import { AccessibilityInfo, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -50,6 +46,7 @@ import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { useAuth } from '../../providers/auth-provider';
 import { useClimbStatsDetail } from './use-climb-byline';
 import { CENTER_CONTENT_MAX_WIDTH } from '../chrome/native-title-bound';
+import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import {
   HeaderCapsuleClimbLabel,
   HeaderStatusCapsule,
@@ -65,11 +62,9 @@ import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
 // The capsule's face stands in for the platter's board thumbnail, sized to the
 // two-line name block beside it. Fixed — does not scale with Dynamic Type.
 const CAPSULE_AVATAR_SIZE = 24;
-// Material pill: its own 48dp touch target, with a short tertiary rail at the
-// leading edge carrying the "live" accent.
+// Material pill: its own 48dp touch target. The leading thumbnail is the
+// MiniPlayer's 40dp slot (a portrait board fits about 32×40, radius 10).
 const APP_BAR_PILL_HEIGHT = 48;
-const APP_BAR_RAIL_WIDTH = 4;
-const APP_BAR_RAIL_HEIGHT = 20;
 // Debounce assistive-tech announcements so a fast party session (rapid wall
 // changes) doesn't spam the speech queue.
 const ANNOUNCE_DEBOUNCE_MS = 600;
@@ -90,22 +85,24 @@ type WallStatusCapsuleProps = {
 // stable BoardPresenceClimb from the wall-climb context (changes only on a wall event).
 function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, onDismiss }: WallStatusCapsuleProps) {
   const { t } = useTranslation('session');
-  const { variant, brandColors, m3, m3SurfaceContainers } = useTheme();
+  const { variant, brandColors, m3 } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   // UIKit hands the glass capsule its title bound; the Material pill fills its
   // slot, so its own measured width is that bound, under the same rules. Until
-  // it has measured, no face, so a narrow slot never flashes one.
+  // it has measured, no leading thumbnail, so a narrow slot never flashes one.
   const [materialWidth, setMaterialWidth] = useState<number | undefined>(undefined);
   const handleMaterialLayout = useCallback((event: LayoutChangeEvent) => {
     const { width } = event.nativeEvent.layout;
     setMaterialWidth((previous) => (previous === width ? previous : width));
   }, []);
-  const nativeFaceFits = useHeaderCapsuleFaceFits();
+  const nativeLeadingFits = useHeaderCapsuleFaceFits();
   const nativeNarrowTitle = useHeaderCapsuleCompact();
-  const faceFits = isMaterial ? materialWidth !== undefined && headerCapsuleFaceFits(materialWidth) : nativeFaceFits;
+  const leadingFits = isMaterial
+    ? materialWidth !== undefined && headerCapsuleFaceFits(materialWidth)
+    : nativeLeadingFits;
   const narrowTitle = isMaterial ? headerCapsuleCompact(materialWidth) : nativeNarrowTitle;
   const { isAuthenticated } = useAuth();
   const viewerUserId = useViewerUserId();
@@ -132,7 +129,12 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
   const senderIsYou = climb.sentByUserId != null && climb.sentByUserId === viewerUserId;
   const senderPending = isAuthenticated && viewerUserId == null && climb.sentByUserId != null;
   const namedOther = senderName != null && !senderIsYou && !senderPending;
-  const showFace = namedOther && hasSenderIdentity && faceFits;
+  const showFace = namedOther && hasSenderIdentity && leadingFits;
+  // Material leads with the climb's board art instead, on the board this list
+  // (and presence) is scoped to: the presence payload carries the frames and
+  // mirror flag, and the drawer host the board.
+  const thumbnailFrames = climb.frames ?? '';
+  const showThumbnail = isMaterial && leadingFits && thumbnailFrames !== '' && boardConfig != null;
 
   const a11yLabel = history
     ? senderName
@@ -224,29 +226,37 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
         key={climbUuid}
         entering={reduceMotion ? undefined : FadeIn.duration(180)}
         onLayout={handleMaterialLayout}
-        style={[styles.appBarPill, { backgroundColor: m3SurfaceContainers.high }]}
+        style={[styles.appBarPill, { backgroundColor: m3.tertiaryContainer }]}
       >
         <PressableSurface
           onPress={handlePress}
-          // Android rides its native ripple, clipped by the pill's radius.
+          // Android rides its native ripple, clipped by the pill's radius: the
+          // M3 state layer is the container's own ink.
           feedback="none"
-          rippleColor={m3.onSurface}
+          rippleColor={m3.onTertiaryContainer}
           accessibilityRole="button"
           accessibilityLabel={a11yLabel}
           accessibilityHint={accessibilityHint}
           accessibilityActions={accessibilityActions}
           onAccessibilityAction={handleAccessibilityAction}
-          style={styles.appBarRow}
+          style={[styles.appBarRow, showThumbnail ? styles.appBarRowWithThumbnail : null]}
         >
-          {/* The "lit" accent. */}
-          <View pointerEvents="none" style={[styles.appBarRail, { backgroundColor: m3.tertiary }]} />
           <HeaderCapsuleClimbLabel
             skin="material"
-            avatar={climbLabelAvatar}
+            avatar={
+              showThumbnail ? (
+                // Through the shared render scheduler (BoardImageNative ->
+                // useNativeClimbRender), never a play surface.
+                <AccessoryClimbThumbnail
+                  climb={{ frames: thumbnailFrames, mirrored: climb.mirrored }}
+                  boardConfig={boardConfig}
+                />
+              ) : null
+            }
             // A reporter that sent no name still shows something: the grade.
             name={name || formattedGrade || ''}
             byline={byline}
-            compact={!showFace}
+            compact={!showThumbnail}
             largeContentTitle={a11yLabel}
             onActivate={handlePress}
           />
@@ -308,12 +318,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
-    paddingHorizontal: spacing[3],
+    paddingHorizontal: spacing[4],
   },
-  appBarRail: {
-    flexShrink: 0,
-    width: APP_BAR_RAIL_WIDTH,
-    height: APP_BAR_RAIL_HEIGHT,
-    borderRadius: APP_BAR_RAIL_WIDTH / 2,
+  // The 40dp thumbnail slot already insets the art from the pill's curve.
+  appBarRowWithThumbnail: {
+    paddingStart: spacing[1],
   },
 });
