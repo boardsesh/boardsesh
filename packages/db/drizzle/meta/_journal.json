@@ -2042,22 +2042,29 @@
     {
       "idx": 291,
       "version": "7",
-      "when": 1793860606563,
-      "tag": "0291_auth_uid_email_verification",
+      "when": 1794162998966,
+      "tag": "0291_auth_current_store_foundation",
       "breakpoints": true
     },
     {
       "idx": 292,
       "version": "7",
-      "when": 1793861693412,
-      "tag": "0292_auth_uid_password_recovery",
+      "when": 1794162998967,
+      "tag": "0292_auth_uid_email_verification",
       "breakpoints": true
     },
     {
       "idx": 293,
       "version": "7",
-      "when": 1793876261919,
-      "tag": "0293_auth_web_oauth_identity",
+      "when": 1794162998968,
+      "tag": "0293_auth_uid_password_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 294,
+      "version": "7",
+      "when": 1794162998969,
+      "tag": "0294_auth_web_oauth_identity",
       "breakpoints": true
     }
   ]

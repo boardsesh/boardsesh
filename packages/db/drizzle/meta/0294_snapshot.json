@@ -1,6 +1,6 @@
 {
-  "id": "0a14f505-c3ba-40a7-85b3-30e6014a4b81",
-  "prevId": "4ae0173a-ed9c-47b0-82db-57ea2a93fe13",
+  "id": "a67ec26f-0e0c-42df-9ab4-7c2879e867e0",
+  "prevId": "8e0e27fd-3aca-46cc-85c6-702509b71ab3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5124,6 +5124,172 @@
         "auth_password_recovery_token_terminal": {
           "name": "auth_password_recovery_token_terminal",
           "value": "\"auth_password_recovery_tokens\".\"consumed_at\" IS NULL OR \"auth_password_recovery_tokens\".\"superseded_at\" IS NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.auth_web_oauth_commands": {
+      "name": "auth_web_oauth_commands",
+      "schema": "",
+      "columns": {
+        "command_hash": {
+          "name": "command_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "operation": {
+          "name": "operation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "auth_web_oauth_commands_expiry_idx": {
+          "name": "auth_web_oauth_commands_expiry_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "auth_web_oauth_commands_hash": {
+          "name": "auth_web_oauth_commands_hash",
+          "value": "\"auth_web_oauth_commands\".\"command_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "auth_web_oauth_commands_operation": {
+          "name": "auth_web_oauth_commands_operation",
+          "value": "\"auth_web_oauth_commands\".\"operation\" IN ('intent','resolve')"
+        },
+        "auth_web_oauth_commands_deadline": {
+          "name": "auth_web_oauth_commands_deadline",
+          "value": "\"auth_web_oauth_commands\".\"expires_at\" > \"auth_web_oauth_commands\".\"issued_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.auth_web_oauth_intents": {
+      "name": "auth_web_oauth_intents",
+      "schema": "",
+      "columns": {
+        "intent_hash": {
+          "name": "intent_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "flow_hash": {
+          "name": "flow_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_lineage_hash": {
+          "name": "actor_lineage_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_observed_generation": {
+          "name": "actor_observed_generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "auth_web_oauth_intents_expiry_idx": {
+          "name": "auth_web_oauth_intents_expiry_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "auth_web_oauth_intents_provider": {
+          "name": "auth_web_oauth_intents_provider",
+          "value": "\"auth_web_oauth_intents\".\"provider\" IN ('apple','google','facebook')"
+        },
+        "auth_web_oauth_intents_hashes": {
+          "name": "auth_web_oauth_intents_hashes",
+          "value": "\"auth_web_oauth_intents\".\"intent_hash\" ~ '^[0-9a-f]{64}$' AND \"auth_web_oauth_intents\".\"flow_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "auth_web_oauth_intents_actor": {
+          "name": "auth_web_oauth_intents_actor",
+          "value": "(\"auth_web_oauth_intents\".\"actor_user_id\" IS NULL AND \"auth_web_oauth_intents\".\"actor_lineage_hash\" IS NULL AND \"auth_web_oauth_intents\".\"actor_observed_generation\" IS NULL) OR (\"auth_web_oauth_intents\".\"actor_user_id\" IS NOT NULL AND length(\"auth_web_oauth_intents\".\"actor_user_id\") > 0 AND \"auth_web_oauth_intents\".\"actor_lineage_hash\" IS NOT NULL AND \"auth_web_oauth_intents\".\"actor_lineage_hash\" ~ '^[0-9a-f]{64}$' AND \"auth_web_oauth_intents\".\"actor_observed_generation\" IS NOT NULL AND \"auth_web_oauth_intents\".\"actor_observed_generation\" >= 0)"
+        },
+        "auth_web_oauth_intents_deadline": {
+          "name": "auth_web_oauth_intents_deadline",
+          "value": "\"auth_web_oauth_intents\".\"expires_at\" > \"auth_web_oauth_intents\".\"issued_at\" AND \"auth_web_oauth_intents\".\"expires_at\" <= \"auth_web_oauth_intents\".\"issued_at\" + interval '15 minutes'"
         }
       },
       "isRLSEnabled": false
@@ -18508,7 +18674,9 @@
       ]
     }
   },
-  "schemas": {},
+  "schemas": {
+    "posthog_reporting": "posthog_reporting"
+  },
   "sequences": {
     "public.spray_hold_catalog_id_seq": {
       "name": "spray_hold_catalog_id_seq",
@@ -18533,7 +18701,29 @@
   },
   "roles": {},
   "policies": {},
-  "views": {},
+  "views": {
+    "posthog_reporting.daily_signups": {
+      "columns": {
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signups": {
+          "name": "signups",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select cast(\"created_at\" as date) as \"day\", count(*) as \"signups\" from \"users\" group by cast(\"users\".\"created_at\" as date)",
+      "name": "daily_signups",
+      "schema": "posthog_reporting",
+      "isExisting": false,
+      "materialized": false
+    }
+  },
   "_meta": {
     "columns": {},
     "schemas": {},

@@ -31,19 +31,19 @@ const legacyWebSessionSchema = readFileSync(
   )
   .join('\n');
 const authCurrentStoreFoundationSchema = readFileSync(
-  new URL('../../../db/drizzle/0290_auth_current_store_foundation.sql', import.meta.url),
+  new URL('../../../db/drizzle/0291_auth_current_store_foundation.sql', import.meta.url),
   'utf8',
 );
 const authUidVerificationSchema = readFileSync(
-  new URL('../../../db/drizzle/0291_auth_uid_email_verification.sql', import.meta.url),
+  new URL('../../../db/drizzle/0292_auth_uid_email_verification.sql', import.meta.url),
   'utf8',
 );
 const authUidPasswordRecoverySchema = readFileSync(
-  new URL('../../../db/drizzle/0292_auth_uid_password_recovery.sql', import.meta.url),
+  new URL('../../../db/drizzle/0293_auth_uid_password_recovery.sql', import.meta.url),
   'utf8',
 );
 const authWebOAuthIdentitySchema = readFileSync(
-  new URL('../../../db/drizzle/0293_auth_web_oauth_identity.sql', import.meta.url),
+  new URL('../../../db/drizzle/0294_auth_web_oauth_identity.sql', import.meta.url),
   'utf8',
 );
 const sharedSprayDraftsSchema = readFileSync(

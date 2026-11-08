@@ -115,7 +115,7 @@ an explicit authenticated command field. Errors expose fixed categories without
 raw SQL, provider profile, cookie or response bodies. Profile-refresh failure
 logging uses a fixed event instead of the original database error in every mode.
 
-Generated migration `0293_auth_web_oauth_identity` adds two tables: short-lived
+Generated migration `0294_auth_web_oauth_identity` adds two tables: short-lived
 flow intents and consumed command nonces. Actor fields have an explicit
 all-or-none database check. The generated migration and registry preserve all
 prior artifacts and add no user foreign key, account rewrite or deletion.

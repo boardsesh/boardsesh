@@ -6,7 +6,7 @@ This is an additive, **unmounted foundation** for
 dependency, backfill, production route, active validator, issuer switch or
 credential mutation command. Existing native/web behavior is unchanged.
 
-The five tables are generated in `0290_auth_current_store_foundation.sql` through
+The five tables are generated in `0291_auth_current_store_foundation.sql` through
 the repository's standard Drizzle generation. The migration creates only new
 tables, their internal foreign keys, checks and indexes. Library imports run no
 DDL, preparation or activation.
@@ -177,7 +177,7 @@ writer fence, recovery path and revocation consumer are implemented and proved.
 
 Main added `0289_board_lit_by_wall_device.sql` before this candidate merged.
 The repository bot rebased and renumbered the auth migration to
-`0290_auth_current_store_foundation.sql`. This repair retains the bot's SQL tag,
+`0291_auth_current_store_foundation.sql`. This repair retains the bot's SQL tag,
 snapshot identity and journal timestamp, together with main's unchanged board
 migration, snapshot and journal entry. Independent compilation of the merged
 schema and local Drizzle generation reproduced the same auth SQL and schema
