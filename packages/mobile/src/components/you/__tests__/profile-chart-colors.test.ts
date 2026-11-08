@@ -25,8 +25,8 @@ describe('profile chart colors', () => {
     expect(gradeChartColor('V8 / 7B', 'light')).toMatch(/^hsl\(/);
     expect(gradeChartColor('V3+ / 6A+', 'dark')).toMatch(/^hsl\(/);
     expect(gradeChartColor('6A+', 'light')).toMatch(/^hsl\(/);
-    expect(gradeChartColor('not-a-grade', 'light')).toBe('#5F5868');
-    expect(gradeChartColor('not-a-grade', 'dark')).toBe('#B8B2C4');
+    expect(gradeChartColor('not-a-grade', 'light')).toBe('#5E5E5E');
+    expect(gradeChartColor('not-a-grade', 'dark')).toBe('#B4B4B4');
   });
 
   it('uses scheme-aware categorical layout colors', () => {

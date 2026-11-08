@@ -9,18 +9,18 @@ import { materialSurfaceContainers, materialElevationLevels } from '../colors';
 import { materialElevationByLevel } from '../tokens';
 
 const SCHEMES = ['light', 'dark'] as const;
-const HEX = /^#[0-9a-f]{6}$/;
+const HEX = /^#[0-9a-f]{6}$/i;
 
 describe('materialSurfaceContainers', () => {
-  it.each(SCHEMES)('resolves five distinct opaque tones (%s)', (scheme) => {
+  it.each(SCHEMES)('resolves six distinct opaque tones (%s)', (scheme) => {
     const ramp = materialSurfaceContainers[scheme];
-    const tones = [ramp.lowest, ramp.low, ramp.base, ramp.high, ramp.highest];
+    const tones = [ramp.lowest, ramp.low, ramp.base, ramp.high, ramp.level4, ramp.highest];
     // Every tone is opaque hex (so a surface never shows the screen through it)…
     tones.forEach((tone) => expect(tone).toMatch(HEX));
     // …and all five are DISTINCT — the bug this replaces collapsed light
     // secondaryBackground/tertiaryBackground/elevatedSurface all to #FFFFFF.
-    expect(new Set(tones).size).toBe(5);
-    // The ramp climbs (more primary tint at each step), so the ends differ.
+    expect(new Set(tones).size).toBe(6);
+    // The ramp moves one tone per step, so the ends differ.
     expect(ramp.lowest).not.toBe(ramp.highest);
   });
 });
@@ -31,6 +31,17 @@ describe('materialElevationLevels', () => {
     const tones = [levels.level1, levels.level2, levels.level3, levels.level4, levels.level5];
     tones.forEach((tone) => expect(tone).toMatch(HEX));
     expect(new Set(tones).size).toBe(5);
+  });
+
+  it.each(SCHEMES)('reads the same table as the named containers (%s)', (scheme) => {
+    const containers = materialSurfaceContainers[scheme];
+    expect(materialElevationLevels(scheme)).toEqual({
+      level1: containers.low,
+      level2: containers.base,
+      level3: containers.high,
+      level4: containers.level4,
+      level5: containers.highest,
+    });
   });
 });
 

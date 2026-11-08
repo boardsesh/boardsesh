@@ -12,8 +12,9 @@ export type LiveSessionColors = {
   label: ColorValue;
   /**
    * Board, gym and elapsed text. iOS's `secondaryLabel` is 3.30:1 on a light
-   * grouped card, under AA for 13pt text, so light mode uses the opaque
-   * Velvet Send secondary (6.44:1) instead.
+   * grouped card, under AA for 13pt text, so light Liquid Glass uses the opaque
+   * Velvet Send secondary (6.44:1) instead. Material's own secondaryLabel is
+   * already opaque grey (#5A5A5A, 5.73:1 on the low container).
    */
   meta: ColorValue;
   live: string;
@@ -44,7 +45,10 @@ export function useLiveSessionColors(): LiveSessionColors {
         material: m3.outlineVariant,
       }),
       label: systemColors.label,
-      meta: colorScheme === 'light' ? androidFallbackColors.light.secondaryLabel : systemColors.secondaryLabel,
+      meta: selectByVariant<ColorValue>(variant, {
+        liquidGlass: colorScheme === 'light' ? androidFallbackColors.light.secondaryLabel : systemColors.secondaryLabel,
+        material: systemColors.secondaryLabel,
+      }),
       live: brandColors.live,
       quietFill: systemColors.fill,
       liveInk,

@@ -280,7 +280,6 @@ const GymRow = memo(function GymRow({
       {selected ? <View style={[styles.selectedAccent, { backgroundColor: brandColors.primary }]} /> : null}
       <PressableSurface
         onPress={handlePress}
-        rippleColor={brandColors.primary}
         accessibilityState={{ expanded }}
         accessibilityActions={
           gym.canEdit ? namedAccessibilityActions(EDIT_ACTION_NAME, t('mobile.gyms.editGym')) : undefined
@@ -338,7 +337,6 @@ const ClaimRow = memo(function ClaimRow({ onPress, label }: { onPress: () => voi
   return (
     <PressableSurface
       onPress={onPress}
-      rippleColor={brandColors.primary}
       accessibilityRole="button"
       accessibilityLabel={label}
       style={[styles.claimRow, { borderTopColor: systemColors.separator }]}
@@ -360,14 +358,13 @@ const BoardRow = memo(function BoardRow({
   onActivateBoard: (board: UserBoard) => void;
   onEditBoard: (board: UserBoard) => void;
 }) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
   const handlePress = useCallback(() => onActivateBoard(board), [onActivateBoard, board]);
   const handleEdit = useCallback(() => onEditBoard(board), [onEditBoard, board]);
   return (
     <PressableSurface
       onPress={handlePress}
-      rippleColor={brandColors.primary}
       accessibilityActions={
         board.canEdit ? namedAccessibilityActions(EDIT_ACTION_NAME, t('mobile.gyms.editBoard')) : undefined
       }
@@ -410,7 +407,6 @@ const StandaloneRow = memo(function StandaloneRow({
       {selected ? <View style={[styles.selectedAccent, { backgroundColor: brandColors.primary }]} /> : null}
       <PressableSurface
         onPress={handlePress}
-        rippleColor={brandColors.primary}
         accessibilityActions={
           board.canEdit ? namedAccessibilityActions(EDIT_ACTION_NAME, t('mobile.gyms.editBoard')) : undefined
         }

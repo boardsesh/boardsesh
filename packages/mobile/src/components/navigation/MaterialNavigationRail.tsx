@@ -58,7 +58,7 @@ const RailItem = memo(function RailItem({
   focused: boolean;
   onPress: (destination: RailDestination) => void;
 }) {
-  const { m3, brandColors } = useTheme();
+  const { m3 } = useTheme();
   // M3 nav-rail roles, identical to MaterialTabBar: the focused destination's icon
   // sits on a secondaryContainer active-indicator pill (onSecondaryContainer glyph),
   // its label lifts to onSurface; inactive destinations use onSurfaceVariant for both.
@@ -71,7 +71,6 @@ const RailItem = memo(function RailItem({
     <PressableSurface
       onPress={handlePress}
       feedback="none"
-      rippleColor={brandColors.primary}
       rippleBorderless
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}

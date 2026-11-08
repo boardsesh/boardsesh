@@ -54,7 +54,7 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
     ),
     // The provider adds the error role on top of the surface palette (M3 error here).
     error: brand.error,
-    tertiaryFill: tertiaryFillFallback[colorScheme],
+    tertiaryFill: tertiaryFillFallback[variant][colorScheme],
   };
   // Hoisted for the same reason as the provider: `sheetSurface` is the plain-string
   // ground the @expo/ui sheet background needs, taken from the chart palette.

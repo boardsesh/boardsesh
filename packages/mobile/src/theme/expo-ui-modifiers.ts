@@ -63,13 +63,13 @@ export type BrandControlColors = {
  * structurally, so the Compose controls match their Paper / RN neighbours.
  */
 export type MaterialControlRoles = {
-  /** Component boundary: 4.08:1 on the dark card #221A33, 3.00:1 on white. */
+  /** Component boundary: 4.83:1 on the dark card #1E1E1E, 4.29:1 on white. */
   outline: string;
   /** Neutral toned container (an unchecked Switch track). */
   surfaceVariant: string;
   /** Muted foreground on a surface (an unselected chip's label). */
   onSurfaceVariant: string;
-  /** Tonal button fill: translucent brand violet. */
+  /** Tonal button fill: opaque brand-violet container (#E6DAF8 / #3C2467). */
   secondaryContainer: string;
   /** Ink on `secondaryContainer`. */
   onSecondaryContainer: string;
@@ -82,6 +82,144 @@ export type MaterialControlRoles = {
  */
 export function composeSeedColor(brandColors: BrandControlColors): string {
   return brandColors.primaryFill;
+}
+
+/**
+ * The Material roles the Compose surface overrides read. `useTheme().m3` (built
+ * by `buildPaperTheme`) satisfies this structurally.
+ */
+export type MaterialSurfaceRoles = {
+  background: string;
+  onBackground: string;
+  surface: string;
+  onSurface: string;
+  surfaceVariant: string;
+  onSurfaceVariant: string;
+  outline: string;
+  outlineVariant: string;
+};
+
+/**
+ * The Graphite container steps (`useTheme().m3SurfaceContainers`) the Compose
+ * `surfaceContainer*` roles map onto.
+ */
+export type MaterialContainerTones = {
+  lowest: string;
+  low: string;
+  base: string;
+  high: string;
+  level4: string;
+  highest: string;
+};
+
+/** A Compose palette colour: `#RRGGBBAA`, the form `@expo/ui`'s `MaterialColors` uses. */
+export type ComposeRgbaHex = `#${string}`;
+
+/** The Compose colour roles `composeSurfaceColorOverrides` sets. */
+export type ComposeSurfaceRole =
+  | 'background'
+  | 'onBackground'
+  | 'surface'
+  | 'surfaceDim'
+  | 'surfaceBright'
+  | 'surfaceContainerLowest'
+  | 'surfaceContainerLow'
+  | 'surfaceContainer'
+  | 'surfaceContainerHigh'
+  | 'surfaceContainerHighest'
+  | 'surfaceVariant'
+  | 'onSurface'
+  | 'onSurfaceVariant'
+  | 'outline'
+  | 'outlineVariant'
+  | 'surfaceTint';
+
+const SIX_DIGIT_HEX = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i;
+const THREE_DIGIT_HEX = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i;
+const RGBA_FUNCTION = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/i;
+
+function toHexByte(channel: number): string {
+  return Math.round(Math.min(255, Math.max(0, channel)))
+    .toString(16)
+    .padStart(2, '0')
+    .toUpperCase();
+}
+
+/**
+ * Convert a theme colour (`#RGB`, `#RRGGBB`, `#RRGGBBAA` or `rgb[a]()`) to the
+ * `#RRGGBBAA` form Compose's palette uses, keeping its alpha. Returns `null` for
+ * anything else (a PlatformColor, a named colour), so that role keeps its seeded
+ * palette value rather than taking a wrong one.
+ */
+export function toComposeRgbaHex(color: string): ComposeRgbaHex | null {
+  const shortHex = THREE_DIGIT_HEX.exec(color);
+  if (shortHex) {
+    const [, red, green, blue] = shortHex;
+    return `#${`${red}${red}${green}${green}${blue}${blue}`.toUpperCase()}FF`;
+  }
+  const longHex = SIX_DIGIT_HEX.exec(color);
+  if (longHex) {
+    const [, rgb, alpha] = longHex;
+    return `#${`${rgb}${alpha ?? 'FF'}`.toUpperCase()}`;
+  }
+  const rgbaFunction = RGBA_FUNCTION.exec(color);
+  if (rgbaFunction) {
+    const [, red, green, blue, alpha] = rgbaFunction;
+    const alphaByte = toHexByte((alpha === undefined ? 1 : Math.min(1, Number(alpha))) * 255);
+    return `#${toHexByte(Number(red))}${toHexByte(Number(green))}${toHexByte(Number(blue))}${alphaByte}`;
+  }
+  return null;
+}
+
+/**
+ * The neutral surface roles every Compose Host takes from our theme instead of
+ * the seeded palette. The seed (`composeSeedColor`) still drives the accent
+ * roles, but a seeded `SchemeTonalSpot` palette tints every surface lilac, so
+ * Compose menus, dialogs and text fields would sit violet on our grey Graphite
+ * screens. These overrides pin them to the same ladder the RN surfaces use.
+ *
+ * In dark the container roles step up from the card (see the inline note);
+ * in light they follow the RN ladder. `surfaceTint` is the surface itself, so Compose's tonal elevation (which lays
+ * `surfaceTint` over `surface`) adds no colour. `surfaceDim` / `surfaceBright`
+ * are the darker and lighter ends of the ladder for the scheme. A role whose
+ * theme value is not a hex or `rgba()` string is left out, so it keeps its
+ * palette value.
+ */
+export function composeSurfaceColorOverrides(
+  m3: MaterialSurfaceRoles,
+  containers: MaterialContainerTones,
+  colorScheme: 'light' | 'dark',
+): Partial<Record<ComposeSurfaceRole, ComposeRgbaHex>> {
+  const isDark = colorScheme === 'dark';
+  const themeColors: Record<ComposeSurfaceRole, string> = {
+    background: m3.background,
+    onBackground: m3.onBackground,
+    surface: m3.surface,
+    surfaceDim: isDark ? m3.background : containers.highest,
+    surfaceBright: isDark ? containers.highest : m3.surface,
+    surfaceContainerLowest: containers.lowest,
+    // Dark: Compose floats menus on `surfaceContainer` and dialogs on
+    // `surfaceContainerHigh` over our cards (`surface`, #1E1E1E), so those roles
+    // step UP from the card as M3's dark baseline does. Mapped straight onto the
+    // RN ladder they sat below it (a #1A1A1A menu on a #1E1E1E card, 1.04:1).
+    // Light keeps the RN ladder: containers darken below the white card there.
+    surfaceContainerLow: isDark ? m3.surface : containers.low,
+    surfaceContainer: isDark ? containers.high : containers.base,
+    surfaceContainerHigh: isDark ? containers.level4 : containers.high,
+    surfaceContainerHighest: containers.highest,
+    surfaceVariant: m3.surfaceVariant,
+    onSurface: m3.onSurface,
+    onSurfaceVariant: m3.onSurfaceVariant,
+    outline: m3.outline,
+    outlineVariant: m3.outlineVariant,
+    surfaceTint: m3.surface,
+  };
+  const overrides: Partial<Record<ComposeSurfaceRole, ComposeRgbaHex>> = {};
+  for (const [role, color] of Object.entries(themeColors) as [ComposeSurfaceRole, string][]) {
+    const composeColor = toComposeRgbaHex(color);
+    if (composeColor) overrides[role] = composeColor;
+  }
+  return overrides;
 }
 
 /**

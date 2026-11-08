@@ -118,6 +118,7 @@ vi.mock('../../theme/tokens', () => ({
   opacity: { disabled: 0.5 },
   material: { disabledContentOpacity: 0.38 },
   androidRipple: (color: string, borderless = false) => ({ color, borderless }),
+  neutralRipple: (onSurface: string, borderless = false) => ({ color: `${onSurface}@0.1`, borderless }),
 }));
 
 vi.mock('../../theme/colors', () => ({
@@ -129,6 +130,7 @@ vi.mock('../../theme/animations', () => ({
 }));
 
 import { PressableSurface, StaticPressableSurface } from '../PressableSurface';
+import { NeutralRippleInkContext } from '../../theme/neutral-ripple-context';
 
 beforeEach(() => {
   ctrl.os = 'ios';
@@ -215,7 +217,27 @@ describe('PressableSurface', () => {
     expect(container.querySelector('[data-has-ripple="true"]')).not.toBeNull();
   });
 
-  it('defaults the Android ripple to the brand tint', () => {
+  it('ripples in the theme onSurface at 10% under a Material theme', () => {
+    ctrl.os = 'android';
+    const { container } = render(
+      <NeutralRippleInkContext value="#EDEDED">
+        <PressableSurface>x</PressableSurface>
+      </NeutralRippleInkContext>,
+    );
+    expect(container.querySelector('[data-ripple-color="#EDEDED@0.1"]')).not.toBeNull();
+  });
+
+  it('lets an explicit rippleColor win over the neutral ink', () => {
+    ctrl.os = 'android';
+    const { container } = render(
+      <NeutralRippleInkContext value="#EDEDED">
+        <PressableSurface rippleColor="#FF3B30">x</PressableSurface>
+      </NeutralRippleInkContext>,
+    );
+    expect(container.querySelector('[data-ripple-color="#FF3B30"]')).not.toBeNull();
+  });
+
+  it('defaults the Android ripple to the brand tint with no neutral ink (Liquid Glass, no provider)', () => {
     ctrl.os = 'android';
     const { container } = render(<PressableSurface>x</PressableSurface>);
     expect(container.querySelector('[data-ripple-color="#6D28D9"]')).not.toBeNull();

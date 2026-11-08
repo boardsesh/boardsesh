@@ -24,7 +24,7 @@ type ColorSchemeName = 'light' | 'dark';
 
 // Mobile charts need stronger marks than the softer web palette. Keep layout
 // colours stable by key, but use opaque light/dark pairs with larger hue
-// separation so stacked segments remain readable on M3 white and dark violet
+// separation so stacked segments remain readable on white and near-black
 // cards.
 const layoutColors: Record<string, Record<ColorSchemeName, string>> = {
   // Kilter Original (sky blue) vs Kilter Homewall (grass green) — the two
@@ -81,7 +81,9 @@ export function layoutChartColor(layoutKey: string, colorScheme: ColorSchemeName
  */
 export function gradeChartColor(gradeKey: string, colorScheme: ColorSchemeName = 'light'): string {
   const hexColor = getGradeColor(gradeKey);
-  if (!hexColor) return colorScheme === 'dark' ? '#B8B2C4' : '#5F5868';
+  // An unknown grade gets a plain grey mark: no hue, so it can't pass for a grade.
+  // #B4B4B4 is 8.0:1 on the dark #1E1E1E card; #5E5E5E is 6.5:1 on white.
+  if (!hexColor) return colorScheme === 'dark' ? '#B4B4B4' : '#5E5E5E';
 
   const hex = hexColor.replace('#', '');
   const r = parseInt(hex.substring(0, 2), 16) / 255;

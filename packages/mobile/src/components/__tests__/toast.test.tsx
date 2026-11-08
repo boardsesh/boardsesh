@@ -101,8 +101,8 @@ vi.mock('../../providers/theme-provider', () => ({
     } as const;
     const systemColorsByVariant = {
       material: {
-        light: { secondaryBackground: '#FFFFFF', label: '#16111F' },
-        dark: { secondaryBackground: '#221A33', label: '#F5F2FB' },
+        light: { secondaryBackground: '#FFFFFF', label: '#1A1A1A' },
+        dark: { secondaryBackground: '#1E1E1E', label: '#EDEDED' },
       },
       liquidGlass: {
         light: { secondaryBackground: '#FFFFFF', label: '#16111F' },
@@ -181,7 +181,7 @@ describe('Toast', () => {
     // blendOpaque(config.color, secondaryBackground): success → brand success hue.
     expect(snackbar?.getAttribute('data-bg')).toBe('#047857|#FFFFFF|0.15');
     expect(container.querySelector('[data-icon="success"]')?.getAttribute('data-color')).toBe('#047857');
-    expect(container.querySelector('[data-text]')?.getAttribute('data-color')).toBe('#16111F');
+    expect(container.querySelector('[data-text]')?.getAttribute('data-color')).toBe('#1A1A1A');
     expect(container.querySelector('[data-view][data-role="alert"]')).not.toBeNull();
     // The glass animated pill must not render on Material.
     expect(container.querySelector('[data-animated]')).toBeNull();
@@ -201,11 +201,18 @@ describe('Toast', () => {
         colorScheme === 'dark'
           ? { success: '#34D399', error: '#F87171', warning: '#FBBF24', info: '#A78BFA' }
           : { success: '#047857', error: '#C81E1E', warning: '#B45309', info: '#6D28D9' };
-      const expectedLabel = colorScheme === 'dark' ? '#F5F2FB' : '#16111F';
+      const expectedLabel =
+        uiVariant === 'material'
+          ? colorScheme === 'dark'
+            ? '#EDEDED'
+            : '#1A1A1A'
+          : colorScheme === 'dark'
+            ? '#F5F2FB'
+            : '#16111F';
       const expectedSurface =
         uiVariant === 'material'
           ? colorScheme === 'dark'
-            ? '#221A33'
+            ? '#1E1E1E'
             : '#FFFFFF'
           : colorScheme === 'dark'
             ? '#181225'

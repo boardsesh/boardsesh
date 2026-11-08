@@ -9,6 +9,7 @@ import {
   type BrandColors,
   type MaterialSurfaces,
 } from '@boardsesh/velvet-tokens';
+import type { UiVariant } from './resolve-ui-variant';
 
 /**
  * iOS semantic system colors via PlatformColor.
@@ -115,14 +116,23 @@ export const androidFallbackColors = {
 } as const;
 
 /**
- * Android / Material `tertiaryFill`: the violet `fill` at roughly half its
- * strength, so a large card ground reads quieter than a small control's fill
- * (the same step iOS takes from systemFill to tertiarySystemFill).
+ * `tertiaryFill` off iOS: the `fill` at roughly half its strength, so a large card
+ * ground reads quieter than a small control's fill (the same step iOS takes from
+ * systemFill to tertiarySystemFill). Keyed by variant because the two grounds
+ * differ: Material's Graphite ladder is pure grey, so its fill is neutral white or
+ * black; Liquid Glass off iOS still sits on the violet `androidFallbackColors`
+ * ladder, so it keeps the violet wash.
  */
 export const tertiaryFillFallback = {
-  light: 'rgba(109, 40, 217, 0.06)',
-  dark: 'rgba(199, 184, 232, 0.07)',
-} as const;
+  material: {
+    light: 'rgba(0, 0, 0, 0.04)',
+    dark: 'rgba(255, 255, 255, 0.05)',
+  },
+  liquidGlass: {
+    light: 'rgba(109, 40, 217, 0.06)',
+    dark: 'rgba(199, 184, 232, 0.07)',
+  },
+} as const satisfies Record<UiVariant, Record<'light' | 'dark', string>>;
 
 /**
  * Android / Material `tertiaryGroupedBackground`: a block inside a grouped card.
@@ -149,59 +159,82 @@ export type AndroidFallbackColors = typeof androidFallbackColors;
  * crisp. Kept translucent so the material still reads as frosted glass, just
  * heavier. Scheme-keyed so the drawer stays light in light mode and dark in dark
  * mode; only the opacity of the material changes.
+ *
+ * Keyed by variant first: Material's dark tint is the Graphite page (#0E0E0E), so
+ * the drawer ground stays neutral; Liquid Glass keeps its violet near-black.
  */
 export const playDrawerMaterialTint = {
-  light: 'rgba(255, 255, 255, 0.6)',
-  dark: 'rgba(15, 11, 22, 0.55)',
-} as const;
+  material: {
+    light: 'rgba(255, 255, 255, 0.6)',
+    dark: 'rgba(14, 14, 14, 0.55)',
+  },
+  liquidGlass: {
+    light: 'rgba(255, 255, 255, 0.6)',
+    dark: 'rgba(15, 11, 22, 0.55)',
+  },
+} as const satisfies Record<UiVariant, Record<'light' | 'dark', string>>;
 
 /**
- * M3 surface-tint percentages for the elevation overlay (levels 1–5). The brand
- * primary is alpha-composited over the base surface at these alphas to build the
- * tonal surface-container ramp — this IS M3's mechanism for expressing depth
- * (higher surface = more primary tint), so depth is tonal, not just a shadow.
- */
-const m3SurfaceTint = { level1: 0.05, level2: 0.08, level3: 0.11, level4: 0.12, level5: 0.14 } as const;
-
-/**
- * One container tone: the scheme's brand primary tinted over its base surface.
- * In light the ramp tones toward violet as it rises; in dark the brighter fill
- * lifts the near-black base — the canonical M3 direction in each scheme.
- */
-function tintTone(scheme: 'light' | 'dark', alpha: number): string {
-  const base = materialSurfaces[scheme].background;
-  const primary = (scheme === 'dark' ? brandColorsDark : brandColors).primaryFill;
-  return blendOpaque(primary, base, alpha);
-}
-
-/**
- * M3 surface-container tones for the Material variant, **computed** per scheme
- * (the hand-tuned `materialSurfaces` collapsed these to one or two values — light
- * `secondaryBackground`/`tertiaryBackground`/`elevatedSurface` were all `#FFFFFF`).
- * Computing from `base + primary` (not tuned hexes) keeps the five steps monotonic
- * and distinct, and lets a future Material You palette recompute them from a
- * dynamic primary without a rewrite. Named roles map onto Paper's elevation
- * levels: `low`↔level1, `base`↔level2, `high`↔level3, `highest`↔level5.
+ * M3 surface-container tones for the Material variant, hand-set per scheme.
+ *
+ * "Graphite": pure greys (R = G = B), so depth reads by tone with no violet cast.
+ * Dark rises from the #0E0E0E page in steps of about 1.5 to 4 L*; the #1E1E1E card
+ * (`secondaryBackground`) sits between `base` and `high`. Light falls from the
+ * #F2F2F2 page, below the white card. Each step is one Paper elevation level:
+ * `low`↔level1, `base`↔level2, `high`↔level3, `level4`↔level4, `highest`↔level5.
+ *
+ * `base` is the MiniPlayer ground. It stays at #1A1A1A in dark so the filled
+ * #7C3AED play button keeps a 3:1 edge on it; a lighter base drops under 3:1.
+ * `material-theme-contrast.test.ts` pins every label, outline and accent pairing.
  */
 export const materialSurfaceContainers = {
   light: {
-    lowest: tintTone('light', 0.02),
-    low: tintTone('light', m3SurfaceTint.level1),
-    base: tintTone('light', m3SurfaceTint.level2),
-    high: tintTone('light', m3SurfaceTint.level3),
-    highest: tintTone('light', m3SurfaceTint.level5),
+    lowest: '#EEEEEE',
+    low: '#EAEAEA',
+    base: '#E4E4E4',
+    high: '#DFDFDF',
+    level4: '#DCDCDC',
+    highest: '#D9D9D9',
   },
   dark: {
-    lowest: tintTone('dark', 0.02),
-    low: tintTone('dark', m3SurfaceTint.level1),
-    base: tintTone('dark', m3SurfaceTint.level2),
-    high: tintTone('dark', m3SurfaceTint.level3),
-    highest: tintTone('dark', m3SurfaceTint.level5),
+    lowest: '#121212',
+    low: '#161616',
+    base: '#1A1A1A',
+    high: '#262626',
+    level4: '#2A2A2A',
+    highest: '#2E2E2E',
   },
 } as const;
 
 /**
- * Paper elevation-level tones (level1–5) for the MD3 theme — the SAME ramp as the
+ * The Material floating accessory bar (MiniPlayer card, climb capsule, rest
+ * timer). It floats over cards, so in dark it takes the top container step:
+ * the `base` step (#1A1A1A) sat darker than the #1E1E1E feed cards beneath it
+ * (1.04:1) and read as a hole in the card (QA verdict 166). #2E2E2E is 1.23:1
+ * on a card and 1.42:1 on the page, and `AccessoryBarSurface` adds a hairline
+ * edge. Light keeps `base`, which already sits darker than the white cards.
+ */
+export const materialFloatingBarSurface = {
+  light: materialSurfaceContainers.light.base,
+  dark: materialSurfaceContainers.dark.highest,
+} as const;
+
+/**
+ * Opaque M3 tonal containers, the one place Material keeps a violet surface: the
+ * selected or current state (nav pill, selected chip, Stepper, tonal button,
+ * connected MiniPlayer). Opaque so they read the same over any ground; a
+ * translucent wash took the colour of whatever sat under it.
+ *
+ * Contrast (WCAG): ink #21005D on #EADDFF 13.3:1 and on #E6DAF8 12.9:1; ink #EADDFF
+ * on #4F378B 7.23:1 and on #3C2467 9.93:1.
+ */
+export const materialTonalContainers = {
+  light: { primaryContainer: '#EADDFF', secondaryContainer: '#E6DAF8', ink: '#21005D' },
+  dark: { primaryContainer: '#4F378B', secondaryContainer: '#3C2467', ink: '#EADDFF' },
+} as const;
+
+/**
+ * Paper elevation-level tones (level1–5) for the MD3 theme — the SAME table as the
  * named containers, so Paper's own elevated components (Surface/Menu/FAB/Card/
  * Dialog/Appbar) tier identically to our app surfaces instead of collapsing to
  * one `elevatedSurface` colour.
@@ -213,16 +246,18 @@ export function materialElevationLevels(scheme: 'light' | 'dark'): {
   level4: string;
   level5: string;
 } {
+  const containers = materialSurfaceContainers[scheme];
   return {
-    level1: tintTone(scheme, m3SurfaceTint.level1),
-    level2: tintTone(scheme, m3SurfaceTint.level2),
-    level3: tintTone(scheme, m3SurfaceTint.level3),
-    level4: tintTone(scheme, m3SurfaceTint.level4),
-    level5: tintTone(scheme, m3SurfaceTint.level5),
+    level1: containers.low,
+    level2: containers.base,
+    level3: containers.high,
+    level4: containers.level4,
+    level5: containers.highest,
   };
 }
 
-export type MaterialSurfaceContainers = typeof materialSurfaceContainers.light;
+/** One scheme's container table, widened to plain strings so a fixture can supply its own. */
+export type MaterialSurfaceContainers = Record<keyof typeof materialSurfaceContainers.light, string>;
 
 /**
  * The lit wall button's glow surfaces (#7000, look F1b): the pill the climb's

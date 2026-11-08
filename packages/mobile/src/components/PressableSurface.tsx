@@ -11,8 +11,9 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { springs } from '../theme/animations';
-import { androidRipple, opacity, material } from '../theme/tokens';
+import { androidRipple, neutralRipple, opacity, material } from '../theme/tokens';
 import { brandColors } from '../theme/colors';
+import { useNeutralRippleInk } from '../theme/neutral-ripple-context';
 
 type RNPressableProps = ComponentProps<typeof Pressable>;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -91,6 +92,16 @@ export function StaticPressableSurface({
   ...props
 }: StaticPressableSurfaceProps) {
   const state = { ...accessibilityState, disabled: disabled || accessibilityState?.disabled };
+  // A caller's colour keeps the 12% brand ripple. Otherwise Material ripples in
+  // the theme's onSurface at 10%; with no neutral ink (Liquid Glass, no
+  // provider) it keeps the legacy brand tint.
+  const neutralRippleInk = useNeutralRippleInk();
+  const resolveAndroidRipple = () => {
+    if (android_ripple !== undefined && android_ripple !== null) return android_ripple;
+    return rippleColor === undefined && neutralRippleInk !== null
+      ? neutralRipple(neutralRippleInk, rippleBorderless)
+      : androidRipple(rippleColor ?? brandColors.tint, rippleBorderless);
+  };
   const resolveStyle = (callerStyle: StyleProp<ViewStyle>) => {
     if (!disabled) return callerStyle;
     const callerOpacity = StyleSheet.flatten(callerStyle)?.opacity;
@@ -110,11 +121,7 @@ export function StaticPressableSurface({
       disabled={disabled}
       accessibilityRole={accessibilityRole}
       accessibilityState={state}
-      android_ripple={
-        Platform.OS === 'android'
-          ? (android_ripple ?? androidRipple(rippleColor ?? brandColors.tint, rippleBorderless))
-          : android_ripple
-      }
+      android_ripple={Platform.OS === 'android' ? resolveAndroidRipple() : android_ripple}
       style={typeof style === 'function' ? (pressState) => resolveStyle(style(pressState)) : resolveStyle(style)}
     />
   );

@@ -1,5 +1,5 @@
 import { chromium, type Page } from '@playwright/test';
-import { brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
+import { brandColorsDark, marketingSurfaces } from '@boardsesh/velvet-tokens';
 import sharp from 'sharp';
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -241,11 +241,11 @@ export async function renderTutorial(options: TutorialRenderOptions): Promise<st
         .join(''),
   );
   const palette = {
-    surface: materialSurfaces.dark.background,
-    ink: materialSurfaces.dark.label,
+    surface: marketingSurfaces.dark.background,
+    ink: marketingSurfaces.dark.label,
     accent: brandColorsDark.primary,
     glow: brandColorsDark.primaryFill,
-    phone: materialSurfaces.dark.secondaryBackground,
+    phone: marketingSurfaces.dark.secondaryBackground,
   };
   const browser = await chromium.launch({ headless: true, args: ['--allow-file-access-from-files'] });
   const page = await browser.newPage({ viewport: TUTORIAL_SIZE, deviceScaleFactor: 1 });

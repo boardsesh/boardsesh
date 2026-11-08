@@ -25,38 +25,62 @@ function contrastRatio(foreground: string, background: string): number {
 }
 
 describe('buildPaperTheme', () => {
-  it('maps the brand + material surfaces onto MD3 roles (light)', () => {
+  it('maps the brand + Graphite surfaces onto MD3 roles (light)', () => {
     const theme = buildPaperTheme('light');
     expect(theme.colors.primary).toBe('#6D28D9');
     expect(theme.colors.onPrimary).toBe('#FFFFFF');
-    expect(theme.colors.background).toBe('#F3EFFA'); // materialSurfaces.light.background
+    expect(theme.colors.background).toBe('#F2F2F2'); // materialSurfaces.light.background
     expect(theme.colors.surface).toBe('#FFFFFF'); // secondaryBackground
     expect(theme.colors.error).toBe('#C81E1E');
-    // The five elevation levels are now DISTINCT, monotonic surface-tint tones
-    // (not all collapsed onto one `elevatedSurface`), so Paper's elevated
-    // components tier instead of looking identical.
-    const { level0, level1, level2, level3, level4, level5 } = theme.colors.elevation;
-    expect(level0).toBe('transparent');
-    expect(new Set([level1, level2, level3, level4, level5]).size).toBe(5);
-    // The two grade stat tiles use the brand-violet primary/secondary containers
-    // (not the vestigial amber tertiary), so they read as one tonal family.
-    expect(theme.colors.primaryContainer).toContain('109, 40, 217'); // brand violet #6D28D9
-    expect(theme.colors.secondaryContainer).toContain('109, 40, 217');
-    // Container ink is an explicit dark violet — not the near-white `onSurface`,
-    // which was illegible on the (dark-scheme) container.
+    expect(theme.colors.onError).toBe('#FFFFFF');
+    // Elevation levels 1–5 are the container steps low → highest, distinct and
+    // falling in light.
+    expect(theme.colors.elevation).toEqual({
+      level0: 'transparent',
+      level1: '#EAEAEA',
+      level2: '#E4E4E4',
+      level3: '#DFDFDF',
+      level4: '#DCDCDC',
+      level5: '#D9D9D9',
+    });
+    // Opaque violet tonal containers: the selected/current state keeps the brand.
+    expect(theme.colors.primaryContainer).toBe('#EADDFF');
+    expect(theme.colors.secondaryContainer).toBe('#E6DAF8');
+    // Container ink is an explicit dark violet, not the grey `onSurface`.
     expect(theme.colors.onPrimaryContainer).toBe('#21005D');
     expect(theme.colors.onSecondaryContainer).toBe('#21005D');
     // `surfaceVariant` is a real toned container (filled text fields were
     // invisible when it aliased `#FFFFFF`).
-    expect(theme.colors.surfaceVariant).not.toBe('#FFFFFF');
-    // `outline` (form border) is distinct from `outlineVariant` (faint divider).
-    expect(theme.colors.outline).not.toBe(theme.colors.outlineVariant);
+    expect(theme.colors.surfaceVariant).toBe('#E4E4E4');
+    // `outline` (form border) is a fixed grey, distinct from the faint divider.
+    expect(theme.colors.outline).toBe('#7A7A7A');
+    expect(theme.colors.outlineVariant).toBe('rgba(0, 0, 0, 0.12)');
+    // The amber tertiary keeps its dark ink in both schemes.
+    expect(theme.colors.onTertiary).toBe('#16111F');
   });
 
-  it('uses the dark tonal surfaces for the dark scheme', () => {
+  it('uses the dark Graphite surfaces for the dark scheme', () => {
     const theme = buildPaperTheme('dark');
-    expect(theme.colors.background).toBe('#15101E');
-    expect(theme.colors.surface).toBe('#221A33');
+    expect(theme.colors.background).toBe('#0E0E0E');
+    expect(theme.colors.surface).toBe('#1E1E1E');
+    expect(theme.colors.surfaceVariant).toBe('#1A1A1A');
+    expect(theme.colors.outline).toBe('#8A8A8A');
+    expect(theme.colors.outlineVariant).toBe('rgba(255, 255, 255, 0.12)');
+    expect(theme.colors.elevation).toEqual({
+      level0: 'transparent',
+      level1: '#161616',
+      level2: '#1A1A1A',
+      level3: '#262626',
+      level4: '#2A2A2A',
+      level5: '#2E2E2E',
+    });
+    expect(theme.colors.onTertiary).toBe('#16111F');
+  });
+
+  it('gives the dark error fill a dark ink, since white on #F87171 is 2.77:1', () => {
+    const theme = buildPaperTheme('dark');
+    expect(theme.colors.error).toBe('#F87171');
+    expect(theme.colors.onError).toBe('#1B1B1B');
   });
 
   it('uses the foreground tint for dark primary, with dark ink on top', () => {
@@ -64,10 +88,14 @@ describe('buildPaperTheme', () => {
     // Not the fill-only #7C3AED: primary colours text (tab labels, text buttons).
     expect(theme.colors.primary).toBe('#A78BFA');
     expect(theme.colors.onPrimary).toBe('#2E1065');
+    // `secondary` stays violet: it is the active nav label.
     expect(theme.colors.secondary).toBe('#A78BFA');
     expect(theme.colors.onSecondary).toBe('#2E1065');
-    // The tonal containers still derive from the fill violet.
-    expect(theme.colors.primaryContainer).toContain('124, 58, 237');
+    // Opaque tonal containers with a light violet ink.
+    expect(theme.colors.primaryContainer).toBe('#4F378B');
+    expect(theme.colors.secondaryContainer).toBe('#3C2467');
+    expect(theme.colors.onPrimaryContainer).toBe('#EADDFF');
+    expect(theme.colors.onSecondaryContainer).toBe('#EADDFF');
   });
 
   // The Climbs bar's wall pill fills with tertiaryContainer, so it must be the

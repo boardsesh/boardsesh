@@ -11,7 +11,7 @@ vi.mock('react-native', () => ({
 }));
 
 import { contrastRatioHex } from '../../../lib/color-contrast-oracle';
-import { materialSurfaceContainers } from '../../../theme/colors';
+import { materialSurfaceContainers, materialTonalContainers } from '../../../theme/colors';
 import { bulbHaloFor, phoneDrivesTheWall, resolveBulbDriveCue, resolvePaneBulbDriveCue } from '../bulb-drive-cue';
 import type { DriveLightingMode } from '../../play-drawer/drive-mode-store';
 import { EMPTY_WALL_CONTROL } from '../../play-drawer/wall-control';
@@ -93,11 +93,11 @@ describe('bulbHaloFor', () => {
 // The ring is a graphic that carries the time left, so WCAG 1.4.11 asks 3:1
 // against what it sits on: the bar itself, since the bulb draws no halo under
 // it (`bulbHaloFor`) and the ring no track behind it, in light and dark. The
-// worst case is 3.06:1, the held Material bar in light; a 16% amber track
+// worst case is 3.77:1, the held Material bar in light; a 16% amber track
 // behind the arc's end left that end at 2.6:1 there. Liquid Glass has no fixed colour; it
 // is measured on the iOS grounds it falls back to, under the 12% amber tint the
 // bar takes while this phone holds the board. The Material bar is the
-// surface-container tone, under the violet secondary container it composites
+// surface-container tone, covered by the opaque violet secondary container
 // while held.
 describe('the drive ring’s contrast', () => {
   const NON_TEXT = 3;
@@ -105,9 +105,9 @@ describe('the drive ring’s contrast', () => {
   type Scheme = (typeof SCHEMES)[number];
   const brandFor = (scheme: Scheme) => (scheme === 'dark' ? brandColorsDark : brandColors);
   const IOS_GROUNDS = { light: ['#FFFFFF', '#F2F2F7'], dark: ['#000000', '#1C1C1E', '#2C2C2E'] } as const;
-  // `AccessoryBarSurface`: the warm tint and the held Material wash.
+  // `AccessoryBarSurface`: the warm tint, and the opaque violet secondary
+  // container that covers the Material bar while held.
   const GLASS_WARM_TINT = 0.12;
-  const HELD_MATERIAL_WASH = { light: 0.16, dark: 0.28 } as const;
 
   function bars(scheme: Scheme): string[] {
     const brand = brandFor(scheme);
@@ -117,7 +117,7 @@ describe('the drive ring’s contrast', () => {
     ]);
     // Docked or floating, the Material bar is the `base` container.
     const material = [materialSurfaceContainers[scheme].base];
-    const held = material.map((ground) => blendOpaque(brand.primaryFill, ground, HELD_MATERIAL_WASH[scheme]));
+    const held = [materialTonalContainers[scheme].secondaryContainer];
     return [...glass, ...material, ...held];
   }
 
