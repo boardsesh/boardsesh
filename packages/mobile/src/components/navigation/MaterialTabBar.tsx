@@ -1,11 +1,16 @@
 import { useCallback } from 'react';
 import { type LayoutChangeEvent, Platform, StyleSheet, View } from 'react-native';
 import type { BottomTabBarProps } from 'expo-router/tabs';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { Text } from '../Text';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { useSetMeasuredTabBarHeight } from '../../providers/tab-bar-height-provider';
-import { brandColors as staticBrandColors } from '../../theme/colors';
+import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { tabBarHiddenProgress } from '../../lib/tab-bar-hide-progress';
+import { useTabBarHidden } from '../../lib/tab-bar-visibility-store';
+import { brandColors as staticBrandColors, withAlpha } from '../../theme/colors';
 import { material } from '../../theme/tokens';
 import { MATERIAL_TAB_BAR_HEIGHT } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
@@ -41,19 +46,47 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
     [setMeasuredTabBarHeight],
   );
 
+  // On an Android phone's tab root the bar is drawn over the screen so it can
+  // slide away on scroll (the metrics decide, so the reserves always agree).
+  // There it reads like Spotify's bar: a mostly opaque m3.surface fill behind
+  // the icons and labels (content is faint there, never legible), no hairline, no
+  // shadow, and a 24dp fade above its top edge so the list dissolves into the
+  // bar instead of running under its labels. Everywhere else it sits in flow,
+  // opaque, as before.
+  const { jsBarOverlaysContent: overlay } = useBottomChromeMetrics();
+  const hidden = useTabBarHidden() && overlay;
+  const barHeight = MATERIAL_TAB_BAR_HEIGHT + insets.bottom;
+  const slideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: overlay ? tabBarHiddenProgress.value * barHeight : 0 }],
+  }));
+
   return (
-    <View
+    <Animated.View
       onLayout={handleLayout}
+      // A hidden bar is off screen: no touches, and out of the TalkBack order.
+      pointerEvents={hidden ? 'none' : 'auto'}
+      importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
       style={[
         styles.bar,
-        {
-          backgroundColor: systemColors.elevatedSurface,
-          borderTopColor: systemColors.separator,
-          paddingBottom: insets.bottom,
-          height: MATERIAL_TAB_BAR_HEIGHT + insets.bottom,
-        },
+        overlay
+          ? [styles.overlayBar, { backgroundColor: withAlpha(m3.surface, OVERLAY_SURFACE_ALPHA) }]
+          : {
+              backgroundColor: systemColors.elevatedSurface,
+              borderTopColor: systemColors.separator,
+            },
+        { paddingBottom: insets.bottom, height: barHeight },
+        slideStyle,
       ]}
     >
+      {overlay ? (
+        // A child of the bar, so it slides away with it; it never takes a touch.
+        <LinearGradient
+          testID="tab-bar-fade"
+          pointerEvents="none"
+          colors={[withAlpha(m3.surface, 0), withAlpha(m3.surface, OVERLAY_SURFACE_ALPHA)]}
+          style={styles.overlayFade}
+        />
+      ) : null}
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         // expo-router turns a screen's `href: null` into `tabBarItemStyle:
@@ -130,9 +163,16 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
           </PressableSurface>
         );
       })}
-    </View>
+    </Animated.View>
   );
 }
+
+// How opaque the overlay bar's surface is: content stays faintly visible behind
+// the icons and labels but never legible. Tune here; the fade above ends on it.
+const OVERLAY_SURFACE_ALPHA = 0.85;
+// The soft edge above the overlay bar: clear at the top, the bar's own fill
+// where it meets the bar, so content fades out before it reaches the labels.
+const OVERLAY_FADE_HEIGHT = 24;
 
 const styles = StyleSheet.create({
   bar: {
@@ -143,6 +183,23 @@ const styles = StyleSheet.create({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.08, shadowRadius: 8 },
       default: {},
     }),
+  },
+  // Drawn over the tab root: absolute, flat, a mostly opaque surface (set inline).
+  overlayBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: 0,
+    elevation: 0,
+  },
+  // Hangs above the bar's top edge; the bar does not clip it.
+  overlayFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -OVERLAY_FADE_HEIGHT,
+    height: OVERLAY_FADE_HEIGHT,
   },
   item: {
     flex: 1,

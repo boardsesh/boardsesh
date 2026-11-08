@@ -15,6 +15,7 @@ import { forgetWorkoutRunTick } from '../lib/workout-run-store';
 import { forgetEndedWorkoutTick } from '../lib/ended-workout-store';
 import { nowMs } from '../lib/clock';
 import { spacing } from '../theme/tokens';
+import { TabBarHideFollower } from '../components/navigation/TabBarHideFollower';
 
 export const LOGBOOK_DELETE_UNDO_MS = 8000;
 type DeleteRequest = {
@@ -191,7 +192,10 @@ export function LogbookDeleteProvider({ children }: { children: ReactNode }) {
               </View>
             </FullWindowOverlay>
           ) : (
-            <Portal>{snackbar}</Portal>
+            // Android: follows the nav bar down when it hides on scroll.
+            <Portal>
+              <TabBarHideFollower>{snackbar}</TabBarHideFollower>
+            </Portal>
           )
         ) : null}
       </PendingContext>

@@ -20,6 +20,7 @@ import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { AccessibilityInfo, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { TabBarHideFollower } from '../navigation/TabBarHideFollower';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Text } from '../Text';
@@ -168,104 +169,106 @@ function ConnectivityBannerContent() {
   const exiting = reduceMotion ? undefined : FadeOut.duration(150);
 
   return (
-    <View
-      pointerEvents="box-none"
-      style={[styles.overlay, { bottom: bottomChrome.connectivityBannerBottom + spacing[2] }]}
-    >
-      {collapsed ? (
-        <Animated.View
-          key="pill"
-          entering={entering}
-          exiting={exiting}
-          onLayout={publishHeight}
-          style={[styles.pill, surfaceColors]}
-        >
-          {tintColor ? (
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]} />
-          ) : null}
-          <PressableSurface
-            onPress={expand}
-            accessibilityRole="button"
-            accessibilityLabel={countLine ? `${presentation.title}. ${countLine}` : presentation.title}
-            accessibilityHint={t('mobile.connectivity.expand')}
-            style={styles.pillPressable}
+    <TabBarHideFollower zIndex={100}>
+      <View
+        pointerEvents="box-none"
+        style={[styles.overlay, { bottom: bottomChrome.connectivityBannerBottom + spacing[2] }]}
+      >
+        {collapsed ? (
+          <Animated.View
+            key="pill"
+            entering={entering}
+            exiting={exiting}
+            onLayout={publishHeight}
+            style={[styles.pill, surfaceColors]}
           >
-            <Icon name={presentation.icon} size={16} color={accentColor} />
-            <Text variant="subheadline" color={systemColors.label}>
-              {presentation.pillLabel}
-            </Text>
-            {countLine && pendingCount > 0 ? (
-              <View style={[styles.badge, { backgroundColor: systemColors.fill }]}>
-                <Text variant="caption1" color={systemColors.label}>
-                  {String(pendingCount)}
-                </Text>
+            {tintColor ? (
+              <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]} />
+            ) : null}
+            <PressableSurface
+              onPress={expand}
+              accessibilityRole="button"
+              accessibilityLabel={countLine ? `${presentation.title}. ${countLine}` : presentation.title}
+              accessibilityHint={t('mobile.connectivity.expand')}
+              style={styles.pillPressable}
+            >
+              <Icon name={presentation.icon} size={16} color={accentColor} />
+              <Text variant="subheadline" color={systemColors.label}>
+                {presentation.pillLabel}
+              </Text>
+              {countLine && pendingCount > 0 ? (
+                <View style={[styles.badge, { backgroundColor: systemColors.fill }]}>
+                  <Text variant="caption1" color={systemColors.label}>
+                    {String(pendingCount)}
+                  </Text>
+                </View>
+              ) : null}
+            </PressableSurface>
+          </Animated.View>
+        ) : (
+          <Animated.View
+            key="card"
+            entering={entering}
+            exiting={exiting}
+            onLayout={publishHeight}
+            style={[styles.card, surfaceColors]}
+          >
+            {tintColor ? (
+              <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]} />
+            ) : null}
+            <View style={styles.headerRow}>
+              {/* Title + body + count are ONE announcement; the buttons stay
+                separately focusable so a screen-reader user can act on them. */}
+              <View accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.message}>
+                <View style={styles.titleRow}>
+                  {presentation.busy ? (
+                    <ActivityIndicator size="small" />
+                  ) : (
+                    <Icon name={presentation.icon} size={20} color={accentColor} />
+                  )}
+                  <Text variant="headline" color={systemColors.label} style={styles.title}>
+                    {presentation.title}
+                  </Text>
+                </View>
+                {presentation.body ? (
+                  <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                    {presentation.body}
+                  </Text>
+                ) : null}
+                {countLine ? (
+                  <Text variant="footnote" color={systemColors.secondaryLabel}>
+                    {countLine}
+                  </Text>
+                ) : null}
+              </View>
+              <PressableSurface
+                onPress={dismiss}
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.connectivity.dismiss')}
+                hitSlop={8}
+                style={styles.close}
+              >
+                <Icon name="close" size={16} color={systemColors.secondaryLabel} />
+              </PressableSurface>
+            </View>
+            {actions.length > 0 ? (
+              <View style={styles.actions}>
+                {actions.map((action) => (
+                  <Button
+                    key={action.key}
+                    title={action.label}
+                    variant={action.variant}
+                    size="small"
+                    loading={action.loading}
+                    onPress={action.onPress}
+                  />
+                ))}
               </View>
             ) : null}
-          </PressableSurface>
-        </Animated.View>
-      ) : (
-        <Animated.View
-          key="card"
-          entering={entering}
-          exiting={exiting}
-          onLayout={publishHeight}
-          style={[styles.card, surfaceColors]}
-        >
-          {tintColor ? (
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]} />
-          ) : null}
-          <View style={styles.headerRow}>
-            {/* Title + body + count are ONE announcement; the buttons stay
-                separately focusable so a screen-reader user can act on them. */}
-            <View accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.message}>
-              <View style={styles.titleRow}>
-                {presentation.busy ? (
-                  <ActivityIndicator size="small" />
-                ) : (
-                  <Icon name={presentation.icon} size={20} color={accentColor} />
-                )}
-                <Text variant="headline" color={systemColors.label} style={styles.title}>
-                  {presentation.title}
-                </Text>
-              </View>
-              {presentation.body ? (
-                <Text variant="subheadline" color={systemColors.secondaryLabel}>
-                  {presentation.body}
-                </Text>
-              ) : null}
-              {countLine ? (
-                <Text variant="footnote" color={systemColors.secondaryLabel}>
-                  {countLine}
-                </Text>
-              ) : null}
-            </View>
-            <PressableSurface
-              onPress={dismiss}
-              accessibilityRole="button"
-              accessibilityLabel={t('mobile.connectivity.dismiss')}
-              hitSlop={8}
-              style={styles.close}
-            >
-              <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-            </PressableSurface>
-          </View>
-          {actions.length > 0 ? (
-            <View style={styles.actions}>
-              {actions.map((action) => (
-                <Button
-                  key={action.key}
-                  title={action.label}
-                  variant={action.variant}
-                  size="small"
-                  loading={action.loading}
-                  onPress={action.onPress}
-                />
-              ))}
-            </View>
-          ) : null}
-        </Animated.View>
-      )}
-    </View>
+          </Animated.View>
+        )}
+      </View>
+    </TabBarHideFollower>
   );
 }
 

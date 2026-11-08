@@ -29,6 +29,7 @@ vi.mock('../../lib/workout-run-store', () => ({ useWorkoutRunPendingStart: () =>
 
 vi.mock('expo-router', () => ({ useSegments: () => cfg.segments }));
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   useWindowDimensions: () => ({ width: cfg.windowWidth, height: 900 }),
 }));
 vi.mock('react-native-safe-area-context', () => ({

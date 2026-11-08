@@ -71,9 +71,9 @@ describe('ToastOffsetPublisher', () => {
       bottom: 34 + 64 + 8,
     },
     {
-      name: 'Material, climb on the wall: also clears the 48dp MiniPlayer card and its 8dp gap',
+      name: 'Material, climb on the wall: also clears the 48dp MiniPlayer card sitting on the bar',
       chrome: { hasCurrentClimb: true },
-      bottom: 34 + 64 + 48 + 8 + 8,
+      bottom: 34 + 64 + 48 + 8,
     },
     {
       name: 'Material, pushed tab route: no queue bar there, so none reserved',

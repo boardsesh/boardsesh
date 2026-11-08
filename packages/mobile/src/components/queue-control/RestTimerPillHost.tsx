@@ -18,6 +18,7 @@ import { useCurrentClimbSurface } from '../../hooks/use-current-climb-surface';
 import { spacing } from '../../theme/tokens';
 import { RestTimerPill, WorkoutStartPill } from './RestTimerPill';
 import { RestTimerSheet } from './RestTimerSheet';
+import { TabBarHideFollower } from '../navigation/TabBarHideFollower';
 
 export type RestTimerPillHostProps = {
   /** The 32pt drawer-header tier. See {@link RestTimerPill}'s `compact`. */
@@ -119,23 +120,25 @@ export function RootRestTimerPillHost() {
   }
 
   return (
-    <View
-      pointerEvents="box-none"
-      style={[
-        styles.overlay,
-        {
-          bottom: bottomChrome.restTimerBottom,
-          // Centre on the column the accessory spans, not the window: the native
-          // iPad sidebar and the iPhone Duo rail take a side of it.
-          ...physicalHorizontalInsets(
-            spacing[3] + bottomChrome.contentColumnLeft,
-            spacing[3] + bottomChrome.contentColumnRight,
-          ),
-        },
-      ]}
-    >
-      <RestTimerPillHost />
-    </View>
+    <TabBarHideFollower zIndex={90}>
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.overlay,
+          {
+            bottom: bottomChrome.restTimerBottom,
+            // Centre on the column the accessory spans, not the window: the native
+            // iPad sidebar and the iPhone Duo rail take a side of it.
+            ...physicalHorizontalInsets(
+              spacing[3] + bottomChrome.contentColumnLeft,
+              spacing[3] + bottomChrome.contentColumnRight,
+            ),
+          },
+        ]}
+      >
+        <RestTimerPillHost />
+      </View>
+    </TabBarHideFollower>
   );
 }
 

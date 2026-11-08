@@ -11,6 +11,7 @@ import { selectByVariant } from '../../theme/variants';
 import { useNativeGlass } from '../../hooks/use-native-glass';
 import { hapticLight } from '../../lib/haptics';
 import { opacity, spacing, shadows } from '../../theme/tokens';
+import { TabBarHideFollower } from '../navigation/TabBarHideFollower';
 
 const CAPSULE_HEIGHT = 52;
 const CAPSULE_RADIUS = CAPSULE_HEIGHT / 2;
@@ -83,38 +84,42 @@ export function SessionStartFab({
     [onHeightChange],
   );
 
+  // Follows the Android nav bar down when it hides on scroll, like the
+  // MiniPlayer card it sits above.
   return (
-    <View
-      testID={testID}
-      pointerEvents="box-none"
-      onLayout={onHeightChange ? handleLayout : undefined}
-      style={[styles.container, { bottom: bottomOffset }]}
-    >
-      {selectByVariant(variant, {
-        material: (
-          <FAB
-            testID={actionTestID}
-            icon={iconMap[icon].android}
-            label={label}
-            onPress={onPress}
-            disabled={disabled}
-            loading={loading}
-            variant="primary"
-            mode="elevated"
-          />
-        ),
-        liquidGlass: (
-          <StartGlassCapsule
-            testID={actionTestID}
-            label={label}
-            icon={icon}
-            onPress={onPress}
-            disabled={disabled}
-            loading={loading}
-          />
-        ),
-      })}
-    </View>
+    <TabBarHideFollower>
+      <View
+        testID={testID}
+        pointerEvents="box-none"
+        onLayout={onHeightChange ? handleLayout : undefined}
+        style={[styles.container, { bottom: bottomOffset }]}
+      >
+        {selectByVariant(variant, {
+          material: (
+            <FAB
+              testID={actionTestID}
+              icon={iconMap[icon].android}
+              label={label}
+              onPress={onPress}
+              disabled={disabled}
+              loading={loading}
+              variant="primary"
+              mode="elevated"
+            />
+          ),
+          liquidGlass: (
+            <StartGlassCapsule
+              testID={actionTestID}
+              label={label}
+              icon={icon}
+              onPress={onPress}
+              disabled={disabled}
+              loading={loading}
+            />
+          ),
+        })}
+      </View>
+    </TabBarHideFollower>
   );
 }
 

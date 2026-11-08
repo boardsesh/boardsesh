@@ -131,8 +131,10 @@ export const floatingContextBarBottom = (tabBarBottom: number, gapAboveTabBar = 
  *  holds the same controls. */
 export const MATERIAL_MINI_PLAYER_CARD_HEIGHT = glassSize.standard;
 
-/** Gap between the Material MiniPlayer card and the top of the tab bar below it. */
-export const MATERIAL_MINI_PLAYER_CARD_GAP = 8;
+/** Gap between the Material MiniPlayer card and the top of the tab bar below it:
+ *  none, the card sits straight on the bar (and on the gesture inset when the
+ *  bar hides on scroll). */
+export const MATERIAL_MINI_PLAYER_CARD_GAP = 0;
 
 /** Bottom room the Material MiniPlayer card takes above the tab bar: its height plus its gap. */
 export const MATERIAL_MINI_PLAYER_CARD_RESERVE = MATERIAL_MINI_PLAYER_CARD_HEIGHT + MATERIAL_MINI_PLAYER_CARD_GAP;

@@ -1,6 +1,7 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useListTopOffset } from '../../hooks/use-list-top-offset';
 import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
+import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, RefreshControl, StyleSheet } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
@@ -78,6 +79,9 @@ export const ProgressTab = memo(function ProgressTab({
   scrollEdge,
 }: ProgressTabProps) {
   const nativeRootHeader = useNativeRootHeader();
+  // On the Profile tab the Android nav bar hides as this list scrolls down; each
+  // sub-tab is its own scroll source, so switching sub-tabs never reads as a jump.
+  const handleScroll = useHideOnScroll(scrollEdge?.listProps.onScroll);
   const listTopOffset = useListTopOffset();
   const { t, i18n } = useTranslation('profile');
   const { t: tYou } = useTranslation('you');
@@ -429,6 +433,7 @@ export const ProgressTab = memo(function ProgressTab({
         getItemType={typeForProgressItem}
         maintainVisibleContentPosition={{ disabled: true }}
         {...scrollEdge?.listProps}
+        onScroll={handleScroll}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         scrollToOverflowEnabled={nativeRootHeader}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}

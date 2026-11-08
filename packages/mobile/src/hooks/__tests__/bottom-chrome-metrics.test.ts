@@ -109,7 +109,7 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.jsQueueToolbarVisible).toBe(true);
     expect(metrics.jsQueueReserve).toBe(MATERIAL_MINI_PLAYER_CARD_RESERVE);
     // The 48dp card plus the 8dp gap it floats above the tab bar.
-    expect(MATERIAL_MINI_PLAYER_CARD_RESERVE).toBe(56);
+    expect(MATERIAL_MINI_PLAYER_CARD_RESERVE).toBe(48);
     // Material clears its taller M3 short nav bar (64) — not the iOS 49.
     expect(metrics.scrollBottomPadding).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_MINI_PLAYER_CARD_RESERVE);
     expect(metrics.floatingControlBottom).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_MINI_PLAYER_CARD_RESERVE);

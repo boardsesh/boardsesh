@@ -17,6 +17,7 @@ import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { OfflineDownloadProgressBar } from '../board-discovery/OfflineDownloadProgressBar';
+import { TabBarHideFollower } from '../navigation/TabBarHideFollower';
 
 const BOARD_NAMES: Record<string, string> = { kilter: 'Kilter', tension: 'Tension', moonboard: 'MoonBoard' };
 
@@ -83,54 +84,56 @@ export function OfflineDownloadPill() {
                   : t('mobile.offline.bootstrapping');
   const percent = frame.fraction === null ? null : Math.round(frame.fraction * 100);
   return (
-    <View
-      pointerEvents="box-none"
-      style={[
-        styles.overlay,
-        {
-          bottom: bottomChrome.connectivityBannerBottom + connectivityHeight + spacing[2],
-        },
-      ]}
-    >
+    <TabBarHideFollower zIndex={100}>
       <View
-        onLayout={publishHeight}
+        pointerEvents="box-none"
         style={[
-          styles.pill,
-          { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
+          styles.overlay,
+          {
+            bottom: bottomChrome.connectivityBannerBottom + connectivityHeight + spacing[2],
+          },
         ]}
       >
-        <View style={styles.actions}>
-          <PressableSurface
-            onPress={openBoards}
-            accessibilityRole="button"
-            accessibilityLabel={`${t('mobile.offline.pill.open', { name: boardName })}. ${phaseLabel}`}
-            accessibilityValue={percent === null ? undefined : { min: 0, max: 100, now: percent }}
-            style={styles.details}
-          >
-            <Text variant="subheadline" numberOfLines={1}>
-              {boardName}
-            </Text>
-            <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-              {phaseLabel}
-              {percent !== null ? ` · ${t('mobile.offline.pill.percent', { percent })}` : ''}
-              {frame.fraction === null && frame.rowsProcessed !== undefined
-                ? ` · ${t('mobile.offline.pill.rows', { count: frame.rowsProcessed })}`
-                : ''}
-              {frame.queuedScopes > 0 ? ` · ${t('mobile.offline.pill.more', { count: frame.queuedScopes })}` : ''}
-            </Text>
-          </PressableSurface>
-          <PressableSurface
-            onPress={hideProgress}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.offline.pill.hide')}
-            style={styles.hide}
-          >
-            <Icon name="close" size={18} color={systemColors.secondaryLabel} />
-          </PressableSurface>
+        <View
+          onLayout={publishHeight}
+          style={[
+            styles.pill,
+            { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
+          ]}
+        >
+          <View style={styles.actions}>
+            <PressableSurface
+              onPress={openBoards}
+              accessibilityRole="button"
+              accessibilityLabel={`${t('mobile.offline.pill.open', { name: boardName })}. ${phaseLabel}`}
+              accessibilityValue={percent === null ? undefined : { min: 0, max: 100, now: percent }}
+              style={styles.details}
+            >
+              <Text variant="subheadline" numberOfLines={1}>
+                {boardName}
+              </Text>
+              <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+                {phaseLabel}
+                {percent !== null ? ` · ${t('mobile.offline.pill.percent', { percent })}` : ''}
+                {frame.fraction === null && frame.rowsProcessed !== undefined
+                  ? ` · ${t('mobile.offline.pill.rows', { count: frame.rowsProcessed })}`
+                  : ''}
+                {frame.queuedScopes > 0 ? ` · ${t('mobile.offline.pill.more', { count: frame.queuedScopes })}` : ''}
+              </Text>
+            </PressableSurface>
+            <PressableSurface
+              onPress={hideProgress}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.offline.pill.hide')}
+              style={styles.hide}
+            >
+              <Icon name="close" size={18} color={systemColors.secondaryLabel} />
+            </PressableSurface>
+          </View>
+          <OfflineDownloadProgressBar fraction={frame.fraction} />
         </View>
-        <OfflineDownloadProgressBar fraction={frame.fraction} />
       </View>
-    </View>
+    </TabBarHideFollower>
   );
 }
 
