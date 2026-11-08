@@ -7,7 +7,7 @@ import { useTheme } from '../../providers/theme-provider';
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 // Cable colour is separate from the orange holes and violet addressable LEDs.
 export const SPRAY_CABLE_COLOR = '#0891B2';
-type Edge = { from: TnutPoint; to: TnutPoint; skip: number };
+type Edge = { from: TnutPoint; to: TnutPoint; skip: number; first: boolean };
 export type SprayHoldRing = { id: number; points: TnutPoint[] };
 function screenPoint(
   point: TnutPoint,
@@ -45,6 +45,18 @@ function circles(
   }
   return path;
 }
+function arrowHead(from: TnutPoint, to: TnutPoint, length: number, width: number): string {
+  'worklet';
+  const dx = to.x - from.x,
+    dy = to.y - from.y,
+    distance = Math.hypot(dx, dy);
+  if (distance < 12) return '';
+  const x = from.x + dx * 0.6,
+    y = from.y + dy * 0.6,
+    ux = dx / distance,
+    uy = dy / distance;
+  return `M${x - ux * length - uy * width} ${y - uy * length + ux * width}L${x} ${y}L${x - ux * length + uy * width} ${y - uy * length - ux * width}`;
+}
 function visibleEdge(from: TnutPoint, to: TnutPoint, width: number, height: number): boolean {
   'worklet';
   return (
@@ -81,6 +93,7 @@ export function SpraySetupOverlay({
   holdRings,
   selectedHoldIds = [],
   selectedHoles = [],
+  compactHoles = false,
   width,
   height,
   zoom,
@@ -88,6 +101,8 @@ export function SpraySetupOverlay({
   panY,
 }: {
   holes: TnutPoint[];
+  /** Draw holes small and faded so the LEDs stay readable (LED and cable editors). */
+  compactHoles?: boolean;
   leds?: LedPosition[];
   wiring?: TnutWiring;
   selected?: string[];
@@ -101,7 +116,7 @@ export function SpraySetupOverlay({
   panY: SharedValue<number>;
 }) {
   const { brandColors } = useTheme();
-  const { edges, gapEdges, selectedLeds } = useMemo(() => {
+  const { edges, gapEdges, selectedLeds, cableStarts } = useMemo(() => {
     const byId = new Map(leds.map((point) => [point.id, point]));
     const skips = new Map<string, number>();
     for (const skip of wiring?.skips ?? []) {
@@ -109,20 +124,25 @@ export function SpraySetupOverlay({
       skips.set(JSON.stringify([skip.to, skip.from]), skip.count);
     }
     const edges: Edge[] = [],
-      gapEdges: Edge[] = [];
-    for (const path of wiring?.paths ?? [])
+      gapEdges: Edge[] = [],
+      cableStarts: TnutPoint[] = [];
+    for (const path of wiring?.paths ?? []) {
+      const start = byId.get(path[0]);
+      if (start) cableStarts.push(start);
       for (let index = 1; index < path.length; index++) {
         const from = byId.get(path[index - 1]),
           to = byId.get(path[index]);
         if (!from || !to) continue;
-        const edge = { from, to, skip: skips.get(JSON.stringify([from.id, to.id])) ?? 0 };
+        const edge = { from, to, skip: skips.get(JSON.stringify([from.id, to.id])) ?? 0, first: index === 1 };
         edges.push(edge);
         if (edge.skip > 0) gapEdges.push(edge);
       }
+    }
     const selection = new Set(selected);
-    return { edges, gapEdges, selectedLeds: leds.filter((point) => selection.has(point.id)) };
+    return { edges, gapEdges, cableStarts, selectedLeds: leds.filter((point) => selection.has(point.id)) };
   }, [leds, wiring, selected]);
-  const holeRadius = wiring ? 3 : 7;
+  const smallHoles = Boolean(wiring) || compactHoles;
+  const holeRadius = smallHoles ? 3 : 7;
   const selectedRings = useMemo(() => {
     const selection = new Set(selectedHoldIds);
     return holdRings?.filter((ring) => selection.has(ring.id)) ?? [];
@@ -165,21 +185,28 @@ export function SpraySetupOverlay({
   const arrowProps = useAnimatedProps(() => {
     let path = '';
     for (const edge of edges) {
-      if (edge.skip) continue;
+      if (edge.skip || edge.first) continue;
       const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
         to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
-      const dx = to.x - from.x,
-        dy = to.y - from.y,
-        length = Math.hypot(dx, dy);
-      if (length < 12 || !visibleEdge(from, to, width, height)) continue;
-      const x = from.x + dx * 0.6,
-        y = from.y + dy * 0.6,
-        ux = dx / length,
-        uy = dy / length;
-      path += `M${x - ux * 5 - uy * 3} ${y - uy * 5 + ux * 3}L${x} ${y}L${x - ux * 5 + uy * 3} ${y - uy * 5 - ux * 3}`;
+      if (visibleEdge(from, to, width, height)) path += arrowHead(from, to, 5, 3);
     }
     return { d: path };
   });
+  // The first LED of each cable run gets a green ring and a larger green arrow,
+  // so the climber can see where the data line enters the strip.
+  const startArrowProps = useAnimatedProps(() => {
+    let path = '';
+    for (const edge of edges) {
+      if (edge.skip || !edge.first) continue;
+      const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
+        to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
+      if (visibleEdge(from, to, width, height)) path += arrowHead(from, to, 8, 5);
+    }
+    return { d: path };
+  });
+  const startRingProps = useAnimatedProps(() => ({
+    d: circles(cableStarts, width, height, zoom.value, panX.value, panY.value, 8),
+  }));
   const gapProps = useAnimatedProps(() => {
     let path = '',
       rendered = 0;
@@ -215,8 +242,8 @@ export function SpraySetupOverlay({
         animatedProps={holeProps}
         fill="none"
         stroke={brandColors.warning}
-        strokeWidth={wiring ? 1 : 1.5}
-        opacity={wiring ? 0.45 : 1}
+        strokeWidth={smallHoles ? 1 : 1.5}
+        opacity={smallHoles ? 0.45 : 1}
       />
       <AnimatedPath
         animatedProps={ledProps}
@@ -224,6 +251,12 @@ export function SpraySetupOverlay({
         stroke={brandColors.onPrimary}
         strokeWidth={1.8}
       />
+      {cableStarts.length ? (
+        <>
+          <AnimatedPath animatedProps={startRingProps} fill="none" stroke={brandColors.success} strokeWidth={2.5} />
+          <AnimatedPath animatedProps={startArrowProps} fill="none" stroke={brandColors.success} strokeWidth={2.5} />
+        </>
+      ) : null}
       <AnimatedPath animatedProps={selectedProps} fill="none" stroke={brandColors.primary} strokeWidth={2.5} />
       {holdRings ? (
         <>

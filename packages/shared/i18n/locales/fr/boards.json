@@ -1501,7 +1501,7 @@
     "initialSkipLabel": "LED à sauter au début du câble",
     "skipCountRange": "Saisis un nombre entier de 0 à {{max}}.",
     "cancelSkip": "Annuler",
-    "wiringLegend": "Orange : trous de fixation. Violet : LED. Turquoise : câble. Rouge : LED sautées.",
+    "wiringLegend": "Orange : trous de fixation. Violet : LED. Turquoise : câble. Vert : début de chaque câble. Rouge : LED sautées.",
     "lightingTitle": "Tester les LED",
     "lightingHint": "Allume toutes les LED ou lance un test rapide rangée par rangée depuis le coin supérieur gauche. Chaque rangée commence à gauche.",
     "selectionKind": "Type de sélection",

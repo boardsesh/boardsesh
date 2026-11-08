@@ -1501,7 +1501,7 @@
     "initialSkipLabel": "LED da saltare all’inizio del cavo",
     "skipCountRange": "Inserisci un numero intero da 0 a {{max}}.",
     "cancelSkip": "Annulla",
-    "wiringLegend": "Arancione: fori. Viola: LED. Turchese: cavo. Rosso: LED saltati.",
+    "wiringLegend": "Arancione: fori. Viola: LED. Turchese: cavo. Verde: inizio di ogni cavo. Rosso: LED saltati.",
     "lightingTitle": "Prova i LED",
     "lightingHint": "Accendi tutti i LED o avvia una prova rapida per righe dall’angolo in alto a sinistra. Ogni riga inizia da sinistra.",
     "selectionKind": "Tipo di selezione",

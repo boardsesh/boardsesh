@@ -1501,7 +1501,7 @@
     "initialSkipLabel": "LEDs to skip at the cable start",
     "skipCountRange": "Enter a whole number from 0 to {{max}}.",
     "cancelSkip": "Cancel",
-    "wiringLegend": "Orange: mounting holes. Purple: LEDs. Turquoise: cable. Red: skipped LEDs.",
+    "wiringLegend": "Orange: mounting holes. Purple: LEDs. Turquoise: cable. Green: where each cable starts. Red: skipped LEDs.",
     "lightingTitle": "Test LEDs",
     "lightingHint": "Light all LEDs or run a quick test row by row from the top left. Each row starts on the left.",
     "selectionKind": "Selection type",

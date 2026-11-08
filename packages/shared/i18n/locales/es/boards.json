@@ -1501,7 +1501,7 @@
     "initialSkipLabel": "LED que omitir al inicio del cable",
     "skipCountRange": "Introduce un número entero de 0 a {{max}}.",
     "cancelSkip": "Cancelar",
-    "wiringLegend": "Naranja: orificios. Morado: LED. Turquesa: cable. Rojo: LED omitidos.",
+    "wiringLegend": "Naranja: orificios. Morado: LED. Turquesa: cable. Verde: inicio de cada cable. Rojo: LED omitidos.",
     "lightingTitle": "Probar los LED",
     "lightingHint": "Enciende todos los LED o inicia una prueba rápida por filas desde arriba a la izquierda. Cada fila empieza por la izquierda.",
     "selectionKind": "Tipo de selección",

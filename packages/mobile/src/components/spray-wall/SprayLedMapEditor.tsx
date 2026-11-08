@@ -131,6 +131,7 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
             <SpraySetupOverlay
               holes={layout.holes}
               leds={leds}
+              compactHoles
               width={renderWidth}
               height={renderHeight}
               zoom={zoom}

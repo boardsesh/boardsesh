@@ -1501,7 +1501,7 @@
     "initialSkipLabel": "LEDs am Kabelanfang überspringen",
     "skipCountRange": "Gib eine ganze Zahl von 0 bis {{max}} ein.",
     "cancelSkip": "Abbrechen",
-    "wiringLegend": "Orange: Bohrlöcher. Lila: LEDs. Türkis: Kabel. Rot: übersprungene LEDs.",
+    "wiringLegend": "Orange: Bohrlöcher. Lila: LEDs. Türkis: Kabel. Grün: Anfang jedes Kabels. Rot: übersprungene LEDs.",
     "lightingTitle": "LEDs testen",
     "lightingHint": "Beleuchte alle LEDs oder starte ein schnelles Lauflicht ab oben links. Es läuft zeilenweise. Jede Zeile beginnt links.",
     "selectionKind": "Auswahltyp",
