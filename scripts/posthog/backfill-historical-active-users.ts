@@ -5,15 +5,33 @@
  * the shared analytics flush helper logs delivery errors without throwing.
  */
 import process from 'node:process';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { closePool, closeReadPool } from '../../packages/db/src/client';
-import {
-  computeHistoricalActiveUsersSnapshots,
-  publishHistoricalActiveUsersSnapshots,
-} from '../../packages/backend/src/services/historical-active-users';
-import { shutdownPosthog } from '../../packages/backend/src/services/analytics/posthog';
+
+type HistoricalSnapshotBatch = readonly Record<string, string | number>[];
+
+type HistoricalActiveUsersModule = {
+  computeHistoricalActiveUsersSnapshots: () => Promise<HistoricalSnapshotBatch>;
+  publishHistoricalActiveUsersSnapshots: (snapshots: HistoricalSnapshotBatch) => Promise<void>;
+};
 
 async function main(): Promise<void> {
+  // Runtime value paths keep the backend's web/Next global types out of the
+  // root scripts typecheck. The backend typecheck owns the implementation.
+  const repositoryRoot = resolve(__dirname, '../..');
+  const { closePool, closeReadPool } = (await import(resolve(repositoryRoot, 'packages/db/src/client/index.ts'))) as {
+    closePool: () => Promise<void>;
+    closeReadPool: () => Promise<void>;
+  };
+  const { computeHistoricalActiveUsersSnapshots, publishHistoricalActiveUsersSnapshots } = (await import(
+    resolve(repositoryRoot, 'packages/backend/src/services/historical-active-users.ts')
+  )) as HistoricalActiveUsersModule;
+  const { shutdownPosthog } = (await import(
+    resolve(repositoryRoot, 'packages/backend/src/services/analytics/posthog.ts')
+  )) as {
+    shutdownPosthog: () => Promise<void>;
+  };
+
   try {
     const { values } = parseArgs({ options: { apply: { type: 'boolean', default: false } }, allowPositionals: false });
     const snapshots = await computeHistoricalActiveUsersSnapshots();
