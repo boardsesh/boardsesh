@@ -27,7 +27,7 @@ import { isLiveTabBadge } from './tab-badge';
  * bar.
  */
 export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, insets }: BottomTabBarProps) {
-  const { systemColors, brandColors, m3 } = useTheme();
+  const { systemColors, colorScheme, m3 } = useTheme();
   // M3 navigation bar roles: the focused destination's icon sits on a
   // secondaryContainer active-indicator pill (onSecondaryContainer glyph), its
   // label takes secondary (M3 ItemActiveLabelTextColor), and inactive destinations use onSurfaceVariant for
@@ -54,6 +54,7 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
   // bar instead of running under its labels. Everywhere else it sits in flow,
   // opaque, as before.
   const { jsBarOverlaysContent: overlay } = useBottomChromeMetrics();
+  const overlaySurfaceAlpha = material.navBar.overlaySurfaceAlpha[colorScheme];
   const hidden = useTabBarHidden() && overlay;
   const barHeight = MATERIAL_TAB_BAR_HEIGHT + insets.bottom;
   const slideStyle = useAnimatedStyle(() => ({
@@ -69,7 +70,7 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
       style={[
         styles.bar,
         overlay
-          ? [styles.overlayBar, { backgroundColor: withAlpha(m3.surface, OVERLAY_SURFACE_ALPHA) }]
+          ? [styles.overlayBar, { backgroundColor: withAlpha(m3.surface, overlaySurfaceAlpha) }]
           : {
               backgroundColor: systemColors.elevatedSurface,
               borderTopColor: systemColors.separator,
@@ -83,7 +84,7 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
         <LinearGradient
           testID="tab-bar-fade"
           pointerEvents="none"
-          colors={[withAlpha(m3.surface, 0), withAlpha(m3.surface, OVERLAY_SURFACE_ALPHA)]}
+          colors={[withAlpha(m3.surface, 0), withAlpha(m3.surface, overlaySurfaceAlpha)]}
           style={styles.overlayFade}
         />
       ) : null}
@@ -116,7 +117,8 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
             onPress={onPress}
             onLongPress={onLongPress}
             feedback="none"
-            rippleColor={brandColors.primary}
+            // No rippleColor: PressableSurface takes the theme's neutral
+            // onSurface ripple, a grey state layer on the grey bar.
             rippleBorderless
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
@@ -167,9 +169,10 @@ export function MaterialTabBar({ state, descriptors, emitter, navigateToTab, ins
   );
 }
 
-// How opaque the overlay bar's surface is: content stays faintly visible behind
-// the icons and labels but never legible. Tune here; the fade above ends on it.
-const OVERLAY_SURFACE_ALPHA = 0.85;
+// How opaque the overlay bar's surface is lives in `material.navBar.overlaySurfaceAlpha`
+// (per scheme): content stays faintly visible behind the icons and labels but never
+// legible, and the active label clears 4.5:1 over white or black content. The fade
+// above ends on it.
 // The soft edge above the overlay bar: clear at the top, the bar's own fill
 // where it meets the bar, so content fades out before it reaches the labels.
 const OVERLAY_FADE_HEIGHT = 24;

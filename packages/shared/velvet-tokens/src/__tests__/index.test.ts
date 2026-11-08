@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { brandColors, brandColorsDark, materialSurfaces, withAlpha, blendOpaque } from '../index';
+import { brandColors, brandColorsDark, marketingSurfaces, materialSurfaces, withAlpha, blendOpaque } from '../index';
 
 describe('brand palette anchors', () => {
   it('holds the load-bearing Velvet values per scheme', () => {
@@ -21,11 +21,42 @@ describe('brand palette anchors', () => {
     expect(brandColorsDark.accent).toBe(brandColors.accent);
   });
 
-  it('exposes the surface anchors web reads', () => {
-    expect(materialSurfaces.light.background).toBe('#F3EFFA');
-    expect(materialSurfaces.dark.background).toBe('#15101E');
-    expect(materialSurfaces.light.label).toBe('#16111F');
-    expect(materialSurfaces.dark.label).toBe('#F5F2FB');
+  it('holds the neutral Graphite surface anchors the app reads', () => {
+    expect(materialSurfaces.light.background).toBe('#F2F2F2');
+    expect(materialSurfaces.dark.background).toBe('#0E0E0E');
+    expect(materialSurfaces.dark.secondaryBackground).toBe('#1E1E1E');
+    expect(materialSurfaces.light.label).toBe('#1A1A1A');
+    expect(materialSurfaces.dark.label).toBe('#EDEDED');
+    // The accent is the one violet the surface set keeps.
+    expect(materialSurfaces.light.accent).toBe(brandColors.primary);
+    expect(materialSurfaces.dark.accent).toBe(brandColorsDark.primary);
+  });
+
+  it('keeps every opaque Material surface and label a pure grey', () => {
+    for (const scheme of ['light', 'dark'] as const) {
+      for (const [role, color] of Object.entries(materialSurfaces[scheme])) {
+        if (role === 'accent' || !color.startsWith('#')) continue;
+        const red = color.slice(1, 3);
+        expect({ role, green: color.slice(3, 5), blue: color.slice(5, 7) }).toEqual({ role, green: red, blue: red });
+      }
+    }
+  });
+});
+
+describe('marketingSurfaces', () => {
+  it('freezes the violet surfaces the marketing videos were cut against', () => {
+    expect(marketingSurfaces.light.background).toBe('#F3EFFA');
+    expect(marketingSurfaces.dark.background).toBe('#15101E');
+    expect(marketingSurfaces.dark.secondaryBackground).toBe('#221A33');
+    expect(marketingSurfaces.light.label).toBe('#16111F');
+    expect(marketingSurfaces.dark.label).toBe('#F5F2FB');
+    expect(marketingSurfaces.dark.secondaryLabel).toBe('#A9A2B6');
+    expect(marketingSurfaces.dark.accent).toBe('#A78BFA');
+  });
+
+  it('carries the same roles as the app surfaces, so a render script can swap one for the other', () => {
+    expect(Object.keys(marketingSurfaces.light).sort()).toEqual(Object.keys(materialSurfaces.light).sort());
+    expect(Object.keys(marketingSurfaces.dark).sort()).toEqual(Object.keys(materialSurfaces.dark).sort());
   });
 });
 

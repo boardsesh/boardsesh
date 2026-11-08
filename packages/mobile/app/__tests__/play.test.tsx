@@ -184,9 +184,14 @@ vi.mock('../../src/providers/queue-provider', () => ({
   useQueueSessionControls: () => ({}),
 }));
 vi.mock('../../src/providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryBackground: '#fff' }, colorScheme: 'light' }),
+  useTheme: () => ({ systemColors: { secondaryBackground: '#fff' }, colorScheme: 'light', variant: 'material' }),
 }));
-vi.mock('../../src/theme/colors', () => ({ playDrawerMaterialTint: { light: 'transparent', dark: 'transparent' } }));
+vi.mock('../../src/theme/colors', () => ({
+  playDrawerMaterialTint: {
+    material: { light: 'transparent', dark: 'transparent' },
+    liquidGlass: { light: 'transparent', dark: 'transparent' },
+  },
+}));
 vi.mock('../../src/components/create-climb/use-player-dismiss-and-wait', () => ({
   usePlayerDismissAndWait: () => player.nativeWait,
 }));

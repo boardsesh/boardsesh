@@ -32,7 +32,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' }, colorScheme: theme.colorScheme }),
 }));
 vi.mock('../../../theme/colors', () => ({
-  materialSurfaces: { light: { secondaryLabel: '#5B5563' }, dark: { secondaryLabel: '#A9A2B6' } },
+  materialSurfaces: { light: { secondaryLabel: '#5A5A5A' }, dark: { secondaryLabel: '#B0B0B0' } },
 }));
 // The iOS viewer's title, recorded so the test can read what it would show.
 vi.mock('../../LargeContentViewer', () => ({
@@ -212,10 +212,10 @@ describe('PlayListContext', () => {
   });
 
   // iOS's translucent secondaryLabel is 3.44:1 on a white sheet; Velvet's
-  // opaque one clears 6:1 on every ground (wall-control-button-contrast.test.ts).
+  // opaque one clears AA on every ground (wall-control-button-contrast.test.ts).
   it.each([
-    ['light', '#5B5563'],
-    ['dark', '#A9A2B6'],
+    ['light', '#5A5A5A'],
+    ['dark', '#B0B0B0'],
   ] as const)('draws the caption in Velvet secondary label in %s', (scheme, color) => {
     theme.colorScheme = scheme;
     const { container } = render(createElement(PlayListContext, { parts: null, caption: 'Preview · not on the wall' }));

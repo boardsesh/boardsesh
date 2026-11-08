@@ -220,9 +220,11 @@ describe('ThemeProvider', () => {
       await waitFor(() => expect(getMock).toHaveBeenCalledWith(UI_VARIANT_KEY));
       expect(result.current.uiVariantPreference).toBe('auto');
       expect(result.current.variant).toBe('material');
-      // Material maps M3 tonal surfaces + the 20dp button radius.
+      // Material maps the neutral Graphite surfaces + the 20dp button radius.
       expect(result.current.radii.button).toBe(20);
-      expect(result.current.systemColors.background).toBe('#F3EFFA');
+      expect(result.current.systemColors.background).toBe('#F2F2F2');
+      // Material's large-shape fill is neutral, not the violet Liquid Glass wash.
+      expect(result.current.systemColors.tertiaryFill).toBe('rgba(0, 0, 0, 0.04)');
     });
 
     it("defaults to the Liquid Glass variant on iPhone ('auto' → liquidGlass), incl. iOS < 26", async () => {
@@ -251,6 +253,8 @@ describe('ThemeProvider', () => {
       // surface — not the Material tonal map.
       expect(result.current.radii.button).toBe(10);
       expect(result.current.systemColors.background).toBe('#F4F1FB');
+      // Liquid Glass off iOS keeps its violet tertiary fill.
+      expect(result.current.systemColors.tertiaryFill).toBe('rgba(109, 40, 217, 0.06)');
       expect(setMock).toHaveBeenCalledWith(UI_VARIANT_KEY, 'liquidGlass');
     });
 

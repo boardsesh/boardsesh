@@ -54,7 +54,7 @@ import {
   readableTextColor,
   type HoldStateInfo,
 } from '@boardsesh/board-constants';
-import { brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
+import { brandColors, brandColorsDark, marketingSurfaces } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '../app/theme/theme-config';
 import {
   showcaseVariantWorkDirs,
@@ -486,12 +486,12 @@ function writeTokens(): void {
   const tokens: Record<string, string> = {
     'stage-dark': themeTokens.semantic.background,
     'stage-light': '#F4F1FB',
-    'ink-dark': materialSurfaces.dark.label,
-    'ink-light': materialSurfaces.light.label,
-    'sub-dark': materialSurfaces.dark.secondaryLabel,
-    'sub-light': materialSurfaces.light.secondaryLabel,
-    'accent-dark': materialSurfaces.dark.accent,
-    'accent-light': materialSurfaces.light.accent,
+    'ink-dark': marketingSurfaces.dark.label,
+    'ink-light': marketingSurfaces.light.label,
+    'sub-dark': marketingSurfaces.dark.secondaryLabel,
+    'sub-light': marketingSurfaces.light.secondaryLabel,
+    'accent-dark': marketingSurfaces.dark.accent,
+    'accent-light': marketingSurfaces.light.accent,
     amber: brandColors.accent,
     'glow-dark': brandColorsDark.primaryFill,
     'role-start': roleColor('STARTING', '#00FF00'),

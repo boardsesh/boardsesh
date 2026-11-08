@@ -88,38 +88,85 @@ export const brandColorsDark = {
 } as const;
 
 /**
- * Material 3 tonal surfaces for the Material UI variant (the React Native app), keyed
- * by color scheme. Neutrals are tinted toward the violet brand (#6D28D9) so every
- * surface reads as the same product rather than a generic theme. Labels use opaque
- * values so text contrast clears WCAG AA.
+ * Material 3 surfaces for the Material UI variant of the React Native app (Android,
+ * the Expo browser app, and a legacy saved choice on iOS), keyed by colour scheme.
+ *
+ * "Graphite": every neutral here is pure grey (R = G = B, chroma 0). Violet is kept
+ * for action and state only: `accent`, the brand fills, and the opaque M3 tonal
+ * containers the app builds on top of these anchors. Labels are opaque so text
+ * contrast clears WCAG AA; `material-theme-contrast.test.ts` in the mobile app pins
+ * every pairing.
+ *
+ * Contrast (WCAG): dark label #EDEDED 16.5:1 on the #0E0E0E page and 14.2:1 on the
+ * #1E1E1E card; secondary #B0B0B0 6.2:1 or more on every container step; tertiary
+ * #8F8F8F 5.15:1 on the card, so it stays off the two highest container steps.
+ * Light label #1A1A1A 12.3:1 or more; secondary #5A5A5A 4.89:1 or more; tertiary
+ * #686868 4.98:1 on the #F2F2F2 page, so it stays on page, card, lowest and low.
  *
  * Web shares only the BRAND colours from this package (`brandColors`/`brandColorsDark`
- * — see `theme-config.ts`). The web SURFACE ladder is intentionally NOT these anchors:
- * web hand-tunes a richer, more-violet page → card → elevated ladder in
- * `packages/web/app/theme/theme-config.ts` (light #E8DDF6 / #FAF6FE / #FFFFFF, dark
- * #110A20 / #251B3A / #2F234A) so the velvet permeates cards and greys rather than
- * reading as white + neutral grey. That divergence is deliberate and guarded by
- * `velvet-tokens-parity.test.ts`; changing either side is a conscious design decision.
+ * — see `theme-config.ts`). The web SURFACE ladder is deliberately NOT these anchors:
+ * www keeps its own hand-tuned violet page → card → elevated ladder in
+ * `packages/web/app/theme/theme-config.ts` (dark #110A20 / #251B3A / #2F234A), so the
+ * marketing site stays velvet while the app goes neutral. That divergence is guarded
+ * by `velvet-tokens-parity.test.ts`; changing either side is a conscious decision.
  */
 export const materialSurfaces = {
   light: {
-    // M3 base surface — violet-tinted so cards/elevation read against it.
+    // Page ground: the lowest neutral, so white cards read against it.
+    background: '#F2F2F2',
+    // Cards and sheets sit a step up from the page.
+    secondaryBackground: '#FFFFFF',
+    tertiaryBackground: '#FFFFFF',
+    groupedBackground: '#F2F2F2',
+    // Raised tile (selected segmented pill, elevated bar).
+    elevatedSurface: '#FFFFFF',
+    label: '#1A1A1A',
+    // #5A5A5A, not #5C5C5C: it keeps 6:1 on the #F2F2F2 page and the iOS #F2F2F7
+    // sheet, the margin the play drawer's status lines are held to.
+    secondaryLabel: '#5A5A5A',
+    // 4.98:1 on the page, 4.63:1 on containers.low. Not on base or above.
+    tertiaryLabel: '#686868',
+    // M3 outline-variant.
+    separator: 'rgba(0, 0, 0, 0.12)',
+    // Neutral track for segmented controls and small fills.
+    fill: 'rgba(0, 0, 0, 0.08)',
+    // Interactive-accent foreground: brand violet, lifted in dark.
+    accent: '#6D28D9',
+  },
+  dark: {
+    background: '#0E0E0E',
+    secondaryBackground: '#1E1E1E',
+    tertiaryBackground: '#262626',
+    groupedBackground: '#0E0E0E',
+    elevatedSurface: '#262626',
+    label: '#EDEDED',
+    secondaryLabel: '#B0B0B0',
+    // 5.15:1 on the card, 4.68:1 on containers.high. Not on level4 or highest.
+    tertiaryLabel: '#8F8F8F',
+    separator: 'rgba(255, 255, 255, 0.12)',
+    fill: 'rgba(255, 255, 255, 0.10)',
+    accent: '#A78BFA',
+  },
+} as const;
+
+/**
+ * The violet-tinted Material surfaces the app shipped before "Graphite", frozen for
+ * the marketing renders (showcase, instructional and spray videos) so already-cut
+ * footage and the frames drawn around it keep matching. Do not use in the app, and
+ * do not retune: re-shoot the videos and move them to `materialSurfaces` instead.
+ */
+export const marketingSurfaces = {
+  light: {
     background: '#F3EFFA',
-    // Cards and sheets sit a step up from the base (surface container low).
     secondaryBackground: '#FFFFFF',
     tertiaryBackground: '#FFFFFF',
     groupedBackground: '#F3EFFA',
-    // Raised tile (selected segmented pill, elevated bar) — surface + elevation.
     elevatedSurface: '#FFFFFF',
     label: '#16111F',
     secondaryLabel: '#5B5563',
     tertiaryLabel: '#8E8898',
-    // M3 outline-variant.
     separator: 'rgba(60, 55, 75, 0.18)',
-    // Faint violet track for segmented controls / fills (bumped to 0.14 so selected
-    // pills read on white).
     fill: 'rgba(109, 40, 217, 0.14)',
-    // Interactive-accent foreground — brand violet, lifted in dark.
     accent: '#6D28D9',
   },
   dark: {
@@ -208,4 +255,5 @@ export function blendOpaque(foreground: string, background: string, alpha: numbe
 
 export type BrandColors = typeof brandColors;
 export type MaterialSurfaces = typeof materialSurfaces;
+export type MarketingSurfaces = typeof marketingSurfaces;
 export type MaterialSurfaceKey = keyof typeof materialSurfaces.light;

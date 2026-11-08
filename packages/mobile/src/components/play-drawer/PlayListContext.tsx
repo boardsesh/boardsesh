@@ -232,8 +232,8 @@ export const PlayListContext = memo(function PlayListContext({
           <Text
             variant="caption2"
             // Velvet's opaque secondary label on both variants (B1): iOS's
-            // translucent secondaryLabel measures 3.44:1 on a white sheet, this
-            // one at least 6.1:1 on every Glass and Material ground.
+            // translucent secondaryLabel measures 3.44:1 on a white sheet; this
+            // opaque grey clears 4.5:1 on every Glass and Material ground.
             color={materialSurfaces[colorScheme].secondaryLabel}
             numberOfLines={1}
             {...captionText}

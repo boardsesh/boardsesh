@@ -8,6 +8,7 @@ const ctrl = vi.hoisted(() => ({
   // The Android phone bar over a tab root (hide-on-scroll), and whether it is hidden.
   overlay: false,
   hidden: false,
+  colorScheme: 'dark' as 'light' | 'dark',
 }));
 
 // Shared with the theme-provider mock below, so the assertion can't drift from it.
@@ -132,10 +133,11 @@ vi.mock('../../../providers/theme-provider', () => ({
       separator: '#3A3A3C',
       secondaryLabel: '#8E8E93',
     },
-    // Scheme-aware brand from the theme — MaterialTabBar uses it for the press
-    // ripple. Seeded with the DARK-scheme values so the badge assertions below
+    // Seeded with the DARK-scheme brand values so the badge assertions below
     // prove the dot fill comes from the static (light) brand instead.
     brandColors: { primary: '#A78BFA', success: '#34D399', live: '#FBBF24' },
+    // Picks the overlay bar's alpha.
+    colorScheme: ctrl.colorScheme,
     // M3 navigation-bar roles: active icon on a secondaryContainer pill, active
     // label secondary, inactive icon+label onSurfaceVariant.
     m3: {
@@ -159,6 +161,7 @@ vi.mock('../../../theme/tokens', () => ({
   material: {
     navBar: {
       surfaceElevation: 2,
+      overlaySurfaceAlpha: { light: 0.85, dark: 0.92 },
       activeIndicatorWidth: 56,
       activeIndicatorHeight: 32,
       activeIndicatorRadius: 16,
@@ -230,6 +233,7 @@ beforeEach(() => {
   ctrl.os = 'ios';
   ctrl.overlay = false;
   ctrl.hidden = false;
+  ctrl.colorScheme = 'dark';
 });
 
 describe('MaterialTabBar', () => {
@@ -474,15 +478,24 @@ describe('MaterialTabBar', () => {
       const style = barOf(container).getAttribute('data-style') ?? '';
       expect(style).toContain('"position":"absolute"');
       expect(style).toContain('"borderTopWidth":0');
-      expect(style).toContain('"backgroundColor":"#141218@0.85"');
+      // Dark covers more (0.92) so the violet active label clears 4.5:1 over white content.
+      expect(style).toContain('"backgroundColor":"#141218@0.92"');
       expect(style).not.toContain('#2C2C2E');
+    });
+
+    it('keeps the lighter 0.85 overlay surface in light mode', () => {
+      ctrl.overlay = true;
+      ctrl.colorScheme = 'light';
+      const { container, getByTestId } = renderBar();
+      expect(barOf(container).getAttribute('data-style') ?? '').toContain('"backgroundColor":"#141218@0.85"');
+      expect(getByTestId('fade').getAttribute('data-colors')).toBe(JSON.stringify(['#141218@0', '#141218@0.85']));
     });
 
     it('fades 24dp above its top edge into the surface, without taking touches', () => {
       ctrl.overlay = true;
       const { getByTestId } = renderBar();
       const fade = getByTestId('fade');
-      expect(fade.getAttribute('data-colors')).toBe(JSON.stringify(['#141218@0', '#141218@0.85']));
+      expect(fade.getAttribute('data-colors')).toBe(JSON.stringify(['#141218@0', '#141218@0.92']));
       expect(fade.getAttribute('data-pointer-events')).toBe('none');
       const fadeStyle = fade.getAttribute('data-style') ?? '';
       expect(fadeStyle).toContain('"top":-24');

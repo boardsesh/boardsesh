@@ -22,6 +22,7 @@ import {
 import { iosDarkColors, iosLightColors } from '../theme/ios-colors';
 import { textStylesByVariant, type TextVariant, type TypeStyle } from '../theme/typography';
 import { buildPaperTheme } from '../theme/paper-theme';
+import { NeutralRippleInkContext } from '../theme/neutral-ripple-context';
 import type { MD3Theme } from 'react-native-paper';
 import {
   spacing,
@@ -153,7 +154,7 @@ type Theme = {
   /**
    * MD3 colour roles (the full Paper palette: primaryContainer, secondaryContainer,
    * tertiaryContainer, onSurfaceVariant, outlineVariant, and the `elevation`
-   * level0–5 surface-tint ladder) for the current colour scheme. Only meaningful
+   * level0–5 Graphite container ladder) for the current colour scheme. Only meaningful
    * on the Material variant — Material-branch app components read these so they
    * match the Paper components without re-deriving roles; Liquid Glass never reads
    * it. Note: react-native-paper 5.15 predates MD3's `surfaceContainer*` tone
@@ -161,7 +162,7 @@ type Theme = {
    */
   m3: MD3Theme['colors'];
   /**
-   * M3 tonal surface-container ramp ({lowest,low,base,high,highest}) for the
+   * M3 tonal surface-container ramp ({lowest,low,base,high,level4,highest}) for the
    * current colour scheme. Material surfaces read a role here to express depth by
    * TONE (the canonical M3 mechanism); pair with `materialElevation` for the cast.
    * Only meaningful on Material — Liquid Glass never reads it.
@@ -248,7 +249,7 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
         secondaryGroupedBackground: materialSurfaces[colorScheme].secondaryBackground,
         tertiaryGroupedBackground: tertiaryGroupedBackgroundFallback(materialSurfaces[colorScheme], colorScheme),
         error: brand.error,
-        tertiaryFill: tertiaryFillFallback[colorScheme],
+        tertiaryFill: tertiaryFillFallback[variant][colorScheme],
       };
     case 'liquidGlass': {
       if (Platform.OS === 'ios' && iosSystemColors) {
@@ -284,7 +285,7 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
         fill: fallback.fill,
         accent: fallback.accent,
         error: brand.error,
-        tertiaryFill: tertiaryFillFallback[colorScheme],
+        tertiaryFill: tertiaryFillFallback[variant][colorScheme],
       };
     }
     // A new UiVariant must declare how its system colours resolve.
@@ -477,10 +478,16 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }
   }, [colorScheme, theme.systemColors.background]);
 
+  // Material ripples are a grey onSurface state layer on the Graphite surfaces;
+  // Liquid Glass keeps the legacy brand ripple (null).
+  const neutralRippleInk = variant === 'material' ? m3Colors.onSurface : null;
+
   // React 19 context provider syntax (Expo SDK 53+ / React 19)
   return (
     <ThemeContext value={theme}>
-      <ColorSchemeContext value={colorScheme}>{children}</ColorSchemeContext>
+      <ColorSchemeContext value={colorScheme}>
+        <NeutralRippleInkContext value={neutralRippleInk}>{children}</NeutralRippleInkContext>
+      </ColorSchemeContext>
     </ThemeContext>
   );
 }

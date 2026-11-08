@@ -77,10 +77,10 @@ export function AccessoryBarSurface({
     // M3 bottom-bar surface: the `surfaceContainer` tone + a level-2 cast (the
     // canonical nav/bottom-bar role), lifted as a pill or a card. No clip on
     // this View, so the cast shows.
-    // When you hold control, step the cast to level-3 and composite the violet
-    // `secondaryContainer` tone OVER the opaque base (this codebase maps that role
-    // to a low-alpha violet meant to layer, so painting it as the sole background
-    // would let the list bleed through). M3 expresses "active" through tone +
+    // When you hold control, step the cast to level-3 and lay the violet
+    // `secondaryContainer` tone over the base. That role is opaque now, so it
+    // simply covers the grey base; the base stays underneath so the bar's shape
+    // and cast never depend on the overlay. M3 expresses "active" through tone +
     // elevation, not a drop-shadow glow.
     const surfaceElevation = connected ? materialElevation.level3 : materialElevation.level2;
     const materialSurfaceStyle: ViewStyle = { backgroundColor: m3SurfaceContainers.base, ...surfaceElevation };

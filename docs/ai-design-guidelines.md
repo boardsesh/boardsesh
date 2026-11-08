@@ -48,9 +48,12 @@ The whole app renders in one resolved `variant`:
 | Variant       | When                                                  | Look                                                                                     |
 | ------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `liquidGlass` | Every iPhone by default; opt-in on Android            | Apple Liquid Glass — floating glass capsules, soft corners, HIG type, reanimated springs |
-| `material`    | Android by default; explicit user choice any platform | Material 3 — elevation, ripple, nav active-indicator pill, M3 type and corners           |
+| `material`    | Android and the Expo browser app by default; on iOS only a legacy saved choice or the dev stories harness | Material 3 — elevation, ripple, nav active-indicator pill, M3 type and corners           |
 
 The user's stored preference is `UiVariantPreference` = `'auto' | 'liquidGlass' | 'material'`.
+There is no in-app picker: it was removed on 2026-06-28 (6af5f43df1). A value saved before then
+still resolves, and the dev stories harness (`dev/stories/use-story-appearance.ts`) is the only
+remaining `setUiVariant` caller.
 `'auto'` resolves against the **platform**, not glass capability — Liquid Glass on every iPhone
 (including iOS < 26), Material on Android:
 
@@ -89,8 +92,9 @@ older iPhone is the variant with the chrome degraded, not Material.
     create button, the Start button, snackbars and toasts move with it on one shared value
     (`tabBarHiddenProgress`, `TabBarHideFollower`); `bottom` never animates. The bottom-chrome
     metrics describe the shown bar, as on iOS. Kill switch: `tab-bar-hide-on-scroll-kill`.
-  - **Fades in where it overlays** (Spotify's bar): on those tab roots the bar is 85% `m3.surface`
-    behind the icons, labels and gesture inset (`OVERLAY_SURFACE_ALPHA`), so content is faint there
+  - **Fades in where it overlays** (Spotify's bar): on those tab roots the bar is `m3.surface` at 92% in dark
+    and 85% in light behind the icons, labels and gesture inset (`material.navBar.overlaySurfaceAlpha`),
+    so content is faint there
     and never legible. A 24dp fade above its top edge runs from clear to that same fill, so content dissolves into the
     bar; it takes no touches and slides away with the bar. No blur, no top hairline, no shadow. The
     in-flow bar on sub-routes stays opaque, and the MiniPlayer card is always opaque and draws over
@@ -209,7 +213,9 @@ value, plain text button) use the `primary` tint (`brandControlTint`); `primaryF
   `systemFill`, `link`, …). These adapt to light/dark and accessibility settings natively — no app
   code needed.
 - **Android (Liquid Glass fallback)** → `androidFallbackColors[light|dark]` (violet-tinted hexes).
-- **Any platform + Material** → `materialSurfaces[light|dark]` (M3 tonal surfaces, violet-tinted).
+  iOS Liquid Glass also reads these as plain strings (`chartColors`, `sheetSurface`), so they stay.
+- **Any platform + Material** → `materialSurfaces[light|dark]` ("Graphite": pure greys, violet only
+  on action and state — see below).
 
 The resolved set always has the same keys. Representative values (Android fallback / Material tonal,
 which are the explicit hexes — iOS uses `PlatformColor` for the same roles):
@@ -230,12 +236,65 @@ which are the explicit hexes — iOS uses `PlatformColor` for the same roles):
 | `error`               | iOS `systemRed` / M3 error | iOS `systemRed` / M3 error | Destructive foreground and selected favourite hearts. |
 | `tertiaryFill`        | iOS `tertiarySystemFill` | iOS `tertiarySystemFill` | Large grouped backgrounds; `fill` is reserved for small controls. |
 
-Material tonal surfaces (`materialSurfaces`) are the same shape with M3-specific values
-(`background` `#F3EFFA` light / `#15101E` dark, `secondaryBackground` `#FFFFFF` / `#221A33`, etc.).
-The neutrals are tinted toward the brand violet so Material reads as the same product as Liquid Glass
-— the Material feel comes from elevation, ripple and the nav pill, not from a different palette. The
-Android phone nav bar overlays its tab roots so it can hide on scroll: it is 85% `m3.surface`
-with a 24dp fade above its top edge (see `useTabChrome()` above).
+#### Material surfaces: "Graphite"
+
+Material surfaces (`materialSurfaces`) are the same shape, with **pure grey neutrals** (R = G = B,
+chroma 0). Material reads as Boardsesh through the accent, the filled CTAs and the selected-state
+containers, not through a tinted page. The container ladder is hand-set in `colors.ts`
+(`materialSurfaceContainers`); Paper's `elevation.level1–5` and the Compose Host's
+`surfaceContainer*` roles read the same table.
+
+| Role                                              | Dark                    | Light                |
+| ------------------------------------------------- | ----------------------- | -------------------- |
+| `background` / `groupedBackground` (page)         | `#0E0E0E`               | `#F2F2F2`            |
+| `containers.lowest`                               | `#121212`               | `#EEEEEE`            |
+| `containers.low` / level1                         | `#161616`               | `#EAEAEA`            |
+| `containers.base` / level2 / `surfaceVariant`     | `#1A1A1A` (MiniPlayer)  | `#E4E4E4`            |
+| `secondaryBackground` (card, Paper `surface`)     | `#1E1E1E`               | `#FFFFFF`            |
+| `containers.high` / level3 / `tertiaryBackground` | `#262626`               | `#DFDFDF` (`tertiaryBackground` stays `#FFFFFF`) |
+| `containers.level4` / level4                      | `#2A2A2A`               | `#DCDCDC`            |
+| `containers.highest` / level5                     | `#2E2E2E`               | `#D9D9D9`            |
+| `label`                                           | `#EDEDED`               | `#1A1A1A`            |
+| `secondaryLabel`                                  | `#B0B0B0`               | `#5A5A5A`            |
+| `tertiaryLabel`                                   | `#8F8F8F`               | `#686868`            |
+| `separator` / `outlineVariant`                    | `rgba(255,255,255,0.12)`| `rgba(0,0,0,0.12)`   |
+| `fill` / `tertiaryFill`                           | white at 10% / 5%       | black at 8% / 4%     |
+| `outline`                                         | `#8A8A8A`               | `#7A7A7A`            |
+| `accent`                                          | `#A78BFA`               | `#6D28D9`            |
+
+**The violet budget.** On Material, violet is spent only on:
+
+1. Accent foreground: links, the active nav label (`m3.secondary`), the focus ring, spinners.
+2. One filled `primaryFill` CTA per region, plus switch, radio and checkbox on-states.
+3. Opaque tonal containers for a selected or current state only: the nav pill and Stepper
+   (`secondaryContainer` `#E6DAF8` / `#3C2467`), selected chips and segments, tonal buttons, the
+   connected MiniPlayer, the wall-control tonal pill. `primaryContainer` is `#EADDFF` / `#4F378B`.
+   Their ink is `#21005D` / `#EADDFF`.
+4. The selected climb-row wash.
+5. Data: the heat ramp, grade colours, holds, the playlist swatch.
+
+Everything else is grey: page, cards, containers, fills, tracks, hairlines, ripples (`onSurface` at
+10%), the lifetime-record stat tiles (`containers.high`) and the unknown-grade chart mark
+(`#B4B4B4` / `#5E5E5E`).
+
+**Tertiary-label placement.** `tertiaryLabel` clears 4.5:1 only on the lower steps. Dark: page, card,
+lowest, low, base and high (4.68:1); never on level4 or highest. Light: page, card, lowest and low
+(4.63:1); never on base or above. Put tertiary text on a higher container and it fails AA; use
+`secondaryLabel` there instead. `material-theme-contrast.test.ts` pins every pairing in this
+section (labels, outline, accent, the nav label over the overlay bar, the ladder order, chroma 0).
+
+**The Android phone nav bar** overlays its tab roots so it can hide on scroll: it is `m3.surface` at
+92% in dark and 85% in light (`material.navBar.overlaySurfaceAlpha`), with a 24dp fade above its top
+edge (see `useTabChrome()` above). Dark needs the extra cover so the violet active label stays 4.5:1
+over white content scrolling under it.
+
+**Compose.** `ComposeHost` seeds every Android Compose Host from `primaryFill` and passes
+`colorOverrides` for the surface, container, text and outline roles (`composeSurfaceColorOverrides`),
+so Compose menus, dialogs and text fields sit on the same greys as the RN surfaces around them.
+
+**www stays violet on purpose.** The marketing site keeps its own violet ladder in
+`packages/web/app/theme/theme-config.ts`; only the app went neutral. The marketing video renders read
+the frozen pre-Graphite values from `marketingSurfaces`, so already-cut footage still matches.
 
 When the Material variant is active, `theme.m3` also exposes the full MD3 colour-role palette
 (`primaryContainer`, `onSurfaceVariant`, `outlineVariant`, the `elevation.level0–5` ladder) for app
@@ -1421,9 +1480,16 @@ The web app renders Velvet Send in **dark only**. Wiring notes specific to web:
   darkest step (`#1E1434`) and `neutral[900]` the lightest (`#F3EFFA`). 50–300 are surfaces; 400–900
   bear text. The numeric keys are a known wart — renaming them to semantic names is a follow-up.
 - **Shared source of truth.** The brand palette, surface anchors and colour helpers (`brandColors`,
-  `brandColorsDark`, `materialSurfaces`, `withAlpha`, `blendOpaque`) live in `@boardsesh/velvet-tokens`.
-  Web reads only `brandColorsDark`; **`brandColors` (light) must not be deleted as dead code** — mobile
-  re-exports it and still renders light. Change a brand hex there, not in each app.
+  `brandColorsDark`, `materialSurfaces`, `marketingSurfaces`, `withAlpha`, `blendOpaque`) live in
+  `@boardsesh/velvet-tokens`. Web reads only `brandColorsDark`; **`brandColors` (light) must not be
+  deleted as dead code** — mobile re-exports it and still renders light. Change a brand hex there, not
+  in each app.
+- **www keeps its violet surfaces on purpose.** The app's Material surfaces went neutral grey
+  ("Graphite"); the web page → card → elevated ladder in `theme-config.ts` did not, and
+  `velvet-tokens-parity.test.ts` asserts the two stay different. The `packages/web/scripts/render-*`
+  video scripts read `marketingSurfaces` (the frozen pre-Graphite app values) so they match the footage
+  already cut; `scripts/frame-screenshots.ts` reads the live `materialSurfaces`, so store frames show the
+  current app.
 - **Two synced sources.** `app/theme/theme-config.ts` feeds MUI + direct imports; `app/components/index.css`
   feeds the CSS custom properties read by the `.module.css` files. Every shared colour changes in BOTH —
   the parity test enforces it, plus the MUI split and WCAG contrast.

@@ -5,14 +5,14 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { materialSurfaces } from '@boardsesh/velvet-tokens';
+import { marketingSurfaces } from '@boardsesh/velvet-tokens';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const rawDir = resolve(root, '.boardsesh/spray-editor/raw');
 const workDir = resolve(root, '.boardsesh/spray-editor/render');
 const videoDir = resolve(root, 'packages/web/public/videos/help');
 const posterDir = resolve(root, 'packages/web/public/images/help/clips');
-const palette = materialSurfaces.dark;
+const palette = marketingSurfaces.dark;
 const fps = 15;
 const maxBytes = 2_000_000;
 

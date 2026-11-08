@@ -23,8 +23,12 @@ type StatsSummaryCardProps = {
 /** Lifetime records stay explicitly scoped even when the charts show a shorter period. */
 export function StatsSummaryCard({ hardestSend, hardestFlash, percentile, boardLabel }: StatsSummaryCardProps) {
   const { t } = useTranslation('profile');
-  const { systemColors, m3 } = useTheme();
+  const { systemColors, m3, m3SurfaceContainers } = useTheme();
   const isMaterial = useVariantValue({ material: true, liquidGlass: false });
+  // Material: both tiles sit on the grey high container. A record is not a
+  // selected state, so it spends no violet; the grade hue rides the glyph.
+  const tileBackground = isMaterial ? m3SurfaceContainers.high : undefined;
+  const tileTextColor = isMaterial ? m3.onSurface : undefined;
   return (
     <Card style={styles.card}>
       <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.caption}>
@@ -36,8 +40,8 @@ export function StatsSummaryCard({ hardestSend, hardestFlash, percentile, boardL
             highlight={hardestSend}
             label={t('stats.send')}
             icon="tick"
-            background={isMaterial ? m3.primaryContainer : undefined}
-            textColor={isMaterial ? m3.onPrimaryContainer : undefined}
+            background={tileBackground}
+            textColor={tileTextColor}
           />
         ) : null}
         {hardestFlash ? (
@@ -45,8 +49,8 @@ export function StatsSummaryCard({ hardestSend, hardestFlash, percentile, boardL
             highlight={hardestFlash}
             label={t('stats.flash')}
             icon="flash"
-            background={isMaterial ? m3.secondaryContainer : undefined}
-            textColor={isMaterial ? m3.onSecondaryContainer : undefined}
+            background={tileBackground}
+            textColor={tileTextColor}
           />
         ) : null}
       </View>
@@ -69,14 +73,14 @@ function GradeTile({
   highlight: RawGradeHighlight;
   label: string;
   icon: IconName;
-  /** Tonal container fill (Material). Glass falls back to the vivid grade fill. */
+  /** Grey container fill (Material). Glass falls back to the vivid grade fill. */
   background?: string;
   /** On-container text (Material). Glass falls back to the contrast-aware colour. */
   textColor?: string;
 }) {
   // Glass: the whole tile is the grade's vivid colour, text picks the contrast
-  // colour. Material: a tonal container carries the tile, so the grade hue lives
-  // only on the leading glyph (the small accent) and text uses the on-container role.
+  // colour. Material: a grey container carries the tile, so the grade hue lives
+  // only on the leading glyph (the small accent) and text uses onSurface.
   const gradeFill = gradeBadgeColor(highlight.label);
   const tileBackground = background ?? gradeFill;
   const onTile = textColor ?? getGradeTextColor(gradeFill);

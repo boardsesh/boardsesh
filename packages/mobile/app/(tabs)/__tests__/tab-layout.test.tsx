@@ -143,9 +143,9 @@ vi.mock('../../../src/providers/theme-provider', () => ({
   useTheme: () => ({
     variant: cfg.variant,
     systemColors: {
-      label: '#F5F2FB',
-      secondaryLabel: '#A9A2B6',
-      separator: 'rgba(60,55,75,0.18)',
+      label: '#EDEDED',
+      secondaryLabel: '#B0B0B0',
+      separator: 'rgba(255, 255, 255, 0.12)',
     },
     m3: { outlineVariant: '#49454F' },
     // Record badge color: green for board-connected-only, amber 'live' for a
@@ -941,11 +941,11 @@ describe('TabLayout', () => {
     const { container } = render(<TabLayout />);
     const tabs = container.querySelector('[data-tabs="true"]');
 
-    expect(tabs?.getAttribute('data-icon-color')).toBe(JSON.stringify({ default: '#A9A2B6', selected: '#F5F2FB' }));
+    expect(tabs?.getAttribute('data-icon-color')).toBe(JSON.stringify({ default: '#B0B0B0', selected: '#EDEDED' }));
     expect(tabs?.getAttribute('data-label-style')).toBe(
-      JSON.stringify({ default: { color: '#A9A2B6' }, selected: { color: '#F5F2FB' } }),
+      JSON.stringify({ default: { color: '#B0B0B0' }, selected: { color: '#EDEDED' } }),
     );
-    expect(tabs?.getAttribute('data-tint-color')).toBe('#F5F2FB');
+    expect(tabs?.getAttribute('data-tint-color')).toBe('#EDEDED');
   });
 
   it('mounts the native bottom accessory when active and a climb is current', () => {

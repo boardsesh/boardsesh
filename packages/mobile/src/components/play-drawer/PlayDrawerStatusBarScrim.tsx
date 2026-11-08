@@ -22,7 +22,7 @@ type PlayDrawerStatusBarScrimProps = {
 };
 
 function PlayDrawerStatusBarScrimComponent({ height, scrollY }: PlayDrawerStatusBarScrimProps) {
-  const { systemColors, colorScheme } = useTheme();
+  const { systemColors, colorScheme, variant } = useTheme();
   const fadeStyle = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, FADE_DISTANCE_PT], [0, 1], Extrapolation.CLAMP),
   }));
@@ -36,7 +36,7 @@ function PlayDrawerStatusBarScrimComponent({ height, scrollY }: PlayDrawerStatus
       pointerEvents="none"
       style={[styles.scrim, { height, backgroundColor: systemColors.secondaryBackground }, fadeStyle]}
     >
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: playDrawerMaterialTint[colorScheme] }]} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: playDrawerMaterialTint[variant][colorScheme] }]} />
     </Animated.View>
   );
 }

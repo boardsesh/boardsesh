@@ -55,11 +55,13 @@ const useThemeMock = vi.hoisted(() =>
     (): {
       brandColors: { primary: string };
       m3: { outline: string };
+      m3SurfaceContainers: Record<'lowest' | 'low' | 'base' | 'high' | 'highest', string>;
       colorScheme: 'light' | 'dark';
       systemColors: { label: string; secondaryLabel: string };
     } => ({
       brandColors: { primary: '#6D28D9' },
       m3: { outline: '#96949A' },
+      m3SurfaceContainers: { lowest: '#EEEEEE', low: '#EAEAEA', base: '#E4E4E4', high: '#DFDFDF', highest: '#D9D9D9' },
       colorScheme: 'light',
       systemColors: { label: '#111111', secondaryLabel: '#222222' },
     }),
@@ -72,6 +74,7 @@ vi.mock('../../theme/expo-ui-modifiers', () => ({
     return { checkedTrackColor: 'from-switchControlColors' };
   },
   composeSeedColor: () => '#7C3AED',
+  composeSurfaceColorOverrides: () => ({}),
 }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
 
@@ -88,6 +91,7 @@ beforeEach(() => {
   useThemeMock.mockReturnValue({
     brandColors: { primary: '#6D28D9' },
     m3: { outline: '#96949A' },
+    m3SurfaceContainers: { lowest: '#EEEEEE', low: '#EAEAEA', base: '#E4E4E4', high: '#DFDFDF', highest: '#D9D9D9' },
     colorScheme: 'light',
     systemColors: { label: '#111111', secondaryLabel: '#222222' },
   });
@@ -154,14 +158,15 @@ describe('Android SwitchRow', () => {
     // on a dark background. Confirm the fix isn't accidentally light-only.
     useThemeMock.mockReturnValue({
       brandColors: { primary: '#6D28D9' },
-      m3: { outline: '#817B8D' },
+      m3: { outline: '#8A8A8A' },
+      m3SurfaceContainers: { lowest: '#121212', low: '#161616', base: '#1A1A1A', high: '#262626', highest: '#2E2E2E' },
       colorScheme: 'dark',
-      systemColors: { label: '#F5F2FB', secondaryLabel: '#A9A2B6' },
+      systemColors: { label: '#EDEDED', secondaryLabel: '#B0B0B0' },
     });
 
     render(<SwitchRow label="Public board" description="Visible to everyone" value={false} onValueChange={vi.fn()} />);
 
-    expect(composeTextColors.seen).toEqual(['#F5F2FB', '#A9A2B6']);
+    expect(composeTextColors.seen).toEqual(['#EDEDED', '#B0B0B0']);
   });
 });
 

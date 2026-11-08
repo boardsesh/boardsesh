@@ -68,7 +68,7 @@ function PlayScreen() {
   const { openLogAscent, sheet: logAscentSheet } = useLogAscentSheetHost();
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
-  const { systemColors, colorScheme } = useTheme();
+  const { systemColors, colorScheme, variant } = useTheme();
   const { swipeDismiss, animatedStyle, onLayout, close, canConsumeTarget, dismissAndWait } = usePlaySwipeDismiss(
     playTarget?.nonce,
   );
@@ -237,7 +237,7 @@ function PlayScreen() {
           color={systemColors.secondaryBackground}
           role="low"
           fallbackColor={systemColors.secondaryBackground}
-          tintColor={playDrawerMaterialTint[colorScheme]}
+          tintColor={playDrawerMaterialTint[variant][colorScheme]}
         />
         {activeBoardConfig ? (
           <>

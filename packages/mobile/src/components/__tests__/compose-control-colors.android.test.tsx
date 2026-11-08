@@ -63,12 +63,14 @@ vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
     brandColors: { primary: '#A78BFA', primaryFill: '#7C3AED', onPrimary: '#FFFFFF', error: '#F87171' },
     m3: {
-      outline: '#817B8D',
-      surfaceVariant: '#1D132F',
-      onSurfaceVariant: '#A9A2B6',
-      secondaryContainer: 'rgba(124, 58, 237, 0.28)',
+      outline: '#8A8A8A',
+      surfaceVariant: '#1A1A1A',
+      onSurfaceVariant: '#B0B0B0',
+      secondaryContainer: '#3C2467',
       onSecondaryContainer: '#EADDFF',
     },
+    // ComposeHost maps these onto the Compose surface roles.
+    m3SurfaceContainers: { lowest: '#121212', low: '#161616', base: '#1A1A1A', high: '#262626', highest: '#2E2E2E' },
     colorScheme: 'dark',
   }),
 }));
@@ -82,7 +84,7 @@ describe('Compose control colours', () => {
     render(createElement(Button, { title: 'Try again', variant: 'tonal', loading: true, onPress: vi.fn() }));
 
     expect(composeProps.byControl.FilledTonalButton?.[0]?.colors).toEqual({
-      containerColor: 'rgba(124, 58, 237, 0.28)',
+      containerColor: '#3C2467',
       contentColor: '#EADDFF',
     });
     expect(composeProps.byControl.CircularProgressIndicator?.[0]?.color).toBe('#EADDFF');
@@ -104,7 +106,7 @@ describe('Compose control colours', () => {
     const radios = composeProps.byControl.RadioButton ?? [];
     expect(radios).toHaveLength(2);
     for (const radio of radios) {
-      expect(radio.colors).toEqual({ selectedColor: '#A78BFA', unselectedColor: '#A9A2B6' });
+      expect(radio.colors).toEqual({ selectedColor: '#A78BFA', unselectedColor: '#B0B0B0' });
     }
   });
 });

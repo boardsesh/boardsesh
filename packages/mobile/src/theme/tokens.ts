@@ -160,6 +160,9 @@ export const material = {
   /** M3 pressed state-layer opacity, used to tint ripples (and the iOS-on-Material
    *  pressed overlay, where there is no `android_ripple`). */
   pressedStateLayer: 0.12,
+  /** Alpha of the default neutral ripple: the theme's `onSurface` at 10%, the M3
+   *  pressed state layer on a grey surface (`neutralRipple`). */
+  neutralRippleOpacity: 0.1,
   /** M3 disabled opacities: content (text/icon) at 38%, container fill at 12% —
    *  replaces the single Liquid-Glass `opacity.disabled` (0.5) on Material. */
   disabledContentOpacity: 0.38,
@@ -172,6 +175,10 @@ export const material = {
     activeIndicatorRadius: 16,
     /** Resting elevation of the solid Android nav surface (M3 nav bar = level 2). */
     surfaceElevation: 2,
+    /** How opaque the bar's surface is when it is drawn over the tab root. Dark
+     *  needs more cover: at 0.85 the violet active label is 3.81:1 over white
+     *  content, at 0.92 it is 4.85:1. Light keeps 0.85 (5.03:1 over black). */
+    overlaySurfaceAlpha: { light: 0.85, dark: 0.92 },
   },
   navRail: {
     /** Tonal pill behind the focused rail item's icon (M3 navigation-rail spec:
@@ -202,6 +209,14 @@ export const material = {
  */
 export function androidRipple(color: string, borderless = false): { color: string; borderless: boolean } {
   return { color: withAlpha(color, material.pressedStateLayer), borderless };
+}
+
+/**
+ * The default ripple on a neutral surface: `onSurface` (from the theme) at 10%,
+ * a grey state layer rather than a brand-violet one.
+ */
+export function neutralRipple(onSurface: string, borderless = false): { color: string; borderless: boolean } {
+  return { color: withAlpha(onSurface, material.neutralRippleOpacity), borderless };
 }
 
 /**
