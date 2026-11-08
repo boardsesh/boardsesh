@@ -45,10 +45,10 @@ export function useLiveSessionColors(): LiveSessionColors {
         material: m3.outlineVariant,
       }),
       label: systemColors.label,
-      meta:
-        variant === 'liquidGlass' && colorScheme === 'light'
-          ? androidFallbackColors.light.secondaryLabel
-          : systemColors.secondaryLabel,
+      meta: selectByVariant<ColorValue>(variant, {
+        liquidGlass: colorScheme === 'light' ? androidFallbackColors.light.secondaryLabel : systemColors.secondaryLabel,
+        material: systemColors.secondaryLabel,
+      }),
       live: brandColors.live,
       quietFill: systemColors.fill,
       liveInk,
