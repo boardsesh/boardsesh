@@ -5,7 +5,9 @@
 // The content row is the caller's; the shell owns the surface, the tap target,
 // the UIKit title-view rules and the entry fade. HeaderCapsuleClimbLabel is the
 // row both capsules use for a climb: a face, then the name, over an optional
-// byline (a stale climb's "20m ago").
+// byline (a stale climb's "20m ago"). The Android app bar's wall pill
+// (WallStatusCapsule's Material skin) draws the same row in M3 type
+// (`skin="material"`) and reads the same width rules from its measured slot.
 // A held climb can supply the wall button's opaque patterned surface in place
 // of glass, keeping the same native title host and tap target.
 // No × (#7281): every room it took came out of the climb's name beside the
@@ -52,15 +54,24 @@ const CAPSULE_COMPACT_BELOW = 100;
 // 130pt title bound. Between the iPhone's matched islands that is every phone
 // (375pt leaves 151pt) except a 320pt Display Zoom bar (96pt).
 const CAPSULE_FACE_MIN_WIDTH = 130;
+/**
+ * True when a title slot this wide is too narrow for the capsule's leading
+ * element. An unknown width (no bound yet) is never compact.
+ */
+export function headerCapsuleCompact(titleWidth: number | undefined): boolean {
+  return titleWidth != null && titleWidth < CAPSULE_COMPACT_BELOW;
+}
+/** True when a title slot this wide leaves the climb's name room beside a face. */
+export function headerCapsuleFaceFits(titleWidth: number | undefined): boolean {
+  return titleWidth == null || titleWidth >= CAPSULE_FACE_MIN_WIDTH;
+}
 /** True when UIKit's title slot is too narrow for the capsule's leading element. */
 export function useHeaderCapsuleCompact(): boolean {
-  const titleMaxWidth = useContext(NativeTitleMaxWidthContext);
-  return titleMaxWidth != null && titleMaxWidth < CAPSULE_COMPACT_BELOW;
+  return headerCapsuleCompact(useContext(NativeTitleMaxWidthContext));
 }
 /** True when UIKit's title slot leaves the climb's name room beside a face. */
 export function useHeaderCapsuleFaceFits(): boolean {
-  const titleMaxWidth = useContext(NativeTitleMaxWidthContext);
-  return titleMaxWidth == null || titleMaxWidth >= CAPSULE_FACE_MIN_WIDTH;
+  return headerCapsuleFaceFits(useContext(NativeTitleMaxWidthContext));
 }
 
 /**
@@ -221,6 +232,12 @@ type HeaderCapsuleClimbLabelProps = {
   /** Patterned surfaces use their contrast-checked foreground for both lines. */
   textColor?: ColorValue;
   textStyle?: StyleProp<TextStyle>;
+  /**
+   * The type and colour roles. `glass` (default): the HIG caption pair in label
+   * colours. `material`: M3 titleSmall over a labelMedium byline, both in
+   * `onTertiaryContainer`, the ink on the Android app-bar pill's amber fill.
+   */
+  skin?: 'glass' | 'material';
 };
 
 /** An optional face, then the climb's name over its grade and one fact. */
@@ -233,8 +250,18 @@ export function HeaderCapsuleClimbLabel({
   onActivate,
   textColor,
   textStyle,
+  skin = 'glass',
 }: HeaderCapsuleClimbLabelProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, m3 } = useTheme();
+  const material = skin === 'material';
+  // M3 titleSmall is 14/20 medium, `label`'s metrics; labelMedium is 12/16
+  // medium, `footnote` at medium weight.
+  const nameVariant = material ? 'label' : 'caption1';
+  const bylineVariant = material ? 'footnote' : 'caption2';
+  const nameColor = textColor ?? (material ? m3.onTertiaryContainer : systemColors.label);
+  const bylineColor = textColor ?? (material ? m3.onTertiaryContainer : systemColors.secondaryLabel);
+  const nameSkinStyle = material ? styles.climbNameMaterial : null;
+  const bylineSkinStyle = material ? styles.climbBylineMaterial : null;
   return (
     <>
       {/* One tap target and one spoken label: the face is decoration here. */}
@@ -245,12 +272,12 @@ export function HeaderCapsuleClimbLabel({
       )}
       <LargeContentViewer title={largeContentTitle} onActivate={onActivate} style={styles.climbLines}>
         <Text
-          variant="caption1"
-          color={textColor ?? systemColors.label}
+          variant={nameVariant}
+          color={nameColor}
           numberOfLines={1}
           ellipsizeMode="tail"
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={[styles.climbName, textStyle]}
+          style={[styles.climbName, nameSkinStyle, textStyle]}
         >
           {name}
         </Text>
@@ -258,23 +285,28 @@ export function HeaderCapsuleClimbLabel({
           <View style={styles.bylineRow}>
             {byline.grade ? (
               <Text
-                variant="caption2"
-                color={textColor ?? systemColors.secondaryLabel}
+                variant={bylineVariant}
+                color={bylineColor}
                 numberOfLines={1}
                 maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={[styles.climbByline, styles.bylineGrade, textStyle]}
+                style={[styles.climbByline, bylineSkinStyle, styles.bylineGrade, textStyle]}
               >
                 {byline.grade}
               </Text>
             ) : null}
             {byline.detail ? (
               <Text
-                variant="caption2"
-                color={textColor ?? systemColors.secondaryLabel}
+                variant={bylineVariant}
+                color={bylineColor}
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={[styles.climbByline, byline.fixed ? styles.bylineFixed : styles.bylineDetail, textStyle]}
+                style={[
+                  styles.climbByline,
+                  bylineSkinStyle,
+                  byline.fixed ? styles.bylineFixed : styles.bylineDetail,
+                  textStyle,
+                ]}
               >
                 {byline.grade ? ` · ${byline.detail}` : byline.detail}
               </Text>
@@ -342,8 +374,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
     fontWeight: '600',
   },
+  climbNameMaterial: {
+    fontWeight: '500',
+  },
   climbByline: {
     fontVariant: ['tabular-nums'],
+  },
+  climbBylineMaterial: {
+    fontWeight: '500',
   },
   // The grade and its fact sit on one line; only the fact gives way.
   bylineRow: {

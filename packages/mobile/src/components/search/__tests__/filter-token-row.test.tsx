@@ -23,7 +23,15 @@ vi.mock('react-native', () => ({
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: unknown) => styles,
   },
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-scrollview': 'true' }, children),
+  ScrollView: ({ children, contentContainerStyle }: { children?: ReactNode; contentContainerStyle?: unknown }) =>
+    createElement(
+      'div',
+      {
+        'data-scrollview': 'true',
+        'data-content-style': JSON.stringify(Object.assign({}, ...[contentContainerStyle].flat(10).filter(Boolean))),
+      },
+      children,
+    ),
   Pressable: ({
     children,
     onPress,
@@ -113,6 +121,19 @@ describe('FilterTokenRow', () => {
       unknown
     >;
     expect(pillStyle).toMatchObject({ backgroundColor: '#1C1C1E', borderColor: '#333', borderWidth: 1 });
+  });
+
+  it('pads 8dp under the pills only when asked (the Material Climbs bar)', () => {
+    const contentStyle = (bottomInset?: boolean) => {
+      const { container, unmount } = render(<FilterTokenRow tokens={[makeToken()]} bottomInset={bottomInset} />);
+      const style = JSON.parse(
+        container.querySelector('[data-scrollview]')?.getAttribute('data-content-style') ?? '{}',
+      ) as Record<string, unknown>;
+      unmount();
+      return style;
+    };
+    expect(contentStyle()).not.toHaveProperty('paddingBottom');
+    expect(contentStyle(true)).toMatchObject({ paddingTop: 8, paddingBottom: 8 });
   });
 
   it('labels each pill for removal using the token label', () => {

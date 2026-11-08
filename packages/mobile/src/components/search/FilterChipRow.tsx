@@ -28,7 +28,7 @@ import type { FilterChipRowProps } from './FilterChipRow.types';
 function ClimbCapsuleRow(props: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const capsules = useMemo(() => buildClimbCapsules(props, t, null), [props, t]);
-  return <CapsuleRow capsules={capsules} />;
+  return <CapsuleRow capsules={capsules} dense={props.dense} />;
 }
 
 function AngleCapsuleRow({ rowProps, openAngle }: { rowProps: FilterChipRowProps; openAngle: () => void }) {
@@ -48,7 +48,7 @@ function AngleCapsuleRow({ rowProps, openAngle }: { rowProps: FilterChipRowProps
     [angleValue, openAngle, tSession],
   );
   const capsules = useMemo(() => buildClimbCapsules(rowProps, t, angle), [rowProps, t, angle]);
-  return <CapsuleRow capsules={capsules} />;
+  return <CapsuleRow capsules={capsules} dense={rowProps.dense} />;
 }
 
 // The row is the picker's trigger. BoardAnglePicker draws its sheet beside the

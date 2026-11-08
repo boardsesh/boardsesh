@@ -2016,6 +2016,7 @@ function ClimbListInner() {
     });
     return nameToken ? [nameToken, ...longTailTokens] : longTailTokens;
   }, [filterTokens, chipBackedTokenKeys, showTallChip, showWideChip, filters.sortOrder, nameToken]);
+  const denseChipRow = selectByVariant(variant, { material: true, liquidGlass: false });
   const filterChrome = useMemo(() => {
     if (!showFilterChips) return null;
     return (
@@ -2066,12 +2067,16 @@ function ClimbListInner() {
           onChangeClimbType={handleChangeClimbType}
           betaActive={!!filters.onlyWithBetaVideos}
           onToggleBeta={handleToggleBeta}
+          // The Material Climbs bar's 48dp chip row (ClimbTopChrome).
+          dense={denseChipRow}
         />
-        <FilterTokenRow tokens={sheetOnlyFilterTokens} />
+        {/* Under the dense Material chip row nothing else pads the pills off the list. */}
+        <FilterTokenRow tokens={sheetOnlyFilterTokens} bottomInset={denseChipRow} />
       </>
     );
   }, [
     showFilterChips,
+    denseChipRow,
     gradeUsesPopover,
     grades,
     gradeBound,

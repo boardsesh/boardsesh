@@ -1000,6 +1000,36 @@ Source: `src/theme/top-bar.ts` (`topBarFor(variant)`), the `label` text variant,
 - **Header tint** is the theme's label colour (`useStackScreenOptions`, and the root navigation theme's
   `primary`), so no bar glyph falls back to React Navigation's iOS blue.
 
+### Material Climbs bar
+
+The Android Climbs header (`ClimbTopChrome`, Material branch) follows the iOS bar: avatar, title
+slot, then history and ⋮. It is about 112dp under the status bar (a 64dp app bar over a 48dp chip
+row), with or without a climb on the wall. Only Climbs looks like this; the other root tabs keep
+their titled bars.
+
+- **Empty title slot.** No "Climbs", no board name. The slot holds an empty `header` view whose
+  spoken label is "Climbs", so TalkBack still names the screen. Boards are switched from ⋮ → Switch board.
+- **The climb on the wall** fills the title slot as a compact M3 pill (`WallStatusCapsule`'s
+  Material skin) that says what the iOS capsule says, plus the climb's board art. It is 48dp
+  tall, full radius, filled with the amber `tertiaryContainer` so it reads as "lit" against the
+  bar (`#FFDBCA` light, `#773300` dark; `paper-theme.ts` sets it from the `#FF8A3D` accent, since
+  Paper's default is a pink). It leads with the MiniPlayer's `AccessoryClimbThumbnail` (40dp
+  slot, drawn through the shared render scheduler), then the sender's 24dp face where iOS would
+  show it. The name sits in titleSmall over the iOS byline, "grade · one fact" in labelMedium:
+  who lit it, your own or an unnamed climb's sends, or how long ago. All text is
+  `onTertiaryContainer` (13.2:1 light, 7.2:1 dark), so the grade never sits in its own hue on
+  the amber. The grade is never cut in the byline; only the fact gives way. Width rules, from
+  the pill's measured width (nothing leads before the first layout): under 130dp neither the
+  thumbnail nor the face; from 130dp the thumbnail; from 180dp the face beside it (the byline
+  names the sender either way). The pill stops at 280dp. Tap opens the wall preview; a left
+  swipe or the screen-reader Hide hides it. There is no ×. The empty `header` view stays
+  beside the pill, so TalkBack still reads "Climbs".
+- **Create** is ⋮'s first row on a compact width, as on iOS. A regular-width tablet keeps + in the bar.
+- **Chips stay pinned.** The chip row is `dense`: no vertical padding, so Compose's 48dp chip touch
+  targets are the row's whole height (8dp visible above and below each 32dp chip). Nothing pads under
+  the chips; when the sheet-only filter tokens show, their row keeps 8dp above and below its pills.
+  The Logbook and playlist rows keep their 8dp padding.
+
 **Material building blocks** (`tokens.ts` → `material`, Android branches only): nav active-indicator
 pill 64 × 32 (radius 16), surface elevation 3, pressed state-layer opacity 0.12. `androidRipple(color,
 borderless)` builds a Pressable `android_ripple` config at that state-layer opacity.

@@ -6,7 +6,7 @@ vi.mock('../../AccessibleTextInput', async () => {
 vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useEffect, type ReactNode } from 'react';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { WallCapsuleDismissOptions } from '../use-wall-capsule-dismiss';
 
@@ -24,6 +24,8 @@ const spies = vi.hoisted(() => ({
   // The sends after the grade; null leaves the grade alone, as for an unsent climb.
   sends: null as string | null,
   statsArgs: null as unknown,
+  // The width the app-bar pill measures (Animated.View onLayout); undefined: no layout yet.
+  layoutWidth: undefined as number | undefined,
 }));
 
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => spies.viewerUserId }));
@@ -114,18 +116,32 @@ vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: spies.announce },
 }));
 
+type LayoutHandler = (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+function MockAnimatedView({
+  children,
+  style,
+  onLayout,
+}: {
+  children?: ReactNode;
+  style?: unknown;
+  onLayout?: LayoutHandler;
+}) {
+  // Native onLayout supplies the slot's width; jsdom has no Yoga layout.
+  useEffect(() => {
+    if (onLayout && spies.layoutWidth !== undefined)
+      onLayout({ nativeEvent: { layout: { width: spies.layoutWidth, height: 48 } } });
+  }, [onLayout]);
+  return createElement(
+    'div',
+    {
+      'data-animated': 'true',
+      'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+    },
+    children,
+  );
+}
 vi.mock('react-native-reanimated', () => ({
-  default: {
-    View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-      createElement(
-        'div',
-        {
-          'data-animated': 'true',
-          'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
-        },
-        children,
-      ),
-  },
+  default: { View: MockAnimatedView },
   FadeIn: { duration: spies.enterAnimation },
   useReducedMotion: () => spies.reduceMotion,
 }));
@@ -205,6 +221,8 @@ vi.mock('../../../providers/theme-provider', () => ({
     m3: {
       tertiary: '#FF8A3D',
       onTertiary: '#3A1D00',
+      tertiaryContainer: '#FFDBCA',
+      onTertiaryContainer: '#341100',
       onSurface: '#F5F2FB',
       onSurfaceVariant: '#A9A2B6',
       outlineVariant: '#4A4458',
@@ -233,24 +251,44 @@ vi.mock('../../Text', () => ({
     numberOfLines,
     ellipsizeMode,
     variant,
+    color,
   }: {
     children?: ReactNode;
     style?: unknown;
     numberOfLines?: number;
     ellipsizeMode?: string;
     variant?: string;
+    color?: string;
   }) =>
     createElement(
       'span',
       {
         'data-text': 'true',
         'data-variant': variant,
+        'data-color': color,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-lines': numberOfLines,
         'data-ellipsize': ellipsizeMode,
       },
       children,
     ),
+}));
+vi.mock('../AccessoryClimbThumbnail', () => ({
+  AccessoryClimbThumbnail: ({
+    climb,
+    boardConfig,
+    size,
+  }: {
+    climb: { frames: string; mirrored?: boolean | null };
+    boardConfig: { boardName: string } | null;
+    size?: number;
+  }) =>
+    createElement('span', {
+      'data-thumbnail': climb.frames,
+      'data-mirrored': String(climb.mirrored),
+      'data-board': boardConfig?.boardName,
+      'data-size': size,
+    }),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../../LargeContentViewer', () => ({
@@ -276,10 +314,12 @@ vi.mock('../../PressableSurface', () => ({
     onAccessibilityAction,
     hitSlop,
     style,
+    rippleColor,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     feedback?: string;
+    rippleColor?: string;
     accessibilityRole?: string;
     accessibilityLabel?: string;
     accessibilityHint?: string;
@@ -294,6 +334,7 @@ vi.mock('../../PressableSurface', () => ({
         'data-pressable': 'true',
         'data-pressable-surface': 'true',
         'data-feedback': feedback,
+        'data-ripple': rippleColor,
         'data-role': accessibilityRole,
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
@@ -348,6 +389,7 @@ describe('WallStatusCapsule', () => {
     spies.isAuthenticated = true;
     spies.sends = null;
     spies.statsArgs = null;
+    spies.layoutWidth = undefined;
   });
 
   it('keeps the climb name intrinsic and shrinkable inside the native header', () => {
@@ -801,49 +843,6 @@ describe('WallStatusCapsule', () => {
     expect(pressable?.getAttribute('data-hint')).toBe('mobile.boardPresence.stripA11yHint');
   });
 
-  describe("the Material band's ×", () => {
-    const hideButton = (root: HTMLElement) =>
-      root.querySelector('[data-label="mobile.boardPresence.stripDismiss"]') as HTMLElement | null;
-    beforeEach(() => {
-      spies.variant = 'material';
-    });
-
-    it('hides only this lighting, without opening it', () => {
-      const onDismiss = vi.fn();
-      const { container } = render(
-        <WallStatusCapsule climb={makeClimb()} occurrenceKey="board:7:wall-1" onDismiss={onDismiss} />,
-      );
-      const button = hideButton(container)!;
-      expect(button.getAttribute('data-role')).toBe('button');
-      expect(button.querySelector('[data-icon="close"]')).not.toBeNull();
-      // Its own button beside the band's tap target, never inside it.
-      expect(container.querySelector('[data-pressable] [data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
-      fireEvent.click(button);
-      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
-      expect(spies.openWallPreview).not.toHaveBeenCalled();
-    });
-
-    it('is an M3 48dp icon button', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
-      const style = JSON.parse(hideButton(container)?.getAttribute('data-style') ?? '{}');
-      expect(style).toMatchObject({ width: 48, height: 48 });
-    });
-
-    it('is absent when the band cannot be hidden', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(hideButton(container)).toBeNull();
-      expect(container.querySelector('[data-icon="close"]')).toBeNull();
-    });
-
-    it('ignores the release of a swipe that started on the ×', () => {
-      spies.panConsumed = true;
-      const onDismiss = vi.fn();
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={onDismiss} />);
-      fireEvent.click(hideButton(container)!);
-      expect(onDismiss).not.toHaveBeenCalled();
-    });
-  });
-
   it('drops the tap that follows an activated swipe', () => {
     spies.panConsumed = true;
     const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
@@ -876,7 +875,7 @@ describe('WallStatusCapsule', () => {
     expect(spies.enterAnimation).not.toHaveBeenCalled();
   });
 
-  it('renders the Liquid Glass Pressable pill (not the Material band) on iOS', () => {
+  it('renders the Liquid Glass Pressable pill (not the Material pill) on iOS', () => {
     const { container, queryByText } = render(<WallStatusCapsule climb={makeClimb()} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
     expect(container.querySelector('[data-pressable-surface]')).not.toBeNull();
@@ -884,78 +883,192 @@ describe('WallStatusCapsule', () => {
     expect(queryByText('mobile.boardPresence.stripOverline')).toBeNull();
   });
 
-  describe('Material variant (Android)', () => {
+  describe('Material (the Android Climbs app-bar pill)', () => {
     beforeEach(() => {
       spies.variant = 'material';
     });
+    const pill = (root: HTMLElement) => root.querySelector('[data-animated]') as HTMLElement;
+    const styleOf = (element: Element | null | undefined) =>
+      JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    const lines = (root: HTMLElement) =>
+      [...root.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
+    const litClimb = (over: Partial<BoardPresenceClimb> = {}) => makeClimb({ frames: 'p1r12p2r13', ...over });
 
-    it('renders a Material status band via PressableSurface (native ripple), not the glass Pressable', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(container.querySelector('[data-pressable-surface]')).not.toBeNull();
-      expect(getByText('Wax On')).not.toBeNull();
-      expect(getByText('V5 6C')).not.toBeNull();
+    it('is one 48dp full-radius pill in the amber tertiary container, filling the slot up to 280dp', () => {
+      const { container } = render(<WallStatusCapsule climb={litClimb()} />);
+      expect(styleOf(pill(container))).toMatchObject({
+        height: 48,
+        width: '100%',
+        maxWidth: 280,
+        borderRadius: 9999,
+        overflow: 'hidden',
+        backgroundColor: '#FFDBCA',
+      });
+      // The fill carries "lit": no accent rail, no overline.
+      expect(container.querySelector('[data-style*="#FF8A3D"]')).toBeNull();
+      expect(container.textContent).not.toContain('stripOverlineWithSender');
+      expect(container.querySelectorAll('button')).toHaveLength(1);
+      // The M3 state layer is the container's ink, so the ripple shows on amber.
+      expect(container.querySelector('[data-pressable-surface]')?.getAttribute('data-ripple')).toBe('#341100');
     });
 
-    it('names the sender in the "On the wall" overline (no lightbulb)', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
-      // The overline carries "lit + who" in words; the bottom queue bar owns the bulb.
-      expect(getByText('mobile.boardPresence.stripOverlineWithSender:Casey')).not.toBeNull();
-      expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
-      // The person glyph belongs to the anonymous fallback, not a known sender.
-      expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
+    it('puts the name in titleSmall over grade · who lit it in labelMedium, all in onTertiaryContainer', () => {
+      const { container, getByText } = render(<WallStatusCapsule climb={litClimb()} />);
+      expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
+      expect(getByText('Wax On').getAttribute('data-variant')).toBe('label');
+      expect(styleOf(getByText('Wax On'))).toMatchObject({ fontWeight: '500' });
+      expect(getByText('V5 6C').getAttribute('data-variant')).toBe('footnote');
+      expect(styleOf(getByText('V5 6C'))).toMatchObject({ fontWeight: '500' });
+      // The grade reads in the container's ink, never its own hue on the amber fill.
+      for (const text of ['Wax On', 'V5 6C', ' · Casey']) {
+        const node = [...container.querySelectorAll('[data-text]')].find((line) => line.textContent === text);
+        expect(node?.getAttribute('data-color')).toBe('#341100');
+      }
+      // Someone else's climb reads no stats, as on glass.
+      expect(spies.statsArgs).toMatchObject({ statsEnabled: false });
     });
 
-    it('uses a historical overline while keeping the climb grade and sender', () => {
-      const { container, getByText } = render(
+    it("says the same facts as glass: your own or an unnamed climb's sends, the age for history", () => {
+      spies.viewerUserId = 'u-casey';
+      spies.sends = '1.4k sends';
+      const own = render(<WallStatusCapsule climb={makeClimb()} />);
+      expect(lines(own.container)).toEqual(['Wax On', 'V5 6C', ' · 1.4k sends']);
+      expect(spies.statsArgs).toMatchObject({ statsEnabled: true });
+      own.unmount();
+      spies.viewerUserId = 'u-me';
+      const unnamed = render(
+        <WallStatusCapsule climb={makeClimb({ sentByDisplayName: null, sentByUserId: 'u-unnamed' })} />,
+      );
+      expect(lines(unnamed.container)).toEqual(['Wax On', 'V5 6C', ' · 1.4k sends']);
+      unnamed.unmount();
+      spies.viewerUserId = null;
+      const pending = render(<WallStatusCapsule climb={makeClimb()} />);
+      expect(lines(pending.container)).toEqual(['Wax On', 'V5 6C']);
+      pending.unmount();
+      spies.viewerUserId = 'u-casey';
+      const history = render(
         <WallStatusCapsule
           climb={makeClimb()}
           presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
         />,
       );
-      expect(getByText('mobile.boardPresence.stripHistoryOverline:20m')).toBeTruthy();
-      expect(getByText('V5 6C')).toBeTruthy();
-      expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-name')).toBe('Casey');
-      expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain(
-        'stripHistoryA11yLabel',
+      expect(lines(history.container)).toEqual(['Wax On', 'V5 6C', ' · 20m ago']);
+    });
+
+    it('never cuts the grade: only the fact after it gives way', () => {
+      const { container, getByText } = render(
+        <WallStatusCapsule
+          climb={makeClimb({ name: 'A very long climb name that will not fit', sentByDisplayName: 'Alexandra' })}
+        />,
       );
+      expect(styleOf(getByText('V5 6C')).flexShrink).toBe(0);
+      const detail = [...container.querySelectorAll('[data-text]')].find(
+        (node) => node.textContent === ' · Alexandra',
+      ) as HTMLElement;
+      expect(styleOf(detail)).toMatchObject({ flexShrink: 1, minWidth: 0 });
+      expect(detail.getAttribute('data-ellipsize')).toBe('tail');
     });
 
-    it('falls back to the bare overline + a neutral person glyph for an anonymous sender', () => {
-      const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId: null });
-      const { container, getByText } = render(<WallStatusCapsule climb={climb} />);
-      // No sender to name — the overline drops the "· {sender}" suffix gracefully.
-      expect(getByText('mobile.boardPresence.stripOverline')).not.toBeNull();
+    it.each([
+      // Before its first layout neither shows, so a narrow slot never flashes one.
+      [undefined, false, false],
+      [96, false, false],
+      [129, false, false],
+      // Room for the thumbnail, not both: the byline still names the sender.
+      [130, true, false],
+      [179, true, false],
+      // From 180dp the sender's face joins the thumbnail.
+      [180, true, true],
+      [200, true, true],
+    ])('leads with the thumbnail from 130dp and adds the face from 180dp: %s', (width, thumbnailShown, faceShown) => {
+      spies.layoutWidth = width;
+      const { container } = render(<WallStatusCapsule climb={litClimb({ mirrored: true })} />);
+      const thumbnail = container.querySelector('[data-thumbnail]');
+      const face = container.querySelector('[data-driver-avatar]');
+      expect(thumbnail != null).toBe(thumbnailShown);
+      expect(face != null).toBe(faceShown);
+      expect(lines(container)).toContain(' · Casey');
+      if (thumbnail) {
+        // The lit climb's own holds and mirror flag, on the board presence is scoped to,
+        // in the MiniPlayer's default 40dp slot, decoration inside the one button.
+        expect(thumbnail.getAttribute('data-thumbnail')).toBe('p1r12p2r13');
+        expect(thumbnail.getAttribute('data-mirrored')).toBe('true');
+        expect(thumbnail.getAttribute('data-board')).toBe('kilter');
+        expect(thumbnail.getAttribute('data-size')).toBeNull();
+        expect(thumbnail.closest('[data-a11y-hidden="true"]')).not.toBeNull();
+      }
+      if (face) {
+        // Glass's face: the same avatar and size, after the thumbnail.
+        expect(face.getAttribute('data-size')).toBe('24');
+        expect(face.getAttribute('data-name')).toBe('Casey');
+        expect(thumbnail?.compareDocumentPosition(face)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      }
+    });
+
+    it('shows no face for your own climb, only the thumbnail and its sends', () => {
+      spies.layoutWidth = 200;
+      spies.viewerUserId = 'u-casey';
+      spies.sends = '406 sends';
+      const { container } = render(<WallStatusCapsule climb={litClimb()} />);
+      expect(container.querySelector('[data-thumbnail]')).not.toBeNull();
       expect(container.querySelector('[data-driver-avatar]')).toBeNull();
-      expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
-      expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
+      expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · 406 sends']);
     });
 
-    it('keeps the band at its own 20dp face and subheadline text', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('20');
-      expect(getByText('Wax On').getAttribute('data-variant')).toBe('subheadline');
-      expect(getByText('V5 6C').getAttribute('data-variant')).toBe('subheadline');
+    it('shows no thumbnail for a reporter that sent no holds, and the face on glass terms', () => {
+      spies.layoutWidth = 130;
+      const { container } = render(<WallStatusCapsule climb={makeClimb({ frames: null })} />);
+      expect(container.querySelector('[data-thumbnail]')).toBeNull();
+      expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
+      expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
+    });
+
+    it('lets the age cut only in a pill too narrow for it', () => {
+      spies.layoutWidth = 96;
+      const { container } = render(
+        <WallStatusCapsule
+          climb={makeClimb()}
+          presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
+        />,
+      );
+      const age = [...container.querySelectorAll('[data-text]')].find((node) => node.textContent === ' · 20m ago');
+      expect(styleOf(age)).toMatchObject({ flexShrink: 1, minWidth: 0 });
     });
 
     it('opens the read-only wall preview on tap', () => {
       const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-      fireEvent.click(container.querySelector('[data-pressable-surface]') as Element);
+      fireEvent.click(container.querySelector('[data-pressable-surface]')!);
       expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-1', _converted: true });
     });
 
-    it('keeps the grade legible in the light scheme (still renders the grade text)', () => {
-      spies.colorScheme = 'light';
-      const { getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(getByText('V5 6C')).not.toBeNull();
-    });
+    it('hides by swipe or the screen-reader action, with no × button', () => {
+      const onDismiss = vi.fn();
+      const { container } = render(
+        <WallStatusCapsule
+          climb={makeClimb()}
 
-    it('exposes the same button role + sender-naming label as the glass skin', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-      const pressable = container.querySelector('[data-pressable-surface]');
-      expect(pressable?.getAttribute('data-role')).toBe('button');
-      expect(pressable?.getAttribute('data-label')).toContain('Wax On');
-      expect(pressable?.getAttribute('data-label')).toContain('Casey');
+          occurrenceKey="board:7:wall-1"
+          onDismiss={onDismiss}
+        />,
+      );
+      expect(container.querySelector('[data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
+      expect(container.querySelector('[data-icon="close"]')).toBeNull();
+      expect(container.querySelectorAll('button')).toHaveLength(1);
+      // The swipe wrapper fills the slot under the same 280dp cap.
+      expect(styleOf(container.querySelector('[data-gesture-root]'))).toMatchObject({
+        width: '100%',
+        maxWidth: 280,
+      });
+      const pressable = container.querySelector('[data-pressable-surface]')!;
+      expect(pressable.getAttribute('data-role')).toBe('button');
+      expect(pressable.getAttribute('data-label')).toContain('Wax On');
+      expect(pressable.getAttribute('data-hint')).toBe('mobile.boardPresence.stripDismissHint');
+      expect(JSON.parse(pressable.getAttribute('data-actions') ?? '[]')).toEqual([
+        { name: 'dismiss', label: 'mobile.boardPresence.stripDismiss' },
+      ]);
+      fireEvent.keyDown(pressable);
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
+      expect(spies.openWallPreview).not.toHaveBeenCalled();
     });
   });
 });

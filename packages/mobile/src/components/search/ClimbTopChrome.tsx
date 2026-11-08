@@ -6,12 +6,15 @@
 // filter chips under it. There is no search field: the climb-name search is the
 // first row of the Filters sheet, like the Logbook. On iOS the native header draws
 // no title (`titleHidden`), because the tab already names the screen. The Material
-// variant uses MaterialTopAppBar with "Climbs" above the board switcher, history
-// and the ⋯ menu; its angle is the first chip in the filter row (FilterChipRow).
+// variant matches it on MaterialTopAppBar: the avatar, an empty title slot that
+// TalkBack still reads as "Climbs" (or the climb on the wall as a compact pill),
+// then history and the ⋮ menu. Create is ⋮'s first row on a phone, + in the bar
+// on a regular-width tablet. Its angle is the first chip in the filter row
+// (FilterChipRow), pinned under the bar in a dense 48dp row.
 
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Appbar, Chip } from 'react-native-paper';
 import type { Grade } from '@boardsesh/shared-schema';
@@ -26,7 +29,6 @@ import { CollapsingTopChrome } from '../chrome';
 import { useSettledHeaderValue } from '../chrome/use-settled-header-value';
 import { ClimbListBoardActions, climbListBoardActionCount } from '../chrome/ClimbListBoardActions';
 import { MaterialTopAppBar } from '../chrome/MaterialTopAppBar';
-import { BoardSwitcherButton } from '../chrome/BoardSwitcherButton';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { GradeRangeRail, type GradeRailChange } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
@@ -139,8 +141,6 @@ function ClimbTopChromeComponent({
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
-  const { t: tBoards } = useTranslation('boards');
-  const router = useRouter();
   const { systemColors, variant } = useTheme();
   const { data: activeBoard } = useActiveBoard();
   const glassGradeRail = useFloatingHeaderControls();
@@ -278,7 +278,6 @@ function ClimbTopChromeComponent({
     });
   }, [hasWallCapsule]);
 
-  const handleOpenBoardSwitcher = useCallback(() => router.push('/boards'), [router]);
   // The same history and ⋯ actions for the iOS 26 header: the iPhone's trailing
   // glass island, or native items on iPad and the Duo rail.
   const climbListBarActions = useMemo(
@@ -294,6 +293,14 @@ function ClimbTopChromeComponent({
   useFocusEffect(useCallback(() => () => handleCloseOverlays(), [handleCloseOverlays]));
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
+  // Material, as on iOS (CollapsingTopChrome): on a compact width + leaves the
+  // bar for ⋮'s first row; a regular-width tablet keeps it in the bar.
+  const materialCreateInMenu = isMaterial && canCreate && widthClass === 'compact';
+  const createLabel = t('mobile.create.fab.ariaLabel');
+  const materialCreateRow = useMemo(
+    () => (materialCreateInMenu ? { label: createLabel, onPress: onCreate } : undefined),
+    [materialCreateInMenu, createLabel, onCreate],
+  );
   const gradeRail =
     gradeRailVisible && gradeBound && onGradeChange ? (
       <GradeRangeRail
@@ -328,71 +335,65 @@ function ClimbTopChromeComponent({
         scrollEdge={scrollEdge}
         below={
           <>
-            {/* "On the wall" status — a full-bleed band under the app bar (M3 has no
-            centre slot in the bar) while the wall's climb is trusted and not hidden. */}
-            {wallCapsule ? (
-              <View pointerEvents="box-none" style={styles.materialWallStatusRow}>
-                {wallCapsule}
-              </View>
-            ) : null}
-
             {/* Inner wrappers stay box-none: once the outer `auto` container claims the
             RNGH pointer, only RN's own hit-testing runs inside, where box-none just
             means "let touches reach the controls". If an inner control ever adopts
             an RNGH gesture it needs no change — the outer container already stops
-            the list's handlers from being recorded. */}
-            <View
-              pointerEvents="box-none"
-              style={[styles.materialFilterStack, persistentChips ? styles.materialFilterStackAboveChips : null]}
-            >
-              {showTopChromeFilters ? (
-                <View pointerEvents="box-none" style={styles.materialControlRow}>
-                  <GradeFilterControl
-                    label={visibleGradeLabel}
-                    active={hasGradeFilter}
-                    expanded={gradeRailVisible}
-                    height={MATERIAL_CONTROL_HEIGHT}
-                    onPress={() => {
-                      if (gradeRailVisible) {
-                        onCloseGrade();
-                        return;
-                      }
-                      onOpenGrade?.();
-                    }}
-                    onClear={hasGradeFilter ? gradeChip?.onClear : undefined}
-                    toggleAccessibilityLabel={t('mobile.search.gradeAction')}
-                    clearAccessibilityLabel={t('mobile.gradeRail.clearFilterAria')}
-                    openHint={t('mobile.search.gradeOpenHint')}
-                    closeHint={t('mobile.search.gradeCloseHint')}
-                  />
-                  {onOpenFilters ? (
-                    <FilterButton activeFilterCount={nonGradeFilterCount} onPress={onOpenFilters} />
-                  ) : null}
-                </View>
-              ) : null}
+            the list's handlers from being recorded. The stack (and its padding)
+            renders only while it holds the legacy controls or the summary chip. */}
+            {showTopChromeFilters || visibleFilterSummary ? (
+              <View pointerEvents="box-none" style={styles.materialFilterStack}>
+                {showTopChromeFilters ? (
+                  <View pointerEvents="box-none" style={styles.materialControlRow}>
+                    <GradeFilterControl
+                      label={visibleGradeLabel}
+                      active={hasGradeFilter}
+                      expanded={gradeRailVisible}
+                      height={MATERIAL_CONTROL_HEIGHT}
+                      onPress={() => {
+                        if (gradeRailVisible) {
+                          onCloseGrade();
+                          return;
+                        }
+                        onOpenGrade?.();
+                      }}
+                      onClear={hasGradeFilter ? gradeChip?.onClear : undefined}
+                      toggleAccessibilityLabel={t('mobile.search.gradeAction')}
+                      clearAccessibilityLabel={t('mobile.gradeRail.clearFilterAria')}
+                      openHint={t('mobile.search.gradeOpenHint')}
+                      closeHint={t('mobile.search.gradeCloseHint')}
+                    />
+                    {onOpenFilters ? (
+                      <FilterButton activeFilterCount={nonGradeFilterCount} onPress={onOpenFilters} />
+                    ) : null}
+                  </View>
+                ) : null}
 
-              {/* The quick row carries the condensed summary when the persistent
-              chip row is off. The angle rides the persistent chip row above. */}
-              {visibleFilterSummary ? (
-                <View pointerEvents="box-none" style={styles.materialQuickRow}>
-                  <Chip
-                    compact
-                    mode="flat"
-                    icon={iconMap.filter.android}
-                    onPress={visibleFilterSummary.onClear}
-                    onClose={visibleFilterSummary.onClear}
-                    closeIcon={iconMap.close.android}
-                    accessibilityLabel={visibleFilterSummary.text}
-                    style={styles.materialChip}
-                    textStyle={styles.materialChipText}
-                  >
-                    {visibleFilterSummary.text}
-                  </Chip>
-                </View>
-              ) : null}
-            </View>
-            {/* The persistent chip row runs full-bleed under the app bar: its own
-              16dp content inset is the gutter, and chips scroll to the screen edge. */}
+                {/* The quick row carries the condensed summary when the persistent
+                chip row is off. The angle rides the persistent chip row instead. */}
+                {visibleFilterSummary ? (
+                  <View pointerEvents="box-none" style={styles.materialQuickRow}>
+                    <Chip
+                      compact
+                      mode="flat"
+                      icon={iconMap.filter.android}
+                      onPress={visibleFilterSummary.onClear}
+                      onClose={visibleFilterSummary.onClear}
+                      closeIcon={iconMap.close.android}
+                      accessibilityLabel={visibleFilterSummary.text}
+                      style={styles.materialChip}
+                      textStyle={styles.materialChipText}
+                    >
+                      {visibleFilterSummary.text}
+                    </Chip>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+            {/* The persistent chip row runs full-bleed under the app bar, always
+              pinned: its own 16dp content inset is the gutter, and chips scroll to
+              the screen edge. The screen builds it dense, so Compose's 48dp chip
+              targets are the row's only vertical space. */}
             {persistentChips ? (
               <View pointerEvents="box-none" style={styles.materialChipRow}>
                 {persistentChips}
@@ -405,17 +406,27 @@ function ClimbTopChromeComponent({
         }
       >
         <UserAvatarToolbarAction variant="material" />
-        <BoardSwitcherButton
-          title={tCommon('mobile.nav.climbs')}
-          onPress={handleOpenBoardSwitcher}
-          accessibilityHint={tBoards('boardPill.switchHint')}
-        />
-        {canCreate ? (
+        {/* The title slot, empty as on iOS: the tab names the screen and ⋮ switches
+          boards. The climb on the wall sits in it as a compact pill while presence
+          trusts it. TalkBack reads the screen's name from the header under it in
+          either state; the header fills the slot (a zero-size node has no bounds,
+          and TalkBack skips those) and takes no touches, so the pill stays on top. */}
+        <View pointerEvents="box-none" style={styles.materialTitleSlot}>
+          <View
+            accessible
+            accessibilityRole="header"
+            accessibilityLabel={tCommon('mobile.nav.climbs')}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+          />
+          {wallCapsule}
+        </View>
+        {canCreate && !materialCreateInMenu ? (
           <Appbar.Action
             icon={iconMap.plus.android}
             color={systemColors.label as string}
             onPress={onCreate}
-            accessibilityLabel={t('mobile.create.fab.ariaLabel')}
+            accessibilityLabel={createLabel}
           />
         ) : null}
         <ClimbListBoardActions
@@ -423,6 +434,7 @@ function ClimbTopChromeComponent({
           onOpenHistory={onOpenBoardDetail}
           badge={showBoardBadge}
           showcaseAnchor={anchorBoardButton}
+          createRow={materialCreateRow}
         />
       </MaterialTopAppBar>
     );
@@ -493,23 +505,26 @@ function ClimbTopChromeComponent({
 export const ClimbTopChrome = memo(ClimbTopChromeComponent);
 
 const styles = StyleSheet.create({
-  materialWallStatusRow: {
-    // Full-bleed "On the wall" status band — it owns its own padding, accent rail
-    // and bottom divider, so the wrapper adds no inset.
-    width: '100%',
+  // Between the avatar and the actions: the wall pill centred in it (capped at
+  // 280dp by the pill), or the empty header.
+  materialTitleSlot: {
+    flex: 1,
+    minWidth: 0,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: spacing[1],
   },
   materialFilterStack: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[3],
     gap: spacing[2],
   },
-  materialFilterStackAboveChips: {
-    // The chip row follows outside the stack; keep the stack's gap above it.
-    paddingBottom: spacing[2],
-  },
   materialChipRow: {
-    // `filterChrome` is a fragment (chip row + sheet-only filter tokens).
-    paddingBottom: spacing[3],
+    // `filterChrome` is a fragment (chip row + sheet-only filter tokens). The
+    // dense chip row is 48dp of touch targets with 8dp visible above and below
+    // each chip, so nothing pads under it.
+    paddingBottom: 0,
     gap: spacing[2],
   },
   materialControlRow: {

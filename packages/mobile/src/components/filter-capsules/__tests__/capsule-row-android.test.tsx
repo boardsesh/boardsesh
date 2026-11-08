@@ -61,7 +61,8 @@ vi.mock('@expo/ui/jetpack-compose', () => {
     FilterChip,
     DropdownMenu,
     DropdownMenuItem,
-    Row: ({ children }: ChildrenProps) => createElement('div', { 'data-row': true }, children),
+    Row: ({ children, modifiers }: ChildrenProps & { modifiers?: unknown }) =>
+      createElement('div', { 'data-row': true, 'data-row-modifiers': JSON.stringify(modifiers) }, children),
     Text: ({ children, color }: ChildrenProps & { color?: string }) =>
       createElement('span', { 'data-text-color': color }, children),
     Icon: ({ source, tint }: { source?: unknown; tint?: string }) =>
@@ -83,7 +84,10 @@ vi.mock('@expo/ui/jetpack-compose', () => {
 vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   fillMaxWidth: () => ({}),
   horizontalScroll: () => ({}),
-  padding: () => ({}),
+  padding: (start: number, top: number, end: number, bottom: number) => ({
+    modifier: 'padding',
+    arg: [start, top, end, bottom],
+  }),
   semantics: (arg: unknown) => ({ modifier: 'semantics', arg }),
 }));
 vi.mock('react-native', () => ({
@@ -316,5 +320,23 @@ describe('CapsuleRow.android', () => {
     );
     expect(container.querySelector('hr')).toBeNull();
     expect(chips(container)[0].getAttribute('data-selected')).toBe('true');
+  });
+
+  describe('dense', () => {
+    const rowPadding = (container: HTMLElement) =>
+      (JSON.parse(container.querySelector('[data-row]')?.getAttribute('data-row-modifiers') ?? '[]') as unknown[]).find(
+        (modifier) => (modifier as { modifier?: string }).modifier === 'padding',
+      );
+    const capsules: Capsule[] = [{ kind: 'sheet', key: 'filters', label: 'Filters', onPress: () => {} }];
+
+    it('keeps the 8dp vertical padding by default (the Logbook row)', () => {
+      const { container } = render(createElement(CapsuleRow, { capsules }));
+      expect(rowPadding(container)).toEqual({ modifier: 'padding', arg: [16, 8, 16, 8] });
+    });
+
+    it("drops the vertical padding so the chips' 48dp targets are the row's height", () => {
+      const { container } = render(createElement(CapsuleRow, { capsules, dense: true }));
+      expect(rowPadding(container)).toEqual({ modifier: 'padding', arg: [16, 0, 16, 0] });
+    });
   });
 });
