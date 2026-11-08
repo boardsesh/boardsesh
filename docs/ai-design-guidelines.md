@@ -1007,18 +1007,20 @@ slot, then history and ⋮. It is about 112dp under the status bar (a 64dp app b
 row), with or without a climb on the wall. Only Climbs looks like this; the other root tabs keep
 their titled bars.
 
-- **Empty title slot.** No "Climbs", no board name. The slot is an empty `header` view whose spoken
-  label is "Climbs", so TalkBack still names the screen. Boards are switched from ⋮ → Switch board.
-- **The climb on the wall** fills the title slot as a compact M3 pill (`WallStatusCapsule`,
-  `materialLayout="appBar"`): 48dp tall, full radius, `surfaceContainerHigh`, a short tertiary rail
-  for "lit". The name sits in titleSmall over "grade · one fact" in tertiary labelMedium (who lit it,
-  "On the wall", or how long ago). The grade never cuts. The face drops under a 130dp slot, and the
-  pill stops at 280dp. Tap opens the wall preview; a left swipe or the screen-reader Hide hides it.
-  There is no ×. Other Material callers keep the full-bleed `band` layout.
+- **Empty title slot.** No "Climbs", no board name. The slot holds an empty `header` view whose
+  spoken label is "Climbs", so TalkBack still names the screen. Boards are switched from ⋮ → Switch board.
+- **The climb on the wall** fills the title slot as a compact M3 pill (`WallStatusCapsule`'s
+  Material skin): 48dp tall, full radius, `surfaceContainerHigh`, a short tertiary rail for "lit".
+  The name sits in titleSmall over "grade · one fact" in tertiary labelMedium (who lit it, "On the
+  wall", or how long ago). The grade is never cut in the byline; only the fact gives way. The face
+  shows only once the pill has measured at least 130dp wide, and the pill stops at 280dp. Tap opens
+  the wall preview; a left swipe or the screen-reader Hide hides it. There is no ×. The empty
+  `header` view stays beside the pill, so TalkBack still reads "Climbs".
 - **Create** is ⋮'s first row on a compact width, as on iOS. A regular-width tablet keeps + in the bar.
 - **Chips stay pinned.** The chip row is `dense`: no vertical padding, so Compose's 48dp chip touch
   targets are the row's whole height (8dp visible above and below each 32dp chip). Nothing pads under
-  it. The Logbook and playlist rows keep their 8dp padding.
+  the chips; when the sheet-only filter tokens show, their row keeps 8dp above and below its pills.
+  The Logbook and playlist rows keep their 8dp padding.
 
 **Material building blocks** (`tokens.ts` → `material`, Android branches only): nav active-indicator
 pill 64 × 32 (radius 16), surface elevation 3, pressed state-layer opacity 0.12. `androidRipple(color,

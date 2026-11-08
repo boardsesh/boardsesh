@@ -528,7 +528,6 @@
       "stripA11yLabelWithSender": "En el muro: {{name}}, {{grade}}, encendido por {{sender}}",
       "stripA11yHint": "Abre el bloque del muro",
       "stripOverline": "En el muro",
-      "stripOverlineWithSender": "En el muro · {{sender}}",
       "stripAnnounce": "Ahora en el muro: {{name}}, {{grade}}",
       "stripAnnounceWithSender": "Ahora en el muro: {{name}}, {{grade}}, encendido por {{sender}}",
       "switchBoard": "Cambiar de muro",
@@ -624,7 +623,6 @@
         "exit": "Salir",
         "exitA11y": "Salir de la pantalla de muro"
       },
-      "stripHistoryOverline": "Último en el muro · {{age}}",
       "stripHistoryA11yLabel": "Último en el muro · {{age}}: {{name}}, {{grade}}",
       "stripHistoryA11yLabelWithSender": "Último en el muro · {{age}}: {{name}}, {{grade}}, encendido por {{sender}}",
       "stripDismiss": "Ocultar",

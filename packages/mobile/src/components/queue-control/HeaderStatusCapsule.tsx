@@ -6,7 +6,7 @@
 // the UIKit title-view rules and the entry fade. HeaderCapsuleClimbLabel is the
 // row both capsules use for a climb: a face, then the name, over an optional
 // byline (a stale climb's "20m ago"). The Android app bar's wall pill
-// (WallStatusCapsule's `appBar` layout) draws the same row in M3 type
+// (WallStatusCapsule's Material skin) draws the same row in M3 type
 // (`skin="material"`) and reads the same width rules from its measured slot.
 // A held climb can supply the wall button's opaque patterned surface in place
 // of glass, keeping the same native title host and tap target.

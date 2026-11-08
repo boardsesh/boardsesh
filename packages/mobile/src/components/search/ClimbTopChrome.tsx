@@ -262,8 +262,6 @@ function ClimbTopChromeComponent({
         presentation={headerCapsule.presentation}
         occurrenceKey={headerCapsule.wall.occurrenceKey}
         onDismiss={handleDismissWallCapsule}
-        // Material draws it in the app bar's title slot, not as a band under it.
-        materialLayout="appBar"
       />
     );
   }, [headerCapsule, boardName, handleDismissWallCapsule, ledless]);
@@ -409,20 +407,20 @@ function ClimbTopChromeComponent({
       >
         <UserAvatarToolbarAction variant="material" />
         {/* The title slot, empty as on iOS: the tab names the screen and ⋮ switches
-          boards. The climb on the wall takes it as a compact pill while presence
-          trusts it; otherwise TalkBack still reads the screen's name here. */}
-        {wallCapsule ? (
-          <View pointerEvents="box-none" style={styles.materialTitleSlot}>
-            {wallCapsule}
-          </View>
-        ) : (
+          boards. The climb on the wall sits in it as a compact pill while presence
+          trusts it. TalkBack reads the screen's name from the header under it in
+          either state; the header fills the slot (a zero-size node has no bounds,
+          and TalkBack skips those) and takes no touches, so the pill stays on top. */}
+        <View pointerEvents="box-none" style={styles.materialTitleSlot}>
           <View
             accessible
             accessibilityRole="header"
             accessibilityLabel={tCommon('mobile.nav.climbs')}
-            style={styles.materialTitleSlot}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
           />
-        )}
+          {wallCapsule}
+        </View>
         {canCreate && !materialCreateInMenu ? (
           <Appbar.Action
             icon={iconMap.plus.android}

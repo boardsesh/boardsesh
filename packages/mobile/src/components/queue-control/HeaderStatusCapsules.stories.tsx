@@ -18,7 +18,9 @@ import { WallStatusCapsule } from './WallStatusCapsule';
 // "20m ago" under it on a stale capsule (#7281). Drawn inside the native header
 // context; the narrow toggle shows the compact form a phone gets beside the
 // angle. The held capsules' taps are inert here; the real one disconnects the
-// board.
+// board. Under the Material theme the wall capsule is the Android app bar's M3
+// pill: it fills the slot and reads its width from its own layout (the face
+// shows from 130dp, so the narrow toggle drops it), not from the native bound.
 
 // UIKit's title slot between the two bar groups on an iPhone 17 Pro.
 const TITLE_SLOT_WIDTH = 210;

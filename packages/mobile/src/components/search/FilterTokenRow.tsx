@@ -17,6 +17,11 @@ import { useTheme } from '../../providers/theme-provider';
 
 type FilterTokenRowProps = {
   tokens: FilterToken[];
+  /**
+   * 8dp under the pills. The Material Climbs bar sets it: its dense chip row
+   * pads nothing below, so without it the pills would sit on the list.
+   */
+  bottomInset?: boolean;
 };
 
 function TokenPill({ token }: { token: FilterToken }) {
@@ -47,14 +52,14 @@ function TokenPill({ token }: { token: FilterToken }) {
   );
 }
 
-function FilterTokenRowComponent({ tokens }: FilterTokenRowProps) {
+function FilterTokenRowComponent({ tokens, bottomInset = false }: FilterTokenRowProps) {
   if (tokens.length === 0) return null;
 
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.list}
+      contentContainerStyle={bottomInset ? [styles.list, styles.listBottomInset] : styles.list}
       keyboardShouldPersistTaps="handled"
     >
       {tokens.map((token) => (
@@ -69,6 +74,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
     gap: spacing[2],
+  },
+  listBottomInset: {
+    paddingBottom: spacing[2],
   },
   pill: {
     flexDirection: 'row',

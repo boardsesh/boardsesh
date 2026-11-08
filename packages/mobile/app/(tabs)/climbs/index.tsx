@@ -2070,7 +2070,8 @@ function ClimbListInner() {
           // The Material Climbs bar's 48dp chip row (ClimbTopChrome).
           dense={denseChipRow}
         />
-        <FilterTokenRow tokens={sheetOnlyFilterTokens} />
+        {/* Under the dense Material chip row nothing else pads the pills off the list. */}
+        <FilterTokenRow tokens={sheetOnlyFilterTokens} bottomInset={denseChipRow} />
       </>
     );
   }, [

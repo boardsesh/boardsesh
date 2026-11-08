@@ -507,17 +507,14 @@ vi.mock('../../queue-control/WallStatusCapsule', () => ({
     presentation,
     occurrenceKey,
     onDismiss,
-    materialLayout,
   }: {
     climb: { climbUuid: string };
     presentation: { kind: string; ageLabel?: string; ageByline?: string };
     occurrenceKey: string;
     onDismiss: (occurrenceKey: string) => void;
-    materialLayout?: string;
   }) =>
     createElement('button', {
       'data-wall-capsule': climb.climbUuid,
-      'data-material-layout': materialLayout,
       'data-presentation': presentation.kind,
       'data-age': presentation.ageLabel,
       'data-age-byline': presentation.ageByline,
@@ -1062,12 +1059,16 @@ describe('ClimbTopChrome', () => {
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
     const pill = container.querySelector('[data-appbar-header] [data-wall-capsule="wall-9"]');
     expect(pill).not.toBeNull();
-    expect(pill?.getAttribute('data-material-layout')).toBe('appBar');
     expect(container.querySelectorAll('[data-wall-capsule]')).toHaveLength(1);
-    // The pill takes the slot the a11y-only header holds when nothing is lit.
-    expect(container.querySelector('[data-role="header"]')).toBeNull();
-    const slotStyle = JSON.parse(pill?.parentElement?.getAttribute('data-style') ?? '{}');
-    expect(slotStyle).toMatchObject({ flex: 1, minWidth: 0 });
+    const slot = pill?.parentElement;
+    expect(JSON.parse(slot?.getAttribute('data-style') ?? '{}')).toMatchObject({ flex: 1, minWidth: 0 });
+    // TalkBack still reads "Climbs" while the pill shows: the header sits under it
+    // in the same slot and takes no touches.
+    const header = slot?.querySelector('[data-role="header"]');
+    expect(header?.getAttribute('data-a11y-label')).toBe('mobile.nav.climbs');
+    expect(header?.getAttribute('data-pointer')).toBe('none');
+    // Drawn first, so the pill sits on top of it.
+    expect(slot?.firstElementChild).toBe(header);
   });
 
   describe('Material create', () => {
@@ -1299,8 +1300,9 @@ describe('ClimbTopChrome', () => {
     expect(getByText('Sheet-only filter tokens').parentElement).toBe(chipCarrier);
     expect(styleOf(chipCarrier)).not.toHaveProperty('paddingHorizontal');
     expect(styleOf(railCarrier)).not.toHaveProperty('paddingHorizontal');
-    // The dense chip row is 48dp of chip targets: nothing pads under it, 8dp
-    // between it and the token row.
+    // The dense chip row is 48dp of chip targets: the carrier pads nothing under
+    // it. Its 8dp gap only separates the chips from the token row, which brings
+    // its own 8dp top (and, from the screen, bottom) inset.
     expect(styleOf(chipCarrier)).toMatchObject({ gap: 8, paddingBottom: 0 });
     // No empty filter stack between the bar and the chips: the row follows the bar.
     expect(chipCarrier?.previousElementSibling?.hasAttribute('data-appbar-header')).toBe(true);
@@ -1354,7 +1356,11 @@ describe('ClimbTopChrome', () => {
     expect(container.textContent).not.toContain('mobile.nav.climbs');
     const header = container.querySelector('[data-appbar-header] [data-role="header"]');
     expect(header?.getAttribute('data-a11y-label')).toBe('mobile.nav.climbs');
-    expect(JSON.parse(header?.getAttribute('data-style') ?? '{}')).toMatchObject({ flex: 1, minWidth: 0 });
+    expect(JSON.parse(header?.parentElement?.getAttribute('data-style') ?? '{}')).toMatchObject({
+      flex: 1,
+      minWidth: 0,
+    });
+    expect(container.querySelector('[data-wall-capsule]')).toBeNull();
     expect(routerPush).not.toHaveBeenCalled();
     const history = capsule(container);
     expect(history?.getAttribute('data-capsule')).toBe('Board history, Display:kilter • 12x12 • 40°');

@@ -818,49 +818,6 @@ describe('WallStatusCapsule', () => {
     expect(pressable?.getAttribute('data-hint')).toBe('mobile.boardPresence.stripA11yHint');
   });
 
-  describe("the Material band's ×", () => {
-    const hideButton = (root: HTMLElement) =>
-      root.querySelector('[data-label="mobile.boardPresence.stripDismiss"]') as HTMLElement | null;
-    beforeEach(() => {
-      spies.variant = 'material';
-    });
-
-    it('hides only this lighting, without opening it', () => {
-      const onDismiss = vi.fn();
-      const { container } = render(
-        <WallStatusCapsule climb={makeClimb()} occurrenceKey="board:7:wall-1" onDismiss={onDismiss} />,
-      );
-      const button = hideButton(container)!;
-      expect(button.getAttribute('data-role')).toBe('button');
-      expect(button.querySelector('[data-icon="close"]')).not.toBeNull();
-      // Its own button beside the band's tap target, never inside it.
-      expect(container.querySelector('[data-pressable] [data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
-      fireEvent.click(button);
-      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
-      expect(spies.openWallPreview).not.toHaveBeenCalled();
-    });
-
-    it('is an M3 48dp icon button', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
-      const style = JSON.parse(hideButton(container)?.getAttribute('data-style') ?? '{}');
-      expect(style).toMatchObject({ width: 48, height: 48 });
-    });
-
-    it('is absent when the band cannot be hidden', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(hideButton(container)).toBeNull();
-      expect(container.querySelector('[data-icon="close"]')).toBeNull();
-    });
-
-    it('ignores the release of a swipe that started on the ×', () => {
-      spies.panConsumed = true;
-      const onDismiss = vi.fn();
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={onDismiss} />);
-      fireEvent.click(hideButton(container)!);
-      expect(onDismiss).not.toHaveBeenCalled();
-    });
-  });
-
   it('drops the tap that follows an activated swipe', () => {
     spies.panConsumed = true;
     const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
@@ -893,7 +850,7 @@ describe('WallStatusCapsule', () => {
     expect(spies.enterAnimation).not.toHaveBeenCalled();
   });
 
-  it('renders the Liquid Glass Pressable pill (not the Material band) on iOS', () => {
+  it('renders the Liquid Glass Pressable pill (not the Material pill) on iOS', () => {
     const { container, queryByText } = render(<WallStatusCapsule climb={makeClimb()} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
     expect(container.querySelector('[data-pressable-surface]')).not.toBeNull();
@@ -901,81 +858,7 @@ describe('WallStatusCapsule', () => {
     expect(queryByText('mobile.boardPresence.stripOverline')).toBeNull();
   });
 
-  describe('Material variant (Android)', () => {
-    beforeEach(() => {
-      spies.variant = 'material';
-    });
-
-    it('renders a Material status band via PressableSurface (native ripple), not the glass Pressable', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(container.querySelector('[data-pressable-surface]')).not.toBeNull();
-      expect(getByText('Wax On')).not.toBeNull();
-      expect(getByText('V5 6C')).not.toBeNull();
-    });
-
-    it('names the sender in the "On the wall" overline (no lightbulb)', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
-      // The overline carries "lit + who" in words; the bottom queue bar owns the bulb.
-      expect(getByText('mobile.boardPresence.stripOverlineWithSender:Casey')).not.toBeNull();
-      expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
-      // The person glyph belongs to the anonymous fallback, not a known sender.
-      expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
-    });
-
-    it('uses a historical overline while keeping the climb grade and sender', () => {
-      const { container, getByText } = render(
-        <WallStatusCapsule
-          climb={makeClimb()}
-          presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
-        />,
-      );
-      expect(getByText('mobile.boardPresence.stripHistoryOverline:20m')).toBeTruthy();
-      expect(getByText('V5 6C')).toBeTruthy();
-      expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-name')).toBe('Casey');
-      expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain(
-        'stripHistoryA11yLabel',
-      );
-    });
-
-    it('falls back to the bare overline + a neutral person glyph for an anonymous sender', () => {
-      const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId: null });
-      const { container, getByText } = render(<WallStatusCapsule climb={climb} />);
-      // No sender to name — the overline drops the "· {sender}" suffix gracefully.
-      expect(getByText('mobile.boardPresence.stripOverline')).not.toBeNull();
-      expect(container.querySelector('[data-driver-avatar]')).toBeNull();
-      expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
-      expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
-    });
-
-    it('keeps the band at its own 20dp face and subheadline text', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('20');
-      expect(getByText('Wax On').getAttribute('data-variant')).toBe('subheadline');
-      expect(getByText('V5 6C').getAttribute('data-variant')).toBe('subheadline');
-    });
-
-    it('opens the read-only wall preview on tap', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-      fireEvent.click(container.querySelector('[data-pressable-surface]') as Element);
-      expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-1', _converted: true });
-    });
-
-    it('keeps the grade legible in the light scheme (still renders the grade text)', () => {
-      spies.colorScheme = 'light';
-      const { getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(getByText('V5 6C')).not.toBeNull();
-    });
-
-    it('exposes the same button role + sender-naming label as the glass skin', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-      const pressable = container.querySelector('[data-pressable-surface]');
-      expect(pressable?.getAttribute('data-role')).toBe('button');
-      expect(pressable?.getAttribute('data-label')).toContain('Wax On');
-      expect(pressable?.getAttribute('data-label')).toContain('Casey');
-    });
-  });
-  describe('Material app-bar pill (the Android Climbs bar)', () => {
+  describe('Material (the Android Climbs app-bar pill)', () => {
     beforeEach(() => {
       spies.variant = 'material';
     });
@@ -986,7 +869,7 @@ describe('WallStatusCapsule', () => {
       [...root.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
 
     it('is one 48dp full-radius M3 pill, filling the slot up to 280dp', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(styleOf(pill(container))).toMatchObject({
         height: 48,
         width: '100%',
@@ -995,15 +878,15 @@ describe('WallStatusCapsule', () => {
         overflow: 'hidden',
         backgroundColor: '#2A2142',
       });
-      // The tertiary rail carries the band's "lit" accent.
+      // The tertiary rail carries the "lit" accent.
       expect(container.querySelector('[data-style*="#FF8A3D"]')).not.toBeNull();
-      // No overline, no band divider: the byline states the fact.
+      // No overline: the byline states the fact.
       expect(container.textContent).not.toContain('stripOverlineWithSender');
       expect(container.querySelectorAll('button')).toHaveLength(1);
     });
 
     it('puts the name in titleSmall over grade · who lit it, in tertiary labelMedium', () => {
-      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
       expect(getByText('Wax On').getAttribute('data-variant')).toBe('label');
       expect(styleOf(getByText('Wax On'))).toMatchObject({ fontWeight: '500' });
@@ -1016,13 +899,13 @@ describe('WallStatusCapsule', () => {
     it('says "On the wall" for your own climb, and the age for a climb lit with no live link', () => {
       spies.viewerUserId = 'u-casey';
       spies.sends = '1.4k sends';
-      const live = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      const live = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(lines(live.container)).toEqual(['Wax On', 'V5 6C', ' · mobile.boardPresence.stripOverline']);
       live.unmount();
       const history = render(
         <WallStatusCapsule
           climb={makeClimb()}
-          materialLayout="appBar"
+
           presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
         />,
       );
@@ -1033,7 +916,6 @@ describe('WallStatusCapsule', () => {
       const { container, getByText } = render(
         <WallStatusCapsule
           climb={makeClimb({ name: 'A very long climb name that will not fit', sentByDisplayName: 'Alexandra' })}
-          materialLayout="appBar"
         />,
       );
       expect(styleOf(getByText('V5 6C')).flexShrink).toBe(0);
@@ -1045,14 +927,15 @@ describe('WallStatusCapsule', () => {
     });
 
     it.each([
-      [undefined, true],
+      // Before its first layout the pill shows no face, so a narrow slot never flashes one.
+      [undefined, false],
       [200, true],
       [130, true],
       [129, false],
       [96, false],
     ])("shows the sender's 24dp face only in a pill from 130dp wide: %s (face: %s)", (width, face) => {
       spies.layoutWidth = width;
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
       const avatar = container.querySelector('[data-driver-avatar]');
       expect(avatar != null).toBe(face);
       if (face) expect(avatar?.getAttribute('data-size')).toBe('24');
@@ -1063,7 +946,7 @@ describe('WallStatusCapsule', () => {
       const { container } = render(
         <WallStatusCapsule
           climb={makeClimb()}
-          materialLayout="appBar"
+
           presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
         />,
       );
@@ -1072,7 +955,7 @@ describe('WallStatusCapsule', () => {
     });
 
     it('opens the read-only wall preview on tap', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} materialLayout="appBar" />);
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
       fireEvent.click(container.querySelector('[data-pressable-surface]')!);
       expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-1', _converted: true });
     });
@@ -1082,7 +965,7 @@ describe('WallStatusCapsule', () => {
       const { container } = render(
         <WallStatusCapsule
           climb={makeClimb()}
-          materialLayout="appBar"
+
           occurrenceKey="board:7:wall-1"
           onDismiss={onDismiss}
         />,
@@ -1105,11 +988,6 @@ describe('WallStatusCapsule', () => {
       fireEvent.keyDown(pressable);
       expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
       expect(spies.openWallPreview).not.toHaveBeenCalled();
-    });
-
-    it('keeps the band as the Material default for other callers', () => {
-      const { getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
-      expect(getByText('mobile.boardPresence.stripOverlineWithSender:Casey')).toBeTruthy();
     });
   });
 });
