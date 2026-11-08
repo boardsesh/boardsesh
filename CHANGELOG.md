@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The Climbs screen on Android gives your list more room ([#7330](https://github.com/boardsesh/boardsesh/pull/7330))
+  A slimmer header, with the climb on the wall right in the top bar, thumbnail and all
+  Create a climb now lives in the ⋮ menu on Android phones
 - On Android, the tab bar tucks away while you scroll climbs, so you see more of the list. Scroll up to get it back. ([#7328](https://github.com/boardsesh/boardsesh/pull/7328))
 
 ## 2026-11-07
