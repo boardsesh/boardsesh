@@ -560,6 +560,25 @@ The daemon stays the owner of routine syncs until the cutover sets
 A worker serving this family refuses to start without `KILTER_OAUTH_CLIENT_ID`
 and `AURORA_CREDENTIALS_SECRET`.
 
+### Catalog runtime and progress
+
+The catalog worker has a two-hour hard lease with its existing five-minute
+heartbeat window. The previous one-hour lease repeatedly expired during full
+catalog jobs in November 2026. Catalog batches commit as they finish, so an
+incomplete job can still import new climbs; a successful user logbook sync is
+not evidence that the catalog completed. The weekly stats repair re-fetches
+the full stats catalog and shares this runtime budget.
+
+Production logs emit `[worker] catalog sync phase` at `info` level for the
+`catalog`, `stats-repair`, and `history` phases, with `started` / `finished`
+and elapsed milliseconds. A `catalog` finish confirms ingestion completed
+even if later maintenance fails. Maintenance completion means the phase returned; check its weekly cursor
+and warning logs to see whether work ran successfully.
+The final `catalog sync finished` line confirms the entire job completed.
+Existing queued jobs retain their old lease; verify the change with a newly
+created run after deployment. The shared fan-out deadline grows automatically
+with the catalog lease so queued Aurora jobs and user cycles remain eligible.
+
 ## Daemon
 
 `SYNC_DAEMON_DISABLED=true` (the literal `true`) makes `kilter-sync daemon` log one line and exit 0 before it touches the lease or the pool, so the ansible service goes idle without its unit being deleted (its compose restart policy must not restart a clean exit). The claim skips an account a background job holds a live lease on (`excludeLeased`), so a daemon and a worker never sync one credential at the same time.

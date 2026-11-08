@@ -22,6 +22,12 @@ export type SyncRunnerConfig = {
   /** Max deletion changes applied per catalog run; the backlog drains over cycles. */
   deleteBatchLimit?: number;
   onLog?: (message: string) => void;
+  /** Bounded phase telemetry; never includes upstream payloads or credentials. */
+  onCatalogPhase?: (progress: {
+    phase: 'catalog' | 'stats-repair' | 'history';
+    status: 'started' | 'finished';
+    elapsedMs: number;
+  }) => void;
   onError?: (error: Error, context: { userId?: string; board?: string }) => void;
   /**
    * A database the caller owns (a background worker's pool). When set the

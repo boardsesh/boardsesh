@@ -784,6 +784,31 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
     );
   });
 
+  it('reports catalog completion separately from maintenance and stops reporting on abort', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    mockIsWeeklyCursorDue.mockResolvedValue(true);
+    const controller = new AbortController();
+    const onCatalogPhase = vi.fn();
+    const { db } = createDbShim();
+    const runner = new SyncRunner({ db, onLog: () => {}, onCatalogPhase });
+    mockRepairKilterCatalogStats.mockImplementationOnce(async () => {
+      controller.abort(new Error('lease expired'));
+      throw controller.signal.reason;
+    });
+
+    await expect(runner.runCatalogSyncJob({ signal: controller.signal, environment: noPasswordEnv })).rejects.toThrow(
+      'lease expired',
+    );
+
+    expect(onCatalogPhase.mock.calls.map(([progress]) => progress)).toEqual([
+      { phase: 'catalog', status: 'started', elapsedMs: 0 },
+      { phase: 'catalog', status: 'finished', elapsedMs: expect.any(Number) },
+      { phase: 'stats-repair', status: 'started', elapsedMs: 0 },
+    ]);
+    expect(mockSnapshotHistory).not.toHaveBeenCalled();
+    expect(mockMarkWeeklyCursorDone).not.toHaveBeenCalled();
+  });
+
   it('falls back to the ROPC test account when no climber is linked', async () => {
     mockFindSharedSyncDonorCredential.mockResolvedValue(null);
     const { runner } = injectedRunner();
