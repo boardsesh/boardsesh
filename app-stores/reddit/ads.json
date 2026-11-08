@@ -1,0 +1,44 @@
+{
+  "//": "Reddit ads as code: docs/paid-social-ads.md. Destination URLs are built from the campaign code and ad name; never write one here. nov26-launch is the live campaign, ADOPT_PENDING until an audit run gives us its id.",
+  "version": 1,
+  "platform": "reddit",
+  "adAccountId": null,
+  "currency": "AUD",
+  "namespace": "Boardsesh Managed",
+  "maxDailyBudgetTotal": "20.00",
+  "allowBudgetJump": false,
+  "adoptCampaignIds": [],
+  "reddit": {
+    "pixelId": null
+  },
+  "campaigns": [
+    {
+      "//": "Live since November 2026. Adopt: run the audit action, copy the live campaign id into adoptCampaignIds, match the ad group and ad names and the post id to what the audit prints, then set status PAUSED or ACTIVE.",
+      "code": "nov26-launch",
+      "status": "ADOPT_PENDING",
+      "objective": "CLICKS",
+      "startDate": "2026-11-01",
+      "endDate": "2026-11-30",
+      "adGroups": [
+        {
+          "name": "homewalls",
+          "status": "PAUSED",
+          "dailyBudget": "10.00",
+          "targeting": {
+            "countries": ["US", "AU", "GB", "CA"],
+            "placements": ["FEED"],
+            "interests": [],
+            "communities": ["climbing", "bouldering", "climbharder"]
+          },
+          "ads": [
+            {
+              "name": "homewalls-ad-1",
+              "status": "PAUSED",
+              "creative": { "postId": null }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

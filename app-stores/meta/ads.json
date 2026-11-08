@@ -1,0 +1,49 @@
+{
+  "//": "Meta (Instagram) ads as code: docs/paid-social-ads.md. Destination URLs are built from the campaign code and the ad name (a literal utm_content, never the {{ad.name}} macro). The live nov26-launch ad is an Instagram-app boost with a lifetime budget, which cannot be adopted: it stays unmanaged and visible in audit. The campaign below mirrors it and stays ADOPT_PENDING / PAUSED; to run it from here, make it a new Ads Manager campaign with a daily budget.",
+  "version": 1,
+  "platform": "meta",
+  "adAccountId": null,
+  "currency": "AUD",
+  "namespace": "Boardsesh Managed",
+  "maxDailyBudgetTotal": "20.00",
+  "allowBudgetJump": false,
+  "adoptCampaignIds": [],
+  "meta": {
+    "pageId": null,
+    "instagramUserId": null
+  },
+  "campaigns": [
+    {
+      "//": "Mirrors the live boost (A$600 over 30 days, about A$20 a day): US, JP, NL, 18+, Advantage+ audience on Indoor climbing and Bouldering. Interest ids are null until looked up with Meta's Targeting Search.",
+      "code": "nov26-launch",
+      "status": "ADOPT_PENDING",
+      "objective": "OUTCOME_TRAFFIC",
+      "startDate": "2026-11-01",
+      "endDate": "2026-11-30",
+      "adGroups": [
+        {
+          "name": "ig-boost",
+          "status": "PAUSED",
+          "dailyBudget": "20.00",
+          "targeting": {
+            "countries": ["US", "JP", "NL"],
+            "placements": ["stream", "story", "reels", "explore"],
+            "interests": [
+              { "id": null, "name": "Indoor climbing" },
+              { "id": null, "name": "Bouldering" }
+            ],
+            "ageMin": 18,
+            "advantageAudience": true
+          },
+          "ads": [
+            {
+              "name": "ig-boost-1",
+              "status": "PAUSED",
+              "creative": { "existingCreativeId": null }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
