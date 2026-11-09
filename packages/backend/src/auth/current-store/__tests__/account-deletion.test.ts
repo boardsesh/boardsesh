@@ -1,4 +1,4 @@
-import { createHash, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import postgres from 'postgres';
 import bcrypt from 'bcryptjs';
@@ -50,8 +50,11 @@ import {
 } from '../account-deletion';
 import { recordSecurityMutation } from '../security-mutations';
 import { consumePasswordRecovery, requestPasswordRecovery } from '../password-recovery';
-import { issueEmailVerification } from '../email-verification';
-import { AUTH_PROTOCOL_VERSION } from '@boardsesh/auth-protocol';
+import { consumeEmailVerification, issueEmailVerification, resendEmailVerification } from '../email-verification';
+import { resolveReservedCurrentStoreOAuthIdentity } from '../provider-oauth-identity';
+import { recordWebOAuthIntent } from '../web-oauth-identity';
+import { authenticateWebPassword } from '../web-password';
+import { AUTH_PROTOCOL_VERSION, WEB_OAUTH_PROTOCOL_VERSION } from '@boardsesh/auth-protocol';
 import { executeFirstRow } from '@boardsesh/db/client';
 import {
   lockFixedSystemOwnerTransaction,
@@ -324,6 +327,127 @@ async function requireLockedSubject(
   if (!subject) throw new Error('Owned deletion fixture expected a live subject');
   return subject;
 }
+/** The backend session queued on an advisory gate, so a test can see who is blocking whom. */
+async function sessionWaitingOnGate(gateKey: number): Promise<number> {
+  const deadline = performance.now() + 5000;
+  while (performance.now() < deadline) {
+    const [row] = await observer<
+      { pid: number }[]
+    >`SELECT pid FROM pg_locks WHERE locktype='advisory' AND objid=${gateKey}::oid AND NOT granted LIMIT 1`;
+    if (row) return row.pid;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+  throw new Error('Owned deletion fixture gate had no waiter');
+}
+const recoveryAuthority = () => ({ ...authority, emailVerificationEnabled: false });
+const verificationAuthority = () => ({ ...authority, emailVerificationEnabled: true });
+function webCommand<Operation extends string, Payload>(operation: Operation, payload: Payload) {
+  return {
+    protocolVersion: AUTH_PROTOCOL_VERSION,
+    operation,
+    requestId: randomUUID(),
+    issuedAt: Date.now(),
+    payload,
+  } as const;
+}
+async function issueOwnerRecoveryToken(): Promise<string> {
+  const issued = await requestPasswordRecovery(
+    db,
+    recoveryAuthority(),
+    webCommand('forgot-password', { email: ownerEmail }),
+  );
+  if (issued.outcome !== 'accepted' || !issued.mailPlan) throw new Error('Owned fixture expected a recovery token');
+  return issued.mailPlan.token;
+}
+/** Every staged command that takes the manifest and then a named user's row. */
+const commandsNamingTheAccount: readonly (readonly [string, () => Promise<() => Promise<unknown>>])[] = [
+  [
+    'password sign-in',
+    async () => () =>
+      authenticateWebPassword(db, recoveryAuthority(), webCommand('password', { email: ownerEmail, password })),
+  ],
+  [
+    'forgot password',
+    async () => () =>
+      requestPasswordRecovery(db, recoveryAuthority(), webCommand('forgot-password', { email: ownerEmail })),
+  ],
+  [
+    'password reset',
+    async () => {
+      const token = await issueOwnerRecoveryToken();
+      const newPassword = 'new-owned-deletion-password';
+      return () =>
+        consumePasswordRecovery(
+          db,
+          recoveryAuthority(),
+          webCommand('reset-password', {
+            email: ownerEmail,
+            token,
+            password: newPassword,
+            confirmPassword: newPassword,
+          }),
+        );
+    },
+  ],
+  [
+    'resend verification',
+    async () => () =>
+      resendEmailVerification(db, verificationAuthority(), webCommand('resend-verification', { email: ownerEmail })),
+  ],
+  [
+    'email verification',
+    async () => {
+      const plan = await db.transaction((transaction) =>
+        issueEmailVerification(transaction, verificationAuthority(), ownerId),
+      );
+      if (!plan) throw new Error('Owned fixture expected a verification token');
+      return () =>
+        consumeEmailVerification(
+          db,
+          verificationAuthority(),
+          webCommand('verify-email', { token: plan.token, email: ownerEmail }),
+        );
+    },
+  ],
+  [
+    'provider sign-in',
+    async () => {
+      const subject = randomUUID();
+      await db
+        .insert(accounts)
+        .values({ userId: ownerId, provider: 'google', providerAccountId: subject, type: 'oauth' });
+      return () =>
+        db.transaction((transaction) =>
+          resolveReservedCurrentStoreOAuthIdentity(
+            transaction,
+            authority,
+            'google',
+            { sub: subject, email: ownerEmail, emailVerified: true, name: null },
+            { emailStorage: 'normalized', emailVerification: 'provider', actorUserId: null },
+          ),
+        );
+    },
+  ],
+  [
+    'web OAuth actor',
+    async () => {
+      const secret = randomBytes(32).toString('base64url');
+      const actorCookie = await publicJwt.encode({
+        secret,
+        token: { sub: ownerId, authSessionId: randomUUID() },
+        maxAge: 3600,
+      });
+      return () =>
+        recordWebOAuthIntent(db, authority, secret, {
+          webOAuthProtocolVersion: WEB_OAUTH_PROTOCOL_VERSION,
+          operation: 'intent',
+          requestId: randomUUID(),
+          issuedAt: new Date().toISOString(),
+          payload: { provider: 'google', flow: randomBytes(32).toString('hex'), actorCookie },
+        });
+    },
+  ],
+];
 /** Staged-failure lines only: the PostHog erasure step logs its own error when no queue runs. */
 function stagedFailureLogs() {
   return vi.mocked(logger.error).mock.calls.filter(([line]: unknown[]) => line === stagedFailureLine);
@@ -1302,6 +1426,49 @@ describe('mounted account deletion and current-store authority', () => {
     expect(postgresErrors.getPostgresErrorCode(failure)).toBe('23514');
     expect(stagedFailureLogs()).toEqual([]);
   });
+  it.each(commandsNamingTheAccount)(
+    '%s gives up on an account being deleted and frees the manifest',
+    async (_name, prepare) => {
+      await seedPair();
+      const run = await prepare();
+      await installCascadeTrigger(`PERFORM pg_advisory_xact_lock(${cascadeGateKey});`);
+      const gate = await holdOnBlocker((transaction) =>
+        transaction.execute(sql`SELECT pg_advisory_xact_lock(${cascadeGateKey})`),
+      );
+      let deletion: Promise<boolean> | undefined;
+      let command: Promise<unknown> | undefined;
+      try {
+        deletion = remove();
+        const deletionPid = await sessionWaitingOnGate(cascadeGateKey);
+        command = track(run());
+        const commandSettled = command.then(
+          () => undefined,
+          () => undefined,
+        );
+        // Queued on the deletion's user row, so this command holds the manifest now.
+        const sawCommandWaiting = await waitForBlocker(deletionPid, commandSettled).then(
+          () => true,
+          () => false,
+        );
+        if (sawCommandWaiting) await bounded(preflight(drizzle(observer), authority), 1500);
+        const failure: unknown = await bounded(
+          command.then(
+            () => undefined,
+            (error: unknown) => error,
+          ),
+        );
+        expect(postgresErrors.getPostgresErrorCode(failure)).toBe('55P03');
+        gate.release();
+        await gate.held;
+        expect(await bounded(deletion)).toBe(true);
+        expect(await db.select().from(users).where(eq(users.id, ownerId))).toEqual([]);
+      } finally {
+        gate.release();
+        await bounded(Promise.allSettled([gate.held, ...(deletion ? [deletion] : []), ...(command ? [command] : [])]));
+      }
+    },
+    15000,
+  );
   it('a reset already through real bcrypt cannot restore a deleted user or credential', async () => {
     await seedPair();
     const recoveryAuthority = { ...authority, emailVerificationEnabled: false };

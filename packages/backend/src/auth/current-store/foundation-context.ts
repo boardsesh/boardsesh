@@ -1,6 +1,6 @@
 import type { DbInstance } from '@boardsesh/db/client';
 import { executeFirstRow } from '@boardsesh/db/client';
-import { authEmailProjection } from '@boardsesh/db/schema/auth';
+import { authEmailProjection, users } from '@boardsesh/db/schema/auth';
 import { eq, sql } from 'drizzle-orm';
 
 export type CurrentStoreTransaction = Parameters<Parameters<DbInstance['transaction']>[0]>[0];
@@ -79,4 +79,27 @@ export async function lockEnforcedProjection(
     throw new CurrentStoreFoundationError('STALE_AUTHORITY');
   }
   return manifest;
+}
+
+/**
+ * Every staged auth command queues on the one manifest row, so a command holding
+ * it must not sit behind a long transaction on a user row. Account deletion holds
+ * its user row through all content and the cascade, and a forgot-password request
+ * naming that email needs no credentials. Call after the manifest, before the
+ * first user-row lock; it stays in force to commit because everything after it
+ * still holds the manifest. A longer wait fails with 55P03, which every entry
+ * point reports as unavailable. 250 ms is under PostgreSQL's 1 s deadlock_timeout,
+ * so a command gives up before a deletion queued on the manifest becomes a deadlock.
+ * A limit rather than NOWAIT: FOR UPDATE also conflicts with the brief foreign-key
+ * KEY SHARE of any ordinary write that references the user.
+ */
+export async function boundLockWaitsUnderManifest(transaction: CurrentStoreTransaction): Promise<void> {
+  await transaction.execute(sql`SET LOCAL lock_timeout = '250ms'`);
+}
+
+/** The caller already holds the manifest. See {@link boundLockWaitsUnderManifest}. */
+export async function lockUserRowUnderManifest(transaction: CurrentStoreTransaction, userId: string) {
+  await boundLockWaitsUnderManifest(transaction);
+  const [user] = await transaction.select().from(users).where(eq(users.id, userId)).for('update');
+  return user;
 }

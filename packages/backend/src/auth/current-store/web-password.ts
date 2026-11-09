@@ -10,7 +10,7 @@ import {
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { lockEnforcedProjection, CurrentStoreFoundationError } from './foundation-context';
+import { boundLockWaitsUnderManifest, lockEnforcedProjection, CurrentStoreFoundationError } from './foundation-context';
 import {
   matchCurrentStorePasswordCandidate,
   MAX_CURRENT_STORE_PASSWORD_CANDIDATES,
@@ -213,6 +213,7 @@ export async function authenticateWebPassword(
       };
     // Manifest → users → credentials → cutoffs. Other participating commands
     // must take the same gate first; old writers are explicitly NOT assumed so.
+    await boundLockWaitsUnderManifest(transaction);
     const currentUsers = await transaction
       .select()
       .from(users)

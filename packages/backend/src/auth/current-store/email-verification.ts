@@ -30,7 +30,7 @@ import {
   transactionSettings,
   type WebPasswordAuthority,
 } from './command-context';
-import { lockEnforcedProjection, type CurrentStoreTransaction } from './foundation-context';
+import { lockEnforcedProjection, lockUserRowUnderManifest, type CurrentStoreTransaction } from './foundation-context';
 
 const purpose = 'email-verification' as const;
 const lifetimeMs = 24 * 60 * 60 * 1000;
@@ -82,7 +82,7 @@ export async function issueEmailVerification(
   if (!initial) return null;
   const key = normalizeAccountEmail(initial.email);
   if ((await reservationOwner(transaction, authority, key)) !== userId) return null;
-  const [user] = await transaction.select().from(users).where(eq(users.id, userId)).for('update');
+  const user = await lockUserRowUnderManifest(transaction, userId);
   if (!user || user.emailVerified || normalizeAccountEmail(user.email) !== key) return null;
   const recipient = user.email.trim();
   if (!z.email().safeParse(recipient).success) return null;
@@ -239,7 +239,7 @@ export async function consumeEmailVerification(
     }
     if (!initial || initial.purpose !== purpose) return { ...base, outcome: 'invalid_token' };
     const owner = await reservationOwner(transaction, authority, initial.normalizedEmail);
-    const [user] = await transaction.select().from(users).where(eq(users.id, initial.userId)).for('update');
+    const user = await lockUserRowUnderManifest(transaction, initial.userId);
     const [cutoff] = await transaction
       .select()
       .from(authSubjectCutoffs)

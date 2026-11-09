@@ -35,6 +35,7 @@ import {
 import {
   CurrentStoreFoundationError,
   lockEnforcedProjection,
+  lockUserRowUnderManifest,
   type CurrentStoreTransaction,
 } from './foundation-context';
 import { recordSecurityMutation } from './security-mutations';
@@ -128,7 +129,7 @@ export async function requestPasswordRecovery(
     const userId = await owner(transaction, authority, key);
     assertFresh(issuedAt);
     if (!userId) return { ...base, outcome: 'accepted' };
-    const [user] = await transaction.select().from(users).where(eq(users.id, userId)).for('update');
+    const user = await lockUserRowUnderManifest(transaction, userId);
     if (!user || normalizeAccountEmail(user.email) !== key)
       throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     const [credential] = await transaction
@@ -292,7 +293,7 @@ export async function consumePasswordRecovery(
     if (!initial || initial.purpose !== purpose || !initialCredential || !passwordHash)
       return { ...base, outcome: 'invalid_or_expired' };
     const userId = await owner(transaction, authority, initial.normalizedEmail, true);
-    const [user] = await transaction.select().from(users).where(eq(users.id, initial.userId)).for('update');
+    const user = await lockUserRowUnderManifest(transaction, initial.userId);
     const [credential] = await transaction
       .select()
       .from(userCredentials)

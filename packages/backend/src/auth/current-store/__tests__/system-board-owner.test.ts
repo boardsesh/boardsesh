@@ -466,7 +466,7 @@ describe('fixed shared-board identity authority', () => {
       expect(result.profiles).toHaveLength(1);
     }
   });
-  it('waits out an uncommitted authentication artifact instead of missing it', async () => {
+  it('refuses to pass an uncommitted authentication artifact, without a long manifest hold', async () => {
     await prepare();
     await ensureReservedSystemBoardOwner(db, authority);
     let releaseArtifact = () => {};
@@ -488,18 +488,15 @@ describe('fixed shared-board identity authority', () => {
       await artifactCanCommit;
     });
     await artifactInserted;
-    const ensured = ensureReservedSystemBoardOwner(db, authority);
-    const settledEarly = await Promise.race([
-      ensured.then(
-        () => true,
-        () => true,
-      ),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 400)),
-    ]);
-    expect(settledEarly).toBe(false);
+    // Holding the manifest, so it gives up quickly rather than waiting the row out.
+    const started = performance.now();
+    await expect(ensureReservedSystemBoardOwner(db, authority)).rejects.toMatchObject({ cause: { code: '55P03' } });
+    expect(performance.now() - started).toBeLessThan(2000);
     releaseArtifact();
     await artifact;
-    await expect(ensured).rejects.toMatchObject({ code: 'RESERVATION_INCONSISTENT' });
+    await expect(ensureReservedSystemBoardOwner(db, authority)).rejects.toMatchObject({
+      code: 'RESERVATION_INCONSISTENT',
+    });
   });
   it('rolls back a written reservation after real SQL permission denial on user insert', async () => {
     await prepare();

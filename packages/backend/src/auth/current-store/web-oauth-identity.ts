@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
-import { authSubjectCutoffs, authWebOAuthCommands, authWebOAuthIntents, users } from '@boardsesh/db/schema/auth';
+import { authSubjectCutoffs, authWebOAuthCommands, authWebOAuthIntents } from '@boardsesh/db/schema/auth';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   AUTH_COMMAND_FUTURE_SKEW_MS,
@@ -19,6 +19,7 @@ import { assertFresh, transactionSettings } from './command-context';
 import {
   captureExpectedAuthority,
   lockEnforcedProjection,
+  lockUserRowUnderManifest,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
@@ -81,7 +82,7 @@ async function captureActor(cookie: string | null, secret: string) {
 }
 async function actorGeneration(transaction: CurrentStoreTransaction, actor: NegativeWebOAuthActor | null) {
   if (!actor) return { valid: true, generation: null };
-  const [user] = await transaction.select({ id: users.id }).from(users).where(eq(users.id, actor.userId)).for('update');
+  const user = await lockUserRowUnderManifest(transaction, actor.userId);
   const [cutoff] = await transaction
     .select()
     .from(authSubjectCutoffs)
