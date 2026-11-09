@@ -47,8 +47,8 @@ export async function transactionSettings(transaction: CurrentStoreTransaction) 
   await transaction.execute(sql`SET LOCAL statement_timeout = '5000ms'`);
   await transaction.execute(sql`SET LOCAL lock_timeout = '4000ms'`);
 }
-/** Short preflight only. Never hold the global manifest lock during bcrypt. */
-export async function preflight(database: DbInstance, authority: WebPasswordAuthority) {
+/** Short preflight only. Never hold the global manifest lock during bcrypt or other long work. */
+export async function preflight(database: DbInstance, authority: ExpectedCurrentStoreAuthority) {
   await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
     await lockEnforcedProjection(transaction, authority);

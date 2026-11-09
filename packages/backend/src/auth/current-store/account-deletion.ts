@@ -22,6 +22,11 @@ export interface CapturedAccountDeletionCommand extends ExpectedCurrentStoreAuth
   readonly operationId: string;
 }
 
+/** Read under this attempt's users row lock, so it cannot change before commit. */
+export interface ReservedDeletionSubject {
+  readonly email: string;
+}
+
 /** Trusted authenticated UID and server operation identity, never email resolution. */
 export function captureAccountDeletionCommand(
   authority: ExpectedCurrentStoreAuthority,
@@ -41,14 +46,36 @@ export function captureAccountDeletionCommand(
   return Object.freeze({ ...captureExpectedAuthority(authority), userId, operationId });
 }
 
-/** Enter manifest then fixed-owner key before content; keep human subject/user locks after walls. */
-export async function beginReservedAccountDeletion(
+/**
+ * Enter the fixed-owner key before content; keep human subject/user locks after walls.
+ * The manifest is deliberately absent here: it is one row every staged auth
+ * command queues on, so holding it through content would stall sign-in for
+ * everyone. The caller runs `preflight` first and the manifest returns in
+ * {@link recordReservedAccountDeletion}, where it is re-validated under the lock.
+ * The key never queues, so holding it while later waiting on the manifest
+ * cannot form a cycle with an identity authority: that side is rejected as busy.
+ */
+export async function beginReservedAccountDeletion(transaction: CurrentStoreTransaction): Promise<void> {
+  await lockSharedFixedSystemOwnerTransaction(transaction);
+}
+
+/**
+ * Take the late human-user lock after the account and wall locks, before any
+ * content changes. An absent subject is an error, so a tombstone is never
+ * invented for a UID that never existed.
+ */
+export async function lockReservedDeletionSubject(
   transaction: CurrentStoreTransaction,
   command: CapturedAccountDeletionCommand,
-): Promise<void> {
-  await transactionSettings(transaction);
-  await lockEnforcedProjection(transaction, command);
-  await lockSharedFixedSystemOwnerTransaction(transaction);
+): Promise<ReservedDeletionSubject> {
+  const [subject] = await transaction
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, command.userId))
+    .limit(1)
+    .for('update');
+  if (!subject) throw new CurrentStoreFoundationError('INVALID_COMMAND');
+  return subject;
 }
 
 async function requireRepresentedDeletionEmail(
@@ -92,24 +119,21 @@ async function requireRepresentedDeletionEmail(
 }
 
 /**
- * Call immediately before the real users DELETE in the SAME outer transaction,
- * after existing account/wall/content work has acquired its late user lock.
+ * Call last, after the real users DELETE in the SAME outer transaction, so the
+ * manifest is held for these few statements and not for content or the cascade.
+ * A projection change during that earlier work fails this re-validation and
+ * rolls everything back; once locked here it cannot change before commit.
  * This adds no recent-auth or legacy-validator revocation proof.
  */
 export async function recordReservedAccountDeletion(
   transaction: CurrentStoreTransaction,
   command: CapturedAccountDeletionCommand,
+  subject: ReservedDeletionSubject,
 ): Promise<void> {
+  // SET LOCAL lasts to commit, and nothing but this bookkeeping is left. Content
+  // and the cascade have already run under the same limits as legacy deletion.
+  await transactionSettings(transaction);
   const manifest = await lockEnforcedProjection(transaction, command);
-  // Re-entrant for the mounted deletion path. Keeping this check late preserves
-  // wall -> users ordering and never invents a tombstone for an absent subject.
-  const [subject] = await transaction
-    .select({ id: users.id, email: users.email })
-    .from(users)
-    .where(eq(users.id, command.userId))
-    .limit(1)
-    .for('update');
-  if (!subject) throw new CurrentStoreFoundationError('INVALID_COMMAND');
   await requireRepresentedDeletionEmail(transaction, command.userId, subject.email, manifest.projectionId);
 
   // The manifest serializes cooperating writers. Read each attempt's current
