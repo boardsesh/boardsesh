@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-09T14:36:57.617Z",
+  "generatedAt": "2026-11-09T17:43:54.039Z",
   "entries": [
+    {
+      "prNumber": 7362,
+      "category": "fixed",
+      "title": "Email verification links now bring you back to Boardsesh instead of a dead page.",
+      "mergedAt": "2026-11-09T17:23:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7362"
+    },
     {
       "prNumber": 7350,
       "category": "fixed",

@@ -13,6 +13,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Email verification links now bring you back to Boardsesh instead of a dead page. ([#7362](https://github.com/boardsesh/boardsesh/pull/7362))
 - Old sessions stop working after account deletion. Sign-in recovers when a connection outage clears. ([#7350](https://github.com/boardsesh/boardsesh/pull/7350))
 
 ## 2026-11-08
