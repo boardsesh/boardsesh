@@ -16,6 +16,8 @@ updates:
   # ignore: Better Auth is the partner OAuth server and its internals are pinned
   # by test. An upgrade has to arrive in a PR that reruns the auth gate suite and
   # gets a security review (docs/better-auth-implementation.md), never as a bot bump.
+  # The ignore also stops automatic security PRs, so a security fix arrives by a
+  # hand-opened gated PR, driven by the Dependabot alert.
   - package-ecosystem: 'npm' # Matches the pnpm-lock.yaml at the repo root
     directory: '/'
     schedule:

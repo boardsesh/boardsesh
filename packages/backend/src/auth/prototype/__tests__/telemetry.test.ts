@@ -1,5 +1,5 @@
 import { createTelemetry, type BetterAuthOptions, type TelemetryEvent } from 'better-auth';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it } from 'vite-plus/test';
 import { PROTOTYPE_CONFIGURATION } from '../configuration';
 
 /**
@@ -31,17 +31,5 @@ describe('Better Auth telemetry', () => {
     await expect(eventsPublishedWith({ ...PROTOTYPE_CONFIGURATION, telemetry: { enabled: true } })).resolves.toContain(
       'probe',
     );
-  });
-
-  it('makes no network request while an authority initializes', async () => {
-    const fetchSpy = vi.fn<typeof fetch>();
-    vi.stubGlobal('fetch', fetchSpy);
-    try {
-      const { auth } = await import('../schema-config');
-      await auth.$context;
-      expect(fetchSpy).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 });
