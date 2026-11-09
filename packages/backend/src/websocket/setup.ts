@@ -39,6 +39,13 @@ const DEBUG = process.env.NODE_ENV === 'development';
 const WS_PING_INTERVAL_MS = 30_000;
 export const WS_HUMAN_ADMISSION_SWEEP_INTERVAL_MS = 1000;
 
+/** Longest header value a rejected upgrade may log. The sender controls all of them. */
+const MAX_LOGGED_HEADER_LENGTH = 256;
+
+function clipHeaderForLog(headerValue: string | string[] | undefined): string | undefined {
+  return (Array.isArray(headerValue) ? headerValue.join(', ') : headerValue)?.slice(0, MAX_LOGGED_HEADER_LENGTH);
+}
+
 /** WebSocket extended with liveness tracking for ping/pong. */
 type AliveWebSocket = {
   isAlive: boolean;
@@ -120,10 +127,10 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       // (User-Agent + IP) so they can be traced. forwardedFor is forensic only —
       // it is user-controlled and never used for an allow/deny decision.
       logger.warn('[WebSocket] Rejected connection from unauthorized origin', {
-        origin,
-        host: info.req.headers.host,
-        userAgent: info.req.headers['user-agent'],
-        forwardedFor: info.req.headers['x-forwarded-for'],
+        origin: clipHeaderForLog(origin),
+        host: clipHeaderForLog(info.req.headers.host),
+        userAgent: clipHeaderForLog(info.req.headers['user-agent']),
+        forwardedFor: clipHeaderForLog(info.req.headers['x-forwarded-for']),
         remoteAddress: info.req.socket.remoteAddress,
       });
       callback(false, 403, 'Origin not allowed');

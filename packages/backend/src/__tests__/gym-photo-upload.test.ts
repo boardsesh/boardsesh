@@ -253,6 +253,21 @@ describe('POST /api/gym-photos', () => {
 });
 
 describe('DELETE /api/gym-photos', () => {
+  it('reads its query string when the Host header is empty', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const response = { setHeader: vi.fn(), writeHead: vi.fn(), end: vi.fn() };
+    const request = {
+      method: 'DELETE',
+      url: '/api/gym-photos?gymUuid=not-a-uuid',
+      headers: { host: '', authorization: 'Bearer owner' },
+    };
+
+    await handleGymPhotoDelete(request as never, response as never);
+
+    expect(response.writeHead).toHaveBeenCalledWith(400, { 'Content-Type': 'application/json' });
+    expect(response.end).toHaveBeenCalledWith(JSON.stringify({ error: 'Invalid gymUuid format' }));
+  });
+
   it('clears image_url itself rather than trusting the caller to have done it', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const { baseUrl, server } = await startPhotoServer();

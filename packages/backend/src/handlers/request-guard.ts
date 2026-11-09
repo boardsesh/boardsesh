@@ -1,4 +1,5 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'http';
+import { parseRequestTarget } from '../lib/request-url';
 import { logger } from '../utils/logger';
 
 /** One replica logs the tally of refused requests at most this often. */
@@ -6,23 +7,15 @@ export const MALFORMED_REQUEST_LOG_INTERVAL_MS = 60_000;
 
 const MALFORMED_REQUEST_BODY = JSON.stringify({ error: 'Bad request' });
 
-/**
- * The parsed request URL, or null when `new URL` refuses it.
- *
- * Node's HTTP parser only checks that a target and a Host header are made of
- * legal bytes, which lets through plenty that `new URL` throws on: `GET //`,
- * `Host: x:abc`, `Host: ::1`, `Host: [::1`. An HTTP/1.0 request may have no Host
- * at all, and an empty one reaches here as `''`; both keep the `localhost` base.
- */
+/** The parsed request URL, or null when the target or Host cannot be parsed. */
 export function parseRequestUrl(req: IncomingMessage): URL | null {
-  try {
-    return new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  } catch {
-    return null;
-  }
+  return parseRequestTarget(req.url, req.headers.host);
 }
 
-/** Answers 400 and closes the connection, so nothing pipelined behind it is read. */
+/**
+ * Answers 400 and closes the connection. A request pipelined in the same packet
+ * may already be dispatched by then, but its response is dropped with the socket.
+ */
 export function refuseMalformedRequest(res: ServerResponse): void {
   res.writeHead(400, {
     'Content-Type': 'application/json',
@@ -33,22 +26,32 @@ export function refuseMalformedRequest(res: ServerResponse): void {
 }
 
 /**
- * Returns a function to call once per refused request. It logs a tally at most
- * once per interval, so the sender cannot choose how much we log. The line is a
- * `warn` carrying only the count: `error` would become a Sentry event through
- * SentryWinstonTransport, and the target and Host are the sender's own bytes.
+ * Counts refused requests and logs the tally once per interval, so the sender
+ * cannot choose how much we log and a burst that stops is still reported. The
+ * line is a `warn` carrying only the count: `error` would become a Sentry event
+ * through SentryWinstonTransport, and the target and Host are the sender's own
+ * bytes. The timer is unref'd so it never holds the process open.
  */
-export function createMalformedRequestRecorder(now: () => number = Date.now): () => void {
+export function createMalformedRequestRecorder(): { record: () => void; flushTimer: NodeJS.Timeout } {
   let refusedSinceLastLog = 0;
-  let lastLoggedAtMs = Number.NEGATIVE_INFINITY;
 
-  return () => {
-    refusedSinceLastLog += 1;
-    const currentMs = now();
-    if (currentMs - lastLoggedAtMs < MALFORMED_REQUEST_LOG_INTERVAL_MS) return;
-    lastLoggedAtMs = currentMs;
-    logger.warn('[HTTP] Refused requests with an unparseable target or Host', { refused: refusedSinceLastLog });
+  const flushTimer = setInterval(() => {
+    if (refusedSinceLastLog === 0) return;
+    const refused = refusedSinceLastLog;
     refusedSinceLastLog = 0;
+    try {
+      logger.warn('[HTTP] Refused requests with an unparseable target or Host', { refused });
+    } catch {
+      // A timer callback that throws would exit the process over a log line.
+    }
+  }, MALFORMED_REQUEST_LOG_INTERVAL_MS);
+  flushTimer.unref();
+
+  return {
+    record: () => {
+      refusedSinceLastLog += 1;
+    },
+    flushTimer,
   };
 }
 

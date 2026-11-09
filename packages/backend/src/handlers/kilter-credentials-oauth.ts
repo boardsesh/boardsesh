@@ -205,8 +205,8 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 function requestOrigin(req: IncomingMessage): string {
   const forwardedProto = req.headers['x-forwarded-proto'];
   const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
-  const scheme = proto || (process.env.NODE_ENV === 'production' ? 'https' : 'http');
-  return `${scheme}://${req.headers.host ?? 'localhost'}`;
+  const scheme = proto && /^https?$/.test(proto) ? proto : process.env.NODE_ENV === 'production' ? 'https' : 'http';
+  return `${scheme}://${req.headers.host || 'localhost'}`;
 }
 
 function requestAllowedOrigin(req: IncomingMessage): string | null {

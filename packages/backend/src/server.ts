@@ -362,7 +362,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   // Create GraphQL Yoga instance
   const yoga = createYogaInstance();
 
-  const recordMalformedRequest = createMalformedRequestRecorder();
+  const malformedRequests = createMalformedRequestRecorder();
 
   /**
    * Custom request handler that routes requests to appropriate handlers
@@ -371,7 +371,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
     const url = parseRequestUrl(req);
     if (!url) {
       refuseMalformedRequest(res);
-      recordMalformedRequest();
+      malformedRequests.record();
       return;
     }
     const pathname = url.pathname;
@@ -778,6 +778,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         // Apply CORS for GraphQL requests
         if (!applyCorsHeaders(req, res)) return;
 
+        // Yoga builds its URL as `http://<Host><target>`, which an absolute-form
+        // target turns into an invalid URL and a 500 carrying a stack trace.
+        req.url = url.pathname + url.search;
+
         // Yoga handles the request and writes directly to the response
         await yoga.handle(req, res);
         return;
@@ -827,7 +831,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   const { wss, pingInterval } = setupWebSocketServer(httpServer);
 
   // Track intervals for cleanup
-  const intervals: NodeJS.Timeout[] = [pingInterval];
+  const intervals: NodeJS.Timeout[] = [pingInterval, malformedRequests.flushTimer];
 
   logger.info(`Boardsesh Backend starting on port ${PORT}...`);
   // Whether this process reports to the production Sentry/PostHog projects is

@@ -96,7 +96,7 @@ export async function handleGymPhotoDelete(req: IncomingMessage, res: ServerResp
     return;
   }
 
-  const requestUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  const requestUrl = new URL(req.url ?? '/', `http://${req.headers.host || 'localhost'}`);
   const gymUuid = requestUrl.searchParams.get('gymUuid');
   if (!gymUuid || !validateGymUuid(gymUuid)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });

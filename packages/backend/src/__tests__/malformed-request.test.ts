@@ -29,6 +29,27 @@ vi.mock('../handlers/robots', async (importOriginal) => {
   };
 });
 
+// Counts what the running server reports, because the tally itself only reaches
+// the log once per real minute.
+const recordedRefusals = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock('../handlers/request-guard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../handlers/request-guard')>();
+  return {
+    ...actual,
+    createMalformedRequestRecorder: () => {
+      const recorder = actual.createMalformedRequestRecorder();
+      return {
+        ...recorder,
+        record: () => {
+          recordedRefusals.count += 1;
+          recorder.record();
+        },
+      };
+    },
+  };
+});
+
 type RawResponse = {
   statusLine: string | null;
   headers: string;
@@ -94,6 +115,12 @@ function requestBytes(target: string, host: string | null, options: { method?: s
 function http10Bytes(target: string, host: string | null): string {
   const hostLine = host === null ? '' : `Host: ${host}\r\n`;
   return `GET ${target} HTTP/1.0\r\n${hostLine}\r\n`;
+}
+
+function graphqlPostBytes(target: string, host: string): string {
+  const query = JSON.stringify({ query: '{ __typename }' });
+  const extra = `Content-Type: application/json\r\nContent-Length: ${query.length}\r\n`;
+  return requestBytes(target, host, { method: 'POST', extra }) + query;
 }
 
 const shown = (input: string) =>
@@ -268,7 +295,7 @@ describe('the running server', () => {
       expectRefused(await sendRaw(port, request), expectedBody);
     });
 
-    it('answers once and reads nothing pipelined behind the bad request', async () => {
+    it('sends one response when another request is pipelined behind the bad one', async () => {
       const response = await sendRaw(port, requestBytes('//', 'localhost') + requestBytes('/nope', 'localhost'));
       expectRefused(response);
       expect(response.body).not.toContain('HTTP/1.1');
@@ -281,11 +308,13 @@ describe('the running server', () => {
       const warnLog = vi.spyOn(logger, 'warn');
       const infoLog = vi.spyOn(logger, 'info');
       const canary = 'canary-from-the-sender';
+      const refusalsBefore = recordedRefusals.count;
 
       for (let attempt = 0; attempt < 25; attempt += 1) {
         expectRefused(await sendRaw(port, requestBytes(`//${canary}:abc`, `${canary}:abc`)));
       }
 
+      expect(recordedRefusals.count - refusalsBefore).toBe(25);
       expect(errorLog).not.toHaveBeenCalled();
       expect(warnLog.mock.calls.length).toBeLessThanOrEqual(1);
       expect(JSON.stringify([warnLog.mock.calls, infoLog.mock.calls])).not.toContain(canary);
@@ -426,6 +455,105 @@ describe('the running server', () => {
     });
   });
 
+  describe('a rejected upgrade', () => {
+    it('clips every sender-set header it logs', async () => {
+      const warnLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const filler = 'a'.repeat(3_000);
+      const extra = `${WEBSOCKET_HEADERS}Origin: http://o${filler}\r\nUser-Agent: u${filler}\r\nX-Forwarded-For: f${filler}\r\n`;
+
+      const response = await sendRaw(port, requestBytes('/graphql', `h${filler}`, { extra }));
+
+      expect(response.statusLine).toBe('HTTP/1.1 403 Forbidden');
+      const logged = (warnLog.mock.calls as unknown as Array<[string, Record<string, string>]>).find(([message]) =>
+        message.includes('Rejected connection'),
+      )?.[1];
+      for (const field of ['origin', 'host', 'userAgent', 'forwardedFor']) {
+        expect(logged?.[field]).toHaveLength(256);
+      }
+    });
+  });
+
+  describe('the API host when its Host is malformed', () => {
+    const UNPARSEABLE_API_HOSTS = [`${API_HOSTNAME}:abc`, `${API_HOSTNAME}:1:2`, `${API_HOSTNAME}, x`];
+    const READABLE_API_HOSTS = [
+      `${API_HOSTNAME}/`,
+      `${API_HOSTNAME}/x`,
+      `${API_HOSTNAME}?x`,
+      `${API_HOSTNAME}#x`,
+      `u@${API_HOSTNAME}`,
+      `${API_HOSTNAME}\\`,
+      `/${API_HOSTNAME}`,
+      `\\${API_HOSTNAME}`,
+      '%61pi.boardsesh.com',
+      'a\tpi.boardsesh.com',
+      `\xad${API_HOSTNAME}`,
+      '\xaapi.boardsesh.com',
+      'api.b\xbaardsesh.com',
+    ];
+    const LOOKALIKE_HOSTS = [
+      `evil.com/${API_HOSTNAME}`,
+      `${API_HOSTNAME}.evil.example`,
+      `not${API_HOSTNAME}`,
+      `${API_HOSTNAME}@evil.com`,
+    ];
+
+    const upgrade = (host: string) => sendRaw(port, requestBytes('/graphql', host, { extra: WEBSOCKET_HEADERS }));
+
+    it.each(UNPARSEABLE_API_HOSTS.map((host) => [shown(host), host] as const))(
+      'refuses a GraphQL POST and an upgrade for %s',
+      async (_label, host) => {
+        expect((await sendRaw(port, graphqlPostBytes('/graphql', host))).statusLine).toBe('HTTP/1.1 400 Bad Request');
+        expect((await upgrade(host)).statusLine).toBe('HTTP/1.1 404 Not Found');
+      },
+    );
+
+    it.each(READABLE_API_HOSTS.map((host) => [shown(host), host] as const))(
+      'keeps the route list for a GraphQL POST and an upgrade on %s',
+      async (_label, host) => {
+        const post = await sendRaw(port, graphqlPostBytes('/graphql', host), HEALTHY_ROUTE_DEADLINE_MS);
+        expect(post.statusLine).toBe('HTTP/1.1 404 Not Found');
+        expect(post.body).toContain(JSON.stringify({ error: 'Not found' }));
+        expect((await upgrade(host)).statusLine).toBe('HTTP/1.1 404 Not Found');
+      },
+    );
+
+    it.each(LOOKALIKE_HOSTS.map((host) => [shown(host), host] as const))(
+      'leaves the lookalike %s out of the filter',
+      async (_label, host) => {
+        expect((await upgrade(host)).statusLine).toBe('HTTP/1.1 101 Switching Protocols');
+      },
+    );
+  });
+
+  describe('GraphQL by target form', () => {
+    function expectGraphqlAnswer(response: RawResponse) {
+      expect(response.statusLine).toBe('HTTP/1.1 200 OK');
+      expect(response.body).toContain('__typename');
+      expect(response.body).not.toContain('node_modules');
+      expect(response.body).not.toMatch(/\n\s+at /);
+    }
+
+    it.each([
+      ['http://x/graphql', 'x:80'],
+      ['http://x:80/graphql', 'x:80'],
+      ['https://x/graphql?a=1', 'x:443'],
+      ['http://example.com/graphql', 'localhost'],
+      ['/graphql', 'ws.boardsesh.com'],
+      ['/graphql?a=1', 'ws.boardsesh.com'],
+      ['//foo/graphql', 'localhost'],
+    ])('runs a POST to %s with Host %s', async (target, host) => {
+      expectGraphqlAnswer(await sendRaw(port, graphqlPostBytes(target, host), HEALTHY_ROUTE_DEADLINE_MS));
+    });
+
+    it.each([
+      ['/graphql?query=%7B__typename%7D', 'ws.boardsesh.com'],
+      ['http://x/graphql?query=%7B__typename%7D', 'x:80'],
+    ])('keeps the query string on a GET to %s', async (target, host) => {
+      const request = requestBytes(target, host, { extra: 'Accept: application/json\r\n' });
+      expectGraphqlAnswer(await sendRaw(port, request, HEALTHY_ROUTE_DEADLINE_MS));
+    });
+  });
+
   describe('when a handler throws', () => {
     const fail = (error: unknown) => () => {
       throw error;
@@ -504,31 +632,50 @@ describe('the running server', () => {
 
 describe('createMalformedRequestRecorder', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it('logs the first request, then only a tally once per interval', () => {
+  it('reports a burst that stops, in one line, and stays quiet afterwards', () => {
+    vi.useFakeTimers();
     const warnLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
-    let currentMs = 1_000_000;
-    const record = createMalformedRequestRecorder(() => currentMs);
+    const recorder = createMalformedRequestRecorder();
 
-    record();
+    for (let attempt = 0; attempt < 10_000; attempt += 1) recorder.record();
+    expect(warnLog).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(MALFORMED_REQUEST_LOG_INTERVAL_MS);
     expect(warnLog).toHaveBeenCalledTimes(1);
+    expect(warnLog).toHaveBeenLastCalledWith(expect.any(String), { refused: 10_000 });
+
+    vi.advanceTimersByTime(MALFORMED_REQUEST_LOG_INTERVAL_MS * 5);
+    expect(warnLog).toHaveBeenCalledTimes(1);
+
+    recorder.record();
+    vi.advanceTimersByTime(MALFORMED_REQUEST_LOG_INTERVAL_MS);
+    expect(warnLog).toHaveBeenCalledTimes(2);
     expect(warnLog).toHaveBeenLastCalledWith(expect.any(String), { refused: 1 });
 
-    for (let attempt = 0; attempt < 500; attempt += 1) {
-      currentMs += 1;
-      record();
-    }
-    expect(warnLog).toHaveBeenCalledTimes(1);
+    clearInterval(recorder.flushTimer);
+  });
 
-    currentMs += MALFORMED_REQUEST_LOG_INTERVAL_MS;
-    record();
-    expect(warnLog).toHaveBeenCalledTimes(2);
-    expect(warnLog).toHaveBeenLastCalledWith(expect.any(String), { refused: 501 });
+  it('does not hold the process open', () => {
+    const recorder = createMalformedRequestRecorder();
+    expect(recorder.flushTimer.hasRef()).toBe(false);
+    clearInterval(recorder.flushTimer);
+  });
 
-    record();
-    expect(warnLog).toHaveBeenCalledTimes(2);
+  it('survives a logger that throws', () => {
+    vi.useFakeTimers();
+    vi.spyOn(logger, 'warn').mockImplementation(() => {
+      throw new Error('the logger failed');
+    });
+    const recorder = createMalformedRequestRecorder();
+
+    recorder.record();
+    expect(() => vi.advanceTimersByTime(MALFORMED_REQUEST_LOG_INTERVAL_MS)).not.toThrow();
+
+    clearInterval(recorder.flushTimer);
   });
 });
 
@@ -582,14 +729,40 @@ describe('the server process', () => {
         DATABASE_URL: getWorkerDatabaseUrl(),
         MALFORMED_REQUEST_SENTRY_DSN: `http://public@127.0.0.1:${sentrySinkPort}/1`,
       },
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
     serverProcess = child;
-    const [message] = (await once(child, 'message')) as [{ type: string; port: number }];
+
+    let childOutput = '';
+    const keepOutputTail = (chunk: Buffer) => {
+      childOutput = (childOutput + chunk.toString('utf8')).slice(-4_000);
+    };
+    child.stdout?.on('data', keepOutputTail);
+    child.stderr?.on('data', keepOutputTail);
+
+    const message = await new Promise<{ type: string; port: number }>((resolve, reject) => {
+      const bootDeadline = setTimeout(
+        () => reject(new Error(`Server process did not start within ${CHILD_BOOT_DEADLINE_MS} ms:\n${childOutput}`)),
+        CHILD_BOOT_DEADLINE_MS,
+      );
+      child.once('message', (received) => {
+        clearTimeout(bootDeadline);
+        resolve(received as { type: string; port: number });
+      });
+      child.once('error', (error) => {
+        clearTimeout(bootDeadline);
+        reject(error);
+      });
+      child.once('exit', (code, signal) => {
+        clearTimeout(bootDeadline);
+        reject(new Error(`Server process exited (${code ?? signal}) before listening:\n${childOutput}`));
+      });
+    });
     expect(message.type).toBe('listening');
     return message.port;
   }
 
+  const CHILD_BOOT_DEADLINE_MS = 60_000;
   const CHILD_TEST_TIMEOUT_MS = 90_000;
 
   it(
@@ -612,7 +785,7 @@ describe('the server process', () => {
   );
 
   it(
-    'answers instead of hanging with Sentry on, and reports no event per request',
+    'answers instead of hanging with Sentry on, and sends Sentry nothing about refused requests',
     { timeout: CHILD_TEST_TIMEOUT_MS },
     async () => {
       const childPort = await launch('sentry-on');
@@ -620,19 +793,33 @@ describe('the server process', () => {
       for (const request of [
         requestBytes('//', 'localhost'),
         requestBytes('/nope', 'x:abc'),
-        requestBytes('//', 'localhost'),
         requestBytes('/nope', '[::1'),
+        requestBytes('/\\', 'localhost'),
+        requestBytes('http://[', 'localhost'),
+        requestBytes('//', 'localhost', { extra: 'X-Forwarded-Host: proxy.example\r\n' }),
+        http10Bytes('//', null),
       ]) {
         const response = await sendRaw(childPort, request);
         expect(response.statusLine).toBe('HTTP/1.1 400 Bad Request');
         expect(response.serverClosed).toBe(true);
       }
 
+      // The control: same process and sampler, on a request it does record.
+      const recorded = await sendRaw(
+        childPort,
+        graphqlPostBytes('/graphql', 'ws.boardsesh.com'),
+        HEALTHY_ROUTE_DEADLINE_MS,
+      );
+      expect(recorded.statusLine).toBe('HTTP/1.1 200 OK');
+
       const flushed = once(serverProcess as ChildProcess, 'message');
       serverProcess?.send('flush');
       await flushed;
 
-      expect(sentryEnvelopes.filter((envelope) => envelope.includes('Invalid URL'))).toEqual([]);
+      expect(sentryEnvelopes.filter((envelope) => envelope.includes('"type":"event"'))).toEqual([]);
+      const transactions = sentryEnvelopes.filter((envelope) => envelope.includes('"type":"transaction"'));
+      expect(transactions).toHaveLength(1);
+      expect(transactions[0]).toContain('POST /graphql');
       expect(serverProcess?.exitCode).toBeNull();
     },
   );

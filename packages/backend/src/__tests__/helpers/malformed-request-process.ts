@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/node';
+import { resolveBackendTracesSampleRate } from '../../lib/sentry-sampling';
 
 // Runs the real server in a child, because what a stray rejection does depends
 // on the process-level listeners, and the test runner installs its own. With
@@ -13,7 +14,13 @@ if (!process.send || process.env.NODE_ENV !== 'test' || new URL(sentryDsn).hostn
 }
 
 const sentryMode = process.argv[2];
-Sentry.init({ dsn: sentryDsn, enabled: sentryMode === 'sentry-on', tracesSampleRate: 0 });
+Sentry.init({
+  dsn: sentryDsn,
+  enabled: sentryMode === 'sentry-on',
+  // The production sampler made certain: whatever it would ever record, record.
+  tracesSampler: ({ name, attributes, normalizedRequest, parentSampled }) =>
+    resolveBackendTracesSampleRate({ name, attributes, normalizedRequest, parentSampled }) > 0 ? 1 : 0,
+});
 
 // Imported after Sentry.init, for the same reason instrument.ts is loaded first.
 process.env.PORT = '0';
