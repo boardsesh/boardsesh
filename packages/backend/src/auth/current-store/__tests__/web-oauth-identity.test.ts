@@ -702,15 +702,26 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
       const owner = await seedLinked('google');
       const original = await actorCookie(owner.userId);
       const binding = operation === 'resolve' ? await intent('google', original) : undefined;
+      const flow = randomBytes(32).toString('hex');
       const candidate =
         operation === 'intent'
-          ? command('intent', { provider: 'google', flow: randomBytes(32).toString('hex'), actorCookie: original })
+          ? command('intent', { provider: 'google', flow, actorCookie: null })
           : resolveCommand(binding!, { subject: owner.subject, actorCookie: await actorCookie(owner.userId) });
       const held = deferred(),
         release = deferred();
       const blocker = db.transaction(async (transaction) => {
-        // A user-row wait under the manifest stops at 250 ms, too short to outlast a deadline.
-        if (operation === 'intent') await transaction.select().from(authEmailProjection).for('update');
+        // An actor's user-row wait stops at 250 ms, too short to outlast a deadline, so
+        // an anonymous intent queues on this uncommitted hash instead, after its claim.
+        if (operation === 'intent')
+          await transaction.insert(authWebOAuthIntents).values({
+            intentHash: createHash('sha256')
+              .update(JSON.stringify(['web-oauth-intent-v1', 'google', flow]))
+              .digest('hex'),
+            provider: 'google',
+            flowHash: flow,
+            issuedAt: new Date(),
+            expiresAt: new Date(Date.now() + 60000),
+          });
         else await transaction.select().from(authWebOAuthIntents).for('update');
         held.resolve();
         await release.promise;
@@ -738,7 +749,7 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
       expect(result.body).toEqual({ error: 'expired_request' });
       expect((await db.select().from(authWebOAuthCommands)).length).toBe(operation === 'resolve' ? 1 : 0);
       const records = await db.select().from(authWebOAuthIntents);
-      expect(records.length).toBe(operation === 'resolve' ? 1 : 0);
+      expect(records.length).toBe(1);
       expect(records.every((record) => record.consumedAt === null)).toBe(true);
     },
   );
