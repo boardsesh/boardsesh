@@ -360,12 +360,17 @@ added to that list as they ship.
 To turn it on, as the owner:
 
 1. Add `api.boardsesh.com` as a custom domain on the backend service in Railway. Railway prints the CNAME target.
-2. Add a `management: 'full'`, `type: 'CNAME'`, `ttl: 1`, `proxied: true` entry for `API_HOSTNAME` to `dnsRecords`,
+2. Create the TXT record `_railway-verify.api.boardsesh.com` in the Cloudflare dashboard, because `cf:apply` does not
+   manage TXT records. Its value appears only in Railway's domain panel. Wait for the domain to show `verified: true`
+   before merging the CNAME change in the next two steps. Without it Railway's edge answers `Application not found`
+   for the host. See "Railway custom-domain verification" in `docs/production-deploy.md`.
+3. Add a `management: 'full'`, `type: 'CNAME'`, `ttl: 1`, `proxied: true` entry for `API_HOSTNAME` to `dnsRecords`,
    with that target as `content`, and no `settings` block (same as `www` below). Update the test in
    `scripts/cloudflare-apply.test.ts` that pins the record as absent.
-3. Merge. `deploy-cloudflare` creates the record.
+4. Merge. `deploy-cloudflare` creates the record.
 
-To roll back, remove the entry and delete the record in the dashboard: the tool never deletes DNS records.
+To roll back, remove the entry and delete the CNAME in the dashboard: the tool never deletes DNS records. Keep the TXT
+record.
 
 Verify:
 
