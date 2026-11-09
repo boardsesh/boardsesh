@@ -2,7 +2,9 @@ import { type NextRequest, NextResponse } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { normalizeEmail } from '@boardsesh/db/utils';
+import { getEmailVerificationTokenIdentifier } from '@/app/lib/auth/email-verification-token';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
@@ -56,15 +58,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email } = validationResult.data;
+    const email = normalizeEmail(validationResult.data.email);
     const db = getDb();
 
-    // Check if user exists and is unverified
-    const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+    // Check if user exists and is unverified (case-insensitive — legacy rows may be mixed-case)
+    const user = await db
+      .select()
+      .from(schema.users)
+      .where(and(sql`lower(${schema.users.email}) = ${email}`, isNull(schema.users.emailVerified)))
+      .orderBy(schema.users.createdAt, schema.users.id)
+      .limit(1);
 
     // Don't reveal user status - return same message for all cases
     // Use consistent delay for all paths to prevent timing attacks
-    if (user.length === 0 || user[0].emailVerified) {
+    if (user.length === 0) {
       await consistentDelay(startTime);
       return NextResponse.json({ message: genericMessage }, { status: 200 });
     }
@@ -72,13 +79,14 @@ export async function POST(request: NextRequest) {
     // Generate new token
     const token = crypto.randomUUID();
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const identifier = getEmailVerificationTokenIdentifier(user[0].id);
 
     // Delete existing tokens and create new one atomically
     await db.transaction(async (tx) => {
-      await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, email));
+      await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
 
       await tx.insert(schema.verificationTokens).values({
-        identifier: email,
+        identifier,
         token,
         expires,
       });

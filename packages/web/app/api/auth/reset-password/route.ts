@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { normalizeEmail } from '@boardsesh/db/utils';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
-import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
+import {
+  getPasswordResetUserId,
+  getLegacyPasswordResetEmail,
+  hashResetToken,
+  consistentDelay,
+} from '@/app/lib/auth/password-reset';
 
 const resetPasswordSchema = z
   .object({
@@ -54,25 +60,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email, token, password } = validationResult.data;
+    const { token, password } = validationResult.data;
+    const email = normalizeEmail(validationResult.data.email);
     const db = getDb();
-    const identifier = getPasswordResetIdentifier(email);
     const tokenHash = hashResetToken(token);
 
     const now = new Date();
     const resetToken = await db
-      .select({ expires: schema.verificationTokens.expires })
+      .select({ identifier: schema.verificationTokens.identifier })
       .from(schema.verificationTokens)
-      .where(
-        and(
-          eq(schema.verificationTokens.identifier, identifier),
-          eq(schema.verificationTokens.token, tokenHash),
-          gt(schema.verificationTokens.expires, now),
-        ),
-      )
-      .limit(1);
+      .where(and(eq(schema.verificationTokens.token, tokenHash), gt(schema.verificationTokens.expires, now)))
+      .limit(2);
 
-    if (resetToken.length === 0) {
+    if (resetToken.length !== 1) {
       // Do NOT delete here — a wrong token in this position could let an attacker
       // invalidate a victim's freshly-issued token (DoS). Tokens expire naturally
       // (1 hour TTL) and are cleaned up by the delete-before-insert in forgot-password.
@@ -80,17 +80,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
-    // The token row only carries the email-derived identifier, not the user id —
-    // look the user up to get the id the transaction below needs. This also guards
-    // the rare case where the account was deleted within the token's 1-hour window.
-    const user = await db
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(eq(schema.users.email, email))
-      .limit(1);
-    if (user.length === 0) {
-      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
-      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
+    const tokenIdentifier = resetToken[0].identifier;
+    const tokenUserId = getPasswordResetUserId(tokenIdentifier);
+    let targetUserId: string;
+    if (tokenUserId) {
+      // Current reset tokens are bound to the account selected when requested.
+      const user = await db
+        .select({ id: schema.users.id, email: schema.users.email })
+        .from(schema.users)
+        .where(eq(schema.users.id, tokenUserId))
+        .limit(1);
+      if (!user[0] || normalizeEmail(user[0].email) !== email) {
+        await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+        return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
+      }
+      targetUserId = user[0].id;
+    } else {
+      // Legacy tokens identify only an email. Accept one only after that email
+      // resolves to exactly one account; duplicates make the original target
+      // unknowable, so reject the link without changing either account.
+      const legacyEmail = getLegacyPasswordResetEmail(tokenIdentifier);
+      if (!legacyEmail || normalizeEmail(legacyEmail) !== email) {
+        await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+        return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
+      }
+      const users = await db
+        .select({ id: schema.users.id })
+        .from(schema.users)
+        .where(sql`lower(${schema.users.email}) = ${email}`)
+        .limit(2);
+      if (users.length !== 1) {
+        await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+        return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
+      }
+      targetUserId = users[0].id;
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
@@ -99,20 +122,20 @@ export async function POST(request: NextRequest) {
       const existingCredentials = await tx
         .select({ userId: schema.userCredentials.userId })
         .from(schema.userCredentials)
-        .where(eq(schema.userCredentials.userId, user[0].id))
+        .where(eq(schema.userCredentials.userId, targetUserId))
         .limit(1);
 
       if (existingCredentials.length > 0) {
         await tx
           .update(schema.userCredentials)
           .set({ passwordHash, updatedAt: new Date() })
-          .where(eq(schema.userCredentials.userId, user[0].id));
+          .where(eq(schema.userCredentials.userId, targetUserId));
       } else {
         // Insert credentials for OAuth-only users who want to add a password.
         // In practice forgot-password skips OAuth-only accounts, but this supports
         // future flows where an admin or other path may issue a reset token directly.
         await tx.insert(schema.userCredentials).values({
-          userId: user[0].id,
+          userId: targetUserId,
           passwordHash,
         });
       }
@@ -123,9 +146,16 @@ export async function POST(request: NextRequest) {
       await tx
         .update(schema.users)
         .set({ emailVerified: new Date(), updatedAt: new Date() })
-        .where(and(eq(schema.users.id, user[0].id), isNull(schema.users.emailVerified)));
+        .where(and(eq(schema.users.id, targetUserId), isNull(schema.users.emailVerified)));
 
-      await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
+      await tx
+        .delete(schema.verificationTokens)
+        .where(
+          and(
+            eq(schema.verificationTokens.identifier, tokenIdentifier),
+            eq(schema.verificationTokens.token, tokenHash),
+          ),
+        );
     });
 
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);

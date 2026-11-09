@@ -33,12 +33,13 @@ vi.mock('bcryptjs', () => ({
 const mockSelectLimit = vi.fn();
 const mockProfileValues = vi.fn();
 const { mockUserProfilesTable } = vi.hoisted(() => ({ mockUserProfilesTable: { userId: 'user_profiles.userId' } }));
+const mockInsertValues = vi.fn().mockResolvedValue(undefined);
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   await fn({
     insert: (table: unknown) => ({
       values: (record: Record<string, unknown>) => {
         if (table === mockUserProfilesTable) mockProfileValues(record);
-        return Promise.resolve(undefined);
+        return mockInsertValues(record);
       },
     }),
   });
@@ -117,6 +118,22 @@ describe('POST /api/auth/register', () => {
     } finally {
       if (savedBaseUrl !== undefined) process.env.BASE_URL = savedBaseUrl;
     }
+  });
+
+  it('stores the verification token against the inserted user id', async () => {
+    const response = await POST(createRequest({ email: 'new@example.com', password: 'password123' }));
+
+    expect(response.status).toBe(201);
+    const userInsert = mockInsertValues.mock.calls
+      .map(([insertedValues]) => insertedValues)
+      .find(
+        (insertedValues) => typeof insertedValues === 'object' && insertedValues !== null && 'email' in insertedValues,
+      );
+    const userId = (userInsert as { id?: string } | undefined)?.id;
+    expect(userId).toBeTruthy();
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ identifier: `email-verification:v2:user:${userId}` }),
+    );
   });
 
   it('falls back to the request origin when BASE_URL is present but empty', async () => {
