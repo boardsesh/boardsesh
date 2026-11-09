@@ -48,7 +48,7 @@ const authWebOAuthIdentitySchema = readFileSync(
 );
 // The tables behind partner OAuth, straight from the generated migration.
 const partnerOAuthSchema = readFileSync(
-  new URL('../../../db/drizzle/0295_partner_oauth_schema.sql', import.meta.url),
+  new URL('../../../db/drizzle/0296_partner_oauth_schema.sql', import.meta.url),
   'utf8',
 );
 const sharedSprayDraftsSchema = readFileSync(
