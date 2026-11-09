@@ -7,6 +7,7 @@ import { authOptions } from '@/app/lib/auth/auth-options';
 import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
 import {
   createPasswordCommandAuthRequest,
+  limitPasswordLoginPerClient,
   unavailablePasswordAuthResponse,
 } from '@/app/lib/auth/password-command-auth.server';
 import {
@@ -169,6 +170,8 @@ async function postAuth(
     ? request.nextUrl.pathname.slice(0, -1)
     : request.nextUrl.pathname;
   if (action === 'callback' && provider === 'credentials') {
+    const limitedResponse = limitPasswordLoginPerClient(request);
+    if (limitedResponse) return limitedResponse;
     const commandRequest = createPasswordCommandAuthRequest(options);
     const commandHandler = NextAuth(commandRequest.options) as NextAuthHandler;
     const response = await commandHandler(request, context);

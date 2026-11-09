@@ -128,7 +128,8 @@ export async function handleCurrentStoreWebAuth(
     return;
   }
   try {
-    // Process-wide service budget, in addition to retained web per-IP limits.
+    // Process-wide backstop behind the web route's per-client limits, which do
+    // the real work: the backend only ever sees the web server as its peer.
     // This is not claimed as distributed production abuse protection.
     checkRateLimit(`current-store-web-auth:${operation}`, operation === 'register' ? 60 : 180, 60_000);
     const result = authCommandReplySchema.parse(
