@@ -334,7 +334,7 @@ Spray cards derive their frosted background from the same photo-mapped marks as
 the foreground overlay, after every public-visibility gate. A singular matrix
 still shows the photo, on neutral frost without coloured blobs.
 
-## The share-card family (`/og/playlist`, `/og/session`, `/og/profile`, `/og/setter`)
+## The share-card family (`/og/playlist`, `/og/session`, `/og/profile`, `/og/setter`, `/og/place`)
 
 `packages/shared/board-render/src/og-family.ts` is the layout the other share
 cards render through, so a link pasted into a chat reads like the climb card. The
@@ -459,6 +459,38 @@ transactions, so a second one alongside would only queue on the pool. Art render
 the shared `runOnRenderSemaphore` cap. Board planes live in their
 own small LRU (`ogFamilyPlaneCache`), because the climb card's `:og` base key omits
 placement and sharing it could serve a misplaced plane and evict climb bases.
+
+**Places (`/og/place?kind=gym|board&slug=`).** `gymBySlug` or `boardBySlug` is the
+gate, run as an anonymous caller on every request; a gym or board a stranger cannot
+open answers the one 404 before any photo, climb or byte-cache read. `boardBySlug`
+opens a home board for whoever holds its slug, so a card also takes the no-link
+reading: an Unlisted board gets no card. Nothing on the URL is a capability, so no
+invite token can appear in one.
+
+A gym prints its own name and the boards it has, from `boardTypes` and
+`boardSummaries` (never `gymBoards`). Its public photo takes the art slot, fetched
+under the `place-photo` host kind with the avatar path's byte sniff, pixel cap and
+timeouts; a photo that fails for any reason falls back to board art and never fails
+the card. With no photo it lights the most-climbed listable climb on the type's
+`FALLBACK_BOARD_PREVIEW_CONFIGS` entry. No boards and no photo is a centred name with
+no art. A board card draws its own config and whatever `boardBySlug` returned, so a
+`hideLocation` board has no location on it, and the config tail is stripped from an
+app-generated default name. A spray wall goes through `spray-og-card.ts`'s gates
+(public, not hidden, published, public photo) and its compositing, and any failure
+answers the 404, since a wall has no board art to fall back to.
+
+The climb a card lights is read through `searchClimbs`, so drafts, unlisted and
+community-hidden climbs are out, and held for 60 s. `Kilter 40°` on a gym card is what
+`boardSummaries` says. No catalogue climb count is ever printed about a place.
+
+**Site default.** `packages/web/app/default-share-card.jpg` is served by
+`opengraph-image.tsx` and `twitter-image.tsx`: a real Kilter board with holds lit in
+the shape of the X. It is decoration, with no climb, name or grade behind it. To
+regenerate it, from the repo root on a machine with Noto Sans:
+
+```
+vp exec tsx packages/backend/src/scripts/render-default-share-card.ts
+```
 
 `/og/climb` also grew a guard for later changes: a request whose `v` differs from the
 compiled `BOARD_RENDER_VERSION` answers the daily tier rather than `immutable`, so a

@@ -58,6 +58,24 @@ describe('renderOgFamilyArt', () => {
     expect((await sharp(result.buffer).metadata()).width).toBe(1200);
   });
 
+  it('draws a photo in the art slot with no board and no WASM render', async () => {
+    const image = await sharp({ create: { width: 544, height: 602, channels: 3, background: '#FF0000' } })
+      .jpeg()
+      .toBuffer();
+
+    const result = await service.renderOgFamilyArt({
+      cacheKey: uniqueKey(),
+      art: null,
+      photo: { image, width: 544, height: 602, digest: 'red', bokeh: { points: [], source: { w: 544, h: 602 } } },
+      content: fullContent,
+    });
+
+    expect(result.timings.wasmMs).toBe(0);
+    const pixel = await sharp(result.buffer).extract({ left: 300, top: 315, width: 1, height: 1 }).raw().toBuffer();
+    expect(pixel[0]).toBeGreaterThan(200);
+    expect(pixel[1]).toBeLessThan(60);
+  });
+
   it('serves a repeat from the byte cache', async () => {
     const params = {
       cacheKey: uniqueKey(),

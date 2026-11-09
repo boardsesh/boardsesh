@@ -233,6 +233,8 @@ export function ogFamilyGradeColor(fontGrade: string): string {
 export const OG_FAMILY_WHITE = '#F8FAFC';
 export const OG_FAMILY_MUTED = '#94A3B8';
 export const OG_FAMILY_JOIN_GREEN = '#3DDC84';
+/** The line that names what a place has, above its name. */
+export const OG_FAMILY_PLACE_ACCENT = '#6FE3EE';
 const WORDMARK_COLOR = '#8791A3';
 
 /**
@@ -302,11 +304,17 @@ export type OgFamilyCardContent = {
   fontFamily?: string;
   identity?: OgFamilyIdentity;
   pill?: OgFamilyPill;
+  /** The line directly above the hero: what a place has, or what the card is. */
+  eyebrow?: OgFamilyRow;
   hero: OgFamilyHero;
   rows: readonly OgFamilyRow[];
   dots?: OgFamilyDots;
   bars?: readonly OgFamilyBar[];
   aside?: OgFamilyAside;
+  /** Leave the corner mark off. Only for a card whose hero already says the name. */
+  hideWordmark?: boolean;
+  /** Colour for the frosted ground of a card with no art and so no lit holds to take it from. */
+  fieldGlow?: { points: { x: number; y: number; color: string }[]; source: { w: number; h: number } };
 };
 
 /** Renders at 96 dpi throughout, so a point is 1.33 pixels. */
@@ -384,6 +392,8 @@ function isRightToLeft(value: string): boolean {
 
 /** Pango line-height factor for a wrapping hero; Noto's default leaves big gaps at display sizes. */
 const HERO_LINE_HEIGHT = 0.9;
+/** One line at that factor is about 1.25 em tall and two about 2.5, so this tells them apart. */
+const MIN_MULTI_LINE_EMS = 1.8;
 
 function runsMarkup(runs: readonly OgFamilyTextRun[], pt: number, weight: number, lineHeight?: number): string {
   const lineHeightAttr = lineHeight ? ` line_height="${lineHeight}"` : '';
@@ -427,8 +437,11 @@ async function trimHeroInk(
     return inset;
   };
   const inset = firstInked(0);
-  // One line has no lower lines to align on, and its lower half is just the point of a "V".
-  const hang = side === 'left' && multiLine ? firstInked(Math.floor(height / 2)) - inset : 0;
+  // One line has no lower lines to align on: its lower half is just the point of
+  // a "V" or the stem of a "T". A wrapping hero that fitted on one line counts.
+  const linesTall = height / ((raster.pt * DPI) / 72);
+  const hang =
+    side === 'left' && multiLine && linesTall >= MIN_MULTI_LINE_EMS ? firstInked(Math.floor(height / 2)) - inset : 0;
 
   let topInset = 0;
   let inkHeight = height;
@@ -716,7 +729,7 @@ export type OgFamilyBlockRects = {
 export async function renderOgFamilyTextLayers(
   content: OgFamilyCardContent,
 ): Promise<{ layers: TextLayer[]; hero: OgFamilyHeroRect; blocks: OgFamilyBlockRects }> {
-  const { slot, fontFamily, identity, pill, hero, rows, dots, bars, aside } = content;
+  const { slot, fontFamily, identity, pill, eyebrow, hero, rows, dots, bars, aside, hideWordmark } = content;
   const bounds = ogFamilyHeroBounds(slot);
   const heroWidth = bounds.right - bounds.left;
   const columnWidth = COLUMN_RIGHT - bounds.left;
@@ -802,6 +815,12 @@ export async function renderOgFamilyTextLayers(
       offset: cursor + Math.round((PILL_HEIGHT - text.height) / 2),
     });
     cursor += PILL_HEIGHT + 14;
+  }
+
+  if (eyebrow) {
+    const raster = await renderRow(eyebrow, rowWidth, fontFamily, direction);
+    stacked.push({ input: raster.buffer, left: anchor(raster.width), offset: cursor });
+    cursor += raster.height + (eyebrow.gapBelow ?? 6);
   }
 
   const heroLeft = anchor(heroRaster.width) - heroRaster.hang;
@@ -908,15 +927,17 @@ export async function renderOgFamilyTextLayers(
     };
   }
 
-  const wordmark = await renderRaster(
-    `<span size="16pt" weight="700" letter_spacing="1800" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
-    { fontFamily },
-  );
-  layers.push({
-    input: wordmark.buffer,
-    left: OG_FAMILY_WORDMARK_RIGHT - wordmark.width,
-    top: OG_FAMILY_WORDMARK_TOP,
-  });
+  if (!hideWordmark) {
+    const wordmark = await renderRaster(
+      `<span size="16pt" weight="700" letter_spacing="1800" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
+      { fontFamily },
+    );
+    layers.push({
+      input: wordmark.buffer,
+      left: OG_FAMILY_WORDMARK_RIGHT - wordmark.width,
+      top: OG_FAMILY_WORDMARK_TOP,
+    });
+  }
 
   return {
     layers: layers.filter((layer) => layer.top >= 0 && layer.top < OG_IMAGE_HEIGHT),
@@ -963,14 +984,54 @@ export function buildOgFamilyScrim(slot: OgFamilySlot): Buffer {
 export type OgFamilyArtLayers = {
   /** Board-sized folded board photo (raw RGBA), or null when no photo resolved. */
   plane: Buffer | null;
-  /** Board-sized overlay (raw RGBA). */
-  overlay: Buffer;
+  /** Board-sized overlay (raw RGBA), or null when the plane already holds everything. */
+  overlay: Buffer | null;
   width: number;
   height: number;
   placement: OgFamilyBoardPlacement;
   /** Draw the rounded frame around the board. Off for the bleeding `narrow` slice. */
   frame: boolean;
 };
+
+const PHOTO_CORNER_RADIUS = 16;
+
+/**
+ * A photograph as art-slot layers: rounded and hairline-bordered like the board
+ * frame, right against the column like a board, sized by the caller to fit
+ * `ogFamilyBoardBox('full')`. A public photo carries no overlay of its own: a
+ * spray wall's climb is drawn into `image` before it gets here.
+ */
+export async function renderOgFamilyPhotoLayers(photo: {
+  image: Buffer;
+  width: number;
+  height: number;
+}): Promise<OgFamilyArtLayers> {
+  const { image, width, height } = photo;
+  const shape = `width="${width - 1}" height="${height - 1}" x="0.5" y="0.5" rx="${PHOTO_CORNER_RADIUS}"`;
+  const mask = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect ${shape} fill="#fff"/></svg>`,
+  );
+  const border = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect ${shape} fill="none" stroke="#fff" stroke-opacity="0.14"/></svg>`,
+  );
+  const rounded = await sharp(image)
+    .ensureAlpha()
+    .composite([{ input: mask, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+  const { data } = await sharp(rounded)
+    .composite([{ input: border }])
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return {
+    plane: data,
+    overlay: null,
+    width,
+    height,
+    placement: placeOgFamilyBoard('full', width, height),
+    frame: false,
+  };
+}
 
 /** Cut the visible rectangle out of a board-sized raw plane when it is not the whole plane. */
 async function visiblePortion(
@@ -1022,8 +1083,10 @@ export async function composeOgFamilyCard(params: {
       const plane = await visiblePortion(art.plane, art.width, art.height, placement);
       layers.push({ ...plane, left: placement.canvasLeft, top: placement.canvasTop, blend: 'over' });
     }
-    const overlay = await visiblePortion(art.overlay, art.width, art.height, placement);
-    layers.push({ ...overlay, left: placement.canvasLeft, top: placement.canvasTop, blend: 'over' });
+    if (art.overlay) {
+      const overlay = await visiblePortion(art.overlay, art.width, art.height, placement);
+      layers.push({ ...overlay, left: placement.canvasLeft, top: placement.canvasTop, blend: 'over' });
+    }
   }
   layers.push(...textLayers);
 

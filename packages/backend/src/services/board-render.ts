@@ -10,6 +10,7 @@ import {
   composeOgFamilyCard,
   ogFamilyBoardBox,
   placeOgFamilyBoard,
+  renderOgFamilyPhotoLayers,
   renderOgFamilyTextLayers,
   type OgFamilyArtLayers,
   type OgFamilyCardContent,
@@ -39,6 +40,7 @@ import { getOgBokehInput, renderFrostedBokehBuffer } from '@boardsesh/board-rend
 import type { BoardName } from '@boardsesh/shared-schema';
 import sharp from 'sharp';
 import { logger } from '../utils/logger';
+import { FALLBACK_BOARD_PREVIEW_CONFIGS } from './board-preview-defaults';
 
 /**
  * libvips is process-global, so configure it before the renderer can initialise.
@@ -48,18 +50,6 @@ import { logger } from '../utils/logger';
  */
 sharp.cache({ memory: 16, files: 4, items: 100 });
 sharp.concurrency(1);
-
-/** Default configs warmed sequentially after WASM initialisation. */
-const FALLBACK_BOARD_PREVIEW_CONFIGS: Record<string, { layout_id: number; size_id: number; set_ids: number[] }> = {
-  kilter: { layout_id: 1, size_id: 10, set_ids: [1, 20] },
-  tension: { layout_id: 1, size_id: 10, set_ids: [1] },
-  moonboard: { layout_id: 2, size_id: 1, set_ids: [2, 3, 4] },
-  decoy: { layout_id: 2, size_id: 1, set_ids: [1, 2] },
-  touchstone: { layout_id: 1, size_id: 1, set_ids: [1] },
-  grasshopper: { layout_id: 1, size_id: 4, set_ids: [1, 2] },
-  soill: { layout_id: 1, size_id: 1, set_ids: [1] },
-  woods: { layout_id: 1, size_id: 2, set_ids: [1] },
-};
 
 const MIB = 1024 * 1024;
 const BOARD_BASE_CACHE_MAX_BYTES = 64 * MIB;
@@ -547,11 +537,28 @@ export type OgFamilyArtSpec = {
   frames: string;
 };
 
+/**
+ * A real photograph in the art slot instead of a rendered board: a gym's public
+ * photo, or a spray wall's with its climb already drawn on it. The loader has
+ * gated it, decoded it and sized it to fit `ogFamilyBoardBox('full')`.
+ */
+export type OgFamilyPhotoArt = {
+  /** JPEG of exactly `width` x `height`. */
+  image: Buffer;
+  width: number;
+  height: number;
+  /** Hash of `image`: what the byte cache keys on, so the bytes never reach a digest. */
+  digest: string;
+  bokeh: { points: { x: number; y: number; color: string }[]; source: { w: number; h: number } };
+};
+
 export type OgFamilyRenderParams = {
   /** The whole byte-cache key, from `buildOgFamilyByteKey`. Only ever read after the gate. */
   cacheKey: string;
-  /** Null draws no art at all, and `content.slot` must then be `'none'`. */
+  /** Null draws no board. With no `photo` either, `content.slot` must then be `'none'`. */
   art: OgFamilyArtSpec | null;
+  /** Takes the art slot instead of `art`, which is then null. */
+  photo?: OgFamilyPhotoArt | null;
   content: OgFamilyCardContent;
 };
 
@@ -675,12 +682,12 @@ export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<O
   if (alreadyRendering) return alreadyRendering;
 
   const renderPromise = runOnRenderSemaphore(async () => {
-    const { art, content } = params;
+    const { art, photo, content } = params;
     let wasmMs = 0;
     let planeMs = 0;
     let cache: OgFamilyRenderResult['cache'] = 'none';
     let artLayers: OgFamilyArtLayers | null = null;
-    let bokeh: ReturnType<typeof getOgBokehInput> = { points: [], source: { w: 1200, h: 630 } };
+    let bokeh: ReturnType<typeof getOgBokehInput> = content.fieldGlow ?? { points: [], source: { w: 1200, h: 630 } };
 
     if (art && content.slot !== 'none') {
       const rendered = await renderOgFamilyArtLayers(art, content.slot);
@@ -689,6 +696,9 @@ export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<O
       wasmMs = rendered.wasmMs;
       planeMs = rendered.planeMs;
       cache = rendered.planeHit ? 'plane-hit' : 'miss';
+    } else if (photo && content.slot === 'full') {
+      artLayers = await renderOgFamilyPhotoLayers(photo);
+      bokeh = photo.bokeh;
     }
 
     const composeT0 = performance.now();
@@ -748,6 +758,7 @@ async function warmFallbackBoardPreviews(): Promise<void> {
   for (const [boardName, config] of Object.entries(FALLBACK_BOARD_PREVIEW_CONFIGS)) {
     try {
       await renderSemaphore.runLowPriority(() => warmBoardBase(boardName, config));
+      await renderSemaphore.runLowPriority(() => warmOgFamilyPlane(boardName, config));
     } catch (error) {
       logger.warn(`[BoardRender] Warm-up failed for ${boardName}:`, error instanceof Error ? error.message : error);
     }
@@ -795,6 +806,24 @@ async function warmBoardBase(
     });
   if (!alreadyComposing) ogBaseInFlight.set(ogKey, composePromise);
   ogBaseCache.set(ogKey, await composePromise);
+}
+
+/** The board-sized plane a gym card draws on its type's default config, so its first render is a plane hit. */
+async function warmOgFamilyPlane(
+  boardName: string,
+  fallback: { layout_id: number; size_id: number; set_ids: number[] },
+): Promise<void> {
+  if (!overlayRenderer) return;
+  await renderOgFamilyArtLayers(
+    {
+      boardName,
+      layoutId: fallback.layout_id,
+      sizeId: fallback.size_id,
+      setIds: fallback.set_ids.join(','),
+      frames: '',
+    },
+    'full',
+  );
 }
 
 /** Test-only reset for process-lifetime render state. */

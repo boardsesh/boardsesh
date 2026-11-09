@@ -27,7 +27,13 @@ import { staticPathToMediaRedirect } from './lib/media-url';
 import { getMediaPublicBaseUrl } from './storage/s3';
 import { handleRobotsTxt } from './handlers/robots';
 import { handleOgClimb } from './handlers/og-climb';
-import { handleOgPlaylist, handleOgProfile, handleOgSession, handleOgSetter } from './handlers/og-family';
+import {
+  handleOgPlace,
+  handleOgPlaylist,
+  handleOgProfile,
+  handleOgSession,
+  handleOgSetter,
+} from './handlers/og-family';
 import { handleBoardRender, isBoardRenderPath } from './handlers/board-render';
 import { handleBoardGeometry, isBoardGeometryPath } from './handlers/board-geometry';
 import { initBoardRenderer } from './services/board-render';
@@ -413,6 +419,11 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
 
       if (pathname === '/og/setter' && ['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
         await handleOgSetter(req, res, url);
+        return;
+      }
+
+      if (pathname === '/og/place' && ['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
+        await handleOgPlace(req, res, url);
         return;
       }
 

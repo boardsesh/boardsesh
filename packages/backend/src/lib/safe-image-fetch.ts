@@ -18,9 +18,12 @@ const HOST_ALLOWLISTS: Record<ImageHostKind, RegExp> = {
   // photo host a signed-in account's `users.image` points at. `avatarUrl` is
   // whatever the row holds, so nothing else may be fetched on its say-so.
   avatar: /^(media\.boardsesh\.com|[a-z0-9-]+\.googleusercontent\.com)$/i,
+  // Gym photos and public spray wall photos drawn on share cards. Both are
+  // objects we wrote to our own media bucket, so nothing else is needed here.
+  'place-photo': /^media\.boardsesh\.com$/i,
 };
 
-export type ImageHostKind = 'instagram' | 'tiktok' | 'avatar';
+export type ImageHostKind = 'instagram' | 'tiktok' | 'avatar' | 'place-photo';
 
 export class UnsafeImageHostError extends Error {
   constructor(message: string) {

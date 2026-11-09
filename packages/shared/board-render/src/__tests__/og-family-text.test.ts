@@ -15,6 +15,59 @@ import {
 const hero = (text: string) => ({ runs: [{ text, color: OG_FAMILY_WHITE }], maxPt: 60, wrap: true });
 const row = (text: string) => ({ runs: [{ text, color: OG_FAMILY_MUTED }], sizePt: 24, weight: 700 });
 
+describe('place card text', () => {
+  const eyebrow = { runs: [{ text: 'Kilter 40°', color: OG_FAMILY_MUTED }], sizePt: 26, weight: 700 };
+
+  it('stacks the eyebrow above the hero', async () => {
+    const without = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: hero('Kaserne'),
+      rows: [],
+    });
+    const withEyebrow = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      eyebrow,
+      hero: hero('Kaserne'),
+      rows: [],
+    });
+
+    expect(withEyebrow.layers).toHaveLength(without.layers.length + 1);
+    const eyebrowLayer = withEyebrow.layers[0];
+    expect(eyebrowLayer.top).toBeLessThan(withEyebrow.hero.top);
+  });
+
+  it('leaves the wordmark off only when asked', async () => {
+    const shown = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: hero('Boardsesh'),
+      rows: [],
+    });
+    const hidden = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hideWordmark: true,
+      hero: hero('Boardsesh'),
+      rows: [],
+    });
+
+    expect(hidden.layers).toHaveLength(shown.layers.length - 1);
+  });
+
+  it('does not hang a one-line wrapping hero left of the column on the bar of a T', async () => {
+    const { hero: heroRect } = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: hero('The Fold'),
+      rows: [],
+    });
+
+    expect(heroRect.left).toBe(590);
+  });
+});
+
 describe('family text survives real-world names', () => {
   it.each([
     ['an ampersand and markup', 'Rock & Roll <3 "quotes"'],
