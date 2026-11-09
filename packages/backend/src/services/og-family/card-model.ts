@@ -505,7 +505,13 @@ export function buildProfileCardContent(params: {
           minPt: 30,
           wrap: true,
         },
-        rows: [{ runs: [{ text: `On ${describeBoards(sentBoards)}`, color: OG_FAMILY_MUTED }], sizePt: SUBLINE_PT, weight: 500 }],
+        rows: [
+          {
+            runs: [{ text: `On ${describeBoards(sentBoards)}`, color: OG_FAMILY_MUTED }],
+            sizePt: SUBLINE_PT,
+            weight: 500,
+          },
+        ],
         bars: buildGradeBars(stats),
       };
     }
