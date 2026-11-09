@@ -361,6 +361,14 @@ vi.mock('../../../../src/components/ClimbListRowSkeleton', () => ({
 vi.mock('../../../../src/components/GlassIconButton', () => ({
   GlassIconButton: () => createElement('div', { 'data-glass-button': 'true' }),
 }));
+vi.mock('../../../../src/components/FollowIconButton', () => ({
+  FollowIconButton: () => createElement('div', { 'data-follow-icon': 'true' }),
+}));
+vi.mock('../../../../src/components/ShareIconButton', () => ({
+  ShareIconButton: ({ url }: { url: string }) => createElement('div', { 'data-share-url': url }),
+}));
+vi.mock('../../../../src/lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../../src/hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
 // PlaylistDetailView surfaces the hero title so we can prove the error branch
 // renders *instead of* a fallback-titled hero, and `editMode` so the overflow
 // menu's regression tests can see the screen actually flip into edit mode.
@@ -504,7 +512,6 @@ vi.mock('../../../../src/components/playlist', () => ({
       createElement('button', { 'data-menu-edit-climbs': 'true', onClick: onEdit }),
       createElement('button', { 'data-menu-delete': 'true', onClick: onDelete }),
     ),
-  PlaylistFollowButton: () => null,
   PlaylistEditDoneButton: ({ onPress, collapsed }: { onPress: () => void; collapsed?: boolean }) =>
     collapsed ? null : createElement('button', { 'data-edit-done': 'true', onClick: onPress }, 'done'),
   PlaylistFilterBar: ({ editing }: { editing: boolean }) =>
@@ -901,15 +908,63 @@ describe('PlaylistDetail owner overflow menu', () => {
     expect(detailViewProps.current?.emptyAction).toBeNull();
   });
 
-  it('gives a signed-out viewer no header actions at all, so no empty glass item shows', async () => {
+  it('gives a signed-out viewer of a private playlist no header actions, so no empty glass item shows', async () => {
     authMock.isAuthenticated = false;
-    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'viewer', isPublic: true }) });
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'viewer', isPublic: false }) });
 
     const { container } = renderDetail();
 
     await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
     expect(container.querySelector('[data-actions-expanded="true"]')?.childElementCount).toBe(0);
     expect(container.querySelector('[data-actions-collapsed="true"]')?.childElementCount).toBe(0);
+  });
+
+  it('leaves a signed-out viewer of a public playlist only Share', async () => {
+    authMock.isAuthenticated = false;
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'viewer', isPublic: true }) });
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    const expanded = container.querySelector('[data-actions-expanded="true"]');
+    expect(expanded?.childElementCount).toBe(1);
+    expect(expanded?.querySelector('[data-share-url]')).not.toBeNull();
+  });
+
+  it('gives a signed-in viewer Share and the Follow icon on a public playlist', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'viewer', isPublic: true }) });
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    for (const form of ['expanded', 'collapsed']) {
+      const actions = container.querySelector(`[data-actions-${form}="true"]`);
+      expect(actions?.querySelector('[data-share-url]')).not.toBeNull();
+      expect(actions?.querySelector('[data-follow-icon="true"]')).not.toBeNull();
+    }
+  });
+
+  it('gives an owner Share in both header forms while the playlist is public', async () => {
+    const { container } = await renderOwnerDetail({ isPublic: true });
+
+    const share = container.querySelector('[data-actions-expanded="true"] [data-share-url]');
+    expect(share?.getAttribute('data-share-url')).toMatch(/\/playlists\/[^/]+$/);
+    expect(container.querySelector('[data-actions-collapsed="true"] [data-share-url]')).not.toBeNull();
+  });
+
+  it('offers no Share on a private playlist', async () => {
+    const { container } = await renderOwnerDetail({ isPublic: false });
+
+    expect(container.querySelector('[data-share-url]')).toBeNull();
+  });
+
+  it('drops Share while the climbs edit mode is open', async () => {
+    const { container } = await renderOwnerDetail({ isPublic: true });
+
+    fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+
+    await waitFor(() => expect(container.querySelector('[data-edit-done="true"]')).not.toBeNull());
+    expect(container.querySelector('[data-share-url]')).toBeNull();
   });
 
   it('forwards the bulk add-to-queue handler and its in-flight flag to the detail view', async () => {

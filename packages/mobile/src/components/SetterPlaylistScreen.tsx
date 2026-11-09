@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import {
   PlaylistDetailView,
   PlaylistFilterBar,
@@ -11,6 +12,7 @@ import {
 } from './playlist';
 import { ClimbFilterSheet, type ClimbFilterSheetPickers, type ClimbFilterSheetSections } from './ClimbFilterSheet';
 import { SetterFollowButton } from './SetterFollowButton';
+import { ShareIconButton } from './ShareIconButton';
 import { Button } from './Button';
 import { Text } from './Text';
 import { useClimbFilterSession } from '../hooks/use-climb-filter-session';
@@ -50,6 +52,8 @@ import { useFetchCachedSearchClimbsCount } from '../lib/graphql/hooks/search-cli
 import { useSearchGradeSourceActive, withGradeSource } from '../lib/graphql/hooks/search-grade-source';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { toQueueClimbs } from '../lib/climb-types';
+import { track } from '../lib/analytics';
+import { WEB_BASE_URL } from '../lib/env';
 import { useAuth } from '../providers/auth-provider';
 import { useIsSharedSession } from '../providers/queue-provider';
 import { useFeatureFlag } from '../providers/feature-flags-provider';
@@ -115,6 +119,7 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
   const { t } = useTranslation('climbs');
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSession } = useTranslation('session');
+  const { t: tProfile } = useTranslation('profile');
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const sourceBoard = useMemo(
@@ -281,7 +286,25 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
     }),
     [username, plainCount.data, allClimbs.length, t, filterState.sortDescription],
   );
-  const actions = useCallback(() => <SetterFollowButton username={username} />, [username]);
+  const trackSetterShared = useCallback(() => {
+    track(SHARED_EVENTS.SetterShared, { username, method: 'share' });
+  }, [username]);
+  const actions = useCallback(
+    () => (
+      <>
+        <ShareIconButton
+          url={`${WEB_BASE_URL}/setter/${encodeURIComponent(username)}`}
+          message={tProfile('setter.shareText', { name: username })}
+          accessibilityLabel={tProfile('setter.shareAriaLabel')}
+          copiedMessage={tProfile('setter.linkCopied')}
+          errorMessage={tProfile('setter.shareFailed')}
+          onShare={trackSetterShared}
+        />
+        <SetterFollowButton username={username} />
+      </>
+    ),
+    [username, tProfile, trackSetterShared],
+  );
   const { refetch: refetchClimbs } = query;
   const { refetch: refetchPlainCount } = plainCount;
   const { refetch: refetchViewCount } = viewCount;

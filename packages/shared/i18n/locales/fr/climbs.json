@@ -10,7 +10,6 @@
     "allSetters": "Tous les ouvreurs",
     "followingClimbs": "Blocs des personnes que je suis",
     "playlistSubtitleSort": "Tous les blocs sur cette board · {{sort}}",
-    "signIn": "Connecte-toi pour suivre cet ouvreur",
     "syncNeeded": "Connecte-toi pour synchroniser tes abonnements et les ouvreurs associés.",
     "followError": "Impossible de modifier cet abonnement. Réessaie.",
     "loadError": "Impossible de charger ces blocs.",

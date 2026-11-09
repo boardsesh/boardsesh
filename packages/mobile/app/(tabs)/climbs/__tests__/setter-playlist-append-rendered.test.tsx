@@ -450,6 +450,7 @@ vi.mock('../../../../src/lib/graphql/hooks/search-grade-source', async (importOr
   useSearchGradeSourceActive: () => false,
 }));
 vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../../src/components/ShareIconButton', () => ({ ShareIconButton: () => null }));
 vi.mock('../../../../src/components/SetterFollowButton', () => ({
   SetterFollowButton: () => createElement('span', null, 'Follow'),
 }));

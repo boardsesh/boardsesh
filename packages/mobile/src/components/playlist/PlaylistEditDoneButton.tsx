@@ -24,8 +24,7 @@ type PlaylistEditDoneButtonProps = {
 /**
  * Exit-edit-mode control for the owned playlist detail. A Liquid Glass pill —
  * `✓ Done` — that collapses to an icon-only glass FAB once the gradient hero
- * scrolls into the colour header bar (and on the Material app bar). Mirrors
- * `PlaylistFollowButton` so the two share the same chrome.
+ * scrolls into the colour header bar (and on the Material app bar).
  */
 export function PlaylistEditDoneButton({ onPress, collapsed }: PlaylistEditDoneButtonProps) {
   const { t } = useTranslation('playlists');

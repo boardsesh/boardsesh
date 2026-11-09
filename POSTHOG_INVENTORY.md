@@ -4,7 +4,7 @@
 
 Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) and backend (Node.js) packages. Events are captured client-side via `track()` helper and server-side via `captureBackendEvent()`. Analytics is dual-layered: Vercel Analytics as primary, PostHog as secondary via hostname-gated reverse proxy.
 
-**Total Web Events: 89 unique event names across 119+ track() call sites**
+**Total Web Events: 91 unique event names across 119+ track() call sites**
 **Backend Events: 5 event types for Live Activity tracking**
 **Key Infrastructure:**
 
@@ -156,7 +156,7 @@ disappears for the rest of the launch after a sign-out.
 | Search Zone Mode Changed   | climb-search-form.tsx:304       | `boardLayout`, `mode`                  | User toggled between zone types |
 | Search Zone Updated        | climb-search-form.tsx:355       | `boardLayout`, `zoneName`              | User edited zone bounds         |
 
-### 2.6 Playlist / Workout Generator (4 events)
+### 2.6 Playlist / Workout Generator (6 events)
 
 | Event Name                    | File:Line                         | Properties                                 | Context                           |
 | ----------------------------- | --------------------------------- | ------------------------------------------ | --------------------------------- |
@@ -164,6 +164,8 @@ disappears for the rest of the launch after a sign-out.
 | Workout Generated             | playlist-generator-drawer.tsx:287 | `boardLayout`, `workoutType`, `climbCount` | AI playlist generated             |
 | Create Playlist (via drawer)  | create-playlist-drawer.tsx:122    | `playlistName`, `boardLayout`              | User created playlist from drawer |
 | Liked Climbs Add All To Queue | liked-climbs-view-content.tsx:102 | `count`                                    | User bulk-added liked climbs      |
+| Playlist Shared | playlist-detail-content.tsx:313; mobile discover/[playlist_uuid].tsx | `playlistUuid`, `method` | Tapped Share on a playlist. Web: native/clipboard. Mobile: `share`, an intent |
+| Setter Shared | setter-share-button.tsx:25; mobile SetterPlaylistScreen.tsx | `username`, `method` | Tapped Share on a setter page. Web: native/clipboard. Mobile: `share`, an intent |
 
 ### 2.7 Navigation / UI (10 events)
 
