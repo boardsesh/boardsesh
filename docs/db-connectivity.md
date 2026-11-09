@@ -391,27 +391,63 @@ connections per backend replica, used for nothing else:
 - **Primary, never a replica.** A lagging read must not decide admission.
 - **Lazy.** Connected on the first read. Workers, the scheduler and `packages/web`
   never run one, so they pay nothing (`workers/index.ts` does not even import the path).
-- **`statement_timeout` of 1,000 ms**, the caller's own deadline, set as a startup
-  parameter on this pool only (`application_name` is `boardsesh-auth-admission`,
-  so the connection-count query below sees it). The server drops a read at the
-  point nobody is left to answer, so a blocked statement cannot hold one of two
-  connections. It replaces `DB_STATEMENT_TIMEOUT_MS`, which is 45 s on the backend.
-  It has the same PgBouncer hazard as that knob ("The `statement_timeout` hazard"
-  above): if a transaction-mode pooler ever fronts the backend, this pool must keep
-  a direct URL or move the timeout onto a role.
+- **`statement_timeout` of 1,000 ms**, set as a startup parameter on this pool only
+  (`application_name` is `boardsesh-auth-admission`, so the connection-count query
+  below sees it). It replaces `DB_STATEMENT_TIMEOUT_MS`, which is 45 s on the backend.
+  The clock starts when the statement reaches the server, so a read that queued
+  first can outlast its caller's deadline by as long as it queued; the timeout bounds
+  how long a connection is held, not how long a caller waits. It has the same
+  PgBouncer hazard as that knob ("The `statement_timeout` hazard" above): if a
+  transaction-mode pooler ever fronts the backend, this pool must keep a direct URL
+  or move the timeout onto a role.
+- **A watchdog on each read, at 2,000 ms.** The statement timeout needs a server that
+  is still answering, and `max: 2` stops a third connection opening. A read with no
+  reply this long after reaching a connection fails, and the pool is severed and
+  replaced, at most once per 5 s. An event-loop stall of 2 s or more can also fire
+  it; that costs one reconnect, and those reads were past their deadline anyway.
+- **`connect_timeout` of 2 s**, against the shared 30 s, so a stalled dial or TLS
+  handshake cannot hold both slots. It is passed to `createDedicatedPool`, because
+  postgres.js copies it when it builds each connection and writing `pool.options`
+  afterwards has no effect.
 - **Closed last in graceful shutdown**, after the main pools, bounded at 2 s.
-
-The admission read's coalescer still runs four batch reads at once against those
-two connections. Measured on the test Postgres (4 reads of 128 users, 200
-rounds): median per-read 1.7 ms on two connections against 1.5 ms on four; the
-third and fourth read each wait one statement longer. That only matters for a
-statement of 500 ms or more, where those two would miss the deadline, and the
-longest observed statement is 13.7 ms. The limits (`MAX_CONCURRENT_COALESCED_ADMISSION_READS`
-4, `MAX_UNSETTLED_AUTH_ADMISSION_READS` 8) are unchanged.
 
 Before and after with the main pool held full by five transactions: the same
 read through the main pool misses every time at 1,001–1,003 ms; through its own
 pool it answers in a median of 0.7 ms, 20.9 ms at worst, over 500 reads.
+
+Recovery from a lost path, measured at 30 requests/s against the test Postgres:
+
+| fault | before the watchdog and connect timeout | now |
+| --- | --- | --- |
+| `SIGSTOP` on both admission backends, Postgres otherwise healthy | every request failed for the full 75 s measured | last failure 2.0 s after the stop |
+| both connections severed and new flows black-holed for 5 s | every request failed for 25.0 s after the path healed | last failure 1.05 s after it healed |
+
+### How much can queue on two connections
+
+At most two coalesced reads and one sweep batch compete for the two connections
+(`MAX_CONCURRENT_COALESCED_ADMISSION_READS` 2, `MAX_SWEEP_BATCHES_PER_ROUND` 1;
+`MAX_UNSETTLED_AUTH_ADMISSION_READS` stays 8). Coalesced callers past the two reads
+wait in the coalescer, where one that outlives the deadline is refused before any
+read starts, instead of queueing on a connection and using up the deadline there.
+
+When four coalesced reads and up to four sweep batches shared the two connections,
+75.6% of requests failed at a 250 ms statement with a 4-batch sweep, and 92.9% at
+400 ms with a 1-batch sweep. Failure rate at 30 requests/s now, 8 s per cell,
+statement timed with `pg_sleep`:
+
+| statement | one sweep batch per second | no sweep |
+| --- | --- | --- |
+| 100 ms | 0% | not run |
+| 250 ms | 0% | 0% |
+| 400 ms | 0% | 0% |
+| 500 ms | 0% | 0% |
+| 800 ms | 79.6% | 0% |
+
+The longest statement seen in production is 13.7 ms.
+
+**The sweep takes one second per 128 connected users on a replica**, because a round
+is one batch and rounds are a second apart: 1,280 users were all reached in 10.0 s
+(8 s for 1,000, 40 s for 5,000). A failed read still leaves the socket open.
 
 ### The admission read log
 
@@ -437,6 +473,19 @@ Each kind logs once per 10 s window with a totals line (`suppressedReads`,
 two lines per kind per window per replica. Read it for the bursts that were
 never explained: if they continue, this line says whether the wait was here or
 on the server. If they stop, the main pool was the cause.
+
+A pool replaced by the watchdog logs `[auth-admission] replaced the pool after a
+read stopped answering`, one line per replacement.
+
+### Dedicated pools
+
+Every `createDedicatedPool` caller, and what it costs. A new one adds a row here and
+a row to the budget table in "Pool budgets and pg-boss timers" below. Its steady cost
+is 2 × its size (two backend replicas) and 4 × its size while an old fleet drains.
+
+| pool | connections per replica | opens | budget row |
+| --- | --- | --- | --- |
+| `auth/admission-pool.ts` (`boardsesh-auth-admission`) | 2 | first admission read | "backend admission pool" |
 
 ## Where the retry is wired
 

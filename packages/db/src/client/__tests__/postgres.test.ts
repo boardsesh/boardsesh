@@ -57,6 +57,21 @@ void describe('postgres client', () => {
         await Promise.all([firstPool.end(), secondPool.end()]);
       }
     });
+
+    void it('applies its own connect timeout and startup parameters', async () => {
+      const { createDedicatedPool } = await import('../postgres');
+      const pool = createDedicatedPool(2, {
+        connect_timeout: 2,
+        connection: { statement_timeout: 1000, application_name: 'dedicated-test' },
+      });
+      try {
+        assert.equal(pool.options.connect_timeout, 2);
+        assert.equal(pool.options.connection.statement_timeout, 1000);
+        assert.equal(pool.options.connection.application_name, 'dedicated-test');
+      } finally {
+        await pool.end();
+      }
+    });
   });
 
   void describe('per-deployment pool knobs', () => {

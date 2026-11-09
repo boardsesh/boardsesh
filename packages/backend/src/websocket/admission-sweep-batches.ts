@@ -1,8 +1,10 @@
 /**
- * Reads one sweep round may start. Four leaves the rest of the admission read
- * slots for ordinary requests, so a large sweep cannot crowd them out.
+ * Reads one sweep round may start. One, because the round shares two admission
+ * connections with ordinary requests: at a slow statement a larger round queues
+ * those requests past their deadline (docs/db-connectivity.md). A round is one
+ * second, so a full pass takes one second per 128 connected users.
  */
-export const MAX_SWEEP_BATCHES_PER_ROUND = 4;
+export const MAX_SWEEP_BATCHES_PER_ROUND = 1;
 
 /**
  * Picks this round's batches, resuming where the last round stopped. With more

@@ -1,16 +1,20 @@
 import { randomUUID } from 'node:crypto';
+import { connect, createServer, type AddressInfo, type Socket } from 'node:net';
 import { inArray, sql } from 'drizzle-orm';
 import { SignJWT } from 'jose';
 import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
-import { createPool } from '@boardsesh/db/client';
+import { createDedicatedPool, createPool, setDbConnectObserver, type DbConnectRetryEvent } from '@boardsesh/db/client';
 import { authSubjectCutoffs, users } from '@boardsesh/db/schema/auth';
 import { getWorkerDatabaseUrl } from '../../__tests__/worker-db';
 import { db } from '../../db/client';
 import { validateToken } from '../../middleware/auth';
 import {
   AUTH_ADMISSION_APPLICATION_NAME,
+  AUTH_ADMISSION_CONNECT_TIMEOUT_S,
+  AUTH_ADMISSION_MIN_RECYCLE_INTERVAL_MS,
   AUTH_ADMISSION_POOL_MAX_CONNECTIONS,
+  AUTH_ADMISSION_READ_WATCHDOG_MS,
   AUTH_ADMISSION_STATEMENT_TIMEOUT_MS,
   closeAdmissionPool,
   getAdmissionPool,
@@ -69,6 +73,68 @@ async function holdMainPoolFull() {
       await Promise.all(holders);
     },
   };
+}
+
+/**
+ * Real Postgres behind a TCP proxy that can go silent with its sockets still
+ * open, which neither a closed port nor the statement timeout can imitate.
+ */
+async function startPostgresProxy() {
+  const database = new URL(getWorkerDatabaseUrl());
+  const openSockets = new Set<Socket>();
+  const forwarded: Array<{ clientSide: Socket; databaseSide: Socket }> = [];
+  let shouldSwallowNewConnections = false;
+
+  function track(socket: Socket) {
+    openSockets.add(socket);
+    socket.on('error', () => {});
+    socket.once('close', () => openSockets.delete(socket));
+  }
+
+  const server = createServer((clientSide) => {
+    track(clientSide);
+    if (shouldSwallowNewConnections) return;
+    const databaseSide = connect(Number(database.port), database.hostname);
+    track(databaseSide);
+    clientSide.pipe(databaseSide);
+    databaseSide.pipe(clientSide);
+    forwarded.push({ clientSide, databaseSide });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+
+  return {
+    url: getWorkerDatabaseUrl().replace(/@[^/]+\//, `@127.0.0.1:${port}/`),
+    hangExistingConnections() {
+      for (const { clientSide, databaseSide } of forwarded.splice(0)) {
+        clientSide.unpipe(databaseSide);
+        databaseSide.unpipe(clientSide);
+        clientSide.pause();
+        databaseSide.pause();
+      }
+    },
+    severExistingConnections() {
+      for (const { clientSide, databaseSide } of forwarded.splice(0)) {
+        clientSide.destroy();
+        databaseSide.destroy();
+      }
+    },
+    setSwallowNewConnections(shouldSwallow: boolean) {
+      shouldSwallowNewConnections = shouldSwallow;
+    },
+    close: async () => {
+      for (const socket of openSockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
+
+async function unusedLocalPort() {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
 }
 
 async function timed<Result>(operation: () => PromiseLike<Result>) {
@@ -194,10 +260,125 @@ describe('auth admission pool', () => {
     await vi.waitFor(async () => expect(await admissionConnectionCount()).toBe(0), { timeout: 3000, interval: 25 });
   });
 
-  it('leaves the deadline and the read limits where they were', () => {
+  it('keeps the deadline, and runs no more coalesced reads than it has connections', () => {
     expect(AUTH_ADMISSION_RESPONSE_DEADLINE_MS).toBe(1000);
     expect(MAX_UNSETTLED_AUTH_ADMISSION_READS).toBe(8);
-    expect(MAX_CONCURRENT_COALESCED_ADMISSION_READS).toBe(4);
+    expect(MAX_CONCURRENT_COALESCED_ADMISSION_READS).toBe(AUTH_ADMISSION_POOL_MAX_CONNECTIONS);
+  });
+
+  it('gives up on an unanswered read a second after the statement timeout, and rate-limits replacing the pool', () => {
+    expect(AUTH_ADMISSION_READ_WATCHDOG_MS).toBe(AUTH_ADMISSION_STATEMENT_TIMEOUT_MS + 1000);
+    expect(AUTH_ADMISSION_MIN_RECYCLE_INTERVAL_MS).toBe(5000);
+  });
+
+  it('merges startup parameters for a dedicated pool over the shared ones', async () => {
+    vi.stubEnv('DB_STATEMENT_TIMEOUT_MS', '45000');
+    const dedicatedPool = createDedicatedPool(2, { connection: { application_name: 'merge-check' } });
+    try {
+      expect(dedicatedPool.options.connection.statement_timeout).toBe(45000);
+      expect(dedicatedPool.options.connection.application_name).toBe('merge-check');
+    } finally {
+      await dedicatedPool.end();
+    }
+  });
+
+  it('gives a connection two seconds to open, against the shared thirty', () => {
+    expect(AUTH_ADMISSION_CONNECT_TIMEOUT_S).toBe(2);
+    expect(getAdmissionPool().options.connect_timeout).toBe(AUTH_ADMISSION_CONNECT_TIMEOUT_S);
+    expect(createPool().options.connect_timeout).toBe(30);
+  });
+
+  describe('when the path to Postgres stops answering', () => {
+    async function timeUntilAnswered(maximumWaitMs: number) {
+      const startedAt = performance.now();
+      for (;;) {
+        const answered = await activeHumanSubjectIds([activeUserId]).then(
+          () => true,
+          () => false,
+        );
+        if (answered) return performance.now();
+        if (performance.now() - startedAt > maximumWaitMs) throw new Error('Admission reads never recovered');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+
+    it('replaces a pool whose connections stop answering, and reads come back', { timeout: 15000 }, async () => {
+      const proxy = await startPostgresProxy();
+      try {
+        vi.stubEnv('DATABASE_URL', proxy.url);
+        await Promise.all([activeHumanSubjectIds([activeUserId]), activeHumanSubjectIds([activeUserId])]);
+
+        proxy.hangExistingConnections();
+        const hungAt = performance.now();
+        const recoveredAt = await timeUntilAnswered(8000);
+
+        const recoveryMs = recoveredAt - hungAt;
+        expect(recoveryMs).toBeGreaterThanOrEqual(AUTH_ADMISSION_READ_WATCHDOG_MS - 50);
+        expect(recoveryMs).toBeLessThan(AUTH_ADMISSION_READ_WATCHDOG_MS + 3000);
+      } finally {
+        await closeAdmissionPool();
+        await proxy.close();
+      }
+    });
+
+    it('recovers soon after a path that swallowed new connections heals', { timeout: 15000 }, async () => {
+      const proxy = await startPostgresProxy();
+      try {
+        vi.stubEnv('DATABASE_URL', proxy.url);
+        await activeHumanSubjectIds([activeUserId]);
+
+        proxy.severExistingConnections();
+        proxy.setSwallowNewConnections(true);
+        const recovered = timeUntilAnswered(10000);
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        proxy.setSwallowNewConnections(false);
+        const healedAt = performance.now();
+
+        expect((await recovered) - healedAt).toBeLessThan(4000);
+      } finally {
+        await closeAdmissionPool();
+        await proxy.close();
+      }
+    });
+
+    it('closes within its bound even with a read that never returns', { timeout: 8000 }, async () => {
+      const proxy = await startPostgresProxy();
+      try {
+        vi.stubEnv('DATABASE_URL', proxy.url);
+        await activeHumanSubjectIds([activeUserId]);
+
+        proxy.hangExistingConnections();
+        const hungRead = readOnAdmissionConnection(
+          () => {},
+          (database) => database.execute(sql`select 1`),
+        ).catch(() => undefined);
+        await nextEventLoopTurn();
+
+        const closing = await timed(closeAdmissionPool);
+        expect(closing.elapsedMs).toBeLessThan(AUTH_ADMISSION_READ_WATCHDOG_MS + 1000);
+        await hungRead;
+      } finally {
+        await proxy.close();
+      }
+    });
+  });
+
+  it('retries a refused connection through the shared connect retry', async () => {
+    const closedPort = await unusedLocalPort();
+    const retries: DbConnectRetryEvent[] = [];
+    setDbConnectObserver((event) => retries.push(event));
+    try {
+      vi.stubEnv('DATABASE_URL', `postgresql://postgres:postgres@127.0.0.1:${closedPort}/admission`);
+      await expect(
+        readOnAdmissionConnection(
+          () => {},
+          (database) => database.execute(sql`select 1`),
+        ),
+      ).rejects.toBeInstanceOf(Error);
+      expect(retries.map((event) => event.code)).toContain('ECONNREFUSED');
+    } finally {
+      setDbConnectObserver(null);
+    }
   });
 
   it('carries the tight statement timeout on the connection itself', async () => {
@@ -268,7 +449,10 @@ describe('auth admission pool', () => {
       await readOnce();
       await readOnce();
       expect(createDedicatedPool).toHaveBeenCalledTimes(1);
-      expect(createDedicatedPool).toHaveBeenCalledWith(AUTH_ADMISSION_POOL_MAX_CONNECTIONS);
+      expect(createDedicatedPool).toHaveBeenCalledWith(
+        AUTH_ADMISSION_POOL_MAX_CONNECTIONS,
+        expect.objectContaining({ connect_timeout: AUTH_ADMISSION_CONNECT_TIMEOUT_S }),
+      );
 
       await isolated.closeAdmissionPool();
       await readOnce();
