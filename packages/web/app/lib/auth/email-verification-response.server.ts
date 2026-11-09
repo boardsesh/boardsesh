@@ -2,6 +2,7 @@ import 'server-only';
 import { NextResponse, type NextRequest } from 'next/server';
 import { DEFAULT_LOCALE, isSupportedLocale, LOCALE_COOKIE } from '@/app/lib/i18n/config';
 import { getServerTranslationForLocale } from '@/app/lib/i18n/server';
+import { resolvePublicAuthOrigin } from './canonical-auth-url';
 
 export const EMAIL_VERIFICATION_RETRY_SECONDS = 30;
 
@@ -16,7 +17,10 @@ export function withEmailVerificationPrivacy<ResponseType extends Response>(resp
 }
 
 export function emailVerificationRedirect(request: NextRequest, path: string): NextResponse {
-  return withEmailVerificationPrivacy(NextResponse.redirect(new URL(path, request.url), 307));
+  // The standalone server reports its bind address as request.url.
+  return withEmailVerificationPrivacy(
+    NextResponse.redirect(new URL(path, resolvePublicAuthOrigin() ?? request.url), 307),
+  );
 }
 
 export async function emailVerificationUnavailableResponse(request: NextRequest): Promise<NextResponse> {
