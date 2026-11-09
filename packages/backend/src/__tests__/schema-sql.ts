@@ -155,7 +155,7 @@ const analyticsConsentSchema = readFileSync(
 );
 // The "Email me project news" opt-in log, from its generated migration.
 const projectNewsEmailSchema = readFileSync(
-  new URL('../../../db/drizzle/0295_project_news_email_consent.sql', import.meta.url),
+  new URL('../../../db/drizzle/0296_project_news_email_consent.sql', import.meta.url),
   'utf8',
 );
 
