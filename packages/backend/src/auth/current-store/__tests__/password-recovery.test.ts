@@ -46,6 +46,15 @@ import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../e
 import { consumePasswordRecovery, requestPasswordRecovery } from '../password-recovery';
 import { issueEmailVerification, consumeEmailVerification } from '../email-verification';
 import type { WebPasswordAuthority } from '../command-context';
+import {
+  attachPartnerState,
+  countsOf,
+  createApp,
+  createUser,
+  INTACT_COUNTS,
+  readPartnerState,
+  REVOKED_COUNTS,
+} from '../../partner/__tests__/revocation-fixtures';
 
 const role = `ba03_recovery_${randomUUID().replaceAll('-', '')}`;
 const rolePassword = randomBytes(32).toString('hex');
@@ -538,6 +547,23 @@ describe('UID-bound password recovery over the restricted current store', () => 
     });
     expect(snapshotAfter.refresh.filter((row) => row.userId === user.id).every((row) => row.revokedAt)).toBe(true);
     expect(snapshotAfter.refresh.find((row) => row.userId === sibling.id)?.revokedAt).toBeNull();
+  });
+  it('ends partner connections through the user_credentials trigger when the staged reset commits', async () => {
+    const { user, plan } = await issued();
+    const developerId = await createUser('developer');
+    const clientId = await createApp(developerId);
+    const partnerRows = await attachPartnerState(user.id, clientId);
+    const bystander = await attachPartnerState(developerId, clientId);
+
+    const reply = await consumePasswordRecovery(writers[0], authority, reset(plan.token));
+
+    expect(reply.outcome).toBe('reset');
+    expect(await bcrypt.compare(nextPassword, (await credential(user.id)).passwordHash)).toBe(true);
+    const state = await readPartnerState(partnerRows);
+    expect(countsOf(state)).toEqual(REVOKED_COUNTS);
+    expect(state.connection.generation).toBe(1);
+    expect(state.connection.revokedAt).not.toBeNull();
+    expect(countsOf(await readPartnerState(bystander))).toEqual(INTACT_COUNTS);
   });
   it('preserves existing email verification timestamp and does not issue any session or token pair', async () => {
     const { user, plan } = await issued();
