@@ -94,6 +94,15 @@ describe('apple-app-site-association paths', () => {
     expect(opensInApp(paths, '/')).toBe(true);
   });
 
+  it('opens shared playlist and setter links in the app, which has those screens', () => {
+    expect(opensInApp(paths, '/playlists/5d3b1c7e-2a4f-4f0e-9d53-6f1a2b3c4d5e')).toBe(true);
+    expect(opensInApp(paths, '/setter/jimmy%20webb')).toBe(true);
+    for (const locale of nonDefaultLocales) {
+      expect(opensInApp(paths, `/${locale}/playlists/5d3b1c7e-2a4f-4f0e-9d53-6f1a2b3c4d5e`)).toBe(true);
+      expect(opensInApp(paths, `/${locale}/setter/jimmy%20webb`)).toBe(true);
+    }
+  });
+
   it('keeps the infrastructure exclusions it already had', () => {
     expect(opensInApp(paths, '/api/v1/kilter/grades')).toBe(false);
     expect(opensInApp(paths, '/_next/static/chunks/main.js')).toBe(false);
