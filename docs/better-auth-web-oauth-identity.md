@@ -105,6 +105,11 @@ and block every sign-in. The key is the trusted client address described in the
 [password delegation doc](./better-auth-web-password-delegation.md), and the
 limit is per web instance.
 
+The continuation's redirect, sealed origin, cookie security and resumed request
+all use the configured public origin (`resolvePublicAuthOrigin`). The standalone
+server reports its bind address as the request URL, so the request cannot supply
+any of them.
+
 A denied `resolve` carries `email_conflict` or `email_required` when the climber
 can act on it, and the web callback answers with `OAuthAccountNotLinked` or
 `OAuthEmailRequired`. Every other denial stays the generic `AccessDenied`.

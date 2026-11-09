@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { AUTH_COMMAND_FUTURE_SKEW_MS, type WebOAuthProvider } from '@boardsesh/auth-protocol';
 import { AuthBackendUnavailableError } from './auth-command-transport.server';
+import { resolvePublicAuthOrigin } from './canonical-auth-url';
 
 const APPLE_CALLBACK_PATH = '/api/auth/callback/apple';
 const CONTINUATION_PURPOSE = 'boardsesh:web-oauth:apple-continuation:v1';
@@ -44,7 +45,15 @@ function requireScope(scope: string): void {
 }
 function requireApplePath(request: NextRequest): void {
   requireCondition(request.nextUrl.pathname === APPLE_CALLBACK_PATH);
-  requireCondition(['https:', 'http:'].includes(request.nextUrl.protocol));
+}
+/**
+ * The configured site, never the request's own URL: the standalone server builds
+ * that from its bind address, so Apple's POST to the site reads as 0.0.0.0:3000.
+ */
+function publicAuthUrl(): URL {
+  const origin = resolvePublicAuthOrigin();
+  requireCondition(origin);
+  return new URL(origin);
 }
 function flowCookie(base: NextAuthOptions, key: (typeof flowCookieKeys)[number]) {
   const configured = base.cookies?.[key];
@@ -77,8 +86,8 @@ function privacy(response: Response): Response {
   response.headers.set('X-Robots-Tag', 'noindex, follow');
   return response;
 }
-function continuationName(request: NextRequest, scope: string): string {
-  return `${request.nextUrl.protocol === 'https:' ? '__Secure-' : ''}boardsesh.web-oauth.apple.${scope}`;
+function continuationName(site: URL, scope: string): string {
+  return `${site.protocol === 'https:' ? '__Secure-' : ''}boardsesh.web-oauth.apple.${scope}`;
 }
 function cookieHeader(name: string, content: string, secure: boolean, lifetime: number): string {
   return `${name}=${content}; Path=${APPLE_CALLBACK_PATH}; Max-Age=${lifetime}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
@@ -190,14 +199,15 @@ export async function holdAppleOAuthCallback(
     requireCondition((await findWebOAuthCallbackScope(request, base, 'apple', state)) === scope);
     const form = await appleForm(request);
     requireCondition(form.state === state);
-    const name = continuationName(request, scope);
+    const site = publicAuthUrl();
+    const name = continuationName(site, scope);
     const rawToken = await encode({
       secret: secret(base),
       salt: name,
       maxAge: CONTINUATION_LIFETIME_SECONDS,
       token: {
         purpose: CONTINUATION_PURPOSE,
-        origin: request.nextUrl.origin,
+        origin: site.origin,
         callbackPath: APPLE_CALLBACK_PATH,
         provider: 'apple',
         scope,
@@ -210,10 +220,10 @@ export async function holdAppleOAuthCallback(
     const response = privacy(
       new Response(null, {
         status: 303,
-        headers: { Location: `${request.nextUrl.origin}${APPLE_CALLBACK_PATH}?boardseshOAuthContinue=${scope}` },
+        headers: { Location: `${site.origin}${APPLE_CALLBACK_PATH}?boardseshOAuthContinue=${scope}` },
       }),
     );
-    const secure = request.nextUrl.protocol === 'https:';
+    const secure = site.protocol === 'https:';
     if (rawToken.length <= MAX_COOKIE_CHUNK_BYTES) {
       response.headers.append('Set-Cookie', cookieHeader(name, rawToken, secure, CONTINUATION_LIFETIME_SECONDS));
     } else {
@@ -246,7 +256,8 @@ export async function resumeAppleOAuthCallback(
     requireCondition(request.method === 'GET');
     const markers = request.nextUrl.searchParams.getAll('boardseshOAuthContinue');
     requireCondition(markers.length === 1 && markers[0] === scope);
-    const name = continuationName(request, scope);
+    const site = publicAuthUrl();
+    const name = continuationName(site, scope);
     const candidates = rawCookies(request).filter(
       (cookie) => cookie.name === name || cookie.name.startsWith(`${name}.`),
     );
@@ -268,7 +279,7 @@ export async function resumeAppleOAuthCallback(
     // Nominal 60s lifetime, with bounded issuer-ahead clock skew only. This
     // does not extend the positive-age deadline or create a real-time clock.
     requireCondition(
-      payload.origin === request.nextUrl.origin &&
+      payload.origin === site.origin &&
         payload.scope === scope &&
         age >= -AUTH_COMMAND_FUTURE_SKEW_MS &&
         age < CONTINUATION_LIFETIME_SECONDS * 1000,
@@ -280,13 +291,13 @@ export async function resumeAppleOAuthCallback(
     const headers = new Headers(request.headers);
     for (const header of ['content-length', 'content-encoding', 'transfer-encoding']) headers.delete(header);
     headers.set('Content-Type', 'application/x-www-form-urlencoded');
-    const resumed = new NextRequest(new URL(APPLE_CALLBACK_PATH, request.nextUrl.origin), {
+    const resumed = new NextRequest(new URL(APPLE_CALLBACK_PATH, site.origin), {
       method: 'POST',
       headers,
       body: payload.body,
     });
     const observedNames = candidates.map((cookie) => cookie.name);
-    const secure = request.nextUrl.protocol === 'https:';
+    const secure = site.protocol === 'https:';
     return {
       request: resumed,
       state: payload.state,

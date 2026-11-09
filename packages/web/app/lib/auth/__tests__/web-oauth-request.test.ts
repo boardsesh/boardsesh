@@ -110,8 +110,13 @@ const invoke: Invocation = async (request, options) => {
   return new Response(null, { status: 302, headers: { Location: `${origin}/signed-in` } });
 };
 
-function signIn(jar: CookieJar, forwardedFor = clientAddress, handler: Invocation = invoke) {
-  const request = new NextRequest(`${origin}/api/auth/signin/google`, {
+function signIn(
+  jar: CookieJar,
+  forwardedFor = clientAddress,
+  handler: Invocation = invoke,
+  requestOrigin = origin,
+) {
+  const request = new NextRequest(`${requestOrigin}/api/auth/signin/google`, {
     method: 'POST',
     headers: {
       Cookie: jar.header(),
@@ -179,6 +184,7 @@ beforeEach(() => {
   vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'backend-staging');
   // A distinct address per case keeps the real per-client start limit in play.
   clientAddress = `198.51.100.${nextClientOctet++}`;
+  vi.stubEnv('NEXTAUTH_URL', origin);
   terminal = 'completed';
   callbackInvocations = 0;
   callbackUrlMaxAge = undefined;
@@ -221,6 +227,15 @@ describe('per-client OAuth start limit', () => {
       expect((await signIn(new CookieJar(), clientAddress, legacyHandler)).status).toBe(302);
     expect(legacyHandler).toHaveBeenCalledTimes(25);
     expect(rpc.intent).not.toHaveBeenCalled();
+  });
+});
+
+describe('on the standalone server, whose request URL is its bind address', () => {
+  it('sends the unavailable redirect to the configured site', async () => {
+    rpc.intent.mockRejectedValueOnce(new Error(privateErrorMarker));
+    const response = await signIn(new CookieJar(), clientAddress, invoke, 'https://0.0.0.0:3000');
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe(`${origin}/auth/error?error=AuthBackendUnavailable`);
   });
 });
 

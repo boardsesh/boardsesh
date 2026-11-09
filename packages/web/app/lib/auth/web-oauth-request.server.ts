@@ -7,6 +7,7 @@ import { AUTH_COMMAND_REQUEST_BYTES, type WebOAuthProvider } from '@boardsesh/au
 import { AuthBackendUnavailableError } from './auth-command-transport.server';
 import { createWebOAuthCommandClient, webOAuthMode } from './web-oauth-command-client.server';
 import { createWebOAuthIdentityAuthRequest, createWebOAuthLogger } from './web-oauth-auth.server';
+import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import {
   createWebOAuthCookieScope,
   findWebOAuthCallbackScope,
@@ -179,7 +180,8 @@ function unavailableResponse(
   provider: WebOAuthProvider,
   state?: string,
 ): Response {
-  const destination = new URL('/auth/error', request.url);
+  // Falls back only where nothing names the site, which the production boot guard refuses.
+  const destination = new URL('/auth/error', resolvePublicAuthOrigin() ?? request.url);
   destination.searchParams.set('error', AUTH_BACKEND_UNAVAILABLE);
   if (json) return privacy(Response.json({ url: destination.href }, { status: 503 }));
   let response = privacy(new Response(null, { status: 303, headers: { Location: destination.href } }));
