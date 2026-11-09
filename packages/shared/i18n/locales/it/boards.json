@@ -1459,7 +1459,7 @@
     "clearCableBody": "Aggiungere o rimuovere un LED cancella il percorso del cavo e il numero di LED saltati. Dovrai collegare di nuovo i LED.",
     "clearCable": "Cancella il cavo e continua",
     "rebuildLedsTitle": "Ricominciare con i LED?",
-    "rebuildLedsBody": "I fori o la disposizione dei LED sono cambiati. Ricominciando, sostituisci le posizioni dei LED e cancelli il percorso del cavo.",
+    "rebuildLedsBody": "I fori o la disposizione dei LED sono cambiati. Ricominciando, sostituisci le posizioni dei LED e cancelli il percorso del cavo e le prese collegate a mano.",
     "rebuildLeds": "Ricomincia",
     "photoLabel": "Foto rettificata della Spraywall con le posizioni dei fori",
     "resetCorners": "Ripristina angoli",

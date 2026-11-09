@@ -360,6 +360,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   /** Untouched generated LEDs cost nothing to rebuild. Hand-placed ones and a cable path do. */
   function wouldDiscardHandWork() {
     if (layout.wiring?.paths.length) return true;
+    // Rebuilding clears hand-made hold links too (the new LEDs reuse the old ids).
+    if (layout.holdLeds?.length) return true;
     if (!layout.ledPositions?.length) return false;
     const untouched = untouchedLeds.current ?? (matchingSaved ? generateLedPositions(matchingSaved) : []);
     return !sameLedPositions(layout.ledPositions, untouched);

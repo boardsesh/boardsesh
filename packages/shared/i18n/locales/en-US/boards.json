@@ -1459,7 +1459,7 @@
     "clearCableBody": "Adding or removing an LED clears your cable path and skipped LED counts. You will need to wire the LEDs again.",
     "clearCable": "Clear cable and continue",
     "rebuildLedsTitle": "Start the LEDs over?",
-    "rebuildLedsBody": "Your holes or LED pattern changed. Starting over replaces your LED positions and clears your cable path.",
+    "rebuildLedsBody": "Your holes or LED pattern changed. Starting over replaces your LED positions and clears your cable path and the holds you linked by hand.",
     "rebuildLeds": "Start over",
     "photoLabel": "Rectified Spraywall photo with T-nut positions",
     "resetCorners": "Reset corners",

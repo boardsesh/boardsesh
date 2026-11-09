@@ -1459,7 +1459,7 @@
     "clearCableBody": "Añadir o quitar un LED borra el recorrido del cable y las cantidades de LED omitidos. Tendrás que volver a conectar los LED.",
     "clearCable": "Borrar cable y continuar",
     "rebuildLedsTitle": "¿Empezar de nuevo con los LED?",
-    "rebuildLedsBody": "Han cambiado los orificios o la distribución de los LED. Al empezar de nuevo, se sustituirán las posiciones de los LED y se borrará el recorrido del cable.",
+    "rebuildLedsBody": "Han cambiado los orificios o la distribución de los LED. Al empezar de nuevo, se sustituirán las posiciones de los LED y se borrarán el recorrido del cable y las presas enlazadas a mano.",
     "rebuildLeds": "Empezar de nuevo",
     "photoLabel": "Foto rectificada del Spraywall con las posiciones de los orificios",
     "resetCorners": "Restablecer esquinas",

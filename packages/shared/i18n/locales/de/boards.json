@@ -1459,7 +1459,7 @@
     "clearCableBody": "Wenn du eine LED hinzufügst oder entfernst, werden der Kabelverlauf und die Anzahl übersprungener LEDs gelöscht. Du musst die LEDs danach erneut verbinden.",
     "clearCable": "Kabel löschen und fortfahren",
     "rebuildLedsTitle": "LEDs neu anlegen?",
-    "rebuildLedsBody": "Deine Löcher oder dein LED-Muster haben sich geändert. Beim Neuanlegen werden deine LED-Positionen ersetzt und dein Kabelverlauf gelöscht.",
+    "rebuildLedsBody": "Deine Löcher oder dein LED-Muster haben sich geändert. Beim Neuanlegen werden deine LED-Positionen ersetzt und dein Kabelverlauf sowie die von Hand verknüpften Griffe gelöscht.",
     "rebuildLeds": "Neu anlegen",
     "photoLabel": "Entzerrtes Spraywall-Foto mit Bohrlochpositionen",
     "resetCorners": "Ecken zurücksetzen",

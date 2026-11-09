@@ -1029,6 +1029,18 @@ describe('SprayWallLedSetupScreen', () => {
   });
 
   describe('replacing LED and cable work', () => {
+    it('asks before a rebuild clears holds linked to LEDs by hand', async () => {
+      const saved = savedWithLeds();
+      const ledId = saved.ledPositions?.[0]?.id ?? '';
+      storage.load.mockResolvedValue({ ...saved, holdLeds: [{ holdId: 1, ledIds: [ledId] }] });
+      await openOnLedStep();
+      fireEvent.click(radio('ledBelow'));
+      next();
+      expect(controls.alert).toHaveBeenCalledOnce();
+      act(() => alertButton('destructive').onPress?.());
+      expect(lastSaved().holdLeds).toBeUndefined();
+    });
+
     it('asks before replacing a hand-moved LED, and Keep editing keeps it', async () => {
       storage.load.mockResolvedValue(savedWithLeds());
       await openOnLedStep();
