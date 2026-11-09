@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
+import { logger } from '../../utils/logger';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import type { PartnerDatabase } from './tables';
 
@@ -46,7 +47,7 @@ export function isPartnerDatabaseBusy(error: unknown): boolean {
   return code !== undefined && DATABASE_BUSY_CODES.has(code);
 }
 
-/** Better Auth hands request errors here before turning them into a 500. */
+/** The adapter calls this because stock endpoints can turn a query failure into a generic 500. */
 export function recordPartnerRequestError(error: unknown): void {
   const active = activeTransaction.getStore();
   if (active && isPartnerDatabaseBusy(error)) active.state.databaseBusy = true;
@@ -120,7 +121,15 @@ export async function handlePartnerRequest(
     });
   } catch (error) {
     if (requestState?.databaseBusy || isPartnerDatabaseBusy(error)) return partnerBusyResponse();
-    if (error instanceof PartnerResponseRollback) return error.response;
-    throw error;
+    if (error instanceof PartnerResponseRollback) {
+      logger.error('Partner OAuth request failed', { status: error.response.status });
+      return error.response;
+    }
+    // Name and database code only: Drizzle's error text carries the query parameters.
+    logger.error('Partner OAuth request failed', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+      postgresCode: getPostgresErrorCode(error),
+    });
+    return new Response(null, { status: 500 });
   }
 }

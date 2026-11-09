@@ -7,17 +7,20 @@ import type { PartnerDatabase } from './tables';
 type OAuthConnection = typeof oauthConnections.$inferSelect;
 
 /**
- * Lock order, always: the climber's `users` row FOR KEY SHARE, then the
- * connection row FOR UPDATE, then provider rows. KEY SHARE does not block
- * ordinary user updates, but it does block the FOR UPDATE that password
- * resets and account deletion take, so they wait for issuers in flight.
+ * Lock order, always: the climber's `users` row FOR SHARE, then the connection
+ * row FOR UPDATE, then provider rows. FOR SHARE leaves the FOR KEY SHARE that
+ * foreign-key inserts take alone, but conflicts with the FOR NO KEY UPDATE a
+ * password reset takes and the FOR UPDATE an account deletion takes, so both
+ * wait for issuers in flight. Issuers never write `users`, so two of them
+ * holding FOR SHARE cannot deadlock on an upgrade.
  */
-async function lockClimber(database: PartnerDatabase, userId: string): Promise<boolean> {
-  const climbers = await database.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('key share');
+export async function lockClimber(database: PartnerDatabase, userId: string): Promise<boolean> {
+  const climbers = await database.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('share');
   return climbers.length === 1;
 }
 
-async function selectConnectionForUpdate(
+/** Call with the climber already locked, so the order above holds. */
+export async function selectConnectionForUpdate(
   database: PartnerDatabase,
   userId: string,
   clientId: string,

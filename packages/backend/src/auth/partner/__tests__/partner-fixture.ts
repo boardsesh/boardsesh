@@ -121,7 +121,12 @@ export interface PartnerTestEnvironment {
   secondaryInstance: RequestHandlerInstance;
   createInstance(plugins?: BetterAuthPlugin[]): RequestHandlerInstance;
   createClimber(): Promise<TestClimber>;
-  createClient(options?: { publicClient?: boolean; skipConsent?: boolean; owner?: TestClimber }): Promise<TestClient>;
+  createClient(options?: {
+    publicClient?: boolean;
+    skipConsent?: boolean;
+    owner?: TestClimber;
+    linkResource?: boolean;
+  }): Promise<TestClient>;
   authorize(
     client: TestClient,
     options?: {
@@ -169,7 +174,11 @@ export interface PartnerTestEnvironment {
   close(): Promise<void>;
 }
 
-async function postForm(target: RequestHandlerInstance, path: string, fields: Record<string, string>) {
+export async function postForm(
+  target: RequestHandlerInstance,
+  path: string,
+  fields: Record<string, string> | URLSearchParams,
+) {
   const response = await target.handler(
     new Request(`${TEST_ISSUER}${path}`, {
       method: 'POST',
@@ -181,7 +190,7 @@ async function postForm(target: RequestHandlerInstance, path: string, fields: Re
   return { response, body: (responseText ? JSON.parse(responseText) : {}) as OAuthResponseBody };
 }
 
-function clientCredentials(client: TestClient): Record<string, string> {
+export function clientCredentials(client: TestClient): Record<string, string> {
   return { client_id: client.clientId, ...(client.clientSecret ? { client_secret: client.clientSecret } : {}) };
 }
 
@@ -245,12 +254,14 @@ export async function createPartnerTestEnvironment(): Promise<PartnerTestEnviron
         },
       });
       if (!registered?.client_id) throw new Error('Fixture client registration did not return an id');
-      await db.insert(oauthClientResource).values({
-        id: randomUUID(),
-        clientId: registered.client_id,
-        resourceId: TEST_RESOURCE,
-        createdAt: new Date(),
-      });
+      if (options.linkResource ?? true) {
+        await db.insert(oauthClientResource).values({
+          id: randomUUID(),
+          clientId: registered.client_id,
+          resourceId: TEST_RESOURCE,
+          createdAt: new Date(),
+        });
+      }
       return {
         clientId: registered.client_id,
         clientSecret: registered.client_secret ?? undefined,

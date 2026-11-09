@@ -6,6 +6,7 @@ import {
   oauthAccessToken,
   oauthClient,
   oauthConnections,
+  oauthConsent,
   oauthRefreshAncestors,
   oauthRefreshToken,
   oauthSession,
@@ -13,7 +14,17 @@ import {
 } from '@boardsesh/db/schema/auth';
 import { db } from '../../../db/client';
 import {
+  PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS,
+  PARTNER_ISSUER,
+  PARTNER_RESOURCE,
+  PARTNER_SCOPES,
+  PARTNER_SIGNED_QUERY_LIFETIME_SECONDS,
+  PARTNER_WEB_ORIGIN,
+} from '../configuration';
+import { PARTNER_POOL_MAX } from '../transaction';
+import {
   createPartnerTestEnvironment,
+  TEST_CONFIGURATION,
   TEST_ISSUER,
   TEST_OAUTH_OPTIONS,
   TEST_RESOURCE,
@@ -57,9 +68,111 @@ describe('partner authority against real Postgres (ported from the BA-01 prototy
       expect(metadata.token_endpoint).toBe(`${TEST_ISSUER}/oauth2/token`);
       expect(metadata.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
       expect(metadata.code_challenge_methods_supported).toEqual(['S256']);
+      // Discovery only publishes scopes whose routes exist.
+      expect(metadata.scopes_supported).toEqual(['profile:read', 'offline_access']);
     }
     const oidc = await environment.auth.handler(new Request(`${TEST_ISSUER}/.well-known/openid-configuration`));
     expect(oidc.status).toBe(404);
+  });
+
+  it('refuses a resource the client is not linked to', async () => {
+    const client = await environment.createClient({ linkResource: false });
+    const refused = await environment.authorize(client);
+    expect(new URL(refused.location!).searchParams.get('error')).toBe('invalid_target');
+    expect(new URL(refused.location!).searchParams.has('code')).toBe(false);
+  });
+
+  it('refuses client registration from a signed-in climber and from nobody', async () => {
+    const climber = await environment.createClimber();
+    const clientName = `registration-${randomUUID()}`;
+    const asCallers: Record<string, string>[] = [{ [TEST_SESSION_HEADER]: climber.sessionToken }, {}];
+    for (const headers of asCallers) {
+      const response = await environment.instance.handler(
+        new Request(`${TEST_ISSUER}/oauth2/register`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...headers },
+          body: JSON.stringify({ client_name: clientName, redirect_uris: ['https://client.example.test/cb'] }),
+        }),
+      );
+      expect(response.status).toBe(403);
+    }
+    expect(await db.select().from(oauthClient).where(eq(oauthClient.name, clientName))).toEqual([]);
+  });
+
+  it.each([
+    ['a foreign origin', { origin: 'https://evil.example' }],
+    ['no origin', {}],
+  ])('checks the origin of a cookie-bearing consent post: %s is refused', async (_label, originHeaders) => {
+    const client = await environment.createClient({ skipConsent: false });
+    const atConsent = await environment.authorize(client);
+    const response = await environment.instance.handler(
+      new Request(`${TEST_ISSUER}/oauth2/consent`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: 'unrelated=1',
+          [TEST_SESSION_HEADER]: client.owner.sessionToken,
+          ...originHeaders,
+        },
+        body: JSON.stringify({ accept: true, oauth_query: new URL(atConsent.location!).searchParams.toString() }),
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(await db.select().from(oauthConsent).where(eq(oauthConsent.clientId, client.clientId))).toEqual([]);
+  });
+
+  it('accepts a cookie-bearing consent post from the web origin', async () => {
+    const client = await environment.createClient({ skipConsent: false });
+    const atConsent = await environment.authorize(client);
+    const response = await environment.instance.handler(
+      new Request(`${TEST_ISSUER}/oauth2/consent`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: 'unrelated=1',
+          origin: TEST_CONFIGURATION.webOrigin,
+          [TEST_SESSION_HEADER]: client.owner.sessionToken,
+        },
+        body: JSON.stringify({ accept: true, oauth_query: new URL(atConsent.location!).searchParams.toString() }),
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it('pins the values a typo would quietly weaken', async () => {
+    expect(TEST_OAUTH_OPTIONS).toMatchObject({
+      allowDynamicClientRegistration: false,
+      allowUnauthenticatedClientRegistration: false,
+      clientRegistrationRequirePKCE: true,
+      enforcePerClientResources: true,
+      refreshTokenReuseInterval: 0,
+      codeExpiresIn: 600,
+      accessTokenExpiresIn: 3600,
+      refreshTokenExpiresIn: 90 * 24 * 60 * 60,
+      storeTokens: 'hashed',
+      storeClientSecret: 'encrypted',
+      disableJwtPlugin: true,
+      grantTypes: ['authorization_code', 'refresh_token'],
+    });
+    expect(PARTNER_SCOPES).toEqual(['profile:read', 'offline_access']);
+    expect(PARTNER_SIGNED_QUERY_LIFETIME_SECONDS).toBe(600);
+    expect(PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS).toBe(60);
+    expect(PARTNER_POOL_MAX).toBe(3);
+    expect([PARTNER_ISSUER, PARTNER_RESOURCE, PARTNER_WEB_ORIGIN]).toEqual([
+      'https://api.boardsesh.com/api/auth',
+      'https://api.boardsesh.com/v1',
+      'https://www.boardsesh.com',
+    ]);
+
+    const { options } = await environment.auth.$context;
+    expect(options.user?.deleteUser?.enabled).toBe(false);
+    expect(options.user?.changeEmail?.enabled).toBe(false);
+    expect(options.account?.accountLinking?.enabled).toBe(false);
+    expect(options.session?.cookieCache?.enabled).toBe(false);
+    expect(options.rateLimit?.enabled).toBe(false);
+    expect(options.telemetry?.enabled).toBe(false);
+    expect(options.logger?.disabled).toBe(true);
+    expect(options.onAPIError?.throw).toBe(true);
   });
 
   it('redeems a PKCE code on another instance and binds an opaque token to the resource and scopes', async () => {
@@ -114,7 +227,9 @@ describe('partner authority against real Postgres (ported from the BA-01 prototy
     const consentUrl = new URL(atConsent.location!);
     expect(consentUrl.href).toContain(TEST_OAUTH_OPTIONS.consentPage);
     const signedExpiry = Number(consentUrl.searchParams.get('exp'));
-    expect(signedExpiry - Math.floor(Date.now() / 1000)).toBeGreaterThan(590);
+    const signedSecondsLeft = signedExpiry - Math.floor(Date.now() / 1000);
+    expect(signedSecondsLeft).toBeGreaterThan(590);
+    expect(signedSecondsLeft).toBeLessThanOrEqual(600);
 
     const client = await environment.createClient({ publicClient: true });
     const authorization = await environment.authorize(client);

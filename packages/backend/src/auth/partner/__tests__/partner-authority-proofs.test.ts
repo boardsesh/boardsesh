@@ -97,11 +97,8 @@ describe('proof (a): the provider runs on users read-only', () => {
   });
 
   describe('every identity write through the adapter is refused before it reaches the database', () => {
-    const models = [
-      ['user', 'users'],
-      ['session', 'oauthSession'],
-      ['account', 'account'],
-    ] as const;
+    // Every spelling the adapter accepts: the model name and the mapped table name.
+    const models = ['user', 'users', 'session', 'oauthSession', 'account'];
 
     it.each(models)('refuses writes to the %s model', async (model) => {
       const context = await environment.auth.$context;

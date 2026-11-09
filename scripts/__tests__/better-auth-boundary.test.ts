@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
@@ -63,6 +63,11 @@ function filesImporting(paths: string[], matches: (specifier: string) => boolean
   return paths.filter((path) => importSpecifiers(readRepoFile(path)).some(matches));
 }
 
+function resolvesIntoPartnerFolder(importerPath: string, specifier: string): boolean {
+  if (!specifier.startsWith('.')) return /(^|\/)auth\/partner(\/|$)/.test(specifier);
+  return `${posix.join(posix.dirname(importerPath), specifier)}/`.startsWith(PARTNER_ROOT);
+}
+
 function isProductionSource(path: string): boolean {
   return !path.includes('/__tests__/') && !/\.test\.[cm]?[jt]sx?$/.test(path);
 }
@@ -84,6 +89,28 @@ describe('import scanner', () => {
       expect(importSpecifiers(source).some(isBetterAuthSpecifier)).toBe(false);
     },
   );
+});
+
+describe('partner folder resolution', () => {
+  const importer = 'packages/backend/src/auth/session.ts';
+
+  it.each([
+    [importer, './partner/mode'],
+    [importer, './partner'],
+    ['packages/backend/src/handlers/oauth.ts', '../auth/partner/load-authority'],
+    ['packages/backend/src/handlers/deep/route.ts', '../../auth/partner'],
+    [importer, 'boardsesh-backend/src/auth/partner/mode'],
+  ])('%s importing %s is caught', (path, specifier) => {
+    expect(resolvesIntoPartnerFolder(path, specifier)).toBe(true);
+  });
+
+  it.each([
+    [importer, './partners'],
+    [importer, './prototype/authority'],
+    ['packages/backend/src/handlers/oauth.ts', '../utils/partner'],
+  ])('%s importing %s is not', (path, specifier) => {
+    expect(resolvesIntoPartnerFolder(path, specifier)).toBe(false);
+  });
 });
 
 describe('Better Auth dependency boundary', () => {
@@ -145,7 +172,10 @@ describe('Better Auth dependency boundary', () => {
         isProductionSource(path),
     );
     expect(productionModules.length).toBeGreaterThan(0);
-    expect(filesImporting(productionModules, (specifier) => /(^|\/)auth\/partner(\/|$)/.test(specifier))).toEqual([]);
+    const importers = productionModules.filter((path) =>
+      importSpecifiers(readRepoFile(path)).some((specifier) => resolvesIntoPartnerFolder(path, specifier)),
+    );
+    expect(importers).toEqual([]);
   });
 
   it('reaches the authority only through a dynamic import in the loader', () => {

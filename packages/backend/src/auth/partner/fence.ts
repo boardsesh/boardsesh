@@ -2,14 +2,40 @@ import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { getOAuthProviderApi, type OAuthOptions } from '@better-auth/oauth-provider';
 import { eq } from 'drizzle-orm';
-import { oauthClient, oauthConnections, oauthGrants, oauthVerification } from '@boardsesh/db/schema/auth';
+import { oauthConnections, oauthGrants, oauthVerification } from '@boardsesh/db/schema/auth';
 import { PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS } from './configuration';
 import { createPartnerFamilyStore, createRefreshFamilyHooks } from './family-guard';
-import { lockCurrentGrant, lockOrCreatePartnerConnection, lockPartnerConnection } from './locks';
+import {
+  lockClimber,
+  lockCurrentGrant,
+  lockOrCreatePartnerConnection,
+  lockPartnerConnection,
+  selectConnectionForUpdate,
+} from './locks';
 import { currentPartnerTransaction } from './transaction';
+
+/** RFC 6749 section 3.2 forbids repeats. RFC 8707 makes `resource` the one exception. */
+const REPEATABLE_FORM_PARAMETERS = new Set(['resource']);
 
 function stringParameter(candidate: unknown): string | undefined {
   return typeof candidate === 'string' ? candidate : undefined;
+}
+
+function firstRepeatedParameter(formBody: string): string | undefined {
+  const seen = new Set<string>();
+  for (const name of new URLSearchParams(formBody).keys()) {
+    if (seen.has(name) && !REPEATABLE_FORM_PARAMETERS.has(name)) return name;
+    seen.add(name);
+  }
+  return undefined;
+}
+
+/** Splits `prompt` the way the provider's schema does. */
+function promptTokens(prompt: string): string[] {
+  return prompt
+    .split(' ')
+    .map((token) => token.trim())
+    .filter(Boolean);
 }
 
 function parseCodeOwner(serialized: string): { userId: string; clientId: string } | null {
@@ -56,6 +82,27 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
     id: 'boardsesh-partner-fence',
     hooks: {
       before: [
+        // Hooks run before the provider parses the request, so they read it raw.
+        // The provider trims grant_type, and last-wins form parsing would let one
+        // copy of a parameter reach the guards and another reach the provider.
+        // Refusing both here keeps every guard on the value the provider acts on.
+        {
+          matcher: (context) => context.path === '/oauth2/token' || context.path === '/oauth2/revoke',
+          handler: createAuthMiddleware(async (context) => {
+            const invalidRequest = (description: string) =>
+              context.json(
+                { error: 'invalid_request', error_description: description },
+                { status: 400, headers: { 'cache-control': 'no-store' } },
+              );
+            const grantType: unknown = context.body?.grant_type;
+            if (typeof grantType === 'string' && grantType !== grantType.trim()) {
+              return invalidRequest('grant_type must not have surrounding whitespace.');
+            }
+            if (context.request && firstRepeatedParameter(await context.request.clone().text())) {
+              return invalidRequest('Request parameters must not be repeated.');
+            }
+          }),
+        },
         // A signed-in climber opening an authorization or answering consent.
         {
           matcher: (context) => context.path === '/oauth2/authorize' || context.path === '/oauth2/consent',
@@ -64,33 +111,34 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (!session) return;
             const { transaction, state } = currentPartnerTransaction();
             const isConsent = context.path === '/oauth2/consent';
+            // The provider reads a form POST from the body and a GET from the query.
+            // Consent's nested authorize finds no client_id in its JSON body and
+            // stops below: consent's own pass through this hook has taken the locks.
+            const source = !isConsent && context.method === 'POST' ? 'body' : 'query';
+            const parameters: Record<string, unknown> = context[source] ?? {};
             const clientId = isConsent
               ? typeof context.body?.oauth_query === 'string'
                 ? new URLSearchParams(context.body.oauth_query).get('client_id')
                 : null
-              : (stringParameter(context.body?.client_id) ?? stringParameter(context.query?.client_id));
+              : stringParameter(parameters.client_id);
             if (!clientId) return;
             if (isConsent && context.body?.accept === true) state.consentApproved = true;
 
-            const [knownClient] = await transaction
-              .select({ clientId: oauthClient.clientId })
-              .from(oauthClient)
-              .where(eq(oauthClient.clientId, clientId));
-            if (!knownClient) return;
-
-            const connection = await lockOrCreatePartnerConnection(transaction, session.user.id, clientId);
-            if (!connection) {
+            // Held even with no connection yet: a password reset then waits for this
+            // request and finds the code it binds. The row itself waits for a code.
+            if (!(await lockClimber(transaction, session.user.id))) {
               throw new APIError('BAD_REQUEST', { error: 'invalid_request', error_description: 'Account not found.' });
             }
-            // A reconnect always shows a new consent screen, even if the app
-            // would otherwise skip it. The provider reads this from the body on
-            // a form POST and from the query otherwise.
-            if (connection.revokedAt && !isConsent && !state.consentApproved) {
-              const source = context.method === 'POST' ? 'body' : 'query';
-              const parameters: Record<string, unknown> = context[source] ?? {};
-              const prompts = new Set(
-                (typeof parameters.prompt === 'string' ? parameters.prompt : '').split(' ').filter(Boolean),
-              );
+            const connection = await selectConnectionForUpdate(transaction, session.user.id, clientId);
+            // A reconnect always shows a new consent screen, even if the app would
+            // otherwise skip it.
+            if (connection?.revokedAt && !isConsent && !state.consentApproved) {
+              const prompt = parameters.prompt ?? '';
+              if (typeof prompt !== 'string') return;
+              const prompts = new Set(promptTokens(prompt));
+              // The provider refuses prompt=none combined with anything else, and
+              // answers consent_required by itself because Disconnect removed the consent.
+              if (prompts.has('none')) return;
               prompts.add('consent');
               return { context: { [source]: { ...parameters, prompt: [...prompts].join(' ') } } };
             }

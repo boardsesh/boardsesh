@@ -175,7 +175,23 @@ export function createRefreshFamilyHooks({
           const currentRefreshToken = await store.findRefreshToken(lookup);
           const currentAncestor = await store.findAncestor(lookup);
           const consumedAt = currentAncestor?.consumedAt ?? currentRefreshToken?.revoked;
-          if (!consumedAt) return;
+          if (!consumedAt) {
+            // Stock 1.7.17 issues a successor that lacks offline_access if the
+            // request drops it, and that successor then never rotates. Checked
+            // after the reuse path so a narrowed scope cannot hide a replay.
+            const requestedScope: unknown = context.body?.scope;
+            if (
+              isRefresh &&
+              typeof requestedScope === 'string' &&
+              !requestedScope.split(' ').includes('offline_access')
+            ) {
+              return context.json(
+                { error: 'invalid_scope', error_description: 'A refresh must keep offline_access.' },
+                { status: 400, headers: { 'cache-control': 'no-store' } },
+              );
+            }
+            return;
+          }
 
           await store.closeFamily(lineage);
           if (!isRefresh) return context.json(null, { status: 200, headers: { 'cache-control': 'no-store' } });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createTelemetry, type BetterAuthOptions, type TelemetryEvent } from 'better-auth';
 import { drizzle } from 'drizzle-orm/postgres-js';
 
-const callCounts = vi.hoisted(() => ({ betterAuth: 0, createDedicatedPool: 0 }));
+const callCounts = vi.hoisted(() => ({ betterAuth: 0, createDedicatedPool: 0, poolSizes: [] as number[] }));
 
 vi.mock('better-auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('better-auth')>();
@@ -21,6 +21,7 @@ vi.mock('@boardsesh/db/client', async (importOriginal) => {
     ...actual,
     createDedicatedPool: (...args: Parameters<typeof actual.createDedicatedPool>) => {
       callCounts.createDedicatedPool += 1;
+      callCounts.poolSizes.push(args[0]);
       return actual.createDedicatedPool(...args);
     },
   };
@@ -82,6 +83,20 @@ describe('importing partner modules', () => {
     });
     expect(callCounts.betterAuth).toBe(1);
     await authority.$context.catch(() => {});
+  });
+});
+
+describe('the deployed authority', () => {
+  it('opens one dedicated pool of three connections', async () => {
+    vi.stubEnv('PARTNER_OAUTH_SECRETS', `1:${VALID_SECRET}`);
+    callCounts.poolSizes = [];
+    const { getPartnerAuthorityRuntime } = await import('../authority');
+    const runtime = await getPartnerAuthorityRuntime();
+    try {
+      expect(callCounts.poolSizes).toEqual([3]);
+    } finally {
+      await runtime.close();
+    }
   });
 });
 

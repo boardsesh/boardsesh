@@ -1,11 +1,8 @@
 import { betterAuth, type Auth, type BetterAuthOptions, type BetterAuthPlugin } from 'better-auth';
-import { isAPIError } from 'better-auth/api';
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
 import { oauthProvider, type OAuthOptions } from '@better-auth/oauth-provider';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { createDedicatedPool, withConnectRetry } from '@boardsesh/db/client';
-import { logger } from '../../utils/logger';
-import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { guardPartnerAdapter } from './adapter-guard';
 import {
   assertPartnerTelemetryOff,
@@ -16,12 +13,7 @@ import {
 } from './configuration';
 import { partnerFencePlugin } from './fence';
 import { partnerAdapterSchema, type PartnerDatabase } from './tables';
-import {
-  createPartnerDatabaseHandle,
-  handlePartnerRequest,
-  PARTNER_POOL_MAX,
-  recordPartnerRequestError,
-} from './transaction';
+import { createPartnerDatabaseHandle, handlePartnerRequest, PARTNER_POOL_MAX } from './transaction';
 
 export type PartnerAuthorityOptions = BetterAuthOptions & {
   plugins: [ReturnType<typeof oauthProvider>, ...BetterAuthPlugin[]];
@@ -54,17 +46,6 @@ export function partnerOAuthOptions(configuration: PartnerAuthorityConfiguration
     storeClientSecret: 'encrypted',
     clientRegistrationRequirePKCE: true,
   } satisfies OAuthOptions<string[]>;
-}
-
-function handlePartnerRequestError(error: unknown): void {
-  recordPartnerRequestError(error);
-  // Protocol rejections are expected. Log what the app did not cause. Name and
-  // database code only: Drizzle's error text carries the query parameters.
-  if (isAPIError(error) && error.statusCode < 500) return;
-  logger.error('Partner OAuth request failed', {
-    errorName: error instanceof Error ? error.name : 'unknown',
-    postgresCode: getPostgresErrorCode(error),
-  });
 }
 
 /**
@@ -106,7 +87,9 @@ export function createPartnerAuthority(
     rateLimit: { enabled: false },
     telemetry: { enabled: false },
     logger: { disabled: true },
-    onAPIError: { onError: handlePartnerRequestError },
+    // Otherwise the router prints unexpected errors, with their query parameters,
+    // to the console. handlePartnerRequest logs them by name and code instead.
+    onAPIError: { throw: true },
     database: guardPartnerAdapter(
       drizzleAdapter(createPartnerDatabaseHandle(database), {
         provider: 'pg',

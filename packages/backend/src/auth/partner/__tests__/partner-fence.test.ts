@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { inspect } from 'node:util';
 import { eq, sql } from 'drizzle-orm';
 import { createAuthMiddleware } from 'better-auth/api';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   oauthAccessToken,
   oauthConnections,
@@ -13,9 +14,10 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { db } from '../../../db/client';
+import { logger } from '../../../utils/logger';
 import { disconnectPartnerConnection } from '../connection';
 import { lockCurrentGrant } from '../locks';
-import { currentPartnerTransaction, runInPartnerTransaction } from '../transaction';
+import { currentPartnerTransaction, handlePartnerRequest, runInPartnerTransaction } from '../transaction';
 import {
   createPartnerTestEnvironment,
   READ_ONLY_PROOF_APPLICATION_NAME,
@@ -173,13 +175,30 @@ describe('partner fence', () => {
 
   describe('Disconnect', () => {
     it('ends tokens, consent, ancestry and pending codes for one connection only', async () => {
-      const client = await environment.createClient();
+      // A client that shows consent, so a remembered consent row really exists.
+      const client = await environment.createClient({ skipConsent: false });
       const unrelated = await environment.createClient({ owner: client.owner });
-      const issued = await environment.issueTokens(client);
+      const atConsent = await environment.authorize(client);
+      const accepted = await environment.consent(client.owner, {
+        accept: true,
+        oauth_query: new URL(atConsent.location!).searchParams.toString(),
+      });
+      const exchanged = await environment.exchange(client, {
+        location: accepted.body.url!,
+        verifier: atConsent.verifier,
+      });
+      expect(exchanged.response.status).toBe(200);
+      const issued = { ...exchanged.body, access_token: exchanged.body.access_token! };
       const rotated = await environment.refresh(client, issued.refresh_token!);
       expect(rotated.response.status).toBe(200);
       const pending = await environment.authorize(client);
+      const pendingCode = new URL(pending.location!).searchParams.get('code')!;
+      const pendingCodeHash = await hashForTest(pendingCode);
       const unrelatedTokens = await environment.issueTokens(unrelated);
+      expect(await db.select().from(oauthConsent).where(eq(oauthConsent.clientId, client.clientId))).toHaveLength(1);
+      expect(
+        await db.select().from(oauthVerification).where(eq(oauthVerification.identifier, pendingCodeHash)),
+      ).toHaveLength(1);
 
       expect(
         await disconnectPartnerConnection(environment.database, {
@@ -202,6 +221,9 @@ describe('partner fence', () => {
         await db.select().from(oauthRefreshAncestors).where(eq(oauthRefreshAncestors.clientId, client.clientId)),
       ).toHaveLength(0);
       expect(await db.select().from(oauthConsent).where(eq(oauthConsent.clientId, client.clientId))).toHaveLength(0);
+      expect(
+        await db.select().from(oauthVerification).where(eq(oauthVerification.identifier, pendingCodeHash)),
+      ).toHaveLength(0);
 
       expect((await environment.introspect(unrelated, unrelatedTokens.access_token)).body.active).toBe(true);
       expect((await environment.refresh(unrelated, unrelatedTokens.refresh_token!)).response.status).toBe(200);
@@ -443,13 +465,16 @@ describe('partner fence', () => {
       TEST_DEADLINE_MS,
     );
 
-    it(
-      'an issuer waits for a reset holding the users row FOR UPDATE',
-      async () => {
+    it.each([
+      ['a password reset', 'no key update'],
+      ['an account deletion', 'update'],
+    ] as const)(
+      'an issuer waits for %s holding the users row FOR %s',
+      async (_writer, strength) => {
         const client = await environment.createClient();
         const issued = await environment.issueTokens(client);
         const release = await holdLock((transaction) =>
-          transaction.select({ id: users.id }).from(users).where(eq(users.id, client.owner.userId)).for('update'),
+          transaction.select({ id: users.id }).from(users).where(eq(users.id, client.owner.userId)).for(strength),
         );
         try {
           const blocked = await environment.refresh(client, issued.refresh_token!);
@@ -461,11 +486,11 @@ describe('partner fence', () => {
       TEST_DEADLINE_MS,
     );
 
-    it('ordinary user updates (FOR NO KEY UPDATE) do not block an issuer', async () => {
+    it('a foreign-key insert elsewhere (FOR KEY SHARE) does not block an issuer', async () => {
       const client = await environment.createClient();
       const issued = await environment.issueTokens(client);
       const release = await holdLock((transaction) =>
-        transaction.select({ id: users.id }).from(users).where(eq(users.id, client.owner.userId)).for('no key update'),
+        transaction.select({ id: users.id }).from(users).where(eq(users.id, client.owner.userId)).for('key share'),
       );
       try {
         expect((await environment.refresh(client, issued.refresh_token!)).response.status).toBe(200);
@@ -473,6 +498,62 @@ describe('partner fence', () => {
         await release();
       }
     });
+
+    it(
+      'two issuers in flight share the users row, and a reset waits for both without deadlocking',
+      async () => {
+        const firstClient = await environment.createClient();
+        const secondClient = await environment.createClient({ owner: firstClient.owner });
+        const firstTokens = await environment.issueTokens(firstClient);
+        const secondTokens = await environment.issueTokens(secondClient);
+        let issuersInFlight = 0;
+        let bothInFlight!: () => void;
+        const bothAreInFlight = new Promise<void>((resolve) => {
+          bothInFlight = resolve;
+        });
+        let releaseIssuers!: () => void;
+        const issuersReleased = new Promise<void>((resolve) => {
+          releaseIssuers = resolve;
+        });
+        // Parks each issuer after it has minted, while it still holds FOR SHARE.
+        const pausingInstance = environment.createInstance([
+          {
+            id: 'test-pause-issuer',
+            hooks: {
+              after: [
+                {
+                  matcher: (context) => context.path === '/oauth2/token',
+                  handler: createAuthMiddleware(async () => {
+                    issuersInFlight += 1;
+                    if (issuersInFlight === 2) bothInFlight();
+                    await issuersReleased;
+                  }),
+                },
+              ],
+            },
+          },
+        ]);
+        const firstRefresh = environment.refresh(firstClient, firstTokens.refresh_token!, pausingInstance);
+        const secondRefresh = environment.refresh(secondClient, secondTokens.refresh_token!, pausingInstance);
+        await bothAreInFlight;
+
+        // The trigger's lock, on a connection tagged so the wait can be observed.
+        const reset = environment.database.transaction(async (transaction) => {
+          await transaction
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, firstClient.owner.userId))
+            .for('no key update');
+        });
+        await waitForBlockedRequests(1);
+        releaseIssuers();
+
+        const [first, second] = await Promise.all([firstRefresh, secondRefresh, reset]);
+        expect(first.response.status).toBe(200);
+        expect(second.response.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
 
     it(
       'maps a lock timeout inside a provider statement to 503 as well, and rolls the whole request back',
@@ -521,12 +602,16 @@ describe('partner fence', () => {
     it(
       'a revocation that writes nothing referencing users still waits for the users row',
       async () => {
-        // A token insert would take KEY SHARE through its foreign key anyway. Deleting
-        // an access token does not, so only the explicit lock can make this wait.
+        // Deleting an access token touches no foreign key to users, so only the
+        // explicit lock can make this wait.
         const client = await environment.createClient();
         const issued = await environment.issueTokens(client);
         const release = await holdLock((transaction) =>
-          transaction.select({ id: users.id }).from(users).where(eq(users.id, client.owner.userId)).for('update'),
+          transaction
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, client.owner.userId))
+            .for('no key update'),
         );
         try {
           expect((await environment.revoke(client, { token: issued.access_token })).response.status).toBe(503);
@@ -601,20 +686,276 @@ describe('partner fence', () => {
     const client = await environment.createClient();
     const issued = await environment.issueTokens(client);
     // A route wired past the transaction wrapper would run the guard with no transaction.
-    const response = await environment.auth.handler(
-      new Request(`${TEST_OAUTH_ISSUER}/oauth2/token`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: issued.refresh_token!,
-          client_id: client.clientId,
-          client_secret: client.clientSecret!,
+    await expect(
+      environment.auth.handler(
+        new Request(`${TEST_OAUTH_ISSUER}/oauth2/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: issued.refresh_token!,
+            client_id: client.clientId,
+            client_secret: client.clientSecret!,
+          }),
         }),
-      }),
-    );
-    expect(response.status).toBe(500);
+      ),
+    ).rejects.toThrow(/outside a partner request transaction/);
     const [row] = await db.select().from(oauthRefreshToken).where(eq(oauthRefreshToken.clientId, client.clientId));
     expect(row.revoked).toBeNull();
+  });
+
+  describe('connection rows wait for a code', () => {
+    const consentlessConnections = (userId: string) =>
+      db.select().from(oauthConnections).where(eq(oauthConnections.userId, userId));
+
+    it('a rejected authorize leaves no row', async () => {
+      const client = await environment.createClient();
+      const climber = await environment.createClimber();
+      const url = new URL(`${TEST_OAUTH_ISSUER}/oauth2/authorize`);
+      url.search = new URLSearchParams({
+        response_type: 'code',
+        client_id: client.clientId,
+        redirect_uri: 'https://evil.example/not-registered',
+        scope: 'profile:read',
+        code_challenge: 'x'.repeat(43),
+        code_challenge_method: 'S256',
+      }).toString();
+      const response = await environment.instance.handler(
+        new Request(url, { headers: { [TEST_SESSION_HEADER]: climber.sessionToken } }),
+      );
+      expect(new URL(response.headers.get('location')!).searchParams.has('code')).toBe(false);
+      expect(await consentlessConnections(climber.userId)).toEqual([]);
+    });
+
+    it('showing the consent screen leaves no row, and approving creates it', async () => {
+      const client = await environment.createClient({ skipConsent: false });
+      const atConsent = await environment.authorize(client);
+      expect(atConsent.location).toContain(TEST_OAUTH_OPTIONS.consentPage);
+      expect(await consentlessConnections(client.owner.userId)).toEqual([]);
+      const denied = await environment.consent(client.owner, {
+        accept: false,
+        oauth_query: new URL(atConsent.location!).searchParams.toString(),
+      });
+      expect(new URL(denied.body.url!).searchParams.get('error')).toBe('access_denied');
+      expect(await consentlessConnections(client.owner.userId)).toEqual([]);
+
+      const accepted = await environment.consent(client.owner, {
+        accept: true,
+        oauth_query: new URL(atConsent.location!).searchParams.toString(),
+      });
+      expect(accepted.response.status).toBe(200);
+      const rows = await consentlessConnections(client.owner.userId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].connectedAt).not.toBeNull();
+    });
+
+    it(
+      'still holds the users row with no connection yet, so a reset waits for the code being minted',
+      async () => {
+        const client = await environment.createClient({ skipConsent: false });
+        const release = await holdLock((transaction) =>
+          transaction
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, client.owner.userId))
+            .for('no key update'),
+        );
+        try {
+          // This request reaches only the consent redirect: no insert, so only the fence can wait here.
+          expect((await environment.authorize(client)).response.status).toBe(503);
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it('two first-time authorizes bind to one row', async () => {
+      const client = await environment.createClient();
+      const [first, second] = await Promise.all([
+        environment.authorize(client, {}, environment.instance),
+        environment.authorize(client, {}, environment.secondaryInstance),
+      ]);
+      expect(first.response.status).toBe(302);
+      expect(second.response.status).toBe(302);
+      const rows = await consentlessConnections(client.owner.userId);
+      expect(rows).toHaveLength(1);
+      expect(await db.select().from(oauthGrants).where(eq(oauthGrants.connectionId, rows[0].id))).toHaveLength(2);
+    });
+  });
+
+  describe('database failures', () => {
+    function captureOutput() {
+      const written: string[] = [];
+      const record = (...args: unknown[]) => {
+        written.push(args.map((argument) => inspect(argument, { depth: 6 })).join(' '));
+        return true;
+      };
+      const spies = [
+        vi.spyOn(process.stderr, 'write').mockImplementation(record),
+        vi.spyOn(process.stdout, 'write').mockImplementation(record),
+        ...(['error', 'warn', 'log', 'info', 'debug'] as const).map((level) =>
+          vi.spyOn(console, level).mockImplementation(record),
+        ),
+      ];
+      return {
+        text: () => written.join('\n'),
+        restore: () => spies.forEach((spy) => spy.mockRestore()),
+      };
+    }
+
+    function expectNoQueryDetails(output: string, client: TestClient) {
+      expect(output).not.toMatch(/params:|Failed query/);
+      expect(output).not.toContain(client.owner.userId);
+      expect(output).not.toContain(client.clientId);
+    }
+
+    it(
+      'a lock timeout in a guard prints no query parameters',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const release = await lockConnectionFor(client);
+        const output = captureOutput();
+        try {
+          const refused = await environment.refresh(client, issued.refresh_token!);
+          expect(refused.response.status).toBe(503);
+        } finally {
+          output.restore();
+          await release();
+        }
+        expectNoQueryDetails(output.text(), client);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'a lock timeout in a provider statement prints no query parameters',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const refreshLookup = await hashForTest(issued.refresh_token!);
+        const release = await holdLock((transaction) =>
+          transaction
+            .select({ id: oauthRefreshToken.id })
+            .from(oauthRefreshToken)
+            .where(eq(oauthRefreshToken.token, refreshLookup))
+            .for('update'),
+        );
+        const output = captureOutput();
+        try {
+          expect((await environment.refresh(client, issued.refresh_token!)).response.status).toBe(503);
+        } finally {
+          output.restore();
+          await release();
+        }
+        expectNoQueryDetails(output.text(), client);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'a lock timeout inside stock revoke answers 503 and prints no query parameters',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const accessLookup = await hashForTest(issued.access_token);
+        const release = await holdLock((transaction) =>
+          transaction
+            .select({ id: oauthAccessToken.id })
+            .from(oauthAccessToken)
+            .where(eq(oauthAccessToken.token, accessLookup))
+            .for('update'),
+        );
+        const output = captureOutput();
+        try {
+          const refused = await environment.revoke(client, { token: issued.access_token });
+          expect(refused.response.status).toBe(503);
+          expect(refused.body.error).toBe('temporarily_unavailable');
+        } finally {
+          output.restore();
+          await release();
+        }
+        expectNoQueryDetails(output.text(), client);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it('an unexpected query failure answers a bare 500 and logs only the name and code', async () => {
+      const client = await environment.createClient();
+      const authorization = await environment.authorize(client);
+      const failingInstance = environment.createInstance([
+        {
+          id: 'test-unexpected-query-failure',
+          hooks: {
+            after: [
+              {
+                matcher: (context) => context.path === '/oauth2/token',
+                handler: createAuthMiddleware(async (context) => {
+                  // A duplicate client id: a real query failure, not a lock wait.
+                  await context.context.adapter.create({
+                    model: 'oauthClient',
+                    data: { clientId: client.clientId, redirectUris: ['https://client.example.test/duplicate'] },
+                  });
+                }),
+              },
+            ],
+          },
+        },
+      ]);
+      const logged = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+      const output = captureOutput();
+      let failed: Awaited<ReturnType<typeof environment.exchange>>;
+      try {
+        failed = await environment.exchange(client, authorization, failingInstance);
+      } finally {
+        output.restore();
+      }
+      expect(failed.response.status).toBe(500);
+      expect(failed.body).toEqual({});
+      expect(logged).toHaveBeenCalledWith('Partner OAuth request failed', {
+        errorName: 'PartnerDatabaseError',
+        postgresCode: '23505',
+      });
+      logged.mockRestore();
+      expectNoQueryDetails(output.text(), client);
+      expect(await db.select().from(oauthAccessToken).where(eq(oauthAccessToken.clientId, client.clientId))).toEqual(
+        [],
+      );
+    });
+
+    it.each(['55P03', '57014', '40P01'])('answers 503 for retryable database error %s', async (code) => {
+      const response = await handlePartnerRequest(
+        environment.database,
+        new Request(`${TEST_OAUTH_ISSUER}/oauth2/token`),
+        () => Promise.reject(Object.assign(new Error('injected'), { code })),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get('retry-after')).toBeTruthy();
+    });
+
+    it('answers 503 when the retryable code is wrapped, as Drizzle wraps it', async () => {
+      const response = await handlePartnerRequest(
+        environment.database,
+        new Request(`${TEST_OAUTH_ISSUER}/oauth2/token`),
+        () => Promise.reject(new Error('wrapped', { cause: Object.assign(new Error('inner'), { code: '40P01' }) })),
+      );
+      expect(response.status).toBe(503);
+    });
+
+    it('answers a bare 500 for anything else', async () => {
+      const logged = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+      try {
+        const response = await handlePartnerRequest(
+          environment.database,
+          new Request(`${TEST_OAUTH_ISSUER}/oauth2/token`),
+          () => Promise.reject(Object.assign(new Error('injected'), { code: '23505' })),
+        );
+        expect(response.status).toBe(500);
+        expect(await response.text()).toBe('');
+      } finally {
+        logged.mockRestore();
+      }
+    });
   });
 });
