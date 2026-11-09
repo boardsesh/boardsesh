@@ -216,6 +216,36 @@ Kilter's app marks some problems "Verified" and has no benchmarks. We store Veri
 
 The result is on the run summary as `curatedBenchmarks`.
 
+#### How Kilter's official grades compare with Aurora's
+
+Measured on 2026-11-09, from the live `/api/climbs/curated` response against the 627 rows frozen in `kilter_aurora_benchmarks`:
+
+| Check                                                 | Rows                                |
+| ----------------------------------------------------- | ----------------------------------- |
+| Aurora benchmark rows                                 | 627 (405 climbs)                    |
+| On Kilter's list at the same angle                    | 566 (378 of the 405 climbs are on it) |
+| Of those, carrying an `officialKilterDifficulty`      | 549                                 |
+| Official grade equals Aurora's                        | 543                                 |
+| Official grade differs                                | 6                                   |
+
+Only Aurora's side is frozen. We keep no separate copy of `officialKilterDifficulty` because it is unlikely to change again, and the pass writes it to `benchmark_difficulty` wherever Kilter gives one.
+
+To re-check:
+
+```sql
+SELECT
+  count(*) FILTER (WHERE stats.benchmark_difficulty = aurora.benchmark_difficulty) AS same,
+  count(*) FILTER (WHERE stats.benchmark_difficulty <> aurora.benchmark_difficulty) AS different,
+  count(*) FILTER (WHERE stats.benchmark_difficulty IS NULL) AS cleared
+FROM kilter_aurora_benchmarks AS aurora
+LEFT JOIN board_climb_stats AS stats
+  ON stats.board_type = 'kilter'
+  AND stats.climb_uuid = aurora.climb_uuid
+  AND stats.angle = aurora.angle;
+```
+
+Right after the first pass, expect 560 same, 6 different and 61 cleared. The 560 is the 543 matches plus 17 rows on the list with no official grade, which keep Aurora's value, so `same` slightly overstates the match. The table above is the measured comparison.
+
 ### Why Kilter's app shows more climbs than Boardsesh
 
 Climbers compare the two apps and see Kilter's number at roughly double ours: about 36k climbs on an 8x12 Kilter Homewall Full Ride in Kilter's app, about 18k in Boardsesh. Both apps have the same climbs. The difference is the counting unit.
