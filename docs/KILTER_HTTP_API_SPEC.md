@@ -196,7 +196,7 @@ For each endpoint, distinguish a path embedded in the client from a route accept
 | `GET`  | `/api/climbs/`                                                                                          | Paginated climb list (filtered by query params)                                   |
 | `GET`  | `/api/climbs/all/{productLayoutUuid}`                                                                    | Full per-layout climb array; live checked by Boardsesh                            |
 | `GET`  | `/api/climbs/single/{climbUuid}`                                                                        | Fetch one climb                                                                   |
-| `GET`  | `/api/climbs/curated`                                                                                   | Curated/featured climbs                                                           |
+| `GET`  | `/api/climbs/curated`                                                                                   | Verified climbs per angle; live checked by Boardsesh, see below                   |
 | `GET`  | `/api/climbs/logged`                                                                                    | Climbs the current user has logged                                                |
 | `GET`  | `/api/climbs/delteduuids`                                                                               | UUIDs of deleted climbs (sync cleanup; note the typo)                             |
 | `GET`  | `/api/climbs/climbdetails/`                                                                             | Climb details (joined with rating/log info)                                       |
@@ -231,6 +231,13 @@ For each endpoint, distinguish a path embedded in the client from a route accept
 | `climbConcat`                                 | `climb_concat`               | string   | canonical placement-encoded string (same encoding used by the LED protocol — see [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](AURORA_BLUETOOTH_PROTOCOL_SPEC.md)) |
 
 The `create-climb/transaction` and `update-climb/transaction` request bodies are presumed to include the parent climb fields plus an array of `mountingHoles` (see [§5.5](#55-climb-mounting-holes)).
+
+`GET /api/climbs/curated` is the list behind the Verified mark in Kilter's app. Checked live on 2026-11-09, it takes no parameters and returns `{ climbs, climbStats }` with no paging:
+
+- `climbStats`: 5,502 rows, 5,076 distinct (climb, angle) pairs across 3,005 climbs. This is the per-angle answer. Rows repeat, and UUID casing is mixed. It carries the normal stat fields plus `officialKilterDifficulty`, which is absent on about 7 rows in 10.
+- `climbs`: 5,179 rows, 3,005 distinct. Full climb objects, repeated exactly once per curated angle, with no `curated` key.
+
+`officialKilterDifficulty` matched the legacy Aurora benchmark grade on 543 of the 549 rows that have both. See [kilter-sync.md](kilter-sync.md#verified-climbs).
 
 `/api/climbs/all/` without a layout ID returned `[]` in the 2026-06-02 check. The per-layout read returns camelCase JSON. See [kilter-sync.md](kilter-sync.md#verified-restpowersync-contract-phase-0-2026-06-02) for the checked response and current integration.
 

@@ -204,8 +204,10 @@ label is right" vote. A synced exact-echo is treated as "no opinion expressed"
 - **Tension benchmarks are the one externally-valid anchor**: 2,867 curated
   problems with independent community validation (drift −0.04 ± 0.18). Tension
   is the offset origin (§3).
-- **Kilter's `benchmark_difficulty` column is not curation** — 164k rows, it is
-  not a hand-picked reference set and must not be treated as one.
+- **Kilter's `benchmark_difficulty` is Kilter's Verified list**, about 5,000
+  (climb, angle) rows since #2493, and the column also holds about 163k NaN rows
+  that mean nothing. Kilter says Verified climbs "won't always be the hardest of
+  the grade, nor the easiest", so it is a curated set but not a grade anchor.
 - **Moon benchmarks are circular** in our feed (`benchmark_difficulty` is still
   sourced from the setter's label, not `userGrade` — unlike
   `difficulty_average`, above).

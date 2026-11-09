@@ -196,9 +196,55 @@ The endpoint paths read off the APK were partly wrong; verified live against a r
 | Catalog   | `GET /api/climbs/all/{productLayoutUuid}`     | Full per-layout array, no pagination. The documented `climbdetails/{productName}/edges` 404s; `/climbs/all/` with no id returns `[]`. |
 | Stats     | `GET /api/climb-stat/all/{productLayoutUuid}` | `{climbUuid, angle, ascentCount, currentDifficultyId, difficultyAverage, qualityAverage, faUsername, faAt}`                           |
 | Deletions | `GET /api/climbs/delteduuids`                 | `string[]` (mixed casing)                                                                                                             |
+| Verified  | `GET /api/climbs/curated`                     | `{ climbs, climbStats }`, no paging. `climbStats` is per (climb, angle); see [Verified climbs](#verified-climbs). Checked 2026-11-09.  |
 | Reference | PowerSync `global` / `global_gyms`            | `product_layouts` carries `product_layout_uuid` + `product_name` + edges                                                              |
 
 Wire JSON is **camelCase**. Across 19 listed layouts the catalog is ~424k climbs (all distinct; each climb has exactly one layout); ~80% already exist in `board_climbs` by UUID (case-insensitive).
+
+### Verified climbs
+
+Kilter's app marks some problems "Verified" and has no benchmarks. We store Verified in `board_climb_stats.benchmark_difficulty`, so search, the offline mirror and every row reader work unchanged. The mobile app says Verified on Kilter through `BoardCapabilities.benchmarkTerm`.
+
+`sync/curated-benchmarks.ts` runs on every catalog pass, after the layouts:
+
+- **Source:** `climbStats` from `/api/climbs/curated`. It is per angle, so a climb can be Verified at 40° and not at 50°.
+- **Value:** Kilter's `officialKilterDifficulty` when it gives one, else the value the row already holds, else its current grade. Keeping the stored value stops a row with no official grade from rewriting each hour as its crowd grade drifts.
+- **Clearing:** Kilter's list is the only source for this column on Kilter, so a marked row it no longer lists goes back to NULL.
+- **Aurora's grades are kept:** migration `0295` froze the 627 benchmark grades Aurora published for Kilter in `kilter_aurora_benchmarks`, before this pass could change them. Nothing writes to that table again. It is the record to compare with `officialKilterDifficulty`, which matched on 543 of the 549 rows that have both, so do not drop it. The pass refuses to run until the table exists, because the worker can deploy ahead of the migration.
+- **Scope:** only `user_id IS NULL` climbs. A repeat pass writes 0 rows, so unchanged rows never bump `sync_seq`.
+- **Safety:** a failed or malformed response skips the pass. A list resolving to fewer than `MIN_CURATED_ANGLE_ROWS` rows (2,500; it was 5,006 on 2026-11-09) is refused and logged as `REFUSING Verified marks`. If Kilter really shrinks the list, lower the constant.
+
+The result is on the run summary as `curatedBenchmarks`.
+
+#### How Kilter's official grades compare with Aurora's
+
+Measured on 2026-11-09, from the live `/api/climbs/curated` response against the 627 rows frozen in `kilter_aurora_benchmarks`:
+
+| Check                                                 | Rows                                |
+| ----------------------------------------------------- | ----------------------------------- |
+| Aurora benchmark rows                                 | 627 (405 climbs)                    |
+| On Kilter's list at the same angle                    | 566 (378 of the 405 climbs are on it) |
+| Of those, carrying an `officialKilterDifficulty`      | 549                                 |
+| Official grade equals Aurora's                        | 543                                 |
+| Official grade differs                                | 6                                   |
+
+Only Aurora's side is frozen. We keep no separate copy of `officialKilterDifficulty` because it is unlikely to change again, and the pass writes it to `benchmark_difficulty` wherever Kilter gives one.
+
+To re-check:
+
+```sql
+SELECT
+  count(*) FILTER (WHERE stats.benchmark_difficulty = aurora.benchmark_difficulty) AS same,
+  count(*) FILTER (WHERE stats.benchmark_difficulty <> aurora.benchmark_difficulty) AS different,
+  count(*) FILTER (WHERE stats.benchmark_difficulty IS NULL) AS cleared
+FROM kilter_aurora_benchmarks AS aurora
+LEFT JOIN board_climb_stats AS stats
+  ON stats.board_type = 'kilter'
+  AND stats.climb_uuid = aurora.climb_uuid
+  AND stats.angle = aurora.angle;
+```
+
+Right after the first pass, expect 560 same, 6 different and 61 cleared. The 560 is the 543 matches plus 17 rows on the list with no official grade, which keep Aurora's value, so `same` slightly overstates the match. The table above is the measured comparison.
 
 ### Why Kilter's app shows more climbs than Boardsesh
 

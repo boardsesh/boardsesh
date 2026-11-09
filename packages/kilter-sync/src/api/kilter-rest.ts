@@ -204,7 +204,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 // 429. Returns the parsed JSON array. Non-429 errors propagate immediately.
 // A caller's signal (a background job's shutdown or lost lease) cuts the
 // request and any backoff short, and surfaces as itself, not as a timeout.
-async function catalogGet<T>(path: string, accessToken: string, signal?: AbortSignal): Promise<T[]> {
+async function catalogGetJson(path: string, accessToken: string, signal?: AbortSignal): Promise<unknown> {
   let attempt = 0;
   for (;;) {
     signal?.throwIfAborted();
@@ -246,8 +246,13 @@ async function catalogGet<T>(path: string, accessToken: string, signal?: AbortSi
     }
 
     await ensureOk(path, response);
-    return (await response.json()) as T[];
+    return await response.json();
   }
+}
+
+/** {@link catalogGetJson} for the endpoints whose whole body is a JSON array. */
+async function catalogGet<T>(path: string, accessToken: string, signal?: AbortSignal): Promise<T[]> {
+  return (await catalogGetJson(path, accessToken, signal)) as T[];
 }
 
 /** All climbs for one product layout (the catalog read path). */
@@ -279,4 +284,53 @@ export function fetchLayoutClimbStats(
 /** UUIDs Kilter has deleted server-side, for deletion reconciliation. */
 export function fetchDeletedClimbUuids(accessToken: string, signal?: AbortSignal): Promise<string[]> {
   return catalogGet<string>('/api/climbs/delteduuids', accessToken, signal);
+}
+
+/**
+ * One (climb, angle) row of Kilter's Verified list. `officialKilterDifficulty` is
+ * on about one row in four; where present it matched our legacy benchmark grade
+ * on 543 of 549 rows (2026-11-09).
+ */
+export type KilterCuratedStat = {
+  climbUuid: string;
+  angle: number;
+  currentDifficultyId: number | null;
+  officialKilterDifficulty: number | null;
+};
+
+function finiteNumberOrNull(candidate: unknown): number | null {
+  return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : null;
+}
+
+/**
+ * Reads `/api/climbs/curated`, which answers `{ climbs, climbStats }`. Only
+ * `climbStats` says which angles are Verified: `climbs` repeats a climb once per
+ * curated angle and carries nothing else we need.
+ *
+ * A body without the array throws, so the caller skips the pass instead of
+ * reading a malformed response as an empty list. A row missing its uuid or angle
+ * is dropped.
+ */
+export function parseCuratedClimbStats(body: unknown): KilterCuratedStat[] {
+  const climbStats = (body as { climbStats?: unknown } | null | undefined)?.climbStats;
+  if (!Array.isArray(climbStats)) {
+    throw new KilterApiError('unknown', '/api/climbs/curated response has no climbStats array');
+  }
+  return climbStats.flatMap((row: unknown): KilterCuratedStat[] => {
+    const { climbUuid, angle, currentDifficultyId, officialKilterDifficulty } = (row ?? {}) as Record<string, unknown>;
+    if (typeof climbUuid !== 'string' || climbUuid === '' || !Number.isInteger(angle)) return [];
+    return [
+      {
+        climbUuid,
+        angle: angle as number,
+        currentDifficultyId: finiteNumberOrNull(currentDifficultyId),
+        officialKilterDifficulty: finiteNumberOrNull(officialKilterDifficulty),
+      },
+    ];
+  });
+}
+
+/** Kilter's Verified list as (climb, angle) rows. */
+export async function fetchCuratedClimbStats(accessToken: string, signal?: AbortSignal): Promise<KilterCuratedStat[]> {
+  return parseCuratedClimbStats(await catalogGetJson('/api/climbs/curated', accessToken, signal));
 }

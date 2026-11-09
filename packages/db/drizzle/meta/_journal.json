@@ -2066,6 +2066,13 @@
       "when": 1794162998969,
       "tag": "0294_auth_web_oauth_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 295,
+      "version": "7",
+      "when": 1794234880275,
+      "tag": "0295_kilter_aurora_benchmarks",
+      "breakpoints": true
     }
   ]
 }
