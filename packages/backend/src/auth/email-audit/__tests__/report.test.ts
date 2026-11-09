@@ -209,7 +209,7 @@ describe('email audit limits and fixed failures', () => {
       maxFieldBytes: 4096,
       maxDetailBytes: 16777216,
       pageSize: 1000,
-      maximumMs: 120000,
+      maximumMs: 30000,
     });
     expect(Object.isFrozen(EMAIL_AUDIT_LIMITS)).toBe(true);
   });
