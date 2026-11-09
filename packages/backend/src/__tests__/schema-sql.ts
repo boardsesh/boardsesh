@@ -46,6 +46,11 @@ const authWebOAuthIdentitySchema = readFileSync(
   new URL('../../../db/drizzle/0294_auth_web_oauth_identity.sql', import.meta.url),
   'utf8',
 );
+// The tables behind partner OAuth, straight from the generated migration.
+const partnerOAuthSchema = readFileSync(
+  new URL('../../../db/drizzle/0295_partner_oauth_schema.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2290,4 +2295,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS auth_web_oauth_intents;
   DROP TABLE IF EXISTS auth_web_oauth_commands;
   ${authWebOAuthIdentitySchema}
+  DROP TABLE IF EXISTS oauth_consent_interactions, oauth_refresh_ancestors, oauth_grants, oauth_subjects, oauth_connections, oauth_app_policy, oauth_consent, oauth_access_token, oauth_refresh_token, oauth_client_assertion, oauth_client_resource, oauth_resource, oauth_client, oauth_verification, oauth_session CASCADE;
+  ${partnerOAuthSchema}
 `;

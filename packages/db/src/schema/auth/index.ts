@@ -7,3 +7,4 @@ export * from './current-store';
 export * from './email-verification';
 export * from './password-recovery';
 export * from './web-oauth-intents';
+export * from './partner-oauth';
