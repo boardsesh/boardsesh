@@ -110,7 +110,7 @@ export async function readLogbookFeedState(transaction: FeedTransaction): Promis
     .from(logbookChangeWatermark)
     .where(eq(logbookChangeWatermark.id, LOGBOOK_CHANGE_WATERMARK_SINGLETON_ID));
   if (!state) {
-    throw new Error('logbook_change_watermark has no row: migration 0296 has not run');
+    throw new Error('logbook_change_watermark has no row: the logbook trigger migration has not run');
   }
   return {
     generation: state.generation,

@@ -811,12 +811,15 @@ see the backend test-DDL notes):
    `kilter_id` (it never hides a row when both carry one), so those count
    too: the pull's `toClear` path, a JSON re-import restamping
    `aurora_synced_at` and Kilter push-back stamping `kilter_id` all change
-   what an app should see without touching a serialized field. Only
+   what an app should see without touching a serialized field. Changing only
    `aurora_sync_error`, `kilter_type`, `kilter_synced_at`,
-   `kilter_sync_error`, `kilter_detached_at`, `board_id`, `session_id` and
-   `climb_revision` are left out, which still keeps no-op Kilter PowerSync
-   redeliveries out of the feed. A `user_id` change writes a row for both
-   climbers.
+   `kilter_sync_error` or `board_id` writes nothing, which keeps no-op Kilter
+   PowerSync redeliveries out of the feed. `session_id`, `climb_revision` and
+   `kilter_detached_at` have no comparison of their own but still write a row,
+   because `trg_boardsesh_ticks_set_updated_at` advances `updated_at` for them
+   and `updated_at` is public and feeds the twin rule. A tick joining an
+   inferred session therefore writes a second row. A `user_id` change writes a
+   row for both climbers.
 3. Twins: when the OLD or the NEW row is an Aurora-pull row with a real
    `aurora_id`, the trigger also writes a row for every other Aurora-pull row
    of that climber under the OLD natural key and under the NEW one (same
@@ -838,7 +841,7 @@ see the backend test-DDL notes):
    production path truncates ticks today; tests that need to can disable the
    trigger explicitly.
 
-As built (migrations 0295 and 0296):
+As built:
 
 - The tick and alias trigger functions are `SECURITY DEFINER` with a pinned
   `search_path`. The production deploy commits a migration's DDL before
@@ -1027,8 +1030,17 @@ production indexes and 1M rows already in the log, on a heavily loaded machine
 The trigger's first call in a new connection cost 2.3 ms for plan compilation
 and is not repeated. Backend CPU per row rose about 20 µs on a native insert
 (313 µs to 332 µs on the same run), within the noise of a shared machine. A 5,000-tick
-catalog merge wrote its fan-out in 32 ms at commit. The log took about 190 bytes
-per row including its indexes, so 90 days at 11,000 writes a day is roughly 190 MB.
+catalog merge wrote its fan-out in 32 ms at commit.
+
+A change row takes about 275 bytes including its indexes with 36-character ids
+(heap 134, `(user_id, txid, seq)` 117, primary key 24). A native tick that later
+joins an inferred session writes two rows, so 90 days at 11,000 ticks a day is
+270 to 545 MB, against 574 MB for a 658,000-tick `boardsesh_ticks` with its
+indexes. Each write adds about 0.2 to 1.0 KB of WAL on top of the 15 to 21 KB a
+tick write already produces, at most about 22 MB a day.
+
+Account deletion removes the climber's rows in its own transaction, after the
+cascade into `boardsesh_ticks` has written them.
 
 The phone's own sync (`syncTicks`, `syncDeletions`) is untouched. It could
 move onto the same log later and lose its own long-transaction hole; that is

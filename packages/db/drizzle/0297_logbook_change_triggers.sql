@@ -1,4 +1,4 @@
--- Triggers that populate logbook_changes (0295), the change log behind the
+-- Triggers that populate logbook_changes, the change log behind the
 -- public logbook feed. Design and proof: docs/integration-platform.md,
 -- "Incremental sync". Nothing reads these rows yet.
 --
@@ -140,8 +140,15 @@ CREATE TRIGGER trg_boardsesh_ticks_logbook_insert_delete AFTER INSERT OR DELETE 
 -- that touches only bookkeeping columns (a Kilter PowerSync redelivery, an
 -- aurora_sync_error write) costs a column comparison and writes nothing.
 -- Columns: everything the public serializer reads, plus what the twin rule
--- reads. Left out on purpose: aurora_sync_error, kilter_type, kilter_synced_at,
--- kilter_sync_error, kilter_detached_at, board_id, session_id, climb_revision.
+-- reads. Changing only aurora_sync_error, kilter_type, kilter_synced_at,
+-- kilter_sync_error or board_id writes nothing.
+--
+-- session_id, climb_revision and kilter_detached_at have no comparison here,
+-- but changing one still writes a row: trg_boardsesh_ticks_set_updated_at
+-- advances updated_at for them, and updated_at is a public field and an input
+-- to the twin rule (isLocallyEdited). A tick joining an inferred session
+-- therefore writes a second row. That is deliberate: suppressing it would leave
+-- an app holding a stale updatedAt and could miss a twin becoming hidden.
 CREATE TRIGGER trg_boardsesh_ticks_logbook_update AFTER UPDATE ON "boardsesh_ticks"
   FOR EACH ROW
   WHEN (

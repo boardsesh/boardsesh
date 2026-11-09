@@ -52,7 +52,7 @@ const partnerOAuthSchema = readFileSync(
   'utf8',
 );
 // The logbook change feed, straight from the migrations so the tests run the
-// triggers production runs. 0296 is applied at the schema tail: its triggers
+// triggers production runs. They are applied at the schema tail: the triggers
 // need boardsesh_ticks and board_climb_aliases to exist.
 const logbookChangesSchema = readFileSync(
   new URL('../../../db/drizzle/0296_logbook_changes.sql', import.meta.url),

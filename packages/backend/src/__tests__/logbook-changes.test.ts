@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { notAuroraTwinDuplicate } from '@boardsesh/db/queries';
 import {
@@ -8,8 +8,11 @@ import {
   boardseshTicks,
   logbookChangeWatermark,
   logbookChanges,
+  users,
 } from '@boardsesh/db/schema';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { userMutations } from '../graphql/resolvers/users/mutations';
 import {
   LOGBOOK_FEED_ORIGIN,
   readLogbookFeedPage,
@@ -22,7 +25,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
 /**
  * The logbook change log and the feed read behind `GET /v1/logbook/changes`
  * (docs/integration-platform.md, "Incremental sync"). The migrations are real
- * (0295/0296 applied by schema-sql.ts) so these exercise the shipped triggers.
+ * (applied by schema-sql.ts) so these exercise the shipped triggers.
  *
  * Revert to prove these fail without their fix:
  * - remove `txid < horizon` from the page query: the interleaved test fails.
@@ -231,9 +234,31 @@ describe('tick triggers', { timeout: 90_000 }, () => {
 
     await db
       .update(boardseshTicks)
-      .set({ auroraSyncError: 'boom', kilterSyncedAt: '2026-05-02 00:00:00', kilterSyncError: 'nope', boardId: null })
+      .set({ auroraSyncError: 'boom', kilterSyncedAt: '2026-05-02 00:00:00', kilterSyncError: 'nope', boardId: 7 })
       .where(eq(boardseshTicks.uuid, tickUuid));
     expect((await changeRows()).length).toBe(2);
+  });
+
+  it.each([
+    ['session_id', { sessionId: 'inferred-session' }],
+    ['climb_revision', { climbRevision: 3 }],
+    ['kilter_detached_at', { kilterDetachedAt: '2026-05-02 00:00:00' }],
+  ] as const)('writes one row when %s changes, because it advances updated_at', async (_column, change) => {
+    const tickUuid = await insertTick();
+    await db.delete(logbookChanges);
+    const [before] = await db
+      .select({ updatedAt: boardseshTicks.updatedAt })
+      .from(boardseshTicks)
+      .where(eq(boardseshTicks.uuid, tickUuid));
+
+    await db.update(boardseshTicks).set(change).where(eq(boardseshTicks.uuid, tickUuid));
+
+    const [after] = await db
+      .select({ updatedAt: boardseshTicks.updatedAt })
+      .from(boardseshTicks)
+      .where(eq(boardseshTicks.uuid, tickUuid));
+    expect(after.updatedAt).not.toBe(before.updatedAt);
+    expect(await changeRows()).toEqual([{ user_id: CLIMBER_A, tick_uuid: tickUuid }]);
   });
 
   it('writes one row for an update that only changes a twin-rule column', async () => {
@@ -518,6 +543,53 @@ describe('feed read', { timeout: 90_000 }, () => {
   });
 });
 
+describe('account deletion', { timeout: 90_000 }, () => {
+  const DELETED_CLIMBER = 'logbook-deleted-climber';
+  const SURVIVING_CLIMBER = 'logbook-surviving-climber';
+
+  function deletionContext(userId: string): ConnectionContext {
+    return {
+      connectionId: 'logbook-account-deletion',
+      transport: 'http',
+      isAuthenticated: true,
+      userId,
+    };
+  }
+
+  it('leaves no change row naming the deleted climber and keeps every other climber', async () => {
+    await db
+      .insert(users)
+      .values([DELETED_CLIMBER, SURVIVING_CLIMBER].map((id) => ({ id, email: `${id}@test.invalid` })))
+      .onConflictDoNothing();
+    // Production's FK: the backend test schema leaves it out, and the cascade is
+    // what writes the rows this test is about.
+    await db.execute(sql`
+      ALTER TABLE boardsesh_ticks ADD CONSTRAINT logbook_test_tick_user_fk
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    `);
+    try {
+      await insertTick({ userId: DELETED_CLIMBER });
+      await insertAuroraTick('aurora-deleted-1', { userId: DELETED_CLIMBER });
+      await insertAuroraTick('aurora-deleted-2', { userId: DELETED_CLIMBER });
+      const survivingTick = await insertTick({ userId: SURVIVING_CLIMBER });
+
+      const deleted = await userMutations.deleteAccount(
+        undefined,
+        { input: { removeSetterName: false } },
+        deletionContext(DELETED_CLIMBER),
+      );
+
+      expect(deleted).toBe(true);
+      expect(await db.select().from(boardseshTicks).where(eq(boardseshTicks.userId, DELETED_CLIMBER))).toEqual([]);
+      expect(await changeRows()).toEqual([{ user_id: SURVIVING_CLIMBER, tick_uuid: survivingTick }]);
+    } finally {
+      await db.delete(boardseshTicks);
+      await db.execute(sql`ALTER TABLE boardsesh_ticks DROP CONSTRAINT logbook_test_tick_user_fk`);
+      await db.delete(users).where(inArray(users.id, [DELETED_CLIMBER, SURVIVING_CLIMBER]));
+    }
+  });
+});
+
 /** Runs until `reader` reports every transaction up to `fenceTxid` as settled. */
 async function drainUntilHorizonPasses(
   userId: string,
@@ -555,46 +627,66 @@ async function commitFence(client: ReturnType<typeof postgres>): Promise<string>
   return row.txid;
 }
 
+/**
+ * An open transaction holds a lock on boardsesh_ticks that blocks the next
+ * test's TRUNCATE, so a failed assertion must not leave one behind.
+ */
+async function reserveWriterConnection(): Promise<postgres.ReservedSql> {
+  return openWriterClient().reserve();
+}
+
+async function rollBackAndRelease(...connections: postgres.ReservedSql[]): Promise<void> {
+  await Promise.all(
+    connections.map(async (connection) => {
+      // Only a notice when the transaction already committed.
+      await connection`ROLLBACK`;
+      connection.release();
+    }),
+  );
+}
+
 describe('concurrent transactions', { timeout: 120_000 }, () => {
   it('does not pass a transaction that started first and commits last', async () => {
-    const writerStartedFirst = openWriterClient();
-    const writerStartedSecond = openWriterClient();
-    const reservedFirst = await writerStartedFirst.reserve();
-    const reservedSecond = await writerStartedSecond.reserve();
+    const reservedFirst = await reserveWriterConnection();
+    const reservedSecond = await reserveWriterConnection();
     const tickFirst = uniqueId('tick');
     const tickSecond = uniqueId('tick');
 
-    await reservedFirst`BEGIN`;
-    await reservedFirst`
+    try {
+      await reservedFirst`BEGIN`;
+      await reservedFirst`
       INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, climbed_at)
       VALUES (${tickFirst}, ${CLIMBER_A}, ${BOARD}, 'climb-x', 40, 'send', '2026-05-01 18:00:00')
     `;
-    const [{ xid: firstWriterTxid }] = await reservedFirst<{ xid: string }[]>`SELECT pg_current_xact_id()::text AS xid`;
+      const [{ xid: firstWriterTxid }] = await reservedFirst<
+        { xid: string }[]
+      >`SELECT pg_current_xact_id()::text AS xid`;
 
-    await reservedSecond`BEGIN`;
-    await reservedSecond`
+      await reservedSecond`BEGIN`;
+      await reservedSecond`
       INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, climbed_at)
       VALUES (${tickSecond}, ${CLIMBER_A}, ${BOARD}, 'climb-y', 40, 'send', '2026-05-01 18:00:00')
     `;
-    const [{ xid: secondWriterTxid }] = await reservedSecond<
-      { xid: string }[]
-    >`SELECT pg_current_xact_id()::text AS xid`;
-    expect(BigInt(secondWriterTxid)).toBeGreaterThan(BigInt(firstWriterTxid));
-    await reservedSecond`COMMIT`;
+      const [{ xid: secondWriterTxid }] = await reservedSecond<
+        { xid: string }[]
+      >`SELECT pg_current_xact_id()::text AS xid`;
+      expect(BigInt(secondWriterTxid)).toBeGreaterThan(BigInt(firstWriterTxid));
+      await reservedSecond`COMMIT`;
 
-    // The first writer is still open: the horizon sits at or below its txid, so
-    // neither tick is served yet, and the cursor must not move past it.
-    const whileFirstOpen = await readAll(CLIMBER_A, await currentFeedCursor());
-    expect(whileFirstOpen.ticks).toEqual([]);
-    expect(BigInt(whileFirstOpen.cursor.txid)).toBeLessThanOrEqual(BigInt(firstWriterTxid));
+      // The first writer is still open: the horizon sits at or below its txid, so
+      // neither tick is served yet, and the cursor must not move past it.
+      const whileFirstOpen = await readAll(CLIMBER_A, await currentFeedCursor());
+      expect(whileFirstOpen.ticks).toEqual([]);
+      expect(BigInt(whileFirstOpen.cursor.txid)).toBeLessThanOrEqual(BigInt(firstWriterTxid));
 
-    await reservedFirst`COMMIT`;
-    reservedFirst.release();
-    reservedSecond.release();
+      await reservedFirst`COMMIT`;
 
-    const fence = await commitFence(openWriterClient());
-    const afterCommit = await drainUntilHorizonPasses(CLIMBER_A, whileFirstOpen.cursor, fence);
-    expect([...afterCommit.ticks.keys()].sort()).toEqual([tickFirst, tickSecond].sort());
+      const fence = await commitFence(openWriterClient());
+      const afterCommit = await drainUntilHorizonPasses(CLIMBER_A, whileFirstOpen.cursor, fence);
+      expect([...afterCommit.ticks.keys()].sort()).toEqual([tickFirst, tickSecond].sort());
+    } finally {
+      await rollBackAndRelease(reservedFirst, reservedSecond);
+    }
   });
 
   it('delivers a tick committed during a long catalog merge with the merged climb id', async () => {
@@ -602,46 +694,46 @@ describe('concurrent transactions', { timeout: 120_000 }, () => {
     const CANONICAL = 'climb-merge-race-canonical';
     await insertCatalogClimb(CANONICAL);
 
-    const tickWriter = openWriterClient();
-    const merger = openWriterClient();
-    const reservedTick = await tickWriter.reserve();
-    const reservedMerge = await merger.reserve();
+    const reservedTick = await reserveWriterConnection();
+    const reservedMerge = await reserveWriterConnection();
     const racingTick = uniqueId('tick');
 
-    await reservedTick`BEGIN`;
-    await reservedTick`
+    try {
+      await reservedTick`BEGIN`;
+      await reservedTick`
       INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, climbed_at)
       VALUES (${racingTick}, ${CLIMBER_A}, ${BOARD}, ${ALIAS}, 40, 'send', '2026-05-01 18:00:00')
     `;
 
-    // The merge starts while the tick is uncommitted and stays open.
-    await reservedMerge`BEGIN`;
-    await reservedMerge`
+      // The merge starts while the tick is uncommitted and stays open.
+      await reservedMerge`BEGIN`;
+      await reservedMerge`
       INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
       VALUES (${BOARD}, ${ALIAS}, ${CANONICAL}, 'kilter')
     `;
 
-    await reservedTick`COMMIT`;
-    reservedTick.release();
+      await reservedTick`COMMIT`;
 
-    // The reader consumes the tick before the merge commits, with the old climb
-    // id: resolving the alias at read time alone cannot hand it the new id later.
-    let beforeMerge = await readAll(CLIMBER_A, await currentFeedCursor());
-    const readDeadline = Date.now() + 20_000;
-    while (!beforeMerge.ticks.some((tick) => tick.uuid === racingTick)) {
-      if (Date.now() > readDeadline) throw new Error('Horizon held back; the tick was never served');
-      await delay(25);
-      beforeMerge = await readAll(CLIMBER_A, await currentFeedCursor());
+      // The reader consumes the tick before the merge commits, with the old climb
+      // id: resolving the alias at read time alone cannot hand it the new id later.
+      let beforeMerge = await readAll(CLIMBER_A, await currentFeedCursor());
+      const readDeadline = Date.now() + 20_000;
+      while (!beforeMerge.ticks.some((tick) => tick.uuid === racingTick)) {
+        if (Date.now() > readDeadline) throw new Error('Horizon held back; the tick was never served');
+        await delay(25);
+        beforeMerge = await readAll(CLIMBER_A, await currentFeedCursor());
+      }
+      expect(beforeMerge.ticks.find((tick) => tick.uuid === racingTick)?.canonicalClimbUuid).toBe(ALIAS);
+
+      await reservedMerge`COMMIT`;
+
+      const fence = await commitFence(openWriterClient());
+      const afterMerge = await drainUntilHorizonPasses(CLIMBER_A, beforeMerge.cursor, fence);
+      const racingRow = afterMerge.ticks.get(racingTick);
+      expect(racingRow?.canonicalClimbUuid).toBe(CANONICAL);
+    } finally {
+      await rollBackAndRelease(reservedTick, reservedMerge);
     }
-    expect(beforeMerge.ticks.find((tick) => tick.uuid === racingTick)?.canonicalClimbUuid).toBe(ALIAS);
-
-    await reservedMerge`COMMIT`;
-    reservedMerge.release();
-
-    const fence = await commitFence(openWriterClient());
-    const afterMerge = await drainUntilHorizonPasses(CLIMBER_A, beforeMerge.cursor, fence);
-    const racingRow = afterMerge.ticks.get(racingTick);
-    expect(racingRow?.canonicalClimbUuid).toBe(CANONICAL);
   });
 });
 
@@ -838,9 +930,12 @@ describe('randomized concurrent writers', () => {
         await operation();
       }
     });
-    await Promise.all(workers);
-    writersDone = true;
-    await readerLoop;
+    try {
+      await Promise.all(workers);
+    } finally {
+      writersDone = true;
+      await readerLoop;
+    }
 
     const fence = await commitFence(openWriterClient());
     for (const userId of climbers) {

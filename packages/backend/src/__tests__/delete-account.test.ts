@@ -13,6 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { logbookChanges, users } from '@boardsesh/db/schema';
 import { userMutations } from '../graphql/resolvers/users/mutations';
 import { userQueries } from '../graphql/resolvers/users/queries';
 
@@ -159,9 +160,13 @@ describe('deleteAccount mutation', () => {
     const result = await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx('user-1'));
 
     expect(result).toBe(true);
-    // Should have exactly 2 operations: delete drafts + delete user
+    // Exactly 3 operations: delete drafts, delete user, then purge the change
+    // rows the user delete's cascade wrote. The purge has to come last.
     const deleteCalls = txCalls.filter((c) => c.method === 'delete');
-    expect(deleteCalls).toHaveLength(2);
+    expect(deleteCalls).toHaveLength(3);
+    const deletedTables = deleteCalls.map((call) => (call as unknown as { table: unknown }).table);
+    expect(deletedTables[1]).toBe(users);
+    expect(deletedTables[2]).toBe(logbookChanges);
     // No update calls
     const updateCalls = txCalls.filter((c) => c.method === 'update');
     expect(updateCalls).toHaveLength(0);
@@ -209,6 +214,7 @@ describe('deleteAccount mutation', () => {
       'delete',
       'update',
       'delete',
+      'delete',
     ]);
   });
 
@@ -217,7 +223,8 @@ describe('deleteAccount mutation', () => {
 
     await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
 
-    // select drafts, delete stats, delete history, delete beta links, delete drafts, delete user.
+    // select drafts, delete stats, delete history, delete beta links, delete drafts, delete user,
+    // purge the logbook change rows.
     // The dependent-row cleanup (3 deletes) must land between the select and the drafts delete.
     expect(txCalls.map((call) => call.method)).toEqual([
       'execute',
@@ -229,9 +236,10 @@ describe('deleteAccount mutation', () => {
       'delete',
       'delete',
       'delete',
+      'delete',
     ]);
     const deleteCalls = txCalls.filter((call) => call.method === 'delete');
-    expect(deleteCalls).toHaveLength(5);
+    expect(deleteCalls).toHaveLength(6);
   });
 
   it('groups dependent-row cleanup by board type when drafts span multiple boards', async () => {
@@ -244,9 +252,9 @@ describe('deleteAccount mutation', () => {
 
     await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
 
-    // 3 dependent-row deletes per board type (2 boards) + the drafts delete + the user delete.
+    // 3 dependent-row deletes per board type (2 boards) + drafts + user + logbook change rows.
     const deleteCalls = txCalls.filter((call) => call.method === 'delete');
-    expect(deleteCalls).toHaveLength(2 * 3 + 2);
+    expect(deleteCalls).toHaveLength(2 * 3 + 3);
   });
 
   it('skips dependent-row cleanup when the user has no draft climbs', async () => {
@@ -254,9 +262,9 @@ describe('deleteAccount mutation', () => {
 
     await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
 
-    // Only the (empty) drafts delete + the user delete — no dependent-row deletes fire.
+    // Only the (empty) drafts delete, the user delete and the logbook purge.
     const deleteCalls = txCalls.filter((call) => call.method === 'delete');
-    expect(deleteCalls).toHaveLength(2);
+    expect(deleteCalls).toHaveLength(3);
   });
 });
 

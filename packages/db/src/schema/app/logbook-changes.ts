@@ -14,7 +14,7 @@ const xid8 = customType<{ data: string; driverData: string }>({
 /**
  * Change log behind the public logbook feed (docs/integration-platform.md,
  * "Incremental sync"). One narrow row per public tick change, written only by
- * triggers (migration 0296) in the same transaction as the tick write. A row
+ * triggers in the same transaction as the tick write. A row
  * says "this tick changed"; the payload is always read from the tick at read
  * time, so this table holds no tick data.
  *
@@ -58,7 +58,8 @@ export const LOGBOOK_CHANGE_WATERMARK_SINGLETON_ID = 1;
  * after a restore. `prunedThrough*` is the retention watermark: a cursor below
  * it answers `410`, a cursor at or above it is valid however old it is.
  *
- * Seeded by migration 0296; L5's prune job advances the watermark.
+ * Seeded by the migration that adds the triggers; L5's prune job advances the
+ * watermark.
  */
 export const logbookChangeWatermark = pgTable('logbook_change_watermark', {
   id: integer('id').primaryKey().notNull().default(LOGBOOK_CHANGE_WATERMARK_SINGLETON_ID),

@@ -27,7 +27,7 @@ import {
   users,
   verificationTokens,
 } from '@boardsesh/db/schema/auth';
-import { userBoards } from '@boardsesh/db/schema';
+import { logbookChanges, userBoards } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { getWorkerDatabaseName, getWorkerDatabaseUrl } from '../../../__tests__/worker-db';
 import { userMutations } from '../../../graphql/resolvers/users/mutations';
@@ -660,10 +660,17 @@ describe('mounted account deletion and current-store authority', () => {
 
   it('commits owned-key tombstone/event with the real users DELETE and refresh cascades', async () => {
     await seedPair();
+    await db.delete(logbookChanges);
+    await db.insert(logbookChanges).values([
+      { userId: ownerId, tickUuid: 'owned-delete-change' },
+      { userId: otherId, tickUuid: 'owned-delete-survivor-change' },
+    ]);
     const before = await snapshot();
     expect(await remove()).toBe(true);
     const after = await snapshot();
     expect(after.users.map((user) => user.id)).toEqual([otherId]);
+    // The staged path shares the mounted deletion transaction, including this purge.
+    expect(await db.select({ userId: logbookChanges.userId }).from(logbookChanges)).toEqual([{ userId: otherId }]);
     for (const field of ['credentials', 'accounts', 'sessions', 'profiles', 'refresh'] as const)
       expect(after[field]).toEqual(before[field].filter((row) => row.userId === otherId));
     expect(after.members).toEqual(before.members);
