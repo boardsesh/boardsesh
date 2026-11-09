@@ -276,16 +276,24 @@ export type TickParams = z.infer<typeof TickParamsSchema>;
 
 export const MeResponseSchema = z
   .strictObject({
-    id: z.string().regex(/^usr_/).openapi({
-      description:
-        "The climber's id for your app: stable across reconnects, different for every app, and not the id Boardsesh uses anywhere else.",
-      example: 'usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6',
-    }),
+    // No hyphen in the pattern: internal user ids are UUIDs, so `usr_<users.id>`
+    // fails here instead of leaking the id this field exists to hide.
+    id: z
+      .string()
+      .regex(/^usr_[0-9A-Za-z]+$/)
+      .openapi({
+        description:
+          "The climber's id for your app: stable across reconnects, different for every app, and not the id Boardsesh uses anywhere else.",
+        example: 'usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6',
+      }),
     displayName: z.string().nullable().optional().openapi({
       description: "The climber's display name. Present only with `profile:read`; `null` when they have none.",
       example: 'Alex',
     }),
-    avatarUrl: z.url().nullable().optional().openapi({
+    // z.httpUrl() because z.url() also accepts javascript: and data:, and apps put
+    // this in an <img> or a link. The handler must map any stored value that is
+    // not http(s) to `null`, or the response fails this schema.
+    avatarUrl: z.httpUrl().nullable().optional().openapi({
       description: "The climber's avatar. Present only with `profile:read`; `null` when they have none.",
       example: 'https://images.example.com/alex.webp',
     }),

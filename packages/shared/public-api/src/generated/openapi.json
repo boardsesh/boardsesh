@@ -414,7 +414,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^usr_",
+            "pattern": "^usr_[0-9A-Za-z]+$",
             "description": "The climber's id for your app: stable across reconnects, different for every app, and not the id Boardsesh uses anywhere else.",
             "example": "usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6"
           },

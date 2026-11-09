@@ -187,6 +187,24 @@ describe('MeResponseSchema', () => {
     expect(MeResponseSchema.safeParse({ id: '602c83bf-e090-4c90-9f7e-08ca0b6b5dad' }).success).toBe(false);
   });
 
+  it('rejects the internal id behind the usr_ prefix', () => {
+    expect(MeResponseSchema.safeParse({ id: 'usr_602c83bf-e090-4c90-9f7e-08ca0b6b5dad' }).success).toBe(false);
+  });
+
+  it.each(['http://images.example.com/alex.webp', 'https://images.example.com/alex.webp'])(
+    'accepts the avatar %s',
+    (avatarUrl) => {
+      expect(MeResponseSchema.safeParse({ ...documentedMe, avatarUrl }).success).toBe(true);
+    },
+  );
+
+  it.each(['javascript:alert(1)', 'data:image/png;base64,AAAA', 'ftp://images.example.com/alex.webp'])(
+    'rejects the avatar %s',
+    (avatarUrl) => {
+      expect(MeResponseSchema.safeParse({ ...documentedMe, avatarUrl }).success).toBe(false);
+    },
+  );
+
   it('rejects an undocumented field', () => {
     expect(MeResponseSchema.safeParse({ ...documentedMe, email: 'alex@example.com' }).success).toBe(false);
   });
