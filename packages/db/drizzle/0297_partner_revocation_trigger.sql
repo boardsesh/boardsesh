@@ -70,12 +70,13 @@
 -- Foreign-key holders no longer count, so a wait now means an issuer, or a transaction
 -- holding users FOR UPDATE or writing the row (account deletion, a data export request,
 -- an audience change, email verification). The probes take ACCESS SHARE, so only an
--- ACCESS EXCLUSIVE lock on a partner table can delay them.
+-- ACCESS EXCLUSIVE lock on a partner table can block them, and held past 5 s it fails
+-- the password write.
 --
 -- Residual risk of carrying on without the lock: until this write commits, nothing
--- excludes an issuer minting the climber's first connection, so that connection can
--- outlive the new password. It needs another transaction holding the row past 5 s and
--- a first-time connect in that same moment. Issuers are bounded (statement 5 s, lock
+-- excludes an issuer minting the climber's first connection or reconnecting a revoked
+-- one, so that connection can outlive the new password. It needs another transaction
+-- holding the row past 5 s and a connect in that same moment. Issuers are bounded (statement 5 s, lock
 -- 2 s, idle 10 s).
 --
 -- Privileges. Only the trigger function is SECURITY DEFINER: staged current-store
