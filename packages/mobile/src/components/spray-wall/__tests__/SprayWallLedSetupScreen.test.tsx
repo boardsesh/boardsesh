@@ -1100,6 +1100,7 @@ describe('SprayWallLedSetupScreen', () => {
       act(() => controls.canvas?.onMove?.({ x: 0.3, y: 0.4 }, { x: 0.35, y: 0.45 }, 500, 700));
       next();
       expect(lastSaved().ledPositions).toEqual([expect.objectContaining({ x: 0.35, y: 0.45 })]);
+      next(); // holds and LEDs → cable pattern
       next();
       next();
       expect(lastSaved().wiring).toBeUndefined();
@@ -1118,6 +1119,7 @@ describe('SprayWallLedSetupScreen', () => {
       expect(lastSaved().ledPositions).toEqual([expect.objectContaining({ x: 0.35, y: 0.45 })]);
       next();
       next();
+      next(); // holds and LEDs → cable pattern
       fireEvent.click(radio('customCable'));
       next();
       next();
@@ -1137,6 +1139,7 @@ describe('SprayWallLedSetupScreen', () => {
       back();
       back();
       back();
+      back(); // cable pattern → holds and LEDs
       back();
       back();
       expect(screen.getByText('sprayLedSetup.ledHint')).toBeTruthy();

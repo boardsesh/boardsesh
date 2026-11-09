@@ -109,6 +109,15 @@ within a bounded distance. Complementary positions use the nearest opposite-phas
 slots and retain their original positions after movement. Physical indices use
 the saved cable order, initial skips and gaps. Unwired positions have no index.
 
+Where the geometry gets a hold wrong, **Holds and LEDs** stores a hand-made link
+in the layout (`holdLeds`: `{ holdId, ledIds }[]`). `buildSprayLedMapping` applies
+it after the geometric pass, so Test LEDs and route lighting follow it: a linked
+hold gets exactly its chosen LEDs (an empty list means no LED), and an LED linked
+by hand leaves the hold the geometry gave it. Holes keep their geometric LEDs.
+`readTnutLayout`, which both the phone and the server's save validation use,
+drops LED ids that no longer exist and repeated holds, and rejects malformed
+links. Links to holds the wall no longer has are ignored.
+
 Enable LEDs, finish setup and take the wall through the usual lightbulb control.
 Routes illuminate their mapped LEDs using the existing start, hand, foot and
 finish colors, including saved color overrides. Route playback and creator
