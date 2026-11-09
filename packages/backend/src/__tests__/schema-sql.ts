@@ -196,6 +196,11 @@ const boardShareLinksSchema = readFileSync(
   new URL('../../../db/drizzle/0267_board_share_links.sql', import.meta.url),
   'utf8',
 );
+// A spray wall's LED setup, straight from the generated migration, after user_boards.
+const sprayWallLedSetupsSchema = readFileSync(
+  new URL('../../../db/drizzle/0295_spray_wall_led_setups.sql', import.meta.url),
+  'utf8',
+);
 // The workout a climber followed in a session (#6903), straight from the
 // generated migration, after board_sessions and users.
 const sessionWorkoutsSchema = readFileSync(
@@ -205,6 +210,7 @@ const sessionWorkoutsSchema = readFileSync(
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
+  DROP TABLE IF EXISTS "spray_wall_led_setups" CASCADE;
   DROP TABLE IF EXISTS "user_deleted_upstream_playlists" CASCADE;
   DROP TYPE IF EXISTS "upstream_playlist_source";
   DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
@@ -2323,6 +2329,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sharedSprayDraftsSchema}
   ${climbMutationReceiptsSchema}
   ${deletedUpstreamPlaylistsSchema}
+  ${sprayWallLedSetupsSchema}
   DROP TABLE IF EXISTS auth_email_reservation_members;
   DROP TABLE IF EXISTS auth_email_reservations;
   DROP TABLE IF EXISTS auth_email_projection;

@@ -43,6 +43,7 @@ import {
   type SprayLookPreviewSource,
 } from '../../lib/spray/spray-look-preview';
 import { loadSprayWallTnutLayout, saveSprayWallTnutLayout } from '../../lib/spray/spray-wall-tnut-store';
+import { subscribeSprayWallLedUploadOutcome } from '../../lib/spray/spray-wall-led-cache';
 import { sprayLedPhotoKey } from '../../lib/spray/spray-led-photo-key';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -131,6 +132,7 @@ function SetupLoader({ wallUuid }: { wallUuid: string }) {
           loadSprayWallTnutLayout(wallUuid),
         ]);
         if (!active) return;
+        // Any climber can light this wall; changing the setup follows Edit board.
         if (!payload?.wall.viewerCanEdit) {
           setFailure('access');
           return;
@@ -256,6 +258,14 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const persisted = useRef<TnutLayout | null>(layout);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  useEffect(
+    () =>
+      // The save lands on the phone first, so this is the only place a failed upload shows up.
+      subscribeSprayWallLedUploadOutcome((changedWallUuid, outcome) => {
+        if (changedWallUuid === wallUuid) setSaveFailed(outcome === 'failed');
+      }),
+    [wallUuid],
+  );
   const [dragging, setDragging] = useState(false);
   const [mode, setMode] = useState<SprayPointMode | null>(null);
   useEffect(() => {

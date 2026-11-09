@@ -52,6 +52,7 @@ import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { clearWorkoutRun } from '../lib/workout-run-store';
 import { clearEndedWorkouts } from '../lib/ended-workout-store';
+import { eraseAllSprayWallLedCaches } from '../lib/spray/spray-wall-led-cache';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
 import { getAppEntryHref } from '../lib/app-entry-route';
@@ -301,6 +302,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         clearWorkoutRun(),
         // The recaps of ended workouts (#6903), kept for their session summaries.
         clearEndedWorkouts(),
+        // Every Spraywall's LED copy. Kept per wall and account-blind on disk; the
+        // next climber on this phone reads what the server says they may see.
+        eraseAllSprayWallLedCaches(),
       ]);
     },
     [],

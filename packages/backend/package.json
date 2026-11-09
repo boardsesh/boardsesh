@@ -50,6 +50,7 @@
     "@boardsesh/i18n": "workspace:*",
     "@boardsesh/kilter-sync": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
+    "@boardsesh/led-controller": "workspace:*",
     "@boardsesh/moonboard-sync": "workspace:*",
     "@boardsesh/offline-sync": "workspace:*",
     "@boardsesh/pr-body": "workspace:*",

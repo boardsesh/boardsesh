@@ -3,7 +3,13 @@ import { OptionalReleaseContextInputSchema } from './release-context';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
 import { BOARD_RENDER_SETTING_BOUNDS, type BoardseshRenderSettings } from '@boardsesh/board-look';
-import { SPRAY_WALL_BACKGROUNDS, isSolvableAnchorQuad } from '@boardsesh/spray-wall-geometry';
+import { LED_CONTROLLER_TYPES, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import {
+  MAX_TNUT_LAYOUT_BYTES,
+  SPRAY_WALL_BACKGROUNDS,
+  isSolvableAnchorQuad,
+  readTnutLayout,
+} from '@boardsesh/spray-wall-geometry';
 import { UUIDSchema } from './primitives';
 
 /**
@@ -393,6 +399,60 @@ export const SetSprayWallRenderSettingsInputSchema = z
     renderSettings: SprayWallRenderSettingsSchema,
   })
   .strict();
+
+/**
+ * The LED setup of one wall. A value here reaches other climbers' phones, so the
+ * address is held to the same local-network rule the phone applies before it
+ * contacts anything, and the layout is rebuilt through `readTnutLayout` so the
+ * stored JSON holds only the fields the app reads.
+ */
+const SprayWallLedControllerUrlSchema = z
+  .string()
+  .max(2048, 'controllerUrl is too long')
+  .transform((url, context) => {
+    // Clearing the address is allowed; the owner may not have one yet.
+    if (url.trim() === '') return '';
+    try {
+      return normalizeLocalControllerUrl(url);
+    } catch (urlError) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          urlError instanceof LedControllerError && urlError.code === 'not-local'
+            ? 'controllerUrl must be a local network address'
+            : 'controllerUrl is not a valid controller address',
+      });
+      return z.NEVER;
+    }
+  });
+
+const SprayWallLedLayoutSchema = z.unknown().transform((layout, context) => {
+  if (Buffer.byteLength(JSON.stringify(layout) ?? '') > MAX_TNUT_LAYOUT_BYTES) {
+    context.addIssue({ code: 'custom', message: 'layout is too large' });
+    return z.NEVER;
+  }
+  const readLayout = readTnutLayout(layout);
+  if (!readLayout) {
+    context.addIssue({ code: 'custom', message: 'layout is not a valid T-nut layout' });
+    return z.NEVER;
+  }
+  return readLayout;
+});
+
+export const SaveSprayWallLedSetupInputSchema = z
+  .object({
+    boardUuid: UUIDSchema,
+    controllerType: z.enum(LED_CONTROLLER_TYPES, { error: "controllerType must be 'wled'" }).nullish(),
+    controllerUrl: SprayWallLedControllerUrlSchema.nullish(),
+    enabled: z.boolean().nullish(),
+    layout: SprayWallLedLayoutSchema.nullish(),
+  })
+  .strict()
+  .refine(
+    ({ controllerType, controllerUrl, enabled, layout }) =>
+      controllerType != null || controllerUrl != null || enabled != null || layout != null,
+    'Nothing to save: send at least one field',
+  );
 
 export type CreateSprayWallInput = z.infer<typeof CreateSprayWallInputSchema>;
 export type CreateSprayWallVersionInput = z.infer<typeof CreateSprayWallVersionInputSchema>;

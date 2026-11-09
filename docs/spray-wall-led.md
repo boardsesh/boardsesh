@@ -5,13 +5,19 @@ Enable LEDs to show the WLED address and setup controls. This first version supp
 one surface with one WLED controller. The saved setup links detected holds to
 holes and their wired LEDs for the app's normal route lighting controls.
 
+Anyone who can edit the wall sets this up once and it is saved to the wall, so
+every signed-in climber who can open the wall lights it from their own phone. See
+[Where the setup lives](#where-the-setup-lives).
+
 ## Using it
 
 1. Enable LEDs and enter the controller's base address, such as `http://wled.local`.
-2. Tap **OK** to check the connection. A successful check saves the address and
-   shows the device name and LED count. It does not change the lighting.
+2. Tap **OK** to check the connection. A successful check saves the address to
+   the wall and shows the device name and LED count. It does not change the
+   lighting.
 3. If the controller is offline or does not return a WLED response, choose
-   **Keep address anyway** to save it. Invalid URL syntax must be corrected.
+   **Keep address anyway** to save it. Invalid URL syntax, or an address that is
+   not on a local network, must be corrected.
 4. After a successful check, **Light all LEDs** sets the entire configured strip
    to solid white at 25% brightness. **Turn LEDs off** ends the test.
 5. **LED setup** opens the T-nut setup: choose grid, offset grid or custom spacing.
@@ -24,7 +30,7 @@ holes and their wired LEDs for the app's normal route lighting controls.
    existing mark without changing its identity. Custom spacing starts here with
    an empty image. Undo reverses manual edits.
    Returning to the grid preserves manual edits unless its parameters change.
-7. Continue to save the holes on this device and choose LEDs in, behind or below
+7. Continue to save the holes to the wall and choose LEDs in, behind or below
    the hold. Next opens the LED editor: choose Add, Move or Remove to edit
    individual positions with the same full-width, zoomable, fullscreen photo.
    Its tools also start inactive. Orange rings mark holes and purple
@@ -60,7 +66,7 @@ holes and their wired LEDs for the app's normal route lighting controls.
     not participate. **Stop lighting** ends the test. These controls require
     enabled LEDs and a saved WLED address. Indices outside the controller's LED
     count produce an error rather than addressing a different LED.
-11. Done saves positions and wiring on this device. Partial wiring can be saved.
+11. Done saves positions and wiring to the wall. Partial wiring can be saved.
     Its status reports connected LEDs and separate cable sections. The assigned
     zero-based indices include skipped LEDs. The normal wall controls use the
     saved setup to illuminate routes after you deliberately take the wall.
@@ -143,18 +149,66 @@ identity is the canonical dimensions and homography. A hold edit publishes a new
 wall version on the same photo and mapping, so it keeps the LED setup; hole-to-hold
 mapping is recomputed on each send. A changed identity starts a new setup while
 preserving the previous saved setup until the user explicitly continues. Layout
-data has a separate local storage key from WLED connection settings. LED and cable
-work is written as each step from LED positions onward closes, so a killed app
-keeps it. Earlier steps wait until the holes are confirmed, and unsaved changes are
+data is saved separately from the WLED connection settings, so neither editor can
+overwrite the other. LED and cable work is written as each step from LED positions
+onward closes, so a killed app keeps it. Earlier steps wait until the holes are confirmed, and unsaved changes are
 protected on leaving the flow. Rebuilding LEDs asks first when it would replace
 hand-placed LEDs or a cable path.
 The generated LED offsets remain editable estimates.
 
-These settings save immediately on this device, separately for each wall. Turning
-the setting off hides the remaining controls and retains the saved controller URL.
+These settings save immediately, separately for each wall. Turning the setting
+off hides the remaining controls and retains the saved controller URL.
 An unconfirmed address draft is not saved on leaving the screen. Disabling LED
 support stops an owned route-lighting session. Use **Turn LEDs off** to turn off
 a running setup test.
+
+## Where the setup lives
+
+The server is the source of truth and the phone keeps a copy. A wall has one
+row in `spray_wall_led_setups`, keyed on `user_boards.id` (`board_id`, cascade),
+holding the controller type, the controller address, the enabled switch, the
+T-nut layout JSON and `updated_at`. It has no column that names a user, so it is
+not in the account-deletion or user-reference catalogs, and it is not in the
+public board snapshot export. GraphQL: `sprayWallLedSetup(boardUuid)` and
+`saveSprayWallLedSetup(input)`.
+
+**Who can do what.** A signed-in climber who can read the wall gets its setup,
+by the same rule as `sprayWall(uuid)` (`sprayBoardRowIsReadable`, with the uuid as
+a capability: the owner, a gym member, or anyone on a public or unlisted wall).
+Signed out is refused with an error rather than null, because the phone reads null
+as access withdrawn and erases its copy. Saving follows Edit board (`canEditBoard`:
+the owner, a gym admin, or a community leader), on an unarchived wall. The edit
+screen shows the section and the setup route opens for those people. Anyone else
+who can read the wall still gets the setup, so the usual lightbulb lights it for
+them too.
+
+**Local addresses only.** Until now an address was only typed on the phone that
+used it. Now one person's value reaches other climbers' phones, so an address
+must be on a local network: private or link-local IPv4 (`10/8`, `172.16/12`,
+`192.168/16`, `169.254/16`), IPv6 unique-local or link-local (`fc00::/7`,
+`fe80::/10`), or a `.local`,
+`.lan`, `.home`, `.home.arpa` or `.internal` name. `normalizeLocalControllerUrl`
+in `@boardsesh/led-controller` is the one check. The server runs it on every save,
+and the WLED driver runs it again before contacting anything, so an address from
+the server never gets further than this check. Public addresses, public hostnames,
+credentials, queries and fragments are refused.
+
+**Offline.** A read answers from the copy when there is one and refreshes behind
+it, so a phone on a wall's Wi-Fi with no internet lights the wall without waiting
+for the backend to give up. With no copy it waits for the backend. One request
+per wall covers every reader, with a 10 minute freshness window (30 seconds after
+a failure). When the server's copy really differs from the phone's, the copy is
+replaced and `notifySprayLedConfiguration` blanks and relights the wall; a no-change
+refresh fires nothing. Reading the setup only ever touches the backend. The first
+LAN request still has to follow a climber's press.
+
+**Saves** write the copy, then upload. One upload runs per wall at a time and it
+reads the newest copy when it goes, so step saves collapse and cannot land out of
+order. A failed upload shows the normal save error, stays marked unsent on the
+phone, and retries on the next load; while unsent the phone's copy wins over the
+server's. A setup that exists only on this phone (from before this shipped) is
+uploaded once if the wall has no row and this viewer owns the wall. The cached
+copy is cleared at sign-out and when wall access is withdrawn.
 
 ## Controller boundary
 
@@ -164,9 +218,10 @@ transport accepts physical LED indices and optional RGB colors through `show`, p
 commands. Serialized preview sessions prevent overlapping animation commands.
 Add future systems as drivers,
 then extend the versioned settings discriminator and provider selection UI. The
-editor does not contain WLED request payloads. No database migration or backend
-proxy is needed: requests originate on the phone/browser in the controller's LAN.
-Controller URLs do not enter shared board metadata, analytics or server requests.
+editor does not contain WLED request payloads. No backend proxy is needed: requests
+originate on the phone/browser in the controller's LAN. Controller URLs are stored
+only in the wall's LED setup: never in shared board metadata or analytics, and the
+server never contacts them.
 
 The WLED implementation uses the official
 [JSON API](https://kno.wled.ge/interfaces/json-api/): read-only `GET /json/info`
@@ -208,12 +263,13 @@ belongs to the local development database, not the hosted service. Separately
 distributed apps remain subject to [the hosted-service policy](../LEGAL.md#hosted-service--api-access).
 
 The dev-only component story `spray-wall-led-section--setup` exercises this same
-component with a separate local settings key, without needing an existing wall.
+component with a story wall id that stays on the device and sends nothing to the
+server, without needing an existing wall.
 Open `dev/stories/spray-wall-led-section--setup` in a development build after
 signing in; the native app's authentication gate also applies to stories. It can
 contact a real WLED device only when you enter its address and press a control.
-Use **Edit spray wall** to check full form placement. LED settings stay on the
-current device; testing lights does not update shared wall metadata.
+Use **Edit spray wall** to check full form placement. Testing lights does not
+update shared wall metadata.
 
 WLED serves plain HTTP only. Android release builds permit it through
 `plugins/with-android-lan-http.js`: on for every host, because Android cannot
@@ -233,7 +289,9 @@ All visible strings are in the `boards.sprayLed` and `boards.sprayLedSetup` cata
 Spanish, French and Italian. Validate the driver, storage and component tests,
 then the mobile typecheck, mobile suite and native bundle check. Verify on a phone
 in light/dark mode and with large text, including offline retention and disabling
-then re-enabling after reopening the editor.
+then re-enabling after reopening the editor. Run the
+`spray-wall-led-setup` backend tests and the `spray-wall-led-sync` mobile tests;
+a real run needs a second account to check that a non-owner lights the wall.
 
 The Android pinch guard ignores focal updates after one finger lifts and rebases
 on pointer-count changes; the gesture handler can stay active until the final

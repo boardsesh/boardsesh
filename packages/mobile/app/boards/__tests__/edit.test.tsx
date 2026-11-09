@@ -774,11 +774,20 @@ describe('EditBoard — Help train hold finding', () => {
 });
 
 describe('EditBoard — spray wall LED settings', () => {
-  it('wires the wall UUID into the LED section for a spray wall editor', () => {
+  it('wires the wall UUID into the LED section for the wall owner', () => {
     state.boardType = 'spray';
+    state.profileId = 'owner-id';
     render(createElement(EditBoard));
     expect(screen.getByTestId('led-settings').textContent).toBe('board-uuid');
     expect(screen.getByTestId('led-settings').getAttribute('data-disabled')).toBe('false');
+  });
+
+  // Changing the LED setup follows Edit board, so gym staff can set up a gym's wall.
+  it('shows the LED section to an editor who does not own the wall', () => {
+    state.boardType = 'spray';
+    state.profileId = 'gym-admin';
+    render(createElement(EditBoard));
+    expect(screen.getByTestId('led-settings')).not.toBeNull();
   });
 
   it('does not add the spray wall LED section to catalogue boards', () => {
@@ -788,6 +797,7 @@ describe('EditBoard — spray wall LED settings', () => {
 
   it('locks the LED section while the board form is saving', async () => {
     state.boardType = 'spray';
+    state.profileId = 'owner-id';
     updateBoardMock.mockReturnValueOnce(new Promise(() => {}));
     render(createElement(EditBoard));
     fireEvent.click(screen.getByRole('button', { name: 'submit' }));

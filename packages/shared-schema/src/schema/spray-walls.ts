@@ -492,6 +492,52 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     trainingConsent: Boolean
   }
 
+  """
+  The LED setup of one spray wall: which controller drives it, whether it is on,
+  and the hole, LED and cable layout that maps holds to physical LEDs.
+
+  Lives on the board, so every climber at the wall can light it from their own
+  phone. The phone talks to the controller directly over the local network; the
+  server only stores the setup and never contacts the address.
+  """
+  type SprayWallLedSetup {
+    boardUuid: ID!
+    "The driver for this controller. \`wled\` is the only one today."
+    controllerType: String!
+    "A local-network base address, or empty until the owner confirms one."
+    controllerUrl: String!
+    enabled: Boolean!
+    "A saved T-nut layout. Null until the setup screen has saved one."
+    layout: JSON
+    "When this setup last changed, ISO 8601."
+    updatedAt: String!
+  }
+
+  """
+  A wall's LED setup as this viewer may use it. Null at the query, not here, when
+  the viewer cannot read the wall: the same answer \`sprayWall(uuid)\` gives.
+  """
+  type SprayWallLedSetupView {
+    "Whether this viewer may save changes: the wall's owner, on a wall still in use."
+    viewerCanEdit: Boolean!
+    "Null when nobody has saved a setup for this wall yet."
+    setup: SprayWallLedSetup
+  }
+
+  """
+  Save part of a wall's LED setup. A field left out (or null) keeps its stored
+  value, so the settings and the layout save from separate code paths without
+  overwriting each other.
+  """
+  input SaveSprayWallLedSetupInput {
+    boardUuid: ID!
+    controllerType: String
+    "Local-network addresses only: the server refuses anything else."
+    controllerUrl: String
+    enabled: Boolean
+    layout: JSON
+  }
+
   input SetSprayWallRenderSettingsInput {
     uuid: ID!
     """

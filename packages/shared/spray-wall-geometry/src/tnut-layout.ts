@@ -17,6 +17,12 @@ export const MIN_TNUT_DIMENSION = 1;
 export const MAX_TNUT_DIMENSION = 50;
 export const DEFAULT_TNUT_DIMENSION = 8;
 export const MAX_TNUT_HOLES = 3000;
+/**
+ * The most a stored layout may weigh as JSON. The biggest layout the setup screen
+ * can build (3000 holes with two LEDs each and a full cable) is about 1.1 MB, so this
+ * only refuses a payload padded by hand.
+ */
+export const MAX_TNUT_LAYOUT_BYTES = 1_500_000;
 export const DEFAULT_TNUT_CORNERS: TnutCorners = Object.freeze({
   topLeft: Object.freeze({ x: 0.1, y: 0.1 }),
   topRight: Object.freeze({ x: 0.9, y: 0.1 }),

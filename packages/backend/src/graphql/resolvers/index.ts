@@ -17,6 +17,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { boardQueries } from './board/queries';
 import { holdOutlineMutations, holdOutlineQueries } from './board/hold-outline-overrides';
 import { sprayWallMutations, sprayWallQueries } from './board/spray-walls';
+import { sprayWallLedSetupMutations, sprayWallLedSetupQueries } from './board/spray-wall-led-setup';
 import { sprayDetectionMutations, sprayDetectionQueries } from './board/spray-detection';
 import { sprayWallModerationMutations, sprayWallModerationQueries } from './board/spray-wall-moderation';
 import { sprayTrainingMutations, sprayTrainingQueries } from './board/spray-training';
@@ -122,6 +123,7 @@ export const resolvers = {
     ...boardQueries,
     ...holdOutlineQueries,
     ...sprayWallQueries,
+    ...sprayWallLedSetupQueries,
     ...sprayDetectionQueries,
     ...sprayWallModerationQueries,
     ...sprayTrainingQueries,
@@ -184,6 +186,7 @@ export const resolvers = {
     ...sessionMutations,
     ...holdOutlineMutations,
     ...sprayWallMutations,
+    ...sprayWallLedSetupMutations,
     ...sprayDetectionMutations,
     ...sprayWallModerationMutations,
     ...sprayTrainingMutations,

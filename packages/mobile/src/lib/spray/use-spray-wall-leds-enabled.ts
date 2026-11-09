@@ -6,9 +6,9 @@ import { loadSprayWallLedSettings } from './use-spray-wall-led-settings';
 type LedSetupAnswer = { wallUuid: string; enabled: boolean };
 
 /**
- * Whether this phone has a working LED setup for a spray wall: the switch is on
- * and a controller address is saved. LED settings live on the device and per
- * wall, so the board's own flags can't say this.
+ * Whether a spray wall has a working LED setup for this phone: the switch is on
+ * and a controller address is saved. The setup lives with the wall (read from the
+ * server, with a copy on the phone), so the board's own flags can't say this.
  *
  * Fails closed: false while the wall or its settings are still loading, on a
  * read error, and for every board that isn't a spray wall, which reads nothing.

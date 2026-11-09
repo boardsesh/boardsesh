@@ -19,6 +19,11 @@ vi.mock('../../../lib/preference-store', () => ({
   getPreference: storage.read,
   setPreference: storage.write,
 }));
+vi.mock('../../../lib/spray/spray-wall-led-sync', () => ({
+  prepareSprayWallLedRead: vi.fn(async () => undefined),
+  markSprayWallLedSaveStarted: vi.fn(async () => undefined),
+  queueSprayWallLedUpload: vi.fn(),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),

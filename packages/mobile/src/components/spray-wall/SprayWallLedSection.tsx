@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
-import { getLedControllerDriver, LedControllerError, normalizeControllerUrl } from '@boardsesh/led-controller';
+import { getLedControllerDriver, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
 import { BuilderTextInput, SectionLabel } from '../board-discovery/BoardMetaFields';
@@ -16,7 +16,7 @@ import { Text } from '../Text';
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
   | { kind: 'unavailable' | 'timeout' | 'notWled'; url: string }
-  | { kind: 'invalidUrl'; url: null };
+  | { kind: 'invalidUrl' | 'notLocal'; url: null };
 
 /** One surface and one controller. No climb output or hold-to-LED mapping yet. */
 export function SprayWallLedSection({ wallUuid, disabled = false }: { wallUuid: string; disabled?: boolean }) {
@@ -76,9 +76,10 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     if (locked || !settings?.enabled || request.current) return;
     let normalized: string;
     try {
-      normalized = normalizeControllerUrl(url);
-    } catch {
-      setResult({ kind: 'invalidUrl', url: null });
+      normalized = normalizeLocalControllerUrl(url);
+    } catch (urlError) {
+      const notLocal = urlError instanceof LedControllerError && urlError.code === 'not-local';
+      setResult({ kind: notLocal ? 'notLocal' : 'invalidUrl', url: null });
       return;
     }
     const controller = new AbortController();
@@ -137,13 +138,15 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
         ? t('sprayLed.connected', { name: result.name, count: result.ledCount })
         : result?.kind === 'invalidUrl'
           ? t('sprayLed.invalidUrl')
-          : result?.kind === 'notWled'
-            ? t('sprayLed.notWled')
-            : result?.kind === 'timeout'
-              ? t('sprayLed.timeout')
-              : result?.kind === 'unavailable'
-                ? t('sprayLed.unavailable')
-                : null;
+          : result?.kind === 'notLocal'
+            ? t('sprayLed.notLocal')
+            : result?.kind === 'notWled'
+              ? t('sprayLed.notWled')
+              : result?.kind === 'timeout'
+                ? t('sprayLed.timeout')
+                : result?.kind === 'unavailable'
+                  ? t('sprayLed.unavailable')
+                  : null;
   const canLight = result?.kind === 'connected' && settings?.controller.url === result.url && url === result.url;
   const canKeep = result?.url && result.kind !== 'connected' && settings?.controller.url !== result.url;
 
@@ -176,7 +179,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
               <Text variant="footnote" color={brandColors.error}>
                 {error === 'load' ? t('sprayLed.loadFailed') : t('sprayLed.saveFailed')}
               </Text>
-              {error === 'load' ? <Button title={t('sprayLed.retry')} variant="text" onPress={reload} /> : null}
+              <Button title={t('sprayLed.retry')} variant="text" onPress={reload} />
             </View>
           ) : null}
           {settings?.enabled ? (

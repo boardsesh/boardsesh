@@ -894,6 +894,14 @@ export const queriesTypeDefs = /* GraphQL */ `
     sprayWallRenderData(uuid: ID!, version: Int): SprayWallRenderData
 
     """
+    A spray wall's LED setup, for lighting it from this phone. Anyone who can read
+    the wall gets it, with the same rules as \`sprayWall\`; null when the wall does
+    not exist, is deleted, or this viewer may not see it. \`setup\` is null when the
+    wall has no saved setup yet.
+    """
+    sprayWallLedSetup(boardUuid: ID!): SprayWallLedSetupView
+
+    """
     The generated wall looks of one version (\`wall-crop\`, \`hold-cutouts\`) and
     its photo-quality verdict. Omit \`version\` for the published one. Same
     visibility rules as \`sprayWallRenderData\`; null where that is null.

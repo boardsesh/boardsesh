@@ -1,5 +1,5 @@
 import { LedControllerError, type LedControllerDriver, type LedControllerInfo } from './types';
-import { normalizeControllerUrl } from './url';
+import { normalizeLocalControllerUrl } from './url';
 import { snapshotLedPixels } from './led-pixels';
 
 export interface WledDriverOptions {
@@ -66,7 +66,7 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
     signal?: AbortSignal,
     command?: Record<string, unknown>,
   ): Promise<unknown> {
-    const baseUrl = normalizeControllerUrl(url);
+    const baseUrl = normalizeLocalControllerUrl(url);
     if (signal?.aborted) throw new LedControllerError('cancelled');
     const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;

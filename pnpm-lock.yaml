@@ -253,6 +253,9 @@ importers:
       '@boardsesh/kiosk':
         specifier: workspace:*
         version: link:../shared/kiosk
+      '@boardsesh/led-controller':
+        specifier: workspace:*
+        version: link:../shared/led-controller
       '@boardsesh/moonboard-sync':
         specifier: workspace:*
         version: link:../moonboard-sync

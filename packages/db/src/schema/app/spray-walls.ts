@@ -774,6 +774,31 @@ export const sprayClimbLineage = pgTable(
   }),
 );
 
+/**
+ * The LED setup of one spray wall: which controller drives it, whether it is
+ * switched on, and the hole, LED and cable layout. One row per wall, on the
+ * board's numeric id, so a soft-deleted board keeps its row and a removed board
+ * takes it along.
+ *
+ * Nothing here names a user. The wall's owner is `user_boards.owner_id`, which is
+ * the only thing the write path checks, so this table stays out of the account
+ * deletion and user-reference catalogs. It holds only a local-network address
+ * (`normalizeLocalControllerUrl` on the server and again on the phone), and it is
+ * not part of the public board snapshot export.
+ */
+export const sprayWallLedSetups = pgTable('spray_wall_led_setups', {
+  boardId: bigint('board_id', { mode: 'number' })
+    .primaryKey()
+    .references(() => userBoards.id, { onDelete: 'cascade' }),
+  controllerType: text('controller_type').notNull().default('wled'),
+  /** Empty until an address is confirmed: the row can start from a layout-only save. */
+  controllerUrl: text('controller_url').notNull().default(''),
+  enabled: boolean('enabled').notNull().default(false),
+  /** A `TnutLayout`, always written through `readTnutLayout`. Null until the setup screen saves one. */
+  layout: jsonb('layout').$type<Record<string, unknown>>(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export type SprayWallVersionStatus = (typeof sprayWallVersionStatusEnum.enumValues)[number];
 export type SprayHoldSource = (typeof sprayHoldSourceEnum.enumValues)[number];
 
@@ -791,3 +816,5 @@ export type SprayHoldAutoReview = (typeof sprayHoldAutoReviewEnum.enumValues)[nu
 export type SprayTrainingReviewStatus = (typeof sprayTrainingReviewStatusEnum.enumValues)[number];
 export type SprayTrainingRejectReason = (typeof sprayTrainingRejectReasonEnum.enumValues)[number];
 export type NewSprayWallReport = typeof sprayWallReports.$inferInsert;
+export type SprayWallLedSetup = typeof sprayWallLedSetups.$inferSelect;
+export type NewSprayWallLedSetup = typeof sprayWallLedSetups.$inferInsert;

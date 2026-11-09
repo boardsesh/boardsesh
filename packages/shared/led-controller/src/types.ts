@@ -1,5 +1,6 @@
 export type LedControllerErrorCode =
   | 'invalid-url'
+  | 'not-local'
   | 'unavailable'
   | 'not-wled'
   | 'timeout'

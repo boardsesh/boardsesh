@@ -269,6 +269,7 @@ vi.mock('../SprayPhotoStage', () => ({
 }));
 
 import { SprayWallLedSetupScreen } from '../SprayWallLedSetupScreen';
+import { notifySprayWallLedUploadOutcome } from '../../../lib/spray/spray-wall-led-cache';
 
 const photoSource: SprayLookPreviewSource = {
   layoutId: 12,
@@ -352,9 +353,10 @@ beforeEach(() => {
   controls.authenticated = true;
   controls.viewerId = 'viewer-1';
   backend.source = structuredClone(photoSource);
-  backend.fetch
-    .mockReset()
-    .mockResolvedValue({ wall: { viewerCanEdit: true, layoutId: 12, currentVersion: { id: 34 } }, holds: [] });
+  backend.fetch.mockReset().mockResolvedValue({
+    wall: { viewerCanEdit: true, layoutId: 12, currentVersion: { id: 34 }, board: { ownerId: 'viewer-1' } },
+    holds: [],
+  });
   backend.sourceFromRenderData.mockReset().mockImplementation(() => backend.source);
   backend.cache.mockReset().mockResolvedValue('/cache/wall.jpg');
   backend.client.invalidateQueries.mockReset().mockResolvedValue(undefined);
@@ -1066,11 +1068,32 @@ describe('SprayWallLedSetupScreen', () => {
     const view = render(<SprayWallLedSetupScreen wallUuid="wall-1" />);
     expect(backend.fetch).not.toHaveBeenCalled();
     controls.authenticated = true;
-    backend.fetch.mockResolvedValue({ wall: { viewerCanEdit: false } });
+    backend.fetch.mockResolvedValue({ wall: { viewerCanEdit: false, board: { ownerId: 'viewer-1' } } });
     view.rerender(<SprayWallLedSetupScreen wallUuid="wall-1" />);
     await screen.findByText('sprayLedSetup.unavailable');
     expect(backend.cache).not.toHaveBeenCalled();
     expect(controls.header).toBeNull();
+  });
+
+  it('opens for a gym admin who can edit the wall', async () => {
+    const payload = await backend.fetch();
+    backend.fetch.mockResolvedValue({ ...payload, wall: { ...payload.wall, board: { ownerId: 'someone-else' } } });
+    render(<SprayWallLedSetupScreen wallUuid="wall-1" />);
+    await waitFor(() => expect(backend.cache).toHaveBeenCalled());
+    expect(screen.queryByText('sprayLedSetup.unavailable')).toBeNull();
+  });
+
+  it('shows a failed upload as the save error, and clears it once one lands', async () => {
+    render(<SprayWallLedSetupScreen wallUuid="wall-1" />);
+    await screen.findByText('sprayLedSetup.patternTitle');
+    expect(screen.queryByText('sprayLedSetup.saveFailed')).toBeNull();
+
+    act(() => notifySprayWallLedUploadOutcome('wall-1', 'failed'));
+    expect(screen.getByText('sprayLedSetup.saveFailed')).toBeTruthy();
+    act(() => notifySprayWallLedUploadOutcome('other-wall', 'uploaded'));
+    expect(screen.getByText('sprayLedSetup.saveFailed')).toBeTruthy();
+    act(() => notifySprayWallLedUploadOutcome('wall-1', 'uploaded'));
+    expect(screen.queryByText('sprayLedSetup.saveFailed')).toBeNull();
   });
 
   it('retries a photo-load failure through the viewer-scoped query key', async () => {

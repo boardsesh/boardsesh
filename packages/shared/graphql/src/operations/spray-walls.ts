@@ -194,6 +194,63 @@ export const GET_SPRAY_WALL_RENDER_DATA = gql`
 `;
 
 /**
+ * A wall's LED setup, separate from `SPRAY_WALL_FIELDS` for the reason
+ * `GET_SPRAY_WALL_LOOK` gives: an older backend fails this operation alone, and
+ * costs the phone only a refresh. It keeps the copy it already has.
+ */
+export const GET_SPRAY_WALL_LED_SETUP = gql`
+  query GetSprayWallLedSetup($boardUuid: ID!) {
+    sprayWallLedSetup(boardUuid: $boardUuid) {
+      viewerCanEdit
+      setup {
+        boardUuid
+        controllerType
+        controllerUrl
+        enabled
+        layout
+        updatedAt
+      }
+    }
+  }
+`;
+
+export type SprayWallLedSetupData = {
+  boardUuid: string;
+  controllerType: string;
+  controllerUrl: string;
+  enabled: boolean;
+  layout: unknown;
+  updatedAt: string;
+};
+
+export type GetSprayWallLedSetupQueryVariables = { boardUuid: string };
+export type GetSprayWallLedSetupQueryResponse = {
+  sprayWallLedSetup: { viewerCanEdit: boolean; setup: SprayWallLedSetupData | null } | null;
+};
+
+export const SAVE_SPRAY_WALL_LED_SETUP = gql`
+  mutation SaveSprayWallLedSetup($input: SaveSprayWallLedSetupInput!) {
+    saveSprayWallLedSetup(input: $input) {
+      boardUuid
+      updatedAt
+    }
+  }
+`;
+
+export type SaveSprayWallLedSetupMutationVariables = {
+  input: {
+    boardUuid: string;
+    controllerType?: string;
+    controllerUrl?: string;
+    enabled?: boolean;
+    layout?: unknown;
+  };
+};
+export type SaveSprayWallLedSetupMutationResponse = {
+  saveSprayWallLedSetup: { boardUuid: string; updatedAt: string };
+};
+
+/**
  * Draft reads verify the immutable row id even when a discarded number is reused.
  *
  * The one read that asks for `photoFullUrl` (#5911): the hold editor swaps it in

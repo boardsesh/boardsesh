@@ -4888,6 +4888,12 @@ export type Mutation = {
   saveClimb: SaveClimbResult;
   /** Save a new MoonBoard climb. */
   saveMoonBoardClimb: SaveClimbResult;
+  /**
+   * Save part of a spray wall's LED setup. Owner only: this value reaches every
+   * climber's phone at the wall. Refuses an address that is not on a local network
+   * and a layout outside the shared caps.
+   */
+  saveSprayWallLedSetup: SprayWallLedSetup;
   /** Save a new tick (climb attempt record). */
   saveTick: Tick;
   sendDeviceLogs: SendDeviceLogsResponse;
@@ -5763,6 +5769,11 @@ export type MutationSaveClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSaveMoonBoardClimbArgs = {
   input: SaveMoonBoardClimbInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSaveSprayWallLedSetupArgs = {
+  input: SaveSprayWallLedSetupInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -7784,6 +7795,13 @@ export type Query = {
   sprayWallHoldUsage: Array<SprayWallHoldUsage>;
   sprayWallImportProgress: Array<SprayWallImportProgress>;
   /**
+   * A spray wall's LED setup, for lighting it from this phone. Anyone who can read
+   * the wall gets it, with the same rules as `sprayWall`; null when the wall does
+   * not exist, is deleted, or this viewer may not see it. `setup` is null when the
+   * wall has no saved setup yet.
+   */
+  sprayWallLedSetup?: Maybe<SprayWallLedSetupView>;
+  /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
    *
@@ -8661,6 +8679,11 @@ export type QuerySprayWallImportProgressArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallLedSetupArgs = {
+  boardUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
@@ -9407,6 +9430,20 @@ export type SaveMoonBoardClimbInput = {
   privacy?: InputMaybe<PrivacyPublicationInput>;
   setter?: InputMaybe<Scalars['String']['input']>;
   userGrade?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Save part of a wall's LED setup. A field left out (or null) keeps its stored
+ * value, so the settings and the layout save from separate code paths without
+ * overwriting each other.
+ */
+export type SaveSprayWallLedSetupInput = {
+  boardUuid: Scalars['ID']['input'];
+  controllerType?: InputMaybe<Scalars['String']['input']>;
+  /** Local-network addresses only: the server refuses anything else. */
+  controllerUrl?: InputMaybe<Scalars['String']['input']>;
+  enabled?: InputMaybe<Scalars['Boolean']['input']>;
+  layout?: InputMaybe<Scalars['JSON']['input']>;
 };
 
 /** Input for recording a climb attempt. */
@@ -11333,6 +11370,40 @@ export type SprayWallKeptDecisionInput = {
    */
   detection?: InputMaybe<SprayWallDetectionInput>;
   holdId: Scalars['Int']['input'];
+};
+
+/**
+ * The LED setup of one spray wall: which controller drives it, whether it is on,
+ * and the hole, LED and cable layout that maps holds to physical LEDs.
+ *
+ * Lives on the board, so every climber at the wall can light it from their own
+ * phone. The phone talks to the controller directly over the local network; the
+ * server only stores the setup and never contacts the address.
+ */
+export type SprayWallLedSetup = {
+  __typename?: 'SprayWallLedSetup';
+  boardUuid: Scalars['ID']['output'];
+  /** The driver for this controller. `wled` is the only one today. */
+  controllerType: Scalars['String']['output'];
+  /** A local-network base address, or empty until the owner confirms one. */
+  controllerUrl: Scalars['String']['output'];
+  enabled: Scalars['Boolean']['output'];
+  /** A saved T-nut layout. Null until the setup screen has saved one. */
+  layout?: Maybe<Scalars['JSON']['output']>;
+  /** When this setup last changed, ISO 8601. */
+  updatedAt: Scalars['String']['output'];
+};
+
+/**
+ * A wall's LED setup as this viewer may use it. Null at the query, not here, when
+ * the viewer cannot read the wall: the same answer `sprayWall(uuid)` gives.
+ */
+export type SprayWallLedSetupView = {
+  __typename?: 'SprayWallLedSetupView';
+  /** Null when nobody has saved a setup for this wall yet. */
+  setup?: Maybe<SprayWallLedSetup>;
+  /** Whether this viewer may save changes: the wall's owner, on a wall still in use. */
+  viewerCanEdit: Scalars['Boolean']['output'];
 };
 
 /** The outcome of the admin switch, thin on purpose: a moderation tool, not a wall read. */

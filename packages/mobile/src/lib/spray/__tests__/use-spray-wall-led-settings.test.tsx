@@ -8,7 +8,19 @@ vi.mock('../../preference-store', () => ({
   setPreference: preferences.set,
 }));
 
-import { useSprayWallLedSettings, type SprayWallLedSettings } from '../use-spray-wall-led-settings';
+vi.mock('../spray-wall-led-sync', () => ({
+  prepareSprayWallLedRead: vi.fn(async () => undefined),
+  markSprayWallLedSaveStarted: vi.fn(async () => undefined),
+  queueSprayWallLedUpload: vi.fn(),
+}));
+
+import { notifySprayWallLedServerChange, notifySprayWallLedUploadOutcome } from '../spray-wall-led-cache';
+import { markSprayWallLedSaveStarted, prepareSprayWallLedRead, queueSprayWallLedUpload } from '../spray-wall-led-sync';
+import {
+  loadSprayWallLedSettings,
+  useSprayWallLedSettings,
+  type SprayWallLedSettings,
+} from '../use-spray-wall-led-settings';
 
 const configured: SprayWallLedSettings = {
   version: 1,
@@ -32,7 +44,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('device-local spray wall LED settings', () => {
+describe('the phone copy of a wall\u2019s LED settings', () => {
   it('starts disabled only after reading a missing record, without writing defaults', async () => {
     const read = deferred<unknown>();
     preferences.get.mockReturnValueOnce(read.promise);
@@ -185,6 +197,88 @@ describe('device-local spray wall LED settings', () => {
     expect(preferences.get).toHaveBeenCalledTimes(1);
     await act(async () => write.resolve());
     await waitFor(() => expect(reopened.result.current.settings).toEqual(configured));
+  });
+
+  it('refreshes from the server before reading the copy, and marks a save unsent before writing it', async () => {
+    const order: string[] = [];
+    vi.mocked(prepareSprayWallLedRead).mockImplementationOnce(async () => {
+      order.push('prepare');
+    });
+    preferences.get.mockImplementationOnce(async () => {
+      order.push('read');
+      return configured;
+    });
+    await expect(loadSprayWallLedSettings('wall-one')).resolves.toEqual(configured);
+    expect(order).toEqual(['prepare', 'read']);
+    expect(prepareSprayWallLedRead).toHaveBeenCalledWith('wall-one', 'settings');
+
+    order.length = 0;
+    vi.mocked(markSprayWallLedSaveStarted).mockImplementationOnce(async () => {
+      order.push('mark');
+    });
+    preferences.set.mockImplementationOnce(async () => {
+      order.push('write');
+    });
+    vi.mocked(queueSprayWallLedUpload).mockImplementationOnce(() => {
+      order.push('upload');
+    });
+    const { result } = renderHook(() => useSprayWallLedSettings('wall-one'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      expect(await result.current.save(configured)).toBe(true);
+    });
+    expect(order).toEqual(['mark', 'write', 'upload']);
+    expect(queueSprayWallLedUpload).toHaveBeenCalledWith('wall-one', 'settings');
+  });
+
+  it('shows a failed upload as the existing save error, and clears it when an upload lands', async () => {
+    preferences.get.mockResolvedValue(configured);
+    const { result } = renderHook(() => useSprayWallLedSettings('wall-one'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => notifySprayWallLedUploadOutcome('wall-one', 'failed'));
+    expect(result.current.error).toBe('save');
+    expect(result.current.settings).toEqual(configured);
+
+    act(() => notifySprayWallLedUploadOutcome('wall-two', 'uploaded'));
+    expect(result.current.error).toBe('save');
+
+    act(() => notifySprayWallLedUploadOutcome('wall-one', 'uploaded'));
+    expect(result.current.error).toBeNull();
+  });
+
+  it('re-reads when the server changed this wall, and only this wall', async () => {
+    let stored: SprayWallLedSettings = configured;
+    preferences.get.mockImplementation(async () => stored);
+    const { result } = renderHook(() => useSprayWallLedSettings('wall-one'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(preferences.get).toHaveBeenCalledTimes(1);
+
+    act(() => notifySprayWallLedServerChange('wall-two'));
+    await act(async () => undefined);
+    expect(preferences.get).toHaveBeenCalledTimes(1);
+
+    stored = { ...configured, enabled: false };
+    act(() => notifySprayWallLedServerChange('wall-one'));
+    await waitFor(() => expect(result.current.settings?.enabled).toBe(false));
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('refuses a public address and never hands a stored one to a caller', async () => {
+    const publicAddress = { ...configured, controller: { type: 'wled', url: 'http://example.com' } };
+    preferences.get.mockResolvedValue(publicAddress);
+    await expect(loadSprayWallLedSettings('wall-one')).resolves.toEqual({
+      ...configured,
+      controller: { type: 'wled', url: '' },
+    });
+
+    const { result } = renderHook(() => useSprayWallLedSettings('wall-one'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      expect(await result.current.save(publicAddress as SprayWallLedSettings)).toBe(false);
+    });
+    expect(result.current.error).toBe('save');
+    expect(preferences.set).not.toHaveBeenCalled();
   });
 
   it('waits for an old write before reloading the same wall after navigation', async () => {

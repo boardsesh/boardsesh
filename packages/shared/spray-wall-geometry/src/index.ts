@@ -85,6 +85,7 @@ export {
   DEFAULT_TNUT_DIMENSION,
   MAX_TNUT_DIMENSION,
   MAX_TNUT_HOLES,
+  MAX_TNUT_LAYOUT_BYTES,
   MIN_TNUT_DIMENSION,
   generateTnutGrid,
   isValidTnutCorners,

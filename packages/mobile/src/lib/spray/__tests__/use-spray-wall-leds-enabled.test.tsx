@@ -8,7 +8,14 @@ vi.mock('../../preference-store', () => ({
   setPreference: preferences.set,
 }));
 
+vi.mock('../spray-wall-led-sync', () => ({
+  prepareSprayWallLedRead: vi.fn(async () => undefined),
+  markSprayWallLedSaveStarted: vi.fn(async () => undefined),
+  queueSprayWallLedUpload: vi.fn(),
+}));
+
 import { notifySprayLedConfiguration } from '../spray-led-config-events';
+import { prepareSprayWallLedRead } from '../spray-wall-led-sync';
 import { clearSprayWallRegistry, registerSprayWall } from '../spray-wall-registry';
 import { useSprayWallLedsEnabled } from '../use-spray-wall-leds-enabled';
 
@@ -52,6 +59,7 @@ async function settleReads() {
 beforeEach(() => {
   preferences.get.mockReset().mockResolvedValue(configured);
   preferences.set.mockReset().mockResolvedValue(undefined);
+  vi.mocked(prepareSprayWallLedRead).mockClear();
 });
 
 afterEach(() => {
@@ -123,6 +131,7 @@ describe('useSprayWallLedsEnabled', () => {
     await settleReads();
     expect(result.current).toBe(false);
     expect(preferences.get).not.toHaveBeenCalled();
+    expect(prepareSprayWallLedRead).not.toHaveBeenCalled();
   });
 
   it('waits for the wall to register, then reads it', async () => {

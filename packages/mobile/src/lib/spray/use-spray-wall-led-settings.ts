@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { normalizeLocalControllerUrl } from '@boardsesh/led-controller';
 import { getPreference, setPreference } from '../preference-store';
 import { notifySprayLedConfiguration } from './spray-led-config-events';
+import {
+  readSprayWallLedSettings,
+  sprayWallLedSettingsKey,
+  subscribeSprayWallLedServerChange,
+  subscribeSprayWallLedUploadOutcome,
+  type SprayWallLedSettings,
+} from './spray-wall-led-cache';
+import { markSprayWallLedSaveStarted, prepareSprayWallLedRead, queueSprayWallLedUpload } from './spray-wall-led-sync';
 
-export type SprayWallLedSettings = {
-  version: 1;
-  enabled: boolean;
-  controller: { type: 'wled'; url: string };
-};
+export type { SprayWallLedSettings } from './spray-wall-led-cache';
 
 export type SprayWallLedSettingsError = 'load' | 'save' | null;
 
@@ -27,7 +32,6 @@ type SettingsSession = {
   settings: SprayWallLedSettings | null;
 };
 
-const storageKey = (wallUuid: string) => `sprayWallLedSettings:${wallUuid}`;
 // A write can outlive its screen. Reopening must read after that write settles.
 const pendingWrites = new Map<string, Promise<void>>();
 
@@ -35,36 +39,30 @@ function initialState(wallUuid: string): SettingsState {
   return { wallUuid, settings: null, loading: true, saving: false, error: null };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** Fail closed on future versions or corruption; never replace them with defaults. */
-function readSettings(stored: unknown): SprayWallLedSettings {
-  if (stored === null) return { version: 1, enabled: false, controller: { type: 'wled', url: '' } };
-  if (
-    !isRecord(stored) ||
-    stored.version !== 1 ||
-    typeof stored.enabled !== 'boolean' ||
-    !isRecord(stored.controller) ||
-    stored.controller.type !== 'wled' ||
-    typeof stored.controller.url !== 'string'
-  ) {
-    throw new Error('Invalid spray wall LED settings');
+/** A value that fails the local rule is no address at all, so nothing ever contacts it. */
+function withLocalAddress(settings: SprayWallLedSettings): SprayWallLedSettings {
+  if (!settings.controller.url) return settings;
+  try {
+    normalizeLocalControllerUrl(settings.controller.url);
+    return settings;
+  } catch {
+    return { ...settings, controller: { ...settings.controller, url: '' } };
   }
-  return {
-    version: 1,
-    enabled: stored.enabled,
-    controller: { type: 'wled', url: stored.controller.url },
-  };
 }
 
+/** The setup for this wall: the server's answer, or this phone's copy when the server can't say. */
 export async function loadSprayWallLedSettings(wallUuid: string): Promise<SprayWallLedSettings> {
   await pendingWrites.get(wallUuid)?.catch(() => undefined);
-  return readSettings(await getPreference<unknown>(storageKey(wallUuid), { strictParsing: true }));
+  await prepareSprayWallLedRead(wallUuid, 'settings');
+  return withLocalAddress(
+    readSprayWallLedSettings(await getPreference<unknown>(sprayWallLedSettingsKey(wallUuid), { strictParsing: true })),
+  );
 }
 
-/** A LAN controller belongs to this device and wall, never the shared board payload. */
+/**
+ * The controller settings for one wall. They save to the wall, so every climber
+ * there can light it, and the phone keeps a copy for when there is no internet.
+ */
 export function useSprayWallLedSettings(wallUuid: string) {
   const [state, setState] = useState<SettingsState>(() => initialState(wallUuid));
   const sessionRef = useRef<SettingsSession | null>(null);
@@ -109,6 +107,25 @@ export function useSprayWallLedSettings(wallUuid: string) {
     void load(session);
   }, [wallUuid, load]);
 
+  useEffect(() => {
+    const unsubscribeServer = subscribeSprayWallLedServerChange((changedWallUuid) => {
+      if (changedWallUuid === wallUuid) reload();
+    });
+    // A failed upload is the same "not saved" a failed write is. The next load retries it.
+    const unsubscribeUploads = subscribeSprayWallLedUploadOutcome((changedWallUuid, outcome) => {
+      if (changedWallUuid !== wallUuid) return;
+      setState((previous) => {
+        if (previous.wallUuid !== wallUuid) return previous;
+        if (outcome === 'failed') return { ...previous, error: 'save' };
+        return previous.error === 'save' ? { ...previous, error: null } : previous;
+      });
+    });
+    return () => {
+      unsubscribeServer();
+      unsubscribeUploads();
+    };
+  }, [wallUuid, reload]);
+
   const save = useCallback(
     async (next: SprayWallLedSettings): Promise<boolean> => {
       const session = sessionRef.current;
@@ -126,8 +143,11 @@ export function useSprayWallLedSettings(wallUuid: string) {
       session.saving = true;
       setState((previous) => ({ ...previous, saving: true, error: null }));
       try {
-        const settings = readSettings(next);
-        const write = setPreference(storageKey(wallUuid), settings);
+        const settings = readSprayWallLedSettings(next);
+        if (settings.controller.url) normalizeLocalControllerUrl(settings.controller.url);
+        const write = markSprayWallLedSaveStarted(wallUuid, 'settings').then(() =>
+          setPreference(sprayWallLedSettingsKey(wallUuid), settings),
+        );
         pendingWrites.set(wallUuid, write);
         try {
           await write;
@@ -135,6 +155,7 @@ export function useSprayWallLedSettings(wallUuid: string) {
           if (pendingWrites.get(wallUuid) === write) pendingWrites.delete(wallUuid);
         }
         notifySprayLedConfiguration(wallUuid);
+        queueSprayWallLedUpload(wallUuid, 'settings');
         if (!session.active) return false;
         session.settings = settings;
         setState({ wallUuid, settings, loading: false, saving: false, error: null });

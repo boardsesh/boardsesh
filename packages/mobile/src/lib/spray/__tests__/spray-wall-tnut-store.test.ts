@@ -4,6 +4,13 @@ import { DEFAULT_TNUT_CORNERS, generateTnutGrid, type TnutLayout } from '@boards
 const preferences = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), records: new Map<string, unknown>() }));
 vi.mock('../../preference-store', () => ({ getPreference: preferences.get, setPreference: preferences.set }));
 
+vi.mock('../spray-wall-led-sync', () => ({
+  prepareSprayWallLedRead: vi.fn(async () => undefined),
+  markSprayWallLedSaveStarted: vi.fn(async () => undefined),
+  queueSprayWallLedUpload: vi.fn(),
+}));
+
+import { markSprayWallLedSaveStarted, prepareSprayWallLedRead, queueSprayWallLedUpload } from '../spray-wall-led-sync';
 import { loadSprayWallTnutLayout, saveSprayWallTnutLayout } from '../spray-wall-tnut-store';
 
 const layoutKey = 'sprayWallTnutLayout:wall-one';
@@ -40,7 +47,7 @@ beforeEach(() => {
   });
 });
 
-describe('device-local T-nut layouts', () => {
+describe('the phone copy of a wall\u2019s T-nut layout', () => {
   it('reads a missing layout without writing defaults', async () => {
     await expect(loadSprayWallTnutLayout('wall-one')).resolves.toBeNull();
     expect(preferences.get).toHaveBeenCalledWith(layoutKey, { strictParsing: true });
@@ -102,6 +109,34 @@ describe('device-local T-nut layouts', () => {
     expect(reopened?.holes).toHaveLength(rows * columns);
   });
 
+  it('refreshes before reading, and marks a save unsent before writing it and uploading it', async () => {
+    const order: string[] = [];
+    vi.mocked(prepareSprayWallLedRead).mockImplementationOnce(async () => {
+      order.push('prepare');
+    });
+    preferences.get.mockImplementationOnce(async () => {
+      order.push('read');
+      return null;
+    });
+    await loadSprayWallTnutLayout('wall-one');
+    expect(order).toEqual(['prepare', 'read']);
+    expect(prepareSprayWallLedRead).toHaveBeenCalledWith('wall-one', 'layout');
+
+    order.length = 0;
+    vi.mocked(markSprayWallLedSaveStarted).mockImplementationOnce(async () => {
+      order.push('mark');
+    });
+    preferences.set.mockImplementationOnce(async () => {
+      order.push('write');
+    });
+    vi.mocked(queueSprayWallLedUpload).mockImplementationOnce(() => {
+      order.push('upload');
+    });
+    await saveSprayWallTnutLayout('wall-one', configured());
+    expect(order).toEqual(['mark', 'write', 'upload']);
+    expect(queueSprayWallLedUpload).toHaveBeenCalledWith('wall-one', 'layout');
+  });
+
   it('refuses invalid saves without touching the stored layout', async () => {
     const stored = configured();
     preferences.records.set(layoutKey, stored);
@@ -160,6 +195,7 @@ describe('device-local T-nut layouts', () => {
     const latest = { ...configured(), holes: [{ x: 0.5, y: 0.5 }] };
     const second = saveSprayWallTnutLayout('wall-one', latest);
     try {
+      await vi.waitFor(() => expect(preferences.set).toHaveBeenCalledTimes(1));
       await Promise.resolve();
       await Promise.resolve();
       expect(preferences.set).toHaveBeenCalledTimes(1);

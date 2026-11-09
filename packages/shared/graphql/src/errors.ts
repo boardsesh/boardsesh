@@ -99,3 +99,16 @@ export function isSprayTrainingNotEligibleError(error: unknown): boolean {
     (graphqlError) => graphqlError.extensions?.code === 'SPRAY_TRAINING_NOT_ELIGIBLE',
   );
 }
+
+/**
+ * The server answered, and it will never take this LED setup from this viewer:
+ * the wall is gone, they cannot edit it, or it is archived. Retrying cannot help,
+ * unlike a dropped connection, so the client stops holding the save as unsent.
+ */
+export function isSprayWallLedSaveRefused(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) =>
+    ['SPRAY_WALL_NOT_FOUND', 'SPRAY_WALL_LED_EDIT_DENIED', 'SPRAY_WALL_ARCHIVED'].includes(
+      asString(graphqlError.extensions?.code) ?? '',
+    ),
+  );
+}

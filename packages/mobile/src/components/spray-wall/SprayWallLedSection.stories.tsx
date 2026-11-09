@@ -5,7 +5,7 @@ const stories: StoryModule = {
   title: 'Spray wall / LED',
   stories: {
     setup: {
-      name: 'One surface, device-local WLED settings',
+      name: 'One surface, WLED settings (no real wall, stays on this device)',
       render: () => <SprayWallLedSection wallUuid="dev-story-spray-led" />,
     },
   },
