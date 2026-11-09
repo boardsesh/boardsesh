@@ -125,7 +125,7 @@ jobs:
     # Derived and enforced in
     # mobile-ota-publish-workflow.test.ts from the ladder in
     # scripts/lib/mobile-publish-retry.ts.
-    timeout-minutes: 110
+    timeout-minutes: 150
     # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
     strategy:
