@@ -325,6 +325,26 @@ void describe('the Verified list', () => {
     });
   });
 
+  it('reports a failed pass and still finishes the run', () => {
+    restMocks.fetchLayoutClimbs.mockResolvedValue([]);
+    const failure = new Error('permission denied for table kilter_aurora_benchmarks');
+    curatedMocks.applyCuratedBenchmarks.mockRejectedValueOnce(failure);
+    const onStepError = vi.fn();
+    const { db } = createFakeDb(baseQueues());
+
+    return syncKilterCatalog({
+      db,
+      tokenProvider: () => Promise.resolve('access-token'),
+      reference: referencePull(),
+      layoutUuids: ['27'],
+      onStepError,
+    }).then((summary) => {
+      expect(onStepError).toHaveBeenCalledWith(failure);
+      expect(summary.curatedBenchmarks).toBeNull();
+      expect(locationMocks.syncKilterLocations).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('skips the pass and finishes the run when the fetch fails', () => {
     restMocks.fetchCuratedClimbStats.mockRejectedValue(new Error('502 from Kilter'));
     const { db, updates } = createFakeDb(baseQueues());

@@ -100,6 +100,12 @@ export type SyncKilterCatalogArgs = {
    */
   suppressNotifications?: boolean;
   /**
+   * Told about a best-effort step that failed but did not stop the run. `log` is
+   * debug level in the worker, so without this a step can fail on every run with
+   * nothing to show for it.
+   */
+  onStepError?: (error: unknown) => void;
+  /**
    * Identifies this run for its setter notifications: a follower gets one per
    * setter per run. A background job passes its run id; unset, each call is
    * its own run.
@@ -1641,6 +1647,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     } catch (error) {
       if (mustStop(error, args.signal)) throw error;
       log(`[kilter-catalog] Verified marks failed: ${error instanceof Error ? error.message : String(error)}`);
+      args.onStepError?.(error);
     }
   }
 

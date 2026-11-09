@@ -674,6 +674,7 @@ export class SyncRunner {
           db,
           tokenProvider,
           log: (message) => this.log(message),
+          onStepError: (error) => this.handleError(error instanceof Error ? error : new Error(String(error)), {}),
           applyDeletions: this.config.applyCatalogDeletions ?? true,
           deleteBatchLimit: this.config.deleteBatchLimit,
           signal,
