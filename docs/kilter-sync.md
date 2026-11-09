@@ -205,7 +205,7 @@ Wire JSON is **camelCase**. Across 19 listed layouts the catalog is ~424k climbs
 
 Kilter's app marks some problems "Verified" and has no benchmarks. We store Verified in `board_climb_stats.benchmark_difficulty`, so search, the offline mirror and every row reader work unchanged. The mobile app says Verified on Kilter through `BoardCapabilities.benchmarkTerm`.
 
-`sync/curated-benchmarks.ts` runs on every catalog pass, after the layouts:
+`sync/curated-benchmarks.ts` runs at the start of every catalog pass, before the layouts. The catalog phase takes about 78 minutes and a worker deploy aborts whatever is running, so the marks do not wait for a run to survive that long. A climb that is new this run gets its mark on the next one.
 
 - **Source:** `climbStats` from `/api/climbs/curated`. It is per angle, so a climb can be Verified at 40° and not at 50°.
 - **Value:** Kilter's `officialKilterDifficulty` when it gives one, else the value the row already holds, else its current grade. Keeping the stored value stops a row with no official grade from rewriting each hour as its crowd grade drifts.
@@ -564,7 +564,7 @@ Three worker families replace the daemon. Full contracts and the cutover:
 | --- | --- | --- |
 | `kilter-user-sync` | `interactive-import` | One account, right after a climber links Kilter and when they tap "Sync now" |
 | `provider-routine-cycle` (`{ provider: 'kilter' }`) | `routine-provider` | Every 5 minutes: the daemon's one-credential cycle, up to 4 credentials a run |
-| `kilter-catalog-sync` | `routine-provider` | Hourly at :23: the catalog, the weekly stats repair and history snapshot (see [Cooldown + piggyback](#cooldown--piggyback)) |
+| `kilter-catalog-sync` | `routine-provider` | Every 6 hours at :23: the catalog, the weekly stats repair and history snapshot (see [Cooldown + piggyback](#cooldown--piggyback)) |
 
 The daemon stays the owner of routine syncs until the cutover sets
 `SYNC_DAEMON_DISABLED=true` on the sync host; from then on
