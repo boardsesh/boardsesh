@@ -457,9 +457,16 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
       if (state !== 'owned') await db.update(authEmailReservations).set({ state, ownerUserId: null });
       const result = await post('resolve', resolveCommand(await intent(), { email: owner.email.toUpperCase() }));
       expect(result.status).toBe(409);
+      expect(result.body).toMatchObject({ outcome: 'denied', code: 'email_conflict' });
       expect(await counts()).toMatchObject({ users: 1, accounts: 1 });
     },
   );
+  it.each([null, 'not-an-address'])('asks a new subject for an email when the provider sent %j', async (email) => {
+    const result = await post('resolve', resolveCommand(await intent(), { email }));
+    expect(result.status).toBe(409);
+    expect(result.body).toMatchObject({ outcome: 'denied', code: 'email_required' });
+    expect(await counts()).toMatchObject({ users: 0, accounts: 0 });
+  });
   it('accepts same-owner actor after ordinary signed JWT rotation while preserving actor lineage', async () => {
     const owner = await seedLinked('google');
     const sid = randomUUID();

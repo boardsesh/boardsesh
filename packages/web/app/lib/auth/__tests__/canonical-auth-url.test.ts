@@ -5,6 +5,7 @@ import {
   type AuthEnv,
   diagnoseCanonicalOrigin,
   resolveCanonicalAuthUrl,
+  resolvePublicAuthOrigin,
 } from '../canonical-auth-url';
 
 // Every case drives an explicit env object, so nothing here depends on the
@@ -147,6 +148,24 @@ describe('resolveCanonicalAuthUrl', () => {
     for (const env of HOSTED_ENVS.filter((env) => env.VERCEL_ENV || env.VERCEL_URL || env.BASE_URL)) {
       expect(resolveCanonicalAuthUrl(env), JSON.stringify(env)).toBeDefined();
     }
+  });
+});
+
+describe('resolvePublicAuthOrigin', () => {
+  it('reduces the canonical origin to scheme, host and port', () => {
+    expect(resolvePublicAuthOrigin({ NEXTAUTH_URL: 'https://www.boardsesh.com/api/auth/' })).toBe(PROD_ORIGIN);
+  });
+  it('falls back to BASE_URL on a deployment that names no NEXTAUTH_URL', () => {
+    expect(resolvePublicAuthOrigin({ BASE_URL: PROD_ORIGIN })).toBe(PROD_ORIGIN);
+  });
+  it("keeps a developer's own loopback origin and port", () => {
+    expect(resolvePublicAuthOrigin({ ...LOCAL_DEV_ENV, NEXTAUTH_URL: 'http://localhost:3095' })).toBe(
+      'http://localhost:3095',
+    );
+  });
+  it('is undefined when nothing names an origin', () => {
+    expect(resolvePublicAuthOrigin({})).toBeUndefined();
+    expect(resolvePublicAuthOrigin({ NEXTAUTH_URL: 'not a url' })).toBeUndefined();
   });
 });
 

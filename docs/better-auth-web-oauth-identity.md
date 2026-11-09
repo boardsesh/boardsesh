@@ -105,6 +105,21 @@ and block every sign-in. The key is the trusted client address described in the
 [password delegation doc](./better-auth-web-password-delegation.md), and the
 limit is per web instance.
 
+Abandoned flows never reach a callback, so a new sign-in at the cap retires the
+oldest flow by its sealed issue time, then starts. The retirement is only sent
+once the new flow's intent is recorded, so a CSRF-rejected or refused start
+clears nothing. Forged or undecodable state cookies cannot nominate a flow; when
+the sealed ones cannot make room the sign-in is refused as unavailable.
+
+The continuation's redirect, sealed origin, cookie security and resumed request
+all use the configured public origin (`resolvePublicAuthOrigin`). The standalone
+server reports its bind address as the request URL, so the request cannot supply
+any of them.
+
+A denied `resolve` carries `email_conflict` or `email_required` when the climber
+can act on it, and the web callback answers with `OAuthAccountNotLinked` or
+`OAuthEmailRequired`. Every other denial stays the generic `AccessDenied`.
+
 Review found that replacing a failed buffered response could discard NextAuth's
 state/PKCE deletion headers and exhaust the pending-flow limit. It also found
 that a newly scoped callback URL otherwise inherited an unbounded session-cookie

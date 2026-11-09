@@ -113,6 +113,21 @@ export function resolveCanonicalAuthUrl(env: AuthEnv = process.env): string | un
   return undefined;
 }
 
+/**
+ * The origin next-auth issues this deployment's auth URLs on, reduced to scheme,
+ * host and port: the canonical origin, or a developer's own loopback
+ * NEXTAUTH_URL. `undefined` when nothing names one.
+ *
+ * Use this rather than `request.url` or `request.nextUrl.origin` when building an
+ * auth redirect. The standalone production server derives those from its own bind
+ * address (`0.0.0.0:3000`) and ignores `Host` and `X-Forwarded-Host`.
+ *
+ * Pure: reads only the passed env, mutates nothing.
+ */
+export function resolvePublicAuthOrigin(env: AuthEnv = process.env): string | undefined {
+  return parseAbsoluteHttpUrl(resolveCanonicalAuthUrl(env) ?? env.NEXTAUTH_URL)?.origin;
+}
+
 // The env vars an operator can set to name this deployment's canonical origin,
 // in the order resolveCanonicalAuthUrl consults them. Exported so the boot
 // guard's message, its tests and the deployment docs cannot drift from what the

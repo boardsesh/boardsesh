@@ -227,8 +227,7 @@ export async function consumeEmailVerification(
       const [legacy] = await transaction
         .select({ expires: verificationTokens.expires })
         .from(verificationTokens)
-        .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, token)))
-        .for('share');
+        .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, token)));
       const now = await clock(transaction);
       assertFresh(issuedAt);
       return !legacy

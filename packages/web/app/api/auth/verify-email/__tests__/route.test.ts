@@ -31,8 +31,13 @@ const legacyToken = 'a363934b-b7ba-41ba-a279-52185daa100e';
 const email = 'Climber+tag@example.com';
 const origin = 'https://www.boardsesh.test';
 
-function request(presentedToken: string | null = token, presentedEmail: string | null = email, locale = 'en-US') {
-  const url = new URL('/api/auth/verify-email', origin);
+function request(
+  presentedToken: string | null = token,
+  presentedEmail: string | null = email,
+  locale = 'en-US',
+  requestOrigin = origin,
+) {
+  const url = new URL('/api/auth/verify-email', requestOrigin);
   if (presentedToken !== null) url.searchParams.set('token', presentedToken);
   if (presentedEmail !== null) url.searchParams.set('email', presentedEmail);
   return new NextRequest(url, {
@@ -83,6 +88,8 @@ beforeEach(() => {
   vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
   vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'http://127.0.0.1:54321');
   vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'dedicated-verification-fixture-secret-32bytes');
+  vi.stubEnv('NEXTAUTH_URL', '');
+  vi.stubEnv('BASE_URL', '');
   mocks.rate.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
   mocks.deleteWhere.mockResolvedValue(undefined);
   mocks.updateWhere.mockResolvedValue(undefined);
@@ -233,6 +240,35 @@ describe('UID verification public reader', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
+  describe('redirecting from the standalone server, whose request URL is its bind address', () => {
+    const configuredSite = 'https://site.boardsesh.test';
+    const bindOrigin = 'https://0.0.0.0:3000';
+
+    it('sends a staged verification to the configured site', async () => {
+      vi.stubEnv('NEXTAUTH_URL', configuredSite);
+      backend('verified');
+      const response = await GET(request(token, email, 'en-US', bindOrigin));
+      expect(response.headers.get('Location')).toBe(`${configuredSite}/auth/login?verified=true`);
+    });
+
+    it('sends a legacy verification to the configured site', async () => {
+      vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+      vi.stubEnv('NEXTAUTH_URL', configuredSite);
+      mocks.limit
+        .mockResolvedValueOnce([{ expires: new Date(Date.now() + 60_000) }])
+        .mockResolvedValueOnce([{ id: 'legacy-owner' }]);
+      const response = await GET(request(legacyToken, email, 'en-US', bindOrigin));
+      expect(response.status).toBe(307);
+      privacy(response);
+      expect(response.headers.get('Location')).toBe(`${configuredSite}/auth/login?verified=true`);
+    });
+
+    it('keeps the request origin when no site is configured', async () => {
+      backend('verified');
+      const response = await GET(request(token, email, 'en-US', 'http://localhost:3095'));
+      expect(response.headers.get('Location')).toBe('http://localhost:3095/auth/login?verified=true');
+    });
+  });
   it('keeps the exact unversioned legacy reader in default-off mode', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     mocks.limit

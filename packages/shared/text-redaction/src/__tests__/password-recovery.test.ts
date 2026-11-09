@@ -25,6 +25,33 @@ describe('password recovery telemetry capabilities', () => {
     expect(result).not.toContain('Climber');
     expect(result).not.toContain('src');
   });
+  it.each(['/api/auth/verify-email', '/fr/api/auth/verify-email/', '/app/auth/verify-email'])(
+    'drops the whole verification query on %s',
+    (path) => {
+      const verificationToken = `ev1_${'B'.repeat(43)}`;
+      const result = redactPasswordRecoveryUrls(
+        `${path}?token=${verificationToken}&email=${encodeURIComponent(email)}&src=mail`,
+      );
+      expect(result).toBe(`${path}?[redacted]`);
+    },
+  );
+  it('masks a versioned verification token in free text and in event request fields', () => {
+    const verificationToken = `ev1_${'B'.repeat(43)}`;
+    const verificationUrl = `https://www.boardsesh.test/api/auth/verify-email?token=${verificationToken}&email=${encodeURIComponent(email)}`;
+    expect(redactPasswordRecoveryUrls(`Link rejected: ${verificationToken}`)).toBe('Link rejected: [redacted]');
+    const scrubbed = scrubPasswordRecoveryEvent({
+      request: { url: verificationUrl, query_string: `token=${verificationToken}&email=${email}` },
+    });
+    const serialized = JSON.stringify(scrubbed);
+    expect(serialized).not.toContain(verificationToken);
+    expect(serialized).not.toContain('Climber');
+    expect(scrubbed.request.query_string).toBe('[redacted]');
+  });
+  it('leaves words that only end in the verification prefix and similar paths alone', () => {
+    for (const original of ['dev1_build-flag', 'prev1_snapshot', '/api/auth/verify-email-sent?email=public']) {
+      expect(redactPasswordRecoveryUrls(original)).toBe(original);
+    }
+  });
   it('scrubs duplicate/mixed-case names and secret-bearing fragments', () => {
     const result = redactPasswordRecoveryUrls(
       `/auth/reset-password?TOKEN=${token}&token=${token}&EMAIL=Climber#email=Climber&token=${token}`,

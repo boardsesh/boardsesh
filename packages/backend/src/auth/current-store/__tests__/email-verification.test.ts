@@ -755,6 +755,21 @@ describe('UID-bound email verification in the current PostgreSQL store', () => {
       before,
     );
   });
+  it('classifies an unbound historical link with only SELECT and INSERT on the shared token table', async () => {
+    const email = `select-only.${randomUUID()}@example.test`;
+    const token = 'historical-select-only';
+    await db
+      .insert(verificationTokens)
+      .values({ identifier: email, token, expires: new Date(Date.now() + 7 * 24 * 3600_000) });
+    await admin(sql`REVOKE UPDATE, DELETE ON TABLE ${verificationTokens} FROM ${sql.identifier(writerRole)}`);
+    try {
+      const response = await rpc(verifyCommand(token, email));
+      expect(response.status).toBe(503);
+      expect(verifyEmailReplySchema.parse(await response.json()).outcome).toBe('legacy_unbound');
+    } finally {
+      await admin(sql`GRANT UPDATE, DELETE ON TABLE ${verificationTokens} TO ${sql.identifier(writerRole)}`);
+    }
+  });
   it('does not choose among current duplicate owners for an unbound historical link', async () => {
     const email = `duplicate.${randomUUID()}@example.test`;
     const token = 'historical-unbound-opaque';

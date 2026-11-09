@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomBytes } from 'node:crypto';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextAuthOptions } from 'next-auth';
 import { decode, encode } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
@@ -17,6 +17,8 @@ import {
 } from '../web-oauth-continuation.server';
 
 const origin = 'https://owned.example.test';
+// What request.url reports on the standalone production server.
+const bindOrigin = 'https://0.0.0.0:3000';
 const callbackPath = '/api/auth/callback/apple';
 const state = 'owned-state-value';
 const secret = randomBytes(32).toString('base64url');
@@ -79,6 +81,12 @@ async function reseal(
     ? [`${name}=${token}`]
     : [`${name}.0=${token.slice(0, 3500)}`, `${name}.1=${token.slice(3500)}`];
 }
+function clearConfiguredSite() {
+  for (const variable of ['NEXTAUTH_URL', 'BASE_URL', 'VERCEL', 'VERCEL_ENV', 'VERCEL_URL']) vi.stubEnv(variable, '');
+}
+beforeEach(() => {
+  vi.stubEnv('NEXTAUTH_URL', origin);
+});
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
@@ -213,6 +221,54 @@ describe('stateless encrypted Apple continuation', () => {
         (name) => name === continuationBase(sibling.continuation) || name === '__Secure-next-auth.session-token',
       ),
     ).toBe(false);
+  });
+
+  describe('behind the standalone server, whose request URL is its bind address', () => {
+    const body = new URLSearchParams({ state, code: 'owned-code' }).toString();
+
+    it('sends Apple back to the configured site and resumes there', async () => {
+      const scope = createWebOAuthCookieScope();
+      const signedState = await stateCookie(scope);
+      const response = await holdAppleOAuthCallback(request('POST', signedState, body, bindOrigin), base, scope, state);
+      expect(response.headers.get('Location')).toBe(`${origin}${callbackPath}?boardseshOAuthContinue=${scope}`);
+      const cookie = [signedState, ...pairs(response)].join('; ');
+      const resumed = await resumeAppleOAuthCallback(request('GET', cookie, undefined, bindOrigin, scope), base, scope);
+      expect(resumed.state).toBe(state);
+      expect(resumed.request.url).toBe(`${origin}${callbackPath}`);
+      expect((await resumed.request.text()) === body).toBe(true);
+    });
+
+    it('picks the cookie security from the configured site, not the request scheme', async () => {
+      const scope = createWebOAuthCookieScope();
+      const signedState = await stateCookie(scope);
+      const response = await holdAppleOAuthCallback(
+        request('POST', signedState, body, 'http://0.0.0.0:3000'),
+        base,
+        scope,
+        state,
+      );
+      const [header] = response.headers.getSetCookie();
+      expect(header.startsWith(`__Secure-boardsesh.web-oauth.apple.${scope}=`)).toBe(true);
+      expect(header).toContain('Secure');
+    });
+
+    it('refuses a continuation sealed for a different configured site', async () => {
+      const fixture = await held();
+      vi.stubEnv('NEXTAUTH_URL', 'https://other.example.test');
+      const cookie = [fixture.signedState, ...fixture.continuation].join('; ');
+      await expect(
+        resumeAppleOAuthCallback(request('GET', cookie, undefined, origin, fixture.scope), base, fixture.scope),
+      ).rejects.toThrow(AUTH_BACKEND_UNAVAILABLE);
+    });
+
+    it('fails closed rather than trusting the request when no site is configured', async () => {
+      const scope = createWebOAuthCookieScope();
+      const signedState = await stateCookie(scope);
+      clearConfiguredSite();
+      await expect(
+        holdAppleOAuthCallback(request('POST', signedState, body, bindOrigin), base, scope, state),
+      ).rejects.toThrow(AUTH_BACKEND_UNAVAILABLE);
+    });
   });
 
   it('reassembles exactly two bounded chunks and deletes only their observed names', async () => {
