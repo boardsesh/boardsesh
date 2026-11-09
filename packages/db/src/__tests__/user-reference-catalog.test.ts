@@ -8,8 +8,10 @@ import {
   decodeCatalogRow,
   MANUAL_USER_REFERENCES,
   portableCatalogDigest,
+  readCatalogPhysical,
   readExpectedUserReferences,
   referenceIdentity,
+  type CatalogServerState,
   type UserReference,
   type UserReferenceCatalog,
 } from '../user-reference-catalog';
@@ -39,6 +41,7 @@ function catalogFixture(): UserReferenceCatalog {
       systemIdentifier: '111',
       usersOid: 200,
       serverVersion: 180006,
+      transport: 'unix-socket',
       recovery: false,
       clientAddress: null,
     },
@@ -347,6 +350,78 @@ void describe('portable catalog digest', () => {
     second.triggers[0].identity = '"RI_ConstraintTrigger_c_900" on public.comments';
     second.dependencies[0].objectIdentity = second.triggers[0].identity;
     assert.notEqual(portableCatalogDigest(first), portableCatalogDigest(second));
+  });
+});
+
+void describe('catalog connection evidence', () => {
+  const state: CatalogServerState = {
+    database: 'catalog',
+    databaseOid: 100,
+    systemIdentifier: '111',
+    usersOid: 200,
+    serverVersion: 180006,
+    recovery: false,
+    clientAddress: null,
+    isolation: 'repeatable read',
+    readOnly: 'on',
+    rowSecurity: 'off',
+  };
+
+  void it('keeps the owned fixture to a primary reached over a Unix socket', () => {
+    assert.deepEqual(readCatalogPhysical(state, 'unix-socket'), {
+      database: 'catalog',
+      databaseOid: 100,
+      usersOid: 200,
+      serverVersion: 180006,
+      transport: 'unix-socket',
+      recovery: false,
+      clientAddress: null,
+      systemIdentifier: '111',
+    });
+    for (const rejected of [
+      { ...state, clientAddress: '10.0.0.1' },
+      { ...state, recovery: true },
+      { ...state, systemIdentifier: null },
+    ]) {
+      assert.throws(() => readCatalogPhysical(rejected, 'unix-socket'), /primary Unix-socket/);
+    }
+  });
+
+  void it('reports what a TCP connection observed, including a standby and an unreadable identifier', () => {
+    assert.deepEqual(
+      readCatalogPhysical({ ...state, clientAddress: '10.0.0.1', recovery: true, systemIdentifier: null }, 'tcp'),
+      {
+        database: 'catalog',
+        databaseOid: 100,
+        usersOid: 200,
+        serverVersion: 180006,
+        transport: 'tcp',
+        recovery: true,
+        clientAddress: '10.0.0.1',
+        systemIdentifier: null,
+      },
+    );
+    assert.equal(readCatalogPhysical({ ...state, clientAddress: '10.0.0.1' }, 'tcp').recovery, false);
+  });
+
+  void it('rejects a TCP claim the server does not confirm', () => {
+    assert.throws(() => readCatalogPhysical(state, 'tcp'), /read-only TCP/);
+  });
+
+  void it('requires the same read-only snapshot on both transports', () => {
+    const tcp = { ...state, clientAddress: '10.0.0.1' };
+    for (const drift of [
+      { readOnly: 'off' },
+      { isolation: 'read committed' },
+      { rowSecurity: 'on' },
+      { usersOid: null },
+      { serverVersion: 170000 },
+      { systemIdentifier: 'not-digits' },
+    ] satisfies Partial<CatalogServerState>[]) {
+      assert.throws(() => readCatalogPhysical({ ...state, ...drift }, 'unix-socket'), /read-only snapshot/);
+      assert.throws(() => readCatalogPhysical({ ...tcp, ...drift }, 'tcp'), /read-only snapshot/);
+    }
+    assert.throws(() => readCatalogPhysical(undefined, 'tcp'), /read-only snapshot/);
   });
 });
 

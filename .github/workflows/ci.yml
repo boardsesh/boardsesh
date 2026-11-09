@@ -419,6 +419,10 @@ jobs:
               - 'packages/db/src/schema/**'
               - 'packages/db/src/user-reference-catalog.ts'
               - 'packages/db/src/__tests__/user-reference-catalog*'
+              - 'packages/db/scripts/reconcile-user-references.ts'
+              - 'packages/db/docker/apply-drizzle-migrations.sh'
+              - 'packages/db/docker/legacy-aurora-schema-stub.sql'
+              - 'packages/db/docker/bootstrap-pg18-development-roles.sql'
               - 'scripts/verify-user-reference-catalog.ts'
               - 'scripts/lib/owned-catalog-postgres.ts'
               - 'scripts/__tests__/verify-user-reference-catalog.test.ts'
@@ -1005,7 +1009,7 @@ jobs:
     # board-constants and the sync packages).
     if: needs.changes.outputs.dbMigrations == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     # A stock Postgres is enough: the journal<->ledger test builds its own
     # throwaway migrations folder and database, so it needs no board data and
     # never pulls the (large) boardsesh-dev-db image.
@@ -1023,6 +1027,23 @@ jobs:
         # accept connections" within ~0.1s of container start. Finer grid, same
         # total tolerance (5s x 10 = 50s -> 2s x 25 = 50s). Do not shorten the
         # window itself — that trades latency for flakiness on a slow start.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 25
+      # The full migration chain needs PostgreSQL 18 and PostGIS, which the
+      # stock service above does not have. Same pinned image as test-backend.
+      catalog-postgres:
+        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:98ed9b18b9ef23d4f0aec136bab51b600b8343a19b5f39c78c2c8deab1e96c91
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: user_reference_catalog
+        ports:
+          - 5434:5432
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 2s
@@ -1086,17 +1107,38 @@ jobs:
       # A trigger function with no pinned search_path cannot resolve an
       # unqualified type or table while pg_restore holds search_path at '',
       # which aborts a --data-only restore on the first affected table with zero
-      # rows loaded (#4699). Textual, because this job's service is a stock
-      # postgres:17 with no PostGIS and cannot apply the full migration chain. The
-      # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
+      # rows loaded (#4699). Textual, because the stock postgres:17 service most
+      # of this job uses has no PostGIS and cannot apply the full migration chain.
+      # The catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
       - name: Every trigger function pins search_path
         run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
-      # Pure reconciliation and actual process/import/socket boundaries need no
-      # PostGIS service. The complete PG18 journal proof is a separate owned task.
+      # Pure reconciliation and actual process boundaries need no PostGIS
+      # service. The complete PG18 journal proof is a separate owned task.
       - name: Verify user-reference reconciliation and isolated proof boundaries
         run: |
           vp test run --project scripts scripts/__tests__/verify-user-reference-catalog.test.ts --reporter=agent
           vp exec node --import tsx --test packages/db/src/__tests__/user-reference-catalog.test.ts
+      # Applies every migration the way the dev-db image does, then compares the
+      # real foreign keys to public.users with the Drizzle declarations, so a
+      # future FK to users that the schema does not declare fails this job.
+      - name: Reconcile applied users foreign keys against the schema
+        env:
+          PGHOST: localhost
+          PGPORT: '5434'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: user_reference_catalog
+          DRIZZLE_MIGRATIONS_DIR: packages/db/drizzle
+          SYNC_CUTOFF_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5434/user_reference_catalog
+          SYNC_CUTOFF_DEVELOPMENT_BOOTSTRAP: 'true'
+          USER_REFERENCE_CATALOG_DATABASE_URL: postgres://postgres:postgres@localhost:5434/user_reference_catalog
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f packages/db/docker/legacy-aurora-schema-stub.sql
+          psql -X -v ON_ERROR_STOP=1 -v boardsesh_dev_role_bootstrap=true \
+            -f packages/db/docker/bootstrap-pg18-development-roles.sql
+          (cd packages/db && vp exec tsx scripts/bootstrap-sync-deletions-cutoff-development.ts --apply)
+          bash packages/db/docker/apply-drizzle-migrations.sh
+          (cd packages/db && vp exec tsx scripts/reconcile-user-references.ts)
       # #5352: `ALTER DATABASE ... SET max_parallel_workers_per_gather = 0` needs
       # database ownership, which the production migration role deliberately does
       # not have — so migration 0225 was a silent no-op there. The integration
