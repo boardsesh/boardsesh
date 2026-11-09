@@ -128,7 +128,9 @@ links. Links to holds the wall no longer has are ignored.
 Enable LEDs, finish setup and take the wall through the usual lightbulb control.
 Routes illuminate their mapped LEDs using the existing start, hand, foot and
 finish colors, including saved color overrides. Route playback and creator
-previews use the same wall sender. All used holds must have wired LED mappings.
+previews use the same wall sender. The route editor shows its lightbulb on a
+spray wall only while that wall's LEDs are enabled; there it takes the wall, so
+the holds light as they are painted. All used holds must have wired LED mappings.
 An incomplete or stale setup produces an error instead of confirming the route.
 The setup photo identity must match the current canonical frame and calibration.
 Mirrored spray routes are rejected because the wall has no defined mirror map.
