@@ -155,11 +155,12 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       }
       return 'admitted';
     } catch {
-      if (humanBindings.get(socket) === binding) closeAdmission(socket, true);
+      // Refuse this one operation. An outage is not a reason to drop the connection.
       return 'unavailable';
     }
   };
   let sweeping = false;
+  let sweepOutageLogged = false;
   const admissionSweep = setInterval(() => {
     if (sweeping) return;
     sweeping = true;
@@ -173,11 +174,18 @@ export function setupWebSocketServer(httpServer: HttpServer): {
     void Promise.all(
       batches.map(async (requestedIds) => {
         const requested = new Set(requestedIds);
-        let admitted: ReadonlySet<string> | undefined;
+        let admitted: ReadonlySet<string>;
         try {
           admitted = await activeHumanSubjectIds(requestedIds);
+          sweepOutageLogged = false;
         } catch {
-          /* Close with 1013 below. */
+          // A failed read proves nothing about these accounts, and a primary that
+          // cannot answer cannot commit a deletion either. Leave them connected.
+          if (!sweepOutageLogged) {
+            sweepOutageLogged = true;
+            logger.warn('[ws] admission sweep could not read the primary; keeping connections open');
+          }
+          return;
         }
         for (const [socket, binding] of captured) {
           if (
@@ -187,7 +195,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             binding.context.userId !== binding.userId
           )
             continue;
-          if (!admitted || !admitted.has(binding.userId)) closeAdmission(socket, !admitted);
+          if (!admitted.has(binding.userId)) closeAdmission(socket, false);
         }
       }),
     ).finally(() => {

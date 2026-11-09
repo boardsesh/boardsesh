@@ -49,6 +49,13 @@ import { pubsub } from '../pubsub';
 import { getConnectionCount } from '../graphql/context';
 import { stopClientUsageReporter } from '../services/client-usage';
 
+// graphql-ws checks returned errors with instanceof. Match its external Node
+// constructor instead of Vite's separate graphql/index.mjs module instance.
+vi.mock('graphql', async () => {
+  const { createRequire } = await import('node:module');
+  return createRequire(import.meta.url)('graphql') as typeof import('graphql');
+});
+
 // Real primary SQL, public token encoders, mounted Yoga/native/WS handlers.
 // No validator/admission mock or admission-off switch is used in this file.
 const publicJwt = createRequire(new URL('../../../web/package.json', import.meta.url))('next-auth/jwt') as {
@@ -868,6 +875,32 @@ describe('mounted deletion admission against the owned primary database', () => 
       await restoreAuthority();
     }
     await warm(credentials);
+  });
+
+  it('keeps open sockets connected through an outage, and still closes a deleted account afterwards', async () => {
+    const credentials = await tokens(),
+      server = await webSocketServer();
+    const client = await connect(server.url, credentials.jwe);
+    await vi.waitFor(() => expect(client.frames.some((frame) => frame.type === 'connection_ack')).toBe(true));
+    await hideAuthority();
+    try {
+      // Long enough for at least one sweep to fail.
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+      client.socket.send(
+        JSON.stringify({
+          type: 'subscribe',
+          id: 'during-outage',
+          payload: { query: 'subscription { notificationReceived { notification { uuid } } }' },
+        }),
+      );
+      await vi.waitFor(() => expect(JSON.stringify(client.frames)).toContain('SERVICE_UNAVAILABLE'));
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      await restoreAuthority();
+    }
+    await cutoff();
+    expect(await bounded(client.closed, 4000)).toBe(4401);
   });
 
   it('delivers a notification without a per-event primary read', async () => {
