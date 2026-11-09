@@ -208,6 +208,26 @@ CREATE TABLE "oauth_verification" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+DO $$
+DECLARE
+  attempts integer := 0;
+BEGIN
+  LOOP
+    attempts := attempts + 1;
+    BEGIN
+      SET LOCAL lock_timeout = '3s';
+      LOCK TABLE "users" IN SHARE ROW EXCLUSIVE MODE;
+      SET LOCAL lock_timeout = '0';
+      RETURN;
+    EXCEPTION WHEN lock_not_available OR deadlock_detected THEN
+      IF attempts >= 40 THEN
+        RAISE;
+      END IF;
+      PERFORM pg_sleep(1);
+    END;
+  END LOOP;
+END $$;
+--> statement-breakpoint
 ALTER TABLE "oauth_access_token" ADD CONSTRAINT "oauth_access_token_client_id_oauth_client_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_client"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_access_token" ADD CONSTRAINT "oauth_access_token_session_id_oauth_session_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."oauth_session"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_access_token" ADD CONSTRAINT "oauth_access_token_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
