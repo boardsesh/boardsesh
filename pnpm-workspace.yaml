@@ -117,18 +117,3 @@ allowBuilds:
   playwright: false
   # CPU binaries are bundled; the install hook only fetches optional GPU providers.
   onnxruntime-node: false
-
-# Pinned for the Better Auth prototype (#6975) inside pnpm's release-age window.
-# Remove these entries once 1.7.17 and better-call 1.4.5 have cleared the window,
-# so they do not stay as permanent supply-chain exceptions.
-minimumReleaseAgeExclude:
-  - '@better-auth/core@1.7.17'
-  - '@better-auth/drizzle-adapter@1.7.17'
-  - '@better-auth/kysely-adapter@1.7.17'
-  - '@better-auth/memory-adapter@1.7.17'
-  - '@better-auth/mongo-adapter@1.7.17'
-  - '@better-auth/oauth-provider@1.7.17'
-  - '@better-auth/prisma-adapter@1.7.17'
-  - '@better-auth/telemetry@1.7.17'
-  - better-auth@1.7.17
-  - better-call@1.4.5

@@ -181,6 +181,12 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1131.0
         version: 3.1131.0
+      '@better-auth/drizzle-adapter':
+        specifier: 1.7.17
+        version: 1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@58.0.14(patch_hash=c0efdcaff858f0b52393e59ab130a14a0343f8cd3b75f00b0abfd0d1a8e9184f)(expo@58.0.19)(react-native@0.88.0(patch_hash=5ba8e0b13c37400bdaf6697e48d0526d632aa6c9233e3e8a67fad9ef29482ae4)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0))(kysely@0.29.8)(pg@8.23.0)(postgres@3.4.9(patch_hash=1c2f0335f127be464a29a2e1a0ab433b2881c5eda2ca8028da5641c6dcc93703)))
+      '@better-auth/oauth-provider':
+        specifier: 1.7.17
+        version: 1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-auth@1.7.17(06461dfd8461307605b12673a5d84250))(better-call@1.4.5(zod@4.4.3))
       '@boardsesh/analytics':
         specifier: workspace:*
         version: link:../shared/analytics
@@ -301,6 +307,9 @@ importers:
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
+      better-auth:
+        specifier: 1.7.17
+        version: 1.7.17(06461dfd8461307605b12673a5d84250)
       busboy:
         specifier: ^1.6.0
         version: 1.6.0
@@ -359,12 +368,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@better-auth/drizzle-adapter':
-        specifier: 1.7.17
-        version: 1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@58.0.14(patch_hash=c0efdcaff858f0b52393e59ab130a14a0343f8cd3b75f00b0abfd0d1a8e9184f)(expo@58.0.19)(react-native@0.88.0(patch_hash=5ba8e0b13c37400bdaf6697e48d0526d632aa6c9233e3e8a67fad9ef29482ae4)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0))(kysely@0.29.8)(pg@8.23.0)(postgres@3.4.9(patch_hash=1c2f0335f127be464a29a2e1a0ab433b2881c5eda2ca8028da5641c6dcc93703)))
-      '@better-auth/oauth-provider':
-        specifier: 1.7.17
-        version: 1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-auth@1.7.17(06461dfd8461307605b12673a5d84250))(better-call@1.4.5(zod@4.4.3))
       '@boardsesh/graphql-client':
         specifier: workspace:*
         version: link:../shared/graphql-client
@@ -386,9 +389,6 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
-      better-auth:
-        specifier: 1.7.17
-        version: 1.7.17(06461dfd8461307605b12673a5d84250)
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
