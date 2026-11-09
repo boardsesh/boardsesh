@@ -30,7 +30,6 @@ import {
   RegisterResponseSchema,
   ResendVerificationRequestSchema,
   ErrorResponseSchema,
-  UserProfileSchema,
   WsAuthResponseSchema,
 } from './openapi-registry';
 
@@ -434,64 +433,6 @@ registry.registerPath({
 // ============================================
 // Internal Routes (Authenticated)
 // ============================================
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/internal/profile',
-  summary: 'Get current user profile',
-  description: 'Returns the profile of the currently authenticated user.',
-  tags: ['User Profile'],
-  security: [{ session: [] }],
-  responses: {
-    200: {
-      description: 'User profile',
-      content: {
-        'application/json': {
-          schema: UserProfileSchema,
-        },
-      },
-    },
-    401: {
-      description: 'Not authenticated',
-      content: {
-        'application/json': {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/internal/profile/{userId}',
-  summary: 'Get public user profile',
-  description: 'Returns the public profile of any user by their ID.',
-  tags: ['User Profile'],
-  request: {
-    params: z.object({
-      userId: z.string().describe('User ID'),
-    }),
-  },
-  responses: {
-    200: {
-      description: 'User profile',
-      content: {
-        'application/json': {
-          schema: UserProfileSchema,
-        },
-      },
-    },
-    404: {
-      description: 'User not found',
-      content: {
-        'application/json': {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-  },
-});
 
 registry.registerPath({
   method: 'get',

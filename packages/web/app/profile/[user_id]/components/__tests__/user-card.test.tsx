@@ -42,13 +42,9 @@ function createDefaultProfile(overrides: Partial<UserProfile> = {}): UserProfile
   return {
     id: 'user-123',
     email: 'test@example.com',
-    name: 'Test User',
-    image: 'https://example.com/avatar.jpg',
-    profile: {
-      displayName: 'Display Name',
-      avatarUrl: 'https://example.com/profile-avatar.jpg',
-      instagramUrl: null,
-    },
+    displayName: 'Display Name',
+    avatarUrl: 'https://example.com/profile-avatar.jpg',
+    instagramUrl: null,
     followerCount: 10,
     followingCount: 5,
     isFollowedByMe: false,
@@ -71,27 +67,16 @@ describe('UserCard', () => {
     vi.clearAllMocks();
   });
 
-  it('renders display name from profile.profile.displayName', () => {
+  it('renders the display name', () => {
     render(<UserCard {...createDefaultProps()} />);
     expect(screen.getByText('Display Name')).toBeTruthy();
   });
 
-  it('falls back to profile.name when displayName is null', () => {
+  // The backend already coalesces displayName onto the NextAuth users.name, so
+  // a null here means the account genuinely has neither.
+  it("falls back to 'Climber' when there is no display name", () => {
     const props = createDefaultProps({
-      profile: createDefaultProfile({
-        profile: { displayName: null, avatarUrl: null, instagramUrl: null },
-      }),
-    });
-    render(<UserCard {...props} />);
-    expect(screen.getByText('Test User')).toBeTruthy();
-  });
-
-  it("falls back to 'Climber' when both displayName and name are null", () => {
-    const props = createDefaultProps({
-      profile: createDefaultProfile({
-        name: null,
-        profile: { displayName: null, avatarUrl: null, instagramUrl: null },
-      }),
+      profile: createDefaultProfile({ displayName: null, avatarUrl: null }),
     });
     render(<UserCard {...props} />);
     expect(screen.getByText('Climber')).toBeTruthy();
@@ -133,11 +118,9 @@ describe('UserCard', () => {
   it('renders Instagram link when available', () => {
     const props = createDefaultProps({
       profile: createDefaultProfile({
-        profile: {
-          displayName: 'Test',
-          avatarUrl: null,
-          instagramUrl: 'https://instagram.com/climber',
-        },
+        displayName: 'Test',
+        avatarUrl: null,
+        instagramUrl: 'https://instagram.com/climber',
       }),
     });
     render(<UserCard {...props} />);

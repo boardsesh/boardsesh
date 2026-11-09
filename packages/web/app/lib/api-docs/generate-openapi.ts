@@ -52,7 +52,6 @@ This documentation covers the REST API endpoints.
 - **Slug Resolution**: Convert human-readable URLs to numeric IDs
 
 ### Authenticated Endpoints
-- **User Profile**: Manage user settings and preferences
 
 ### WebSocket API
 For real-time features like queue synchronization and party sessions, see the [GraphQL WebSocket documentation](/docs#graphql).
@@ -124,10 +123,6 @@ Layout, size, and set IDs can be either numeric IDs or human-readable slugs.
       {
         name: 'Authentication',
         description: 'User registration and authentication',
-      },
-      {
-        name: 'User Profile',
-        description: 'User profile management (requires authentication)',
       },
       {
         name: 'WebSocket',

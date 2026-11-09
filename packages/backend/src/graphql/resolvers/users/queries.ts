@@ -11,8 +11,7 @@ import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 import { getAuroraCredentialStatuses } from '../../../services/aurora-credentials';
 import { mapAuroraCredentialStatus } from './credential-status';
-import { loadProfileRoleFlags } from './role-flags';
-import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
+import { mapProfileRow, PROFILE_SELECT } from './profile-row';
 
 export const userQueries = {
   /**
@@ -24,16 +23,7 @@ export const userQueries = {
     }
 
     const [row] = await db
-      .select({
-        id: dbSchema.users.id,
-        email: dbSchema.users.email,
-        name: dbSchema.users.name,
-        image: dbSchema.users.image,
-        createdAt: dbSchema.users.createdAt,
-        displayName: dbSchema.userProfiles.displayName,
-        avatarUrl: dbSchema.userProfiles.avatarUrl,
-        favoriteCount: FAVORITE_COUNT_SUBQUERY,
-      })
+      .select(PROFILE_SELECT)
       .from(dbSchema.users)
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
       .where(eq(dbSchema.users.id, ctx.userId))
@@ -43,18 +33,7 @@ export const userQueries = {
       return null;
     }
 
-    const { isTester, isAdmin } = await loadProfileRoleFlags(row.id);
-
-    return {
-      id: row.id,
-      email: row.email,
-      displayName: row.displayName || row.name || undefined,
-      avatarUrl: row.avatarUrl || row.image || undefined,
-      isTester,
-      isAdmin,
-      createdAt: row.createdAt.toISOString(),
-      favoriteCount: row.favoriteCount,
-    };
+    return mapProfileRow(row);
   },
 
   /**

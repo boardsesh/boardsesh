@@ -7,8 +7,8 @@
  *
  *  - the deleted trees stay deleted,
  *  - the surfaces the epic explicitly keeps stay present (an over-eager sweep
- *    into `/session`, `/join`, `climb-search-cache` or `/api/internal/profile`
- *    reds here rather than in production),
+ *    into `/session`, `/join` or `climb-search-cache` reds here rather than in
+ *    production),
  *  - every deleted path 30x's in all four locales, and
  *  - no same-origin redirect lands on a path that any other rule would redirect
  *    again — matched against the compiled source patterns, not literal strings,
@@ -68,7 +68,6 @@ const KEPT_PATHS = [
   'app/join/[sessionId]/page.tsx',
   'app/api/internal/climb-search-cache/revalidate/route.ts',
   'app/lib/climb-search-cache.ts',
-  'app/api/internal/profile/route.ts',
   'app/lib/auth/user-board-mappings.ts',
   // `app/lib/server-popular-configs.ts` is the live twin of the deleted
   // `server-board-configs.ts` — the sitemap shard registry imports it.
