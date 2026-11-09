@@ -209,7 +209,8 @@ Kilter's app marks some problems "Verified" and has no benchmarks. We store Veri
 
 - **Source:** `climbStats` from `/api/climbs/curated`. It is per angle, so a climb can be Verified at 40° and not at 50°.
 - **Value:** Kilter's `officialKilterDifficulty` when it gives one, else the value the row already holds, else its current grade. Keeping the stored value stops a row with no official grade from rewriting each hour as its crowd grade drifts.
-- **Clearing:** Kilter's list is the only source for this column on Kilter, so a marked row it no longer lists goes back to NULL. The weekly `board_climb_stats_history` snapshot keeps past values for rows with ascents, and all 627 legacy Aurora values were confirmed there on 2026-11-09.
+- **Clearing:** Kilter's list is the only source for this column on Kilter, so a marked row it no longer lists goes back to NULL.
+- **Aurora's grades are kept:** migration `0295` froze the 627 benchmark grades Aurora published for Kilter in `kilter_aurora_benchmarks`, before this pass could change them. Nothing writes to that table again. It is the record to compare with `officialKilterDifficulty`, which matched on 543 of the 549 rows that have both, so do not drop it. The pass refuses to run until the table exists, because the worker can deploy ahead of the migration.
 - **Scope:** only `user_id IS NULL` climbs. A repeat pass writes 0 rows, so unchanged rows never bump `sync_seq`.
 - **Safety:** a failed or malformed response skips the pass. A list resolving to fewer than `MIN_CURATED_ANGLE_ROWS` rows (2,500; it was 5,006 on 2026-11-09) is refused and logged as `REFUSING Verified marks`. If Kilter really shrinks the list, lower the constant.
 

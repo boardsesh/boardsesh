@@ -895,6 +895,25 @@ export const boardClimbStatsHistory = pgTable(
   }),
 );
 
+// The benchmark grades Aurora published for Kilter climbs, frozen as they stood
+// before Kilter's Verified list took over `board_climb_stats.benchmark_difficulty`
+// (#2493). Kept on purpose as the record to compare with Kilter's own
+// `officialKilterDifficulty`, which matches it almost row for row. One migration
+// created and filled this table, and nothing writes to it afterwards. No foreign
+// key to `board_climbs`, so a climb's record outlives the climb.
+export const kilterAuroraBenchmarks = pgTable(
+  'kilter_aurora_benchmarks',
+  {
+    climbUuid: text('climb_uuid').notNull(),
+    angle: integer('angle').notNull(),
+    benchmarkDifficulty: doublePrecision('benchmark_difficulty').notNull(),
+    capturedAt: timestamp('captured_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.climbUuid, table.angle] }),
+  }),
+);
+
 export const boardBetaLinks = pgTable(
   'board_beta_links',
   {

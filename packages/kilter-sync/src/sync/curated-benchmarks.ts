@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { boardClimbAliases, boardClimbs, boardClimbStats } from '@boardsesh/db/schema';
+import { boardClimbAliases, boardClimbs, boardClimbStats, kilterAuroraBenchmarks } from '@boardsesh/db/schema';
 import { realBenchmarkCondition } from '@boardsesh/db/queries';
 import { commandCountFromResult } from '@boardsesh/db/client';
 
@@ -15,8 +15,8 @@ import type { CatalogWriteRunner } from './catalog-sync';
  * `/api/climbs/curated` lists them per angle. We store that in the benchmark
  * column, so filters, the offline mirror and every row reader work unchanged, and
  * the app labels it Verified on Kilter. Kilter's list is the only source for this
- * column on Kilter: a row it does not list is cleared. The weekly
- * `board_climb_stats_history` snapshot keeps past values for rows with ascents.
+ * column on Kilter: a row it does not list is cleared. The grades Aurora published
+ * are frozen in `kilter_aurora_benchmarks` before any of this can run.
  *
  * No other Kilter writer touches the column (`kilterStatsConflictSet` leaves it
  * out, and the Aurora sync refuses Kilter), so this pass owns it.
@@ -269,6 +269,11 @@ export async function applyCuratedBenchmarks(args: {
     );
     return report;
   }
+
+  // Throws until the migration that freezes Aurora's grades has run, which rolls
+  // nothing back because nothing has been written. The worker can deploy ahead of
+  // that migration, and marking first would lose the grades it is there to keep.
+  await db.select({ climbUuid: kilterAuroraBenchmarks.climbUuid }).from(kilterAuroraBenchmarks).limit(1);
 
   const toClear = planCuratedClears(await loadMarkedRows(db), targets);
   await write(async (transaction) => {

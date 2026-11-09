@@ -12,11 +12,11 @@
 //     vp test run --reporter=agent packages/kilter-sync/src/sync/curated-benchmarks.integration.test.ts
 
 import { describe, it, expect } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { rowsFromResult } from '@boardsesh/db/client';
-import { boardClimbAliases, boardClimbs, boardClimbStats, users } from '@boardsesh/db/schema';
+import { boardClimbAliases, boardClimbs, boardClimbStats, kilterAuroraBenchmarks, users } from '@boardsesh/db/schema';
 
 import type { KilterCuratedStat } from '../api/kilter-rest';
 import { applyCuratedBenchmarks } from './curated-benchmarks';
@@ -135,6 +135,9 @@ describeIntegration('applyCuratedBenchmarks', () => {
       await seedStat(tx, 'FALLBACK', 40, null); // no official grade: takes the current grade
       await seedStat(tx, 'LEGACYKEPT', 40, 25); // no official grade: keeps its value
       await seedStat(tx, 'LEGACYGONE', 40, 22); // not on the list: cleared
+      await tx
+        .insert(kilterAuroraBenchmarks)
+        .values({ climbUuid: uuid('LEGACYGONE'), angle: 40, benchmarkDifficulty: 22 });
       await seedStat(tx, 'NANROW', 40, Number.NaN); // NaN is not a real mark
       await seedStat(tx, 'CASING', 40, null); // Kilter sends this uuid in lower case
       await seedStat(tx, 'USEROWNED', 40, 21); // never ours to touch
@@ -159,6 +162,11 @@ describeIntegration('applyCuratedBenchmarks', () => {
       expect(after.get('FALLBACK@40')?.benchmark_difficulty).toBe(21);
       expect(after.get('LEGACYKEPT@40')?.benchmark_difficulty).toBe(25);
       expect(after.get('LEGACYGONE@40')?.benchmark_difficulty).toBeNull();
+      const frozen = await tx
+        .select({ benchmarkDifficulty: kilterAuroraBenchmarks.benchmarkDifficulty })
+        .from(kilterAuroraBenchmarks)
+        .where(eq(kilterAuroraBenchmarks.climbUuid, uuid('LEGACYGONE')));
+      expect(frozen).toEqual([{ benchmarkDifficulty: 22 }]);
       expect(after.get('NANROW@40')?.benchmark_difficulty).toBe(17);
       expect(after.get('CASING@40')?.benchmark_difficulty).toBe(18);
       expect(after.get('USEROWNED@40')?.benchmark_difficulty).toBe(21);
@@ -187,6 +195,16 @@ describeIntegration('applyCuratedBenchmarks', () => {
 
       await runPass(tx, [curated('DRIFT', 40, 21, 24)]);
       expect((await storedRows(tx)).get('DRIFT@40')?.benchmark_difficulty).toBe(24);
+    });
+  });
+
+  it('refuses to run until the frozen Aurora grades exist', async () => {
+    await inRolledBackTransaction(async (tx) => {
+      await seedClimb(tx, 'LEGACYSAFE');
+      await seedStat(tx, 'LEGACYSAFE', 40, 22);
+      await tx.execute(sql`DROP TABLE kilter_aurora_benchmarks`);
+
+      await expect(runPass(tx, [curated('LEGACYSAFE', 40, 20, 24)])).rejects.toThrow();
     });
   });
 
