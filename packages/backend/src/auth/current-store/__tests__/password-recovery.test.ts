@@ -36,6 +36,7 @@ import bcrypt from 'bcryptjs';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { setupWorkerDatabase } from '../../../__tests__/worker-db';
 import { db } from '../../../db/client';
+import { getPostgresErrorCode } from '../../../utils/postgres-errors';
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
 import { __resetNativeAuthStateForTests, handleNativeAuthRefresh } from '../../../handlers/native-auth';
 import { logger } from '../../../utils/logger';
@@ -44,7 +45,7 @@ import { CURRENT_EMAIL_NORMALIZER_VERSION, lockEnforcedProjection } from '../fou
 import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../email-reservations';
 import { consumePasswordRecovery, requestPasswordRecovery } from '../password-recovery';
 import { issueEmailVerification, consumeEmailVerification } from '../email-verification';
-import { WebPasswordCommandError, type WebPasswordAuthority } from '../command-context';
+import type { WebPasswordAuthority } from '../command-context';
 
 const role = `ba03_recovery_${randomUUID().replaceAll('-', '')}`;
 const rolePassword = randomBytes(32).toString('hex');
@@ -165,7 +166,7 @@ async function bounded<T>(pending: Promise<T>, ms = 4500): Promise<T> {
     if (timer) clearTimeout(timer);
   }
 }
-async function poll(check: () => Promise<boolean>, pending: Promise<unknown>) {
+async function poll(check: () => Promise<boolean>, pending: Promise<unknown>, milliseconds = 4500) {
   let stopped = false;
   const polling = (async () => {
     while (!stopped) {
@@ -181,6 +182,7 @@ async function poll(check: () => Promise<boolean>, pending: Promise<unknown>) {
           throw new Error('Owned command ended before barrier');
         }),
       ]),
+      milliseconds,
     );
   } finally {
     stopped = true;
@@ -757,12 +759,24 @@ describe('UID-bound password recovery over the restricted current store', () => 
   it('rejects expiry at the final redemption gate after real bcrypt and an observed lock wait', async () => {
     const { user, plan } = await issued();
     const [instant] = await admin(sql`SELECT floor(extract(epoch from clock_timestamp())*1000) AS milliseconds`);
-    const deadline = Number(instant.milliseconds) + 3500;
+    const deadline = Number(instant.milliseconds) + 7000;
     await db
       .update(authPasswordRecoveryTokens)
       .set({ issuedAt: new Date(deadline - 3600000), expiresAt: new Date(deadline) })
       .where(eq(authPasswordRecoveryTokens.tokenHash, digest(plan.token)));
     const reply = await duringHash(reset(plan.token), async (pending, resume) => {
+      // Real bcrypt ran first and slows under load. Spend what it left here, so the
+      // lock-wait window below is the same 1.5 s on any machine.
+      await poll(
+        async () =>
+          (
+            await admin(
+              sql`SELECT clock_timestamp()>=expires_at - interval '1500 milliseconds' AS near FROM ${authPasswordRecoveryTokens} WHERE token_hash=${digest(plan.token)}`,
+            )
+          )[0]?.near === true,
+        pending,
+        8000,
+      );
       const locked = barrier();
       const release = barrier();
       const holder = db.transaction(async (transaction) => {
@@ -799,7 +813,7 @@ describe('UID-bound password recovery over the restricted current store', () => 
     expect((await credential(user.id)).passwordHash === originalHash).toBe(true);
     expect((await receipt(plan.token)).consumedAt).toBeNull();
     expect(await db.select().from(authSecurityMutationEvents)).toHaveLength(0);
-  });
+  }, 20000);
   it('does not revive an expired active receipt when a new forgot replaces it', async () => {
     const { user, plan } = await issued();
     const deadline = Date.now() - 1000;
@@ -1132,7 +1146,9 @@ describe('UID-bound password recovery over the restricted current store', () => 
       } catch (error) {
         release.resolve();
         await bounded(Promise.allSettled([holder, pending]), 10000);
-        throw error;
+        // A poll stalled past the 250 ms user-row limit sees the command end first; the
+        // checks below still require a fail-closed code and no committed recovery state.
+        if (branch === 'blocked-key' || getPostgresErrorCode(await pending) !== '55P03') throw error;
       } finally {
         release.resolve();
         await holder;
@@ -1143,8 +1159,10 @@ describe('UID-bound password recovery over the restricted current store', () => 
       } finally {
         vi.restoreAllMocks();
       }
-      expect(outcome).toBeInstanceOf(WebPasswordCommandError);
-      expect((outcome as WebPasswordCommandError).code).toBe('expired_request');
+      // Only the user-row wait is limited to 250 ms; a stalled runner can reach that first.
+      expect(branch === 'blocked-key' ? ['expired_request'] : ['expired_request', '55P03']).toContain(
+        getPostgresErrorCode(outcome),
+      );
       expect(await db.select().from(verificationTokens)).toHaveLength(0);
       expect(await db.select().from(authPasswordRecoveryState)).toHaveLength(0);
       expect(await db.select().from(authPasswordRecoveryTokens)).toHaveLength(0);

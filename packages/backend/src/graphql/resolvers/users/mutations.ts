@@ -46,15 +46,35 @@ import {
   captureFixedSystemOwnerOrderMode,
   lockCooperativeFixedSystemOwnerTransaction,
 } from '../../../services/fixed-system-owner-order';
+import { FixedSystemOwnerOrderError } from '@boardsesh/db/fixed-system-owner-order';
 import {
   beginReservedAccountDeletion,
   captureAccountDeletionCommand,
+  lockReservedDeletionSubject,
   recordReservedAccountDeletion,
   type CapturedAccountDeletionCommand,
+  type ReservedDeletionSubject,
 } from '../../../auth/current-store/account-deletion';
+import { preflight } from '../../../auth/current-store/command-context';
+import { CurrentStoreFoundationError } from '../../../auth/current-store/foundation-context';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
 const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
+
+/**
+ * Fixed vocabulary for the staged-deletion log line: our own enums or a
+ * SQLSTATE, never a driver message or detail, which can quote the email.
+ */
+function stagedDeletionFailureCode(error: unknown): string {
+  if (error instanceof CurrentStoreFoundationError || error instanceof FixedSystemOwnerOrderError) return error.code;
+  if (error instanceof GraphQLError && typeof error.extensions.code === 'string') return error.extensions.code;
+  const postgresCode = getPostgresErrorCode(error);
+  return postgresCode && /^[0-9A-Z]{5}$/.test(postgresCode) ? postgresCode : 'unexpected';
+}
+
+function logStagedDeletionFailure(failureCode: string): void {
+  logger.error('[deleteAccount] Staged account deletion failed', { failureCode });
+}
 
 export const userMutations = {
   /**
@@ -292,6 +312,7 @@ export const userMutations = {
         deletionCommand = captureAccountDeletionCommand(configuration.authority, userId, randomUUID());
       }
     } catch {
+      logStagedDeletionFailure('configuration');
       throw new GraphQLError('Account deletion is temporarily unavailable.', {
         extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
       });
@@ -300,8 +321,11 @@ export const userMutations = {
     let deletedWallIds: number[] = [];
     let previewBoardIds: number[] = [];
     try {
-      await retryAccountDeletion(() =>
-        db.transaction(async (tx) => {
+      await retryAccountDeletion(async () => {
+        // Fail closed on stale authority before touching content, in a short
+        // transaction of its own, so the manifest is not held while content runs.
+        if (deletionCommand) await preflight(db, deletionCommand);
+        await db.transaction(async (tx) => {
           // This guard must be serving before migration 0250 can create its
           // archive. The migration's DDL takes ACCESS EXCLUSIVE on the live table;
           // holding ROW EXCLUSIVE here makes one operation wait for the other.
@@ -311,10 +335,19 @@ export const userMutations = {
           // transaction keeps the lock until deletion commits and prevents the
           // migration from archiving favorites for an account being removed.
           await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
-          if (deletionCommand) await beginReservedAccountDeletion(tx, deletionCommand);
+          if (deletionCommand) await beginReservedAccountDeletion(tx);
           else await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
           const sprayWalls = await deleteAccountSprayWalls(tx, userId);
           deletedWallIds = sprayWalls.wallIds;
+          let deletionSubject: ReservedDeletionSubject | undefined;
+          if (deletionCommand) {
+            deletionSubject = await lockReservedDeletionSubject(tx, deletionCommand);
+            if (!deletionSubject) {
+              // Already deleted and committed: report success and write nothing.
+              previewBoardIds = [];
+              return;
+            }
+          }
           await withdrawDeletedAccountContent(tx, userId);
           // Assigned, not accumulated, so a retried transaction cannot keep a stale list.
           previewBoardIds = [...sprayWalls.previewBoardIds, ...(await deleteAccountBoards(tx, userId))];
@@ -372,17 +405,20 @@ export const userMutations = {
           // will be cleaned up automatically by the database.
           // boardClimbs.userId has onDelete: 'set null', so published climbs
           // will have their userId set to null (preserved).
-          if (deletionCommand) await recordReservedAccountDeletion(tx, deletionCommand);
           await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
-        }),
-      );
+          // After the cascade, the longest statement here, so the manifest
+          // every staged auth command queues on is held for bookkeeping only.
+          if (deletionCommand && deletionSubject) {
+            await recordReservedAccountDeletion(tx, deletionCommand, deletionSubject);
+          }
+        });
+      });
     } catch (error) {
+      if (!deletionCommand) throw error;
+      logStagedDeletionFailure(stagedDeletionFailureCode(error));
       // Keep the existing deadlock-only retry in control of the original error.
       // Staged foundation/driver failures must not expose SQL or retained causes.
-      if (
-        !deletionCommand ||
-        (error instanceof GraphQLError && error.extensions.code === 'ACCOUNT_DELETE_RETRY_REQUIRED')
-      ) {
+      if (error instanceof GraphQLError && error.extensions.code === 'ACCOUNT_DELETE_RETRY_REQUIRED') {
         throw error;
       }
       throw new GraphQLError('Account deletion is temporarily unavailable.', {

@@ -120,6 +120,9 @@ The current manifest row uses `FOR UPDATE`, serializing these bounded helpers
 across keys/users. This closes first-cutoff and missing-key races. The helpers
 perform no provider network or bcrypt work themselves; callers must keep such
 work outside the locked section where their verified-command policy permits.
+A command holding the manifest limits its user-row wait to 250 ms, so a long
+transaction on one account delays the commands queued behind it by at most that
+much per command naming the account.
 Production throughput, lock order and finer-grained serialization require
 measurement and a new concurrency proof before activation.
 

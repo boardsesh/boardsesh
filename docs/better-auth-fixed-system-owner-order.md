@@ -23,9 +23,11 @@ Staged identity authorities always acquire the key after their existing enforced
 projection lock, before cutoff, reservation and user-row locks. This applies to
 the shared-board owner, recommendations account and hold-classifier account.
 Historical creator/member UIDs copied by content writers cannot be assumed to
-exclude either batch account. Staged account deletion also always takes the
-projection then the shared key before account/wall/content work, while retaining
-its existing late human-user lock.
+exclude either batch account. Staged account deletion also always preflights the
+projection in a short transaction of its own, then takes the shared key before
+account/wall/content work, while retaining its existing late human-user lock.
+It takes the projection again last, after the user delete: see
+[the deletion lock order](./better-auth-account-deletion.md#transaction-and-lock-order).
 
 ## Transaction contract
 
@@ -63,7 +65,10 @@ existing run and active-job fence
 Content-only participants enter the key before their existing gym and wall
 locks. The deduplication CLI queues on its own lock first, so time spent waiting
 there does not count against a key that never queues. Do not acquire a new projection manifest later while holding
-that key. Do not replace an existing identity `FOR UPDATE` with a weaker lock.
+that key; staged account deletion is the one exception, because holding the manifest through content would stall
+every auth command, and a holder of the shared key waiting on the manifest cannot deadlock an authority whose key
+acquisition never queues. Do not replace an existing identity `FOR UPDATE` with a weaker lock: its conflict with
+foreign-key `KEY SHARE` is what lets the authentication-artifact check see an in-flight insert.
 A pool-level advisory call cannot cover later autocommit writes.
 
 ## Error and commit boundaries

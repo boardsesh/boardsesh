@@ -22,6 +22,7 @@ import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
   lockEnforcedProjection,
+  lockUserRowUnderManifest,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
@@ -98,7 +99,11 @@ export async function ensureReservedSystemIdentity(
     .where(and(eq(authEmailReservationMembers.userId, userId), ne(authEmailReservationMembers.normalizedEmail, key)))
     .limit(1);
   if (otherReservation || otherMembership) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
-  const [user] = await transaction.select().from(users).where(eq(users.id, userId)).for('update');
+  // FOR UPDATE, not NO KEY UPDATE: conflicting with FK KEY SHARE is the point.
+  // It waits out an uncommitted credential, session or refresh-token insert for
+  // this UID, so the artifact check below cannot miss one that is in flight.
+  // The wait is short: this holds the manifest, and an unavailable reply is safe.
+  const user = await lockUserRowUnderManifest(transaction, userId);
   await assertNoAuthenticationArtifacts(transaction, userId);
 
   if (user) {

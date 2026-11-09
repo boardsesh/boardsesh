@@ -15,6 +15,7 @@ import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
   lockEnforcedProjection,
+  lockUserRowUnderManifest,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
@@ -85,7 +86,7 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
     const userId = initialLink.userId;
     if (policy.actorUserId !== null && policy.actorUserId !== userId) return { outcome: 'actor_conflict' };
     const [initialUser] = await transaction.select({ email: users.email }).from(users).where(eq(users.id, userId));
-    const [user] = await transaction.select().from(users).where(eq(users.id, userId)).for('update');
+    const user = await lockUserRowUnderManifest(transaction, userId);
     const [cutoff] = await transaction
       .select()
       .from(authSubjectCutoffs)

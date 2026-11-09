@@ -466,6 +466,38 @@ describe('fixed shared-board identity authority', () => {
       expect(result.profiles).toHaveLength(1);
     }
   });
+  it('refuses to pass an uncommitted authentication artifact, without a long manifest hold', async () => {
+    await prepare();
+    await ensureReservedSystemBoardOwner(db, authority);
+    let releaseArtifact = () => {};
+    const artifactCanCommit = new Promise<void>((resolve) => {
+      releaseArtifact = resolve;
+    });
+    let reportInserted = () => {};
+    const artifactInserted = new Promise<void>((resolve) => {
+      reportInserted = resolve;
+    });
+    // The session's foreign key takes KEY SHARE on the fixed user until commit.
+    const artifact = db.transaction(async (transaction) => {
+      await transaction.insert(sessions).values({
+        userId: SYSTEM_BOARD_OWNER_ID,
+        sessionToken: randomUUID(),
+        expires: new Date(Date.now() + 60000),
+      });
+      reportInserted();
+      await artifactCanCommit;
+    });
+    await artifactInserted;
+    // Holding the manifest, so it gives up quickly rather than waiting the row out.
+    const started = performance.now();
+    await expect(ensureReservedSystemBoardOwner(db, authority)).rejects.toMatchObject({ cause: { code: '55P03' } });
+    expect(performance.now() - started).toBeLessThan(2000);
+    releaseArtifact();
+    await artifact;
+    await expect(ensureReservedSystemBoardOwner(db, authority)).rejects.toMatchObject({
+      code: 'RESERVATION_INCONSISTENT',
+    });
+  });
   it('rolls back a written reservation after real SQL permission denial on user insert', async () => {
     await prepare();
     const before = await snapshot();
