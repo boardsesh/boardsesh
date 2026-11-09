@@ -214,10 +214,40 @@ describe('supported native Sentry startup', () => {
     const options = init.mock.calls[0][0] as {
       beforeSend: (event: object, hint: object) => unknown;
       beforeSendTransaction: (event: object) => unknown;
+      beforeSendSpan: (span: object) => unknown;
     };
     const error = { user: { id: 'account' }, contexts: { device: { id: 'installation', model: 'phone' } } };
     expect(options.beforeSend(error, {})).toEqual({ contexts: { device: { model: 'phone' } } });
     expect(options.beforeSendTransaction({ user: { id: 'account' } })).toEqual({});
+    // Expo's browser SDK can enrich even manually named screen events with full
+    // URL/referrer context. Exercise the actual configured hooks, without I/O.
+    const token = 'a363934b-b7ba-41ba-a279-52185daa100e';
+    const email = 'Climber+tag@example.test';
+    const url = `https://app.boardsesh.test/auth/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
+    const payload = () => ({
+      user: { id: 'account' },
+      contexts: { device: { id: 'installation', model: 'phone' } },
+      request: {
+        url,
+        query_string: [
+          ['token', token],
+          ['email', email],
+        ],
+      },
+      breadcrumbs: [{ data: { from: url, to: '/auth/login' } }],
+      spans: [{ description: url, data: { 'url.full': url } }],
+    });
+    for (const processed of [
+      options.beforeSend(payload(), {}),
+      options.beforeSendTransaction(payload()),
+      options.beforeSendSpan({
+        description: url,
+        data: { 'url.full': url, 'http.query': `token=${token}&email=${email}` },
+      }),
+    ]) {
+      expect(JSON.stringify(processed)).not.toContain(token);
+      expect(JSON.stringify(processed)).not.toContain('Climber');
+    }
     expect(plugin.applySwiftSentryPrivacy(swift, { dsn })).toContain(`event.tags?["${plugin.ENVIRONMENT_TAG}"]`);
     expect(plugin.applyKotlinSentryPrivacy(kotlin, { dsn })).toContain(`getTag("${plugin.ENVIRONMENT_TAG}")`);
   });

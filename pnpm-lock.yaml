@@ -187,6 +187,9 @@ importers:
       '@boardsesh/aurora-sync':
         specifier: workspace:*
         version: link:../aurora-sync
+      '@boardsesh/auth-protocol':
+        specifier: workspace:*
+        version: link:../shared/auth-protocol
       '@boardsesh/ble-protocol':
         specifier: workspace:*
         version: link:../shared/ble-protocol
@@ -434,6 +437,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@boardsesh/auth-protocol':
+        specifier: workspace:*
+        version: link:../shared/auth-protocol
       '@boardsesh/board-config':
         specifier: workspace:*
         version: link:../shared/board-config
@@ -710,6 +716,9 @@ importers:
       '@boardsesh/spray-wall-geometry':
         specifier: workspace:*
         version: link:../shared/spray-wall-geometry
+      '@boardsesh/text-redaction':
+        specifier: workspace:*
+        version: link:../shared/text-redaction
       '@boardsesh/velvet-tokens':
         specifier: workspace:*
         version: link:../shared/velvet-tokens
@@ -1069,6 +1078,16 @@ importers:
         version: 7.0.2
 
   packages/shared/analytics:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/auth-protocol:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       typescript:
         specifier: ~7.0.2
@@ -1740,6 +1759,9 @@ importers:
       '@boardsesh/aurora-sync':
         specifier: workspace:*
         version: link:../aurora-sync
+      '@boardsesh/auth-protocol':
+        specifier: workspace:*
+        version: link:../shared/auth-protocol
       '@boardsesh/ble-protocol':
         specifier: workspace:*
         version: link:../shared/ble-protocol
@@ -1854,6 +1876,9 @@ importers:
       '@boardsesh/sync-runtime':
         specifier: workspace:*
         version: link:../sync-runtime
+      '@boardsesh/text-redaction':
+        specifier: workspace:*
+        version: link:../shared/text-redaction
       '@boardsesh/velvet-tokens':
         specifier: workspace:*
         version: link:../shared/velvet-tokens

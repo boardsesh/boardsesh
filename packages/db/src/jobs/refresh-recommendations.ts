@@ -34,12 +34,11 @@ import {
 import { rowsOf } from '../queries/util/rows';
 import { snapshotClimbStatsHistoryIfDue } from '../queries/climb-stats';
 import { refreshPlaylistGradeSummariesFor } from '../queries/playlists/grade-summaries';
-import { ensureSystemUser } from './system-user';
+import { ensureJobSystemUser } from './system-user';
 import { RECOMMENDATIONS_USER_ID } from '../queries/system-accounts';
 import { defaultTransact, type JobDatabase, type JobLogger, type JobRunOptions, type JobTransact } from './types';
 
 const SYSTEM_USER_ID = RECOMMENDATIONS_USER_ID;
-const SYSTEM_USER_EMAIL = 'recommendations@boardsesh.com';
 const COHORT_SIZE = 50;
 const FRESH_WINDOW_DAYS = 365;
 /** A hung PostHog query must not eat the job's lease. */
@@ -424,9 +423,8 @@ export async function runRefreshRecommendations(
   const transact = options.transact ?? defaultTransact(db);
 
   signal.throwIfAborted();
-  await transact((transaction) =>
-    ensureSystemUser(transaction, { id: SYSTEM_USER_ID, name: 'Boardsesh', email: SYSTEM_USER_EMAIL }),
-  );
+  await ensureJobSystemUser(transact, 'recommendations', options.systemUserAuthority);
+  signal.throwIfAborted();
 
   log.info('[recs] recomputing setter stats…');
   await transact(async (transaction) => {

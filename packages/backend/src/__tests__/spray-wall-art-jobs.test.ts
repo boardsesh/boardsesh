@@ -5,10 +5,21 @@ import sharp from 'sharp';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql } from 'drizzle-orm';
 import { PgBoss } from 'pg-boss';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { SPRAY_WALL_WRITE_LOCK_NAMESPACE, type ConnectionContext } from '@boardsesh/shared-schema';
 import type { DbInstance } from '@boardsesh/db/client';
+import { FIXED_SYSTEM_OWNER_LOCK_KEY, FIXED_SYSTEM_OWNER_LOCK_NAMESPACE } from '@boardsesh/db/fixed-system-owner-order';
 import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
 import { backgroundJobRuns, sprayWallVersions } from '@boardsesh/db/schema';
 import { ART_RECIPE, canonicalArtSize } from '@boardsesh/spray-wall-geometry';
@@ -93,6 +104,9 @@ const { ensureBackgroundJobSchema } = await import('../workers/families/__tests_
 const { executeBackgroundJob, handlerForRole } = await import('../workers/jobs');
 const { assertWorkerPrivileges } = await import('../services/job-queue-client');
 const { resetSprayWallArtReadThrottle } = await import('../services/spray-wall-art');
+const { BatchSystemUserProof } = await import('../auth/current-store/__tests__/fixtures/batch-system-user-proof');
+const { startFixedSystemOwnerBatchActor } = await import('./helpers/fixed-system-owner-batch-process');
+const { logger } = await import('../utils/logger');
 type BackgroundJobPayload = import('../workers/jobs').BackgroundJobPayload;
 
 const OWNER = 'art-owner';
@@ -141,10 +155,7 @@ async function photoJpeg(): Promise<Buffer> {
     .toBuffer();
 }
 
-async function publishWall(
-  anchors: [number, number][] | undefined,
-  beforePublish?: (wall: { uuid: string; layoutId: number }) => Promise<void>,
-) {
+async function createWallDraft(anchors: [number, number][] | undefined) {
   const wall = (await sprayWallMutations.createSprayWall(
     {},
     { input: { name: `Art ${uuidv4().slice(0, 6)}`, angle: 40 } },
@@ -167,9 +178,17 @@ async function publishWall(
     { input: { wallUuid: wall.uuid, versionId: version.id, holds: [{ cx: 400, cy: 400, r: 40 }] } },
     ctx,
   );
-  await beforePublish?.(wall);
-  await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctx);
   return { wall, versionId: Number(version.id) };
+}
+
+async function publishWall(
+  anchors: [number, number][] | undefined,
+  beforePublish?: (wall: { uuid: string; layoutId: number }) => Promise<void>,
+) {
+  const draft = await createWallDraft(anchors);
+  await beforePublish?.(draft.wall);
+  await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: String(draft.versionId) } }, ctx);
+  return draft;
 }
 
 async function artOf(versionId: number) {
@@ -386,7 +405,7 @@ describe('spray-wall-art', () => {
       [2300, 1700],
       [100, 1700],
     ]);
-    for (const key of [...objects.keys()]) if (key.startsWith(`spray-walls/${wall.uuid}/`)) objects.delete(key);
+    for (const key of objects.keys()) if (key.startsWith(`spray-walls/${wall.uuid}/`)) objects.delete(key);
     const [job] = await workerBoss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
     await executeBackgroundJob(
       workerDatabase,
@@ -665,3 +684,279 @@ const STRAIGHT: [number, number][] = [
   [2300, 1700],
   [100, 1700],
 ];
+
+type DraftWall = Awaited<ReturnType<typeof createWallDraft>>;
+type PublishOperation = 'commit' | 'publish';
+
+function barrier() {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { held, release };
+}
+
+function observeSettlement(pending: Promise<unknown>) {
+  return pending.then(
+    () => ({ succeeded: true }),
+    (error: unknown) => ({ succeeded: false, error }),
+  );
+}
+
+async function waitUntilHeld(held: Promise<void>, settled: Promise<unknown>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      held,
+      settled.then(() => {
+        throw new Error('Owned transaction ended before the expected hold');
+      }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Owned transaction hold was not observed')), 4_000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function publishDraft(operation: PublishOperation, draft: DraftWall): Promise<unknown> {
+  return operation === 'commit'
+    ? sprayWallMutations.commitSprayWallVersion(
+        {},
+        { input: { wallUuid: draft.wall.uuid, versionId: String(draft.versionId), kept: [], removed: [], added: [] } },
+        ctx,
+      )
+    : sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: String(draft.versionId) } }, ctx);
+}
+
+/** Inspect error codes only, including Drizzle's cause; optional art must not hide a deadlock. */
+function postgresCodes(inputs: unknown[]): Set<string> {
+  const codes = new Set<string>();
+  const visited = new Set<object>();
+  function inspect(input: unknown, depth: number): void {
+    if (typeof input !== 'object' || input === null || visited.has(input) || depth > 6) return;
+    visited.add(input);
+    if ('code' in input && typeof input.code === 'string' && /^[A-Z0-9]{5}$/.test(input.code)) {
+      codes.add(input.code);
+    }
+    if (Array.isArray(input)) {
+      for (const member of input) inspect(member, depth + 1);
+    }
+    if ('cause' in input) inspect(input.cause, depth + 1);
+    if ('error' in input) inspect(input.error, depth + 1);
+  }
+  for (const input of inputs) inspect(input, 0);
+  return codes;
+}
+
+describe('cooperative fixed-owner publication with real art enqueue and a separate batch process', () => {
+  const proof = new BatchSystemUserProof();
+  let errorLog: MockInstance<typeof logger.error>;
+  let warningLog: MockInstance<typeof logger.warn>;
+
+  beforeAll(() => proof.start(), 30_000);
+  afterAll(() => proof.close(), 30_000);
+  beforeEach(async () => {
+    await proof.reset();
+    // The outer art fixture clears walls; the batch fixture also clears identities.
+    await db.execute(sql`
+      INSERT INTO users (id, email, name, created_at, updated_at)
+      VALUES (${OWNER}, ${OWNER + '@test.com'}, 'Art owner', now(), now())
+    `);
+    vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', 'cooperative-staging');
+    errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    warningLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+  });
+  afterEach(() => {
+    errorLog?.mockRestore();
+    warningLog?.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  const loggedCodes = () => postgresCodes([...errorLog.mock.calls, ...warningLog.mock.calls]);
+
+  async function batchInput() {
+    const authority = await proof.prepare();
+    const { job, token } = await proof.active('refresh-recommendations');
+    if (!token) throw new Error('Owned batch attempt did not have an active fence');
+    return { authority, command: proof.command(job.id, token) };
+  }
+
+  async function assertPublishedWithArt(draft: DraftWall): Promise<void> {
+    const [version] = await db
+      .select({ status: sprayWallVersions.status })
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, draft.versionId));
+    expect(version.status).toBe('published');
+    expect(await artOf(draft.versionId)).toMatchObject({ status: 'pending', recipe: ART_RECIPE });
+    const queuedRuns = await runs();
+    expect(queuedRuns).toHaveLength(1);
+    const [run] = queuedRuns;
+    expect(run).toMatchObject({
+      queue,
+      role: 'maintenance-delivery',
+      status: 'queued',
+      singletonKey: `art:${draft.versionId}:${ART_RECIPE}`,
+      payload: { versionId: draft.versionId, recipe: ART_RECIPE },
+    });
+    const jobs = await ownerBoss.findJobs<BackgroundJobPayload>(queue, {
+      key: `spray-wall-art:art:${draft.versionId}:${ART_RECIPE}`,
+    });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ id: run.id, state: 'created', data: { runId: run.id } });
+    expect(loggedCodes().has('40P01')).toBe(false);
+  }
+
+  for (const operation of ['commit', 'publish'] as const) {
+    it(`${operation} keeps K before its wall lock, so a separately fenced batch fails busy and art still queues`, async () => {
+      const input = await batchInput();
+      const draft = await createWallDraft(STRAIGHT);
+      const [wall] = await owner`SELECT id FROM spray_walls WHERE board_uuid = ${draft.wall.uuid}`;
+      const wallHeld = barrier();
+      const releaseWall = barrier();
+      const blocker = observeSettlement(
+        owner.begin(async (transaction) => {
+          await transaction`SELECT pg_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${wall.id})`;
+          wallHeld.release();
+          await releaseWall.held;
+        }),
+      );
+      let publisher: ReturnType<typeof observeSettlement> | undefined;
+      let actor: ReturnType<typeof startFixedSystemOwnerBatchActor> | undefined;
+      try {
+        await waitUntilHeld(wallHeld.held, blocker);
+        publisher = observeSettlement(publishDraft(operation, draft));
+        // pg_locks is cluster-wide: both locks must be in this exact DB and on
+        // the same SQL PID, with the publisher waiting on this particular wall.
+        let publisherPid = 0;
+        const deadline = performance.now() + 4_000;
+        while (performance.now() < deadline && !publisherPid) {
+          const [held] = await proof.ownerPool`
+            SELECT owner_lock.pid
+            FROM pg_catalog.pg_locks AS owner_lock
+            JOIN pg_catalog.pg_locks AS wall_wait ON wall_wait.pid = owner_lock.pid
+            JOIN pg_catalog.pg_stat_activity AS activity ON activity.pid = owner_lock.pid
+            WHERE owner_lock.locktype = 'advisory' AND owner_lock.granted
+              AND owner_lock.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database())
+              AND owner_lock.classid = ${FIXED_SYSTEM_OWNER_LOCK_NAMESPACE}::oid
+              AND owner_lock.objid = ${FIXED_SYSTEM_OWNER_LOCK_KEY}::oid AND owner_lock.objsubid = 2
+              AND wall_wait.locktype = 'advisory' AND NOT wall_wait.granted
+              AND wall_wait.database = owner_lock.database
+              AND wall_wait.classid = ${SPRAY_WALL_WRITE_LOCK_NAMESPACE}::oid
+              AND wall_wait.objid = ${Number(wall.id)}::oid AND wall_wait.objsubid = 2
+              AND activity.datname = current_database() AND activity.wait_event_type = 'Lock'
+          `;
+          publisherPid = Number(held?.pid ?? 0);
+          if (!publisherPid) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(publisherPid).toBeGreaterThan(0);
+        actor = startFixedSystemOwnerBatchActor({ ...input, holdBeforeCommit: false });
+        expect(await actor.result).toMatchObject({
+          outcome: 'busy',
+          poolClosed: true,
+          childClosed: true,
+          groupDrained: true,
+        });
+        expect((await actor.result).postgresCode).not.toBe('40P01');
+        releaseWall.release();
+        expect((await blocker).succeeded).toBe(true);
+        expect((await publisher).succeeded).toBe(true);
+        await assertPublishedWithArt(draft);
+      } finally {
+        releaseWall.release();
+        await actor?.stop();
+        await blocker;
+        await publisher;
+      }
+    }, 30_000);
+
+    it(`${operation} rejects while the fenced batch holds K, then an explicit retry queues art`, async () => {
+      const input = await batchInput();
+      const draft = await createWallDraft(STRAIGHT);
+      const actor = startFixedSystemOwnerBatchActor({ ...input, holdBeforeCommit: true });
+      try {
+        expect(await actor.held).toBe(true);
+        await expect(publishDraft(operation, draft)).rejects.toMatchObject({
+          extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+        });
+        const [version] = await db
+          .select({ status: sprayWallVersions.status, art: sprayWallVersions.art })
+          .from(sprayWallVersions)
+          .where(eq(sprayWallVersions.id, draft.versionId));
+        expect(version).toEqual({ status: 'draft', art: null });
+        expect(await runs()).toHaveLength(0);
+        actor.release();
+        expect(await actor.result).toMatchObject({
+          outcome: 'ensured',
+          poolClosed: true,
+          childClosed: true,
+          groupDrained: true,
+        });
+        expect((await actor.result).postgresCode).not.toBe('40P01');
+        await publishDraft(operation, draft);
+        await assertPublishedWithArt(draft);
+      } finally {
+        await actor.stop();
+      }
+    }, 30_000);
+  }
+
+  it('retains outer K after a real art savepoint rolls back, without losing the published wall', async () => {
+    const input = await batchInput();
+    const draft = await createWallDraft(STRAIGHT);
+    const constraint = `fixed_owner_art_${randomUUID().replaceAll('-', '')}`;
+    // Commit fixture DDL before the product transaction; never take a table
+    // lock ahead of the product's K acquisition inside its transaction.
+    await db.execute(sql`
+      ALTER TABLE spray_wall_versions ADD CONSTRAINT ${sql.identifier(constraint)}
+      CHECK (art IS NULL OR art->>'status' <> 'pending')
+    `);
+    const outerHeld = barrier();
+    const releaseOuter = barrier();
+    const realTransaction = db.transaction.bind(db);
+    const controlledTransaction: DbInstance['transaction'] = async (callback, configuration) =>
+      realTransaction(async (transaction) => {
+        const result = await callback(transaction);
+        // The callback ran all actual publish, enqueue and SAVEPOINT SQL.
+        // Pause only after it returns, before the real outer COMMIT.
+        outerHeld.release();
+        await releaseOuter.held;
+        return result;
+      }, configuration);
+    const transactionSpy = vi.spyOn(db, 'transaction').mockImplementation(controlledTransaction);
+    const publisher = observeSettlement(publishDraft('publish', draft));
+    let actor: ReturnType<typeof startFixedSystemOwnerBatchActor> | undefined;
+    try {
+      await waitUntilHeld(outerHeld.held, publisher);
+      expect(loggedCodes().has('23514')).toBe(true);
+      expect(loggedCodes().has('40P01')).toBe(false);
+      actor = startFixedSystemOwnerBatchActor({ ...input, holdBeforeCommit: false });
+      expect(await actor.result).toMatchObject({
+        outcome: 'busy',
+        poolClosed: true,
+        childClosed: true,
+        groupDrained: true,
+      });
+      expect((await actor.result).postgresCode).not.toBe('40P01');
+      releaseOuter.release();
+      expect((await publisher).succeeded).toBe(true);
+      const [version] = await db
+        .select({ status: sprayWallVersions.status, art: sprayWallVersions.art })
+        .from(sprayWallVersions)
+        .where(eq(sprayWallVersions.id, draft.versionId));
+      expect(version).toEqual({ status: 'published', art: null });
+      expect(await runs()).toHaveLength(0);
+      expect(
+        await ownerBoss.findJobs(queue, { key: `spray-wall-art:art:${draft.versionId}:${ART_RECIPE}` }),
+      ).toHaveLength(0);
+      expect(loggedCodes().has('40P01')).toBe(false);
+    } finally {
+      releaseOuter.release();
+      await actor?.stop();
+      await publisher;
+      transactionSpy.mockRestore();
+      await db.execute(sql`ALTER TABLE spray_wall_versions DROP CONSTRAINT ${sql.identifier(constraint)}`);
+    }
+  }, 30_000);
+});

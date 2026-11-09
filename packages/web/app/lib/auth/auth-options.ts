@@ -450,11 +450,11 @@ export const authOptions: NextAuthOptions = {
           token.profileAvatarUrl = profiles[0]?.avatarUrl ?? null;
           token.profileDisplayName = profiles[0]?.displayName ?? null;
           token.profileClaimsRefreshedAt = Date.now();
-        } catch (error) {
+        } catch {
           // Keep whatever claims are already cached rather than failing the
           // whole token read — a briefly stale avatar/name is fine; a broken
           // session (signed-out header, failed page load) is not.
-          console.warn('Failed to refresh profile claims for session JWT:', error);
+          console.warn(JSON.stringify({ event: 'auth_profile_refresh_unavailable', phase: 'jwt' }));
         }
       }
       return token;

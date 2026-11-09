@@ -24,6 +24,10 @@
 import { sql, type SQLWrapper } from 'drizzle-orm';
 import { pathToFileURL } from 'node:url';
 import { createScriptDb } from './db-connection.js';
+import {
+  captureFixedSystemOwnerOrderMode,
+  lockCooperativeFixedSystemOwnerTransaction,
+} from '@boardsesh/db/fixed-system-owner-order';
 import { executeRows } from '../src/client/index.js';
 import {
   distanceMeters,
@@ -647,6 +651,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  const ownerOrderMode = captureFixedSystemOwnerOrderMode();
   const { db, close } = createScriptDb();
 
   try {
@@ -666,7 +671,10 @@ async function main(): Promise<void> {
     }
 
     const { totalCounts, warnings } = await db.transaction(async (transaction) => {
+      // Dedupe first: time spent queueing here must not count against the owner
+      // key, which every other adopted writer needs and which never queues.
       await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext('boardsesh:gym-location-dedupe'))`);
+      await lockCooperativeFixedSystemOwnerTransaction(transaction, ownerOrderMode);
 
       let aggregateCounts = emptyMergeCounts();
       const aggregateWarnings: MergeWarning[] = [];

@@ -1,5 +1,6 @@
 import type { ZodType } from 'zod';
 import type { DbInstance } from '@boardsesh/db/client';
+import type { JobSystemUserAuthority } from '@boardsesh/db/jobs';
 import type {
   BackgroundJobFamily as BackgroundJobFamilyName,
   BackgroundWorkerRole,
@@ -27,6 +28,8 @@ export type BackgroundJobContext = {
    */
   expiresAt: number;
   database: DbInstance;
+  /** Bound by actual worker dispatch; never supplied through the queue payload. */
+  systemUserAuthority?: JobSystemUserAuthority;
   transaction<T>(callback: (transaction: BackgroundJobTransaction) => Promise<T>): Promise<T>;
   /**
    * The same attempt fence as `transaction`, without its abort checks. Only

@@ -18,6 +18,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '@/app/components/auth/validate-fields';
 import { themeTokens } from '@/app/theme/theme-config';
 import { FormShell, FormField, FormActions, focusFirstInvalidAfterRender } from '@/app/components/form';
+import { isAuthBackendUnavailable } from '@boardsesh/auth-protocol/client-errors';
 
 export default function ResetPasswordContent() {
   const { t } = useTranslation('auth');
@@ -76,7 +77,11 @@ export default function ResetPasswordContent() {
 
       const data = await response.json();
       if (!response.ok) {
-        setFormError(data.error || t('resetPassword.toasts.failed'));
+        setFormError(
+          isAuthBackendUnavailable(data.error)
+            ? t('login.toasts.authFailed')
+            : data.error || t('resetPassword.toasts.failed'),
+        );
         return;
       }
 

@@ -334,6 +334,8 @@ jobs:
               - 'packages/moonboard-ocr/**'
               - 'packages/shared-schema/**'
               - 'packages/shared/analytics/**'
+              - 'packages/shared/auth-protocol/**'
+              - 'packages/shared/text-redaction/**'
               - 'packages/shared/consent/**'
               - 'packages/shared/ble-protocol/**'
               - 'packages/shared/board-config/**'
@@ -1111,6 +1113,14 @@ jobs:
           vp exec tsx --test
           scripts/serial-plan-default.test.ts
           scripts/serial-plan-default.integration.test.ts
+      # The fixed system-owner key's lock contract and the dedupe CLI's lock order
+      # sit outside Vitest's module graph and need no database.
+      - name: Verify the fixed system-owner key and its CLI order
+        working-directory: packages/db
+        run: >-
+          vp exec tsx --test
+          src/__tests__/fixed-system-owner-order.test.ts
+          scripts/dedupe-gym-locations-owner-order.test.ts
       # #6499: the first dev-db image built after the exporter stopped writing
       # spray rows still loads an older artifact that carries them, so the
       # loader's own board_type filter is what keeps private walls out. A

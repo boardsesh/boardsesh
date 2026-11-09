@@ -64,6 +64,9 @@ import {
   stopRefreshTokenCleanup,
 } from './handlers/native-auth';
 import { handleApnsStats } from './handlers/apns-stats';
+import { handleCurrentStoreWebAuth } from './handlers/current-store-web-auth';
+import { handleCurrentStoreWebOAuth } from './handlers/current-store-web-oauth';
+import { handleCurrentStoreBatchSystemUsers } from './handlers/current-store-batch-system-users';
 import { handleIntegrationOAuthStart, handleIntegrationOAuthCallback } from './handlers/integrations-oauth';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
@@ -86,6 +89,7 @@ import { startBackendMemoryMonitoring } from './services/memory-monitor';
 import { startClientUsageReporter, stopClientUsageReporter } from './services/client-usage';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
+import { captureFixedSystemOwnerOrderMode } from '@boardsesh/db/fixed-system-owner-order';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import type { QueueEvent } from '@boardsesh/shared-schema';
 
@@ -117,6 +121,11 @@ async function dispatchLiveActivityForSession(sessionId: string): Promise<void> 
 }
 
 export async function startServer(options: { host?: string } = {}): Promise<ServerResources> {
+  // A typo in this mode would otherwise turn every adopted writer (account
+  // deletion, spray publish, gym merge, stray attach) into a quiet 503, one
+  // request at a time. Refuse to serve instead, so the deploy fails visibly.
+  captureFixedSystemOwnerOrderMode();
+
   // Surface database connect retries. `warn`, not `error`: SentryWinstonTransport
   // is constructed with `level: 'error'` (utils/sentry-transport.ts:80), so a
   // warn stays log-only and cannot double-report alongside the
@@ -649,6 +658,27 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // APNs metrics (debugging aid, gated on APNS_STATS_SECRET)
       if (pathname === '/api/internal/apns-stats' && (req.method === 'GET' || req.method === 'OPTIONS')) {
         await handleApnsStats(req, res);
+        return;
+      }
+
+      // Default-off service commands. Browser cookies do not authorize them.
+      if (pathname.startsWith('/api/internal/auth/current-store/batch-system-users/v1/')) {
+        await handleCurrentStoreBatchSystemUsers(req, res);
+        return;
+      }
+      if (pathname.startsWith('/api/internal/auth/current-store/web-oauth/v1/')) {
+        await handleCurrentStoreWebOAuth(req, res);
+        return;
+      }
+      if (
+        pathname === '/api/internal/auth/current-store/register' ||
+        pathname === '/api/internal/auth/current-store/password' ||
+        pathname === '/api/internal/auth/current-store/verify-email' ||
+        pathname === '/api/internal/auth/current-store/resend-verification' ||
+        pathname === '/api/internal/auth/current-store/forgot-password' ||
+        pathname === '/api/internal/auth/current-store/reset-password'
+      ) {
+        await handleCurrentStoreWebAuth(req, res);
         return;
       }
 

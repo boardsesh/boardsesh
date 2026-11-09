@@ -167,6 +167,7 @@ export default defineConfig({
       './packages/shared/playlists-react/vite.config.ts',
       './packages/shared/party-profile/vite.config.ts',
       './packages/shared/watch-pairing/vite.config.ts',
+      './packages/shared/auth-protocol/vite.config.ts',
       './packages/shared/analytics/vite.config.ts',
       './packages/shared/climb-actions/vite.config.ts',
       './packages/shared/key-value-storage/vite.config.ts',
@@ -898,6 +899,9 @@ export default defineConfig({
       'typecheck:watch-pairing': {
         command: 'pnpm --filter @boardsesh/watch-pairing run typecheck',
       },
+      'typecheck:auth-protocol': {
+        command: 'pnpm --filter @boardsesh/auth-protocol run typecheck',
+      },
       'typecheck:analytics': {
         command: 'pnpm --filter @boardsesh/analytics run typecheck',
       },
@@ -1068,6 +1072,7 @@ export default defineConfig({
           'typecheck:create-climb-react',
           'typecheck:party-profile',
           'typecheck:watch-pairing',
+          'typecheck:auth-protocol',
           'typecheck:analytics',
           'typecheck:climb-actions',
           'typecheck:key-value-storage',

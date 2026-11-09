@@ -45,7 +45,14 @@ function namespacesToKey(namespaces: readonly string[]): string {
 export async function getServerTranslation(
   ns: SeedNamespace | readonly SeedNamespace[] = DEFAULT_NAMESPACE,
 ): Promise<{ t: TFunction; i18n: i18n; locale: Locale }> {
-  const locale = await getLocale();
+  return getServerTranslationForLocale(await getLocale(), ns);
+}
+
+/** API responses can resolve an explicit supported cookie locale without changing ambient headers. */
+export async function getServerTranslationForLocale(
+  locale: Locale,
+  ns: SeedNamespace | readonly SeedNamespace[] = DEFAULT_NAMESPACE,
+): Promise<{ t: TFunction; i18n: i18n; locale: Locale }> {
   const namespaces = Array.isArray(ns) ? ns : [ns];
   const instance = await initI18nForRequest(locale, namespacesToKey(namespaces));
   const primaryNs = namespaces[0];

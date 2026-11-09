@@ -1,48 +1,39 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
-import { compare, hash } from 'bcryptjs';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
-import { eq, and, isNull, lt, or, isNotNull, sql } from 'drizzle-orm';
-import { mobileRefreshTokens, users, userCredentials, accounts, userProfiles } from '@boardsesh/db/schema/auth';
+import { eq, and, isNull, lt, or, isNotNull, DrizzleQueryError } from 'drizzle-orm';
+import type { DbInstance } from '@boardsesh/db/client';
+import { mobileRefreshTokens, users, accounts, userProfiles } from '@boardsesh/db/schema/auth';
 import { notificationDevices } from '@boardsesh/db/schema/app';
 import { db } from '../db/client';
 import { redisClientManager } from '../redis/client';
 import { applyCorsHeaders } from './cors';
 import { validateToken } from '../middleware/auth';
 import { logger } from '../utils/logger';
-
-/**
- * Fixed dummy bcrypt hash used to keep the credentials handler's response
- * time roughly constant for unknown emails / OAuth-only users. Without it,
- * an attacker could enumerate registered accounts by timing the response.
- * The plaintext is irrelevant — `compare` always returns false against it.
- */
-const DUMMY_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfRzC2VyM4dy';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
+import {
+  currentStoreNativeRegistrationConfiguration,
+  currentStoreNativeOAuthConfiguration,
+} from '../auth/current-store/authority-configuration';
+import { preflight, transactionSettings, type WebPasswordAuthority } from '../auth/current-store/command-context';
+import { CurrentStoreFoundationError } from '../auth/current-store/foundation-context';
+import { insertReservedPasswordIdentity } from '../auth/current-store/reserved-password-registration';
+import {
+  resolveReservedNativeOAuthIdentity,
+  resolveNativeOAuthDisplayName as resolveDisplayName,
+  type NativeOAuthProvider as OAuthProvider,
+  type VerifiedNativeOAuthIdentity as VerifiedOAuthIdentity,
+} from '../auth/current-store/native-oauth-identity';
+import {
+  authenticateCurrentStorePassword,
+  parseCurrentStorePasswordRegistration,
+  prepareCurrentStorePasswordRegistration,
+  insertCurrentStorePasswordIdentity,
+} from '../auth/current-store/password-identity';
 
 /** Generic error returned for all credential validation failures. */
 const INVALID_CREDENTIALS_ERROR = 'Invalid email or password';
-
-/**
- * Bound duplicate-by-case password checks so malformed legacy account groups
- * cannot turn one rate-limited login attempt into unbounded bcrypt work. The
- * current production maximum is six; leave headroom while account cleanup and
- * a case-insensitive unique index remain separate work.
- */
-const MAX_CREDENTIAL_CANDIDATES = 8;
-
-/**
- * Registration field bounds — mirror the web register route's Zod schema
- * (packages/web/app/api/auth/register/route.ts) so both signup paths accept
- * exactly the same inputs. The email regex is the same lax shape the web/mobile
- * client validators use: it rejects nothing the server would otherwise accept.
- */
-const REGISTER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_MAX_LENGTH = 128;
-const NAME_MAX_LENGTH = 100;
-/** bcrypt cost factor — matches the web register route. */
-const BCRYPT_COST = 12;
 
 // Transfer tokens are short-lived (120s) and exchanged between our own
 // servers, so 5s tolerance is sufficient. Long-lived JWTs use 60s in
@@ -561,66 +552,13 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
     return;
   }
 
-  // Normalize the email to match how NextAuth's adapter stores it.
-  const normalizedEmail = email.trim().toLowerCase();
-
   try {
-    // Legacy web accounts may retain mixed-case emails, and users.email is not
-    // currently unique case-insensitively. Load every exact case-insensitive
-    // match so duplicate-by-case accounts can each authenticate with their own
-    // password. Using LOWER rather than ILIKE avoids treating valid email
-    // characters such as `_` as pattern wildcards.
-    const credentialCandidates = await db
-      .select({
-        userId: users.id,
-        passwordHash: userCredentials.passwordHash,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .innerJoin(userCredentials, eq(userCredentials.userId, users.id))
-      .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
-      .limit(MAX_CREDENTIAL_CANDIDATES + 1);
-
-    if (credentialCandidates.length === 0) {
-      // Unknown emails and OAuth-only accounts take one dummy comparison and
-      // return the same generic response.
-      await compare(password, DUMMY_PASSWORD_HASH);
+    const authenticatedUser = await authenticateCurrentStorePassword(db, email, password);
+    if (!authenticatedUser) {
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
     }
 
-    if (credentialCandidates.length > MAX_CREDENTIAL_CANDIDATES) {
-      // Keep oversized groups bounded while matching the work performed for
-      // the largest supported group, so the limit sentinel is not observable
-      // through a sudden drop to one bcrypt comparison.
-      await Promise.all(
-        credentialCandidates
-          .slice(0, MAX_CREDENTIAL_CANDIDATES)
-          .map((candidate) => compare(password, candidate.passwordHash)),
-      );
-      sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
-      return;
-    }
-
-    // Check every available hash. Aside from supporting duplicate-by-case
-    // accounts, avoiding an early exit keeps success timing independent of a
-    // matching candidate's position in the result set.
-    const passwordMatchResults = await Promise.all(
-      credentialCandidates.map((candidate) => compare(password, candidate.passwordHash)),
-    );
-    const matchingCredentialIndexes = passwordMatchResults.reduce<number[]>((indexes, passwordMatches, index) => {
-      if (passwordMatches) indexes.push(index);
-      return indexes;
-    }, []);
-
-    // Duplicate-by-case accounts can share a password. Without an unambiguous
-    // match there is no safe account to issue the session for.
-    if (matchingCredentialIndexes.length !== 1) {
-      sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
-      return;
-    }
-
-    const authenticatedUser = credentialCandidates[matchingCredentialIndexes[0]];
     const authenticatedUserId = authenticatedUser.userId;
     const tokenPair = await generateTokenPair(authenticatedUserId);
     logger.info(`[NativeAuth] Credentials sign-in successful for user ${authenticatedUserId}`);
@@ -641,7 +579,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
 // app logs the user straight in (no web browser, no email round-trip) — the same
 // auto-login behaviour the native OAuth and credentials handlers already have.
 //
-// Email verification: the backend can't send a verification email, and
+// Email verification: this adapter does not deliver verification email, and
 // handleNativeAuthCredentials never checks emailVerified, so the new user is
 // auto-logged-in on the device regardless. We still honour
 // EMAIL_VERIFICATION_ENABLED for the stored emailVerified value, mirroring the
@@ -652,7 +590,11 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
 // When the flag is off (the default), accounts are created verified.
 // ---------------------------------------------------------------------------
 
-export async function handleNativeAuthRegister(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleNativeAuthRegister(
+  req: IncomingMessage,
+  res: ServerResponse,
+  database: DbInstance = db,
+): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 
   if (req.method !== 'POST') {
@@ -687,84 +629,44 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
     return;
   }
 
-  const { email, password, name } = body as Record<string, unknown>;
-
-  // Email: present, a string, and matching the lax client-side shape. Validate
-  // against the trimmed/lowercased form so a trailing space can't sneak past.
-  if (typeof email !== 'string' || email.trim().length === 0) {
-    sendJson(res, 400, { error: 'email and password are required' });
-    return;
-  }
-  const normalizedEmail = email.trim().toLowerCase();
-  if (!REGISTER_EMAIL_REGEX.test(normalizedEmail)) {
-    sendJson(res, 400, { error: 'Invalid email address' });
+  const validation = parseCurrentStorePasswordRegistration(body as Record<string, unknown>);
+  if (!validation.ok) {
+    sendJson(res, 400, { error: validation.error });
     return;
   }
 
-  // Password: present, a string, within bounds (mirrors the web Zod schema).
-  if (typeof password !== 'string' || password.length === 0) {
-    sendJson(res, 400, { error: 'email and password are required' });
+  let configuration: ReturnType<typeof currentStoreNativeRegistrationConfiguration>;
+  try {
+    configuration = currentStoreNativeRegistrationConfiguration();
+  } catch {
+    logger.warn('[NativeAuth] Reserved registration unavailable', { category: 'configuration' });
+    sendJson(res, 503, { error: 'Service temporarily unavailable' });
     return;
   }
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    sendJson(res, 400, { error: 'Password must be at least 8 characters' });
+  if (configuration.mode === 'reserved-staging') {
+    await handleReservedNativeRegistration(res, database, configuration.authority, validation.registration);
     return;
-  }
-  if (password.length > PASSWORD_MAX_LENGTH) {
-    sendJson(res, 400, { error: 'Password must be less than 128 characters' });
-    return;
-  }
-
-  // Name: optional. An empty/whitespace-only string is treated as absent; the
-  // display name then falls back to the email local-part (matches web).
-  let trimmedName: string | undefined;
-  if (name !== undefined && name !== null) {
-    if (typeof name !== 'string') {
-      sendJson(res, 400, { error: 'name must be a string' });
-      return;
-    }
-    const candidate = name.trim();
-    if (candidate.length > NAME_MAX_LENGTH) {
-      sendJson(res, 400, { error: 'Name must be less than 100 characters' });
-      return;
-    }
-    if (candidate.length > 0) trimmedName = candidate;
   }
 
   try {
-    // Pre-check keeps the clean 409 message without relying on a DB constraint
-    // (users.email currently has no unique index — see the catch below).
-    const existingRows = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
-    if (existingRows[0]) {
+    const prepared = await prepareCurrentStorePasswordRegistration(database, validation.registration);
+    if (!prepared) {
       sendJson(res, 409, {
         error: 'An account with this email already exists. Please sign in with your existing account.',
       });
       return;
     }
 
-    const passwordHash = await hash(password, BCRYPT_COST);
     // Mirror web: unverified when the verification gate is on, verified otherwise.
     const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
-    const result = await db.transaction(async (tx) => {
-      const newUserId = crypto.randomUUID();
-      const createdAt = new Date();
-      await tx.insert(users).values({
-        id: newUserId,
-        createdAt,
-        email: normalizedEmail,
-        name: trimmedName ?? normalizedEmail.split('@')[0],
-        emailVerified: emailVerificationEnabled ? null : new Date(),
-      });
-      await tx.insert(userCredentials).values({ userId: newUserId, passwordHash });
-      // Mirror the web createUser event: every user gets a profile row. New
-      // accounts start public (the column defaults); Private is opt-in.
-      await tx.insert(userProfiles).values({ userId: newUserId }).onConflictDoNothing();
-      const tokenPair = await generateTokenPair(newUserId, tx);
+    const result = await database.transaction(async (tx) => {
+      const identity = await insertCurrentStorePasswordIdentity(tx, prepared, emailVerificationEnabled);
+      const tokenPair = await generateTokenPair(identity.userId, tx);
       return {
-        userId: newUserId,
+        userId: identity.userId,
         tokenPair,
-        accountCreation: accountCreationReceipt(newUserId, true, 'email', createdAt),
+        accountCreation: accountCreationReceipt(identity.userId, true, 'email', identity.createdAt),
       };
     });
 
@@ -785,6 +687,80 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
   }
 }
 
+const nativeAuthDriverCodes = new Set([
+  'CONNECT_TIMEOUT',
+  'CONNECTION_CLOSED',
+  'CONNECTION_ENDED',
+  'CONNECTION_DESTROYED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+]);
+
+function isNativeAuthInfrastructureFailure(error: unknown): boolean {
+  const code = getPostgresErrorCode(error);
+  return (
+    error instanceof CurrentStoreFoundationError ||
+    error instanceof DrizzleQueryError ||
+    (code !== undefined && (/^[0-9A-Z]{5}$/.test(code) || nativeAuthDriverCodes.has(code)))
+  );
+}
+
+async function handleReservedNativeRegistration(
+  response: ServerResponse,
+  database: DbInstance,
+  authority: WebPasswordAuthority,
+  registration: Parameters<typeof prepareCurrentStorePasswordRegistration>[1],
+) {
+  try {
+    // Validate authority before even an exact-email precheck can report409.
+    // Bcrypt remains outside the global manifest's locked transaction.
+    await preflight(database, authority);
+    const prepared = await prepareCurrentStorePasswordRegistration(database, registration);
+    const result = await database.transaction(async (transaction) => {
+      await transactionSettings(transaction);
+      const inserted = await insertReservedPasswordIdentity(transaction, authority, {
+        email: registration.email,
+        prepared,
+        emailVerificationEnabled: authority.emailVerificationEnabled,
+      });
+      if (inserted.outcome === 'exists') return inserted;
+      const { identity } = inserted;
+      // This remains the installed native issuer, bound to the identity's tx.
+      const tokenPair = await generateTokenPair(identity.userId, transaction);
+      return {
+        outcome: 'created' as const,
+        tokenPair,
+        accountCreation: accountCreationReceipt(identity.userId, true, 'email', identity.createdAt),
+      };
+    });
+    if (result.outcome === 'exists') {
+      sendJson(response, 409, {
+        error: 'An account with this email already exists. Please sign in with your existing account.',
+      });
+      return;
+    }
+    logger.info('[NativeAuth] Reserved registration successful', { category: 'created' });
+    sendJson(response, 201, { ...result.tokenPair, accountCreation: result.accountCreation });
+  } catch (error) {
+    const unavailable = isNativeAuthInfrastructureFailure(error);
+    // Never pass the original query/error/cause/parameters into logs or Sentry.
+    // This branch returns before the unchanged legacy raw-error handler.
+    if (unavailable) {
+      logger.warn('[NativeAuth] Reserved registration unavailable', { category: 'authority-or-database' });
+      sendJson(response, 503, { error: 'Service temporarily unavailable' });
+    } else {
+      logger.error('[NativeAuth] Reserved registration failed', new Error('Native registration internal failure'));
+      sendJson(response, 500, { error: 'Internal server error' });
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // POST /auth/native/oauth — native Sign in with Apple / Google
 //
@@ -792,8 +768,8 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
 // @react-native-google-signin) and posts the provider's identity token here.
 // We verify the token against the provider's JWKS, then find-or-create the
 // Boardsesh user and issue our own mobile JWT pair. Account linking is by the
-// provider's stable `sub`, falling back to email — mirroring the web
-// NextAuth `allowDangerousEmailAccountLinking: true` behaviour.
+// provider's stable `sub`. Legacy mode retains its email-link fallback;
+// explicitly staged resolution reserves new keys and rejects email-only links.
 // ---------------------------------------------------------------------------
 
 /** Apple's bundle identifier — the `aud` claim on Apple identity tokens. */
@@ -814,8 +790,6 @@ const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 const appleJwks = createRemoteJWKSet(new URL('https://appleid.apple.com/auth/keys'));
 const googleJwks = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 
-type OAuthProvider = 'apple' | 'google';
-
 type ForwardedName = { firstName?: string; lastName?: string };
 
 /**
@@ -823,12 +797,24 @@ type ForwardedName = { firstName?: string; lastName?: string };
  * provider's stable per-user id (used for account linking); `email` may be
  * absent on Apple resubmissions (handled by the sub lookup).
  */
-type VerifiedOAuthIdentity = {
-  sub: string;
-  email: string | null;
-  emailVerified: boolean;
-  name: string | null;
-};
+type NativeOAuthVerification =
+  | { status: 'verified'; identity: VerifiedOAuthIdentity }
+  | { status: 'invalid' }
+  | { status: 'unavailable' };
+
+const invalidNativeOAuthCodes = new Set([
+  'ERR_JWT_CLAIM_VALIDATION_FAILED',
+  'ERR_JWT_EXPIRED',
+  'ERR_JWS_SIGNATURE_VERIFICATION_FAILED',
+  'ERR_JWS_INVALID',
+  'ERR_JWT_INVALID',
+  'ERR_JOSE_ALG_NOT_ALLOWED',
+]);
+
+/** JWT payload typings do not validate an arbitrary runtime subject. */
+function validStagedNativeSubject(subject: unknown): subject is string {
+  return typeof subject === 'string' && subject.trim().length > 0 && Buffer.byteLength(subject, 'utf8') <= 1024;
+}
 
 /**
  * The configured Google OAuth client IDs. Any of the iOS / Android / Web
@@ -864,17 +850,22 @@ function verifyNonce(rawNonce: string | undefined, payloadNonce: unknown): boole
 
 /**
  * Verify a provider identity token against the provider's JWKS and extract the
- * claims we need. Returns null on any verification failure (bad signature,
- * wrong issuer/audience, expired, nonce mismatch). Network-free in tests when
- * `jose.jwtVerify` is mocked.
+ * claims we need. Staging separates authoritative invalid-token failures from
+ * required-key/configuration uncertainty and logs only fixed categories.
+ * Legacy callers retain the current failure response and diagnostics.
  */
 async function verifyProviderIdentityToken(
   provider: OAuthProvider,
   identityToken: string,
   nonce?: string,
-): Promise<VerifiedOAuthIdentity | null> {
+  staged = false,
+): Promise<NativeOAuthVerification> {
   try {
     if (provider === 'apple') {
+      if (staged && !APPLE_BUNDLE_ID.trim()) {
+        logger.warn('[NativeAuth] OAuth verification unavailable', { category: 'provider-configuration' });
+        return { status: 'unavailable' };
+      }
       const { payload } = await jwtVerify(identityToken, appleJwks, {
         issuer: APPLE_ISSUER,
         audience: APPLE_BUNDLE_ID,
@@ -882,51 +873,59 @@ async function verifyProviderIdentityToken(
         // also advertises a weaker/asymmetric-confusable alg can't be selected.
         algorithms: ['RS256'],
         clockTolerance: 60,
+        ...(staged ? { requiredClaims: ['exp'] } : {}),
       });
-      if (!payload.sub || !verifyNonce(nonce, payload.nonce)) return null;
+      if (!payload.sub || (staged && !validStagedNativeSubject(payload.sub)) || !verifyNonce(nonce, payload.nonce))
+        return { status: 'invalid' };
       return {
-        sub: payload.sub,
-        email: typeof payload.email === 'string' ? payload.email : null,
-        emailVerified: payload.email_verified === true || payload.email_verified === 'true',
-        // Apple never returns the name in the token — it's delivered once, in
-        // the authorization response, and forwarded by the client separately.
-        name: null,
+        status: 'verified',
+        identity: {
+          sub: payload.sub,
+          email: typeof payload.email === 'string' ? payload.email : null,
+          emailVerified: payload.email_verified === true || payload.email_verified === 'true',
+          // Apple never returns the name in the token — it's delivered once, in
+          // the authorization response, and forwarded by the client separately.
+          name: null,
+        },
       };
     }
 
     const audiences = getGoogleAudiences();
     if (audiences.length === 0) {
-      logger.error('[NativeAuth] No Google client IDs configured — cannot verify Google token');
-      return null;
+      if (staged) logger.warn('[NativeAuth] OAuth verification unavailable', { category: 'provider-configuration' });
+      else logger.error('[NativeAuth] No Google client IDs configured — cannot verify Google token');
+      return { status: staged ? 'unavailable' : 'invalid' };
     }
     const { payload } = await jwtVerify(identityToken, googleJwks, {
       issuer: GOOGLE_ISSUERS,
       audience: audiences,
       algorithms: ['RS256'],
       clockTolerance: 60,
+      ...(staged ? { requiredClaims: ['exp'] } : {}),
     });
-    if (!payload.sub || !verifyNonce(nonce, payload.nonce)) return null;
+    if (!payload.sub || (staged && !validStagedNativeSubject(payload.sub)) || !verifyNonce(nonce, payload.nonce))
+      return { status: 'invalid' };
     return {
-      sub: payload.sub,
-      email: typeof payload.email === 'string' ? payload.email : null,
-      emailVerified: payload.email_verified === true || payload.email_verified === 'true',
-      name: typeof payload.name === 'string' ? payload.name : null,
+      status: 'verified',
+      identity: {
+        sub: payload.sub,
+        email: typeof payload.email === 'string' ? payload.email : null,
+        emailVerified: payload.email_verified === true || payload.email_verified === 'true',
+        name: typeof payload.name === 'string' ? payload.name : null,
+      },
     };
   } catch (error) {
+    if (staged) {
+      const code = getPostgresErrorCode(error);
+      const status = code !== undefined && invalidNativeOAuthCodes.has(code) ? 'invalid' : 'unavailable';
+      logger.warn('[NativeAuth] OAuth verification rejected', {
+        category: status === 'invalid' ? 'invalid-token' : 'provider-unavailable',
+      });
+      return { status };
+    }
     logger.warn('[NativeAuth] OAuth identity token verification failed:', error);
-    return null;
+    return { status: 'invalid' };
   }
-}
-
-/** Build a display name from the forwarded Apple name or the Google token. */
-function resolveDisplayName(identity: VerifiedOAuthIdentity, forwardedName: ForwardedName | undefined): string | null {
-  if (forwardedName) {
-    const parts = [forwardedName.firstName, forwardedName.lastName].filter(
-      (part): part is string => typeof part === 'string' && part.trim().length > 0,
-    );
-    if (parts.length > 0) return parts.join(' ').trim();
-  }
-  return identity.name;
 }
 
 /** Narrow an unknown `name` field from the request body to ForwardedName. */
@@ -961,8 +960,9 @@ async function findOrCreateOAuthUser(
   provider: OAuthProvider,
   identity: VerifiedOAuthIdentity,
   forwardedName: ForwardedName | undefined,
+  database: DbInstance = db,
 ): Promise<FindOrCreateResult> {
-  return db.transaction(async (tx) => {
+  return database.transaction(async (tx) => {
     // 1. Link by the provider's stable subject id.
     const linkedRows = await tx
       .select({ userId: accounts.userId, createdAt: users.createdAt })
@@ -1046,7 +1046,11 @@ async function findOrCreateOAuthUser(
   });
 }
 
-export async function handleNativeAuthOAuth(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleNativeAuthOAuth(
+  req: IncomingMessage,
+  res: ServerResponse,
+  database: DbInstance = db,
+): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 
   if (req.method !== 'POST') {
@@ -1096,14 +1100,47 @@ export async function handleNativeAuthOAuth(req: IncomingMessage, res: ServerRes
     return;
   }
 
-  const identity = await verifyProviderIdentityToken(provider, identityToken, nonce);
-  if (!identity) {
+  let configuration: ReturnType<typeof currentStoreNativeOAuthConfiguration>;
+  try {
+    configuration = currentStoreNativeOAuthConfiguration();
+  } catch {
+    logger.warn('[NativeAuth] Reserved OAuth unavailable', { category: 'configuration' });
+    sendJson(res, 503, { error: 'Service temporarily unavailable' });
+    return;
+  }
+  const staged = configuration.mode === 'reserved-staging';
+  if (configuration.mode === 'reserved-staging') {
+    try {
+      await preflight(database, configuration.authority);
+    } catch (error) {
+      reportReservedNativeOAuthFailure(res, error);
+      return;
+    }
+  }
+  const verified = await verifyProviderIdentityToken(provider, identityToken, nonce, staged);
+  if (verified.status === 'invalid') {
     sendJson(res, 401, { error: 'Invalid or expired identity token' });
+    return;
+  }
+  if (verified.status === 'unavailable') {
+    sendJson(res, 503, { error: 'Service temporarily unavailable' });
+    return;
+  }
+  const { identity } = verified;
+  if (configuration.mode === 'reserved-staging') {
+    await handleReservedNativeOAuth(
+      res,
+      database,
+      configuration.authority,
+      provider,
+      identity,
+      parseForwardedName(name),
+    );
     return;
   }
 
   try {
-    const result = await findOrCreateOAuthUser(provider, identity, parseForwardedName(name));
+    const result = await findOrCreateOAuthUser(provider, identity, parseForwardedName(name), database);
     if (result.status === 'no_email') {
       logger.warn(`[NativeAuth] ${provider} sign-in for a new account without an email — rejecting`);
       sendJson(res, 401, { error: 'An email is required to create an account' });
@@ -1117,6 +1154,60 @@ export async function handleNativeAuthOAuth(req: IncomingMessage, res: ServerRes
   } catch (error) {
     logger.error('[NativeAuth] OAuth sign-in failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
+  }
+}
+
+function reportReservedNativeOAuthFailure(response: ServerResponse, error: unknown) {
+  if (isNativeAuthInfrastructureFailure(error)) {
+    logger.warn('[NativeAuth] Reserved OAuth unavailable', { category: 'authority-or-database' });
+    sendJson(response, 503, { error: 'Service temporarily unavailable' });
+  } else {
+    logger.error('[NativeAuth] Reserved OAuth failed', new Error('Native OAuth internal failure'));
+    sendJson(response, 500, { error: 'Internal server error' });
+  }
+}
+
+async function handleReservedNativeOAuth(
+  response: ServerResponse,
+  database: DbInstance,
+  authority: WebPasswordAuthority,
+  provider: OAuthProvider,
+  identity: VerifiedOAuthIdentity,
+  name: ForwardedName | undefined,
+) {
+  try {
+    const result = await database.transaction(async (transaction) => {
+      await transactionSettings(transaction);
+      const resolved = await resolveReservedNativeOAuthIdentity(transaction, authority, provider, identity, name);
+      if (resolved.outcome !== 'linked' && resolved.outcome !== 'created') return resolved;
+      const tokenPair = await generateTokenPair(resolved.userId, transaction);
+      return {
+        outcome: 'ok' as const,
+        tokenPair,
+        accountCreation: accountCreationReceipt(
+          resolved.userId,
+          resolved.outcome === 'created',
+          provider,
+          resolved.createdAt,
+        ),
+      };
+    });
+    if (result.outcome === 'conflict') {
+      sendJson(response, 409, {
+        error: 'This sign-in method is not linked to that account. Use your existing sign-in method.',
+      });
+    } else if (result.outcome === 'no_email') {
+      sendJson(response, 401, { error: 'An email is required to create an account' });
+    } else if (result.outcome === 'deleted') {
+      sendJson(response, 401, { error: 'Account is not available' });
+    } else {
+      sendJson(response, 200, {
+        ...result.tokenPair,
+        ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
+      });
+    }
+  } catch (error) {
+    reportReservedNativeOAuthFailure(response, error);
   }
 }
 

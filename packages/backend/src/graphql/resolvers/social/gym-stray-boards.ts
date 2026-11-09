@@ -19,6 +19,11 @@ import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { requireGymEditAccess } from './gyms';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { getUserCommunityRoles } from './roles';
+import type { FixedSystemOwnerOrderMode } from '@boardsesh/db/fixed-system-owner-order';
+import {
+  captureFixedSystemOwnerOrderMode,
+  lockCooperativeFixedSystemOwnerTransaction,
+} from '../../../services/fixed-system-owner-order';
 
 // ============================================
 // Stray-board discovery for the gym Boards tab
@@ -437,7 +442,12 @@ function toMergeCandidate(row: RetireGateRow): CanonicalGymCandidate {
  * debug log and a plain `return`: the board move has already committed, so a
  * skipped fold is a no-op, not an error.
  */
-async function retireEmptiedSourceGym(sourceGymId: number, targetGym: GymRow, actorUserId: string): Promise<void> {
+async function retireEmptiedSourceGym(
+  sourceGymId: number,
+  targetGym: GymRow,
+  actorUserId: string,
+  ownerOrderMode: FixedSystemOwnerOrderMode,
+): Promise<void> {
   if (targetGym.ownerId === SYSTEM_BOARD_OWNER_ID) {
     logger.debug('stray attach: not retiring the source listing, the target gym is itself a synced listing', {
       sourceGymId,
@@ -447,6 +457,7 @@ async function retireEmptiedSourceGym(sourceGymId: number, targetGym: GymRow, ac
   }
 
   await db.transaction(async (tx) => {
+    await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
     const gateRows = await loadRetireGateRows(tx, [sourceGymId, targetGym.id]);
     const source = gateRows.get(sourceGymId);
     const target = gateRows.get(targetGym.id);
@@ -530,6 +541,7 @@ export const socialGymStrayBoardQueries = {
 
 export const socialGymStrayBoardMutations = {
   attachBoardToGym: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
+    const ownerOrderMode = captureFixedSystemOwnerOrderMode();
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20, 'attachBoardToGym');
     const validatedInput = validateInput(AttachBoardToGymInputSchema, input, 'input');
@@ -599,9 +611,12 @@ export const socialGymStrayBoardMutations = {
     // turn a successful attach into a GraphQL error.
     if (validatedInput.allowSourceGymMerge !== false && target.currentGymId != null && target.currentGymId !== gym.id) {
       try {
-        await retireEmptiedSourceGym(target.currentGymId, gym, userId);
+        await retireEmptiedSourceGym(target.currentGymId, gym, userId, ownerOrderMode);
       } catch (error) {
-        logger.error('failed to retire the listing a stray attach emptied', {
+        // A busy key is an expected skip under cooperative ordering: the attach
+        // has already committed and the empty listing can be retired later.
+        const isBusyOwnerKey = error instanceof GraphQLError && error.extensions.code === 'SERVICE_UNAVAILABLE';
+        logger[isBusyOwnerKey ? 'warn' : 'error']('failed to retire the listing a stray attach emptied', {
           sourceGymId: target.currentGymId,
           targetGymId: gym.id,
           error: error instanceof Error ? error.message : String(error),

@@ -56,6 +56,11 @@
       "import": "./src/client/config.ts",
       "default": "./src/client/config.ts"
     },
+    "./fixed-system-owner-order": {
+      "types": "./src/fixed-system-owner-order.ts",
+      "import": "./src/fixed-system-owner-order.ts",
+      "default": "./src/fixed-system-owner-order.ts"
+    },
     "./catalog-snapshot": {
       "types": "./src/catalog-snapshot.ts",
       "import": "./src/catalog-snapshot.ts",
@@ -145,6 +150,7 @@
     "db:report-moonboard-reconciliation": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/report-moonboard-reconciliation.ts"
   },
   "dependencies": {
+    "@boardsesh/auth-protocol": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/board-look": "workspace:*",

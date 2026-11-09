@@ -35,12 +35,11 @@ import {
   type ClimbHoldObservation,
   type HoldDifficulty,
 } from '../queries/hold-features';
-import { ensureSystemUser } from './system-user';
+import { ensureJobSystemUser } from './system-user';
 import { HOLD_CLASSIFIER_USER_ID } from '../queries/system-accounts';
 import { defaultTransact, type JobDatabase, type JobLogger, type JobRunOptions, type JobTransact } from './types';
 
 const SYSTEM_USER_ID = HOLD_CLASSIFIER_USER_ID;
-const SYSTEM_USER_EMAIL = 'hold-classifier@boardsesh.com';
 const FEATURE_VERSION = 'v1';
 const MIN_ASCENTS = 20;
 const UPSERT_CHUNK = 1000;
@@ -420,13 +419,8 @@ export async function runRefreshHoldFeatures(options: RefreshHoldFeaturesOptions
   log.info(`[hold-features] board=${board} dryRun=${dryRun} shadow=${shadow} version=${FEATURE_VERSION}`);
   signal.throwIfAborted();
   if (!dryRun && shadow) {
-    await transact((transaction) =>
-      ensureSystemUser(transaction, {
-        id: SYSTEM_USER_ID,
-        name: 'Boardsesh Hold Classifier',
-        email: SYSTEM_USER_EMAIL,
-      }),
-    );
+    await ensureJobSystemUser(transact, 'hold-classifier', options.systemUserAuthority);
+    signal.throwIfAborted();
   }
   const layouts = await listLayouts(db, board);
   let totalFeatures = 0;
