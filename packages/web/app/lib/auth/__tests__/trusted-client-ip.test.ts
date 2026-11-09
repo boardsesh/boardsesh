@@ -4,6 +4,7 @@ vi.mock('server-only', () => ({}));
 import { stagedPasswordClientKey, trustedClientRateLimitKey } from '../trusted-client-ip.server';
 
 const CLOUDFLARE_EDGE = '172.70.1.2';
+const OTHER_CLOUDFLARE_EDGE = '162.158.4.5';
 const VISITOR = '203.0.113.9';
 const FORGED = '198.51.100.7';
 
@@ -41,10 +42,13 @@ describe('trustedClientRateLimitKey', () => {
     expect(new Set(keys)).toEqual(new Set([VISITOR]));
   });
 
-  it('falls back to the edge address when Cloudflare reports no usable visitor', () => {
-    expect(
-      trustedClientRateLimitKey(requestWith({ 'X-Forwarded-For': CLOUDFLARE_EDGE, 'CF-Connecting-IP': 'not-an-ip' })),
-    ).toBe(CLOUDFLARE_EDGE);
+  it('puts edge requests with no usable visitor in one bucket, whichever edge carried them', () => {
+    const missingVisitor = trustedClientRateLimitKey(requestWith({ 'X-Forwarded-For': CLOUDFLARE_EDGE }));
+    const unusableVisitor = trustedClientRateLimitKey(
+      requestWith({ 'X-Forwarded-For': OTHER_CLOUDFLARE_EDGE, 'CF-Connecting-IP': 'not-an-ip' }),
+    );
+    expect(missingVisitor).toBe('edge-without-visitor');
+    expect(unusableVisitor).toBe('edge-without-visitor');
   });
 
   it('groups a rotating IPv6 client by its /64 and separates other networks', () => {
@@ -57,12 +61,22 @@ describe('trustedClientRateLimitKey', () => {
     expect(keyFor('::1:2')).toBe('0:0:0:0::/64');
   });
 
-  it('unwraps an IPv4-mapped visitor', () => {
+  // 203.0.113.9 is cb00:7109 in hex.
+  it.each([
+    `::ffff:${VISITOR}`,
+    '::ffff:cb00:7109',
+    '::FFFF:CB00:7109',
+    '0:0:0:0:0:ffff:cb00:7109',
+    '0000:0000:0000:0000:0000:ffff:cb00:7109',
+    `0:0:0:0:0:ffff:${VISITOR}`,
+  ])('reads the IPv4-mapped visitor %s as the dotted address', (mapped) => {
     expect(
-      trustedClientRateLimitKey(
-        requestWith({ 'X-Forwarded-For': CLOUDFLARE_EDGE, 'CF-Connecting-IP': `::ffff:${VISITOR}` }),
-      ),
+      trustedClientRateLimitKey(requestWith({ 'X-Forwarded-For': CLOUDFLARE_EDGE, 'CF-Connecting-IP': mapped })),
     ).toBe(VISITOR);
+  });
+
+  it('reads an IPv4-mapped direct-origin last hop as the dotted address', () => {
+    expect(trustedClientRateLimitKey(requestWith({ 'X-Forwarded-For': `${FORGED}, ::ffff:cb00:7109` }))).toBe(VISITOR);
   });
 
   const unreadableForwardedFor: Record<string, string>[] = [
