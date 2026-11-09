@@ -73,7 +73,7 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    finished custom one); a cut keeps every LED on a section, so rerouting is Cut
    and Connect. Orange marks show holes, purple marks LEDs, turquoise lines the
    cable and red markers the skipped LEDs. A green ring and arrow mark where the
-   cable starts, a purple ring where it ends (where laying continues), and red
+   cable starts, a turquoise ring where it ends (where laying continues), and red
    rings the section ends a cut left unconnected. Direction arrows, numbered positions and highlighted selections
    make the order visible. Undo restores edits. **Light selected LEDs** is an
    optional physical preview of the selected positions using their assigned

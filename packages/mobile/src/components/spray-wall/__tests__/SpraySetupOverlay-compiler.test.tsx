@@ -212,7 +212,7 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     });
     expect(atOne[5].d).toContain('M56 150a4 4');
     // The cable's end, where laying continues, gets a purple ring.
-    expect(atOne[8]).toMatchObject({ d: 'M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: palette.primary });
+    expect(atOne[8]).toMatchObject({ d: 'M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: '#0891B2' });
     expect(atOne[9].d).toBe('M170 150a10 10 0 1 0 20 0a10 10 0 1 0 -20 0');
     initial.zoom.value = 3;
     initial.panY.value = 100;
@@ -261,7 +261,7 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     const paths = evaluated(shapes);
     expect(paths).toHaveLength(11);
     expect(paths[6].d).toBe('M52 150a8 8 0 1 0 16 0a8 8 0 1 0 -16 0');
-    expect(paths[8]).toMatchObject({ d: 'M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: palette.primary });
+    expect(paths[8]).toMatchObject({ d: 'M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: '#0891B2' });
     expect(paths[9].stroke).toBe(palette.error);
     expect(paths[9].d).toBe('M172 150a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0');
   });

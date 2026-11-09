@@ -345,7 +345,7 @@ export function SpraySetupOverlay({
         </>
       ) : null}
       {cableEnds.length ? (
-        <AnimatedPath animatedProps={endRingProps} fill="none" stroke={brandColors.primary} strokeWidth={2.5} />
+        <AnimatedPath animatedProps={endRingProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2.5} />
       ) : null}
       {looseEnds.length ? (
         <AnimatedPath animatedProps={looseRingProps} fill="none" stroke={brandColors.error} strokeWidth={2.5} />

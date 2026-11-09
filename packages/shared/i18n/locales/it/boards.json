@@ -1508,7 +1508,7 @@
     "initialSkipLabel": "LED da saltare all’inizio del cavo",
     "skipCountRange": "Inserisci un numero intero da 0 a {{max}}.",
     "cancelSkip": "Annulla",
-    "wiringLegend": "Arancione: fori. Viola: LED. Turchese: cavo. Verde: inizio del cavo. Anello viola: fine del cavo. Anello rosso: estremità non collegate. Rosso: LED saltati.",
+    "wiringLegend": "Arancione: fori. Viola: LED. Turchese: cavo. Verde: inizio del cavo. Anello turchese: fine del cavo. Anello rosso: estremità non collegate. Rosso: LED saltati.",
     "holdLedsTitle": "Prese e LED",
     "holdLedsHint": "Controlla quali LED appartengono a ogni presa prima di posare il cavo. Tocca una presa per vedere i suoi LED; se non sono giusti, tocca i LED per aggiungerli alla presa o toglierli. Le prese con il contorno rosso non hanno LED.",
     "holdLedsSummary": "Prese con LED {{linked}} / {{total}}",
