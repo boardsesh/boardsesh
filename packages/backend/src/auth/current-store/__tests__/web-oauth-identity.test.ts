@@ -709,8 +709,8 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
       const held = deferred(),
         release = deferred();
       const blocker = db.transaction(async (transaction) => {
-        if (operation === 'intent')
-          await transaction.select().from(users).where(eq(users.id, owner.userId)).for('update');
+        // A user-row wait under the manifest stops at 250 ms, too short to outlast a deadline.
+        if (operation === 'intent') await transaction.select().from(authEmailProjection).for('update');
         else await transaction.select().from(authWebOAuthIntents).for('update');
         held.resolve();
         await release.promise;

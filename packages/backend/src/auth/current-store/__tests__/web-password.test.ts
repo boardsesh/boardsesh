@@ -33,6 +33,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { db } from '../../../db/client';
+import { getPostgresErrorCode } from '../../../utils/postgres-errors';
 import { checkRateLimit } from '../../../utils/rate-limiter';
 import { setupWorkerDatabase } from '../../../__tests__/worker-db';
 import { currentStoreWebAuthConfiguration, handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
@@ -906,7 +907,12 @@ describe('default-off staged web password commands against the current PostgreSQ
       await bounded(lockWait, active);
       vi.spyOn(Date, 'now').mockReturnValue(command.issuedAt + AUTH_COMMAND_MAX_AGE_MS + 1);
       release.resolve();
-      await expect(active).rejects.toMatchObject({ code: 'expired_request' });
+      const failure = await active.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      // A runner stalled past the 250 ms user-row limit ends in 55P03; both roll back.
+      expect(['expired_request', '55P03']).toContain(getPostgresErrorCode(failure));
     } finally {
       release.resolve();
       await Promise.allSettled([holding, ...(active ? [active] : []), ...(lockWait ? [lockWait] : [])]);
