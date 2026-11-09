@@ -282,12 +282,12 @@ async function liveRefreshRows(userId: string) {
   return { total: rows.length, live: rows.filter((row) => row.revokedAt === null).length };
 }
 /** The refresh handler connects as the owner role, unlike the restricted recovery writer. */
-async function refreshWaitingOnLock(pending: Promise<unknown>) {
+async function refreshWaitingOnUsersKeyShare(pending: Promise<unknown>) {
   await poll(
     async () =>
       (
         await admin(
-          sql`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE usename<>${role} AND wait_event_type='Lock' AND query ILIKE 'insert into "mobile_refresh_tokens"%') AS waiting`,
+          sql`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND usename<>${role} AND wait_event_type='Lock' AND query ILIKE 'select%from "users"%for key share of "users"%') AS waiting`,
         )
       )[0]?.waiting === true,
     pending,
@@ -907,8 +907,8 @@ describe('UID-bound password recovery over the restricted current store', () => 
     try {
       await bounded(rotated.promise);
       expect(await liveRefreshRows(user.id)).toEqual({ total: 1, live: 1 });
-      // The insert's foreign-key check holds the users row, so the reset cannot
-      // reach its refresh revocation until the rotation has committed.
+      // The rotation's admission lock holds the users row with FOR KEY SHARE, so
+      // the reset cannot reach its refresh revocation until the rotation commits.
       resetReply = await duringHash(reset(plan.token), async (pending, resume) => {
         resume();
         try {
@@ -924,7 +924,7 @@ describe('UID-bound password recovery over the restricted current store', () => 
     expect(resetReply.outcome).toBe('reset');
     expect(await liveRefreshRows(user.id)).toEqual({ total: 2, live: 0 });
   }, 15000);
-  it('leaves no live refresh row when a rotation and a reset deadlock on the users row', async () => {
+  it('makes a rotation wait out the reset on the users row, then refuses its revoked refresh row', async () => {
     const { user, plan } = await issued();
     const refreshToken = await seedRefreshToken(user.id);
     vi.stubEnv('NEXTAUTH_SECRET', secret);
@@ -943,32 +943,25 @@ describe('UID-bound password recovery over the restricted current store', () => 
     });
     await bounded(stateLocked.promise);
     let refresh: Promise<number> | undefined;
-    const settledReset = duringHash(reset(plan.token), async (pending, resume) => {
-      try {
-        resume();
-        await waiting(pending);
-        refresh = refreshOverHandler(refreshToken);
-        await refreshWaitingOnLock(refresh);
-      } finally {
-        releaseState.resolve();
-      }
-    }).then(
-      (reply) => ({ reply }),
-      (error: unknown) => ({ error }),
+    const resetReply = await bounded(
+      duringHash(reset(plan.token), async (pending, resume) => {
+        try {
+          resume();
+          await waiting(pending);
+          refresh = refreshOverHandler(refreshToken);
+          // The rotation blocks before it touches any refresh row.
+          await refreshWaitingOnUsersKeyShare(refresh);
+          expect(await liveRefreshRows(user.id)).toEqual({ total: 1, live: 1 });
+        } finally {
+          releaseState.resolve();
+        }
+      }),
+      12000,
     );
-    const settled = await bounded(settledReset, 12000);
     await stateHolder;
-    const status = await bounded(refresh!, 9000);
-    if ('reply' in settled) {
-      expect(settled.reply.outcome).toBe('reset');
-      expect(status).toBe(500);
-    } else {
-      expect(failureDetails(settled.error).code).toBe('40P01');
-      expect(status).toBe(200);
-      expect(await liveRefreshRows(user.id)).toEqual({ total: 2, live: 1 });
-      expect((await consumePasswordRecovery(writers[0], authority, reset(plan.token))).outcome).toBe('reset');
-    }
-    expect((await liveRefreshRows(user.id)).live).toBe(0);
+    expect(resetReply.outcome).toBe('reset');
+    expect(await bounded(refresh!, 9000)).toBe(401);
+    expect(await liveRefreshRows(user.id)).toEqual({ total: 1, live: 0 });
   }, 15000);
   it('invalidates an older UID verification receipt through the committed subject generation', async () => {
     const { user, plan } = await issued();
