@@ -55,7 +55,7 @@ import { resolveReservedCurrentStoreOAuthIdentity } from '../provider-oauth-iden
 import { recordWebOAuthIntent } from '../web-oauth-identity';
 import { authenticateWebPassword } from '../web-password';
 import { AUTH_PROTOCOL_VERSION, WEB_OAUTH_PROTOCOL_VERSION } from '@boardsesh/auth-protocol';
-import { executeFirstRow } from '@boardsesh/db/client';
+import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
 import {
   lockFixedSystemOwnerTransaction,
   type FixedSystemOwnerTransaction,
@@ -82,6 +82,8 @@ const sequenceName = `${triggerName}_attempts`;
 const privateMarker = `owned-delete-private-${randomUUID()}`;
 const stagedFailureLine = '[deleteAccount] Staged account deletion failed';
 const cascadeGateKey = randomInt(1, 2_147_483_647);
+const commandGateKey = randomInt(1, 2_147_483_647);
+const commandGateName = `${triggerName}_command`;
 const password = 'owned-deletion-current-password';
 let passwordHash: string;
 let authority: ExpectedCurrentStoreAuthority;
@@ -263,6 +265,18 @@ async function clearFault() {
   await db.execute(sql`DROP TRIGGER IF EXISTS ${sql.identifier(triggerName)} ON public.auth_security_mutation_events`);
   await db.execute(sql`DROP FUNCTION IF EXISTS ${sql.identifier(triggerName)}()`);
   await db.execute(sql`DROP SEQUENCE IF EXISTS ${sql.identifier(sequenceName)}`);
+  await db.execute(sql`DROP TRIGGER IF EXISTS ${sql.identifier(commandGateName)} ON ${verificationTokens}`);
+  await db.execute(sql`DROP FUNCTION IF EXISTS ${sql.identifier(commandGateName)}()`);
+}
+/** Parks a real command on its first write: manifest held, user row not yet requested. */
+async function installCommandGate() {
+  await db.execute(
+    sql.raw(`CREATE FUNCTION ${commandGateName}() RETURNS trigger LANGUAGE plpgsql AS $gate$
+    BEGIN PERFORM pg_advisory_xact_lock(${commandGateKey}); RETURN NEW; END; $gate$`),
+  );
+  await db.execute(
+    sql`CREATE TRIGGER ${sql.identifier(commandGateName)} BEFORE INSERT ON ${verificationTokens} FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(commandGateName)}()`,
+  );
 }
 /** Runs `body` inside the real users DELETE for the owner. Generated constants only, never input. */
 async function installCascadeTrigger(body: string) {
@@ -295,12 +309,13 @@ async function installRetryFault() {
 /** Holds `acquire` on the blocker connection until released, so a deletion can be parked mid-flight. */
 async function holdOnBlocker(
   acquire: (transaction: { execute: (query: SQL) => Promise<unknown> }) => Promise<unknown>,
+  connection: DbInstance = drizzle(blocker),
 ) {
   const arrived = barrier(),
     release = barrier();
   let backendPid = 0;
   const held = track(
-    drizzle(blocker).transaction(async (transaction) => {
+    connection.transaction(async (transaction) => {
       const row = await executeFirstRow<{ pid: number }>(transaction, sql`SELECT pg_backend_pid() AS pid`);
       if (!row) throw new Error('Owned blocker PID unavailable');
       backendPid = row.pid;
@@ -1469,6 +1484,133 @@ describe('mounted account deletion and current-store authority', () => {
       } finally {
         gate.release();
         await bounded(Promise.allSettled([gate.held, ...(deletion ? [deletion] : []), ...(command ? [command] : [])]));
+      }
+    },
+    15000,
+  );
+  it('resolves a real command-versus-deletion lock cycle without a deadlock abort', async () => {
+    await seedPair();
+    await installCascadeTrigger(`PERFORM pg_advisory_xact_lock(${cascadeGateKey});`);
+    await installCommandGate();
+    const cascadeGate = await holdOnBlocker((transaction) =>
+      transaction.execute(sql`SELECT pg_advisory_xact_lock(${cascadeGateKey})`),
+    );
+    const commandGate = await holdOnBlocker(
+      (transaction) => transaction.execute(sql`SELECT pg_advisory_xact_lock(${commandGateKey})`),
+      db,
+    );
+    let deletion: Promise<boolean> | undefined;
+    let command: Promise<unknown> | undefined;
+    try {
+      // The deletion holds the user row and is parked inside its cascade.
+      deletion = remove();
+      await waitForBlocker(cascadeGate.backendPid, deletion);
+      // The command holds the manifest and is parked before its user-row lock.
+      command = track(
+        requestPasswordRecovery(db, recoveryAuthority(), webCommand('forgot-password', { email: ownerEmail })),
+      );
+      const commandPid = await sessionWaitingOnGate(commandGateKey);
+      // The deletion finishes its cascade and queues on the manifest the command holds.
+      cascadeGate.release();
+      await cascadeGate.held;
+      await waitForBlocker(commandPid, deletion);
+      // The command now requests the row the deletion holds: a real two-lock cycle.
+      commandGate.release();
+      await commandGate.held;
+      const failure: unknown = await bounded(
+        command.then(
+          () => undefined,
+          (error: unknown) => error,
+        ),
+      );
+      expect(postgresErrors.getPostgresErrorCode(failure)).toBe('55P03');
+      expect(await bounded(deletion)).toBe(true);
+      const events = await db
+        .select()
+        .from(authSecurityMutationEvents)
+        .where(eq(authSecurityMutationEvents.userId, ownerId));
+      expect(events).toHaveLength(1);
+      expect(stagedFailureLogs()).toEqual([]);
+    } finally {
+      cascadeGate.release();
+      commandGate.release();
+      await bounded(
+        Promise.allSettled([
+          cascadeGate.held,
+          commandGate.held,
+          ...(deletion ? [deletion] : []),
+          ...(command ? [command] : []),
+        ]),
+      );
+    }
+  }, 15000);
+  it('records the generation a password change set between preflight and the final step', async () => {
+    await seedPair();
+    const hold = await holdOnBlocker((transaction) => lockSprayWallAccount(transaction, ownerId));
+    let deletion: Promise<boolean> | undefined;
+    try {
+      deletion = remove();
+      await waitForBlocker(hold.backendPid, deletion);
+      await bounded(
+        db.transaction((transaction) =>
+          recordSecurityMutation(transaction, {
+            ...authority,
+            operationId: randomUUID(),
+            userId: ownerId,
+            expectedGeneration: 0,
+            kind: 'password-change',
+            domains: ['first-party', 'partner'],
+          }),
+        ),
+        3000,
+      );
+      hold.release();
+      await hold.held;
+      expect(await bounded(deletion)).toBe(true);
+      const events = await db
+        .select()
+        .from(authSecurityMutationEvents)
+        .where(eq(authSecurityMutationEvents.userId, ownerId))
+        .orderBy(authSecurityMutationEvents.generation);
+      expect(events.map(({ kind, previousGeneration, generation }) => [kind, previousGeneration, generation])).toEqual([
+        ['password-change', 0, 1],
+        ['account-deletion', 1, 2],
+      ]);
+      const [cutoff] = await db.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, ownerId));
+      expect(cutoff.generation).toBe(2);
+      expect(cutoff.deletedAt).toBeInstanceOf(Date);
+    } finally {
+      hold.release();
+      await bounded(Promise.allSettled([hold.held, ...(deletion ? [deletion] : [])]));
+    }
+  }, 15000);
+  it.each([
+    ['moved to another owner', { ownerUserId: otherId }],
+    ['retired', { state: 'blocked_deleted', ownerUserId: null }],
+  ] as const)(
+    'rolls everything back when the reservation is %s between preflight and the final step',
+    async (_change, reservationChange) => {
+      await seedPair();
+      const hold = await holdOnBlocker((transaction) => lockSprayWallAccount(transaction, ownerId));
+      let deletion: Promise<boolean> | undefined;
+      try {
+        deletion = remove();
+        await waitForBlocker(hold.backendPid, deletion);
+        await db
+          .update(authEmailReservations)
+          .set(reservationChange)
+          .where(eq(authEmailReservations.normalizedEmail, normalizeAccountEmail(ownerEmail)));
+        const before = await snapshot();
+        hold.release();
+        await hold.held;
+        await expect(bounded(deletion)).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
+        expect(await snapshot()).toEqual(before);
+        expect(stagedFailureLogs()).toEqual([[stagedFailureLine, { failureCode: 'RESERVATION_INCONSISTENT' }]]);
+        expect(effects.publish).not.toHaveBeenCalled();
+        expect(effects.purge).not.toHaveBeenCalled();
+      } finally {
+        hold.release();
+        await bounded(Promise.allSettled([hold.held, ...(deletion ? [deletion] : [])]));
       }
     },
     15000,
