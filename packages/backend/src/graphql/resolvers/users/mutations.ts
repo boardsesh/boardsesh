@@ -46,6 +46,7 @@ import {
   captureFixedSystemOwnerOrderMode,
   lockCooperativeFixedSystemOwnerTransaction,
 } from '../../../services/fixed-system-owner-order';
+import { FixedSystemOwnerOrderError } from '@boardsesh/db/fixed-system-owner-order';
 import {
   beginReservedAccountDeletion,
   captureAccountDeletionCommand,
@@ -55,9 +56,25 @@ import {
   type ReservedDeletionSubject,
 } from '../../../auth/current-store/account-deletion';
 import { preflight } from '../../../auth/current-store/command-context';
+import { CurrentStoreFoundationError } from '../../../auth/current-store/foundation-context';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
 const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
+
+/**
+ * Fixed vocabulary for the staged-deletion log line: our own enums or a
+ * SQLSTATE, never a driver message or detail, which can quote the email.
+ */
+function stagedDeletionFailureCode(error: unknown): string {
+  if (error instanceof CurrentStoreFoundationError || error instanceof FixedSystemOwnerOrderError) return error.code;
+  if (error instanceof GraphQLError && typeof error.extensions.code === 'string') return error.extensions.code;
+  const postgresCode = getPostgresErrorCode(error);
+  return postgresCode && /^[0-9A-Z]{5}$/.test(postgresCode) ? postgresCode : 'unexpected';
+}
+
+function logStagedDeletionFailure(failureCode: string): void {
+  logger.error('[deleteAccount] Staged account deletion failed', { failureCode });
+}
 
 export const userMutations = {
   /**
@@ -295,6 +312,7 @@ export const userMutations = {
         deletionCommand = captureAccountDeletionCommand(configuration.authority, userId, randomUUID());
       }
     } catch {
+      logStagedDeletionFailure('configuration');
       throw new GraphQLError('Account deletion is temporarily unavailable.', {
         extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
       });
@@ -396,12 +414,11 @@ export const userMutations = {
         });
       });
     } catch (error) {
+      if (!deletionCommand) throw error;
+      logStagedDeletionFailure(stagedDeletionFailureCode(error));
       // Keep the existing deadlock-only retry in control of the original error.
       // Staged foundation/driver failures must not expose SQL or retained causes.
-      if (
-        !deletionCommand ||
-        (error instanceof GraphQLError && error.extensions.code === 'ACCOUNT_DELETE_RETRY_REQUIRED')
-      ) {
+      if (error instanceof GraphQLError && error.extensions.code === 'ACCOUNT_DELETE_RETRY_REQUIRED') {
         throw error;
       }
       throw new GraphQLError('Account deletion is temporarily unavailable.', {

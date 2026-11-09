@@ -77,6 +77,7 @@ const systemId = '00000000-0000-0000-0000-000000000000';
 const triggerName = `ba03_delete_fault_${randomUUID().replaceAll('-', '')}`;
 const sequenceName = `${triggerName}_attempts`;
 const privateMarker = `owned-delete-private-${randomUUID()}`;
+const stagedFailureLine = '[deleteAccount] Staged account deletion failed';
 const cascadeGateKey = randomInt(1, 2_147_483_647);
 const password = 'owned-deletion-current-password';
 let passwordHash: string;
@@ -322,6 +323,10 @@ async function requireLockedSubject(
   const subject = await lockReservedDeletionSubject(transaction, command);
   if (!subject) throw new Error('Owned deletion fixture expected a live subject');
   return subject;
+}
+/** Staged-failure lines only: the PostHog erasure step logs its own error when no queue runs. */
+function stagedFailureLogs() {
+  return vi.mocked(logger.error).mock.calls.filter(([line]: unknown[]) => line === stagedFailureLine);
 }
 function errorDetail(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') return undefined;
@@ -1128,6 +1133,7 @@ describe('mounted account deletion and current-store authority', () => {
       await expect(bounded(deletion)).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
       expect(await snapshot()).toEqual(before);
       expect(before.users.some((user) => user.id === ownerId)).toBe(true);
+      expect(stagedFailureLogs()).toEqual([[stagedFailureLine, { failureCode: 'STALE_AUTHORITY' }]]);
       expect(effects.publish).not.toHaveBeenCalled();
       expect(effects.purge).not.toHaveBeenCalled();
     } finally {
@@ -1165,6 +1171,7 @@ describe('mounted account deletion and current-store authority', () => {
       await accountHold.held;
       await expect(bounded(deletion)).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
       expect(performance.now() - started).toBeGreaterThanOrEqual(3500);
+      expect(stagedFailureLogs()).toEqual([[stagedFailureLine, { failureCode: '55P03' }]]);
       manifestRelease.release();
       await manifestHold;
       expect(await snapshot()).toEqual(before);
@@ -1223,6 +1230,7 @@ describe('mounted account deletion and current-store authority', () => {
     expect(await snapshot()).toEqual(committed);
     expect(enqueue).toHaveBeenCalledTimes(1);
     expect(effects.publish).toHaveBeenCalledTimes(1);
+    expect(stagedFailureLogs()).toEqual([]);
   });
   it('reports success to both callers and records one event when two deletions race', async () => {
     await seedPair();
@@ -1241,11 +1249,59 @@ describe('mounted account deletion and current-store authority', () => {
       ).toHaveLength(1);
       const [cutoff] = await db.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, ownerId));
       expect(cutoff.generation).toBe(1);
+      expect(stagedFailureLogs()).toEqual([]);
     } finally {
       hold.release();
       await bounded(Promise.allSettled([hold.held, ...(first ? [first] : []), ...(second ? [second] : [])]));
     }
   }, 15000);
+  it.each([
+    [
+      'a Postgres failure',
+      '23514',
+      async () => {
+        await installFault();
+      },
+    ],
+    [
+      'a foundation rejection',
+      'RESERVATION_INCONSISTENT',
+      async () => {
+        const key = normalizeAccountEmail(ownerEmail);
+        await db.delete(authEmailReservationMembers).where(eq(authEmailReservationMembers.normalizedEmail, key));
+        await db.delete(authEmailReservations).where(eq(authEmailReservations.normalizedEmail, key));
+      },
+    ],
+    [
+      'bad configuration',
+      'configuration',
+      async () => {
+        vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '1.1');
+      },
+    ],
+  ] as const)('logs one fixed line with no identity for %s', async (_name, failureCode, breakDeletion) => {
+    await seedPair();
+    await breakDeletion();
+    await expectUnavailableUnchanged();
+    const logged = stagedFailureLogs();
+    expect(logged).toEqual([[stagedFailureLine, { failureCode }]]);
+    for (const secret of [ownerId, ownerEmail, normalizeAccountEmail(ownerEmail), privateMarker]) {
+      expect(JSON.stringify(logged)).not.toContain(secret);
+    }
+  });
+  it('leaves a legacy deletion failure unmasked and unlogged', async () => {
+    await seedPair();
+    await installFault();
+    vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', 'legacy');
+    let failure: unknown;
+    try {
+      await remove();
+    } catch (caught) {
+      failure = caught;
+    }
+    expect(postgresErrors.getPostgresErrorCode(failure)).toBe('23514');
+    expect(stagedFailureLogs()).toEqual([]);
+  });
   it('a reset already through real bcrypt cannot restore a deleted user or credential', async () => {
     await seedPair();
     const recoveryAuthority = { ...authority, emailVerificationEnabled: false };
