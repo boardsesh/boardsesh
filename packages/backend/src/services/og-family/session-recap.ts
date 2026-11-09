@@ -75,6 +75,7 @@ export async function readSessionRecap(sessionId: string): Promise<SessionRecapR
       climbedAt: ticks.climbedAt,
       consensusDifficulty: stats.displayDifficulty,
       climbName: climbs.name,
+      climbIsHidden: climbs.isHidden,
       layoutId: climbs.layoutId,
       frames: climbs.frames,
       compatibleSizeIds: climbs.compatibleSizeIds,
@@ -148,8 +149,16 @@ export async function readSessionRecap(sessionId: string): Promise<SessionRecapR
         (best, row) => (best === null || row.effectiveDifficulty! > best.effectiveDifficulty! ? row : best),
         null,
       );
-  // Attempts only headline a session with no sends at all.
-  const featuredRow = hardestOf(sendRows) ?? sendRows[0] ?? hardestOf(graded) ?? graded[0];
+  // A community-hidden climb still counts, as it does on the session page, but it
+  // is never the one the card puts forward. Attempts only headline a session with
+  // no sends at all, so a session whose sends are all hidden features nothing.
+  const featurable = (candidates: typeof graded) => candidates.filter((row) => !row.climbIsHidden);
+  const featurableSends = featurable(sendRows);
+  const featurableTicks = featurable(graded);
+  const featuredRow =
+    sendRows.length > 0
+      ? (hardestOf(featurableSends) ?? featurableSends[0] ?? null)
+      : (hardestOf(featurableTicks) ?? featurableTicks[0] ?? null);
 
   const sendsByUser = new Map<string, number>();
   for (const row of graded) {
@@ -173,7 +182,7 @@ export async function readSessionRecap(sessionId: string): Promise<SessionRecapR
     .sort((first, second) => second.sends - first.sends);
 
   let renderBoard: RenderBoardConfig | null = null;
-  if (featuredRow.layoutId !== null) {
+  if (featuredRow && featuredRow.layoutId !== null) {
     const ownerBoards = (await fetchOwnerBoards([featuredRow.userId])).get(featuredRow.userId) ?? [];
     renderBoard = resolveRenderBoard({
       boardType: featuredRow.boardType,
@@ -199,16 +208,18 @@ export async function readSessionRecap(sessionId: string): Promise<SessionRecapR
     attempts: graded.filter((row) => row.status === 'attempt').reduce((sum, row) => sum + row.attemptCount, 0),
     capped,
     gradeRows,
-    featured: {
-      status: featuredRow.status,
-      climberName: nameById.get(featuredRow.userId)?.trim() || null,
-      climbName: featuredRow.climbName,
-      boardType: featuredRow.boardType,
-      angle: featuredRow.angle,
-      difficulty: featuredRow.effectiveDifficulty,
-      frames: featuredRow.frames,
-      renderBoard,
-    },
+    featured: featuredRow
+      ? {
+          status: featuredRow.status,
+          climberName: nameById.get(featuredRow.userId)?.trim() || null,
+          climbName: featuredRow.climbName,
+          boardType: featuredRow.boardType,
+          angle: featuredRow.angle,
+          difficulty: featuredRow.effectiveDifficulty,
+          frames: featuredRow.frames,
+          renderBoard,
+        }
+      : null,
     participants: participants.map(({ name, sends }) => ({ name, sends })),
     durationMinutes,
   };

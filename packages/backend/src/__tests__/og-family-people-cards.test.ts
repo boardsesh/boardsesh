@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { renderOgFamilyTextLayers } from '@boardsesh/board-render/og-family';
 import {
   PROFILE_FALLBACK_NAME,
   RECAP_FALLBACK_NAME,
+  SETTER_FALLBACK_NAME,
   buildGradeBars,
   buildProfileCardContent,
   buildRecapCardContent,
@@ -96,6 +98,13 @@ describe('compactCount', () => {
     expect(compactCount(227_004)).toBe('227K');
     expect(compactCount(1_136_595)).toBe('1.1M');
     expect(compactCount(12_000_000)).toBe('12M');
+  });
+
+  it('rolls over to millions instead of printing 1000K', () => {
+    expect(compactCount(999_499)).toBe('999K');
+    expect(compactCount(999_500)).toBe('1M');
+    expect(compactCount(999_999)).toBe('1M');
+    expect(compactCount(1_000_000)).toBe('1M');
   });
 });
 
@@ -216,6 +225,7 @@ describe('setter card content', () => {
     climbCount: 391,
     boardTypes: ['kilter'],
     topClimb: {
+      uuid: 'bell',
       name: 'Bell of the Wall',
       boardType: 'kilter',
       layoutId: 1,
@@ -273,6 +283,17 @@ describe('setter card content', () => {
     expect(buildSetterCardContent({ ...base, hasLinkedAvatar: false, totalAscents: 50 }).identity?.avatar).toBeNull();
   });
 
+  it.each([
+    ['a whitespace-only username', '   ', null, SETTER_FALLBACK_NAME],
+    ['a username of only invisible characters', '\u200B\u200B', '', SETTER_FALLBACK_NAME],
+    ['a blank linked name over a real username', 'KilterStudio', '   ', 'KilterStudio'],
+  ])('renders through the real text path for %s', async (_label, username, linkedDisplayName, expected) => {
+    const content = buildSetterCardContent({ ...base, username, linkedDisplayName, totalAscents: 100 });
+
+    expect(content.identity?.name).toBe(expected);
+    await expect(renderOgFamilyTextLayers(content)).resolves.toBeDefined();
+  });
+
   it('never lights a climb it cannot draw', () => {
     expect(buildSetterArt({ ...base.topClimb, boardType: 'spray', layoutId: 1 })).toBeNull();
     expect(buildSetterArt(null)).toBeNull();
@@ -323,6 +344,37 @@ describe('recap card content', () => {
 
     expect(content.dots?.total).toBe(2);
     expect(content.dots?.dots.map((dot) => dot.filled)).toEqual([true, false]);
+  });
+
+  it('keeps an ungraded send hollow and an ungraded flash filled', () => {
+    const content = buildRecapCardContent({
+      recap: { ...recap, sends: 2, flashes: 1, gradeRows: [], featured: { ...recap.featured!, difficulty: null } },
+      art: null,
+      fontFamily: FONT,
+    });
+
+    expect(content.dots?.dots.map((dot) => dot.filled)).toEqual([true, false]);
+  });
+
+  it('draws an ungraded non-flash send hollow when every send is a plain send', () => {
+    const content = buildRecapCardContent({
+      recap: { ...recap, sends: 1, flashes: 0, gradeRows: [], featured: { ...recap.featured!, difficulty: null } },
+      art: null,
+      fontFamily: FONT,
+    });
+
+    expect(content.dots?.dots.map((dot) => dot.filled)).toEqual([false]);
+  });
+
+  it('draws a card with no featured climb when every send was on a hidden climb', async () => {
+    const content = buildRecapCardContent({
+      recap: { ...recap, featured: null, gradeRows: [] },
+      art: null,
+      fontFamily: FONT,
+    });
+
+    expect(content.aside).toBeUndefined();
+    await expect(renderOgFamilyTextLayers(content)).resolves.toBeDefined();
   });
 
   it('never claims a dot beyond the list it kept', () => {

@@ -436,6 +436,26 @@ describe('the hardest send a stranger may see', () => {
     await expectVisibleSendDrawn('Unlisted line');
   });
 
+  it('skips a climb the community has hidden, so the next hardest send is drawn', async () => {
+    await seedVisibleSend();
+    await createClimb('p-hidden', { isHidden: true, frames: 'p1214r12', name: 'Community Hid This' });
+    await createTick({ climbUuid: 'p-hidden', difficulty: HARD });
+
+    await expectVisibleSendDrawn('Community Hid This');
+  });
+
+  it("keeps a hidden climb in the count and bars, as the public profile's own stats do", async () => {
+    await seedVisibleSend();
+    await createClimb('p-hidden-counted', { isHidden: true, name: 'Hidden But Sent' });
+    await createTick({ climbUuid: 'p-hidden-counted', difficulty: HARD });
+
+    await requestProfile(CLIMBER);
+
+    const { content } = renderedCard();
+    expect(drawnText(content)).toContain('Hardest of 2 climbs sent on Kilter');
+    expect(content.bars?.filter((bar) => bar.value > 0)).toHaveLength(2);
+  });
+
   it('skips a climb on a private spray wall', async () => {
     await seedVisibleSend();
     await createClimb('p-spray-private', {
@@ -494,7 +514,8 @@ describe('setter card gates and totals', () => {
     await setterClimb('s-draft-only', { isDraft: true, isListed: false });
 
     expectIdenticalNotFound(await requestSetter(SETTER));
-    expect(documentsRun).toEqual(['OgSetterGate']);
+    // The refusal is the one bounded row: nothing about the setter was read.
+    expect(documentsRun).toEqual([]);
   });
 
   it('sums each listable climb at its best angle, not across angles', async () => {
@@ -580,16 +601,50 @@ describe('setter card gates and totals', () => {
     expect(renderedCard().cacheKey).not.toBe(firstKey);
   });
 
-  it('runs the gate on every request while the total and top climb are held', async () => {
+  it('holds the summary, total and top climb across requests', async () => {
     await setterClimb('s-cached');
     await setClimbStats('s-cached', 40, 500);
 
     await requestSetter(SETTER);
     await requestSetter(SETTER);
 
-    expect(documentsRun.filter((name) => name === 'OgSetterGate')).toHaveLength(2);
+    expect(documentsRun.filter((name) => name === 'OgSetterSummary')).toHaveLength(1);
     expect(documentsRun.filter((name) => name === 'OgSetterTotalAscents')).toHaveLength(1);
     expect(documentsRun.filter((name) => name === 'OgSetterTopClimb')).toHaveLength(1);
+  });
+
+  it('stops at the gate on the next request once no climb is visible, whatever is held', async () => {
+    await setterClimb('s-withdrawn');
+    await setClimbStats('s-withdrawn', 40, 500);
+    expect((await requestSetter(SETTER)).statusCode).toBe(200);
+    renderFamily.mockClear();
+    fetchImage.mockClear();
+
+    await db.update(dbSchema.boardClimbs).set({ isDraft: true }).where(eq(dbSchema.boardClimbs.uuid, 's-withdrawn'));
+
+    expectIdenticalNotFound(await requestSetter(SETTER));
+  });
+
+  it('drops a held top climb on the very next request once it is hidden', async () => {
+    await setterClimb('s-stays', { frames: 'p1140r12', name: 'Stays Listed' });
+    await setClimbStats('s-stays', 40, 20);
+    await setterClimb('s-gets-hidden', { frames: 'p1214r12', name: 'Gets Hidden' });
+    await setClimbStats('s-gets-hidden', 40, 900);
+    await requestSetter(SETTER);
+    expect(renderedCard().art?.frames).toBe('p1214r12');
+
+    await db.update(dbSchema.boardClimbs).set({ isHidden: true }).where(eq(dbSchema.boardClimbs.uuid, 's-gets-hidden'));
+    await requestSetter(SETTER);
+
+    const { content, art } = renderedCard();
+    expect(art?.frames).toBe('p1140r12');
+    expect(drawnText(content)).toContain('Most sent: Stays Listed');
+    expect(drawnText(content)).not.toContain('Gets Hidden');
+  });
+
+  it('answers the same 404 for a NUL in the name, without touching the database', async () => {
+    expectIdenticalNotFound(await requestSetter('abc\u0000def'));
+    expect(documentsRun).toEqual([]);
   });
 });
 
@@ -729,6 +784,61 @@ describe('recap draws only what a stranger may see', () => {
     await expectOnlyVisibleSend('Wall Line');
   });
 
+  it('never features a climb the community has hidden, and draws the next hardest send', async () => {
+    await seedVisibleSend();
+    await createClimb('r-hidden', { isHidden: true, frames: 'p1214r12', name: 'Community Hid This' });
+    await createTick({ climbUuid: 'r-hidden', sessionId: SESSION, difficulty: 28, status: 'send' });
+
+    await requestRecap(SESSION);
+
+    const { content, art } = renderedCard();
+    expect(art?.frames).toBe('p1140r12');
+    expect(content.hero.runs[0].text).toBe('6c/V5');
+    expect(drawnText(content)).not.toContain('Community Hid This');
+    // Still a send, as it is on the session page.
+    expect(drawnText(content)).toContain('2 sends, 1 flashed');
+  });
+
+  it('still answers for a session whose only sends are on hidden climbs, featuring none of them', async () => {
+    await createSession('r-all-hidden');
+    await createClimb('r-all-hidden-climb', { isHidden: true, name: 'Community Hid This' });
+    await createTick({ climbUuid: 'r-all-hidden-climb', sessionId: 'r-all-hidden', difficulty: 28, status: 'flash' });
+
+    const res = await requestRecap('r-all-hidden');
+
+    expect(res.statusCode).toBe(200);
+    const { content, art } = renderedCard();
+    expect(art).toBeNull();
+    expect(content.aside).toBeUndefined();
+    expect(drawnText(content)).not.toContain('Community Hid This');
+  });
+
+  it('does not put an attempt forward as the hardest send when every send is hidden', async () => {
+    await createSession('r-hidden-plus-attempt');
+    await createClimb('r-hidden-send', { isHidden: true, name: 'Community Hid This' });
+    await createClimb('r-attempted', { name: 'Only Tried This', frames: 'p1214r12' });
+    await createTick({
+      climbUuid: 'r-hidden-send',
+      sessionId: 'r-hidden-plus-attempt',
+      difficulty: 28,
+      status: 'send',
+    });
+    await createTick({
+      climbUuid: 'r-attempted',
+      sessionId: 'r-hidden-plus-attempt',
+      difficulty: 20,
+      status: 'attempt',
+      attemptCount: 2,
+    });
+
+    await requestRecap('r-hidden-plus-attempt');
+
+    const { content, art } = renderedCard();
+    expect(art).toBeNull();
+    expect(content.aside).toBeUndefined();
+    expect(drawnText(content)).not.toContain('Only Tried This');
+  });
+
   it('never credits a climber whose ticks are private, and counts only what is shown', async () => {
     await seedVisibleSend();
     await createClimb('r-other-private', { name: 'Other Line' });
@@ -771,6 +881,43 @@ describe('recap names only who a stranger may see', () => {
     expect(renderedCard().content.identity?.name).toBe('A climber');
     expect(drawnText(renderedCard().content)).not.toContain('Other Climber');
     expect(renderedCard().content.aside?.lines[0]).toBe('Flashed');
+  });
+
+  it('counts a masked crew member but neither names nor credits them', async () => {
+    await createSession('r-crew-masked');
+    await db
+      .insert(dbSchema.userProfiles)
+      .values({ userId: OTHER_CLIMBER, anonymousOnForeignBoards: true })
+      .onConflictDoUpdate({ target: dbSchema.userProfiles.userId, set: { anonymousOnForeignBoards: true } });
+    await createClimb('r-crew-masked-a');
+    await createTick({
+      climbUuid: 'r-crew-masked-a',
+      sessionId: 'r-crew-masked',
+      userId: OTHER_CLIMBER,
+      status: 'flash',
+      difficulty: 28,
+    });
+    await createTick({
+      climbUuid: 'r-crew-masked-a',
+      sessionId: 'r-crew-masked',
+      userId: CLIMBER,
+      status: 'send',
+      difficulty: 20,
+    });
+
+    try {
+      await requestRecap('r-crew-masked');
+    } finally {
+      await db
+        .update(dbSchema.userProfiles)
+        .set({ anonymousOnForeignBoards: false })
+        .where(eq(dbSchema.userProfiles.userId, OTHER_CLIMBER));
+    }
+
+    const { content } = renderedCard();
+    expect(content.identity?.name).toBe('Public Climber + 1 other');
+    expect(content.aside?.lines[0]).toBe('Flashed');
+    expect(drawnText(content)).not.toContain('Other Climber');
   });
 
   it('reads a crew session as one person plus the rest', async () => {

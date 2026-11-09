@@ -106,8 +106,13 @@ export const OG_PROFILE_HARDEST_SEND = parse(/* GraphQL */ `
   }
 `);
 
-export const OG_SETTER_GATE = parse(/* GraphQL */ `
-  query OgSetterGate($input: SetterProfileInput!) {
+/**
+ * What the setter card draws about the setter. Not the gate: this counts every
+ * climb the setter has, which is about a second on a prolific one, so it sits
+ * behind `setterHasVisibleClimbs` and a short memory.
+ */
+export const OG_SETTER_SUMMARY = parse(/* GraphQL */ `
+  query OgSetterSummary($input: SetterProfileInput!) {
     setterProfile(input: $input) {
       climbCount
       boardTypes
@@ -130,6 +135,7 @@ export const OG_SETTER_TOP_CLIMB = parse(/* GraphQL */ `
   query OgSetterTopClimb($input: SetterClimbsFullInput!) {
     setterClimbsFull(input: $input) {
       climbs {
+        uuid
         name
         boardType
         layoutId

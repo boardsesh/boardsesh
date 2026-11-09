@@ -204,6 +204,8 @@ function buildAscentClimbConditions(validated: AscentFeedFilterInput, viewerUser
     ),
     // …and a spray log whose climb was hard-deleted, for everybody but its author.
     sprayTickClimbExistsCondition(viewerUserId),
+    // `IS NOT TRUE`: the climb is LEFT JOINed, and a missing row is not a hidden one.
+    ...(validated.excludeHiddenClimbs ? [sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`] : []),
     ...(validated.layoutIds && validated.layoutIds.length > 0
       ? [inArray(dbSchema.boardClimbs.layoutId, validated.layoutIds)]
       : []),

@@ -401,8 +401,11 @@ nothing a stranger may see to recap.
 **Profile (`/og/profile?user_id=`).** `publicProfile.isPrivate` is checked first and a
 private account stops there, before stats, frames, avatar or render. The hero is the
 hardest send's logged grade, consensus only when nothing was logged, from
-`userAscentsFeed(sortBy: hardest, statusMode: send)`, whose tick privacy and spray
-rules keep a private tick, draft, unlisted or private-wall climb off the card.
+`userAscentsFeed(sortBy: hardest, statusMode: send, excludeHiddenClimbs: true)`, whose
+tick privacy and spray rules keep a private tick, draft, unlisted or private-wall climb
+off the card, and whose new filter passes over a community-hidden climb for the next
+hardest. `Hardest of N` and the bars keep counting hidden climbs, as `userProfileStats`
+does on the public profile.
 `userProfileStats` replaces the old `userTicks` read, whose `difficulty` was null on
 most ticks and left the chart empty. Stats are held 10 minutes; the hardest send 60
 seconds, because it names one tick and a revoked tick should leave the card quickly.
@@ -416,8 +419,12 @@ and one climber sits on the row for every angle they have sent, so summing would
 count them twice; KilterStudio is 1,136,595 this way and 2,035,138 summed, against
 the owner's 1.1M, and it matches the per-climb count on the setter's own list. Under
 10 sends the climb count becomes the hero. A setter whose climbs are all hidden keeps
-the card, because the page still exists, with no art and no count to headline. The total
-and top climb are held 10 minutes behind a gate that runs every request.
+the card, because the page still exists, with no art and no count to headline. The gate
+is one bounded row with `setterProfile`'s own predicate (`setterHasVisibleClimbs`), since
+`setterProfile` counts the whole catalogue, about a second on a 23,000-climb setter; its
+result (count, boards, linked account) is held 60 seconds. The total and top climb are held
+10 minutes, but the top climb is re-checked on every request (`isSetterClimbListable`), so
+one hidden or withdrawn leaves the card on the next fetch.
 
 **Recap (`/og/session?sessionId=`).** Access (`canAccessResource`) is checked on every
 request, then one bounded read of at most 1,000 ticks (`readSessionRecap`) with the
@@ -427,7 +434,8 @@ clips and attempt totals in front of every cache. Past 1,000 ticks the card says
 `1,000+ sends logged` and the hardest grade is the hardest of those it read. The rollup is
 held 60 seconds. Hero is the hardest grade, or `Still projecting` over the hardest
 attempted grade with rings; one dot per send (filled is a flash, hollow a send), up to
-one line, then `+N`. A crew session reads `Name + 2 others`; `sessionVisibleUserIds`
+one line, then `+N`. A hidden climb counts, as on the session page, but is never the one
+featured. A crew session reads `Name + 2 others`; `sessionVisibleUserIds`
 decides who may be named, so a masked climber is counted but never named and never
 credited. `daily:` ids are not accepted (their rules live in `sessionDetail`), so
 they keep the web route.
@@ -437,14 +445,18 @@ a card fetches one only through `fetchAllowedImage` (`lib/safe-image-fetch.ts`, 
 host kind: our media CDN and Google's photo host). The same DNS private-address check
 runs, redirects are refused because the allowlist only judged the first hop, the timeout
 is 1.5 s, the body is capped at 3 MB and streamed, a declared non-image or zero-byte
-response is rejected, and sharp decodes under a pixel limit from an allowlist of
-formats, with SVG deliberately out. Any failure draws the monogram and the card still
+response is rejected, and only bytes that start as JPEG, PNG or WebP reach sharp, under
+a 13 MP input limit and a 2 s decode timeout. Any failure draws the monogram and the card still
 answers 200. `/static/avatars/` paths are mapped straight to the media CDN, since a
 request to our own route would only redirect there; with no media base configured
 (local dev) the monogram draws. Results, failures included, are held 10 minutes per URL
 so a slow host costs one timeout rather than one per request.
 
-Art renders through the shared `runOnRenderSemaphore` cap. Board planes live in their
+Cold reads behind the gates (`runCardRead`) run one at a time per process with eight
+waiting at most, then answer 503 with `Retry-After`, the same as a saturated render
+queue. The backend's pool is 5 connections and one cold `userProfileStats` is nine
+transactions, so a second one alongside would only queue on the pool. Art renders through
+the shared `runOnRenderSemaphore` cap. Board planes live in their
 own small LRU (`ogFamilyPlaneCache`), because the climb card's `:og` base key omits
 placement and sharing it could serve a misplaced plane and evict climb bases.
 

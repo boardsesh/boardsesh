@@ -17,6 +17,7 @@ import {
 } from '../services/og-family/load-avatar';
 
 const MEDIA_BASE = 'https://media.boardsesh.com';
+const JPEG_LOOKALIKE = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('not really a jpeg')]);
 
 async function jpegBytes(): Promise<Buffer> {
   return sharp({ create: { width: 400, height: 300, channels: 3, background: '#335577' } })
@@ -71,8 +72,36 @@ describe('decodeCardAvatar', () => {
     ).resolves.toBeNull();
   });
 
-  it('throws on bytes that are not an image', async () => {
-    await expect(decodeCardAvatar(Buffer.from('not an image at all'))).rejects.toThrow();
+  it('refuses a GIF, which sharp could also read', async () => {
+    const gif = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#335577' } })
+      .gif()
+      .toBuffer();
+
+    await expect(decodeCardAvatar(gif)).resolves.toBeNull();
+  });
+
+  it.each(['png', 'webp'] as const)('accepts a %s', async (format) => {
+    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#335577' } })
+      .toFormat(format)
+      .toBuffer();
+
+    expect((await decodeCardAvatar(bytes))?.png).toBeInstanceOf(Buffer);
+  });
+
+  it('refuses an image past the pixel limit before decoding it', async () => {
+    const bomb = await sharp({ create: { width: 5000, height: 4000, channels: 3, background: '#000000' } })
+      .png()
+      .toBuffer();
+
+    await expect(decodeCardAvatar(bomb)).rejects.toThrow(/pixel/i);
+  });
+
+  it('refuses bytes that are no known image, without asking sharp', async () => {
+    await expect(decodeCardAvatar(Buffer.from('not an image at all'))).resolves.toBeNull();
+  });
+
+  it('throws on bytes that only start like a JPEG', async () => {
+    await expect(decodeCardAvatar(JPEG_LOOKALIKE)).rejects.toThrow();
   });
 });
 
@@ -105,7 +134,7 @@ describe('loadCardAvatar', () => {
   });
 
   it('returns null for an image sharp cannot decode', async () => {
-    fetchImage.mockResolvedValue(Buffer.from('still not an image'));
+    fetchImage.mockResolvedValue(JPEG_LOOKALIKE);
 
     await expect(loadCardAvatar('/static/avatars/garbage.jpg')).resolves.toBeNull();
   });

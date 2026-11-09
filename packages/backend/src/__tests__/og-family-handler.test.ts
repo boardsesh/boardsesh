@@ -31,6 +31,7 @@ import {
   loadSetterCard,
 } from '../services/og-family/load-cards';
 import { OgFamilyNotFoundError } from '../services/og-family/run-document';
+import { CardReadsSaturatedError } from '../services/og-family/card-read-limit';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 type MockRes = {
@@ -239,6 +240,7 @@ describe('family card handlers', () => {
       ['an unknown variant', '/og/session?sessionId=abc&variant=recap'],
       ['a missing id', '/og/session?variant=join'],
       ['a hostile id', '/og/session?sessionId=%3Cscript%3E'],
+      ['a NUL in the id', '/og/session?sessionId=abc%00def'],
     ])('answers the same 404 for %s, before any load', async (_label, path) => {
       const res = await callSession(path);
 
@@ -309,6 +311,7 @@ describe('family card handlers', () => {
     it.each([
       ['a missing id', '/og/profile'],
       ['a hostile id', '/og/profile?user_id=%3Cscript%3E'],
+      ['a NUL in the id', '/og/profile?user_id=abc%00def'],
       ['an oversized id', `/og/profile?user_id=${'a'.repeat(101)}`],
     ])('answers the same 404 for %s, before any load', async (_label, path) => {
       const res = await callProfile(path);
@@ -316,6 +319,17 @@ describe('family card handlers', () => {
       expect(res.statusCode).toBe(404);
       expect(res.body).toBe(notFoundBody);
       expect(loadProfileCard).not.toHaveBeenCalled();
+    });
+
+    it('sheds with a 503 and Retry-After when card reads are saturated, logging no failure', async () => {
+      vi.mocked(loadProfileCard).mockRejectedValue(new CardReadsSaturatedError());
+
+      const res = await callProfile('/og/profile?user_id=abc');
+
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['Retry-After']).toBe('5');
+      expect(res.headers['Cache-Control']).toBe('no-store');
+      expect(renderFamily).not.toHaveBeenCalled();
     });
 
     it('answers a gate refusal with the same 404', async () => {
@@ -349,6 +363,8 @@ describe('family card handlers', () => {
       ['a missing name', '/og/setter'],
       ['an empty name', '/og/setter?username='],
       ['an oversized name', `/og/setter?username=${'a'.repeat(101)}`],
+      ['a NUL in the name', '/og/setter?username=abc%00def'],
+      ['a newline in the name', '/og/setter?username=abc%0Adef'],
     ])('answers the same 404 for %s, before any load', async (_label, path) => {
       const res = await callSetter(path);
 

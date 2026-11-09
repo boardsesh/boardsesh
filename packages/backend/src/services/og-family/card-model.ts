@@ -393,7 +393,8 @@ export function cardAvatarFor(name: string, avatar: CardAvatar | null, accentCol
 
 /** `1,136,595` -> `1.1M`; `227,004` -> `227K`; below 100k the exact number fits and means more. */
 export function compactCount(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1).replace(/\.0$/, '')}M`;
+  // 999,500 and up round to a thousand thousands, so they read as millions.
+  if (count >= 999_500) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1).replace(/\.0$/, '')}M`;
   if (count >= 100_000) return `${Math.round(count / 1000)}K`;
   return count.toLocaleString('en-US');
 }
@@ -524,6 +525,7 @@ export function buildProfileCardContent(params: {
 // --- setter ----------------------------------------------------------------
 
 export type SetterTopClimbForCard = {
+  uuid: string;
   name: string;
   boardType: string | null;
   layoutId: number | null;
@@ -532,6 +534,9 @@ export type SetterTopClimbForCard = {
   compatibleSizeIds: number[] | null;
   requiredSetIds: number[] | null;
 };
+
+/** What a setter is called when neither their account nor their username has anything drawable. */
+export const SETTER_FALLBACK_NAME = 'Setter';
 
 /** Under this many sends the climb count carries the card instead. */
 export const SETTER_SENDS_HERO_MINIMUM = 10;
@@ -574,7 +579,10 @@ export function buildSetterCardContent(params: {
     art,
     fontFamily,
   } = params;
-  const name = normalizeOgCardText(linkedDisplayName || username, MAX_DRAWN_NAME_CODEPOINTS);
+  const name =
+    normalizeOgCardText(linkedDisplayName ?? '', MAX_DRAWN_NAME_CODEPOINTS) ||
+    normalizeOgCardText(username, MAX_DRAWN_NAME_CODEPOINTS) ||
+    SETTER_FALLBACK_NAME;
   const slot: OgFamilySlot = art ? 'full' : 'none';
   const identity = {
     name,
@@ -709,8 +717,14 @@ function recapDots(recap: SessionRecapRead, featuredColor: string): OgFamilyDots
       dots.push({ color, filled: false });
     }
   }
-  // Sends with no grade at all still each get a dot, in the neutral colour.
-  while (dots.length < Math.min(recap.sends, RECAP_MAX_DOTS_KEPT)) dots.push({ color: OG_FAMILY_MUTED, filled: true });
+  // Sends with no grade at all still each get a dot, in the neutral colour, and
+  // still say which of them were flashes.
+  const gradedFlashes = recap.gradeRows.reduce((sum, row) => sum + row.flashes, 0);
+  let ungradedFlashes = recap.flashes - gradedFlashes;
+  while (dots.length < Math.min(recap.sends, RECAP_MAX_DOTS_KEPT)) {
+    dots.push({ color: OG_FAMILY_MUTED, filled: ungradedFlashes > 0 });
+    ungradedFlashes -= 1;
+  }
   return { dots, total: recap.sends };
 }
 

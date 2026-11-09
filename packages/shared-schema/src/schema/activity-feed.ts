@@ -284,6 +284,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     minQuality: Int
     "Only include climbs by these setters (exact setter usernames)"
     setterUsernames: [String!]
+    "Leave out ascents of climbs the community has hidden. For surfaces that headline one ascent; the logbook itself keeps them."
+    excludeHiddenClimbs: Boolean
     "Primary sort field"
     sortBy: String
     "Primary sort order: desc (default) or asc"

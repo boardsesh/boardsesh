@@ -12,6 +12,7 @@ import {
   renderOgFamilyArt,
 } from '../services/board-render';
 import { OgFamilyNotFoundError } from '../services/og-family/run-document';
+import { CardReadsSaturatedError } from '../services/og-family/card-read-limit';
 import {
   loadPlaylistCard,
   loadProfileCard,
@@ -37,6 +38,12 @@ const OG_RESOURCE_ID_PATTERN = /^[A-Za-z0-9-]{1,100}$/;
 const OG_USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
 /** Same bound the resolver uses; a setter name can be any script, with spaces. */
 const OG_SETTER_NAME_MAX_LENGTH = 100;
+const CONTROL_CHARACTER = /\p{Cc}/u;
+
+/** A setter name a database and a text renderer can both take. Any script, any spacing, no control characters. */
+function isAcceptableSetterName(username: string | null): username is string {
+  return !!username && username.length <= OG_SETTER_NAME_MAX_LENGTH && !CONTROL_CHARACTER.test(username);
+}
 
 /**
  * The one "no card" answer. Missing, private, ended and refused all answer this,
@@ -51,6 +58,15 @@ function sendNotFound(req: IncomingMessage, res: ServerResponse): void {
     'Cache-Control': 'no-store',
   });
   res.end(req.method === 'HEAD' ? undefined : NOT_FOUND_BODY);
+}
+
+function sendSaturated(req: IncomingMessage, res: ServerResponse, message: string): void {
+  res.writeHead(503, {
+    'Content-Type': 'application/json',
+    'Retry-After': '5',
+    'Cache-Control': 'no-store',
+  });
+  res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ error: message }));
 }
 
 function sendJson(req: IncomingMessage, res: ServerResponse, status: number, body: unknown): void {
@@ -108,6 +124,10 @@ async function serveOgFamilyCard(
       sendNotFound(req, res);
       return;
     }
+    if (error instanceof CardReadsSaturatedError) {
+      sendSaturated(req, res, error.message);
+      return;
+    }
     logger.error('[OGFamily] load failed:', error);
     sendJson(req, res, 500, { error: 'Render failed' });
     return;
@@ -162,12 +182,7 @@ async function serveOgFamilyCard(
     else logger.info('[OGFamily] served', logPayload);
   } catch (error) {
     if (error instanceof RenderQueueSaturatedError) {
-      res.writeHead(503, {
-        'Content-Type': 'application/json',
-        'Retry-After': '5',
-        'Cache-Control': 'no-store',
-      });
-      res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ error: error.message }));
+      sendSaturated(req, res, error.message);
       return;
     }
     logger.error('[OGFamily] render failed:', error);
@@ -227,7 +242,7 @@ export async function handleOgProfile(req: IncomingMessage, res: ServerResponse,
 export async function handleOgSetter(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
   const username = url.searchParams.get('username');
-  if (!username || username.length > OG_SETTER_NAME_MAX_LENGTH) {
+  if (!isAcceptableSetterName(username)) {
     sendNotFound(req, res);
     return;
   }

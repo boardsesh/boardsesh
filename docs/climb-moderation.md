@@ -212,7 +212,9 @@ The predicate lives in one place: `hiddenClimbCondition` in
 feed, the new-climb feed and its live push (`newClimbCreated` re-reads the climb per event, so one
 hidden after it was announced still never arrives), recommendations, similar-climb discovery, setter
 stats, the setter OG card's grade bars, a board's featured hardest send, someone else's view of a
-profile's climbs (`userClimbs`), the sitemap.
+profile's climbs (`userClimbs`), the sitemap, and the climb a profile or session recap share card
+puts forward. Those two cards still count a hidden climb, matching the profile stats and session
+page beside them, but never headline it.
 
 Three of those read `board_climbs` through their own join rather than through `hiddenClimbCondition`,
 so they carry their own copy of the rule:

@@ -10,15 +10,14 @@ import { PostGateCache } from './post-gate-cache';
 const AVATAR_FETCH_TIMEOUT_MS = 1_500;
 /** Avatar uploads are capped at 2 MB; a little headroom for the formats Google serves. */
 const AVATAR_MAX_BYTES = 3 * 1024 * 1024;
-/** Refuses a decompression bomb before sharp allocates it. */
-const AVATAR_MAX_INPUT_PIXELS = 24_000_000;
+/** Fits a 12 MP phone photo. Refuses a decompression bomb before sharp allocates it. */
+const AVATAR_MAX_INPUT_PIXELS = 13_000_000;
+/** Decode work stays bounded even for a file that passes every check above. */
+const AVATAR_DECODE_TIMEOUT_SECONDS = 2;
 /** Twice the drawn size, so the circle stays crisp on a retina chat preview. */
 const AVATAR_RASTER_PX = 160;
 const AVATAR_TTL_MS = 10 * 60_000;
 const AVATAR_CACHE_ENTRIES = 256;
-
-/** Formats sharp may decode here. SVG is out on purpose: it can reference other resources. */
-const DECODABLE_AVATAR_FORMATS = new Set(['jpeg', 'png', 'webp', 'gif']);
 
 /** The hostname this backend is reachable at, in absolute avatar URLs stored on old rows. */
 const OWN_BACKEND_HOST = 'ws.boardsesh.com';
@@ -65,16 +64,37 @@ export function resolveAvatarFetchUrl(avatarUrl: string, mediaBaseUrl: string | 
   return staticPathToMediaRedirect(parsed.pathname, search, mediaBaseUrl);
 }
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * JPEG, PNG or WebP by their first bytes. Sharp sees nothing else: it would
+ * happily open SVG, which can reference other resources, and its long list of
+ * decoders is more attack surface than a profile picture needs. A content type
+ * proves nothing, because the server sending it chose it.
+ */
+export function isDecodableAvatarBytes(bytes: Buffer): boolean {
+  const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isPng = bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE);
+  const isWebp =
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    bytes.subarray(8, 12).toString('latin1') === 'WEBP';
+  return isJpeg || isPng || isWebp;
+}
+
 /**
  * Decode fetched bytes into the small square the card draws. Null for anything
- * that is not one of the formats allowed here, whatever its content type claimed.
- * @throws when sharp cannot decode the bytes.
+ * that is not one of the formats allowed here, before sharp sees it.
+ * @throws when sharp cannot decode the bytes or they break the pixel or time limit.
  */
 export async function decodeCardAvatar(bytes: Buffer): Promise<CardAvatar | null> {
-  const image = sharp(bytes, { limitInputPixels: AVATAR_MAX_INPUT_PIXELS, failOn: 'error' });
-  const metadata = await image.metadata();
-  if (!metadata.format || !DECODABLE_AVATAR_FORMATS.has(metadata.format)) return null;
-  const png = await image.rotate().resize(AVATAR_RASTER_PX, AVATAR_RASTER_PX, { fit: 'cover' }).png().toBuffer();
+  if (!isDecodableAvatarBytes(bytes)) return null;
+  const png = await sharp(bytes, { limitInputPixels: AVATAR_MAX_INPUT_PIXELS, failOn: 'error', pages: 1 })
+    .timeout({ seconds: AVATAR_DECODE_TIMEOUT_SECONDS })
+    .rotate()
+    .resize(AVATAR_RASTER_PX, AVATAR_RASTER_PX, { fit: 'cover' })
+    .png()
+    .toBuffer();
   return { png, digest: createHash('sha256').update(png).digest('base64url').slice(0, 24) };
 }
 

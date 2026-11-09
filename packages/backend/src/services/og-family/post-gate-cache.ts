@@ -36,6 +36,12 @@ export class PostGateCache<T> {
     return started;
   }
 
+  /** Drop one entry, so the next read loads it fresh. */
+  forget(key: string): void {
+    const held = this.entries.get(key);
+    if (held) this.entries.set(key, { ...held, expiresAt: 0 });
+  }
+
   clear(): void {
     this.entries.clear();
     this.inFlight.clear();

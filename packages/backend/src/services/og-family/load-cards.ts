@@ -8,7 +8,7 @@ import {
   OG_PROFILE_HARDEST_SEND,
   OG_PROFILE_STATS,
   OG_SESSION_GATE,
-  OG_SETTER_GATE,
+  OG_SETTER_SUMMARY,
   OG_SETTER_TOP_CLIMB,
   OG_SETTER_TOTAL_ASCENTS,
 } from './documents';
@@ -17,6 +17,8 @@ import { PostGateCache } from './post-gate-cache';
 import { readLatestSessionTickFrames } from './latest-session-tick';
 import { canViewSessionRecap, readSessionRecap, type SessionRecapRead } from './session-recap';
 import { loadCardAvatar, resetAvatarCache } from './load-avatar';
+import { runCardRead } from './card-read-limit';
+import { isSetterClimbListable, setterHasVisibleClimbs } from '../../graphql/resolvers/social/setter-follows';
 import {
   PLAYLIST_ART_PAGE_SIZE,
   buildClimbArt,
@@ -76,6 +78,17 @@ const hardestSendCache = new PostGateCache<HardestSendForCard | null>({
   ttlMs: HARDEST_SEND_TTL_MS,
   maxEntries: POST_GATE_MAX_ENTRIES,
 });
+type SetterSummaryRead = {
+  climbCount: number;
+  boardTypes: string[];
+  linkedUserDisplayName: string | null;
+  linkedUserAvatarUrl: string | null;
+} | null;
+/** Short, because it carries the linked account's name and avatar. */
+const setterSummaryCache = new PostGateCache<SetterSummaryRead>({
+  ttlMs: HARDEST_SEND_TTL_MS,
+  maxEntries: POST_GATE_MAX_ENTRIES,
+});
 const setterTotalCache = new PostGateCache<number>({
   ttlMs: EXPENSIVE_READ_TTL_MS,
   maxEntries: POST_GATE_MAX_ENTRIES,
@@ -115,6 +128,7 @@ export function resetOgFamilyLoadCaches(): void {
   sessionTickCache.clear();
   profileStatsCache.clear();
   hardestSendCache.clear();
+  setterSummaryCache.clear();
   setterTotalCache.clear();
   setterTopClimbCache.clear();
   sessionRecapCache.clear();
@@ -222,22 +236,27 @@ export function loadProfileCard(userId: string, fontFamily: string): Promise<Loa
     if (!publicProfile || publicProfile.isPrivate) return null;
 
     const [stats, hardest, avatar] = await Promise.all([
-      profileStatsCache.read(userId, async () => {
-        const { userProfileStats } = await runOgDocument<{ userProfileStats: ProfileStatsForCard }>(
-          OG_PROFILE_STATS,
-          { userId },
-          context,
-        );
-        return userProfileStats;
-      }),
-      hardestSendCache.read(userId, async () => {
-        const { userAscentsFeed } = await runOgDocument<{ userAscentsFeed: { items: HardestSendForCard[] } }>(
-          OG_PROFILE_HARDEST_SEND,
-          { userId, input: { limit: 1, sortBy: 'hardest', statusMode: 'send' } },
-          context,
-        );
-        return userAscentsFeed.items[0] ?? null;
-      }),
+      profileStatsCache.read(userId, () =>
+        runCardRead(async () => {
+          const { userProfileStats } = await runOgDocument<{ userProfileStats: ProfileStatsForCard }>(
+            OG_PROFILE_STATS,
+            { userId },
+            context,
+          );
+          return userProfileStats;
+        }),
+      ),
+      hardestSendCache.read(userId, () =>
+        runCardRead(async () => {
+          // A community-hidden climb stays in the logbook but never headlines a card.
+          const { userAscentsFeed } = await runOgDocument<{ userAscentsFeed: { items: HardestSendForCard[] } }>(
+            OG_PROFILE_HARDEST_SEND,
+            { userId, input: { limit: 1, sortBy: 'hardest', statusMode: 'send', excludeHiddenClimbs: true } },
+            context,
+          );
+          return userAscentsFeed.items[0] ?? null;
+        }),
+      ),
       loadCardAvatar(publicProfile.avatarUrl),
     ]);
 
@@ -261,35 +280,51 @@ export function loadProfileCard(userId: string, fontFamily: string): Promise<Loa
  */
 export function loadSetterCard(username: string, fontFamily: string): Promise<LoadedOgFamilyCard | null> {
   return coalesceCardLoad(`setter:${username}`, async () => {
+    if (!(await setterHasVisibleClimbs(username))) return null;
+
     const context = createAnonymousOgContext();
     const input = { username };
-    const { setterProfile } = await runOgDocument<{
-      setterProfile: {
-        climbCount: number;
-        boardTypes: string[];
-        linkedUserDisplayName: string | null;
-        linkedUserAvatarUrl: string | null;
-      } | null;
-    }>(OG_SETTER_GATE, { input }, context);
+    const setterProfile = await setterSummaryCache.read(username, () =>
+      runCardRead(async () => {
+        const result = await runOgDocument<{ setterProfile: SetterSummaryRead }>(OG_SETTER_SUMMARY, { input }, context);
+        return result.setterProfile;
+      }),
+    );
     if (!setterProfile) return null;
 
+    const readTopClimb = () =>
+      setterTopClimbCache.read(username, () =>
+        runCardRead(async () => {
+          const { setterClimbsFull } = await runOgDocument<{ setterClimbsFull: { climbs: SetterTopClimbForCard[] } }>(
+            OG_SETTER_TOP_CLIMB,
+            { input: { username, sortBy: 'popular', limit: 1 } },
+            context,
+          );
+          return setterClimbsFull.climbs[0] ?? null;
+        }),
+      );
+    // The climb is held for ten minutes, so it is re-checked on every request: a
+    // hidden or withdrawn climb leaves the card on the next fetch.
+    const readStillListableTopClimb = async () => {
+      const held = await readTopClimb();
+      if (!held) return null;
+      if (held.boardType && (await isSetterClimbListable(username, held.boardType, held.uuid))) return held;
+      setterTopClimbCache.forget(username);
+      return readTopClimb();
+    };
+
     const [totalAscents, topClimb, avatar] = await Promise.all([
-      setterTotalCache.read(username, async () => {
-        const result = await runOgDocument<{ setterProfile: { totalAscents: number } | null }>(
-          OG_SETTER_TOTAL_ASCENTS,
-          { input },
-          context,
-        );
-        return result.setterProfile?.totalAscents ?? 0;
-      }),
-      setterTopClimbCache.read(username, async () => {
-        const { setterClimbsFull } = await runOgDocument<{ setterClimbsFull: { climbs: SetterTopClimbForCard[] } }>(
-          OG_SETTER_TOP_CLIMB,
-          { input: { username, sortBy: 'popular', limit: 1 } },
-          context,
-        );
-        return setterClimbsFull.climbs[0] ?? null;
-      }),
+      setterTotalCache.read(username, () =>
+        runCardRead(async () => {
+          const result = await runOgDocument<{ setterProfile: { totalAscents: number } | null }>(
+            OG_SETTER_TOTAL_ASCENTS,
+            { input },
+            context,
+          );
+          return result.setterProfile?.totalAscents ?? 0;
+        }),
+      ),
+      readStillListableTopClimb(),
       loadCardAvatar(setterProfile.linkedUserAvatarUrl),
     ]);
 
@@ -317,7 +352,7 @@ export function loadSetterCard(username: string, fontFamily: string): Promise<Lo
 export function loadSessionRecapCard(sessionId: string, fontFamily: string): Promise<LoadedOgFamilyCard | null> {
   return coalesceCardLoad(`session-recap:${sessionId}`, async () => {
     if (!(await canViewSessionRecap(sessionId))) return null;
-    const recap = await sessionRecapCache.read(sessionId, () => readSessionRecap(sessionId));
+    const recap = await sessionRecapCache.read(sessionId, () => runCardRead(() => readSessionRecap(sessionId)));
     if (!recap) return null;
     const featured = recap.featured;
     const art = featured ? buildClimbArt(featured.boardType, featured.frames, featured.renderBoard) : null;
