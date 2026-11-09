@@ -72,6 +72,12 @@ type BuildRenderConfigParams = {
   frames: string;
   thumbnail: boolean;
   isOgVariant: boolean;
+  /**
+   * The box an OG board is fitted into. Omitted means the climb card's box, so
+   * every existing caller keeps its exact output size and BOARD_RENDER_VERSION
+   * does not move. The share-card family passes its own slot's box.
+   */
+  ogBox?: { width: number; height: number };
   /** Per-board hold-state colour/style map (from HOLD_STATE_MAP[boardName]). */
   boardStates: HoldStateRecord;
   /** Injected so web can pass its (mockable) THUMBNAIL_WIDTH; defaults to the shared constant. */
@@ -177,6 +183,7 @@ export function buildRenderConfig({
   frames,
   thumbnail,
   isOgVariant,
+  ogBox = OG_CARD_BOARD_BOX,
   boardStates,
   thumbnailWidth = THUMBNAIL_WIDTH,
   renderMode,
@@ -193,7 +200,7 @@ export function buildRenderConfig({
   // for every board, to save an empty column nobody sees once the callers ship
   // the params.
   const ogScale = isOgVariant
-    ? Math.min(OG_CARD_BOARD_BOX.width / boardDetails.boardWidth, OG_CARD_BOARD_BOX.height / boardDetails.boardHeight)
+    ? Math.min(ogBox.width / boardDetails.boardWidth, ogBox.height / boardDetails.boardHeight)
     : null;
 
   const computeOutputWidth = () => {

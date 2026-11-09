@@ -94,7 +94,9 @@ export type PublicPlaylistRow = {
 };
 
 /** The `PlaylistGradeSummary` of a public playlist row, or null when it has none. */
-export function formatGradeSummary(p: PublicPlaylistRow) {
+export function formatGradeSummary(
+  p: Pick<PublicPlaylistRow, 'gradedClimbCount' | 'gradeMin' | 'gradeP10' | 'gradeMedian' | 'gradeP90' | 'gradeMax'>,
+) {
   if (
     p.gradedClimbCount == null ||
     p.gradeMin == null ||
@@ -137,6 +139,18 @@ export function formatPublicPlaylist(p: PublicPlaylistRow) {
 }
 
 /**
+ * The caller may not read this playlist. Same message as the plain error it
+ * replaces, so clients see no change; the type lets the share card answer a 404
+ * without treating every other failure as one.
+ */
+export class PlaylistAccessDeniedError extends Error {
+  constructor() {
+    super('Playlist not found or access denied');
+    this.name = 'PlaylistAccessDeniedError';
+  }
+}
+
+/**
  * Check if a user has access to a playlist. Returns the numeric playlist ID.
  * Throws if playlist not found or user lacks access to a private playlist.
  */
@@ -147,6 +161,6 @@ export async function verifyPlaylistAccess(playlistUuid: string, userId: string 
     .from(dbSchema.playlists)
     .where(and(eq(dbSchema.playlists.uuid, playlistUuid), playlistVisibilityCondition(userId)))
     .limit(1);
-  if (!playlist) throw new Error('Playlist not found or access denied');
+  if (!playlist) throw new PlaylistAccessDeniedError();
   return playlist.id;
 }

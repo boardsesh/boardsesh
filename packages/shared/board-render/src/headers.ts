@@ -121,3 +121,21 @@ export function createOgImageHeaders({
     ...(serverTiming ? { 'Server-Timing': serverTiming } : {}),
   };
 }
+
+/**
+ * Headers for a card that must be re-authorized on every fetch.
+ *
+ * A card whose subject can go private (a playlist, a profile, a session) cannot be
+ * cached by anyone between the origin and the crawler: an old versioned URL would
+ * otherwise keep serving the old bytes after the owner closed the door.
+ */
+export function createPrivateOgImageHeaders(
+  options: Parameters<typeof createOgImageHeaders>[0],
+): Record<string, string> {
+  return {
+    ...createOgImageHeaders(options),
+    'Cache-Control': 'private, no-store',
+    'CDN-Cache-Control': 'no-store',
+    'Vercel-CDN-Cache-Control': 'no-store',
+  };
+}

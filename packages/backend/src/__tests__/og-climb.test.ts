@@ -26,6 +26,7 @@ vi.mock('../services/spray-og-card', () => ({
   renderSprayOgCard: vi.fn(),
 }));
 
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { handleOgClimb } from '../handlers/og-climb';
 import { RenderQueueSaturatedError, ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
 import { renderSprayOgCard } from '../services/spray-og-card';
@@ -622,4 +623,37 @@ describe('renderOgClimb (real render)', () => {
     });
     expect(boardseshRepeat.cache).toBe('hit');
   }, 30_000);
+});
+
+describe('handleOgClimb cache tier for version mismatches', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(ensureBoardRendererAvailable).mockResolvedValue(true);
+    vi.mocked(checkRateLimitRedis).mockResolvedValue(undefined);
+    vi.mocked(renderOgClimb).mockResolvedValue({
+      buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+      contentType: 'image/jpeg',
+      cache: 'miss',
+      timings: { wasmMs: 12, baseMs: 8, encodeMs: 4 },
+    });
+  });
+
+  it('keeps a request with no `v` immutable, as the already-shipped URLs are', async () => {
+    const res = await run(validParams);
+
+    expect(String(res.headers['Cache-Control'])).toContain('immutable');
+  });
+
+  it('keeps a request carrying the compiled version immutable', async () => {
+    const res = await run({ ...validParams, v: BOARD_RENDER_VERSION });
+
+    expect(String(res.headers['Cache-Control'])).toContain('immutable');
+  });
+
+  it('answers a stale `v` on the daily tier so old bytes cannot be pinned for a year', async () => {
+    const res = await run({ ...validParams, v: 'not-the-current-version' });
+
+    expect(String(res.headers['Cache-Control'])).not.toContain('immutable');
+    expect(String(res.headers['Cache-Control'])).toContain('s-maxage=86400');
+  });
 });

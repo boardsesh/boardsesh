@@ -106,9 +106,9 @@ const ZERO_RATE_PATHS = new Set([
 const GRAPHQL_PATH = '/graphql';
 const GRAPHQL_SAMPLE_RATE = 0.01;
 
-/** Climb OG share cards. Low volume, but slow enough (image render) to be worth watching. */
-const OG_CLIMB_PATH = '/og/climb';
-const OG_CLIMB_SAMPLE_RATE = 0.05;
+/** OG share cards. Low volume, but slow enough (image render) to be worth watching. */
+const OG_CARD_PATHS: ReadonlySet<string> = new Set(['/og/climb', '/og/playlist', '/og/session']);
+const OG_CARD_SAMPLE_RATE = 0.05;
 
 /** Everything else: /join/*, /integrations/*, the REST surface. */
 export const BACKEND_DEFAULT_SAMPLE_RATE = 0.1;
@@ -312,7 +312,7 @@ export function resolveBackendTracesSampleRate(request: BackendSamplingRequest):
   if (ZERO_RATE_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) return 0;
 
   if (path === GRAPHQL_PATH) return GRAPHQL_SAMPLE_RATE;
-  if (path === OG_CLIMB_PATH) return OG_CLIMB_SAMPLE_RATE;
+  if (OG_CARD_PATHS.has(path)) return OG_CARD_SAMPLE_RATE;
 
   return BACKEND_DEFAULT_SAMPLE_RATE;
 }

@@ -37,7 +37,7 @@ import { climbFieldResolvers } from './climbs/field-resolvers';
 import { favoriteQueries } from './favorites/queries';
 import { favoriteClimbsQuery } from './favorites/favorite-climbs-query';
 import { favoriteMutations } from './favorites/mutations';
-import { playlistQueries } from './playlists/queries';
+import { playlistFieldResolvers, playlistQueries } from './playlists/queries';
 import { playlistMutations } from './playlists/mutations';
 import { sessionQueries } from './sessions/queries';
 import { liveSessionQueries } from './sessions/live-sessions';
@@ -239,6 +239,7 @@ export const resolvers = {
 
   ...boardSessionPrivacyResolvers,
   PublicUserProfile: privacyProfileFields,
+  Playlist: playlistFieldResolvers,
   PrivacySettings: privacySettingsFields,
 
   // Field-level resolvers

@@ -25,6 +25,11 @@
       "import": "./src/og-card.ts",
       "default": "./src/og-card.ts"
     },
+    "./og-family": {
+      "types": "./src/og-family.ts",
+      "import": "./src/og-family.ts",
+      "default": "./src/og-family.ts"
+    },
     "./pipeline": {
       "types": "./src/pipeline.ts",
       "import": "./src/pipeline.ts",

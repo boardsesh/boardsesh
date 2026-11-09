@@ -177,13 +177,25 @@ export const BoardSerialSchema = z
   .transform(normalizeSerial);
 
 /**
+ * Input that failed schema validation. Still an `Error` with the same message, so
+ * clients see no change; the type lets a caller tell "bad input" from a real
+ * failure without matching on message text.
+ */
+export class InputValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InputValidationError';
+  }
+}
+
+/**
  * Validate input and throw a user-friendly error if invalid.
  */
 export function validateInput<T>(schema: z.ZodSchema<T>, data: unknown, fieldName?: string): T {
   const result = schema.safeParse(data);
   if (!result.success) {
     const errors = result.error.issues.map((e: { message: string }) => e.message).join(', ');
-    throw new Error(`Invalid ${fieldName || 'input'}: ${errors}`);
+    throw new InputValidationError(`Invalid ${fieldName || 'input'}: ${errors}`);
   }
   return result.data;
 }

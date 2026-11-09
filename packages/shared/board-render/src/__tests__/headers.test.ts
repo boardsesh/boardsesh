@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOgImageHeaders } from '../headers';
+import { createOgImageHeaders, createPrivateOgImageHeaders } from '../headers';
 
 // Three tiers, not two (#4773). The versioned branch is what the `&v=` in a
 // board-render URL buys; the two unversioned branches exist because the original
@@ -54,5 +54,15 @@ describe('createOgImageHeaders', () => {
 
   it('omits Server-Timing when none is given', () => {
     expect(createOgImageHeaders({ contentType: 'image/png' })['Server-Timing']).toBeUndefined();
+  });
+});
+
+describe('createPrivateOgImageHeaders', () => {
+  it.each([undefined, 'immutable', 'old-version'])('never caches at version %s', (version) => {
+    const headers = createPrivateOgImageHeaders({ contentType: 'image/jpeg', version });
+
+    expect(headers['Cache-Control']).toBe('private, no-store');
+    expect(headers['CDN-Cache-Control']).toBe('no-store');
+    expect(headers['Content-Type']).toBe('image/jpeg');
   });
 });

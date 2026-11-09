@@ -41,6 +41,8 @@ export const playlistsTypeDefs = /* GraphQL */ `
     isFollowedByMe: Boolean!
     "Whether the current user has pinned this playlist (false when unauthenticated)"
     isPinnedByMe: Boolean!
+    "Grade spread of the playlist's climbs. Null when none of its climbs has a grade yet."
+    gradeSummary: PlaylistGradeSummary
   }
 
   """

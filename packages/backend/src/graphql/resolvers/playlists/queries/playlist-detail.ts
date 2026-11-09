@@ -1,4 +1,4 @@
-import { playlistVisibilityCondition } from '../helpers/enrichment';
+import { formatGradeSummary, playlistVisibilityCondition } from '../helpers/enrichment';
 import { eq, and, or, isNull, inArray, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
@@ -181,4 +181,29 @@ export const playlistsForClimbs = async (
     climbUuid,
     playlistUuids,
   }));
+};
+
+/**
+ * `Playlist.gradeSummary`: a primary-key read of `playlist_grade_summaries`,
+ * the same table and shape Discover's band uses. A field resolver rather than
+ * a join in `playlist`, so the app's playlist reads keep their query plan and
+ * only a selection that names this field pays for it. Nothing lists it today
+ * except the backend's own share card, which reads one playlist at a time.
+ */
+export const playlistFieldResolvers = {
+  gradeSummary: async (parent: { id: string }) => {
+    const [summary] = await db
+      .select({
+        gradedClimbCount: dbSchema.playlistGradeSummaries.gradedClimbCount,
+        gradeMin: dbSchema.playlistGradeSummaries.minDifficulty,
+        gradeP10: dbSchema.playlistGradeSummaries.p10Difficulty,
+        gradeMedian: dbSchema.playlistGradeSummaries.medianDifficulty,
+        gradeP90: dbSchema.playlistGradeSummaries.p90Difficulty,
+        gradeMax: dbSchema.playlistGradeSummaries.maxDifficulty,
+      })
+      .from(dbSchema.playlistGradeSummaries)
+      .where(eq(dbSchema.playlistGradeSummaries.playlistId, BigInt(parent.id)))
+      .limit(1);
+    return summary ? formatGradeSummary(summary) : null;
+  },
 };
