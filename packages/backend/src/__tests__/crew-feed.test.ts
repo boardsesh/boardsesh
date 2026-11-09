@@ -326,12 +326,13 @@ describe('Crew feed', () => {
     });
 
     it('splits a setter day on the viewer zone, not on UTC', async () => {
-      // 00:00 and 01:00 UTC on `cappedAt` are the previous evening in Denver,
-      // so a US viewer sees the day break where their clock puts it.
+      // The first hours UTC on `cappedAt` are the previous evening in Regina, so
+      // a viewer sees the day break where their clock puts it. Regina stays on
+      // UTC-6 all year; a zone with daylight saving moves this split twice a year.
       const utc = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
-      const denver = await crewFeedQueries.crewFeed(
+      const regina = await crewFeedQueries.crewFeed(
         null,
-        { input: { limit: 50, timeZone: 'America/Denver', groupClimbs: true } },
+        { input: { limit: 50, timeZone: 'America/Regina', groupClimbs: true } },
         ctx,
       );
       const countsFor = (feed: Awaited<ReturnType<typeof crewFeedQueries.crewFeed>>, setter: string) =>
@@ -339,8 +340,8 @@ describe('Crew feed', () => {
           .filter((item) => item.id.startsWith(`climbgroup:kilter:${setter}:`))
           .map((item) => (item.__typename === 'CrewClimbGroupItem' ? item.totalCount : 1));
       expect(countsFor(utc, 'crew-prolific')).toEqual([12]);
-      // 00:00-05:59 UTC fall on the previous Denver day (UTC-6): 6 and 6.
-      expect(countsFor(denver, 'crew-prolific')).toEqual([6, 6]);
+      // 00:00-05:59 UTC fall on the previous Regina day (UTC-6): 6 and 6.
+      expect(countsFor(regina, 'crew-prolific')).toEqual([6, 6]);
     });
 
     it('never hands an unasked client a CrewClimbGroupItem', async () => {
