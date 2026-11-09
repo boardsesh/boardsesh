@@ -57,3 +57,5 @@ export * from './privacy';
 export * from './board-share-links';
 export * from './analytics-consent';
 export * from './posthog-signups';
+
+export * from './logbook-changes';

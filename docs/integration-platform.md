@@ -838,6 +838,26 @@ see the backend test-DDL notes):
    production path truncates ticks today; tests that need to can disable the
    trigger explicitly.
 
+As built (migrations 0295 and 0296):
+
+- The tick and alias trigger functions are `SECURITY DEFINER` with a pinned
+  `search_path`. The production deploy commits a migration's DDL before
+  `reconcileMigrationRuntimeAcl` grants `boardsesh_runtime` on the new table, so
+  a trigger running as the writer would fail every tick saved in that gap.
+- Nothing in the tick trigger can fail for a valid row: its two columns are NOT
+  NULL on `boardsesh_ticks`, the log has no foreign key and no unique key beyond
+  the generated `seq`, and permissions are the owner's. It uses no `EXCEPTION`
+  block on purpose: one per row is one subtransaction per row, which during a
+  bulk import overflows the per-backend subtransaction cache and slows every
+  snapshot in the cluster.
+- The alias trigger is deferred to commit, so a tick committed while a catalog
+  merge is in flight is picked up by that merge's fan-out instead of being
+  served with the old `climb.id` forever. The window that remains is the gap
+  between the deferred fan-out's snapshot and the commit, which is microseconds.
+- `logbook_change_watermark` holds the one row that carries the feed generation
+  and the retention watermark. The read path is
+  `packages/backend/src/services/logbook-feed.ts`.
+
 A trigger, not application code, because ticks are written by GraphQL
 mutations, offline-sync pushes, the Aurora and Kilter sync daemons, JSON and
 MoonBoard imports, admin scripts and migrations. A trigger covers every one of
@@ -991,8 +1011,24 @@ One narrow row per public tick change, plus the twin and alias fan-out
 (bounded by the twins of one ascent and the ticks of one merged climb). The
 feed query is an index range scan on `(user_id, txid, seq)` plus one batched
 tick lookup per page. Ninety days of rows for every write is a small fraction
-of `boardsesh_ticks` itself; measure it in the milestone 1 PR against
-[postgres-query-costs.md](./postgres-query-costs.md).
+of `boardsesh_ticks` itself.
+
+Measured on PostgreSQL 18.6 against a synthetic table of 3M ticks with all 15
+production indexes and 1M rows already in the log, on a heavily loaded machine
+(load average about 60, so treat the wall-clock numbers as upper bounds):
+
+| Write | Trigger time per row (EXPLAIN `Trigger` line) |
+| --- | --- |
+| Native tick insert | p50 113 µs, p95 590 µs |
+| Aurora-pull insert (adds the twin lookup) | p50 151 µs, p95 561 µs |
+| Public-column update | p50 153 µs, p95 688 µs |
+| Bookkeeping-only update (Kilter redelivery) | No function call; the `WHEN` clause rejects it |
+
+The trigger's first call in a new connection cost 2.3 ms for plan compilation
+and is not repeated. Backend CPU per row rose about 20 µs on a native insert
+(313 µs to 332 µs on the same run), within the noise of a shared machine. A 5,000-tick
+catalog merge wrote its fan-out in 32 ms at commit. The log took about 190 bytes
+per row including its indexes, so 90 days at 11,000 writes a day is roughly 190 MB.
 
 The phone's own sync (`syncTicks`, `syncDeletions`) is untouched. It could
 move onto the same log later and lose its own long-transaction hole; that is
