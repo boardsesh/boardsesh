@@ -614,7 +614,8 @@ for every request and response, an OpenAPI 3.1 registry, and a committed
 `openapi.json` that CI regenerates and diffs, so a contract change shows up in
 review as a JSON diff. The backend validates requests with those schemas and
 contract tests validate responses against them. The web docs render the same
-file.
+file. Regenerate it with `vp run generate:public-api-openapi`; the `check:public-api-openapi`
+step in the CI `guards` job fails a PR whose committed copy is stale.
 
 Milestone 1 routes:
 

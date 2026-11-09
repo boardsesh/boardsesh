@@ -800,6 +800,13 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: vp run check:board-render-version
 
+      # No path gate, for the same reason: the input is the whole
+      # @boardsesh/public-api contract, and a stale list would stop guarding.
+      - name: public-api-openapi (committed document matches the schemas)
+        id: public-api-openapi
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: vp run check:public-api-openapi
+
       # `mobile` is in the gate because check:i18n:orphans scans
       # packages/mobile/{src,app} too. #4416 shipped a raw `playView.resetZoom`
       # label from a mobile-only commit; without it the guard would skip the

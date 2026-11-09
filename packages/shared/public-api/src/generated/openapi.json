@@ -1,0 +1,1636 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Boardsesh API",
+    "version": "1.0.0",
+    "description": "Read a climber's Boardsesh logbook with their consent. Draft v1. JSON, UTF-8, camelCase, timestamps are RFC 3339 in UTC, ids are strings. Additive changes ship on v1 without notice: read what you know and ignore the rest."
+  },
+  "servers": [
+    {
+      "url": "https://api.boardsesh.com"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "boardseshOAuth": {
+        "type": "oauth2",
+        "description": "OAuth 2.0 authorization code flow with PKCE (S256). Tokens are opaque.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://api.boardsesh.com/api/auth/oauth2/authorize",
+            "tokenUrl": "https://api.boardsesh.com/api/auth/oauth2/token",
+            "refreshUrl": "https://api.boardsesh.com/api/auth/oauth2/token",
+            "scopes": {
+              "logbook:read": "Every tick the climber has logged, on every board, including ones they keep private on Boardsesh.",
+              "profile:read": "The climber's display name and avatar.",
+              "offline_access": "Receive a refresh token to keep accessing the other granted scopes while the climber is away."
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "BoardType": {
+        "type": "string",
+        "x-extensible-enum": [
+          "kilter",
+          "tension",
+          "moonboard",
+          "decoy",
+          "touchstone",
+          "grasshopper",
+          "soill",
+          "woods",
+          "spray"
+        ],
+        "description": "The kind of board. `spray` is a climber's own spray wall. New values may be added.",
+        "example": "kilter"
+      },
+      "TickStatus": {
+        "type": "string",
+        "x-extensible-enum": [
+          "flash",
+          "send",
+          "attempt"
+        ],
+        "description": "Whether the climb was topped. New values may be added; treat an unknown one as `attempt`.",
+        "example": "send"
+      },
+      "Tick": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable id of this tick. Never reused.",
+            "example": "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77"
+          },
+          "climbedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the climber logged the climb, UTC. Ticks imported from other board apps carry the time that app recorded.",
+            "example": "2026-10-20T18:42:11Z"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TickStatus"
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Goes this tick represents. A `send` with `attempts: 3` went on the third go.",
+            "example": 3
+          },
+          "angle": {
+            "type": "integer",
+            "description": "Wall angle in degrees.",
+            "example": 40
+          },
+          "mirrored": {
+            "type": "boolean",
+            "description": "Climbed mirrored, on boards that support it.",
+            "example": false
+          },
+          "stars": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 5,
+            "description": "The climber's 1 to 5 rating, or `null`.",
+            "example": 4
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Grade"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The grade the climber gave it, or `null` if they did not give one."
+          },
+          "benchmark": {
+            "type": "boolean",
+            "description": "The climb is a benchmark on its board.",
+            "example": false
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "description": "The climber's note, or `null` when they left none.",
+            "example": "Finally stuck the cross-through"
+          },
+          "climb": {
+            "$ref": "#/components/schemas/TickClimb"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When Boardsesh first stored this tick, UTC.",
+            "example": "2026-10-20T18:42:15Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When Boardsesh last changed this tick, UTC.",
+            "example": "2026-10-20T18:42:15Z"
+          }
+        },
+        "required": [
+          "id",
+          "climbedAt",
+          "status",
+          "attempts",
+          "angle",
+          "mirrored",
+          "stars",
+          "grade",
+          "benchmark",
+          "comment",
+          "climb",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": true,
+        "description": "One logged climb, the same shape everywhere a tick appears. Apps must ignore fields they do not know.",
+        "example": {
+          "id": "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77",
+          "climbedAt": "2026-10-20T18:42:11Z",
+          "status": "send",
+          "attempts": 3,
+          "angle": 40,
+          "mirrored": false,
+          "stars": 4,
+          "grade": {
+            "v": 4,
+            "font": "6B+",
+            "label": "6B+/V4"
+          },
+          "benchmark": false,
+          "comment": "Finally stuck the cross-through",
+          "climb": {
+            "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+            "name": "Slopey Business",
+            "board": {
+              "type": "kilter",
+              "layout": "Kilter Board Original"
+            },
+            "grade": {
+              "v": 4,
+              "font": "6B+",
+              "label": "6B+/V4"
+            },
+            "boardseshGrade": 4.2
+          },
+          "createdAt": "2026-10-20T18:42:15Z",
+          "updatedAt": "2026-10-20T18:42:15Z"
+        }
+      },
+      "Grade": {
+        "type": "object",
+        "properties": {
+          "v": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "V-scale grade, or `null` where the board grade has no V equivalent.",
+            "example": 4
+          },
+          "font": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Fontainebleau grade.",
+            "example": "6B+"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The board's own label for this grade.",
+            "example": "6B+/V4"
+          }
+        },
+        "required": [
+          "v",
+          "font",
+          "label"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "v": 4,
+          "font": "6B+",
+          "label": "6B+/V4"
+        }
+      },
+      "TickClimb": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable climb id. If Boardsesh merges duplicate climbs, this changes to the surviving climb's id and the tick comes through the feed again.",
+            "example": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Climb name. `null` for a climb on someone else's spray wall that is not public: the wall's owner shared it with the climber, not with apps.",
+            "example": "Slopey Business"
+          },
+          "board": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "$ref": "#/components/schemas/BoardType"
+              },
+              "layout": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Layout name, for display (`\"Spray wall\"` when the name is withheld).",
+                "example": "Kilter Board Original"
+              }
+            },
+            "required": [
+              "type",
+              "layout"
+            ],
+            "additionalProperties": true,
+            "description": "The board this climb is on."
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Grade"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The community grade at this angle when read. It drifts over time without the tick changing. `null` when the climb has no community grade at this angle."
+          },
+          "boardseshGrade": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "The Boardsesh universal grade, a decimal on the V scale, or `null`. Optional reading; the model may change.",
+            "example": 4.2
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "board",
+          "grade",
+          "boardseshGrade"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+          "name": "Slopey Business",
+          "board": {
+            "type": "kilter",
+            "layout": "Kilter Board Original"
+          },
+          "grade": {
+            "v": 4,
+            "font": "6B+",
+            "label": "6B+/V4"
+          },
+          "boardseshGrade": 4.2
+        }
+      },
+      "TickChange": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "tick"
+            ],
+            "description": "Upsert this tick by `id`."
+          },
+          "tick": {
+            "$ref": "#/components/schemas/Tick"
+          }
+        },
+        "required": [
+          "type",
+          "tick"
+        ],
+        "additionalProperties": true,
+        "description": "Set this tick to these values. Treat it as \"set\", never \"add one\"; the feed is at least once.",
+        "example": {
+          "type": "tick",
+          "tick": {
+            "id": "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77",
+            "climbedAt": "2026-10-20T18:42:11Z",
+            "status": "send",
+            "attempts": 3,
+            "angle": 40,
+            "mirrored": false,
+            "stars": 4,
+            "grade": {
+              "v": 4,
+              "font": "6B+",
+              "label": "6B+/V4"
+            },
+            "benchmark": false,
+            "comment": "Finally stuck the cross-through",
+            "climb": {
+              "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+              "name": "Slopey Business",
+              "board": {
+                "type": "kilter",
+                "layout": "Kilter Board Original"
+              },
+              "grade": {
+                "v": 4,
+                "font": "6B+",
+                "label": "6B+/V4"
+              },
+              "boardseshGrade": 4.2
+            },
+            "createdAt": "2026-10-20T18:42:15Z",
+            "updatedAt": "2026-10-20T18:42:15Z"
+          }
+        }
+      },
+      "TickDeletedChange": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "tick.deleted"
+            ],
+            "description": "Remove this tick."
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The tick to remove, even if you never saw it.",
+            "example": "9a1f7c3d-2b4e-4f6a-8c9d-1e2f3a4b5c6d"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "additionalProperties": true,
+        "description": "This tick is gone, or is now hidden by duplicate handling.",
+        "example": {
+          "type": "tick.deleted",
+          "id": "9a1f7c3d-2b4e-4f6a-8c9d-1e2f3a4b5c6d"
+        }
+      },
+      "UnknownLogbookChange": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Any other change type.",
+            "example": "tick.moved"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "description": "A change type added after your client was written. Skip it and continue.",
+        "example": {
+          "type": "tick.moved"
+        }
+      },
+      "MeResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^usr_",
+            "description": "The climber's id for your app: stable across reconnects, different for every app, and not the id Boardsesh uses anywhere else.",
+            "example": "usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The climber's display name. Present only with `profile:read`; `null` when they have none.",
+            "example": "Alex"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "The climber's avatar. Present only with `profile:read`; `null` when they have none.",
+            "example": "https://images.example.com/alex.webp"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "id": "usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6",
+          "displayName": "Alex",
+          "avatarUrl": "https://images.example.com/alex.webp"
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "x-extensible-enum": [
+              "invalid_request",
+              "invalid_cursor",
+              "invalid_token",
+              "insufficient_scope",
+              "not_found",
+              "cursor_expired",
+              "rate_limited",
+              "server_error"
+            ],
+            "description": "Machine-readable code. New codes may be added; branch on the HTTP status first.",
+            "example": "invalid_cursor"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For a human reading logs.",
+            "example": "cursor is not a value this API issued"
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Added for validation errors: the field that failed.",
+            "example": "limit"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Quote this when something looks wrong. Also sent as `Boardsesh-Request-Id`.",
+            "example": "req_7Hc2Pb9Xw1Lm"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "requestId"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "error": "invalid_cursor",
+          "message": "cursor is not a value this API issued",
+          "requestId": "req_7Hc2Pb9Xw1Lm"
+        }
+      },
+      "LogbookChangesResponse": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TickChange"
+                },
+                {
+                  "$ref": "#/components/schemas/TickDeletedChange"
+                },
+                {
+                  "$ref": "#/components/schemas/UnknownLogbookChange"
+                }
+              ],
+              "description": "One feed entry. Apply entries in order and ignore types you do not know."
+            },
+            "description": "Possibly empty, even while `hasMore` is true."
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Pass it as `cursor` on the next request. Opaque. Commit it together with the page you applied.",
+            "example": "c3.eyJraW5kIjo"
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "Keep paging while true. Only `false` means a complete snapshot and its catch-up, or an incremental sync, is finished.",
+            "example": false
+          }
+        },
+        "required": [
+          "changes",
+          "cursor",
+          "hasMore"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "changes": [
+            {
+              "type": "tick.deleted",
+              "id": "9a1f7c3d-2b4e-4f6a-8c9d-1e2f3a4b5c6d"
+            }
+          ],
+          "cursor": "c3.eyJraW5kIjo",
+          "hasMore": false
+        }
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/v1/me": {
+      "get": {
+        "operationId": "getMe",
+        "summary": "Who is connected",
+        "description": "Works with any valid access token. `displayName` and `avatarUrl` are present only when the token has `profile:read`.",
+        "security": [
+          {
+            "boardseshOAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connected climber, as seen by your app.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/connection": {
+      "delete": {
+        "operationId": "deleteConnection",
+        "summary": "Disconnect this app from the climber",
+        "description": "Ends the connection this token belongs to: every token family, remembered consent and pending code. Needs no additional scope. Idempotent, but a retry may return `401`; `401` alone does not prove an earlier request succeeded.",
+        "security": [
+          {
+            "boardseshOAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The connection is disconnected.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/logbook/changes": {
+      "get": {
+        "operationId": "getLogbookChanges",
+        "summary": "Read the logbook: first complete download and every later update",
+        "security": [
+          {
+            "boardseshOAuth": [
+              "logbook:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Omit it to start a complete snapshot of the climber's visible ticks. Otherwise pass the `cursor` from the previous page. Opaque: do not parse or build it. `c3.expired` always answers `410`, for testing recovery.",
+              "example": "c3.eyJraW5kIjo"
+            },
+            "required": false,
+            "description": "Omit it to start a complete snapshot of the climber's visible ticks. Otherwise pass the `cursor` from the previous page. Opaque: do not parse or build it. `c3.expired` always answers `410`, for testing recovery.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "description": "Page size, 1 to 200.",
+              "example": 100
+            },
+            "required": false,
+            "description": "Page size, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of changes, in order.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogbookChangesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request` for a bad parameter, `invalid_cursor` for a cursor this API did not issue.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`insufficient_scope`: the token lacks `logbook:read`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`cursor_expired`: persist that a full sync is required, then start without a cursor.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/logbook/ticks/{id}": {
+      "get": {
+        "operationId": "getLogbookTick",
+        "summary": "Read one tick",
+        "security": [
+          {
+            "boardseshOAuth": [
+              "logbook:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The tick id.",
+              "example": "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77"
+            },
+            "required": true,
+            "description": "The tick id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tick.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tick"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`insufficient_scope`: the token lacks `logbook:read`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: the tick was deleted or is not this climber's.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

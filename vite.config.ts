@@ -182,6 +182,7 @@ export default defineConfig({
       './packages/shared/community-roles/vite.config.ts',
       './packages/shared/consent/vite.config.ts',
       './packages/shared/gym-claim/vite.config.ts',
+      './packages/shared/public-api/vite.config.ts',
       './packages/shared/kiosk/vite.config.ts',
       './packages/shared/i18n/vite.config.ts',
       './packages/shared/graphql/vite.config.ts',
@@ -752,6 +753,16 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-board-render-version.ts --check',
         cache: false,
       },
+      // The public /v1 contract as a committed document, so a contract change is
+      // a reviewable JSON diff. `check:` is the drift gate.
+      'generate:public-api-openapi': {
+        command: 'node --import tsx scripts/generate-public-api-openapi.ts',
+        cache: false,
+      },
+      'check:public-api-openapi': {
+        command: 'node --import tsx scripts/generate-public-api-openapi.ts --check',
+        cache: false,
+      },
       'check:changelog': {
         command: 'node --import tsx scripts/generate-changelog.ts --check',
         cache: false,
@@ -901,6 +912,9 @@ export default defineConfig({
       },
       'typecheck:auth-protocol': {
         command: 'pnpm --filter @boardsesh/auth-protocol run typecheck',
+      },
+      'typecheck:public-api': {
+        command: 'pnpm --filter @boardsesh/public-api run typecheck',
       },
       'typecheck:analytics': {
         command: 'pnpm --filter @boardsesh/analytics run typecheck',
@@ -1073,6 +1087,7 @@ export default defineConfig({
           'typecheck:party-profile',
           'typecheck:watch-pairing',
           'typecheck:auth-protocol',
+          'typecheck:public-api',
           'typecheck:analytics',
           'typecheck:climb-actions',
           'typecheck:key-value-storage',
