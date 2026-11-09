@@ -13,7 +13,6 @@ export {
 export { PlaylistStateHeader } from './PlaylistStateHeader';
 export { PlaylistFormSheet, type PlaylistFormValues } from './PlaylistFormSheet';
 export { PlaylistPinButton } from './PlaylistPinButton';
-export { PlaylistFollowButton } from './PlaylistFollowButton';
 export { PlaylistEditDoneButton } from './PlaylistEditDoneButton';
 export { PlaylistOwnerToolbar } from './PlaylistOwnerToolbar';
 export { PlaylistActionsMenu } from './PlaylistActionsMenu';

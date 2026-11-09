@@ -14,6 +14,7 @@ import {
   usePlaylistItemMutations,
   type PlaylistClimbsBoardInput,
 } from '@boardsesh/playlists-react';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/queue';
 import {
   GET_PLAYLIST,
@@ -31,7 +32,6 @@ import {
   SKELETON_PLACEHOLDERS,
   PlaylistFormSheet,
   PlaylistActionsMenu,
-  PlaylistFollowButton,
   PlaylistEditDoneButton,
   PlaylistOwnerToolbar,
   PlaylistStateHeader,
@@ -66,6 +66,8 @@ import {
 import { listAddToQueueCount } from '../../../src/lib/playlists/list-add-to-queue-count';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
 import { GlassIconButton } from '../../../src/components/GlassIconButton';
+import { FollowIconButton } from '../../../src/components/FollowIconButton';
+import { ShareIconButton } from '../../../src/components/ShareIconButton';
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { OfflineState } from '../../../src/components/OfflineState';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
@@ -78,6 +80,10 @@ import { recordPlaylistOpen } from '../../../src/lib/playlists/recents-store';
 import { reportHandledError } from '../../../src/lib/error-reporting';
 import { toQueueClimbs } from '../../../src/lib/climb-types';
 import { hapticSelection } from '../../../src/lib/haptics';
+import { track } from '../../../src/lib/analytics';
+import { WEB_BASE_URL } from '../../../src/lib/env';
+import { useNativeGlass } from '../../../src/hooks/use-native-glass';
+import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useIsSharedSession } from '../../../src/providers/queue-provider';
 import { useToast } from '../../../src/providers/toast-provider';
@@ -119,6 +125,7 @@ export default function PlaylistDetail() {
   const isSharedSession = useIsSharedSession();
   const { showToast } = useToast();
   const { systemColors, brandColors } = useTheme();
+  const nativeGlass = useNativeGlass();
   const { updatePlaylist, deletePlaylist, pinPlaylist, unpinPlaylist, followPlaylist, unfollowPlaylist } =
     usePlaylistMutations();
   const { reorderPlaylistClimb, removeClimbFromPlaylist } = usePlaylistItemMutations();
@@ -861,10 +868,15 @@ export default function PlaylistDetail() {
     [unfilteredCount, totalCount, settledFitsBoard, hasNextPage, renderBoard, visibleAllClimbs],
   );
 
+  const trackPlaylistShared = useCallback(() => {
+    track(SHARED_EVENTS.PlaylistShared, { playlistUuid, method: 'share' });
+  }, [playlistUuid]);
+
   // Header controls over the hero. Owners get a pin · edit · delete toolbar that
   // collapses to a single overflow ⋯ menu on scroll (and always on Material,
-  // which asks for the collapsed form). Non-owners keep follow + pin. Edit mode
-  // replaces everything with Done.
+  // which asks for the collapsed form). Non-owners keep follow + pin. A public
+  // playlist adds Share for everyone, signed in or not. Edit mode replaces
+  // everything with Done.
   const renderActions = useCallback(
     (collapsed: boolean) => {
       if (!playlist) return null;
@@ -876,39 +888,55 @@ export default function PlaylistDetail() {
       if (pendingEdit) {
         return <PlaylistEditDoneButton onPress={cancelPendingEdit} collapsed={collapsed} />;
       }
+      // A private playlist has no link that opens for anyone else.
+      const shareButton = playlist.isPublic ? (
+        <ShareIconButton
+          url={`${WEB_BASE_URL}/playlists/${encodeURIComponent(playlistUuid)}`}
+          message={t('detail.shareText')}
+          accessibilityLabel={t('detail.share')}
+          copiedMessage={t('detail.shareSuccess')}
+          errorMessage={t('detail.shareError')}
+          onShare={trackPlaylistShared}
+          // Beside the owner toolbar's white glyphs on the clear glass over the hero.
+          iconColor={isOwner && !collapsed && nativeGlass ? iosSystemColors.white : undefined}
+        />
+      ) : null;
       if (isOwner) {
         if (collapsed) {
           return (
-            <PlaylistActionsMenu
-              isPinned={isPinned}
-              onTogglePin={handleTogglePin}
-              onAddClimbs={canAddClimbs ? goToClimbs : undefined}
-              onEditDetails={openEditDetails}
-              onEdit={enterEditMode}
-              onDelete={handleDelete}
-            />
+            <>
+              {shareButton}
+              <PlaylistActionsMenu
+                isPinned={isPinned}
+                onTogglePin={handleTogglePin}
+                onAddClimbs={canAddClimbs ? goToClimbs : undefined}
+                onEditDetails={openEditDetails}
+                onEdit={enterEditMode}
+                onDelete={handleDelete}
+              />
+            </>
           );
         }
         return (
-          <PlaylistOwnerToolbar
-            isPinned={isPinned}
-            onTogglePin={handleTogglePin}
-            onEdit={enterEditMode}
-            onDelete={handleDelete}
-          />
+          <>
+            {shareButton}
+            <PlaylistOwnerToolbar
+              isPinned={isPinned}
+              onTogglePin={handleTogglePin}
+              onEdit={enterEditMode}
+              onDelete={handleDelete}
+            />
+          </>
         );
       }
-      // Signed out there is nothing to follow or pin: no item, not an empty one.
-      if (!isAuthenticated) return null;
+      // Signed out there is nothing to follow or pin. Null when private too: no
+      // item, not an empty one.
+      if (!isAuthenticated) return shareButton;
       return (
         <>
+          {shareButton}
           {isFollowable ? (
-            <PlaylistFollowButton
-              isFollowing={isFollowing}
-              onToggle={handleToggleFollow}
-              loading={followLoading}
-              collapsed={collapsed}
-            />
+            <FollowIconButton isFollowing={isFollowing} onToggle={handleToggleFollow} disabled={followLoading} />
           ) : null}
           <GlassIconButton
             iconName={isPinned ? 'pin.fill' : 'pin'}
@@ -944,6 +972,9 @@ export default function PlaylistDetail() {
       openEditDetails,
       systemColors,
       brandColors,
+      nativeGlass,
+      playlistUuid,
+      trackPlaylistShared,
       t,
     ],
   );

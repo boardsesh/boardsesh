@@ -36,6 +36,7 @@ vi.mock('../../../../src/components/Button', () => ({
 vi.mock('../../../../src/components/Text', () => ({
   Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
+vi.mock('../../../../src/components/ShareIconButton', () => ({ ShareIconButton: () => null }));
 vi.mock('../../../../src/components/SetterFollowButton', () => ({
   SetterFollowButton: ({ username }: { username: string }) => <span>follow:{username}</span>,
 }));

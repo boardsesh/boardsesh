@@ -297,6 +297,11 @@ export const SHARED_EVENTS = {
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',
   ClimbShared: 'Climb Shared',
+  // Tapped Share on a playlist or setter page. Web sends the same two names with
+  // `method` native/clipboard; mobile sends `method: 'share'`, an intent. Props:
+  // { playlistUuid, method } and { username, method }.
+  PlaylistShared: 'Playlist Shared',
+  SetterShared: 'Setter Shared',
   // A climber sent a community report on a climb. Props: { kind: 'hide' |
   // 'grade', boardType, status: 'created' | 'added' | 'already_reported' }.
   // The status split is the signal: mostly `added` means one bad climb is
