@@ -9,6 +9,7 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { boardHasLights, drivesWithoutBluetooth } from '../../lib/boards/board-lighting';
+import { useSprayWallLedsEnabled } from '../../lib/spray/use-spray-wall-leds-enabled';
 import { hapticSelection } from '../../lib/haptics';
 import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { spacing } from '../../theme/tokens';
@@ -37,10 +38,12 @@ function WallEmptyStateComponent() {
   // Bluetooth connect CTA.
   const { data: activeBoard } = useActiveBoard();
   const ledless = drivesWithoutBluetooth(activeBoard);
-  // A wall device lights the wall, so "this wall has no lights" would be wrong.
+  const sprayLedsEnabled = useSprayWallLedsEnabled(activeBoard?.boardType, activeBoard?.layoutId);
+  // A wall device or this phone's LED setup lights the wall, so "this wall has
+  // no lights" would be wrong.
   const body = !ledless
     ? t('mobile.boardPresence.wallEmptyBody')
-    : boardHasLights(activeBoard)
+    : boardHasLights(activeBoard) || sprayLedsEnabled
       ? t('mobile.boardPresence.wallEmptyBodyWallDevice')
       : t('mobile.boardPresence.wallEmptyBodyNoLeds');
   const takeVirtualWall = bluetooth?.takeVirtualWall;
