@@ -277,8 +277,12 @@ every relaxed route today, and the visitor lands on the climb after signing in.
 
 `next` passes two independent gates before it is followed: `isSafeReturnPath`
 (app-relative, length-capped, no scheme, no `//`, no backslash, no control
-characters) and `isReadOnlyAnonymousPath`, which pins the destination to a shape
-the gate itself could have produced. Values are read from
+characters, checked at every depth of percent-decoding) and
+`isReadOnlyAnonymousPath`, which pins the destination to a shape the gate itself
+could have produced. The decoding matters because Expo Router decodes a path
+twice while routing, and anything starting `//` after that is opened as an
+external URL: `isSameOriginPath` (`same-origin-path.ts`) is the check, and
+`+not-found` and the consent-gate replay apply it directly. Values are read from
 `window.location.pathname` with `EXPO_BASE_URL` stripped (`/app` on the
 www-mounted export, `/` on the subdomain) and written back base-relative, since
 Expo Router re-applies the base. The browser-OAuth path carries `next` on the

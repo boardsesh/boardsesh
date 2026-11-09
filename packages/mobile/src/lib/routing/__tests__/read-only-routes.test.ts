@@ -84,4 +84,33 @@ describe('isSafeReturnPath', () => {
   it('rejects a percent-decoded protocol-relative value', () => {
     expect(isSafeReturnPath(decodeURIComponent('%2f%2fevil.example'))).toBe(false);
   });
+
+  // These pass every literal rule and the board-shape check, then the router
+  // decodes them into `/es//evil.example/…` and `+not-found` strips the locale.
+  it.each([
+    ['a hidden slash', '/es/%252Fevil.example/a/b/c/40/list'],
+    ['a slash one layer deeper', '/es/%25252Fevil.example/a/b/c/40/list'],
+    ['a hidden backslash', '/es/%255Cevil.example/a/b/c/40/list'],
+    ['a hidden tab', '/es/%2509/a/b/c/40/list'],
+    ['a literal empty segment', '/es//evil.example/a/b/c/40/list'],
+  ])('rejects %s that the router would decode into a redirect', (_label, value) => {
+    expect(isSafeReturnPath(value)).toBe(false);
+  });
+
+  // The encodings a real board URL carries keep working.
+  it.each(['/kilter/1/10/1%2C20/40/list', '/b/caf%C3%A9-wall/40/list', `/es/b/the-gym/40/view/${CLIMB_SEGMENT}`])(
+    'accepts %s',
+    (value) => {
+      expect(isSafeReturnPath(value)).toBe(true);
+    },
+  );
+
+  // Tighter than the router's check on purpose, and only here: a return path is a
+  // board URL we minted.
+  it.each(['/b/the gym/40/list', '/b/the-gym/40/list?ref=a b', '/b/the-gym/40/list?ref=a\\b'])(
+    'rejects %s, which we would never mint',
+    (value) => {
+      expect(isSafeReturnPath(value)).toBe(false);
+    },
+  );
 });

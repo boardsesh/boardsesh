@@ -33,6 +33,12 @@ describe('deferConsentDestination', () => {
     ['https://www.boardsesh.com/join/abc123?src=qr#top', '/join/abc123?src=qr#top'],
     ['https://www.boardsesh.com?src=qr', '/?src=qr'],
     ['/changelog', '/changelog'],
+    // A shared reel's own URL rides in the query; only the path is judged.
+    [
+      '/share-beta?link=https%3A%2F%2Finstagram.com%2Freel%2Fabc',
+      '/share-beta?link=https%3A%2F%2Finstagram.com%2Freel%2Fabc',
+    ],
+    ['https://www.boardsesh.com/es/b/the-gym/40/list', '/es/b/the-gym/40/list'],
   ])('keeps the in-app route of %s', (path, destination) => {
     expect(deferConsentDestination(path)).toBe(true);
     expect(consumeConsentDestination()).toBe(destination);
@@ -44,6 +50,18 @@ describe('deferConsentDestination', () => {
       const destination = consumeConsentDestination();
       if (destination !== null) expect(destination.startsWith('//')).toBe(false);
     }
+  });
+
+  // The path of a universal link is whatever the sender typed. Each of these is
+  // still deferred, so the consent step keeps the screen; it just leads nowhere.
+  it.each([
+    'https://www.boardsesh.com//evil.example/x',
+    'https://www.boardsesh.com/%2F%2Fevil.example/x',
+    'https://www.boardsesh.com/es/%252Fevil.example/x',
+    'https://www.boardsesh.com/\\evil.example',
+  ])('hands out nothing for %s', (path) => {
+    expect(deferConsentDestination(path)).toBe(true);
+    expect(consumeConsentDestination()).toBeNull();
   });
 
   it('leaves auth and the consent step itself alone', () => {

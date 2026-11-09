@@ -58,11 +58,11 @@ export function buildLoginHrefWithReturn(): string {
  * The `?next=` in the address bar, if we are willing to follow it.
  *
  * Two independent gates, not one. `isSafeReturnPath` is the open-redirect
- * contract — app-relative, no scheme, no protocol-relative form.
- * `isReadOnlyAnonymousPath` additionally pins the destination to the set the
- * gate itself can produce, so a hand-crafted `?next=` can never reach an
- * arbitrary in-app route. `URLSearchParams.get` decodes once, so `%2f%2fevil`
- * arrives as `//evil` and the protocol-relative rule catches it.
+ * contract — app-relative, no scheme, no protocol-relative form, now or after the
+ * router decodes it further. `isReadOnlyAnonymousPath` additionally pins the
+ * destination to the set the gate itself can produce, so a hand-crafted `?next=`
+ * can never reach an arbitrary in-app route. `URLSearchParams.get` decodes once,
+ * so `%2f%2fevil` arrives as `//evil` and the protocol-relative rule catches it.
  */
 export function readPostLoginReturnHref(): string | null {
   if (typeof window === 'undefined') return null;
