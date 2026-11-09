@@ -1,0 +1,179 @@
+import { once } from 'node:events';
+import { request, type IncomingMessage, type ServerResponse } from 'node:http';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { WebSocket } from 'ws';
+
+import { API_HOSTNAME, isApiHost, rejectApiHostRequest } from '../handlers/api-host';
+import { startServer } from '../server';
+
+describe('isApiHost', () => {
+  it.each([
+    [API_HOSTNAME],
+    ['API.Boardsesh.COM'],
+    [`${API_HOSTNAME}:443`],
+    [`${API_HOSTNAME}:`],
+    [`${API_HOSTNAME}.`],
+    [`${API_HOSTNAME}.:8443`],
+    [` ${API_HOSTNAME} `],
+  ])('recognises %j', (hostHeader) => {
+    expect(isApiHost(hostHeader)).toBe(true);
+  });
+
+  it.each([
+    ['ws.boardsesh.com'],
+    ['www.boardsesh.com'],
+    ['localhost:8080'],
+    ['[::1]:8080'],
+    ['notapi.boardsesh.com'],
+    [`${API_HOSTNAME}.evil.example`],
+    [`evil.example/${API_HOSTNAME}`],
+    [''],
+    [undefined],
+  ])('does not recognise %j', (hostHeader) => {
+    expect(isApiHost(hostHeader)).toBe(false);
+  });
+});
+
+describe('rejectApiHostRequest', () => {
+  function respondingTo(method: string, pathname: string, host: string) {
+    const written: { status?: number; headers?: Record<string, string>; body?: string } = {};
+    const response = {
+      writeHead(status: number, headers: Record<string, string>) {
+        written.status = status;
+        written.headers = headers;
+      },
+      end(body: string) {
+        written.body = body;
+      },
+    };
+    const incoming = { method, headers: { host } };
+    const rejected = rejectApiHostRequest(
+      incoming as unknown as IncomingMessage,
+      response as unknown as ServerResponse,
+      pathname,
+    );
+    return { rejected, written };
+  }
+
+  it('lets GET /health through on the API host without writing anything', () => {
+    expect(respondingTo('GET', '/health', API_HOSTNAME)).toEqual({ rejected: false, written: {} });
+  });
+
+  it.each([
+    ['GET', '/health/db'],
+    ['GET', '/health/'],
+    ['HEAD', '/health'],
+    ['POST', '/health'],
+    ['OPTIONS', '/health'],
+    ['GET', '/graphql'],
+    ['POST', '/graphql'],
+    ['GET', '/robots.txt'],
+    ['POST', '/auth/native/credentials'],
+    ['GET', '/'],
+  ])('answers %s %s with the plain 404', (method, pathname) => {
+    expect(respondingTo(method, pathname, API_HOSTNAME)).toEqual({
+      rejected: true,
+      written: {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Not found' }),
+      },
+    });
+  });
+
+  it.each([
+    ['GET', '/graphql'],
+    ['POST', '/auth/native/credentials'],
+    ['GET', '/robots.txt'],
+  ])('leaves %s %s alone on every other host', (method, pathname) => {
+    expect(respondingTo(method, pathname, 'ws.boardsesh.com')).toEqual({ rejected: false, written: {} });
+  });
+});
+
+// The dispatcher and the upgrade check live inside startServer, so these drive
+// the real server to prove both are actually wired to the filter.
+describe('the running server on the API host', () => {
+  let server: Awaited<ReturnType<typeof startServer>>;
+  let port = 0;
+
+  beforeAll(async () => {
+    process.env.PORT = '0';
+    server = await startServer();
+    if (!server.httpServer.listening) await once(server.httpServer, 'listening');
+    const address = server.httpServer.address();
+    if (!address || typeof address === 'string') throw new Error('Expected a TCP test server address');
+    port = address.port;
+  });
+
+  afterAll(async () => {
+    server.cleanupIntervals();
+    await new Promise<void>((resolve) => server.wss.close(() => resolve()));
+    await new Promise<void>((resolve) => server.httpServer.close(() => resolve()));
+  });
+
+  function send(method: string, path: string, host: string, body?: string) {
+    return new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+      const outgoing = request(
+        { port, path, method, agent: false, headers: { Host: host, 'Content-Type': 'application/json' } },
+        (incoming) => {
+          let received = '';
+          incoming.setEncoding('utf8');
+          incoming.on('data', (chunk: string) => {
+            received += chunk;
+          });
+          incoming.on('end', () => resolve({ status: incoming.statusCode, body: received }));
+        },
+      );
+      outgoing.on('error', reject);
+      outgoing.end(body);
+    });
+  }
+
+  function openWebSocket(host: string) {
+    return new Promise<'open' | number>((resolve, reject) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/graphql`, 'graphql-transport-ws', {
+        headers: { Host: host },
+      });
+      socket.once('open', () => {
+        socket.terminate();
+        resolve('open');
+      });
+      socket.once('unexpected-response', (clientRequest, response) => {
+        const status = response.statusCode ?? 0;
+        clientRequest.destroy();
+        resolve(status);
+      });
+      socket.once('error', reject);
+    });
+  }
+
+  it('answers GET /health', async () => {
+    expect((await send('GET', '/health', API_HOSTNAME)).status).toBe(200);
+  });
+
+  it.each([
+    ['GET', '/health/db'],
+    ['GET', '/robots.txt'],
+    ['GET', '/graphql'],
+  ])('answers %s %s with 404', async (method, path) => {
+    expect(await send(method, path, API_HOSTNAME)).toEqual({
+      status: 404,
+      body: JSON.stringify({ error: 'Not found' }),
+    });
+  });
+
+  it('refuses a GraphQL POST that ws.boardsesh.com accepts', async () => {
+    const query = JSON.stringify({ query: '{ __typename }' });
+    expect((await send('POST', '/graphql', API_HOSTNAME, query)).status).toBe(404);
+    expect((await send('POST', '/graphql', 'ws.boardsesh.com', query)).status).toBe(200);
+  });
+
+  it('refuses a WebSocket upgrade that ws.boardsesh.com accepts', async () => {
+    await expect(openWebSocket(API_HOSTNAME)).resolves.toBe(404);
+    await expect(openWebSocket('ws.boardsesh.com')).resolves.toBe('open');
+  });
+
+  it('keeps robots.txt on ws.boardsesh.com', async () => {
+    expect((await send('GET', '/robots.txt', 'ws.boardsesh.com')).status).toBe(200);
+  });
+});

@@ -8,6 +8,7 @@ import { roomManager } from './services/room-manager';
 import { redisClientManager } from './redis/client';
 import { eventBroker, NotificationWorker } from './events/index';
 import { initCors, applyCorsHeaders } from './handlers/cors';
+import { rejectApiHostRequest } from './handlers/api-host';
 import { handleDatabaseHealthCheck, handleHealthCheck } from './handlers/health';
 import { recordDbConnectRetry } from './services/db-health';
 import { handleSessionJoin } from './handlers/join';
@@ -361,6 +362,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
     const pathname = url.pathname;
 
     try {
+      // api.boardsesh.com answers only its own route list, so this stays ahead
+      // of every route below.
+      if (rejectApiHostRequest(req, res, pathname)) return;
+
       // Health check endpoint
       if (pathname === '/health' && req.method === 'GET') {
         await handleHealthCheck(req, res);

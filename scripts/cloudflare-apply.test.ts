@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { diffR2Bucket, r2CorsHasUnmanagedRules } from '../infra/cloudflare/plan';
+import { API_HOSTNAME as BACKEND_API_HOSTNAME } from '../packages/backend/src/handlers/api-host';
 import { CloudflareApiRequestError, isAuthorizationError } from './cloudflare-apply';
 import {
+  API_HOSTNAME,
   APEX_HOSTNAME,
   APEX_ORIGINLESS_ADDRESS,
   APEX_REDIRECT_RULE_DESCRIPTION,
@@ -76,7 +78,7 @@ import {
   resolveRulePhase,
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
-import type { LiveDnsRecord, LiveState, RulesetRule } from '../infra/cloudflare/plan';
+import type { LiveDnsRecord, LiveState, ManagedRulePhase, RulesetRule } from '../infra/cloudflare/plan';
 import {
   MANAGED_DNS_RECORD_TYPES,
   SHARED_TOKEN_SCOPES,
@@ -654,6 +656,33 @@ describe('assets.boardsesh.com routing and historical generic DNS fixture', () =
       value: '*',
     });
     expect(corsRule?.enabled).toBe(true);
+  });
+});
+
+describe('api.boardsesh.com (#6981)', () => {
+  it('names the host the backend filter guards', () => {
+    expect(API_HOSTNAME).toBe('api.boardsesh.com');
+    expect(API_HOSTNAME).toBe(BACKEND_API_HOSTNAME);
+  });
+
+  it('is not a desired DNS record yet, so a merge cannot create one', () => {
+    // A proxied-only entry would also make every apply throw while the record
+    // is missing, and deploy-cloudflare runs on each merge touching this config.
+    expect(desired.dnsRecords.some((record) => record.name === API_HOSTNAME)).toBe(false);
+
+    const plan = buildPlan(desired, inSyncLiveState(), { allowZoneSsl: false });
+    expect(plan.filter((change) => change.dnsName === API_HOSTNAME)).toEqual([]);
+    expect(JSON.stringify(plan)).not.toContain(API_HOSTNAME);
+  });
+
+  it('is not named by any managed rule', () => {
+    const phases: readonly ManagedRulePhase[] = MANAGED_RULE_PHASES;
+    const managedRules = phases.flatMap((phase) => phase.selectDesired(desired));
+    expect(managedRules.filter((rule) => rule.expression.includes(API_HOSTNAME))).toEqual([]);
+  });
+
+  it('is not a bucket domain', () => {
+    expect(desiredR2Buckets.filter((bucket) => bucket.customDomain === API_HOSTNAME)).toEqual([]);
   });
 });
 
