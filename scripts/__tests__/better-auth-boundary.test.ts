@@ -11,13 +11,11 @@ const repoRoot = resolve(import.meta.dirname, '../..');
 const BACKEND_RUNTIME_PACKAGES = ['@better-auth/drizzle-adapter', '@better-auth/oauth-provider', 'better-auth'];
 const PINNED_VERSION = '1.7.17';
 const BACKEND_MANIFEST_PATH = 'packages/backend/package.json';
-/** The only folder allowed to import Better Auth until the partner authority ships. */
+/** The prototype and the partner authority are the only folders allowed to import Better Auth. */
 const PROTOTYPE_ROOT = 'packages/backend/src/auth/prototype/';
-/**
- * Backend tests that check the partner tables against Better Auth's own schema.
- * Tests are never bundled, so they cannot carry Better Auth into web or mobile.
- */
-const PARTNER_TESTS_ROOT = 'packages/backend/src/auth/partner/__tests__/';
+const PARTNER_ROOT = 'packages/backend/src/auth/partner/';
+/** Partner modules that load Better Auth at runtime. Everything else must stay importable with the mode off. */
+const PARTNER_RUNTIME_IMPORTERS = ['authority.ts', 'family-guard.ts', 'fence.ts'];
 
 interface Manifest {
   dependencies?: Record<string, string>;
@@ -52,12 +50,21 @@ function isBetterAuthSpecifier(specifier: string): boolean {
   return specifier === 'better-auth' || specifier.startsWith('better-auth/') || specifier.startsWith('@better-auth/');
 }
 
+function runtimeImportSpecifiers(source: string): string[] {
+  // A bare `import type` is erased at compile time, so it cannot pull a module in.
+  return importSpecifiers(source.replace(/import\s+type\s[^;]*;/g, ''));
+}
+
 function isPrototypeSpecifier(specifier: string): boolean {
   return specifier.includes('/prototype/') || specifier.endsWith('/prototype') || specifier.includes('auth-prototype');
 }
 
 function filesImporting(paths: string[], matches: (specifier: string) => boolean): string[] {
   return paths.filter((path) => importSpecifiers(readRepoFile(path)).some(matches));
+}
+
+function isProductionSource(path: string): boolean {
+  return !path.includes('/__tests__/') && !/\.test\.[cm]?[jt]sx?$/.test(path);
 }
 
 describe('import scanner', () => {
@@ -103,24 +110,54 @@ describe('Better Auth dependency boundary', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('is imported only by the auth prototype and partner schema tests, so web and mobile can never bundle it', () => {
+  it('is imported only by the prototype and the partner authority, so web and mobile can never bundle it', () => {
     const importers = filesImporting(trackedSourceFiles, isBetterAuthSpecifier);
     expect(importers.length).toBeGreaterThan(0);
-    expect(
-      importers.filter((path) => !path.startsWith(PROTOTYPE_ROOT) && !path.startsWith(PARTNER_TESTS_ROOT)),
-    ).toEqual([]);
+    expect(importers.filter((path) => !path.startsWith(PROTOTYPE_ROOT) && !path.startsWith(PARTNER_ROOT))).toEqual([]);
   });
 
   it('keeps the prototype out of every production backend module', () => {
     const productionModules = trackedSourceFiles.filter(
       (path) =>
-        path.startsWith('packages/backend/src/') &&
-        !path.startsWith(PROTOTYPE_ROOT) &&
-        !path.includes('/__tests__/') &&
-        !/\.test\.[cm]?[jt]sx?$/.test(path),
+        path.startsWith('packages/backend/src/') && !path.startsWith(PROTOTYPE_ROOT) && isProductionSource(path),
     );
     expect(productionModules.length).toBeGreaterThan(0);
     expect(filesImporting(productionModules, isPrototypeSpecifier)).toEqual([]);
+  });
+
+  it('confines runtime Better Auth imports inside the partner folder to the listed modules', () => {
+    const partnerModules = trackedSourceFiles.filter(
+      (path) => path.startsWith(PARTNER_ROOT) && isProductionSource(path),
+    );
+    expect(partnerModules.length).toBeGreaterThan(0);
+    const runtimeImporters = partnerModules
+      .filter((path) => runtimeImportSpecifiers(readRepoFile(path)).some(isBetterAuthSpecifier))
+      .map((path) => path.slice(PARTNER_ROOT.length));
+    expect(runtimeImporters.sort()).toEqual([...PARTNER_RUNTIME_IMPORTERS].sort());
+  });
+
+  it('keeps the partner authority out of production code until a route imports it through the loader', () => {
+    const productionModules = trackedSourceFiles.filter(
+      (path) =>
+        path.startsWith('packages/backend/src/') &&
+        !path.startsWith(PROTOTYPE_ROOT) &&
+        !path.startsWith(PARTNER_ROOT) &&
+        isProductionSource(path),
+    );
+    expect(productionModules.length).toBeGreaterThan(0);
+    expect(filesImporting(productionModules, (specifier) => /(^|\/)auth\/partner(\/|$)/.test(specifier))).toEqual([]);
+  });
+
+  it('reaches the authority only through a dynamic import in the loader', () => {
+    const loaderPath = `${PARTNER_ROOT}load-authority.ts`;
+    const partnerModules = trackedSourceFiles.filter(
+      (path) => path.startsWith(PARTNER_ROOT) && isProductionSource(path),
+    );
+    const authorityImporters = partnerModules.filter((path) =>
+      runtimeImportSpecifiers(readRepoFile(path)).includes('./authority'),
+    );
+    expect(authorityImporters).toEqual([loaderPath]);
+    expect(readRepoFile(loaderPath)).toContain("await import('./authority')");
   });
 
   it('keeps Dependabot from opening Better Auth upgrades', () => {

@@ -1,0 +1,187 @@
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { createTelemetry, type BetterAuthOptions, type TelemetryEvent } from 'better-auth';
+import { drizzle } from 'drizzle-orm/postgres-js';
+
+const callCounts = vi.hoisted(() => ({ betterAuth: 0, createDedicatedPool: 0 }));
+
+vi.mock('better-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('better-auth')>();
+  return {
+    ...actual,
+    betterAuth: (...args: Parameters<typeof actual.betterAuth>) => {
+      callCounts.betterAuth += 1;
+      return actual.betterAuth(...args);
+    },
+  };
+});
+
+vi.mock('@boardsesh/db/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/db/client')>();
+  return {
+    ...actual,
+    createDedicatedPool: (...args: Parameters<typeof actual.createDedicatedPool>) => {
+      callCounts.createDedicatedPool += 1;
+      return actual.createDedicatedPool(...args);
+    },
+  };
+});
+
+const PARTNER_MODULES = [
+  '../adapter-guard',
+  '../authority',
+  '../configuration',
+  '../connection',
+  '../family-guard',
+  '../fence',
+  '../load-authority',
+  '../locks',
+  '../mode',
+  '../offline',
+  '../tables',
+  '../transaction',
+];
+
+const VALID_SECRET = 'partner-oauth-test-secret-never-deployed-0123456789';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+  vi.doUnmock('../authority');
+});
+
+describe('PARTNER_OAUTH_MODE', () => {
+  it.each([undefined, '', 'nonsense', 'ON', 'true'])('reads %j as off', async (rawMode) => {
+    const { readPartnerOAuthMode } = await import('../mode');
+    expect(readPartnerOAuthMode(rawMode)).toBe('off');
+  });
+
+  it.each(['off', 'hold', 'allowlist', 'open', ' OPEN '])('reads %j', async (rawMode) => {
+    const { readPartnerOAuthMode } = await import('../mode');
+    expect(readPartnerOAuthMode(rawMode)).toBe(rawMode.trim().toLowerCase());
+  });
+});
+
+describe('importing partner modules', () => {
+  it('constructs no instance, opens no pool and starts no telemetry', async () => {
+    callCounts.betterAuth = 0;
+    callCounts.createDedicatedPool = 0;
+    await Promise.all(PARTNER_MODULES.map((modulePath) => import(modulePath)));
+    expect(callCounts.betterAuth).toBe(0);
+    expect(callCounts.createDedicatedPool).toBe(0);
+  });
+
+  it('builds an instance only when asked (proves the counter above can fail)', async () => {
+    const { createPartnerAuthority } = await import('../authority');
+    const { partnerAdapterSchema } = await import('../tables');
+    callCounts.betterAuth = 0;
+    const authority = createPartnerAuthority(drizzle.mock({ schema: partnerAdapterSchema }), {
+      issuer: 'https://api.boardsesh.test/api/auth',
+      resource: 'https://api.boardsesh.test/v1',
+      webOrigin: 'https://www.boardsesh.test',
+      secrets: [{ version: 1, value: VALID_SECRET }],
+    });
+    expect(callCounts.betterAuth).toBe(1);
+    await authority.$context.catch(() => {});
+  });
+});
+
+describe('loadPartnerAuthority', () => {
+  it('returns null with the mode off and never loads the authority or Better Auth', async () => {
+    let authorityLoaded = false;
+    vi.doMock('../authority', () => {
+      authorityLoaded = true;
+      return { getPartnerAuthorityRuntime: () => 'runtime' };
+    });
+    const { loadPartnerAuthority } = await import('../load-authority');
+    await expect(loadPartnerAuthority('off')).resolves.toBeNull();
+    expect(authorityLoaded).toBe(false);
+  });
+
+  it('loads it once the mode is on', async () => {
+    let authorityLoaded = false;
+    vi.doMock('../authority', () => {
+      authorityLoaded = true;
+      return { getPartnerAuthorityRuntime: () => 'runtime' };
+    });
+    const { loadPartnerAuthority } = await import('../load-authority');
+    await expect(loadPartnerAuthority('allowlist')).resolves.toBe('runtime');
+    expect(authorityLoaded).toBe(true);
+  });
+
+  it('reads the deployed mode by default, and defaults to off', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', '');
+    const { loadPartnerAuthority } = await import('../load-authority');
+    await expect(loadPartnerAuthority()).resolves.toBeNull();
+  });
+});
+
+describe('BETTER_AUTH_TELEMETRY', () => {
+  async function eventsPublishedWith(options: BetterAuthOptions): Promise<string[]> {
+    const publishedTypes: string[] = [];
+    const customTrack = async (event: TelemetryEvent) => {
+      publishedTypes.push(event.type);
+    };
+    const { publish } = await createTelemetry(options, { customTrack, skipTestCheck: true });
+    await publish({ type: 'probe', payload: {} });
+    return publishedTypes;
+  }
+
+  it.each([
+    ['1', true],
+    ['true', true],
+    ['TRUE', true],
+    ['yes', true],
+    ['0', false],
+    ['false', false],
+    ['FALSE', false],
+    ['', false],
+  ])('treats BETTER_AUTH_TELEMETRY=%j the way the library does', async (flag, publishes) => {
+    const { assertPartnerTelemetryOff } = await import('../configuration');
+    vi.stubEnv('BETTER_AUTH_TELEMETRY', flag);
+    // The library is the oracle: the flag beats `telemetry: { enabled: false }`.
+    const libraryPublishes = (await eventsPublishedWith({ telemetry: { enabled: false } })).includes('probe');
+    expect(libraryPublishes).toBe(publishes);
+    if (publishes) expect(() => assertPartnerTelemetryOff()).toThrow(/BETTER_AUTH_TELEMETRY/);
+    else expect(() => assertPartnerTelemetryOff()).not.toThrow();
+  });
+
+  it('refuses to build an authority when the flag is on, before Better Auth starts', async () => {
+    const { createPartnerAuthority } = await import('../authority');
+    const { PartnerAuthorityConfigurationError } = await import('../configuration');
+    const { partnerAdapterSchema } = await import('../tables');
+    vi.stubEnv('BETTER_AUTH_TELEMETRY', '1');
+    callCounts.betterAuth = 0;
+    expect(() =>
+      createPartnerAuthority(drizzle.mock({ schema: partnerAdapterSchema }), {
+        issuer: 'https://api.boardsesh.test/api/auth',
+        resource: 'https://api.boardsesh.test/v1',
+        webOrigin: 'https://www.boardsesh.test',
+        secrets: [{ version: 1, value: VALID_SECRET }],
+      }),
+    ).toThrow(PartnerAuthorityConfigurationError);
+    expect(callCounts.betterAuth).toBe(0);
+  });
+});
+
+describe('PARTNER_OAUTH_SECRETS', () => {
+  it('parses newest-first versioned secrets', async () => {
+    const { parsePartnerSecrets } = await import('../configuration');
+    expect(parsePartnerSecrets(`2:${VALID_SECRET},1:${VALID_SECRET}-old`)).toEqual([
+      { version: 2, value: VALID_SECRET },
+      { version: 1, value: `${VALID_SECRET}-old` },
+    ]);
+  });
+
+  it.each([
+    [undefined, /required/],
+    ['', /required/],
+    ['no-version-separator', /version:value/],
+    ['x:not-numeric', /version:value/],
+    ['1:too-short', /shorter than 32/],
+    [`1:${VALID_SECRET},1:${VALID_SECRET}-other`, /repeats a version/],
+  ])('refuses %j', async (rawSecrets, message) => {
+    const { parsePartnerSecrets, PartnerAuthorityConfigurationError } = await import('../configuration');
+    expect(() => parsePartnerSecrets(rawSecrets)).toThrow(PartnerAuthorityConfigurationError);
+    expect(() => parsePartnerSecrets(rawSecrets)).toThrow(message);
+  });
+});

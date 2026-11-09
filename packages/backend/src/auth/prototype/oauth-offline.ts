@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { oauthAccessToken, oauthRefreshToken } from '@boardsesh/db/auth-prototype';
+import type { RefreshTokenRecord } from '../partner/family-guard';
 import type { PrototypeDatabase } from './authority';
 
 /**
@@ -10,7 +11,7 @@ import type { PrototypeDatabase } from './authority';
  */
 export async function detachPrototypeOfflineGrant(
   database: PrototypeDatabase,
-  refreshToken: typeof oauthRefreshToken.$inferSelect,
+  refreshToken: RefreshTokenRecord,
   accessTokenHash: string,
 ): Promise<void> {
   if (!refreshToken.scopes.includes('offline_access')) return;
