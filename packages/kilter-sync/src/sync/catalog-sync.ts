@@ -17,15 +17,22 @@ import {
   fetchLayoutClimbs,
   fetchLayoutClimbStats,
   fetchDeletedClimbUuids,
+  fetchCuratedClimbStats,
   type KilterCatalogClimb,
   type KilterCatalogStat,
+  type KilterCuratedStat,
 } from '../api/kilter-rest';
 import { KilterApiError } from '../api/errors';
 import { pullKilterReference, type KilterReferencePull } from './reference-pull';
 import { correctGripsQualityAverage } from './quality-scale';
 import { buildLayoutResolver } from './layout-resolver';
 import { sanitizeFirstAscent } from '@boardsesh/sync-runtime';
-import { decodeGripsClimbConcat, findUniqueDecodableLayout, type GripsDecodeResult } from './catalog-parse';
+import {
+  decodeGripsClimbConcat,
+  findUniqueDecodableLayout,
+  guardDifficulty,
+  type GripsDecodeResult,
+} from './catalog-parse';
 import {
   buildSkipRow,
   describeSkip,
@@ -39,6 +46,7 @@ import { fingerprintFromHolds } from './fingerprint';
 import { upsertKilterStats, type KilterStatsUpsertRow } from './stats-upsert';
 import { createSetterSyncNotifications, type NewClimbInfo } from './notifications';
 import { reconcileDeletions, type DeletionReport } from './deletions';
+import { applyCuratedBenchmarks, type CuratedBenchmarkReport } from './curated-benchmarks';
 import { syncKilterLocations } from './locations-sync';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
 
@@ -153,6 +161,8 @@ export type KilterCatalogSummary = {
   skipsWriteFailed: boolean;
   locations: LocationSyncSummary | null;
   deletions: DeletionReport;
+  /** Kilter's Verified list applied to benchmark_difficulty; null when no list arrived. */
+  curatedBenchmarks: CuratedBenchmarkReport | null;
 };
 
 async function processBatches<T>(rows: T[], fn: (chunk: T[]) => Promise<void>): Promise<void> {
@@ -409,15 +419,6 @@ export function foldCatalogStat(
     if (accum.faUsername == null) accum.faUsername = sanitizedFaUsername;
     if (accum.faAt == null) accum.faAt = sanitizedFaAt;
   }
-}
-
-/**
- * Ingest guard for a Grips difficulty id/average: valid grade ids are ~10-33,
- * so treat a missing value or a ≤ 1 placeholder (id 1 doesn't exist; 0 is
- * `Number(null)`) as "no grade" → null.
- */
-function guardDifficulty(difficulty: number | null | undefined): number | null {
-  return difficulty != null && difficulty > 1 ? difficulty : null;
 }
 
 /**
@@ -1560,6 +1561,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
       remaining: 0,
       refused: false,
     },
+    curatedBenchmarks: null,
   };
   const collected: CollectedGroupOutputs = { newCanonicals: [], skips: [], resolvedSkipUuids: [] };
   const allNewCanonicals = collected.newCanonicals;
@@ -1608,6 +1610,19 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   if (deletedLowerUuids === null) {
     log(
       `[kilter-catalog] no deletion list this run (${deletedListError ?? 'endpoint returned none'}) — identity re-list and deletion reconciliation are both skipped`,
+    );
+  }
+
+  // Kilter's Verified list, fetched once and applied after the layouts so a climb
+  // that is new this run already has its stat rows. A failed fetch leaves it null,
+  // which skips the pass: an absent list says nothing about what is Verified.
+  let curatedStats: KilterCuratedStat[] | null = null;
+  try {
+    curatedStats = await withToken(state, (token) => fetchCuratedClimbStats(token, state.signal));
+  } catch (error) {
+    if (error instanceof KilterApiError && error.code === 'rate_limited') throw error;
+    log(
+      `[kilter-catalog] no curated list this run (${error instanceof Error ? error.message : String(error)}) — Verified marks left as they are`,
     );
   }
 
@@ -1711,6 +1726,22 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     log(
       `[kilter-catalog] suppressed setter notifications for ${allNewCanonicals.length} new canonical(s) (bulk ingest)`,
     );
+  }
+
+  args.signal?.throwIfAborted();
+  if (curatedStats !== null) {
+    try {
+      summary.curatedBenchmarks = await applyCuratedBenchmarks({
+        db: args.db,
+        write,
+        stats: curatedStats,
+        deletedLowerUuids,
+        log,
+      });
+    } catch (error) {
+      if (mustStop(error, args.signal)) throw error;
+      log(`[kilter-catalog] Verified marks failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // Deletion reconciliation runs last (report-only unless applyDeletions), over

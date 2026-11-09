@@ -5,6 +5,15 @@ import { type HoldTuple } from './fingerprint';
 const KILTER_BOARD = 'kilter' as const;
 
 /**
+ * Ingest guard for a Grips difficulty id/average: valid grade ids are ~10-33,
+ * so treat a missing value or a ≤ 1 placeholder (id 1 doesn't exist; 0 is
+ * `Number(null)`) as "no grade" → null.
+ */
+export function guardDifficulty(difficulty: number | null | undefined): number | null {
+  return difficulty != null && difficulty > 1 ? difficulty : null;
+}
+
+/**
  * One hold in a Kilter Grips `climb_concat`:
  *
  *   h{holeId} p{roleCode} [s{startFrame}] [e{endFrame}]

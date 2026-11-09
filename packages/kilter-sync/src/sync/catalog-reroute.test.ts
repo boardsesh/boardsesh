@@ -12,6 +12,7 @@ const restMocks = vi.hoisted(() => ({
   fetchLayoutClimbs: vi.fn(),
   fetchLayoutClimbStats: vi.fn(),
   fetchDeletedClimbUuids: vi.fn(),
+  fetchCuratedClimbStats: vi.fn(),
 }));
 const deletionMocks = vi.hoisted(() => ({ reconcileDeletions: vi.fn() }));
 const locationMocks = vi.hoisted(() => ({ syncKilterLocations: vi.fn() }));
@@ -199,6 +200,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   restMocks.fetchLayoutClimbStats.mockResolvedValue([] as KilterCatalogStat[]);
   restMocks.fetchDeletedClimbUuids.mockResolvedValue([]);
+  restMocks.fetchCuratedClimbStats.mockResolvedValue([]);
   locationMocks.syncKilterLocations.mockResolvedValue({});
   notificationMocks.createSetterSyncNotifications.mockResolvedValue(undefined);
   deletionMocks.reconcileDeletions.mockResolvedValue({});
