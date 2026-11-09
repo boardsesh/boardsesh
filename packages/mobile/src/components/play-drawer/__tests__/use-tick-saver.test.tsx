@@ -460,6 +460,14 @@ describe('useTickSaver after a save', () => {
     ]);
   });
 
+  it('adds angleChanged and dateChanged to Tick Logged when the caller passes them', () => {
+    const { result } = renderSaver();
+
+    result.current.save(fields({ angleChanged: true, dateChanged: false }));
+
+    expect(vi.mocked(track).mock.calls[0]?.[1]).toMatchObject({ angleChanged: true, dateChanged: false });
+  });
+
   it('counts the tick for the climb on the wall, in the rest timer and the workout log', () => {
     queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
     saveMock.state.result = { savedTick: { uuid: 'tick-9' } };

@@ -300,6 +300,9 @@ export function useQuickTickForm({
           // a 45° nobody has sent). Without it, the count waits for the server.
           baseAscensionistCount: atOpeningAngle ? baseAscensionistCount : undefined,
           gradeName: resolvedGradeName ?? null,
+          angleChanged: !atOpeningAngle,
+          // Set when the climber edits the timestamp, before any clamp to now.
+          dateChanged: hasEditedClimbedAtRef.current,
         },
         {
           onSaved: () => {

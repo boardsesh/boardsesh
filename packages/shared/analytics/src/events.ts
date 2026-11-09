@@ -433,6 +433,8 @@ export const SHARED_EVENTS = {
   // Opened and sit outside the Dismissed + Logged <= Opened invariant above.
   // Mobile adds `boardType` (#6027): one of the nine board types or null, from
   // `boardTypeProperty`. `layoutId` alone cannot say "spray wall".
+  // The mobile tick sheet also adds `angleChanged` and `dateChanged` (issue
+  // #7343); both are absent on one-tap workout logs.
   TickLogged: 'Tick Logged',
   // Bluetooth / hardware
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',
