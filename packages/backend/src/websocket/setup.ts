@@ -14,6 +14,7 @@ import { validateToken, extractAuthToken, extractControllerApiKey, validateContr
 import { activeHumanSubjectIds, AUTH_ADMISSION_BATCH_SIZE, isAuthAdmissionUnavailable } from '../auth/human-admission';
 import { selectSweepBatches } from './admission-sweep-batches';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
+import { isApiHost } from '../handlers/api-host';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from './client-ip';
 import { tryAcquireAnonConnectionSlot, releaseAnonConnectionSlot } from './connection-cap';
 import {
@@ -89,6 +90,13 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       info: { origin: string; req: IncomingMessage },
       callback: (res: boolean, code?: number, message?: string) => void,
     ) => {
+      // An upgrade skips the HTTP dispatcher, so the API host's route list has
+      // to be enforced here as well. GraphQL subscriptions stay on ws.boardsesh.com.
+      if (isApiHost(info.req.headers.host)) {
+        callback(false, 404, 'Not Found');
+        return;
+      }
+
       const origin = info.origin;
 
       // Allow connections without origin header (e.g., from native apps or direct WebSocket clients)

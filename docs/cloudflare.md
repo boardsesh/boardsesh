@@ -341,6 +341,44 @@ openssl s_client -starttls postgres -connect pgdr.boardsesh.com:17963 \
 this endpoint: an untrusted chain reports `Verify return code: 18` and exits 0,
 and a hostname mismatch exits 0 too. With the flag both exit 1.
 
+## api.boardsesh.com, the partner API host
+
+This name is reserved for the partner API (#6981) and is not live. `API_HOSTNAME` in
+`infra/cloudflare/config.ts` names it, but it is deliberately absent from `dnsRecords`, so `cf:apply` neither creates
+nor requires it. `deploy-cloudflare` applies the config on every merge that touches it, which rules out both record
+shapes for now:
+
+- A `proxied-only` entry makes the apply throw while the record is missing, and a failed `deploy-cloudflare` holds
+  back the web deploy.
+- A `full` entry needs the CNAME target Railway prints when the custom domain is registered, and would create the
+  record on merge.
+
+The backend already guards the name. For `Host: api.boardsesh.com` it answers `GET /health` and returns 404 for every
+other request, and it refuses WebSocket upgrades (`packages/backend/src/handlers/api-host.ts`). Partner routes are
+added to that list as they ship.
+
+To turn it on, as the owner:
+
+1. Add `api.boardsesh.com` as a custom domain on the backend service in Railway. Railway prints the CNAME target.
+2. Create the TXT record `_railway-verify.api.boardsesh.com` in the Cloudflare dashboard, because `cf:apply` does not
+   manage TXT records. Its value appears only in Railway's domain panel. Wait for the domain to show `verified: true`
+   before merging the CNAME change in the next two steps. Without it Railway's edge answers `Application not found`
+   for the host. See "Railway custom-domain verification" in `docs/production-deploy.md`.
+3. Add a `management: 'full'`, `type: 'CNAME'`, `ttl: 1`, `proxied: true` entry for `API_HOSTNAME` to `dnsRecords`,
+   with that target as `content`, and no `settings` block (same as `www` below). Update the test in
+   `scripts/cloudflare-apply.test.ts` that pins the record as absent.
+4. Merge. `deploy-cloudflare` creates the record.
+
+To roll back, remove the entry and delete the CNAME in the dashboard: the tool never deletes DNS records. Keep the TXT
+record.
+
+Verify:
+
+```bash
+curl -si https://api.boardsesh.com/health | head -1      # expect 200
+curl -si https://api.boardsesh.com/graphql | head -1     # expect 404
+```
+
 ## www.boardsesh.com DNS, and the origin flip
 
 `www.boardsesh.com` is a proxied CNAME to the Railway `boardsesh-web` service

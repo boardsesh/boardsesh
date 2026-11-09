@@ -43,6 +43,20 @@ export const ZONE_NAME = 'boardsesh.com';
 /** The Railway-backed host we put behind the Cloudflare proxy. */
 export const WS_HOSTNAME = 'ws.boardsesh.com';
 
+/**
+ * The partner API host (#6981). The backend's host filter
+ * (packages/backend/src/handlers/api-host.ts) guards the same name, and
+ * scripts/cloudflare-apply.test.ts fails if the two ever differ.
+ *
+ * Deliberately NOT in `dnsRecords` yet. `deploy-cloudflare` applies this file
+ * on every merge that touches it, and neither record shape is safe before the
+ * owner registers the domain in Railway: a `proxied-only` entry makes the apply
+ * throw while the record is missing, and a `full` entry needs the CNAME target
+ * Railway prints at registration and would create the record on merge. See
+ * "api.boardsesh.com" in docs/cloudflare.md for the steps.
+ */
+export const API_HOSTNAME = 'api.boardsesh.com';
+
 /** Public custom domain for the content-addressed static-assets bucket. */
 export const ASSETS_HOSTNAME = 'assets.boardsesh.com';
 
