@@ -185,6 +185,20 @@ describe('profile card content', () => {
 
     expect(content.hero.runs[0].text).toBe('No sends logged yet');
   });
+
+  it('keeps the count and bars when every send is on a hidden climb', () => {
+    const content = buildProfileCardContent({
+      displayName: 'Ivan',
+      avatar: null,
+      hardest: null,
+      stats: { ...stats, totalDistinctClimbs: 12 },
+      art: null,
+      fontFamily: FONT,
+    });
+
+    expect(content.hero.runs[0].text).toBe('12 climbs sent');
+    expect(content.bars?.length).toBeGreaterThan(0);
+  });
 });
 
 describe('buildGradeBars', () => {

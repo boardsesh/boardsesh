@@ -477,10 +477,42 @@ export function buildProfileCardContent(params: {
   const slot: OgFamilySlot = art ? 'full' : 'none';
 
   if (!hardest) {
+    const identity = {
+      name,
+      avatar: named ? cardAvatarFor(name, avatar, OG_FAMILY_MUTED) : null,
+      sizePt: IDENTITY_PT,
+    };
+    // No featured climb is not the same as an empty logbook: every send can be on
+    // a community-hidden climb, which the card will not name or draw but the
+    // public stats still count.
+    const sentClimbs = stats.totalDistinctClimbs;
+    if (sentClimbs > 0) {
+      const sentBoards = stats.layoutStats
+        .filter((layout) => layout.distinctClimbCount > 0)
+        .map((layout) => layout.boardType);
+      return {
+        slot,
+        fontFamily,
+        identity,
+        hero: {
+          runs: [
+            {
+              text: `${sentClimbs.toLocaleString('en-US')} ${sentClimbs === 1 ? 'climb' : 'climbs'} sent`,
+              color: OG_FAMILY_WHITE,
+            },
+          ],
+          maxPt: 46,
+          minPt: 30,
+          wrap: true,
+        },
+        rows: [{ runs: [{ text: `On ${describeBoards(sentBoards)}`, color: OG_FAMILY_MUTED }], sizePt: SUBLINE_PT, weight: 500 }],
+        bars: buildGradeBars(stats),
+      };
+    }
     return {
       slot,
       fontFamily,
-      identity: { name, avatar: named ? cardAvatarFor(name, avatar, OG_FAMILY_MUTED) : null, sizePt: IDENTITY_PT },
+      identity,
       hero: { runs: [{ text: 'No sends logged yet', color: OG_FAMILY_WHITE }], maxPt: 46, minPt: 30, wrap: true },
       rows: [],
     };
