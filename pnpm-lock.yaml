@@ -1610,6 +1610,19 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/public-api:
+    dependencies:
+      '@asteasolutions/zod-to-openapi':
+        specifier: ^8.5.0
+        version: 8.5.0(zod@4.4.3)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/queue:
     devDependencies:
       typescript:

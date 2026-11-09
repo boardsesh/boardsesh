@@ -10,6 +10,9 @@ packages/db/auth-prototype-migrations/meta/
 # the file size for data nobody reads by eye. Nested dir, so the `**/generated/**` glob in
 # vite.config.ts fmt.ignore is not enough on its own.
 packages/shared/board-art-geometry/src/generated/
+# The committed public API contract. `scripts/generate-public-api-openapi.ts` writes it with
+# JSON.stringify and `--check` byte-compares, so a formatting pass would red the drift gate.
+packages/shared/public-api/src/generated/
 
 # Local-only board-data exports (gitignored, see .gitignore). If an operator drops an
 # export here to run an importer, don't let `vp check` try to reformat the raw data.

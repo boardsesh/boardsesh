@@ -263,7 +263,8 @@ data for the climber unless they asked you to keep it.
 
 ## 3. Reading the logbook
 
-Milestone 1. Scope `logbook:read`. Every path below is on
+Milestone 1. `GET /v1/me` works with any valid access token. The rest of this
+section needs the `logbook:read` scope. Every path below is on
 `https://api.boardsesh.com` and already starts with `/v1`.
 
 ### Who is connected
@@ -278,8 +279,8 @@ GET /v1/me
 
 `id` is the climber's id **for your app**: stable across reconnects, different
 for every app, and not the id Boardsesh uses anywhere else. Use it to tell
-whether a reconnect is the same climber. `displayName` and `avatarUrl` need
-`profile:read`.
+whether a reconnect is the same climber. `displayName` and `avatarUrl` are sent
+only with `profile:read`, and either can be `null` when the climber has none.
 
 ### Syncing
 
@@ -492,7 +493,7 @@ climber's.
 | `climb.name` | Climb name. `null` for a climb on someone else's spray wall that is not public: the wall's owner shared it with the climber, not with apps |
 | `climb.board.type` | `kilter`, `tension`, `moonboard`, `decoy`, `touchstone`, `grasshopper`, `soill`, `woods`, `spray` (a climber's own spray wall). New values may be added |
 | `climb.board.layout` | Layout name, for display (`"Spray wall"` when the name is withheld) |
-| `climb.grade` | The community grade at this angle when you read it. It drifts over time without the tick changing |
+| `climb.grade` | The community grade at this angle when you read it, or `null` when the climb has none at this angle. Check for `null` before reading `climb.grade.font` or `climb.grade.v`: a sync that throws on it fails on the same tick every time it retries. It drifts over time without the tick changing |
 | `climb.boardseshGrade` | The Boardsesh universal grade, a decimal on the V scale, or `null`. Optional; the model behind it may change |
 
 A grade object is `{ "v": 4, "font": "6B+", "label": "6B+/V4" }`: `v` is an
