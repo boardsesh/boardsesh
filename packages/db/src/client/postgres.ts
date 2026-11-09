@@ -238,6 +238,16 @@ export function createPool() {
   return cache.client!;
 }
 
+/**
+ * A pool of its own for work that must not compete with the shared one for
+ * connections. Same TLS and pooler handling as the primary, but never cached:
+ * the caller owns it, closes it, and wraps it in drizzle before reading through it.
+ */
+export function createDedicatedPool(max: number): PoolInstance {
+  const { connectionString } = getConnectionConfig();
+  return postgres(connectionString, { ...buildPoolOptions(connectionString), max });
+}
+
 export async function closePool(): Promise<void> {
   try {
     if (cache.client) {

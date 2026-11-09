@@ -1,6 +1,7 @@
 export {
   createDb,
   createPool,
+  createDedicatedPool,
   closePool,
   createReadDb,
   createReadPool,

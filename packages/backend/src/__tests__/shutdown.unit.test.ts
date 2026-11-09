@@ -55,6 +55,17 @@ describe('shutdown: closePool wiring', () => {
     expect(readIdx).toBeGreaterThanOrEqual(0);
     expect(readIdx).toBeLessThan(primaryIdx);
   });
+
+  it('index.ts closes the admission pool once the shared pools have closed', () => {
+    // Every authenticated request reads through this pool, so nothing else may
+    // wait on it, and it must come after the HTTP and WebSocket servers.
+    const source = readCode('src/index.ts');
+    expect(source).toContain("import { closeAdmissionPool } from './auth/admission-pool'");
+    const primaryIdx = source.indexOf('await closePool()');
+    const admissionIdx = source.indexOf('await closeAdmissionPool()');
+    expect(admissionIdx).toBeGreaterThan(primaryIdx);
+    expect(source.indexOf('await httpServerClosed')).toBeLessThan(admissionIdx);
+  });
 });
 
 describe('shutdown: server resources interface', () => {

@@ -11,6 +11,7 @@ async function main(): Promise<void> {
     throw new Error('Tutorial server requires its isolated loopback database');
   const { startServer } = await import('../server');
   const { closePool, closeReadPool } = await import('@boardsesh/db/client');
+  const { closeAdmissionPool } = await import('../auth/admission-pool');
   const { redisClientManager } = await import('../redis/client');
   const { shutdownPosthog } = await import('../services/analytics/posthog');
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer({ host: '127.0.0.1' });
@@ -27,6 +28,7 @@ async function main(): Promise<void> {
     await redisClientManager.disconnect();
     await closeReadPool();
     await closePool();
+    await closeAdmissionPool();
     await shutdownPosthog();
   };
   const stopOnSignal = (): void => {

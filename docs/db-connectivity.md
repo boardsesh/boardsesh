@@ -374,6 +374,70 @@ forwards it to PostgreSQL there. Check the host and port in the URL instead.
 none, so during a web-pool incident `/health/db` stays green and says nothing
 about the surface that is actually failing. That gap is not filled here.
 
+## Admission reads have their own pool
+
+Every authenticated request reads the primary to learn whether the account
+still exists (#7350), with a 1,000 ms deadline. The statement is cheap: 115,616
+executions with a 13.7 ms maximum in `pg_stat_statements`. The wait was never
+the statement. It queued in the same 5-connection pool per replica as search
+and count transactions that run 3–26 s (`withSerialPlan` holds a connection for
+the whole transaction), and because `prepare: false` keeps parameterised
+queries from pipelining, it waited in the driver's FIFO behind them. When the
+pool stayed full for a second the climber got a 503 instead of a slow 200.
+
+Admission reads now run on `createDedicatedPool` (`auth/admission-pool.ts`), two
+connections per backend replica, used for nothing else:
+
+- **Primary, never a replica.** A lagging read must not decide admission.
+- **Lazy.** Connected on the first read. Workers, the scheduler and `packages/web`
+  never run one, so they pay nothing (`workers/index.ts` does not even import the path).
+- **`statement_timeout` of 1,000 ms**, the caller's own deadline, set as a startup
+  parameter on this pool only (`application_name` is `boardsesh-auth-admission`,
+  so the connection-count query below sees it). The server drops a read at the
+  point nobody is left to answer, so a blocked statement cannot hold one of two
+  connections. It replaces `DB_STATEMENT_TIMEOUT_MS`, which is 45 s on the backend.
+  It has the same PgBouncer hazard as that knob ("The `statement_timeout` hazard"
+  above): if a transaction-mode pooler ever fronts the backend, this pool must keep
+  a direct URL or move the timeout onto a role.
+- **Closed last in graceful shutdown**, after the main pools, bounded at 2 s.
+
+The admission read's coalescer still runs four batch reads at once against those
+two connections. Measured on the test Postgres (4 reads of 128 users, 200
+rounds): median per-read 1.7 ms on two connections against 1.5 ms on four; the
+third and fourth read each wait one statement longer. That only matters for a
+statement of 500 ms or more, where those two would miss the deadline, and the
+longest observed statement is 13.7 ms. The limits (`MAX_CONCURRENT_COALESCED_ADMISSION_READS`
+4, `MAX_UNSETTLED_AUTH_ADMISSION_READS` 8) are unchanged.
+
+Before and after with the main pool held full by five transactions: the same
+read through the main pool misses every time at 1,001–1,003 ms; through its own
+pool it answers in a median of 0.7 ms, 20.9 ms at worst, over 500 reads.
+
+### The admission read log
+
+Reads queue in front of the driver rather than inside it, so `waitMs` is exact.
+`auth/admission-read-diagnostics.ts` writes only what a 503 needs explained, at
+`warn`, with numbers and fixed labels and never a user ID, email or token:
+
+| `outcome`         | when                                      |
+| ----------------- | ----------------------------------------- |
+| `slow`            | answered, in 250 ms or more               |
+| `deadline_missed` | no answer before the 1,000 ms deadline    |
+| `failed`          | the read itself errored (`errorCode`)     |
+| `refused`         | all eight read slots were taken           |
+
+`waitMs` is time before the read got a connection, `executeMs` is time on one,
+including opening it when none was open. The line for a read that missed the
+deadline is written at the deadline, with the numbers so far. `executeMs: 0` at
+`waitMs: 1000` means it never reached a connection; `waitMs: 2` at `executeMs: 998`
+means the statement itself, or the path to Postgres, took the second.
+
+Each kind logs once per 10 s window with a totals line (`suppressedReads`,
+`maxWaitMs`, `maxExecuteMs`) when the window saw more, so a stall costs at most
+two lines per kind per window per replica. Read it for the bursts that were
+never explained: if they continue, this line says whether the wait was here or
+on the server. If they stop, the main pool was the cause.
+
 ## Where the retry is wired
 
 `createDb()` / `createReadDb()` hand drizzle a retry-wrapped view of the pool
@@ -438,6 +502,7 @@ the projection below counts both pools as 5 + 3.
 | client                                   | code defaults (web still 10) | after web cap 4 | after separate daemon cap 3 |
 | ---------------------------------------- | ---------------------------: | --------------: | --------------------------: |
 | backend postgres.js, 2 replicas          |                       2 x 5 |          2 x 5 |                      2 x 5 |
+| backend admission pool, 2 replicas       |                       2 x 2 |          2 x 2 |                      2 x 2 |
 | backend pg-boss, 2 replicas              |                       2 x 2 |          2 x 2 |                      2 x 2 |
 | web postgres.js (explicit env)           |                          10 |             4 |                         4 |
 | hold detector                            |                           8 |             8 |                         8 |
@@ -445,27 +510,30 @@ the projection below counts both pools as 5 + 3.
 | background workers, 4 roles              |                   4 x (2+1) |      4 x (2+1) |                  4 x (2+1) |
 | `boardsesh_readonly` (role cap)          |                         <=5 |           <=5 |                       <=5 |
 | migrator, during a deploy                |                           1 |             1 |                         1 |
-| **steady ceiling (one migrator counted)**|                     **<=65** |       **<=59** |                   **<=53** |
-| **+ old backend fleet draining (15 s)**  |                     **<=79** |       **<=73** |                   **<=67** |
+| **steady ceiling (one migrator counted)**|                     **<=69** |       **<=63** |                   **<=57** |
+| **+ old backend fleet draining (15 s)**  |                     **<=87** |       **<=81** |                   **<=75** |
 
 The code-only budget uses the unchanged web setting of 10. The web cap to 4 is
 an operator step after this change deploys. The daemon cap column is a later
-source change, because those runners currently ignore `DB_POOL_MAX`. Do not
-lower `max_connections` to 60 while the drain projection is 67 or higher: 60
-leaves 57 application slots, below even the later-cap projection. The original
-C15 order still applies — cap every client, watch a week of deploy peaks under
-45, then consider the restart-window change. If those conditions are not met,
-keep `max_connections=100`.
+source change, because those runners currently ignore `DB_POOL_MAX`. The
+admission pool adds 2 per backend replica, 4 at steady state and 8 while an old
+fleet drains ("Admission reads have their own pool" above); production had 43
+of 100 in use when it was added. Do not lower `max_connections` to 60 while the
+drain projection is 75 or higher: 60 leaves 57 application slots, below even
+the later-cap projection. The original C15 order still applies — cap every
+client, watch a week of deploy peaks under 45, then consider the restart-window
+change. If those conditions are not met, keep `max_connections=100`.
 
 ### If PgBouncer is revisited
 
 PgBouncer remains parked as described above. If the backend and web are later
 moved behind its 45-server cap, the code defaults make them 18 clients at
 steady state (web 4 plus backend 14) or 32 during a backend deploy. The direct
-clients (hold detector, sync daemons, background workers, `boardsesh_readonly`,
-and migrator) total at most 41 while the daemons remain at 5. This projected
-split fits under the 97 application slots; it is not evidence that PgBouncer
-has been deployed or that its TLS prerequisites are complete.
+clients (hold detector, sync daemons, background workers, the backend's two
+admission pools, `boardsesh_readonly`, and migrator) total at most 45 while the
+daemons remain at 5. This projected split fits under the 97 application slots; it
+is not evidence that PgBouncer has been deployed or that its TLS prerequisites
+are complete.
 
 ### pg-boss timers
 

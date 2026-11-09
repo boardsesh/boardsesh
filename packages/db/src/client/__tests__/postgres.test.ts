@@ -44,6 +44,21 @@ void describe('postgres client', () => {
     });
   });
 
+  void describe('createDedicatedPool', () => {
+    void it('builds a new pool with its own size on every call', async () => {
+      const { createDedicatedPool, createPool } = await import('../postgres');
+      const firstPool = createDedicatedPool(3);
+      const secondPool = createDedicatedPool(3);
+      try {
+        assert.notEqual(firstPool, secondPool, 'each call must return its own pool');
+        assert.notEqual(firstPool, createPool(), 'a dedicated pool is never the shared one');
+        assert.equal(firstPool.options.max, 3);
+      } finally {
+        await Promise.all([firstPool.end(), secondPool.end()]);
+      }
+    });
+  });
+
   void describe('per-deployment pool knobs', () => {
     // Asserts on the options postgres-js actually resolved, not on the source
     // text of postgres.ts. A source grep goes green-but-meaningless the moment
