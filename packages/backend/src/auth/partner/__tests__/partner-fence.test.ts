@@ -19,7 +19,9 @@ import { disconnectPartnerConnection } from '../connection';
 import { lockCurrentGrant } from '../locks';
 import { currentPartnerTransaction, handlePartnerRequest, runInPartnerTransaction } from '../transaction';
 import {
+  clientCredentials,
   createPartnerTestEnvironment,
+  postForm,
   READ_ONLY_PROOF_APPLICATION_NAME,
   TEST_OAUTH_OPTIONS,
   TEST_RESOURCE,
@@ -1033,6 +1035,143 @@ describe('partner fence', () => {
           await release();
         }
         expect((await environment.exchange(client, authorization)).response.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    /** Fails the provider's own checks before it would consume the code or clean up. */
+    const replayWithoutVerifier = (client: TestClient, authorization: { location: string | null }) =>
+      postForm(environment.instance, '/oauth2/token', {
+        grant_type: 'authorization_code',
+        code: new URL(authorization.location!).searchParams.get('code')!,
+        redirect_uri: client.redirectUri,
+        ...clientCredentials(client),
+      });
+
+    const tokenRowCounts = async (client: TestClient) => ({
+      access: (
+        await db
+          .select({ id: oauthAccessToken.id })
+          .from(oauthAccessToken)
+          .where(eq(oauthAccessToken.clientId, client.clientId))
+      ).length,
+      refresh: (
+        await db
+          .select({ id: oauthRefreshToken.id })
+          .from(oauthRefreshToken)
+          .where(eq(oauthRefreshToken.clientId, client.clientId))
+      ).length,
+    });
+
+    it(
+      'closes the tokens on the first replay the provider would refuse, so the lock is taken once',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        const firstReplay = await replayWithoutVerifier(client, authorization);
+        expect(firstReplay.body.error).toBe('invalid_grant');
+        expect(await tokenRowCounts(client)).toEqual({ access: 0, refresh: 0 });
+
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const replays = await Promise.all(
+            Array.from({ length: 6 }, () => replayWithoutVerifier(client, authorization)),
+          );
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(replays.map((replay) => replay.body.error)).toEqual(Array.from({ length: 6 }, () => 'invalid_grant'));
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'takes rotated tokens and their ancestry with it, as the provider does for its whole family',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization, issued } = await spendCode(client);
+        const rotated = await environment.refresh(client, issued.body.refresh_token!);
+        expect(rotated.response.status).toBe(200);
+        expect((await tokenRowCounts(client)).refresh).toBeGreaterThan(0);
+
+        expect((await replayWithoutVerifier(client, authorization)).body.error).toBe('invalid_grant');
+
+        expect(await tokenRowCounts(client)).toEqual({ access: 0, refresh: 0 });
+        expect(
+          await db.select().from(oauthRefreshAncestors).where(eq(oauthRefreshAncestors.clientId, client.clientId)),
+        ).toEqual([]);
+        expect((await environment.refresh(client, rotated.body.refresh_token!)).body.error).toBe('invalid_grant');
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still locks while only a refresh token from the code remains',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        await db.delete(oauthAccessToken).where(eq(oauthAccessToken.clientId, client.clientId));
+        const release = await holdClimberRow(client);
+        try {
+          expect((await replayWithoutVerifier(client, authorization)).response.status).toBe(503);
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'treats an expired code that was never redeemed as spent, without the lock',
+      async () => {
+        const client = await environment.createClient();
+        const authorization = await environment.authorize(client);
+        const code = new URL(authorization.location!).searchParams.get('code')!;
+        await db
+          .update(oauthVerification)
+          .set({ expiresAt: new Date(Date.now() - 1000) })
+          .where(eq(oauthVerification.identifier, await hashForTest(code)));
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          expect((await replayWithoutVerifier(client, authorization)).body.error).toBe('invalid_grant');
+          expect(performance.now() - started).toBeLessThan(1000);
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'leaves no usable token when a redemption and a replay race',
+      async () => {
+        const client = await environment.createClient();
+        const authorization = await environment.authorize(client);
+        const results = await Promise.all([
+          environment.exchange(client, authorization),
+          environment.exchange(client, authorization, environment.secondaryInstance),
+        ]);
+        const statuses = results.map((result) => result.response.status).sort((first, second) => first - second);
+        // One redeems; the loser finds the code gone and closes what it issued.
+        expect(statuses).toEqual([200, 400]);
+        expect(await tokenRowCounts(client)).toEqual({ access: 0, refresh: 0 });
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'survives concurrent first replays with no server error',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        const replays = await Promise.all(
+          Array.from({ length: 8 }, () => replayWithoutVerifier(client, authorization)),
+        );
+        expect(replays.map((replay) => replay.response.status)).toEqual(Array.from({ length: 8 }, () => 400));
+        expect(await tokenRowCounts(client)).toEqual({ access: 0, refresh: 0 });
       },
       TEST_DEADLINE_MS,
     );

@@ -454,10 +454,20 @@ Availability is protected before any transaction opens:
   `Retry-After` at once.
 - Discovery and a signed-out authorize take no transaction.
 - Rate limits use the table under Operations and run first. Per-connection refresh
-  and the app limits never reach a lock. A spent code with no tokens left answers
-  `invalid_grant` without taking the climber's row lock.
+  and the app limits never reach a lock. The first replay of a spent code closes
+  that code's tokens under the lock. Every later replay answers `invalid_grant`
+  without taking the climber's row lock.
+- The whole-app count is checked before serving and charged only after a token
+  response succeeds, because a public `client_id` is no secret: charging it by name
+  would let anyone spend an app's budget. Revoke is not charged at all, since it
+  answers `200` for any token. A burst can pass the check together, so one instance
+  can overshoot by up to 19 requests (3 running, 16 queued).
+- A `client_id` outside `[A-Za-z0-9_-]`, at most 128 characters, cannot name a real
+  app and bills a shared invalid bucket.
 - The client address for a limit is `CF-Connecting-IP` only from a verified
-  Cloudflare edge, otherwise the last `X-Forwarded-For` hop.
+  Cloudflare edge, otherwise the last `X-Forwarded-For` hop. An IPv6 client counts
+  as its /64, and an IPv4-mapped address as that IPv4 address.
+- A Redis command that takes over 100 ms falls back to the per-instance memory limit.
 
 ### Browser access
 

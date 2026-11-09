@@ -1,7 +1,7 @@
 import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { getOAuthProviderApi, type OAuthOptions } from '@better-auth/oauth-provider';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import {
   oauthAccessToken,
   oauthConnections,
@@ -46,18 +46,26 @@ function promptTokens(prompt: string): string[] {
 }
 
 /**
- * True when the code row is gone and neither token table still has a row from it.
- * The code is read first: a redemption inserts its tokens in the transaction
- * that consumes the code, so a code row seen as gone means those tokens are
- * already visible to the two reads that follow.
+ * Whether the code can still be redeemed. An expired row counts as gone, as it
+ * does in the provider, because nothing deletes it until the provider consumes it.
  */
-async function isSpentCodeWithNoTokens(transaction: PartnerDatabase, authorizationCodeId: string): Promise<boolean> {
+async function isCodeLive(transaction: PartnerDatabase, authorizationCodeId: string): Promise<boolean> {
   const [pendingCode] = await transaction
     .select({ identifier: oauthVerification.identifier })
     .from(oauthVerification)
-    .where(eq(oauthVerification.identifier, authorizationCodeId))
+    .where(and(eq(oauthVerification.identifier, authorizationCodeId), gt(oauthVerification.expiresAt, new Date())))
     .limit(1);
-  if (pendingCode) return false;
+  return pendingCode !== undefined;
+}
+
+/**
+ * True when the code cannot be redeemed and neither token table still has a row
+ * from it. The code is read first: a redemption inserts its tokens in the
+ * transaction that consumes the code, so a code row seen as gone means those
+ * tokens are already visible to the two reads that follow.
+ */
+async function isSpentCodeWithNoTokens(transaction: PartnerDatabase, authorizationCodeId: string): Promise<boolean> {
+  if (await isCodeLive(transaction, authorizationCodeId)) return false;
   const [accessToken] = await transaction
     .select({ id: oauthAccessToken.id })
     .from(oauthAccessToken)
@@ -100,8 +108,9 @@ function authorizeRedirectTarget(context: {
 }
 
 export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): BetterAuthPlugin {
+  const familyStore = createPartnerFamilyStore();
   const family = createRefreshFamilyHooks({
-    store: createPartnerFamilyStore(),
+    store: familyStore,
     oauthOptions,
     async acquireFamilyFence(owner) {
       return (await lockCurrentGrant(currentPartnerTransaction().transaction, owner)) ? 'current' : 'fenced';
@@ -208,6 +217,14 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (await isSpentCodeWithNoTokens(transaction, authorizationCodeId)) return invalidGrant();
             const owner = { userId: grant.userId, clientId: grant.clientId, authorizationCodeId };
             if (!(await lockCurrentGrant(transaction, owner))) return invalidGrant();
+            // RFC 6749 section 4.1.2: a code used twice takes its tokens with it.
+            // Done here, under the lock, because the provider only does it after
+            // its own checks, and a replay that fails those (no code_verifier)
+            // would otherwise find the tokens still there and lock again forever.
+            if (!(await isCodeLive(transaction, authorizationCodeId))) {
+              await familyStore.closeFamily(owner);
+              return invalidGrant();
+            }
           }),
         },
         ...(family.before ?? []),

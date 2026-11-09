@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer, request, type IncomingMessage } from 'node:http';
-import type { AddressInfo, Socket } from 'node:net';
+import { connect as openTcpConnection, type AddressInfo, type Socket } from 'node:net';
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { oauthRefreshToken } from '@boardsesh/db/schema/auth';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../auth/partner/authority';
 import { PARTNER_DISABLED_PATHS, PARTNER_ROUTES } from '../auth/partner/routes';
@@ -11,6 +11,7 @@ import { createPartnerDatabaseHandle, PARTNER_POOL_MAX } from '../auth/partner/t
 import { db } from '../db/client';
 import { API_HOSTNAME, rejectApiHostRequest } from '../handlers/api-host';
 import { createPartnerAuthHandler, type PartnerAuthHandlerOptions } from '../handlers/partner-auth';
+import { redisClientManager } from '../redis/client';
 import { getTrustedClientIp } from '../utils/client-ip';
 import { logger } from '../utils/logger';
 import {
@@ -26,6 +27,35 @@ import {
 } from '../auth/partner/__tests__/partner-fixture';
 
 const TEST_DEADLINE_MS = 60_000;
+const MINUTE_MS = 60_000;
+
+// The limits run against real Redis, the path production takes.
+beforeAll(async () => {
+  await redisClientManager.connect();
+});
+
+afterAll(async () => {
+  await redisClientManager.disconnect();
+});
+
+function limiterKey(identity: string, operation: string): string {
+  return `ratelimit:${identity}:${operation}:${Math.floor(Date.now() / MINUTE_MS)}`;
+}
+
+/** Sets a counter directly, so a test can stand at a limit without sending thousands of requests. */
+async function seedLimiter(identity: string, operation: string, count: number): Promise<void> {
+  await redisClientManager.getClients().publisher.set(limiterKey(identity, operation), String(count), 'EX', 120);
+}
+
+async function limiterCount(identity: string, operation: string): Promise<number> {
+  return Number(await redisClientManager.getClients().publisher.get(limiterKey(identity, operation)));
+}
+
+/** Limits use fixed one-minute windows, so a counting test must not straddle a rollover. */
+async function enoughWindowLeft(minimumMs = 20_000): Promise<void> {
+  const remainingMs = MINUTE_MS - (Date.now() % MINUTE_MS);
+  if (remainingMs < minimumMs) await new Promise((resolve) => setTimeout(resolve, remainingMs + 50));
+}
 
 interface SentResponse {
   status: number;
@@ -485,6 +515,11 @@ describe('partner OAuth routes on the API host', () => {
       expect(answered.status).toBe(400);
       expect(answered.headers['content-type']).toContain('text/html');
       expect(answered.headers['x-frame-options']).toBe('DENY');
+      expect(answered.headers['content-security-policy']).toBe(
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+      );
+      expect(answered.headers['referrer-policy']).toBe('no-referrer');
+      expect(answered.headers['x-content-type-options']).toBe('nosniff');
       expect(answered.body).toContain('invalid_client');
       expect(answered.body).not.toContain('<script>alert');
     });
@@ -529,6 +564,32 @@ describe('partner OAuth routes on the API host', () => {
           browserRouteTarget(AUTHORIZE_PATH, { ...authorizeQuery(client), code: 'planted' }),
         );
         expect(answered.status).toBe(302);
+      });
+      expect(transactions).toBe(0);
+    });
+
+    it.each([
+      ['the secure cookie', '__Secure-next-auth.session-token=unknown'],
+      ['a chunked cookie', 'next-auth.session-token.0=unknown'],
+      ['a chunked secure cookie', '__Secure-next-auth.session-token.1=unknown'],
+      ['the cookie after another one', 'theme=dark; next-auth.session-token=unknown'],
+    ])('takes a transaction for %s', async (_label, cookie) => {
+      const client = await environment.createClient({ publicClient: true });
+      const transactions = await transactionsDuring(async () => {
+        const answered = await partnerHost.send('GET', browserRouteTarget(AUTHORIZE_PATH, authorizeQuery(client)), {
+          headers: { Cookie: cookie },
+        });
+        expect(answered.status).toBe(302);
+      });
+      expect(transactions).toBe(1);
+    });
+
+    it('takes no transaction for a cookie that only resembles the session cookie', async () => {
+      const client = await environment.createClient({ publicClient: true });
+      const transactions = await transactionsDuring(async () => {
+        await partnerHost.send('GET', browserRouteTarget(AUTHORIZE_PATH, authorizeQuery(client)), {
+          headers: { Cookie: 'not-next-auth.session-token=x; next-auth.session-token-old=y' },
+        });
       });
       expect(transactions).toBe(0);
     });
@@ -682,7 +743,325 @@ describe('partner OAuth routes on the API host', () => {
     );
   });
 
+  describe('the whole-app token budget', () => {
+    beforeEach(() => enoughWindowLeft());
+
+    const refreshForm = (client: TestClient, refreshToken: string) => ({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      ...clientCredentials(client),
+    });
+
+    it('is not spent by requests that only name the app', async () => {
+      const client = await environment.createClient({ publicClient: true });
+      await seedLimiter(client.clientId, 'oauth-client', 5999);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const junk = await sendToken(refreshForm(client, `junk-${randomUUID()}`));
+        expect(junk.status).toBe(400);
+      }
+      // A public client's revoke answers 200 for any token, so it proves nothing either.
+      const junkRevoke = await partnerHost.send('POST', REVOKE_PATH, {
+        ...formBody({ token: `junk-${randomUUID()}`, ...clientCredentials(client) }),
+      });
+      expect(junkRevoke.status).toBe(200);
+      expect(await limiterCount(client.clientId, 'oauth-client')).toBe(5999);
+    });
+
+    it('is spent by a token response that succeeds', async () => {
+      const client = await environment.createClient({ publicClient: true });
+      const issued = await environment.issueTokens(client);
+      await seedLimiter(client.clientId, 'oauth-client', 100);
+      expect((await sendToken(refreshForm(client, issued.refresh_token!))).status).toBe(200);
+      expect(await limiterCount(client.clientId, 'oauth-client')).toBe(101);
+    });
+
+    it('refuses the app once it is used up, before any transaction', async () => {
+      const client = await environment.createClient({ publicClient: true });
+      const issued = await environment.issueTokens(client);
+      await seedLimiter(client.clientId, 'oauth-client', 6000);
+      const transactions = await transactionsDuring(async () => {
+        const limited = await sendToken(refreshForm(client, issued.refresh_token!));
+        expect(limited.status).toBe(429);
+        expect(limited.headers['ratelimit-limit']).toBe('6000');
+        expect(limited.headers['retry-after']).toBeDefined();
+      });
+      expect(transactions).toBe(0);
+    });
+
+    it(
+      'stops a real flood of valid refreshes within one burst of the budget',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const refreshTokens: string[] = [];
+        for (let climberIndex = 0; climberIndex < 30; climberIndex += 1) {
+          const climber = await environment.createClimber();
+          const authorization = await environment.authorize(client, { climber });
+          const issued = await environment.exchange(client, authorization);
+          refreshTokens.push(issued.body.refresh_token!);
+        }
+        await seedLimiter(client.clientId, 'oauth-client', 5990);
+
+        const burst = await Promise.all(refreshTokens.map((token) => sendToken(refreshForm(client, token))));
+        const succeeded = burst.filter((answered) => answered.status === 200).length;
+        // Budget for 10, plus at most what was already past the check: 3 running and 16 queued.
+        expect(succeeded).toBeGreaterThanOrEqual(10);
+        expect(succeeded).toBeLessThanOrEqual(PARTNER_POOL_MAX + 16);
+        expect(await limiterCount(client.clientId, 'oauth-client')).toBe(5990 + succeeded);
+
+        const issuedAfter = await environment.issueTokens(client);
+        expect((await sendToken(refreshForm(client, issuedAfter.refresh_token!))).status).toBe(429);
+      },
+      TEST_DEADLINE_MS,
+    );
+  });
+
+  describe('what bills a limit', () => {
+    beforeEach(() => enoughWindowLeft());
+
+    const codeForm = (clientId: string) => ({
+      grant_type: 'authorization_code',
+      code: 'not-real',
+      client_id: clientId,
+    });
+
+    it.each([
+      ['a colon', (victim: string, victimIp: string) => `${victim}:${victimIp}`],
+      ['a space', (victim: string) => `${victim} x`],
+      ['a slash', (victim: string) => `${victim}/x`],
+    ])('sends a client_id containing %s to the invalid bucket', async (_label, attackerClaim) => {
+      const victim = randomUUID().replaceAll('-', '');
+      const victimIp = randomClientIp();
+      const attackerIp = randomClientIp();
+      await sendToken(codeForm(attackerClaim(victim, victimIp)), { clientIp: attackerIp });
+      expect(await limiterCount(`${victim}:${victimIp}`, 'oauth-client')).toBe(0);
+      expect(await limiterCount(`invalid:${attackerIp}`, 'oauth-client')).toBe(1);
+    });
+
+    it('applies the same rule to a Basic credential', async () => {
+      const victim = randomUUID().replaceAll('-', '');
+      const victimIp = randomClientIp();
+      const attackerIp = randomClientIp();
+      const credential = Buffer.from(`${encodeURIComponent(`${victim}:${victimIp}`)}:secret`).toString('base64');
+      await sendToken(
+        { grant_type: 'authorization_code', code: 'not-real' },
+        { clientIp: attackerIp, headers: { Authorization: `Basic ${credential}` } },
+      );
+      expect(await limiterCount(`${victim}:${victimIp}`, 'oauth-client')).toBe(0);
+      expect(await limiterCount(`invalid:${attackerIp}`, 'oauth-client')).toBe(1);
+    });
+
+    it('bills the Basic client over a client_id in the form, as the provider authenticates it', async () => {
+      const client = await environment.createClient();
+      const otherClientId = randomUUID().replaceAll('-', '');
+      const clientIp = randomClientIp();
+      const credential = Buffer.from(`${client.clientId}:${client.clientSecret!}`).toString('base64');
+      await sendToken(
+        { grant_type: 'authorization_code', code: 'not-real', client_id: otherClientId },
+        { clientIp, headers: { Authorization: `Basic ${credential}` } },
+      );
+      expect(await limiterCount(`${client.clientId}:${clientIp}`, 'oauth-client')).toBe(1);
+      expect(await limiterCount(`${otherClientId}:${clientIp}`, 'oauth-client')).toBe(0);
+    });
+
+    it(
+      'reads a form whatever a Content-Type parameter says, so a connection cannot dodge its limit',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        let current = await environment.issueTokens(client);
+        const statuses: number[] = [];
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const answered = await partnerHost.send('POST', TOKEN_PATH, {
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: current.refresh_token!,
+              ...clientCredentials(client),
+            }).toString(),
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset="application/json"' },
+          });
+          statuses.push(answered.status);
+          if (answered.status === 200) current = JSON.parse(answered.body) as typeof current;
+        }
+        expect(statuses.slice(0, 10)).toEqual(Array.from({ length: 10 }, () => 200));
+        expect(statuses.slice(10)).toEqual([429, 429]);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it('bills the client the provider reads from a body that is also valid JSON', async () => {
+      const client = await environment.createClient({ publicClient: true });
+      const issued = await environment.issueTokens(client);
+      const decoyClientId = randomUUID().replaceAll('-', '');
+      const clientIp = randomClientIp();
+      const polyglotBody = JSON.stringify({
+        client_id: decoyClientId,
+        pad: `&grant_type=refresh_token&refresh_token=${encodeURIComponent(issued.refresh_token!)}&client_id=${client.clientId}&zz=`,
+      });
+      await partnerHost.send('POST', TOKEN_PATH, {
+        clientIp,
+        body: polyglotBody,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; x=application/json' },
+      });
+      expect(await limiterCount(`${decoyClientId}:${clientIp}`, 'oauth-refresh-ip')).toBe(0);
+      expect(await limiterCount(`${client.clientId}:${clientIp}`, 'oauth-refresh-ip')).toBe(1);
+    });
+
+    it('limits consent per address, before the body is read', async () => {
+      const clientIp = randomClientIp();
+      await seedLimiter(clientIp, 'oauth-consent', 60);
+      const limited = await partnerHost.send('POST', CONSENT_PATH, {
+        clientIp,
+        body: '{}',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      expect(limited.status).toBe(429);
+      expect(limited.headers['ratelimit-limit']).toBe('60');
+    });
+
+    it('counts a body read against the address before any of it arrives', async () => {
+      const clientIp = randomClientIp();
+      await seedLimiter(clientIp, 'oauth-body-ip', 1200);
+      const started = performance.now();
+      const limited = await partnerHost.openEndlessPost(TOKEN_PATH, clientIp);
+      expect(limited.status).toBe(429);
+      expect(limited.headers['ratelimit-limit']).toBe('1200');
+      // The endless body would otherwise run into the 400 ms deadline.
+      expect(performance.now() - started).toBeLessThan(300);
+    });
+
+    it(
+      'treats addresses in one IPv6 /64 as one client',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const target = browserRouteTarget(AUTHORIZE_PATH, authorizeQuery(client));
+        const prefix = `2001:db8:${Math.floor(Math.random() * 0xffff).toString(16)}:${Math.floor(Math.random() * 0xffff).toString(16)}`;
+        for (let host = 1; host <= 60; host += 1) {
+          expect((await partnerHost.send('GET', target, { clientIp: `${prefix}::${host.toString(16)}` })).status).toBe(
+            302,
+          );
+        }
+        const limited = await partnerHost.send('GET', target, { clientIp: `${prefix}:aaaa:bbbb:cccc:dddd` });
+        expect(limited.status).toBe(429);
+      },
+      TEST_DEADLINE_MS,
+    );
+  });
+
+  describe('a refused body', () => {
+    /** Talks HTTP by hand: Node's client asks for `Connection: close` itself, which hides the server's answer. */
+    function sendRawUntilClosed(requestText: string, port = partnerHost.port) {
+      return new Promise<{ response: string; closedAfterMs: number }>((resolve, reject) => {
+        const socket = openTcpConnection({ host: '127.0.0.1', port });
+        const startedAt = performance.now();
+        let response = '';
+        socket.setEncoding('utf8');
+        socket.on('data', (chunk: string) => {
+          response += chunk;
+        });
+        socket.on('error', reject);
+        socket.on('close', () => resolve({ response, closedAfterMs: performance.now() - startedAt }));
+        socket.write(requestText);
+      });
+    }
+
+    const rawHeaders = (extraLines: string[]) =>
+      [
+        `POST ${TOKEN_PATH} HTTP/1.1`,
+        `Host: ${API_HOSTNAME}`,
+        `X-Forwarded-For: ${randomClientIp()}`,
+        'Content-Type: application/x-www-form-urlencoded',
+        'Connection: keep-alive',
+        ...extraLines,
+        '',
+        '',
+      ].join('\r\n');
+
+    it('closes the connection after an oversized body, though the client asked to keep it', async () => {
+      const { response, closedAfterMs } = await sendRawUntilClosed(rawHeaders(['Content-Length: 70000']));
+      expect(response.toLowerCase()).toContain('connection: close');
+      expect(response).toContain('413');
+      expect(closedAfterMs).toBeLessThan(2000);
+    });
+
+    it('closes the connection after the deadline, though the client asked to keep it', async () => {
+      const { response, closedAfterMs } = await sendRawUntilClosed(
+        `${rawHeaders(['Transfer-Encoding: chunked'])}5\r\nhello\r\n`,
+      );
+      expect(response.toLowerCase()).toContain('connection: close');
+      expect(response).toContain('408');
+      expect(closedAfterMs).toBeLessThan(2500);
+    });
+
+    it(
+      'refuses a new reader once 256 bodies are being read, whichever address it is from',
+      async () => {
+        const slowHost = await startPartnerHost({
+          mode: 'allowlist',
+          loadRuntime: async () => runtime,
+          bodyReadDeadlineMs: 10_000,
+        });
+        try {
+          // 32 addresses at their cap of 8, opened in small groups.
+          for (let addressIndex = 0; addressIndex < 32; addressIndex += 1) {
+            const clientIp = randomClientIp();
+            for (let readIndex = 0; readIndex < 8; readIndex += 1) {
+              slowHost.openEndlessPost(TOKEN_PATH, clientIp).catch(() => undefined);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 15));
+          }
+          await vi.waitFor(
+            async () => {
+              const probe = await slowHost.send('POST', TOKEN_PATH, {
+                ...formBody({ grant_type: 'authorization_code', client_id: 'probe' }),
+              });
+              expect(probe.status).toBe(503);
+              expect(probe.headers['retry-after']).toBe('2');
+            },
+            { timeout: 8000, interval: 100 },
+          );
+        } finally {
+          await slowHost.close();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+  });
+
+  describe('a failed refresh lookup', () => {
+    it('answers 503 and logs no token or hash', async () => {
+      const client = await environment.createClient({ publicClient: true });
+      const presented = `secret-refresh-${randomUUID()}`;
+      const databaseError = Object.assign(new Error(`Failed query: select ... params: ${presented}`), {
+        name: 'DrizzleQueryError',
+        query: 'select',
+        params: [presented],
+        cause: Object.assign(new Error('terminating connection'), { code: '57P01' }),
+      });
+      const lookup = vi.spyOn(runtime, 'findRefreshConnection').mockRejectedValueOnce(databaseError);
+      const errors = vi.spyOn(logger, 'error');
+      const warnings = vi.spyOn(logger, 'warn');
+      try {
+        const answered = await sendToken({
+          grant_type: 'refresh_token',
+          refresh_token: presented,
+          ...clientCredentials(client),
+        });
+        expect(answered.status).toBe(503);
+        expect(answered.headers['retry-after']).toBe('2');
+        expect(JSON.parse(answered.body).error).toBe('temporarily_unavailable');
+        const logged = JSON.stringify([...errors.mock.calls, ...warnings.mock.calls]);
+        expect(logged).not.toContain(presented);
+        expect(logged).toContain('57P01');
+      } finally {
+        lookup.mockRestore();
+        errors.mockRestore();
+        warnings.mockRestore();
+      }
+    });
+  });
+
   describe('rate limits', () => {
+    beforeEach(() => enoughWindowLeft());
+
     it(
       'limits authorize per address, before any database work',
       async () => {
@@ -1138,9 +1517,124 @@ describe('getTrustedClientIp', () => {
   it('falls back to the socket peer when no private ingress stands in front', () => {
     expect(getTrustedClientIp(requestFrom('198.51.100.7', { 'x-forwarded-for': '1.1.1.1' }))).toBe('198.51.100.7');
   });
+
+  it.each([
+    ['a compressed address', '2001:db8:1:2::5'],
+    ['the same /64 with other interface bits', '2001:db8:1:2:aaaa:bbbb:cccc:dddd'],
+    ['the fully written form', '2001:0db8:0001:0002:0000:0000:0000:0005'],
+    ['upper case', '2001:DB8:1:2::5'],
+  ])('reduces %s to its /64', (_label, address) => {
+    expect(getTrustedClientIp(requestFrom('10.0.0.5', { 'x-forwarded-for': address }))).toBe('2001:db8:1:2::/64');
+  });
+
+  it('keeps different /64s apart', () => {
+    expect(getTrustedClientIp(requestFrom('10.0.0.5', { 'x-forwarded-for': '2001:db8:1:3::5' }))).toBe(
+      '2001:db8:1:3::/64',
+    );
+  });
+
+  it('reduces a Cloudflare-reported IPv6 visitor too', () => {
+    expect(
+      getTrustedClientIp(
+        requestFrom('10.0.0.5', { 'x-forwarded-for': '173.245.48.5', 'cf-connecting-ip': '2001:db8:9:9::1' }),
+      ),
+    ).toBe('2001:db8:9:9::/64');
+  });
+
+  it('reduces an IPv6 socket peer too', () => {
+    expect(getTrustedClientIp(requestFrom('2001:db8:7:7::1', {}))).toBe('2001:db8:7:7::/64');
+  });
+
+  it.each([
+    ['dotted', '::ffff:203.0.113.9'],
+    ['hexadecimal', '::ffff:cb00:7109'],
+    ['fully written', '0:0:0:0:0:ffff:cb00:7109'],
+  ])('treats a %s IPv4-mapped address as that IPv4 address', (_label, address) => {
+    expect(getTrustedClientIp(requestFrom('10.0.0.5', { 'x-forwarded-for': address }))).toBe('203.0.113.9');
+  });
 });
 
 describe('the deployed partner routes', () => {
+  it(
+    'serves the routes in the real server with the mode on, and nothing else on the API host',
+    async () => {
+      const { startServer } = await import('../server');
+      vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+      vi.stubEnv('PARTNER_OAUTH_SECRETS', '1:partner-oauth-test-secret-never-deployed-0123456789');
+      vi.stubEnv('PORT', '0');
+      const server = await startServer();
+      const { getPartnerAuthorityRuntime } = await import('../auth/partner/authority');
+      try {
+        if (!server.httpServer.listening) await once(server.httpServer, 'listening');
+        const { port } = server.httpServer.address() as AddressInfo;
+        const send = (method: string, path: string, host: string, body?: string) =>
+          new Promise<SentResponse>((resolve, reject) => {
+            const outgoing = request(
+              {
+                port,
+                path,
+                method,
+                agent: false,
+                headers: {
+                  Host: host,
+                  'X-Forwarded-For': randomClientIp(),
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+              },
+              (incoming) => {
+                const chunks: Buffer[] = [];
+                incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
+                incoming.on('end', () =>
+                  resolve({
+                    status: incoming.statusCode ?? 0,
+                    headers: incoming.headers,
+                    body: Buffer.concat(chunks).toString('utf8'),
+                  }),
+                );
+              },
+            );
+            outgoing.on('error', reject);
+            outgoing.end(body);
+          });
+
+        const discovery = await send('GET', METADATA_PATHS[0], API_HOSTNAME);
+        expect(discovery.status).toBe(200);
+        expect((JSON.parse(discovery.body) as { issuer: string }).issuer).toBe('https://api.boardsesh.com/api/auth');
+
+        const unknownClient = await send(
+          'GET',
+          browserRouteTarget(AUTHORIZE_PATH, {
+            response_type: 'code',
+            client_id: 'no-such-client',
+            redirect_uri: 'https://client.example.test/callback',
+          }),
+          API_HOSTNAME,
+        );
+        expect(unknownClient.status).toBe(302);
+        expect(unknownClient.headers.location).toContain('https://api.boardsesh.com/api/auth/error');
+        expect((await send('GET', `${ERROR_PATH}?error=invalid_client`, API_HOSTNAME)).status).toBe(400);
+
+        const token = await send('POST', TOKEN_PATH, API_HOSTNAME, 'grant_type=authorization_code&client_id=missing');
+        expect(token.headers['boardsesh-request-id']).toMatch(/^req_/);
+        expect(token.status).toBeGreaterThanOrEqual(400);
+        expect(token.status).toBeLessThan(500);
+
+        // The rest of the API host stays shut, and other hosts see no partner route.
+        expect((await send('GET', '/graphql', API_HOSTNAME)).status).toBe(404);
+        expect((await send('GET', '/api/auth/oauth2/userinfo', API_HOSTNAME)).status).toBe(404);
+        expect((await send('POST', TOKEN_PATH, 'ws.boardsesh.com', 'grant_type=x')).status).toBe(404);
+        expect((await send('GET', '/health', API_HOSTNAME)).status).toBe(200);
+      } finally {
+        vi.unstubAllEnvs();
+        server.cleanupIntervals();
+        await new Promise<void>((resolve) => server.wss.close(() => resolve()));
+        await new Promise<void>((resolve) => server.httpServer.close(() => resolve()));
+        await (await getPartnerAuthorityRuntime()).close();
+      }
+    },
+    TEST_DEADLINE_MS,
+  );
+
   it(
     'mounts in the real server only when asked',
     async () => {

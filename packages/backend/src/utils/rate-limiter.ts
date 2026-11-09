@@ -65,6 +65,25 @@ export function checkRateLimit(
   return entry;
 }
 
+/** The current window's count, without counting this call. Null when no window is open. */
+export function peekRateLimit(connectionId: string): RateLimitEntry | null {
+  const entry = rateLimitMap.get(connectionId);
+  return !entry || Date.now() > entry.resetAt ? null : entry;
+}
+
+/** Adds one to a window without checking it, for a limit charged only after the work succeeds. */
+export function incrementRateLimit(connectionId: string, windowMs: number): RateLimitEntry {
+  const now = Date.now();
+  const entry = rateLimitMap.get(connectionId);
+  if (!entry || now > entry.resetAt) {
+    const created = { count: 1, resetAt: now + windowMs };
+    rateLimitMap.set(connectionId, created);
+    return created;
+  }
+  entry.count++;
+  return entry;
+}
+
 /**
  * Clean up rate limit entries for a disconnected connection.
  * @param connectionId - The connection to clean up

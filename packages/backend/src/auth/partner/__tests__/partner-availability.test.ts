@@ -8,6 +8,7 @@ import { users } from '@boardsesh/db/schema/auth';
 import { db } from '../../../db/client';
 import { API_HOSTNAME } from '../../../handlers/api-host';
 import { createPartnerAuthHandler } from '../../../handlers/partner-auth';
+import { redisClientManager } from '../../../redis/client';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../authority';
 import { createPartnerDatabaseHandle } from '../transaction';
 import {
@@ -120,6 +121,8 @@ describe('partner OAuth availability', () => {
   let host: Awaited<ReturnType<typeof startFloodableHost>>;
 
   beforeAll(async () => {
+    // Real Redis, so the measured paths include its round trips.
+    await redisClientManager.connect();
     environment = await createPartnerTestEnvironment();
     runtime = await createPartnerAuthorityRuntime(environment.database, TEST_CONFIGURATION, {
       plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
@@ -131,6 +134,7 @@ describe('partner OAuth availability', () => {
   afterAll(async () => {
     await host?.close();
     await environment?.close();
+    await redisClientManager.disconnect();
   });
 
   const refreshOnce = (client: TestClient, refreshToken: string, clientIp: string) =>
@@ -231,9 +235,14 @@ describe('partner OAuth availability', () => {
     FLOOD_DEADLINE_MS,
   );
 
-  it(
-    'spent-code replays do not hold up a password reset',
-    async () => {
+  // Without the verifier the provider refuses before it would clean up, so the
+  // fence has to close the tokens itself or every replay takes the lock again.
+  it.each([
+    ['with the verifier', 'spent-code-replay-vs-reset', true],
+    ['without the verifier', 'spent-code-no-verifier-replay-vs-reset', false],
+  ])(
+    'spent-code replays %s do not hold up a password reset',
+    async (_label, scenario, sendsVerifier) => {
       const client = await environment.createClient();
       const authorization = await environment.authorize(client);
       expect((await environment.exchange(client, authorization)).response.status).toBe(200);
@@ -241,7 +250,7 @@ describe('partner OAuth availability', () => {
       const form = {
         grant_type: 'authorization_code',
         code,
-        code_verifier: authorization.verifier,
+        ...(sendsVerifier ? { code_verifier: authorization.verifier } : {}),
         redirect_uri: client.redirectUri,
         ...clientCredentials(client),
       };
@@ -277,7 +286,7 @@ describe('partner OAuth availability', () => {
       await Promise.all(replayers);
       const durationSeconds = (performance.now() - replayStarted) / 1000;
 
-      record('spent-code-replay-vs-reset', {
+      record(scenario, {
         resetMs: Math.round(resetMs),
         replaysPerSecond: Math.round(replays / durationSeconds),
       });

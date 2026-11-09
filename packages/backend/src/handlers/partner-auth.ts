@@ -12,7 +12,13 @@ import {
 import { getTrustedClientIp } from '../utils/client-ip';
 import { logger } from '../utils/logger';
 import { RateLimitError } from '../utils/rate-limiter';
-import { consumeRateLimitRedis, type RateLimitUsage } from '../utils/redis-rate-limiter';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
+import {
+  consumeRateLimitRedis,
+  countRateLimitRedis,
+  peekRateLimitRedis,
+  type RateLimitUsage,
+} from '../utils/redis-rate-limiter';
 import { isApiHost } from './api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders, type PartnerCorsPolicy } from './partner-cors';
 
@@ -54,7 +60,7 @@ const FORWARDED_REQUEST_HEADERS = [
 /** Token and revoke authenticate the client, so a browser's cookies mean nothing there. */
 const COOKIE_READING_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['authorize', 'consent']);
 const NEXTAUTH_SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token(?:\.\d+)?=/;
-const MAX_CLIENT_ID_LENGTH = 128;
+const CLIENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 class PartnerRateLimited extends Error {
   constructor(
@@ -109,41 +115,30 @@ function readBoundedBody(req: IncomingMessage, deadlineMs: number): Promise<Buff
   });
 }
 
-/** Parsed for limits and CORS only. The provider re-reads the raw body itself. */
-function requestFields(req: IncomingMessage, body: Buffer): Record<string, string> {
-  const contentType = req.headers['content-type'] ?? '';
-  try {
-    if (contentType.includes('application/json')) {
-      const parsed: unknown = JSON.parse(body.toString('utf8'));
-      if (typeof parsed !== 'object' || parsed === null) return {};
-      return Object.fromEntries(
-        Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-      );
-    }
-    return Object.fromEntries(new URLSearchParams(body.toString('utf8')));
-  } catch {
-    return {};
-  }
+/**
+ * Parsed for limits and CORS only. The token and revoke endpoints accept nothing
+ * but a form, so anything else fails in the provider and bills the invalid bucket.
+ */
+function formFields(body: Buffer): Record<string, string> {
+  return Object.fromEntries(new URLSearchParams(body.toString('utf8')));
 }
 
-/** The client a request names, as a bucket key. It proves nothing until the provider authenticates it. */
+/**
+ * The client a request names, as a bucket key: the Basic credential first, then
+ * the form, decoded the way the provider does. It proves nothing until the
+ * provider authenticates it. A name outside this alphabet cannot be a real
+ * client, and could otherwise be written to collide with another limit's key.
+ */
 function claimedClientId(req: IncomingMessage, fields: Record<string, string>): string | undefined {
-  const authorization = req.headers.authorization;
+  const basicCredential = req.headers.authorization?.match(/^Basic +(.*)$/i)?.[1];
   let basicClientId: string | undefined;
-  if (authorization?.toLowerCase().startsWith('basic ')) {
-    const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
+  if (basicCredential !== undefined) {
+    const decoded = Buffer.from(basicCredential, 'base64').toString('utf8');
     const separator = decoded.indexOf(':');
-    if (separator > 0) {
-      try {
-        basicClientId = decodeURIComponent(decoded.slice(0, separator));
-      } catch {
-        basicClientId = undefined;
-      }
-    }
+    if (separator > 0) basicClientId = new URLSearchParams(`v=${decoded.slice(0, separator)}`).get('v') ?? undefined;
   }
   const clientId = basicClientId ?? fields.client_id;
-  if (!clientId || clientId.length > MAX_CLIENT_ID_LENGTH) return undefined;
-  return clientId;
+  return clientId && CLIENT_ID_PATTERN.test(clientId) ? clientId : undefined;
 }
 
 function jsonError(status: number, error: string, description: string, headers: Record<string, string> = {}) {
@@ -224,9 +219,18 @@ function corsPolicyFor(kind: PartnerRouteKind): PartnerCorsPolicy | null {
 class RateLimitLedger {
   private readonly usages: RateLimitUsage[] = [];
 
-  async consume(identity: string, operation: string, maxRequests: number): Promise<void> {
+  consume(identity: string, operation: string, maxRequests: number): Promise<void> {
+    return this.record(consumeRateLimitRedis(identity, operation, maxRequests, MINUTE_MS), maxRequests);
+  }
+
+  /** Refuses when the window is full, without counting this request. */
+  check(identity: string, operation: string, maxRequests: number): Promise<void> {
+    return this.record(peekRateLimitRedis(identity, operation, maxRequests, MINUTE_MS), maxRequests);
+  }
+
+  private async record(pendingUsage: Promise<RateLimitUsage>, maxRequests: number): Promise<void> {
     try {
-      this.usages.push(await consumeRateLimitRedis(identity, operation, maxRequests, MINUTE_MS));
+      this.usages.push(await pendingUsage);
     } catch (error) {
       if (error instanceof RateLimitError) throw new PartnerRateLimited(maxRequests, error.retryAfterSeconds);
       throw error;
@@ -326,7 +330,6 @@ async function writePartnerResponse(
   res.writeHead(response.status, responseHeaders);
   for (const cookie of response.headers.getSetCookie()) res.appendHeader('set-cookie', cookie);
   res.end(responseBody);
-  if (closeConnection) res.once('finish', () => req.destroy());
 }
 
 export interface PartnerAuthHandlerOptions {
@@ -375,7 +378,12 @@ export function createPartnerAuthHandler({
     }
   }
 
-  /** Every limit that can refuse a token or revoke, before a transaction or a permit is taken. */
+  /**
+   * Every limit that can refuse a token or revoke, before a transaction or a
+   * permit is taken. The whole-app count is only checked here. It is charged
+   * after a token response succeeds, because a public client_id is no secret and
+   * charging it by name would let anyone spend one app's whole budget.
+   */
   async function applyTokenLimits(
     kind: PartnerRouteKind,
     fields: Record<string, string>,
@@ -389,7 +397,19 @@ export function createPartnerAuthHandler({
     } else {
       await ledger.consume(`${bucketClientId}:${clientIp}`, 'oauth-client', TOKEN_PER_APP_AND_IP);
     }
-    await ledger.consume(bucketClientId, 'oauth-client', TOKEN_PER_APP);
+    if (kind === 'token' && clientId) await ledger.check(clientId, 'oauth-client', TOKEN_PER_APP);
+  }
+
+  /**
+   * Only a token response proves the caller held a live code or refresh token.
+   * Revoke does not count: RFC 7009 answers 200 for an unknown token too.
+   */
+  async function chargeWholeAppBudget(
+    kind: PartnerRouteKind,
+    clientId: string | undefined,
+    response: Response,
+  ): Promise<void> {
+    if (kind === 'token' && clientId && response.ok) await countRateLimitRedis(clientId, 'oauth-client', MINUTE_MS);
   }
 
   async function serveBodyRoute(
@@ -402,17 +422,20 @@ export function createPartnerAuthHandler({
   ): Promise<{ response: Response; clientId: string | undefined }> {
     if (route.kind === 'consent') await ledger.consume(clientIp, 'oauth-consent', CONSENT_PER_IP);
     const body = await bufferedBody(req, clientIp, ledger);
-    const fields = requestFields(req, body);
-    const clientId = claimedClientId(req, fields);
+    // Consent posts JSON and carries no client credentials to bill.
+    const fields = route.kind === 'consent' ? {} : formFields(body);
+    const clientId = route.kind === 'consent' ? undefined : claimedClientId(req, fields);
     if (route.kind !== 'consent') await applyTokenLimits(route.kind, fields, clientId, clientIp, ledger);
 
     const permit = await runtime.admission.acquire('token');
     if (!permit) return { response: unavailableResponse(), clientId };
+    let response: Response;
     try {
       // Keyed by the connection the token belongs to, so a spent token cannot
       // queue on a climber's row. Before the transaction, inside the permit.
       if (route.kind === 'token' && fields.grant_type === 'refresh_token' && fields.refresh_token) {
-        const connection = await runtime.findRefreshConnection(fields.refresh_token);
+        const connection = await findRefreshConnectionSafely(runtime, fields.refresh_token, requestId);
+        if (connection === 'unavailable') return { response: unavailableResponse(), clientId };
         if (connection) {
           await ledger.consume(
             `${connection.clientId}:${connection.connectionId}`,
@@ -421,13 +444,31 @@ export function createPartnerAuthHandler({
           );
         }
       }
-      const response = await runtime.handleRequest(
-        buildPartnerRequest(req, route, runtime.configuration.issuer, body),
-        { logContext: { requestId, clientId } },
-      );
-      return { response, clientId };
+      response = await runtime.handleRequest(buildPartnerRequest(req, route, runtime.configuration.issuer, body), {
+        logContext: { requestId, clientId },
+      });
     } finally {
       permit.release();
+    }
+    await chargeWholeAppBudget(route.kind, clientId, response);
+    return { response, clientId };
+  }
+
+  /**
+   * This query runs outside `handlePartnerRequest`, so it needs its own guard: a
+   * Drizzle error's message and params carry the token hash, and an uncaught one
+   * would reach the server's error log and Sentry. Name and code only.
+   */
+  async function findRefreshConnectionSafely(runtime: PartnerRuntime, refreshToken: string, requestId: string) {
+    try {
+      return await runtime.findRefreshConnection(refreshToken);
+    } catch (error) {
+      logger.error('Partner OAuth refresh lookup failed', {
+        requestId,
+        errorName: error instanceof Error ? error.name : 'unknown',
+        postgresCode: getPostgresErrorCode(error),
+      });
+      return 'unavailable' as const;
     }
   }
 
