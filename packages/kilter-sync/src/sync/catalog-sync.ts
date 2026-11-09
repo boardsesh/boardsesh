@@ -1613,9 +1613,11 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     );
   }
 
-  // Kilter's Verified list, fetched once and applied after the layouts so a climb
-  // that is new this run already has its stat rows. A failed fetch leaves it null,
-  // which skips the pass: an absent list says nothing about what is Verified.
+  // Kilter's Verified list, applied before the layouts. A run takes over an hour
+  // and a worker deploy aborts whatever is running, so the marks must not depend
+  // on a run surviving to its end. A climb that is new this run gets its mark on
+  // the next one. A failed fetch leaves the list null, which skips the pass: an
+  // absent list says nothing about what is Verified.
   let curatedStats: KilterCuratedStat[] | null = null;
   try {
     curatedStats = await withToken(state, (token) => fetchCuratedClimbStats(token, state.signal));
@@ -1624,6 +1626,22 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     log(
       `[kilter-catalog] no curated list this run (${error instanceof Error ? error.message : String(error)}) — Verified marks left as they are`,
     );
+  }
+
+  args.signal?.throwIfAborted();
+  if (curatedStats !== null) {
+    try {
+      summary.curatedBenchmarks = await applyCuratedBenchmarks({
+        db: args.db,
+        write,
+        stats: curatedStats,
+        deletedLowerUuids,
+        log,
+      });
+    } catch (error) {
+      if (mustStop(error, args.signal)) throw error;
+      log(`[kilter-catalog] Verified marks failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // Loaded once for the whole run; see loadKilterSelfAliasLower.
@@ -1726,22 +1744,6 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     log(
       `[kilter-catalog] suppressed setter notifications for ${allNewCanonicals.length} new canonical(s) (bulk ingest)`,
     );
-  }
-
-  args.signal?.throwIfAborted();
-  if (curatedStats !== null) {
-    try {
-      summary.curatedBenchmarks = await applyCuratedBenchmarks({
-        db: args.db,
-        write,
-        stats: curatedStats,
-        deletedLowerUuids,
-        log,
-      });
-    } catch (error) {
-      if (mustStop(error, args.signal)) throw error;
-      log(`[kilter-catalog] Verified marks failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
   }
 
   // Deletion reconciliation runs last (report-only unless applyDeletions), over

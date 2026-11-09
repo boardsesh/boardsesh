@@ -18,7 +18,13 @@ const deletionMocks = vi.hoisted(() => ({ reconcileDeletions: vi.fn() }));
 const locationMocks = vi.hoisted(() => ({ syncKilterLocations: vi.fn() }));
 const notificationMocks = vi.hoisted(() => ({ createSetterSyncNotifications: vi.fn() }));
 
+const curatedMocks = vi.hoisted(() => ({ applyCuratedBenchmarks: vi.fn() }));
 vi.mock('../api/kilter-rest', () => restMocks);
+vi.mock('./curated-benchmarks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./curated-benchmarks')>();
+  curatedMocks.applyCuratedBenchmarks.mockImplementation(actual.applyCuratedBenchmarks);
+  return { ...actual, applyCuratedBenchmarks: curatedMocks.applyCuratedBenchmarks };
+});
 vi.mock('./deletions', () => deletionMocks);
 vi.mock('./locations-sync', () => locationMocks);
 vi.mock('./notifications', () => notificationMocks);
@@ -308,6 +314,17 @@ void describe('a failed /delteduuids fetch', () => {
 });
 
 void describe('the Verified list', () => {
+  it('applies the list before the layouts, so a run cut short still has it', () => {
+    restMocks.fetchLayoutClimbs.mockResolvedValue([]);
+    const { db } = createFakeDb(baseQueues());
+
+    return runCatalog(db).then(() => {
+      const [applied] = curatedMocks.applyCuratedBenchmarks.mock.invocationCallOrder;
+      const [firstLayoutFetch] = restMocks.fetchLayoutClimbs.mock.invocationCallOrder;
+      expect(applied).toBeLessThan(firstLayoutFetch as number);
+    });
+  });
+
   it('skips the pass and finishes the run when the fetch fails', () => {
     restMocks.fetchCuratedClimbStats.mockRejectedValue(new Error('502 from Kilter'));
     const { db, updates } = createFakeDb(baseQueues());
