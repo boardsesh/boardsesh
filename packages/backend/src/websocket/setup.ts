@@ -537,7 +537,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       },
       // No admission read per delivery: the sweep closes a deleted account's socket
       // within a second, and a read here would make every live update wait on the
-      // primary and let one slow read close a healthy socket.
+      // primary.
       onNext: (_ctx: ServerContext, _id: string, payload, _executionArgs, result) =>
         sanitizeBoardShareResult(result, payload.query),
       onError: (_ctx: ServerContext, _id: string, payload, errors) => {

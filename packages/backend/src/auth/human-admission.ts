@@ -31,7 +31,7 @@ const admitHumanSubject = createAdmissionCoalescer(activeHumanSubjectIds);
 
 /**
  * Fresh primary admission only. A generation or JWT issue time is not deletion.
- * Concurrent callers share one read, so a burst cannot exhaust the read slots.
+ * Concurrent callers share reads and briefly wait for a free one when all are busy.
  */
 export async function isHumanSubjectActive(userId: string): Promise<boolean> {
   if (!userId) return false;
