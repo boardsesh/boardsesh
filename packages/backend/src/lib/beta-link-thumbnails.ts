@@ -1,5 +1,5 @@
 import { getPublicUrl, isS3Configured, uploadToS3 } from '../storage/s3';
-import { assertAllowedImageHost, type ImageHostKind } from './safe-image-fetch';
+import { assertAllowedImageHost, readBodyWithCap, type ImageHostKind } from './safe-image-fetch';
 import { logger } from '../utils/logger';
 import { BETA_THUMBNAIL_REQUEST_SIZE } from '@boardsesh/shared-schema';
 import { writeImageVariants } from './image-resize';
@@ -107,41 +107,6 @@ function warnOncePublicUrlUnavailable(error: unknown): void {
       'will be recognised as ours. Set MEDIA_PUBLIC_BASE_URL if this is a deployed environment.',
     error,
   );
-}
-
-async function readBodyWithCap(res: Response, maxBytes: number): Promise<Buffer | null> {
-  // Streaming path with hard byte cap. Wall-clock is bounded by the fetch
-  // timeout but bytes aren't, so without this a hostile server over a fast
-  // pipe could exhaust memory before AbortSignal.timeout fires.
-  if (res.body) {
-    const reader = res.body.getReader();
-    let total = 0;
-    const chunks: Uint8Array[] = [];
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > maxBytes) {
-        try {
-          await reader.cancel();
-        } catch {
-          // best-effort
-        }
-        return null;
-      }
-      chunks.push(value);
-    }
-    return Buffer.concat(chunks);
-  }
-  // Fallback for environments / mocks where `res.body` isn't a ReadableStream.
-  // Fetch the whole buffer, then enforce the cap on the result. Less
-  // protective than streaming (the byte cap doesn't help if Node already
-  // buffered the whole response) but at least keeps the runtime check in
-  // place for the upload step.
-  const arrayBuffer = await res.arrayBuffer();
-  if (arrayBuffer.byteLength > maxBytes) return null;
-  return Buffer.from(arrayBuffer);
 }
 
 async function cacheRemoteThumbnail(key: string, sourceUrl: string, kind: ImageHostKind): Promise<string | null> {

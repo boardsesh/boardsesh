@@ -12,7 +12,7 @@ vi.mock('node:dns/promises', () => ({
   lookup: mockDnsLookup,
 }));
 
-import { assertAllowedImageHost, isPrivateIp, UnsafeImageHostError } from '../lib/safe-image-fetch';
+import { assertAllowedImageHost, fetchAllowedImage, isPrivateIp, UnsafeImageHostError } from '../lib/safe-image-fetch';
 
 const lookupResolves = (addr: string, family = 4) => {
   // dns.lookup overload returning all addresses when called with `{ all: true }`.
@@ -147,5 +147,103 @@ describe('assertAllowedImageHost', () => {
     await expect(
       assertAllowedImageHost('https://scontent.cdninstagram.com/foo.jpg', 'instagram'),
     ).rejects.toBeInstanceOf(UnsafeImageHostError);
+  });
+});
+
+describe('assertAllowedImageHost avatar kind', () => {
+  beforeEach(() => mockDnsLookup.mockReset());
+
+  it.each(['https://media.boardsesh.com/avatars/a.jpg', 'https://lh3.googleusercontent.com/a/x=s96-c'])(
+    'accepts %s',
+    async (url) => {
+      lookupResolves('172.253.115.132');
+      await expect(assertAllowedImageHost(url, 'avatar')).resolves.toBeUndefined();
+    },
+  );
+
+  it.each([
+    'https://evil.com/a.jpg',
+    'https://ws.boardsesh.com/static/avatars/a.jpg',
+    'https://media.boardsesh.com.evil.com/a.jpg',
+    'https://backend.railway.internal/a.jpg',
+    'http://media.boardsesh.com/avatars/a.jpg',
+  ])('refuses %s without resolving it', async (url) => {
+    await expect(assertAllowedImageHost(url, 'avatar')).rejects.toBeInstanceOf(UnsafeImageHostError);
+    expect(mockDnsLookup).not.toHaveBeenCalled();
+  });
+
+  it('refuses an allowed host that resolves to a private address', async () => {
+    lookupResolves('10.0.0.8');
+    await expect(assertAllowedImageHost('https://media.boardsesh.com/a.jpg', 'avatar')).rejects.toThrow(/private IP/);
+  });
+});
+
+describe('fetchAllowedImage', () => {
+  const AVATAR_URL = 'https://media.boardsesh.com/avatars/a.jpg';
+  const options = { timeoutMs: 1000, maxBytes: 1024 };
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockDnsLookup.mockReset();
+    lookupResolves('104.18.1.1');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const imageResponse = (body: BodyInit | null, headers: Record<string, string> = { 'content-type': 'image/jpeg' }) =>
+    new Response(body, { status: 200, headers });
+
+  it('returns the bytes of an allowed image', async () => {
+    fetchMock.mockResolvedValue(imageResponse(new Uint8Array([1, 2, 3])));
+
+    await expect(fetchAllowedImage(AVATAR_URL, 'avatar', options)).resolves.toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it('refuses to follow redirects', async () => {
+    fetchMock.mockResolvedValue(imageResponse(new Uint8Array([1])));
+
+    await fetchAllowedImage(AVATAR_URL, 'avatar', options);
+
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
+  });
+
+  it('checks the host before making the request', async () => {
+    await expect(fetchAllowedImage('https://evil.com/a.jpg', 'avatar', options)).rejects.toBeInstanceOf(
+      UnsafeImageHostError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-200', async () => {
+    fetchMock.mockResolvedValue(new Response('nope', { status: 404, headers: { 'content-type': 'image/jpeg' } }));
+
+    await expect(fetchAllowedImage(AVATAR_URL, 'avatar', options)).rejects.toThrow(/answered 404/);
+  });
+
+  it('rejects a non-image content type even with a body', async () => {
+    fetchMock.mockResolvedValue(imageResponse('<html>', { 'content-type': 'text/html' }));
+
+    await expect(fetchAllowedImage(AVATAR_URL, 'avatar', options)).rejects.toThrow(/non-image/);
+  });
+
+  it('rejects a zero-byte body, which is a real 200 with image/jpeg', async () => {
+    fetchMock.mockResolvedValue(imageResponse(new Uint8Array()));
+
+    await expect(fetchAllowedImage(AVATAR_URL, 'avatar', options)).rejects.toThrow(/empty/);
+  });
+
+  it('rejects an oversized declared length before reading it', async () => {
+    fetchMock.mockResolvedValue(
+      imageResponse(new Uint8Array([1]), { 'content-type': 'image/jpeg', 'content-length': '999999' }),
+    );
+
+    await expect(fetchAllowedImage(AVATAR_URL, 'avatar', options)).rejects.toThrow(/exceeds/);
+  });
+
+  it('rejects a body larger than the cap whose length was not declared', async () => {
+    fetchMock.mockResolvedValue(imageResponse(new Uint8Array(2048)));
+
+    await expect(fetchAllowedImage(AVATAR_URL, 'avatar', options)).rejects.toThrow(/byte cap/);
   });
 });

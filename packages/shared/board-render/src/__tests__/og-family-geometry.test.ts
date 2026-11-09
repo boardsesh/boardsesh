@@ -155,3 +155,167 @@ describe('family hero stays inside the search crop', () => {
     }
   });
 });
+
+describe('family blocks stay clear of each other', () => {
+  const overlaps = (
+    first: { left: number; top: number; width: number; height: number },
+    second: { left: number; top: number; width: number; height: number },
+  ) =>
+    first.left < second.left + second.width &&
+    second.left < first.left + first.width &&
+    first.top < second.top + second.height &&
+    second.top < first.top + first.height;
+
+  it('keeps `1.1M sends` inside the crop on the full slot', async () => {
+    const { hero } = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      identity: { name: 'KilterStudio', avatar: null, sizePt: 34 },
+      hero: {
+        runs: [
+          { text: '1.1M', color: OG_FAMILY_WHITE },
+          { text: ' sends', color: OG_FAMILY_WHITE, scale: 0.42 },
+        ],
+        maxPt: 96,
+        wrap: false,
+        tight: true,
+      },
+      rows: [],
+    });
+
+    expect(hero.left).toBeGreaterThanOrEqual(OG_FAMILY_CROP_LEFT);
+    expect(hero.left + hero.width).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
+  });
+
+  it('keeps a tight grade hero whole under an identity row with a long name', async () => {
+    const { hero, blocks } = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      identity: { name: 'A very long display name somebody typed', avatar: null, sizePt: 34 },
+      hero: { runs: [{ text: '7c+/V10', color: OG_FAMILY_WHITE }], maxPt: 96, wrap: false, tight: true },
+      rows: [],
+    });
+
+    expect(hero.left + hero.width).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
+    expect(overlaps(hero, blocks.identity!)).toBe(false);
+  });
+
+  it('keeps the aside outside the crop and off the hero and name on a narrow card', async () => {
+    const { hero, blocks } = await renderOgFamilyTextLayers({
+      slot: 'narrow',
+      fontFamily: 'Noto Sans',
+      identity: { name: 'A very long display name somebody typed', avatar: null, sizePt: 30 },
+      hero: { runs: [{ text: '7c+/V10', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },
+      rows: [{ runs: heroRuns('17 sends, all flashed'), sizePt: 34, weight: 800 }],
+      aside: {
+        eyebrow: 'HARDEST SEND',
+        title: 'A really very long climb name somebody typed on their phone',
+        lines: ['Flashed by someone', 'Kilter at 40°', '49 min session'],
+      },
+    });
+
+    expect(hero.left + hero.width).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
+    expect(blocks.aside!.left).toBeGreaterThanOrEqual(OG_FAMILY_CROP_RIGHT);
+    expect(overlaps(hero, blocks.aside!)).toBe(false);
+    expect(overlaps(blocks.identity!, blocks.aside!)).toBe(false);
+    expect(blocks.aside!.top + blocks.aside!.height).toBeLessThan(574);
+  });
+
+  it('keeps the dots inside the crop however many there are', async () => {
+    for (const count of [1, 10, 11, 17, 40, 60, 200]) {
+      const { hero, blocks } = await renderOgFamilyTextLayers({
+        slot: 'narrow',
+        fontFamily: 'Noto Sans',
+        hero: { runs: [{ text: '6a/V3', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },
+        rows: [{ runs: heroRuns('A line'), sizePt: 34, weight: 800 }],
+        dots: {
+          dots: Array.from({ length: Math.min(count, 60) }, () => ({ color: '#FFD400', filled: true })),
+          total: count,
+        },
+      });
+
+      expect(blocks.dots, `${count}`).toBeDefined();
+      expect(blocks.dots!.left + blocks.dots!.width, `${count}`).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
+      expect(overlaps(hero, blocks.dots!)).toBe(false);
+    }
+  });
+
+  it('keeps the rings and attempt label inside the crop', async () => {
+    const { blocks } = await renderOgFamilyTextLayers({
+      slot: 'narrow',
+      fontFamily: 'Noto Sans',
+      hero: { runs: [{ text: '7a+/V7', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },
+      rows: [],
+      dots: {
+        dots: Array.from({ length: 24 }, () => ({ color: '#FFD400', filled: false })),
+        total: 412,
+        label: '412 attempts',
+      },
+    });
+
+    expect(blocks.dots!.left + blocks.dots!.width).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
+  });
+
+  it('draws bars when they are clear of the text and drops them when they are not', async () => {
+    const bars = Array.from({ length: 5 }, (_, index) => ({ color: '#FFD400', value: index }));
+    const clear = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: { runs: heroRuns('7a/V6'), maxPt: 96, wrap: false, tight: true },
+      rows: [{ runs: heroRuns('One line'), sizePt: 18, weight: 500 }],
+      bars,
+    });
+    expect(clear.blocks.bars).toBeDefined();
+    expect(overlaps(clear.hero, clear.blocks.bars!)).toBe(false);
+
+    const crowded = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      identity: { name: 'A name', avatar: { kind: 'monogram', letter: 'A', color: '#FFD400' }, sizePt: 34 },
+      hero: { runs: heroRuns('7a/V6'), maxPt: 96, wrap: false, tight: true },
+      rows: Array.from({ length: 8 }, () => ({ runs: heroRuns('A long supporting line'), sizePt: 24, weight: 500 })),
+      bars,
+    });
+    expect(crowded.blocks.bars).toBeUndefined();
+  });
+
+  it('keeps every drawn bar inside the column and above the wordmark row', async () => {
+    const bars = Array.from({ length: 24 }, (_, index) => ({ color: '#FFD400', value: index }));
+    const { blocks } = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: { runs: heroRuns('7a/V6'), maxPt: 96, wrap: false, tight: true },
+      rows: [],
+      bars,
+    });
+
+    expect(blocks.bars!.left + blocks.bars!.width).toBeLessThanOrEqual(1176);
+    expect(blocks.bars!.top + blocks.bars!.height).toBeLessThanOrEqual(556);
+  });
+
+  it('does not draw bars for fewer than three grades', async () => {
+    const { blocks } = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: { runs: heroRuns('7a/V6'), maxPt: 96, wrap: false, tight: true },
+      rows: [],
+      bars: [{ color: '#FFD400', value: 1 }],
+    });
+
+    expect(blocks.bars).toBeUndefined();
+  });
+
+  it('draws a monogram for any first character without failing', async () => {
+    for (const letter of ['A', 'И', '田', '🧗', 'ש', 'ع']) {
+      const { layers, blocks } = await renderOgFamilyTextLayers({
+        slot: 'full',
+        fontFamily: 'Noto Sans',
+        identity: { name: `${letter} name`, avatar: { kind: 'monogram', letter, color: '#FFD400' }, sizePt: 34 },
+        hero: { runs: heroRuns('7a/V6'), maxPt: 96, wrap: false, tight: true },
+        rows: [],
+      });
+      expect(blocks.identity).toBeDefined();
+      expect(layers.length).toBeGreaterThan(2);
+    }
+  });
+});

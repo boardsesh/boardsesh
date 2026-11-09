@@ -107,7 +107,13 @@ const GRAPHQL_PATH = '/graphql';
 const GRAPHQL_SAMPLE_RATE = 0.01;
 
 /** OG share cards. Low volume, but slow enough (image render) to be worth watching. */
-const OG_CARD_PATHS: ReadonlySet<string> = new Set(['/og/climb', '/og/playlist', '/og/session']);
+const OG_CARD_PATHS: ReadonlySet<string> = new Set([
+  '/og/climb',
+  '/og/playlist',
+  '/og/session',
+  '/og/profile',
+  '/og/setter',
+]);
 const OG_CARD_SAMPLE_RATE = 0.05;
 
 /** Everything else: /join/*, /integrations/*, the REST surface. */

@@ -10360,6 +10360,8 @@ export type SetterProfile = {
   linkedUserDisplayName?: Maybe<Scalars['String']['output']>;
   /** Linked Boardsesh user ID (if setter has a Boardsesh account) */
   linkedUserId?: Maybe<Scalars['ID']['output']>;
+  /** Sends across this setter's listable climbs, summing each climb's best angle so a climber who sent it at two angles counts once. Includes imported Aurora ascents. */
+  totalAscents: Scalars['Int']['output'];
   /** The setter's Aurora username */
   username: Scalars['String']['output'];
 };
@@ -19242,6 +19244,7 @@ export type SetterProfileResolvers<
   linkedUserAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   linkedUserDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   linkedUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   username?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;

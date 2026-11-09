@@ -243,3 +243,48 @@ describe('family scrim', () => {
     expect(Math.abs(blue - groundBlue)).toBeLessThan(30);
   });
 });
+
+describe('family people cards survive real-world names', () => {
+  it.each([
+    ['an ampersand and markup', 'Tom & Jerry <crew> "quotes"'],
+    ['right-to-left text', 'דני כהן'],
+    ['arabic', 'محمد علي'],
+    ['japanese', '田中さん'],
+    ['cyrillic', 'Иван Семочкин'],
+    ['a very long name', 'Maximiliano Bartholomew the Third of the Wall and his very long name'],
+  ])('renders %s in every text slot without throwing', async (_label, text) => {
+    const {
+      layers,
+      blocks,
+      hero: heroRect,
+    } = await renderOgFamilyTextLayers({
+      slot: 'narrow',
+      fontFamily: 'Noto Sans',
+      identity: { name: text, avatar: { kind: 'monogram', letter: text.slice(0, 1), color: '#FFD400' }, sizePt: 34 },
+      hero: { runs: [{ text: '7c+/V10', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },
+      rows: [row(text)],
+      dots: { dots: [{ color: '#FFD400', filled: true }], total: 1 },
+      aside: { eyebrow: 'HARDEST SEND', title: text, lines: [text] },
+    });
+
+    expect(heroRect.width).toBeGreaterThan(0);
+    expect(blocks.aside).toBeDefined();
+    for (const layer of layers) {
+      const metadata = await sharp(layer.input).metadata();
+      expect(metadata.width).toBeGreaterThan(0);
+    }
+  });
+
+  it('rejects rather than drawing a wordless card when text cannot render', async () => {
+    // Pango fails on a NUL; the error has to reach the caller, never a cached blank.
+    await expect(
+      renderOgFamilyTextLayers({
+        slot: 'full',
+        fontFamily: 'Noto Sans',
+        identity: { name: 'bad\u0000name', avatar: null, sizePt: 34 },
+        hero: { runs: [{ text: '7a/V6', color: OG_FAMILY_WHITE }], maxPt: 96, wrap: false },
+        rows: [],
+      }),
+    ).rejects.toThrow();
+  });
+});

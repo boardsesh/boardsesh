@@ -53,7 +53,7 @@ import { controllerMutations } from './controller/mutations';
 import { controllerSubscriptions, controllerEventResolver } from './controller/subscriptions';
 import { socialFollowQueries, socialFollowMutations } from './social/follows';
 import { socialSearchQueries } from './social/search';
-import { setterFollowQueries, setterFollowMutations } from './social/setter-follows';
+import { setterFollowQueries, setterFollowMutations, setterProfileFieldResolvers } from './social/setter-follows';
 import { socialFeedQueries } from './social/feed';
 import { climbLogsQueries } from './social/climb-logs';
 import { activityFeedQueries } from './social/activity-feed';
@@ -239,6 +239,7 @@ export const resolvers = {
 
   ...boardSessionPrivacyResolvers,
   PublicUserProfile: privacyProfileFields,
+  SetterProfile: setterProfileFieldResolvers,
   Playlist: playlistFieldResolvers,
   PrivacySettings: privacySettingsFields,
 

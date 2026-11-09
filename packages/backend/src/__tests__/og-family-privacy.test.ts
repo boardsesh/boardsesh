@@ -438,7 +438,7 @@ describe('playlist grade band drawn from the summary', () => {
 });
 
 describe('invite card gates', () => {
-  it('answers 404 for a session with no live roster: an ended session cannot say Join', async () => {
+  it('answers 404 for a session with no live roster and no logged ticks to recap', async () => {
     await createSession('og-join-ended', 'kilter/1/10/1,20/40', []);
 
     expectIdenticalNotFound(await requestJoin('og-join-ended'));
