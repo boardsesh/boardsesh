@@ -110,12 +110,7 @@ const invoke: Invocation = async (request, options) => {
   return new Response(null, { status: 302, headers: { Location: `${origin}/signed-in` } });
 };
 
-function signIn(
-  jar: CookieJar,
-  forwardedFor = clientAddress,
-  handler: Invocation = invoke,
-  requestOrigin = origin,
-) {
+function signIn(jar: CookieJar, forwardedFor = clientAddress, handler: Invocation = invoke, requestOrigin = origin) {
   const request = new NextRequest(`${requestOrigin}/api/auth/signin/google`, {
     method: 'POST',
     headers: {
