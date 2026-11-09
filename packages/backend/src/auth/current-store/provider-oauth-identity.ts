@@ -7,7 +7,7 @@ import {
   users,
   userProfiles,
 } from '@boardsesh/db/schema/auth';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { normalizeAccountEmail } from '../normalize-email';
 import { parseCurrentStoreRegistrationEmail } from './password-identity';
 import { reserveEnforcedEmail } from './email-reservations';
@@ -139,7 +139,12 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
       throw new CurrentStoreFoundationError('STALE_AUTHORITY');
     return { outcome: 'conflict' };
   }
-  const [existing] = await transaction.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+  // Normalized, as login matches: another case of this mailbox is the same owner.
+  const [existing] = await transaction
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`LOWER(${users.email}) = ${key}`)
+    .limit(1);
   if (existing) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   const userId = randomUUID();
   await reserveEnforcedEmail(transaction, { ...authority, rawEmail: email, requestedUserId: userId });
