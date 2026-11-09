@@ -178,6 +178,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const anonymousSessionIsolatedRef = useRef(false);
   const authenticatedStorageOwnerRef = useRef<UserStorageOwner | null>(null);
   const pendingAuthTransportRestartRef = useRef(false);
+  // The server closes a deleted account's socket within a second, which can force
+  // a sign-out while this device is still running its own deletion cleanup.
+  const accountDeletionSignOutInFlightRef = useRef(false);
   const remoteInvalidationVersionRef = useRef(0);
   const remoteRevalidationRef = useRef<Promise<void> | null>(null);
   const nativeSessionDegradedRef = useRef(false);
@@ -1116,7 +1119,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // ('account_deleted') in analytics, matching web. The cleanup is identical:
   // server revocation is best-effort, while durable credential cleanup failures
   // remain visible to callers after local account isolation has completed.
-  const signOut = useCallback(
+  const performSignOut = useCallback(
     async (...request: SignOutRequest) => {
       const [method = 'manual', deletionIntent] = request;
       if (method === 'account_deleted') {
@@ -1218,14 +1221,32 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     ],
   );
 
+  const signOut = useCallback(
+    async (...request: SignOutRequest) => {
+      if (request[0] !== 'account_deleted') return performSignOut(...request);
+      accountDeletionSignOutInFlightRef.current = true;
+      try {
+        return await performSignOut(...request);
+      } finally {
+        accountDeletionSignOutInFlightRef.current = false;
+      }
+    },
+    [performSignOut],
+  );
+
   const handleForcedSignOut = useCallback(() => {
-    track(SHARED_EVENTS.Logout, { method: 'forced' });
+    // A forced sign-out during account deletion takes over that sign-out, so it
+    // must run the same full wipe and not report a second Logout.
+    const purgeOfflineBoards = accountDeletionSignOutInFlightRef.current;
+    if (!purgeOfflineBoards) track(SHARED_EVENTS.Logout, { method: 'forced' });
     commitVerifiedAuthResult(null);
     const transitionEpoch = beginAuthTransition();
     // The interceptor already confirmed this credential owner is anonymous.
     // Serialize its cleanup with session checks so a later login cannot be
     // erased by the tail of an older asynchronous cleanup.
-    enqueueAuthTransition(() => handleSignedOutTransition(transitionEpoch, true)).catch(reportError);
+    enqueueAuthTransition(() => handleSignedOutTransition(transitionEpoch, true, { purgeOfflineBoards })).catch(
+      reportError,
+    );
   }, [beginAuthTransition, enqueueAuthTransition, handleSignedOutTransition]);
 
   const handleRemoteConfirmedSignOut = useCallback(() => {

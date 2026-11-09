@@ -2,6 +2,7 @@ import 'server-only';
 import { decode } from 'next-auth/jwt';
 import { GET_AUTHENTICATED_USER_ID } from '@boardsesh/graphql/operations/account';
 import { getGraphQLHttpUrl } from '../backend-url';
+import { webClientIdentityHeaders } from '../client-identity';
 
 /** An unavailable authority must never be interpreted as a confirmed logout. */
 export class CredentialAuthorityUnavailable extends Error {
@@ -40,7 +41,11 @@ export async function admitPresentedWebCredential(credential: string): Promise<s
   try {
     const response = await fetch(getGraphQLHttpUrl(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${credential}`,
+        ...webClientIdentityHeaders(),
+      },
       body: JSON.stringify({ query: GET_AUTHENTICATED_USER_ID }),
       cache: 'no-store',
       redirect: 'error',

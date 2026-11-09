@@ -1,5 +1,6 @@
 import 'server-only';
 import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 
 /**
  * The distinct id PostHog knows the current visitor by, or `null` when nobody
@@ -17,6 +18,12 @@ import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server
  * the answer is per-person by construction.
  */
 export async function getPosthogDistinctId(): Promise<string | null> {
-  const session = await getAdmittedServerSession();
-  return session?.user?.id ?? null;
+  try {
+    const session = await getAdmittedServerSession();
+    return session?.user?.id ?? null;
+  } catch (error) {
+    // This only picks an analytics label, so an outage must not fail the page.
+    if (error instanceof CredentialAuthorityUnavailable) return null;
+    throw error;
+  }
 }

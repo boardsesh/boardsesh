@@ -314,8 +314,14 @@ export async function guardedNextAuthSignOut(
           cache: 'no-store',
           signal: boundedSignal.signal,
         });
-        if (!sessionResponse.ok) throw new Error('Unable to verify the session before signing out');
-        const currentSession = await readJson(sessionResponse);
+        // During an outage the session read answers 503. Carry on to the POST: its
+        // expected identity still binds the sign-out to the login shown in this tab.
+        if (!sessionResponse.ok && sessionResponse.status !== 503) {
+          throw new Error('Unable to verify the session before signing out');
+        }
+        const currentSession = sessionResponse.ok
+          ? await readJson(sessionResponse)
+          : { user: { id: identity.userId }, authSessionId: identity.authSessionId };
         if (isAnonymousSession(currentSession)) {
           return { status: 'signed-out' as const, url: callbackUrl };
         }

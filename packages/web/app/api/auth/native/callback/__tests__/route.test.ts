@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
 import { getAdmittedServerSession as getServerSession } from '@/app/lib/auth/admitted-session.server';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import {
   issueNativeOAuthTransferToken,
   issueNativeOAuthAttempt,
@@ -120,6 +121,14 @@ describe('GET /api/auth/native/callback', () => {
       expect(mockedIssueToken).toHaveBeenCalledWith({ userId, nextPath: '/' });
     },
   );
+
+  it('returns to the app with an error when the session cannot be verified', async () => {
+    mockedGetServerSession.mockRejectedValue(new CredentialAuthorityUnavailable());
+
+    const response = await GET(createRequest('http://localhost:3000/api/auth/native/callback?next=/'));
+
+    expect(await extractDeepLink(response)).toContain('error=session_unavailable');
+  });
 
   it('returns HTML redirect with error when session is missing', async () => {
     mockedGetServerSession.mockResolvedValue(null);

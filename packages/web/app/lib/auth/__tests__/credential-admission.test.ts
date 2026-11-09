@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { webClientIdentityHeaders } from '../../client-identity';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encode } from 'next-auth/jwt';
 
@@ -31,7 +32,11 @@ describe('presented web credential admission', () => {
     await expect(admitPresentedWebCredential(credential)).resolves.toBe('fixture-owner');
     const [endpoint, options] = fetchMock.mock.calls[0];
     expect(endpoint).toBe('http://authority.invalid/graphql');
-    expect(options?.headers).toEqual({ 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` });
+    expect(options?.headers).toEqual({
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${credential}`,
+      ...webClientIdentityHeaders(),
+    });
     const requestBody = options?.body;
     if (typeof requestBody !== 'string') throw new Error('Expected a JSON request body');
     expect(JSON.parse(requestBody)).toEqual({

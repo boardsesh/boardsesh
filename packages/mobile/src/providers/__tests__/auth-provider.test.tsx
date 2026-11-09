@@ -2156,6 +2156,45 @@ describe('AuthProvider sign-out offline data wipe', () => {
     expect(clearUserDataMock).not.toHaveBeenCalled();
   });
 
+  // The server closes a deleted account's socket within a second, so a forced
+  // sign-out can land while the deletion's own cleanup is still running.
+  it('still wipes the downloaded catalogs when a forced sign-out interrupts a deletion', async () => {
+    let finishDeactivation = () => {};
+    const { deactivateNotificationDevice } = await import('../../notifications/device-registration');
+    vi.mocked(deactivateNotificationDevice).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDeactivation = resolve;
+        }),
+    );
+    const result = await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+    const trackCallsBefore = trackMock.mock.calls.length;
+
+    let deletion: Promise<void> | undefined;
+    await act(async () => {
+      deletion = result.current.signOut('account_deleted', accountDeletionIntentForCurrentOwner());
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(deactivateNotificationDevice).toHaveBeenCalled());
+    await act(async () => {
+      // The real interceptor advances the generation before it notifies the provider.
+      isAuthCredentialGenerationCurrentMock.mockReturnValue(false);
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      finishDeactivation();
+      await deletion;
+    });
+
+    await waitFor(() => expect(purgeLocalDataForSignOutMock).toHaveBeenCalledTimes(1));
+    expect(clearUserDataMock).not.toHaveBeenCalled();
+    const logoutEvents = trackMock.mock.calls.slice(trackCallsBefore).filter(([name]) => name === 'Logout');
+    expect(logoutEvents.length).toBe(1);
+  });
+
   // The guard that matters most: a failed token refresh is not a decision the user
   // made, so it must never cost them a download they waited minutes for.
   it('keeps the downloaded catalogs when a 401 forces a sign-out', async () => {

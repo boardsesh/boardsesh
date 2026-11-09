@@ -123,6 +123,17 @@ describe('buffered auth response admission', () => {
     expect(response.headers.getSetCookie()).toEqual([]);
   });
 
+  it('still clears the cookie on sign-out when the authority is unavailable', async () => {
+    admission.mockRejectedValue(new CredentialAuthorityUnavailable());
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async () => new Response(null, { headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' } }),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie()).toHaveLength(1);
+  });
+
   it('withholds fresh callback JWE and every flow cookie on authority unavailability', async () => {
     admission.mockRejectedValue(new CredentialAuthorityUnavailable());
     const response = await withAuthResponseAdmission(

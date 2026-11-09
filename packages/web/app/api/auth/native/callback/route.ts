@@ -1,5 +1,4 @@
 import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
-import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import {
@@ -89,7 +88,10 @@ export async function GET(request: NextRequest) {
   try {
     return await nativeCallback(request);
   } catch (error) {
-    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
+    // The in-app browser only closes on a redirect to the app scheme.
+    if (error instanceof CredentialAuthorityUnavailable) {
+      return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_unavailable`);
+    }
     throw error;
   }
 }

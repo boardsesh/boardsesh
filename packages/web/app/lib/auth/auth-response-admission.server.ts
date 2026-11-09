@@ -61,10 +61,20 @@ export async function withAuthResponseAdmission(
   invoke: () => Promise<Response>,
 ): Promise<Response> {
   const [action] = (await context.params).nextauth;
+  // Clearing a cookie needs no proof the account still exists, so an outage must
+  // not stop a climber signing out. A known denial still answers as before.
+  const isDenied = async (credential: string): Promise<boolean> => {
+    try {
+      return !(await admitPresentedWebCredential(credential));
+    } catch (error) {
+      if (action === 'signout' && error instanceof CredentialAuthorityUnavailable) return false;
+      throw error;
+    }
+  };
   try {
     const captured = await capturePresentedWebCredential(request);
     if (captured && (action === 'session' || action === 'signout')) {
-      if (!(await admitPresentedWebCredential(captured.credential))) return deniedAuthResponse(action);
+      if (await isDenied(captured.credential)) return deniedAuthResponse(action);
     }
 
     const response = await invoke();
@@ -80,7 +90,7 @@ export async function withAuthResponseAdmission(
     } else if (captured && action !== 'signin' && action !== 'csrf' && action !== 'providers') {
       // Sign-out and negative renewal must recheck at the publication boundary,
       // including deletion committed while the real handler was running.
-      if (!(await admitPresentedWebCredential(captured.credential))) return deniedAuthResponse(action);
+      if (await isDenied(captured.credential)) return deniedAuthResponse(action);
     }
     response.headers.set('Cache-Control', 'private, no-store');
     return response;
