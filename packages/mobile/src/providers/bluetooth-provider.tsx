@@ -2682,7 +2682,9 @@ export function BluetoothProvider({
       // stays untagged (no sendSource): the user didn't press Clear Lights, so it
       // must not count towards Board Lights Cleared.
       const clearWall = () => {
-        blankWallAndReportClear(() => (isConnected ? sendFramesToBoard('') : commitWallFrames(''))).catch(
+        // Only a spray wall's LED hold has lights to blank without a radio.
+        const blankOnHold = !isConnected && boardName === 'spray';
+        blankWallAndReportClear(() => (blankOnHold ? commitWallFrames('') : sendFramesToBoard(''))).catch(
           (error: unknown) => console.warn('[bluetooth] clearing the wall after a spill skip failed', error),
         );
       };
@@ -2732,7 +2734,16 @@ export function BluetoothProvider({
         clearWall();
       }
     },
-    [blankWallAndReportClear, setCurrentClimb, showToast, isConnected, sendFramesToBoard, commitWallFrames, t],
+    [
+      blankWallAndReportClear,
+      setCurrentClimb,
+      showToast,
+      isConnected,
+      boardName,
+      sendFramesToBoard,
+      commitWallFrames,
+      t,
+    ],
   );
 
   // The auto-sender reached the current climb but it has no frames yet — a

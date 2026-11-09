@@ -44,6 +44,9 @@ export function useSprayLedRouteSender({
   // the app, the same split `isAppActive` makes for Bluetooth writes.
   const away = useRef(AppState.currentState === 'background');
   const missedWhileAway = useRef(false);
+  // One toast per run of failures: an unreachable controller would otherwise
+  // say so again on every climb.
+  const failureShown = useRef(false);
   const mounted = useRef(true);
   const invalidate = useRef(onInvalidated);
   invalidate.current = onInvalidated;
@@ -122,13 +125,18 @@ export function useSprayLedRouteSender({
       const fail = () => {
         if (!enabled || !isCurrent()) return false;
         // Nobody reads a toast on a locked phone. The write is retried on return.
-        if (away.current) missedWhileAway.current = true;
-        else failure.current?.();
+        if (away.current) {
+          missedWhileAway.current = true;
+        } else if (!failureShown.current) {
+          failureShown.current = true;
+          failure.current?.();
+        }
         return false;
       };
       const settled = (acknowledged: boolean) => {
         if (!acknowledged || !isCurrent()) return false;
         missedWhileAway.current = false;
+        failureShown.current = false;
         return true;
       };
       const abort = () => {

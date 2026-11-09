@@ -91,7 +91,7 @@ const payload = {
   photo: { url: 'https://private/photo', width: 1200, height: 900, expiresAt: 'later' },
 };
 const layout = {
-  photoKey: sprayLedPhotoKey({ versionId: 3, frame: { width: 1000, height: 800 }, homography }),
+  photoKey: sprayLedPhotoKey({ frame: { width: 1000, height: 800 }, homography }),
   wiring: { initialSkip: 2 },
 };
 const useSender = (boardName = 'spray', layoutId = 42) =>
@@ -169,14 +169,16 @@ describe('spray route transport', () => {
     ]);
   });
 
-  it('refuses a stale calibration, missing hold or malformed route', async () => {
+  it.each([
+    ['a stale calibration', 'p7r1', true],
+    ['a missing hold', 'p8r1', false],
+    ['a malformed route', 'not-frames', false],
+  ])('refuses %s and says so', async (_refusal, frames, staleLayout) => {
+    if (staleLayout) mocks.layout.mockResolvedValueOnce({ ...layout, photoKey: 'old-version' });
     const { result } = renderHook(() => useSender());
-    mocks.layout.mockResolvedValueOnce({ ...layout, photoKey: 'old-version' });
-    expect(await result.current.send('p7r1')).toBe(false);
-    expect(await result.current.send('p8r1')).toBe(false);
-    expect(await result.current.send('not-frames')).toBe(false);
+    expect(await result.current.send(frames)).toBe(false);
     expect(mocks.show).not.toHaveBeenCalled();
-    expect(mocks.failure).toHaveBeenCalledTimes(3);
+    expect(mocks.failure).toHaveBeenCalledTimes(1);
   });
 
   it('can explicitly clear before any route has been written', async () => {
@@ -237,6 +239,24 @@ describe('spray route transport', () => {
     expect(await pending).toBe(false);
     expect(mocks.detach).toHaveBeenCalledTimes(1);
     expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it('shows one failure toast until a write succeeds again', async () => {
+    mocks.show.mockRejectedValueOnce(new Error('offline')).mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderHook(() => useSender());
+    expect(await result.current.send('p7r1')).toBe(false);
+    expect(await result.current.send('p7r1')).toBe(false);
+    expect(mocks.failure).toHaveBeenCalledTimes(1);
+    expect(await result.current.send('p7r1')).toBe(true);
+    mocks.show.mockRejectedValueOnce(new Error('offline'));
+    expect(await result.current.send('p7r1')).toBe(false);
+    expect(mocks.failure).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads no controller settings until a write is asked for', () => {
+    renderHook(() => useSender());
+    expect(mocks.settings).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 
   it('keeps the wall lit through a lock and does not rewrite it on return', async () => {
