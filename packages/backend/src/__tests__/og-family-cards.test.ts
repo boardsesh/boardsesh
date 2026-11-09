@@ -4,17 +4,13 @@ import { getDefaultRenderBoard } from '@boardsesh/board-config';
 import { buildBoardRenderByteCacheKey, buildOgFamilyByteKey, buildOgFamilyPlaneKey } from '../services/board-render';
 import {
   JOIN_FALLBACK_NAME,
-  PLAYLIST_ART_HOLD_CAP,
   buildGradeBand,
   buildJoinCardContent,
   buildPlaylistArt,
   buildPlaylistCardContent,
   digestDrawnData,
-  latestTickFrames,
-  mergeClimbFrames,
   pickInviteName,
   resolveSessionBoard,
-  type BoardConfig,
 } from '../services/og-family/card-model';
 
 const heroText = (content: { hero: { runs: readonly { text: string }[] } }) =>
@@ -24,59 +20,37 @@ const allText = (content: {
   rows: readonly { runs: readonly { text: string }[] }[];
 }) => [heroText(content), ...content.rows.map((row) => row.runs.map((run) => run.text).join(''))].join('\n');
 
-const flatFrames = (holds: number) => Array.from({ length: holds }, (_unused, index) => `p${1000 + index}r12`).join('');
-
 describe('playlist art', () => {
-  it('lights only the dominant layout and ignores climbs from another', () => {
+  it('lights the first climb on the dominant layout, and only that climb', () => {
     const art = buildPlaylistArt('kilter', [
-      { layoutId: 1, frames: 'p1r12' },
-      { layoutId: 1, frames: 'p2r13' },
       { layoutId: 8, frames: 'p3000r12' },
+      { layoutId: 1, frames: 'p1r12p2r13' },
+      { layoutId: 1, frames: 'p9r12' },
     ]);
 
     expect(art?.layoutId).toBe(1);
     expect(art?.frames).toBe('p1r12p2r13');
   });
 
-  it('flattens a multi-frame climb before merging, so a removed hold does not vanish', () => {
-    const frames = mergeClimbFrames([{ layoutId: 1, frames: 'p1r12p2r13,p3r14' }], 'kilter');
+  it('keeps a climb whole, however many holds it uses', () => {
+    const frames = Array.from({ length: 120 }, (_unused, index) => `p${1000 + index}r12`).join('');
 
-    expect(frames.match(/p\d+/g)).toEqual(['p1', 'p2', 'p3']);
+    expect(buildPlaylistArt('kilter', [{ layoutId: 1, frames }])?.frames).toBe(frames);
   });
 
-  it('dedupes placements across climbs and keeps the first role', () => {
-    const frames = mergeClimbFrames(
-      [
-        { layoutId: 1, frames: 'p1r12p2r13' },
-        { layoutId: 1, frames: 'p2r15p3r14' },
-      ],
-      'kilter',
-    );
+  it('flattens a multi-frame climb so a hold it clears still shows', () => {
+    const frames = buildPlaylistArt('kilter', [{ layoutId: 1, frames: 'p1r12p2r13,p3r14' }])?.frames;
 
-    expect(frames).toBe('p1r12p2r13p3r14');
+    expect(frames?.match(/p\d+/g)).toEqual(['p1', 'p2', 'p3']);
   });
 
-  it('stops adding climbs past the hold cap', () => {
-    const climbs = [
-      { layoutId: 1, frames: flatFrames(40) },
-      {
-        layoutId: 1,
-        frames: Array.from({ length: 40 }, (_unused, index) => `p${2000 + index}r12`).join(''),
-      },
-      { layoutId: 1, frames: 'p3000r12' },
-    ];
-
-    const holds = (mergeClimbFrames(climbs, 'kilter').match(/p\d+r/g) ?? []).length;
-
-    expect(holds).toBeLessThanOrEqual(PLAYLIST_ART_HOLD_CAP);
-    // The two-climb overflow halts before the third is reached.
-    expect(holds).toBe(40);
-  });
-
-  it('lights a one-climb list whole, even past the cap', () => {
-    const frames = flatFrames(PLAYLIST_ART_HOLD_CAP + 20);
-
-    expect(mergeClimbFrames([{ layoutId: 1, frames }], 'kilter')).toBe(frames);
+  it('skips a climb with no frames', () => {
+    expect(
+      buildPlaylistArt('kilter', [
+        { layoutId: 1, frames: null },
+        { layoutId: 1, frames: 'p5r12' },
+      ])?.frames,
+    ).toBe('p5r12');
   });
 
   it('has no art with no drawable climb', () => {
@@ -206,6 +180,32 @@ describe('invite card content', () => {
     ).toBe('Morgan');
   });
 
+  it('takes the narrow slot with art and the centred one without', () => {
+    const board = { config: { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,20' }, angle: 40 };
+    const withArt = buildJoinCardContent({
+      name: 'Alex',
+      board,
+      art: { ...board.config, frames: '' },
+      fontFamily: 'Noto Sans',
+    });
+    const withoutArt = buildJoinCardContent({ name: 'Alex', board: null, art: null, fontFamily: 'Noto Sans' });
+
+    expect(withArt.slot).toBe('narrow');
+    expect(withoutArt.slot).toBe('none');
+  });
+
+  it('keeps the hero floor above the board line', () => {
+    const board = { config: { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,20' }, angle: 40 };
+    const content = buildJoinCardContent({
+      name: 'A',
+      board,
+      art: { ...board.config, frames: '' },
+      fontFamily: 'Noto Sans',
+    });
+
+    expect(content.hero.minPt).toBeGreaterThan(content.rows[0].sizePt);
+  });
+
   it('draws a board line and JOIN pill with no "climbing now" claim', () => {
     const board = { config: { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,20' }, angle: 40 };
     const content = buildJoinCardContent({
@@ -254,40 +254,6 @@ describe('session board path', () => {
   });
 });
 
-describe('latest tick', () => {
-  const config: BoardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
-
-  it('picks the newest tick on this board', () => {
-    expect(
-      latestTickFrames(
-        [
-          { boardType: 'kilter', layoutId: 1, frames: 'p1r12', climbedAt: '2026-11-09T09:00:00' },
-          { boardType: 'kilter', layoutId: 1, frames: 'p2r12', climbedAt: '2026-11-09T10:00:00' },
-        ],
-        config,
-      ),
-    ).toBe('p2r12');
-  });
-
-  it('skips ticks from another board or layout, and frameless ones', () => {
-    expect(
-      latestTickFrames(
-        [
-          { boardType: 'tension', layoutId: 1, frames: 'p1r12', climbedAt: '2026-11-09T11:00:00' },
-          { boardType: 'kilter', layoutId: 8, frames: 'p2r12', climbedAt: '2026-11-09T10:00:00' },
-          { boardType: 'kilter', layoutId: 1, frames: null, climbedAt: '2026-11-09T09:00:00' },
-          { boardType: 'kilter', layoutId: 1, frames: 'p3r12', climbedAt: '2026-11-09T08:00:00' },
-        ],
-        config,
-      ),
-    ).toBe('p3r12');
-  });
-
-  it('is the unlit board with no ticks', () => {
-    expect(latestTickFrames([], config)).toBe('');
-  });
-});
-
 describe('cache keys', () => {
   it('namespaces a family byte key so it cannot collide with a climb card key', () => {
     const climbKey = buildBoardRenderByteCacheKey({
@@ -303,8 +269,8 @@ describe('cache keys', () => {
       isOgVariant: true,
     });
 
-    expect(buildOgFamilyByteKey('playlist', 'digest', 'jpeg')).not.toBe(climbKey);
-    expect(buildOgFamilyByteKey('playlist', 'digest', 'jpeg')).toMatch(/^og-family:/);
+    expect(buildOgFamilyByteKey('playlist', 'digest')).not.toBe(climbKey);
+    expect(buildOgFamilyByteKey('playlist', 'digest')).toMatch(/^og-family:/);
     expect(climbKey).not.toMatch(/^og-family/);
   });
 

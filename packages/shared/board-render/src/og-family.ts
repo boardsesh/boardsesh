@@ -4,7 +4,6 @@ import { createOgFrameBuffer } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 import { OG_JPEG_OPTIONS } from './pipeline';
 import { escapePangoMarkup } from './validation';
-import type { OutputFormat } from './types';
 
 /**
  * The share-card family: one layout contract the playlist, join and later card
@@ -29,8 +28,12 @@ const COLUMN_TOP = 40;
 const COLUMN_FLOOR = 552;
 const COLUMN_RIGHT = OG_IMAGE_WIDTH - 24;
 
-/** Where the wordmark sits on every family card, whichever slot it uses. */
-export const OG_FAMILY_WORDMARK_LEFT = 590;
+/**
+ * Where the wordmark sits on every family card, whichever slot it uses: its right
+ * edge is fixed at the bottom right, the one spot that clears the text on the
+ * left-aligned column, the wide narrow-slot hero and the centred no-art card.
+ */
+export const OG_FAMILY_WORDMARK_RIGHT = 1160;
 export const OG_FAMILY_WORDMARK_TOP = 574;
 
 const BOARD_TOP_INSET = 14;
@@ -48,7 +51,9 @@ type SlotGeometry = {
 const SLOTS: Record<OgFamilySlot, SlotGeometry> = {
   full: { art: { left: 16, right: 560 }, columnLeft: 590 },
   narrow: { art: { left: 0, right: 290 }, columnLeft: 322 },
-  none: { art: null, columnLeft: 310 },
+  // No art: the text is centred across the whole crop rather than left-aligned on
+  // an empty field, so `columnLeft` is the crop's own left edge.
+  none: { art: null, columnLeft: OG_FAMILY_CROP_LEFT },
 };
 
 /** The hero's horizontal limits for a slot: from the column's left edge to the crop edge. */
@@ -238,6 +243,11 @@ export type OgFamilyHero = {
   /** Largest point size to try. Measured fit decides the real one. */
   maxPt: number;
   /**
+   * Smallest point size a wrapping hero may reach. Below it the hero truncates
+   * instead, so a long name still reads as the hero and not as a supporting line.
+   */
+  minPt?: number;
+  /**
    * `false` keeps the hero on one line and shrinks it to fit: a grade is never
    * wrapped or cut. `true` wraps and, as a last resort, truncates: names run long.
    */
@@ -267,7 +277,7 @@ export type OgFamilyCardContent = {
 const DPI = 96;
 const LINE_HEIGHT_FACTOR = 1.4;
 const MIN_HERO_PT = 20;
-const HERO_MAX_HEIGHT = 290;
+const HERO_MAX_HEIGHT = 340;
 const WRAP_HERO_STEP_PT = 4;
 const TRUNCATION_ATTEMPTS = 6;
 const PILL_HEIGHT = 44;
@@ -275,17 +285,19 @@ const PILL_PADDING_X = 18;
 const PILL_DOT_SIZE = 12;
 const PILL_GAP = 10;
 
+const LEFT_TO_RIGHT_MARK = '\u200E';
 const CJK_WORD = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
 type TextLayer = { input: Buffer; left: number; top: number };
 type TextRaster = { buffer: Buffer; width: number; height: number };
+type TextAlign = 'left' | 'right' | 'centre';
 
 // Temporary copy of og-card.ts's renderText so this module can ship without
 // touching a file in OPAQUE_RENDER_INPUTS. Deleted when the climb card moves
 // onto this grid and the two text paths become one.
 async function renderRaster(
   markup: string,
-  options: { fontFamily?: string; width?: number; align?: 'left' | 'right' },
+  options: { fontFamily?: string; width?: number; align?: TextAlign },
 ): Promise<TextRaster> {
   const { data, info } = await sharp({
     text: {
@@ -323,31 +335,56 @@ function runsMarkup(runs: readonly OgFamilyTextRun[], pt: number, weight: number
  * Shave the transparent side-bearing off a hero raster.
  *
  * At display sizes a glyph's bearing is ~10px, so a hero laid out at the column's
- * left edge reads as indented next to the smaller rows. Trimming the ink edge the
- * text is anchored to brings them into one line.
+ * left edge reads as indented next to the smaller rows. Trimming the edge the text
+ * is anchored to brings them into one line.
+ *
+ * `hang` is how far the ink of the upper lines reaches past the lower ones: the hook
+ * of a "J" over "Huy Dang". The stack aligns on the lower lines and lets that hook
+ * sit left of them, the way a typesetter would, instead of indenting every line.
  */
-async function trimHeroInk(raster: TextRaster, side: 'left' | 'right'): Promise<TextRaster> {
+async function trimHeroInk(
+  raster: FittedHero,
+  side: 'left' | 'right',
+  multiLine: boolean,
+): Promise<FittedHero & { hang: number }> {
   const { data, info } = await sharp(raster.buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
-  const columnIsEmpty = (column: number) => {
-    for (let row = 0; row < height; row++) {
-      if (data[(row * width + column) * channels + (channels - 1)] > 8) return false;
+  const columnHasInk = (column: number, fromRow: number) => {
+    for (let row = fromRow; row < height; row++) {
+      if (data[(row * width + column) * channels + (channels - 1)] > 8) return true;
     }
-    return true;
+    return false;
   };
-  let inset = 0;
-  if (side === 'left') {
-    while (inset < width - 1 && columnIsEmpty(inset)) inset++;
-  } else {
-    while (inset < width - 1 && columnIsEmpty(width - 1 - inset)) inset++;
-  }
-  if (inset === 0) return raster;
-  const left = side === 'left' ? inset : 0;
+  const columnAt = (inset: number) => (side === 'left' ? inset : width - 1 - inset);
+  const firstInked = (fromRow: number) => {
+    let inset = 0;
+    while (inset < width - 1 && !columnHasInk(columnAt(inset), fromRow)) inset++;
+    return inset;
+  };
+  const inset = firstInked(0);
+  // One line has no lower lines to align on, and its lower half is just the point of a "V".
+  const hang = side === 'left' && multiLine ? firstInked(Math.floor(height / 2)) - inset : 0;
+  if (inset === 0) return { ...raster, hang };
   const buffer = await sharp(raster.buffer)
-    .extract({ left, top: 0, width: width - inset, height })
+    .extract({ left: side === 'left' ? inset : 0, top: 0, width: width - inset, height })
     .png()
     .toBuffer();
-  return { buffer, width: width - inset, height };
+  return { ...raster, buffer, width: width - inset, hang };
+}
+
+/**
+ * Give every line a left-to-right base direction.
+ *
+ * Pango infers each paragraph's direction from its first strong letter and flips
+ * `align: left` for a right-to-left one, which pushes a Hebrew or Arabic name to
+ * the far edge of its box. A left-to-right mark keeps it on the stack's edge; the
+ * bidi algorithm still orders the name's own letters and words right to left.
+ */
+function withLeftToRightBase(runs: readonly OgFamilyTextRun[]): OgFamilyTextRun[] {
+  return runs.map((run, index) => ({
+    ...run,
+    text: `${index === 0 ? LEFT_TO_RIGHT_MARK : ''}${run.text.replaceAll('\n', `\n${LEFT_TO_RIGHT_MARK}`)}`,
+  }));
 }
 
 function truncateRuns(runs: readonly OgFamilyTextRun[]): OgFamilyTextRun[] {
@@ -367,6 +404,7 @@ async function ptCapForWidestToken(
   maxPt: number,
   maxWidth: number,
   fontFamily: string | undefined,
+  minPt: number,
 ): Promise<number> {
   const measurable = tokens.filter((token) => token.length > 0 && !CJK_WORD.test(token));
   if (measurable.length === 0) return maxPt;
@@ -380,11 +418,17 @@ async function ptCapForWidestToken(
   const widest = Math.max(...measured);
   // Glyph ink rounds in a few pixels against the layout width, so leave a margin.
   const usable = maxWidth * 0.96;
-  return widest <= usable ? maxPt : Math.max(MIN_HERO_PT, Math.floor((maxPt * usable) / widest));
+  return widest <= usable ? maxPt : Math.max(minPt, Math.floor((maxPt * usable) / widest));
 }
 
-/** Below this, a hero name stops reading as a hero and may as well wrap. */
-const MIN_SINGLE_LINE_NAME_PT = 42;
+/**
+ * Keep each explicit line whole only while that costs little size. "Join / Huy
+ * Dang" is cleaner on two lines; "Join / Daniel Comber-Todd" reads better wrapped
+ * and big than on one small line.
+ */
+const SINGLE_LINE_MIN_SIZE_RATIO = 0.8;
+
+type FittedHero = TextRaster & { pt: number };
 
 /**
  * The hero, at the largest size that fits its box.
@@ -396,61 +440,89 @@ async function fitHero(
   hero: OgFamilyHero,
   box: { width: number },
   fontFamily: string | undefined,
-  align: 'left' | 'right',
-): Promise<TextRaster> {
-  let runs = hero.runs;
-  const lineHeight = hero.wrap ? HERO_LINE_HEIGHT : undefined;
-  let ptCap = hero.maxPt;
-  if (hero.wrap) {
-    const text = runs.map((run) => run.text).join('');
-    // First choice: the largest size where each explicit line stays on one line,
-    // so "Join / Huy Dang" is two lines rather than a fat three.
-    const singleLinePt = await ptCapForWidestToken(text.split('\n'), hero.maxPt, box.width, fontFamily);
-    if (singleLinePt >= MIN_SINGLE_LINE_NAME_PT) {
-      const raster = await renderRaster(runsMarkup(runs, singleLinePt, 800, lineHeight), { fontFamily, align });
-      if (raster.width <= box.width && raster.height <= HERO_MAX_HEIGHT) return raster;
-    }
-    ptCap = await ptCapForWidestToken(text.split(/\s+/), hero.maxPt, box.width, fontFamily);
-  }
+  align: TextAlign,
+): Promise<FittedHero> {
+  return hero.wrap ? fitWrappingHero(hero, box, fontFamily, align) : fitOneLineHero(hero, box, fontFamily);
+}
 
+/** A grade: one line, shrunk to fit, never cut. */
+async function fitOneLineHero(
+  hero: OgFamilyHero,
+  box: { width: number },
+  fontFamily: string | undefined,
+): Promise<FittedHero> {
+  let pt = hero.maxPt;
+  for (;;) {
+    const raster = await renderRaster(runsMarkup(hero.runs, pt, 800), { fontFamily });
+    if ((raster.width <= box.width && raster.height <= HERO_MAX_HEIGHT) || pt <= MIN_HERO_PT) return { ...raster, pt };
+    pt = Math.max(MIN_HERO_PT, Math.min(pt - 2, Math.floor((pt * box.width) / raster.width)));
+  }
+}
+
+/** A name: the largest size that fits, wrapping as needed, truncating only below the floor. */
+async function fitWrappingHero(
+  hero: OgFamilyHero,
+  box: { width: number },
+  fontFamily: string | undefined,
+  align: TextAlign,
+): Promise<FittedHero> {
+  const minPt = hero.minPt ?? MIN_HERO_PT;
+  const text = hero.runs.map((run) => run.text).join('');
+  const singleLinePt = await ptCapForWidestToken(text.split('\n'), hero.maxPt, box.width, fontFamily, MIN_HERO_PT);
+  // Pango also breaks after a hyphen, so a hyphenated name is sized by its parts.
+  const wordCapPt = await ptCapForWidestToken(text.split(/[\s-]+/), hero.maxPt, box.width, fontFamily, minPt);
+
+  const directed = (runs: readonly OgFamilyTextRun[]) => (align === 'left' ? withLeftToRightBase(runs) : runs);
+  let runs = hero.runs;
   for (let attempt = 0; attempt < TRUNCATION_ATTEMPTS; attempt++) {
-    let pt = ptCap;
-    let raster: TextRaster | undefined;
-    for (;;) {
-      const candidate = await renderRaster(runsMarkup(runs, pt, 800, lineHeight), {
+    for (let pt = wordCapPt; ; pt = Math.max(minPt, pt - WRAP_HERO_STEP_PT)) {
+      const wrapped = await renderRaster(runsMarkup(directed(runs), pt, 800, HERO_LINE_HEIGHT), {
         fontFamily,
-        ...(hero.wrap ? { width: box.width, align } : {}),
+        width: box.width,
+        align,
       });
-      raster = candidate;
-      if (candidate.width <= box.width && candidate.height <= HERO_MAX_HEIGHT) return candidate;
-      if (pt <= MIN_HERO_PT) break;
-      pt = hero.wrap
-        ? Math.max(MIN_HERO_PT, pt - WRAP_HERO_STEP_PT)
-        : Math.max(MIN_HERO_PT, Math.min(pt - 2, Math.floor((pt * box.width) / candidate.width)));
+      if (wrapped.width <= box.width && wrapped.height <= HERO_MAX_HEIGHT) {
+        if (attempt === 0 && singleLinePt >= Math.max(minPt, pt * SINGLE_LINE_MIN_SIZE_RATIO)) {
+          const singleLine = await renderRaster(runsMarkup(directed(runs), singleLinePt, 800, HERO_LINE_HEIGHT), {
+            fontFamily,
+            align,
+          });
+          if (singleLine.width <= box.width && singleLine.height <= HERO_MAX_HEIGHT) {
+            return { ...singleLine, pt: singleLinePt };
+          }
+        }
+        return { ...wrapped, pt };
+      }
+      if (pt <= minPt) break;
     }
-    if (!hero.wrap) return raster;
     runs = truncateRuns(runs);
   }
-  return renderRaster(runsMarkup(runs, MIN_HERO_PT, 800, lineHeight), { fontFamily, width: box.width, align });
+  const raster = await renderRaster(runsMarkup(directed(runs), minPt, 800, HERO_LINE_HEIGHT), {
+    fontFamily,
+    width: box.width,
+    align,
+  });
+  return { ...raster, pt: minPt };
 }
 
 async function renderRow(
   row: OgFamilyRow,
   width: number,
   fontFamily: string | undefined,
-  align: 'left' | 'right',
+  align: TextAlign,
 ): Promise<TextRaster> {
   const maxHeight = Math.ceil((row.maxLines ?? 1) * row.sizePt * (DPI / 72) * LINE_HEIGHT_FACTOR);
+  const directed = (runs: readonly OgFamilyTextRun[]) => (align === 'left' ? withLeftToRightBase(runs) : runs);
   let runs = row.runs;
   for (let attempt = 0; attempt < TRUNCATION_ATTEMPTS; attempt++) {
-    const raster = await renderRaster(runsMarkup(runs, row.sizePt, row.weight), { fontFamily, width, align });
+    const raster = await renderRaster(runsMarkup(directed(runs), row.sizePt, row.weight), { fontFamily, width, align });
     if (raster.height <= maxHeight) return raster;
     runs = truncateRuns(runs);
   }
-  return renderRaster(runsMarkup(runs, row.sizePt, row.weight), { fontFamily, width, align });
+  return renderRaster(runsMarkup(directed(runs), row.sizePt, row.weight), { fontFamily, width, align });
 }
 
-async function renderPillLayers(pill: OgFamilyPill, fontFamily: string | undefined, left: number, top: number) {
+async function renderPill(pill: OgFamilyPill, fontFamily: string | undefined) {
   const text = await renderRaster(
     `<span size="18pt" weight="800" letter_spacing="1400" foreground="${pill.color}">${escapePangoMarkup(pill.text)}</span>`,
     { fontFamily },
@@ -462,20 +534,10 @@ async function renderPillLayers(pill: OgFamilyPill, fontFamily: string | undefin
       `<circle cx="${PILL_PADDING_X + PILL_DOT_SIZE / 2}" cy="${PILL_HEIGHT / 2}" r="${PILL_DOT_SIZE / 2}" fill="${pill.color}"/>` +
       `</svg>`,
   );
-  return {
-    height: PILL_HEIGHT,
-    layers: [
-      { input: background, left, top },
-      {
-        input: text.buffer,
-        left: left + PILL_PADDING_X + PILL_DOT_SIZE + PILL_GAP,
-        top: top + Math.round((PILL_HEIGHT - text.height) / 2),
-      },
-    ],
-  };
+  return { background, text, width };
 }
 
-export type OgFamilyHeroRect = { left: number; top: number; width: number; height: number };
+export type OgFamilyHeroRect = { left: number; top: number; width: number; height: number; pt: number };
 
 /**
  * Lay out the family's text stack for one card and return its composite layers.
@@ -492,56 +554,65 @@ export async function renderOgFamilyTextLayers(
   const heroWidth = bounds.right - bounds.left;
   const columnWidth = COLUMN_RIGHT - bounds.left;
 
-  const heroText = hero.runs.map((run) => run.text).join('');
-  const heroRtl = isRightToLeft(heroText);
-  const heroAlign = heroRtl ? 'right' : 'left';
-  const heroRaster = await trimHeroInk(
-    await fitHero(hero, { width: heroWidth }, fontFamily, heroAlign),
-    heroRtl ? 'right' : 'left',
-  );
+  // One direction for the whole stack, set by the hero. A right-to-left name
+  // inside a left-aligned card stays on the column's edge and Pango still orders
+  // its letters correctly, so the rows never start at two different places.
+  const direction: TextAlign =
+    slot === 'none' ? 'centre' : isRightToLeft(hero.runs.map((run) => run.text).join('')) ? 'right' : 'left';
+  const anchor = (width: number) => {
+    if (direction === 'left') return bounds.left;
+    if (direction === 'right') return bounds.right - width;
+    return Math.round((bounds.left + bounds.right - width) / 2);
+  };
+  // Only a left-aligned stack can use the rest of the column past the crop.
+  const rowWidth = direction === 'left' ? columnWidth : heroWidth;
+
+  const fitted = await fitHero(hero, { width: heroWidth }, fontFamily, direction);
+  const heroRaster = direction === 'centre' ? { ...fitted, hang: 0 } : await trimHeroInk(fitted, direction, hero.wrap);
 
   const stacked: { input: Buffer; left: number; offset: number }[] = [];
   let cursor = 0;
 
-  let pillBlock: { height: number; layers: TextLayer[] } | null = null;
   if (pill) {
-    // Placed at offset 0 and re-based onto the final block top below.
-    pillBlock = await renderPillLayers(pill, fontFamily, bounds.left, 0);
-    cursor += pillBlock.height + 14;
+    const { background, text, width } = await renderPill(pill, fontFamily);
+    const left = anchor(width);
+    stacked.push({ input: background, left, offset: 0 });
+    stacked.push({
+      input: text.buffer,
+      left: left + PILL_PADDING_X + PILL_DOT_SIZE + PILL_GAP,
+      offset: Math.round((PILL_HEIGHT - text.height) / 2),
+    });
+    cursor += PILL_HEIGHT + 14;
   }
 
-  const heroLeft = heroRtl ? bounds.right - heroRaster.width : bounds.left;
+  const heroLeft = anchor(heroRaster.width) - heroRaster.hang;
   stacked.push({ input: heroRaster.buffer, left: heroLeft, offset: cursor });
   const heroOffset = cursor;
-  cursor += heroRaster.height + (hero.wrap ? 16 : 4);
+  cursor += heroRaster.height + (hero.wrap ? 26 : 4);
 
   for (const row of rows) {
-    const rowText = row.runs.map((run) => run.text).join('');
-    const rowRtl = isRightToLeft(rowText);
-    const raster = await renderRow(row, rowRtl ? heroWidth : columnWidth, fontFamily, rowRtl ? 'right' : 'left');
+    const raster = await renderRow(row, rowWidth, fontFamily, direction);
     if (cursor + raster.height > COLUMN_FLOOR - COLUMN_TOP) break;
-    stacked.push({
-      input: raster.buffer,
-      left: rowRtl ? bounds.right - raster.width : bounds.left,
-      offset: cursor,
-    });
+    stacked.push({ input: raster.buffer, left: anchor(raster.width), offset: cursor });
     cursor += raster.height + (row.gapBelow ?? 10);
   }
 
-  const blockHeight = cursor;
-  const blockTop = Math.max(COLUMN_TOP, COLUMN_TOP + Math.round((COLUMN_FLOOR - COLUMN_TOP - blockHeight) / 2));
-
-  const layers: TextLayer[] = [];
-  if (pillBlock) {
-    for (const layer of pillBlock.layers) layers.push({ ...layer, top: layer.top + blockTop });
-  }
-  for (const row of stacked) layers.push({ input: row.input, left: row.left, top: blockTop + row.offset });
+  const blockTop = Math.max(COLUMN_TOP, COLUMN_TOP + Math.round((COLUMN_FLOOR - COLUMN_TOP - cursor) / 2));
+  const layers: TextLayer[] = stacked.map((row) => ({
+    input: row.input,
+    left: row.left,
+    top: blockTop + row.offset,
+  }));
 
   const wordmark = await renderRaster(
     `<span size="16pt" weight="700" letter_spacing="1800" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
     { fontFamily },
   );
-  layers.push({ input: wordmark.buffer, left: OG_FAMILY_WORDMARK_LEFT, top: OG_FAMILY_WORDMARK_TOP });
+  layers.push({
+    input: wordmark.buffer,
+    left: OG_FAMILY_WORDMARK_RIGHT - wordmark.width,
+    top: OG_FAMILY_WORDMARK_TOP,
+  });
 
   return {
     layers: layers.filter((layer) => layer.top >= 0 && layer.top < OG_IMAGE_HEIGHT),
@@ -550,6 +621,7 @@ export async function renderOgFamilyTextLayers(
       top: blockTop + heroOffset,
       width: heroRaster.width,
       height: heroRaster.height,
+      pt: heroRaster.pt,
     },
   };
 }
@@ -558,32 +630,30 @@ export async function renderOgFamilyTextLayers(
 
 const SCRIM_FEATHER_WIDTH = 240;
 const SCRIM_COLUMN_OPACITY = 0.92;
-const SCRIM_FIELD_OPACITY = 0.82;
 const SCRIM_GROUND_TINT_OPACITY = 0.4;
+/** A no-art card keeps the neutral frost and grain showing through the ground. */
+const SCRIM_NEUTRAL_FIELD_OPACITY = 0.62;
 
 /**
  * Lays the family ground over the bokeh: a tint across the whole card, then a
  * feathered ramp into the near-solid column so the text never competes with it.
- * A card with no art takes the dark field across its full width instead.
+ * A card with no art takes one even tint, so the frost and grain still read.
  */
 export function buildOgFamilyScrim(slot: OgFamilySlot): Buffer {
   const width = OG_IMAGE_WIDTH;
   const height = OG_IMAGE_HEIGHT;
-  const tint = `<rect width="${width}" height="${height}" fill="${OG_FAMILY_GROUND}" fill-opacity="${SCRIM_GROUND_TINT_OPACITY}"/>`;
   const art = SLOTS[slot].art;
   if (!art) {
     return Buffer.from(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${tint}<rect width="${width}" height="${height}" fill="${OG_FAMILY_GROUND}" fill-opacity="${SCRIM_FIELD_OPACITY}"/></svg>`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="${OG_FAMILY_GROUND}" fill-opacity="${SCRIM_NEUTRAL_FIELD_OPACITY}"/></svg>`,
     );
   }
+  const tint = `<rect width="${width}" height="${height}" fill="${OG_FAMILY_GROUND}" fill-opacity="${SCRIM_GROUND_TINT_OPACITY}"/>`;
   const columnLeft = SLOTS[slot].columnLeft;
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${tint}<defs><linearGradient id="scrim"><stop offset="0" stop-color="${OG_FAMILY_GROUND}" stop-opacity="0"/><stop offset="1" stop-color="${OG_FAMILY_GROUND}" stop-opacity="${SCRIM_COLUMN_OPACITY}"/></linearGradient></defs><rect x="${columnLeft - SCRIM_FEATHER_WIDTH}" width="${SCRIM_FEATHER_WIDTH}" height="${height}" fill="url(#scrim)"/><rect x="${columnLeft}" width="${width - columnLeft}" height="${height}" fill="${OG_FAMILY_GROUND}" fill-opacity="${SCRIM_COLUMN_OPACITY}"/></svg>`,
   );
 }
-
-const PNG_OPTIONS: sharp.PngOptions = { compressionLevel: 9, adaptiveFiltering: true };
-const WEBP_OPTIONS: sharp.WebpOptions = { quality: 80 };
 
 export type OgFamilyArtLayers = {
   /** Board-sized folded board photo (raw RGBA), or null when no photo resolved. */
@@ -627,9 +697,8 @@ export async function composeOgFamilyCard(params: {
   slot: OgFamilySlot;
   art: OgFamilyArtLayers | null;
   textLayers: readonly sharp.OverlayOptions[];
-  format: OutputFormat;
 }): Promise<{ buffer: Buffer; contentType: string }> {
-  const { background, slot, art, textLayers, format } = params;
+  const { background, slot, art, textLayers } = params;
 
   const layers: sharp.OverlayOptions[] = [{ input: buildOgFamilyScrim(slot) }];
   if (art) {
@@ -657,7 +726,5 @@ export async function composeOgFamilyCard(params: {
     raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 },
   }).composite(layers);
 
-  if (format === 'png') return { buffer: await composited.png(PNG_OPTIONS).toBuffer(), contentType: 'image/png' };
-  if (format === 'webp') return { buffer: await composited.webp(WEBP_OPTIONS).toBuffer(), contentType: 'image/webp' };
   return { buffer: await composited.jpeg(OG_JPEG_OPTIONS).toBuffer(), contentType: 'image/jpeg' };
 }

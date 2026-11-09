@@ -4,7 +4,7 @@ import {
   OG_FAMILY_GROUND,
   OG_FAMILY_MUTED,
   OG_FAMILY_WHITE,
-  OG_FAMILY_WORDMARK_LEFT,
+  OG_FAMILY_WORDMARK_RIGHT,
   OG_FAMILY_WORDMARK_TOP,
   buildOgFamilyScrim,
   liftGradeColorForCard,
@@ -42,17 +42,121 @@ describe('family text survives real-world names', () => {
     }
   });
 
-  it('keeps a long hero name inside the crop and truncates only what it must', async () => {
+  it('keeps a long hero name inside the crop and well above the size of the line under it', async () => {
     const { hero: heroRect } = await renderOgFamilyTextLayers({
-      slot: 'full',
+      slot: 'narrow',
       fontFamily: 'Noto Sans',
-      hero: hero('Join\nMaximiliano-Bartholomew the Third of the Wall and his very long name'),
+      hero: {
+        runs: [
+          {
+            text: 'Join\nMaximiliano-Bartholomew the Third of the Wall and his very long name',
+            color: OG_FAMILY_WHITE,
+          },
+        ],
+        maxPt: 100,
+        minPt: 44,
+        wrap: true,
+      },
       rows: [],
     });
 
-    expect(heroRect.left).toBe(590);
+    // The "J" of Join may hang left of the column, but stays inside the crop.
+    expect(heroRect.left).toBeGreaterThanOrEqual(285);
+    expect(heroRect.left).toBeLessThanOrEqual(322);
     expect(heroRect.left + heroRect.width).toBeLessThanOrEqual(915);
-    expect(heroRect.height).toBeLessThanOrEqual(290);
+    expect(heroRect.height).toBeLessThanOrEqual(340);
+    expect(heroRect.pt).toBeGreaterThanOrEqual(44);
+  });
+
+  it('keeps a right-to-left name whole and on the stack edge under an English prefix', async () => {
+    const hebrew = await renderOgFamilyTextLayers({
+      slot: 'narrow',
+      fontFamily: 'Noto Sans',
+      hero: {
+        runs: [
+          { text: 'Join\n', color: OG_FAMILY_WHITE },
+          { text: 'דני כהן', color: OG_FAMILY_WHITE },
+        ],
+        maxPt: 100,
+        minPt: 44,
+        wrap: true,
+      },
+      rows: [],
+    });
+    const prefixOnly = await renderOgFamilyTextLayers({
+      slot: 'narrow',
+      fontFamily: 'Noto Sans',
+      hero: { runs: [{ text: 'Join', color: OG_FAMILY_WHITE }], maxPt: hebrew.hero.pt, wrap: false },
+      rows: [],
+    });
+
+    // Wider than "Join" alone: the name was drawn and not truncated away.
+    expect(hebrew.hero.width).toBeGreaterThan(prefixOnly.hero.width);
+    expect(hebrew.hero.pt).toBeGreaterThanOrEqual(70);
+  });
+
+  it('keeps every line of an unbroken name above the floor by truncating it', async () => {
+    const { hero: heroRect } = await renderOgFamilyTextLayers({
+      slot: 'narrow',
+      fontFamily: 'Noto Sans',
+      hero: { runs: [{ text: `Join\n${'W'.repeat(60)}`, color: OG_FAMILY_WHITE }], maxPt: 100, minPt: 44, wrap: true },
+      rows: [],
+    });
+
+    expect(heroRect.pt).toBeGreaterThanOrEqual(44);
+    expect(heroRect.left + heroRect.width).toBeLessThanOrEqual(915);
+  });
+
+  it('keeps two lines for a name that fits, instead of a fat three', async () => {
+    const twoLine = await renderOgFamilyTextLayers({
+      slot: 'narrow',
+      fontFamily: 'Noto Sans',
+      hero: { runs: [{ text: 'Join\nHuy Dang', color: OG_FAMILY_WHITE }], maxPt: 100, minPt: 44, wrap: true },
+      rows: [],
+    });
+
+    expect(twoLine.hero.pt).toBeGreaterThanOrEqual(70);
+    expect(twoLine.hero.height).toBeLessThanOrEqual(340);
+  });
+
+  it('centres the stack on a card with no art', async () => {
+    const { hero: heroRect, layers } = await renderOgFamilyTextLayers({
+      slot: 'none',
+      fontFamily: 'Noto Sans',
+      pill: { text: 'JOIN', color: OG_FAMILY_WHITE },
+      hero: hero('Join\nDaniel'),
+      rows: [row('Kilter at 40°')],
+    });
+
+    expect(Math.abs(heroRect.left + heroRect.width / 2 - 600)).toBeLessThanOrEqual(1);
+    const rowLayer = layers[layers.length - 2];
+    const { width } = await sharp(rowLayer.input).metadata();
+    expect(Math.abs(rowLayer.left + (width ?? 0) / 2 - 600)).toBeLessThanOrEqual(1);
+  });
+
+  it('keeps a right-to-left name on the same edge as the rows around it', async () => {
+    const { layers } = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: { runs: [{ text: 'V5–V9', color: OG_FAMILY_WHITE }], maxPt: 78, wrap: false },
+      rows: [row('117 climbs'), row('אבן הכותל'), row('Kilter playlist')],
+    });
+
+    expect(layers.slice(0, 4).map((layer) => layer.left)).toEqual([590, 590, 590, 590]);
+  });
+
+  it('anchors a whole right-to-left stack to the crop edge', async () => {
+    const { layers, hero: heroRect } = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: { runs: [{ text: 'אבן הכותל', color: OG_FAMILY_WHITE }], maxPt: 60, wrap: true },
+      rows: [row('Tension playlist')],
+    });
+
+    expect(heroRect.left + heroRect.width).toBe(915);
+    const rowLayer = layers[1];
+    const { width } = await sharp(rowLayer.input).metadata();
+    expect(rowLayer.left + (width ?? 0)).toBe(915);
   });
 
   it('draws the wordmark in the same place on every slot', async () => {
@@ -64,7 +168,8 @@ describe('family text survives real-world names', () => {
         rows: [],
       });
       const wordmark = layers[layers.length - 1];
-      expect(wordmark.left).toBe(OG_FAMILY_WORDMARK_LEFT);
+      const { width } = await sharp(wordmark.input).metadata();
+      expect(wordmark.left + (width ?? 0)).toBe(OG_FAMILY_WORDMARK_RIGHT);
       expect(wordmark.top).toBe(OG_FAMILY_WORDMARK_TOP);
     }
   });

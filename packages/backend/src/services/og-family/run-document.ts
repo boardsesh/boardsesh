@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { execute, type DocumentNode, type GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { schema } from '../../graphql/index';
+import { PlaylistAccessDeniedError } from '../../graphql/resolvers/playlists/helpers/enrichment';
+import { InputValidationError } from '../../validation/schemas/primitives';
 
 /**
  * Every share-card read runs a real GraphQL document through the real schema, as
@@ -43,7 +45,12 @@ export class OgFamilyNotFoundError extends Error {
 
 function isNotFoundError(error: GraphQLError): boolean {
   const code = error.extensions?.code;
-  return typeof code === 'string' && OG_FAMILY_NOT_FOUND_CODES.has(code);
+  if (typeof code === 'string' && OG_FAMILY_NOT_FOUND_CODES.has(code)) return true;
+  // The two refusals that have no code. Matched by type and never by message, so
+  // a database failure can only ever reach the 500.
+  return (
+    error.originalError instanceof PlaylistAccessDeniedError || error.originalError instanceof InputValidationError
+  );
 }
 
 /**

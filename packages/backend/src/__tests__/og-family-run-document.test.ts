@@ -18,6 +18,8 @@ vi.mock('../graphql/index', () => ({
   }),
 }));
 
+import { PlaylistAccessDeniedError } from '../graphql/resolvers/playlists/helpers/enrichment';
+import { InputValidationError } from '../validation/schemas/primitives';
 import {
   OG_FAMILY_NOT_FOUND_CODES,
   OgFamilyNotFoundError,
@@ -57,6 +59,26 @@ describe('runOgDocument', () => {
     errors.next = new GraphQLError('refused', { extensions: { code } });
 
     await expect(runOgDocument(DOCUMENT, {}, createAnonymousOgContext())).rejects.toBeInstanceOf(OgFamilyNotFoundError);
+  });
+
+  it('maps a playlist that went private between the gate and the climbs read to the 404', async () => {
+    errors.next = new PlaylistAccessDeniedError();
+
+    await expect(runOgDocument(DOCUMENT, {}, createAnonymousOgContext())).rejects.toBeInstanceOf(OgFamilyNotFoundError);
+  });
+
+  it('maps a validateInput refusal to the 404', async () => {
+    errors.next = new InputValidationError('Invalid sessionId: nope');
+
+    await expect(runOgDocument(DOCUMENT, {}, createAnonymousOgContext())).rejects.toBeInstanceOf(OgFamilyNotFoundError);
+  });
+
+  it('never turns a database failure into a 404, even with a look-alike message', async () => {
+    errors.next = new Error('Playlist not found or access denied');
+
+    await expect(runOgDocument(DOCUMENT, {}, createAnonymousOgContext())).rejects.not.toBeInstanceOf(
+      OgFamilyNotFoundError,
+    );
   });
 
   it('lets any other error through as a real failure', async () => {

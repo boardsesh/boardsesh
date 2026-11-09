@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createPrivateOgImageHeaders, normalizeOutputFormat, type OutputFormat } from '@boardsesh/board-render';
+import { createPrivateOgImageHeaders } from '@boardsesh/board-render';
 import { applyCorsHeaders } from './cors';
 import { getPublicClientIp } from '../utils/client-ip';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
@@ -82,7 +82,6 @@ async function serveOgFamilyCard(
   req: IncomingMessage,
   res: ServerResponse,
   surface: 'playlist' | 'session-join',
-  format: OutputFormat,
   load: () => Promise<LoadedOgFamilyCard | null>,
 ): Promise<void> {
   if (!(await passRateLimit(req, res))) return;
@@ -117,10 +116,9 @@ async function serveOgFamilyCard(
   const totalT0 = performance.now();
   try {
     const { buffer, contentType, cache, timings } = await renderOgFamilyArt({
-      cacheKey: buildOgFamilyByteKey(surface, card.digest, format),
+      cacheKey: buildOgFamilyByteKey(surface, card.digest),
       art: card.art,
       content: card.content,
-      format,
     });
     const totalMs = performance.now() - totalT0;
     const serverTiming = [
@@ -148,7 +146,6 @@ async function serveOgFamilyCard(
       totalMs: Math.round(totalMs),
       wasmMs: Math.round(timings.wasmMs),
       bytes: buffer.length,
-      format,
     };
     if (totalMs > SLOW_RENDER_MS) logger.warn('[OGFamily] served (slow)', logPayload);
     else logger.info('[OGFamily] served', logPayload);
@@ -167,10 +164,6 @@ async function serveOgFamilyCard(
   }
 }
 
-function formatFromUrl(url: URL): OutputFormat {
-  return normalizeOutputFormat(url.searchParams.get('format') ?? '') ?? 'jpeg';
-}
-
 /** GET/HEAD/OPTIONS /og/playlist?uuid=… */
 export async function handleOgPlaylist(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
@@ -179,9 +172,7 @@ export async function handleOgPlaylist(req: IncomingMessage, res: ServerResponse
     sendNotFound(req, res);
     return;
   }
-  await serveOgFamilyCard(req, res, 'playlist', formatFromUrl(url), () =>
-    loadPlaylistCard(playlistId, OG_FAMILY_FONT_FAMILY),
-  );
+  await serveOgFamilyCard(req, res, 'playlist', () => loadPlaylistCard(playlistId, OG_FAMILY_FONT_FAMILY));
 }
 
 /**
@@ -197,7 +188,5 @@ export async function handleOgSession(req: IncomingMessage, res: ServerResponse,
     sendNotFound(req, res);
     return;
   }
-  await serveOgFamilyCard(req, res, 'session-join', formatFromUrl(url), () =>
-    loadSessionJoinCard(sessionId, OG_FAMILY_FONT_FAMILY),
-  );
+  await serveOgFamilyCard(req, res, 'session-join', () => loadSessionJoinCard(sessionId, OG_FAMILY_FONT_FAMILY));
 }

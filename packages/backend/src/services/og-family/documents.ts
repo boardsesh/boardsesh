@@ -6,9 +6,7 @@ export const OG_PLAYLIST_GATE = parse(/* GraphQL */ `
     playlist(playlistId: $playlistId) {
       name
       boardType
-      climbCount
       isPublic
-      updatedAt
       gradeSummary {
         p10Difficulty
         p90Difficulty
@@ -20,6 +18,7 @@ export const OG_PLAYLIST_GATE = parse(/* GraphQL */ `
 export const OG_PLAYLIST_CLIMBS = parse(/* GraphQL */ `
   query OgPlaylistClimbs($input: GetPlaylistClimbsInput!) {
     playlistClimbs(input: $input) {
+      totalCount
       climbs {
         layoutId
         frames
@@ -36,19 +35,6 @@ export const OG_SESSION_GATE = parse(/* GraphQL */ `
         userId
         username
         isLeader
-      }
-    }
-  }
-`);
-
-export const OG_SESSION_TICKS = parse(/* GraphQL */ `
-  query OgSessionTicks($sessionId: ID!) {
-    sessionDetail(sessionId: $sessionId) {
-      ticks {
-        boardType
-        layoutId
-        frames
-        climbedAt
       }
     }
   }

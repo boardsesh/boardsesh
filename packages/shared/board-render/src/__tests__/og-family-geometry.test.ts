@@ -149,7 +149,9 @@ describe('family hero stays inside the search crop', () => {
         rows: [{ runs: heroRuns('A row of text'), sizePt: 20, weight: 500 }],
       });
       const columnLeft = ogFamilyHeroBounds(slot).left;
-      for (const layer of layers) expect(layer.left).toBeGreaterThanOrEqual(Math.min(columnLeft, 590));
+      // A hero's first-line hook may hang a few pixels past the column edge.
+      const allowedHang = 24;
+      for (const layer of layers) expect(layer.left).toBeGreaterThanOrEqual(columnLeft - allowedHang);
     }
   });
 });

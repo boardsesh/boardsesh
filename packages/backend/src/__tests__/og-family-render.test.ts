@@ -20,7 +20,7 @@ const noneContent: OgFamilyCardContent = { slot: 'none', fontFamily: 'Noto Sans'
 const kilterBoard = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
 
 let cardCounter = 0;
-const uniqueKey = () => service.buildOgFamilyByteKey('test', `digest-${(cardCounter += 1)}`, 'jpeg');
+const uniqueKey = () => service.buildOgFamilyByteKey('test', `digest-${(cardCounter += 1)}`);
 
 describe('renderOgFamilyArt', () => {
   it('renders a lit board on the family canvas', async () => {
@@ -28,7 +28,6 @@ describe('renderOgFamilyArt', () => {
       cacheKey: uniqueKey(),
       art: { ...kilterBoard, frames: 'p1080r15p1202r12' },
       content: fullContent,
-      format: 'jpeg',
     });
 
     expect(result.contentType).toBe('image/jpeg');
@@ -43,7 +42,6 @@ describe('renderOgFamilyArt', () => {
       cacheKey: uniqueKey(),
       art: { ...kilterBoard, frames: '' },
       content: fullContent,
-      format: 'jpeg',
     });
 
     expect((await sharp(result.buffer).metadata()).width).toBe(1200);
@@ -54,7 +52,6 @@ describe('renderOgFamilyArt', () => {
       cacheKey: uniqueKey(),
       art: null,
       content: noneContent,
-      format: 'jpeg',
     });
 
     expect(result.cache).toBe('none');
@@ -66,7 +63,6 @@ describe('renderOgFamilyArt', () => {
       cacheKey: uniqueKey(),
       art: { ...kilterBoard, frames: 'p1080r15' },
       content: fullContent,
-      format: 'jpeg' as const,
     };
     await service.renderOgFamilyArt(params);
 
@@ -80,7 +76,6 @@ describe('renderOgFamilyArt', () => {
       cacheKey: uniqueKey(),
       art: { ...kilterBoard, frames: 'p1202r12' },
       content: fullContent,
-      format: 'jpeg' as const,
     };
 
     const [first, second] = await Promise.all([service.renderOgFamilyArt(params), service.renderOgFamilyArt(params)]);
@@ -96,7 +91,6 @@ describe('renderOgFamilyArt', () => {
       cacheKey: uniqueKey(),
       art: { ...kilterBoard, frames: 'p1080r15' },
       content: fullContent,
-      format: 'jpeg',
     });
 
     const after = service.getBoardRenderRuntimeStats();

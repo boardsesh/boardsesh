@@ -6,13 +6,45 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { eq } from 'drizzle-orm';
+import { getOperationAST, print, type DocumentNode } from 'graphql';
+import { SignJWT } from 'jose';
 import * as dbSchema from '@boardsesh/db/schema';
-import type { SessionUser } from '@boardsesh/shared-schema';
+import type { ConnectionContext, SessionUser } from '@boardsesh/shared-schema';
 import type { OgFamilyCardContent } from '@boardsesh/board-render/og-family';
 import { db } from '../db/client';
+import { playlistQueries } from '../graphql/resolvers/playlists/queries';
+import { validateToken } from '../middleware/auth';
+import { canAccessResource } from '../services/privacy';
 import { roomManager } from '../services/room-manager';
+import { OG_BOARD_BY_SLUG } from '../services/og-family/documents';
 
-const { renderFamily } = vi.hoisted(() => ({ renderFamily: vi.fn() }));
+const { renderFamily, documentsRun, contextsUsed, tickReads } = vi.hoisted(() => ({
+  renderFamily: vi.fn(),
+  documentsRun: [] as string[],
+  contextsUsed: [] as unknown[],
+  tickReads: [] as string[],
+}));
+vi.mock('../services/og-family/run-document', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/og-family/run-document')>();
+  return {
+    ...actual,
+    runOgDocument: async (document: DocumentNode, variables: Record<string, unknown>, context: ConnectionContext) => {
+      documentsRun.push(getOperationAST(document)?.name?.value ?? 'anonymous');
+      contextsUsed.push(context);
+      return actual.runOgDocument(document, variables, context);
+    },
+  };
+});
+vi.mock('../services/og-family/latest-session-tick', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/og-family/latest-session-tick')>();
+  return {
+    ...actual,
+    readLatestSessionTickFrames: async (...args: Parameters<typeof actual.readLatestSessionTickFrames>) => {
+      tickReads.push(args[0]);
+      return actual.readLatestSessionTickFrames(...args);
+    },
+  };
+});
 vi.mock('../services/board-render', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/board-render')>()),
   ensureBoardRendererAvailable: vi.fn(async () => true),
@@ -21,6 +53,8 @@ vi.mock('../services/board-render', async (importOriginal) => ({
 vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn(async () => {}) }));
 
 import { handleOgPlaylist, handleOgSession } from '../handlers/og-family';
+import { resetOgFamilyLoadCaches } from '../services/og-family/load-cards';
+import { readLatestSessionTickFrames } from '../services/og-family/latest-session-tick';
 
 const OWNER = 'og-family-owner';
 const PRIVATE_CLIMBER = 'og-family-private-climber';
@@ -96,6 +130,53 @@ function drawnText(content: OgFamilyCardContent): string {
   ].join('\n');
 }
 
+/** A real bearer token for `userId`, the kind the app sends. */
+function signRealToken(userId: string): Promise<string> {
+  return new SignJWT({})
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(userId)
+    .setIssuer('boardsesh')
+    .setAudience('boardsesh-mobile')
+    .setExpirationTime('1h')
+    .sign(new TextEncoder().encode(process.env.NEXTAUTH_SECRET));
+}
+
+const ownerContext: ConnectionContext = { connectionId: 'og-owner', isAuthenticated: true, userId: OWNER };
+const strangerContext: ConnectionContext = { connectionId: 'og-stranger', isAuthenticated: false };
+
+async function createClimb(uuid: string, overrides: { isDraft?: boolean; frames?: string } = {}) {
+  await db.insert(dbSchema.boardClimbs).values({
+    uuid,
+    boardType: 'kilter',
+    layoutId: 1,
+    name: `Climb ${uuid}`,
+    isListed: true,
+    isDraft: overrides.isDraft ?? false,
+    userId: OWNER,
+    frames: overrides.frames ?? 'p1140r12p1155r15',
+  });
+}
+
+async function addClimbs(playlistId: bigint, climbUuids: string[]) {
+  await db
+    .insert(dbSchema.playlistClimbs)
+    .values(climbUuids.map((climbUuid, position) => ({ playlistId, climbUuid, angle: 40, position })));
+}
+
+async function createTick(uuid: string, sessionId: string, climbUuid: string, climbedAt: string) {
+  await db.insert(dbSchema.boardseshTicks).values({
+    uuid,
+    userId: OWNER,
+    climbUuid,
+    boardType: 'kilter',
+    angle: 40,
+    status: 'send' as const,
+    difficulty: 20,
+    climbedAt,
+    sessionId,
+  });
+}
+
 async function createPlaylist(uuid: string, options: { isPublic: boolean; ownerId?: string }) {
   const [playlist] = await db
     .insert(dbSchema.playlists)
@@ -132,6 +213,10 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  resetOgFamilyLoadCaches();
+  documentsRun.length = 0;
+  contextsUsed.length = 0;
+  tickReads.length = 0;
   renderFamily.mockReset();
   renderFamily.mockResolvedValue({
     buffer: Buffer.from([0xff, 0xd8]),
@@ -182,11 +267,18 @@ describe('playlist card gates', () => {
     expectIdenticalNotFound(await requestPlaylist('og-card-nope'));
   });
 
-  it('answers the same 404 for a private playlist, whoever asks', async () => {
+  it("answers the same 404 for a private playlist, even with its owner's valid token", async () => {
     await createPlaylist('og-card-private', { isPublic: false });
+    const token = await signRealToken(OWNER);
+    // Both controls have to hold, or the 404 below proves nothing: the token is
+    // real, and that owner can read this playlist everywhere else.
+    expect((await validateToken(token))?.userId).toBe(OWNER);
+    expect(await playlistQueries.playlist(null, { playlistId: 'og-card-private' }, ownerContext)).not.toBeNull();
 
-    expectIdenticalNotFound(await requestPlaylist('og-card-private'));
-    expectIdenticalNotFound(await requestPlaylist('og-card-private', { authorization: 'Bearer owner-token' }));
+    expectIdenticalNotFound(await requestPlaylist('og-card-private', { authorization: `Bearer ${token}` }));
+    expect(contextsUsed).toHaveLength(1);
+    expect(contextsUsed[0]).toMatchObject({ isAuthenticated: false });
+    expect((contextsUsed[0] as ConnectionContext).userId).toBeUndefined();
   });
 
   it('answers the same 404 for an only_me playlist, even with isPublic set', async () => {
@@ -201,12 +293,102 @@ describe('playlist card gates', () => {
     expectIdenticalNotFound(await requestPlaylist('og-card-only-me'));
   });
 
-  it('never reads the frames of a playlist it refused', async () => {
+  it('answers 404 for a list a stranger can open that is not public', async () => {
+    await createPlaylist('og-card-public-audience', { isPublic: false });
+    await db.insert(dbSchema.contentPrivacy).values({
+      entityType: 'playlist',
+      entityId: 'og-card-public-audience',
+      ownerId: OWNER,
+      audience: 'public',
+      publicConsentRevision: 2,
+    });
+    // Only the card's own isPublic check stands between a stranger and this card.
+    expect(
+      await playlistQueries.playlist(null, { playlistId: 'og-card-public-audience' }, strangerContext),
+    ).not.toBeNull();
+
+    expectIdenticalNotFound(await requestPlaylist('og-card-public-audience'));
+  });
+
+  it('reads no climbs or frames for a playlist it refused', async () => {
     await createPlaylist('og-card-private-frames', { isPublic: false });
 
     await requestPlaylist('og-card-private-frames');
 
-    expect(renderFamily).not.toHaveBeenCalled();
+    expect(documentsRun).toEqual(['OgPlaylistGate']);
+  });
+
+  it('reads the climbs once it has passed the gate', async () => {
+    await createPlaylist('og-card-reads-climbs', { isPublic: true });
+
+    await requestPlaylist('og-card-reads-climbs');
+
+    expect(documentsRun).toEqual(['OgPlaylistGate', 'OgPlaylistClimbs']);
+  });
+
+  it('runs the gate on every request, even while the climbs read is held', async () => {
+    const playlistId = await createPlaylist('og-card-flips', { isPublic: true });
+
+    expect((await requestPlaylist('og-card-flips')).statusCode).toBe(200);
+    documentsRun.length = 0;
+    await requestPlaylist('og-card-flips');
+    expect(documentsRun).toEqual(['OgPlaylistGate']);
+
+    renderFamily.mockClear();
+    await db.update(dbSchema.playlists).set({ isPublic: false }).where(eq(dbSchema.playlists.id, playlistId));
+
+    expectIdenticalNotFound(await requestPlaylist('og-card-flips'));
+  });
+
+  it('shares one gate across requests arriving together', async () => {
+    await createPlaylist('og-card-burst', { isPublic: true });
+
+    await Promise.all([requestPlaylist('og-card-burst'), requestPlaylist('og-card-burst')]);
+
+    expect(documentsRun.filter((name) => name === 'OgPlaylistGate')).toHaveLength(1);
+  });
+});
+
+describe('playlist art', () => {
+  it('lights one climb, and changes the digest when the first climb changes', async () => {
+    const playlistId = await createPlaylist('og-card-first-climb', { isPublic: true });
+    await createClimb('og-first-a', { frames: 'p1140r12' });
+    await createClimb('og-first-b', { frames: 'p1155r12' });
+    await addClimbs(playlistId, ['og-first-a', 'og-first-b']);
+
+    await requestPlaylist('og-card-first-climb');
+    const before = renderFamily.mock.calls[0][0];
+    expect(before.art.frames).toBe('p1140r12');
+
+    await db
+      .update(dbSchema.playlistClimbs)
+      .set({ position: 5 })
+      .where(eq(dbSchema.playlistClimbs.climbUuid, 'og-first-a'));
+    // Past the post-gate hold, which is what a real later request sees.
+    resetOgFamilyLoadCaches();
+    renderFamily.mockClear();
+    await requestPlaylist('og-card-first-climb');
+    const after = renderFamily.mock.calls[0][0];
+
+    expect(after.art.frames).toBe('p1155r12');
+    expect(after.cacheKey).not.toBe(before.cacheKey);
+  });
+});
+
+describe('playlist cards draw only what a stranger can see', () => {
+  it('counts and lights only the visible climbs, not the drafts', async () => {
+    const playlistId = await createPlaylist('og-card-drafts', { isPublic: true });
+    await createClimb('og-draft-visible', { frames: 'p1140r12' });
+    await createClimb('og-draft-a', { isDraft: true, frames: 'p1155r12' });
+    await createClimb('og-draft-b', { isDraft: true, frames: 'p1162r12' });
+    await createClimb('og-draft-c', { isDraft: true, frames: 'p1214r12' });
+    await addClimbs(playlistId, ['og-draft-a', 'og-draft-b', 'og-draft-c', 'og-draft-visible']);
+
+    await requestPlaylist('og-card-drafts');
+
+    const params = renderFamily.mock.calls[0][0];
+    expect(params.art.frames).toBe('p1140r12');
+    expect(drawnText(params.content).split('\n')[0]).toBe('1');
   });
 });
 
@@ -266,16 +448,20 @@ describe('invite card gates', () => {
     expectIdenticalNotFound(await requestJoin('og-join-nope'));
   });
 
-  it('answers 404 for an invite-only session, whoever asks', async () => {
+  it("answers 404 for an invite-only session, even with its owner's valid token", async () => {
     await createSession('og-join-invite', 'kilter/1/10/1,20/40', [
       rosterUser({ username: 'Alex', userId: OWNER, isLeader: true }),
     ]);
     await db
       .insert(dbSchema.resourcePrivacy)
       .values({ kind: 'session', resourceId: 'og-join-invite', ownerId: OWNER, audience: 'invite_only' });
+    const token = await signRealToken(OWNER);
+    expect((await validateToken(token))?.userId).toBe(OWNER);
+    expect(await canAccessResource('session', 'og-join-invite', OWNER)).toBe(true);
 
-    expectIdenticalNotFound(await requestJoin('og-join-invite'));
-    expectIdenticalNotFound(await requestJoin('og-join-invite', { authorization: 'Bearer owner-token' }));
+    expectIdenticalNotFound(await requestJoin('og-join-invite', { authorization: `Bearer ${token}` }));
+    expect(documentsRun).toEqual(['OgSessionGate']);
+    expect(tickReads).toEqual([]);
   });
 
   it('serves the unlit board for a live session with no ticks', async () => {
@@ -333,22 +519,141 @@ describe('invite card gates', () => {
 
     expect(renderFamily.mock.calls[0][0].art.frames).toBe('p1140r12p1155r15');
   });
+
+  it('holds the tick read briefly but still gates every request', async () => {
+    await createSession('og-join-held', 'kilter/1/10/1,20/40', [
+      rosterUser({ username: 'Alex', userId: OWNER, isLeader: true }),
+    ]);
+
+    await requestJoin('og-join-held');
+    await requestJoin('og-join-held');
+
+    expect(tickReads).toHaveLength(1);
+    expect(documentsRun).toEqual(['OgSessionGate', 'OgSessionGate']);
+
+    renderFamily.mockClear();
+    liveRosters.set('og-join-held', []);
+    expectIdenticalNotFound(await requestJoin('og-join-held'));
+  });
+});
+
+describe('the latest tick a stranger may see', () => {
+  const kilter = { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,20' };
+  const OLDER = '2026-11-09T09:00:00Z';
+  const NEWER = '2026-11-09T10:00:00Z';
+
+  it('skips a draft climb for the newest visible tick', async () => {
+    await createClimb('og-tick-older', { frames: 'p1140r12' });
+    await createClimb('og-tick-draft', { isDraft: true, frames: 'p1155r15' });
+    await createSession('og-tick-skip-draft', 'kilter/1/10/1,20/40', [
+      rosterUser({ username: 'Alex', userId: OWNER, isLeader: true }),
+    ]);
+    await createTick('og-tick-1', 'og-tick-skip-draft', 'og-tick-older', OLDER);
+    await createTick('og-tick-2', 'og-tick-skip-draft', 'og-tick-draft', NEWER);
+
+    await requestJoin('og-tick-skip-draft');
+
+    expect(renderFamily.mock.calls[0][0].art.frames).toBe('p1140r12');
+  });
+
+  it('draws the unlit board when every tick is on a draft', async () => {
+    await createClimb('og-tick-only-draft', { isDraft: true, frames: 'p1155r15' });
+    await createSession('og-tick-all-draft', 'kilter/1/10/1,20/40', [
+      rosterUser({ username: 'Alex', userId: OWNER, isLeader: true }),
+    ]);
+    await createTick('og-tick-3', 'og-tick-all-draft', 'og-tick-only-draft', NEWER);
+
+    await requestJoin('og-tick-all-draft');
+
+    expect(renderFamily.mock.calls[0][0].art.frames).toBe('');
+  });
+
+  it('skips a private tick for the newest visible one', async () => {
+    await createClimb('og-tick-public-older', { frames: 'p1202r12' });
+    await createClimb('og-tick-private-newer', { frames: 'p1214r12' });
+    await createSession('og-tick-skip-private', 'kilter/1/10/1,20/40', [
+      rosterUser({ username: 'Alex', userId: OWNER, isLeader: true }),
+    ]);
+    await createTick('og-tick-4', 'og-tick-skip-private', 'og-tick-public-older', OLDER);
+    await createTick('og-tick-5', 'og-tick-skip-private', 'og-tick-private-newer', NEWER);
+    await db
+      .insert(dbSchema.contentPrivacy)
+      .values({ entityType: 'tick', entityId: 'og-tick-5', ownerId: OWNER, audience: 'only_me' });
+
+    await requestJoin('og-tick-skip-private');
+
+    expect(renderFamily.mock.calls[0][0].art.frames).toBe('p1202r12');
+  });
+
+  it('skips a tick from another layout', async () => {
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: 'og-tick-layout-8',
+      boardType: 'kilter',
+      layoutId: 8,
+      name: 'Other layout',
+      isListed: true,
+      isDraft: false,
+      frames: 'p4146r45',
+    });
+    await createSession('og-tick-other-layout', 'kilter/1/10/1,20/40', [
+      rosterUser({ username: 'Alex', userId: OWNER, isLeader: true }),
+    ]);
+    await createTick('og-tick-6', 'og-tick-other-layout', 'og-tick-layout-8', NEWER);
+
+    await requestJoin('og-tick-other-layout');
+
+    expect(renderFamily.mock.calls[0][0].art.frames).toBe('');
+  });
+
+  it('considers only the newest 50 ticks, so a long session stays a bounded read', async () => {
+    await createClimb('og-tick-window-visible', { frames: 'p1140r12' });
+    await createClimb('og-tick-window-draft', { isDraft: true, frames: 'p1155r15' });
+    await createSession('og-tick-window', 'kilter/1/10/1,20/40', [
+      rosterUser({ username: 'Alex', userId: OWNER, isLeader: true }),
+    ]);
+    await createTick('og-tick-window-old', 'og-tick-window', 'og-tick-window-visible', OLDER);
+    for (let index = 0; index < 50; index++) {
+      await createTick(`og-tick-window-${index}`, 'og-tick-window', 'og-tick-window-draft', NEWER);
+    }
+
+    await expect(readLatestSessionTickFrames('og-tick-window', kilter)).resolves.toBeNull();
+  });
+
+  it('reads nothing for a session a stranger cannot access', async () => {
+    await createClimb('og-tick-invite', { frames: 'p1140r12' });
+    await createSession('og-tick-invite-only', 'kilter/1/10/1,20/40', []);
+    await createTick('og-tick-7', 'og-tick-invite-only', 'og-tick-invite', NEWER);
+    await db
+      .insert(dbSchema.resourcePrivacy)
+      .values({ kind: 'session', resourceId: 'og-tick-invite-only', ownerId: OWNER, audience: 'invite_only' });
+
+    await expect(readLatestSessionTickFrames('og-tick-invite-only', kilter)).resolves.toBeNull();
+  });
 });
 
 describe('invite card names only who a stranger may see', () => {
-  it('says "the crew" when the only climber has a private profile', async () => {
-    await createSession('og-join-masked', 'kilter/1/10/1,20/40', [
-      rosterUser({ username: 'Private Person', userId: PRIVATE_CLIMBER, isLeader: true }),
-    ]);
+  it('names a public climber and masks the same roster slot when the profile is private', async () => {
+    const roster = (username: string, userId: string) => [rosterUser({ username, userId, isLeader: true })];
+    await createSession('og-join-named', 'kilter/1/10/1,20/40', roster('Public Person', OWNER));
+    await createSession('og-join-masked', 'kilter/1/10/1,20/40', roster('Private Person', PRIVATE_CLIMBER));
 
+    await requestJoin('og-join-named');
+    const namedText = drawnText(renderFamily.mock.calls[0][0].content);
+    renderFamily.mockClear();
     await requestJoin('og-join-masked');
+    const maskedText = drawnText(renderFamily.mock.calls[0][0].content);
 
-    const text = drawnText(renderFamily.mock.calls[0][0].content);
-    expect(text).not.toContain('Private Person');
-    expect(text.replace('\n', ' ')).toContain('Join the crew');
+    // The control: the same code path does draw a name the roster lets through.
+    expect(namedText).toContain('Public Person');
+    expect(maskedText).not.toContain('Private Person');
+    expect(maskedText.replace('\n', ' ')).toContain('Join the crew');
   });
 
-  it('draws no board name or location on a hideLocation board', async () => {
+  it("asks for a named board's config only, so its name and location cannot be drawn", () => {
+    expect(print(OG_BOARD_BY_SLUG)).not.toMatch(/\b(name|locationName|gymName|latitude|longitude)\b/);
+  });
+
+  it('draws the board only as its model and angle on a hideLocation board', async () => {
     await db.insert(dbSchema.userBoards).values({
       uuid: 'og-join-hidden-board',
       slug: 'og-join-hidden-board',
@@ -366,10 +671,10 @@ describe('invite card names only who a stranger may see', () => {
       rosterUser({ username: 'Alex', userId: OWNER, isLeader: true }),
     ]);
 
-    const res = await requestJoin('og-join-hidden');
+    await requestJoin('og-join-hidden');
 
-    expect(res.statusCode).toBe(200);
     const text = drawnText(renderFamily.mock.calls[0][0].content);
+    expect(text).toContain('Kilter at 40°');
     expect(text).not.toContain(HIDDEN_BOARD_NAME);
     expect(text).not.toContain(HIDDEN_LOCATION);
   });

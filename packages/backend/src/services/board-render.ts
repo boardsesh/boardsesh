@@ -553,7 +553,6 @@ export type OgFamilyRenderParams = {
   /** Null draws no art at all, and `content.slot` must then be `'none'`. */
   art: OgFamilyArtSpec | null;
   content: OgFamilyCardContent;
-  format: OutputFormat;
 };
 
 export type OgFamilyRenderResult = {
@@ -568,8 +567,8 @@ export type OgFamilyRenderResult = {
  * Namespaced, so it cannot share a slot with a `/render/board` or `/og/climb` key,
  * whose first segment is always a board name.
  */
-export function buildOgFamilyByteKey(surface: string, digest: string, format: OutputFormat): string {
-  return `og-family:${surface}:${format}:${digest}`;
+export function buildOgFamilyByteKey(surface: string, digest: string): string {
+  return `og-family:${surface}:${digest}`;
 }
 
 /** Plane-cache key: the board's art paths and the size they were folded at. */
@@ -657,19 +656,6 @@ async function renderOgFamilyArtLayers(
   };
 }
 
-/** A family card that cannot lay out its words still has a board worth sharing. */
-async function renderOgFamilyTextOrNone(content: OgFamilyCardContent): Promise<sharp.OverlayOptions[]> {
-  try {
-    return (await renderOgFamilyTextLayers(content)).layers;
-  } catch (error) {
-    logger.warn('[BoardRender] Family card text failed to render; serving the art alone', {
-      error: error instanceof Error ? error.message : String(error),
-      slot: content.slot,
-    });
-    return [];
-  }
-}
-
 /**
  * Render one share-card family image.
  *
@@ -689,7 +675,7 @@ export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<O
   if (alreadyRendering) return alreadyRendering;
 
   const renderPromise = runOnRenderSemaphore(async () => {
-    const { art, content, format } = params;
+    const { art, content } = params;
     let wasmMs = 0;
     let planeMs = 0;
     let cache: OgFamilyRenderResult['cache'] = 'none';
@@ -706,9 +692,11 @@ export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<O
     }
 
     const composeT0 = performance.now();
-    const textLayers = await renderOgFamilyTextOrNone(content);
+    // A family card is mostly its words, so a Pango failure rejects here rather
+    // than serving and caching a wordless card under this card's real key.
+    const { layers: textLayers } = await renderOgFamilyTextLayers(content);
     const background = await renderFrostedBokehBuffer({ ...bokeh, protectDetails: false });
-    const encoded = await composeOgFamilyCard({ background, slot: content.slot, art: artLayers, textLayers, format });
+    const encoded = await composeOgFamilyCard({ background, slot: content.slot, art: artLayers, textLayers });
     const composeMs = performance.now() - composeT0;
 
     byteCache.set(params.cacheKey, encoded);

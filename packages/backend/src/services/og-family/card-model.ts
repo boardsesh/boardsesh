@@ -59,42 +59,26 @@ export function isRenderableConfig(config: BoardConfig): boolean {
 
 // --- playlist --------------------------------------------------------------
 
-/** Merged climbs stop adding holds past this, so a long list stays readable at 110px. */
-export const PLAYLIST_ART_HOLD_CAP = 72;
 export const PLAYLIST_ART_PAGE_SIZE = 20;
 
 export type PlaylistArtClimb = { layoutId: number | null; frames: string | null };
 
 /**
- * Merge a playlist's first climbs into one lit board.
- *
- * Flattens each climb first (a multi-frame climb is a union of its frames, not
- * frame 0), keeps the first role a hold was given, and never splits a climb to
- * fill the cap: a one-climb list lights that climb, however many holds it uses.
+ * The art for a playlist: one climb, the first in the list's own order on the
+ * most-used layout of its first page, in that climb's real LED colours.
  */
-export function mergeClimbFrames(climbs: readonly PlaylistArtClimb[], boardName: BoardName): string {
-  const placements = new Map<number, number>();
-  for (const climb of climbs) {
-    const flat = toFlatFrames(climb.frames, boardName);
-    if (!flat) continue;
-    const pairs = [...flat.matchAll(/p(\d+)r(\d+)/g)].map((match) => [Number(match[1]), Number(match[2])] as const);
-    const newPlacements = pairs.filter(([placement]) => !placements.has(placement));
-    if (placements.size > 0 && placements.size + newPlacements.length > PLAYLIST_ART_HOLD_CAP) break;
-    for (const [placement, role] of pairs) {
-      if (!placements.has(placement)) placements.set(placement, role);
-    }
-  }
-  return [...placements].map(([placement, role]) => `p${placement}r${role}`).join('');
-}
-
-/** The art for a playlist: most-used layout in the first page, lit from only that layout. */
 export function buildPlaylistArt(boardName: BoardName, climbs: readonly PlaylistArtClimb[]): OgFamilyArtSpec | null {
-  const withLayout = climbs.filter((climb) => climb.layoutId !== null && climb.frames);
-  if (withLayout.length === 0) return null;
+  const withLayout = climbs.flatMap((climb) => {
+    // A multi-frame climb is the union of its frames, not frame 0.
+    const frames = toFlatFrames(climb.frames, boardName);
+    return climb.layoutId !== null && frames ? [{ layoutId: climb.layoutId, frames }] : [];
+  });
+  const [firstClimb] = withLayout;
+  if (!firstClimb) return null;
 
   const countByLayout = new Map<number, number>();
   for (const climb of withLayout) {
-    countByLayout.set(climb.layoutId as number, (countByLayout.get(climb.layoutId as number) ?? 0) + 1);
+    countByLayout.set(climb.layoutId, (countByLayout.get(climb.layoutId) ?? 0) + 1);
   }
   // Ties go to the layout that appears first, which is the one the owner put first.
   const dominantLayoutId = [...countByLayout].reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0];
@@ -109,13 +93,8 @@ export function buildPlaylistArt(boardName: BoardName, climbs: readonly Playlist
   };
   if (!isRenderableConfig(config)) return null;
 
-  return {
-    ...config,
-    frames: mergeClimbFrames(
-      withLayout.filter((climb) => climb.layoutId === dominantLayoutId),
-      boardName,
-    ),
-  };
+  const litClimb = withLayout.find((climb) => climb.layoutId === dominantLayoutId) ?? firstClimb;
+  return { ...config, frames: litClimb.frames };
 }
 
 export type PlaylistSummaryForCard = { p10Difficulty: number; p90Difficulty: number } | null | undefined;
@@ -158,7 +137,11 @@ function climbCountLabel(climbCount: number): string {
   return `${climbCount === 1 ? 'climb' : 'climbs'}`;
 }
 
-/** Hero: band if there is one, else the count in white. Creator name is never on a card. */
+/**
+ * Hero: band if there is one, else the count in white. Creator name is never on a card.
+ * `climbCount` is what a stranger can open (`playlistClimbs.totalCount`), not the row
+ * count on `Playlist.climbCount`, which also counts drafts and hidden spray climbs.
+ */
 export function buildPlaylistCardContent(params: {
   name: string;
   boardName: string;
@@ -289,24 +272,9 @@ export function resolveSessionBoard(
   };
 }
 
-export type SessionTickForCard = {
-  boardType: string;
-  layoutId: number | null;
-  frames: string | null;
-  climbedAt: string;
-};
-
-/**
- * The newest tick that can actually be drawn on this board, flattened, or `''`
- * for the unlit board. A tick from another layout would light meaningless holds.
- */
-export function latestTickFrames(ticks: readonly SessionTickForCard[], config: BoardConfig): string {
-  const onBoard = ticks
-    .filter((tick) => tick.boardType === config.boardName && tick.layoutId === config.layoutId && tick.frames)
-    .sort((first, second) => (first.climbedAt < second.climbedAt ? 1 : first.climbedAt > second.climbedAt ? -1 : 0));
-  return onBoard[0] ? toFlatFrames(onBoard[0].frames, config.boardName) : '';
-}
-
+/** The floor keeps even a long name well above the board line under it. */
+export const JOIN_BOARD_LINE_PT = 30;
+export const JOIN_HERO_MIN_PT = 44;
 export const JOIN_HERO_PREFIX = 'Join';
 export const JOIN_FALLBACK_NAME = 'the crew';
 
@@ -318,13 +286,15 @@ export function buildJoinCardContent(params: {
   fontFamily: string;
 }): OgFamilyCardContent {
   const { name, board, art, fontFamily } = params;
-  const slot: OgFamilySlot = art ? 'full' : 'none';
+  // The name is the hero, so the art gives up width: the narrow slice leaves it
+  // the whole crop to grow into.
+  const slot: OgFamilySlot = art ? 'narrow' : 'none';
 
   const rows: OgFamilyRow[] = [];
   if (board) {
     const label = BOARD_TYPE_LABELS[board.config.boardName] ?? board.config.boardName;
     const boardLine = board.angle === null ? label : `${label} at ${board.angle}°`;
-    rows.push({ runs: [{ text: boardLine, color: OG_FAMILY_WHITE }], sizePt: 24, weight: 700 });
+    rows.push({ runs: [{ text: boardLine, color: OG_FAMILY_WHITE }], sizePt: JOIN_BOARD_LINE_PT, weight: 700 });
   }
 
   return {
@@ -332,8 +302,13 @@ export function buildJoinCardContent(params: {
     fontFamily,
     pill: { text: 'JOIN', color: OG_FAMILY_JOIN_GREEN },
     hero: {
-      runs: [{ text: `${JOIN_HERO_PREFIX}\n${name ?? JOIN_FALLBACK_NAME}`, color: OG_FAMILY_WHITE }],
-      maxPt: art ? 62 : 84,
+      // Two runs, so a name too long to fit is the part that truncates.
+      runs: [
+        { text: `${JOIN_HERO_PREFIX}\n`, color: OG_FAMILY_WHITE },
+        { text: name ?? JOIN_FALLBACK_NAME, color: OG_FAMILY_WHITE },
+      ],
+      maxPt: 100,
+      minPt: JOIN_HERO_MIN_PT,
       wrap: true,
     },
     rows,

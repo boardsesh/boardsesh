@@ -11,7 +11,7 @@ vi.mock('../services/board-render', () => ({
   RenderQueueSaturatedError: FakeSaturated,
   ensureBoardRendererAvailable: ensureRenderer,
   renderOgFamilyArt: renderFamily,
-  buildOgFamilyByteKey: (surface: string, digest: string, format: string) => `key:${surface}:${format}:${digest}`,
+  buildOgFamilyByteKey: (surface: string, digest: string) => `key:${surface}:${digest}`,
 }));
 vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn(async () => {}) }));
 vi.mock('../services/og-family/load-cards', () => ({
@@ -115,10 +115,11 @@ describe('family card handlers', () => {
     expect(res.body).toBeUndefined();
   });
 
-  it('keys the byte cache on surface, format and digest', async () => {
+  it('keys the byte cache on surface and digest, and ignores a format param', async () => {
     await callPlaylist('/og/playlist?uuid=playlist-uuid&format=png');
 
-    expect(renderFamily.mock.calls[0][0].cacheKey).toBe('key:playlist:png:abc');
+    expect(renderFamily.mock.calls[0][0].cacheKey).toBe('key:playlist:abc');
+    expect(renderFamily.mock.calls[0][0]).not.toHaveProperty('format');
   });
 
   it.each([
