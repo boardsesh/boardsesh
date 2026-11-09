@@ -49,6 +49,12 @@ const formInput = vi.hoisted(() => ({
 // so the form reads the opening angle, as the real hook does.
 const pickedAngle = vi.hoisted(() => ({ current: null as number | null }));
 
+type SwipeConfig = {
+  onMoveShouldSetPanResponder: (event: unknown, gesture: { dx: number; dy: number }) => boolean;
+  onPanResponderGrant: () => void;
+};
+const swipeHandlers = vi.hoisted(() => new Map<string, SwipeConfig>());
+
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
@@ -68,15 +74,19 @@ vi.mock('react-native', () => ({
         style,
         testID,
         onLayout,
+        swipeConfig,
       }: {
         children?: ReactNode;
         style?: unknown;
         testID?: string;
         onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
+        swipeConfig?: SwipeConfig;
       },
       ref: Ref<unknown>,
     ) => {
       if (testID && onLayout) layoutHandlers.set(testID, onLayout);
+      if (testID && swipeConfig) swipeHandlers.set(testID, swipeConfig);
+      else if (testID) swipeHandlers.delete(testID);
       const measuredHeight = flattenStyle(style).height;
       useImperativeHandle(
         ref,
@@ -105,6 +115,7 @@ vi.mock('react-native', () => ({
     metrics: () => undefined,
   },
   LayoutAnimation: { configureNext: vi.fn() },
+  PanResponder: { create: (swipeConfig: SwipeConfig) => ({ panHandlers: { swipeConfig } }) },
   Pressable: ({
     children,
     accessibilityLabel,
@@ -205,8 +216,10 @@ vi.mock('../../theme/tokens', () => ({ spacing: new Proxy({}, { get: () => 0 }) 
 // run against the shipped CREATE_TICK_SNAP_POINTS rather than a copy.
 vi.mock('../tick', async () => {
   const metrics = await vi.importActual<typeof import('../tick/tick-sheet-metrics')>('../tick/tick-sheet-metrics');
+  const swipe = await vi.importActual<typeof import('../tick/use-swipe-up-to-open')>('../tick/use-swipe-up-to-open');
   return {
     ...metrics,
+    useSwipeUpToOpen: swipe.useSwipeUpToOpen,
     TickFormRow: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
       createElement('div', { 'data-testid': testID }, children),
     TickCountRail: () => createElement('span', null, 'tries'),
@@ -610,6 +623,37 @@ describe('LogAscentSheet Android details fold (#7343)', () => {
     baseAscensionistCount: 10,
     layoutId: 7,
   };
+
+  it.each(['tick-form-fields', 'tick-sheet-swipe-header'])('opens the fold on a swipe up on %s', (surface) => {
+    platformMock.OS = 'android';
+    const { getByTestId, queryByTestId } = renderSheet();
+    const swipe = swipeHandlers.get(surface);
+
+    expect(swipe?.onMoveShouldSetPanResponder({}, { dx: 2, dy: -40 })).toBe(true);
+    act(() => swipe?.onPanResponderGrant());
+
+    expect(queryByTestId('tick-details-row')).toBeNull();
+    expect(getByTestId('tick-row-angle')).toBeTruthy();
+    expect(getByTestId('tick-row-date')).toBeTruthy();
+  });
+
+  it('stops listening for the swipe once the fold is open', () => {
+    platformMock.OS = 'android';
+    const { getByTestId } = renderSheet();
+
+    fireEvent.click(getByTestId('tick-details-row'));
+
+    expect(swipeHandlers.has('tick-form-fields')).toBe(false);
+    expect(swipeHandlers.has('tick-sheet-swipe-header')).toBe(false);
+  });
+
+  it('does not take the swipe on iOS, which has its detents', () => {
+    platformMock.OS = 'ios';
+    renderSheet();
+
+    expect(swipeHandlers.has('tick-form-fields')).toBe(false);
+    expect(swipeHandlers.has('tick-sheet-swipe-header')).toBe(false);
+  });
 
   it('stays open through the onChange(0) Android fires when the sheet settles', () => {
     platformMock.OS = 'android';

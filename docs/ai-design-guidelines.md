@@ -1609,7 +1609,9 @@ personal-grade explanation and first-ascent logging requirement visible and
 wrapping. On iOS, date/time stays in the expanded sheet so the compact state
 focuses on Tries, Stars and Grade. Android has one content-fitted state, so
 Angle and Date start folded behind a single Details row that shows their current
-values. Tapping it swaps in the two rows, one way, for that sitting. The fold
+values. Tapping it, or swiping up on the form, swaps in the two rows, one way,
+for that sitting. The Material sheet can't do the iOS drag: its first stop is a
+fixed half of the screen, too short for the form and its actions. The fold
 returns on every open, and values you changed stay readable in the row. On
 Material the sheet has one divider, under Stars. Collapsing preserves the chosen timestamp; expanding
 restores it. When shown, the date row has no divider above the pinned footer.

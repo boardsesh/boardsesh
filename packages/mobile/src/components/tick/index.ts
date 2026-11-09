@@ -6,6 +6,7 @@ export { TickSheetHeader } from './TickSheetHeader';
 export { TickFormRow } from './TickFormRow';
 export { TickDateRow } from './TickDateRow';
 export { TickDetailsRow } from './TickDetailsRow';
+export { useSwipeUpToOpen } from './use-swipe-up-to-open';
 export { TickAngleControl, shouldShowAngleRow } from './TickAngleControl';
 export { TickChip, type TickChipProps } from './TickChip';
 export { TickCountRail } from './TickCountRail';

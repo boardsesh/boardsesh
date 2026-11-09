@@ -237,7 +237,9 @@ content-fitting would collapse:
   closes the void), and it shrinks-and-scrolls once the column hits its ceiling so the footer
   stays pinned above the keyboard instead of the note clipping.
 - The Android tick sheet's Details row (Angle and Date folded into one line) grows this
-  content-fitted sheet in place when tapped. It changes neither the detents nor the `maxHeight`.
+  content-fitted sheet in place when tapped or when the form is swiped up. It changes neither
+  the detents nor the `maxHeight`. The swipe is a JS `PanResponder` that fires past a threshold,
+  because the native sheet reports only dismissal, never a drag between its states.
 
 **Keyboard: pad the column, never a `KeyboardAvoidingView`.** RN 0.86's KAV computes its overlap
 from its own `onLayout` frame, which inside a native sheet is relative to the sheet's content
