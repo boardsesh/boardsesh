@@ -613,7 +613,10 @@ export const socialGymStrayBoardMutations = {
       try {
         await retireEmptiedSourceGym(target.currentGymId, gym, userId, ownerOrderMode);
       } catch (error) {
-        logger.error('failed to retire the listing a stray attach emptied', {
+        // A busy key is an expected skip under cooperative ordering: the attach
+        // has already committed and the empty listing can be retired later.
+        const isBusyOwnerKey = error instanceof GraphQLError && error.extensions.code === 'SERVICE_UNAVAILABLE';
+        logger[isBusyOwnerKey ? 'warn' : 'error']('failed to retire the listing a stray attach emptied', {
           sourceGymId: target.currentGymId,
           targetGymId: gym.id,
           error: error instanceof Error ? error.message : String(error),

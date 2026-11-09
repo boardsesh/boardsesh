@@ -34,8 +34,24 @@ export function captureFixedSystemOwnerOrderMode(
  * outer entry, before later savepoints, so their rollback cannot release the
  * prefix. Calling this only inside a savepoint does not establish that order.
  * Long transaction hold times and unadopted producers remain activation gates.
+ *
+ * Exclusive is for the fixed identity authorities. Content writers and account
+ * deletion only need to exclude those authorities, not each other, so they take
+ * the shared form below.
  */
 export async function lockFixedSystemOwnerTransaction(transaction: FixedSystemOwnerTransaction): Promise<void> {
+  await acquireFixedSystemOwnerKey(transaction, 'exclusive');
+}
+
+/** Excludes the fixed identity authorities without excluding other shared holders. */
+export async function lockSharedFixedSystemOwnerTransaction(transaction: FixedSystemOwnerTransaction): Promise<void> {
+  await acquireFixedSystemOwnerKey(transaction, 'shared');
+}
+
+async function acquireFixedSystemOwnerKey(
+  transaction: FixedSystemOwnerTransaction,
+  strength: 'exclusive' | 'shared',
+): Promise<void> {
   // Catch accidental pool/root-database calls. This is not proof that the caller
   // entered before all of its other locks; actual outer callers must enforce it.
   if (
@@ -47,7 +63,9 @@ export async function lockFixedSystemOwnerTransaction(transaction: FixedSystemOw
     throw new FixedSystemOwnerOrderError('invalid_transaction');
   }
   const rows: unknown = await transaction.execute(
-    sql`SELECT pg_catalog.pg_try_advisory_xact_lock(${FIXED_SYSTEM_OWNER_LOCK_NAMESPACE}, ${FIXED_SYSTEM_OWNER_LOCK_KEY}) AS acquired`,
+    strength === 'exclusive'
+      ? sql`SELECT pg_catalog.pg_try_advisory_xact_lock(${FIXED_SYSTEM_OWNER_LOCK_NAMESPACE}, ${FIXED_SYSTEM_OWNER_LOCK_KEY}) AS acquired`
+      : sql`SELECT pg_catalog.pg_try_advisory_xact_lock_shared(${FIXED_SYSTEM_OWNER_LOCK_NAMESPACE}, ${FIXED_SYSTEM_OWNER_LOCK_KEY}) AS acquired`,
   );
   if (!Array.isArray(rows) || rows.length !== 1) throw new FixedSystemOwnerOrderError('invalid_result');
   const observed: unknown = rows[0];
@@ -63,12 +81,12 @@ export async function lockFixedSystemOwnerTransaction(transaction: FixedSystemOw
   if (!observed.acquired) throw new FixedSystemOwnerOrderError('busy');
 }
 
-/** Default-off content adoption; fixed identity authorities use the unconditional helper. */
+/** Default-off content adoption; shared, so adopted writers never exclude each other. */
 export async function lockCooperativeFixedSystemOwnerTransaction(
   transaction: FixedSystemOwnerTransaction,
   mode: FixedSystemOwnerOrderMode,
 ): Promise<void> {
   if (mode === 'legacy') return;
   if (mode !== 'cooperative-staging') throw new FixedSystemOwnerOrderError('invalid_mode');
-  await lockFixedSystemOwnerTransaction(transaction);
+  await lockSharedFixedSystemOwnerTransaction(transaction);
 }

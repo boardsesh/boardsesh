@@ -10,7 +10,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const script = join(root, 'packages/db/scripts/dedupe-gym-locations.ts');
 const modeName = 'CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE';
 
-async function invokeCli(mode: string): Promise<{ code: number | null; output: string }> {
+async function invokeCli(
+  mode: string,
+  cliArguments: string[] = ['--apply'],
+): Promise<{ code: number | null; output: string }> {
   const directory = mkdtempSync(join(tmpdir(), 'gym-order-cli-'));
   const databaseModule = join(directory, 'database.mjs');
   const forbiddenClient = join(directory, 'forbidden-client.mjs');
@@ -39,6 +42,9 @@ async function invokeCli(mode: string): Promise<{ code: number | null; output: s
             const text=new PgDialect().sqlToQuery(query).sql;
             if(text.includes('pg_try_advisory_xact_lock')) {
               process.stdout.write('OWNER_TRY\\n');return [{acquired:false}];
+            }
+            if(text.includes('boardsesh:gym-location-dedupe')) {
+              process.stdout.write('DEDUPE_LOCK\\n');return [];
             }
             process.stdout.write('CONTENT_BEFORE_OWNER\\n');throw new Error('CONTENT_BEFORE_OWNER');
           }});
@@ -76,7 +82,7 @@ async function invokeCli(mode: string): Promise<{ code: number | null; output: s
   );
   const child = spawn(
     process.execPath,
-    ['--import', pathToFileURL(preload).href, '--import', 'tsx', script, '--apply'],
+    ['--import', pathToFileURL(preload).href, '--import', 'tsx', script, ...cliArguments],
     {
       cwd: root,
       env: { PATH: process.env.PATH, LANG: 'C', TZ: 'UTC', NODE_ENV: 'test', [modeName]: mode },
@@ -149,11 +155,18 @@ void it('rejects an unknown mode before constructing the CLI database factory', 
   assert.match(result.output, /Fixed system-owner coordination is temporarily unavailable/);
 });
 
-void it('captures staging before candidate loading and tries the owner key before the existing dedupe lock', async () => {
+void it('prints help on a bad mode instead of failing', async () => {
+  const result = await invokeCli('invalid-selector-fixture', ['--help']);
+  assert.equal(result.code, 0);
+  assert.doesNotMatch(result.output, /FACTORY_CALLED|TRANSACTION_STARTED|OWNER_TRY/);
+});
+
+void it('captures staging before candidate loading and queues on the dedupe lock before trying the owner key', async () => {
   const result = await invokeCli('cooperative-staging');
   assert.equal(result.code, 1);
   assert.match(result.output, /FACTORY_CALLED/);
   assert.match(result.output, /TRANSACTION_STARTED/);
+  assert.match(result.output, /DEDUPE_LOCK[\s\S]*OWNER_TRY/);
   assert.equal((result.output.match(/OWNER_TRY/g) ?? []).length, 1);
   assert.match(result.output, /FACTORY_CLOSED/);
   assert.doesNotMatch(

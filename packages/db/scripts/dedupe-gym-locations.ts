@@ -645,13 +645,13 @@ async function runPointerBackfill(commandDb: ScriptDbInstance, scriptArgs: Scrip
 }
 
 async function main(): Promise<void> {
-  const ownerOrderMode = captureFixedSystemOwnerOrderMode();
   const scriptArgs = parseArgs(process.argv.slice(2));
   if (scriptArgs.help) {
     printHelp();
     return;
   }
 
+  const ownerOrderMode = captureFixedSystemOwnerOrderMode();
   const { db, close } = createScriptDb();
 
   try {
@@ -671,8 +671,10 @@ async function main(): Promise<void> {
     }
 
     const { totalCounts, warnings } = await db.transaction(async (transaction) => {
-      await lockCooperativeFixedSystemOwnerTransaction(transaction, ownerOrderMode);
+      // Dedupe first: time spent queueing here must not count against the owner
+      // key, which every other adopted writer needs and which never queues.
       await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext('boardsesh:gym-location-dedupe'))`);
+      await lockCooperativeFixedSystemOwnerTransaction(transaction, ownerOrderMode);
 
       let aggregateCounts = emptyMergeCounts();
       const aggregateWarnings: MergeWarning[] = [];

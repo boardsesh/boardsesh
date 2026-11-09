@@ -89,6 +89,7 @@ import { startBackendMemoryMonitoring } from './services/memory-monitor';
 import { startClientUsageReporter, stopClientUsageReporter } from './services/client-usage';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
+import { captureFixedSystemOwnerOrderMode } from '@boardsesh/db/fixed-system-owner-order';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import type { QueueEvent } from '@boardsesh/shared-schema';
 
@@ -120,6 +121,11 @@ async function dispatchLiveActivityForSession(sessionId: string): Promise<void> 
 }
 
 export async function startServer(options: { host?: string } = {}): Promise<ServerResources> {
+  // A typo in this mode would otherwise turn every adopted writer (account
+  // deletion, spray publish, gym merge, stray attach) into a quiet 503, one
+  // request at a time. Refuse to serve instead, so the deploy fails visibly.
+  captureFixedSystemOwnerOrderMode();
+
   // Surface database connect retries. `warn`, not `error`: SentryWinstonTransport
   // is constructed with `level: 'error'` (utils/sentry-transport.ts:80), so a
   // warn stays log-only and cannot double-report alongside the

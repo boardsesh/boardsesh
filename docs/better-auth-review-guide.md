@@ -99,7 +99,7 @@ The [web OAuth identity implementation](./better-auth-web-oauth-identity.md) mov
 
 The [fully migrated catalog prerequisite](https://github.com/boardsesh/boardsesh/pull/7321) applies all 290 main migrations and, separately, all 294 auth-stack migrations. Each observes 79 inbound user constraints, including the manual beta attribution and one retained controller-owner duplicate. Two main fixtures have matching journal and runtime portable catalogs despite different physical allocations. This establishes the observed reference surface, not complete producer coverage or deployed role fencing.
 
-The [staged fixed system-owner order](./better-auth-fixed-system-owner-order.md) uses one nonblocking transaction key for all three fixed identities and the adopted gym, spray and deletion boundaries. Conditional content adoption defaults to legacy. Staged authorities keep manifest before the key and preserve existing identity locks. Busy does not trigger automatic replay; stray attachment keeps its existing two-commit exception. Remaining producers, real process/queue races and long transaction hold times still gate activation.
+The [staged fixed system-owner order](./better-auth-fixed-system-owner-order.md) uses one nonblocking transaction key for all three fixed identities and the adopted gym, spray and deletion boundaries. Identity authorities hold it exclusively; content and deletion share it. Conditional content adoption defaults to legacy. Staged authorities keep manifest before the key and preserve existing identity locks. Busy does not trigger automatic replay; stray attachment keeps its existing two-commit exception. Remaining producers, real process/queue races and long transaction hold times still gate activation.
 
 ## Decisions to review
 

@@ -6,6 +6,7 @@ import {
   captureFixedSystemOwnerOrderMode,
   lockCooperativeFixedSystemOwnerTransaction,
   lockFixedSystemOwnerTransaction,
+  lockSharedFixedSystemOwnerTransaction,
   FixedSystemOwnerOrderError,
   type FixedSystemOwnerTransaction,
 } from '../fixed-system-owner-order';
@@ -83,13 +84,27 @@ void describe('borrowed fixed system-owner transaction', () => {
     assert.equal(statements.length, 1);
   });
 
-  void it('uses the same acquisition for cooperative content', async () => {
+  void it('shares the key for cooperative content and reports contention as busy', async () => {
     const { transaction, statements } = transactionReturning([{ acquired: false }]);
     await assert.rejects(
       lockCooperativeFixedSystemOwnerTransaction(transaction, 'cooperative-staging'),
       hasCode('busy'),
     );
     assert.equal(statements.length, 1);
+    assert.match(
+      new PgDialect().sqlToQuery(statements[0]).sql,
+      /^SELECT pg_catalog\.pg_try_advisory_xact_lock_shared\(/,
+    );
+  });
+
+  void it('shares the key for the unconditional shared helper', async () => {
+    const { transaction, statements } = transactionReturning([{ acquired: true }]);
+    await lockSharedFixedSystemOwnerTransaction(transaction);
+    assert.equal(statements.length, 1);
+    assert.match(
+      new PgDialect().sqlToQuery(statements[0]).sql,
+      /^SELECT pg_catalog\.pg_try_advisory_xact_lock_shared\(/,
+    );
   });
 
   void it('rejects missing and non-boolean acquisition records', async () => {

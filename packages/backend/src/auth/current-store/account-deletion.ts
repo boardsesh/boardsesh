@@ -5,7 +5,7 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { and, eq } from 'drizzle-orm';
-import { lockFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
+import { lockSharedFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
 import { normalizeAccountEmail } from '../normalize-email';
 import { transactionSettings } from './command-context';
 import {
@@ -48,7 +48,7 @@ export async function beginReservedAccountDeletion(
 ): Promise<void> {
   await transactionSettings(transaction);
   await lockEnforcedProjection(transaction, command);
-  await lockFixedSystemOwnerTransaction(transaction);
+  await lockSharedFixedSystemOwnerTransaction(transaction);
 }
 
 async function requireRepresentedDeletionEmail(

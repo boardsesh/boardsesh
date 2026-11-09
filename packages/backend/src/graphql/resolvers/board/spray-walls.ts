@@ -3435,7 +3435,9 @@ export const sprayWallMutations = {
     }
 
     const publishedDraft = await db.transaction(async (tx) => {
+      // Non-blocking, and a no-op unless cooperative ordering is switched on.
       await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
+
       // Stated here as well as inside the helper. `pg_advisory_xact_lock` is
       // re-entrant within a transaction, so the second take costs nothing, and a
       // reader of this resolver sees the rule where the transaction opens rather
