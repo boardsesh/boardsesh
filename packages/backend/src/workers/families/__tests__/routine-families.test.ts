@@ -211,6 +211,12 @@ describe('family contracts', () => {
         cron: '13 * * * *',
         options: { expireInSeconds: 900, retryLimit: 1, retryDelay: 300, deadlineSeconds: 3600, heartbeatSeconds: 120 },
       },
+      {
+        name: 'reclaim-logbook-snapshots',
+        role: 'maintenance-delivery',
+        cron: '2,17,32,47 * * * *',
+        options: { expireInSeconds: 300, retryLimit: 1, retryDelay: 60, deadlineSeconds: 900, heartbeatSeconds: 60 },
+      },
     ];
     for (const { name, role, cron, options } of cases) {
       const family = requireFamily(name);
@@ -233,6 +239,7 @@ describe('family contracts', () => {
       'kilter-catalog-sync',
       'moonboard-locations-sync',
       'climb-stats-self-heal',
+      'reclaim-logbook-snapshots',
     ]) {
       const { options } = requireFamily(name);
       expect(options.retryBackoff).toBe(true);

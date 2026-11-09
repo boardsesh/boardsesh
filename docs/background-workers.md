@@ -224,6 +224,19 @@ it. It needs the same `PRIVATE_*` storage configuration as the export; the
 restricted-role proof is `src/__tests__/spray-wall-art-jobs.test.ts`. See
 [spray-walls.md](./spray-walls.md), "Generated wall looks".
 
+`reclaim-logbook-snapshots` (`LOGBOOK_SNAPSHOT_RECLAIM_GRANTS`) deletes partner
+logbook snapshots past their expiry, every 15 minutes (`2,17,32,47 * * * *`), at
+most 200 batches a run of up to 100 snapshots and 500 chunks each.
+It reads only `logbook_snapshots (id, expires_at)` and
+`logbook_snapshot_chunks (snapshot_id, chunk_index)`, and holds `UPDATE
+(expires_at)` only because `FOR UPDATE SKIP LOCKED` needs an UPDATE grant. It
+can never read a chunk's ticks or which connection a snapshot belongs to. Expiry
+is enforced at read time, so the job only reclaims storage: it can be late
+without any client noticing. The restricted-role proof is
+`services/__tests__/job-queue-roles-routine.test.ts`. See
+[integration-platform.md](./integration-platform.md), "Complete bootstrap and
+transition".
+
 No application SQL function is called directly; the trigger functions these
 writes fire (the `sync_seq` stamps, the location triggers) run as the caller,
 and their sequences are owned by the tables the role may INSERT into, so the
@@ -316,6 +329,7 @@ module. The module declares:
 | `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
 | `user-data-export` | `maintenance-delivery` | 300 s (heartbeat 30 s) | 1, after 15 s | 30 min | `userId:boardType:ISO-week` |
 | `spray-wall-art` | `maintenance-delivery` | 300 s (heartbeat 30 s) | 2, 30 s backoff to 300 s | 1 h | `art:versionId:recipe` |
+| `reclaim-logbook-snapshots` | `maintenance-delivery` | 300 s (heartbeat 60 s) | 1, after 60 s | 15 min | `logbook-snapshots` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass

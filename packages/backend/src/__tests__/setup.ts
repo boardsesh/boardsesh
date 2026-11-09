@@ -47,6 +47,8 @@ const TABLES_TO_RESET = [
   'integration_exports',
   'sync_deletions',
   'logbook_changes',
+  'logbook_snapshot_chunks',
+  'logbook_snapshots',
   'climb_classic_status',
   'climb_community_status',
   'proposal_votes',

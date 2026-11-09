@@ -62,6 +62,10 @@ const logbookChangeTriggersSchema = readFileSync(
   new URL('../../../db/drizzle/0298_logbook_change_triggers.sql', import.meta.url),
   'utf8',
 );
+const logbookSnapshotsSchema = readFileSync(
+  new URL('../../../db/drizzle/0298_logbook_snapshots.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2323,4 +2327,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   -- Test fixtures reset boardsesh_ticks with TRUNCATE; the guard against that
   -- is covered by logbook-changes.test.ts, which enables it for its own test.
   ALTER TABLE boardsesh_ticks DISABLE TRIGGER trg_boardsesh_ticks_logbook_truncate;
+  DROP TABLE IF EXISTS logbook_snapshot_chunks;
+  DROP TABLE IF EXISTS logbook_snapshots;
+  ${logbookSnapshotsSchema};
 `;

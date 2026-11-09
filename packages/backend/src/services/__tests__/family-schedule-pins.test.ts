@@ -26,6 +26,9 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'kilter-catalog-sync': [{ key: 'every-6h', cron: '23 */6 * * *', tz: 'UTC', roles: ['routine-provider'] }],
   'moonboard-locations-sync': [{ key: 'daily', cron: '41 3 * * *', tz: 'UTC', roles: ['routine-provider'] }],
   'climb-stats-self-heal': [{ key: 'hourly', cron: '13 * * * *', tz: 'UTC', roles: ['maintenance-delivery'] }],
+  'reclaim-logbook-snapshots': [
+    { key: 'quarter-hourly', cron: '2,17,32,47 * * * *', tz: 'UTC', roles: ['maintenance-delivery'] },
+  ],
   'user-data-export': [],
   'spray-wall-art': [],
   'spray-wall-health': [{ key: 'weekly', cron: '45 8 * * 1', tz: 'UTC', roles: ['batch'] }],

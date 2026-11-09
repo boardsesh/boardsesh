@@ -146,6 +146,7 @@ describe('batch family registration', () => {
       'climb-stats-self-heal',
       'user-data-export',
       'spray-wall-art',
+      'reclaim-logbook-snapshots',
     ]);
     expect(requireFamily('refresh-climb-grades')).toBe(refreshClimbGradesFamily);
     expect(requireFamily('refresh-climb-neighbors')).toBe(refreshClimbNeighborsFamily);
