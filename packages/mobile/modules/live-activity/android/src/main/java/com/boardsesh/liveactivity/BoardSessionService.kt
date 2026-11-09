@@ -1086,9 +1086,10 @@ class BoardSessionService : Service() {
     // Paints the card's bokeh off the main thread, then re-posts. Keyed on the JSON
     // itself, which changes exactly when the picture does.
     private fun maybeComposeCardArt() {
+        // Before the returns, so a payload the kill switch dropped mid-compose goes stale.
+        currentCardKey = cardJson
         val key = cardJson ?: return
         val payload = cardPayload ?: return
-        currentCardKey = key
         if (cardArtCache.get(key) != null) return
         if (!inFlight.add(key)) return
         imageExecutor.execute {

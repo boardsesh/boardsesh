@@ -23,6 +23,7 @@
         <item name="android:textColor">@color/session_card_secondary</item>
     </style>
     <style name="SessionCard.Meta.Collapsed">
+        <item name="android:textColor">@color/session_card_meta_collapsed</item>
         <item name="android:textSize">12sp</item>
     </style>
     <style name="SessionCard.Meta.Expanded">

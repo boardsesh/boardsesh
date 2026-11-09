@@ -97,6 +97,17 @@ describe('readableGradeColor', () => {
     expect(readableGradeColor('#FF7043', [], [])).toBe('#FF7043');
   });
 
+  it('keeps the collapsed line at 4.5:1 over the brightest hold under it', () => {
+    const colors = readFileSync(
+      new URL('../../../../modules/live-activity/android/src/main/res/values/colors.xml', import.meta.url),
+      'utf8',
+    );
+    const ink = /name="session_card_meta_collapsed">(#[0-9A-Fa-f]{6})</.exec(colors)?.[1] ?? '';
+    const pixel = bokehPixel({ x: 150, y: 24 }, bright, { surface: BOKEH_DARK_SURFACE, blend: 'screen', fade: 0.8 });
+
+    expect(contrast(ink, pixel)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('lifts a dark high grade instead of leaving it unreadable', () => {
     const dark = V_GRADE_COLORS.V17 ?? '#000000';
 
