@@ -510,7 +510,7 @@
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
       "verified": "Verified",
-      "verifiedDescription": "Picked by Kilter with climbers and setters.",
+      "verifiedDescription": "Verified climbs are picked by Kilter with climbers and setters.",
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
       "close": "Close filters",

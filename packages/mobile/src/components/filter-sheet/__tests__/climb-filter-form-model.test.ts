@@ -105,6 +105,16 @@ function rowKeys(rows: ClimbFilterFormRow[]): string[] {
 }
 
 describe('buildClimbFilterFormModel', () => {
+  it("explains the board's word under Quality only when it needs explaining", () => {
+    const base = makeInput();
+    expect(sectionOf(base, 'quality').footer).toBeUndefined();
+
+    const explained = makeInput({
+      collection: { ...base.collection, description: 'Verified climbs are picked by Kilter.' },
+    });
+    expect(sectionOf(explained, 'quality').footer).toBe('Verified climbs are picked by Kilter.');
+  });
+
   it('lays a full Climbs input out in the RN sheet order', () => {
     const { sections } = buildClimbFilterFormModel(makeInput());
     expect(sections.map((section) => section.key)).toEqual([

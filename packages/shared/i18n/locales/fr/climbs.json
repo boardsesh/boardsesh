@@ -510,7 +510,7 @@
       "established2plus": "Établies 2+",
       "benchmark": "Benchmarks",
       "verified": "Vérifiés",
-      "verifiedDescription": "Choisis par Kilter avec des grimpeurs et des ouvreurs.",
+      "verifiedDescription": "Les blocs vérifiés sont choisis par Kilter avec des grimpeurs et des ouvreurs.",
       "showCount_one": "Voir {{count}} voie",
       "showCount_other": "Voir {{count}} voies",
       "close": "Fermer les filtres",

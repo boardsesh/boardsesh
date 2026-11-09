@@ -510,7 +510,7 @@
       "established2plus": "Consolidati 2+",
       "benchmark": "Benchmark",
       "verified": "Verificati",
-      "verifiedDescription": "Scelti da Kilter con climber e tracciatori.",
+      "verifiedDescription": "I blocchi verificati sono scelti da Kilter con climber e tracciatori.",
       "showCount_one": "Mostra {{count}} blocco",
       "showCount_other": "Mostra {{count}} blocchi",
       "close": "Chiudi i filtri",

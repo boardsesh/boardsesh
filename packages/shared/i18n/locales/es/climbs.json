@@ -510,7 +510,7 @@
       "established2plus": "Establecido 2+",
       "benchmark": "Benchmarks",
       "verified": "Verificados",
-      "verifiedDescription": "Elegidos por Kilter con escaladores y setters.",
+      "verifiedDescription": "Los bloques verificados los elige Kilter con escaladores y setters.",
       "showCount_one": "Ver {{count}} vía",
       "showCount_other": "Ver {{count}} vías",
       "close": "Cerrar filtros",

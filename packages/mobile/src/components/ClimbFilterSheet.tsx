@@ -1129,7 +1129,12 @@ export function ClimbFilterSheet({
                 showMyRating,
               }
             : null,
-        collection: { options: collectionOptions, selected: collectionFilter, onSelect: handleCollectionChange },
+        collection: {
+          options: collectionOptions,
+          selected: collectionFilter,
+          onSelect: handleCollectionChange,
+          description: isVerifiedBoard(boardName) ? t('mobile.filter.verifiedDescription') : undefined,
+        },
         popularity: { onStatusChange: handleStatusChange, onBucket: handlePopularity },
         climbType: {
           show: showClimbTypeControl,
