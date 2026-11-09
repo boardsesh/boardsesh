@@ -161,6 +161,21 @@ describe('SprayWallLedSection', () => {
     expect(controller.turnOff).not.toHaveBeenCalled();
   });
 
+  // iOS asks for Local Network access on the first contact, so that must be a press.
+  it('contacts nothing when a wall with a saved controller is opened', async () => {
+    storage.records.set('sprayWallLedSettings:wall-1', {
+      version: 1,
+      enabled: true,
+      controller: { type: 'wled', url: 'http://wled.local' },
+    });
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    expect(enabledSwitch().checked).toBe(true);
+    expect(controller.probe).not.toHaveBeenCalled();
+    expect(controller.lightAll).not.toHaveBeenCalled();
+    expect(controller.turnOff).not.toHaveBeenCalled();
+  });
+
   it('retains the confirmed URL when disabled, re-enabled, and reopened', async () => {
     const view = render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     await openSection();

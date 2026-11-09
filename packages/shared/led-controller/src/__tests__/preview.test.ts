@@ -99,7 +99,8 @@ describe('WLED individual preview', () => {
     ]);
     fetchController.mockClear();
     await preview.show([11]);
-    expect(fetchController).toHaveBeenCalledTimes(1);
+    // One state read to catch a controller switched off from outside, one write.
+    expect(fetchController).toHaveBeenCalledTimes(2);
     expect(commands()[0]).toMatchObject({ seg: [{ id: 0, i: [10, '00000000', 12, '00000000', 11, 'FFFFFFFF'] }] });
   });
 
@@ -328,6 +329,17 @@ describe('serialized LED preview ownership', () => {
     expect(commands()).toHaveLength(count);
     await newSession.close();
     expect(commands().at(-1)).toMatchObject({ on: false });
+  });
+
+  it('wakes a controller that something else switched off before the next route', async () => {
+    const { fetchController, driver, commands } = fixture();
+    const session = createLedPreviewSession(driver, 'woken.local');
+    await session.show([1]);
+    const count = commands().length;
+    fetchController.mockImplementationOnce(async () => json({ on: false, bri: 128, seg: [{ id: 0 }] }));
+    await session.show([2]);
+    expect(commands()[count]).toMatchObject({ on: true });
+    await session.close();
   });
 
   it('letting go leaves the lights on and the next session wakes the controller', async () => {

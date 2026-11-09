@@ -51,6 +51,10 @@ function segmentIds(payload: unknown): number[] {
   return [...ids];
 }
 
+function isSwitchedOff(state: unknown): boolean {
+  return isRecord(state) && (state.on === false || state.bri === 0);
+}
+
 export function createWledDriver(options: WledDriverOptions = {}): LedControllerDriver {
   const fetchController = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const timeoutMs = options.timeoutMs ?? 3000;
@@ -177,6 +181,13 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
                 .join('')
                 .toUpperCase() + '00',
             );
+          }
+          // The WLED app, a button or Turn LEDs off may have switched it off since
+          // the last write. Individual colours alone would be acknowledged and
+          // stay dark, so start again from the full wake.
+          if (count !== null && isSwitchedOff(await request(url, 'state'))) {
+            count = null;
+            previous = [];
           }
           const ledCount = count ?? (await driver.probe(url)).ledCount;
           if (next.some((index) => index >= ledCount)) throw new LedControllerError('invalid-indices');

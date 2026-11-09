@@ -484,6 +484,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           'Boardsesh uses Bluetooth to connect to your Kilter Board, Tension Board, or MoonBoard and light up climbing holds. No personal data is sent over Bluetooth.',
         NSBluetoothPeripheralUsageDescription:
           'Boardsesh uses Bluetooth to connect to your climbing board and control the LED holds.',
+        NSLocalNetworkUsageDescription:
+          'Boardsesh connects to the LED controller on your network to light up the holds on your Spraywall.',
         NSLocationWhenInUseUsageDescription:
           'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
         NSLocationAlwaysAndWhenInUseUsageDescription:
@@ -778,6 +780,9 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // service instead of always resolving FEATURE_NOT_SUPPORTED. EAS-safe pure
       // manifest addition.
       './plugins/with-android-install-referrer-queries',
+      // Lets release builds reach a WLED controller, which serves plain HTTP on
+      // the climber's own network. Boardsesh's own hosts stay HTTPS-only.
+      './plugins/with-android-lan-http',
       // Adds the <service android:foregroundServiceType="connectedDevice"> + the
       // notification-action <receiver> for the background BLE session (the
       // Android counterpart to the iOS Live Activity). EAS-safe manifest-only mod.

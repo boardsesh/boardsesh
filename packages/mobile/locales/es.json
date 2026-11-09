@@ -4,6 +4,7 @@
     "NSHealthShareUsageDescription": "Boardsesh lee tu peso corporal para estimar calorías y tus entrenamientos de Boardsesh guardados para evitar duplicados.",
     "NSBluetoothAlwaysUsageDescription": "Boardsesh usa Bluetooth para conectarse a tu Kilter Board, Tension Board o MoonBoard e iluminar las presas. No se envían datos personales por Bluetooth.",
     "NSBluetoothPeripheralUsageDescription": "Boardsesh usa Bluetooth para conectarse a tu plafón y controlar las presas LED.",
+    "NSLocalNetworkUsageDescription": "Boardsesh se conecta al controlador LED de tu red para iluminar las presas de tu Spraywall.",
     "NSLocationWhenInUseUsageDescription": "Boardsesh usa tu ubicación para mostrarte plafones y rocódromos cerca de ti, y para situar en el mapa el plafón que añadas.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh usa tu ubicación para mostrarte plafones y rocódromos cerca de ti, y para situar en el mapa el plafón que añadas.",
     "NSCameraUsageDescription": "Boardsesh usa tu cámara para que puedas fotografiar un plafón y crear bloques en él.",

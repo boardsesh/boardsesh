@@ -84,7 +84,7 @@ Routes illuminate their mapped LEDs using the existing start, hand, foot and
 finish colors, including saved color overrides. Route playback and creator
 previews use the same wall sender. All used holds must have wired LED mappings.
 An incomplete or stale setup produces an error instead of confirming the route.
-The setup photo identity must match the current wall version and calibration.
+The setup photo identity must match the current canonical frame and calibration.
 Mirrored spray routes are rejected because the wall has no defined mirror map.
 
 Spray LEDs follow the Bluetooth boards: locking the phone or backgrounding the
@@ -139,10 +139,15 @@ from an uncalibrated photograph (an identity homography remains identity).
 T-nut coordinates are normalized in that same rectified frame, never in the raw
 photograph. The grid uses a second projective transform from the unit grid to the
 four selected anchors, and updates on the UI thread while dragging. The saved
-identity includes the immutable wall version, canonical dimensions and homography.
-A changed identity starts a new setup while preserving the previous saved setup
-until the user explicitly continues. Layout data has a separate local storage key
-from WLED connection settings. Unsaved changes are protected on leaving the flow.
+identity is the canonical dimensions and homography. A hold edit publishes a new
+wall version on the same photo and mapping, so it keeps the LED setup; hole-to-hold
+mapping is recomputed on each send. A changed identity starts a new setup while
+preserving the previous saved setup until the user explicitly continues. Layout
+data has a separate local storage key from WLED connection settings. LED and cable
+work is written as each step from LED positions onward closes, so a killed app
+keeps it. Earlier steps wait until the holes are confirmed, and unsaved changes are
+protected on leaving the flow. Rebuilding LEDs asks first when it would replace
+hand-placed LEDs or a cable path.
 The generated LED offsets remain editable estimates.
 
 These settings save immediately on this device, separately for each wall. Turning
@@ -210,12 +215,17 @@ contact a real WLED device only when you enter its address and press a control.
 Use **Edit spray wall** to check full form placement. LED settings stay on the
 current device; testing lights does not update shared wall metadata.
 
-Android development clients allow HTTP traffic for Metro/local development.
-Verify the actual installed build with the controller: a release build may
-restrict cleartext HTTP. Supporting arbitrary local HTTP controllers in release
-builds needs a deliberate native network policy and a new binary; this change
-does not silently relax that policy. On iOS, local-network permission and ATS
-configuration likewise need a native-build check. Browser mixed-content, CORS
+WLED serves plain HTTP only. Android release builds permit it through
+`plugins/with-android-lan-http.js`: on for every host, because Android cannot
+allow-list private IP ranges, and off for `boardsesh.com` and its subdomains.
+iOS permits local HTTP through ATS local networking and asks for Local Network
+access the first time the app contacts the controller. That contact must always
+be a climber's press (confirming an address, a test light, taking the wall): never
+add a request to app launch or to opening a screen. Android apps targeting SDK 36
+get LAN access through the internet permission and must not declare
+`ACCESS_LOCAL_NETWORK`. At target SDK 37 it becomes a runtime permission, to be
+requested at that same press; a test fails when the target moves. Both platforms
+need a native build. Browser mixed-content, CORS
 and local-network restrictions can make a reachable controller inaccessible to
 the app; a failed test never prevents retaining the address.
 
