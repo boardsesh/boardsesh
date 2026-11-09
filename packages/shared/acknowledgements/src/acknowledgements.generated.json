@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-11-02T16:56:27.282Z",
+  "generatedAt": "2026-11-09T17:18:16.477Z",
   "contributors": [
     {
       "login": "marcodejongh",
       "name": "Marco de Jongh",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1107647?u=63993f18e3d652404c7a04ae91a5f7a505fdef5c&v=4",
       "htmlUrl": "https://github.com/marcodejongh",
-      "pullRequests": 4807,
-      "issues": 1686,
-      "contributions": 6493
+      "pullRequests": 4922,
+      "issues": 1699,
+      "contributions": 6621
     },
     {
       "login": "ES-Alexander",
@@ -173,6 +173,15 @@
       "contributions": 2
     },
     {
+      "login": "dmb1107",
+      "name": "Dave Amarosa-Becker",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2727010?u=b08c54fc03259eef774793d882060cd9b4d27f00&v=4",
+      "htmlUrl": "https://github.com/dmb1107",
+      "pullRequests": 2,
+      "issues": 0,
+      "contributions": 2
+    },
+    {
       "login": "dmucli",
       "name": null,
       "avatarUrl": "https://avatars.githubusercontent.com/u/29764214?v=4",
@@ -189,6 +198,24 @@
       "pullRequests": 1,
       "issues": 1,
       "contributions": 2
+    },
+    {
+      "login": "TigR77",
+      "name": null,
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41168787?v=4",
+      "htmlUrl": "https://github.com/TigR77",
+      "pullRequests": 2,
+      "issues": 0,
+      "contributions": 2
+    },
+    {
+      "login": "AitorBarrutia",
+      "name": null,
+      "avatarUrl": "https://avatars.githubusercontent.com/u/145688067?v=4",
+      "htmlUrl": "https://github.com/AitorBarrutia",
+      "pullRequests": 0,
+      "issues": 1,
+      "contributions": 1
     },
     {
       "login": "aliebling",
@@ -224,15 +251,6 @@
       "htmlUrl": "https://github.com/crcklt",
       "pullRequests": 0,
       "issues": 1,
-      "contributions": 1
-    },
-    {
-      "login": "dmb1107",
-      "name": "Dave Amarosa-Becker",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/2727010?u=b08c54fc03259eef774793d882060cd9b4d27f00&v=4",
-      "htmlUrl": "https://github.com/dmb1107",
-      "pullRequests": 1,
-      "issues": 0,
       "contributions": 1
     },
     {
@@ -393,6 +411,15 @@
       "name": "Sam Roehrich",
       "avatarUrl": "https://avatars.githubusercontent.com/u/26787961?u=3a62179e459a45ca215efc7eb2cfac496e205420&v=4",
       "htmlUrl": "https://github.com/SamRoehrich",
+      "pullRequests": 1,
+      "issues": 0,
+      "contributions": 1
+    },
+    {
+      "login": "Spikeystrike",
+      "name": null,
+      "avatarUrl": "https://avatars.githubusercontent.com/u/45663981?v=4",
+      "htmlUrl": "https://github.com/Spikeystrike",
       "pullRequests": 1,
       "issues": 0,
       "contributions": 1
