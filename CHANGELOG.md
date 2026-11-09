@@ -4,14 +4,27 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-09
+
+### New
+
+- Follow playlists and setters with one tap on a smaller icon ([#7344](https://github.com/boardsesh/boardsesh/pull/7344))
+  Share any public playlist or setter with your crew
+
 ## 2026-11-08
 
 ### New
 
+- A new neutral near-black dark theme on Android, and a cleaner, less purple light mode. ([#7333](https://github.com/boardsesh/boardsesh/pull/7333))
 - The Climbs screen on Android gives your list more room ([#7330](https://github.com/boardsesh/boardsesh/pull/7330))
   A slimmer header, with the climb on the wall right in the top bar, thumbnail and all
   Create a climb now lives in the ⋮ menu on Android phones
 - On Android, the tab bar tucks away while you scroll climbs, so you see more of the list. Scroll up to get it back. ([#7328](https://github.com/boardsesh/boardsesh/pull/7328))
+
+### Fixed
+
+- Sheets on Android now match the app's colours instead of your wallpaper. ([#7332](https://github.com/boardsesh/boardsesh/pull/7332))
+- New Kilter climbs can finish syncing across board layouts. ([#7334](https://github.com/boardsesh/boardsesh/pull/7334))
 
 ## 2026-11-07
 
