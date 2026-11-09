@@ -192,7 +192,7 @@ these grants. A table the appliers start writing fails that test first.
 | SELECT, INSERT, UPDATE | `board_products`, `board_sets`, `board_product_sizes`, `board_holes`, `board_layouts`, `board_placement_roles`, `board_leds`, `board_placements`, `board_product_sizes_layouts_sets`, `board_beta_links`, `board_attempts`, `board_kits`, `board_climb_holds`, `board_shared_syncs`, `board_layout_aliases`, `board_climb_ingest_skips`, `gyms`, `user_boards`, `location_sync_gym_sources`, `kilter_wall_sources` |
 | SELECT, INSERT, UPDATE, DELETE | `board_climb_aliases` (Kilter's folded aliases and the deletions that drop them) |
 | SELECT, INSERT | `board_climb_stats_history`, `notifications` |
-| SELECT | `setter_follows`, `user_follows`, `gym_claims`, `gym_members`, `gym_follows`, `comments (entity_id, entity_type, deleted_at)` |
+| SELECT | `setter_follows`, `user_follows`, `gym_claims`, `gym_members`, `gym_follows`, `comments (entity_id, entity_type, deleted_at)`, `kilter_aurora_benchmarks` |
 | INSERT | `provider_sync_controls` (a control row for a credential linked before rows existed), `users (id, name, email, emailVerified, image, created_at, updated_at)` (the system user that owns public catalog boards; none of it readable) |
 
 `maintenance-delivery` gets the grants `climb-stats-self-heal` needs

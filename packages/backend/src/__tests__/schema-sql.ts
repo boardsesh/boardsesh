@@ -1162,6 +1162,14 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_events_board_seq_unique" ON "board_climb_events" ("board_id", "seq");
   CREATE INDEX IF NOT EXISTS "board_climb_events_session_idx" ON "board_climb_events" ("session_id");
+  DROP TABLE IF EXISTS "kilter_aurora_benchmarks";
+CREATE TABLE "kilter_aurora_benchmarks" (
+	"climb_uuid" text NOT NULL,
+	"angle" integer NOT NULL,
+	"benchmark_difficulty" double precision NOT NULL,
+	"captured_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "kilter_aurora_benchmarks_climb_uuid_angle_pk" PRIMARY KEY("climb_uuid","angle")
+);
   DROP TABLE IF EXISTS "kilter_wall_sources";
 CREATE TABLE "kilter_wall_sources" (
 	"source_key" text PRIMARY KEY NOT NULL,

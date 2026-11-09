@@ -241,6 +241,9 @@ const ROUTINE_PROVIDER_EXTRA_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'user_boards', privileges: CATALOG_WRITE },
   { table: 'location_sync_gym_sources', privileges: CATALOG_WRITE },
   { table: 'kilter_wall_sources', privileges: CATALOG_WRITE },
+  // Read only: Kilter's Verified pass refuses to run until the frozen Aurora
+  // grades exist. Nothing writes to this table after its migration.
+  { table: 'kilter_aurora_benchmarks', privileges: ['SELECT'] },
   // Read only: the physical gym match weighs a candidate by its claims,
   // members, followers and comments before adopting it.
   { table: 'gym_claims', privileges: ['SELECT'] },
