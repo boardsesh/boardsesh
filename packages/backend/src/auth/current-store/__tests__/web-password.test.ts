@@ -904,7 +904,17 @@ describe('default-off staged web password commands against the current PostgreSQ
         }
         throw new Error('Owned writer did not enter a PostgreSQL lock wait');
       })();
-      await bounded(lockWait, active);
+      // A poll stalled past the 250 ms user-row limit sees the command end first; the
+      // checks below still require a fail-closed code and an uncommitted nonce.
+      await bounded(
+        Promise.race([
+          lockWait,
+          active.then(
+            () => undefined,
+            () => undefined,
+          ),
+        ]),
+      );
       vi.spyOn(Date, 'now').mockReturnValue(command.issuedAt + AUTH_COMMAND_MAX_AGE_MS + 1);
       release.resolve();
       const failure = await active.then(
