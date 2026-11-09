@@ -179,7 +179,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     [wiring],
   );
   // Lay cable and Light and tap only add LEDs to the end of the cable, so they
-  // have nothing to do once every LED is on it (a generated horizontal or
+  // are hidden once every LED is on it (a generated horizontal or
   // vertical run, or a finished custom one). A cut keeps every LED on one of
   // the sections, so rerouting is Cut and Connect under "Select two LEDs".
   const cableComplete = leds.length > 0 && leds.every((point) => indices.has(point.id));
@@ -282,18 +282,20 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
 
   const tools = (
     <View style={[styles.row, { gap: spacing[2] }]}>
-      <Button
-        title={t('sprayLedSetup.drawCable')}
-        variant={mode === 'draw' ? 'filled' : 'outlined'}
-        disabled={cableComplete}
-        onPress={() => chooseMode(mode === 'draw' ? null : 'draw')}
-      />
-      <Button
-        title={t('sprayLedSetup.lightAndTap')}
-        variant={mode === 'light' ? 'filled' : 'outlined'}
-        disabled={cableComplete}
-        onPress={() => chooseMode(mode === 'light' ? null : 'light')}
-      />
+      {cableComplete ? null : (
+        <>
+          <Button
+            title={t('sprayLedSetup.drawCable')}
+            variant={mode === 'draw' ? 'filled' : 'outlined'}
+            onPress={() => chooseMode(mode === 'draw' ? null : 'draw')}
+          />
+          <Button
+            title={t('sprayLedSetup.lightAndTap')}
+            variant={mode === 'light' ? 'filled' : 'outlined'}
+            onPress={() => chooseMode(mode === 'light' ? null : 'light')}
+          />
+        </>
+      )}
       <Button
         title={t('sprayLedSetup.selectLeds')}
         variant={mode === 'select' ? 'filled' : 'outlined'}

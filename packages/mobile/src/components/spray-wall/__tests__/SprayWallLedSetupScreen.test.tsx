@@ -560,11 +560,12 @@ describe('SprayWallLedSetupScreen', () => {
     next();
     next();
     const wired = () => screen.getByTestId('hole-editor').getAttribute('data-wired');
-    const disabled = (name: string) => (button(name) as HTMLButtonElement).disabled;
-    expect(disabled('drawCable')).toBe(false);
+    const shown = (name: string) => screen.queryByRole('button', { name: `sprayLedSetup.${name}` }) !== null;
+    expect(shown('drawCable')).toBe(true);
+    expect(shown('lightAndTap')).toBe(true);
     expect(screen.queryByText('sprayLedSetup.cableComplete')).toBeNull();
     // Light and tap wires the last LED: the cable is complete, so its LED goes dark
-    // and both tools that only extend the cable step aside.
+    // and both tools that only extend the cable are hidden.
     fireEvent.click(button('lightAndTap'));
     tap({ x: 0.2, y: 0.3 });
     tap({ x: 0.5, y: 0.3 });
@@ -572,17 +573,17 @@ describe('SprayWallLedSetupScreen', () => {
     tap({ x: 0.8, y: 0.3 });
     expect(wired()).toBe('3');
     await waitFor(() => expect(preview.stop).toHaveBeenCalled());
-    expect(disabled('drawCable')).toBe(true);
-    expect(disabled('lightAndTap')).toBe(true);
+    expect(shown('drawCable')).toBe(false);
+    expect(shown('lightAndTap')).toBe(false);
     expect(controls.canvas?.mode).toBe('pan');
     expect(screen.getByText('sprayLedSetup.cableComplete')).toBeTruthy();
     // A cut keeps every LED on one of the two sections: rerouting is Cut and
-    // Connect, so the extending tools stay aside.
+    // Connect, so the extending tools stay hidden.
     fireEvent.click(button('selectLeds'));
     tap({ x: 0.5, y: 0.3 });
     tap({ x: 0.8, y: 0.3 });
     fireEvent.click(button('cutCable'));
-    expect(disabled('drawCable')).toBe(true);
+    expect(shown('drawCable')).toBe(false);
     expect(screen.getByText('sprayLedSetup.cableComplete')).toBeTruthy();
   });
 
