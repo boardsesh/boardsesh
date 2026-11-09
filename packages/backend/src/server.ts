@@ -16,6 +16,7 @@ import {
   parseRequestUrl,
   refuseMalformedRequest,
 } from './handlers/request-guard';
+import { createPartnerAuthHandler } from './handlers/partner-auth';
 import { handleDatabaseHealthCheck, handleHealthCheck } from './handlers/health';
 import { recordDbConnectRetry } from './services/db-health';
 import { handleSessionJoin } from './handlers/join';
@@ -370,6 +371,9 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
 
   const malformedRequests = createMalformedRequestRecorder();
 
+  // Reads PARTNER_OAUTH_MODE once. A request can never change it.
+  const handlePartnerAuth = createPartnerAuthHandler();
+
   /**
    * Custom request handler that routes requests to appropriate handlers
    */
@@ -383,6 +387,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
     const pathname = url.pathname;
 
     try {
+      // Partner OAuth's exact routes on api.boardsesh.com. With the mode off,
+      // the default, this answers false for everything.
+      if (await handlePartnerAuth(req, res)) return;
+
       // api.boardsesh.com answers only its own route list, so this stays ahead
       // of every route below.
       if (rejectApiHostRequest(req, res, pathname)) return;

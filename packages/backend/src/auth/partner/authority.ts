@@ -1,9 +1,18 @@
-import { betterAuth, type Auth, type BetterAuthOptions, type BetterAuthPlugin } from 'better-auth';
+import {
+  betterAuth,
+  type Auth,
+  type BetterAuthOptions,
+  type BetterAuthPlugin,
+  type GenericEndpointContext,
+} from 'better-auth';
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
-import { oauthProvider, type OAuthOptions } from '@better-auth/oauth-provider';
+import { getOAuthProviderApi, oauthProvider, type OAuthOptions } from '@better-auth/oauth-provider';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { createDedicatedPool, withConnectRetry } from '@boardsesh/db/client';
+import { oauthConnections, oauthRefreshAncestors, oauthRefreshToken } from '@boardsesh/db/schema/auth';
 import { guardPartnerAdapter } from './adapter-guard';
+import { createPartnerAdmissionGate, type PartnerAdmissionGate, type PartnerAdmissionLimits } from './admission';
 import {
   assertPartnerTelemetryOff,
   PARTNER_SCOPES,
@@ -12,19 +21,79 @@ import {
   type PartnerAuthorityConfiguration,
 } from './configuration';
 import { partnerFencePlugin } from './fence';
+import { createPartnerOriginDirectory, type PartnerRegisteredOrigins } from './registered-origins';
+import { PARTNER_DISABLED_PATHS } from './routes';
 import { partnerAdapterSchema, type PartnerDatabase } from './tables';
-import { createPartnerDatabaseHandle, handlePartnerRequest, PARTNER_POOL_MAX } from './transaction';
+import {
+  createPartnerDatabaseHandle,
+  handlePartnerRequest,
+  PARTNER_POOL_MAX,
+  type PartnerRequestOptions,
+} from './transaction';
 
 export type PartnerAuthorityOptions = BetterAuthOptions & {
   plugins: [ReturnType<typeof oauthProvider>, ...BetterAuthPlugin[]];
 };
 export type PartnerAuthority = Auth<PartnerAuthorityOptions>;
 
+/** The connection a refresh token belongs to, found before any lock is taken. */
+export interface PartnerRefreshConnection {
+  clientId: string;
+  connectionId: string;
+}
+
+/** Everything the HTTP routes need. Built only when the mode is not `off`. */
 export interface PartnerAuthorityRuntime {
   authority: PartnerAuthority;
   database: PartnerDatabase;
-  handleRequest(request: Request): Promise<Response>;
+  configuration: PartnerAuthorityConfiguration;
+  admission: PartnerAdmissionGate;
+  registeredOrigins: PartnerRegisteredOrigins;
+  handleRequest(request: Request, options?: PartnerRequestOptions): Promise<Response>;
+  /** The published RFC 8414 document, built once. Reads no table. */
+  discoveryResponse(logContext?: PartnerRequestOptions['logContext']): Promise<Response>;
+  findRefreshConnection(refreshToken: string): Promise<PartnerRefreshConnection | null>;
   close(): Promise<void>;
+}
+
+const ADMISSION_LIMITS: PartnerAdmissionLimits = {
+  permits: PARTNER_POOL_MAX,
+  authorizePermits: 1,
+  queueLimitPerLane: 16,
+  queueDeadlineMs: 1000,
+};
+
+/**
+ * Only what is reachable. Stock also advertises `introspection_endpoint`,
+ * `private_key_jwt`, signing algorithms and DPoP, none of which this server offers.
+ */
+const PUBLISHED_METADATA_FIELDS = [
+  'issuer',
+  'authorization_endpoint',
+  'token_endpoint',
+  'revocation_endpoint',
+  'scopes_supported',
+  'response_types_supported',
+  'response_modes_supported',
+  'grant_types_supported',
+  'code_challenge_methods_supported',
+  'authorization_response_iss_parameter_supported',
+] as const;
+
+/** `docs/partner-api.md` section 2: confidential apps use Basic or POST, public apps `none`. */
+const PARTNER_CLIENT_AUTH_METHODS = ['none', 'client_secret_basic', 'client_secret_post'];
+
+const DISCOVERY_CACHE_CONTROL = 'public, max-age=15, stale-while-revalidate=15, stale-if-error=86400';
+
+export function publishedPartnerMetadata(stockMetadata: object): Record<string, unknown> {
+  const published: Record<string, unknown> = {};
+  for (const field of PUBLISHED_METADATA_FIELDS) {
+    const value = (stockMetadata as Record<string, unknown>)[field];
+    if (value !== undefined) published[field] = value;
+  }
+  published.token_endpoint_auth_methods_supported = PARTNER_CLIENT_AUTH_METHODS;
+  published.revocation_endpoint_auth_methods_supported = PARTNER_CLIENT_AUTH_METHODS;
+  return published;
 }
 
 export function partnerOAuthOptions(configuration: PartnerAuthorityConfiguration) {
@@ -56,11 +125,14 @@ export function partnerOAuthOptions(configuration: PartnerAuthorityConfiguration
  *
  * `plugins` run before the fence, which is where the consent bridge goes: it
  * sets `ctx.context.session` for the fence and the provider to find.
+ *
+ * `disabledPaths` defaults to every route the plan does not name. Only the
+ * authority's own test suite, which exercises stock routes directly, changes it.
  */
 export function createPartnerAuthority(
   database: PartnerDatabase,
   configuration: PartnerAuthorityConfiguration,
-  { plugins = [] }: { plugins?: BetterAuthPlugin[] } = {},
+  { plugins = [], disabledPaths = PARTNER_DISABLED_PATHS }: PartnerAuthorityBuildOptions = {},
 ): PartnerAuthority {
   assertPartnerTelemetryOff();
   const oauthOptions = partnerOAuthOptions(configuration);
@@ -71,6 +143,7 @@ export function createPartnerAuthority(
     secret: configuration.secrets[0].value,
     secrets: configuration.secrets,
     trustedOrigins: [configuration.webOrigin],
+    disabledPaths: [...disabledPaths],
     emailAndPassword: { enabled: false },
     user: { modelName: 'users', changeEmail: { enabled: false }, deleteUser: { enabled: false } },
     session: { modelName: 'oauthSession', cookieCache: { enabled: false } },
@@ -103,18 +176,82 @@ export function createPartnerAuthority(
   return betterAuth(authorityOptions);
 }
 
+interface PartnerAuthorityBuildOptions {
+  plugins?: BetterAuthPlugin[];
+  disabledPaths?: readonly string[];
+}
+
+/**
+ * Assembles the runtime around one authority. Exported so the route tests run
+ * the same object production does, against a test issuer.
+ */
+export async function createPartnerAuthorityRuntime(
+  database: PartnerDatabase,
+  configuration: PartnerAuthorityConfiguration,
+  { close, ...buildOptions }: PartnerAuthorityBuildOptions & { close: () => Promise<void> },
+): Promise<PartnerAuthorityRuntime> {
+  const authority = createPartnerAuthority(database, configuration, buildOptions);
+  await authority.$context;
+  const oauthOptions = partnerOAuthOptions(configuration);
+  // hashToken never reads the endpoint context; only client authentication does.
+  const hashRefreshToken = (refreshToken: string) =>
+    getOAuthProviderApi({} as GenericEndpointContext, oauthOptions).hashToken(refreshToken, 'refresh_token');
+  const publishedDiscovery = JSON.stringify(publishedPartnerMetadata(await authority.api.getOAuthServerConfig()));
+
+  return {
+    authority,
+    database,
+    configuration,
+    admission: createPartnerAdmissionGate(ADMISSION_LIMITS),
+    registeredOrigins: createPartnerOriginDirectory(database),
+    handleRequest: (request, options) => handlePartnerRequest(database, request, authority.handler, options),
+    discoveryResponse: (logContext) =>
+      handlePartnerRequest(
+        database,
+        // Goes through the wrapper so a failure here answers like every other route.
+        new Request(`${configuration.issuer}/.well-known/oauth-authorization-server`),
+        async () =>
+          new Response(publishedDiscovery, {
+            headers: { 'content-type': 'application/json', 'cache-control': DISCOVERY_CACHE_CONTROL },
+          }),
+        { transaction: false, logContext },
+      ),
+    async findRefreshConnection(refreshToken) {
+      const tokenHash = await hashRefreshToken(refreshToken);
+      const [current] = await database
+        .select({ clientId: oauthConnections.clientId, connectionId: oauthConnections.id })
+        .from(oauthRefreshToken)
+        .innerJoin(
+          oauthConnections,
+          and(
+            eq(oauthConnections.clientId, oauthRefreshToken.clientId),
+            eq(oauthConnections.userId, oauthRefreshToken.userId),
+          ),
+        )
+        .where(eq(oauthRefreshToken.token, tokenHash));
+      if (current) return current;
+      const [ancestor] = await database
+        .select({ clientId: oauthConnections.clientId, connectionId: oauthConnections.id })
+        .from(oauthRefreshAncestors)
+        .innerJoin(
+          oauthConnections,
+          and(
+            eq(oauthConnections.clientId, oauthRefreshAncestors.clientId),
+            eq(oauthConnections.userId, oauthRefreshAncestors.userId),
+          ),
+        )
+        .where(eq(oauthRefreshAncestors.tokenHash, tokenHash));
+      return ancestor ?? null;
+    },
+    close,
+  };
+}
+
 async function buildPartnerAuthorityRuntime(): Promise<PartnerAuthorityRuntime> {
   const configuration = readPartnerAuthorityConfiguration();
   const pool = createDedicatedPool(PARTNER_POOL_MAX);
   const database = drizzle(withConnectRetry(pool), { schema: partnerAdapterSchema });
-  const authority = createPartnerAuthority(database, configuration);
-  await authority.$context;
-  return {
-    authority,
-    database,
-    handleRequest: (request) => handlePartnerRequest(database, request, authority.handler),
-    close: () => pool.end(),
-  };
+  return createPartnerAuthorityRuntime(database, configuration, { close: () => pool.end() });
 }
 
 let runtime: Promise<PartnerAuthorityRuntime> | undefined;

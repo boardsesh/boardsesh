@@ -141,7 +141,11 @@ export function createRefreshFamilyHooks({
               if (accessToken) {
                 if (accessToken.clientId === client.clientId) await lockAccessTokenOwner(accessToken);
                 if (context.body?.token_type_hint === 'refresh_token') context.body.token_type_hint = 'access_token';
+                return;
               }
+              // RFC 7009 section 2.2: an unknown token is a success, and stock
+              // 1.7.17 answers 400. The client has authenticated by this point.
+              return refused();
             }
             return;
           }

@@ -1,4 +1,6 @@
 import type { IncomingMessage } from 'node:http';
+import { normalizeIpAddress } from '@boardsesh/consent/edge-country';
+import { isPrivatePeerAddress, resolveEdgeVisitorIp } from './flag-country';
 
 /**
  * Stable client identity behind Cloudflare and Railway.
@@ -17,4 +19,23 @@ export function getPublicClientIp(req: IncomingMessage): string {
   const forwardedChain = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
   const lastHop = forwardedChain?.split(',').at(-1)?.trim();
   return lastHop || req.socket.remoteAddress || 'unknown';
+}
+
+/**
+ * The client address for a limit a stranger must not be able to choose. Unlike
+ * `getPublicClientIp`, this believes `cf-connecting-ip` only from a verified
+ * Cloudflare edge (docs/cloudflare.md), because a direct request to the origin
+ * can set that header to anything. Otherwise it is the last `X-Forwarded-For`
+ * hop, which the private ingress appends, and never an earlier one a caller wrote.
+ */
+export function getTrustedClientIp(req: IncomingMessage): string {
+  const edgeVisitor = resolveEdgeVisitorIp(req);
+  if (edgeVisitor) return edgeVisitor;
+  const socketPeer = normalizeIpAddress(req.socket.remoteAddress);
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (socketPeer && isPrivatePeerAddress(socketPeer) && typeof forwardedFor === 'string') {
+    const appendedHop = normalizeIpAddress(forwardedFor.split(',').at(-1));
+    if (appendedHop) return appendedHop;
+  }
+  return socketPeer || 'unknown';
 }

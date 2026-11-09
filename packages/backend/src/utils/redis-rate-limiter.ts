@@ -75,3 +75,47 @@ export async function checkRateLimitRedis(
     if (fallbackToMemory) checkRateLimit(`${identity}:${operation}`, maxRequests, windowMs);
   }
 }
+
+export interface RateLimitUsage {
+  limit: number;
+  remaining: number;
+  resetSeconds: number;
+}
+
+/**
+ * The same limit as `checkRateLimitRedis`, for callers that publish
+ * `RateLimit-*` headers. Throws `RateLimitError` over the limit.
+ */
+export async function consumeRateLimitRedis(
+  identity: string,
+  operation: string,
+  maxRequests: number,
+  windowMs: number,
+): Promise<RateLimitUsage> {
+  const usageFrom = (count: number, resetSeconds: number): RateLimitUsage => ({
+    limit: maxRequests,
+    remaining: Math.max(0, maxRequests - count),
+    resetSeconds,
+  });
+  const usingMemory = () => {
+    const entry = checkRateLimit(`${identity}:${operation}`, maxRequests, windowMs);
+    return usageFrom(entry.count, Math.ceil((entry.resetAt - Date.now()) / 1000));
+  };
+
+  if (!redisClientManager.isRedisConnected()) return usingMemory();
+
+  try {
+    const { publisher } = redisClientManager.getClients();
+    const windowBucket = Math.floor(Date.now() / windowMs);
+    const key = `ratelimit:${identity}:${operation}:${windowBucket}`;
+    const expireSeconds = Math.ceil(windowMs / 1000);
+    const count = (await publisher.eval(RATE_LIMIT_SCRIPT, 1, key, expireSeconds.toString())) as number;
+    const resetSeconds = Math.ceil((windowMs - (Date.now() % windowMs)) / 1000);
+    if (count > maxRequests) throw new RateLimitError(resetSeconds);
+    return usageFrom(count, resetSeconds);
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err;
+    logger.warn('[RateLimit] Redis unavailable, falling back to in-memory:', (err as Error).message);
+    return usingMemory();
+  }
+}

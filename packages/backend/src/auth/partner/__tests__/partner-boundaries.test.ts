@@ -29,6 +29,7 @@ vi.mock('@boardsesh/db/client', async (importOriginal) => {
 
 const PARTNER_MODULES = [
   '../adapter-guard',
+  '../admission',
   '../authority',
   '../configuration',
   '../connection',
@@ -38,8 +39,12 @@ const PARTNER_MODULES = [
   '../locks',
   '../mode',
   '../offline',
+  '../registered-origins',
+  '../routes',
   '../tables',
   '../transaction',
+  '../../../handlers/partner-auth',
+  '../../../handlers/partner-cors',
 ];
 
 const VALID_SECRET = 'partner-oauth-test-secret-never-deployed-0123456789';
@@ -97,6 +102,44 @@ describe('the deployed authority', () => {
     } finally {
       await runtime.close();
     }
+  });
+});
+
+describe('the F9 entry point', () => {
+  it('builds nothing with the mode off, however many requests arrive', async () => {
+    let authorityLoaded = false;
+    vi.doMock('../authority', () => {
+      authorityLoaded = true;
+      return { getPartnerAuthorityRuntime: () => 'runtime' };
+    });
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
+    callCounts.betterAuth = 0;
+    callCounts.createDedicatedPool = 0;
+    const { createPartnerAuthHandler } = await import('../../../handlers/partner-auth');
+    const handler = createPartnerAuthHandler();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(
+        handler(
+          { method: 'POST', url: '/api/auth/oauth2/token', headers: { host: 'api.boardsesh.com' } } as never,
+          {} as never,
+        ),
+      ).resolves.toBe(false);
+    }
+    expect(callCounts.betterAuth).toBe(0);
+    expect(callCounts.createDedicatedPool).toBe(0);
+    expect(authorityLoaded).toBe(false);
+  });
+
+  it('reads the mode once, from the environment', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
+    const { createPartnerAuthHandler } = await import('../../../handlers/partner-auth');
+    const loadRuntime = vi.fn(async () => null);
+    const handler = createPartnerAuthHandler({ loadRuntime });
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    await expect(
+      handler({ method: 'GET', url: '/api/auth/error', headers: { host: 'api.boardsesh.com' } } as never, {} as never),
+    ).resolves.toBe(false);
+    expect(loadRuntime).not.toHaveBeenCalled();
   });
 });
 

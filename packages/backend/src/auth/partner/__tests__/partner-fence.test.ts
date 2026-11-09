@@ -432,9 +432,9 @@ describe('partner fence', () => {
           // Queuing on the held row would end in a 503 once the lock timeout passed.
           const unknown = await environment.refresh(client, 'not-a-real-refresh-token');
           expect(unknown.body.error).toBe('invalid_grant');
-          // Stock 1.7.17 answers an unknown token with 400 rather than RFC 7009's 200.
+          // RFC 7009 section 2.2. Stock 1.7.17 answers 400; the guard answers for it.
           const unknownRevoke = await environment.revoke(client, { token: 'not-a-real-token' });
-          expect(unknownRevoke.response.status).toBe(400);
+          expect(unknownRevoke.response.status).toBe(200);
         } finally {
           await release();
         }
@@ -957,5 +957,84 @@ describe('partner fence', () => {
         logged.mockRestore();
       }
     });
+  });
+
+  describe('a spent authorization code', () => {
+    const holdClimberRow = (client: TestClient) =>
+      holdLock((transaction) =>
+        transaction.select({ id: users.id }).from(users).where(eq(users.id, client.owner.userId)).for('no key update'),
+      );
+
+    async function spendCode(client: TestClient) {
+      const authorization = await environment.authorize(client);
+      const issued = await environment.exchange(client, authorization);
+      expect(issued.response.status).toBe(200);
+      return { authorization, issued };
+    }
+
+    it(
+      'takes no lock once nothing is left to clean up',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        const firstReplay = await environment.exchange(client, authorization);
+        expect(firstReplay.response.status).toBe(400);
+        expect(firstReplay.body.error).toBe('invalid_grant');
+        expect(
+          await db
+            .select({ id: oauthAccessToken.id })
+            .from(oauthAccessToken)
+            .where(eq(oauthAccessToken.clientId, client.clientId)),
+        ).toEqual([]);
+
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const replays = await Promise.all(
+            Array.from({ length: 6 }, () => environment.exchange(client, authorization)),
+          );
+          // Queuing behind the row lock would end in a 503 after the 2 s lock timeout.
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(replays.map((replay) => replay.body.error)).toEqual(Array.from({ length: 6 }, () => 'invalid_grant'));
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still locks while tokens from the code remain, so replay cleanup stays fenced',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        const release = await holdClimberRow(client);
+        try {
+          const firstReplay = await environment.exchange(client, authorization);
+          // The replay had to wait on the climber's row, then gave up.
+          expect(firstReplay.response.status).toBe(503);
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still locks a live code, so redemption stays fenced',
+      async () => {
+        const client = await environment.createClient();
+        const authorization = await environment.authorize(client);
+        const release = await holdClimberRow(client);
+        try {
+          const redemption = await environment.exchange(client, authorization);
+          expect(redemption.response.status).toBe(503);
+        } finally {
+          await release();
+        }
+        expect((await environment.exchange(client, authorization)).response.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
   });
 });

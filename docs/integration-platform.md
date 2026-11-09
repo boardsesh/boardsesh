@@ -422,6 +422,43 @@ does not claim `api.boardsesh.com`; `/oauth` on `www` is excluded from iOS
 association before consent launches. First-party auth paths and their old
 native/watch aliases are owned by the migration doc, not this API contract.
 
+### Routes and the mode switch
+
+`PARTNER_OAUTH_MODE` is read once at boot, from the environment. No request can
+choose it. `handlers/partner-auth.ts` is the only production module outside
+`auth/partner/` that may reach into that folder, and with the mode `off` it
+answers nothing.
+
+| Mode | What the API host does |
+| --- | --- |
+| `off` (default, and any unrecognised value) | Every partner route is `404`, and Better Auth is never loaded |
+| `hold` | Every partner route answers `503` with `Retry-After: 60`, without loading Better Auth |
+| `allowlist`, `open` | The routes below are served. The two modes differ only in who can register an app |
+
+Only these exact method and path pairs are served, and only on `api.boardsesh.com`:
+`GET /api/auth/oauth2/authorize`, `POST /api/auth/oauth2/consent`,
+`POST /api/auth/oauth2/token`, `POST /api/auth/oauth2/revoke`, RFC 8414 metadata at
+both paths above, and `GET /api/auth/error`, the page the provider sends a browser
+to when it must not send it to the app. Token, revoke and consent also answer a
+CORS preflight, which never reaches Better Auth. The path is matched byte for byte
+against what the client sent, so a trailing slash, a doubled slash, different case,
+a percent-encoded byte or `HEAD` is a `404`. `disabledPaths` also refuses the other
+stock routes inside Better Auth, except the two with path parameters.
+
+Availability is protected before any transaction opens:
+
+- A body is buffered first, up to 64 KB and for at most 5 seconds. Over the size
+  is `413`, over the time is `408`, with the connection closed either way.
+- At most 3 requests run at once, one for an authorize, with token work first. 16
+  more wait per kind, for at most 1 second. Anything else gets `503` and
+  `Retry-After` at once.
+- Discovery and a signed-out authorize take no transaction.
+- Rate limits use the table under Operations and run first. Per-connection refresh
+  and the app limits never reach a lock. A spent code with no tokens left answers
+  `invalid_grant` without taking the climber's row lock.
+- The client address for a limit is `CF-Connecting-IP` only from a verified
+  Cloudflare edge, otherwise the last `X-Forwarded-For` hop.
+
 ### Browser access
 
 CORS on the token/revoke endpoints and `/v1/*` is credential-free and separate

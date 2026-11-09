@@ -103,6 +103,18 @@ export async function runInPartnerTransaction<Result>(
   });
 }
 
+export interface PartnerRequestOptions {
+  /**
+   * False only for a request that cannot reach a fence: discovery, the error
+   * page, and an authorize with no session cookie. A guard that asks for a
+   * transaction anyway throws, so a mistake here answers 500 rather than running
+   * unfenced.
+   */
+  transaction?: boolean;
+  /** Carried onto failure logs. Never tokens or codes. */
+  logContext?: { requestId?: string; clientId?: string };
+}
+
 /**
  * One request, one transaction. A protocol 4xx commits so replay cleanup
  * persists; a 5xx rolls back so a failed mint leaves nothing behind; a lock
@@ -112,9 +124,11 @@ export async function handlePartnerRequest(
   root: PartnerDatabase,
   request: Request,
   handler: (request: Request) => Promise<Response>,
+  { transaction = true, logContext }: PartnerRequestOptions = {},
 ): Promise<Response> {
   let requestState: PartnerRequestState | undefined;
   try {
+    if (!transaction) return await handler(request);
     return await runInPartnerTransaction(root, async (_transaction, state) => {
       requestState = state;
       return rejectPartnerServerFailure(await handler(request));
@@ -122,11 +136,12 @@ export async function handlePartnerRequest(
   } catch (error) {
     if (requestState?.databaseBusy || isPartnerDatabaseBusy(error)) return partnerBusyResponse();
     if (error instanceof PartnerResponseRollback) {
-      logger.error('Partner OAuth request failed', { status: error.response.status });
+      logger.error('Partner OAuth request failed', { ...logContext, status: error.response.status });
       return error.response;
     }
     // Name and database code only: Drizzle's error text carries the query parameters.
     logger.error('Partner OAuth request failed', {
+      ...logContext,
       errorName: error instanceof Error ? error.name : 'unknown',
       postgresCode: getPostgresErrorCode(error),
     });

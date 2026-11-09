@@ -240,6 +240,14 @@ describe('the running server on the API host', () => {
     ['GET', '/health/db'],
     ['GET', '/robots.txt'],
     ['GET', '/graphql'],
+    // PARTNER_OAUTH_MODE is unset in this suite, so every partner route is off.
+    ['GET', '/api/auth/oauth2/authorize'],
+    ['POST', '/api/auth/oauth2/token'],
+    ['POST', '/api/auth/oauth2/revoke'],
+    ['POST', '/api/auth/oauth2/consent'],
+    ['GET', '/.well-known/oauth-authorization-server/api/auth'],
+    ['GET', '/api/auth/.well-known/oauth-authorization-server'],
+    ['GET', '/api/auth/error'],
   ])('answers %s %s with 404', async (method, path) => {
     expect(await send(method, path, API_HOSTNAME)).toEqual({
       status: 404,

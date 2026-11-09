@@ -36,23 +36,22 @@ const DEFAULT_MAX_REQUESTS = 60; // 60 requests per minute per connection
  * @param connectionId - The unique connection identifier
  * @param maxRequests - Maximum requests allowed in the time window
  * @param windowMs - Time window in milliseconds
+ * @returns The window's count after this request and when it resets
  * @throws Error if rate limit exceeded
  */
 export function checkRateLimit(
   connectionId: string,
   maxRequests: number = DEFAULT_MAX_REQUESTS,
   windowMs: number = DEFAULT_WINDOW_MS,
-): void {
+): RateLimitEntry {
   const now = Date.now();
   const entry = rateLimitMap.get(connectionId);
 
   // If no entry or window expired, create new entry
   if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(connectionId, {
-      count: 1,
-      resetAt: now + windowMs,
-    });
-    return;
+    const created = { count: 1, resetAt: now + windowMs };
+    rateLimitMap.set(connectionId, created);
+    return created;
   }
 
   // Check if limit exceeded
@@ -63,6 +62,7 @@ export function checkRateLimit(
 
   // Increment counter
   entry.count++;
+  return entry;
 }
 
 /**

@@ -2,7 +2,13 @@ import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { getOAuthProviderApi, type OAuthOptions } from '@better-auth/oauth-provider';
 import { eq } from 'drizzle-orm';
-import { oauthConnections, oauthGrants, oauthVerification } from '@boardsesh/db/schema/auth';
+import {
+  oauthAccessToken,
+  oauthConnections,
+  oauthGrants,
+  oauthRefreshToken,
+  oauthVerification,
+} from '@boardsesh/db/schema/auth';
 import { PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS } from './configuration';
 import { createPartnerFamilyStore, createRefreshFamilyHooks } from './family-guard';
 import {
@@ -12,6 +18,7 @@ import {
   lockPartnerConnection,
   selectConnectionForUpdate,
 } from './locks';
+import type { PartnerDatabase } from './tables';
 import { currentPartnerTransaction } from './transaction';
 
 /** RFC 6749 section 3.2 forbids repeats. RFC 8707 makes `resource` the one exception. */
@@ -36,6 +43,33 @@ function promptTokens(prompt: string): string[] {
     .split(' ')
     .map((token) => token.trim())
     .filter(Boolean);
+}
+
+/**
+ * True when the code row is gone and neither token table still has a row from it.
+ * The code is read first: a redemption inserts its tokens in the transaction
+ * that consumes the code, so a code row seen as gone means those tokens are
+ * already visible to the two reads that follow.
+ */
+async function isSpentCodeWithNoTokens(transaction: PartnerDatabase, authorizationCodeId: string): Promise<boolean> {
+  const [pendingCode] = await transaction
+    .select({ identifier: oauthVerification.identifier })
+    .from(oauthVerification)
+    .where(eq(oauthVerification.identifier, authorizationCodeId))
+    .limit(1);
+  if (pendingCode) return false;
+  const [accessToken] = await transaction
+    .select({ id: oauthAccessToken.id })
+    .from(oauthAccessToken)
+    .where(eq(oauthAccessToken.authorizationCodeId, authorizationCodeId))
+    .limit(1);
+  if (accessToken) return false;
+  const [refreshToken] = await transaction
+    .select({ id: oauthRefreshToken.id })
+    .from(oauthRefreshToken)
+    .where(eq(oauthRefreshToken.authorizationCodeId, authorizationCodeId))
+    .limit(1);
+  return refreshToken === undefined;
 }
 
 function parseCodeOwner(serialized: string): { userId: string; clientId: string } | null {
@@ -167,6 +201,11 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
                 { status: 400, headers: { 'cache-control': 'no-store' } },
               );
             if (!grant || grant.clientId !== client.clientId) return invalidGrant();
+            // A spent code whose tokens are already gone needs no fence: only a
+            // live code can issue anything, and there is nothing left to clean
+            // up. Taking `users FOR SHARE` here would let replays of it hold off
+            // a password reset for as long as the replays keep coming.
+            if (await isSpentCodeWithNoTokens(transaction, authorizationCodeId)) return invalidGrant();
             const owner = { userId: grant.userId, clientId: grant.clientId, authorizationCodeId };
             if (!(await lockCurrentGrant(transaction, owner))) return invalidGrant();
           }),
@@ -178,6 +217,9 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
         {
           matcher: (context) => context.path === '/oauth2/authorize',
           handler: createAuthMiddleware(async (context) => {
+            // A code needs a session. Without one the redirect is the sign-in
+            // page, and a `code` on it is a parameter the caller sent.
+            if (!context.context.session) return;
             const target = authorizeRedirectTarget(context);
             if (!target) return;
             const code = URL.canParse(target) ? new URL(target).searchParams.get('code') : null;
