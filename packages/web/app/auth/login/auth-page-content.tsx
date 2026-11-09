@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useId } from 'react';
+import { useCallback, useState, useEffect, useId } from 'react';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Typography from '@mui/material/Typography';
@@ -39,6 +39,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { track, setPersonProperties } from '@/app/lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { authMethodFromError, safeAuthError } from './auth-error-classification';
+import { safeCallbackUrl } from '../signout/safe-callback-url';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
 export default function AuthPageContent() {
@@ -64,6 +65,13 @@ export default function AuthPageContent() {
   const [activeTab, setActiveTab] = useState('login');
 
   const verified = searchParams.get('verified');
+
+  // The page's only client-side navigation to `callbackUrl`. The social buttons
+  // keep the raw value: they POST it to NextAuth, whose redirect callback checks
+  // it, and the phone and Expo web flows need their return URLs intact.
+  const pushCallbackUrl = useCallback(() => {
+    router.push(safeCallbackUrl(callbackUrl, window.location.origin));
+  }, [router, callbackUrl]);
 
   // Surface NextAuth redirect errors (failed OAuth round-trip or credentials
   // redirect) as the login form's inline alert rather than a transient toast —
@@ -102,9 +110,9 @@ export default function AuthPageContent() {
   // Redirect if already authenticated
   useEffect(() => {
     if (status === 'authenticated') {
-      router.push(callbackUrl);
+      pushCallbackUrl();
     }
-  }, [status, router, callbackUrl]);
+  }, [status, pushCallbackUrl]);
 
   const handleLogin = async () => {
     setLoginServerError(null);
@@ -136,7 +144,7 @@ export default function AuthPageContent() {
       } else if (result?.ok) {
         showMessage(t('login.toasts.loggedIn'), 'success');
         track('Login Succeeded', { auth_method: 'credentials' });
-        router.push(callbackUrl);
+        pushCallbackUrl();
       }
     } catch (error) {
       // A thrown signIn (network down, server unreachable) must not leave the
@@ -226,7 +234,7 @@ export default function AuthPageContent() {
           auth_method: 'credentials',
           is_first_login: true,
         });
-        router.push(callbackUrl);
+        pushCallbackUrl();
       } else {
         setActiveTab('login');
         setLoginValues((prev) => ({ ...prev, email: registerValues.email }));

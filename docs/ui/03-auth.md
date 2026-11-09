@@ -70,7 +70,7 @@
 - NextAuth `signIn()` for credential login
 - `/api/auth/register` POST for registration
 - `/api/auth/providers-config` GET for available OAuth providers
-- `callbackUrl` query parameter for post-auth redirect
+- `callbackUrl` query parameter for post-auth redirect. The page navigates only to a relative path or a URL on its own origin, with no `//` in the path; anything else lands on `/`
 
 **Navigation:**
 
