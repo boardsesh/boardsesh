@@ -558,8 +558,9 @@ correct CORS/headers for expired-token and rate-limit errors. Ordinary
 first-party sign-out must not silently revoke an offline connection; explicit
 security revocation must.
 
-An external security review of configuration and glue is recommended before
-milestone 2 opens registration. Failure of any launch gate blocks that
+Independent adversarial agent reviews, by agents that did not write the code and
+working from the OAuth threat list, run before the first connection and again
+before milestone 2 opens registration. Failure of any launch gate blocks that
 deliverable; it does not authorize a fallback implementation.
 
 ---
@@ -1378,7 +1379,6 @@ bug: fix it and rerun.
 - **The compatibility proof** (D2). Better Auth is selected, but implementation
   is gated on the pinned-version results. Failed criteria require a reviewed
   design revision, not an automatic switch to another provider.
-- **External security review** before milestone 2: who, and when.
 - **Moving the phone's sync onto the change log**, which would close its
   long-transaction hole too. Not needed for the public API.
 - **Imported `climbedAt`.** Aurora's naive timestamps are stored as UTC
