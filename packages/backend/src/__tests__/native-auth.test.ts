@@ -29,7 +29,24 @@ const mockDbUpdateReturning = vi.fn(async () => []);
 const mockDbDeleteWhere = vi.fn();
 const mockDbDeleteReturning = vi.fn(async () => []);
 
+// These handler tests assume an active account. Admission has its own suites
+// (deletion-credential-admission and admission-read-coalescer).
+vi.mock('../auth/admission-read-coalescer', () => ({
+  createAdmissionCoalescer: () => async () => true,
+}));
+
 vi.mock('../db/client', () => {
+  function selectChain(projection?: Record<string, unknown>) {
+    const rows =
+      projection && 'deletedAt' in projection ? [{ id: 'unit-subject', deletedAt: null }] : [{ userId: 'user-abc' }];
+    const selection = {
+      from: () => selection,
+      leftJoin: () => selection,
+      where: () => selection,
+      limit: () => Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) }),
+    };
+    return selection;
+  }
   const insertChain = {
     values: (...args: unknown[]) => mockDbInsertValues(...args),
   };
@@ -53,11 +70,14 @@ vi.mock('../db/client', () => {
   };
   return {
     db: {
+      select: vi.fn(selectChain),
       insert: vi.fn(() => insertChain),
       update: vi.fn(() => updateChain),
       delete: vi.fn(() => deleteChain),
       transaction: vi.fn(async (fn: (tx: unknown) => unknown) => {
         const tx = {
+          execute: async () => [{ transaction_isolation: 'read committed' }],
+          select: vi.fn(selectChain),
           insert: vi.fn(() => insertChain),
           update: vi.fn(() => updateChain),
           delete: vi.fn(() => deleteChain),
@@ -452,7 +472,7 @@ describe('handleNativeAuthRefresh', () => {
     expect(res.statusCode).toBe(405);
   });
 
-  it('returns 500 when NEXTAUTH_SECRET is unset during token generation', async () => {
+  it('returns retryable 503 when NEXTAUTH_SECRET is unset during token generation', async () => {
     // Set up valid refresh token revocation
     mockDbUpdateReturning.mockResolvedValueOnce([
       {
@@ -473,8 +493,8 @@ describe('handleNativeAuthRefresh', () => {
       const req = makeRequest({ method: 'POST', body: { refreshToken } });
       const res = makeResponse();
       await handleNativeAuthRefresh(req as unknown as IncomingMessage, res as unknown as ServerResponse);
-      expect(res.statusCode).toBe(500);
-      expect(parseBody(res).error).toBe('Internal server error');
+      expect(res.statusCode).toBe(503);
+      expect(parseBody(res).error).toBe('Authentication is temporarily unavailable');
     } finally {
       process.env.NEXTAUTH_SECRET = savedSecret;
     }

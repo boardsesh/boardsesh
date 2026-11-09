@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import {
   accounts,
+  authSubjectCutoffs,
   sessions,
   userCredentials,
   userProfiles,
@@ -17,6 +18,7 @@ import type { ConfiguredIdentity, ConfiguredProvider } from './fixtures/app-rout
 const role = `ba03_router_stock_${randomUUID().replaceAll('-', '')}`;
 const password = randomBytes(32).toString('hex');
 const tables = [users, accounts, userCredentials, userProfiles, sessions, verificationTokens];
+const admissionReadTables = [authSubjectCutoffs];
 let roleTracked = false;
 let harness: Awaited<ReturnType<typeof startAppRouterHarness>> | undefined;
 async function admin(statement: SQL) {
@@ -47,6 +49,9 @@ describe('actual App Router and configured providers: stock characterization', (
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${sql.join(tables, sql`, `)} TO ${sql.identifier(role)}`,
       );
+      await transaction.execute(
+        sql`GRANT SELECT ON TABLE ${sql.join(admissionReadTables, sql`, `)} TO ${sql.identifier(role)}`,
+      );
     });
     const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
     databaseUrl.username = role;
@@ -66,7 +71,9 @@ describe('actual App Router and configured providers: stock characterization', (
     }
     if (roleTracked) {
       try {
-        await admin(sql`REVOKE ALL PRIVILEGES ON TABLE ${sql.join(tables, sql`, `)} FROM ${sql.identifier(role)}`);
+        await admin(
+          sql`REVOKE ALL PRIVILEGES ON TABLE ${sql.join([...tables, ...admissionReadTables], sql`, `)} FROM ${sql.identifier(role)}`,
+        );
       } catch {
         failures.push(new Error('Owned grants cleanup failed'));
       }

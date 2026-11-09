@@ -3,7 +3,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { GYM_PHOTO_MAX_UPLOAD_BYTES } from '@boardsesh/shared-schema';
 import { applyCorsHeaders } from './cors';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { db } from '../db/client';
 import { userCanEditGym } from '../graphql/resolvers/social/gyms';
 import { isS3Configured, deleteGymPhotosFromS3 } from '../storage/s3';
@@ -87,7 +87,9 @@ export async function handleGymPhotoDelete(req: IncomingMessage, res: ServerResp
     return;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return;
+  const authResult = admission.auth;
   if (!authResult) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid or expired token' }));

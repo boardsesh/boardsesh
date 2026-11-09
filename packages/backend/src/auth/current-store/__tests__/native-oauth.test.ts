@@ -258,6 +258,9 @@ describe('reserved native OAuth identity with actual JOSE and PostgreSQL', () =>
       }
       await transaction.execute(sql`GRANT INSERT ON TABLE ${mobileRefreshTokens} TO ${sql.identifier(nativeRole)}`);
       await transaction.execute(sql`GRANT UPDATE ON TABLE ${users} TO ${sql.identifier(nativeRole)}`);
+      // This role also exercises native password registration. Permit its
+      // issuer's row lock without granting identity-column UPDATE.
+      await transaction.execute(sql`GRANT UPDATE (updated_at) ON TABLE ${users} TO ${sql.identifier(webRole)}`);
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE ON TABLE ${accounts} TO ${sql.identifier(nativeRole)}`,
       );
@@ -431,6 +434,7 @@ describe('reserved native OAuth identity with actual JOSE and PostgreSQL', () =>
         failures.push(new Error('Owned OAuth role lookup failed'));
       }
       try {
+        await administrator(sql`REVOKE UPDATE (updated_at) ON TABLE ${users} FROM ${sql.identifier(role)}`);
         await administrator(
           sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${accounts}, ${userCredentials}, ${userProfiles}, ${mobileRefreshTokens}, ${authEmailProjection}, ${authEmailReservations}, ${authEmailReservationMembers}, ${authSubjectCutoffs}, ${verificationTokens} FROM ${sql.identifier(role)}`,
         );
@@ -449,6 +453,33 @@ describe('reserved native OAuth identity with actual JOSE and PostgreSQL', () =>
       }
     }
     if (failures.length) throw new AggregateError(failures, 'Owned OAuth fixture cleanup failed');
+  });
+
+  it('supports the registration role user KEY SHARE without identity mutation or deletion', async () => {
+    const probeId = randomUUID();
+    const rollback = new Error('Owned OAuth row-lock probe rollback');
+    await expect(
+      webWriter.transaction(async (transaction) => {
+        await transaction.insert(users).values({ id: probeId, email: `${probeId}@oauth-lock-probe.example.test` });
+        const [subject] = await transaction
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, probeId))
+          .for('key share', { of: users });
+        expect(subject?.id).toBe(probeId);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await db.select({ id: users.id }).from(users).where(eq(users.id, probeId))).toEqual([]);
+    await expect(webWriter.update(users).set({ id: randomUUID() }).where(eq(users.id, probeId))).rejects.toMatchObject({
+      cause: { code: '42501' },
+    });
+    await expect(
+      webWriter.update(users).set({ email: 'forbidden@oauth-lock-probe.example.test' }).where(eq(users.id, probeId)),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+    await expect(webWriter.delete(users).where(eq(users.id, probeId))).rejects.toMatchObject({
+      cause: { code: '42501' },
+    });
   });
 
   it('keeps actual cold JWKS network/HTTP/malformed failures unavailable and valid cached keys usable', async () => {
@@ -821,16 +852,14 @@ describe('reserved native OAuth identity with actual JOSE and PostgreSQL', () =>
         if (kind === 'signing') vi.stubEnv('NEXTAUTH_SECRET', '');
         else await administrator(sql`ALTER TABLE ${table} ADD CONSTRAINT ${sql.identifier(constraint)} CHECK (false)`);
         const response = await post(await signed('google'));
-        expect(response.status).toBe(kind === 'signing' ? 500 : 503);
+        expect(response.status).toBe(503);
+        if (kind === 'signing')
+          expect(await response.json()).toEqual({ error: 'Authentication is temporarily unavailable' });
         if (kind !== 'signing') expect(databaseFailure).toEqual({ code: '23514', constraint });
         expect(await counts()).toEqual(empty);
         expect(JSON.stringify([...warning.mock.calls, ...error.mock.calls])).not.toContain('insert into');
         expect(JSON.stringify([...warning.mock.calls, ...error.mock.calls])).not.toContain('Failed query');
-        if (kind === 'signing')
-          expect(error).toHaveBeenCalledWith(
-            '[NativeAuth] Reserved OAuth failed',
-            expect.objectContaining({ message: 'Native OAuth internal failure' }),
-          );
+        if (kind === 'signing') expect(error).not.toHaveBeenCalled();
         else
           expect(warning).toHaveBeenCalledWith('[NativeAuth] Reserved OAuth unavailable', {
             category: 'authority-or-database',

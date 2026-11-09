@@ -60,6 +60,7 @@ const { chromium } = webRequire('@playwright/test') as {
 const role = `ba03_router_browser_${randomUUID().replaceAll('-', '')}`;
 const password = randomBytes(32).toString('hex');
 const tables = [users, accounts, userCredentials, userProfiles, sessions, verificationTokens];
+const admissionReadTables = [authSubjectCutoffs];
 const actorId = randomUUID();
 const ownerId = randomUUID();
 const subject = randomUUID();
@@ -126,6 +127,9 @@ describe('real Chromium transport around actual App Router bridge', () => {
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${sql.join(tables, sql`, `)} TO ${sql.identifier(role)}`,
       );
+      await transaction.execute(
+        sql`GRANT SELECT ON TABLE ${sql.join(admissionReadTables, sql`, `)} TO ${sql.identifier(role)}`,
+      );
     });
     const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
     databaseUrl.username = role;
@@ -161,7 +165,9 @@ describe('real Chromium transport around actual App Router bridge', () => {
     }
     if (tracked) {
       try {
-        await admin(sql`REVOKE ALL PRIVILEGES ON TABLE ${sql.join(tables, sql`, `)} FROM ${sql.identifier(role)}`);
+        await admin(
+          sql`REVOKE ALL PRIVILEGES ON TABLE ${sql.join([...tables, ...admissionReadTables], sql`, `)} FROM ${sql.identifier(role)}`,
+        );
       } catch {
         failures.push(new Error('Owned browser grants cleanup failed'));
       }
@@ -323,7 +329,7 @@ describe('real Chromium with an explicitly synthetic actor-bound continuation', 
         await transaction.execute(sql`GRANT USAGE ON SCHEMA public TO ${sql.identifier(roleName)}`);
       }
       await transaction.execute(
-        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles} TO ${sql.identifier(readRole)}`,
+        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles}, ${authSubjectCutoffs} TO ${sql.identifier(readRole)}`,
       );
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${sql.join(mutable, sql`, `)} TO ${sql.identifier(writerRole)}`,

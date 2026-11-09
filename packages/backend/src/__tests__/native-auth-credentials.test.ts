@@ -29,8 +29,12 @@ const mockDbSelectQueue: unknown[][] = [];
 const mockDbInsertValues = vi.fn(async () => []);
 
 vi.mock('../db/client', () => {
-  function makeSelectChain(): unknown {
+  function makeSelectChain(projection?: Record<string, unknown>): unknown {
+    const admissionProjection = Boolean(projection && 'deletedAt' in projection);
     const chain = {
+      leftJoin() {
+        return chain;
+      },
       from() {
         return chain;
       },
@@ -41,7 +45,10 @@ vi.mock('../db/client', () => {
         return chain;
       },
       limit() {
-        return Promise.resolve(mockDbSelectQueue.shift() ?? []);
+        const rows = admissionProjection
+          ? [{ id: 'unit-subject', deletedAt: null }]
+          : (mockDbSelectQueue.shift() ?? []);
+        return Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) });
       },
     };
     return chain;
@@ -51,12 +58,13 @@ vi.mock('../db/client', () => {
     values: (...args: unknown[]) => mockDbInsertValues(...args),
   };
 
-  return {
-    db: {
-      select: vi.fn(() => makeSelectChain()),
-      insert: vi.fn(() => insertChain),
-    },
+  const database = {
+    select: vi.fn((projection?: Record<string, unknown>) => makeSelectChain(projection)),
+    insert: vi.fn(() => insertChain),
+    execute: async () => [{ transaction_isolation: 'read committed' }],
+    transaction: async (callback: (transaction: unknown) => unknown) => callback(database),
   };
+  return { db: database };
 });
 
 vi.mock('../handlers/cors', () => ({

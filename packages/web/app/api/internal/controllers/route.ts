@@ -1,10 +1,11 @@
-import { getServerSession } from 'next-auth/next';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
-import { authOptions } from '@/app/lib/auth/auth-options';
 import { randomBytes } from 'crypto';
 
 const registerControllerSchema = z.discriminatedUnion('boardName', [
@@ -57,7 +58,7 @@ function generateApiKey(): string {
  */
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getAdmittedServerSession();
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -83,6 +84,7 @@ export async function GET() {
 
     return NextResponse.json({ controllers: controllerList });
   } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
     console.error('Failed to get controllers:', error);
     return NextResponse.json({ error: 'Failed to get controllers' }, { status: 500 });
   }
@@ -94,7 +96,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getAdmittedServerSession();
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -144,6 +146,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
     console.error('Failed to register controller:', error);
     return NextResponse.json({ error: 'Failed to register controller' }, { status: 500 });
   }
@@ -154,7 +157,7 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getAdmittedServerSession();
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -177,6 +180,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
     console.error('Failed to delete controller:', error);
     return NextResponse.json({ error: 'Failed to delete controller' }, { status: 500 });
   }

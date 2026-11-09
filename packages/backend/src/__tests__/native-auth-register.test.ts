@@ -37,8 +37,16 @@ function makeAwaitableInsert(): Promise<unknown[]> & { onConflictDoNothing: () =
 }
 
 function makeChain() {
+  let admissionProjection = false;
   const chain = {
-    select() {
+    execute: async () => [{ transaction_isolation: 'read committed' }],
+    select(projection?: Record<string, unknown>) {
+      // Model a live subject for these legacy issuer unit tests. The separate
+      // admission integration suite exercises actual primary rows and denial.
+      admissionProjection = Boolean(projection && 'deletedAt' in projection);
+      return chain;
+    },
+    leftJoin() {
       return chain;
     },
     from() {
@@ -48,8 +56,8 @@ function makeChain() {
       return chain;
     },
     limit() {
-      const rows = mockDbSelectQueue.shift() ?? [];
-      return Promise.resolve(rows);
+      const rows = admissionProjection ? [{ id: 'unit-subject', deletedAt: null }] : (mockDbSelectQueue.shift() ?? []);
+      return Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) });
     },
     insert(table: unknown) {
       return {

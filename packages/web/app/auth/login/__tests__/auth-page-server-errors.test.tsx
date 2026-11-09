@@ -18,6 +18,7 @@ vi.mock('react-i18next', () => ({
 
 const mockSignIn = vi.fn();
 vi.mock('next-auth/react', () => ({
+  getSession: vi.fn().mockResolvedValue(null),
   signIn: (...args: unknown[]) => mockSignIn(...args),
   useSession: () => ({ status: 'unauthenticated', data: null }),
 }));

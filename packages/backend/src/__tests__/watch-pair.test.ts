@@ -8,7 +8,7 @@
  *
  * generateTokenPair runs for real (signs a JWT + inserts a refresh row via the
  * mocked db), so these also cover the token-pair shape. Redis is mocked so we
- * can drive SET NX collisions and the GETDEL consume path deterministically.
+ * can drive SET NX collisions and the atomic compare-and-delete consume path deterministically.
  */
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -25,13 +25,30 @@ const USER_ID = 'user-watch-pair-test';
 // ---------------------------------------------------------------------------
 
 const mockDbInsertValues = vi.fn(async () => []);
+// These handler tests assume an active account. Admission has its own suites
+// (deletion-credential-admission and admission-read-coalescer).
+vi.mock('../auth/admission-read-coalescer', () => ({
+  createAdmissionCoalescer: () => async () => true,
+}));
+
 vi.mock('../db/client', () => {
   const insertChain = { values: (...args: unknown[]) => mockDbInsertValues(...args) };
-  return {
-    db: {
-      insert: vi.fn(() => insertChain),
+  const selection = {
+    from: () => selection,
+    leftJoin: () => selection,
+    where: () => selection,
+    limit: () => {
+      const rows = [{ id: USER_ID, deletedAt: null }];
+      return Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) });
     },
   };
+  const database = {
+    select: vi.fn(() => selection),
+    insert: vi.fn(() => insertChain),
+    execute: async () => [{ transaction_isolation: 'read committed' }],
+    transaction: async (callback: (transaction: unknown) => unknown) => callback(database),
+  };
+  return { db: database };
 });
 
 vi.mock('../handlers/cors', () => ({
@@ -45,14 +62,24 @@ vi.mock('../middleware/auth', () => ({
 
 const isRedisConnectedMock = vi.fn(() => true);
 const redisSetMock = vi.fn(async () => 'OK');
-const redisGetdelMock = vi.fn(async () => USER_ID);
+let pendingPairOwner: string | null = USER_ID;
+const redisGetMock = vi.fn(async () => pendingPairOwner);
+const redisCompareDeleteMock = vi.fn(
+  async (_script: string, _keyCount: number, _key: string, expectedOwner: string) => {
+    if (pendingPairOwner !== expectedOwner) return null;
+    const owner = pendingPairOwner;
+    pendingPairOwner = null;
+    return owner;
+  },
+);
 vi.mock('../redis/client', () => ({
   redisClientManager: {
     isRedisConnected: () => isRedisConnectedMock(),
     getClients: () => ({
       publisher: {
         set: (...args: unknown[]) => redisSetMock(...args),
-        getdel: (...args: unknown[]) => redisGetdelMock(...args),
+        get: (...args: unknown[]) => redisGetMock(...args),
+        eval: (...args: unknown[]) => redisCompareDeleteMock(...args),
       },
     }),
   },
@@ -210,7 +237,8 @@ describe('handleWatchPair', () => {
     vi.clearAllMocks();
     __resetNativeAuthStateForTests();
     isRedisConnectedMock.mockReturnValue(true);
-    redisGetdelMock.mockResolvedValue(USER_ID);
+    pendingPairOwner = USER_ID;
+    redisGetMock.mockImplementation(async () => pendingPairOwner);
     mockDbInsertValues.mockResolvedValue([]);
   });
 
@@ -227,7 +255,7 @@ describe('handleWatchPair', () => {
   it('returns 400 for a wrong-length code', async () => {
     const res = await runPair({ method: 'POST', body: { code: '123' } });
     expect(res.statusCode).toBe(400);
-    expect(redisGetdelMock).not.toHaveBeenCalled();
+    expect(redisGetMock).not.toHaveBeenCalled();
   });
 
   it('returns 503 when Redis is unavailable', async () => {
@@ -236,21 +264,21 @@ describe('handleWatchPair', () => {
     expect(res.statusCode).toBe(503);
   });
 
-  it('returns 401 for an invalid or expired code (GETDEL miss)', async () => {
-    redisGetdelMock.mockResolvedValue(null);
+  it('returns 401 for an invalid or expired code (lookup miss)', async () => {
+    pendingPairOwner = null;
     const res = await runPair({ method: 'POST', body: { code: 'ABCD2345' } });
     expect(res.statusCode).toBe(401);
   });
 
-  it('exchanges a valid code for a token pair (single-use GETDEL)', async () => {
+  it('exchanges a valid code for a token pair (single-use atomic comparison)', async () => {
     const res = await runPair({ method: 'POST', body: { code: 'ABCD2345' } });
     expect(res.statusCode).toBe(200);
     const parsed = JSON.parse(res.body);
     expect(typeof parsed.jwt).toBe('string');
     expect(typeof parsed.refreshToken).toBe('string');
     expect(typeof parsed.expiresAt).toBe('string');
-    expect(redisGetdelMock).toHaveBeenCalledOnce();
-    expect(String(redisGetdelMock.mock.calls[0][0])).toBe('boardsesh:watch:pair:ABCD2345');
+    expect(redisCompareDeleteMock).toHaveBeenCalledOnce();
+    expect(String(redisCompareDeleteMock.mock.calls[0][2])).toBe('boardsesh:watch:pair:ABCD2345');
     // generateTokenPair persisted a refresh token.
     expect(mockDbInsertValues).toHaveBeenCalledOnce();
   });
@@ -258,13 +286,13 @@ describe('handleWatchPair', () => {
   it('normalizes hand entry (lowercase + separators) before lookup', async () => {
     const res = await runPair({ method: 'POST', body: { code: 'abcd-2345' } });
     expect(res.statusCode).toBe(200);
-    expect(String(redisGetdelMock.mock.calls[0][0])).toBe('boardsesh:watch:pair:ABCD2345');
+    expect(String(redisCompareDeleteMock.mock.calls[0][2])).toBe('boardsesh:watch:pair:ABCD2345');
   });
 
   it('mints the token pair for the user the code was bound to', async () => {
     // The code maps (in Redis) to a specific userId; the JWT must be minted for
     // exactly that user, not the fixture default.
-    redisGetdelMock.mockResolvedValue('bound-user-xyz');
+    pendingPairOwner = 'bound-user-xyz';
     const res = await runPair({ method: 'POST', body: { code: 'ABCD2345' } });
     expect(res.statusCode).toBe(200);
     const parsed = JSON.parse(res.body);

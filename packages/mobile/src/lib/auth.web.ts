@@ -341,6 +341,9 @@ async function resolveCookieOwnership(departingIdentity: WebAuthIdentity | null)
   } catch (error) {
     throw new Error('Could not verify the browser session to sign out', { cause: error });
   }
+  // During an outage the session read answers 503. Carry on to the POST: its
+  // expected identity still binds the sign-out to the departing login.
+  if (response.status === 503) return departingIdentity === null ? 'changed' : 'owned';
   if (!response.ok) throw new Error(`Could not verify the browser session to sign out: HTTP ${response.status}`);
 
   let responseBody: Record<string, unknown>;

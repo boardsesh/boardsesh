@@ -338,8 +338,33 @@ describe('NextAuth cookie fetch lock', () => {
     expect(getSessionMock).toHaveBeenCalledOnce();
   });
 
+  it('still signs out when the session read is unavailable, bound to the displayed login', async () => {
+    const requestLock = vi.fn(
+      async (
+        _name: string,
+        _options: LockOptions,
+        operation: (lock: Lock | null) => PromiseLike<Response> | Response,
+      ) => operation(null),
+    );
+    vi.stubGlobal('navigator', { locks: { request: requestLock } });
+    originalFetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: 'csrf-1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ url: 'https://boardsesh.test/current' }), { status: 200 }));
+
+    await guardedNextAuthSignOut(
+      { userId: 'user-1', authSessionId: 'login-1' },
+      { callbackUrl: 'https://boardsesh.test/current', redirect: false },
+    );
+
+    expect(originalFetchMock).toHaveBeenCalledTimes(3);
+    const postBody = new URLSearchParams(originalFetchMock.mock.calls[2]?.[1]?.body as URLSearchParams);
+    expect(postBody.get('expectedUserId')).toBe('user-1');
+    expect(postBody.get('expectedAuthSessionId')).toBe('login-1');
+  });
+
   it.each([
-    ['unavailable', new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 })],
+    ['failing', new Response(JSON.stringify({ error: 'failed' }), { status: 500 })],
     ['malformed', new Response(JSON.stringify({ user: 'invalid' }), { status: 200 })],
   ])('throws when the session endpoint is %s', async (_caseName, sessionResponse) => {
     const requestLock = vi.fn(

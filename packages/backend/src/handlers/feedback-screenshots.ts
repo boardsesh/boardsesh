@@ -6,7 +6,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import { FEEDBACK_SCREENSHOT_MAX_UPLOAD_BYTES, FEEDBACK_SCREENSHOT_PREFIX } from '@boardsesh/shared-schema';
 import { applyCorsHeaders } from './cors';
 import { guardUploadFileStream } from './http-utils';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import { extractAuthTokenFromHeader, formatByteCapForMessage, GYM_IMAGE_ALLOWED_MIME_TYPES } from './gym-image-upload';
 import { detectImageMimeType, MIME_TO_EXT } from '../lib/image-mime';
@@ -116,7 +116,9 @@ export async function handleFeedbackScreenshotUpload(req: IncomingMessage, res: 
     return;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return;
+  const authResult = admission.auth;
   if (!authResult) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid or expired token' }));

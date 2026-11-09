@@ -5,7 +5,7 @@ import { applyCorsHeaders } from './cors';
 import { guardUploadFileStream } from './http-utils';
 import { extractAuthTokenFromHeader, formatByteCapForMessage } from './gym-image-upload';
 import { detectImageMimeType } from '../lib/image-mime';
-import { validateToken } from '../middleware/auth';
+import { validateHttpAuthToken } from './auth-admission';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
 
@@ -98,7 +98,9 @@ export async function handleSprayWallTestDataUpload(req: IncomingMessage, res: S
     return;
   }
 
-  const authResult = await validateToken(token);
+  const admission = await validateHttpAuthToken(token, res);
+  if (!admission.available) return;
+  const authResult = admission.auth;
   if (!authResult) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid or expired token' }));

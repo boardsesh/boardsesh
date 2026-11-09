@@ -16,7 +16,8 @@ const { constructorOptions, backend } = vi.hoisted(() => ({
 
 vi.mock('server-only', () => ({}));
 
-vi.mock('graphql-request', () => ({
+vi.mock('graphql-request', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('graphql-request')>()),
   GraphQLClient: class {
     constructor(
       public url: string,

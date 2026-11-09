@@ -1,6 +1,7 @@
 import { createYoga } from 'graphql-yoga';
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
+import { isAuthAdmissionUnavailable } from '../auth/human-admission';
 import * as Sentry from '@sentry/node';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { schema } from './index';
@@ -36,7 +37,14 @@ async function authenticateHttpBearer(authHeader: string | null): Promise<AuthRe
   const token = bearerMatch[1]?.trim() ?? '';
   // Preserve the deployed transport contract: an invalid or expired optional
   // credential degrades to anonymous so public operations remain available.
-  return token ? validateToken(token) : null;
+  try {
+    return token ? await validateToken(token) : null;
+  } catch (error) {
+    if (!isAuthAdmissionUnavailable(error)) throw error;
+    throw new GraphQLError('Authentication is temporarily unavailable', {
+      extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+    });
+  }
 }
 
 /**

@@ -11,6 +11,7 @@ import { useAuth } from '../providers/auth-provider';
 import { useKeyboardHeight } from '../hooks/use-keyboard-height';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { useDeleteAccount, useDeleteAccountInfo } from '../lib/graphql/hooks';
+import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { borderRadius, spacing } from '../theme/tokens';
 import { reportError } from '../lib/error-reporting';
 import { Text, type TextVariant } from './Text';
@@ -83,17 +84,36 @@ export function DeleteAccountScreen() {
     // the delete through here would submit removeSetterName:false and leave the
     // setter name on preserved climbs without the user ever seeing the choice.
     if (!isConfirmed || isDeleting || infoQuery.isLoading) return;
+    const credentialGeneration = captureAuthCredentialGeneration();
     let accountDeleted = false;
     try {
       setIsDeleting(true);
-      await deleteAccount.mutateAsync({ input: { removeSetterName } });
+      const deletion = await deleteAccount.mutateAsync({ input: { removeSetterName }, credentialGeneration });
+      if (!deletion.deleted) throw new Error('Account deletion was not confirmed');
       accountDeleted = true;
+      if (!isAuthCredentialGenerationCurrent(deletion.intent.credentialGeneration)) {
+        setConfirmText('');
+        setRemoveSetterName(false);
+        setIsDeleting(false);
+        return;
+      }
       // Account gone — sign out. The auth provider clears local state and flips
       // isAuthenticated → false, which redirects to /auth/login (no manual nav).
       // signOut's revoke is best-effort, so this resolves even though the
       // session was just deleted server-side.
-      await signOut('account_deleted');
+      await signOut('account_deleted', deletion.intent);
+      // A newer owner may have won at the provider's own async guard. If the
+      // screen remains mounted, require a new confirmation for that owner.
+      setConfirmText('');
+      setRemoveSetterName(false);
+      setIsDeleting(false);
     } catch (error) {
+      if (!isAuthCredentialGenerationCurrent(credentialGeneration)) {
+        setConfirmText('');
+        setRemoveSetterName(false);
+        setIsDeleting(false);
+        return;
+      }
       reportError(error);
       // The account is already gone; only the local sign-out cleanup failed.
       // Showing a "deletion failed" toast or re-enabling the form would be

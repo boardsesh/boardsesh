@@ -11,6 +11,8 @@ import { roomManager } from '../services/room-manager';
 import { kilterLiveSync } from '../services/kilter-live-sync';
 import { pubsub } from '../pubsub/index';
 import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
+import { activeHumanSubjectIds, AUTH_ADMISSION_BATCH_SIZE, isAuthAdmissionUnavailable } from '../auth/human-admission';
+import { selectSweepBatches } from './admission-sweep-batches';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from './client-ip';
 import { tryAcquireAnonConnectionSlot, releaseAnonConnectionSlot } from './connection-cap';
@@ -34,6 +36,7 @@ const DEBUG = process.env.NODE_ENV === 'development';
 
 /** Ping interval in milliseconds for detecting dead WebSocket connections. */
 const WS_PING_INTERVAL_MS = 30_000;
+export const WS_HUMAN_ADMISSION_SWEEP_INTERVAL_MS = 1000;
 
 /** WebSocket extended with liveness tracking for ping/pong. */
 type AliveWebSocket = {
@@ -119,6 +122,99 @@ export function setupWebSocketServer(httpServer: HttpServer): {
     },
   });
 
+  // Raw credentials stay private to this server instance, never in the public
+  // GraphQL context or logs. Admission is rechecked even when crypto is cached.
+  const humanBindings = new Map<WebSocket, { context: ConnectionContext; token: string; userId: string }>();
+  const closeAdmission = (socket: WebSocket, unavailable: boolean) => {
+    if (socket.readyState === socket.OPEN) {
+      socket.close(
+        unavailable ? 1013 : 4401,
+        unavailable ? 'Authentication is temporarily unavailable' : 'Authentication is required',
+      );
+    }
+  };
+  const checkHumanConnection = async (ctx: ServerContext): Promise<'admitted' | 'denied' | 'unavailable'> => {
+    if (!ctx.extra.context?.isAuthenticated) return 'admitted';
+    const socket = ctx.extra.socket,
+      binding = humanBindings.get(socket);
+    if (!binding) {
+      closeAdmission(socket, true);
+      return 'unavailable';
+    }
+    try {
+      const auth = await validateToken(binding.token);
+      // Never deliver an old operation's result to a replacement context.
+      if (
+        humanBindings.get(socket) !== binding ||
+        getContext(binding.context.connectionId) !== binding.context ||
+        binding.context.userId !== binding.userId
+      )
+        return 'unavailable';
+      if (!auth || auth.userId !== binding.userId) {
+        closeAdmission(socket, false);
+        return 'denied';
+      }
+      return 'admitted';
+    } catch {
+      // graphql-ws treats an operation error as final, so a refused subscription
+      // would never come back. Closing lets the client reconnect and resubscribe.
+      if (humanBindings.get(socket) === binding) closeAdmission(socket, true);
+      return 'unavailable';
+    }
+  };
+  let sweeping = false;
+  let sweepOutageLogged = false;
+  let sweepBatchOffset = 0;
+  const admissionSweep = setInterval(() => {
+    if (sweeping) return;
+    sweeping = true;
+    const captured = [...humanBindings.entries()];
+    const userIds = [...new Set(captured.map(([, binding]) => binding.userId))];
+    const batches: string[][] = [];
+    for (let offset = 0; offset < userIds.length; offset += AUTH_ADMISSION_BATCH_SIZE)
+      batches.push(userIds.slice(offset, offset + AUTH_ADMISSION_BATCH_SIZE));
+    const { roundBatches, nextOffset } = selectSweepBatches(batches, sweepBatchOffset);
+    sweepBatchOffset = nextOffset;
+    let roundFailed = false;
+    // Start batches together: capacity pressure fails unavailable immediately,
+    // rather than accumulating one read deadline per sequential batch.
+    void Promise.all(
+      roundBatches.map(async (requestedIds) => {
+        const requested = new Set(requestedIds);
+        let admitted: ReadonlySet<string>;
+        try {
+          admitted = await activeHumanSubjectIds(requestedIds);
+        } catch {
+          // A failed read proves nothing about these accounts, and a primary that
+          // cannot answer cannot commit a deletion either. Leave them connected.
+          roundFailed = true;
+          return;
+        }
+        for (const [socket, binding] of captured) {
+          if (
+            !requested.has(binding.userId) ||
+            humanBindings.get(socket) !== binding ||
+            getContext(binding.context.connectionId) !== binding.context ||
+            binding.context.userId !== binding.userId
+          )
+            continue;
+          if (!admitted.has(binding.userId)) closeAdmission(socket, false);
+        }
+      }),
+    ).finally(() => {
+      sweeping = false;
+      if (roundFailed && !sweepOutageLogged) {
+        logger.warn('[ws] admission sweep could not read the primary; keeping connections open');
+      }
+      sweepOutageLogged = roundFailed;
+    });
+  }, WS_HUMAN_ADMISSION_SWEEP_INTERVAL_MS);
+  admissionSweep.unref();
+  wss.once('close', () => {
+    clearInterval(admissionSweep);
+    humanBindings.clear();
+  });
+
   // Use graphql-ws server
   useServer<Record<string, unknown>, CustomExtra>(
     {
@@ -136,7 +232,14 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         let credentialExpiresAt: number | undefined;
 
         if (token !== null) {
-          const authResult = await validateToken(token);
+          let authResult;
+          try {
+            authResult = await validateToken(token);
+          } catch (error) {
+            if (!isAuthAdmissionUnavailable(error)) throw error;
+            closeAdmission(ctx.extra.socket, true);
+            return false;
+          }
           if (authResult) {
             isAuthenticated = true;
             authenticatedUserId = authResult.userId;
@@ -310,6 +413,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
 
         // Store context in ctx.extra for access in other hooks
         ctx.extra.context = context;
+        if (isAuthenticated && authenticatedUserId && token) {
+          humanBindings.set(ctx.extra.socket, { context, token, userId: authenticatedUserId });
+        }
 
         // First-party active-user count (#2644). Browsers can't set headers on a
         // WebSocket upgrade, so the connection param comes first; the header is
@@ -407,7 +513,15 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           releaseAnonConnectionSlot(context.connectionId);
         }
       },
-      onSubscribe: (_ctx: ServerContext, _id: string, payload) => {
+      onSubscribe: async (ctx: ServerContext, _id: string, payload) => {
+        const admission = await checkHumanConnection(ctx);
+        if (admission !== 'admitted')
+          return [
+            new GraphQLError(
+              admission === 'unavailable' ? 'Authentication is temporarily unavailable' : 'Authentication is required',
+              { extensions: { code: admission === 'unavailable' ? 'SERVICE_UNAVAILABLE' : 'UNAUTHENTICATED' } },
+            ),
+          ];
         // Block this HTTP-only credential before parsing/coercing a document;
         // graphql-ws otherwise sends its original validation errors to clients.
         if (payload.query.includes('exchangeAppleAdsAttribution')) {
@@ -436,6 +550,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           }
         }
       },
+      // No admission read per delivery: the sweep closes a deleted account's socket
+      // within a second, and a read here would make every live update wait on the
+      // primary.
       onNext: (_ctx: ServerContext, _id: string, payload, _executionArgs, result) =>
         sanitizeBoardShareResult(result, payload.query),
       onError: (_ctx: ServerContext, _id: string, payload, errors) => {
@@ -467,6 +584,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
   // This interval pings every client; if it doesn't respond before the next ping,
   // the socket is terminated, which triggers onDisconnect and cleans up Redis state.
   wss.on('connection', (ws: WebSocket) => {
+    ws.once('close', () => humanBindings.delete(ws));
     const aliveWs = ws as AliveWebSocket;
     aliveWs.isAlive = true;
     aliveWs.on('pong', () => {

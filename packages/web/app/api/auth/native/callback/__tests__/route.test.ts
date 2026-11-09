@@ -1,7 +1,9 @@
+vi.mock('server-only', () => ({}));
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
-import { getServerSession } from 'next-auth/next';
+import { getAdmittedServerSession as getServerSession } from '@/app/lib/auth/admitted-session.server';
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import {
   issueNativeOAuthTransferToken,
   issueNativeOAuthAttempt,
@@ -9,8 +11,8 @@ import {
 } from '@/app/lib/auth/native-oauth-transfer';
 
 // Mock dependencies before importing the route handler
-vi.mock('next-auth/next', () => ({
-  getServerSession: vi.fn(),
+vi.mock('@/app/lib/auth/admitted-session.server', () => ({
+  getAdmittedServerSession: vi.fn(),
 }));
 
 vi.mock('@/app/lib/auth/auth-options', () => ({
@@ -88,7 +90,7 @@ describe('GET /api/auth/native/callback', () => {
       provider: 'apple',
       attemptId,
     });
-    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 
   it.each(['old-session', 'same-millisecond-session', 'wrong-provider', 'wrong-session', 'wrong-attempt'] as const)(
@@ -120,6 +122,14 @@ describe('GET /api/auth/native/callback', () => {
     },
   );
 
+  it('returns to the app with an error when the session cannot be verified', async () => {
+    mockedGetServerSession.mockRejectedValue(new CredentialAuthorityUnavailable());
+
+    const response = await GET(createRequest('http://localhost:3000/api/auth/native/callback?next=/'));
+
+    expect(await extractDeepLink(response)).toContain('error=session_unavailable');
+  });
+
   it('returns HTML redirect with error when session is missing', async () => {
     mockedGetServerSession.mockResolvedValue(null);
 
@@ -131,7 +141,10 @@ describe('GET /api/auth/native/callback', () => {
   });
 
   it('returns HTML redirect with error when session has no user id', async () => {
-    mockedGetServerSession.mockResolvedValue({ user: { email: 'test@test.com' } });
+    mockedGetServerSession.mockResolvedValue({
+      user: { id: '', email: 'test@test.com' },
+      expires: '2099-01-01T00:00:00.000Z',
+    });
 
     const response = await GET(createRequest('/api/auth/native/callback?next=/'));
 
@@ -142,6 +155,7 @@ describe('GET /api/auth/native/callback', () => {
   it('returns HTML redirect with transfer token on success', async () => {
     mockedGetServerSession.mockResolvedValue({
       user: { id: 'user_123', email: 'test@test.com' },
+      expires: '2099-01-01T00:00:00.000Z',
     });
     mockedIssueToken.mockReturnValue('test-transfer-token');
 
@@ -162,6 +176,7 @@ describe('GET /api/auth/native/callback', () => {
   it('sanitizes non-relative next path to root', async () => {
     mockedGetServerSession.mockResolvedValue({
       user: { id: 'user_123', email: 'test@test.com' },
+      expires: '2099-01-01T00:00:00.000Z',
     });
     mockedIssueToken.mockReturnValue('token');
 
@@ -177,6 +192,7 @@ describe('GET /api/auth/native/callback', () => {
   it('defaults next path to root when missing', async () => {
     mockedGetServerSession.mockResolvedValue({
       user: { id: 'user_123', email: 'test@test.com' },
+      expires: '2099-01-01T00:00:00.000Z',
     });
     mockedIssueToken.mockReturnValue('token');
 
@@ -191,6 +207,7 @@ describe('GET /api/auth/native/callback', () => {
   it('returns HTML redirect with error when token issuance throws', async () => {
     mockedGetServerSession.mockResolvedValue({
       user: { id: 'user_123', email: 'test@test.com' },
+      expires: '2099-01-01T00:00:00.000Z',
     });
     mockedIssueToken.mockImplementation(() => {
       throw new Error('NEXTAUTH_SECRET not set');
