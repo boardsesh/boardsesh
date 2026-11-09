@@ -401,6 +401,15 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.authSessionId = randomUUID();
         delete token.nativeOAuthCreationProof;
+        // Epoch seconds of the sign-in. Only this branch sees a completed sign-in, so
+        // a cookie rotation neither sets nor moves it and a cookie from before this
+        // claim stays without one, which readers must treat as "age unknown". A native
+        // transfer hands over a login made elsewhere, so it never claims a fresh one.
+        if (account && account.provider !== 'native-oauth') {
+          token.auth_time = Math.floor(Date.now() / 1000);
+        } else {
+          delete token.auth_time;
+        }
         // Only this completed provider sign-in knows whether its adapter created a user.
         if ((account?.provider === 'apple' || account?.provider === 'google') && typeof isNewUser === 'boolean') {
           try {
