@@ -1702,7 +1702,7 @@ export function BluetoothProvider({
   const reportSprayLedFailure = useCallback(() => {
     showToast(sprayTranslationRef.current('sprayLed.lightFailed'), 'error');
   }, [showToast]);
-  const { send: sendSprayLedFrames, stop: stopSprayLedFrames } = useSprayLedRouteSender({
+  const { send: sendSprayLedFrames, release: releaseSprayLedFrames } = useSprayLedRouteSender({
     boardName,
     layoutId,
     colorOverrides: bluetoothColorOverrides,
@@ -1808,7 +1808,9 @@ export function BluetoothProvider({
       wallOperationEpochRef.current += 1;
       virtualWallHoldRef.current = null;
       virtualHold.controller.abort();
-      stopSprayLedFrames();
+      // Letting go leaves the lights alone, as a Bluetooth hang-up does. After a
+      // takeover they are already the next climber's.
+      releaseSprayLedFrames();
       virtualWallHeldRef.current = false;
       setVirtualWallHeld(false);
       pendingReportSignatureRef.current = null;
@@ -1846,7 +1848,7 @@ export function BluetoothProvider({
         boardId: boardId ?? undefined,
       });
     },
-    [clearPendingWallReportAndUndoToastArm, noLightKit, wallDevice, showToast, stopSprayLedFrames, tSession],
+    [clearPendingWallReportAndUndoToastArm, noLightKit, wallDevice, showToast, releaseSprayLedFrames, tSession],
   );
 
   const releaseVirtualWallForUser = useCallback(() => releaseVirtualWall('user'), [releaseVirtualWall]);

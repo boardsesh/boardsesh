@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   show: vi.fn(),
   clear: vi.fn(),
   close: vi.fn(),
+  detach: vi.fn(),
   create: vi.fn(),
   invalidate: vi.fn(),
   failure: vi.fn(),
@@ -113,7 +114,8 @@ beforeEach(() => {
   mocks.show.mockResolvedValue(true);
   mocks.clear.mockResolvedValue(true);
   mocks.close.mockResolvedValue(undefined);
-  mocks.create.mockReturnValue({ show: mocks.show, clear: mocks.clear, close: mocks.close });
+  mocks.detach.mockResolvedValue(undefined);
+  mocks.create.mockReturnValue({ show: mocks.show, clear: mocks.clear, close: mocks.close, detach: mocks.detach });
 });
 afterEach(cleanup);
 
@@ -233,10 +235,54 @@ describe('spray route transport', () => {
     rerender({ id: 43 });
     complete(true);
     expect(await pending).toBe(false);
-    expect(mocks.close).toHaveBeenCalledTimes(1);
+    expect(mocks.detach).toHaveBeenCalledTimes(1);
+    expect(mocks.close).not.toHaveBeenCalled();
   });
 
-  it('aborts in-flight writes and closes on background and credential change', async () => {
+  it('keeps the wall lit through a lock and does not rewrite it on return', async () => {
+    const { result } = renderHook(() => useSender());
+    expect(await result.current.send('p7r1')).toBe(true);
+    mocks.invalidate.mockClear();
+    act(() => mocks.background?.('inactive'));
+    act(() => mocks.background?.('background'));
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.detach).not.toHaveBeenCalled();
+    act(() => mocks.background?.('active'));
+    expect(mocks.invalidate).not.toHaveBeenCalled();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps lighting climbs while the app is in the background', async () => {
+    const { result } = renderHook(() => useSender());
+    act(() => mocks.background?.('background'));
+    expect(await result.current.send('p7r1')).toBe(true);
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a write that failed while away once, without a toast', async () => {
+    const { result } = renderHook(() => useSender());
+    act(() => mocks.background?.('background'));
+    mocks.show.mockRejectedValueOnce(new Error('suspended'));
+    expect(await result.current.send('p7r1')).toBe(false);
+    expect(mocks.failure).not.toHaveBeenCalled();
+    expect(mocks.close).not.toHaveBeenCalled();
+    act(() => mocks.background?.('active'));
+    expect(mocks.invalidate).toHaveBeenCalledWith(true);
+    mocks.invalidate.mockClear();
+    act(() => mocks.background?.('background'));
+    act(() => mocks.background?.('active'));
+    expect(mocks.invalidate).not.toHaveBeenCalled();
+  });
+
+  it('lets go of the wall without touching its lights', async () => {
+    const { result } = renderHook(() => useSender());
+    expect(await result.current.send('p7r1')).toBe(true);
+    act(() => result.current.release());
+    expect(mocks.detach).toHaveBeenCalledTimes(1);
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it('aborts in-flight writes and closes on a credential change', async () => {
     let complete!: (answer: boolean) => void;
     mocks.show.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -251,10 +297,6 @@ describe('spray route transport', () => {
     complete(true);
     expect(await pending).toBe(false);
     expect(mocks.close).toHaveBeenCalledTimes(1);
-    act(() => mocks.background?.('background'));
-    expect(await result.current.send('p7r1')).toBe(false);
-    act(() => mocks.background?.('active'));
-    expect(mocks.invalidate).toHaveBeenLastCalledWith(true);
     expect(await result.current.send('p7r1')).toBe(true);
     act(() => {
       mocks.credential++;

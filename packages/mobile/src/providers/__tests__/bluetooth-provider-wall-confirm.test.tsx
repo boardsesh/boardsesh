@@ -12,7 +12,7 @@ import type { CurrentChangeClock } from '../../lib/ble/stale-current-hold';
 import { setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
 
 vi.mock('../../lib/spray/use-spray-led-route-sender', () => {
-  const sender = { send: async () => null, stop: () => undefined };
+  const sender = { send: async () => null, release: () => undefined };
   return { useSprayLedRouteSender: () => sender };
 });
 

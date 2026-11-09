@@ -19,6 +19,12 @@ export function createLedPreviewSession(driver: LedControllerDriver, controllerU
   const token = Symbol('LED preview');
   let generation = 0;
   let closed = false;
+  let leavesLights = false;
+
+  function leaveLane() {
+    lane.users--;
+    if (lane.users === 0 && lanes.get(url) === lane) lanes.delete(url);
+  }
 
   function enqueue(operation: () => Promise<boolean>) {
     const pending = lane.tail.catch(() => undefined).then(operation);
@@ -39,6 +45,7 @@ export function createLedPreviewSession(driver: LedControllerDriver, controllerU
         await operation(transport);
         return !closed && request === generation && lane.owner === token;
       } catch (error) {
+        if (leavesLights) throw error;
         // The device may have applied a command whose response was lost. Clear
         // after that request settles, never concurrently with an in-flight POST.
         try {
@@ -86,8 +93,24 @@ export function createLedPreviewSession(driver: LedControllerDriver, controllerU
       try {
         await stop();
       } finally {
-        lane.users--;
-        if (lane.users === 0 && lanes.get(url) === lane) lanes.delete(url);
+        leaveLane();
+      }
+    },
+    /** Let go and leave the wall as it is: what is lit may be another phone's by now. */
+    async detach() {
+      if (closed) return;
+      closed = true;
+      leavesLights = true;
+      try {
+        await enqueue(async () => {
+          if (lane.owner === token) {
+            lane.owner = null;
+            lane.transport = null;
+          }
+          return false;
+        });
+      } finally {
+        leaveLane();
       }
     },
   };

@@ -330,6 +330,41 @@ describe('serialized LED preview ownership', () => {
     expect(commands().at(-1)).toMatchObject({ on: false });
   });
 
+  it('letting go leaves the lights on and the next session wakes the controller', async () => {
+    const { driver, commands } = fixture();
+    const first = createLedPreviewSession(driver, 'letgo.local');
+    await first.show([1]);
+    const count = commands().length;
+    await first.detach();
+    expect(commands()).toHaveLength(count);
+    expect(first.isOwner()).toBe(false);
+    expect(await first.show([2])).toBe(false);
+    expect(commands()).toHaveLength(count);
+    const next = createLedPreviewSession(driver, 'letgo.local');
+    expect(await next.show([3])).toBe(true);
+    expect(commands()[count]).toMatchObject({ on: true });
+  });
+
+  it('does not blank the wall when a write in flight fails after letting go', async () => {
+    const { fetchController, driver, commands } = fixture();
+    const session = createLedPreviewSession(driver, 'inflight.local');
+    await session.show([1]);
+    let failWrite: (() => void) | undefined;
+    fetchController.mockImplementationOnce(
+      () =>
+        new Promise<Response>((_resolve, reject) => {
+          failWrite = () => reject(new Error('lost'));
+        }),
+    );
+    const writing = session.show([2]);
+    await vi.waitFor(() => expect(failWrite).toBeDefined());
+    const letGo = session.detach();
+    failWrite?.();
+    await expect(writing).rejects.toThrow();
+    await letGo;
+    expect(commands().filter((command) => command.on === false)).toHaveLength(0);
+  });
+
   it('a stop superseded immediately by a selection does not drop the selection', async () => {
     const { driver, commands } = fixture();
     const session = createLedPreviewSession(driver, 'superseded.local');

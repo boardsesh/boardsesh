@@ -87,9 +87,13 @@ An incomplete or stale setup produces an error instead of confirming the route.
 The setup photo identity must match the current wall version and calibration.
 Mirrored spray routes are rejected because the wall has no defined mirror map.
 
-Clear, release, backgrounding, account changes and access withdrawal cancel the
-owned lighting session. Changes to the saved layout or controller settings clear
-the old session and refresh the next route write. A controller acknowledgement
+Spray LEDs follow the Bluetooth boards: locking the phone or backgrounding the
+app leaves the climb lit, and a write that fails while away is retried on
+return. Releasing the wall, another climber taking it and switching boards let
+go without touching the lights. Clear, account changes and access withdrawal end
+the owned lighting session and turn the LEDs off. Changes to the saved layout or
+controller settings clear the old session and refresh the next route write. A
+controller acknowledgement
 is required before the existing wall-presence flow reports a successful write.
 The setup test remains white and can take control of the same serialized lane.
 

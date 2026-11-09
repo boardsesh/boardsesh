@@ -19,7 +19,11 @@ import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 type RouteRuntime = { wallUuid: string; url: string; session: LedPreviewSession };
 
-/** LAN writes share the normal wall commit path and require a deliberate wall hold. */
+/**
+ * LAN writes share the normal wall commit path and require a deliberate wall
+ * hold. As on a Bluetooth board, locking the phone or letting go of the wall
+ * leaves the climb lit; only a clear, or a change that makes it wrong, ends it.
+ */
 export function useSprayLedRouteSender({
   boardName,
   layoutId,
@@ -36,7 +40,10 @@ export function useSprayLedRouteSender({
   const queryClient = useQueryClient();
   const runtime = useRef<RouteRuntime | null>(null);
   const requestGeneration = useRef(0);
-  const foreground = useRef(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
+  // `inactive` (Control Center, a call overlay) still has the climber looking at
+  // the app, the same split `isAppActive` makes for Bluetooth writes.
+  const away = useRef(AppState.currentState === 'background');
+  const missedWhileAway = useRef(false);
   const mounted = useRef(true);
   const invalidate = useRef(onInvalidated);
   invalidate.current = onInvalidated;
@@ -48,19 +55,23 @@ export function useSprayLedRouteSender({
   const colors = useRef(colorOverrides);
   colors.current = colorOverrides;
 
-  const stop = useCallback(() => {
+  const stop = useCallback((lights: 'off' | 'leave' = 'off') => {
     requestGeneration.current++;
+    missedWhileAway.current = false;
     const previous = runtime.current;
     runtime.current = null;
-    if (previous) void previous.session.close().catch(() => undefined);
+    if (previous) {
+      void (lights === 'off' ? previous.session.close() : previous.session.detach()).catch(() => undefined);
+    }
     if (mounted.current) invalidate.current();
   }, []);
+  const release = useCallback(() => stop('leave'), [stop]);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      stop();
+      stop('leave');
     };
   }, [stop]);
 
@@ -76,16 +87,17 @@ export function useSprayLedRouteSender({
       if (withdrawnLayout == null || withdrawnLayout === layoutId) stop();
     });
     const background = AppState.addEventListener('change', (next) => {
-      foreground.current = next === 'active';
-      if (!foreground.current) stop();
-      else invalidate.current(true);
+      away.current = next === 'background';
+      if (away.current || !missedWhileAway.current) return;
+      missedWhileAway.current = false;
+      invalidate.current(true);
     });
     return () => {
       configuration();
       credentials();
       withdrawals();
       background.remove();
-      stop();
+      stop('leave');
     };
   }, [boardName, layoutId, stop]);
 
@@ -99,7 +111,6 @@ export function useSprayLedRouteSender({
       const configuration = `${boardName}:${layoutId}`;
       const isCurrent = () =>
         mounted.current &&
-        foreground.current &&
         !signal?.aborted &&
         requestGeneration.current === generation &&
         config.current === configuration &&
@@ -109,8 +120,16 @@ export function useSprayLedRouteSender({
       if (!isCurrent()) return false;
       let enabled = false;
       const fail = () => {
-        if (enabled && isCurrent()) failure.current?.();
+        if (!enabled || !isCurrent()) return false;
+        // Nobody reads a toast on a locked phone. The write is retried on return.
+        if (away.current) missedWhileAway.current = true;
+        else failure.current?.();
         return false;
+      };
+      const settled = (acknowledged: boolean) => {
+        if (!acknowledged || !isCurrent()) return false;
+        missedWhileAway.current = false;
+        return true;
       };
       const abort = () => {
         if (requestGeneration.current === generation) stop();
@@ -148,10 +167,7 @@ export function useSprayLedRouteSender({
           };
           runtime.current = current;
         }
-        if (!frames) {
-          const cleared = await current.session.clear();
-          return cleared && isCurrent();
-        }
+        if (!frames) return settled(await current.session.clear());
         const [payload, layout] = await Promise.all([
           fetchSprayWallRenderData(queryClient, wallUuid),
           loadSprayWallTnutLayout(wallUuid),
@@ -180,12 +196,12 @@ export function useSprayLedRouteSender({
           }
         }
         if (!isCurrent()) return false;
-        const written = await current.session.show([...pixels.keys()], [...pixels.values()]);
-        return written && isCurrent();
+        return settled(await current.session.show([...pixels.keys()], [...pixels.values()]));
       } catch {
         if (isCurrent()) {
           fail();
-          stop();
+          // Away, the wall is left alone until the retry on return.
+          if (!away.current) stop();
         }
         return false;
       } finally {
@@ -195,5 +211,5 @@ export function useSprayLedRouteSender({
     [boardName, layoutId, queryClient, stop],
   );
 
-  return { send, stop };
+  return { send, release };
 }

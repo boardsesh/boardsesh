@@ -40,7 +40,7 @@ const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const haptics = vi.hoisted(() => ({ hapticLight: vi.fn(), hapticSuccess: vi.fn(), hapticError: vi.fn() }));
 const lan = vi.hoisted(() => ({
   send: vi.fn<(...arguments_: unknown[]) => Promise<boolean | null>>(async () => null),
-  stop: vi.fn(),
+  release: vi.fn(),
   invalidate: null as ((retry?: boolean) => void) | null,
 }));
 vi.mock('../../lib/spray/use-spray-led-route-sender', () => ({
@@ -268,7 +268,7 @@ function renderProvider(options?: Parameters<typeof providerElement>[0]) {
 beforeEach(() => {
   lan.send.mockReset();
   lan.send.mockResolvedValue(null);
-  lan.stop.mockClear();
+  lan.release.mockClear();
   queue.items = [];
   presence.lastConnectionSeq = 0;
   presence.currentClimb = null;
@@ -433,7 +433,7 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     expect(lan.send).toHaveBeenCalledWith('p7r1', undefined, undefined);
     expect(lan.send).toHaveBeenLastCalledWith('', false, undefined);
     await act(async () => capturedBluetooth?.releaseVirtualWall());
-    expect(lan.stop).toHaveBeenCalledTimes(1);
+    expect(lan.release).toHaveBeenCalledTimes(1);
   });
 
   it('reasserts identical frames after the setup configuration changes', async () => {
@@ -459,7 +459,7 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     await act(async () => capturedBluetooth?.releaseVirtualWall());
     await act(async () => complete(true));
     await settle();
-    expect(lan.stop).toHaveBeenCalledTimes(1);
+    expect(lan.release).toHaveBeenCalledTimes(1);
     expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
   });
 
