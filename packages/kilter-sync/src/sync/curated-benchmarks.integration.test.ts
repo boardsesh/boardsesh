@@ -126,15 +126,17 @@ describeIntegration('applyCuratedBenchmarks', () => {
     await inRolledBackTransaction(async (tx) => {
       const ownerId = uuid('OWNER');
       await tx.insert(users).values({ id: ownerId, email: `${ownerId}@example.com` });
-      for (const name of ['OFFICIAL', 'FALLBACK', 'LEGACYKEPT', 'LEGACYGONE', 'NANROW']) await seedClimb(tx, name);
+      for (const name of ['OFFICIAL', 'FALLBACK', 'LEGACYKEPT', 'LEGACYGONE', 'NANROW', 'CASING'])
+        await seedClimb(tx, name);
       await seedClimb(tx, 'USEROWNED', { userId: ownerId });
 
       await seedStat(tx, 'OFFICIAL', 40, 18); // official grade replaces it
-      await seedStat(tx, 'OFFICIAL', 50, null); // same climb, angle not on the list
+      await seedStat(tx, 'OFFICIAL', 50, 19); // same climb, angle not on the list: cleared
       await seedStat(tx, 'FALLBACK', 40, null); // no official grade: takes the current grade
       await seedStat(tx, 'LEGACYKEPT', 40, 25); // no official grade: keeps its value
       await seedStat(tx, 'LEGACYGONE', 40, 22); // not on the list: cleared
       await seedStat(tx, 'NANROW', 40, Number.NaN); // NaN is not a real mark
+      await seedStat(tx, 'CASING', 40, null); // Kilter sends this uuid in lower case
       await seedStat(tx, 'USEROWNED', 40, 21); // never ours to touch
 
       const stats = [
@@ -142,6 +144,7 @@ describeIntegration('applyCuratedBenchmarks', () => {
         curated('FALLBACK', 40, 21),
         curated('LEGACYKEPT', 40, 24),
         curated('NANROW', 40, 17),
+        { ...curated('CASING', 40, 18), climbUuid: uuid('CASING').toLowerCase() },
         curated('NOTINBOARDSESH', 40, 20),
         curated('USEROWNED', 40, 20, 26),
       ];
@@ -157,6 +160,7 @@ describeIntegration('applyCuratedBenchmarks', () => {
       expect(after.get('LEGACYKEPT@40')?.benchmark_difficulty).toBe(25);
       expect(after.get('LEGACYGONE@40')?.benchmark_difficulty).toBeNull();
       expect(after.get('NANROW@40')?.benchmark_difficulty).toBe(17);
+      expect(after.get('CASING@40')?.benchmark_difficulty).toBe(18);
       expect(after.get('USEROWNED@40')?.benchmark_difficulty).toBe(21);
 
       // Clients pull on sync_seq, so a changed row has to move it.

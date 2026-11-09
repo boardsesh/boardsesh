@@ -203,13 +203,13 @@ Wire JSON is **camelCase**. Across 19 listed layouts the catalog is ~424k climbs
 
 ### Verified climbs
 
-Kilter's app marks some problems "Verified" and has no benchmarks. We store Verified in `board_climb_stats.benchmark_difficulty`, so search, the offline mirror and every row reader work unchanged, and the app shows the word Verified on Kilter.
+Kilter's app marks some problems "Verified" and has no benchmarks. We store Verified in `board_climb_stats.benchmark_difficulty`, so search, the offline mirror and every row reader work unchanged. The mobile app says Verified on Kilter through `BoardCapabilities.benchmarkTerm`.
 
 `sync/curated-benchmarks.ts` runs on every catalog pass, after the layouts:
 
 - **Source:** `climbStats` from `/api/climbs/curated`. It is per angle, so a climb can be Verified at 40° and not at 50°.
 - **Value:** Kilter's `officialKilterDifficulty` when it gives one, else the value the row already holds, else its current grade. Keeping the stored value stops a row with no official grade from rewriting each hour as its crowd grade drifts.
-- **Clearing:** Kilter's list is the only source for this column on Kilter, so a marked row it no longer lists goes back to NULL. Old values stay in `board_climb_stats_history`.
+- **Clearing:** Kilter's list is the only source for this column on Kilter, so a marked row it no longer lists goes back to NULL. The weekly `board_climb_stats_history` snapshot keeps past values for rows with ascents, and all 627 legacy Aurora values were confirmed there on 2026-11-09.
 - **Scope:** only `user_id IS NULL` climbs. A repeat pass writes 0 rows, so unchanged rows never bump `sync_seq`.
 - **Safety:** a failed or malformed response skips the pass. A list resolving to fewer than `MIN_CURATED_ANGLE_ROWS` rows (2,500; it was 5,006 on 2026-11-09) is refused and logged as `REFUSING Verified marks`. If Kilter really shrinks the list, lower the constant.
 

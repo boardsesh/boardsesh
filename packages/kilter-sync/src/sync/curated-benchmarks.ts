@@ -15,8 +15,8 @@ import type { CatalogWriteRunner } from './catalog-sync';
  * `/api/climbs/curated` lists them per angle. We store that in the benchmark
  * column, so filters, the offline mirror and every row reader work unchanged, and
  * the app labels it Verified on Kilter. Kilter's list is the only source for this
- * column on Kilter: a row it does not list is cleared. Cleared values stay in
- * `board_climb_stats_history`.
+ * column on Kilter: a row it does not list is cleared. The weekly
+ * `board_climb_stats_history` snapshot keeps past values for rows with ascents.
  *
  * No other Kilter writer touches the column (`kilterStatsConflictSet` leaves it
  * out, and the Aurora sync refuses Kilter), so this pass owns it.
