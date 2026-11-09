@@ -396,9 +396,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
                   onPress={() => setSkipText(String(gapCount || 1))}
                 />
               </View>
-              {gapCount ? (
-                <Text color={brandColors.error}>{t('sprayLedSetup.gapLabel', { count: gapCount })}</Text>
-              ) : null}
+              {gapCount ? <Text>{t('sprayLedSetup.gapLabel', { count: gapCount })}</Text> : null}
             </>
           ) : null}
           {skipText !== null ? (

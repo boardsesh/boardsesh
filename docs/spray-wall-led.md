@@ -68,14 +68,18 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    drawing extends the last cable section. Choose **Select two LEDs** to cut a
    connection, reconnect free endpoints or edit the skipped LED count between
    adjacent positions. Set that count to zero to remove the gap. Lay cable and
-   Light and tap only extend the cable's end, so they are disabled while every
+   Light and tap only extend the cable's end, so they are hidden while every
    LED is already on the cable (a generated horizontal or vertical run, or a
-   finished custom one); a cut keeps every LED on a section, so rerouting is Cut
-   and Connect. Orange marks show holes, purple marks LEDs, turquoise lines the
-   cable and red markers the skipped LEDs. A green ring and arrow mark where the
-   cable starts, a turquoise ring where it ends (where laying continues), and red
-   rings the section ends a cut left unconnected. Direction arrows, numbered positions and highlighted selections
-   make the order visible. Undo restores edits. **Light selected LEDs** is an
+   finished custom one), and a note explains that rerouting is Cut and Connect
+   under Select two LEDs (a cut keeps every LED on a section). The legend
+   follows the photo, one meaning per colour: purple dots are LEDs; the
+   turquoise line is the cable, with arrows for its direction; a green ring and
+   larger green arrow mark where it starts and a turquoise ring where it ends
+   (where laying continues); small turquoise dots on a cable segment are its
+   skipped LEDs; a red ring is a loose end a cut left unconnected; faint orange
+   rings are holes. A selected LED gets a larger purple ring, and the selection
+   is listed below the photo by cable position (for example 3 → 4). Undo
+   restores edits. **Light selected LEDs** is an
    optional physical preview of the selected positions using their assigned
    WLED indices, including initial and intermediate skips.
 11. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the

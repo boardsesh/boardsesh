@@ -1508,7 +1508,7 @@
     "initialSkipLabel": "LEDs am Kabelanfang überspringen",
     "skipCountRange": "Gib eine ganze Zahl von 0 bis {{max}} ein.",
     "cancelSkip": "Abbrechen",
-    "wiringLegend": "Orange: Bohrlöcher. Lila: LEDs. Türkis: Kabel. Grün: Anfang des Kabels. Türkiser Ring: Ende des Kabels. Roter Ring: nicht verbundene Kabelenden. Rot: übersprungene LEDs.",
+    "wiringLegend": "Lila: LEDs. Türkis: das Kabel; die Pfeile zeigen seine Richtung. Grüner Ring: Kabelanfang. Türkiser Ring: Kabelende. Kleine Punkte auf dem Kabel: übersprungene LEDs. Roter Ring: loses Ende zum Verbinden. Blasses Orange: Bohrlöcher.",
     "holdLedsTitle": "Griffe und LEDs",
     "holdLedsHint": "Prüfe vor dem Verlegen des Kabels, welche LEDs zu jedem Griff gehören. Tippe auf einen Griff, um seine LEDs zu sehen; stimmen sie nicht, tippe auf LEDs, um sie dem Griff hinzuzufügen oder wegzunehmen. Rot umrandete Griffe haben keine LED.",
     "holdLedsSummary": "Griffe mit LEDs {{linked}} / {{total}}",

@@ -47,7 +47,7 @@ type OverlayProps = {
   selectedHoldIds?: number[];
   selectedHoles?: TnutPoint[];
 };
-const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', onPrimary: '#fff' };
+const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', success: '#0a7', onPrimary: '#fff' };
 
 /** Rebuild serialized worklets in a separate VM, never call their JS closures.
  * A normal function captured by React Compiler is a remote JS function on the
@@ -197,23 +197,26 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     expect(shapes).toHaveLength(10);
     const atOne = evaluated(shapes);
     expect(atOne[0]).toMatchObject({ d: 'M60 150L180 150', stroke: '#0891B2', strokeWidth: 2 });
-    expect(atOne[1]).toMatchObject({ d: 'M180 150L180 400', stroke: palette.error });
+    // Skipped LEDs stay in the cable colour; red is only for loose ends.
+    expect(atOne[1]).toMatchObject({ d: 'M180 150L180 400', stroke: '#0891B2' });
     // The only drawn edge starts the cable, so its arrow moves to the larger start arrow.
     expect(atOne[2].d).toBe('');
-    expect(atOne[6].d).toBe('M52 150a8 8 0 1 0 16 0a8 8 0 1 0 -16 0');
+    expect(atOne[6]).toMatchObject({ d: 'M52 150a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: palette.success });
+    expect(atOne[7].stroke).toBe(palette.success);
     expectPathCoordinates(atOne[7].d, [124, 155, 132, 150, 124, 145]);
     expect(atOne[3].d?.match(/M/g)).toHaveLength(2);
     expect(atOne[3].d).toContain(`M177 ${150 + 250 / 3}a3 3`);
-    expect(atOne[3].fill).toBe(palette.error);
+    expect(atOne[3].fill).toBe('#0891B2');
     expect(atOne[4]).toMatchObject({
       d: 'M27 100a3 3 0 1 0 6 0a3 3 0 1 0 -6 0',
       fill: 'none',
       stroke: palette.warning,
     });
     expect(atOne[5].d).toContain('M56 150a4 4');
-    // The cable's end, where laying continues, gets a purple ring.
+    // The cable's end, where laying continues, gets a ring in the cable colour.
+    // Purple rings are only for the selection (atOne[9]).
     expect(atOne[8]).toMatchObject({ d: 'M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: '#0891B2' });
-    expect(atOne[9].d).toBe('M170 150a10 10 0 1 0 20 0a10 10 0 1 0 -20 0');
+    expect(atOne[9]).toMatchObject({ d: 'M170 150a10 10 0 1 0 20 0a10 10 0 1 0 -20 0', stroke: palette.primary });
     initial.zoom.value = 3;
     initial.panY.value = 100;
     const atThree = evaluated(shapes);

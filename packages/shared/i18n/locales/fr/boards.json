@@ -1508,7 +1508,7 @@
     "initialSkipLabel": "LED à sauter au début du câble",
     "skipCountRange": "Saisis un nombre entier de 0 à {{max}}.",
     "cancelSkip": "Annuler",
-    "wiringLegend": "Orange : trous de fixation. Violet : LED. Turquoise : câble. Vert : début du câble. Anneau turquoise : fin du câble. Anneau rouge : extrémités non reliées. Rouge : LED sautées.",
+    "wiringLegend": "Violet : LED. Turquoise : le câble ; les flèches montrent son sens. Anneau vert : son début. Anneau turquoise : sa fin. Petits points sur le câble : LED sautées. Anneau rouge : extrémité libre à relier. Orange pâle : trous de fixation.",
     "holdLedsTitle": "Prises et LED",
     "holdLedsHint": "Vérifie quelles LED appartiennent à chaque prise avant de poser le câble. Touche une prise pour voir ses LED ; si elles sont fausses, touche des LED pour les ajouter à la prise ou les lui retirer. Les prises au contour rouge n’ont pas de LED.",
     "holdLedsSummary": "Prises avec LED {{linked}} / {{total}}",

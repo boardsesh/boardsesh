@@ -7,7 +7,8 @@ import { useTheme } from '../../providers/theme-provider';
 import type { SprayLiveDrag } from './SprayPhotoCanvas';
 import { cableEndpoints } from './spray-cable-endpoints';
 const AnimatedPath = Animated.createAnimatedComponent(Path);
-// Cable colour is separate from the orange holes and violet addressable LEDs.
+// Cable colour is separate from the orange holes and violet LEDs. Skipped LEDs are
+// small dots in the cable colour, so red stays for loose ends that need fixing.
 export const SPRAY_CABLE_COLOR = '#0891B2';
 type Edge = { from: TnutPoint; to: TnutPoint; skip: number; first: boolean };
 export type SprayHoldRing = { id: number; points: TnutPoint[] };
@@ -312,9 +313,9 @@ export function SpraySetupOverlay({
   return (
     <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
       <AnimatedPath animatedProps={cableProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
-      <AnimatedPath animatedProps={gapLineProps} fill="none" stroke={brandColors.error} strokeWidth={2} />
+      <AnimatedPath animatedProps={gapLineProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
       <AnimatedPath animatedProps={arrowProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
-      <AnimatedPath animatedProps={gapProps} fill={brandColors.error} stroke={brandColors.onPrimary} strokeWidth={1} />
+      <AnimatedPath animatedProps={gapProps} fill={SPRAY_CABLE_COLOR} stroke={brandColors.onPrimary} strokeWidth={1} />
       <AnimatedPath
         animatedProps={holeProps}
         fill="none"

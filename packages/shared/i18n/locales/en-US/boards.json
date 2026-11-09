@@ -1508,7 +1508,7 @@
     "initialSkipLabel": "LEDs to skip at the cable start",
     "skipCountRange": "Enter a whole number from 0 to {{max}}.",
     "cancelSkip": "Cancel",
-    "wiringLegend": "Orange: mounting holes. Purple: LEDs. Turquoise: cable. Green: where the cable starts. Turquoise ring: where the cable ends. Red ring: cable ends not connected. Red: skipped LEDs.",
+    "wiringLegend": "Purple: LEDs. Turquoise: the cable; arrows show its direction. Green ring: where it starts. Turquoise ring: where it ends. Small dots on the cable: skipped LEDs. Red ring: loose end to connect. Faint orange: holes.",
     "holdLedsTitle": "Holds and LEDs",
     "holdLedsHint": "Check which LEDs belong to each hold before laying the cable. Tap a hold to see its LEDs; if they are wrong, tap LEDs to add them to the hold or take them away. Holds outlined in red have no LED.",
     "holdLedsSummary": "Holds with LEDs {{linked}} / {{total}}",
