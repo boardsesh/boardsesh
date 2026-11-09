@@ -257,7 +257,7 @@ describe('stateless encrypted Apple continuation', () => {
       vi.stubEnv('NEXTAUTH_URL', 'https://other.example.test');
       const cookie = [fixture.signedState, ...fixture.continuation].join('; ');
       await expect(
-        resumeAppleOAuthCallback(request('GET', cookie, undefined, bindOrigin, fixture.scope), base, fixture.scope),
+        resumeAppleOAuthCallback(request('GET', cookie, undefined, origin, fixture.scope), base, fixture.scope),
       ).rejects.toThrow(AUTH_BACKEND_UNAVAILABLE);
     });
 
