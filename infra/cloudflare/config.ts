@@ -778,8 +778,8 @@ export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_T
  * - Browser strings are untouched: real climbers arrive as `Mozilla/…`, and a
  *   `Mozilla/…` string only matches when it names itself (`compatible;
  *   Googlebot/2.1`).
- * - Health, `/.well-known/` and the two API surfaces are exempt — see
- *   AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS in crawler-policy.ts.
+ * - Health, `/.well-known/`, the API surfaces and the partner OAuth pages are
+ *   exempt — see AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS in crawler-policy.ts.
  *
  * Registered between the allow rule and the challenge, which must stay last.
  */

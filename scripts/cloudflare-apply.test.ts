@@ -1299,11 +1299,32 @@ describe('automation default-deny (allow-list model)', () => {
   it('leaves health, .well-known and the API surfaces alone', () => {
     // mobile-ota-production.yml polls ws /health with bare curl while it waits
     // for the backend; a 403 there would stall every OTA publish.
-    for (const path of ['/health', '/health/db', '/api/health', '/robots.txt']) {
+    const localeSegments = ['es', 'fr', 'de', 'it'];
+    for (const path of [
+      '/health',
+      '/health/db',
+      '/api/health',
+      '/robots.txt',
+      '/developers',
+      ...localeSegments.map((localeSegment) => `/${localeSegment}/developers`),
+    ]) {
       expect(defaultDenyRule.expression).toContain(`http.request.uri.path eq "${path}"`);
       expect(isBlockedCrawler('curl/8.9.1', { method: 'GET', pathname: path })).toBe(false);
     }
-    for (const prefix of ['/.well-known/', '/api/v1/', '/v1/partner/']) {
+    for (const prefix of [
+      '/.well-known/',
+      '/api/v1/',
+      '/v1/',
+      '/api/auth/oauth2/',
+      '/oauth/',
+      '/developers/',
+      '/auth/login',
+      ...localeSegments.flatMap((localeSegment) => [
+        `/${localeSegment}/oauth/`,
+        `/${localeSegment}/developers/`,
+        `/${localeSegment}/auth/login`,
+      ]),
+    ]) {
       expect(defaultDenyRule.expression).toContain(`starts_with(http.request.uri.path, "${prefix}")`);
       expect(isBlockedCrawler('Go-http-client/1.1', { method: 'GET', pathname: `${prefix}x` })).toBe(false);
     }
@@ -1322,6 +1343,10 @@ describe('automation default-deny (allow-list model)', () => {
     expect(rules.indexOf(blockRule)).toBeLessThan(rules.indexOf(defaultDenyRule));
     expect(rules.indexOf(defaultDenyRule)).toBeLessThan(rules.indexOf(challengeRule));
     expect(rules.indexOf(challengeRule)).toBe(rules.length - 1);
+  });
+
+  it('stays inside the 4096-character ruleset expression limit', () => {
+    expect(defaultDenyRule.expression.length).toBeLessThan(4096);
   });
 
   it('balances its parentheses', () => {
