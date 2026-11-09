@@ -62,13 +62,22 @@ vi.mock('@/app/lib/db/schema', () => ({
 
 import { POST } from '../route';
 
-function createRequest(body: Record<string, unknown>, origin = 'http://localhost'): NextRequest {
+function createRequest(
+  body: Record<string, unknown>,
+  origin = 'http://localhost',
+  headers: Record<string, string> = {},
+): NextRequest {
   return new NextRequest(`${origin}/api/auth/forgot-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
 }
+
+const edgeHeaders = {
+  'X-Forwarded-For': '198.51.100.7, 203.0.113.9, 172.70.1.2',
+  'CF-Connecting-IP': '203.0.113.9',
+};
 
 describe('POST /api/auth/forgot-password', () => {
   beforeEach(() => {
@@ -82,6 +91,27 @@ describe('POST /api/auth/forgot-password', () => {
 
     const response = await POST(createRequest({ email: 'test@example.com' }));
     expect(response.status).toBe(429);
+  });
+
+  it('keys the staged limiter on the trusted client, not the first forwarded hop', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    try {
+      mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
+      const response = await POST(createRequest({ email: 'test@example.com' }, undefined, edgeHeaders));
+      expect(response.status).toBe(429);
+      expect(mockCheckRateLimit).toHaveBeenCalledWith('forgot-password:203.0.113.9', 5, 60_000);
+      expect(mockGetClientIp).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps the legacy limiter key when staged auth is off', async () => {
+    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
+    const response = await POST(createRequest({ email: 'test@example.com' }, undefined, edgeHeaders));
+    expect(response.status).toBe(429);
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('forgot-password:127.0.0.1', 5, 60_000);
+    expect(mockGetClientIp).toHaveBeenCalledOnce();
   });
 
   it('returns 400 for invalid email', async () => {

@@ -41,7 +41,12 @@ const submitted = {
 function request(operation: 'forgot-password' | 'reset-password', body: unknown, raw = false) {
   return new NextRequest(`https://www.boardsesh.test/api/auth/${operation}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: 'next-auth.session-token=existing-sibling' },
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: 'next-auth.session-token=existing-sibling',
+      'X-Forwarded-For': '198.51.100.7, 203.0.113.9, 172.70.1.2',
+      'CF-Connecting-IP': '203.0.113.9',
+    },
     body: raw ? String(body) : JSON.stringify(body),
   });
 }
@@ -182,7 +187,7 @@ describe('actual public recovery routes with strict backend delegation', () => {
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).toBe('30');
     expect(mocks.rate).toHaveBeenCalledWith(
-      `${route === forgot ? 'forgot-password' : 'reset-password'}:owned-ip`,
+      route === forgot ? 'forgot-password:203.0.113.9' : 'reset-password:owned-ip',
       5,
       60_000,
     );

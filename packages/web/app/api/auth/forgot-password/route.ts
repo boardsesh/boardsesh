@@ -13,6 +13,7 @@ import {
   passwordRecoveryUnavailableResponse,
 } from '@/app/lib/auth/password-recovery-command.server';
 import { withEmailVerificationPrivacy } from '@/app/lib/auth/email-verification-response.server';
+import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
 
 const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -30,7 +31,8 @@ async function handleForgotPassword(request: NextRequest) {
   let staged = false;
 
   try {
-    const clientIp = getClientIp(request);
+    // The staged budget is shared by every caller, so its key must not be forgeable.
+    const clientIp = stagedPasswordClientKey(request) ?? getClientIp(request);
     // NOTE: checkRateLimit is in-memory and not shared across serverless instances.
     // This provides best-effort protection only. Add Redis/Upstash rate limiting
     // before relying on this as a production security control.
