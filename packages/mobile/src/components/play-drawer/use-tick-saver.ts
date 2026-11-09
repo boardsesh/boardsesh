@@ -81,6 +81,10 @@ export type TickSaveFields = {
   baseAscensionistCount?: number;
   /** The picked difficulty's grade name, for analytics only. */
   gradeName?: string | null;
+  /** Tick sheet only (#7343): the climber picked an angle other than the one the sheet opened at. */
+  angleChanged?: boolean;
+  /** Tick sheet only (#7343): the climber edited the timestamp. */
+  dateChanged?: boolean;
   /**
    * The queue item this tick is meant for, when the caller knows it better than
    * the wall does: a one-tap Fell / Sent just after the wall moved on is for the
@@ -232,6 +236,8 @@ export function useTickSaver({
               difficulty: fields.difficulty,
               grade: fields.gradeName ?? null,
               hasComment: fields.comment.length > 0,
+              ...(fields.angleChanged !== undefined ? { angleChanged: fields.angleChanged } : {}),
+              ...(fields.dateChanged !== undefined ? { dateChanged: fields.dateChanged } : {}),
             });
             const landedAtMs = nowMs();
             // No haptic here: the caller's saved toast plays the success haptic.

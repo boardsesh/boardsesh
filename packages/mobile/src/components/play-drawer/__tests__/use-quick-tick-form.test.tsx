@@ -614,6 +614,59 @@ describe('useQuickTickForm analytics', () => {
     // (same onSuccess as TickLogged) companions are gone.
     expect(vi.mocked(track).mock.calls.map(([eventName]) => eventName)).toEqual(['Tick Logged']);
   });
+
+  // #7343: a baseline for how often climbers touch the Angle and Date rows.
+  it('sends angleChanged and dateChanged as false when the form is untouched', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(track).toHaveBeenCalledWith(
+      SHARED_EVENTS.TickLogged,
+      expect.objectContaining({ angleChanged: false, dateChanged: false }),
+    );
+  });
+
+  it('sends angleChanged true when the picked angle differs from the opening one', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('angle-45'));
+    fireEvent.click(getByTestId('save'));
+
+    expect(track).toHaveBeenCalledWith(
+      SHARED_EVENTS.TickLogged,
+      expect.objectContaining({ angleChanged: true, dateChanged: false }),
+    );
+  });
+
+  it('sends dateChanged true when the climber edits the timestamp', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('climbedat-date'));
+    fireEvent.click(getByTestId('save'));
+
+    expect(track).toHaveBeenCalledWith(
+      SHARED_EVENTS.TickLogged,
+      expect.objectContaining({ angleChanged: false, dateChanged: true }),
+    );
+  });
+
+  it('carries angleChanged and dateChanged on an Attempt too', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('angle-45'));
+    fireEvent.click(getByTestId('climbedat-date'));
+    fireEvent.click(getByTestId('attempt'));
+
+    expect(track).toHaveBeenCalledWith(
+      SHARED_EVENTS.TickLogged,
+      expect.objectContaining({ status: 'attempt', angleChanged: true, dateChanged: true }),
+    );
+  });
 });
 
 // #6023: the server picks which version of the climb a tick is on, so the
