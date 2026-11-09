@@ -12,6 +12,7 @@ import {
   passwordCommandUnavailableResponse,
   registerWithPasswordCommand,
 } from '@/app/lib/auth/register-password-command.server';
+import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
 
 const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
@@ -26,8 +27,9 @@ const registerSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting - 10 requests per minute per IP for registration
-    const clientIp = getClientIp(request);
+    // Rate limiting - 10 requests per minute per IP for registration. The staged
+    // budget is shared by every caller, so its key must not be forgeable.
+    const clientIp = stagedPasswordClientKey(request) ?? getClientIp(request);
     const rateLimitResult = checkRateLimit(`register:${clientIp}`, 10, 60_000);
 
     if (rateLimitResult.limited) {

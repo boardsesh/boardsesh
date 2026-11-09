@@ -60,13 +60,22 @@ vi.mock('@/app/lib/db/schema', () => ({
 
 import { POST } from '../route';
 
-function createRequest(body: Record<string, unknown>, origin = 'http://localhost'): NextRequest {
+function createRequest(
+  body: Record<string, unknown>,
+  origin = 'http://localhost',
+  headers: Record<string, string> = {},
+): NextRequest {
   return new NextRequest(`${origin}/api/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
 }
+
+const edgeHeaders = {
+  'X-Forwarded-For': '198.51.100.7, 203.0.113.9, 172.70.1.2',
+  'CF-Connecting-IP': '203.0.113.9',
+};
 
 describe('POST /api/auth/register', () => {
   beforeEach(() => {
@@ -82,6 +91,16 @@ describe('POST /api/auth/register', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+  });
+
+  it('keeps the legacy limiter key when staged auth is off', async () => {
+    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
+    const response = await POST(
+      createRequest({ email: 'limited@example.com', password: 'password123' }, undefined, edgeHeaders),
+    );
+    expect(response.status).toBe(429);
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('register:127.0.0.1', 10, 60_000);
+    expect(mockGetClientIp).toHaveBeenCalledOnce();
   });
 
   it.each(['0', '1'])('creates a public account with privacy controls enabled=%s', async (flag) => {
@@ -167,6 +186,18 @@ describe('backend-staging registration public adapter', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+  });
+  it('keys the staged limiter on the trusted client, not the first forwarded hop', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
+    const response = await POST(
+      createRequest({ email: 'limited@example.com', password: 'password123' }, undefined, edgeHeaders),
+    );
+    expect(response.status).toBe(429);
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('register:203.0.113.9', 10, 60_000);
+    expect(mockGetClientIp).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
   function backend(outcome: Record<string, unknown>, status: number) {
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {

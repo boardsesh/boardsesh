@@ -77,13 +77,24 @@ vi.mock('@/app/lib/db/schema', () => ({
 
 import { POST } from '../route';
 
-function createRequest(body: Record<string, unknown>): NextRequest {
+function createRequest(body: Record<string, unknown>, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest('http://localhost/api/auth/reset-password', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
 }
+
+const edgeHeaders = {
+  'X-Forwarded-For': '198.51.100.7, 203.0.113.9, 172.70.1.2',
+  'CF-Connecting-IP': '203.0.113.9',
+};
+const limitedSubmission = {
+  email: 'test@example.com',
+  token: '6f1c1f3e-8d7a-4b7e-9a35-3f4a1f0f2b11',
+  password: 'validpassword',
+  confirmPassword: 'validpassword',
+};
 
 describe('POST /api/auth/reset-password', () => {
   beforeEach(() => {
@@ -108,6 +119,27 @@ describe('POST /api/auth/reset-password', () => {
 
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).toBe('25');
+  });
+
+  it('keys the staged limiter on the trusted client, not the first forwarded hop', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    try {
+      mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 25 });
+      const response = await POST(createRequest(limitedSubmission, edgeHeaders));
+      expect(response.status).toBe(429);
+      expect(mockCheckRateLimit).toHaveBeenCalledWith('reset-password:203.0.113.9', 5, 60_000);
+      expect(mockGetClientIp).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps the legacy limiter key when staged auth is off', async () => {
+    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 25 });
+    const response = await POST(createRequest(limitedSubmission, edgeHeaders));
+    expect(response.status).toBe(429);
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('reset-password:127.0.0.1', 5, 60_000);
+    expect(mockGetClientIp).toHaveBeenCalledOnce();
   });
 
   it('returns 400 for invalid request body', async () => {
