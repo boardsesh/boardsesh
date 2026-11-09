@@ -11,6 +11,10 @@ manual changes). See docs/mobile-ota-updates.md.
 - Follow playlists and setters with one tap on a smaller icon ([#7344](https://github.com/boardsesh/boardsesh/pull/7344))
   Share any public playlist or setter with your crew
 
+### Fixed
+
+- Old sessions stop working after account deletion. Sign-in recovers when a connection outage clears. ([#7350](https://github.com/boardsesh/boardsesh/pull/7350))
+
 ## 2026-11-08
 
 ### New
