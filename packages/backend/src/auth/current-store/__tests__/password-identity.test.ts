@@ -3,16 +3,32 @@ import { IncomingMessage, type ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 import { compare, getRounds, hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vite-plus/test';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { mobileRefreshTokens, userCredentials, userProfiles, users } from '@boardsesh/db/schema/auth';
 import { db } from '../../../db/client';
 import { handleNativeAuthRegister, __resetNativeAuthStateForTests } from '../../../handlers/native-auth';
 import {
   authenticateCurrentStorePassword,
   insertCurrentStorePasswordIdentity,
+  matchCurrentStorePasswordCandidate,
   parseCurrentStorePasswordRegistration,
   prepareCurrentStorePasswordRegistration,
 } from '../password-identity';
+
+const comparedHashes = vi.hoisted(() => [] as string[]);
+vi.mock('bcryptjs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('bcryptjs')>();
+  return {
+    ...actual,
+    compare: (password: string, passwordHash: string) => {
+      comparedHashes.push(passwordHash);
+      return actual.compare(password, passwordHash);
+    },
+  };
+});
+beforeEach(() => {
+  comparedHashes.length = 0;
+});
 
 function registration(email: string, password: string, name?: string) {
   const parsed = parseCurrentStorePasswordRegistration({ email, password, name });
@@ -43,6 +59,22 @@ async function identityRows(userId: string) {
       .where(eq(mobileRefreshTokens.userId, userId)),
   };
 }
+
+describe('comparison for an address with no password', () => {
+  it('costs the same as a stored password on the shared comparison', async () => {
+    const prepared = await preparedRegistration(`${randomUUID()}@example.test`, 'any-owned-password');
+    expect(await matchCurrentStorePasswordCandidate([], 'submitted-password')).toBeNull();
+    expect(comparedHashes).toHaveLength(1);
+    expect(comparedHashes[0]).toHaveLength(60);
+    expect(getRounds(comparedHashes[0])).toBe(getRounds(prepared.passwordHash));
+  });
+
+  it('leaves released native login on its existing comparison', async () => {
+    expect(await authenticateCurrentStorePassword(db, `${randomUUID()}@example.test`, 'submitted')).toBeNull();
+    expect(comparedHashes).toHaveLength(1);
+    expect(getRounds(comparedHashes[0])).toBe(10);
+  });
+});
 
 describe('native password service over the current authoritative Postgres store', () => {
   it('preserves password bytes, bcrypt cost, native email/name preparation and profile defaults', async () => {
