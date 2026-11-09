@@ -56,6 +56,8 @@ type Flow = { state: string; scope: string; names: string[]; response: Response 
 let terminal: 'completed' | 'unavailable' | 'throw';
 let callbackInvocations = 0;
 let callbackUrlMaxAge: number | undefined;
+let clientAddress: string;
+let nextClientOctet = 1;
 const privateErrorMarker = 'owned-private-rpc-failure-marker';
 
 const invoke: Invocation = async (request, options) => {
@@ -107,18 +109,21 @@ const invoke: Invocation = async (request, options) => {
   return new Response(null, { status: 302, headers: { Location: `${origin}/signed-in` } });
 };
 
-async function start(jar: CookieJar): Promise<Flow> {
+function signIn(jar: CookieJar, forwardedFor = clientAddress, handler: Invocation = invoke) {
   const request = new NextRequest(`${origin}/api/auth/signin/google`, {
     method: 'POST',
-    headers: { Cookie: jar.header(), 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      Cookie: jar.header(),
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Forwarded-For': forwardedFor,
+    },
     body: 'csrfToken=owned-controlled-invoke',
   });
-  const response = await withWebOAuthIdentity(
-    request,
-    { params: Promise.resolve({ nextauth: ['signin', 'google'] }) },
-    base,
-    invoke,
-  );
+  return withWebOAuthIdentity(request, { params: Promise.resolve({ nextauth: ['signin', 'google'] }) }, base, handler);
+}
+
+async function start(jar: CookieJar, forwardedFor = clientAddress): Promise<Flow> {
+  const response = await signIn(jar, forwardedFor);
   const location = response.headers.get('Location');
   if (response.status !== 302 || !location) throw new Error('Owned flow initiation was unexpectedly denied');
   const state = new URL(location).searchParams.get('state');
@@ -171,6 +176,8 @@ function expectSessionUnchanged(jar: CookieJar, prior: [string, string][]) {
 
 beforeEach(() => {
   vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'backend-staging');
+  // A distinct address per case keeps the real per-client start limit in play.
+  clientAddress = `198.51.100.${nextClientOctet++}`;
   terminal = 'completed';
   callbackInvocations = 0;
   callbackUrlMaxAge = undefined;
@@ -187,6 +194,34 @@ beforeEach(() => {
   rpc.resolve.mockRejectedValue(new Error(privateErrorMarker));
 });
 afterEach(() => vi.unstubAllEnvs());
+
+describe('per-client OAuth start limit', () => {
+  it('stops one client before intent while another client keeps starting flows', async () => {
+    for (let attempt = 0; attempt < 20; attempt += 1) await start(new CookieJar());
+    expect(rpc.intent).toHaveBeenCalledTimes(20);
+
+    // A forged first hop cannot buy a fresh bucket: the ingress appends the real one last.
+    const limited = await signIn(new CookieJar(), `203.0.113.77, ${clientAddress}`);
+    expect(limited.status).toBe(303);
+    expect(new URL(limited.headers.get('Location') ?? '').searchParams.get('error')).toBe('AuthBackendUnavailable');
+    expect(limited.headers.getSetCookie()).toEqual([]);
+    expect(rpc.intent).toHaveBeenCalledTimes(20);
+
+    expect((await start(new CookieJar(), '198.51.100.250')).response.status).toBe(302);
+    expect(rpc.intent).toHaveBeenCalledTimes(21);
+  });
+
+  it('applies no limit in legacy mode', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'legacy');
+    const legacyHandler = vi.fn<Invocation>(
+      async () => new Response(null, { status: 302, headers: { Location: 'https://provider.example.test/authorize' } }),
+    );
+    for (let attempt = 0; attempt < 25; attempt += 1)
+      expect((await signIn(new CookieJar(), clientAddress, legacyHandler)).status).toBe(302);
+    expect(legacyHandler).toHaveBeenCalledTimes(25);
+    expect(rpc.intent).not.toHaveBeenCalled();
+  });
+});
 
 describe('validated OAuth flow retirement at the request wrapper', () => {
   it('retires three failed verified flows so a later initiation still fits the budget, retaining a chunked current login', async () => {

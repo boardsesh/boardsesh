@@ -18,12 +18,16 @@ import {
 } from './web-oauth-continuation.server';
 import { readExpoReturnForState, redirectExpoOAuthResponse } from './expo-web-oauth-return';
 import { PLAIN_SESSION_COOKIE_NAME, SECURE_SESSION_COOKIE_NAME } from './secure-cookies';
+import { checkRateLimit } from './rate-limiter';
+import { trustedClientRateLimitKey } from './trusted-client-ip.server';
 
 type RouteContext = { params: Promise<{ nextauth: string[] }> };
 type InvokeAuth = (request: NextRequest, options: NextAuthOptions) => Promise<Response>;
 const CONTINUATION_PARAM = 'boardseshOAuthContinue';
 const providers = new Set<string>(['google', 'apple', 'facebook']);
 const flowCookieKeys = ['state', 'pkceCodeVerifier', 'nonce', 'callbackUrl'] as const;
+/** Each anonymous start spends one slot of the backend's process-wide `intent` budget. */
+const OAUTH_STARTS_PER_CLIENT = 20;
 
 function boundedFlowCookies(base: NextAuthOptions, scope: string): NextAuthOptions['cookies'] {
   const cookies = scopedWebOAuthCookies(base, scope);
@@ -223,6 +227,8 @@ export async function withWebOAuthIdentity(
       const fields = await requestFields(request);
       json = fields.get('json') === 'true';
       assertFlowBudget(request, base);
+      const clientKey = trustedClientRateLimitKey(request);
+      if (checkRateLimit(`web-oauth-signin:${clientKey}`, OAUTH_STARTS_PER_CLIENT, 60_000).limited) return reject();
       const scope = createWebOAuthCookieScope();
       const options: NextAuthOptions = {
         ...base,
