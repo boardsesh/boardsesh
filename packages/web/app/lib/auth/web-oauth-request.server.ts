@@ -11,6 +11,7 @@ import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import {
   createWebOAuthCookieScope,
   findWebOAuthCallbackScope,
+  findWebOAuthFlowsToRetire,
   holdAppleOAuthCallback,
   readAppleOAuthCallbackState,
   resumeAppleOAuthCallback,
@@ -153,13 +154,6 @@ function singleState(fields: URLSearchParams): string {
   if (states.length !== 1 || !states[0] || states[0].length > 1024) return reject();
   return states[0];
 }
-function assertFlowBudget(request: NextRequest, base: NextAuthOptions): void {
-  const stateName = base.cookies?.state?.name;
-  if (!stateName) return reject();
-  const existing = (request.headers.get('cookie') ?? '').split(';').map((part) => part.trim().split('=')[0]);
-  if (existing.filter((name) => name.startsWith(`${stateName}.`)).length >= 2) return reject();
-}
-
 async function initiationState(response: Response): Promise<string | null> {
   let destination = response.headers.get('Location');
   if (!destination && /^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type') ?? '')) {
@@ -228,9 +222,9 @@ export async function withWebOAuthIdentity(
     if (action === 'signin') {
       const fields = await requestFields(request);
       json = fields.get('json') === 'true';
-      assertFlowBudget(request, base);
       const clientKey = trustedClientRateLimitKey(request);
       if (checkRateLimit(`web-oauth-signin:${clientKey}`, OAUTH_STARTS_PER_CLIENT, 60_000).limited) return reject();
+      const retiredScopes = await findWebOAuthFlowsToRetire(request, base);
       const scope = createWebOAuthCookieScope();
       const options: NextAuthOptions = {
         ...base,
@@ -246,6 +240,9 @@ export async function withWebOAuthIdentity(
       const flow = webOAuthFlowHash(provider, state);
       const reply = await createWebOAuthCommandClient().intent({ provider, flow, actorCookie });
       if (reply.outcome !== 'recorded') return reject();
+      // Only a flow that really started displaces an older one, so a refused or
+      // CSRF-rejected POST above has cleared nothing.
+      for (const retiredScope of retiredScopes) clearObservedFlowCookies(response, request, base, retiredScope);
       return response;
     }
 

@@ -14,6 +14,8 @@ const CONTINUATION_LIFETIME_SECONDS = 60;
 const MAX_BODY_BYTES = 4096;
 const MAX_COOKIE_CHUNK_BYTES = 3500;
 const BODY_TIMEOUT_MS = 2000;
+const MAX_PENDING_FLOWS = 2;
+const MAX_STATE_COOKIES = 8;
 const scopePattern = /^[a-f0-9]{32}$/;
 const flowCookieKeys = ['state', 'pkceCodeVerifier', 'nonce', 'callbackUrl'] as const;
 const continuationPayloadSchema = z
@@ -142,6 +144,47 @@ export async function findWebOAuthCallbackScope(
     return matches[0];
   } catch {
     throw new AuthBackendUnavailableError();
+  }
+}
+
+/**
+ * The scopes to retire, oldest first, so one more flow fits under the pending-flow
+ * cap. Only a state cookie this deployment sealed can nominate a flow for cleanup,
+ * and when those cannot make enough room the initiation is refused.
+ */
+export async function findWebOAuthFlowsToRetire(request: NextRequest, base: NextAuthOptions): Promise<string[]> {
+  try {
+    const prefix = `${flowCookie(base, 'state').name}.`;
+    const candidates = rawCookies(request).filter((cookie) => cookie.name.startsWith(prefix));
+    const retireCount = candidates.length - (MAX_PENDING_FLOWS - 1);
+    if (retireCount <= 0) return [];
+    requireCondition(candidates.length <= MAX_STATE_COOKIES);
+    requireCondition(new Set(candidates.map((cookie) => cookie.name)).size === candidates.length);
+    const authenticatedFlows: { scope: string; issuedAt: number }[] = [];
+    for (const candidate of candidates) {
+      const scope = candidate.name.slice(prefix.length);
+      if (!scopePattern.test(scope)) continue;
+      const issuedAt = await authenticatedStateIssuedAt(candidate, base);
+      if (issuedAt !== null) authenticatedFlows.push({ scope, issuedAt });
+    }
+    requireCondition(authenticatedFlows.length >= retireCount);
+    return authenticatedFlows
+      .sort((first, second) => first.issuedAt - second.issuedAt)
+      .slice(0, retireCount)
+      .map((flow) => flow.scope);
+  } catch {
+    throw new AuthBackendUnavailableError();
+  }
+}
+async function authenticatedStateIssuedAt(
+  cookie: { name: string; content: string | null },
+  base: NextAuthOptions,
+): Promise<number | null> {
+  try {
+    const claims = await decode({ token: decodedCookie(cookie.content), secret: secret(base), salt: cookie.name });
+    return claims && typeof claims.iat === 'number' && Number.isFinite(claims.iat) ? claims.iat : null;
+  } catch {
+    return null;
   }
 }
 

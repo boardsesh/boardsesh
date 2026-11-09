@@ -200,7 +200,97 @@ beforeEach(() => {
   }));
   rpc.resolve.mockRejectedValue(new Error(privateErrorMarker));
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
+describe('abandoned sign-ins at the two-flow cap', () => {
+  const stateCookieName = (scope: string) => `${base.cookies!.state!.name}.${scope}`;
+  async function twoAbandonedFlows(jar: CookieJar) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const oldest = await start(jar);
+    vi.setSystemTime(Date.now() + 5000);
+    const newest = await start(jar);
+    vi.setSystemTime(Date.now() + 5000);
+    return { oldest, newest };
+  }
+
+  it('retires the oldest abandoned flow so the next sign-in still starts', async () => {
+    const jar = new CookieJar();
+    const session = await seedCurrentSession(jar, true);
+    const { oldest, newest } = await twoAbandonedFlows(jar);
+    const newestValues = newest.names.map((name) => [name, jar.contents.get(name)] as const);
+    const third = await start(jar);
+    expect(deletionNames(third.response).sort()).toEqual([...oldest.names].sort());
+    expect(oldest.names.every((name) => !jar.contents.has(name))).toBe(true);
+    expect(newestValues.every(([name, content]) => jar.contents.get(name) === content)).toBe(true);
+    expect(third.names.every((name) => jar.contents.has(name))).toBe(true);
+    expect(rpc.intent).toHaveBeenCalledTimes(3);
+    expectSessionUnchanged(jar, session);
+  });
+
+  it('keeps retiring so repeated abandoned sign-ins never lock the browser out', async () => {
+    const jar = new CookieJar();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      expect((await start(jar)).response.status).toBe(302);
+      vi.setSystemTime(Date.now() + 2000);
+    }
+    expect([...jar.contents.keys()].filter((name) => name.startsWith(`${base.cookies!.state!.name}.`)).length).toBe(2);
+  });
+
+  it('picks the oldest by sealed issue time, not by cookie order', async () => {
+    const jar = new CookieJar();
+    const { oldest } = await twoAbandonedFlows(jar);
+    const reordered = new CookieJar();
+    for (const [name, content] of [...jar.contents].reverse()) reordered.contents.set(name, content);
+    const third = await start(reordered);
+    expect(deletionNames(third.response).sort()).toEqual([...oldest.names].sort());
+  });
+
+  it('refuses without clearing anything when forged state cookies cannot make room', async () => {
+    const jar = new CookieJar();
+    jar.contents.set(stateCookieName(randomBytes(16).toString('hex')), 'forged-state-value');
+    jar.contents.set(stateCookieName(randomBytes(16).toString('hex')), 'forged-state-value');
+    const response = await signIn(jar);
+    expect(response.status).toBe(303);
+    expect(new URL(response.headers.get('Location') ?? '').searchParams.get('error')).toBe('AuthBackendUnavailable');
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(rpc.intent).not.toHaveBeenCalled();
+  });
+
+  it('lets a sealed flow make room but never retires a forged cookie', async () => {
+    const jar = new CookieJar();
+    const authentic = await start(jar);
+    const forged = stateCookieName(randomBytes(16).toString('hex'));
+    jar.contents.set(forged, 'forged-state-value');
+    const third = await start(jar);
+    expect(deletionNames(third.response).sort()).toEqual([...authentic.names].sort());
+    expect(jar.contents.get(forged)).toBe('forged-state-value');
+  });
+
+  it('keeps both pending flows when the new sign-in is not recorded', async () => {
+    const jar = new CookieJar();
+    const { oldest, newest } = await twoAbandonedFlows(jar);
+    rpc.intent.mockRejectedValueOnce(new Error(privateErrorMarker));
+    const response = await signIn(jar);
+    expect(new URL(response.headers.get('Location') ?? '').searchParams.get('error')).toBe('AuthBackendUnavailable');
+    expect(deletionNames(response)).toEqual([]);
+    expect([...oldest.names, ...newest.names].every((name) => jar.contents.has(name))).toBe(true);
+  });
+
+  it('keeps both pending flows when the handler refuses before generating state', async () => {
+    const jar = new CookieJar();
+    await twoAbandonedFlows(jar);
+    const csrfRejected: Invocation = async () =>
+      new Response(null, { status: 302, headers: { Location: `${origin}/api/auth/signin?csrf=true` } });
+    const response = await signIn(jar, clientAddress, csrfRejected);
+    expect(response.status).toBe(302);
+    expect(deletionNames(response)).toEqual([]);
+    expect(rpc.intent).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('per-client OAuth start limit', () => {
   it('stops one client before intent while another client keeps starting flows', async () => {
