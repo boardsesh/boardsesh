@@ -58,6 +58,7 @@ import {
   logbookStatusLabel,
 } from './logbook-capsules';
 import type { LogbookBoardOption } from './use-logbook-board-options';
+import { isVerifiedBoard } from '../../lib/benchmark-term';
 
 type LogbookFilterSheetProps = {
   onDismiss: () => void;
@@ -312,6 +313,7 @@ export function LogbookFilterSheet({
 
   // --- The climb
   const selectedBoard = boardOptions.find((board) => board.boardType === filters.boardType);
+  const verifiedBoard = isVerifiedBoard(filters.boardType);
   const showBoardControl = boardOptions.length >= 2 || filters.boardType !== '';
   const boardChoices = useMemo(() => {
     const choices = boardOptions.map((board) => ({ value: board.boardType, label: board.label }));
@@ -589,9 +591,18 @@ export function LogbookFilterSheet({
               />
 
               <View style={filterSheetStyles.subsectionGap} />
-              <FilterLabelRow label={t('mobile.logbook.filterSheet.benchmarks')} {...pinProps('benchmarks')} />
+              <FilterLabelRow
+                label={
+                  verifiedBoard ? t('mobile.logbook.filterSheet.verified') : t('mobile.logbook.filterSheet.benchmarks')
+                }
+                {...pinProps('benchmarks')}
+              />
               <SwitchRow
-                label={t('mobile.logbook.filterSheet.onlyBenchmarks')}
+                label={
+                  verifiedBoard
+                    ? t('mobile.logbook.filterSheet.onlyVerified')
+                    : t('mobile.logbook.filterSheet.onlyBenchmarks')
+                }
                 value={filters.benchmarkOnly}
                 onValueChange={handleBenchmarks}
               />

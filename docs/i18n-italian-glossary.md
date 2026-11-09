@@ -80,6 +80,7 @@ Never: _spray wall_, _spray-wall_, _parete spray_, _muro spray_. Never a bare _p
 | Established 2+ (popularity filter: sent by 2+ people)    | Consolidati 2+                                |
 | Unrepeated (popularity filter)                           | Mai ripetuti                                  |
 | benchmark (curated reference climb)                      | Benchmark (kept in English)                   |
+| Verified (Kilter's mark)                                 | Verificato / Verificati                       |
 | campus (no feet)                                         | campus (kept in English)                      |
 
 Kept in English by convention (technical board-config or loanwords): **layout**, **set / sets**, **beta**, **crew**, **flash**, **playlist**, **session**, **campus**, **kickboard**.

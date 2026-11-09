@@ -19,6 +19,7 @@ import { DEFAULT_FILTERS } from '../../../lib/climb-filter-types';
 import { useHeatmapFirstRunCaption } from '../../../lib/heatmap-first-run';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { HoldFilterHeatmap } from './use-hold-filter-heatmap';
+import { benchmarkFilterLabel } from '../../../lib/benchmark-term';
 
 type HoldFilterHeatmapPanelProps = {
   heatmap: HoldFilterHeatmap;
@@ -160,7 +161,7 @@ function HeatmapScopeChip({
     // them, so a region-only search still says what it is filtering on. Hold
     // picks never reach here: the hook drops them.
     const boardParts: string[] = [];
-    if (search.boardFilters.onlyBenchmarks) boardParts.push(t('mobile.filter.benchmark'));
+    if (search.boardFilters.onlyBenchmarks) boardParts.push(benchmarkFilterLabel(boardName, t));
     if (search.boardFilters.zoneBox != null) boardParts.push(t('mobile.zoneFilter.title'));
     const listFiltered =
       hasActiveClimbFilters({
@@ -172,7 +173,7 @@ function HeatmapScopeChip({
       ? [getFilterSummary(search.filters, search.searchText, grades, t, gradeStops), ...boardParts]
       : boardParts;
     return parts.join(' · ');
-  }, [search, grades, gradeStops, t]);
+  }, [search, grades, gradeStops, t, boardName]);
   const label = wholeBoard ? t('mobile.heatmap.wholeBoard') : summary;
 
   return (

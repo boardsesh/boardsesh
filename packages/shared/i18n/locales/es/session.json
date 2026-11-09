@@ -776,6 +776,8 @@
       "preGeneratorOnlyBenchmarksLabel": "Solo bloques benchmark",
       "preGeneratorOnlyBenchmarksDescription": "La mayoría de los plafones tienen pocos por grado, así que una fase larga puede quedarse corta.",
       "preGeneratorOnlyBenchmarksSummary": "Benchmarks",
+      "preGeneratorOnlyVerifiedLabel": "Solo bloques verificados",
+      "preGeneratorOnlyVerifiedSummary": "Verificados",
       "preGeneratorOptionAccessibilityLabel": "{{group}}, {{value}}",
       "preGeneratorAddBlock": "Añadir una fase",
       "preGeneratorAddBlockHint": "Añade una fase al final del entrenamiento",

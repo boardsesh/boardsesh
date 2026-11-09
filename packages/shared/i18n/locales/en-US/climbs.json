@@ -509,6 +509,8 @@
       "quickFiltersFooter": "Choose the filters that show in the top row, and their order.",
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
+      "verified": "Verified",
+      "verifiedDescription": "Picked by Kilter with climbers and setters.",
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
       "close": "Close filters",
@@ -677,6 +679,7 @@
       "anyFeet": "Any feet",
       "noKickboard": "No KB",
       "benchmark": "Benchmark",
+      "verified": "Verified climb",
       "method": {
         "footless": "Footless",
         "footlessKickboard": "Footless + KB",

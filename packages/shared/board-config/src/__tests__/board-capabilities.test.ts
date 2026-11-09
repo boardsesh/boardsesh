@@ -12,12 +12,14 @@ const AURORA_ROW: BoardCapabilities = {
   multiFrameClimbs: true,
   nativeBoardControl: true,
   auroraAppLink: true,
+  benchmarkTerm: 'benchmark',
 };
 
 // The whole table in one place: change a row here and the reviewer sees exactly
 // which surface turns on or off.
 const EXPECTED: Record<string, BoardCapabilities> = {
-  kilter: AURORA_ROW,
+  // Kilter's own app has no benchmarks and calls its list Verified.
+  kilter: { ...AURORA_ROW, benchmarkTerm: 'verified' },
   tension: AURORA_ROW,
   decoy: AURORA_ROW,
   touchstone: AURORA_ROW,
@@ -35,6 +37,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     multiFrameClimbs: true,
     nativeBoardControl: true,
     auroraAppLink: false,
+    benchmarkTerm: 'benchmark',
   },
   woods: {
     crowdGrade: false,
@@ -47,6 +50,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     // still gate per-binary via nativeBleSupportsBoard.
     nativeBoardControl: true,
     auroraAppLink: false,
+    benchmarkTerm: 'benchmark',
   },
   spray: {
     // A climber's own wall: the only thing it does is let climbs be set on it.
@@ -61,6 +65,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     multiFrameClimbs: false,
     nativeBoardControl: false,
     auroraAppLink: false,
+    benchmarkTerm: 'benchmark',
   },
 };
 
@@ -77,7 +82,7 @@ describe('getBoardCapabilities', () => {
 
   it('gives every Aurora board the full feature set', () => {
     for (const auroraBoard of AURORA_BOARDS) {
-      expect(getBoardCapabilities(auroraBoard)).toEqual(AURORA_ROW);
+      expect({ ...getBoardCapabilities(auroraBoard), benchmarkTerm: AURORA_ROW.benchmarkTerm }).toEqual(AURORA_ROW);
     }
   });
 

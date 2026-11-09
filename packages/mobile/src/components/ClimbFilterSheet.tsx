@@ -42,6 +42,7 @@ import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
 import { FilterSheetSection } from './filter-sheet/FilterSheetSection';
 import { FilterLabelRow } from './filter-sheet/FilterLabelRow';
+import { benchmarkFilterLabel, isVerifiedBoard } from '../lib/benchmark-term';
 import { FilterChip, FilterChipGroup } from './filter-sheet/FilterChip';
 import { FilterNameField } from './filter-sheet/FilterNameField';
 import { FilterTappableRow } from './filter-sheet/FilterTappableRow';
@@ -701,14 +702,14 @@ export function ClimbFilterSheet({
   const collectionOptions = useMemo(
     () => [
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
-      ...(offerBenchmarks ? [{ key: 'benchmarks' as const, label: t('mobile.filter.benchmark') }] : []),
+      ...(offerBenchmarks ? [{ key: 'benchmarks' as const, label: benchmarkFilterLabel(boardName, t) }] : []),
       // My drafts and Liked are auth-only: both are the climber's own climbs.
       ...((isAuthenticated || isSprayWall) && offerDrafts
         ? [{ key: 'drafts' as const, label: isSprayWall ? t('mobile.filter.wallDrafts') : t('mobile.filter.drafts') }]
         : []),
       ...(isAuthenticated && offerLiked ? [{ key: 'liked' as const, label: t('mobile.filter.collection.liked') }] : []),
     ],
-    [t, isAuthenticated, isSprayWall, offerBenchmarks, offerDrafts, offerLiked],
+    [t, boardName, isAuthenticated, isSprayWall, offerBenchmarks, offerDrafts, offerLiked],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -1384,7 +1385,11 @@ export function ClimbFilterSheet({
               <FilterSheetSection title={t('mobile.filter.section.quality')}>
                 {/* Collection — Benchmarks, My drafts and Liked are mutually
                   exclusive. Personal collections are offered only when signed in. */}
-                <FilterLabelRow label={t('mobile.filter.collection.label')} {...pinProps('collection')} />
+                <FilterLabelRow
+                  label={t('mobile.filter.collection.label')}
+                  description={isVerifiedBoard(boardName) ? t('mobile.filter.verifiedDescription') : undefined}
+                  {...pinProps('collection')}
+                />
                 <View style={filterSheetStyles.controlGap} />
                 <SegmentedControl
                   options={collectionOptions}

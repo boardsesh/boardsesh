@@ -90,6 +90,8 @@ export type FilterChipRowProps = {
   canFilterPersonalCollections: boolean;
   /** A spray wall has no benchmarks, so the menu hides Benchmarks unless it is already active. */
   isSprayWall: boolean;
+  /** Names the Collection's benchmark option: Verified on Kilter, Benchmarks elsewhere. */
+  boardName?: string | null;
 
   // --- Tier-2 (opt-in) chips: sheet-only controls a user can pin. ---
 

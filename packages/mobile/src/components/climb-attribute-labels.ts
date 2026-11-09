@@ -7,10 +7,13 @@ import {
   isNoKickboard,
   isNoMatch,
 } from '@boardsesh/shared-schema';
+import { benchmarkAttributeLabel } from '../lib/benchmark-term';
 
 export type ClimbAttributeInput = {
   /** Raw benchmark difficulty; > 0 marks a benchmark/classic climb. */
   benchmarkDifficulty?: string | number | null;
+  /** Names the mark for a screen reader: Verified on Kilter, Benchmark elsewhere. */
+  boardName?: string | null;
   /**
    * Climb characteristics; preferred source for no-match + MoonBoard method_* tokens.
    * When present, the no-match status is derived from it and `isNoMatch` is ignored.
@@ -97,7 +100,7 @@ export function resolveClimbAttributes(
 export function describeClimbAttributes(input: ClimbAttributeInput, t: TFunction<'climbs'>): string[] {
   const { isBenchmark, isNoMatchClimb, method, extraLabels } = resolveClimbAttributes(input, t);
   return [
-    ...(isBenchmark ? [t('mobile.climbRow.benchmark')] : []),
+    ...(isBenchmark ? [benchmarkAttributeLabel(input.boardName, t)] : []),
     ...(isNoMatchClimb ? [t('mobile.climbRow.noMatch')] : []),
     ...(method ? [method] : []),
     ...extraLabels,

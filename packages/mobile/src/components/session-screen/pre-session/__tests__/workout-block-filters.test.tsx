@@ -84,6 +84,7 @@ import { WorkoutBlockFilters, blockFiltersSummary, offersBenchmarksOnly } from '
 
 const SKIP_SENT = 'mobile.session.preGeneratorSkipSentLabel';
 const BENCHMARKS = 'mobile.session.preGeneratorOnlyBenchmarksLabel';
+const VERIFIED = 'mobile.session.preGeneratorOnlyVerifiedLabel';
 const t = (key: string, options?: Record<string, string | number>) =>
   options ? `${key}(${Object.values(options).join(',')})` : key;
 
@@ -109,7 +110,7 @@ beforeEach(() => {
 
 describe('WorkoutBlockFilters', () => {
   it('turns Skip what I have sent and Benchmarks only on for the block', () => {
-    renderFilters();
+    renderFilters(DEFAULT_WORKOUT_FILTERS, 'tension');
 
     fireEvent.click(switchNamed(SKIP_SENT) as HTMLInputElement);
     fireEvent.click(switchNamed(BENCHMARKS) as HTMLInputElement);
@@ -118,8 +119,17 @@ describe('WorkoutBlockFilters', () => {
     expect(onFiltersChange).toHaveBeenNthCalledWith(2, { onlyBenchmarks: true });
   });
 
+  it('calls the switch Verified only on Kilter, and it still sets onlyBenchmarks', () => {
+    renderFilters(DEFAULT_WORKOUT_FILTERS, 'kilter');
+
+    expect(switchNamed(BENCHMARKS)).toBeFalsy();
+    fireEvent.click(switchNamed(VERIFIED) as HTMLInputElement);
+
+    expect(onFiltersChange).toHaveBeenCalledWith({ onlyBenchmarks: true });
+  });
+
   it('shows the switches the block has on', () => {
-    renderFilters({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true });
+    renderFilters({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true }, 'tension');
 
     expect(switchNamed(SKIP_SENT)?.checked).toBe(true);
     expect(switchNamed(BENCHMARKS)?.checked).toBe(true);
@@ -139,7 +149,7 @@ describe('WorkoutBlockFilters', () => {
   });
 
   it('shows the title and the whole filter line under it while closed', () => {
-    renderFilters({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true });
+    renderFilters({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true }, 'tension');
 
     const header = screen.getByTestId('collapsed-header');
     expect(header.textContent).toBe(
