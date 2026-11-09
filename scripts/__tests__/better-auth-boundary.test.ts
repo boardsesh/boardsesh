@@ -1,0 +1,131 @@
+/// <reference types="node" />
+
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+
+const repoRoot = resolve(import.meta.dirname, '../..');
+
+const BACKEND_RUNTIME_PACKAGES = ['@better-auth/drizzle-adapter', '@better-auth/oauth-provider', 'better-auth'];
+const PINNED_VERSION = '1.7.17';
+const BACKEND_MANIFEST_PATH = 'packages/backend/package.json';
+/** The only folder allowed to import Better Auth until the partner authority ships. */
+const PROTOTYPE_ROOT = 'packages/backend/src/auth/prototype/';
+
+interface Manifest {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+}
+
+interface DependabotConfig {
+  updates: { directory: string; ignore?: { 'dependency-name': string }[] }[];
+}
+
+const readRepoFile = (path: string): string => readFileSync(join(repoRoot, path), 'utf8');
+
+const trackedPackageFiles = execFileSync('git', ['ls-files', 'packages'], {
+  cwd: repoRoot,
+  encoding: 'utf8',
+  maxBuffer: 64 * 1024 * 1024,
+})
+  .split('\n')
+  .filter(Boolean);
+
+const trackedSourceFiles = trackedPackageFiles.filter((path) => /\.[cm]?[jt]sx?$/.test(path));
+
+const IMPORT_SPECIFIER = /(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)['"`]([^'"`]+)['"`]/g;
+
+function importSpecifiers(source: string): string[] {
+  return [...source.matchAll(IMPORT_SPECIFIER)].map(([, specifier]) => specifier);
+}
+
+function isBetterAuthSpecifier(specifier: string): boolean {
+  return specifier === 'better-auth' || specifier.startsWith('better-auth/') || specifier.startsWith('@better-auth/');
+}
+
+function isPrototypeSpecifier(specifier: string): boolean {
+  return specifier.includes('/prototype/') || specifier.endsWith('/prototype') || specifier.includes('auth-prototype');
+}
+
+function filesImporting(paths: string[], matches: (specifier: string) => boolean): string[] {
+  return paths.filter((path) => importSpecifiers(readRepoFile(path)).some(matches));
+}
+
+describe('import scanner', () => {
+  it.each([
+    [`import { betterAuth } from 'better-auth';`],
+    [`import 'better-auth/api';`],
+    [`const loaded = await import('@better-auth/oauth-provider');`],
+    [`const loaded = require("@better-auth/drizzle-adapter");`],
+    [`export { oauthProvider } from '@better-auth/oauth-provider';`],
+  ])('finds %s', (source) => {
+    expect(importSpecifiers(source).some(isBetterAuthSpecifier)).toBe(true);
+  });
+
+  it.each([[`const cookie = 'better-auth.session_token';`], [`import { hash } from 'bcryptjs';`]])(
+    'ignores %s',
+    (source) => {
+      expect(importSpecifiers(source).some(isBetterAuthSpecifier)).toBe(false);
+    },
+  );
+});
+
+describe('Better Auth dependency boundary', () => {
+  it('is a backend runtime dependency, pinned exactly', () => {
+    const manifest = JSON.parse(readRepoFile(BACKEND_MANIFEST_PATH)) as Manifest;
+    for (const packageName of BACKEND_RUNTIME_PACKAGES) {
+      expect(manifest.dependencies?.[packageName], packageName).toBe(PINNED_VERSION);
+      expect(manifest.devDependencies?.[packageName], packageName).toBeUndefined();
+    }
+  });
+
+  it('is declared by no other workspace package', () => {
+    const offenders = trackedPackageFiles
+      .filter((path) => path.endsWith('package.json') && path !== BACKEND_MANIFEST_PATH)
+      .filter((path) => {
+        const manifest = JSON.parse(readRepoFile(path)) as Manifest;
+        return Object.keys({
+          ...manifest.dependencies,
+          ...manifest.devDependencies,
+          ...manifest.optionalDependencies,
+          ...manifest.peerDependencies,
+        }).some(isBetterAuthSpecifier);
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it('is imported only by the auth prototype, so web and mobile can never bundle it', () => {
+    const importers = filesImporting(trackedSourceFiles, isBetterAuthSpecifier);
+    expect(importers.length).toBeGreaterThan(0);
+    expect(importers.filter((path) => !path.startsWith(PROTOTYPE_ROOT))).toEqual([]);
+  });
+
+  it('keeps the prototype out of every production backend module', () => {
+    const productionModules = trackedSourceFiles.filter(
+      (path) =>
+        path.startsWith('packages/backend/src/') &&
+        !path.startsWith(PROTOTYPE_ROOT) &&
+        !path.includes('/__tests__/') &&
+        !/\.test\.[cm]?[jt]sx?$/.test(path),
+    );
+    expect(productionModules.length).toBeGreaterThan(0);
+    expect(filesImporting(productionModules, isPrototypeSpecifier)).toEqual([]);
+  });
+
+  it('keeps Dependabot from opening Better Auth upgrades', () => {
+    const config = parse(readRepoFile('.github/dependabot.yml')) as DependabotConfig;
+    const rootUpdate = config.updates.find((update) => update.directory === '/');
+    const ignoredNames = rootUpdate?.ignore?.map((rule) => rule['dependency-name']);
+    expect(ignoredNames).toEqual(expect.arrayContaining(['better-auth', '@better-auth/*']));
+  });
+
+  it('carries no release-age exclusions for the pinned packages', () => {
+    const workspace = parse(readRepoFile('pnpm-workspace.yaml')) as { minimumReleaseAgeExclude?: string[] };
+    const excluded = workspace.minimumReleaseAgeExclude ?? [];
+    expect(excluded.filter((entry) => /^(?:better-auth|@better-auth\/|better-call)/.test(entry))).toEqual([]);
+  });
+});

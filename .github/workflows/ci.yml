@@ -914,6 +914,17 @@ jobs:
           vp test run --project mobile packages/mobile/src/__tests__/web-fork-export-parity.test.ts
           vp test run --project scripts scripts/__tests__/ci-web-fork-parity-workflow.test.ts
 
+      # No path gate on purpose, and deliberately not `--changed`-filtered, same
+      # rationale as deploy-config and rest-surface: the spec finds importers with
+      # `git ls-files` and readFileSync, so Vitest's module graph never relates it
+      # to a source diff. A PR importing better-auth from production backend code,
+      # web or mobile would go green in test-default and only redden main. A paths
+      # filter would have to list every package, so it simply always runs.
+      - name: better-auth-boundary (Better Auth stays out of web, mobile and production backend code)
+        id: better-auth-boundary
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts
+
       # Last on purpose: `vp run codegen` rewrites generated files in the
       # working tree, and no earlier guard should see that.
       #

@@ -12,12 +12,21 @@ updates:
   # on its release day therefore fails every image build for up to a day
   # (nodemailer 10.0.12, 2026-09-28). Two days keeps Dependabot behind that cutoff
   # with margin, and still lets it pick up releases that survived their first day.
+  #
+  # ignore: Better Auth is the partner OAuth server and its internals are pinned
+  # by test. An upgrade has to arrive in a PR that reruns the auth gate suite and
+  # gets a security review (docs/better-auth-implementation.md), never as a bot bump.
+  # The ignore also stops automatic security PRs, so a security fix arrives by a
+  # hand-opened gated PR, driven by the Dependabot alert.
   - package-ecosystem: 'npm' # Matches the pnpm-lock.yaml at the repo root
     directory: '/'
     schedule:
       interval: 'weekly'
     cooldown:
       default-days: 2
+    ignore:
+      - dependency-name: 'better-auth'
+      - dependency-name: '@better-auth/*'
   - package-ecosystem: 'npm' # Isolated Expo web runtime and its nested pnpm-lock.yaml
     directory: '/packages/mobile/web-runtime'
     schedule:

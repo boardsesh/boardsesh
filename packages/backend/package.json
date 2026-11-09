@@ -26,6 +26,8 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",
     "@aws-sdk/s3-request-presigner": "^3.1131.0",
+    "@better-auth/drizzle-adapter": "1.7.17",
+    "@better-auth/oauth-provider": "1.7.17",
     "@boardsesh/analytics": "workspace:*",
     "@boardsesh/aurora-sync": "workspace:*",
     "@boardsesh/auth-protocol": "workspace:*",
@@ -66,6 +68,7 @@
     "@sentry/node": "^10.69.0",
     "@whatwg-node/fetch": "^0.10.13",
     "bcryptjs": "^3.0.3",
+    "better-auth": "1.7.17",
     "busboy": "^1.6.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
@@ -87,8 +90,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@better-auth/drizzle-adapter": "1.7.17",
-    "@better-auth/oauth-provider": "1.7.17",
     "@boardsesh/graphql-client": "workspace:*",
     "@boardsesh/queue-react": "workspace:*",
     "@boardsesh/queue-runtime": "workspace:*",
@@ -96,7 +97,6 @@
     "@types/node": "^25.9.5",
     "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.18.1",
-    "better-auth": "1.7.17",
     "drizzle-kit": "^0.31.10",
     "postgres": "^3.4.9",
     "typescript": "~7.0.2",
