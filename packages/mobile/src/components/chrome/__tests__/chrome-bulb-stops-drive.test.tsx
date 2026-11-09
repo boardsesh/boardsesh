@@ -76,7 +76,7 @@ vi.mock('../../icon-map', () => ({
   },
 }));
 vi.mock('../../play-drawer/AngleSelectorSheet', () => ({ AngleSelectorSheet: () => null }));
-vi.mock('../use-material-angle-control', () => ({ useMaterialAngleControl: () => ({}) }));
+vi.mock('../BoardAnglePicker', () => ({ BoardAnglePicker: () => null }));
 
 type BulbProps = {
   children?: ReactNode;

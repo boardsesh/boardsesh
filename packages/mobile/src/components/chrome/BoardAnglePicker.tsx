@@ -28,7 +28,7 @@ export function useAnglePickerPopover(): boolean {
   return Platform.OS === 'ios' && isPad && widthClass === 'regular';
 }
 
-/** One angle picker shared by the toolbar angle buttons and the Climbs filter-row Angle chip. */
+/** One angle picker shared by the toolbar angle buttons in both appearances. */
 export function BoardAnglePicker({
   children,
   onOpenChange,

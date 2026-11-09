@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-// FilterChipRow leads the Material variant (Android and the web by default) with
-// an Angle chip; Liquid Glass keeps its toolbar angle button. Screen suites
+// FilterChipRow keeps board angle out of quick filters in both appearances. Screen suites
 // import the extensionless `search/FilterChipRow`, which mobile Vitest aliases to
 // a null stub; this relative import (`../FilterChipRow`) is not aliased, so it
 // runs the real one.
@@ -9,7 +8,7 @@ import { createElement, type ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CLIMB_FILTER_STATE } from '@boardsesh/climb-filters';
 import { DEFAULT_PINNED_CHIPS } from '../../../lib/pinnable-chips';
-import type { Capsule, SheetCapsule } from '../../filter-capsules/CapsuleRow.types';
+import type { Capsule } from '../../filter-capsules/CapsuleRow.types';
 import type { FilterChipRowProps } from '../FilterChipRow.types';
 import { FilterChipRow } from '../FilterChipRow';
 
@@ -102,76 +101,20 @@ beforeEach(() => {
 });
 
 describe('FilterChipRow', () => {
-  it('on Liquid Glass leads with Filters, with no angle capsule or picker', () => {
-    const capsules = renderIn('liquidGlass');
-    expect(capsules.map(({ key }) => key)).toEqual([
-      'filters',
-      'grade',
-      'benchmarks',
-      'progress',
-      'collection',
-      'popularity',
-      'rating',
-    ]);
-    expect(state.pickerMounts).toBe(0);
-  });
-
-  it('on Material leads with an Angle chip that opens the shared picker', () => {
-    const capsules = renderIn('material');
-    expect(capsules.map(({ key }) => key)).toEqual([
-      'angle',
-      'filters',
-      'grade',
-      'benchmarks',
-      'progress',
-      'collection',
-      'popularity',
-      'rating',
-    ]);
-    const angle = capsules[0] as SheetCapsule;
-    expect(angle.label).toBe('40°');
-    expect(angle.accessibilityLabel).toBe('Board angle, 40°');
-    expect(angle.onPress).toBe(state.open);
-    expect(state.pickerMounts).toBeGreaterThan(0);
-  });
-
-  it('moves the Angle chip in and out when the climber switches look', () => {
-    state.variant = 'liquidGlass';
-    const { rerender } = render(createElement(FilterChipRow, PROPS));
-    expect(state.capsules.at(-1)?.some(({ key }) => key === 'angle')).toBe(false);
-    state.variant = 'material';
-    // The real theme is a context that re-renders past the memo; the mocked hook
-    // is not, so a changed prop stands in for it.
-    rerender(createElement(FilterChipRow, { ...PROPS, activeFilterCount: 1 }));
-    expect(state.capsules.at(-1)?.[0].key).toBe('angle');
-  });
-
-  it.each([
-    ['a fixed-angle board', { angle: 40, boardType: 'kilter', layoutId: 1, isAngleAdjustable: false }],
-    ['a board with no angle', { angle: null, boardType: 'kilter', layoutId: 1, isAngleAdjustable: true }],
-    ['no board', null],
-  ] as const)('on Material leaves the Angle chip out for %s', (_label, board) => {
-    state.board = board;
-    const capsules = renderIn('material');
-    expect(capsules[0].key).toBe('filters');
-    expect(capsules.some(({ key }) => key === 'angle')).toBe(false);
-  });
-});
-
-describe('FilterChipRow without the Angle chip', () => {
-  it('leaves the Angle chip and its picker off a Material row that asks for none', () => {
-    state.variant = 'material';
-    render(createElement(FilterChipRow, { ...PROPS, showAngle: false }));
-    const capsules = state.capsules.at(-1);
-    expect(capsules?.map(({ key }) => key)).toEqual([
-      'filters',
-      'grade',
-      'benchmarks',
-      'progress',
-      'collection',
-      'popularity',
-      'rating',
-    ]);
-    expect(state.pickerMounts).toBe(0);
-  });
+  it.each(['liquidGlass', 'material'] as const)(
+    'starts with Filters on %s without mounting an angle picker',
+    (variant) => {
+      const capsules = renderIn(variant);
+      expect(capsules.map(({ key }) => key)).toEqual([
+        'filters',
+        'grade',
+        'benchmarks',
+        'progress',
+        'collection',
+        'popularity',
+        'rating',
+      ]);
+      expect(state.pickerMounts).toBe(0);
+    },
+  );
 });
