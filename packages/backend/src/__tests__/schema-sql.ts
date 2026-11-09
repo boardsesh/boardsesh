@@ -198,7 +198,7 @@ const boardShareLinksSchema = readFileSync(
 );
 // A spray wall's LED setup, straight from the generated migration, after user_boards.
 const sprayWallLedSetupsSchema = readFileSync(
-  new URL('../../../db/drizzle/0295_spray_wall_led_setups.sql', import.meta.url),
+  new URL('../../../db/drizzle/0304_spray_wall_led_setups.sql', import.meta.url),
   'utf8',
 );
 // The workout a climber followed in a session (#6903), straight from the
