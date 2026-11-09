@@ -35,6 +35,7 @@ import { createYogaInstance } from '../../../graphql/yoga';
 import { logger } from '../../../utils/logger';
 import * as postgresErrors from '../../../utils/postgres-errors';
 import * as userActivity from '../../../services/user-activity';
+import * as posthogPersonDeletion from '../../../services/analytics/posthog-person-deletion';
 import { lockSprayWallAccount } from '../../../services/spray-account-lock';
 import { normalizeAccountEmail } from '../../normalize-email';
 import { preflight } from '../command-context';
@@ -1210,6 +1211,41 @@ describe('mounted account deletion and current-store authority', () => {
       await bounded(Promise.allSettled([hold.held, ...(deletion ? [deletion] : [])]));
     }
   }, 20000);
+  it('reports success and writes nothing when a retry finds its deletion committed', async () => {
+    await seedPair({ system: true });
+    await seedBoard();
+    const enqueue = vi.spyOn(posthogPersonDeletion, 'enqueuePosthogPersonDeletion');
+    expect(await remove()).toBe(true);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(effects.publish).toHaveBeenCalledTimes(1);
+    const committed = await snapshot();
+    expect(await remove()).toBe(true);
+    expect(await snapshot()).toEqual(committed);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(effects.publish).toHaveBeenCalledTimes(1);
+  });
+  it('reports success to both callers and records one event when two deletions race', async () => {
+    await seedPair();
+    const hold = await holdOnBlocker((transaction) => lockSprayWallAccount(transaction, ownerId));
+    let first: Promise<boolean> | undefined;
+    let second: Promise<boolean> | undefined;
+    try {
+      first = remove();
+      second = remove();
+      await waitForBlocker(hold.backendPid, Promise.race([first, second]));
+      hold.release();
+      await hold.held;
+      expect(await bounded(Promise.all([first, second]))).toEqual([true, true]);
+      expect(
+        await db.select().from(authSecurityMutationEvents).where(eq(authSecurityMutationEvents.userId, ownerId)),
+      ).toHaveLength(1);
+      const [cutoff] = await db.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, ownerId));
+      expect(cutoff.generation).toBe(1);
+    } finally {
+      hold.release();
+      await bounded(Promise.allSettled([hold.held, ...(first ? [first] : []), ...(second ? [second] : [])]));
+    }
+  }, 15000);
   it('a reset already through real bcrypt cannot restore a deleted user or credential', async () => {
     await seedPair();
     const recoveryAuthority = { ...authority, emailVerificationEnabled: false };

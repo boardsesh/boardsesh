@@ -52,6 +52,7 @@ import {
   lockReservedDeletionSubject,
   recordReservedAccountDeletion,
   type CapturedAccountDeletionCommand,
+  type ReservedDeletionSubject,
 } from '../../../auth/current-store/account-deletion';
 import { preflight } from '../../../auth/current-store/command-context';
 
@@ -320,7 +321,15 @@ export const userMutations = {
           else await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
           const sprayWalls = await deleteAccountSprayWalls(tx, userId);
           deletedWallIds = sprayWalls.wallIds;
-          const deletionSubject = deletionCommand ? await lockReservedDeletionSubject(tx, deletionCommand) : undefined;
+          let deletionSubject: ReservedDeletionSubject | undefined;
+          if (deletionCommand) {
+            deletionSubject = await lockReservedDeletionSubject(tx, deletionCommand);
+            if (!deletionSubject) {
+              // Already deleted and committed: report success and write nothing.
+              previewBoardIds = [];
+              return;
+            }
+          }
           await withdrawDeletedAccountContent(tx, userId);
           // Assigned, not accumulated, so a retried transaction cannot keep a stale list.
           previewBoardIds = [...sprayWalls.previewBoardIds, ...(await deleteAccountBoards(tx, userId))];

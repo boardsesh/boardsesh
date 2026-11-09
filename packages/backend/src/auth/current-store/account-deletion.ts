@@ -61,21 +61,30 @@ export async function beginReservedAccountDeletion(transaction: CurrentStoreTran
 
 /**
  * Take the late human-user lock after the account and wall locks, before any
- * content changes. An absent subject is an error, so a tombstone is never
- * invented for a UID that never existed.
+ * content changes. Returns undefined only when this UID's deletion already
+ * committed: a retry after a lost response, or the loser of two racing requests
+ * (the account lock parked it until the winner committed). The caller then ends
+ * the transaction without writing. Absent with no tombstone stays an error, so
+ * a tombstone is never invented for a UID that never existed.
  */
 export async function lockReservedDeletionSubject(
   transaction: CurrentStoreTransaction,
   command: CapturedAccountDeletionCommand,
-): Promise<ReservedDeletionSubject> {
+): Promise<ReservedDeletionSubject | undefined> {
   const [subject] = await transaction
     .select({ email: users.email })
     .from(users)
     .where(eq(users.id, command.userId))
     .limit(1)
     .for('update');
-  if (!subject) throw new CurrentStoreFoundationError('INVALID_COMMAND');
-  return subject;
+  if (subject) return subject;
+  const [tombstone] = await transaction
+    .select({ deletedAt: authSubjectCutoffs.deletedAt })
+    .from(authSubjectCutoffs)
+    .where(eq(authSubjectCutoffs.userId, command.userId))
+    .limit(1);
+  if (!tombstone?.deletedAt) throw new CurrentStoreFoundationError('INVALID_COMMAND');
+  return undefined;
 }
 
 async function requireRepresentedDeletionEmail(
