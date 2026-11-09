@@ -800,8 +800,11 @@ The limits, on purpose:
 - Exempt paths: `/health`, `/health/db`, `/api/health` (CI polls them with bare
   curl), `/robots.txt` (so an unlisted bot can read the Disallow lines; named
   crawlers still get the block rule there), `/.well-known/` (deep-link
-  association files) and the two API surfaces `/api/v1/` and `/v1/partner/`,
-  whose intended clients are scripts and partner servers.
+  association files and OAuth metadata), the API surfaces `/api/v1/`, `/v1/`
+  and `/api/auth/oauth2/`, whose intended clients are scripts and partner
+  servers, and `/oauth/`, `/developers` and everything under it, and
+  `/auth/login`, each in every locale form (`/es/oauth/` and so on), which a
+  partner's coding agent or browser test opens to connect an app.
 - Allowed on top of the search engines and unfurlers, because each carries
   `bot` and would otherwise be caught: the Snapchat unfurler, AppleNewsBot,
   DuckDuckGo's favicon fetcher and DuckAssistBot, Kagibot, AdsBot-Google,

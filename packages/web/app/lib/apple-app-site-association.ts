@@ -32,8 +32,26 @@ export const APPLE_APP_ID = '9L3HKPZBH3.com.boardsesh.app';
  * prints points at `/b/{slug}`, which still opens the app; the print page
  * itself must load in the browser, including when a phone opens it from the
  * app's in-app browser or from a shared link.
+ *
+ * `/oauth` is where a partner app sends a climber to sign in and approve access,
+ * and `/developers` is the developer console. Neither has an app screen. A
+ * claimed consent link would land on Home and the partner's sign-in would never
+ * finish. Phones pick up this file days after it changes (see the route), so
+ * these entries have to be live at least a week before those pages ship.
  */
-export const WEB_ONLY_PATH_PREFIXES = ['/gym', '/poster'] as const;
+export const WEB_ONLY_PATH_PREFIXES = ['/gym', '/poster', '/oauth', '/developers'] as const;
+
+/**
+ * Exact paths that are web-only, excluded at the root and under every locale
+ * prefix. `NOT /developers/*` needs the literal slash, so it does not match the
+ * `/developers` overview page itself.
+ *
+ * `/auth/error` is where NextAuth sends a failed social sign-in (`pages.error`).
+ * The app has no such screen, so a partner's sign-in would land on Home. It is
+ * this page only: `/auth/login` stays claimed, because the verify-email redirect
+ * goes there and has to keep opening the app.
+ */
+export const WEB_ONLY_EXACT_PATHS = ['/developers', '/auth/error'] as const;
 
 /** Non-page paths the OS or a build tool fetches. Never locale-prefixed. */
 const INFRASTRUCTURE_EXCLUSIONS = ['NOT /api/*', 'NOT /_next/*', 'NOT /monitoring', 'NOT /.well-known/*'] as const;
@@ -44,6 +62,11 @@ const INFRASTRUCTURE_EXCLUSIONS = ['NOT /api/*', 'NOT /_next/*', 'NOT /monitorin
  */
 function localePathSegments(): string[] {
   return SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE);
+}
+
+/** One `NOT` entry for the pattern at the root, then one under each locale. */
+function exclusionsForEveryLocale(pathPattern: string): string[] {
+  return [`NOT ${pathPattern}`, ...localePathSegments().map((localeSegment) => `NOT /${localeSegment}${pathPattern}`)];
 }
 
 /**
@@ -59,10 +82,10 @@ function localePathSegments(): string[] {
  * strips the locale, finds no `/gym/{slug}` screen, and falls back to Home.
  */
 export function buildAppleAppSiteAssociationPaths(): string[] {
-  const webOnlyExclusions = WEB_ONLY_PATH_PREFIXES.flatMap((pathPrefix) => [
-    `NOT ${pathPrefix}/*`,
-    ...localePathSegments().map((localeSegment) => `NOT /${localeSegment}${pathPrefix}/*`),
-  ]);
+  const webOnlyExclusions = [
+    ...WEB_ONLY_PATH_PREFIXES.flatMap((pathPrefix) => exclusionsForEveryLocale(`${pathPrefix}/*`)),
+    ...WEB_ONLY_EXACT_PATHS.flatMap((exactPath) => exclusionsForEveryLocale(exactPath)),
+  ];
   return [...INFRASTRUCTURE_EXCLUSIONS, ...webOnlyExclusions, '/*'];
 }
 

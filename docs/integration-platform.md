@@ -287,9 +287,9 @@ model holds. Measured against the platform goals:
   CSRF bound to the session, parameters re-validated on POST,
   `frame-ancestors 'none'`.
 - Prerequisites it found: AASA must exclude `/oauth`, and `/auth/login`'s
-  `callbackUrl` must be constrained first. Both are still open today
-  (`WEB_ONLY_PATH_PREFIXES = ['/gym', '/poster']`; `auth-page-content.tsx`
-  pushes `callbackUrl` raw at three call sites).
+  `callbackUrl` must be constrained first. AASA now excludes it
+  (`WEB_ONLY_PATH_PREFIXES`); the `callbackUrl` work is tracked in milestone 0
+  below.
 - Postgres, not Redis, for single-use codes, because Redis fails open when
   unconfigured.
 - Per-client Redis rate limits instead of the per-IP limiter, which behind
@@ -305,9 +305,9 @@ model holds. Measured against the platform goals:
 
 - Registration by email → self-service web page (D7).
 - "Partner" → "app" everywhere, `/v1/partner/*` → `/v1/*`, `ws` →
-  `api.boardsesh.com` (D9). The edge's default-deny exemption is keyed on
-  `/v1/partner/` today (`AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES` in
-  `packages/web/app/lib/crawler-policy.ts`) and must follow the path.
+  `api.boardsesh.com` (D9). The edge's default-deny exemption has followed the
+  path to `/v1/` (`AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES` in
+  `packages/web/app/lib/crawler-policy.ts`).
 - Webhook URL, secret and event list move off the client row onto per-app
   webhook settings the developer edits in the console (milestone 4).
 - Client ids are provider-generated opaque strings. Examples do not reserve
@@ -558,8 +558,9 @@ correct CORS/headers for expired-token and rate-limit errors. Ordinary
 first-party sign-out must not silently revoke an offline connection; explicit
 security revocation must.
 
-An external security review of configuration and glue is recommended before
-milestone 2 opens registration. Failure of any launch gate blocks that
+Independent adversarial agent reviews, by agents that did not write the code and
+working from the OAuth threat list, run before the first connection and again
+before milestone 2 opens registration. Failure of any launch gate blocks that
 deliverable; it does not authorize a fallback implementation.
 
 ---
@@ -1121,9 +1122,10 @@ before milestone 2 opens registration, against the read replica numbers in
 ### The edge
 
 - `AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES` in `crawler-policy.ts`
-  exempts `/v1/partner/`. Change it to `/v1/` and permit the backend's
-  `/api/auth/oauth2/` and issuer metadata routes (authorize is a GET a CLI may
-  open). Mirror it in the Cloudflare rule with the correct hostname.
+  exempts `/v1/` and the backend's `/api/auth/oauth2/` (authorize is a GET a
+  CLI may open); issuer metadata sits under the existing `/.well-known/`. The
+  Cloudflare rule reads the same constants. Its host list is `www` and `ws`, so
+  it needs `api.boardsesh.com` only if that host ever joins the default-deny.
 - Milestone 0 exempts `/developers/`, `/auth/login` and `/oauth/` on `www`,
   and milestone 2 adds `/llms.txt`. Coding agents fetch docs with `curl`,
   `python-requests` and the like, and drive browsers whose UA says
@@ -1131,9 +1133,14 @@ before milestone 2 opens registration, against the read replica numbers in
   (`AUTOMATION_SIGNATURE_TOKENS`). `claude-user` and `chatgpt-user` are already
   allowed. The default-deny exists for crawl cost; a login page and a consent
   page are not where that cost is.
-- AASA claims every path but `/gym` and `/poster` for the iOS app, so on an
-  iPhone with Boardsesh installed a link to `/developers/…` would open the app
-  on Home. `/developers` joins `/oauth` in `WEB_ONLY_PATH_PREFIXES`.
+- AASA claims every path it does not exclude for the iOS app, so on an iPhone
+  with Boardsesh installed a link there would open the app on Home.
+  `/oauth/*` and `/developers/*` are in `WEB_ONLY_PATH_PREFIXES`. `/developers/*`
+  needs its slash and misses the milestone 2 overview page, so the bare
+  `/developers` is in `WEB_ONLY_EXACT_PATHS`, and in the default-deny's exact
+  exemptions too. `/auth/error` is also in `WEB_ONLY_EXACT_PATHS`, because
+  NextAuth sends a failed social sign-in there and the app has no such screen.
+  `/auth/login` stays claimed for the verify-email redirect.
 
 ---
 
@@ -1372,7 +1379,6 @@ bug: fix it and rerun.
 - **The compatibility proof** (D2). Better Auth is selected, but implementation
   is gated on the pinned-version results. Failed criteria require a reviewed
   design revision, not an automatic switch to another provider.
-- **External security review** before milestone 2: who, and when.
 - **Moving the phone's sync onto the change log**, which would close its
   long-transaction hole too. Not needed for the public API.
 - **Imported `climbedAt`.** Aurora's naive timestamps are stored as UTC
