@@ -6,6 +6,14 @@ import { dirname, join, resolve } from 'node:path';
 import { getWallLightness, loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import { renderOgCardLayers, type OgCardContent } from '@boardsesh/board-render/og-card';
+import {
+  composeOgFamilyCard,
+  ogFamilyBoardBox,
+  placeOgFamilyBoard,
+  renderOgFamilyTextLayers,
+  type OgFamilyArtLayers,
+  type OgFamilyCardContent,
+} from '@boardsesh/board-render/og-family';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import {
   BoundedLru,
@@ -20,13 +28,14 @@ import {
   type WasmRenderConfig,
 } from '@boardsesh/board-render';
 import {
+  composeBoardBaseBuffer,
   composeOgBaseBuffer,
   renderBoardImageBuffer,
   type OgBaseResult,
   type RenderTimings,
 } from '@boardsesh/board-render/pipeline';
 import { createOverlayRenderer, type OverlayRenderer } from '@boardsesh/board-render/wasm';
-import { getOgBokehInput } from '@boardsesh/board-render/frosted-bokeh';
+import { getOgBokehInput, renderFrostedBokehBuffer } from '@boardsesh/board-render/frosted-bokeh';
 import type { BoardName } from '@boardsesh/shared-schema';
 import sharp from 'sharp';
 import { logger } from '../utils/logger';
@@ -56,8 +65,11 @@ const MIB = 1024 * 1024;
 const BOARD_BASE_CACHE_MAX_BYTES = 64 * MIB;
 const OG_BASE_CACHE_MAX_BYTES = 32 * MIB;
 const BYTE_CACHE_MAX_BYTES = 32 * MIB;
+const OG_FAMILY_PLANE_MAX_BYTES = 24 * MIB;
 
-// Exactly three process-lifetime LRUs serve both public render endpoints.
+// Exactly four process-lifetime LRUs serve the public render endpoints: three
+// shared by `/render/board` and `/og/climb`, and `ogFamilyPlaneCache` below for
+// the share-card family.
 const boardBaseCache = new BoundedLru<Buffer>({
   maxEntries: 24,
   maxBytes: BOARD_BASE_CACHE_MAX_BYTES,
@@ -74,10 +86,24 @@ const byteCache = new BoundedLru<{ buffer: Buffer; contentType: string }>({
   sizeOf: (value) => value.buffer.length,
 });
 
+/**
+ * Board-sized folded board photos for the share-card family, one per board and
+ * output size. Deliberately NOT `ogBaseCache`: that key omits the placement,
+ * which it bakes into a canvas-sized plane, so a family render sharing it could
+ * serve a misplaced base and evict the climb card's entries. A family plane
+ * stays board-sized and is placed at composite time, so it carries no placement.
+ */
+const ogFamilyPlaneCache = new BoundedLru<Buffer>({
+  maxEntries: 16,
+  maxBytes: OG_FAMILY_PLANE_MAX_BYTES,
+  sizeOf: (buffer) => buffer.length,
+});
+
 // Both endpoint families share final-render and base-composition coalescing.
 const inFlightRenders = new Map<string, Promise<BoardImageRenderResult>>();
 const boardBaseInFlight = new Map<string, Promise<Buffer | null>>();
 const ogBaseInFlight = new Map<string, Promise<OgBaseResult>>();
+const ogFamilyInFlight = new Map<string, Promise<OgFamilyRenderResult>>();
 
 function positiveIntegerFromEnv(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
@@ -215,6 +241,8 @@ export type BoardImageRenderParams = {
   includeBackground: boolean;
   dimBackground: number;
   isOgVariant: boolean;
+  /** OG-only: fit the board into this box instead of the climb card's. */
+  ogBox?: { width: number; height: number };
   /** Climb identity drawn in an OG card's right-hand column; OG renders only. */
   card?: OgCardContent;
 };
@@ -376,6 +404,7 @@ export function prepareRender(params: BoardImageRenderParams): {
     frames: params.frames,
     thumbnail: params.thumbnail,
     isOgVariant: params.isOgVariant,
+    ...(params.ogBox ? { ogBox: params.ogBox } : {}),
     boardStates,
     renderMode: params.renderMode,
     glowFalloff: params.glowFalloff,
@@ -507,6 +536,190 @@ export function runOnRenderSemaphore<T>(fn: () => Promise<T>): Promise<T> {
   return renderSemaphore.run(fn);
 }
 
+/** What the family renderer needs to light a board on a card. */
+export type OgFamilyArtSpec = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  /** Comma-separated set ids. */
+  setIds: string;
+  /** Lit holds; `''` is the unlit board. */
+  frames: string;
+};
+
+export type OgFamilyRenderParams = {
+  /** The whole byte-cache key, from `buildOgFamilyByteKey`. Only ever read after the gate. */
+  cacheKey: string;
+  /** Null draws no art at all, and `content.slot` must then be `'none'`. */
+  art: OgFamilyArtSpec | null;
+  content: OgFamilyCardContent;
+  format: OutputFormat;
+};
+
+export type OgFamilyRenderResult = {
+  buffer: Buffer;
+  contentType: string;
+  cache: 'hit' | 'plane-hit' | 'miss' | 'none';
+  timings: { wasmMs: number; planeMs: number; composeMs: number };
+};
+
+/**
+ * Byte-cache key for one family card: the surface plus a digest of what is drawn.
+ * Namespaced, so it cannot share a slot with a `/render/board` or `/og/climb` key,
+ * whose first segment is always a board name.
+ */
+export function buildOgFamilyByteKey(surface: string, digest: string, format: OutputFormat): string {
+  return `og-family:${surface}:${format}:${digest}`;
+}
+
+/** Plane-cache key: the board's art paths and the size they were folded at. */
+export function buildOgFamilyPlaneKey(backgroundPaths: readonly string[], width: number, height: number): string {
+  return `og-family-plane:${backgroundPaths.join('|')}:${width}x${height}`;
+}
+
+async function loadOgFamilyPlane(
+  boardDetails: RenderableBoardDetails,
+  width: number,
+  height: number,
+): Promise<{ plane: Buffer | null; hit: boolean }> {
+  const key = buildOgFamilyPlaneKey(getBackgroundRelPaths(boardDetails, false), width, height);
+  const cached = ogFamilyPlaneCache.get(key);
+  if (cached) return { plane: cached, hit: true };
+  const composed = await composeBoardBaseBuffer({
+    boardDetails,
+    width,
+    height,
+    thumbnail: false,
+    dimBackground: 0,
+    resolveImagePath,
+  });
+  if (composed) ogFamilyPlaneCache.set(key, composed);
+  return { plane: composed, hit: false };
+}
+
+async function renderOgFamilyArtLayers(
+  art: OgFamilyArtSpec,
+  slot: 'full' | 'narrow',
+): Promise<{
+  layers: OgFamilyArtLayers;
+  bokeh: ReturnType<typeof getOgBokehInput>;
+  wasmMs: number;
+  planeMs: number;
+  planeHit: boolean;
+}> {
+  const renderer = overlayRenderer;
+  if (!renderer) throw new Error('Board renderer is not initialised');
+  const prepared = prepareRender({
+    boardName: art.boardName,
+    layoutId: art.layoutId,
+    sizeId: art.sizeId,
+    setIds: art.setIds,
+    frames: art.frames,
+    format: 'jpeg',
+    renderMode: 'aura',
+    fieldColor: BOARD_FIELD_COLORS.dark,
+    thumbnail: false,
+    includeBackground: true,
+    dimBackground: 0,
+    isOgVariant: true,
+    ogBox: ogFamilyBoardBox(slot),
+  });
+  const wasmT0 = performance.now();
+  const overlay = await renderer.render(JSON.stringify(prepared.config));
+  const wasmMs = performance.now() - wasmT0;
+
+  const planeT0 = performance.now();
+  const { plane, hit } = await loadOgFamilyPlane(prepared.boardDetails, overlay.width, overlay.height);
+  const planeMs = performance.now() - planeT0;
+
+  const bokeh = getOgBokehInput(prepared.config);
+  // Centroid of the lit holds in the rendered board's pixels, so the narrow slot
+  // can centre its crop on what is actually lit.
+  const pixelsPerSourceUnit = overlay.width / prepared.config.board_width;
+  const litCentroidX =
+    bokeh.points.length > 0
+      ? (bokeh.points.reduce((sum, point) => sum + point.x, 0) / bokeh.points.length) * pixelsPerSourceUnit
+      : undefined;
+
+  return {
+    layers: {
+      plane,
+      overlay: Buffer.from(overlay.rgba.buffer, overlay.rgba.byteOffset, overlay.rgba.byteLength),
+      width: overlay.width,
+      height: overlay.height,
+      placement: placeOgFamilyBoard(slot, overlay.width, overlay.height, litCentroidX),
+      frame: slot === 'full',
+    },
+    bokeh,
+    wasmMs,
+    planeMs,
+    planeHit: hit,
+  };
+}
+
+/** A family card that cannot lay out its words still has a board worth sharing. */
+async function renderOgFamilyTextOrNone(content: OgFamilyCardContent): Promise<sharp.OverlayOptions[]> {
+  try {
+    return (await renderOgFamilyTextLayers(content)).layers;
+  } catch (error) {
+    logger.warn('[BoardRender] Family card text failed to render; serving the art alone', {
+      error: error instanceof Error ? error.message : String(error),
+      slot: content.slot,
+    });
+    return [];
+  }
+}
+
+/**
+ * Render one share-card family image.
+ *
+ * Callers run their visibility gate first; a card someone is not allowed to see
+ * must never reach this function, because the byte cache is keyed on the drawn
+ * data alone. Everything expensive runs under the shared render cap, and a
+ * byte-cache hit or a coalesced in-flight render never takes a slot.
+ *
+ * @throws RenderQueueSaturatedError when the render queue is already full.
+ */
+export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<OgFamilyRenderResult> {
+  const cached = byteCache.get(params.cacheKey);
+  if (cached) {
+    return { ...cached, cache: 'hit', timings: { wasmMs: 0, planeMs: 0, composeMs: 0 } };
+  }
+  const alreadyRendering = ogFamilyInFlight.get(params.cacheKey);
+  if (alreadyRendering) return alreadyRendering;
+
+  const renderPromise = runOnRenderSemaphore(async () => {
+    const { art, content, format } = params;
+    let wasmMs = 0;
+    let planeMs = 0;
+    let cache: OgFamilyRenderResult['cache'] = 'none';
+    let artLayers: OgFamilyArtLayers | null = null;
+    let bokeh: ReturnType<typeof getOgBokehInput> = { points: [], source: { w: 1200, h: 630 } };
+
+    if (art && content.slot !== 'none') {
+      const rendered = await renderOgFamilyArtLayers(art, content.slot);
+      artLayers = rendered.layers;
+      bokeh = rendered.bokeh;
+      wasmMs = rendered.wasmMs;
+      planeMs = rendered.planeMs;
+      cache = rendered.planeHit ? 'plane-hit' : 'miss';
+    }
+
+    const composeT0 = performance.now();
+    const textLayers = await renderOgFamilyTextOrNone(content);
+    const background = await renderFrostedBokehBuffer({ ...bokeh, protectDetails: false });
+    const encoded = await composeOgFamilyCard({ background, slot: content.slot, art: artLayers, textLayers, format });
+    const composeMs = performance.now() - composeT0;
+
+    byteCache.set(params.cacheKey, encoded);
+    return { ...encoded, cache, timings: { wasmMs, planeMs, composeMs } };
+  }).finally(() => {
+    ogFamilyInFlight.delete(params.cacheKey);
+  });
+  ogFamilyInFlight.set(params.cacheKey, renderPromise);
+  return renderPromise;
+}
+
 async function renderOgCardLayersOrNone(card: OgCardContent): Promise<sharp.OverlayOptions[] | undefined> {
   try {
     return await renderOgCardLayers(card);
@@ -600,9 +813,11 @@ async function warmBoardBase(
 export function resetBoardRenderCaches(): void {
   boardBaseCache.clear();
   ogBaseCache.clear();
+  ogFamilyPlaneCache.clear();
   byteCache.clear();
   boardBaseInFlight.clear();
   ogBaseInFlight.clear();
+  ogFamilyInFlight.clear();
   inFlightRenders.clear();
 }
 
@@ -616,6 +831,7 @@ export function getBoardRenderRuntimeStats(): {
   pending: number;
   boardBaseBytes: number;
   ogBaseBytes: number;
+  ogFamilyPlaneBytes: number;
   byteCacheBytes: number;
   boardBaseMaxBytes: number;
   ogBaseMaxBytes: number;
@@ -632,6 +848,7 @@ export function getBoardRenderRuntimeStats(): {
     pending: renderSemaphore.pending,
     boardBaseBytes: boardBaseCache.byteSize,
     ogBaseBytes: ogBaseCache.byteSize,
+    ogFamilyPlaneBytes: ogFamilyPlaneCache.byteSize,
     byteCacheBytes: byteCache.byteSize,
     boardBaseMaxBytes: BOARD_BASE_CACHE_MAX_BYTES,
     ogBaseMaxBytes: OG_BASE_CACHE_MAX_BYTES,

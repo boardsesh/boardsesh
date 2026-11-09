@@ -8,6 +8,7 @@ import {
   ogClimbQuerySchema,
   type OutputFormat,
 } from '@boardsesh/board-render';
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { applyCorsHeaders } from './cors';
 import { describeBoardConfig } from '../services/og-card-board-line';
 import { getPublicClientIp } from '../utils/client-ip';
@@ -199,9 +200,16 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
 
     // The shared helper also emits Vercel-CDN-Cache-Control for the web route;
     // that header is meaningless from this origin, so drop it.
+    // A URL carrying some other render's version asked for bytes this process
+    // does not draw. Answering it `immutable` would pin the new pixels under the
+    // old version for a year, so it gets the daily tier and the edge lets go of
+    // it. URLs with no `v` are the already-shipped callers and stay immutable.
+    const requestedVersion = url.searchParams.get('v');
+    const pinsOldBytes = requestedVersion !== null && requestedVersion !== BOARD_RENDER_VERSION;
     const { 'Vercel-CDN-Cache-Control': _vercelOnlyHeader, ...ogImageHeaders } = createOgImageHeaders({
       contentType,
-      version: 'immutable',
+      version: pinsOldBytes ? null : 'immutable',
+      unversionedTier: 'daily',
       serverTiming,
     });
     res.writeHead(200, {

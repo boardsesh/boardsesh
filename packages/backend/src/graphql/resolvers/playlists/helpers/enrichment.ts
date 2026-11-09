@@ -94,7 +94,9 @@ export type PublicPlaylistRow = {
 };
 
 /** The `PlaylistGradeSummary` of a public playlist row, or null when it has none. */
-export function formatGradeSummary(p: PublicPlaylistRow) {
+export function formatGradeSummary(
+  p: Pick<PublicPlaylistRow, 'gradedClimbCount' | 'gradeMin' | 'gradeP10' | 'gradeMedian' | 'gradeP90' | 'gradeMax'>,
+) {
   if (
     p.gradedClimbCount == null ||
     p.gradeMin == null ||

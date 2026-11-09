@@ -6330,6 +6330,8 @@ export type Playlist = {
   description?: Maybe<Scalars['String']['output']>;
   /** Number of users following this playlist */
   followerCount: Scalars['Int']['output'];
+  /** Grade spread of the playlist's climbs. Null when none of its climbs has a grade yet. */
+  gradeSummary?: Maybe<PlaylistGradeSummary>;
   /** Display icon */
   icon?: Maybe<Scalars['String']['output']>;
   /** Database ID */

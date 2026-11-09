@@ -1,0 +1,203 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createPrivateOgImageHeaders, normalizeOutputFormat, type OutputFormat } from '@boardsesh/board-render';
+import { applyCorsHeaders } from './cors';
+import { getPublicClientIp } from '../utils/client-ip';
+import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
+import { RateLimitError } from '../utils/rate-limiter';
+import { logger } from '../utils/logger';
+import {
+  RenderQueueSaturatedError,
+  buildOgFamilyByteKey,
+  ensureBoardRendererAvailable,
+  renderOgFamilyArt,
+} from '../services/board-render';
+import { OgFamilyNotFoundError } from '../services/og-family/run-document';
+import { loadPlaylistCard, loadSessionJoinCard } from '../services/og-family/load-cards';
+import type { LoadedOgFamilyCard } from '../services/og-family/card-model';
+
+// The same limits as `/og/climb`: one image per crawl, and a card costs a render.
+const RATE_LIMIT_MAX = 120;
+const SOCKET_RATE_LIMIT_MAX = 600;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const SLOW_RENDER_MS = 1000;
+
+/** `Noto Sans` for the same reason `/og/climb` names it: see `OG_CARD_FONT_FAMILY` there. */
+const OG_FAMILY_FONT_FAMILY = process.env.OG_CARD_FONT_FAMILY?.trim() || 'Noto Sans';
+
+/** A session id or playlist uuid: bounded before any database or CPU work. */
+const OG_RESOURCE_ID_PATTERN = /^[A-Za-z0-9-]{1,100}$/;
+
+/**
+ * The one "no card" answer. Missing, private, ended and refused all answer this,
+ * byte for byte, with `no-store`: anything else would say which ids are real.
+ */
+const NOT_FOUND_BODY = JSON.stringify({ error: 'Not found' });
+
+function sendNotFound(req: IncomingMessage, res: ServerResponse): void {
+  res.writeHead(404, {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(NOT_FOUND_BODY),
+    'Cache-Control': 'no-store',
+  });
+  res.end(req.method === 'HEAD' ? undefined : NOT_FOUND_BODY);
+}
+
+function sendJson(req: IncomingMessage, res: ServerResponse, status: number, body: unknown): void {
+  const encoded = JSON.stringify(body);
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(encoded),
+    'Cache-Control': 'no-store',
+  });
+  res.end(req.method === 'HEAD' ? undefined : encoded);
+}
+
+/** Applies the IP and peer limits. Returns false when the response has been sent. */
+async function passRateLimit(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  try {
+    await checkRateLimitRedis(getPublicClientIp(req), 'og-family', RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS);
+    await checkRateLimitRedis(
+      req.socket.remoteAddress || 'unknown',
+      'og-family-peer',
+      SOCKET_RATE_LIMIT_MAX,
+      RATE_LIMIT_WINDOW_MS,
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      res.writeHead(429, {
+        'Content-Type': 'application/json',
+        'Retry-After': String(error.retryAfterSeconds),
+        'Cache-Control': 'no-store',
+      });
+      res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ error: 'Rate limit exceeded' }));
+      return false;
+    }
+    throw error;
+  }
+}
+
+/** Shared path after a surface has validated its params: load, gate, render, answer. */
+async function serveOgFamilyCard(
+  req: IncomingMessage,
+  res: ServerResponse,
+  surface: 'playlist' | 'session-join',
+  format: OutputFormat,
+  load: () => Promise<LoadedOgFamilyCard | null>,
+): Promise<void> {
+  if (!(await passRateLimit(req, res))) return;
+
+  // The gate runs here, inside the loader, before the byte cache is touched:
+  // the cache is keyed on the drawn data, so a card that went private must never
+  // find its old bytes. Nothing below runs for a refused request.
+  let card: LoadedOgFamilyCard | null;
+  try {
+    card = await load();
+  } catch (error) {
+    if (error instanceof OgFamilyNotFoundError) {
+      sendNotFound(req, res);
+      return;
+    }
+    logger.error('[OGFamily] load failed:', error);
+    sendJson(req, res, 500, { error: 'Render failed' });
+    return;
+  }
+  if (!card) {
+    sendNotFound(req, res);
+    return;
+  }
+
+  // A card with no board art needs no WASM, so a renderer that failed to boot
+  // must not 503 it. Same reasoning as the spray branch in `/og/climb`.
+  if (card.art && !(await ensureBoardRendererAvailable())) {
+    sendJson(req, res, 503, { error: 'Board renderer unavailable' });
+    return;
+  }
+
+  const totalT0 = performance.now();
+  try {
+    const { buffer, contentType, cache, timings } = await renderOgFamilyArt({
+      cacheKey: buildOgFamilyByteKey(surface, card.digest, format),
+      art: card.art,
+      content: card.content,
+      format,
+    });
+    const totalMs = performance.now() - totalT0;
+    const serverTiming = [
+      `total;dur=${totalMs.toFixed(1)}`,
+      `wasm;dur=${timings.wasmMs.toFixed(1)}`,
+      `plane;dur=${timings.planeMs.toFixed(1)}`,
+      `compose;dur=${timings.composeMs.toFixed(1)}`,
+      `cache;desc=${cache}`,
+    ].join(', ');
+
+    const { 'Vercel-CDN-Cache-Control': _vercelOnlyHeader, ...headers } = createPrivateOgImageHeaders({
+      contentType,
+      serverTiming,
+    });
+    res.writeHead(200, {
+      ...headers,
+      'Content-Length': buffer.length,
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(req.method === 'HEAD' ? undefined : buffer);
+
+    const logPayload = {
+      surface,
+      cache,
+      totalMs: Math.round(totalMs),
+      wasmMs: Math.round(timings.wasmMs),
+      bytes: buffer.length,
+      format,
+    };
+    if (totalMs > SLOW_RENDER_MS) logger.warn('[OGFamily] served (slow)', logPayload);
+    else logger.info('[OGFamily] served', logPayload);
+  } catch (error) {
+    if (error instanceof RenderQueueSaturatedError) {
+      res.writeHead(503, {
+        'Content-Type': 'application/json',
+        'Retry-After': '5',
+        'Cache-Control': 'no-store',
+      });
+      res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ error: error.message }));
+      return;
+    }
+    logger.error('[OGFamily] render failed:', error);
+    sendJson(req, res, 500, { error: 'Render failed' });
+  }
+}
+
+function formatFromUrl(url: URL): OutputFormat {
+  return normalizeOutputFormat(url.searchParams.get('format') ?? '') ?? 'jpeg';
+}
+
+/** GET/HEAD/OPTIONS /og/playlist?uuid=… */
+export async function handleOgPlaylist(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (!applyCorsHeaders(req, res)) return;
+  const playlistId = url.searchParams.get('uuid');
+  if (!playlistId || !OG_RESOURCE_ID_PATTERN.test(playlistId)) {
+    sendNotFound(req, res);
+    return;
+  }
+  await serveOgFamilyCard(req, res, 'playlist', formatFromUrl(url), () =>
+    loadPlaylistCard(playlistId, OG_FAMILY_FONT_FAMILY),
+  );
+}
+
+/**
+ * GET/HEAD/OPTIONS /og/session?sessionId=…&variant=join
+ *
+ * An ended session has no truthful "join" to offer, so it answers the same 404 as
+ * a missing one until the recap card ships. The same goes for any other variant.
+ */
+export async function handleOgSession(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (!applyCorsHeaders(req, res)) return;
+  const sessionId = url.searchParams.get('sessionId');
+  if (url.searchParams.get('variant') !== 'join' || !sessionId || !OG_RESOURCE_ID_PATTERN.test(sessionId)) {
+    sendNotFound(req, res);
+    return;
+  }
+  await serveOgFamilyCard(req, res, 'session-join', formatFromUrl(url), () =>
+    loadSessionJoinCard(sessionId, OG_FAMILY_FONT_FAMILY),
+  );
+}

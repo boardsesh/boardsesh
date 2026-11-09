@@ -333,3 +333,59 @@ somebody already posted is a broken one.
 Spray cards derive their frosted background from the same photo-mapped marks as
 the foreground overlay, after every public-visibility gate. A singular matrix
 still shows the photo, on neutral frost without coloured blobs.
+
+## The share-card family (`/og/playlist`, `/og/session?variant=join`)
+
+`packages/shared/board-render/src/og-family.ts` is the layout the other share
+cards render through, so a link pasted into a chat reads like the climb card. The
+surface supplies an art slot and a text stack; the ground (`#181225`), the frosted
+bokeh, the scrim, the column and the wordmark are fixed. It is deliberately not in
+`OPAQUE_RENDER_INPUTS`: climb card URLs stay byte-identical until the climb card
+moves onto this grid.
+
+Slots are `full` (board in x 16-560, text column at x 590), `narrow` (a 290px slice
+around the lit holds, text at x 322) and `none` (no art, text at x 310). The hero
+(`V5–V9`, `Join Huy Dang`) always ends inside x 285-915 so a square search crop keeps
+it. Fit is measured through Pango, never estimated from character counts. A grade
+shrinks to fit and is never cut or wrapped; a name wraps and, only as a last resort,
+truncates. Grade colour comes from `FONT_GRADE_COLORS` with one shared lift
+(`liftGradeColorForCard`) so V8 and up clear contrast on dark without changing hue.
+
+**Data.** Each card runs GraphQL documents in process with graphql-js `execute` on
+`schema`, using a fresh anonymous context per request (`createAnonymousOgContext`).
+Calling resolvers directly would skip field-level masks such as the session roster
+redaction and `boardLocationField`. The connection id has to be fresh on purpose:
+with no user and no `clientIp`, it is the only key `applyRateLimit` has, so a
+constant id would be one global rate-limit bucket for every card. A resolver
+refusing with `NOT_FOUND`/`FORBIDDEN`/`UNAUTHENTICATED`/`BAD_USER_INPUT` becomes the
+same 404 as a missing row; anything else is a 500.
+
+**Gate, then cache.** A family card's bytes are not determined by its URL: a
+playlist can go private and a session can end under an unchanged query string. So
+responses are `private, no-store`, the gate query runs on every request before any
+byte-cache read, and the byte key is the surface plus a digest of the data actually
+drawn (the playlist's `gradeSummary` included, because its daily refresh does not
+touch `playlists.updated_at`). Missing, private, `only_me`, invite-only and ended all
+answer the identical `no-store` 404, so an id cannot be probed. Rate limits match
+`/og/climb`: 120/min per IP, 600/min per peer.
+
+**Playlist art.** The dominant `layoutId` in the first page of climbs, drawn on
+`getDefaultRenderBoard`'s config for that layout, with only that layout's climbs lit.
+Each climb is flattened (`toFlatFrames`) before merging, placements are deduped with
+the first role winning, and merging stops at 72 holds, except that a one-climb list
+always lights its whole climb.
+
+**Join.** Reads `boardPath` from `session`, in either form: `/b/<slug>` (resolved
+through `boardBySlug`, which is why no board name or location is ever selected) or
+the geometry path. The latest tick on that board is lit, an empty `frames` draws the
+unlit board, no board means no art column, and `Join the crew` covers a roster with
+nobody nameable. An ended session has no live roster, so `session()` is null and the
+card answers 404: it cannot truthfully say Join.
+
+Art renders through the shared `runOnRenderSemaphore` cap. Board planes live in their
+own small LRU (`ogFamilyPlaneCache`), because the climb card's `:og` base key omits
+placement and sharing it could serve a misplaced plane and evict climb bases.
+
+`/og/climb` also grew a guard for later changes: a request whose `v` differs from the
+compiled `BOARD_RENDER_VERSION` answers the daily tier rather than `immutable`, so a
+render change cannot pin old bytes for a year. A URL with no `v` stays immutable.
