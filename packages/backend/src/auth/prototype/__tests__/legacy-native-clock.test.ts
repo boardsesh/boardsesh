@@ -15,9 +15,19 @@ import { PROTOTYPE_ISSUER } from '../oauth-options';
 
 // These are transport/database seams around the actual released public handler.
 // jose, SignJWT and all signature/claim verification execute unmodified.
-vi.mock('../../../db/client', () => ({
-  db: { insert: vi.fn(() => ({ values: vi.fn(async () => []) })) },
-  dbRead: {},
+vi.mock('../../../db/client', () => {
+  const database = {
+    insert: vi.fn(() => ({ values: vi.fn(async () => []) })),
+    execute: async () => [{ transaction_isolation: 'read committed' }],
+    transaction: async (callback: (transaction: unknown) => unknown) => callback(database),
+  };
+  return { db: database, dbRead: {} };
+});
+// This file is about token clocks. Deletion admission has its own suite.
+vi.mock('../../human-admission', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../human-admission')>()),
+  isHumanSubjectActive: vi.fn(async () => true),
+  requireHumanSubjectForIssuance: vi.fn(async () => undefined),
 }));
 vi.mock('../../../handlers/cors', () => ({ applyCorsHeaders: vi.fn(() => true) }));
 vi.mock('../../../redis/client', () => ({

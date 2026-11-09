@@ -29,6 +29,12 @@ const mockDbUpdateReturning = vi.fn(async () => []);
 const mockDbDeleteWhere = vi.fn();
 const mockDbDeleteReturning = vi.fn(async () => []);
 
+// These handler tests assume an active account. Admission has its own suites
+// (deletion-credential-admission and admission-read-coalescer).
+vi.mock('../auth/admission-read-coalescer', () => ({
+  createAdmissionCoalescer: () => async () => true,
+}));
+
 vi.mock('../db/client', () => {
   function selectChain(projection?: Record<string, unknown>) {
     const rows =
