@@ -8,7 +8,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     // These run one at a time in the backend-serial project (vite.serial.config.ts).
-    exclude: ['**/node_modules/**', '**/dist/**', ...SERIAL_TEST_FILES],
+    exclude: ['**/node_modules/**', '**/dist/**', 'src/auth/prototype/**', ...SERIAL_TEST_FILES],
     globalSetup: ['./src/__tests__/global-setup.ts'],
     setupFiles: ['./src/__tests__/setup.ts'],
     testTimeout: 10000,

@@ -2,6 +2,8 @@
 # formatted copy (and the `changelog-owned` CI gate rejects changelog edits). See vite.config.ts.
 **/*.generated.json
 **/drizzle/meta/
+# The disposable Better Auth schema uses its own generated migration journal.
+packages/db/auth-prototype-migrations/meta/
 # Traced hold silhouettes (#2202). `scripts/generate-board-art-geometry.ts` emits one
 # polygon per line and `--check` byte-compares the result, so a formatting pass that
 # reflows the coordinate arrays would put the drift gate permanently red — and it triples

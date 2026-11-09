@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "types": ["node"]
+  },
+  "include": ["browser.spec.ts", "../playwright.auth-prototype.config.ts"],
+  "exclude": []
+}
