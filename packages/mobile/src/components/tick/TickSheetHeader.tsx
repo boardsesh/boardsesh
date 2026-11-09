@@ -33,10 +33,21 @@ export const TickSheetHeader = React.memo(function TickSheetHeader({
   onClose,
   closeAccessibilityLabel,
 }: TickSheetHeaderProps) {
-  const { systemColors, spacing, borderRadius } = useTheme();
+  const { systemColors, spacing, borderRadius, variant } = useTheme();
 
   return (
-    <View style={[styles.header, { gap: spacing[3], borderBottomColor: systemColors.separator }]}>
+    <View
+      style={[
+        styles.header,
+        {
+          gap: spacing[3],
+          borderBottomColor: systemColors.separator,
+          // Material sheets separate by surface and space; the form keeps its
+          // one divider under Stars.
+          borderBottomWidth: variant === 'material' ? 0 : StyleSheet.hairlineWidth,
+        },
+      ]}
+    >
       <View
         style={[
           styles.gradeBar,
@@ -69,7 +80,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: TICK_GUTTER,
     minHeight: TICK_HEADER_HEIGHT,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   gradeBar: {
     width: 4,

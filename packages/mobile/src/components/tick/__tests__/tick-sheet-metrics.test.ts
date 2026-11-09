@@ -18,10 +18,13 @@ import {
   TICK_ACTION_MAX_FONT_SCALE,
   TICK_ANGLE_ROW_HEIGHT,
   TICK_CONTROL_ORIGIN,
+  TICK_DETAILS_ROW_HEIGHT,
   TICK_GUTTER,
   TICK_HEADER_HEIGHT,
   TICK_LABEL_GAP,
   TICK_LABEL_MIN_WIDTH,
+  TICK_MATERIAL_LABEL_GAP,
+  TICK_MATERIAL_LABEL_MIN_WIDTH,
   TICK_RAIL_ROW_HEIGHT,
   TICK_ROW_HEIGHT,
   tickActionHeight,
@@ -34,6 +37,15 @@ function percentToNumber(snapPoint: string): number {
 describe('tick sheet metrics', () => {
   it('derives the control seam from the gutter, label column and label gap', () => {
     expect(TICK_CONTROL_ORIGIN).toBe(TICK_GUTTER + TICK_LABEL_MIN_WIDTH + TICK_LABEL_GAP);
+  });
+
+  it('keeps the Material label column on the same control seam', () => {
+    expect(TICK_GUTTER + TICK_MATERIAL_LABEL_MIN_WIDTH + TICK_MATERIAL_LABEL_GAP).toBe(TICK_CONTROL_ORIGIN);
+    expect(TICK_CONTROL_ORIGIN).toBe(84);
+  });
+
+  it('holds the details row at the 48dp Material touch target', () => {
+    expect(TICK_DETAILS_ROW_HEIGHT).toBeGreaterThanOrEqual(48);
   });
 
   it('keeps every row at or above the 44pt touch floor', () => {

@@ -98,6 +98,18 @@ function LogAscentSheetContent({
   const sheetRef = useRef<ManagedSheetHandle>(null);
   const [expanded, setExpanded] = useState(false);
   const compactNote = Platform.OS !== 'android' && !expanded;
+  // Android has one content-fitted state and no detent to reveal Angle and Date
+  // with (#7343), so a row folds them away instead. Separate from `expanded`:
+  // Android fires onChange(0) on open, and handleDetentChange would close
+  // anything sharing that state.
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const foldsDetails = Platform.OS === 'android';
+  const showDetails = foldsDetails ? detailsOpen : !compactNote;
+  const openDetails = useCallback(() => setDetailsOpen(true), []);
+  const detailsDisclosure = useMemo(
+    () => (foldsDetails ? { open: detailsOpen, onOpen: openDetails } : undefined),
+    [foldsDetails, detailsOpen, openDetails],
+  );
   const { snapPoints, onHeaderLayout, onFooterLayout, onBodyLayout } = useCreateTickSnapPoints(
     i18n?.resolvedLanguage,
     compactNote,
@@ -140,6 +152,7 @@ function LogAscentSheetContent({
     if (visible) {
       savedRef.current = false;
       setExpanded(false);
+      setDetailsOpen(false);
     }
   }, [visible]);
 
@@ -262,7 +275,13 @@ function LogAscentSheetContent({
       }
     >
       <View ref={formFieldsRef} onLayout={handleFormFieldsLayout} testID="tick-form-fields">
-        <QuickTickBar form={form} showNote={false} showDate={!compactNote} showAngle={!compactNote} />
+        <QuickTickBar
+          form={form}
+          showNote={false}
+          showDate={showDetails}
+          showAngle={showDetails}
+          detailsDisclosure={detailsDisclosure}
+        />
         <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
       </View>
     </ModalSheet>

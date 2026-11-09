@@ -14,7 +14,7 @@
 //   4. The box geometry does not move between tones. React Native is border-box,
 //      so a tone that changes `borderWidth` resizes the content box under the
 //      label — which is exactly what a 0pt selected border did.
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -72,10 +72,12 @@ vi.mock('../../Text', () => ({
   },
 }));
 
+const uiVariant = vi.hoisted(() => ({ current: 'liquidGlass' as 'liquidGlass' | 'material' }));
+
 vi.mock('../../../providers/theme-provider', async () => {
   const { makeThemeMock } = await import('../../../test/theme-mock');
-  const theme = makeThemeMock();
-  return { useTheme: () => theme };
+  const themes = { liquidGlass: makeThemeMock(), material: makeThemeMock({ variant: 'material' }) };
+  return { useTheme: () => themes[uiVariant.current] };
 });
 
 import { GRADE_CHIP_HEIGHT, GradeChip, type GradeChipColorway, type GradeChipTone } from '../GradeChip';
@@ -416,6 +418,45 @@ describe('GradeChip colorway="selection"', () => {
       expect(chip.borderColor).not.toBe(SELECTED_RING);
       expect(chip.backgroundColor).not.toBe(withAlpha(GRADE_COLOR, 0.18));
     }
+  });
+});
+
+describe('GradeChip colorway="selection" on Material', () => {
+  const materialTheme = makeThemeMock({ variant: 'material' });
+
+  beforeEach(() => {
+    uiVariant.current = 'material';
+  });
+  afterEach(() => {
+    uiVariant.current = 'liquidGlass';
+  });
+
+  it('selects with the tonal container, its ink and a 1pt primary ring', () => {
+    expect(paint('selected', 'selection')).toEqual({
+      backgroundColor: materialTheme.m3.secondaryContainer,
+      borderColor: materialTheme.brandColors.primary,
+      borderWidth: 1,
+      textColor: materialTheme.m3.onSecondaryContainer,
+    });
+  });
+
+  it('thins the consensus ring to 1pt, so no tone resizes the box', () => {
+    expect(paint('consensus', 'selection')).toEqual({
+      backgroundColor: materialTheme.systemColors.fill,
+      borderColor: materialTheme.brandColors.warning,
+      borderWidth: 1,
+      textColor: materialTheme.systemColors.label,
+    });
+    for (const tone of ALL_TONES) {
+      expect(paint(tone, 'selection').borderWidth).toBe(1);
+    }
+  });
+
+  it('leaves the filter rails on the grade ramp', () => {
+    const selected = paint('selected', 'grade');
+
+    expect(selected.backgroundColor).toBe(GRADE_COLOR);
+    expect(selected.textColor).toBe(readableTextColor(GRADE_COLOR));
   });
 });
 

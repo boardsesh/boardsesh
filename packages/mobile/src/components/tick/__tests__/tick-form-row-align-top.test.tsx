@@ -24,8 +24,8 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../Text', () => ({
-  Text: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-    createElement('span', { 'data-style': JSON.stringify(style ?? null) }, children),
+  Text: ({ children, style, variant }: { children?: ReactNode; style?: unknown; variant?: string }) =>
+    createElement('span', { 'data-style': JSON.stringify(style ?? null), 'data-variant': variant }, children),
 }));
 
 vi.mock('../../../providers/theme-provider', async () => {
@@ -55,6 +55,18 @@ function renderRow(props: { alignTop?: boolean } = {}) {
     label: flattenStyle(JSON.parse(label?.getAttribute('data-style') ?? 'null')),
   };
 }
+
+describe('TickFormRow on Material', () => {
+  it('sets the label in subheadline on a 60 floor and an 8 gap, so the seam stays at 84', () => {
+    windowMock.fontScale = 1;
+    const { row, label } = renderRow();
+
+    expect(document.querySelector('span')?.getAttribute('data-variant')).toBe('subheadline');
+    expect(label.minWidth).toBe(60);
+    expect(row.gap).toBe(spacing[2]);
+    expect(row.paddingStart).toBe(16);
+  });
+});
 
 describe('TickFormRow alignTop', () => {
   it('keeps the centred 56pt beat by default', () => {

@@ -42,7 +42,7 @@ export const TickNoteField = React.memo(function TickNoteField({
   onFocus,
   submitBehavior = 'blurAndSubmit',
 }: TickNoteFieldProps) {
-  const { systemColors, brandColors, borderRadius, spacing, textStyles } = useTheme();
+  const { systemColors, brandColors, borderRadius, spacing, textStyles, variant } = useTheme();
   const [focused, setFocused] = useState(false);
   const handleFocus = useCallback(() => {
     setFocused(true);
@@ -76,7 +76,8 @@ export const TickNoteField = React.memo(function TickNoteField({
           borderRadius: borderRadius.lg,
           paddingHorizontal: spacing[3],
           paddingVertical: spacing[2],
-          backgroundColor: systemColors.fill,
+          // Material draws an outlined field: the border below is the whole box.
+          backgroundColor: variant === 'material' ? 'transparent' : systemColors.fill,
           // A real edge at rest, not `transparent` — an unfocused field with no
           // visible boundary reads as decoration rather than somewhere to
           // type. `borderWidth` is unchanged either way, so focus recolours the

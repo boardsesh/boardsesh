@@ -26,6 +26,12 @@ export const TICK_LABEL_GAP = spacing[3]; // 12
  *  inset to. 16 + 56 + 12 = 84. */
 export const TICK_CONTROL_ORIGIN = TICK_GUTTER + TICK_LABEL_MIN_WIDTH + TICK_LABEL_GAP; // 84
 
+/** Material's label floor and gap. Labels drop to the 14/20 `subheadline` there,
+ *  and this pair keeps the same seam while leaving "My grade" room to fit:
+ *  16 + 60 + 8 = 84. */
+export const TICK_MATERIAL_LABEL_MIN_WIDTH = 60;
+export const TICK_MATERIAL_LABEL_GAP = spacing[2]; // 8
+
 /** The row beat. Every plain field row is this tall. */
 export const TICK_ROW_HEIGHT = 56;
 
@@ -36,6 +42,10 @@ export const TICK_RAIL_ROW_HEIGHT = 60;
 /** The angle row: a native slider needs more vertical room than a chip before
  *  its thumb crowds the hairlines above and below. */
 export const TICK_ANGLE_ROW_HEIGHT = 64;
+
+/** The folded Angle and Date summary on the Android create sheet: the 48dp
+ *  Material touch target, and shorter than the two rows it stands in for. */
+export const TICK_DETAILS_ROW_HEIGHT = 48;
 
 /** Sheet header (grade identity bar + title + meta + close disc). */
 export const TICK_HEADER_HEIGHT = 56;

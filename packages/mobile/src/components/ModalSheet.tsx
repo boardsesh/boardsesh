@@ -89,8 +89,8 @@ type ModalSheetProps = {
    * `header` (no-bottom-footers.test.ts holds the list of files allowed a footer). */
   footer?: ReactNode;
   /** Pinned-footer ground. `plate` (default) keeps the raised
-   * `secondaryBackground` plate. `flush` makes it transparent; the hairline top
-   * border stays either way. */
+   * `secondaryBackground` plate. `flush` makes it transparent. The hairline top
+   * border stays on Liquid Glass either way; Material drops it on `flush`. */
   footerSurface?: 'plate' | 'flush';
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
@@ -139,7 +139,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   },
   ref,
 ) {
-  const { systemColors, sheet } = useTheme();
+  const { systemColors, sheet, variant } = useTheme();
   const backgroundStyle = useSheetBackgroundStyle();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
 
@@ -325,6 +325,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
         {
           backgroundColor: footerSurface === 'flush' ? 'transparent' : systemColors.secondaryBackground,
           borderTopColor: systemColors.separator,
+          borderTopWidth: variant === 'material' && footerSurface === 'flush' ? 0 : StyleSheet.hairlineWidth,
           // Window inset + gap at rest; just the gap while the keyboard is up,
           // so the bar rests spacing[3] above the keyboard (the column below is
           // padded by the overlap).
@@ -439,6 +440,5 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

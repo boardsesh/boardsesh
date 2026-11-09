@@ -89,6 +89,9 @@ export type QuickTickForm = {
   firstAscent: boolean;
   /** True while a first-ascent flash or send is still missing its grade. */
   saveBlockedByGrade: boolean;
+  /** Whether the climber has picked a date or time. Until they do the tick saves
+   *  at save-time now, which is why a summary should say "Now" and not `climbedAt`. */
+  climbedAtEdited: boolean;
   /** The picked difficulty id resolved back to its grade name, for the header's
    *  identity bar and for analytics. */
   resolvedGradeName: string | undefined;
@@ -169,6 +172,14 @@ export function useQuickTickForm({
   // visibility), so a value frozen at mount would otherwise save a stale
   // timestamp minutes/hours in the past.
   const hasEditedClimbedAtRef = useRef(false);
+  // The same fact for render. The ref stays because the save path and the
+  // refresh interval read it from stable closures; every write goes through
+  // markClimbedAtEdited so the two can't disagree.
+  const [climbedAtEdited, setClimbedAtEdited] = useState(false);
+  const markClimbedAtEdited = useCallback((edited: boolean) => {
+    hasEditedClimbedAtRef.current = edited;
+    setClimbedAtEdited(edited);
+  }, []);
   // Rendered in the action bar's reserved error slot when the last save attempt
   // failed. Cleared on the next attempt or on success.
   const [lastError, setLastError] = useState<string | null>(null);
@@ -226,8 +237,8 @@ export function useQuickTickForm({
     setLastError(null);
     setClimbedAt(new Date());
     setMaximumClimbedAtDate(new Date());
-    hasEditedClimbedAtRef.current = false;
-  }, [climbUuid]);
+    markClimbedAtEdited(false);
+  }, [climbUuid, markClimbedAtEdited]);
 
   // Keep "now" fresh while the sheet lives on. The picker's upper bound tracks
   // now so a long-open sheet can't select a future minute; and, until the user
@@ -250,10 +261,13 @@ export function useQuickTickForm({
     [angle],
   );
 
-  const handleClimbedAtChange = useCallback((next: Date) => {
-    hasEditedClimbedAtRef.current = true;
-    setClimbedAt(next);
-  }, []);
+  const handleClimbedAtChange = useCallback(
+    (next: Date) => {
+      markClimbedAtEdited(true);
+      setClimbedAt(next);
+    },
+    [markClimbedAtEdited],
+  );
 
   const handleFutureAdjusted = useCallback(() => {
     showToast(tClimbs('mobile.tick.futureTimeAdjusted'), 'warning');
@@ -311,7 +325,7 @@ export function useQuickTickForm({
             setLastError(null);
             setClimbedAt(new Date());
             setMaximumClimbedAtDate(new Date());
-            hasEditedClimbedAtRef.current = false;
+            markClimbedAtEdited(false);
             showToast(tClimbs('mobile.logAscent.savedToast'), 'success');
             // Tell LogAscentSheet this close is a completed save, not an
             // abandon, so its wrapped onClose doesn't fire QuickTickDismissed.
@@ -338,6 +352,7 @@ export function useQuickTickForm({
       tClimbs,
       resolvedGradeName,
       savedRef,
+      markClimbedAtEdited,
     ],
   );
 
@@ -354,6 +369,7 @@ export function useQuickTickForm({
     tickState,
     comment,
     climbedAt,
+    climbedAtEdited,
     maximumClimbedAtDate,
     grades,
     consensusDifficultyId,

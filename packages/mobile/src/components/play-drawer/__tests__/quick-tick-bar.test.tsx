@@ -12,7 +12,17 @@ import { createElement, type ReactNode } from 'react';
 // lifted above every top-level binding in the file.
 const RAIL_TRAIL_INSET = vi.hoisted(() => 24);
 
-type RowProps = { label: string; children?: ReactNode; bleed?: boolean; height?: number; showSeparator?: boolean };
+type RowProps = {
+  label: string;
+  children?: ReactNode;
+  bleed?: boolean;
+  height?: number;
+  showSeparator?: boolean;
+  labelFocusRef?: unknown;
+};
+
+const announceFocus = vi.hoisted(() => vi.fn());
+vi.mock('../use-announce-body-focus', () => ({ useAnnounceBodyFocus: announceFocus }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -66,11 +76,40 @@ vi.mock('../../tick', () => ({
   // is tested in tick/__tests__/tick-angle-control.test.tsx.
   shouldShowAngleRow: (boardName: string | undefined, angles: number[]) => boardName !== 'spray' && angles.length >= 2,
   TICK_RAIL_TRAIL_INSET: RAIL_TRAIL_INSET,
-  TickFormRow: ({ label, children, bleed, height, showSeparator }: RowProps) =>
+  TickDetailsRow: ({
+    angle,
+    openingAngle,
+    climbedAt,
+    now,
+    dateEdited,
+    onPress,
+  }: {
+    angle: number | null;
+    openingAngle: number;
+    climbedAt: Date;
+    now: Date;
+    dateEdited: boolean;
+    onPress: () => void;
+  }) =>
+    createElement(
+      'button',
+      {
+        'data-testid': 'tick-details-row',
+        'data-angle': String(angle),
+        'data-opening-angle': String(openingAngle),
+        'data-climbed-at': climbedAt.toISOString(),
+        'data-now': now.toISOString(),
+        'data-date-edited': String(dateEdited),
+        onClick: onPress,
+      },
+      createElement('span', { 'data-row-label': 'mobile.tick.detailsLabel' }),
+    ),
+  TickFormRow: ({ label, children, bleed, height, showSeparator, labelFocusRef }: RowProps) =>
     createElement(
       'div',
       {
         'data-row': label,
+        'data-focus-target': String(labelFocusRef != null),
         'data-bleed': String(Boolean(bleed)),
         'data-height': height == null ? '' : String(height),
         'data-separator': String(showSeparator !== false),
@@ -196,6 +235,7 @@ function makeForm(overrides: Partial<QuickTickForm> = {}): QuickTickForm {
     tickState: { quality: null, difficulty: undefined, attemptCount: 1 },
     comment: '',
     climbedAt: new Date('2025-06-01T08:00:00.000Z'),
+    climbedAtEdited: false,
     maximumClimbedAtDate: new Date('2025-06-01T08:00:00.000Z'),
     grades: [{ difficultyId: 7, name: 'V5' }] as unknown as QuickTickForm['grades'],
     consensusDifficultyId: 7,
@@ -331,6 +371,95 @@ describe('QuickTickBar angle', () => {
     const { container } = renderBar({ boardName: 'spray' });
 
     expect(rowLabels(container)).not.toContain('mobile.tick.angleLabel');
+  });
+});
+
+// #7343: Android folds Angle and Date behind one summary row.
+describe('QuickTickBar details disclosure', () => {
+  function renderDisclosure(open: boolean, overrides: Partial<QuickTickForm> = {}) {
+    const onOpen = vi.fn();
+    const form = makeForm(overrides);
+    const utils = render(createElement(QuickTickBar, { form, showNote: false, detailsDisclosure: { open, onOpen } }));
+    return { ...utils, onOpen, form };
+  }
+
+  it('stands where Angle and Date are, after the grade and its help line', () => {
+    const { container, getByTestId } = renderDisclosure(false);
+
+    expect(rowLabels(container)).toEqual([
+      'mobile.tick.triesLabel',
+      'mobile.tick.starsLabel',
+      'mobile.tick.gradeLabel',
+      'mobile.tick.detailsLabel',
+    ]);
+    const helpLine = Array.from(container.querySelectorAll('span')).find(
+      (node) => node.textContent === 'mobile.tick.gradeHelp',
+    );
+    expect(helpLine?.compareDocumentPosition(getByTestId('tick-details-row'))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('summarises the form values and reports the tap', () => {
+    const { getByTestId, onOpen } = renderDisclosure(false, { angle: 45, openingAngle: 40, climbedAtEdited: true });
+    const row = getByTestId('tick-details-row');
+
+    expect(row.getAttribute('data-angle')).toBe('45');
+    expect(row.getAttribute('data-opening-angle')).toBe('40');
+    expect(row.getAttribute('data-date-edited')).toBe('true');
+    expect(row.getAttribute('data-now')).toBe('2025-06-01T08:00:00.000Z');
+
+    fireEvent.click(row);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the summary no angle on a spray wall', () => {
+    const { getByTestId } = renderDisclosure(false, { boardName: 'spray' });
+
+    expect(getByTestId('tick-details-row').getAttribute('data-angle')).toBe('null');
+  });
+
+  it('gives the summary no angle when the board has fewer than two', () => {
+    boardAngles.current = [40];
+    const { getByTestId } = renderDisclosure(false);
+    boardAngles.current = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70];
+
+    expect(getByTestId('tick-details-row').getAttribute('data-angle')).toBe('null');
+  });
+
+  it('swaps for the Angle and Date rows when open, and moves focus to Angle', () => {
+    announceFocus.mockClear();
+    const { container, queryByTestId } = renderDisclosure(true);
+
+    expect(queryByTestId('tick-details-row')).toBeNull();
+    expect(rowLabels(container)).toEqual([
+      'mobile.tick.triesLabel',
+      'mobile.tick.starsLabel',
+      'mobile.tick.gradeLabel',
+      'mobile.tick.angleLabel',
+      'mobile.tick.dateLabel',
+    ]);
+    expect(announceFocus).toHaveBeenLastCalledWith(expect.anything(), true);
+    expect(container.querySelector('[data-focus-target="true"]')?.getAttribute('data-row')).toBe(
+      'mobile.tick.angleLabel',
+    );
+  });
+
+  it('moves focus to Date when the board has no angle row', () => {
+    const { container } = renderDisclosure(true, { boardName: 'spray' });
+
+    expect(container.querySelector('[data-focus-target="true"]')?.getAttribute('data-row')).toBe(
+      'mobile.tick.dateLabel',
+    );
+  });
+
+  it('leaves focus alone while folded and on platforms with no disclosure', () => {
+    announceFocus.mockClear();
+    renderDisclosure(false);
+    expect(announceFocus).toHaveBeenLastCalledWith(expect.anything(), false);
+
+    announceFocus.mockClear();
+    const { container } = renderBar();
+    expect(announceFocus).toHaveBeenLastCalledWith(expect.anything(), false);
+    expect(container.querySelector('[data-focus-target="true"]')).toBeNull();
   });
 });
 

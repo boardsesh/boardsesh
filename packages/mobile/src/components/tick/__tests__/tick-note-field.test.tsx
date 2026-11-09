@@ -93,6 +93,14 @@ function inputStyle(container: HTMLElement): Record<string, unknown> {
 }
 
 describe('TickNoteField', () => {
+  it('is an outlined field on Material: no fill, the border stays', () => {
+    const { container } = renderField();
+    const style = inputStyle(container);
+
+    expect(style.backgroundColor).toBe('transparent');
+    expect(style.borderWidth).toBe(1);
+  });
+
   it('renders the input as its own root, with no wrapper element around it', () => {
     // The 2.3.1 shape was a bordered `View` wrapping a `flex: 1` input, and the
     // outer box's `justifyContent: 'center'` is what pinned the input to a

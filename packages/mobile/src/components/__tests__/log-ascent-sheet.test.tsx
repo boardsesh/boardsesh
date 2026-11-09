@@ -226,6 +226,24 @@ vi.mock('../tick', async () => {
         },
         'date',
       ),
+    TickDetailsRow: ({
+      angle,
+      openingAngle,
+      dateEdited,
+      onPress,
+    }: {
+      angle: number | null;
+      openingAngle: number;
+      dateEdited: boolean;
+      onPress: () => void;
+    }) =>
+      createElement('button', {
+        'data-testid': 'tick-details-row',
+        'data-angle': String(angle),
+        'data-opening-angle': String(openingAngle),
+        'data-date-edited': String(dateEdited),
+        onClick: onPress,
+      }),
     TickSheetHeader: ({
       title,
       subtitle,
@@ -319,6 +337,7 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
     formInput.current = input;
     const [comment, setComment] = useState('');
     const [climbedAt, setClimbedAt] = useState(new Date('2025-06-01T08:00:00.000Z'));
+    const [climbedAtEdited, setClimbedAtEdited] = useState(false);
     return {
       boardName: input.boardName,
       angle: pickedAngle.current ?? input.angle,
@@ -326,6 +345,7 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
       tickState: { quality: null, difficulty: undefined, attemptCount: 1 },
       comment,
       climbedAt,
+      climbedAtEdited,
       maximumClimbedAtDate: new Date('2025-06-01T08:00:00.000Z'),
       grades: [],
       consensusDifficultyId: undefined,
@@ -341,7 +361,10 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
       onGradeSelect: vi.fn(),
       onTriesSelect: vi.fn(),
       onCommentChange: setComment,
-      onClimbedAtChange: setClimbedAt,
+      onClimbedAtChange: (next: Date) => {
+        setClimbedAtEdited(true);
+        setClimbedAt(next);
+      },
       onFutureAdjusted: vi.fn(),
       onSave: () => {
         if (input.savedRef) input.savedRef.current = true;
@@ -351,6 +374,10 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
     };
   },
 }));
+
+// Calls `findNodeHandle`, which the react-native mock above leaves out. Which row
+// gets the focus is pinned in quick-tick-bar.test.tsx.
+vi.mock('../play-drawer/use-announce-body-focus', () => ({ useAnnounceBodyFocus: vi.fn() }));
 
 vi.mock('../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children) }));
 vi.mock('../StarRating', () => ({ StarRating: () => createElement('span', null, 'stars') }));
@@ -560,9 +587,89 @@ describe('LogAscentSheet angle row (#6615)', () => {
     expect(getByTestId('tick-angle-value').textContent).toBe('40');
   });
 
-  it('shows the angle in the single Android content-fitting state', () => {
+  it('folds the angle behind the details row on Android and keeps its value', () => {
+    platformMock.OS = 'android';
+    const { getByTestId, queryByTestId } = renderSheet();
+    expect(queryByTestId('tick-row-angle')).toBeNull();
+
+    fireEvent.click(getByTestId('tick-details-row'));
+    expect(getByTestId('tick-row-angle')).toBeTruthy();
+    expect(getByTestId('tick-angle-value').textContent).toBe('40');
+    expect(queryByTestId('tick-details-row')).toBeNull();
+  });
+});
+
+describe('LogAscentSheet Android details fold (#7343)', () => {
+  const sheetProps = {
+    onClose: vi.fn(),
+    climbUuid: 'climb-1',
+    boardName: 'kilter',
+    angle: 40,
+    isMirror: false,
+    isBenchmark: false,
+    baseAscensionistCount: 10,
+    layoutId: 7,
+  };
+
+  it('stays open through the onChange(0) Android fires when the sheet settles', () => {
     platformMock.OS = 'android';
     const { getByTestId } = renderSheet();
+
+    fireEvent.click(getByTestId('tick-details-row'));
+    fireEvent.click(getByTestId('simulate-collapse'));
+
+    expect(getByTestId('tick-row-angle')).toBeTruthy();
+    expect(getByTestId('tick-row-date')).toBeTruthy();
+  });
+
+  it('folds again on the next present, and the summary carries the changed angle', () => {
+    platformMock.OS = 'android';
+    const { getByTestId, queryByTestId, rerender } = render(
+      createElement(LogAscentSheet, { ...sheetProps, visible: true }),
+    );
+
+    fireEvent.click(getByTestId('tick-details-row'));
+    pickedAngle.current = 45;
+    rerender(createElement(LogAscentSheet, { ...sheetProps, visible: false }));
+    rerender(createElement(LogAscentSheet, { ...sheetProps, visible: true }));
+
+    expect(queryByTestId('tick-row-angle')).toBeNull();
+    expect(getByTestId('tick-details-row').getAttribute('data-angle')).toBe('45');
+    expect(getByTestId('tick-details-row').getAttribute('data-opening-angle')).toBe('40');
+  });
+
+  it('reports an edited date to the summary after it folds again', () => {
+    platformMock.OS = 'android';
+    const { getByTestId, rerender } = render(createElement(LogAscentSheet, { ...sheetProps, visible: true }));
+    expect(getByTestId('tick-details-row').getAttribute('data-date-edited')).toBe('false');
+
+    fireEvent.click(getByTestId('tick-details-row'));
+    fireEvent.click(getByTestId('tick-date-value'));
+    rerender(createElement(LogAscentSheet, { ...sheetProps, visible: false }));
+    rerender(createElement(LogAscentSheet, { ...sheetProps, visible: true }));
+
+    expect(getByTestId('tick-details-row').getAttribute('data-date-edited')).toBe('true');
+  });
+
+  it('keeps the same note input, with its text, across unfolding', () => {
+    platformMock.OS = 'android';
+    const { getByTestId } = renderSheet();
+    const noteBefore = getByTestId('tick-note') as HTMLTextAreaElement;
+    fireEvent.change(noteBefore, { target: { value: 'Heel on the left' } });
+
+    fireEvent.click(getByTestId('tick-details-row'));
+
+    expect(getByTestId('tick-note')).toBe(noteBefore);
+    expect(noteBefore.value).toBe('Heel on the left');
+    expect(noteBefore.getAttribute('data-compact')).toBe('false');
+  });
+
+  it('shows no details row on iOS, folded or expanded', () => {
+    const { getByTestId, queryByTestId } = renderSheet();
+    expect(queryByTestId('tick-details-row')).toBeNull();
+
+    fireEvent.click(getByTestId('simulate-expand'));
+    expect(queryByTestId('tick-details-row')).toBeNull();
     expect(getByTestId('tick-row-angle')).toBeTruthy();
   });
 });
@@ -701,10 +808,14 @@ describe('LogAscentSheet compact visible fields at the opening detent (#6503)', 
     expect(getByTestId('tick-date-value').getAttribute('data-date-value')).toBe('2025-03-15T12:00:00.000Z');
   });
 
-  it('keeps date/time available in the single Android content-fitting state', () => {
+  it('folds date/time behind the details row on Android and keeps its value', () => {
     platformMock.OS = 'android';
-    const { getByTestId } = renderSheet();
+    const { getByTestId, queryByTestId } = renderSheet();
+    expect(queryByTestId('tick-row-date')).toBeNull();
+
+    fireEvent.click(getByTestId('tick-details-row'));
     expect(getByTestId('tick-row-date')).toBeTruthy();
+    expect(getByTestId('tick-date-value').getAttribute('data-date-value')).toBe('2025-06-01T08:00:00.000Z');
   });
 
   it('ignores expanded body measurements and rejects stale callbacks after returning to compact', () => {
