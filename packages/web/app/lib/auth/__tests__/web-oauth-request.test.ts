@@ -13,6 +13,7 @@ vi.mock('../web-oauth-command-client.server', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../web-oauth-command-client.server')>()),
   createWebOAuthCommandClient: () => rpc,
 }));
+import { createWebOAuthIdentityAuthRequest } from '../web-oauth-auth.server';
 import { withWebOAuthIdentity } from '../web-oauth-request.server';
 
 const origin = 'https://owned.example.test';
@@ -220,6 +221,36 @@ describe('per-client OAuth start limit', () => {
       expect((await signIn(new CookieJar(), clientAddress, legacyHandler)).status).toBe(302);
     expect(legacyHandler).toHaveBeenCalledTimes(25);
     expect(rpc.intent).not.toHaveBeenCalled();
+  });
+});
+
+describe('terminal identity denials', () => {
+  const binding = { provider: 'google' as const, flow: 'a'.repeat(64), actorCookie: null };
+  const signInParameters = {
+    user: { id: 'provider-profile-id', name: 'Owned climber', email: 'owned@example.test' },
+    account: { provider: 'google', type: 'oauth' as const, providerAccountId: 'owned-provider-subject' },
+    profile: { sub: 'owned-provider-subject', email: 'owned@example.test' },
+  };
+
+  it.each([
+    ['email_conflict', '/auth/error?error=OAuthAccountNotLinked'],
+    ['email_required', '/auth/error?error=OAuthEmailRequired'],
+    ['identity_unavailable', false],
+    ['replayed', false],
+  ] as const)('answers the %s denial with %s', async (code, expected) => {
+    const delegated = createWebOAuthIdentityAuthRequest(base, binding, () => ({
+      intent: vi.fn(),
+      resolve: vi.fn().mockResolvedValue({
+        webOAuthProtocolVersion: 1,
+        operation: 'resolve',
+        requestId: randomUUID(),
+        outcome: 'denied',
+        code,
+      }),
+    }));
+    expect(await delegated.options.callbacks?.signIn?.(signInParameters)).toBe(expected);
+    expect(delegated.resolved()).toBe(false);
+    expect(delegated.unavailable()).toBe(false);
   });
 });
 

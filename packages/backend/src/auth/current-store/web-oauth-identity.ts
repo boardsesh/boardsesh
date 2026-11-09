@@ -12,6 +12,7 @@ import {
   type WebOAuthCommand,
   type WebOAuthIntentCommand,
   type WebOAuthResolveCommand,
+  type WebOAuthResolveDenialCode,
   type WebOAuthIntentReply,
   type WebOAuthResolveReply,
 } from '@boardsesh/auth-protocol';
@@ -32,11 +33,10 @@ type Intent = typeof authWebOAuthIntents.$inferSelect;
 function digest(parts: readonly string[]) {
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
-function denied<Operation extends 'intent' | 'resolve'>(
-  operation: Operation,
-  requestId: string,
-  code: 'identity_unavailable' | 'replayed' = 'identity_unavailable',
-) {
+function denied<
+  Operation extends 'intent' | 'resolve',
+  Code extends WebOAuthResolveDenialCode = 'identity_unavailable',
+>(operation: Operation, requestId: string, code: Code = 'identity_unavailable' as Code) {
   return {
     webOAuthProtocolVersion: WEB_OAUTH_PROTOCOL_VERSION,
     operation,
@@ -243,6 +243,8 @@ export async function resolveWebOAuthIdentity(
       )
         throw new Error('Web OAuth intent expired before completion');
       if (identity.outcome === 'sensitive_link_unavailable') return { outcome: 'unavailable' } as const;
+      if (identity.outcome === 'conflict') return denied('resolve', requestId, 'email_conflict');
+      if (identity.outcome === 'no_email') return denied('resolve', requestId, 'email_required');
       if (identity.outcome !== 'linked' && identity.outcome !== 'created') return denied('resolve', requestId);
       const user = identity.user;
       return webOAuthResolveReplySchema.parse({

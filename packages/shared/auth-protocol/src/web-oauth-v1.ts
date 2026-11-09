@@ -48,13 +48,20 @@ export const webOAuthResolveCommandSchema = z
   .strict();
 export const webOAuthCommandSchema = z.union([webOAuthIntentCommandSchema, webOAuthResolveCommandSchema]);
 
-function deniedReply<Operation extends keyof typeof WEB_OAUTH_COMMAND_PATHS>(operation: Operation) {
+const GENERIC_DENIAL_CODES = ['identity_unavailable', 'replayed'] as const;
+/** Only `resolve` sees a provider profile, so only it can name these two outcomes. */
+const RESOLVE_DENIAL_CODES = [...GENERIC_DENIAL_CODES, 'email_conflict', 'email_required'] as const;
+
+function deniedReply<
+  Operation extends keyof typeof WEB_OAUTH_COMMAND_PATHS,
+  const Codes extends readonly [string, ...string[]],
+>(operation: Operation, codes: Codes) {
   return z
     .object({
       ...metadata,
       operation: z.literal(operation),
       outcome: z.literal('denied'),
-      code: z.enum(['identity_unavailable', 'replayed']),
+      code: z.enum(codes),
     })
     .strict();
 }
@@ -77,7 +84,7 @@ export const webOAuthIntentReplySchema = z.union([
   z
     .object({ ...metadata, operation: z.literal('intent'), outcome: z.literal('recorded'), flow, expiresAt: timestamp })
     .strict(),
-  deniedReply('intent'),
+  deniedReply('intent', GENERIC_DENIAL_CODES),
 ]);
 export const webOAuthResolveReplySchema = z.union([
   z
@@ -90,7 +97,7 @@ export const webOAuthResolveReplySchema = z.union([
       account: webOAuthAccountSchema,
     })
     .strict(),
-  deniedReply('resolve'),
+  deniedReply('resolve', RESOLVE_DENIAL_CODES),
 ]);
 export const webOAuthReplySchema = z.union([webOAuthIntentReplySchema, webOAuthResolveReplySchema]);
 
@@ -107,6 +114,7 @@ export type WebOAuthUser = z.infer<typeof webOAuthUserSchema>;
 export type WebOAuthAccount = z.infer<typeof webOAuthAccountSchema>;
 export type WebOAuthIntentReply = z.infer<typeof webOAuthIntentReplySchema>;
 export type WebOAuthResolveReply = z.infer<typeof webOAuthResolveReplySchema>;
+export type WebOAuthResolveDenialCode = Extract<WebOAuthResolveReply, { outcome: 'denied' }>['code'];
 export type WebOAuthReply = z.infer<typeof webOAuthReplySchema>;
 export type WebOAuthProtocolRejection = z.infer<typeof webOAuthProtocolRejectionSchema>;
 

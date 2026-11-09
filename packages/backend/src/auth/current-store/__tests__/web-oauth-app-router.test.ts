@@ -448,7 +448,9 @@ describe('shipping App Router identity delegation over actual provider and backe
     const result = await current.browser.complete('facebook', { ...profile, subject: randomUUID() });
     expectNoAuthCookie(result.response);
     expect(current.browser.session().length).toBe(0);
-    expect(new URL(result.response.location!).searchParams.get('error')).toBe('AccessDenied');
+    expect(new URL(result.response.location!, current.harness.origin).searchParams.get('error')).toBe(
+      'OAuthAccountNotLinked',
+    );
     expect(await db.select({ id: users.id }).from(users)).toEqual([{ id: owner }]);
     expect(await db.select().from(accounts)).toHaveLength(1);
     expect(current.requests.at(-1)).toEqual({ operation: 'resolve', status: 409 });

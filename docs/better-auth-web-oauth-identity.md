@@ -105,6 +105,10 @@ and block every sign-in. The key is the trusted client address described in the
 [password delegation doc](./better-auth-web-password-delegation.md), and the
 limit is per web instance.
 
+A denied `resolve` carries `email_conflict` or `email_required` when the climber
+can act on it, and the web callback answers with `OAuthAccountNotLinked` or
+`OAuthEmailRequired`. Every other denial stays the generic `AccessDenied`.
+
 Review found that replacing a failed buffered response could discard NextAuth's
 state/PKCE deletion headers and exhaust the pending-flow limit. It also found
 that a newly scoped callback URL otherwise inherited an unbounded session-cookie

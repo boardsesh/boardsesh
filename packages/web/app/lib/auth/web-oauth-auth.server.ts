@@ -2,11 +2,16 @@ import 'server-only';
 import type { NextAuthOptions } from 'next-auth';
 import type { Adapter, AdapterUser } from 'next-auth/adapters';
 import { decode, encode } from 'next-auth/jwt';
-import type { WebOAuthProvider, WebOAuthResolveReply } from '@boardsesh/auth-protocol';
+import type { WebOAuthProvider, WebOAuthResolveDenialCode, WebOAuthResolveReply } from '@boardsesh/auth-protocol';
 import { AuthBackendUnavailableError } from './auth-command-transport.server';
 import { createWebOAuthCommandClient, type WebOAuthCommandClient } from './web-oauth-command-client.server';
 
 type ResolvedIdentity = Extract<WebOAuthResolveReply, { outcome: 'resolved' }>;
+/** Denials the climber can act on. Every other code stays NextAuth's generic AccessDenied. */
+const ACTIONABLE_DENIAL_REDIRECTS: Partial<Record<WebOAuthResolveDenialCode, string>> = {
+  email_conflict: '/auth/error?error=OAuthAccountNotLinked',
+  email_required: '/auth/error?error=OAuthEmailRequired',
+};
 export interface WebOAuthRequestBinding {
   provider: WebOAuthProvider;
   flow: string;
@@ -149,7 +154,7 @@ export function createWebOAuthIdentityAuthRequest(
             name: parameters.user.name ?? null,
             image: parameters.user.image ?? null,
           });
-          if (reply.outcome === 'denied') return false;
+          if (reply.outcome === 'denied') return ACTIONABLE_DENIAL_REDIRECTS[reply.code] ?? false;
           outcome = reply;
           return true;
         } catch {
