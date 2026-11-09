@@ -69,7 +69,14 @@ Sentry.init({
   // and produced ~246k `graphql.parse` spans in 7 days with no diagnostic value;
   // the outbound `http.client` span to the backend already carries the latency.
   // 'Graphql' is INTEGRATION_NAME in @sentry/node's tracing/graphql integration.
-  integrations: (defaultIntegrations) => defaultIntegrations.filter((integration) => integration.name !== 'Graphql'),
+  // RequestData is replaced because `sendDefaultPii` does not cover request bodies,
+  // and sign-in, registration and password routes carry credentials there.
+  integrations: (defaultIntegrations) => [
+    ...defaultIntegrations.filter(
+      (integration) => integration.name !== 'Graphql' && integration.name !== 'RequestData',
+    ),
+    Sentry.requestDataIntegration({ include: { data: false } }),
+  ],
 });
 
 // Join key between a Railway HTTP log line and a Sentry event. Registered as a
