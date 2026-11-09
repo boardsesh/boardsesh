@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -73,7 +74,7 @@ async function invokeCli(
     registerHooks({resolve(specifier,context,nextResolve) {
       if(/^dotenv(?:\\/|$)/.test(specifier)) throw new Error('ENVFILE_IMPORT_FORBIDDEN');
       if(specifier==='postgres') return {url:${JSON.stringify(pathToFileURL(forbiddenClient).href)},shortCircuit:true};
-      if(specifier==='./db-connection.js' && context.parentURL?.includes('/scripts/dedupe-gym-locations.ts'))
+      if(/^\\.\\/db-connection\\.(?:js|ts)$/.test(specifier) && context.parentURL?.includes('/scripts/dedupe-gym-locations.ts'))
         return {url:${JSON.stringify(pathToFileURL(databaseModule).href)},shortCircuit:true};
       return nextResolve(specifier,context);
     }});
