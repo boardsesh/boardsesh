@@ -21,14 +21,13 @@ function payload(overrides: Partial<Parameters<typeof buildAndroidCardPayload>[0
 }
 
 describe('buildAndroidCardPayload', () => {
-  it('puts the expanded holds in the band behind the controls', () => {
-    const { expanded } = payload();
+  it('spreads the holds over the full height of the expanded card', () => {
+    const ys = payload().expanded.map((blob) => blob.y);
 
-    expect(expanded).toHaveLength(3);
-    for (const blob of expanded) {
-      expect(blob.y).toBeGreaterThanOrEqual(84);
-      expect(blob.y).toBeLessThanOrEqual(140);
-    }
+    expect(ys).toHaveLength(3);
+    expect(Math.min(...ys)).toBeLessThan(40);
+    expect(Math.max(...ys)).toBeGreaterThan(100);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(140);
   });
 
   it('reads a climb left to right, start to finish', () => {
@@ -97,12 +96,12 @@ describe('readableGradeColor', () => {
     expect(readableGradeColor('#FF7043', [], [])).toBe('#FF7043');
   });
 
-  it('keeps the collapsed line at 4.5:1 over the brightest hold under it', () => {
+  it('keeps the metadata line at 4.5:1 over the brightest hold under it', () => {
     const colors = readFileSync(
       new URL('../../../../modules/live-activity/android/src/main/res/values/colors.xml', import.meta.url),
       'utf8',
     );
-    const ink = /name="session_card_meta_collapsed">(#[0-9A-Fa-f]{6})</.exec(colors)?.[1] ?? '';
+    const ink = /name="session_card_meta">(#[0-9A-Fa-f]{6})</.exec(colors)?.[1] ?? '';
     const pixel = bokehPixel({ x: 150, y: 24 }, bright, { surface: BOKEH_DARK_SURFACE, blend: 'screen', fade: 0.8 });
 
     expect(contrast(ink, pixel)).toBeGreaterThanOrEqual(4.5);

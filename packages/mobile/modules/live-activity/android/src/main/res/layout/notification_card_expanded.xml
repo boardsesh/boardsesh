@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The expanded card. The holds glow behind the control row (y 92-140); the text
-     above it sits on the darker part of the scrim. -->
+<!-- The expanded card. The holds glow across its full height; the text sits on the
+     darker part of the scrim. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -12,6 +12,19 @@
         android:layout_height="match_parent"
         android:scaleType="fitXY"
         android:importantForAccessibility="no"
+        tools:ignore="ContentDescription" />
+
+    <!-- Deepens the scrim behind a rest clock, whose colours need more contrast than
+         the card's other text. Soft-edged so it doesn't read as a box on the glow. -->
+    <ImageView
+        android:id="@+id/session_card_rest_scrim"
+        android:layout_width="200dp"
+        android:layout_height="140dp"
+        android:layout_gravity="end|top"
+        android:alpha="0.625"
+        android:background="@drawable/session_card_rest_scrim_soft"
+        android:importantForAccessibility="no"
+        android:visibility="gone"
         tools:ignore="ContentDescription" />
 
     <ImageView

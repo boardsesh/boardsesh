@@ -57,11 +57,17 @@ grade colours and contrast stay in tested TypeScript. Kotlin only paints
 - **Collapsed is the main surface.** The lock screen shows the collapsed view by
   default, capped at 48dp, and the system draws no `addAction` buttons there. So the
   card's controls are content views, and a `WearableExtender` keeps a watch's actions.
+- **The timed drive's ring drains.** RemoteViews can't animate, so the service re-posts
+  with a new `setImageLevel` every 1/40 of the drive (at least 1 s), only while the
+  screen is on.
 - **Grey means no active drive** (`resolveLighting == Off`), the same test that writes
   "Driving the wall". Native decides, because a timed drive ends while Android has JS
   timers paused. Both tones are painted together, so that re-post needs no compose.
-- **Holds glow behind the controls, not the text.** Spread behind the text, they need
-  so much scrim for 4.5:1 that the pattern disappears.
+- **Holds glow across the card's full height,** under a scrim that keeps the text at
+  4.5:1. The metadata line has a lighter ink so that scrim can stay at 0.80.
+- **No box edge.** The bitmap fades into the surface at its edges, and the notification
+  is colorized to that surface under the grain. Change the surface or grain alpha and
+  `edgeColorFor` has to change with them.
 - **A true full-bleed card needs a media session**, and that would cost the live rest
   clock and grade colour and need a permanently fake "playing" state.
 

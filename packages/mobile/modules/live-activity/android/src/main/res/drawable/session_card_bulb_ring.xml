@@ -1,21 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A timed drive: an amber ring around the bulb. A tap stops the drive. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <path
-        android:pathData="M12,1.25a10.75,10.75 0 1,0 0,21.5a10.75,10.75 0 1,0 0,-21.5"
-        android:strokeColor="#FBBF24"
-        android:strokeWidth="1.5" />
-    <group
-        android:pivotX="12"
-        android:pivotY="12"
-        android:scaleX="0.62"
-        android:scaleY="0.62">
-        <path
-            android:fillColor="#FBBF24"
-            android:pathData="M9,21c0,0.55 0.45,1 1,1h4c0.55,0 1,-0.45 1,-1v-1H9v1zM12,2C8.14,2 5,5.14 5,9c0,2.38 1.19,4.47 3,5.74V17c0,0.55 0.45,1 1,1h6c0.55,0 1,-0.45 1,-1v-2.26c1.81,-1.27 3,-3.36 3,-5.74 0,-3.86 -3.14,-7 -7,-7z" />
-    </group>
-</vector>
+<!-- A timed drive: an amber ring that drains as the drive runs out. The level sets
+     how far round it is drawn, starting from 12 o'clock. A tap stops the drive. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="24dp"
+        android:height="24dp">
+        <rotate
+            android:fromDegrees="-90"
+            android:pivotX="50%"
+            android:pivotY="50%"
+            android:toDegrees="-90">
+            <shape
+                android:innerRadius="10dp"
+                android:shape="ring"
+                android:thickness="1.5dp"
+                android:useLevel="true">
+                <solid android:color="#FBBF24" />
+                <size
+                    android:width="24dp"
+                    android:height="24dp" />
+            </shape>
+        </rotate>
+    </item>
+    <item android:drawable="@drawable/session_card_bulb_ring_glyph" />
+</layer-list>

@@ -16,7 +16,7 @@ import kotlin.math.roundToInt
 /** Which art one post can carry and still fit the Binder budget. */
 internal data class ArtPlan(val thumbnail: Boolean, val cardArt: Boolean)
 
-/** Full colour while this phone drives the wall, a little grey otherwise. */
+/** Full colour while this phone drives the wall, grey otherwise. */
 internal enum class CardTone { Colour, Grey }
 
 internal data class CardBlob(val x: Float, val y: Float, val radius: Float, val peak: Float, val color: Int)
@@ -88,22 +88,30 @@ internal object SessionCardPainter {
     private val FALLOFF_POSITIONS = floatArrayOf(0f, 0.3f, 0.55f, 0.8f, 1f)
     private val FALLOFF_SHARES = floatArrayOf(1f, 0.8f, 0.4f, 0.12f, 0f)
 
-    private const val GREY_SATURATION = 0.45f
     private const val GREY_BLOB_ALPHA = 0.80f
+    private const val EDGE_FEATHER_DP = 14f
     val COLOUR_SURFACE: Int = Color.rgb(0x0E, 0x0D, 0x12)
     val GREY_SURFACE: Int = Color.rgb(0x10, 0x10, 0x12)
 
     fun surfaceFor(tone: CardTone): Int = if (tone == CardTone.Colour) COLOUR_SURFACE else GREY_SURFACE
 
-    /** Pulls a hold colour toward its luma, keeping enough hue to still read as that hold. */
+    /**
+     * What the card's feathered edge ends up as: the surface under the grain view
+     * (alpha 0.06, mean grey 127). The notification is colorized to this, because
+     * anything else shows the content slot as a box inside the card.
+     */
+    fun edgeColorFor(tone: CardTone): Int =
+        if (tone == CardTone.Colour) Color.rgb(0x15, 0x14, 0x19) else Color.rgb(0x17, 0x17, 0x19)
+
+    /** Not driving: every hold goes to its own luma, so the state reads at a glance. */
     fun toneColor(color: Int, tone: CardTone): Int {
         if (tone == CardTone.Colour) return color
         val red = Color.red(color).toFloat()
         val green = Color.green(color).toFloat()
         val blue = Color.blue(color).toFloat()
         val luma = 0.213f * red + 0.715f * green + 0.072f * blue
-        fun channel(value: Float) = (luma + (value - luma) * GREY_SATURATION).roundToInt().coerceIn(0, 255)
-        return Color.rgb(channel(red), channel(green), channel(blue))
+        val grey = luma.roundToInt().coerceIn(0, 255)
+        return Color.rgb(grey, grey, grey)
     }
 
     fun compose(payload: CardPayload): CardArt = CardArt(panels(payload, CardTone.Colour), panels(payload, CardTone.Grey))
@@ -114,10 +122,12 @@ internal object SessionCardPainter {
             BITMAP_WIDTH, (EXPANDED_HEIGHT * scale).roundToInt(), scale, payload.expanded, tone,
         )
         scrim(expanded, tone, expandedScrim(expanded.height))
+        featherEdges(expanded, tone, EDGE_FEATHER_DP * scale)
         val collapsed = paintGlow(
             BITMAP_WIDTH, (COLLAPSED_HEIGHT * scale).roundToInt(), scale, payload.collapsed, tone,
         )
         scrim(collapsed, tone, collapsedScrim(collapsed.width))
+        featherEdges(collapsed, tone, EDGE_FEATHER_DP * scale)
         return CardPanels(expanded, collapsed)
     }
 
@@ -165,6 +175,24 @@ internal object SessionCardPainter {
     private fun scrim(bitmap: Bitmap, tone: CardTone, gradient: (Int) -> Shader) {
         val paint = Paint().apply { shader = gradient(surfaceFor(tone)) }
         Canvas(bitmap).drawRect(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(), paint)
+    }
+
+    // The bitmap can't reach the notification's edge, so it fades into the surface
+    // instead of ending in a visible rectangle.
+    private fun featherEdges(bitmap: Bitmap, tone: CardTone, feather: Float) {
+        val canvas = Canvas(bitmap)
+        val width = bitmap.width.toFloat()
+        val height = bitmap.height.toFloat()
+        val solid = surfaceFor(tone)
+        val clear = withAlpha(solid, 0f)
+        fun fade(x0: Float, y0: Float, x1: Float, y1: Float, left: Float, top: Float, right: Float, bottom: Float) {
+            val paint = Paint().apply { shader = LinearGradient(x0, y0, x1, y1, solid, clear, Shader.TileMode.CLAMP) }
+            canvas.drawRect(left, top, right, bottom, paint)
+        }
+        fade(0f, 0f, feather, 0f, 0f, 0f, feather, height)
+        fade(width, 0f, width - feather, 0f, width - feather, 0f, width, height)
+        fade(0f, 0f, 0f, feather, 0f, 0f, width, feather)
+        fade(0f, height, 0f, height - feather, 0f, height - feather, width, height)
     }
 
     private fun withAlpha(color: Int, alpha: Float): Int =

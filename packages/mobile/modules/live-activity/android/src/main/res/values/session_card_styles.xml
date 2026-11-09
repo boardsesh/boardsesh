@@ -20,10 +20,9 @@
     <style name="SessionCard.Meta">
         <item name="android:ellipsize">end</item>
         <item name="android:maxLines">1</item>
-        <item name="android:textColor">@color/session_card_secondary</item>
+        <item name="android:textColor">@color/session_card_meta</item>
     </style>
     <style name="SessionCard.Meta.Collapsed">
-        <item name="android:textColor">@color/session_card_meta_collapsed</item>
         <item name="android:textSize">12sp</item>
     </style>
     <style name="SessionCard.Meta.Expanded">

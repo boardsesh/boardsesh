@@ -25,6 +25,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.text.SpannableString
 import android.text.Spanned
@@ -144,6 +145,10 @@ class BoardSessionService : Service() {
     private var lightState: String = LIGHT_STATE_OFF
     private var lightWindowEndMs: Long? = null
 
+    // How long the current timed drive ran for when it began, so the card's ring
+    // can drain from full.
+    private var lightWindowTotalMs: Long = 0L
+
     // The overlay path whose composited bitmap is currently displayed; the async
     // compose only applies its result if this still matches (stale guard).
     @Volatile
@@ -186,6 +191,9 @@ class BoardSessionService : Service() {
     // capture the deadline re-post instead of waiting on the main looper.
     internal var wallClockMs: () -> Long = { System.currentTimeMillis() }
     internal var elapsedRealtimeMs: () -> Long = { SystemClock.elapsedRealtime() }
+    internal var screenInteractive: () -> Boolean = {
+        getSystemService(PowerManager::class.java)?.isInteractive != false
+    }
     internal var scheduleOnMain: (Runnable, Long) -> Unit = { task, delayMs -> mainHandler.postDelayed(task, delayMs) }
     internal var cancelOnMain: (Runnable) -> Unit = { mainHandler.removeCallbacks(it) }
 
@@ -198,6 +206,7 @@ class BoardSessionService : Service() {
     // Re-posts the notification just after a timed drive ends, so the
     // header drops its clock and the bulb icon even while JS is suspended.
     private val lightTransition = Runnable { onLightTransition() }
+    private val lightRingTick = Runnable { onLightRingTick() }
 
     // The re-post above runs on the main Handler, whose clock is uptime: it stops
     // while the phone is in deep sleep. The Chronometer's base is elapsedRealtime,
@@ -250,6 +259,7 @@ class BoardSessionService : Service() {
     override fun onDestroy() {
         cancelOnMain(restTransition)
         cancelOnMain(lightTransition)
+        cancelOnMain(lightRingTick)
         unregisterScreenOnReceiver()
         foregrounded = false
         super.onDestroy()
@@ -290,11 +300,16 @@ class BoardSessionService : Service() {
                 val lightSessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
                 if (sessionId.isNotEmpty() && lightSessionId == sessionId) {
                     lightState = intent.getStringExtra(EXTRA_LIGHT_STATE)?.takeIf { it in LIGHT_STATES } ?: LIGHT_STATE_OFF
-                    lightWindowEndMs = if (intent.hasExtra(EXTRA_LIGHT_WINDOW_END_MS)) {
+                    val nextWindowEndMs = if (intent.hasExtra(EXTRA_LIGHT_WINDOW_END_MS)) {
                         intent.getLongExtra(EXTRA_LIGHT_WINDOW_END_MS, 0L)
                     } else {
                         null
                     }
+                    // A new end is a new or renewed window, so the ring starts full.
+                    if (nextWindowEndMs != lightWindowEndMs) {
+                        lightWindowTotalMs = nextWindowEndMs?.let { it - wallClockMs() } ?: 0L
+                    }
+                    lightWindowEndMs = nextWindowEndMs
                 }
             }
             ACTION_REST_TIMER -> {
@@ -358,6 +373,7 @@ class BoardSessionService : Service() {
             foregrounded = false
             cancelOnMain(restTransition)
             cancelOnMain(lightTransition)
+            cancelOnMain(lightRingTick)
             unregisterScreenOnReceiver()
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -368,6 +384,7 @@ class BoardSessionService : Service() {
         registerScreenOnReceiver()
         scheduleRestTransition()
         scheduleLightTransition()
+        scheduleLightRingTick()
         // Image compositing never runs before promotion: the notification was
         // already built (with the cached bitmap or a placeholder) and posted above.
         maybeComposeImage()
@@ -479,7 +496,7 @@ class BoardSessionService : Service() {
             builder
                 .setCustomContentView(buildCardView(R.layout.notification_card_collapsed, card, tone, art))
                 .setCustomBigContentView(buildCardView(R.layout.notification_card_expanded, card, tone, art))
-                .setColor(SessionCardPainter.surfaceFor(tone))
+                .setColor(SessionCardPainter.edgeColorFor(tone))
                 .setColorized(true)
         } else {
             builder
@@ -584,9 +601,8 @@ class BoardSessionService : Service() {
             views.setTextViewText(R.id.session_card_grade, card.gradeLabel.orEmpty())
             views.setTextColor(R.id.session_card_grade, card.gradeColor ?: ContextCompat.getColor(this, R.color.session_card_ink))
             bindMirror(views)
-        } else {
-            views.setViewVisibility(R.id.session_card_rest_scrim, if (restShown) View.VISIBLE else View.GONE)
         }
+        views.setViewVisibility(R.id.session_card_rest_scrim, if (restShown) View.VISIBLE else View.GONE)
 
         bindCardArt(views, expanded, tone, art.cardArt)
         bindCardControls(views, expanded, connected, restShown, holderLine)
@@ -620,6 +636,13 @@ class BoardSessionService : Service() {
         views.setImageViewBitmap(R.id.session_card_art, if (expanded) panels.expanded else panels.collapsed)
     }
 
+    // 10000 is a full ring: the drawable's level scale.
+    private fun ringLevel(): Int {
+        val window = currentLighting() as? LightingDisplay.Window ?: return RING_FULL_LEVEL
+        if (lightWindowTotalMs <= 0L) return RING_FULL_LEVEL
+        return ((window.endMs - wallClockMs()) * RING_FULL_LEVEL / lightWindowTotalMs).toInt().coerceIn(0, RING_FULL_LEVEL)
+    }
+
     private fun bindCardControls(
         views: RemoteViews,
         expanded: Boolean,
@@ -636,6 +659,8 @@ class BoardSessionService : Service() {
             else -> R.drawable.session_card_bulb_bare
         }
         views.setImageViewResource(R.id.session_bulb, bulbIcon)
+        // After the resource: this is how far round the timed drive's ring is drawn.
+        views.setInt(R.id.session_bulb, "setImageLevel", ringLevel())
         views.setContentDescription(R.id.session_bulb, if (connected) stopLabel ?: relightLabel else connectLabel)
         views.setOnClickPendingIntent(
             R.id.session_bulb,
@@ -929,6 +954,25 @@ class BoardSessionService : Service() {
         if (!foregrounded) return
         postNotification("lighting-transition")
         scheduleLightTransition()
+        scheduleLightRingTick()
+    }
+
+    // RemoteViews can't animate, so the ring drains in steps of a re-post. Only with
+    // the screen on: nobody can see it otherwise, and turning the screen on re-posts.
+    private fun scheduleLightRingTick() {
+        cancelOnMain(lightRingTick)
+        if (cardPayload == null || !screenInteractive()) return
+        val window = currentLighting() as? LightingDisplay.Window ?: return
+        val delayMs = (lightWindowTotalMs / RING_STEPS).coerceAtLeast(MIN_RING_TICK_MS)
+        // The end's own re-post finishes the job.
+        if (wallClockMs() + delayMs >= window.endMs) return
+        scheduleOnMain(lightRingTick, delayMs)
+    }
+
+    private fun onLightRingTick() {
+        if (!foregrounded) return
+        postNotification("lighting-ring")
+        scheduleLightRingTick()
     }
 
     // One re-post for whatever the phone slept through, then both transitions
@@ -939,6 +983,7 @@ class BoardSessionService : Service() {
         postNotification("screen-on")
         scheduleRestTransition()
         scheduleLightTransition()
+        scheduleLightRingTick()
     }
 
     // Minimal notification for when buildNotification() throws: no RemoteViews,
@@ -1217,6 +1262,10 @@ class BoardSessionService : Service() {
         private const val CARD_ART_CACHE_BYTES = 1024 * 1024
 
         const val EXTRA_CARD_JSON = "cardJson"
+
+        private const val RING_FULL_LEVEL = 10_000
+        private const val RING_STEPS = 40L
+        private const val MIN_RING_TICK_MS = 1_000L
 
         /**
          * The filesystem path for an overlay or background JS handed over. A

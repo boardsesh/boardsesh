@@ -15,10 +15,6 @@ import type { WallGlowInput } from '../../components/play-drawer/use-wall-glow';
 export const ANDROID_CARD_EXPANDED: BokehSize = { w: 347, h: 140 };
 export const ANDROID_CARD_COLLAPSED: BokehSize = { w: 347, h: 48 };
 
-// Holds sit in a band behind the controls. Spread behind the text too, they need
-// so much scrim for 4.5:1 that the pattern disappears.
-const EXPANDED_BAND_TOP = 84;
-
 const TEXT_SCRIM = 0.8;
 const GRADE_LIFT_STEP = 0.05;
 
@@ -49,13 +45,13 @@ function roundBlob({ x, y, r, peak, color }: BokehBlob): AndroidCardBlob {
   };
 }
 
-function panelBlobs(glow: WallGlowInput, target: BokehSize, offsetY: number): BokehBlob[] {
+function panelBlobs(glow: WallGlowInput, target: BokehSize): BokehBlob[] {
   return buildBokehBlobs({
     points: glow.holds,
     source: { w: glow.boardWidth, h: glow.boardHeight },
     target,
     rotation: 'clockwise',
-  }).map((blob) => ({ ...blob, y: blob.y + offsetY }));
+  });
 }
 
 function towardsWhite(hex: string, amount: number): string {
@@ -116,8 +112,8 @@ export function buildAndroidCardPayload({
   boardName: string | null | undefined;
   angle: number | null | undefined;
 }): AndroidCardPayload {
-  const expanded = glow ? panelBlobs(glow, { w: ANDROID_CARD_EXPANDED.w, h: 56 }, EXPANDED_BAND_TOP) : [];
-  const collapsed = glow ? panelBlobs(glow, ANDROID_CARD_COLLAPSED, 0) : [];
+  const expanded = glow ? panelBlobs(glow, ANDROID_CARD_EXPANDED) : [];
+  const collapsed = glow ? panelBlobs(glow, ANDROID_CARD_COLLAPSED) : [];
   const gradeLabel = formatVGrade(difficulty, boardName);
   const bandColor = gradeLabel ? getGradeColor(difficulty) : undefined;
   return {

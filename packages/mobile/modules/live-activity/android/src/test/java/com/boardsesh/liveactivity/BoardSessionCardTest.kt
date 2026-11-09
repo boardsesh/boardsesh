@@ -60,6 +60,7 @@ class BoardSessionCardTest {
     private val notifications = mutableListOf<Notification>()
     private val scheduled = mutableListOf<Pair<Runnable, Long>>()
     private var composes = 0
+    private var screenOn = true
     private val latest: Notification get() = notifications.last()
 
     @Before
@@ -100,6 +101,7 @@ class BoardSessionCardTest {
             composer(payload)
         }
         service.wallClockMs = { nowMs }
+        service.screenInteractive = { screenOn }
         service.scheduleOnMain = { task, delayMs -> scheduled.add(task to delayMs) }
         service.cancelOnMain = { task -> scheduled.removeAll { it.first === task } }
         controller.startCommand(0, 1)
@@ -228,7 +230,7 @@ class BoardSessionCardTest {
         assertEquals(colourCollapsed, artWidth(collapsed()))
         val composesBefore = composes
 
-        val (transition, delayMs) = scheduled.single()
+        val (transition, delayMs) = scheduled.maxBy { it.second }
         nowMs += delayMs
         transition.run()
 
@@ -247,6 +249,70 @@ class BoardSessionCardTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         assertEquals(greyCollapsed, artWidth(collapsed()))
+    }
+
+    private fun bulbLevel(): Int = collapsed().findViewById<ImageButton>(R.id.session_bulb).drawable.level
+
+    @Test
+    fun `the ring drains from full as a timed drive runs out`() {
+        val service = startCard()
+        service.send(update())
+        service.send(lighting(BoardSessionService.LIGHT_STATE_WINDOW, endMs = startMs + 40_000))
+        assertEquals(10_000, bulbLevel())
+
+        val (tick, delayMs) = scheduled.minBy { it.second }
+        assertEquals(1_000L, delayMs)
+        nowMs += 20_000
+        tick.run()
+
+        assertTrue(bulbLevel() in 4_900..5_100)
+    }
+
+    @Test
+    fun `a renewed drive refills the ring`() {
+        val service = startCard()
+        service.send(update())
+        service.send(lighting(BoardSessionService.LIGHT_STATE_WINDOW, endMs = startMs + 40_000))
+        nowMs += 20_000
+        service.send(lighting(BoardSessionService.LIGHT_STATE_WINDOW, endMs = nowMs + 40_000))
+
+        assertEquals(10_000, bulbLevel())
+    }
+
+    @Test
+    fun `the ring stops ticking with the screen off and resumes on screen on`() {
+        val service = startCard()
+        service.send(update())
+        service.send(lighting(BoardSessionService.LIGHT_STATE_WINDOW, endMs = startMs + 40_000))
+        screenOn = false
+        val postsBefore = notifications.size
+        scheduled.minBy { it.second }.first.run()
+
+        assertEquals(postsBefore + 1, notifications.size)
+        assertEquals(1, scheduled.size)
+
+        screenOn = true
+        context.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(2, scheduled.size)
+    }
+
+    @Test
+    fun `an open-ended drive has nothing to tick`() {
+        val service = startCard()
+        service.send(update())
+        service.send(lighting(BoardSessionService.LIGHT_STATE_DRIVING))
+
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    fun `the classic card never ticks`() {
+        val service = startCard()
+        service.send(update(json = null))
+        service.send(lighting(BoardSessionService.LIGHT_STATE_WINDOW, endMs = startMs + 40_000))
+
+        assertEquals(1, scheduled.size)
     }
 
     // --- Budget and failure ---
@@ -381,5 +447,6 @@ class BoardSessionCardTest {
         assertEquals(View.GONE, visibility(collapsed(), R.id.session_next))
         assertEquals(View.VISIBLE, visibility(collapsed(), R.id.session_bulb))
         assertEquals(View.VISIBLE, visibility(collapsed(), R.id.session_card_rest_scrim))
+        assertEquals(View.VISIBLE, visibility(expanded(), R.id.session_card_rest_scrim))
     }
 }

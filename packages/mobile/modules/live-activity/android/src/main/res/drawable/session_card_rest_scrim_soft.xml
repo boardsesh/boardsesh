@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Centred on the expanded card's rest clock, gone before the view's own edges. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:type="radial"
+        android:centerX="0.72"
+        android:centerY="0.24"
+        android:gradientRadius="90dp"
+        android:startColor="#FF0E0D12"
+        android:centerColor="#FF0E0D12"
+        android:endColor="#000E0D12" />
+</shape>

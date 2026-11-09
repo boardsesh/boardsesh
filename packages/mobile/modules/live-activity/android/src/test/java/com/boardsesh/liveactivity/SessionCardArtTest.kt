@@ -43,12 +43,12 @@ class SessionCardArtTest {
     }
 
     @Test
-    fun `grey keeps the hold's hue at less than half its saturation`() {
+    fun `the grey tone takes every hold to a true grey at its own brightness`() {
         val grey = SessionCardPainter.toneColor(Color.rgb(0x27, 0xED, 0x2A), CardTone.Grey)
 
-        assertTrue(Color.green(grey) > Color.red(grey))
-        assertTrue(Color.green(grey) > Color.blue(grey))
-        assertTrue(Color.green(grey) - Color.red(grey) < (0xED - 0x27) / 2)
+        assertEquals(Color.red(grey), Color.green(grey))
+        assertEquals(Color.green(grey), Color.blue(grey))
+        assertTrue(Color.green(grey) > 0x80)
         assertEquals(Color.RED, SessionCardPainter.toneColor(Color.RED, CardTone.Colour))
     }
 
@@ -93,15 +93,32 @@ class SessionCardArtTest {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun `the grey tone is duller than the colour tone at a blob's centre`() {
+    fun `the grey tone has no hold colour at a blob's centre`() {
         val blob = CardBlob(40f, 40f, 40f, 0.9f, Color.rgb(0x27, 0xED, 0x2A))
         fun chroma(tone: CardTone): Int {
             val pixel = SessionCardPainter.paintGlow(80, 80, 1f, listOf(blob), tone).getPixel(40, 40)
             return Color.green(pixel) - Color.red(pixel)
         }
 
-        assertTrue(chroma(CardTone.Grey) < chroma(CardTone.Colour))
-        assertTrue(chroma(CardTone.Grey) > 0)
+        assertTrue(chroma(CardTone.Colour) > 100)
+        assertTrue(abs(chroma(CardTone.Grey)) <= 3)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun `the panels fade into the surface at their edges`() {
+        val blob = CardBlob(173f, 70f, 400f, 0.9f, Color.GREEN)
+        val art = SessionCardPainter.compose(
+            CardPayload(listOf(blob), listOf(blob), gradeLabel = null, gradeColor = null, angleLabel = null),
+        )
+        val panel = art.forTone(CardTone.Colour).expanded
+        val surface = SessionCardPainter.surfaceFor(CardTone.Colour)
+
+        for ((x, y) in listOf(0 to panel.height / 2, panel.width - 1 to panel.height / 2, panel.width / 2 to 0, panel.width / 2 to panel.height - 1)) {
+            val pixel = panel.getPixel(x, y)
+            assertTrue("$x,$y", abs(Color.green(pixel) - Color.green(surface)) <= 12)
+        }
+        assertTrue(Color.green(panel.getPixel(panel.width / 2, panel.height / 2)) > Color.green(surface) + 12)
     }
 
     private companion object {
