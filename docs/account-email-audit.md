@@ -90,8 +90,9 @@ queue behind the audit, and every later query on `users` would queue behind that
 `ALTER`, which stalls sign-in and every users read until the audit ends.
 
 Limits are 100,000 users/keys, 64 MiB of retained text, 4,096 bytes per identity
-or email field, 1,000 users per page, and a 30-second scan budget (a real run
-over 9,788 users took 16 seconds). Oversized fields are capped in SQL before
+or email field, 1,000 users per page, and a 30-second scan budget. A real run
+over 9,788 users took 16 seconds, so expect the budget to bind at around 18,000
+users, where the audit fails with `TIME_LIMIT` rather than reporting part of the store. Oversized fields are capped in SQL before
 driver allocation. Statements have a five-second timeout and lock waits a
 one-second timeout; an in-flight statement must settle before cleanup, and a
 result exceeding the scan budget is rejected.

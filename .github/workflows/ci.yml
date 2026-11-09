@@ -420,6 +420,7 @@ jobs:
               - 'packages/db/src/user-reference-catalog.ts'
               - 'packages/db/src/__tests__/user-reference-catalog*'
               - 'packages/db/scripts/reconcile-user-references.ts'
+              - 'packages/db/scripts/db-connection.ts'
               - 'packages/db/docker/apply-drizzle-migrations.sh'
               - 'packages/db/docker/legacy-aurora-schema-stub.sql'
               - 'packages/db/docker/bootstrap-pg18-development-roles.sql'

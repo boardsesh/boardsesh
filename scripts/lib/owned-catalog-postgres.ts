@@ -71,9 +71,9 @@ export function digest(contents: string | Buffer): string {
   return createHash('sha256').update(contents).digest('hex');
 }
 
-export function regularFile(path: string, maximumBytes = 32 * 1024 * 1024): Buffer {
+export function regularFile(path: string): Buffer {
   const metadata = lstatSync(path);
-  requireCatalog(metadata.isFile() && !metadata.isSymbolicLink() && metadata.size <= maximumBytes);
+  requireCatalog(metadata.isFile() && !metadata.isSymbolicLink() && metadata.size <= 32 * 1024 * 1024);
   return readFileSync(path);
 }
 

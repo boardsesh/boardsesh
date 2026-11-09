@@ -186,7 +186,7 @@ ordinary catalog visibility and `SELECT` on `public.__drizzle_migrations` and
 `drizzle.__drizzle_migrations`. Run it from the commit deployed to that database,
 or a newly added or dropped foreign key will read as drift.
 
-It prints one JSON line. `status` is `matched`, `different` (exit 1, with each
+Its last line of output is one JSON object, so pipe it through `tail -n 1` before parsing; dotenv can print startup notices first. `status` is `matched`, `different` (exit 1, with each
 difference) or `incomplete` (exit 1, with a fixed error category and never the
 URL). `target` names the transport, primary or standby and the identifier the
 server reported, so a report states which server it describes.
