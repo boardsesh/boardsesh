@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { getServerSession } from 'next-auth/next';
 import { getToken } from 'next-auth/jwt';
@@ -43,18 +44,27 @@ async function captureServerCredential(): Promise<PresentedWebCredential | null>
   );
 }
 
-export async function getAdmittedRawServerToken(): Promise<string | undefined> {
+/**
+ * One admission per server render. A profile page asks for the token about 15
+ * times, and every forwarded request is checked again when it reaches the
+ * backend. React scopes this to one render, so nothing is shared between requests.
+ */
+const admitServerCredentialForRender = cache(async () => {
   const presented = await captureServerCredential();
-  if (!presented || !(await admitPresentedWebCredential(presented.credential))) return undefined;
-  return presented.credential;
+  if (!presented) return null;
+  const userId = await admitPresentedWebCredential(presented.credential);
+  return userId ? { presented, userId } : null;
+});
+
+export async function getAdmittedRawServerToken(): Promise<string | undefined> {
+  return (await admitServerCredentialForRender())?.presented.credential;
 }
 
 /** Never mint a session or silently turn an authority outage into anonymity. */
 export async function getAdmittedServerSession() {
-  const presented = await captureServerCredential();
-  if (!presented) return null;
-  const userId = await admitPresentedWebCredential(presented.credential);
-  if (!userId) return null;
+  const admitted = await admitServerCredentialForRender();
+  if (!admitted) return null;
+  const { presented, userId } = admitted;
 
   const { authOptions } = await import('./auth-options');
   // Read the same selected name that was admitted; preserve request-local
