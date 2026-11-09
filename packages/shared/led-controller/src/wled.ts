@@ -120,6 +120,15 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
     }
   }
 
+  /** An unreadable state is no reason to blank a lit wall; the write that follows says if the controller is gone. */
+  async function switchedOffSinceLastWrite(url: string) {
+    try {
+      return isSwitchedOff(await request(url, 'state'));
+    } catch {
+      return false;
+    }
+  }
+
   const driver: LedControllerDriver = {
     async probe(url, signal) {
       return readInfo(await request(url, 'info', signal));
@@ -185,7 +194,7 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
           // The WLED app, a button or Turn LEDs off may have switched it off since
           // the last write. Individual colours alone would be acknowledged and
           // stay dark, so start again from the full wake.
-          if (count !== null && isSwitchedOff(await request(url, 'state'))) {
+          if (count !== null && (await switchedOffSinceLastWrite(url))) {
             count = null;
             previous = [];
           }

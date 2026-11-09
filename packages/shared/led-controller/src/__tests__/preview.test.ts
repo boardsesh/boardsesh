@@ -342,6 +342,24 @@ describe('serialized LED preview ownership', () => {
     await session.close();
   });
 
+  it('still writes the route, and leaves the wall lit, when the state read fails', async () => {
+    const { fetchController, driver, commands } = fixture();
+    const session = createLedPreviewSession(driver, 'readfail.local');
+    await session.show([1]);
+    const count = commands().length;
+    fetchController.mockImplementationOnce(async () => {
+      throw new Error('lost');
+    });
+    expect(await session.show([2])).toBe(true);
+    expect(
+      commands()
+        .slice(count)
+        .filter((command) => command.on === false),
+    ).toHaveLength(0);
+    expect(commands().at(-1)).toMatchObject({ seg: [{ id: 0, i: [1, '00000000', 2, 'FFFFFFFF'] }] });
+    await session.close();
+  });
+
   it('letting go leaves the lights on and the next session wakes the controller', async () => {
     const { driver, commands } = fixture();
     const first = createLedPreviewSession(driver, 'letgo.local');
@@ -362,6 +380,7 @@ describe('serialized LED preview ownership', () => {
     const session = createLedPreviewSession(driver, 'inflight.local');
     await session.show([1]);
     let failWrite: (() => void) | undefined;
+    fetchController.mockImplementationOnce(async () => json({ on: true, bri: 64, seg: [{ id: 0 }] }));
     fetchController.mockImplementationOnce(
       () =>
         new Promise<Response>((_resolve, reject) => {
