@@ -9,6 +9,13 @@ import { redisClientManager } from './redis/client';
 import { eventBroker, NotificationWorker } from './events/index';
 import { initCors, applyCorsHeaders } from './handlers/cors';
 import { rejectApiHostRequest } from './handlers/api-host';
+import {
+  createMalformedRequestRecorder,
+  dropUnfinishedResponse,
+  guardRequestHandler,
+  parseRequestUrl,
+  refuseMalformedRequest,
+} from './handlers/request-guard';
 import { handleDatabaseHealthCheck, handleHealthCheck } from './handlers/health';
 import { recordDbConnectRetry } from './services/db-health';
 import { handleSessionJoin } from './handlers/join';
@@ -355,11 +362,18 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   // Create GraphQL Yoga instance
   const yoga = createYogaInstance();
 
+  const recordMalformedRequest = createMalformedRequestRecorder();
+
   /**
    * Custom request handler that routes requests to appropriate handlers
    */
   async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const url = parseRequestUrl(req);
+    if (!url) {
+      refuseMalformedRequest(res);
+      recordMalformedRequest();
+      return;
+    }
     const pathname = url.pathname;
 
     try {
@@ -781,13 +795,17 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         })
       ) {
         logger.info('Request aborted by client', { method: req.method, url: req.url });
+        // An upstream reset carries the same codes, with the client still waiting.
+        dropUnfinishedResponse(res);
         return;
       }
       logger.error('Request handler error:', error);
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Internal server error' }));
+      if (res.headersSent) {
+        dropUnfinishedResponse(res);
+        return;
       }
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal server error' }));
     }
   }
 
@@ -800,9 +818,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   const certFile = process.env.DEV_HTTPS_CERT_FILE;
   const keyFile = process.env.DEV_HTTPS_KEY_FILE;
   const tlsEnabled = !!(certFile && keyFile);
+  const requestListener = guardRequestHandler(handleRequest);
   const httpServer = tlsEnabled
-    ? createHttpsServer({ cert: readFileSync(certFile!), key: readFileSync(keyFile!) }, handleRequest)
-    : createServer(handleRequest);
+    ? createHttpsServer({ cert: readFileSync(certFile!), key: readFileSync(keyFile!) }, requestListener)
+    : createServer(requestListener);
 
   // Setup WebSocket server for GraphQL subscriptions (includes ping/pong heartbeat)
   const { wss, pingInterval } = setupWebSocketServer(httpServer);
