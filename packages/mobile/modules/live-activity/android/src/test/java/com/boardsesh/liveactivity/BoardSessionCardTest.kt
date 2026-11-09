@@ -130,12 +130,14 @@ class BoardSessionCardTest {
         json?.let { putExtra(BoardSessionService.EXTRA_CARD_JSON, it) }
     }
 
-    private fun lighting(state: String, endMs: Long? = null) = Intent(context, BoardSessionService::class.java).apply {
-        action = BoardSessionService.ACTION_LIGHTING
-        putExtra(BoardSessionService.EXTRA_SESSION_ID, session)
-        putExtra(BoardSessionService.EXTRA_LIGHT_STATE, state)
-        endMs?.let { putExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_END_MS, it) }
-    }
+    private fun lighting(state: String, endMs: Long? = null, windowSeconds: Double? = null) =
+        Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_LIGHTING
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, session)
+            putExtra(BoardSessionService.EXTRA_LIGHT_STATE, state)
+            endMs?.let { putExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_END_MS, it) }
+            windowSeconds?.let { putExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_SECONDS, it) }
+        }
 
     private fun BoardSessionService.send(intent: Intent) = onStartCommand(intent, 0, 2)
 
@@ -266,6 +268,33 @@ class BoardSessionCardTest {
         tick.run()
 
         assertTrue(bulbLevel() in 4_900..5_100)
+    }
+
+    @Test
+    fun `a service restarted mid-drive shows the drive's real progress`() {
+        val service = startCard()
+        service.send(update())
+
+        service.send(lighting(BoardSessionService.LIGHT_STATE_WINDOW, endMs = startMs + 30_000, windowSeconds = 60.0))
+
+        assertEquals(5_000, bulbLevel())
+    }
+
+    @Test
+    fun `the lighting intent carries the drive's length`() {
+        val snapshot = LightingWindowSnapshot(
+            sessionId = session,
+            mode = BoardSessionService.LIGHT_STATE_WINDOW,
+            endsAtMs = startMs,
+            windowSeconds = 45.0,
+            family = null,
+            source = LightingWindowStore.SOURCE_APP,
+            updatedAtMs = startMs,
+        )
+
+        val intent = BoardSessionService.lightingIntent(context, session, snapshot)
+
+        assertEquals(45.0, intent.getDoubleExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_SECONDS, 0.0), 0.0)
     }
 
     @Test

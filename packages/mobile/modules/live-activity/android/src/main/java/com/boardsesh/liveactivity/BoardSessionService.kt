@@ -305,9 +305,16 @@ class BoardSessionService : Service() {
                     } else {
                         null
                     }
-                    // A new end is a new or renewed window, so the ring starts full.
+                    // A new end is a new or renewed window. The drive's own length comes
+                    // first: a service restarted mid-drive must not read what's left as
+                    // the whole drive, or the ring would start full and drain too fast.
                     if (nextWindowEndMs != lightWindowEndMs) {
-                        lightWindowTotalMs = nextWindowEndMs?.let { it - wallClockMs() } ?: 0L
+                        val driveMs = if (intent.hasExtra(EXTRA_LIGHT_WINDOW_SECONDS)) {
+                            (intent.getDoubleExtra(EXTRA_LIGHT_WINDOW_SECONDS, 0.0) * 1000).toLong()
+                        } else {
+                            0L
+                        }
+                        lightWindowTotalMs = driveMs.takeIf { it > 0L } ?: nextWindowEndMs?.let { it - wallClockMs() } ?: 0L
                     }
                     lightWindowEndMs = nextWindowEndMs
                 }
@@ -1304,6 +1311,7 @@ class BoardSessionService : Service() {
         // ACTION_START.
         const val EXTRA_LIGHT_STATE = "lightState"
         const val EXTRA_LIGHT_WINDOW_END_MS = "lightWindowEndMs"
+        const val EXTRA_LIGHT_WINDOW_SECONDS = "lightWindowSeconds"
         const val EXTRA_LIGHT_DRIVING_LABEL = "lightDrivingLabel"
         // The lit bulb's Stop driving label (from JS, on ACTION_START), and the
         // bulb intent's flag that it was drawn as Stop driving.
@@ -1339,6 +1347,7 @@ class BoardSessionService : Service() {
                 putExtra(EXTRA_SESSION_ID, sessionId)
                 putExtra(EXTRA_LIGHT_STATE, snapshot?.mode ?: LIGHT_STATE_OFF)
                 snapshot?.endsAtMs?.let { putExtra(EXTRA_LIGHT_WINDOW_END_MS, it) }
+                snapshot?.windowSeconds?.let { putExtra(EXTRA_LIGHT_WINDOW_SECONDS, it) }
             }
 
         const val EXTRA_REST_CLEAR = "restClear"

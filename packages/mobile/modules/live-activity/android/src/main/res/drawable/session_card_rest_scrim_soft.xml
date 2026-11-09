@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Centred on the expanded card's rest clock, gone before the view's own edges. -->
+<!-- Centred on the expanded card's rest clock, fading out toward the card's text. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <gradient
