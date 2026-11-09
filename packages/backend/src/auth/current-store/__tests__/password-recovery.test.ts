@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { createServer, type Server } from 'node:http';
+import { EventEmitter } from 'node:events';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
@@ -36,6 +37,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { setupWorkerDatabase } from '../../../__tests__/worker-db';
 import { db } from '../../../db/client';
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
+import { __resetNativeAuthStateForTests, handleNativeAuthRefresh } from '../../../handlers/native-auth';
 import { logger } from '../../../utils/logger';
 import { normalizeAccountEmail } from '../../normalize-email';
 import { CURRENT_EMAIL_NORMALIZER_VERSION, lockEnforcedProjection } from '../foundation-context';
@@ -241,6 +243,55 @@ async function snapshot(userId: string, token: string) {
     refresh: await db.select().from(mobileRefreshTokens),
     nonces: await db.select().from(verificationTokens),
   };
+}
+/** Drives the shipped refresh handler, so these races exercise its real statements. */
+async function refreshOverHandler(refreshToken: string) {
+  const request = Object.assign(new EventEmitter(), {
+    method: 'POST',
+    url: '/auth/native/refresh',
+    headers: {},
+    socket: { remoteAddress: '127.0.0.1' },
+    destroy: () => undefined,
+  });
+  const response = {
+    statusCode: 0,
+    writeHead(status: number) {
+      this.statusCode = status;
+    },
+    end() {},
+    setHeader() {},
+  };
+  setImmediate(() => {
+    request.emit('data', Buffer.from(JSON.stringify({ refreshToken }), 'utf8'));
+    request.emit('end');
+  });
+  await handleNativeAuthRefresh(request as unknown as IncomingMessage, response as unknown as ServerResponse);
+  return response.statusCode;
+}
+async function seedRefreshToken(userId: string) {
+  const refreshToken = randomBytes(32).toString('hex');
+  await db.insert(mobileRefreshTokens).values({
+    userId,
+    tokenHash: createHash('sha256').update(refreshToken).digest('hex'),
+    expiresAt: new Date(Date.now() + 86400000),
+  });
+  return refreshToken;
+}
+async function liveRefreshRows(userId: string) {
+  const rows = await db.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, userId));
+  return { total: rows.length, live: rows.filter((row) => row.revokedAt === null).length };
+}
+/** The refresh handler connects as the owner role, unlike the restricted recovery writer. */
+async function refreshWaitingOnLock(pending: Promise<unknown>) {
+  await poll(
+    async () =>
+      (
+        await admin(
+          sql`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE usename<>${role} AND wait_event_type='Lock' AND query ILIKE 'insert into "mobile_refresh_tokens"%') AS waiting`,
+        )
+      )[0]?.waiting === true,
+    pending,
+  );
 }
 function failureDetails(error: unknown): { code?: string; constraint?: string } {
   if (!error || typeof error !== 'object') return {};
@@ -836,6 +887,89 @@ describe('UID-bound password recovery over the restricted current store', () => 
     }
     expect((await consumePasswordRecovery(writers[0], authority, command)).outcome).toBe('reset');
   });
+  it('revokes a rotated refresh row whose insert is uncommitted when the reset starts', async () => {
+    const { user, plan } = await issued();
+    const refreshToken = await seedRefreshToken(user.id);
+    vi.stubEnv('NEXTAUTH_SECRET', secret);
+    __resetNativeAuthStateForTests();
+    const rotated = barrier();
+    const commitRotation = barrier();
+    const runTransaction = db.transaction.bind(db);
+    vi.spyOn(db, 'transaction').mockImplementationOnce(((work, config) =>
+      runTransaction(async (transaction) => {
+        const outcome = await work(transaction);
+        rotated.resolve();
+        await commitRotation.promise;
+        return outcome;
+      }, config)) as typeof db.transaction);
+    const refresh = refreshOverHandler(refreshToken);
+    let resetReply: ResetPasswordReply;
+    try {
+      await bounded(rotated.promise);
+      expect(await liveRefreshRows(user.id)).toEqual({ total: 1, live: 1 });
+      // The insert's foreign-key check holds the users row, so the reset cannot
+      // reach its refresh revocation until the rotation has committed.
+      resetReply = await duringHash(reset(plan.token), async (pending, resume) => {
+        resume();
+        try {
+          await waiting(pending);
+        } finally {
+          commitRotation.resolve();
+        }
+      });
+    } finally {
+      commitRotation.resolve();
+    }
+    expect(await bounded(refresh)).toBe(200);
+    expect(resetReply.outcome).toBe('reset');
+    expect(await liveRefreshRows(user.id)).toEqual({ total: 2, live: 0 });
+  }, 15000);
+  it('leaves no live refresh row when a rotation and a reset deadlock on the users row', async () => {
+    const { user, plan } = await issued();
+    const refreshToken = await seedRefreshToken(user.id);
+    vi.stubEnv('NEXTAUTH_SECRET', secret);
+    __resetNativeAuthStateForTests();
+    // Parks the reset after it locks the users row and before it revokes.
+    const stateLocked = barrier();
+    const releaseState = barrier();
+    const stateHolder = db.transaction(async (transaction) => {
+      await transaction
+        .select()
+        .from(authPasswordRecoveryState)
+        .where(eq(authPasswordRecoveryState.userId, user.id))
+        .for('update');
+      stateLocked.resolve();
+      await releaseState.promise;
+    });
+    await bounded(stateLocked.promise);
+    let refresh: Promise<number> | undefined;
+    const settledReset = duringHash(reset(plan.token), async (pending, resume) => {
+      try {
+        resume();
+        await waiting(pending);
+        refresh = refreshOverHandler(refreshToken);
+        await refreshWaitingOnLock(refresh);
+      } finally {
+        releaseState.resolve();
+      }
+    }).then(
+      (reply) => ({ reply }),
+      (error: unknown) => ({ error }),
+    );
+    const settled = await bounded(settledReset, 12000);
+    await stateHolder;
+    const status = await bounded(refresh!, 9000);
+    if ('reply' in settled) {
+      expect(settled.reply.outcome).toBe('reset');
+      expect(status).toBe(500);
+    } else {
+      expect(failureDetails(settled.error).code).toBe('40P01');
+      expect(status).toBe(200);
+      expect(await liveRefreshRows(user.id)).toEqual({ total: 2, live: 1 });
+      expect((await consumePasswordRecovery(writers[0], authority, reset(plan.token))).outcome).toBe('reset');
+    }
+    expect((await liveRefreshRows(user.id)).live).toBe(0);
+  }, 15000);
   it('invalidates an older UID verification receipt through the committed subject generation', async () => {
     const { user, plan } = await issued();
     const verification = await db.transaction((transaction) => issueEmailVerification(transaction, authority, user.id));
