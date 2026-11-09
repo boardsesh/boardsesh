@@ -213,11 +213,6 @@ describe('partner OAuth availability', () => {
         counts[status] = (counts[status] ?? 0) + 1;
         return counts;
       }, {});
-      expect(refreshed.status).toBe(200);
-      // Before the gate this waited 3,083 ms against a 10 ms baseline.
-      expect(refreshDuringFloodMs).toBeLessThan(500);
-      expect(statuses[503]).toBeGreaterThan(0);
-
       record('authorize-flood-vs-refresh', {
         baselineRefreshMs: Math.round(baselineRefreshMs),
         refreshDuringFloodMs: Math.round(refreshDuringFloodMs),
@@ -225,6 +220,11 @@ describe('partner OAuth availability', () => {
         floodServed302: statuses[302] ?? 0,
         floodRefused503: statuses[503] ?? 0,
       });
+
+      expect(refreshed.status).toBe(200);
+      // Before the gate this waited 3,083 ms against a 10 ms baseline.
+      expect(refreshDuringFloodMs).toBeLessThan(500);
+      expect(statuses[503]).toBeGreaterThan(0);
     },
     FLOOD_DEADLINE_MS,
   );
@@ -275,13 +275,13 @@ describe('partner OAuth availability', () => {
       await Promise.all(replayers);
       const durationSeconds = (performance.now() - replayStarted) / 1000;
 
-      // Before this fix the reset waited 8.8 s, until the replays stopped.
-      expect(resetMs).toBeLessThan(200);
-
       record('spent-code-replay-vs-reset', {
         resetMs: Math.round(resetMs),
         replaysPerSecond: Math.round(replays / durationSeconds),
       });
+
+      // Before this fix the reset waited 8.8 s, until the replays stopped.
+      expect(resetMs).toBeLessThan(200);
     },
     FLOOD_DEADLINE_MS,
   );
@@ -303,16 +303,16 @@ describe('partner OAuth availability', () => {
       const statuses = await Promise.all(slowBodies);
       const refusedAfterMs = performance.now() - openedAt;
 
-      expect(inTransaction).toBe(0);
-      expect(refreshed.status).toBe(200);
-      expect(refreshMs).toBeLessThan(500);
-      expect(statuses).toEqual([408, 408, 408]);
-
       record('endless-bodies-vs-refresh', {
         refreshMs: Math.round(refreshMs),
         connectionsIdleInTransaction: inTransaction,
         refusedAfterMs: Math.round(refusedAfterMs),
       });
+
+      expect(inTransaction).toBe(0);
+      expect(refreshed.status).toBe(200);
+      expect(refreshMs).toBeLessThan(500);
+      expect(statuses).toEqual([408, 408, 408]);
     },
     FLOOD_DEADLINE_MS,
   );

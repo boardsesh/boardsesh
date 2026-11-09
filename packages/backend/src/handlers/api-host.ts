@@ -8,9 +8,10 @@ import { parseRequestTarget } from '../lib/request-url';
 export const API_HOSTNAME = 'api.boardsesh.com';
 
 /**
- * Everything the API host answers, as exact method and path pairs. Partner
- * routes are added here as they ship. Until then `ws.boardsesh.com` stays the
- * only host serving GraphQL, the upload routes and native auth.
+ * Everything else the API host answers, as exact method and path pairs. The
+ * partner OAuth routes are served ahead of this list by `partner-auth.ts`, and
+ * only when their mode is on. `ws.boardsesh.com` stays the only host serving
+ * GraphQL, the upload routes and native auth.
  */
 const API_HOST_ROUTES: ReadonlyArray<{ method: string; pathname: string }> = [{ method: 'GET', pathname: '/health' }];
 
