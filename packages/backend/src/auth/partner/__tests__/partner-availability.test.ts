@@ -171,8 +171,10 @@ describe('partner OAuth availability', () => {
 
   async function idleInTransactionConnections(): Promise<number> {
     const rows = await db.execute(
+      // pg_stat_activity is cluster-wide, and every worktree's tests share one Postgres.
       sql`select count(*)::int as idle from pg_stat_activity
-          where state = 'idle in transaction' and application_name = ${READ_ONLY_PROOF_APPLICATION_NAME}`,
+          where state = 'idle in transaction' and datname = current_database()
+            and application_name = ${READ_ONLY_PROOF_APPLICATION_NAME}`,
     );
     return Number((rows as unknown as Array<{ idle: number }>)[0].idle);
   }
