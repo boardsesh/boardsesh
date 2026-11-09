@@ -88,9 +88,10 @@ export async function lockEnforcedProjection(
  * naming that email needs no credentials. Call after the manifest, before the
  * first user-row lock; it stays in force to commit because everything after it
  * still holds the manifest. A longer wait fails with 55P03, which every entry
- * point reports as unavailable. 250 ms is under PostgreSQL's 1 s deadlock_timeout,
- * so a command gives up before a deletion queued on the manifest becomes a deadlock.
- * A limit rather than NOWAIT: FOR UPDATE also conflicts with the brief foreign-key
+ * point reports as unavailable. This does not rule out a deadlock: a deletion
+ * queued on the manifest runs its own check 1 s after queueing, and a command inside
+ * this wait at that moment completes a cycle, so PostgreSQL aborts the deletion's
+ * lock request (lockFinalManifest retries it). A limit rather than NOWAIT: FOR UPDATE also conflicts with the brief foreign-key
  * KEY SHARE of any ordinary write that references the user.
  */
 export async function boundLockWaitsUnderManifest(transaction: CurrentStoreTransaction): Promise<void> {

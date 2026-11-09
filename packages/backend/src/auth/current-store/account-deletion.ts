@@ -6,6 +6,7 @@ import {
 } from '@boardsesh/db/schema/auth';
 import { and, eq, sql } from 'drizzle-orm';
 import { lockSharedFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
+import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { normalizeAccountEmail } from '../normalize-email';
 import { transactionSettings } from './command-context';
 import {
@@ -16,6 +17,8 @@ import {
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
 import { recordSecurityMutation } from './security-mutations';
+
+const FINAL_MANIFEST_ATTEMPTS = 3;
 
 export interface CapturedAccountDeletionCommand extends ExpectedCurrentStoreAuthority {
   readonly userId: string;
@@ -128,6 +131,23 @@ async function requireRepresentedDeletionEmail(
 }
 
 /**
+ * PostgreSQL runs this wait's deadlock check 1 s after it queues. A command that
+ * holds the manifest and is inside its 250 ms user-row wait at that moment
+ * completes a cycle, and this lock request is the one aborted with 40P01. Retrying
+ * in a savepoint keeps the finished cascade and the user row, so that command
+ * times out instead of winning the row. A full re-run stays the fallback.
+ */
+async function lockFinalManifest(transaction: CurrentStoreTransaction, command: CapturedAccountDeletionCommand) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await transaction.transaction((savepoint) => lockEnforcedProjection(savepoint, command));
+    } catch (error) {
+      if (getPostgresErrorCode(error) !== '40P01' || attempt >= FINAL_MANIFEST_ATTEMPTS) throw error;
+    }
+  }
+}
+
+/**
  * Call last, after the real users DELETE in the SAME outer transaction, so the
  * manifest is held for these few statements and not for content or the cascade.
  * A projection change during that earlier work fails this re-validation and
@@ -145,7 +165,7 @@ export async function recordReservedAccountDeletion(
   // limit is the lower of the two so the failure stays a lock timeout.
   await transaction.execute(sql`SET LOCAL statement_timeout = '35000ms'`);
   await transaction.execute(sql`SET LOCAL lock_timeout = '30000ms'`);
-  const manifest = await lockEnforcedProjection(transaction, command);
+  const manifest = await lockFinalManifest(transaction, command);
   // Short limits from here to commit: only bookkeeping is left, and it runs
   // holding the row every staged auth command queues on.
   await transactionSettings(transaction);

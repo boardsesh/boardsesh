@@ -1488,62 +1488,74 @@ describe('mounted account deletion and current-store authority', () => {
     },
     15000,
   );
-  it('resolves a real command-versus-deletion lock cycle without a deadlock abort', async () => {
-    await seedPair();
-    await installCascadeTrigger(`PERFORM pg_advisory_xact_lock(${cascadeGateKey});`);
-    await installCommandGate();
-    const cascadeGate = await holdOnBlocker((transaction) =>
-      transaction.execute(sql`SELECT pg_advisory_xact_lock(${cascadeGateKey})`),
-    );
-    const commandGate = await holdOnBlocker(
-      (transaction) => transaction.execute(sql`SELECT pg_advisory_xact_lock(${commandGateKey})`),
-      db,
-    );
-    let deletion: Promise<boolean> | undefined;
-    let command: Promise<unknown> | undefined;
-    try {
-      // The deletion holds the user row and is parked inside its cascade.
-      deletion = remove();
-      await waitForBlocker(cascadeGate.backendPid, deletion);
-      // The command holds the manifest and is parked before its user-row lock.
-      command = track(
-        requestPasswordRecovery(db, recoveryAuthority(), webCommand('forgot-password', { email: ownerEmail })),
+  // 0 ms: the command's 250 ms wait ends long before the deletion's 1 s deadlock timer.
+  // 850 ms: that wait straddles the timer, so PostgreSQL can abort the deletion's lock wait.
+  it.each([
+    ['well before', 0],
+    ['across', 850],
+  ] as const)(
+    'keeps one finished cascade when a real lock cycle lands %s the deadlock timer',
+    async (_timing, delay) => {
+      await seedPair();
+      await installCascadeTrigger(`PERFORM pg_advisory_xact_lock(${cascadeGateKey});`);
+      await installCommandGate();
+      const enqueue = vi.spyOn(posthogPersonDeletion, 'enqueuePosthogPersonDeletion');
+      const cascadeGate = await holdOnBlocker((transaction) =>
+        transaction.execute(sql`SELECT pg_advisory_xact_lock(${cascadeGateKey})`),
       );
-      const commandPid = await sessionWaitingOnGate(commandGateKey);
-      // The deletion finishes its cascade and queues on the manifest the command holds.
-      cascadeGate.release();
-      await cascadeGate.held;
-      await waitForBlocker(commandPid, deletion);
-      // The command now requests the row the deletion holds: a real two-lock cycle.
-      commandGate.release();
-      await commandGate.held;
-      const failure: unknown = await bounded(
-        command.then(
-          () => undefined,
-          (error: unknown) => error,
-        ),
+      const commandGate = await holdOnBlocker(
+        (transaction) => transaction.execute(sql`SELECT pg_advisory_xact_lock(${commandGateKey})`),
+        db,
       );
-      expect(postgresErrors.getPostgresErrorCode(failure)).toBe('55P03');
-      expect(await bounded(deletion)).toBe(true);
-      const events = await db
-        .select()
-        .from(authSecurityMutationEvents)
-        .where(eq(authSecurityMutationEvents.userId, ownerId));
-      expect(events).toHaveLength(1);
-      expect(stagedFailureLogs()).toEqual([]);
-    } finally {
-      cascadeGate.release();
-      commandGate.release();
-      await bounded(
-        Promise.allSettled([
-          cascadeGate.held,
-          commandGate.held,
-          ...(deletion ? [deletion] : []),
-          ...(command ? [command] : []),
-        ]),
-      );
-    }
-  }, 15000);
+      let deletion: Promise<boolean> | undefined;
+      let command: Promise<unknown> | undefined;
+      try {
+        // The deletion holds the user row and is parked inside its cascade.
+        deletion = remove();
+        await waitForBlocker(cascadeGate.backendPid, deletion);
+        // The command holds the manifest and is parked before its user-row lock.
+        command = track(
+          requestPasswordRecovery(db, recoveryAuthority(), webCommand('forgot-password', { email: ownerEmail })),
+        );
+        const commandPid = await sessionWaitingOnGate(commandGateKey);
+        // The deletion finishes its cascade and queues on the manifest the command holds.
+        cascadeGate.release();
+        await cascadeGate.held;
+        await waitForBlocker(commandPid, deletion);
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+        // The command now requests the row the deletion holds: a real two-lock cycle.
+        commandGate.release();
+        await commandGate.held;
+        const failure: unknown = await bounded(
+          command.then(
+            () => undefined,
+            (error: unknown) => error,
+          ),
+        );
+        expect(postgresErrors.getPostgresErrorCode(failure)).toBe('55P03');
+        expect(await bounded(deletion)).toBe(true);
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        const events = await db
+          .select()
+          .from(authSecurityMutationEvents)
+          .where(eq(authSecurityMutationEvents.userId, ownerId));
+        expect(events).toHaveLength(1);
+        expect(stagedFailureLogs()).toEqual([]);
+      } finally {
+        cascadeGate.release();
+        commandGate.release();
+        await bounded(
+          Promise.allSettled([
+            cascadeGate.held,
+            commandGate.held,
+            ...(deletion ? [deletion] : []),
+            ...(command ? [command] : []),
+          ]),
+        );
+      }
+    },
+    15000,
+  );
   it('records the generation a password change set between preflight and the final step', async () => {
     await seedPair();
     const hold = await holdOnBlocker((transaction) => lockSprayWallAccount(transaction, ownerId));
