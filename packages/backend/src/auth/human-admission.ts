@@ -8,6 +8,7 @@ import {
   AUTH_ADMISSION_BATCH_SIZE,
   runAuthAdmissionRead,
 } from './admission-read-runner';
+import { createAdmissionCoalescer } from './admission-read-coalescer';
 export {
   AuthAdmissionUnavailableError,
   AUTH_ADMISSION_RESPONSE_DEADLINE_MS,
@@ -25,18 +26,16 @@ export class AuthSubjectDeniedError extends Error {
 }
 
 type AdmissionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
-/** Fresh primary admission only. A generation or JWT issue time is not deletion. */
+
+const admitHumanSubject = createAdmissionCoalescer(activeHumanSubjectIds);
+
+/**
+ * Fresh primary admission only. A generation or JWT issue time is not deletion.
+ * Concurrent callers share one read, so a burst cannot exhaust the read slots.
+ */
 export async function isHumanSubjectActive(userId: string): Promise<boolean> {
   if (!userId) return false;
-  return runAuthAdmissionRead(async () => {
-    const [subject] = await db
-      .select({ id: users.id, deletedAt: authSubjectCutoffs.deletedAt })
-      .from(users)
-      .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
-      .where(eq(users.id, userId))
-      .limit(1);
-    return Boolean(subject && subject.deletedAt === null);
-  });
+  return admitHumanSubject(userId);
 }
 
 /** One bounded primary read for an active-connection sweep, never a result cache. */

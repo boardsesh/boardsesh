@@ -535,21 +535,11 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           }
         }
       },
-      onNext: async (ctx: ServerContext, _id: string, payload, _executionArgs, result) => {
-        const admission = await checkHumanConnection(ctx);
-        if (admission !== 'admitted')
-          return {
-            errors: [
-              new GraphQLError(
-                admission === 'unavailable'
-                  ? 'Authentication is temporarily unavailable'
-                  : 'Authentication is required',
-                { extensions: { code: admission === 'unavailable' ? 'SERVICE_UNAVAILABLE' : 'UNAUTHENTICATED' } },
-              ),
-            ],
-          };
-        return sanitizeBoardShareResult(result, payload.query);
-      },
+      // No admission read per delivery: the sweep closes a deleted account's socket
+      // within a second, and a read here would make every live update wait on the
+      // primary and let one slow read close a healthy socket.
+      onNext: (_ctx: ServerContext, _id: string, payload, _executionArgs, result) =>
+        sanitizeBoardShareResult(result, payload.query),
       onError: (_ctx: ServerContext, _id: string, payload, errors) => {
         const safeErrors = errors.map((error) =>
           sanitizeBoardShareGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),

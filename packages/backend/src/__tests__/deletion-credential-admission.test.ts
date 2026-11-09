@@ -870,57 +870,71 @@ describe('mounted deletion admission against the owned primary database', () => 
     await warm(credentials);
   });
 
-  it.each(['deleted', 'unavailable'] as const)(
-    'rechecks %s authority before a real notification independently of the sweep',
-    async (authorityState) => {
-      // Freeze interval scheduling only: sockets, SQL, response deadlines and
-      // setTimeout continue to run. This isolates the actual graphql-ws onNext
-      // gate from the separate periodic sweep, without replacing either hook.
-      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-      const credentials = await tokens(),
-        server = await webSocketServer();
-      const client = await connect(server.url, credentials.jwe);
-      const poll = async (predicate: () => boolean) => {
-        const deadline = Date.now() + 3000;
-        while (!predicate()) {
-          if (Date.now() >= deadline) throw new Error('Owned notification fixture deadline');
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-      };
-      await poll(() => client.frames.some((frame) => frame.type === 'connection_ack'));
-      const beforeSubscribers = pubsub.getRuntimeStats().notification.subscribers;
-      client.socket.send(
-        JSON.stringify({
-          type: 'subscribe',
-          id: 'notifications',
-          payload: {
-            query: 'subscription { notificationReceived { notification { uuid actorDisplayName } } }',
-          },
-        }),
-      );
-      await poll(() => pubsub.getRuntimeStats().notification.subscribers === beforeSubscribers + 1);
-      const notificationUuid = randomUUID();
-      await db
-        .insert(notifications)
-        .values({ uuid: notificationUuid, recipientId: ownerId, actorId: otherId, type: 'new_follower' });
-      const notification = {
-        uuid: notificationUuid,
-        type: 'new_follower' as const,
-        isRead: false,
-        createdAt: new Date().toISOString(),
-      };
+  it('delivers a notification without a per-event primary read', async () => {
+    // Freeze the sweep and hide the authority, so any read made for this
+    // delivery would fail and close the socket.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const credentials = await tokens(),
+      server = await webSocketServer();
+    const client = await connect(server.url, credentials.jwe);
+    const poll = async (predicate: () => boolean) => {
+      const deadline = Date.now() + 3000;
+      while (!predicate()) {
+        if (Date.now() >= deadline) throw new Error('Owned notification fixture deadline');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    };
+    await poll(() => client.frames.some((frame) => frame.type === 'connection_ack'));
+    const beforeSubscribers = pubsub.getRuntimeStats().notification.subscribers;
+    client.socket.send(
+      JSON.stringify({
+        type: 'subscribe',
+        id: 'notifications',
+        payload: {
+          query: 'subscription { notificationReceived { notification { uuid actorDisplayName } } }',
+        },
+      }),
+    );
+    await poll(() => pubsub.getRuntimeStats().notification.subscribers === beforeSubscribers + 1);
+    const notificationUuid = randomUUID();
+    await db
+      .insert(notifications)
+      .values({ uuid: notificationUuid, recipientId: ownerId, actorId: otherId, type: 'new_follower' });
+    const notification = {
+      uuid: notificationUuid,
+      type: 'new_follower' as const,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    };
+    await hideAuthority();
+    try {
       pubsub.publishNotificationEvent(ownerId, {
-        notification: { ...notification, actorDisplayName: 'Visible baseline' },
+        notification: { ...notification, actorDisplayName: 'Delivered during an outage' },
       });
-      await poll(() => JSON.stringify(client.frames).includes('Visible baseline'));
-      if (authorityState === 'deleted') await cutoff();
-      else await hideAuthority();
-      pubsub.publishNotificationEvent(ownerId, {
-        notification: { ...notification, actorDisplayName: 'PRIVATE_AFTER_DELETION' },
-      });
-      expect(await bounded(client.closed, 3000)).toBe(authorityState === 'deleted' ? 4401 : 1013);
-      expect(JSON.stringify(client.frames)).not.toContain('PRIVATE_AFTER_DELETION');
-      await poll(() => pubsub.getRuntimeStats().notification.subscribers === beforeSubscribers);
-    },
-  );
+      await poll(() => JSON.stringify(client.frames).includes('Delivered during an outage'));
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      await restoreAuthority();
+    }
+    client.socket.close();
+    await poll(() => pubsub.getRuntimeStats().notification.subscribers === beforeSubscribers);
+  });
+
+  it('admits a same-tick burst of warm credentials through one primary read', async () => {
+    const burstUserIds = Array.from({ length: 40 }, () => randomUUID());
+    await db
+      .insert(users)
+      .values(burstUserIds.map((id) => ({ id, email: `${id}@example.test`, name: 'Admission burst' })));
+    try {
+      const credentials = await Promise.all(burstUserIds.map((id) => tokens(id)));
+      for (const credential of credentials) await validateMobileJwt(credential.jws);
+      const selectSpy = vi.spyOn(db, 'select');
+      const results = await Promise.all(credentials.map((credential) => validateMobileJwt(credential.jws)));
+      expect(results.map((result) => result?.userId)).toEqual(burstUserIds);
+      expect(selectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.restoreAllMocks();
+      await db.delete(users).where(inArray(users.id, burstUserIds));
+    }
+  });
 });
