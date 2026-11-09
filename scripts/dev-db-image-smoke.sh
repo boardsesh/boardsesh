@@ -176,12 +176,13 @@ BEGIN
 
   -- The legacy Aurora tables exist only as empty stubs during the build, so the
   -- journal can apply to a bare cluster; 0038 must have dropped every one.
-  -- The live wall mapping is current application data, not a legacy catalogue.
+  -- The live wall mapping is current application data, not a legacy catalogue,
+  -- and kilter_aurora_benchmarks is a frozen record added long after 0038.
   IF EXISTS (
     SELECT 1 FROM pg_tables
     WHERE schemaname = 'public'
       AND (tablename LIKE 'kilter\_%' OR tablename LIKE 'tension\_%')
-      AND tablename <> 'kilter_wall_sources'
+      AND tablename NOT IN ('kilter_wall_sources', 'kilter_aurora_benchmarks')
   ) THEN
     RAISE EXCEPTION 'legacy kilter_*/tension_* tables survived into the image';
   END IF;
