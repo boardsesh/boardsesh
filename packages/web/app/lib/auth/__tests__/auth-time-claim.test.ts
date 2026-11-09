@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { hashSync } from 'bcryptjs';
 import { NextRequest } from 'next/server';
 import { decode, encode, type JWT } from 'next-auth/jwt';
+import type { WebOAuthResolveReply } from '@boardsesh/auth-protocol';
 
 const { baseUrl, sessionSecret } = vi.hoisted(() => {
   const fixtureUrl = 'http://localhost:3000';
@@ -34,6 +35,7 @@ import * as schema from '@/app/lib/db/schema';
 import { GET, POST } from '@/app/api/auth/[...nextauth]/route';
 import { authOptions } from '../auth-options';
 import { issueNativeOAuthTransferToken } from '../native-oauth-transfer';
+import { createWebOAuthIdentityAuthRequest } from '../web-oauth-auth.server';
 
 // Only the database, the backend admission call and Next's ambient request I/O are
 // replaced. The App Router handler, CSRF check, password compare, callbacks and
@@ -46,8 +48,9 @@ const nextIo = require('next/headers') as {
 };
 
 const SESSION_COOKIE = 'next-auth.session-token';
-const SIGN_IN_AT_MS = Date.UTC(2026, 10, 9, 12, 0, 0);
-const SIGN_IN_AT_SECONDS = SIGN_IN_AT_MS / 1000;
+// Half a second past the minute, so a claim that is not whole seconds cannot pass.
+const SIGN_IN_AT_MS = Date.UTC(2026, 10, 9, 12, 0, 0, 500);
+const SIGN_IN_AT_SECONDS = Math.floor(SIGN_IN_AT_MS / 1000);
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const PASSWORD = 'correct horse battery staple';
 const climber = {
@@ -128,6 +131,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 afterAll(() => vi.restoreAllMocks());
@@ -212,6 +217,64 @@ describe('auth_time through the real NextAuth handler', () => {
   });
 });
 
+describe('auth_time on the backend-staged sign-in paths', () => {
+  it('records a password sign-in delegated to the backend', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'http://127.0.0.1:54321');
+    vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'dedicated-rpc-test-server-secret-at-least-32');
+    const backend = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a serialized command');
+      const { requestId } = JSON.parse(init.body) as { requestId: string };
+      return Response.json({
+        protocolVersion: 2,
+        operation: 'password',
+        requestId,
+        outcome: 'authenticated',
+        user: { id: climber.id, email: climber.email, name: climber.name, image: climber.image },
+        verification: { userId: climber.id, required: true, verified: true },
+      });
+    });
+    vi.stubGlobal('fetch', backend);
+
+    const response = await signInWithPassword();
+    expect(response.status).toBe(200);
+    remember(response);
+
+    expect(backend).toHaveBeenCalledOnce();
+    expect((await currentSessionClaims())?.auth_time).toBe(SIGN_IN_AT_SECONDS);
+  });
+
+  // Runs the wrapper's own callbacks and encoder. Going through a provider redirect
+  // here would need a local OIDC server and a provider registered at import time.
+  it('records an OAuth sign-in resolved by the backend identity wrapper', async () => {
+    const issuedAt = '2026-01-01T00:00:00.000Z';
+    const account = { provider: 'google', type: 'oauth' as const, providerAccountId: 'google-subject' };
+    const user = { id: climber.id, email: climber.email, name: climber.name };
+    const resolved: WebOAuthResolveReply = {
+      webOAuthProtocolVersion: 1,
+      requestId: '8f14e45f-ceea-4e67-8b3a-2f1d0a9b7701',
+      operation: 'resolve',
+      outcome: 'resolved',
+      user: { ...user, image: climber.image, emailVerified: issuedAt, createdAt: issuedAt },
+      createdUser: false,
+      account: { provider: 'google', providerAccountId: account.providerAccountId },
+    };
+    const { options } = createWebOAuthIdentityAuthRequest(
+      authOptions,
+      { provider: 'google', flow: 'a'.repeat(64), actorCookie: null },
+      () => ({ intent: vi.fn(), resolve: vi.fn(async () => resolved) }),
+    );
+    const { callbacks, jwt } = options;
+    if (!callbacks?.signIn || !callbacks.jwt || !jwt?.encode) throw new Error('wrapper is missing a callback');
+
+    expect(await callbacks.signIn({ user, account })).toBe(true);
+    const token = await callbacks.jwt({ token: { sub: climber.id }, user, account });
+    const encoded = await jwt.encode({ token, secret: sessionSecret });
+
+    expect((await decode({ token: encoded, secret: sessionSecret }))?.auth_time).toBe(SIGN_IN_AT_SECONDS);
+  });
+});
+
 describe('auth_time in the jwt callback', () => {
   it.each(['google', 'apple', 'facebook', 'credentials'])('records a %s sign-in in whole seconds', async (provider) => {
     const claims = await runJwtCallback({
@@ -239,8 +302,12 @@ describe('auth_time in the jwt callback', () => {
     expect(claims).not.toHaveProperty('auth_time');
   });
 
-  it.each([undefined, 'update'] as const)('never adds it on a %s token read', async (trigger) => {
-    const claims = await runJwtCallback({ token: { sub: climber.id, authSessionId: 'old-login' }, trigger });
+  it.each([undefined, 'update'] as const)('never takes it from the client on a %s token read', async (trigger) => {
+    const claims = await runJwtCallback({
+      token: { sub: climber.id, authSessionId: 'old-login' },
+      session: { auth_time: 1 },
+      trigger,
+    });
 
     expect(claims).not.toHaveProperty('auth_time');
   });
@@ -249,6 +316,7 @@ describe('auth_time in the jwt callback', () => {
     const earlierSignIn = SIGN_IN_AT_SECONDS - ONE_DAY_MS / 1000;
     const claims = await runJwtCallback({
       token: { sub: climber.id, authSessionId: 'login-1', auth_time: earlierSignIn },
+      session: { auth_time: 1 },
       trigger,
     });
 
