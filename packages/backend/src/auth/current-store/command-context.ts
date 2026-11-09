@@ -7,13 +7,17 @@ import {
   type AuthCommand,
 } from '@boardsesh/auth-protocol';
 import { verificationTokens } from '@boardsesh/db/schema/auth';
-import { sql } from 'drizzle-orm';
+import { and, inArray, like, lt, sql } from 'drizzle-orm';
 import {
   captureExpectedAuthority,
   lockEnforcedProjection,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
+
+const WEB_AUTH_COMMAND_IDENTIFIER_PREFIX = 'ba03-web-auth:';
+// One run a minute covers 5,000 commands; each backend process accepts at most 960.
+const EXPIRED_COMMAND_CLAIMS_PER_RUN = 5_000;
 
 export interface WebPasswordAuthority extends ExpectedCurrentStoreAuthority {
   readonly emailVerificationEnabled: boolean;
@@ -55,11 +59,14 @@ export async function claimCommand(
   command: Pick<AuthCommand, 'operation' | 'requestId' | 'issuedAt'>,
 ) {
   assertFresh(command.issuedAt);
-  const commandHash = createHash('sha256').update(`${command.operation}\0${command.requestId}`).digest('hex');
+  // The schema accepts either case, and the same UUID must claim the same row.
+  const commandHash = createHash('sha256')
+    .update(`${command.operation}\0${command.requestId.toLowerCase()}`)
+    .digest('hex');
   const claimed = await transaction
     .insert(verificationTokens)
     .values({
-      identifier: `ba03-web-auth:${commandHash}`,
+      identifier: `${WEB_AUTH_COMMAND_IDENTIFIER_PREFIX}${commandHash}`,
       token: commandHash,
       expires: new Date(
         command.issuedAt + AUTH_COMMAND_MAX_AGE_MS + AUTH_COMMAND_FUTURE_SKEW_MS + AUTH_COMMAND_TIMEOUT_MS,
@@ -68,4 +75,38 @@ export async function claimCommand(
     .onConflictDoNothing()
     .returning({ token: verificationTokens.token });
   return claimed.length === 1;
+}
+
+/**
+ * Deletes at most one batch of expired replay records; a backlog drains over
+ * later runs. Safe because freshness rejects a command before its row expires.
+ * Runs apart from the commands themselves: their database role may only append
+ * to this table, and a failed cleanup must never fail a sign-in.
+ */
+export async function deleteExpiredCommandClaims(
+  database: DbInstance,
+  batchSize: number = EXPIRED_COMMAND_CLAIMS_PER_RUN,
+): Promise<number> {
+  return database.transaction(async (transaction) => {
+    await transactionSettings(transaction);
+    const expired = await transaction
+      .select({ identifier: verificationTokens.identifier })
+      .from(verificationTokens)
+      .where(
+        and(
+          like(verificationTokens.identifier, `${WEB_AUTH_COMMAND_IDENTIFIER_PREFIX}%`),
+          lt(verificationTokens.expires, new Date()),
+        ),
+      )
+      .limit(batchSize)
+      .for('update', { skipLocked: true });
+    if (expired.length === 0) return 0;
+    await transaction.delete(verificationTokens).where(
+      inArray(
+        verificationTokens.identifier,
+        expired.map(({ identifier }) => identifier),
+      ),
+    );
+    return expired.length;
+  });
 }

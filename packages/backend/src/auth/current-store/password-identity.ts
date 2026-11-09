@@ -8,7 +8,12 @@ import { normalizeAccountEmail } from '../normalize-email';
 type PasswordIdentityReader = Pick<DbInstance, 'select'>;
 type PasswordIdentityTransaction = Parameters<Parameters<DbInstance['transaction']>[0]>[0];
 
-const DUMMY_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfRzC2VyM4dy';
+// Hash of a discarded random string, at the cost of a stored password, so an
+// address with no password takes as long to reject as one with a wrong password.
+const ABSENT_PASSWORD_HASH = '$2b$12$3qFGDie2IfjRh92IVzRFQeHL0ovw3iRwVMfkudP3XYTfMmfFrmUt6';
+// Released native login still runs with every staged mode off, so it keeps its
+// existing comparison until a deliberate native change moves it to the one above.
+const NATIVE_LOGIN_ABSENT_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfRzC2VyM4dy';
 export const MAX_CURRENT_STORE_PASSWORD_CANDIDATES = 8;
 const REGISTER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
@@ -38,6 +43,7 @@ export interface CurrentStorePasswordCandidate {
 export async function matchCurrentStorePasswordCandidate(
   candidates: readonly CurrentStorePasswordCandidate[],
   password: string,
+  absentPasswordHash: string = ABSENT_PASSWORD_HASH,
 ): Promise<{ userId: string; createdAt: Date } | null> {
   const snapshot = candidates.map((candidate) => ({
     userId: candidate.userId,
@@ -45,7 +51,7 @@ export async function matchCurrentStorePasswordCandidate(
     createdAt: candidate.createdAt instanceof Date ? new Date(candidate.createdAt.getTime()) : candidate.createdAt,
   }));
   if (snapshot.length === 0) {
-    await compare(password, DUMMY_PASSWORD_HASH);
+    await compare(password, absentPasswordHash);
     return null;
   }
   if (snapshot.length > MAX_CURRENT_STORE_PASSWORD_CANDIDATES) {
@@ -81,7 +87,7 @@ export async function authenticateCurrentStorePassword(
     .innerJoin(userCredentials, eq(userCredentials.userId, users.id))
     .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
     .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1);
-  return matchCurrentStorePasswordCandidate(candidates, password);
+  return matchCurrentStorePasswordCandidate(candidates, password, NATIVE_LOGIN_ABSENT_PASSWORD_HASH);
 }
 
 /** Shared native creation email policy; subjects and login passwords are separate. */

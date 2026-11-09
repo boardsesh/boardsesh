@@ -34,6 +34,8 @@ const baseUrl = 'http://localhost:3000';
 const selected = { id: 'backend-selected', email: 'Duplicate@example.com', name: 'Climber', image: null };
 let cookies: Map<string, string>;
 let csrfToken: string;
+let clientAddress: string;
+let nextClientOctet = 1;
 
 function remember(response: Response) {
   for (const header of response.headers.getSetCookie()) {
@@ -42,11 +44,17 @@ function remember(response: Response) {
     cookies.set(pair.slice(0, separator), pair.slice(separator + 1));
   }
 }
-async function invoke(path: string, form?: Record<string, string>, parameters = path.split('/')) {
+async function invoke(
+  path: string,
+  form?: Record<string, string>,
+  parameters = path.split('/'),
+  forwardedFor = clientAddress,
+) {
   const request = new NextRequest(`${baseUrl}/api/auth/${path}`, {
     method: form ? 'POST' : 'GET',
     headers: {
       Cookie: [...cookies].map(([name, cookie]) => `${name}=${cookie}`).join('; '),
+      'X-Forwarded-For': forwardedFor,
       ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
     },
     ...(form ? { body: new URLSearchParams(form) } : {}),
@@ -54,14 +62,19 @@ async function invoke(path: string, form?: Record<string, string>, parameters = 
   const context = { params: Promise.resolve({ nextauth: parameters }) };
   return requestStorage.run(request, () => (form ? POST(request, context) : GET(request, context)));
 }
-async function password() {
-  return invoke('callback/credentials', {
-    email: selected.email,
-    password: 'submitted-password',
-    csrfToken,
-    json: 'true',
-    callbackUrl: baseUrl,
-  });
+async function password(forwardedFor = clientAddress) {
+  return invoke(
+    'callback/credentials',
+    {
+      email: selected.email,
+      password: 'submitted-password',
+      csrfToken,
+      json: 'true',
+      callbackUrl: baseUrl,
+    },
+    ['callback', 'credentials'],
+    forwardedFor,
+  );
 }
 function backendResponse(
   options: { verified?: boolean; outcome?: string; status?: number; privateField?: boolean } = {},
@@ -99,6 +112,8 @@ beforeEach(async () => {
   vi.stubEnv('NEXTAUTH_SECRET', secret);
   vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
   vi.stubEnv('VERCEL_ENV', '');
+  // A distinct address per case keeps the real per-client login limit in play.
+  clientAddress = `198.51.100.${nextClientOctet++}`;
   cookies = new Map();
   const response = await invoke('csrf');
   remember(response);
@@ -195,6 +210,33 @@ describe('public NextAuth App Router password delegation', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'signout_identity_required' });
     expect(response.headers.getSetCookie()).toEqual([]);
+  });
+  it('stops one client before the backend while another client keeps signing in', async () => {
+    const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+    vi.stubGlobal('fetch', fetchMock);
+    for (let attempt = 0; attempt < 10; attempt += 1) expect((await password()).status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+
+    // A forged first hop cannot buy a fresh bucket: the ingress appends the real one last.
+    const limited = await password(`203.0.113.77, ${clientAddress}`);
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
+    expect(limited.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(limited.headers.getSetCookie()).toEqual([]);
+    expect(await limited.json()).toEqual({ url: `${baseUrl}/auth/error?error=AuthBackendUnavailable` });
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+
+    expect((await password('198.51.100.250')).status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(11);
+    expect(legacyAuthorize).not.toHaveBeenCalled();
+  });
+  it('puts no per-client limit on legacy sign-in', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    legacyAuthorize.mockResolvedValue({ id: 'legacy-user', email: 'legacy@example.com' });
+    legacySignIn.mockResolvedValue(true);
+    vi.stubGlobal('fetch', vi.fn());
+    for (let attempt = 0; attempt < 12; attempt += 1) expect((await password()).status).toBe(200);
+    expect(legacyAuthorize).toHaveBeenCalledTimes(12);
   });
   it('uses the exact original credentials path in legacy mode without RPC configuration', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');

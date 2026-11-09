@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { authEmailReservations, users } from '@boardsesh/db/schema/auth';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { normalizeAccountEmail } from '../normalize-email';
 import { reserveEnforcedEmail } from './email-reservations';
 import {
@@ -40,8 +40,14 @@ export async function insertReservedPasswordIdentity(
       throw new CurrentStoreFoundationError('STALE_AUTHORITY');
     return { outcome: 'exists' };
   }
-  const [existing] = await transaction.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
-  // An existing exact row without a reservation is an incomplete authority,
+  // Match the normalized key, as login does: the same mailbox in another case
+  // must not slip past this and become the key's sole owner.
+  const [existing] = await transaction
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`LOWER(${users.email}) = ${key}`)
+    .limit(1);
+  // An existing row without a reservation is an incomplete authority,
   // not evidence that the staged writer may silently use an unfenced precheck.
   if (existing || !prepared || prepared.email !== email)
     throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');

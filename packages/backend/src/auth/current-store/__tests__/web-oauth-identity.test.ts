@@ -444,6 +444,12 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     expect(result.user.id).toBe(second);
     expect((await db.select().from(users)).length).toBe(2);
   });
+  it('refuses to create a provider owner over an unreserved account in another case', async () => {
+    await db.insert(users).values({ id: randomUUID(), email: 'Unreserved.Case@example.test' });
+    const result = await post('resolve', resolveCommand(await intent(), { email: 'unreserved.case@example.test' }));
+    expect(result.status).toBe(503);
+    expect(await counts()).toMatchObject({ users: 1, accounts: 0 });
+  });
   it.each(['owned', 'blocked_ambiguous', 'blocked_deleted', 'blocked_invalid'] as const)(
     'never links an unknown subject through occupied key %s',
     async (state) => {

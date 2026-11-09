@@ -98,6 +98,26 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+describe('verification limiter key', () => {
+  const edgeRequest = () =>
+    new NextRequest(`${origin}/api/auth/verify-email?token=${legacyToken}&email=${encodeURIComponent(email)}`, {
+      headers: { 'X-Forwarded-For': '198.51.100.7, 203.0.113.9, 172.70.1.2', 'CF-Connecting-IP': '203.0.113.9' },
+    });
+  it('keys the staged limiter on the trusted client, not the first forwarded hop', async () => {
+    mocks.rate.mockReturnValue({ limited: true, retryAfterSeconds: 30 });
+    const response = await GET(edgeRequest());
+    expect(response.headers.get('Location')).toContain('error=TooManyAttempts');
+    expect(mocks.rate).toHaveBeenCalledWith('verify-email:203.0.113.9', 20, 60_000);
+  });
+  it('keeps the legacy limiter key when staged auth is off', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    mocks.rate.mockReturnValue({ limited: true, retryAfterSeconds: 30 });
+    const response = await GET(edgeRequest());
+    expect(response.headers.get('Location')).toContain('error=TooManyAttempts');
+    expect(mocks.rate).toHaveBeenCalledWith('verify-email:127.0.0.1', 20, 60_000);
+  });
+});
+
 describe('UID verification public reader', () => {
   it.each(SUPPORTED_LOCALES)('renders the real %s catalog as a retryable503 at the original URL', async (locale) => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('private transport details'));

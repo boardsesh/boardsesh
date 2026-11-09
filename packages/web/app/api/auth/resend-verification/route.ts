@@ -9,6 +9,7 @@ import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
 import { resendVerificationWithCommand } from '@/app/lib/auth/email-verification-command.server';
 import { passwordCommandUnavailableResponse } from '@/app/lib/auth/register-password-command.server';
+import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
 
 // Zod schema for email validation
 const resendVerificationSchema = z.object({
@@ -33,8 +34,9 @@ export async function POST(request: NextRequest) {
   const genericMessage = 'If an account exists and needs verification, a verification email will be sent';
 
   try {
-    // Rate limiting - 5 requests per minute per IP
-    const clientIp = getClientIp(request);
+    // Rate limiting - 5 requests per minute per IP. The staged budget is shared
+    // by every caller, so its key must not be forgeable.
+    const clientIp = stagedPasswordClientKey(request) ?? getClientIp(request);
     const rateLimitResult = checkRateLimit(`resend-verification:${clientIp}`, 5, 60_000);
 
     if (rateLimitResult.limited) {

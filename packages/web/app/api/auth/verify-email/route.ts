@@ -14,6 +14,7 @@ import {
   emailVerificationUnavailableResponse,
 } from '@/app/lib/auth/email-verification-response.server';
 import { verifyEmailWithCommand } from '@/app/lib/auth/email-verification-command.server';
+import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token');
@@ -35,7 +36,8 @@ export async function GET(request: NextRequest) {
   }
   // Rate limiting - 20 attempts per minute per IP
   // Higher limit than other endpoints since users may click verification link multiple times
-  const clientIp = getClientIp(request);
+  // The staged budget is shared by every caller, so its key must not be forgeable.
+  const clientIp = stagedPasswordClientKey(request) ?? getClientIp(request);
   const rateLimitResult = checkRateLimit(`verify-email:${clientIp}`, 20, 60_000);
 
   if (rateLimitResult.limited) {

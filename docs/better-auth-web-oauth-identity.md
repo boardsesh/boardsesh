@@ -99,6 +99,12 @@ the exact observed cookie names for its flow, including when a buffered handler
 response is withheld. Cleanup cannot target a sibling flow or a current session
 cookie. Unverified state does not authorize flow-cookie cleanup.
 
+Each client may start 20 flows a minute, counted before `intent` is sent, so
+anonymous traffic cannot fill the backend's process-wide budget of 180 a minute
+and block every sign-in. The key is the trusted client address described in the
+[password delegation doc](./better-auth-web-password-delegation.md), and the
+limit is per web instance.
+
 Review found that replacing a failed buffered response could discard NextAuth's
 state/PKCE deletion headers and exhaust the pending-flow limit. It also found
 that a newly scoped callback URL otherwise inherited an unbounded session-cookie

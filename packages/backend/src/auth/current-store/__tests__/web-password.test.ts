@@ -39,6 +39,8 @@ import { currentStoreWebAuthConfiguration, handleCurrentStoreWebAuth } from '../
 import { prepareProjectionUnderUsersTableLock } from '../email-reservations';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../foundation-context';
 import { recordSecurityMutation } from '../security-mutations';
+import { deleteExpiredCommandClaims } from '../command-context';
+import { clearExpiredWebAuthCommandClaims } from '../../../services/background-job-maintenance';
 import { authenticateWebPassword, registerWebPassword, type WebPasswordAuthority } from '../web-password';
 
 const comparison = vi.hoisted(() => ({ afterRealCompare: undefined as (() => Promise<void>) | undefined }));
@@ -593,6 +595,87 @@ describe('default-off staged web password commands against the current PostgreSQ
     expect(nonce.identifier).toMatch(/^ba03-web-auth:[a-f0-9]{64}$/);
     expect(nonce.token).toMatch(/^[a-f0-9]{64}$/);
     expect(nonce.expires.getTime()).toBeGreaterThanOrEqual(first.issuedAt + AUTH_COMMAND_MAX_AGE_MS + 5000);
+  });
+
+  it('treats the same request ID in another case as a replay', async () => {
+    const first = registerCommand();
+    expect((await registerWebPassword(writer, authority, first)).outcome).toBe('created');
+    expect(
+      await registerWebPassword(writer, authority, {
+        ...first,
+        requestId: first.requestId.toUpperCase(),
+        payload: { email: `${randomUUID()}@example.test`, password: 'changed-password' },
+      }),
+    ).toMatchObject({ outcome: 'error', code: 'replayed' });
+    expect(await db.select().from(users)).toHaveLength(1);
+    expect(await nonceCount()).toBe(1);
+  });
+
+  it('refuses to create an account over an unreserved row for the same mailbox in another case', async () => {
+    const existing = await seed(`case.variant.${randomUUID()}@example.test`);
+    const command = registerCommand(existing.email.toUpperCase());
+    await expect(registerWebPassword(writer, authority, command)).rejects.toMatchObject({
+      code: 'RESERVATION_INCONSISTENT',
+    });
+    expect(await db.select({ id: users.id }).from(users)).toEqual([{ id: existing.id }]);
+    expect(await db.select().from(authEmailReservations)).toEqual([]);
+    expect(await nonceCount()).toBe(0);
+  });
+
+  describe('expired replay-record cleanup', () => {
+    const past = () => new Date(Date.now() - 1000);
+    const future = () => new Date(Date.now() + 60_000);
+    const claimRow = (expires: Date) => {
+      const token = randomBytes(32).toString('hex');
+      return { identifier: `ba03-web-auth:${token}`, token, expires };
+    };
+
+    it('deletes only expired web-auth records, at most one batch per run', async () => {
+      const live = claimRow(future());
+      const legacyReset = { identifier: `password-reset:${randomUUID()}`, token: 'legacy-hash', expires: past() };
+      const batchUser = {
+        identifier: `ba03-batch-system-user:v1:${randomUUID()}`,
+        token: 'batch-hash',
+        expires: past(),
+      };
+      await db
+        .insert(verificationTokens)
+        .values([claimRow(past()), claimRow(past()), claimRow(past()), live, legacyReset, batchUser]);
+
+      expect(await deleteExpiredCommandClaims(db, 2)).toBe(2);
+      expect(await nonceCount()).toBe(2);
+      expect(await deleteExpiredCommandClaims(db, 2)).toBe(1);
+      expect(await deleteExpiredCommandClaims(db, 2)).toBe(0);
+
+      const remaining = await db.select().from(verificationTokens);
+      expect(remaining.map((row) => row.identifier).sort()).toEqual(
+        [live.identifier, legacyReset.identifier, batchUser.identifier].sort(),
+      );
+    });
+
+    it('skips a record another transaction holds instead of waiting for it', async () => {
+      const held = claimRow(past());
+      await db.insert(verificationTokens).values([held, claimRow(past())]);
+      await db.transaction(async (transaction) => {
+        await transaction
+          .select()
+          .from(verificationTokens)
+          .where(eq(verificationTokens.identifier, held.identifier))
+          .for('update');
+        expect(await deleteExpiredCommandClaims(writer, 10)).toBe(1);
+      });
+      expect(await nonceCount()).toBe(1);
+    });
+
+    it('runs only while staged web auth is on', async () => {
+      await db.insert(verificationTokens).values(claimRow(past()));
+      await clearExpiredWebAuthCommandClaims(db, {});
+      await clearExpiredWebAuthCommandClaims(db, { CURRENT_STORE_WEB_AUTH_MODE: 'legacy' });
+      await clearExpiredWebAuthCommandClaims(db, { CURRENT_STORE_WEB_AUTH_MODE: 'misconfigured' });
+      expect(await nonceCount()).toBe(1);
+      await clearExpiredWebAuthCommandClaims(db, { CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging' });
+      expect(await nonceCount()).toBe(0);
+    });
   });
 
   it('rolls back identity, hashes, reservations and nonce on a real SQL failure after identity writes', async () => {
