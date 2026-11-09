@@ -4,6 +4,9 @@ import type { DbInstance } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_RECONCILE_QUEUE } from '@boardsesh/db/background-jobs';
 import { backgroundJobRuns } from '@boardsesh/db/schema';
 import { clearFinishedProviderSyncRuns, reconcileBackgroundJobRun } from '@boardsesh/db/queries';
+import { AUTH_COMMAND_ENV, parseWebAuthMode } from '@boardsesh/auth-protocol';
+import { deleteExpiredCommandClaims } from '../auth/current-store/command-context';
+import { logger } from '../utils/logger';
 import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from './job-queue-client';
 
 /** Backend-owned, bounded and fair even while every homelab consumer is offline. */
@@ -52,6 +55,20 @@ export function backgroundJobReconciler(database: DbInstance) {
   };
 }
 
+/** Only staged web auth writes these rows, so a legacy deployment does no work here. */
+export async function clearExpiredWebAuthCommandClaims(
+  database: DbInstance,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<void> {
+  try {
+    if (parseWebAuthMode(environment[AUTH_COMMAND_ENV.mode]) === 'legacy') return;
+    await deleteExpiredCommandClaims(database);
+  } catch {
+    // SQL failures can carry bound values. Keep a fixed category; the next minute retries.
+    logger.warn('Current-store command claim cleanup unavailable');
+  }
+}
+
 export async function startBackgroundJobMaintenance(boss: PgBoss, database: DbInstance): Promise<void> {
   await boss.schedule(BACKGROUND_JOB_RECONCILE_QUEUE, '* * * * *', {}, { tz: 'UTC' });
   const reconcile = backgroundJobReconciler(database);
@@ -60,6 +77,7 @@ export async function startBackgroundJobMaintenance(boss: PgBoss, database: DbIn
     { localConcurrency: 1, batchSize: 1, pollingIntervalSeconds: MAINTENANCE_POLLING_INTERVAL_SECONDS },
     async () => {
       await reconcile();
+      await clearExpiredWebAuthCommandClaims(database);
     },
   );
 }
