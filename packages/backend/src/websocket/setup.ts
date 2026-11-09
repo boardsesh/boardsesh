@@ -12,6 +12,7 @@ import { kilterLiveSync } from '../services/kilter-live-sync';
 import { pubsub } from '../pubsub/index';
 import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
 import { activeHumanSubjectIds, AUTH_ADMISSION_BATCH_SIZE, isAuthAdmissionUnavailable } from '../auth/human-admission';
+import { selectSweepBatches } from './admission-sweep-batches';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from './client-ip';
 import { tryAcquireAnonConnectionSlot, releaseAnonConnectionSlot } from './connection-cap';
@@ -155,12 +156,15 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       }
       return 'admitted';
     } catch {
-      // Refuse this one operation. An outage is not a reason to drop the connection.
+      // graphql-ws treats an operation error as final, so a refused subscription
+      // would never come back. Closing lets the client reconnect and resubscribe.
+      if (humanBindings.get(socket) === binding) closeAdmission(socket, true);
       return 'unavailable';
     }
   };
   let sweeping = false;
   let sweepOutageLogged = false;
+  let sweepBatchOffset = 0;
   const admissionSweep = setInterval(() => {
     if (sweeping) return;
     sweeping = true;
@@ -169,22 +173,21 @@ export function setupWebSocketServer(httpServer: HttpServer): {
     const batches: string[][] = [];
     for (let offset = 0; offset < userIds.length; offset += AUTH_ADMISSION_BATCH_SIZE)
       batches.push(userIds.slice(offset, offset + AUTH_ADMISSION_BATCH_SIZE));
+    const { roundBatches, nextOffset } = selectSweepBatches(batches, sweepBatchOffset);
+    sweepBatchOffset = nextOffset;
+    let roundFailed = false;
     // Start batches together: capacity pressure fails unavailable immediately,
     // rather than accumulating one read deadline per sequential batch.
     void Promise.all(
-      batches.map(async (requestedIds) => {
+      roundBatches.map(async (requestedIds) => {
         const requested = new Set(requestedIds);
         let admitted: ReadonlySet<string>;
         try {
           admitted = await activeHumanSubjectIds(requestedIds);
-          sweepOutageLogged = false;
         } catch {
           // A failed read proves nothing about these accounts, and a primary that
           // cannot answer cannot commit a deletion either. Leave them connected.
-          if (!sweepOutageLogged) {
-            sweepOutageLogged = true;
-            logger.warn('[ws] admission sweep could not read the primary; keeping connections open');
-          }
+          roundFailed = true;
           return;
         }
         for (const [socket, binding] of captured) {
@@ -200,6 +203,10 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       }),
     ).finally(() => {
       sweeping = false;
+      if (roundFailed && !sweepOutageLogged) {
+        logger.warn('[ws] admission sweep could not read the primary; keeping connections open');
+      }
+      sweepOutageLogged = roundFailed;
     });
   }, WS_HUMAN_ADMISSION_SWEEP_INTERVAL_MS);
   admissionSweep.unref();

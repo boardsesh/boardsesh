@@ -6,7 +6,8 @@ import {
 
 /**
  * Reads this coalescer runs at once. It stays under the runner's eight slots so
- * the WebSocket sweep, which calls the runner directly, always finds one free.
+ * ordinary requests cannot crowd out the WebSocket sweep, which calls the runner
+ * directly. During a stall, timed-out reads can still hold every slot.
  */
 export const MAX_CONCURRENT_COALESCED_ADMISSION_READS = 4;
 

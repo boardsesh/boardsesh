@@ -877,7 +877,7 @@ describe('mounted deletion admission against the owned primary database', () => 
     await warm(credentials);
   });
 
-  it('keeps open sockets connected through an outage, and still closes a deleted account afterwards', async () => {
+  it('keeps idle sockets through an outage, and closes one that starts a subscription so it can reconnect', async () => {
     const credentials = await tokens(),
       server = await webSocketServer();
     const client = await connect(server.url, credentials.jwe);
@@ -894,13 +894,14 @@ describe('mounted deletion admission against the owned primary database', () => 
           payload: { query: 'subscription { notificationReceived { notification { uuid } } }' },
         }),
       );
-      await vi.waitFor(() => expect(JSON.stringify(client.frames)).toContain('SERVICE_UNAVAILABLE'));
-      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+      expect(await bounded(client.closed, 4000)).toBe(1013);
     } finally {
       await restoreAuthority();
     }
+    const reconnected = await connect(server.url, credentials.jwe);
+    await vi.waitFor(() => expect(reconnected.frames.some((frame) => frame.type === 'connection_ack')).toBe(true));
     await cutoff();
-    expect(await bounded(client.closed, 4000)).toBe(4401);
+    expect(await bounded(reconnected.closed, 4000)).toBe(4401);
   });
 
   it('delivers a notification without a per-event primary read', async () => {
