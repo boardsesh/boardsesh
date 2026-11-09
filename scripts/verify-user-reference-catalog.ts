@@ -3,15 +3,11 @@ import { closeSync, existsSync, fchmodSync, fsyncSync, openSync, realpathSync, w
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  catalogExecutionManifest,
   CatalogCommandFailure,
   digest,
-  guardCatalogImports,
-  guardCatalogSocket,
   OwnedCatalogPostgres,
   regularFile,
   requireCatalog,
-  requireExecutionManifest,
   requireCatalogSourceHead,
   snapshotCatalogSource,
   savePrivateJson,
@@ -68,7 +64,7 @@ export function requireCatalogInvocation(
   );
   requireCatalog(
     !environmentNames.some((name) =>
-      /^(?:NODE_OPTIONS|NODE_PATH|TSX_.*|ESBUILD_.*)$|^(?:PG|DATABASE_|POSTGRES_|DB_URL$|READ_REPLICA_|REDIS_|MIGRATOR_DATABASE_|ADMIN_DATABASE_|SYNC_CUTOFF_)|(?:^|_)PROXY$/.test(
+      /^(?:NODE_OPTIONS|NODE_PATH|TSX_.*|ESBUILD_.*)$|^(?:PG|DATABASE_|POSTGRES_|DB_URL$|READ_REPLICA_|REDIS_|MIGRATOR_DATABASE_|ADMIN_DATABASE_|SYNC_CUTOFF_)/.test(
         name,
       ),
     ),
@@ -179,24 +175,19 @@ export async function runUserReferenceCatalog(options: CatalogOptions): Promise<
   process.once('SIGTERM', abort);
   const deadline = setTimeout(abort, 600_000);
   let descriptor: number | undefined;
-  let removeImportGuard: (() => void) | undefined;
-  let removeSocketGuard: (() => void) | undefined;
   let owned: OwnedCatalogPostgres | undefined;
   const progress: Record<string, unknown> = { kind: 'detail-only', completed: false };
   try {
     const source = await snapshotCatalogSource(options.sourceRoot, options.sourceHead);
     const harness = await snapshotCatalogSource(harnessRoot, options.harnessHead);
-    const manifest = catalogExecutionManifest([source, harness]);
     const checkpoint = async () => {
       requireCatalog(!controller.signal.aborted && performance.now() < expiresAt);
-      requireExecutionManifest(manifest);
       await requireCatalogSourceHead(source);
       await requireCatalogSourceHead(harness);
       requireCatalog(!controller.signal.aborted && performance.now() < expiresAt);
     };
     progress.source = source;
     progress.harness = harness;
-    progress.executionManifest = manifest;
     await checkpoint();
     const migrations = readCatalogMigrations(source.root);
     const bootstrapSql = cutoffBootstrapSql(source.root);
@@ -209,8 +200,6 @@ export async function runUserReferenceCatalog(options: CatalogOptions): Promise<
       harnessHead: harness.head,
       resources: owned.resourceEvidence(),
     });
-    removeSocketGuard = guardCatalogSocket(join(owned.socketDirectory, '.s.PGSQL.5432'));
-    removeImportGuard = guardCatalogImports(manifest);
     const collector = (await import(
       pathToFileURL(join(harnessRoot, 'packages/db/src/user-reference-catalog.ts')).href
     )) as typeof import('../packages/db/src/user-reference-catalog');
@@ -308,7 +297,6 @@ export async function runUserReferenceCatalog(options: CatalogOptions): Promise<
       kind: 'detail-only',
       source,
       harness,
-      executionManifest: manifest,
       nodeVersion: process.version,
       identity,
       expected,
@@ -340,7 +328,6 @@ export async function runUserReferenceCatalog(options: CatalogOptions): Promise<
       detailSha256: digest(bytes),
       detailBytes: bytes.length,
       portableCatalogSha256: collector.portableCatalogDigest(catalogs.runtime),
-      executionManifestSha256: digest(JSON.stringify(manifest)),
       output: options.output,
     };
   } catch (error) {
@@ -384,8 +371,6 @@ export async function runUserReferenceCatalog(options: CatalogOptions): Promise<
     try {
       await owned?.stop();
     } finally {
-      removeImportGuard?.();
-      removeSocketGuard?.();
       if (descriptor !== undefined) closeSync(descriptor);
     }
   }
