@@ -1265,13 +1265,13 @@ describe('mounted account deletion and current-store authority', () => {
       await bounded(Promise.allSettled([hold.held, ...(deletion ? [deletion] : [])]));
     }
   }, 15000);
-  it('keeps the 4 s limit on the final manifest wait and rolls back when it runs out', async () => {
+  it('waits out a busy manifest at the final step instead of losing a finished deletion', async () => {
     await seedPair({ system: true });
     await seedBoard();
-    const before = await snapshot();
     const accountHold = await holdOnBlocker((transaction) => lockSprayWallAccount(transaction, ownerId));
     const manifestArrived = barrier(),
       manifestRelease = barrier();
+    let manifestHolderPid = 0;
     let manifestHold: Promise<void> | undefined;
     let deletion: Promise<boolean> | undefined;
     try {
@@ -1280,6 +1280,9 @@ describe('mounted account deletion and current-store authority', () => {
       await waitForBlocker(accountHold.backendPid, deletion);
       manifestHold = track(
         db.transaction(async (transaction) => {
+          const row = await executeFirstRow<{ pid: number }>(transaction, sql`SELECT pg_backend_pid() AS pid`);
+          if (!row) throw new Error('Owned manifest holder PID unavailable');
+          manifestHolderPid = row.pid;
           await transaction
             .select()
             .from(authEmailProjection)
@@ -1290,17 +1293,18 @@ describe('mounted account deletion and current-store authority', () => {
         }),
       );
       await bounded(manifestArrived.promise);
-      const started = performance.now();
       accountHold.release();
       await accountHold.held;
-      await expect(bounded(deletion)).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
-      expect(performance.now() - started).toBeGreaterThanOrEqual(3500);
-      expect(stagedFailureLogs()).toEqual([[stagedFailureLine, { failureCode: '55P03' }]]);
+      await waitForBlocker(manifestHolderPid, deletion);
+      // Past both the 4 s lock limit and the 5 s statement limit.
+      await new Promise((resolve) => setTimeout(resolve, 5300));
       manifestRelease.release();
       await manifestHold;
-      expect(await snapshot()).toEqual(before);
-      expect(effects.publish).not.toHaveBeenCalled();
-      expect(effects.purge).not.toHaveBeenCalled();
+      expect(await bounded(deletion)).toBe(true);
+      expect(stagedFailureLogs()).toEqual([]);
+      expect(await db.select().from(users).where(eq(users.id, ownerId))).toEqual([]);
+      const [cutoff] = await db.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, ownerId));
+      expect(cutoff.deletedAt).toBeInstanceOf(Date);
     } finally {
       accountHold.release();
       manifestRelease.release();
@@ -1312,7 +1316,7 @@ describe('mounted account deletion and current-store authority', () => {
         ]),
       );
     }
-  }, 15000);
+  }, 25000);
   it('lets the cascade run past the 5 s authority statement limit', async () => {
     await seedPair();
     await installCascadeTrigger('PERFORM pg_sleep(5.2);');

@@ -4,7 +4,7 @@ import {
   authSubjectCutoffs,
   users,
 } from '@boardsesh/db/schema/auth';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { lockSharedFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
 import { normalizeAccountEmail } from '../normalize-email';
 import { transactionSettings } from './command-context';
@@ -139,10 +139,16 @@ export async function recordReservedAccountDeletion(
   command: CapturedAccountDeletionCommand,
   subject: ReservedDeletionSubject,
 ): Promise<void> {
-  // SET LOCAL lasts to commit, and nothing but this bookkeeping is left. Content
-  // and the cascade have already run under the same limits as legacy deletion.
-  await transactionSettings(transaction);
+  // A timeout on this one wait would throw away a finished deletion, and 55P03 is
+  // not retried. Waiting costs other commands nothing: this transaction holds only
+  // this account's rows, and a command wanting one gives up in 250 ms. The lock
+  // limit is the lower of the two so the failure stays a lock timeout.
+  await transaction.execute(sql`SET LOCAL statement_timeout = '35000ms'`);
+  await transaction.execute(sql`SET LOCAL lock_timeout = '30000ms'`);
   const manifest = await lockEnforcedProjection(transaction, command);
+  // Short limits from here to commit: only bookkeeping is left, and it runs
+  // holding the row every staged auth command queues on.
+  await transactionSettings(transaction);
   await requireRepresentedDeletionEmail(transaction, command.userId, subject.email, manifest.projectionId);
 
   // The manifest serializes cooperating writers. Read each attempt's current
