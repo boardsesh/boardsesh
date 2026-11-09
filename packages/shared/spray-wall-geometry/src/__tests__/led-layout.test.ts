@@ -244,6 +244,80 @@ describe('cable order and edits', () => {
     expect(initial.skips).toEqual([]);
   });
 
+  describe('rejoining cut sections', () => {
+    const sections = (...paths: string[][]): TnutWiring => ({
+      direction: 'custom',
+      startCorner: 'tl',
+      paths,
+      skips: [],
+    });
+
+    it('gives the same run for both tap orders', () => {
+      const wiring = sections(['a', 'b'], ['c', 'd']);
+      expect(connectWiring(wiring, 'b', 'c').paths).toEqual([['a', 'b', 'c', 'd']]);
+      expect(connectWiring(wiring, 'c', 'b').paths).toEqual([['a', 'b', 'c', 'd']]);
+    });
+
+    it.each([
+      ['a', 'c', [['b', 'a', 'c', 'd']]],
+      ['b', 'd', [['a', 'b', 'd', 'c']]],
+      ['a', 'd', [['b', 'a', 'd', 'c']]],
+    ])('turns only the section whose end was picked the wrong way: %s to %s', (from, to, expected) => {
+      const wiring = sections(['a', 'b'], ['c', 'd']);
+      expect(connectWiring(wiring, from, to).paths).toEqual(expected);
+      expect(connectWiring(wiring, to, from).paths).toEqual(expected);
+    });
+
+    it.each([
+      [
+        'neighbours',
+        'd',
+        'e',
+        [
+          ['a', 'b'],
+          ['c', 'd', 'e', 'f'],
+        ],
+      ],
+      [
+        'the first and last section',
+        'b',
+        'e',
+        [
+          ['a', 'b', 'e', 'f'],
+          ['c', 'd'],
+        ],
+      ],
+      [
+        'both turned around',
+        'a',
+        'f',
+        [
+          ['b', 'a', 'f', 'e'],
+          ['c', 'd'],
+        ],
+      ],
+    ])('keeps the other sections in place across three sections: %s', (_name, from, to, expected) => {
+      const wiring = sections(['a', 'b'], ['c', 'd'], ['e', 'f']);
+      expect(connectWiring(wiring, from, to).paths).toEqual(expected);
+      expect(connectWiring(wiring, to, from).paths).toEqual(expected);
+    });
+
+    it('keeps physical numbers when a cut is reconnected ahead of a later section', () => {
+      const cut = cutWiring(cutWiring(sections(['a', 'b', 'c', 'd', 'e', 'f']), 'c', 'd'), 'e', 'f');
+      expect(cut.paths).toEqual([['a', 'b', 'c'], ['d', 'e'], ['f']]);
+      const expected = [
+        { id: 'a', index: 0 },
+        { id: 'b', index: 1 },
+        { id: 'c', index: 2 },
+        { id: 'd', index: 3 },
+        { id: 'e', index: 4 },
+        { id: 'f', index: 5 },
+      ];
+      expect(assignLedIndices(connectWiring(cut, 'c', 'd'))).toEqual(expected);
+      expect(assignLedIndices(connectWiring(cut, 'd', 'c'))).toEqual(expected);
+    });
+  });
+
   it('hits LEDs in stroke order only once, even when a stroke doubles back', () => {
     expect(
       traceLedPath(

@@ -24,6 +24,7 @@ import {
   type TnutPattern,
   type TnutPoint,
   type CanonicalSprayHold,
+  type LedPosition,
 } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import { useHeaderActions } from '../../hooks/use-header-actions';
@@ -81,6 +82,23 @@ type Step =
   | 'initialSkip'
   | 'wiring'
   | 'lighting';
+
+/** Leaving these keeps the work on disk. Choosing a placement is not work yet, and stays discardable. */
+const LED_WORK_STEPS: ReadonlySet<Step> = new Set<Step>([
+  'ledPositions',
+  'cablePattern',
+  'cableStart',
+  'initialSkip',
+  'wiring',
+  'lighting',
+]);
+
+function sameLedPositions(left: readonly LedPosition[], right: readonly LedPosition[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every(({ id, x, y }, index) => id === right[index].id && x === right[index].x && y === right[index].y)
+  );
+}
 
 /** Private photos use the same managed cache and perspective warp as Wall only. */
 export function SprayWallLedSetupScreen({ wallUuid }: { wallUuid: string }) {
@@ -234,7 +252,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   }, [step]);
   const [rowsText, setRowsText] = useState(String(layout.rows));
   const [columnsText, setColumnsText] = useState(String(layout.columns));
-  const [dirty, setDirty] = useState(false);
+  // Identity, not contents: an unchanged layout object is already on disk.
+  const persisted = useRef<TnutLayout | null>(layout);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -267,6 +286,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       draft.firstRowOffset,
     ]);
   const generatedLeds = useRef(layout.ledPositions ? ledSignature(layout) : null);
+  const untouchedLeds = useRef<readonly LedPosition[] | null>(null);
   const wiringSignature = (draft: TnutLayout, axis: CableDirection, corner: CableStartCorner) =>
     JSON.stringify([draft.ledPositions?.map(({ id }) => id), axis, corner]);
   const generatedWiring = useRef(
@@ -302,14 +322,34 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     layout.corners.bottomLeft,
   ].map(({ x, y }) => [x * photo.width, y * photo.height]);
 
+  function withUpdate(previous: TnutLayout, update: Partial<TnutLayout>): TnutLayout {
+    const updated = { ...previous, ...update };
+    return update.ledPositions ? { ...updated, ledPositions: bindLedPositionsToHoles(updated, source.frame) } : updated;
+  }
+
   function changeLayout(update: Partial<TnutLayout>) {
     if (busy.current) return;
-    setLayout((previous) => {
-      const next = { ...previous, ...update };
-      return update.ledPositions ? { ...next, ledPositions: bindLedPositionsToHoles(next, source.frame) } : next;
-    });
-    setDirty(true);
+    setLayout((previous) => withUpdate(previous, update));
     setSaveFailed(false);
+  }
+
+  /** Next stays instant: the store queues each wall's writes, so the newest always lands last. */
+  function saveWork(draft: TnutLayout) {
+    if (persisted.current === draft) return;
+    persisted.current = draft;
+    setSaveFailed(false);
+    saveSprayWallTnutLayout(wallUuid, draft).catch(() => {
+      if (persisted.current === draft) persisted.current = null;
+      if (mounted.current) setSaveFailed(true);
+    });
+  }
+
+  /** Untouched generated LEDs cost nothing to rebuild. Hand-placed ones and a cable path do. */
+  function wouldDiscardHandWork() {
+    if (layout.wiring?.paths.length) return true;
+    if (!layout.ledPositions?.length) return false;
+    const untouched = untouchedLeds.current ?? (matchingSaved ? generateLedPositions(matchingSaved) : []);
+    return !sameLedPositions(layout.ledPositions, untouched);
   }
 
   function changeCorners([topLeft, topRight, bottomRight, bottomLeft]: Quad) {
@@ -352,6 +392,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   function previousStep() {
     if (busy.current) return;
     Keyboard.dismiss();
+    if (LED_WORK_STEPS.has(step)) saveWork(layout);
     if (step === 'offset') setStep('pattern');
     else if (step === 'align') setStep(layout.pattern === 'offset' ? 'offset' : 'pattern');
     else if (step === 'holes') setStep(layout.pattern === 'custom' ? 'pattern' : 'align');
@@ -375,7 +416,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       previousStep();
       return;
     }
-    if (!dirty) {
+    if (persisted.current === layout) {
       leave();
       return;
     }
@@ -411,19 +452,39 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     if (step === 'led') {
       if (!layout.ledPlacement) return;
       const signature = ledSignature(layout);
-      if (generatedLeds.current !== signature) {
-        changeLayout({ ledPositions: generateLedPositions(layout), wiring: undefined });
+      if (generatedLeds.current === signature) {
+        saveWork(layout);
+        setStep('ledPositions');
+        return;
+      }
+      const rebuildLeds = () => {
+        const ledPositions = generateLedPositions(layout);
+        const draft = withUpdate(layout, { ledPositions, wiring: undefined });
+        untouchedLeds.current = ledPositions;
         generatedLeds.current = signature;
         generatedWiring.current = null;
+        setLayout(draft);
+        saveWork(draft);
+        setStep('ledPositions');
+      };
+      if (wouldDiscardHandWork()) {
+        Alert.alert(t('sprayLedSetup.rebuildLedsTitle'), t('sprayLedSetup.rebuildLedsBody'), [
+          { text: t('sprayLedSetup.keepEditing'), style: 'cancel' },
+          { text: t('sprayLedSetup.rebuildLeds'), style: 'destructive', onPress: rebuildLeds },
+        ]);
+      } else {
+        rebuildLeds();
       }
-      setStep('ledPositions');
       return;
     }
     if (step === 'ledPositions') {
-      if (layout.ledPositions?.length) setStep('cablePattern');
+      if (!layout.ledPositions?.length) return;
+      saveWork(layout);
+      setStep('cablePattern');
       return;
     }
     if (step === 'cablePattern' || step === 'cableStart') {
+      saveWork(layout);
       setStep(step === 'cablePattern' && direction !== 'custom' ? 'cableStart' : 'initialSkip');
       return;
     }
@@ -434,13 +495,18 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         preserveWiring && layout.wiring
           ? layout.wiring
           : createWiring(layout.ledPositions ?? [], direction, startCorner, layout);
-      changeLayout({ wiring: setWiringInitialSkip(wiring, initialSkip) });
+      const startingWiring = setWiringInitialSkip(wiring, initialSkip);
+      const draft = startingWiring === layout.wiring ? layout : withUpdate(layout, { wiring: startingWiring });
+      setLayout(draft);
+      saveWork(draft);
       generatedWiring.current = signature;
       setStep('wiring');
       return;
     }
     if (step === 'wiring') {
-      if (layout.wiring && layout.ledPositions?.length) setStep('lighting');
+      if (!layout.wiring || !layout.ledPositions?.length) return;
+      saveWork(layout);
+      setStep('lighting');
       return;
     }
     if (step === 'holes' || step === 'lighting') {
@@ -451,8 +517,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       setSaveFailed(false);
       try {
         await saveSprayWallTnutLayout(wallUuid, layout);
+        persisted.current = layout;
         if (mounted.current) {
-          setDirty(false);
+          setSaveFailed(false);
           setPhotoChanged(false);
           if (step === 'holes') setStep('led');
           else {

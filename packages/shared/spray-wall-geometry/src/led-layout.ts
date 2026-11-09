@@ -223,7 +223,8 @@ function ledGroups(leds: LedPosition[], direction: 'horizontal' | 'vertical', la
   const primary = direction === 'horizontal' ? 'y' : 'x';
   const secondary = direction === 'horizontal' ? 'x' : 'y';
   const sorted = projected.sort((left, right) => left[primary] - right[primary] || left[secondary] - right[secondary]);
-  const tolerance = layout ? 0.2 / Math.max(1, (direction === 'horizontal' ? layout.rows : layout.columns) - 1) : 0.01;
+  // A `sides` pair sits 0.2 of a step apart. Staying under that keeps float noise from choosing each column's order.
+  const tolerance = layout ? 0.15 / Math.max(1, (direction === 'horizontal' ? layout.rows : layout.columns) - 1) : 0.01;
   const groups: (typeof projected)[] = [];
   for (const point of sorted) {
     const group = groups.at(-1);
@@ -273,7 +274,11 @@ function withPaths(wiring: TnutWiring, paths: string[][]): TnutWiring {
   const edges = edgeSet(paths);
   return { ...wiring, paths, skips: wiring.skips.filter((skip) => edges.has(edgeKey(skip.from, skip.to))) };
 }
-/** Join free endpoints only; reversing a run never changes its physical gap counts. */
+/**
+ * Join free endpoints only; reversing a run never changes its physical gap counts.
+ * The joined run stays at the earlier section's place and direction, so tap order
+ * cannot renumber the physical LEDs.
+ */
 export function connectWiring(wiring: TnutWiring, from: string, to: string): TnutWiring {
   if (from === to) return wiring;
   const paths = wiring.paths.map((path) => [...path]);
@@ -289,12 +294,18 @@ export function connectWiring(wiring: TnutWiring, from: string, to: string): Tnu
     second = paths.length - 1;
   }
   if (first === second) return wiring;
-  const a = paths[first],
-    b = paths[second];
-  if ((a[0] !== from && a.at(-1) !== from) || (b[0] !== to && b.at(-1) !== to)) return wiring;
-  if (a[0] === from) a.reverse();
-  if (b.at(-1) === to) b.reverse();
-  return withPaths(wiring, [...paths.filter((_, index) => index !== first && index !== second), [...a, ...b]]);
+  const [earlier, later, earlierEnd, laterEnd] = first < second ? [first, second, from, to] : [second, first, to, from];
+  const head = paths[earlier],
+    tail = paths[later];
+  if ((head[0] !== earlierEnd && head.at(-1) !== earlierEnd) || (tail[0] !== laterEnd && tail.at(-1) !== laterEnd))
+    return wiring;
+  if (head[0] === earlierEnd) head.reverse();
+  if (tail.at(-1) === laterEnd) tail.reverse();
+  head.push(...tail);
+  return withPaths(
+    wiring,
+    paths.filter((_, index) => index !== later),
+  );
 }
 export function cutWiring(wiring: TnutWiring, from: string, to: string): TnutWiring {
   for (let pathIndex = 0; pathIndex < wiring.paths.length; pathIndex++) {

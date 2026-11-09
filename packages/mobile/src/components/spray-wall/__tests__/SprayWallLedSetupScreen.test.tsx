@@ -10,7 +10,14 @@ import {
 } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, type Quad, type TnutLayout, type TnutPoint } from '@boardsesh/spray-wall-geometry';
+import {
+  createWiring,
+  DEFAULT_TNUT_CORNERS,
+  generateLedPositions,
+  type Quad,
+  type TnutLayout,
+  type TnutPoint,
+} from '@boardsesh/spray-wall-geometry';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 import type { SprayCornerMarker } from '../SprayCornerMarker';
 import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
@@ -273,8 +280,7 @@ const photoSource: SprayLookPreviewSource = {
   homography: [0.5, 0, 0, 0, 0.5, 0, 0, 0, 1],
   holds: [],
 };
-const photoKey = () =>
-  JSON.stringify([photoSource.versionId, photoSource.frame.width, photoSource.frame.height, photoSource.homography]);
+const photoKey = () => JSON.stringify([photoSource.frame.width, photoSource.frame.height, photoSource.homography]);
 const savedLayout = (): TnutLayout => ({
   version: 1,
   photoKey: photoKey(),
@@ -305,6 +311,25 @@ function finish() {
 }
 function back() {
   act(() => controls.header?.leading.onPress());
+}
+type AlertButton = { text: string; style?: string; onPress?: () => void };
+function alertButton(style: string) {
+  const buttons = controls.alert.mock.calls.at(-1)?.[2] as AlertButton[];
+  const match = buttons.find((entry) => entry.style === style);
+  if (!match) throw new Error(`No ${style} alert button`);
+  return match;
+}
+const savedWithLeds = (): TnutLayout => {
+  const layout: TnutLayout = { ...savedLayout(), ledPlacement: 'center' };
+  return { ...layout, ledPositions: generateLedPositions(layout) };
+};
+const lastSaved = () => storage.save.mock.calls.at(-1)?.[1] as TnutLayout;
+async function openOnLedStep() {
+  await open();
+  next();
+  next();
+  next();
+  await screen.findByText('sprayLedSetup.ledHint');
 }
 function tap(point: TnutPoint) {
   act(() => controls.editor?.onTap(point, 500, 700));
@@ -670,7 +695,7 @@ describe('SprayWallLedSetupScreen', () => {
     expect(storage.save).toHaveBeenCalledTimes(2);
   });
 
-  it('reopens saved manual corrections when the photo version, frame and transform still match', async () => {
+  it('reopens saved manual corrections when the frame and transform still match', async () => {
     storage.load.mockResolvedValue(savedLayout());
     await open();
     next();
@@ -805,10 +830,11 @@ describe('SprayWallLedSetupScreen', () => {
     );
     const leaveAfterSave = vi.fn();
     controls.back.mockImplementationOnce(() => controls.leave?.(leaveAfterSave));
+    const savesBeforeDuplicates = storage.save.mock.calls.length;
     next();
     next();
     back();
-    expect(storage.save).toHaveBeenCalledTimes(3);
+    expect(storage.save).toHaveBeenCalledTimes(savesBeforeDuplicates + 1);
     expect(controls.header?.trailing.disabled).toBe(true);
     await act(async () => resolveSave?.());
     expect(controls.back).toHaveBeenCalledOnce();
@@ -839,22 +865,201 @@ describe('SprayWallLedSetupScreen', () => {
     expect(radio('ledCenter').getAttribute('aria-checked')).toBe('true');
   });
 
-  it.each(['version', 'frame', 'transform'] as const)(
-    'ignores saved positions when the photo %s changes',
-    async (changed) => {
+  it.each(['frame', 'transform'] as const)('ignores saved positions when the photo %s changes', async (changed) => {
+    storage.load.mockResolvedValue(savedLayout());
+    if (!backend.source) throw new Error('Missing fixture');
+    if (changed === 'frame') backend.source.frame.width++;
+    if (changed === 'transform') backend.source.homography[2] = 12;
+    await open();
+    expect(screen.getByText('sprayLedSetup.photoChanged')).toBeTruthy();
+    next();
+    next();
+    expectHoles(64);
+    expect(storage.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps the saved setup when a hold edit only publishes a new wall version', async () => {
+    storage.load.mockResolvedValue(savedLayout());
+    if (!backend.source) throw new Error('Missing fixture');
+    backend.source.versionId++;
+    await open();
+    expect(screen.queryByText('sprayLedSetup.photoChanged')).toBeNull();
+    next();
+    next();
+    expectHoles(1);
+  });
+
+  describe('replacing LED and cable work', () => {
+    it('asks before replacing a hand-moved LED, and Keep editing keeps it', async () => {
+      storage.load.mockResolvedValue(savedWithLeds());
+      await openOnLedStep();
+      next();
+      fireEvent.click(button('movePoint'));
+      act(() => controls.canvas?.onMove?.({ x: 0.3, y: 0.4 }, { x: 0.35, y: 0.45 }, 500, 700));
+      back();
+      fireEvent.click(radio('ledBelow'));
+      next();
+      expect(controls.alert).toHaveBeenCalledOnce();
+      expect(controls.alert.mock.calls[0].slice(0, 2)).toEqual([
+        'sprayLedSetup.rebuildLedsTitle',
+        'sprayLedSetup.rebuildLedsBody',
+      ]);
+      expect(screen.getByText('sprayLedSetup.ledHint')).toBeTruthy();
+      expect(alertButton('cancel').onPress).toBeUndefined();
+      expect(lastSaved().ledPositions).toEqual([expect.objectContaining({ x: 0.35, y: 0.45 })]);
+      act(() => alertButton('destructive').onPress?.());
+      expect(screen.getByText('sprayLedSetup.ledPositionsTitle')).toBeTruthy();
+      expect(screen.getByTestId('hole-editor').getAttribute('data-led-count')).toBe('1');
+      expect(lastSaved().ledPlacement).toBe('below');
+      expect(lastSaved().ledPositions).not.toEqual([expect.objectContaining({ x: 0.35, y: 0.45 })]);
+    });
+
+    it('asks before clearing a cable path', async () => {
+      const layout = savedWithLeds();
+      storage.load.mockResolvedValue({
+        ...layout,
+        wiring: createWiring(layout.ledPositions ?? [], 'horizontal', 'tl', layout),
+      });
+      await openOnLedStep();
+      fireEvent.click(radio('ledBelow'));
+      next();
+      expect(controls.alert).toHaveBeenCalledOnce();
+      act(() => alertButton('destructive').onPress?.());
+      expect(lastSaved().wiring).toBeUndefined();
+    });
+
+    it('rebuilds LEDs nobody touched without asking', async () => {
+      storage.load.mockResolvedValue(savedWithLeds());
+      await openOnLedStep();
+      fireEvent.click(radio('ledBelow'));
+      next();
+      expect(controls.alert).not.toHaveBeenCalled();
+      expect(screen.getByText('sprayLedSetup.ledPositionsTitle')).toBeTruthy();
+    });
+
+    it('does not count a generated set the climber only walked past', async () => {
       storage.load.mockResolvedValue(savedLayout());
-      if (!backend.source) throw new Error('Missing fixture');
-      if (changed === 'version') backend.source.versionId++;
-      if (changed === 'frame') backend.source.frame.width++;
-      if (changed === 'transform') backend.source.homography[2] = 12;
+      await openOnLedStep();
+      fireEvent.click(radio('ledCenter'));
+      next();
+      back();
+      fireEvent.click(radio('ledBelow'));
+      next();
+      expect(controls.alert).not.toHaveBeenCalled();
+      expect(lastSaved().ledPlacement).toBe('below');
+    });
+  });
+
+  describe('saving LED and cable work as you go', () => {
+    it('writes the generated LEDs, a moved LED and the cable as each step closes', async () => {
+      storage.load.mockResolvedValue(savedLayout());
+      await openOnLedStep();
+      fireEvent.click(radio('ledCenter'));
+      next();
+      expect(lastSaved().ledPositions).toEqual([expect.objectContaining({ x: 0.3, y: 0.4 })]);
+      fireEvent.click(button('movePoint'));
+      act(() => controls.canvas?.onMove?.({ x: 0.3, y: 0.4 }, { x: 0.35, y: 0.45 }, 500, 700));
+      next();
+      expect(lastSaved().ledPositions).toEqual([expect.objectContaining({ x: 0.35, y: 0.45 })]);
+      next();
+      next();
+      expect(lastSaved().wiring).toBeUndefined();
+      fireEvent.change(field('initialSkipLabel'), { target: { value: '3' } });
+      next();
+      expect(lastSaved().wiring?.initialSkip).toBe(3);
+    });
+
+    it('saves LED and cable edits when stepping back', async () => {
+      storage.load.mockResolvedValue(savedWithLeds());
+      await openOnLedStep();
+      next();
+      fireEvent.click(button('movePoint'));
+      act(() => controls.canvas?.onMove?.({ x: 0.3, y: 0.4 }, { x: 0.35, y: 0.45 }, 500, 700));
+      back();
+      expect(lastSaved().ledPositions).toEqual([expect.objectContaining({ x: 0.35, y: 0.45 })]);
+      next();
+      next();
+      fireEvent.click(radio('customCable'));
+      next();
+      next();
+      expect(lastSaved().wiring?.paths).toEqual([]);
+      fireEvent.click(button('drawCable'));
+      tap({ x: 0.35, y: 0.45 });
+      back();
+      expect(lastSaved().wiring?.paths).toHaveLength(1);
+      expect(screen.getByText('sprayLedSetup.initialSkipTitle')).toBeTruthy();
+    });
+
+    it('writes nothing when walking over unchanged steps', async () => {
+      storage.load.mockResolvedValue(savedWithLeds());
+      await openOnLedStep();
+      const savesAfterHoles = storage.save.mock.calls.length;
+      advanceToWiring();
+      back();
+      back();
+      back();
+      back();
+      back();
+      expect(screen.getByText('sprayLedSetup.ledHint')).toBeTruthy();
+      expect(storage.save.mock.calls.slice(savesAfterHoles).map(([, draft]) => (draft as TnutLayout).wiring)).toEqual([
+        expect.objectContaining({ direction: 'horizontal' }),
+      ]);
+    });
+
+    it('moves on and retries at the next step when a save fails', async () => {
+      storage.load.mockResolvedValue(savedLayout());
+      await openOnLedStep();
+      fireEvent.click(radio('ledCenter'));
+      storage.save.mockRejectedValueOnce(new Error('Disk full'));
+      next();
+      expect(screen.getByText('sprayLedSetup.ledPositionsTitle')).toBeTruthy();
+      await screen.findByText('sprayLedSetup.saveFailed');
+      const savesAfterFailure = storage.save.mock.calls.length;
+      next();
+      expect(storage.save).toHaveBeenCalledTimes(savesAfterFailure + 1);
+      expect(screen.queryByText('sprayLedSetup.saveFailed')).toBeNull();
+    });
+
+    it('still guards a placement change no step has saved yet', async () => {
+      storage.load.mockResolvedValue(savedLayout());
+      await openOnLedStep();
+      fireEvent.click(radio('ledCenter'));
+      next();
+      back();
+      fireEvent.click(radio('ledBelow'));
+      back();
+      back();
+      back();
+      const leave = vi.fn();
+      act(() => controls.leave?.(leave));
+      expect(controls.alert).toHaveBeenCalledOnce();
+      expect(leave).not.toHaveBeenCalled();
+    });
+
+    it('leaves without asking once the LED work is saved', async () => {
+      storage.load.mockResolvedValue(savedLayout());
+      await openOnLedStep();
+      fireEvent.click(radio('ledCenter'));
+      next();
+      back();
+      back();
+      back();
+      back();
+      const leave = vi.fn();
+      act(() => controls.leave?.(leave));
+      expect(leave).toHaveBeenCalledOnce();
+      expect(controls.alert).not.toHaveBeenCalled();
+    });
+
+    it('keeps the earlier setup untouched before the holes are confirmed', async () => {
+      storage.load.mockResolvedValue(savedWithLeds());
       await open();
-      expect(screen.getByText('sprayLedSetup.photoChanged')).toBeTruthy();
+      fireEvent.click(radio('custom'));
       next();
-      next();
-      expectHoles(64);
+      back();
       expect(storage.save).not.toHaveBeenCalled();
-    },
-  );
+    });
+  });
 
   it('does not fetch private photos before authentication or when edit access is absent', async () => {
     controls.authenticated = false;

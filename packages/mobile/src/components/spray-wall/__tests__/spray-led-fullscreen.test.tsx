@@ -26,6 +26,8 @@ const controls = vi.hoisted(() => ({
   marker: null as ComponentProps<typeof SprayCornerMarker> | null,
   leave: null as ((confirm: () => void) => void) | null,
   back: vi.fn(),
+  platformOS: 'android',
+  setStatusBarHidden: vi.fn(),
   surfaces: new Map<
     string,
     {
@@ -46,6 +48,12 @@ vi.mock('react-native', () => {
     return createElement('div', { 'data-testid': testID }, children);
   };
   return {
+    Platform: {
+      get OS() {
+        return controls.platformOS;
+      },
+    },
+    StatusBar: { setHidden: controls.setStatusBarHidden },
     View: Surface,
     ScrollView: Surface,
     StyleSheet: { create: (styles: unknown) => styles },
@@ -141,12 +149,35 @@ beforeEach(() => {
   controls.marker = null;
   controls.leave = null;
   controls.back.mockReset();
+  controls.platformOS = 'android';
+  controls.setStatusBarHidden.mockReset();
   controls.surfaces.clear();
 });
 afterEach(() => {
   cleanup();
   for (const id of openSessions) closeTnutCalibrationSession(id);
   openSessions.clear();
+});
+
+describe('status bar', () => {
+  it('hides on iOS while the route is up and comes back when it closes', () => {
+    controls.platformOS = 'ios';
+    open();
+    const view = render(createElement(SprayLedFullscreen));
+    expect(controls.setStatusBarHidden.mock.calls).toEqual([[true, 'none']]);
+    view.unmount();
+    expect(controls.setStatusBarHidden.mock.calls).toEqual([
+      [true, 'none'],
+      [false, 'none'],
+    ]);
+  });
+
+  it('leaves Android to the stack option', () => {
+    open();
+    const view = render(createElement(SprayLedFullscreen));
+    view.unmount();
+    expect(controls.setStatusBarHidden).not.toHaveBeenCalled();
+  });
 });
 
 describe('fullscreen T-nut calibration route', () => {

@@ -101,7 +101,17 @@ vi.mock('react-native-gesture-handler', () => {
     const record: GestureRecord = { kind, handlers: {}, options: {} };
     runtime.gestures.push(record);
     const builder: Record<string, (...args: unknown[]) => unknown> = {};
-    for (const name of ['onBegin', 'onStart', 'onUpdate', 'onEnd', 'onFinalize', 'onTouchesMove', 'onTouchesDown']) {
+    for (const name of [
+      'onBegin',
+      'onStart',
+      'onUpdate',
+      'onEnd',
+      'onFinalize',
+      'onTouchesMove',
+      'onTouchesDown',
+      'onTouchesUp',
+      'onTouchesCancelled',
+    ]) {
       builder[name] = (callback) => {
         record.handlers[name] = callback as (event: Event, manager: Manager) => void;
         return builder;
@@ -467,6 +477,59 @@ describe('ZoomableTnutMarker', () => {
     expect(onChange).not.toHaveBeenCalled();
     fire(pinch, 'onFinalize');
     expect(lock.mock.calls).toEqual([[true], [false]]);
+  });
+
+  describe('a two-finger tap that never pinches (iOS sends it no onFinalize)', () => {
+    function touchDown() {
+      const lock = vi.fn();
+      render(createElement(ZoomableTnutMarker, props({ onDragActiveChange: lock })));
+      const pinch = runtime.gestures[0];
+      fire(pinch, 'onTouchesDown', { numberOfTouches: 2 });
+      expect(lock.mock.calls).toEqual([[true]]);
+      return { lock, pinch };
+    }
+
+    it('hands the lock back when the last finger lifts, not before', () => {
+      const { lock, pinch } = touchDown();
+      fire(pinch, 'onTouchesUp', { numberOfTouches: 1 });
+      expect(lock.mock.calls).toEqual([[true]]);
+      fire(pinch, 'onTouchesUp', { numberOfTouches: 0 });
+      expect(lock.mock.calls).toEqual([[true], [false]]);
+    });
+
+    it('hands the lock back on a cancel, whose touch count iOS has not cleared yet', () => {
+      const { lock, pinch } = touchDown();
+      fire(pinch, 'onTouchesCancelled', { numberOfTouches: 1 });
+      expect(lock.mock.calls).toEqual([[true], [false]]);
+    });
+
+    it('can take the lock again for the next tap', () => {
+      const { lock, pinch } = touchDown();
+      fire(pinch, 'onTouchesUp', { numberOfTouches: 0 });
+      fire(pinch, 'onTouchesDown', { numberOfTouches: 2 });
+      fire(pinch, 'onTouchesUp', { numberOfTouches: 0 });
+      expect(lock.mock.calls).toEqual([[true], [false], [true], [false]]);
+    });
+
+    it('releases once when Android follows up with onFinalize', () => {
+      const { lock, pinch } = touchDown();
+      fire(pinch, 'onTouchesUp', { numberOfTouches: 0 });
+      fire(pinch, 'onFinalize');
+      expect(lock.mock.calls).toEqual([[true], [false]]);
+    });
+
+    it('leaves a pinch that did start to onFinalize', () => {
+      const { lock, pinch } = touchDown();
+      fire(pinch, 'onStart');
+      fire(pinch, 'onTouchesUp', { numberOfTouches: 0 });
+      fire(pinch, 'onTouchesCancelled', { numberOfTouches: 0 });
+      expect(lock.mock.calls).toEqual([[true]]);
+      fire(pinch, 'onFinalize');
+      expect(lock.mock.calls).toEqual([[true], [false]]);
+      fire(pinch, 'onTouchesDown', { numberOfTouches: 2 });
+      fire(pinch, 'onTouchesUp', { numberOfTouches: 0 });
+      expect(lock.mock.calls).toEqual([[true], [false], [true], [false]]);
+    });
   });
 
   it('restores hidden corners unchanged and draws just the active one-dimensional segment', () => {

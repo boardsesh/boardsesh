@@ -634,7 +634,10 @@ function RootLayout() {
                                                                                 headerShown: false,
                                                                                 gestureEnabled: false,
                                                                                 orientation: 'all',
-                                                                                statusBarHidden: true,
+                                                                                // iOS hides it from inside the route: the plist keeps
+                                                                                // view-controller status bars off, and this option then only logs an error.
+                                                                                statusBarHidden:
+                                                                                  Platform.OS === 'android',
                                                                                 navigationBarHidden: true,
                                                                                 autoHideHomeIndicator: true,
                                                                               }}

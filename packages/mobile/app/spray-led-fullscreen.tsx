@@ -1,5 +1,5 @@
-import { useRef, useState, useSyncExternalStore } from 'react';
-import { StyleSheet, View, ScrollView } from 'react-native';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Platform, StatusBar, StyleSheet, View, ScrollView } from 'react-native';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -57,6 +57,13 @@ function SprayLedFullscreen() {
   const [accessoryHeight, setAccessoryHeight] = useState(0);
   const [dragging, setDragging] = useState(false);
   const closing = useRef(false);
+  // Info.plist keeps UIViewControllerBasedStatusBarAppearance false, so only this
+  // app-level call moves the iOS status bar. Android hides it through the stack.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+    StatusBar.setHidden(true, 'none');
+    return () => StatusBar.setHidden(false, 'none');
+  }, []);
   useSprayWizardLeaveGuard((leave) => {
     closing.current = true;
     closeTnutCalibrationSession(id);

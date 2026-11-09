@@ -147,6 +147,54 @@ describe('row-major physical LED preview', () => {
   });
 });
 
+describe('side pairs on a vertical cable', () => {
+  const sideLayout = (columns: number, corners = DEFAULT_TNUT_CORNERS): TnutLayout => {
+    const grid = { pattern: 'grid' as const, rows: 2, columns, corners, firstRowOffset: false };
+    return { ...layout, ...grid, ledPlacement: 'sides', holes: generateTnutGrid(grid) };
+  };
+
+  it('runs up one side of every column and down the other on a 2x3 grid', () => {
+    const configured = sideLayout(3);
+    const points = generateLedPositions(configured);
+    // Holes are row-major and each one yields its left LED, then its right.
+    const led = (row: number, column: number, side: number) => points[(row * 3 + column) * 2 + side].id;
+    expect(createWiring(points, 'vertical', 'tl', configured).paths).toEqual([
+      [
+        led(0, 0, 0),
+        led(1, 0, 0),
+        led(1, 0, 1),
+        led(0, 0, 1),
+        led(0, 1, 0),
+        led(1, 1, 0),
+        led(1, 1, 1),
+        led(0, 1, 1),
+        led(0, 2, 0),
+        led(1, 2, 0),
+        led(1, 2, 1),
+        led(0, 2, 1),
+      ],
+    ]);
+  });
+
+  const skewedCorners = {
+    topLeft: { x: 0.12, y: 0.09 },
+    topRight: { x: 0.91, y: 0.14 },
+    bottomRight: { x: 0.83, y: 0.88 },
+    bottomLeft: { x: 0.07, y: 0.93 },
+  };
+  it.each([
+    ...[2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 17, 23, 37, 50].map((columns) => ['square', columns] as const),
+    ...[3, 7, 13, 50].map((columns) => ['skewed', columns] as const),
+  ])('treats every column the same on a %s wall with %i columns', (shape, columns) => {
+    const configured = sideLayout(columns, shape === 'skewed' ? skewedCorners : DEFAULT_TNUT_CORNERS);
+    const points = generateLedPositions(configured);
+    const sideOf = new Map(points.map(({ id }, index) => [id, index % 2]));
+    const [path] = createWiring(points, 'vertical', 'tl', configured).paths;
+    expect(path).toHaveLength(columns * 4);
+    path.forEach((id, index) => expect(sideOf.get(id)).toBe(Math.floor(index / 2) % 2));
+  });
+});
+
 describe('close behind-hold LED pairs', () => {
   it('places custom pairs one tenth of measured hole spacing on either side', () => {
     const custom: TnutLayout = {

@@ -15,6 +15,7 @@ export function useSprayPhotoViewport(
     panX = useSharedValue(0),
     panY = useSharedValue(0);
   const isPinching = useSharedValue(false),
+    pinchStarted = useSharedValue(false),
     interactions = useSharedValue(0);
   const callback = useRef(onInteractionChange);
   callback.current = onInteractionChange;
@@ -46,6 +47,13 @@ export function useSprayPhotoViewport(
     lastY = useSharedValue(0),
     panning = useSharedValue(false);
   const viewportGesture = useMemo(() => {
+    const releasePinch = () => {
+      'worklet';
+      if (!isPinching.value) return;
+      isPinching.value = false;
+      interactions.value--;
+      if (interactions.value === 0) runOnJS(reportInteraction)(false);
+    };
     const pinch = Gesture.Pinch()
       .withRef(pinchRef)
       .onTouchesDown((event) => {
@@ -54,7 +62,17 @@ export function useSprayPhotoViewport(
         interactions.value++;
         if (interactions.value === 1) runOnJS(reportInteraction)(true);
       })
+      // iOS never begins a two-finger tap that doesn't pinch, so no onFinalize
+      // comes to return the lock taken above.
+      .onTouchesUp((event) => {
+        if (event.numberOfTouches === 0 && !pinchStarted.value) releasePinch();
+      })
+      // A cancel covers every touch, though iOS still reports the count from before it.
+      .onTouchesCancelled(() => {
+        if (!pinchStarted.value) releasePinch();
+      })
       .onStart((event) => {
+        pinchStarted.value = true;
         if (!isPinching.value) {
           isPinching.value = true;
           interactions.value++;
@@ -92,10 +110,8 @@ export function useSprayPhotoViewport(
         zoom.value = next;
       })
       .onFinalize(() => {
-        if (!isPinching.value) return;
-        isPinching.value = false;
-        interactions.value--;
-        if (interactions.value === 0) runOnJS(reportInteraction)(false);
+        pinchStarted.value = false;
+        releasePinch();
       });
     const pan = Gesture.Pan()
       .maxPointers(1)
@@ -137,6 +153,7 @@ export function useSprayPhotoViewport(
     panX,
     panY,
     isPinching,
+    pinchStarted,
     interactions,
     reportInteraction,
     startZoom,
