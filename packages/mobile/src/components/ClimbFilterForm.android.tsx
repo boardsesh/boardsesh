@@ -19,13 +19,12 @@ import {
   LazyColumn,
   LazyRow,
   OutlinedTextField,
+  Shape,
+  Surface,
   Text,
   useNativeState,
 } from '@expo/ui/jetpack-compose';
 import {
-  background,
-  border,
-  clip,
   combinedClickable,
   defaultMinSize,
   fillMaxWidth,
@@ -33,7 +32,6 @@ import {
   onSizeChanged,
   padding,
   semantics,
-  Shapes,
   weight,
 } from '@expo/ui/jetpack-compose/modifiers';
 import {
@@ -260,26 +258,29 @@ function GradeRow({
         ? withAlpha(gradeColor, 0.75)
         : 'transparent';
     return (
-      <Box
+      <Surface
         key={key}
-        contentAlignment="center"
-        modifiers={[
-          clip(Shapes.RoundedCorner(24)),
-          background(fill),
-          border(1, ring),
-          combinedClickable({ onClick: onTap, onLongClick: onHold }),
-          semantics({ contentDescription: description, selected }),
-          defaultMinSize({ minHeight: 48, minWidth: 48 }),
-          padding(spacing[3], spacing[2], spacing[3], spacing[2]),
-        ]}
+        shape={Shape.RoundedCorner({ cornerRadii: { topStart: 24, topEnd: 24, bottomStart: 24, bottomEnd: 24 } })}
+        color={fill}
+        border={{ width: 1, color: ring }}
       >
-        <Text
-          color={selected && gradeColor ? readableTextColor(gradeColor) : systemColors.label}
-          style={{ typography: 'labelLarge' }}
+        <Box
+          contentAlignment="center"
+          modifiers={[
+            combinedClickable({ onClick: onTap, onLongClick: onHold }),
+            semantics({ contentDescription: description, selected }),
+            defaultMinSize({ minHeight: 48, minWidth: 48 }),
+            padding(spacing[3], spacing[2], spacing[3], spacing[2]),
+          ]}
         >
-          {label}
-        </Text>
-      </Box>
+          <Text
+            color={selected && gradeColor ? readableTextColor(gradeColor) : systemColors.label}
+            style={{ typography: 'labelLarge' }}
+          >
+            {label}
+          </Text>
+        </Box>
+      </Surface>
     );
   };
   return (

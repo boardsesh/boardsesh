@@ -83,6 +83,8 @@ vi.mock('@expo/ui/jetpack-compose', () => {
   );
   return {
     Card: Container,
+    Surface: Container,
+    Shape: { RoundedCorner: Container },
     Column: Container,
     Text: Container,
     Icon: () => null,
