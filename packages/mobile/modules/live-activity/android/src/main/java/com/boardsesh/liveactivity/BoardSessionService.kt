@@ -19,13 +19,18 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.format.DateUtils
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.util.Log
 import android.util.LruCache
 import android.view.View
@@ -115,6 +120,20 @@ class BoardSessionService : Service() {
     private var overlayPath: String? = null
     private var backgroundPaths: List<String> = emptyList()
 
+    // The lock screen card (#7327). Null is the classic card: an older bundle, the
+    // kill switch, a service restarted with no JS, or a payload that didn't parse.
+    private var cardJson: String? = null
+    private var cardPayload: CardPayload? = null
+
+    @Volatile
+    private var currentCardKey: String? = null
+
+    @Volatile
+    private var failedCardKey: String? = null
+
+    // The art last painted, kept up while the next climb's composes. Main thread only.
+    private var lastCardArt: CardArt? = null
+
     // The rest countdown (null = hidden). Epoch-ms from JS; converted to the
     // Chronometer's elapsedRealtime timebase at build time.
     private var restTimer: RestTimerSnapshot? = null
@@ -158,6 +177,7 @@ class BoardSessionService : Service() {
         getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification)
     }
     private val reportedPostFailures = HashSet<String>()
+    internal var cardArtComposer: (CardPayload) -> CardArt? = SessionCardPainter::compose
     internal var imageComposer: (String, List<String>) -> Bitmap? = { overlay, backgrounds ->
         composeThumbnail(overlay, backgrounds)
     }
@@ -313,6 +333,13 @@ class BoardSessionService : Service() {
                     // thumbnail doesn't flicker out between updates.
                     intent.getStringExtra(EXTRA_OVERLAY_PATH)?.let { overlayPath = it }
                     intent.getStringArrayListExtra(EXTRA_BACKGROUND_PATHS)?.let { backgroundPaths = it }
+                    // Unlike the thumbnail, absent means something: an older bundle
+                    // or the kill switch, and either one wants the classic card.
+                    val nextCardJson = intent.getStringExtra(EXTRA_CARD_JSON)
+                    if (nextCardJson != cardJson) {
+                        cardJson = nextCardJson
+                        cardPayload = nextCardJson?.let { CardPayload.parse(it) }
+                    }
                 }
             }
         }
@@ -344,6 +371,7 @@ class BoardSessionService : Service() {
         // Image compositing never runs before promotion: the notification was
         // already built (with the cached bitmap or a placeholder) and posted above.
         maybeComposeImage()
+        maybeComposeCardArt()
 
         // START_NOT_STICKY: don't let the OS recreate the service in the background
         // after a kill — a null-intent restart on a frozen/cold-starting process
@@ -440,13 +468,26 @@ class BoardSessionService : Service() {
     }
 
     private fun buildNotification(withArt: Boolean = true): Notification {
-        val showArt = withArt && artFitsBinderBudget()
+        val art = planArt(withArt)
+        val card = cardPayload
+        val tone = cardTone()
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_boardsesh_notification)
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(buildContentView(R.layout.notification_session_collapsed, showArt))
-            .setCustomBigContentView(buildContentView(R.layout.notification_session_expanded, showArt))
-            .setColor(ContextCompat.getColor(this, R.color.session_accent))
+        if (card != null) {
+            // Colorized so the system header matches the card and no box edge shows.
+            builder
+                .setCustomContentView(buildCardView(R.layout.notification_card_collapsed, card, tone, art))
+                .setCustomBigContentView(buildCardView(R.layout.notification_card_expanded, card, tone, art))
+                .setColor(SessionCardPainter.surfaceFor(tone))
+                .setColorized(true)
+        } else {
+            builder
+                .setCustomContentView(buildContentView(R.layout.notification_session_collapsed, art.thumbnail))
+                .setCustomBigContentView(buildContentView(R.layout.notification_session_expanded, art.thumbnail))
+                .setColor(ContextCompat.getColor(this, R.color.session_accent))
+        }
+        builder
             .setOngoing(true)
             .setSilent(true)
             // DEFAULT-importance channel: alert once on first post so re-posting on
@@ -458,34 +499,176 @@ class BoardSessionService : Service() {
             .setContentIntent(launchAppIntent())
         applyLighting(builder)
 
-        // Controls follow ownership: only the driver (connectedByMe) gets
-        // Previous/Next; everyone else gets just the outline bulb to (re)connect.
-        if (boardConnection == CONNECTION_CONNECTED_BY_ME) {
+        val actions = sessionActions()
+        if (card != null) {
+            // The card draws its own controls. A watch still needs real actions, and
+            // these reach it without adding a second row to the phone's card.
+            builder.extend(NotificationCompat.WearableExtender().addActions(actions))
+        } else {
+            actions.forEach { builder.addAction(it) }
+        }
+        return builder.build()
+    }
+
+    // Controls follow ownership: only the driver (connectedByMe) gets
+    // Previous/Next; everyone else gets just the outline bulb to (re)connect.
+    private fun sessionActions(): List<NotificationCompat.Action> {
+        if (boardConnection != CONNECTION_CONNECTED_BY_ME) {
+            return listOf(
+                NotificationCompat.Action(
+                    R.drawable.ic_lightbulb_outline,
+                    if (boardConnecting) connectingLabel else reconnectLabel,
+                    outlineBulbPendingIntent(),
+                ),
+            )
+        }
+        val stopLabel = stopDrivingBulbLabel()
+        return listOfNotNull(
             if (hasPrevious) {
-                builder.addAction(R.drawable.ic_skip_previous, previousLabel, actionPendingIntent(ACTION_NAV_PREVIOUS, REQ_PREVIOUS))
-            }
-            // While this phone drives, the lit bulb stops driving, as the
-            // frosted button does in the app. The re-post at a timed drive's
-            // end (and JS's own "off") turns it back into a relight.
-            val stopLabel = stopDrivingLabel?.takeIf {
-                resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection) != LightingDisplay.Off
-            }
-            builder.addAction(
+                NotificationCompat.Action(R.drawable.ic_skip_previous, previousLabel, actionPendingIntent(ACTION_NAV_PREVIOUS, REQ_PREVIOUS))
+            } else {
+                null
+            },
+            NotificationCompat.Action(
                 R.drawable.ic_lightbulb_filled,
                 stopLabel ?: relightLabel,
                 bulbPendingIntent(stopsDrive = stopLabel != null),
-            )
+            ),
             if (hasNext) {
-                builder.addAction(R.drawable.ic_skip_next, nextLabel, actionPendingIntent(ACTION_NAV_NEXT, REQ_NEXT))
-            }
+                NotificationCompat.Action(R.drawable.ic_skip_next, nextLabel, actionPendingIntent(ACTION_NAV_NEXT, REQ_NEXT))
+            } else {
+                null
+            },
+        )
+    }
+
+    // While this phone drives, the lit bulb stops driving, as the frosted button
+    // does in the app. The re-post at a timed drive's end (and JS's own "off")
+    // turns it back into a relight.
+    private fun stopDrivingBulbLabel(): String? = stopDrivingLabel?.takeIf { currentLighting() != LightingDisplay.Off }
+
+    private fun currentLighting(): LightingDisplay =
+        resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection)
+
+    // Native owns this: a timed drive ends while Android has JS timers paused.
+    private fun cardTone(): CardTone = if (currentLighting() == LightingDisplay.Off) CardTone.Grey else CardTone.Colour
+
+    private fun currentCardArt(): CardArt? {
+        val key = cardJson ?: return null
+        return cardArtCache.get(key) ?: lastCardArt?.takeIf { key != failedCardKey }
+    }
+
+    // The lock screen card (#7327). Colours come from the layout or are set on every
+    // build, so a RemoteViews that SystemUI reapplies can't leave a stale one behind.
+    @VisibleForTesting
+    internal fun buildCardView(layoutId: Int, card: CardPayload, tone: CardTone, art: ArtPlan): RemoteViews {
+        val views = RemoteViews(packageName, layoutId)
+        val expanded = layoutId == R.layout.notification_card_expanded
+        val restShown = restTimer?.let { resolveRestDisplay(it, wallClockMs()) } != null
+        val connected = boardConnection == CONNECTION_CONNECTED_BY_ME
+        val holder = holderDisplayName?.takeIf { boardConnection == CONNECTION_HELD_BY_PEER && it.isNotBlank() }
+        val holderLine = holder?.let { onWallTemplate.replace("{{name}}", it) }
+
+        views.setTextViewText(R.id.session_title, climbName ?: contentTitleFallback)
+
+        val position = if (totalClimbs > 0) "${currentIndex + 1} / $totalClimbs" else null
+        val gradeInSlot = expanded && !restShown && card.gradeLabel != null
+        val lead = if (expanded) position else (holderLine ?: position)
+        views.setTextViewText(
+            R.id.session_subtitle,
+            cardMetadata(card, showGrade = !gradeInSlot, parts = listOfNotNull(lead, card.angleLabel)),
+        )
+
+        if (expanded) {
+            views.setViewVisibility(R.id.session_card_grade, if (gradeInSlot) View.VISIBLE else View.GONE)
+            views.setTextViewText(R.id.session_card_grade, card.gradeLabel.orEmpty())
+            views.setTextColor(R.id.session_card_grade, card.gradeColor ?: ContextCompat.getColor(this, R.color.session_card_ink))
+            bindMirror(views)
         } else {
-            builder.addAction(
-                R.drawable.ic_lightbulb_outline,
-                if (boardConnecting) connectingLabel else reconnectLabel,
-                outlineBulbPendingIntent(),
-            )
+            views.setViewVisibility(R.id.session_card_rest_scrim, if (restShown) View.VISIBLE else View.GONE)
         }
-        return builder.build()
+
+        bindCardArt(views, expanded, tone, art.cardArt)
+        bindCardControls(views, expanded, connected, restShown, holderLine)
+        bindThumbnail(views, art.thumbnail)
+        bindRestTimer(views)
+        return views
+    }
+
+    private fun cardMetadata(card: CardPayload, showGrade: Boolean, parts: List<String>): CharSequence {
+        val grade = card.gradeLabel?.takeIf { showGrade }
+        val text = (listOfNotNull(grade) + parts).joinToString(" · ")
+        if (grade == null) return text
+        return SpannableString(text).apply {
+            card.gradeColor?.let { setSpan(ForegroundColorSpan(it), 0, grade.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+            setSpan(StyleSpan(Typeface.BOLD), 0, grade.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    private fun bindCardArt(views: RemoteViews, expanded: Boolean, tone: CardTone, show: Boolean) {
+        val cardArt = if (show) currentCardArt() else null
+        // Holds this climb's art up while the next climb's composes, so the card
+        // doesn't blink to a plain surface on every Next.
+        if (cardArt != null) lastCardArt = cardArt
+        val panels = cardArt?.forTone(tone)
+        if (panels == null) {
+            views.setImageViewResource(R.id.session_card_art, 0)
+            views.setViewVisibility(R.id.session_card_art, View.GONE)
+            return
+        }
+        views.setViewVisibility(R.id.session_card_art, View.VISIBLE)
+        views.setImageViewBitmap(R.id.session_card_art, if (expanded) panels.expanded else panels.collapsed)
+    }
+
+    private fun bindCardControls(
+        views: RemoteViews,
+        expanded: Boolean,
+        connected: Boolean,
+        restShown: Boolean,
+        holderLine: String?,
+    ) {
+        val connectLabel = if (boardConnecting) connectingLabel else reconnectLabel
+        val stopLabel = if (connected) stopDrivingBulbLabel() else null
+        val bulbIcon = when {
+            !connected -> R.drawable.session_card_bulb_outline
+            currentLighting() is LightingDisplay.Window -> R.drawable.session_card_bulb_ring
+            currentLighting() == LightingDisplay.Driving -> R.drawable.session_card_bulb_disc
+            else -> R.drawable.session_card_bulb_bare
+        }
+        views.setImageViewResource(R.id.session_bulb, bulbIcon)
+        views.setContentDescription(R.id.session_bulb, if (connected) stopLabel ?: relightLabel else connectLabel)
+        views.setOnClickPendingIntent(
+            R.id.session_bulb,
+            if (connected) bulbPendingIntent(stopsDrive = stopLabel != null) else outlineBulbPendingIntent(),
+        )
+
+        // The collapsed strip has no room for Next beside a rest clock.
+        bindCardNav(
+            views, R.id.session_next, nextLabel, hasNext, ACTION_NAV_NEXT, REQ_NEXT,
+            visible = connected && (expanded || !restShown),
+        )
+        if (expanded) {
+            bindCardNav(views, R.id.session_previous, previousLabel, hasPrevious, ACTION_NAV_PREVIOUS, REQ_PREVIOUS, visible = connected)
+            views.setViewVisibility(R.id.session_card_status, if (connected) View.GONE else View.VISIBLE)
+            views.setTextViewText(R.id.session_card_status, holderLine ?: connectLabel)
+        }
+    }
+
+    // A button with nowhere to go keeps its slot, so the row doesn't jump between climbs.
+    private fun bindCardNav(
+        views: RemoteViews,
+        viewId: Int,
+        label: String,
+        enabled: Boolean,
+        navAction: String,
+        requestCode: Int,
+        visible: Boolean,
+    ) {
+        views.setViewVisibility(viewId, if (visible) View.VISIBLE else View.GONE)
+        views.setContentDescription(viewId, label)
+        views.setBoolean(viewId, "setEnabled", enabled)
+        views.setInt(viewId, "setImageAlpha", if (enabled) 255 else DISABLED_CONTROL_ALPHA)
+        views.setOnClickPendingIntent(viewId, if (visible && enabled) actionPendingIntent(navAction, requestCode) else null)
     }
 
     // internal so a test can inflate the result and assert the rendered holder line
@@ -522,15 +705,19 @@ class BoardSessionService : Service() {
             views.setTextViewText(R.id.session_subtitle, collapsedSubtitle)
         }
 
+        bindMirror(views)
+        bindThumbnail(views, withArt)
+        bindRestTimer(views)
+        return views
+    }
+
+    private fun bindMirror(views: RemoteViews) {
         val showMirror = supportsMirroring && sessionId.isNotEmpty() && queueItemUuid.isNotEmpty() &&
             boardConnection == CONNECTION_CONNECTED_BY_ME
         views.setViewVisibility(R.id.session_mirror, if (showMirror) android.view.View.VISIBLE else android.view.View.GONE)
         views.setContentDescription(R.id.session_mirror, if (mirrored) unmirrorLabel else mirrorLabel)
         views.setInt(R.id.session_mirror, "setImageAlpha", if (mirrored) 255 else 140)
         if (showMirror) views.setOnClickPendingIntent(R.id.session_mirror, mirrorPendingIntent())
-        bindThumbnail(views, withArt)
-        bindRestTimer(views)
-        return views
     }
 
     private fun currentThumbnail(): Bitmap? {
@@ -544,12 +731,15 @@ class BoardSessionService : Service() {
     }
 
     // The check runs before posting because a Binder failure on the promotion path
-    // may never reach our catch. Art is parcelled once per layout.
-    private fun artFitsBinderBudget(): Boolean {
-        val artBytes = (currentThumbnail()?.byteCount ?: 0) * LAYOUTS_CARRYING_ART
-        if (artBytes <= MAX_PARCELLED_ART_BYTES) return true
+    // may never reach our catch. The thumbnail is parcelled once per layout, and the
+    // bokeh goes first: the climb's own board is the part worth keeping.
+    private fun planArt(withArt: Boolean): ArtPlan {
+        if (!withArt) return ArtPlan(thumbnail = false, cardArt = false)
+        val thumbnailBytes = (currentThumbnail()?.byteCount ?: 0) * LAYOUTS_CARRYING_ART
+        val cardBytes = if (cardPayload != null) currentCardArt()?.forTone(cardTone())?.byteCount ?: 0 else 0
+        if (thumbnailBytes + cardBytes <= MAX_PARCELLED_ART_BYTES) return ArtPlan(thumbnail = true, cardArt = true)
         reportPostFailure("art-over-budget", null)
-        return false
+        return ArtPlan(thumbnail = thumbnailBytes <= MAX_PARCELLED_ART_BYTES, cardArt = false)
     }
 
     // Every branch sets both the image and the visibility. SystemUI may reapply a
@@ -893,6 +1083,38 @@ class BoardSessionService : Service() {
         }
     }
 
+    // Paints the card's bokeh off the main thread, then re-posts. Keyed on the JSON
+    // itself, which changes exactly when the picture does.
+    private fun maybeComposeCardArt() {
+        val key = cardJson ?: return
+        val payload = cardPayload ?: return
+        currentCardKey = key
+        if (cardArtCache.get(key) != null) return
+        if (!inFlight.add(key)) return
+        imageExecutor.execute {
+            val art = try {
+                cardArtComposer(payload)
+            } catch (error: Throwable) {
+                // Throwable: an OutOfMemoryError here must only cost the bokeh.
+                Log.w(TAG, "card art compose failed: ${error.javaClass.simpleName}: ${error.message}")
+                null
+            } finally {
+                inFlight.remove(key)
+            }
+            if (art == null) {
+                if (failedCardKey == key) return@execute
+                failedCardKey = key
+            } else {
+                cardArtCache.put(key, art)
+                if (failedCardKey == key) failedCardKey = null
+            }
+            postToMain {
+                if (currentCardKey != key || !foregrounded) return@postToMain
+                postNotification("card-art")
+            }
+        }
+    }
+
     // Decode the bundled board background layers + the holds-only overlay (both
     // local PNGs from the BoardRenderer module / bundled assets) and stack them on
     // a dark base. No server.
@@ -986,6 +1208,14 @@ class BoardSessionService : Service() {
         // transaction limit with room left for the views, extras and intents.
         private const val MAX_PARCELLED_ART_BYTES = 700 * 1024
         private const val LAYOUTS_CARRYING_ART = 2
+
+        // 38%: the Material figure for a disabled icon.
+        private const val DISABLED_CONTROL_ALPHA = 97
+
+        // Both tones of a climb's two panels are about 175 KB, so roughly six climbs.
+        private const val CARD_ART_CACHE_BYTES = 1024 * 1024
+
+        const val EXTRA_CARD_JSON = "cardJson"
 
         /**
          * The filesystem path for an overlay or background JS handed over. A
@@ -1208,6 +1438,10 @@ class BoardSessionService : Service() {
         private val bitmapCache = object : LruCache<String, Bitmap>(BITMAP_CACHE_BYTES) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
+        private val cardArtCache = object : LruCache<String, CardArt>(CARD_ART_CACHE_BYTES) {
+            override fun sizeOf(key: String, value: CardArt): Int = value.byteCount
+        }
+
         private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet()
         private val sharedImageExecutor: Executor = Executors.newSingleThreadExecutor()
 
@@ -1217,6 +1451,7 @@ class BoardSessionService : Service() {
         @VisibleForTesting
         internal fun resetImageStateForTest() {
             bitmapCache.evictAll()
+            cardArtCache.evictAll()
             inFlight.clear()
         }
     }

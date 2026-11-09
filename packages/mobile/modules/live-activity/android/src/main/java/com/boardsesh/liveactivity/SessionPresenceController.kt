@@ -146,6 +146,7 @@ internal class SessionPresenceController(
                     ArrayList(options.androidThumbnailBackgroundPaths),
                 )
             }
+            options.androidBokehJson?.let { putExtra(BoardSessionService.EXTRA_CARD_JSON, it) }
         }
         // Update path: the service is already running. A failed re-delivery while
         // the app briefly backgrounds (ForegroundServiceStartNotAllowedException)

@@ -2,7 +2,7 @@
 
 The Android counterpart to the iOS Live Activity. While a session is active it
 keeps the `react-native-ble-plx` board connection alive in the background and
-shows an ongoing media-style notification with Previous/Next controls.
+shows an ongoing custom notification with the current climb and its controls.
 
 ## Pieces
 
@@ -16,12 +16,13 @@ shows an ongoing media-style notification with Previous/Next controls.
     `WeakReference` to itself so the receiver can reach it without leaking.
   - `BoardSessionService.kt` — `startForeground` with
     `FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE` (guarded for API < 30, wrapped in
-    try/catch for the API 34 permission rule); channel `boardsesh_session`
-    (`IMPORTANCE_LOW`); `MediaStyle` notification with Previous/Next actions
-    gated on `hasPrevious`/`hasNext`.
+    try/catch for the API 34 permission rule); channel
+    `boardsesh_session_active` (`IMPORTANCE_DEFAULT`, silent); a
+    `DecoratedCustomViewStyle` notification. It is not a media session, so
+    Android's full-bleed media card is not available to it.
   - `BoardSessionActionReceiver.kt` — turns the action taps into the module's
     `queueNavigate` event (same `{ action, currentIndex, correlationId }` shape
-    as the iOS widget). If the JS process is dead it launches the app instead.
+    as the iOS widget). Events wait in the bounded buffer until JS attaches.
 - **`plugins/with-android-session-service.js`** — injects the `<service>` +
   `<receiver>` into the generated `AndroidManifest.xml` (managed Expo has no
   committed `android/`). The FGS permissions live in `app.config.ts`
@@ -42,6 +43,28 @@ foregrounded (and BLE alive) during real use. `POST_NOTIFICATIONS` (Android 13+)
 is requested at board-connect time in `use-ble-permissions.ts`, decoupled from
 the BLE gate: a denial only hides the notification; the service still runs.
 
+## The lock screen card
+
+JS sends `androidBokehJson` on every climb update: the bokeh blobs, the V-grade, its
+colour and the angle (`src/lib/live-activity/android-card-payload.ts`). Geometry,
+grade colours and contrast stay in tested TypeScript. Kotlin only paints
+(`SessionCardArt.kt`) and binds the layouts (`notification_card_{collapsed,expanded}`).
+
+- **The field is the switch.** Absent means the classic card: an older bundle, a
+  service restarted with no JS, or the `android-notification-bokeh-kill` flag. Empty
+  blob lists mean the new card on a plain surface. The classic layouts and
+  `values-v31` colours stay until one stable release has shipped.
+- **Collapsed is the main surface.** The lock screen shows the collapsed view by
+  default, capped at 48dp, and the system draws no `addAction` buttons there. So the
+  card's controls are content views, and a `WearableExtender` keeps a watch's actions.
+- **Grey means no active drive** (`resolveLighting == Off`), the same test that writes
+  "Driving the wall". Native decides, because a timed drive ends while Android has JS
+  timers paused. Both tones are painted together, so that re-post needs no compose.
+- **Holds glow behind the controls, not the text.** Spread behind the text, they need
+  so much scrim for 4.5:1 that the pattern disappears.
+- **A true full-bleed card needs a media session**, and that would cost the live rest
+  clock and grade colour and need a permanently fake "playing" state.
+
 ## When the card can't be posted
 
 The service keeps the Bluetooth link alive, so a card that fails to post must not
@@ -49,14 +72,14 @@ take the service down or fail silently.
 
 - Bitmaps in one posted notification are capped at 700 KB, checked before posting.
   A Binder failure on the promotion path may never reach our `catch`, so the check
-  can't wait for one. Over the cap, the card posts without art.
+  can't wait for one. Over the cap the bokeh goes first, then the thumbnail.
 - Every re-post goes through `postNotification()`, which retries once without art.
 - A promotion that throws with the card retries with the plain fallback before the
   service stops. An oversized card doesn't reach this path, because
   `startForeground` swallows Binder errors. The 700 KB cap is what guards that case.
 - Each failing stage emits `notificationPostFailed` once per service. JS reports it
   to Sentry as `Android session notification post failed`, tagged with the stage:
-  `art-over-budget`, `promotion`, `thumbnail`, `rest-transition`,
+  `art-over-budget`, `promotion`, `thumbnail`, `card-art`, `rest-transition`,
   `lighting-transition` or `screen-on`. Only the exception's class name is sent.
 
 ## Caveats / follow-ups

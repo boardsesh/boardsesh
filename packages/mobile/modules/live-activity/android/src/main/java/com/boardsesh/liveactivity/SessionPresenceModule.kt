@@ -72,6 +72,9 @@ class SessionUpdateOptions : Record {
     @Field var boardConnecting: Boolean = false
     @Field var androidThumbnailOverlayPath: String? = null
     @Field var androidThumbnailBackgroundPaths: List<String> = emptyList()
+    // The lock screen card's bokeh and grade as JSON. Null (older JS, or the kill
+    // switch) keeps the classic card.
+    @Field var androidBokehJson: String? = null
 }
 
 // Mirrors LiveActivityRestTimerOptions (modules/live-activity/src/index.ts). JS

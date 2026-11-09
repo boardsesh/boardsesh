@@ -183,6 +183,19 @@ class SessionPresenceControllerTest {
 
     @Test
     @Config(sdk = [30])
+    fun `updateActivity forwards the card payload and omits it when absent`() {
+        val (controller, launchedIntents) = recordingController()
+        controller.startSession(null)
+
+        controller.updateActivity(updateOptions().apply { androidBokehJson = """{"expanded":[]}""" })
+        assertEquals("""{"expanded":[]}""", launchedIntents.last().getStringExtra(BoardSessionService.EXTRA_CARD_JSON))
+
+        controller.updateActivity(updateOptions())
+        assertEquals(false, launchedIntents.last().hasExtra(BoardSessionService.EXTRA_CARD_JSON))
+    }
+
+    @Test
+    @Config(sdk = [30])
     fun `updateActivity forwards ownership and the on-device thumbnail paths`() {
         val (controller, launchedIntents) = recordingController()
         controller.startSession(null)

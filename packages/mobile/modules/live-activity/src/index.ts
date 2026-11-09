@@ -386,6 +386,11 @@ export type LiveActivityUpdateOptions = {
   androidThumbnailOverlayPath?: string | null;
   androidThumbnailBackgroundPaths?: string[];
   /**
+   * Android-only: the lock screen card's bokeh and grade as JSON (#7327). Absent
+   * means the classic card, so an older bundle and the kill switch both get it.
+   */
+  androidBokehJson?: string;
+  /**
    * Android-only: no board is remembered for the current config, so the
    * notification's outline bulb opens the app instead of starting a background
    * reconnect, which could only end in a board list nobody can see (#7087).
@@ -650,7 +655,7 @@ export const liveActivityNative = requireOptionalNativeModule<LiveActivityNative
 // --- SessionPresence native module (Android) ---
 
 // The Android counterpart to the iOS LiveActivity module: a foreground service +
-// ongoing media-style notification that keeps the BLE connection alive in the
+// ongoing custom notification that keeps the BLE connection alive in the
 // background and surfaces Previous/Next session controls. It deliberately
 // mirrors the LiveActivity method names + the queueNavigate event shape so the
 // JS seam (live-activity-plugin) can drive either platform through one selector.

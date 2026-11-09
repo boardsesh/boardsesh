@@ -49,7 +49,7 @@ export const LABEL_FADE_STEPS = [0, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9] as const;
 export const MIN_LABEL_CONTRAST = 4.5;
 export type WallGlowReadableZone = 'center' | 'full';
 
-function contrast(first: string, second: string): number {
+export function contrast(first: string, second: string): number {
   const firstLum = relativeLuminance(first) ?? 0;
   const secondLum = relativeLuminance(second) ?? 0;
   const [light, dark] = firstLum > secondLum ? [firstLum, secondLum] : [secondLum, firstLum];

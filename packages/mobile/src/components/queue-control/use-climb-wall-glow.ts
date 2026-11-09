@@ -16,14 +16,19 @@ const subscribeToNoSprayWall = (): (() => void) => () => {};
 
 /** Local hold geometry and colours only: this surface never requests wall data or board images. */
 export function useClimbWallGlow(
-  climb: Climb,
+  climb: Climb | null,
   boardConfig: BoardConfig | null,
   enabled: boolean,
 ): WallGlowInput | null {
   'use no memo';
 
-  const { uuid, frames, boardType, layoutId, angle, compatibleSizeIds } = climb;
-  const mirrored = climb.mirrored === true;
+  const uuid = climb?.uuid ?? null;
+  const frames = climb?.frames ?? '';
+  const boardType = climb?.boardType;
+  const layoutId = climb?.layoutId;
+  const angle = climb?.angle ?? 0;
+  const compatibleSizeIds = climb?.compatibleSizeIds;
+  const mirrored = climb?.mirrored === true;
   const glowEnabled = enabled && frames.length > 0;
   const climbSprayLayout = glowEnabled && boardType === 'spray' ? layoutId : null;
   const activeSprayLayout = glowEnabled && boardConfig?.boardName === 'spray' ? boardConfig.layoutId : null;
