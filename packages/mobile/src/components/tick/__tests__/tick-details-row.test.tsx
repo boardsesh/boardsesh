@@ -143,6 +143,12 @@ describe('TickDetailsRow summary', () => {
     expect(pressable.textContent).toBe('40° · Today 09:41');
   });
 
+  it('writes the time the way the date row does, on a 24-hour clock', () => {
+    const { pressable } = renderRow({ climbedAt: new Date(2026, 10, 9, 14, 30), dateEdited: true });
+
+    expect(pressable.textContent).toBe('40° · Today 14:30');
+  });
+
   it('gives another day a short localized date and time, never ISO', () => {
     const { pressable } = renderRow({ climbedAt: new Date(2026, 10, 2, 18, 20), dateEdited: true });
 

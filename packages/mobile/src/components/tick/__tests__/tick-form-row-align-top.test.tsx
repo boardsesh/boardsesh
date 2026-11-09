@@ -8,8 +8,9 @@
 // row takes it, a plain row must not, and it stays out of the way of the
 // large-text `stacked` layout, which already puts the label on its own line.
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { cleanup, render } from '@testing-library/react';
+import type { ViewInstance } from 'react-native';
+import { createElement, createRef, type ReactNode, type Ref } from 'react';
 import { flattenStyle } from '../../../../test/flatten-style';
 
 const windowMock = vi.hoisted(() => ({ fontScale: 1 }));
@@ -18,8 +19,29 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: (options: Record<string, unknown>) => options.android ?? options.default },
   PlatformColor: (name: string) => name,
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-  View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
-    createElement('div', { 'data-style': JSON.stringify(style ?? null), 'data-testid': testID }, children),
+  View: ({
+    children,
+    style,
+    testID,
+    accessible,
+    ref,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    testID?: string;
+    accessible?: boolean;
+    ref?: Ref<HTMLDivElement>;
+  }) =>
+    createElement(
+      'div',
+      {
+        ref,
+        'data-style': JSON.stringify(style ?? null),
+        'data-testid': testID,
+        'data-accessible': accessible ? 'true' : undefined,
+      },
+      children,
+    ),
   useWindowDimensions: () => ({ width: 405, height: 900, fontScale: windowMock.fontScale }),
 }));
 
@@ -28,10 +50,14 @@ vi.mock('../../Text', () => ({
     createElement('span', { 'data-style': JSON.stringify(style ?? null), 'data-variant': variant }, children),
 }));
 
+const themeState = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlass' }));
 vi.mock('../../../providers/theme-provider', async () => {
   const { makeThemeMock } = await import('../../../test/theme-mock');
-  const theme = makeThemeMock({ variant: 'material', colorScheme: 'dark' });
-  return { useTheme: () => theme };
+  const themes = {
+    material: makeThemeMock({ variant: 'material', colorScheme: 'dark' }),
+    liquidGlass: makeThemeMock({ variant: 'liquidGlass', colorScheme: 'dark' }),
+  };
+  return { useTheme: () => themes[themeState.variant] };
 });
 
 import { TickFormRow } from '../TickFormRow';
@@ -55,6 +81,45 @@ function renderRow(props: { alignTop?: boolean } = {}) {
     label: flattenStyle(JSON.parse(label?.getAttribute('data-style') ?? 'null')),
   };
 }
+
+describe('TickFormRow labelFocusRef', () => {
+  it('wraps the label in one focusable view only when asked', () => {
+    windowMock.fontScale = 1;
+    cleanup();
+    render(createElement(TickFormRow, { label: 'Note', children: createElement('input', { readOnly: true }) }));
+    expect(document.querySelector('[data-accessible]')).toBeNull();
+
+    cleanup();
+    const labelFocusRef = createRef<ViewInstance>();
+    render(
+      createElement(TickFormRow, {
+        label: 'Angle',
+        labelFocusRef,
+        children: createElement('input', { readOnly: true }),
+      }),
+    );
+    const focusable = document.querySelector('[data-accessible]');
+    expect(focusable?.textContent).toBe('Angle');
+    expect(labelFocusRef.current).toBe(focusable);
+  });
+});
+
+describe('TickFormRow on Liquid Glass', () => {
+  it('keeps the body label on the 56 floor and 12 gap', () => {
+    windowMock.fontScale = 1;
+    themeState.variant = 'liquidGlass';
+    try {
+      cleanup();
+      const { row, label } = renderRow();
+
+      expect(document.querySelector('span')?.getAttribute('data-variant')).toBe('body');
+      expect(label.minWidth).toBe(56);
+      expect(row.gap).toBe(spacing[3]);
+    } finally {
+      themeState.variant = 'material';
+    }
+  });
+});
 
 describe('TickFormRow on Material', () => {
   it('sets the label in subheadline on a 60 floor and an 8 gap, so the seam stays at 84', () => {

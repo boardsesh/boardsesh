@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ReactNode, type Ref } from 'react';
 
 // QuickTickBar is the create sheet's field stack and nothing else — the state,
 // the save path and the analytics all live in useQuickTickForm (tested next
@@ -29,12 +29,26 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 // QuickTickBar now renders one helper line under the grade rail (#4796), which
 // pulls in StyleSheet and the Text primitive. Neither is what this suite tests,
 // and the real react-native module does not transform under it.
+const scrollTracking = vi.hoisted(() => ({
+  keyboardListeners: new Map<string, () => void>(),
+  scrollIntoView: { reveal: vi.fn(), follow: vi.fn(), release: vi.fn() },
+}));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   StyleSheet: { create: (styles: unknown) => styles },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Keyboard: {
+    addListener: (eventName: string, listener: () => void) => {
+      scrollTracking.keyboardListeners.set(eventName, listener);
+      return { remove: () => scrollTracking.keyboardListeners.delete(eventName) };
+    },
+  },
+  View: ({ children, ref, testID }: { children?: ReactNode; ref?: Ref<HTMLDivElement>; testID?: string }) =>
+    createElement('div', { ref, 'data-testid': testID }, children),
+}));
+vi.mock('../../sheet-scroll-into-view', () => ({
+  useSheetScrollIntoView: () => scrollTracking.scrollIntoView,
 }));
 vi.mock('../../Text', () => ({
   Text: ({
@@ -376,6 +390,17 @@ describe('QuickTickBar angle', () => {
 
 // #7343: Android folds Angle and Date behind one summary row.
 describe('QuickTickBar details disclosure', () => {
+  it('stops tracking the unfolded rows once the keyboard comes up', () => {
+    // The note sits in the pinned footer, outside the scroll body. Left
+    // tracking, every keyboard or note-growth resize would drag the body back.
+    scrollTracking.scrollIntoView.release.mockClear();
+    const { getByTestId } = renderDisclosure(true);
+
+    scrollTracking.keyboardListeners.get('keyboardDidShow')?.();
+
+    expect(scrollTracking.scrollIntoView.release).toHaveBeenCalledWith(getByTestId('tick-details-revealed'));
+  });
+
   function renderDisclosure(open: boolean, overrides: Partial<QuickTickForm> = {}) {
     const onOpen = vi.fn();
     const form = makeForm(overrides);

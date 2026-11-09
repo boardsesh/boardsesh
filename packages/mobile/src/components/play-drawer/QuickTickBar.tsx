@@ -6,7 +6,7 @@
 // row is a `TickFormRow`, so the label seam and the control seam are the same
 // two verticals here as in the edit sheet.
 import React, { useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { StyleSheet, View, type ViewInstance } from 'react-native';
+import { Keyboard, StyleSheet, View, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { StarRating } from '../StarRating';
 import { Text } from '../Text';
@@ -61,14 +61,18 @@ export type QuickTickBarProps = {
  * A frame late because the scroll body reports its new content height in the
  * same layout pass as these rows, and the scroll is clamped to that height.
  * `follow` keeps tracking them through the sheet's own resize. It never changes
- * a detent, and the note's focus takes over tracking when the keyboard comes up.
+ * a detent. The keyboard ends the tracking: the note lives in the pinned footer,
+ * outside this scroll body, so no field would take over, and each keyboard or
+ * note-growth resize would drag the body back to these rows.
  */
 function RevealedDetails({ children }: { children: ReactNode }) {
   const scrollIntoView = useSheetScrollIntoView();
   const rowsRef = useRef<ViewInstance>(null);
   const pendingFrameRef = useRef<number | null>(null);
+  const keyboardCameUpRef = useRef(false);
 
   const handleLayout = useCallback(() => {
+    if (keyboardCameUpRef.current) return;
     if (pendingFrameRef.current != null) cancelAnimationFrame(pendingFrameRef.current);
     pendingFrameRef.current = requestAnimationFrame(() => {
       pendingFrameRef.current = null;
@@ -78,9 +82,17 @@ function RevealedDetails({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const rows = rowsRef.current;
-    return () => {
+    const stopTracking = () => {
       if (pendingFrameRef.current != null) cancelAnimationFrame(pendingFrameRef.current);
       if (rows) scrollIntoView?.release(rows);
+    };
+    const keyboardSubscription = Keyboard.addListener('keyboardDidShow', () => {
+      keyboardCameUpRef.current = true;
+      stopTracking();
+    });
+    return () => {
+      keyboardSubscription.remove();
+      stopTracking();
     };
   }, [scrollIntoView]);
 

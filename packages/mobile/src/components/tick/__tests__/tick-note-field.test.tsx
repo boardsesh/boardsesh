@@ -64,10 +64,14 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     }),
 }));
 
+const themeState = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlass' }));
 vi.mock('../../../providers/theme-provider', async () => {
   const { makeThemeMock } = await import('../../../test/theme-mock');
-  const theme = makeThemeMock({ variant: 'material', colorScheme: 'dark' });
-  return { useTheme: () => theme };
+  const themes = {
+    material: makeThemeMock({ variant: 'material', colorScheme: 'dark' }),
+    liquidGlass: makeThemeMock({ variant: 'liquidGlass', colorScheme: 'dark' }),
+  };
+  return { useTheme: () => themes[themeState.variant] };
 });
 
 import { TickNoteField } from '../TickNoteField';
@@ -92,6 +96,8 @@ function inputStyle(container: HTMLElement): Record<string, unknown> {
   return flattenStyle(JSON.parse(input?.getAttribute('data-style') ?? 'null'));
 }
 
+import { useTheme } from '../../../providers/theme-provider';
+
 describe('TickNoteField', () => {
   it('is an outlined field on Material: no fill, the border stays', () => {
     const { container } = renderField();
@@ -99,6 +105,21 @@ describe('TickNoteField', () => {
 
     expect(style.backgroundColor).toBe('transparent');
     expect(style.borderWidth).toBe(1);
+    expect(style.borderColor).toBe(useTheme().m3.outline);
+  });
+
+  it('keeps the filled field and separator edge on Liquid Glass', () => {
+    themeState.variant = 'liquidGlass';
+    try {
+      const { container } = renderField();
+      const style = inputStyle(container);
+      const { systemColors } = useTheme();
+
+      expect(style.backgroundColor).toBe(systemColors.fill);
+      expect(style.borderColor).toBe(systemColors.separator);
+    } finally {
+      themeState.variant = 'material';
+    }
   });
 
   it('renders the input as its own root, with no wrapper element around it', () => {

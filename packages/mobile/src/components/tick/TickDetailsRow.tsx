@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
+import { formatTimeForDisplay } from '../logbook/climbed-at';
 import { getCachedDateTimeFormat } from '../../lib/intl-formatter-cache';
 import { useTheme } from '../../providers/theme-provider';
 import { TickFormRow } from './TickFormRow';
@@ -24,9 +25,9 @@ const SUMMARY_SEPARATOR = ' · ';
 const CHEVRON_SIZE = 16;
 
 // `Intl`, not `formatDateForDisplay`: that one is ISO, and this reads as a sentence.
-const TIME_FORMAT: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-const DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', ...TIME_FORMAT };
-const DATE_TIME_WITH_YEAR_FORMAT: Intl.DateTimeFormatOptions = { ...DATE_TIME_FORMAT, year: 'numeric' };
+// The time still comes from `formatTimeForDisplay`, so it matches the row it folds.
+const DATE_FORMAT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+const DATE_WITH_YEAR_FORMAT: Intl.DateTimeFormatOptions = { ...DATE_FORMAT, year: 'numeric' };
 
 function isSameLocalDay(first: Date, second: Date): boolean {
   return (
@@ -67,13 +68,12 @@ export const TickDetailsRow = React.memo(function TickDetailsRow({
 
   let whenText = t('mobile.tick.detailsNow');
   if (dateEdited) {
+    const timeText = formatTimeForDisplay(climbedAt);
     if (isSameLocalDay(climbedAt, now)) {
-      whenText = t('mobile.tick.detailsToday', {
-        time: getCachedDateTimeFormat(locale, TIME_FORMAT).format(climbedAt),
-      });
+      whenText = t('mobile.tick.detailsToday', { time: timeText });
     } else {
-      const format = climbedAt.getFullYear() === now.getFullYear() ? DATE_TIME_FORMAT : DATE_TIME_WITH_YEAR_FORMAT;
-      whenText = getCachedDateTimeFormat(locale, format).format(climbedAt);
+      const format = climbedAt.getFullYear() === now.getFullYear() ? DATE_FORMAT : DATE_WITH_YEAR_FORMAT;
+      whenText = `${getCachedDateTimeFormat(locale, format).format(climbedAt)} ${timeText}`;
     }
   }
 
