@@ -23,7 +23,10 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'kilter-user-sync': [],
   'provider-routine-cycle': [{ key: 'every-5-min', cron: '*/5 * * * *', tz: 'UTC', roles: ['routine-provider'] }],
   'aurora-shared-sync': [{ key: 'hourly', cron: '7 * * * *', tz: 'UTC', roles: ['routine-provider'] }],
-  'kilter-catalog-sync': [{ key: 'every-6h', cron: '23 */6 * * *', tz: 'UTC', roles: ['routine-provider'] }],
+  'kilter-catalog-sync': [
+    { key: 'every-6h', cron: '23 */6 * * *', tz: 'UTC', roles: ['routine-provider'] },
+    { key: 'every-15m', cron: '8,23,38,53 * * * *', tz: 'UTC', roles: ['routine-provider'] },
+  ],
   'moonboard-locations-sync': [{ key: 'daily', cron: '41 3 * * *', tz: 'UTC', roles: ['routine-provider'] }],
   'climb-stats-self-heal': [{ key: 'hourly', cron: '13 * * * *', tz: 'UTC', roles: ['maintenance-delivery'] }],
   'user-data-export': [],

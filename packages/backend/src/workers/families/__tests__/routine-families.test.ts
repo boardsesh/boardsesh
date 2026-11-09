@@ -14,7 +14,7 @@ import {
   AURORA_SHARED_SYNC_DEADLINE_SECONDS,
   orderBoardsByLeastRecentSharedSync,
 } from '../aurora-shared-sync';
-import { KILTER_CATALOG_SYNC_COOLDOWN_MS } from '../kilter-catalog-sync';
+import { KILTER_CATALOG_SYNC_COOLDOWN_MS, KILTER_CATALOG_LEGACY_COOLDOWN_MS } from '../kilter-catalog-sync';
 
 const runners = vi.hoisted(() => ({
   runSharedSyncJob: vi.fn(),
@@ -218,7 +218,7 @@ describe('family contracts', () => {
       expect(family.options).toMatchObject(options);
       expect(family.payload.safeParse({}).success).toBe(true);
       expect(family.payload.safeParse({ extra: 1 }).success).toBe(false);
-      expect(family.schedules).toHaveLength(1);
+      expect(family.schedules).toHaveLength(name === 'kilter-catalog-sync' ? 2 : 1);
       expect(family.schedules![0].cron).toBe(cron);
       expect(await family.schedules![0].fanOut({} as DbInstance)).toEqual([{ payload: {} }]);
       // One key per family: a slow run never piles up more than one successor.
@@ -302,7 +302,7 @@ describe('aurora-shared-sync execute', () => {
 describe('kilter-catalog-sync execute', () => {
   const family = requireFamily('kilter-catalog-sync');
 
-  it('claims with the 50-minute cooldown, the run signal and the attempt fence', async () => {
+  it('claims legacy full sync with the 50-minute cooldown, signal and attempt fence', async () => {
     runners.runCatalogSyncJob.mockResolvedValue({ status: 'synced', tokenSource: 'credential' });
     const context = fakeContext('kilter-catalog-sync');
 
@@ -312,9 +312,29 @@ describe('kilter-catalog-sync execute', () => {
     expect(runners.runCatalogSyncJob).toHaveBeenCalledWith({
       signal: context.signal,
       transaction: context.transaction,
-      cooldownMs: KILTER_CATALOG_SYNC_COOLDOWN_MS,
+      cooldownMs: KILTER_CATALOG_LEGACY_COOLDOWN_MS,
+      mode: 'auto',
       runId: context.runId,
     });
+  });
+
+  it('switches cadence and cooldown only when incremental rollout is enabled', async () => {
+    const [legacy, incremental] = family.schedules!;
+    vi.stubEnv('KILTER_CATALOG_INCREMENTAL_ENABLED', 'false');
+    expect(await legacy.fanOut({} as DbInstance)).toEqual([{ payload: {} }]);
+    expect(await incremental.fanOut({} as DbInstance)).toEqual([]);
+    vi.stubEnv('KILTER_CATALOG_INCREMENTAL_ENABLED', 'true');
+    expect(incremental.cron).toBe('8,23,38,53 * * * *');
+    expect(await legacy.fanOut({} as DbInstance)).toEqual([]);
+    expect(await incremental.fanOut({} as DbInstance)).toEqual([{ payload: {} }]);
+    runners.runCatalogSyncJob.mockResolvedValue({ status: 'synced', tokenSource: 'credential' });
+    await family.execute(fakeContext('kilter-catalog-sync'), { mode: 'incremental' });
+    expect(runners.runCatalogSyncJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'incremental',
+        cooldownMs: KILTER_CATALOG_SYNC_COOLDOWN_MS,
+      }),
+    );
   });
 
   it.each([{ status: 'cooldown', lastRunAt: null }, { status: 'no_donor' }])(

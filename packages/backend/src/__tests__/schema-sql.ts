@@ -4,6 +4,10 @@
  */
 
 import { readFileSync } from 'node:fs';
+const kilterCatalogSchema = readFileSync(
+  new URL('../../../db/drizzle/0291_kilter_catalog_incremental.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -122,6 +126,7 @@ const sessionWorkoutsSchema = readFileSync(
 );
 
 export const schemaSQL = `
+  DROP TABLE IF EXISTS kilter_catalog_checkpoints, kilter_catalog_control, kilter_catalog_deferred, kilter_catalog_source_stats;
   DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
   DROP TABLE IF EXISTS "user_deleted_upstream_playlists" CASCADE;
   DROP TYPE IF EXISTS "upstream_playlist_source";
@@ -2228,4 +2233,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sharedSprayDraftsSchema}
   ${climbMutationReceiptsSchema}
   ${deletedUpstreamPlaylistsSchema}
+  ${kilterCatalogSchema}
 `;

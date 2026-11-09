@@ -1,6 +1,6 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { boardClimbAliases, boardClimbs } from '@boardsesh/db/schema';
+import { boardClimbAliases, boardClimbs, kilterCatalogDeferred } from '@boardsesh/db/schema';
 import { commandCountFromResult, rowsFromResult } from '@boardsesh/db/client';
 
 import type { KilterTokenProvider } from '../api/token-provider';
@@ -9,7 +9,14 @@ import { KilterApiError } from '../api/errors';
 import { pullKilterReference, type KilterReferencePull } from './reference-pull';
 import { buildLayoutResolver } from './layout-resolver';
 import { catalogStatSourceKey, foldCatalogStat, shouldSkipEmptyCatalogStat, type StatAccum } from './catalog-sync';
-import { upsertKilterStats, type KilterStatsUpsertRow } from './stats-upsert';
+import type { KilterStatsUpsertRow } from './stats-upsert';
+import { withCatalogWriterLease } from './catalog-control';
+import {
+  applyCatalogSourceStats,
+  finalizeCatalogSourceBaseline,
+  replayCachedCatalogStats,
+  type CatalogSourceStat,
+} from './catalog-source-stats';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
@@ -295,14 +302,6 @@ async function countFormulaMismatches(db: DrizzleDb): Promise<number> {
   return Number(rows[0]?.rows_to_recompute ?? 0);
 }
 
-async function upsertRepairedStats(db: DrizzleDb, statValues: KilterStatsUpsertRow[]): Promise<void> {
-  // Repair is the authoritative reconciliation to the live Grips catalog, so it
-  // overwrites the upstream count with the incoming value (it may correct a
-  // count downward), unlike the routine catalog sync which only ever raises it.
-  // Rows that already match are skipped (see upsertKilterStats).
-  await upsertKilterStats(db, statValues, { policy: 'authoritative' });
-}
-
 async function recomputeMaterializedTotals(db: DrizzleDb): Promise<number> {
   const result = await db.execute(sql`
     UPDATE board_climb_stats
@@ -320,6 +319,14 @@ async function recomputeMaterializedTotals(db: DrizzleDb): Promise<number> {
 }
 
 export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Promise<KilterStatsRepairSummary> {
+  if (!args.apply) return inspectAndRepairKilterCatalogStats(args);
+  return withCatalogWriterLease(args, ({ write, signal }) =>
+    inspectAndRepairKilterCatalogStats({ ...args, transaction: write, signal }),
+  );
+}
+
+async function inspectAndRepairKilterCatalogStats(args: KilterStatsRepairArgs): Promise<KilterStatsRepairSummary> {
+  const requestStartedAt = new Date().toISOString();
   const log = args.log ?? (() => {});
   const state: TokenState = { provider: args.tokenProvider, token: await args.tokenProvider() };
   const reference =
@@ -343,8 +350,17 @@ export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Pro
   }
 
   const topBefore = await loadTopStats(args.db);
+  const deferredSources = new Set(
+    (
+      await args.db
+        .select({ sourceUuid: kilterCatalogDeferred.sourceUuid })
+        .from(kilterCatalogDeferred)
+        .where(ne(kilterCatalogDeferred.reason, 'resolved'))
+    ).map((entry) => entry.sourceUuid),
+  );
   const statsByCanonicalAngle = new Map<string, StatAccum>();
   const seenSourceStats = new Set<string>();
+  const sourceStats: CatalogSourceStat[] = [];
   let statsSeen = 0;
   let statsDeduped = 0;
   let statsUnresolved = 0;
@@ -366,10 +382,11 @@ export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Pro
         seenSourceStats.add(sourceKey);
 
         const canonicalUuid = canonicalBySourceUuid.get(stat.climbUuid.toLowerCase());
-        if (!canonicalUuid) {
+        if (!canonicalUuid || deferredSources.has(stat.climbUuid.toLowerCase())) {
           statsUnresolved += 1;
           continue;
         }
+        sourceStats.push({ stat, canonicalUuid });
         foldCatalogStat(statsByCanonicalAngle, stat, canonicalUuid);
       }
     }
@@ -387,12 +404,27 @@ export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Pro
   let formulaRowsRecomputed = 0;
   let topAfter: KilterStatsRepairTopRow[] | null = null;
   if (args.apply) {
-    // Atomic: a crash between the kilter-count overwrite and the materialized
-    // recompute would otherwise leave ascensionist_count stale until re-run.
     const runApply = args.transaction ?? ((callback) => args.db.transaction(callback));
-    await runApply(async (tx) => {
-      await upsertRepairedStats(tx, statValues);
-      formulaRowsRecomputed = await recomputeMaterializedTotals(tx);
+    // Populate the same absolute source cache as the catalog/delta importer.
+    // Until every fetched source is durable, batches may raise counts only and
+    // cannot certify freshness. Each cache/aggregate batch commits together.
+    const completeCoverage =
+      !args.layoutUuids && layoutsUnmapped === 0 && statsUnresolved === 0 && byBoardLayout.size > 0;
+    await processBatches(sourceStats, (chunk) =>
+      runApply(async (transaction) => {
+        await applyCatalogSourceStats(transaction, chunk, {
+          completeCoverage: false,
+          generation: completeCoverage ? requestStartedAt : undefined,
+        });
+      }),
+    );
+    if (completeCoverage) await finalizeCatalogSourceBaseline(args.db, runApply, requestStartedAt);
+    await replayCachedCatalogStats(args.db, runApply, {
+      completeCoverage,
+      confirmedAt: completeCoverage ? requestStartedAt : null,
+    });
+    await runApply(async (transaction) => {
+      formulaRowsRecomputed = await recomputeMaterializedTotals(transaction);
     });
     topAfter = await loadTopStats(args.db);
   }

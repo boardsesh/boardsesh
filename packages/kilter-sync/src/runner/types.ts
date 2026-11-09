@@ -1,3 +1,4 @@
+import type { CatalogRefreshTelemetry } from '../sync/catalog-sync';
 import type postgres from 'postgres';
 import type { ProviderSyncDb, SyncBatchRunner } from '@boardsesh/db/queries';
 
@@ -22,9 +23,10 @@ export type SyncRunnerConfig = {
   /** Max deletion changes applied per catalog run; the backlog drains over cycles. */
   deleteBatchLimit?: number;
   onLog?: (message: string) => void;
+  onCatalogMetrics?: (metrics: CatalogRefreshTelemetry) => void;
   /** Bounded phase telemetry; never includes upstream payloads or credentials. */
   onCatalogPhase?: (progress: {
-    phase: 'catalog' | 'stats-repair' | 'history';
+    phase: 'catalog' | 'history';
     status: 'started' | 'finished';
     elapsedMs: number;
   }) => void;
@@ -69,11 +71,13 @@ export type SyncOutcome = {
 
 /** Options for {@link SyncRunner.runCatalogSyncJob}. */
 export type CatalogSyncJobOptions = {
+  /** Empty scheduled payloads use auto; the incremental kill switch gates auto selection. */
+  mode?: 'auto' | 'incremental' | 'full';
   signal?: AbortSignal;
   /**
    * Runs every write batch of the job: the slot claim and stamp, each catalog
-   * flush, stats chunk, location and deletion batch, the weekly repair's apply
-   * and watermark, and the history snapshot. A background job passes its
+   * flush, stats chunk, location and deletion batch, cache reconciliation,
+   * checkpoint publication, and the history snapshot. A background job passes its
    * attempt fence, so a run that lost its lease stops at its next batch.
    */
   transaction?: SyncBatchRunner;

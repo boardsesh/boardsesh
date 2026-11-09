@@ -101,6 +101,7 @@ program
   .command('catalog')
   .description('Sync the public climb catalog (Flow A) into board_climbs / board_climb_stats')
   .option('--user <userId>', 'use this linked user’s stored Kilter credential (refresh grant)')
+  .option('--mode <mode>', 'catalog mode: full, incremental, or auto (default: full)', 'full')
   .option('--layouts <uuids>', 'comma-separated product_layout_uuids to sync (default: all listed)')
   .option('--apply-deletions', 'apply /delteduuids reconciliation (default: report only)')
   .option('--delete-batch-limit <n>', 'max deletion changes to apply per run (default: 500)')
@@ -109,6 +110,7 @@ program
   .action(
     async (opts: {
       user?: string;
+      mode?: string;
       layouts?: string;
       applyDeletions?: boolean;
       deleteBatchLimit?: string;
@@ -133,6 +135,12 @@ program
           process.exitCode = 1;
           return;
         }
+        const mode = opts.mode ?? 'full';
+        if (mode !== 'full' && mode !== 'auto' && mode !== 'incremental') {
+          console.error('--mode must be full, incremental, or auto');
+          process.exitCode = 1;
+          return;
+        }
         const layoutUuids = parseLayoutUuids(opts.layouts);
         const deleteBatchLimit = opts.deleteBatchLimit != null ? Number(opts.deleteBatchLimit) : undefined;
         if (deleteBatchLimit != null && (!Number.isInteger(deleteBatchLimit) || deleteBatchLimit <= 0)) {
@@ -141,6 +149,7 @@ program
           return;
         }
         const summary = await runner.runCatalogSync(tokenProvider, {
+          mode,
           applyDeletions: opts.applyDeletions,
           deleteBatchLimit,
           layoutUuids,

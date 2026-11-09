@@ -4,37 +4,26 @@ import { boundedErrorFields } from './job-logging';
 import { BackgroundJobError, type BackgroundJobFamilyModule } from './types';
 import { BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS, KILTER_CATALOG_SYNC_BUDGET } from './fan-out-budget';
 
-const kilterCatalogSyncPayload = z.object({}).strict();
+const kilterCatalogSyncPayload = z.object({ mode: z.enum(['auto', 'incremental', 'full']).optional() }).strict();
 
 export type KilterCatalogSyncPayload = z.infer<typeof kilterCatalogSyncPayload>;
 
-/** As `AURORA_SHARED_SYNC_COOLDOWN_MS`: under the hourly cron, so the end-of-run stamp never skips a tick. */
-export const KILTER_CATALOG_SYNC_COOLDOWN_MS = 50 * 60 * 1000;
+/** Under the quarter-hour schedule; queue waiting time is separate from execution. */
+export const KILTER_CATALOG_SYNC_COOLDOWN_MS = 10 * 60 * 1000;
+export const KILTER_CATALOG_LEGACY_COOLDOWN_MS = 50 * 60 * 1000;
+
+/** Kept off until baseline verification; rollback restores six-hour full imports. */
+export function kilterCatalogIncrementalEnabled(): boolean {
+  return process.env.KILTER_CATALOG_INCREMENTAL_ENABLED === 'true';
+}
 
 /**
- * The Kilter daemon's catalog piggyback, on its own schedule: the full Kilter
- * catalog (climbs, stats, aliases, locations, deletions applied as the daemon
- * applies them), then the weekly stats repair and weekly history snapshot, each
- * behind its own 7-day cursor in `board_shared_syncs`.
- *
- * The token comes from the most recently successful linked Kilter account
- * (refreshed exactly as a user sync refreshes it, in its own `FOR UPDATE`
- * transaction), else the `KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account.
- * The daemon's catalog cooldown slot keeps it to one writer: refused is a
- * logged `CATALOG_SYNC_COOLDOWN`, no token source a logged
- * `CATALOG_SYNC_NO_DONOR`, both successful runs with no work.
- *
- * Every write batch goes through the attempt fence (`context.transaction`):
- * the slot claim and stamp, each layout flush and stats chunk (at most 5000
- * rows), the backlog, layout aliases, locations (25 gyms a batch), setter
- * notifications, the deletion apply, the weekly repair's apply and watermark,
- * and the history snapshot. A run that outlived its lease or lost its attempt
- * throws at its next batch instead of writing on beside its replacement.
- * Kilter's REST and PowerSync requests run between batches and take the run
- * signal; the REST client honours Retry-After on its own. The weekly repair's
- * apply stays one atomic transaction (the authoritative upsert plus the
- * materialized recompute), so on a very large catalog it is the batch closest
- * to the 300 s heartbeat window.
+ * Shared-worker catalog refresh. Rollout defaults to six-hour full imports;
+ * KILTER_CATALOG_INCREMENTAL_ENABLED enables quarter-hour auto refreshes with
+ * weekly full reconciliation and the existing weekly history snapshot.
+ * Every import write uses both the worker attempt fence and the catalog writer
+ * lease. Provider Retry-After parks the slot and donor without falling back to
+ * a full download. Shared-worker waiting time can delay the scheduled tick.
  */
 export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyncPayload> = {
   name: 'kilter-catalog-sync',
@@ -45,7 +34,7 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
     retryDelay: KILTER_CATALOG_SYNC_BUDGET.retryDelay,
     retryBackoff: true,
     retryDelayMax: KILTER_CATALOG_SYNC_BUDGET.retryDelay,
-    // Queued at :23, it can wait behind every hour-long :07 shared sync on
+    // Each tick can wait behind every hour-long :07 shared sync on
     // the one-at-a-time worker at the same priority: the full-fan-out
     // budget (fan-out-budget.ts), so it runs late instead of expiring at claim.
     deadlineSeconds: BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS,
@@ -56,11 +45,20 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
   },
   payload: kilterCatalogSyncPayload,
   singletonKey: () => 'kilter',
-  // Every 6 hours, not hourly: each run streams the full Kilter catalog and
-  // takes ~43 minutes from the homelab while changing almost nothing (#5897),
-  // and the one-at-a-time routine worker runs no user syncs meanwhile.
-  schedules: [{ key: 'every-6h', cron: '23 */6 * * *', fanOut: async () => [{ payload: {} }] }],
-  async execute(context) {
+  // Keep both registrations stable across flag changes; only one emits work.
+  schedules: [
+    {
+      key: 'every-6h',
+      cron: '23 */6 * * *',
+      fanOut: async () => (kilterCatalogIncrementalEnabled() ? [] : [{ payload: {} }]),
+    },
+    {
+      key: 'every-15m',
+      cron: '8,23,38,53 * * * *',
+      fanOut: async () => (kilterCatalogIncrementalEnabled() ? [{ payload: {} }] : []),
+    },
+  ],
+  async execute(context, payload) {
     // Loaded here, not at module scope; see loadProviderSyncAdapter.
     const [{ SyncRunner }, { DonorRelinkedError, KilterApiError, isTransientKilterError }] = await Promise.all([
       import('@boardsesh/kilter-sync/runner'),
@@ -70,9 +68,21 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
       db: context.database,
       signal: context.signal,
       onLog: (message) => logger.debug(message, { runId: context.runId, family: context.family }),
+      onCatalogMetrics: (metrics) =>
+        logger.info('[worker] catalog sync metrics', {
+          runId: context.runId,
+          family: context.family,
+          queueDelayMs: context.queueDelayMs ?? null,
+          ...metrics,
+        }),
       onCatalogPhase: (progress) =>
-        logger.info('[worker] catalog sync phase', { runId: context.runId, family: context.family, ...progress }),
-      // A step the runner swallows (a crawl, the weekly repair) still leaves a
+        logger.info('[worker] catalog sync phase', {
+          runId: context.runId,
+          family: context.family,
+          queueDelayMs: context.queueDelayMs ?? null,
+          ...progress,
+        }),
+      // A step the runner swallows (a location crawl or history snapshot) still leaves a
       // trace: the error's class and SQLSTATE, never its message.
       onError: (error) =>
         logger.warn('[worker] catalog sync step failed', {
@@ -87,7 +97,10 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
       result = await runner.runCatalogSyncJob({
         signal: context.signal,
         transaction: context.transaction,
-        cooldownMs: KILTER_CATALOG_SYNC_COOLDOWN_MS,
+        cooldownMs: kilterCatalogIncrementalEnabled()
+          ? KILTER_CATALOG_SYNC_COOLDOWN_MS
+          : KILTER_CATALOG_LEGACY_COOLDOWN_MS,
+        mode: payload.mode ?? 'auto',
         // A retry of this run re-claims the slot this run left claimed.
         runId: context.runId,
       });
@@ -100,7 +113,7 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
       if (error.retryAfterMs !== undefined) {
         // Kilter asked us to wait: the runner closed the slot and held the
         // donor for that long, so a pg-boss retry minutes from now could only
-        // find the slot closed. The next hourly tick after the hold runs it.
+        // find the slot closed. The next scheduled tick after the hold runs it.
         logger.warn('[worker] catalog sync throttled', {
           runId: context.runId,
           family: context.family,

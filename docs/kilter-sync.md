@@ -184,8 +184,8 @@ Implemented in [`packages/kilter-sync/src/sync/catalog-sync.ts`](../packages/kil
 3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`. `--layouts` scopes which layouts are *pulled*, but not the hole→placement preload the reroute resolver needs: every listed layout still resolves, so a scoped run also persists those layout aliases and reports unmapped layouts from outside the filter.
 4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}[s{start}][e{end}]`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
 5. **Dedup** (see [Climb dedup](#climb-dedup)) — **UUID-first** (Grips inherited Aurora's climb UUIDs, so ~80% of climbs already exist as their own canonical), then hold-fingerprint for new UUIDs.
-6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync), in the same transaction as the layout flush that inserted them: once a canonical exists no later run sees it as new, so a run that stopped before an end-of-run notification batch would have left it unannounced.
-7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default. The deletion list is fetched **once per run**, right after the skip backlog is loaded, and shared with the identity re-list in step 5. A failed or empty fetch leaves it null, which disables both (see [Climb dedup](#climb-dedup)) — an absent list is not evidence that nothing was deleted.
+6. **Upsert** `board_climbs` (new canonicals and source-owned scalar metadata) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync), in the same transaction as the layout flush that inserted them: once a canonical exists no later run sees it as new, so a run that stopped before an end-of-run notification batch would have left it unannounced.
+7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default. The deletion list is fetched **once per ingestion pass** (baseline and overlap are separate passes), right after the skip backlog is loaded, and shared with the identity re-list in step 5. A failed or empty fetch leaves it null, which disables both (see [Climb dedup](#climb-dedup)) — an absent list is not evidence that nothing was deleted.
 
 ### Verified REST/PowerSync contract (Phase 0, 2026-06-02)
 
@@ -193,7 +193,8 @@ The endpoint paths read off the APK were partly wrong; verified live against a r
 
 | Need      | Endpoint                                      | Notes                                                                                                                                 |
 | --------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog   | `GET /api/climbs/all/{productLayoutUuid}`     | Full per-layout array, no pagination. The documented `climbdetails/{productName}/edges` 404s; `/climbs/all/` with no id returns `[]`. |
+| Catalog   | `GET /api/climbs/all/{productLayoutUuid}`     | Full per-layout array, no pagination. The GET variant 404s. Timestamp deltas use the literal POST route below. |
+| Delta     | `POST /api/climbs/climbdetails/productName/edges` | Product/edge filter and `lastUpdatedAt`; flat metadata with optional per-angle statistics. |
 | Stats     | `GET /api/climb-stat/all/{productLayoutUuid}` | `{climbUuid, angle, ascentCount, currentDifficultyId, difficultyAverage, qualityAverage, faUsername, faAt}`                           |
 | Deletions | `GET /api/climbs/delteduuids`                 | `string[]` (mixed casing)                                                                                                             |
 | Reference | PowerSync `global` / `global_gyms`            | `product_layouts` carries `product_layout_uuid` + `product_name` + edges                                                              |
@@ -261,32 +262,102 @@ with that user's token; success and failure both keep the full cooldown from
 the end of the catalog run, and a catalog failure never poisons the user's
 credential.
 
-After the worker cutover the `kilter-catalog-sync` job owns it instead (every 6
-hours at :23, since a full catalog pull takes ~43 minutes from the homelab;
-see #5897, `SyncRunner.runCatalogSyncJob`): a refresh-grant token from the most
-recently successful `active` Kilter credential (else the
-`KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account), the same slot claimed
-with a 50-minute cooldown measured from the claim (the end-of-run marker is
-backdated by the run's length, so a long pull never makes the next hourly tick
-wait), then the catalog, the weekly stats repair and the weekly history
-snapshot. A transient failure, an abort or a database error re-stamps a
-five-minute cooldown so the job's one retry can run; a permanent Kilter
-failure keeps the full one. The catalog's REST client waits out a
-`Retry-After` of up to 5 minutes and retries, else backs off exponentially up
-to 30 s; a longer `Retry-After` is not slept on: the request fails at once as
-`rate_limited` with the delay, and the job closes the catalog slot and holds
-the donor for it. The donor's token is pinned to the link it was borrowed
-under: after a relink mid-run the token read fails with a retryable
-`DONOR_RELINKED` instead of refreshing the new link's token. Every write
-of the job goes through the attempt fence (`syncKilterCatalog`'s and
-`repairKilterCatalogStats`'s `transaction` option, and the slot claim and
-stamp): each layout flush, stats in chunks of 5000 rows, the backlog, layout
-aliases, locations in 25-gym batches, notifications, the deletion apply, the
-repair's atomic apply and watermark, and the history snapshot. A run that
-outlived its lease throws at its next batch, and the catalog's best-effort
-steps rethrow a lost fence instead of logging it. The job's signal reaches
-the reference stream, every REST request and the 429 backoff. The CLI and the
-daemon pass no runner and write as before.
+After the worker cutover, `kilter-catalog-sync` owns catalog scheduling on the
+existing one-at-a-time `routine-provider` worker. The donor is the most recently
+successful active Kilter link, with the configured test account as fallback.
+Provider throttling preserves `Retry-After`, parks the slot and donor, and never
+turns a failed delta into a full download. Other imports and weekly work can
+still delay a scheduled refresh.
+
+### Incremental catalog refreshes
+
+`KILTER_CATALOG_INCREMENTAL_ENABLED` defaults to **false**. With it disabled,
+only `23 */6 * * *` UTC emits jobs and `auto` runs full imports. With it enabled,
+only `8,23,38,53 * * * *` UTC emits jobs, with a ten-minute cooldown. Both schedule
+registrations remain stable when the flag changes. Empty job payloads mean
+`auto`; explicit `full` and `incremental` payloads are supported. The CLI remains
+full by default (`catalog --mode full`). A filtered `--layouts` import cannot
+establish or advance a complete baseline.
+
+`auto` performs one complete full import, then deltas, with a full reconciliation
+when the baseline is seven days old. A scope is a product name and four edge
+bounds. Its mapping version includes all listed layout definitions, resolved
+layout IDs and hole/placement mappings. A changed mapping invalidates coverage.
+Explicit incremental mode refuses incomplete coverage instead of falling back.
+Incremental execution is capped at ten minutes; full execution at two hours.
+
+The app uses the **literal** POST path
+`/api/climbs/climbdetails/productName/edges`, with `productName`, edge bounds,
+`limit`, `offset`, `excludeProductLayoutUuid`, `prioritizedProductLayoutUuid`,
+and `lastUpdatedAt` in its JSON body. Retained November 8 captures are in
+`packages/kilter-sync/src/api/__fixtures__/catalog-delta.json`. A timestamp
+request with `limit: 1` returned 4,156 rows, so the reader consumes the entire
+response without slicing or offset pagination. Inline statistics use
+`derivativeAngle`; the climb's `angle` describes its original angle. A row can
+contain metadata only. Statistics-only changes retain old climb `updatedAt`
+values, so those values never advance progress.
+
+Each checkpoint stores the UTC **request-start** watermark. Requests overlap it
+by five minutes. A full baseline captures its start before any full catalog
+read, then fetches the overlapping delta immediately after ingestion. Checkpoint
+publication is the final transaction, after all response batches, deferred
+payloads, source contributions and aggregate repairs are durable. Failure,
+malformed responses, cancellation and restart leave the previous checkpoint for
+idempotent replay. An interrupted baseline remains uncertified.
+
+Migration `0291_kilter_catalog_incremental` adds four server-only tables:
+`kilter_catalog_control`, `kilter_catalog_checkpoints`,
+`kilter_catalog_source_stats` and `kilter_catalog_deferred`. The routine worker
+receives their required SELECT/INSERT/UPDATE grants. These tables have no client
+sync registration. Full imports, deltas and applied CLI repairs share one
+renewable database-clock writer lease. Every bounded transaction locks and
+checks ownership before and after its work, inside the worker's attempt fence.
+A heartbeat renews while provider reads are in flight; takeover aborts the old
+reader and its next batch cannot commit.
+
+The cache stores absolute source statistics by **lowercase UUID and angle**.
+Each replacement and its aggregate write commit together, recomputing the
+canonical total from all cached contributors. Canonical-own grade precedence,
+tick-grade provenance, Boardsesh counts and quality blending remain intact.
+Decreases require complete coverage; active deferred contributors prevent both
+authoritative decreases and fresh upstream stamps for their old canonical.
+Existing zero-count rows update, but empty new rows are omitted. Delta absence
+never means deletion. A completed full generation zeros missing contributions,
+except quarantined sources, then reconciles from the cache without downloading
+statistics again. The weekly history snapshot remains.
+
+Scalar metadata refresh requires `user_id IS NULL` **and**
+`is_boardsesh_authored = false`; it preserves local visibility. Changed geometry
+and conflicting aliases retain full metadata, normalized statistics and raw
+inline response rows in the deferred table. They replay on subsequent runs even
+when the timestamp endpoint no longer returns them. Recovered records are marked
+resolved. The existing deletion list and notification deduplication still apply.
+Ordinary scalar/stat updates use the existing client sync triggers.
+
+Changed statistics use the minimum confirmed request-start watermark across all
+contributing scopes. Daily freshness revisits only rows with Boardsesh ascents
+that need a new stamp; a failed contributing scope cannot certify freshness.
+Worker metrics separate queue delay from execution and include fetch/apply
+milliseconds, response rows, changed rows, checkpoint age and deferred records.
+
+#### Deployment and rollback gate
+
+1. Deploy the migration and worker with the flag disabled. Complete one unfiltered
+   `vp exec kilter-sync catalog --user <id> --mode full --suppress-notifications`.
+2. Run read-only `vp exec kilter-sync repair-stats --user <id>` and compare
+   full-source totals against the baseline plus overlapping delta. Investigate
+   unresolved sources and meaningful parity differences before enabling.
+3. Set `KILTER_CATALOG_INCREMENTAL_ENABLED=true` on the scheduler and worker.
+   Confirm two consecutive scheduled runs use delta POSTs without full climb or
+   statistics GETs, preserve totals, and make newly imported climbs searchable.
+   Read `executionMs` separately from `queueDelayMs`.
+4. Roll back the cadence with `KILTER_CATALOG_INCREMENTAL_ENABLED=false` on both
+   services. Before re-enabling after a rollback, repeat the full baseline and
+   parity check. Keep the flag off until that verification succeeds.
+
+These are deployment acceptance steps, not claims established by local mocked
+provider tests. Local PostgreSQL tests cover lease takeover, aggregate rollback,
+metadata ownership, geometry deferral and client sync sequence changes.
 
 ### Prerequisite: fingerprint backfill
 
@@ -406,7 +477,7 @@ Kilter's catalog has duplicate climbs at different UUIDs with identical hold lay
 
 ### Re-listing a climb Kilter still lists
 
-Both dedup paths can re-list a synced canonical we previously unlisted, because the incoming climb is live-listed in the current catalog pull. They are protected differently:
+The refresh path preserves existing local visibility, including unlisting. The legacy engine retains the following re-list safeguards for its direct engine tests; refresh imports do not call its re-list writes. Historically the two paths worked as follows:
 
 - **Fold path** — a listed Grips climb fingerprint-matched the canonical. The fold leaves it with ≥2 aliases: the folded one, plus its self-alias, which the fold stages into the same batch for the ~6k canonicals that never got one. The same cycle's deletion pass then classifies it as `skippedCanonicalWithAliases` and never re-unlists it. That staged self-alias is what makes the invariant hold — without it the canonical misses the alias-graph lookup, the direct-uuid fallback unlists it again in the same cycle, and the next fold re-lists it: a flip-flop costing a `sync_seq` bump per cycle.
 - **Identity path** — Kilter served the same UUID from `/climbs/all`. That argument does **not** hold here: the canonical usually has only its own self-alias, so the deletion pass would re-unlist it and the two would fight every cycle. `decideIdentityRelist` keeps them apart, using the run's single `/delteduuids` fetch:
@@ -416,7 +487,7 @@ Both dedup paths can re-list a synced canonical we previously unlisted, because 
 
 Why the guard is load-bearing: on 2026-09-15 Kilter's `/climbs/all` still returned 124 climbs that the same run's deletion pass unlisted, so an unguarded re-list would flip them back every cycle and churn offline sync's `sync_seq`. What it lets through is the genuinely stale unlistings — ~24 climbs carrying the 2026-07-07 Aurora migration baseline as their `updated_at`, invisible in search ever since. Both paths report in `canonicalsRelisted`.
 
-**Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `upstream_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **in memory per `(canonical, angle)` and written as an overwrite** (not `+=`), so re-running recomputes the same 23 — idempotent. If the same source climb stat appears through multiple Grips `product_layout_uuid`s that collapse to one Boardsesh layout, it is counted once by `(source climb UUID, angle)`. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
+**Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `upstream_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **from all durable cached contributors per `(canonical, angle)` and written as an absolute total** (not `+=`), so replay recomputes the same 23. If the same source climb stat appears through multiple Grips `product_layout_uuid`s that collapse to one Boardsesh layout, it is counted once by `(source climb UUID, angle)`. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
 
 **Unchanged rows are not rewritten.** The catalog sync and `repair-stats` share one upsert (`stats-upsert.ts`). Its `ON CONFLICT … WHERE` writes a row only when a SET column would change, when `upstream_synced_at` is NULL, or when the stamp is over 24 h old on a row with `boardsesh_ascensionist_count > 0`. The tick recompute's push-back absorption reads that stamp (`kilter_synced_at < upstream_synced_at - 48h`), so on Kilter it means "last changed upstream, or confirmed within a day", not "last pass". A stamp can lag by up to 24 h but never runs ahead, so absorption is delayed, never premature. Before this, each pass rewrote all ~420k Kilter rows although a few thousand changed. The same rule covers the other catalog writers: a pure alias refreshes `last_seen_at` at most once a day unless its `source` changes, and `kilter_wall_sources` rows are written only when a mapped column or `is_listed` changes. The self-alias set loads once per run, not once per layout.
 
@@ -437,12 +508,12 @@ Historical note: there used to be two upstream columns — `aurora_` (from the p
 
 A single Boardsesh layout maps to several Grips `product_layout_uuid`s (size variants). Before the `(source climb UUID, angle)` dedup landed, the catalog sync folded each repeated source stat once per variant, so `upstream_ascensionist_count` (and thus `ascensionist_count`) was inflated by the number of variants a climb appeared in. The fix prevents new inflation; existing rows need a one-time `repair-stats` pass (`stats-repair.ts`).
 
-`repair-stats` re-fetches every listed Grips layout, dedupes stats the same way the live sync now does, and **overwrites** `upstream_ascensionist_count` from the deduped value (also re-asserting Grips `display_difficulty / difficulty_average / quality_average` on canonical rows). Unlike the live catalog sync — which writes `upstream_ascensionist_count = GREATEST(existing, incoming)` so a stale or partial snapshot can never lower a climb — `repair-stats` is authoritative and may correct a count downward. It is idempotent — re-running converges and the second run is a no-op.
+`repair-stats` re-fetches every listed Grips layout, dedupes stats the same way the live sync now does, and **overwrites** `upstream_ascensionist_count` from the deduped value (also re-asserting Grips `display_difficulty / difficulty_average / quality_average` on canonical rows). Applied repairs share the catalog writer lease and source cache. Complete coverage permits downward corrections; partial coverage and quarantined contributors remain raise-only. It is idempotent — re-running converges and the second run is a no-op.
 
 - **Dry-run is the default and is read-only.** It reports `changedKilterRows`, `maxKilterDrop` / `maxKilterRise` (largest per-row decrease/increase), `statsDeduped`, `statsUnresolved`, and a `topBefore` list. Review these before applying — a large `maxKilterDrop` can also signal a partial Grips fetch (delisted climbs, rate-limit truncation), so treat it as a stop-and-investigate signal rather than blindly applying.
-- **`--apply` writes inside a single transaction** (overwrite + materialized-total recompute are atomic) and prints `topAfter`. A fetch error aborts before any write, since writes only run after the full fetch loop completes.
+- **`--apply` uses bounded leased transactions** and prints `topAfter`. Each source-cache batch and its aggregate are atomic. All source fetches finish before the first cache write; authoritative replay follows complete cache coverage.
 - A climb the live sync **rerouted** to another layout is still tagged upstream with the layout it came from, so `repair-stats` fetches its stats under a layout whose canonical map doesn't contain it and counts it in `statsUnresolved`. A handful of those is expected, not a fault.
-- Run it with the **daemon paused** so a concurrent catalog sync doesn't interleave, and run it **unscoped** (no `--layouts`) for the production cleanup — the materialized-total recompute pass touches all Kilter rows, so a scoped run can leave inconsistent state. Rows for climbs Grips no longer lists aren't re-fetched, so this tool does not correct delisted-climb inflation.
+- The shared writer lease prevents concurrent catalog writes. Run it **unscoped** (no `--layouts`) for complete reconciliation; partial coverage cannot authorize decreases or freshness. A completed full cache generation zeros missing contributions while preserving quarantined sources.
 
 An applied repair that changes 500 or more rows is picked up by the live board-snapshot threshold scan and
 republished to the fleet's gzip CDN prefix. Do not leave devices to replay a bulk repair through hundreds of
@@ -518,7 +589,7 @@ Three worker families replace the daemon. Full contracts and the cutover:
 | --- | --- | --- |
 | `kilter-user-sync` | `interactive-import` | One account, right after a climber links Kilter and when they tap "Sync now" |
 | `provider-routine-cycle` (`{ provider: 'kilter' }`) | `routine-provider` | Every 5 minutes: the daemon's one-credential cycle, up to 4 credentials a run |
-| `kilter-catalog-sync` | `routine-provider` | Hourly at :23: the catalog, the weekly stats repair and history snapshot (see [Cooldown + piggyback](#cooldown--piggyback)) |
+| `kilter-catalog-sync` | `routine-provider` | Quarter-hour auto refresh when enabled; otherwise six-hour full imports. Weekly full reconciliation and history snapshot. |
 
 The daemon stays the owner of routine syncs until the cutover sets
 `SYNC_DAEMON_DISABLED=true` on the sync host; from then on
@@ -566,11 +637,12 @@ The catalog worker has a two-hour hard lease with its existing five-minute
 heartbeat window. The previous one-hour lease repeatedly expired during full
 catalog jobs in November 2026. Catalog batches commit as they finish, so an
 incomplete job can still import new climbs; a successful user logbook sync is
-not evidence that the catalog completed. The weekly stats repair re-fetches
-the full stats catalog and shares this runtime budget.
+not evidence that the catalog completed. Incremental work has a ten-minute
+execution cap. Weekly full reconciliation reuses the populated source cache,
+without a second statistics download.
 
 Production logs emit `[worker] catalog sync phase` at `info` level for the
-`catalog`, `stats-repair`, and `history` phases, with `started` / `finished`
+`catalog` and `history` phases, with `started` / `finished`
 and elapsed milliseconds. A `catalog` finish confirms ingestion completed
 even if later maintenance fails. Maintenance completion means the phase returned; check its weekly cursor
 and warning logs to see whether work ran successfully.
@@ -646,6 +718,6 @@ These are the remaining integration questions. Packaged client URLs help identif
 
 1. **REST push contract.** The 2.10.1 package contains `/api/v2/logs/bulk` and `/api/v2/climb-rating/` URLs, but the operation-to-route mapping, methods, request bodies, and responses need a checked write. Push-back is gated behind `KILTER_SYNC_PUSH_ENABLED`; the helpers call `pushNotWired()` (throws).
 2. **Attempts write.** The checked pull path carries sends and attempts in `logs`; confirm whether the versioned log write uses `topped=false` for attempts.
-3. ~~**Climb-metadata source.**~~ **Resolved (2026-06-02).** The public catalog uses full per-layout arrays: `GET /api/climbs/all/{productLayoutUuid}` (+ `/api/climb-stat/all/{…}`, `/api/climbs/delteduuids`). See [Catalog sync (Flow A)](#catalog-sync-flow-a). The packaged `climbdetails/{productName}/edges` route returned 404 in the service check.
+3. ~~**Climb-metadata source.**~~ **Resolved (2026-06-02).** The public catalog uses full per-layout arrays: `GET /api/climbs/all/{productLayoutUuid}` (+ `/api/climb-stat/all/{…}`, `/api/climbs/delteduuids`). See [Catalog sync (Flow A)](#catalog-sync-flow-a). The GET variant returned 404; the literal POST `climbdetails/productName/edges` was verified for timestamp deltas on 2026-11-08 (see above).
 
 When any of these get verified, replace the matching `pushNotWired()` call with the real POST and remove the item here.

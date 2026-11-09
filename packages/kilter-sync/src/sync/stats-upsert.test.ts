@@ -99,6 +99,14 @@ describe('Kilter stats upsert', () => {
     expect(three.params[2]).toEqual(['a', 'b', 'c']);
   });
 
+  it('does not advance or regress freshness without a confirmed coverage watermark', () => {
+    const query = dialect.sqlToQuery(buildKilterStatsUpsert([row('a')], { policy: 'authoritative', syncedAt: null }));
+    expect(query.params[1]).toBeNull();
+    expect(render(buildKilterStatsUpsert([row('a')], { policy: 'authoritative', syncedAt: null }))).toContain(
+      '"upstream_synced_at" = greatest("board_climb_stats"."upstream_synced_at", excluded.upstream_synced_at)',
+    );
+  });
+
   it('sends NULL, never undefined, for an unset nullable column', () => {
     // The catalog fold leaves grade, quality and FA fields unset on its
     // accumulators when Grips sends none. postgres-js refuses undefined inside

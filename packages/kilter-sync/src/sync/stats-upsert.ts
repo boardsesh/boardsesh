@@ -144,13 +144,13 @@ export function kilterStatsConflictWhere(set: SetEntry[]): SQL {
  */
 export function buildKilterStatsUpsert(
   rows: KilterStatsUpsertRow[],
-  options: { policy: KilterUpstreamCountPolicy; syncedAt: string },
+  options: { policy: KilterUpstreamCountPolicy; syncedAt: string | null },
 ): SQL {
   const set = kilterStatsConflictSet(options.policy);
   const assignments = sql.join(
     [
       ...set.map((entry) => sql`${sql.identifier(entry.column.name)} = ${entry.value}`),
-      sql`${sql.identifier(boardClimbStats.upstreamSyncedAt.name)} = excluded.upstream_synced_at`,
+      sql`${sql.identifier(boardClimbStats.upstreamSyncedAt.name)} = GREATEST(${boardClimbStats.upstreamSyncedAt}, excluded.upstream_synced_at)`,
     ],
     sql`, `,
   );
@@ -189,9 +189,11 @@ export function buildKilterStatsUpsert(
 export async function upsertKilterStats(
   db: DrizzleDb,
   rows: KilterStatsUpsertRow[],
-  options: { policy: KilterUpstreamCountPolicy; syncedAt?: string },
+  options: { policy: KilterUpstreamCountPolicy; syncedAt?: string | null },
 ): Promise<number> {
-  const syncedAt = options.syncedAt ?? new Date().toISOString();
+  // NULL means this batch has no complete coverage watermark. Changed values
+  // still land, but cannot certify freshness or absorb Boardsesh ticks.
+  const syncedAt = options.syncedAt === undefined ? new Date().toISOString() : options.syncedAt;
   let written = 0;
   for (let start = 0; start < rows.length; start += BATCH) {
     const chunk = rows.slice(start, start + BATCH);

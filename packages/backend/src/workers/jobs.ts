@@ -283,7 +283,11 @@ export async function executeBackgroundJob(
   if (!token) return 'stale';
   // Family and payload are written once at enqueue, so an unfenced read is exact.
   const [run] = await database
-    .select({ family: backgroundJobRuns.family, payload: backgroundJobRuns.payload })
+    .select({
+      family: backgroundJobRuns.family,
+      payload: backgroundJobRuns.payload,
+      createdAt: backgroundJobRuns.createdAt,
+    })
     .from(backgroundJobRuns)
     .where(eq(backgroundJobRuns.id, job.id));
   const family = run ? handler.resolveFamily(run.family) : undefined;
@@ -328,6 +332,7 @@ export async function executeBackgroundJob(
         family: family.name,
         signal,
         expiresAt: job.startedOn.getTime() + job.expireInSeconds * 1000,
+        queueDelayMs: Math.max(0, job.startedOn.getTime() - (run.createdAt?.getTime() ?? job.startedOn.getTime())),
         database,
         enqueue: (transaction, input) => enqueueBackgroundJobOn(transaction, boss, input),
         transaction: (callback) =>

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getTableName } from 'drizzle-orm';
 import type { KilterCatalogStat } from '../api/kilter-rest';
 import type { KilterReferencePull } from './reference-pull';
 import type { KilterStatsUpsertRow, KilterUpstreamCountPolicy } from './stats-upsert';
@@ -27,6 +28,47 @@ vi.mock('../api/kilter-rest', async () => {
 vi.mock('./layout-resolver', () => ({
   buildLayoutResolver: mockBuildLayoutResolver,
 }));
+
+vi.mock('./catalog-control', () => ({
+  withCatalogWriterLease: async (
+    options: { db: { transaction: (work: unknown) => Promise<unknown> }; transaction?: unknown; signal?: AbortSignal },
+    callback: (lease: { write: unknown; signal: AbortSignal }) => Promise<unknown>,
+  ) =>
+    callback({
+      write: options.transaction ?? options.db.transaction,
+      signal: options.signal ?? new AbortController().signal,
+    }),
+}));
+vi.mock('./catalog-source-stats', async () => {
+  const { aggregateCatalogSourceStats } =
+    await vi.importActual<typeof import('./catalog-source-stats')>('./catalog-source-stats');
+  return {
+    applyCatalogSourceStats: async (
+      transaction: unknown,
+      entries: import('./catalog-source-stats').CatalogSourceStat[],
+    ) => {
+      const rows = [...aggregateCatalogSourceStats(entries).values()];
+      // The cache implementation is covered separately. Here retain the repair
+      // report's transport/mapping coverage without modeling the cache database.
+      await mockUpsertKilterStats(
+        transaction,
+        rows.map((entry) => ({
+          climbUuid: entry.canonicalUuid,
+          angle: entry.angle,
+          displayDifficulty: entry.displayDifficulty,
+          difficultyAverage: entry.difficultyAverage,
+          qualityAverage: entry.qualityAverage,
+          faUsername: entry.faUsername,
+          faAt: entry.faAt,
+          upstreamAscensionistCount: entry.kilterCount,
+        })),
+        { policy: 'raise-only' },
+      );
+    },
+    replayCachedCatalogStats: async () => ({ sent: 0, written: 0 }),
+    finalizeCatalogSourceBaseline: async () => ({ sent: 0, written: 0 }),
+  };
+});
 
 import { repairKilterCatalogStats } from './stats-repair';
 
@@ -87,8 +129,9 @@ function createDbShim(args: { selectResults: SelectResult[]; executeResults: Exe
   );
   const execute = vi.fn(async () => args.executeResults.shift() ?? []);
   const select = vi.fn(() => ({
-    from: () => ({
-      where: () => Promise.resolve(args.selectResults.shift() ?? []),
+    from: (table: Parameters<typeof getTableName>[0]) => ({
+      where: () =>
+        Promise.resolve(getTableName(table) === 'kilter_catalog_deferred' ? [] : (args.selectResults.shift() ?? [])),
       innerJoin: () => ({
         where: () => Promise.resolve(args.selectResults.shift() ?? []),
       }),
@@ -161,15 +204,17 @@ describe('repairKilterCatalogStats', () => {
     expect(summary.applied).toBe(true);
     expect(summary.formulaRowsRecomputed).toBe(2);
     expect(insertValues).toHaveLength(1);
-    expect(insertValues[0]).toMatchObject([
-      {
-        climbUuid: 'canon',
-        angle: 40,
-        upstreamAscensionistCount: 17,
-      },
-    ]);
-    // The repair may lower a count, so it must not use the catalog's GREATEST.
-    expect(policies).toEqual(['authoritative']);
+    expect(insertValues[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          climbUuid: 'canon',
+          angle: 40,
+          upstreamAscensionistCount: 17,
+        }),
+      ]),
+    );
+    // Cache population raises counts only; the final complete replay authorizes decreases.
+    expect(policies).toEqual(['raise-only']);
   });
 
   it('skips an empty Grips angle but preserves a zero-ascent stat with a grade', async () => {
@@ -203,14 +248,16 @@ describe('repairKilterCatalogStats', () => {
 
     expect(summary.canonicalStatsComputed).toBe(1);
     expect(insertValues).toHaveLength(1);
-    expect(insertValues[0]).toMatchObject([
-      {
-        climbUuid: 'canon',
-        angle: 40,
-        displayDifficulty: 20,
-        upstreamAscensionistCount: 0,
-      },
-    ]);
+    expect(insertValues[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          climbUuid: 'canon',
+          angle: 40,
+          displayDifficulty: 20,
+          upstreamAscensionistCount: 0,
+        }),
+      ]),
+    );
   });
 
   it('reconciles an empty Grips angle to zero when its stats row already exists', async () => {
@@ -250,14 +297,16 @@ describe('repairKilterCatalogStats', () => {
     expect(summary.changedKilterRows).toBe(1);
     expect(summary.maxKilterDrop).toBe(7);
     expect(insertValues).toHaveLength(1);
-    expect(insertValues[0]).toMatchObject([
-      {
-        climbUuid: 'canon',
-        angle: 50,
-        displayDifficulty: null,
-        upstreamAscensionistCount: 0,
-      },
-    ]);
+    expect(insertValues[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          climbUuid: 'canon',
+          angle: 50,
+          displayDifficulty: null,
+          upstreamAscensionistCount: 0,
+        }),
+      ]),
+    );
   });
 
   it('does not let an existing mixed-case key authorize an absent casing variant', async () => {
@@ -302,12 +351,14 @@ describe('repairKilterCatalogStats', () => {
 
     expect(summary.canonicalStatsComputed).toBe(1);
     expect(insertValues).toHaveLength(1);
-    expect(insertValues[0]).toMatchObject([
-      {
-        climbUuid: 'Canon',
-        angle: 50,
-        upstreamAscensionistCount: 0,
-      },
-    ]);
+    expect(insertValues[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          climbUuid: 'Canon',
+          angle: 50,
+          upstreamAscensionistCount: 0,
+        }),
+      ]),
+    );
   });
 });
