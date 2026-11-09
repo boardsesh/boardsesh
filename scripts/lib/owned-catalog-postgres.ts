@@ -10,15 +10,12 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
-  readdirSync,
   realpathSync,
   writeFileSync,
 } from 'node:fs';
-import { createRequire, registerHooks } from 'node:module';
-import { Socket } from 'node:net';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import type postgres from 'postgres';
 
 const MAXIMUM_OUTPUT = 1024 * 1024;
@@ -74,9 +71,9 @@ export function digest(contents: string | Buffer): string {
   return createHash('sha256').update(contents).digest('hex');
 }
 
-export function regularFile(path: string, maximumBytes = 32 * 1024 * 1024): Buffer {
+export function regularFile(path: string): Buffer {
   const metadata = lstatSync(path);
-  requireCatalog(metadata.isFile() && !metadata.isSymbolicLink() && metadata.size <= maximumBytes);
+  requireCatalog(metadata.isFile() && !metadata.isSymbolicLink() && metadata.size <= 32 * 1024 * 1024);
   return readFileSync(path);
 }
 
@@ -242,11 +239,10 @@ export async function snapshotCatalogSource(rootInput: string, expectedHead: str
     requireCatalog(separator > 0);
     const [mode, kind, blob] = entry.slice(0, separator).split(' ');
     const name = entry.slice(separator + 1);
-    // Native fixtures are outside this Node proof; any actual import still
-    // requires an admitted manifest entry through the import guard.
+    // Native fixtures are outside this Node proof.
     if (name.startsWith('embedded/')) continue;
     if (!/\.(?:[cm]?[jt]sx?|json|sql|sh|ya?ml|toml|patch)$/.test(name) && name !== 'pnpm-lock.yaml') continue;
-    // Private environment files are neither read nor importable through the guard below.
+    // Private environment files are never read.
     if (name.split('/').some((part) => /^\.env(?:\.|$)/.test(part))) continue;
     const path = join(root, name);
     requireCatalog(realpathSync(path) === path);
@@ -258,140 +254,6 @@ export async function snapshotCatalogSource(rootInput: string, expectedHead: str
   }
   requireCatalog(Object.keys(files).length > 0);
   return { root, head, files, sha256: digest(JSON.stringify(files)) };
-}
-
-/** Include entire resolved packages, so dynamically selected runtime files cannot escape a short import list. */
-export function catalogExecutionManifest(sources: readonly SourceSnapshot[]): Record<string, string> {
-  const files: Record<string, string> = Object.assign({}, ...sources.map((source) => source.files));
-  const admittedRoots = sources.flatMap((source) => [
-    realpathSync(source.root),
-    realpathSync(join(source.root, 'node_modules')),
-  ]);
-  const packages = new Set<string>();
-  let bytes = 0;
-  let fileCount = Object.keys(files).length;
-  function visitDirectory(directory: string): void {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.name === 'node_modules' || entry.name === '.git') continue;
-      if (/^\.env(?:\.|$)/.test(entry.name)) continue;
-      const path = join(directory, entry.name);
-      requireCatalog(!entry.isSymbolicLink());
-      if (entry.isDirectory()) visitDirectory(path);
-      else if (entry.isFile()) {
-        const contents = regularFile(path);
-        bytes += contents.length;
-        fileCount += 1;
-        requireCatalog(bytes <= 256 * 1024 * 1024 && fileCount < 100_000);
-        files[path] = digest(contents);
-      }
-    }
-  }
-  function visitPackage(name: string, context: string, optional: boolean): void {
-    const resolver = createRequire(context);
-    let entry: string | undefined;
-    try {
-      entry = resolver.resolve(name);
-    } catch {
-      try {
-        entry = resolver.resolve(`${name}/package.json`);
-      } catch {
-        // Type-only and native packages can lack a root entry or hide metadata
-        // behind exports. Locate only their exact metadata through Node's paths.
-        requireCatalog(/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(name) && name !== '.' && name !== '..');
-        for (const searchDirectory of resolver.resolve.paths(name) ?? []) {
-          const metadataPath = join(searchDirectory, name, 'package.json');
-          try {
-            requireCatalog(lstatSync(metadataPath).isFile());
-            entry = metadataPath;
-            break;
-          } catch (error) {
-            if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'))
-              throw error;
-          }
-        }
-        if (entry === undefined) {
-          requireCatalog(optional);
-          return;
-        }
-      }
-    }
-    let directory = dirname(realpathSync(entry));
-    while (directory !== dirname(directory)) {
-      requireCatalog(admittedRoots.some((root) => directory === root || directory.startsWith(`${root}${sep}`)));
-      try {
-        const metadata = JSON.parse(regularFile(join(directory, 'package.json')).toString()) as {
-          name?: unknown;
-          dependencies?: Record<string, string>;
-          optionalDependencies?: Record<string, string>;
-          peerDependencies?: Record<string, string>;
-        };
-        if (metadata.name === name) {
-          if (packages.has(directory)) return;
-          packages.add(directory);
-          visitDirectory(directory);
-          for (const dependency of Object.keys(metadata.dependencies ?? {}))
-            visitPackage(dependency, join(directory, 'package.json'), false);
-          // Explicit primary packages cover supported peers; unknown actual imports
-          // still fail the import guard instead of admitting unrelated adapters.
-          for (const dependency of Object.keys(metadata.optionalDependencies ?? {}))
-            visitPackage(dependency, join(directory, 'package.json'), true);
-          return;
-        }
-      } catch (error) {
-        if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) throw error;
-      }
-      directory = dirname(directory);
-    }
-    throw new Error('Owned catalog dependency is unresolved.');
-  }
-  for (const source of sources) {
-    const context = join(source.root, 'packages/db/package.json');
-    for (const name of ['postgres', 'drizzle-orm', 'pg-boss', '@boardsesh/shared-schema'])
-      visitPackage(name, context, false);
-    visitPackage('tsx', join(source.root, 'package.json'), false);
-  }
-  files[realpathSync(process.execPath)] = digest(regularFile(realpathSync(process.execPath), 256 * 1024 * 1024));
-  return Object.fromEntries(Object.entries(files).sort(([left], [right]) => left.localeCompare(right)));
-}
-
-export function requireExecutionManifest(manifest: Readonly<Record<string, string>>): void {
-  for (const [path, expected] of Object.entries(manifest))
-    requireCatalog(realpathSync(path) === path && digest(regularFile(path, 256 * 1024 * 1024)) === expected);
-}
-
-/** The Node runtime can contact only this new fixture's Unix socket. Docker uses its separate CLI. */
-export function guardCatalogSocket(socketPath: string): () => void {
-  const original = Object.getOwnPropertyDescriptor(Socket.prototype, 'connect')
-    ?.value as typeof Socket.prototype.connect;
-  requireCatalog(typeof original === 'function');
-  Socket.prototype.connect = function (this: Socket, ...arguments_: unknown[]): Socket {
-    const first = arguments_[0];
-    const path =
-      typeof first === 'string'
-        ? first
-        : typeof first === 'object' && first !== null && 'path' in first
-          ? first.path
-          : undefined;
-    requireCatalog(path === socketPath);
-    return Reflect.apply(original, this, arguments_) as Socket;
-  };
-  return () => {
-    Socket.prototype.connect = original;
-  };
-}
-
-export function guardCatalogImports(manifest: Readonly<Record<string, string>>): () => void {
-  const hooks = registerHooks({
-    resolve(specifier, context, nextResolve) {
-      const resolved = nextResolve(specifier, context);
-      if (resolved.url.startsWith('node:')) return resolved;
-      requireCatalog(resolved.url.startsWith('file:'));
-      const path = realpathSync(fileURLToPath(resolved.url));
-      requireCatalog(manifest[path] !== undefined && digest(regularFile(path)) === manifest[path]);
-      return resolved;
-    },
-  });
-  return () => hooks.deregister();
 }
 
 /** Abort cannot leave a pending callback holding the proof open or publish a late success. */

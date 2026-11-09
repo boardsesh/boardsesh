@@ -4,12 +4,9 @@ Parent: [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975).
 Design: [Better Auth migration](./better-auth-migration.md).
 Started: 2026-11-04, from `origin/main` at `796746a5db`.
 
-Review: [PR #7280](https://github.com/boardsesh/boardsesh/pull/7280) is ready.
-The latest reviewed batch passes **702 cases on both PostgreSQL 15.17 and 18.6**.
-Recorded full CI is green at `0487eaca0b`; cloud review reported no findings at
-the earlier `689446f9bc` head. Later commits require their own CI. Production migration remains gated. The
-user's password policy is to keep the current device signed in, revoke other
-credentials, and revoke every session after forgotten-password reset.
+Production migration remains gated. The user's password policy is to keep the
+current device signed in, revoke other credentials, and revoke every session
+after forgotten-password reset.
 
 ## Execution plan
 

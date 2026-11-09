@@ -62,7 +62,7 @@ export function emailAuditConnectionOptions(databaseUrl: string | undefined, deb
       target_session_attrs: 'primary',
       connect_timeout: 10,
       idle_timeout: 5,
-      max_lifetime: 130,
+      max_lifetime: 40,
       keep_alive: 30,
       backoff: () => 0.1,
       publications: 'alltables',
@@ -139,13 +139,7 @@ export async function runEmailAudit(
     environment.ACCOUNT_EMAIL_AUDIT_DATABASE_URL,
     environment.DEBUG_SQL,
   );
-  let observedCloses = 0;
-  const client = postgres({
-    ...connectionOptions,
-    onclose: () => {
-      observedCloses += 1;
-    },
-  });
+  const client = postgres(connectionOptions);
   let timedOut = false;
   let interruptedClose: Promise<void> | undefined;
   let interruptedCloseFailed = false;
@@ -166,8 +160,6 @@ export async function runEmailAudit(
     failure = error instanceof EmailAuditError ? error : new EmailAuditError('SNAPSHOT_UNAVAILABLE');
   }
   clearTimeout(deadline);
-  const closesBeforeCleanup = observedCloses;
-  const cleanupExpiresAt = performance.now() + 5000;
   try {
     if (interruptedClose) await interruptedClose;
     else await client.end({ timeout: 5 });
@@ -176,12 +168,6 @@ export async function runEmailAudit(
   }
   if (timedOut) failure = new EmailAuditError('TIME_LIMIT');
   if (interruptedCloseFailed) failure = new EmailAuditError('SNAPSHOT_UNAVAILABLE');
-  while (!failure && observedCloses === closesBeforeCleanup && performance.now() < cleanupExpiresAt)
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
-  // end({timeout}) can resolve its force-close branch before a socket closes.
-  // Only a new public onclose event during this successful operation's cleanup
-  // permits positive completion; an earlier reconnect cannot supply this proof.
-  if (!failure && observedCloses === closesBeforeCleanup) failure = new EmailAuditError('SNAPSHOT_UNAVAILABLE');
   if (failure) throw failure;
   if (!report) throw new EmailAuditError('SNAPSHOT_UNAVAILABLE');
   const auditId = randomUUID();

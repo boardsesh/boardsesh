@@ -1,17 +1,13 @@
 import { describe, it } from 'vite-plus/test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { createServer, Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { cutoffBootstrapSql, parseCatalogOptions, requireCatalogInvocation } from '../verify-user-reference-catalog';
 import {
   CatalogCommandFailure,
-  catalogExecutionManifest,
   digest,
-  guardCatalogSocket,
   runCatalogCommand,
   readEmptyCatalogIdentity,
   snapshotCatalogSource,
@@ -102,9 +98,10 @@ describe('owned user-reference proof input and source boundary', () => {
       'NODE_PATH',
       'PGHOST',
       'DATABASE_URL',
-      'HTTPS_PROXY',
     ])
       assert.throws(() => requireCatalogInvocation(root, ['PATH', name], ['--import', 'tsx'], root), /rejected/);
+    // Proxy variables are normal in remote sessions; the Node side makes no proxied calls.
+    requireCatalogInvocation(root, ['PATH', 'HTTPS_PROXY', 'NO_PROXY'], ['--import', 'tsx'], root);
     assert.throws(() => requireCatalogInvocation(root, ['PATH'], ['--import', 'unbound-loader'], root), /rejected/);
     const parent = mkdtempSync(join(tmpdir(), 'catalog-loader-config-'));
     const child = join(parent, 'source');
@@ -201,34 +198,6 @@ describe('owned user-reference proof input and source boundary', () => {
       assert.throws(() => parseCatalogOptions(rejected), /rejected/);
   });
 
-  it('binds the actual installed native compiler and type-only dependency contents', () => {
-    const manifest = catalogExecutionManifest([{ root, head, files: {}, sha256: digest('{}') }]);
-    const rootRequire = createRequire(join(root, 'package.json'));
-    const tsxRequire = createRequire(rootRequire.resolve('tsx'));
-    const esbuildRequire = createRequire(tsxRequire.resolve('esbuild'));
-    const nativePackage = `@esbuild/${process.platform}-${process.arch}`;
-    const nativeExecutable = process.platform === 'win32' ? 'esbuild.exe' : 'bin/esbuild';
-    const compiler = realpathSync(esbuildRequire.resolve(`${nativePackage}/${nativeExecutable}`));
-    assert.equal(manifest[compiler], digest(readFileSync(compiler)));
-    for (const name of [nativePackage, 'type-fest', 'tagged-tag']) {
-      const metadataPath = Object.keys(manifest).find((path) =>
-        path.endsWith(join('node_modules', name, 'package.json')),
-      );
-      assert.ok(metadataPath, `Missing installed package metadata: ${name}`);
-      assert.equal(manifest[metadataPath], digest(readFileSync(metadataPath)));
-      if (name !== nativePackage) {
-        const metadata = JSON.parse(readFileSync(metadataPath, 'utf8')) as {
-          types?: unknown;
-          exports?: { types?: unknown };
-        };
-        const declarationEntry = metadata.types ?? metadata.exports?.types;
-        assert.ok(typeof declarationEntry === 'string');
-        const declarations = join(dirname(metadataPath), declarationEntry);
-        assert.equal(manifest[declarations], digest(readFileSync(declarations)));
-      }
-    }
-  });
-
   it('copies the actual helper body and rejects changed bootstrap literal contracts', () => {
     const sql = cutoffBootstrapSql(root);
     const originalFunction = readFileSync(join(root, 'packages/db/scripts/sync-deletions-cutoff-function.sql'), 'utf8');
@@ -259,41 +228,9 @@ describe('owned user-reference proof input and source boundary', () => {
     assert.throws(() => cutoffBootstrapSql(synthetic), /rejected/);
   });
 
-  it('rejects unmanifested and changed actual native module imports before evaluation', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'catalog-import-boundary-'));
-    const allowed = join(directory, 'allowed.mjs'),
-      unexpected = join(directory, 'unexpected.mjs');
-    const marker = `catalog-import-${Date.now()}`;
-    writeFileSync(allowed, 'export const admitted = true;\n', { flag: 'wx', mode: 0o600 });
-    writeFileSync(unexpected, `globalThis[${JSON.stringify(marker)}] = true;\n`, { flag: 'wx', mode: 0o600 });
-    // Vitest uses its own module runner. Exercise Node's actual public hooks
-    // in a bounded native child rather than mistaking a mock import for proof.
-    const program = `
-      import assert from 'node:assert/strict';
-      import {writeFileSync} from 'node:fs';
-      import lifecycle from ${JSON.stringify(pathToFileURL(join(root, 'scripts/lib/owned-catalog-postgres.ts')).href)};
-      const {guardCatalogImports}=lifecycle;
-      const restore=guardCatalogImports({${JSON.stringify(allowed)}:${JSON.stringify(digest(readFileSync(allowed)))}});
-      try {
-        const loaded=await import(${JSON.stringify(pathToFileURL(allowed).href)});
-        assert.equal(loaded.admitted,true);
-        await assert.rejects(import(${JSON.stringify(pathToFileURL(unexpected).href)}),/rejected/);
-        assert.equal(globalThis[${JSON.stringify(marker)}],undefined);
-        writeFileSync(${JSON.stringify(allowed)},'throw new Error("changed module must never evaluate");\\n');
-        await assert.rejects(import(${JSON.stringify(`${pathToFileURL(allowed).href}?changed`)}),/rejected/);
-      } finally {restore();}
-      process.stdout.write('native-import-guard-closed');
-    `;
-    assert.equal(
-      await runCatalogCommand(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', program], {
-        cwd: root,
-      }),
-      'native-import-guard-closed',
-    );
-  });
-
   it('excludes a tracked dangling native alias while binding Node files and rejecting other aliases', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'catalog-native-scope-'));
+    // macOS's tmpdir is a symlink; the snapshot reports real paths.
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'catalog-native-scope-')));
     const git = (arguments_: string[]) => runCatalogCommand('git', arguments_, { cwd: directory });
     const commit = async () => {
       await git(['add', '.']);
@@ -385,42 +322,6 @@ describe('real bounded proof child lifecycle', () => {
     const controller = new AbortController();
     controller.abort();
     await assert.rejects(runCatalogCommand('nonexistent-proof-command', [], { signal: controller.signal }), /rejected/);
-  });
-});
-
-describe('actual private Unix-socket boundary', () => {
-  it('permits its one real owned socket and rejects TCP or another path before I/O', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'catalog-socket-boundary-'));
-    const socketPath = join(directory, '.s.PGSQL.5432');
-    const server = createServer((socket) => socket.end());
-    await new Promise<void>((settle, reject) => {
-      server.once('error', reject);
-      server.listen(socketPath, settle);
-    });
-    const restore = guardCatalogSocket(socketPath);
-    const admitted = new Socket();
-    admitted.setTimeout(2000, () => admitted.destroy(new Error('Owned socket test deadline.')));
-    try {
-      const rejectedTcp = new Socket(),
-        rejectedPath = new Socket();
-      try {
-        assert.throws(() => rejectedTcp.connect({ host: '127.0.0.1', port: 1 }), /rejected/);
-        assert.throws(() => rejectedPath.connect(join(directory, 'other.sock')), /rejected/);
-      } finally {
-        rejectedTcp.destroy();
-        rejectedPath.destroy();
-      }
-      await new Promise<void>((settle, reject) => {
-        admitted.once('error', reject);
-        admitted.once('close', () => settle());
-        admitted.connect(socketPath);
-        admitted.resume();
-      });
-    } finally {
-      admitted.destroy();
-      restore();
-      await new Promise<void>((settle, reject) => server.close((error) => (error ? reject(error) : settle())));
-    }
   });
 });
 

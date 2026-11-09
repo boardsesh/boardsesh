@@ -20,6 +20,14 @@ authentication authority.
 
 ## Run the proof
 
+**The owned proof runs only on Linux, against a rootful Docker daemon.** It talks
+to the fixed `/var/run/docker.sock`, ignores `DOCKER_HOST` and Docker contexts,
+and bind-mounts a host Unix-socket directory into the container. Docker Desktop
+on macOS reports that bind source as `/host_mnt/...`, so the ownership check
+rejects it, and rootless Docker or Podman have no socket at that path. The
+`--plan` mode, the unit tests and the TCP check under
+[Check a real catalog](#check-a-real-catalog) run anywhere.
+
 Install the pinned workspace dependencies first. Docker must already have an
 unseeded PostgreSQL 18.6 image with PostGIS 3.6.4 libraries available. Provision
 the repository's **portable** artifact from
@@ -49,28 +57,21 @@ describes its boundaries without creating a fixture.
 
 Run from the harness checkout root using the task's fixed Node import arguments.
 Proof admission rejects ambient Node/tsx/esbuild overrides, service connection
-variables, proxies and a default root or ancestor `tsconfig.json`. These checks
-bind the supported loader configuration; they cannot undo configuration reads
-that occurred before the entrypoint started.
+variables and a default root or ancestor `tsconfig.json`. These checks bind the
+supported loader configuration; they cannot undo configuration reads that
+occurred before the entrypoint started.
 
 The selected source supplies its own migration journal, complete SQL files,
 schema exports and runtime queue initializer. The harness supplies the collector
-and fixture runner. Their source and execution dependencies are fingerprinted
-before selected runtime imports and checked throughout execution. A source change
-invalidates the result. A main checkout and an unmerged auth stack need separate
-reports; their migration and reference counts need not match.
+and fixture runner. Their tracked files are fingerprinted against the HEAD blobs
+before selected runtime imports, and each checkpoint rechecks HEAD and a clean
+worktree. A source change invalidates the result. A main checkout and an unmerged
+auth stack need separate reports; their migration and reference counts need not
+match.
 
-The execution manifest follows declared runtime dependencies and installed
-optional dependencies, including the actual esbuild platform binary. Runtime
-peers used by this proof are admitted explicitly, including `postgres` for the
-Drizzle adapter. Each selected runtime import must resolve to an already
-fingerprinted file. Missing required packages or an unadmitted actual peer
-prevent completion. Package metadata lookup supports type-only and binary-only
-packages while retaining package-name, real-root and content checks.
-
-The Node input manifest excludes top-level `embedded/` fixtures. Admitted inputs
-retain HEAD blob and mode validation, and runtime imports remain closed to the
-fingerprinted files. A dangling input inside the Node source still fails.
+The source fingerprint excludes top-level `embedded/` fixtures. Admitted inputs
+retain HEAD blob and mode validation. A dangling input inside the Node source
+still fails.
 
 ## Fixture boundary
 
@@ -92,6 +93,15 @@ running QA cluster would not provide that boundary. The proof never repairs or
 adopts an existing fixture. Containers and volumes remain available for inspection
 after success or failure; the runner stops only the container it claimed.
 
+Each run therefore leaves a stopped container and a migrated data volume behind,
+both labelled `org.boardsesh.catalog-proof`. Clear them when you no longer need
+them; `docker rm` refuses a container that is still running:
+
+```sh
+docker ps -aq --filter label=org.boardsesh.catalog-proof | xargs -r docker rm
+docker volume ls -q --filter label=org.boardsesh.catalog-proof | xargs -r docker volume rm
+```
+
 After the journal capture, the command invokes the selected checkout's actual
 `initializeJobQueueSchema` through an explicit borrowed client, with supervision
 and scheduling disabled and no role arguments. It captures again after queue
@@ -100,10 +110,13 @@ claiming deployed worker grants or queue-attempt lock behavior.
 
 ## Catalog contract
 
-The collector observes one primary, Unix-socket, `REPEATABLE READ READ ONLY`
-transaction with `row_security=off` and a catalog-only search path. It records the
-new cluster/database identity, server and extension versions, and both complete
-migration ledgers.
+The collector observes one `REPEATABLE READ READ ONLY` transaction with
+`row_security=off` and a catalog-only search path. It records the cluster/database
+identity, server and extension versions, and both complete migration ledgers. The
+owned proof requires a primary reached over its new Unix socket, so it also proves
+the connection has no client address. A read-only TCP run reports what the server
+saw instead: `transport`, `recovery` (primary or standby), `clientAddress`, and
+the system identifier, or `null` when the role cannot read `pg_control_system`.
 
 Every inbound foreign key to the actual `public.users` relation is captured
 across schemas, including ordered source/target columns, actions, match mode,
@@ -152,16 +165,35 @@ This proves a fully migrated **user-reference catalog**, not equality of every
 PostgreSQL schema object, complete producer coverage, deployed role fencing,
 historical fixed-UID absence, authentication denial, queue/advisory order or
 contention bounds. General column/index definitions and table/column ACLs are not
-the semantic comparison contract. No production catalog or credential is read.
+the semantic comparison contract. The owned proof reads no production catalog or
+credential.
 
-The password policy remains unchanged: authenticated set/change must preserve the
-requesting device and its original proven authentication age while revoking
-others; forgotten-password reset revokes every session. This tooling does not
-adopt that policy in production.
+## Check a real catalog
 
-Qualification evidence is added after the isolated runs and independent review.
+The same collector and reconciliation run over a read-only TCP connection, so a
+real database can be compared with a checkout's Drizzle declarations:
 
-CI runs the pure collector regression and the real process/import/socket tests
-when their inputs change. That job's stock PostgreSQL service does not stand in
-for the complete PostgreSQL 18/PostGIS journal proof; run the explicit owned task
-for that evidence.
+```sh
+cd packages/db
+USER_REFERENCE_CATALOG_DATABASE_URL=postgresql://reader@db.example.test/main?sslmode=verify-full \
+  vp exec tsx scripts/reconcile-user-references.ts
+```
+
+The command takes that explicit URL only, never the application's `DATABASE_URL`.
+The session defaults to read-only and every catalog read runs in the one `READ
+ONLY` transaction above, so a primary or a standby both work. The role needs
+ordinary catalog visibility and `SELECT` on `public.__drizzle_migrations` and
+`drizzle.__drizzle_migrations`. Run it from the commit deployed to that database,
+or a newly added or dropped foreign key will read as drift.
+
+Its last line of output is one JSON object, so pipe it through `tail -n 1` before parsing; dotenv can print startup notices first. `status` is `matched`, `different` (exit 1, with each
+difference) or `incomplete` (exit 1, with a fixed error category and never the
+URL). `target` names the transport, primary or standby and the identifier the
+server reported, so a report states which server it describes.
+
+CI applies every migration to the `db-migrations` job's PostgreSQL 18 PostGIS
+service and runs this command against it, so an undeclared foreign key to `users`
+fails the job. That step does not stand in for the owned proof: it runs neither
+the runtime job-queue capture nor the negative controls, so run the explicit
+owned task for that evidence. CI also runs the pure collector regression and the
+process-boundary tests when their inputs change.

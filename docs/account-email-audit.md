@@ -83,20 +83,28 @@ Concurrent committed changes appear in the next run.
 No table write lock is requested. A long snapshot can still delay vacuum
 cleanup, so run it with the recorded limits and ordinary operational care.
 
+**Do not run the audit during a deploy.** The transaction holds `ACCESS SHARE`
+on `users`, `user_credentials` and `accounts` for its whole scan, and the
+migration runner sets no `lock_timeout`. A deploy's `ALTER TABLE users` would
+queue behind the audit, and every later query on `users` would queue behind that
+`ALTER`, which stalls sign-in and every users read until the audit ends.
+
 Limits are 100,000 users/keys, 64 MiB of retained text, 4,096 bytes per identity
-or email field, 1,000 users per page, and a 120-second scan budget. Oversized
-fields are capped in SQL before driver allocation. Statements have a
-five-second timeout and lock waits a one-second timeout; an in-flight statement
-must settle before cleanup, and a result exceeding the scan budget is rejected.
+or email field, 1,000 users per page, and a 30-second scan budget. A real run
+over 9,788 users took 16 seconds, so expect the budget to bind at around 18,000
+users, where the audit fails with `TIME_LIMIT` rather than reporting part of the store. Oversized fields are capped in SQL before
+driver allocation. Statements have a five-second timeout and lock waits a
+one-second timeout; an in-flight statement must settle before cleanup, and a
+result exceeding the scan budget is rejected.
 Private output is streamed in bounded member chunks and stops at 16 MiB.
 The scan budget includes awaiting the actual read transaction's COMMIT. Client
 work that remains pending at the deadline is interrupted by ending the CLI's
 dedicated read-only client with a one-second force-close bound. The actual
-driver operation and end promise are awaited. A successful report additionally
-requires a new socket-close event during cleanup: the driver's forced end
-acknowledgment alone cannot establish that. Normal client cleanup has a separate
-five-second close bound. An incomplete standalone command flushes its fixed
-failure record and exits; it cannot be held open by a half-closed connection.
+driver operation and end promise are awaited. `connectionClosed: true` means the
+driver's `end()` settled: normally after the socket closed, or after its
+five-second force-close bound, which cannot change a read-only report. An
+incomplete standalone command flushes its fixed failure record and exits; it
+cannot be held open by a half-closed connection.
 PostgreSQL's statement timeout also bounds remaining read-only server work.
 Private-file output happens after that connection is closed and is bounded by
 the output-size cap.

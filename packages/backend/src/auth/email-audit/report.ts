@@ -8,7 +8,7 @@ export const EMAIL_AUDIT_LIMITS = Object.freeze({
   maxFieldBytes: 4096,
   maxDetailBytes: 16777216,
   pageSize: 1000,
-  maximumMs: 120000,
+  maximumMs: 30000,
 });
 
 export type EmailAuditErrorCode =

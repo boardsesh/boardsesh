@@ -21,21 +21,18 @@ describe('read-only audit against a disposable legacy identity database', () => 
         if (statement.trim()) await fixtureClient.unsafe(statement);
       }
     }
-    const database = drizzle(fixtureClient);
-    await database.insert(users).values([
-      { id: 'audit-password-user', email: 'Legacy.Audit@example.test', emailVerified: new Date('2026-01-01') },
-      { id: 'audit-provider-user', email: ' legacy.audit@example.test ' },
-    ]);
-    await database.insert(userCredentials).values({
-      userId: 'audit-password-user',
-      passwordHash: '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfRzC2VyM4dy',
-    });
-    await database.insert(accounts).values({
-      userId: 'audit-provider-user',
-      type: 'oauth',
-      provider: 'apple',
-      providerAccountId: 'audit-private-subject',
-    });
+    // Explicit columns: Drizzle's insert would name every current schema column,
+    // and only these two legacy migrations ran in this database.
+    await fixtureClient`
+      INSERT INTO users (id, email, "emailVerified") VALUES
+        ('audit-password-user', 'Legacy.Audit@example.test', '2026-01-01'),
+        ('audit-provider-user', ' legacy.audit@example.test ', NULL)`;
+    await fixtureClient`
+      INSERT INTO user_credentials (user_id, password_hash)
+      VALUES ('audit-password-user', '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfRzC2VyM4dy')`;
+    await fixtureClient`
+      INSERT INTO accounts ("userId", type, provider, "providerAccountId")
+      VALUES ('audit-provider-user', 'oauth', 'apple', 'audit-private-subject')`;
   });
 
   afterAll(async () => {
@@ -43,13 +40,29 @@ describe('read-only audit against a disposable legacy identity database', () => 
     await environment?.close();
   });
 
-  it('selects legacy identity columns and leaves all source records unchanged', async () => {
+  // The audited columns only, so a future column on these tables cannot fail
+  // with a missing-column error here (only migrations 0016/0017 were applied).
+  async function readAuditedSourceRows() {
     const database = drizzle(fixtureClient);
-    const before = {
-      users: await database.select().from(users),
-      credentials: await database.select().from(userCredentials),
-      providerAccounts: await database.select().from(accounts),
+    return {
+      users: await database
+        .select({ id: users.id, email: users.email, emailVerified: users.emailVerified })
+        .from(users),
+      credentials: await database
+        .select({ userId: userCredentials.userId, passwordHash: userCredentials.passwordHash })
+        .from(userCredentials),
+      providerAccounts: await database
+        .select({
+          userId: accounts.userId,
+          provider: accounts.provider,
+          providerAccountId: accounts.providerAccountId,
+        })
+        .from(accounts),
     };
+  }
+
+  it('selects legacy identity columns and leaves all source records unchanged', async () => {
+    const before = await readAuditedSourceRows();
 
     const report = await runIdentityAudit({ AUTH_IDENTITY_AUDIT_DATABASE_URL: environment.databaseUrl });
     expect(report.counts).toMatchObject({
@@ -64,14 +77,12 @@ describe('read-only audit against a disposable legacy identity database', () => 
     });
     expect(JSON.stringify(report)).not.toContain('audit-private-subject');
     expect(JSON.stringify(report)).not.toContain('example.test');
-    expect(await database.select().from(users)).toEqual(before.users);
-    expect(await database.select().from(userCredentials)).toEqual(before.credentials);
-    expect(await database.select().from(accounts)).toEqual(before.providerAccounts);
+    expect(await readAuditedSourceRows()).toEqual(before);
   });
 
   it('remeasures the selected database on every run with fresh private references', async () => {
     const firstReport = await runIdentityAudit({ AUTH_IDENTITY_AUDIT_DATABASE_URL: environment.databaseUrl });
-    await drizzle(fixtureClient).insert(users).values({ id: 'audit-new-user', email: 'new-audit@example.test' });
+    await fixtureClient`INSERT INTO users (id, email) VALUES ('audit-new-user', 'new-audit@example.test')`;
     const secondReport = await runIdentityAudit({ AUTH_IDENTITY_AUDIT_DATABASE_URL: environment.databaseUrl });
     expect(secondReport.counts.users).toBe(firstReport.counts.users + 1);
     expect(secondReport.counts.usersWithoutSignInMethods).toBe(firstReport.counts.usersWithoutSignInMethods + 1);

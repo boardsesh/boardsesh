@@ -89,17 +89,26 @@ export interface CatalogRelation {
   parents: string[];
 }
 
+/** The connection the caller claims. The collector rejects a claim the server does not confirm. */
+export type CatalogTransport = 'unix-socket' | 'tcp';
+
+/**
+ * What the server reported about this connection. The owned fixture is a primary
+ * reached over a Unix socket; a TCP run may be a primary or a standby, and a
+ * restricted role may be unable to read the cluster's system identifier.
+ */
+export type CatalogConnectionEvidence =
+  | { transport: 'unix-socket'; recovery: false; clientAddress: null; systemIdentifier: string }
+  | { transport: 'tcp'; recovery: boolean; clientAddress: string; systemIdentifier: string | null };
+
 export interface UserReferenceCatalog {
   version: 1;
   physical: {
     database: string;
     databaseOid: number;
-    systemIdentifier: string;
     usersOid: number;
     serverVersion: number;
-    recovery: false;
-    clientAddress: null;
-  };
+  } & CatalogConnectionEvidence;
   snapshot: {
     isolation: 'repeatable read';
     readOnly: 'on';
@@ -374,10 +383,72 @@ const REFERENCE_SHAPE: Record<keyof PhysicalUserReference, FieldRule> = {
   deleteSetColumns: 'nullableStrings',
 };
 
-/** Borrows the caller's client. Only fixed catalog SELECTs and transaction-local settings execute. */
+export interface CatalogServerState {
+  database: string;
+  databaseOid: number;
+  systemIdentifier: string | null;
+  usersOid: number | null;
+  serverVersion: number;
+  recovery: boolean;
+  clientAddress: string | null;
+  isolation: string;
+  readOnly: string;
+  rowSecurity: string;
+}
+
+/** Both transports require this same read-only snapshot; only the connection evidence differs. */
+export function readCatalogPhysical(
+  state: CatalogServerState | undefined,
+  transport: CatalogTransport,
+): UserReferenceCatalog['physical'] {
+  if (
+    !state ||
+    typeof state.database !== 'string' ||
+    !state.database ||
+    !Number.isSafeInteger(state.databaseOid) ||
+    state.databaseOid <= 0 ||
+    (state.systemIdentifier !== null &&
+      (typeof state.systemIdentifier !== 'string' || !/^\d+$/.test(state.systemIdentifier))) ||
+    !Number.isSafeInteger(state.usersOid) ||
+    !state.usersOid ||
+    state.usersOid <= 0 ||
+    !Number.isSafeInteger(state.serverVersion) ||
+    state.serverVersion < 180000 ||
+    state.isolation !== 'repeatable read' ||
+    state.readOnly !== 'on' ||
+    state.rowSecurity !== 'off'
+  )
+    throw new Error('Catalog requires a read-only snapshot with public.users');
+  const server = {
+    database: state.database,
+    databaseOid: state.databaseOid,
+    usersOid: state.usersOid,
+    serverVersion: state.serverVersion,
+  };
+  if (transport === 'unix-socket') {
+    if (state.recovery !== false || state.clientAddress !== null || state.systemIdentifier === null)
+      throw new Error('Catalog requires a primary Unix-socket read-only snapshot with public.users');
+    return { ...server, transport, recovery: false, clientAddress: null, systemIdentifier: state.systemIdentifier };
+  }
+  if (typeof state.recovery !== 'boolean' || typeof state.clientAddress !== 'string' || !state.clientAddress)
+    throw new Error('Catalog requires a read-only TCP snapshot with public.users');
+  return {
+    ...server,
+    transport,
+    recovery: state.recovery,
+    clientAddress: state.clientAddress,
+    systemIdentifier: state.systemIdentifier,
+  };
+}
+
+/**
+ * Borrows the caller's client. Only fixed catalog SELECTs and transaction-local settings execute.
+ * Defaults to the owned fixture's Unix socket; a read-only TCP run must ask for it explicitly.
+ */
 export async function collectUserReferenceCatalog(
   client: postgres.Sql,
   limits: CatalogLimits = {},
+  transport: CatalogTransport = 'unix-socket',
 ): Promise<UserReferenceCatalog> {
   const maximumRows = limits.maximumRows ?? 50_000;
   const maximumBytes = limits.maximumBytes ?? 32 * 1024 * 1024;
@@ -394,48 +465,31 @@ export async function collectUserReferenceCatalog(
       pg_catalog.set_config('row_security', 'off', true),
       pg_catalog.set_config('statement_timeout', ${String(statementTimeoutMs)}, true),
       pg_catalog.set_config('lock_timeout', '1000', true)`;
-    const [state] = await transaction<
-      {
-        database: string;
-        databaseOid: number;
-        systemIdentifier: string;
-        usersOid: number | null;
-        serverVersion: number;
-        recovery: boolean;
-        clientAddress: string | null;
-        isolation: string;
-        readOnly: string;
-        rowSecurity: string;
-      }[]
-    >`SELECT pg_catalog.current_database() AS database,
+    const [state] = await transaction<Omit<CatalogServerState, 'systemIdentifier'>[]>`
+      SELECT pg_catalog.current_database() AS database,
       (SELECT oid::integer FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database()) AS "databaseOid",
-      (SELECT system_identifier::text FROM pg_catalog.pg_control_system()) AS "systemIdentifier",
       pg_catalog.to_regclass('public.users')::oid::integer AS "usersOid",
       pg_catalog.current_setting('server_version_num')::integer AS "serverVersion",
       pg_catalog.pg_is_in_recovery() AS recovery, pg_catalog.inet_client_addr()::text AS "clientAddress",
       pg_catalog.current_setting('transaction_isolation') AS isolation,
       pg_catalog.current_setting('transaction_read_only') AS "readOnly",
       pg_catalog.current_setting('row_security') AS "rowSecurity"`;
-    if (
-      !state ||
-      typeof state.database !== 'string' ||
-      !state.database ||
-      !Number.isSafeInteger(state.databaseOid) ||
-      state.databaseOid <= 0 ||
-      typeof state.systemIdentifier !== 'string' ||
-      !/^\d+$/.test(state.systemIdentifier) ||
-      !Number.isSafeInteger(state.usersOid) ||
-      !state.usersOid ||
-      state.usersOid <= 0 ||
-      !Number.isSafeInteger(state.serverVersion) ||
-      state.serverVersion < 180000 ||
-      state.recovery !== false ||
-      state.clientAddress !== null ||
-      state.isolation !== 'repeatable read' ||
-      state.readOnly !== 'on' ||
-      state.rowSecurity !== 'off'
-    )
-      throw new Error('Catalog requires a primary Unix-socket read-only snapshot with public.users');
+    // pg_control_system is revoked from PUBLIC on the hardened roles. PostgreSQL
+    // checks the ACL when it initializes the call, so a CASE cannot guard it: ask first.
+    // The owned fixture still fails with insufficient_privilege, as its proof expects.
+    const [controlDataAccess] =
+      transport === 'tcp'
+        ? await transaction<{ readable: boolean }[]>`
+            SELECT pg_catalog.has_function_privilege('pg_catalog.pg_control_system()', 'EXECUTE') AS readable`
+        : [{ readable: true }];
+    const [controlData] = controlDataAccess?.readable
+      ? await transaction<{ systemIdentifier: string }[]>`
+          SELECT system_identifier::text AS "systemIdentifier" FROM pg_catalog.pg_control_system()`
+      : [];
+    const physical = readCatalogPhysical(
+      state && { ...state, systemIdentifier: controlData?.systemIdentifier ?? null },
+      transport,
+    );
 
     let bytes = 0;
     let rowCount = 0;
@@ -736,15 +790,7 @@ export async function collectUserReferenceCatalog(
     );
     return {
       version: 1,
-      physical: {
-        database: state.database,
-        databaseOid: state.databaseOid,
-        systemIdentifier: state.systemIdentifier,
-        usersOid: state.usersOid,
-        serverVersion: state.serverVersion,
-        recovery: false,
-        clientAddress: null,
-      },
+      physical,
       snapshot: { isolation: 'repeatable read', readOnly: 'on', rowSecurity: 'off' },
       references,
       triggers,
