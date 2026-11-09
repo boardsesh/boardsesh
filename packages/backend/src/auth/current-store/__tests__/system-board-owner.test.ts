@@ -466,6 +466,41 @@ describe('fixed shared-board identity authority', () => {
       expect(result.profiles).toHaveLength(1);
     }
   });
+  it('waits out an uncommitted authentication artifact instead of missing it', async () => {
+    await prepare();
+    await ensureReservedSystemBoardOwner(db, authority);
+    let releaseArtifact = () => {};
+    const artifactCanCommit = new Promise<void>((resolve) => {
+      releaseArtifact = resolve;
+    });
+    let reportInserted = () => {};
+    const artifactInserted = new Promise<void>((resolve) => {
+      reportInserted = resolve;
+    });
+    // The session's foreign key takes KEY SHARE on the fixed user until commit.
+    const artifact = db.transaction(async (transaction) => {
+      await transaction.insert(sessions).values({
+        userId: SYSTEM_BOARD_OWNER_ID,
+        sessionToken: randomUUID(),
+        expires: new Date(Date.now() + 60000),
+      });
+      reportInserted();
+      await artifactCanCommit;
+    });
+    await artifactInserted;
+    const ensured = ensureReservedSystemBoardOwner(db, authority);
+    const settledEarly = await Promise.race([
+      ensured.then(
+        () => true,
+        () => true,
+      ),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 400)),
+    ]);
+    expect(settledEarly).toBe(false);
+    releaseArtifact();
+    await artifact;
+    await expect(ensured).rejects.toMatchObject({ code: 'RESERVATION_INCONSISTENT' });
+  });
   it('rolls back a written reservation after real SQL permission denial on user insert', async () => {
     await prepare();
     const before = await snapshot();

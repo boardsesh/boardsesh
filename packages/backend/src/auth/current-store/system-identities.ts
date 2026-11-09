@@ -98,6 +98,9 @@ export async function ensureReservedSystemIdentity(
     .where(and(eq(authEmailReservationMembers.userId, userId), ne(authEmailReservationMembers.normalizedEmail, key)))
     .limit(1);
   if (otherReservation || otherMembership) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  // FOR UPDATE, not NO KEY UPDATE: conflicting with FK KEY SHARE is the point.
+  // It waits out an uncommitted credential, session or refresh-token insert for
+  // this UID, so the artifact check below cannot miss one that is in flight.
   const [user] = await transaction.select().from(users).where(eq(users.id, userId)).for('update');
   await assertNoAuthenticationArtifacts(transaction, userId);
 
