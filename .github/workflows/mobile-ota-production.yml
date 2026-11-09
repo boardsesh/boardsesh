@@ -266,7 +266,7 @@ jobs:
     # same commit (scripts/mobile-ota-server-ready.mjs), which only happens on the
     # rare push that also rolls the OTA server. Direct publishes also reserve
     # 25 minutes for the trusted main-only unlock; staging has no such wait.
-    timeout-minutes: 240
+    timeout-minutes: 280
     # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
 
