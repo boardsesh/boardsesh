@@ -12,6 +12,8 @@ describe('In-memory rate limiter', () => {
     cleanupRateLimit('test-conn');
     cleanupRateLimit('conn-1');
     cleanupRateLimit('conn-2');
+    cleanupRateLimit('valid-connection');
+    cleanupRateLimit('');
     vi.useRealTimers();
   });
 
@@ -95,6 +97,38 @@ describe('In-memory rate limiter', () => {
         expect(() => checkRateLimit('test-conn')).not.toThrow();
       }
       expect(() => checkRateLimit('test-conn')).toThrow('Rate limit exceeded');
+    });
+
+    it('shares one fallback bucket across empty and whitespace-only identifiers', () => {
+      checkRateLimit('', 1, 60_000);
+
+      expect(() => checkRateLimit('   ', 1, 60_000)).toThrow('Rate limit exceeded');
+      expect(getRateLimitStatus('')).toEqual(getRateLimitStatus('   '));
+
+      cleanupRateLimit('   ');
+      expect(getRateLimitStatus('')).toBeNull();
+      expect(() => checkRateLimit('', 1, 60_000)).not.toThrow();
+    });
+
+    it('uses the finite fallback bucket for missing or malformed runtime identifiers', () => {
+      const missingConnectionId = undefined as unknown as string;
+      const nullConnectionId = null as unknown as string;
+      const numericConnectionId = 42 as unknown as string;
+
+      checkRateLimit(missingConnectionId, 2, 60_000);
+      checkRateLimit(nullConnectionId, 2, 60_000);
+
+      expect(() => checkRateLimit(numericConnectionId, 2, 60_000)).toThrow(RateLimitError);
+      expect(getRateLimitStatus(missingConnectionId)).toEqual(getRateLimitStatus('   '));
+      expect(getRateLimitStatus(nullConnectionId)?.remaining).toBe(58);
+
+      // A malformed caller spends the shared fallback budget, not another
+      // caller's valid connection bucket.
+      expect(() => checkRateLimit('valid-connection', 1, 60_000)).not.toThrow();
+
+      cleanupRateLimit(nullConnectionId);
+      expect(getRateLimitStatus(missingConnectionId)).toBeNull();
+      expect(() => checkRateLimit('   ', 2, 60_000)).not.toThrow();
     });
   });
 

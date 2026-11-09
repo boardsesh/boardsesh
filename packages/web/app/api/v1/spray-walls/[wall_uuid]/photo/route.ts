@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
+import { checkRateLimit } from '@/app/lib/auth/rate-limiter';
+import { enforcePublicApiRateLimit, resolvePublicApiClientIdentity } from '@/app/lib/public-api-rate-limit.server';
 import { createRequestLogger } from '@/app/lib/observability/request-logger';
 import { fetchSprayWallArtImageUrl, fetchSprayWallPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.server';
 
@@ -47,7 +48,10 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
 export async function GET(req: Request, props: { params: Promise<{ wall_uuid: string }> }): Promise<Response> {
   const log = createRequestLogger(req, { route: ROUTE });
-  const clientIp = getClientIp(req);
+  const publicApiLimitResponse = await enforcePublicApiRateLimit(req);
+  if (publicApiLimitResponse) return publicApiLimitResponse;
+
+  const clientIp = resolvePublicApiClientIdentity(req);
   const { limited, retryAfterSeconds } = checkRateLimit(`spray-photo:${clientIp}`, MAX_REQUESTS_PER_MINUTE, 60_000);
   if (limited) {
     return NextResponse.json(
