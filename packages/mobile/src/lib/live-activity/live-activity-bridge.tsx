@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { getBoardCapabilities, toBoardName, boardSupportsMirroring } from '@boardsesh/board-config';
 import { nativeBleSupportsBoard } from '../ble/adapter-factory';
 import { trackBoardConnectTapped } from '../analytics-board-connect';
+import { captureToSentry } from '../sentry';
 import { requestedBoardRenderMode, useBoardRenderSettings } from '../board-render-settings';
 import { resolveClimbRenderBoard } from '../boards/climb-render-board';
 import { useQueue } from '../../providers/queue-provider';
@@ -21,6 +22,7 @@ import {
   type WidgetMirrorEvent,
   addWidgetQueueNavigateListener,
   addBoardControlListener,
+  addNotificationPostFailedListener,
   isAndroidSessionPresence,
 } from './live-activity-plugin';
 
@@ -271,6 +273,19 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     });
     return unsubscribe;
   }, []);
+
+  // The card could not be posted as drawn. Native only logs otherwise, and this
+  // service is what keeps the Bluetooth link alive, so a failure must be visible.
+  useEffect(
+    () =>
+      addNotificationPostFailedListener(({ stage, errorName }) => {
+        captureToSentry(new Error('Android session notification post failed'), {
+          tags: { source: 'session-presence-post', stage },
+          extra: { errorName },
+        });
+      }),
+    [],
+  );
 
   const handleMirrorRef = useRef<(event: WidgetMirrorEvent) => Promise<void>>(async () => {});
   handleMirrorRef.current = async (event) => {

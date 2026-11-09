@@ -114,6 +114,7 @@ class BoardSessionServiceTest {
         // The thumbnail cache + in-flight set are process-static; reset so one
         // test's warmed bitmap can't turn another's expected fetch into a hit.
         BoardSessionService.resetImageStateForTest()
+        SessionPresenceModule.clearPendingForTest()
         context.getSystemService(NotificationManager::class.java).cancelAll()
     }
 
@@ -173,6 +174,19 @@ class BoardSessionServiceTest {
     private fun actionTitles(notification: Notification): List<String> =
         notification.actions?.map { it.title.toString() } ?: emptyList()
 
+    private fun postFailures(): List<Map<String, Any?>> =
+        SessionPresenceModule.pendingEventsSnapshotForTest()
+            .filter { it.first == "notificationPostFailed" }
+            .map { it.second }
+
+    private fun assertArtHidden(notification: Notification) {
+        for (views in listOf(notification.contentView, notification.bigContentView)) {
+            val thumbnail = views.apply(context, FrameLayout(context)).findViewById<ImageView>(R.id.session_image)
+            assertEquals(android.view.View.GONE, thumbnail.visibility)
+            assertNull(thumbnail.drawable)
+        }
+    }
+
     @Test
     @Config(sdk = [31])
     fun `falls back to an untyped promotion when the typed start fails below API 34`() {
@@ -210,13 +224,107 @@ class BoardSessionServiceTest {
 
         val service = startService()
 
-        verify(exactly = 1) { ServiceCompat.startForeground(any(), any(), any(), eq(connectedDevice)) }
+        // Once with the card, once with the plain fallback.
+        verify(exactly = 2) { ServiceCompat.startForeground(any(), any(), any(), eq(connectedDevice)) }
         // Type-0 on a typed service throws MissingForegroundServiceTypeException on
         // API 34+, so the retry must not be attempted.
         verify(exactly = 0) { ServiceCompat.startForeground(any(), any(), any(), eq(0)) }
         // Failed promotion tears the service down rather than risk
         // ForegroundServiceDidNotStartInTimeException.
         assertTrue(shadowOf(service).isStoppedBySelf)
+        // The plain card failed too, so the card wasn't the cause: nothing to report.
+        assertTrue(postFailures().isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [31, 34])
+    fun `a card the system refuses is swapped for the plain one so the service survives`() {
+        every { ServiceCompat.startForeground(any(), any(), match { it.actions != null }, any()) } throws
+            IllegalArgumentException("card refused")
+        every { ServiceCompat.startForeground(any(), any(), match { it.actions == null }, any()) } just Runs
+
+        val service = startService()
+
+        assertFalse(shadowOf(service).isStoppedBySelf)
+        assertEquals(listOf("promotion"), postFailures().map { it["stage"] })
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a failed re-post retries once without art and reports each stage once`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val stub = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val service = startWithImageSeams(imageComposer = { _, _ -> stub })
+        val posted = mutableListOf<Notification>()
+        var failuresLeft = 1
+        service.notificationPoster = { notification ->
+            if (failuresLeft-- > 0) throw RuntimeException(android.os.TransactionTooLargeException())
+            posted.add(notification)
+        }
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/a.png"), 0, 2)
+
+        assertEquals(1, posted.size)
+        assertArtHidden(posted.single())
+        assertEquals("thumbnail", postFailures().single()["stage"])
+        assertEquals("RuntimeException", postFailures().single()["errorName"])
+
+        // The next climb tries with art again, and the repeat isn't reported twice.
+        failuresLeft = 1
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/b.png"), 0, 3)
+        assertEquals(2, posted.size)
+        assertEquals(1, postFailures().size)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a re-post that fails twice leaves the service running`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val stub = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val service = startWithImageSeams(imageComposer = { _, _ -> stub })
+        var attempts = 0
+        service.notificationPoster = {
+            attempts += 1
+            throw RuntimeException("system server gone")
+        }
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/a.png"), 0, 2)
+
+        assertEquals(2, attempts)
+        assertFalse(shadowOf(service).isStoppedBySelf)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `art over the Binder budget posts without art and reports it`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        // 600 x 600 x 4 = 1.44 MB per copy, parcelled once per layout.
+        val oversized = Bitmap.createBitmap(600, 600, Bitmap.Config.ARGB_8888)
+        val service = startWithImageSeams(imageComposer = { _, _ -> oversized })
+        val posted = mutableListOf<Notification>()
+        service.notificationPoster = { posted.add(it) }
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/a.png"), 0, 2)
+
+        assertArtHidden(posted.single())
+        assertEquals(listOf("art-over-budget"), postFailures().map { it["stage"] })
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the largest thumbnail the service composes fits the Binder budget`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val largest = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        val service = startWithImageSeams(imageComposer = { _, _ -> largest })
+        val posted = mutableListOf<Notification>()
+        service.notificationPoster = { posted.add(it) }
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/a.png"), 0, 2)
+
+        val thumbnail = posted.single().contentView.apply(context, FrameLayout(context))
+            .findViewById<ImageView>(R.id.session_image)
+        assertEquals(android.view.View.VISIBLE, thumbnail.visibility)
+        assertTrue(postFailures().isEmpty())
     }
 
     @Test

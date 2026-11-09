@@ -52,6 +52,8 @@ const widget = vi.hoisted(() => ({
   acknowledgeMirrorRequest: vi.fn(async () => {}),
   listener: null as null | ((event: QueueNavigateEvent) => void),
   boardControlListener: null as null | ((event: BoardControlEvent) => void),
+  postFailedListener: null as null | ((event: { stage: string; errorName?: string | null }) => void),
+  captureToSentry: vi.fn(),
   useLiveActivity: vi.fn((_args: unknown) => ({ activityStartCount: 0 })),
   updateRestTimer: vi.fn(async (_options: unknown) => {}),
 }));
@@ -114,6 +116,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../analytics', () => ({ track: analytics.track }));
+
+vi.mock('../../sentry', () => ({ captureToSentry: widget.captureToSentry }));
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({
@@ -192,6 +196,12 @@ vi.mock('../live-activity-plugin', () => ({
       widget.boardControlListener = null;
     };
   },
+  addNotificationPostFailedListener: (listener: (event: { stage: string; errorName?: string | null }) => void) => {
+    widget.postFailedListener = listener;
+    return () => {
+      widget.postFailedListener = null;
+    };
+  },
   get isAndroidSessionPresence() {
     return platform.android;
   },
@@ -250,6 +260,24 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     } finally {
       resetLastPickForTests();
     }
+  });
+
+  it('reports a card the service could not post, with only the stage and error class', () => {
+    widget.captureToSentry.mockClear();
+    const { unmount } = renderBridge();
+
+    act(() => widget.postFailedListener?.({ stage: 'thumbnail', errorName: 'RuntimeException' }));
+
+    expect(widget.captureToSentry).toHaveBeenCalledTimes(1);
+    const [error, context] = widget.captureToSentry.mock.calls[0] as [Error, unknown];
+    expect(error.message).toBe('Android session notification post failed');
+    expect(context).toEqual({
+      tags: { source: 'session-presence-post', stage: 'thumbnail' },
+      extra: { errorName: 'RuntimeException' },
+    });
+
+    unmount();
+    expect(widget.postFailedListener).toBeNull();
   });
 
   it('passes connectedByMe + enables widget navigation when this device holds the board', () => {
