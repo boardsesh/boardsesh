@@ -50,6 +50,12 @@ describe('anonymous-auth-gate (web fork)', () => {
     expect(buildLoginHrefWithReturn()).toBe('/auth/login');
   });
 
+  // A signed-out visitor on a crafted URL must not get it written into `?next=`.
+  it('does not carry a path that decodes into a protocol-relative URL', () => {
+    goTo('/es/%252Fevil.example/a/b/c/40/list');
+    expect(buildLoginHrefWithReturn()).toBe('/auth/login');
+  });
+
   // The query is deliberately not carried: the canonical board URLs have no
   // meaningful one, and dropping it stops `bs_oauth_*` residue riding along.
   it('carries the path only, not the query', () => {
@@ -71,6 +77,11 @@ describe('readPostLoginReturnHref', () => {
     ['a double-encoded protocol-relative URL', '%2f%2fevil.example'],
     ['a javascript: URL', 'javascript:alert(1)'],
     ['a backslash escape', '/%5Cevil.example'],
+    // `URLSearchParams.get` takes one layer off these, which leaves a value that
+    // passes the literal rules and the board shape. The router then decodes the
+    // rest, and `+not-found` strips the locale off `/es//evil.example/…`.
+    ['a slash hidden under the locale', '/es/%25252Fevil.example/a/b/c/40/list'],
+    ['a backslash hidden under the locale', '/es/%25255Cevil.example/a/b/c/40/list'],
     // App-relative and perfectly safe, but outside the set the gate can produce.
     // The second gate is what stops a hand-crafted next reaching any in-app route.
     ['an in-app route outside the allow-set', '/(tabs)/profile'],

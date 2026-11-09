@@ -1,4 +1,5 @@
 import { getConsentSnapshot } from './consent-state';
+import { isSameOriginPath } from './routing/same-origin-path';
 
 let pendingDestination: string | null = null;
 
@@ -41,8 +42,14 @@ export function deferConsentDestination(path: string): boolean {
   return true;
 }
 
+/**
+ * The deferred destination, once, ready for `router.navigate`. A universal link's
+ * path is whatever the sender typed, so `https://www.boardsesh.com//evil.example`
+ * yields `//evil.example`, which the router would open in the browser. Those are
+ * dropped here, and the climber stays where consent left them.
+ */
 export function consumeConsentDestination(): string | null {
   const destination = pendingDestination;
   pendingDestination = null;
-  return destination;
+  return isSameOriginPath(destination) ? destination : null;
 }
