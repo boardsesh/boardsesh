@@ -110,6 +110,14 @@ export async function revokePrototypeUser(
   revokePartners = true,
 ): Promise<number> {
   const revokedAt = new Date();
+  // Session creation waits on this row (authority.ts) before trusting its
+  // generation stamp. The cutoff row cannot do this job: the first reset has
+  // none, and NO KEY UPDATE leaves concurrent foreign-key checks unblocked.
+  await database
+    .select({ id: schema.user.id })
+    .from(schema.user)
+    .where(eq(schema.user.id, userId))
+    .for('no key update');
   const [cutoff] = await database
     .insert(schema.prototypeUserCutoff)
     .values({ userId, revokedThrough: revokedAt })

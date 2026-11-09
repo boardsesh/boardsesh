@@ -192,6 +192,88 @@ describe('trusted revocation generation and original authentication age', () => 
   });
 });
 
+describe('stock session creation racing a reset, without the global advisory lock', () => {
+  beforeAll(async () => {
+    environment = await createPrototypeEnvironment();
+  });
+  afterAll(async () => {
+    await environment?.close();
+  });
+
+  async function registerUser() {
+    const registration = await environment.auth.api.signUpEmail({
+      body: { email: `${randomUUID()}@example.test`, name: 'Race fixture', password },
+    });
+    return registration.user;
+  }
+
+  function stockSignIn(email: string): Promise<Response> {
+    return environment.auth.handler(
+      new Request(`${PROTOTYPE_ISSUER}/sign-in/email`, {
+        method: 'POST',
+        headers: { origin: 'https://www.boardsesh.test', 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      }),
+    );
+  }
+
+  /** Observes the other connection queued on a lock, so the interleaving is forced rather than timed. */
+  async function waitForBackendBlockedOn(statementPattern: string) {
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+      const blocked = await environment.database.execute<{ waiting: number }>(sql`
+        SELECT count(*)::integer AS waiting FROM pg_catalog.pg_stat_activity
+        WHERE datname = pg_catalog.current_database() AND wait_event_type = 'Lock'
+          AND query ILIKE ${statementPattern}`);
+      if ((blocked[0]?.waiting ?? 0) > 0) return;
+      await new Promise((settle) => setTimeout(settle, 10));
+    }
+    throw new Error(`No backend blocked on ${statementPattern}`);
+  }
+
+  async function expectSignInLostTheRace(signIn: Promise<Response> | undefined, userId: string) {
+    const response = await signIn;
+    if (!response) throw new Error('Expected the sign-in to have started');
+    expect(response.status).toBe(401);
+    const cookies = response.headers.getSetCookie();
+    expect(cookies.some((cookie) => cookie.includes('session_token='))).toBe(false);
+    expect(
+      await environment.database
+        .select({ id: environment.schema.session.id })
+        .from(environment.schema.session)
+        .where(eq(environment.schema.session.userId, userId)),
+    ).toEqual([]);
+    const cookieHeader = cookies.map((cookie) => cookie.split(';', 1)[0]).join('; ');
+    expect(await environment.auth.api.getSession({ headers: new Headers({ cookie: cookieHeader }) })).toBeNull();
+  }
+
+  it('rejects a session stamped before a reset that committed ahead of its insert', async () => {
+    const user = await registerUser();
+    let signIn: Promise<Response> | undefined;
+    await environment.database.transaction(async (transaction) => {
+      // Lets the sign-in read generation 0 and then parks its insert, so the
+      // reset commits between the read and the insert, exactly as a slow request.
+      await transaction.execute(sql`LOCK TABLE "session" IN SHARE ROW EXCLUSIVE MODE`);
+      signIn = stockSignIn(user.email);
+      await waitForBackendBlockedOn('insert into "session"%');
+      expect(await revokePrototypeUser(transaction, user.id)).toBe(1);
+    });
+    await expectSignInLostTheRace(signIn, user.id);
+  });
+
+  it('makes a session committed during a reset wait for that reset and lose', async () => {
+    const user = await registerUser();
+    let signIn: Promise<Response> | undefined;
+    await environment.database.transaction(async (transaction) => {
+      expect(await revokePrototypeUser(transaction, user.id)).toBe(1);
+      // The reset's delete has already run, so this committed row is invisible
+      // to it. Only waiting on the user row can see the generation it published.
+      signIn = stockSignIn(user.email);
+      await waitForBackendBlockedOn('select "id" from "user"%for share%');
+    });
+    await expectSignInLostTheRace(signIn, user.id);
+  });
+});
+
 describe('pre-generation compatibility boundaries', () => {
   const cutoff = { generation: 2, revokedThrough: new Date('2026-01-01T00:00:00.000Z') };
   it.each([
