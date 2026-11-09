@@ -51,8 +51,11 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    hand-made link (`holdLeds` in the layout) which replaces the automatic,
    geometry-based assignment for that hold everywhere: Test LEDs and route
    lighting. An LED linked by hand leaves the hold the geometry gave it.
-   **Next hold without LEDs** steps through the red holds top to bottom;
-   **Back to automatic** drops a hold's link; Undo reverts link edits. Before
+   **Next hold without LEDs** steps through the red holds top to bottom.
+   LEDs that belong to no hold get a red dashed ring, and **Next LED without a
+   hold** picks them one by one, the same way; tapping a hold then adds the
+   picked LED to it. The summary counts both holds with LEDs and LEDs with a
+   hold. **Back to automatic** drops a hold's link; Undo reverts link edits. Before
    the cable exists the LEDs have no physical index, so the wall cannot light
    the chosen hold; coming back to this step after the cable does light it.
    Regenerating the LED positions clears all links, because the new LEDs reuse

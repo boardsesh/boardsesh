@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
+  assignLedIndices,
   buildSprayLedMapping,
   clearHoldLedLink,
   findSprayHoldAtPoint,
@@ -56,6 +57,8 @@ export function SprayHoldLedStep({
   const preview = useSprayLedPreview(wallUuid);
   const [target, setTarget] = useState<TapTarget>('holds');
   const [holdId, setHoldId] = useState<number | null>(null);
+  // An LED with no hold, picked with "Next LED without a hold"; tapping a hold then adds it there.
+  const [freeLedId, setFreeLedId] = useState<string | null>(null);
   const [history, setHistory] = useState<(SprayHoldLedLink[] | undefined)[]>([]);
   const leds = layout.ledPositions ?? NO_LEDS;
   const mapping = useMemo(() => buildSprayLedMapping(layout, source.frame, holds), [layout, source.frame, holds]);
@@ -66,12 +69,22 @@ export function SprayHoldLedStep({
     () => mapping.holds.filter((hold) => !hold.ledIds.length).map((hold) => hold.holdId),
     [mapping],
   );
+  const ledsWithHold = useMemo(() => new Set(mapping.holds.flatMap((hold) => hold.ledIds)), [mapping]);
+  const freeLeds = useMemo(() => leds.filter((led) => !ledsWithHold.has(led.id)), [leds, ledsWithHold]);
+  // Once the LED joins a hold, it is no longer the focus.
+  const focusLed = freeLedId !== null && !ledsWithHold.has(freeLedId) ? freeLedId : null;
   const wired = Boolean(layout.wiring?.paths.some((path) => path.length));
+  const indexById = useMemo(
+    () => new Map(layout.wiring ? assignLedIndices(layout.wiring).map(({ id, index }) => [id, index]) : []),
+    [layout.wiring],
+  );
   const entry = holdId === null ? undefined : mapping.holds.find((hold) => hold.holdId === holdId);
   const linkedByHand = holdId !== null && (layout.holdLeds ?? []).some((link) => link.holdId === holdId);
 
-  // The wall shows the chosen hold's LEDs, so a wrong link is obvious on the wall too.
-  const indicesKey = entry?.indices.join(',') ?? '';
+  // The wall shows the chosen hold's LEDs (or the chosen loose LED), so a wrong
+  // link is obvious on the wall too.
+  const focusIndex = focusLed === null ? undefined : indexById.get(focusLed);
+  const indicesKey = entry ? entry.indices.join(',') : focusIndex === undefined ? '' : String(focusIndex);
   const lastLit = useRef('');
   const { available, show, stop } = preview;
   useEffect(() => {
@@ -87,6 +100,7 @@ export function SprayHoldLedStep({
   }
   function chooseHold(id: number) {
     setHoldId(id);
+    setFreeLedId(null);
     // Picking a hold is almost always followed by fixing its LEDs.
     setTarget('leds');
   }
@@ -102,7 +116,13 @@ export function SprayHoldLedStep({
     }
     // Away from any LED, a tap picks the hold under the finger.
     const hit = findSprayHoldAtPoint(holds, point, source.frame);
-    if (hit !== null) chooseHold(hit);
+    if (hit === null) return;
+    if (focusLed !== null) {
+      // "Next LED without a hold" picked this LED: the tapped hold is where it belongs.
+      const hitLeds = mapping.holds.find((hold) => hold.holdId === hit)?.ledIds ?? [];
+      commit(setHoldLedLink(layout, hit, [...hitLeds, focusLed]));
+    }
+    chooseHold(hit);
   }
   /** Holds without an LED, top to bottom and left to right, starting after the current one. */
   function nextUnmapped() {
@@ -113,6 +133,15 @@ export function SprayHoldLedStep({
     if (!order.length) return;
     const after = holdId === null ? -1 : order.indexOf(holdId);
     chooseHold(order[(after + 1) % order.length]);
+  }
+  /** LEDs without a hold, in the same order. Picks one and waits for the tap on its hold. */
+  function nextFreeLed() {
+    const order = [...freeLeds].sort((first, second) => first.y - second.y || first.x - second.x).map((led) => led.id);
+    if (!order.length) return;
+    const after = focusLed === null ? -1 : order.indexOf(focusLed);
+    setFreeLedId(order[(after + 1) % order.length]);
+    setHoldId(null);
+    setTarget('holds');
   }
   function undo() {
     const previous = history.at(-1);
@@ -141,6 +170,12 @@ export function SprayHoldLedStep({
           onPress={nextUnmapped}
         />
         <Button
+          title={t('sprayLedSetup.holdLedsNextFreeLed')}
+          variant="outlined"
+          disabled={!freeLeds.length}
+          onPress={nextFreeLed}
+        />
+        <Button
           title={t('sprayLedSetup.holdLedsReset')}
           variant="outlined"
           disabled={!linkedByHand}
@@ -156,6 +191,9 @@ export function SprayHoldLedStep({
     <View style={{ gap: spacing[3] }}>
       <Text>{t('sprayLedSetup.holdLedsHint')}</Text>
       <Text variant="footnote">{t('sprayLedSetup.holdLedsSummary', { linked, total: holds.length })}</Text>
+      <Text variant="footnote">
+        {t('sprayLedSetup.holdLedsLedSummary', { linked: leds.length - freeLeds.length, total: leds.length })}
+      </Text>
       {tools}
       <SprayPhotoStage
         width={width}
@@ -170,7 +208,8 @@ export function SprayHoldLedStep({
             <SpraySetupOverlay
               holes={[]}
               leds={leds}
-              selected={entry?.ledIds ?? []}
+              selected={entry?.ledIds ?? (focusLed === null ? [] : [focusLed])}
+              unmappedHoles={freeLeds}
               holdRings={rings}
               selectedHoldIds={holdId === null ? [] : [holdId]}
               subtleLeds
@@ -185,11 +224,13 @@ export function SprayHoldLedStep({
         }}
       />
       <Text variant="footnote" accessibilityLiveRegion="polite">
-        {entry
-          ? t(linkedByHand ? 'sprayLedSetup.holdLedsSelectedManual' : 'sprayLedSetup.holdLedsSelected', {
-              count: entry.ledIds.length,
-            })
-          : t('sprayLedSetup.holdLedsNoHold')}
+        {focusLed !== null && !entry
+          ? t('sprayLedSetup.holdLedsFreeLedSelected')
+          : entry
+            ? t(linkedByHand ? 'sprayLedSetup.holdLedsSelectedManual' : 'sprayLedSetup.holdLedsSelected', {
+                count: entry.ledIds.length,
+              })
+            : t('sprayLedSetup.holdLedsNoHold')}
       </Text>
       {target === 'leds' && entry ? <Text variant="footnote">{t('sprayLedSetup.holdLedsLedHint')}</Text> : null}
       {!wired ? (

@@ -92,8 +92,8 @@ const holds = [
   { id: 20, cx: 400, cy: 210, r: 35 },
 ];
 const changes: Partial<TnutLayout>[] = [];
-function Harness() {
-  const [layout, setLayout] = useState(initial);
+function Harness({ start = initial }: { start?: TnutLayout }) {
+  const [layout, setLayout] = useState(start);
   return (
     <SprayHoldLedStep
       wallUuid="wall"
@@ -123,7 +123,12 @@ function overlay() {
     { value: 0 } as never,
     { value: 0 } as never,
     { value: null } as never,
-  ) as ReactElement<{ selected: string[]; selectedHoldIds: number[]; unmappedHoldIds: number[] }>;
+  ) as ReactElement<{
+    selected: string[];
+    selectedHoldIds: number[];
+    unmappedHoldIds: number[];
+    unmappedHoles: { id: string }[];
+  }>;
   return element.props;
 }
 const button = (name: string) => screen.getByText(`sprayLedSetup.${name}`) as HTMLButtonElement;
@@ -205,6 +210,33 @@ describe('holds and LEDs step', () => {
     expect(preview.show).not.toHaveBeenCalled();
     tap(right);
     expect(overlay().unmappedHoldIds).toEqual([20]);
+  });
+
+  it('steps to an LED without a hold, lights it, and adds it to the hold tapped next', () => {
+    // LED d sits between the holds, so the photo gives it to neither.
+    const loose = { id: 'd', x: 0.5, y: 0.6 };
+    render(
+      <Harness
+        start={{
+          ...initial,
+          ledPositions: [...(initial.ledPositions ?? []), loose],
+          wiring: { direction: 'custom', startCorner: 'tl', paths: [['a', 'b', 'c', 'd']], skips: [] },
+        }}
+      />,
+    );
+    expect(overlay().unmappedHoles.map((led) => led.id)).toEqual(['d']);
+    fireEvent.click(button('holdLedsNextFreeLed'));
+    expect(overlay().selected).toEqual(['d']);
+    expect(overlay().selectedHoldIds).toEqual([]);
+    expect(preview.show).toHaveBeenLastCalledWith([3]);
+    expect(screen.getByText('sprayLedSetup.holdLedsFreeLedSelected')).toBeTruthy();
+    // Tapping hold 20 adds d to the LED it already had.
+    tap(right);
+    expect(changes.at(-1)).toEqual({ holdLeds: [{ holdId: 20, ledIds: ['c', 'd'] }] });
+    expect(overlay().selectedHoldIds).toEqual([20]);
+    expect(overlay().unmappedHoles).toEqual([]);
+    expect(button('holdLedsNextFreeLed').disabled).toBe(true);
+    expect(preview.show).toHaveBeenLastCalledWith([2, 3]);
   });
 
   it('picks another hold when a tap in LED mode misses every LED', () => {
