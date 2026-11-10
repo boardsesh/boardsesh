@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
 import { PARTNER_CONSENT_DETAILS_URL, PARTNER_CONSENT_URL } from './authorization-query';
 
 /**
@@ -14,11 +15,7 @@ import { PARTNER_CONSENT_DETAILS_URL, PARTNER_CONSENT_URL } from './authorizatio
  * contract; `packages/backend/src/auth/partner/consent.ts` has the code.
  */
 
-/**
- * The fields the screen shows. `developerName` is left out on purpose: until a
- * publisher name is stored it holds the developer's own account name, which the
- * screen must never show.
- */
+/** The fields the screen shows. */
 const consentDetailsSchema = z.object({
   client: z.object({
     clientId: z.string(),
@@ -76,42 +73,47 @@ export type ConsentDecisionOutcome =
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
-/** `APP_UNAVAILABLE` in consent.ts. It shares `invalid_request` with a spent link, so only the text tells them apart. */
-const APP_UNAVAILABLE_DESCRIPTION = 'This app cannot be connected.';
+/**
+ * Better Auth's own refusal when the signed query was changed or is past its
+ * `exp`, before Boardsesh's consent checks run. Not one of PARTNER_CONSENT_ERRORS.
+ */
+const BETTER_AUTH_INVALID_SIGNATURE = 'invalid_signature';
 
 /** Schemes a redirect may never navigate to, whatever the app registered. */
 const UNSAFE_SCHEMES: ReadonlySet<string> = new Set(['javascript:', 'data:', 'vbscript:', 'blob:', 'file:', 'about:']);
 
-async function readErrorBody(response: Response): Promise<{ error?: string; description?: string }> {
+/** The refusal's `error` code. The `error_description` is for logs and is never read. */
+async function readErrorCode(response: Response): Promise<string | undefined> {
   try {
     const body: unknown = await response.json();
-    if (typeof body !== 'object' || body === null) return {};
-    const { error, error_description: description } = body as Record<string, unknown>;
-    return {
-      error: typeof error === 'string' ? error : undefined,
-      description: typeof description === 'string' ? description : undefined,
-    };
+    if (typeof body !== 'object' || body === null) return undefined;
+    const { error } = body as Record<string, unknown>;
+    return typeof error === 'string' ? error : undefined;
   } catch {
-    return {};
+    return undefined;
   }
 }
 
-/** A refused consent request, as the screen explains it. */
+/**
+ * A refused consent request, as the screen explains it: by status and `error`
+ * code (PARTNER_CONSENT_ERRORS), never by the English text beside it.
+ */
 export async function classifyConsentRefusal(response: Response): Promise<ConsentProblem> {
   if (response.status === 401) return 'sign-in-again';
   if (response.status === 404) return 'unavailable';
   if (response.status === 429 || response.status === 408 || response.status >= 500) return 'busy';
-  const { error, description } = await readErrorBody(response);
+  const error = await readErrorCode(response);
   if (response.status === 400) {
-    // Better Auth's own signature check: a changed query or one past `exp`.
-    if (error === 'invalid_signature') return 'expired';
-    if (error === 'invalid_request') return description === APP_UNAVAILABLE_DESCRIPTION ? 'app-unavailable' : 'expired';
+    if (error === PARTNER_CONSENT_ERRORS.linkSpent || error === BETTER_AUTH_INVALID_SIGNATURE) return 'expired';
   }
   if (response.status === 403) {
+    // Suspended or deleted. Checked first, and the link is not spent.
+    if (error === PARTNER_CONSENT_ERRORS.appSuspended) return 'app-unavailable';
     // The cap refusal when the app's redirect could not carry it (fence.ts).
     if (error === 'temporarily_unavailable') return 'app-full';
     if (error === 'access_denied') return 'app-unavailable';
   }
+  // Includes the cross-site `invalid_request`, which the page itself never causes.
   return 'failed';
 }
 
