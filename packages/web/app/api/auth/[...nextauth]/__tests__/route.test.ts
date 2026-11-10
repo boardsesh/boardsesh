@@ -502,6 +502,147 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
   });
 
+  describe('an Expo return carrying a next path', () => {
+    const nextPath = '/b/the-gym/40/view/crimpy-thing-0A1B2C3D4E5F60718293A4B5C6D7E8F9';
+
+    function returnUrlWithNext(attemptId: string, nextValue = nextPath): string {
+      const returnUrl = new URL('https://app.boardsesh.com/auth/login');
+      returnUrl.searchParams.set('boardseshOAuthProvider', 'google');
+      returnUrl.searchParams.set('boardseshOAuthAttempt', attemptId);
+      returnUrl.searchParams.set('next', nextValue);
+      return returnUrl.toString();
+    }
+
+    async function startSignIn(callbackUrl: string, state: string): Promise<string | undefined> {
+      nextAuthHandlerMock.mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: `https://accounts.google.com/o/oauth2/v2/auth?state=${state}` },
+        }),
+      );
+      const signInRequest = request('/api/auth/signin/google', { csrfToken: 'csrf-token', callbackUrl });
+      const signInResponse = await POST(signInRequest, routeContext(signInRequest));
+      return signInResponse.headers.getSetCookie().find((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'));
+    }
+
+    async function finishSignIn(cookiePair: string, state: string, outcome: Response): Promise<Response> {
+      nextAuthHandlerMock.mockResolvedValueOnce(outcome);
+      const callbackRequest = new NextRequest(
+        `https://www.boardsesh.com/api/auth/callback/google?state=${state}&code=provider-code`,
+        { headers: { Cookie: cookiePair } },
+      );
+      return GET(callbackRequest, routeContext(callbackRequest));
+    }
+
+    const failedSignIn = () =>
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://www.boardsesh.com/auth/login?error=OAuthCallback' },
+      });
+
+    it('returns a failed sign-in to the app with the climb still on the URL', async () => {
+      const returnCookie = await startSignIn(returnUrlWithNext('attempt-next-1'), 'next-state-1');
+      expect(returnCookie).toBeDefined();
+
+      const callbackResponse = await finishSignIn(returnCookie!.split(';', 1)[0]!, 'next-state-1', failedSignIn());
+
+      const destination = new URL(callbackResponse.headers.get('Location')!);
+      expect(destination.origin + destination.pathname).toBe('https://app.boardsesh.com/auth/login');
+      expect(destination.searchParams.get('next')).toBe(nextPath);
+      expect(destination.searchParams.get('boardseshOAuthError')).toBe('OAuthCallback');
+    });
+
+    it('returns a successful sign-in to the exact URL it started from', async () => {
+      const returnUrl = returnUrlWithNext('attempt-next-2');
+      const returnCookie = await startSignIn(returnUrl, 'next-state-2');
+
+      const callbackResponse = await finishSignIn(
+        returnCookie!.split(';', 1)[0]!,
+        'next-state-2',
+        new Response(null, { status: 302, headers: { Location: 'https://www.boardsesh.com/app' } }),
+      );
+
+      expect(callbackResponse.headers.get('Location')).toBe(returnUrl);
+    });
+
+    it('refuses a return cookie whose next was changed after signing', async () => {
+      const returnCookie = await startSignIn(returnUrlWithNext('attempt-next-3'), 'next-state-3');
+      const [cookieName, cookieValue] = returnCookie!.split(';', 1)[0]!.split('=') as [string, string];
+      const [payload, signature] = cookieValue.split('.') as [string, string];
+      const descriptor = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { returnUrl: string };
+      const swappedNext = descriptor.returnUrl.replace(
+        encodeURIComponent(nextPath),
+        encodeURIComponent('/b/other-gym'),
+      );
+      expect(swappedNext).not.toBe(descriptor.returnUrl);
+      const tamperedPayload = Buffer.from(JSON.stringify({ ...descriptor, returnUrl: swappedNext })).toString(
+        'base64url',
+      );
+
+      const callbackResponse = await finishSignIn(
+        `${cookieName}=${tamperedPayload}.${signature}`,
+        'next-state-3',
+        failedSignIn(),
+      );
+
+      // Unbound, so NextAuth's own redirect stands and nothing reaches the app.
+      expect(callbackResponse.headers.get('Location')).toBe('https://www.boardsesh.com/auth/login?error=OAuthCallback');
+    });
+
+    it.each([
+      ['a look-alike host', (url: URL) => (url.hostname = 'app.boardsesh.com.evil.example')],
+      ['an app path other than login or register', (url: URL) => (url.pathname = '/settings')],
+      ['a param that is not allowed', (url: URL) => url.searchParams.set('redirect', 'https://evil.example')],
+    ])('still refuses to bind %s, next or no next', async (_label, widen) => {
+      const widenedUrl = new URL(returnUrlWithNext('attempt-next-4'));
+      widen(widenedUrl);
+
+      expect(await startSignIn(widenedUrl.toString(), 'next-state-4')).toBeUndefined();
+    });
+
+    it('keeps a hostile next as a value on the app URL, where the app refuses it', async () => {
+      const returnCookie = await startSignIn(
+        returnUrlWithNext('attempt-next-5', 'https://evil.example'),
+        'next-state-5',
+      );
+
+      const callbackResponse = await finishSignIn(returnCookie!.split(';', 1)[0]!, 'next-state-5', failedSignIn());
+
+      const destination = new URL(callbackResponse.headers.get('Location')!);
+      expect(destination.origin + destination.pathname).toBe('https://app.boardsesh.com/auth/login');
+    });
+
+    describe('the return URL length limit', () => {
+      function returnUrlOfLength(attemptId: string, length: number): string {
+        const nextPrefix = '/b/';
+        const paddingLength = length - returnUrlWithNext(attemptId, nextPrefix).length;
+        const returnUrl = returnUrlWithNext(attemptId, `${nextPrefix}${'a'.repeat(paddingLength)}`);
+        expect(returnUrl).toHaveLength(length);
+        return returnUrl;
+      }
+
+      it('binds a return URL exactly at 1024 characters', async () => {
+        expect(await startSignIn(returnUrlOfLength('attempt-next-6', 1024), 'next-state-6')).toBeDefined();
+      });
+
+      it('leaves a return URL over 1024 characters on the unbound path', async () => {
+        expect(await startSignIn(returnUrlOfLength('attempt-next-7', 1025), 'next-state-7')).toBeUndefined();
+        expect(nextAuthHandlerMock).toHaveBeenCalledOnce();
+      });
+
+      it('leaves room for the longest board path the app will carry', async () => {
+        // The app refuses a next over 512 characters (MAX_RETURN_HREF_LENGTH), and
+        // canonical board URLs are ASCII, so only their slashes grow when encoded.
+        const boardPathPrefix = '/tension/original-layout/12x12-rubber/mainline_bolt-ons_screw-ons/40/view/';
+        const longestBoardPath = `${boardPathPrefix}${'a'.repeat(512 - boardPathPrefix.length)}`;
+        const returnUrl = returnUrlWithNext('a'.repeat(128), longestBoardPath);
+
+        expect(returnUrl.length).toBeLessThan(800);
+        expect(await startSignIn(returnUrl, 'next-state-8')).toBeDefined();
+      });
+    });
+  });
+
   it('does not bind an untrusted or malformed Expo callback URL', async () => {
     nextAuthHandlerMock.mockResolvedValue(
       new Response(null, {

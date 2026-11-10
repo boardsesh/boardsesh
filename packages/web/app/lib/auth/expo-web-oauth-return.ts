@@ -6,6 +6,14 @@ import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors
 const RETURN_PROVIDER_PARAM = 'boardseshOAuthProvider';
 const RETURN_ATTEMPT_PARAM = 'boardseshOAuthAttempt';
 const RETURN_ERROR_PARAM = 'boardseshOAuthError';
+// The read-only board path the app carries through sign-in. It rides only on a
+// return URL that passed the origin and path checks, the return cookie signs it,
+// and the app validates it again where it reads it (`readPostLoginReturnHref`).
+const RETURN_NEXT_PARAM = 'next';
+// Each sign-in attempt writes its own return cookie for 10 minutes, so an
+// uncapped URL would let a few crafted links grow the Cookie header past what
+// the server accepts. The longest return the app builds is about 750 characters.
+const MAX_RETURN_URL_LENGTH = 1024;
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const RETURN_MAX_AGE_MS = 10 * 60 * 1000;
 const COOKIE_PREFIX = 'boardsesh.oauth-return.';
@@ -109,7 +117,8 @@ export function validatedExpoReturnUrl(
   const attemptId = returnUrl.searchParams.get(RETURN_ATTEMPT_PARAM);
   if (!attemptId || !ATTEMPT_ID_PATTERN.test(attemptId)) return null;
   if (returnUrl.searchParams.has(RETURN_ERROR_PARAM)) return null;
-  const allowedParams = new Set([RETURN_PROVIDER_PARAM, RETURN_ATTEMPT_PARAM]);
+  if (returnUrl.href.length > MAX_RETURN_URL_LENGTH) return null;
+  const allowedParams = new Set([RETURN_PROVIDER_PARAM, RETURN_ATTEMPT_PARAM, RETURN_NEXT_PARAM]);
   for (const key of returnUrl.searchParams.keys()) {
     if (!allowedParams.has(key)) return null;
   }
