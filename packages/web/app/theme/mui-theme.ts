@@ -496,6 +496,14 @@ const elevatedPaper = {
   border: '1px solid var(--separator)',
 } as const;
 
+/** The standard-variant Alert severities whose palette `.light` is a translucent tint. */
+export const STANDARD_ALERT_SEVERITIES = ['error', 'warning', 'success'] as const;
+const STANDARD_ALERT_TINTS: Record<(typeof STANDARD_ALERT_SEVERITIES)[number], string> = {
+  error: themeTokens.colors.errorBg,
+  warning: themeTokens.colors.warningBg,
+  success: themeTokens.colors.successBg,
+};
+
 const components: Components<Theme> = {
   ...sharedComponents,
   MuiPaper: {
@@ -547,6 +555,22 @@ const components: Components<Theme> = {
       paper: {
         borderRadius: themeTokens.borderRadius.md,
         ...elevatedPaper,
+      },
+    },
+  },
+  // `palette.<status>.light` is the translucent status tint (`errorBg` and its
+  // siblings). MUI's standard Alert lightens `.light` into its TEXT colour, which
+  // keeps the 14% alpha, so every standard error, warning and success message
+  // rendered as near-invisible text (form errors on /auth/login among them).
+  // Pin the standard variants: the tint as background, max-contrast ink as text,
+  // and the status hue left on the icon, where MUI already puts `.main`.
+  MuiAlert: {
+    styleOverrides: {
+      root: {
+        variants: STANDARD_ALERT_SEVERITIES.map((severity) => ({
+          props: { variant: 'standard', severity },
+          style: { backgroundColor: STANDARD_ALERT_TINTS[severity], color: themeTokens.neutral[900] },
+        })),
       },
     },
   },
