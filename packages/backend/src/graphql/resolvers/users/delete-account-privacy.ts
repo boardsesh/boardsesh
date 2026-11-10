@@ -6,18 +6,31 @@ import { getPostgresErrorCode } from '../../../utils/postgres-errors';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
-/** Only a rolled-back deadlock is safe to retry; media effects run after commit. */
-export async function retryAccountDeletion<Result>(transaction: () => Promise<Result>): Promise<Result> {
+const BUSY_BACKOFF_MS = 50;
+
+/**
+ * Only a rolled-back deadlock is safe to retry; media effects run after commit.
+ * `alsoRetry` names one more error code the caller knows is a rolled-back,
+ * momentary refusal (the partner app locks' busy code); it waits a moment
+ * before each retry, because what refused it finishes in milliseconds.
+ */
+export async function retryAccountDeletion<Result>(
+  transaction: () => Promise<Result>,
+  { alsoRetry }: { alsoRetry?: string } = {},
+): Promise<Result> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await transaction();
     } catch (error) {
-      if (getPostgresErrorCode(error) !== '40P01') throw error;
+      const code = getPostgresErrorCode(error);
+      const busy = alsoRetry !== undefined && code === alsoRetry;
+      if (code !== '40P01' && !busy) throw error;
       if (attempt >= 2) {
         throw new GraphQLError('Your account is busy. Please try deleting it again.', {
           extensions: { code: 'ACCOUNT_DELETE_RETRY_REQUIRED' },
         });
       }
+      if (busy) await new Promise((resolve) => setTimeout(resolve, BUSY_BACKOFF_MS * (attempt + 1)));
     }
   }
 }

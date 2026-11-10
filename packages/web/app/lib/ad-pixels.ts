@@ -39,9 +39,10 @@ const AD_MEASUREMENT_COPY_SINCE_MS = Date.parse(AD_MEASUREMENT_COPY_SINCE);
 /**
  * Route trees that never load or fire a pixel, compared locale-stripped and
  * lowercased. `/oauth` is a partner app's sign-in and consent: its URLs carry
- * the app's signed authorization request.
+ * the app's signed authorization request. `/developers/apps` is the developer
+ * console, which puts a new client secret on screen once.
  */
-const EXCLUDED_PATH_PREFIXES = ['/kiosk', '/embed', '/auth', '/admin', '/oauth'] as const;
+const EXCLUDED_PATH_PREFIXES = ['/kiosk', '/embed', '/auth', '/admin', '/oauth', '/developers/apps'] as const;
 
 /** A Meta Pixel id is a plain number. Anything else is a misconfiguration and stays off. */
 export function parseMetaPixelId(raw: string | undefined | null): string | null {

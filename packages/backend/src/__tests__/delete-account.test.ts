@@ -49,6 +49,15 @@ vi.mock('../graphql/resolvers/users/delete-account-privacy', () => ({
 vi.mock('../graphql/resolvers/users/delete-account-boards', () => ({
   deleteAccountBoards: vi.fn(async () => []),
 }));
+// The partner app locks and their order against consent, refresh and
+// Disconnect are exercised against real PostgreSQL in partner-launch-suite.test.ts.
+// Here only their place in the sequence is checked: before the users delete.
+vi.mock('../auth/partner/locks', () => ({
+  PARTNER_APP_LOCK_BUSY: 'partner_app_lock_busy',
+  lockOwnedAppsForDeletion: vi.fn(async (_tx: unknown, userId: string) => {
+    txCalls.push({ method: 'lockOwnedAppsForDeletion', args: [userId] });
+  }),
+}));
 
 function makeAuthCtx(userId = 'user-1'): ConnectionContext {
   return {
@@ -167,6 +176,10 @@ describe('deleteAccount mutation', () => {
     const deletedTables = deleteCalls.map((call) => (call as unknown as { table: unknown }).table);
     expect(deletedTables[1]).toBe(users);
     expect(deletedTables[2]).toBe(logbookChanges);
+    // The developer's partner apps are locked before the users delete cascades into them.
+    const lockIndex = txCalls.findIndex((call) => call.method === 'lockOwnedAppsForDeletion');
+    expect(txCalls[lockIndex]?.args).toEqual(['user-1']);
+    expect(lockIndex).toBeLessThan(txCalls.indexOf(deleteCalls[1]));
     // No update calls
     const updateCalls = txCalls.filter((c) => c.method === 'update');
     expect(updateCalls).toHaveLength(0);
@@ -213,6 +226,7 @@ describe('deleteAccount mutation', () => {
       'select',
       'delete',
       'update',
+      'lockOwnedAppsForDeletion',
       'delete',
       'delete',
     ]);
@@ -223,8 +237,8 @@ describe('deleteAccount mutation', () => {
 
     await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
 
-    // select drafts, delete stats, delete history, delete beta links, delete drafts, delete user,
-    // purge the logbook change rows.
+    // select drafts, delete stats, delete history, delete beta links, delete drafts, lock the
+    // partner apps, delete user, purge the logbook change rows.
     // The dependent-row cleanup (3 deletes) must land between the select and the drafts delete.
     expect(txCalls.map((call) => call.method)).toEqual([
       'execute',
@@ -235,6 +249,7 @@ describe('deleteAccount mutation', () => {
       'delete',
       'delete',
       'delete',
+      'lockOwnedAppsForDeletion',
       'delete',
       'delete',
     ]);

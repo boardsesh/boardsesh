@@ -43,6 +43,8 @@ export const oauthClientsTypeDefs = /* GraphQL */ `
     maxActiveConnections: Int!
     "Most new climber connections per day."
     maxNewConnectionsPerDay: Int!
+    "Climbers connected now. Deleting the app disconnects every one of them."
+    activeConnections: Int!
   }
 
   "An app with a secret that is shown this once and can never be read again."

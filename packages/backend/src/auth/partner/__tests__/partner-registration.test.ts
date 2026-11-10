@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   oauthAccessToken,
@@ -7,12 +8,16 @@ import {
   oauthClient,
   oauthClientResource,
   oauthConnections,
+  oauthConsentInteractions,
   oauthGrants,
   oauthRefreshToken,
   oauthVerification,
   users,
 } from '@boardsesh/db/schema/auth';
+import { getWorkerDatabaseUrl } from '../../../__tests__/worker-db';
 import { db } from '../../../db/client';
+import { getPostgresErrorCode } from '../../../utils/postgres-errors';
+import { disconnectPartnerConnection } from '../connection';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../authority';
 import { PARTNER_SCOPES } from '../configuration';
 import { managedClientProblem } from '../registration';
@@ -311,7 +316,8 @@ describe('partner app registration', () => {
       const rotated = await runtime.registration.rotateSecret(consoleDatabase, developerId, created.app.clientId);
       expect(rotated.clientSecret).toMatch(/^[A-Za-z]{32}$/);
       expect(rotated.clientSecret).not.toBe(created.clientSecret);
-      expect(rotated.app).toEqual(created.app);
+      // The same app, now with the climber who connected since it was registered.
+      expect(rotated.app).toEqual({ ...created.app, activeConnections: 1 });
 
       const oldClient = testClient(created, climber);
       const newClient = testClient(rotated, climber);
@@ -582,6 +588,174 @@ describe('partner app registration', () => {
 
       expect((await environment.refresh(kept, keptTokens.body.refresh_token!)).response.status).toBe(200);
       expect(await runtime.registration.deleteApp(consoleDatabase, developerId, doomed.clientId)).toBe(false);
+    });
+  });
+
+  describe('the connection count', () => {
+    it('counts the climbers connected now, the way the caps count them', async () => {
+      const developerId = await createDeveloper();
+      const created = await register(developerId);
+      expect(created.app.activeConnections).toBe(0);
+      const climber = await environment.createClimber();
+      expect((await connect(testClient(created, climber))).response.status).toBe(200);
+      // An approval nobody redeemed is not a connection.
+      await environment.authorize(testClient(created, await environment.createClimber()));
+
+      const [listed] = await runtime.registration.listApps(consoleDatabase, developerId);
+      expect(listed.activeConnections).toBe(1);
+      expect(
+        (await runtime.registration.updateApp(consoleDatabase, developerId, created.app.clientId, { name: 'Renamed' }))
+          .activeConnections,
+      ).toBe(1);
+
+      await disconnectPartnerConnection(consoleDatabase, {
+        userId: climber.userId,
+        clientId: created.app.clientId,
+        reason: 'climber_disconnect',
+      });
+      expect((await runtime.registration.listApps(consoleDatabase, developerId))[0].activeConnections).toBe(0);
+    });
+  });
+
+  describe('deleting, in the partner lock order', () => {
+    let raw: ReturnType<typeof postgres>;
+
+    beforeAll(() => {
+      raw = postgres(getWorkerDatabaseUrl(), { max: 4, onnotice: () => {} });
+    });
+
+    afterAll(async () => {
+      await raw?.end({ timeout: 5 });
+    });
+
+    /** A barrier on what the database says, never on a clock. */
+    async function waitForLockWaiters(minimum: number): Promise<void> {
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const [row] = await raw<Array<{ waiting: number }>>`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+        if (row.waiting >= minimum) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`Fewer than ${minimum} sessions ever waited on a lock`);
+    }
+
+    it('makes a password reset racing an app delete wait for it, instead of deadlocking', async () => {
+      // The reset trigger takes the climber's users row, then their connections
+      // and consent screens. The delete takes users FOR SHARE before any of
+      // those, so the two queue in one order instead of crossing.
+      const developerId = await createDeveloper();
+      const created = await register(developerId);
+      const { clientId } = created.app;
+      expect((await connect(testClient(created, await environment.createClimber()))).response.status).toBe(200);
+      expect((await connect(testClient(created, await environment.createClimber()))).response.status).toBe(200);
+      const rows = await db
+        .select({ id: oauthConnections.id, userId: oauthConnections.userId })
+        .from(oauthConnections)
+        .where(eq(oauthConnections.clientId, clientId));
+      rows.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+      // The delete locks connections in id order, so it parks on the first.
+      const [held, target] = rows;
+      await db.insert(oauthConsentInteractions).values({
+        digest: `digest-${randomUUID()}`,
+        userId: target.userId,
+        authSessionId: `session-${randomUUID()}`,
+        clientId,
+        connectionGeneration: 1,
+        expiresAt: new Date(Date.now() + 600_000),
+      });
+
+      const issuer = await raw.reserve();
+      const reset = await raw.reserve();
+      try {
+        await issuer`BEGIN`;
+        await issuer`SELECT 1 FROM oauth_connections WHERE id = ${held.id} FOR UPDATE`;
+        const deleting = runtime.registration.deleteApp(consoleDatabase, developerId, clientId);
+        await waitForLockWaiters(1);
+        await reset`BEGIN`;
+        const resetting = reset`
+          INSERT INTO user_credentials (user_id, password_hash) VALUES (${target.userId}, 'hash')
+          ON CONFLICT (user_id) DO UPDATE SET password_hash = 'hash-' || now()::text`.then(
+          () => 'written',
+          (error: unknown) => getPostgresErrorCode(error),
+        );
+        await waitForLockWaiters(2);
+        await issuer`ROLLBACK`;
+        expect(await deleting).toBe(true);
+        expect(await resetting).toBe('written');
+        await reset`COMMIT`;
+      } finally {
+        await issuer`ROLLBACK`.catch(() => undefined);
+        await reset`ROLLBACK`.catch(() => undefined);
+        issuer.release();
+        reset.release();
+      }
+    });
+
+    it('gives way as busy, never deadlocking, to a consent answer holding a screen opened mid-delete', async () => {
+      const developerId = await createDeveloper();
+      const climber = await environment.createClimber();
+      const created = await register(developerId);
+      expect((await connect(testClient(created, climber))).response.status).toBe(200);
+      const { clientId } = created.app;
+      const [connection] = await db
+        .select({ id: oauthConnections.id })
+        .from(oauthConnections)
+        .where(eq(oauthConnections.clientId, clientId));
+
+      const issuer = await raw.reserve();
+      const answer = await raw.reserve();
+      try {
+        // An issuer holds the connection: the delete takes its climber and
+        // screen locks, then queues on the connection.
+        await issuer`BEGIN`;
+        await issuer`SELECT 1 FROM oauth_connections WHERE id = ${connection.id} FOR UPDATE`;
+        const deleting = runtime.registration.deleteApp(consoleDatabase, developerId, clientId).then(
+          (deleted) => deleted,
+          (error: unknown) => error,
+        );
+        await waitForLockWaiters(1);
+
+        // A consent screen opened after the delete's first pass, and an answer
+        // in consent's own order: the screen, then the connection.
+        const digest = `digest-${randomUUID()}`;
+        await db.insert(oauthConsentInteractions).values({
+          digest,
+          userId: climber.userId,
+          authSessionId: `session-${randomUUID()}`,
+          clientId,
+          connectionGeneration: 0,
+          expiresAt: new Date(Date.now() + 600_000),
+        });
+        await answer`BEGIN`;
+        await answer`SELECT 1 FROM oauth_consent_interactions WHERE digest = ${digest} FOR UPDATE`;
+        const answering = answer`SELECT 1 FROM oauth_connections WHERE id = ${connection.id} FOR UPDATE`.then(
+          () => 'locked',
+          (error: unknown) => error,
+        );
+        await waitForLockWaiters(2);
+
+        await issuer`ROLLBACK`;
+        const outcome = await deleting;
+        // The delete refused to wait on the held screen (NOWAIT), so there was
+        // no cycle for Postgres to break by aborting the climber's answer.
+        expect(outcome).toBeInstanceOf(PartnerRegistrationError);
+        expect((outcome as PartnerRegistrationError).reason).toBe('busy');
+        expect(getPostgresErrorCode((outcome as PartnerRegistrationError).cause)).toBe('55P03');
+        expect(await answering).toBe('locked');
+        await answer`COMMIT`;
+      } finally {
+        await issuer`ROLLBACK`.catch(() => undefined);
+        await answer`ROLLBACK`.catch(() => undefined);
+        issuer.release();
+        answer.release();
+      }
+
+      expect(await db.$count(oauthClient, eq(oauthClient.clientId, clientId))).toBe(1);
+      // The developer's retry goes through, and takes the screen with the app.
+      expect(await runtime.registration.deleteApp(consoleDatabase, developerId, clientId)).toBe(true);
+      expect(await db.$count(oauthConsentInteractions, eq(oauthConsentInteractions.clientId, clientId))).toBe(0);
     });
   });
 

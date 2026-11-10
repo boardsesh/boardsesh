@@ -76,6 +76,21 @@ describe('account deletion preserves privacy', () => {
     expect(exhausted).toHaveBeenCalledTimes(3);
   });
 
+  it('retries the one extra code its caller names, and never a bare lock timeout', async () => {
+    const busy = Object.assign(new Error('partner app held'), { code: 'partner_app_lock_busy' });
+    const succeeds = vi.fn().mockRejectedValueOnce(busy).mockResolvedValue(true);
+    expect(await retryAccountDeletion(succeeds, { alsoRetry: 'partner_app_lock_busy' })).toBe(true);
+    expect(succeeds).toHaveBeenCalledTimes(2);
+    const lockTimeout = Object.assign(new Error('lock timeout'), { code: '55P03' });
+    const timedOut = vi.fn().mockRejectedValue(lockTimeout);
+    await expect(retryAccountDeletion(timedOut, { alsoRetry: 'partner_app_lock_busy' })).rejects.toBe(lockTimeout);
+    expect(timedOut).toHaveBeenCalledOnce();
+    // Without the caller naming it, the partner code is an ordinary failure.
+    const unnamed = vi.fn().mockRejectedValue(busy);
+    await expect(retryAccountDeletion(unnamed)).rejects.toBe(busy);
+    expect(unnamed).toHaveBeenCalledOnce();
+  });
+
   it('serializes concurrent publication after both writers hold creator foreign-key locks', async () => {
     const { userId } = await seedAccount(true);
     const uuids = [randomUUID(), randomUUID()];

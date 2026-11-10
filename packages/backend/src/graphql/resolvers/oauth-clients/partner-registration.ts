@@ -207,6 +207,7 @@ function toOAuthClient(record: PartnerAppRecord): OAuthClient {
     suspensionReason: record.suspensionReason,
     maxActiveConnections: record.maxActiveConnections,
     maxNewConnectionsPerDay: record.maxNewConnectionsPerDay,
+    activeConnections: record.activeConnections,
   };
 }
 

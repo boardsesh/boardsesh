@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { BetterAuthPlugin } from 'better-auth';
 import { createAuthMiddleware, isAPIError } from 'better-auth/api';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   oauthAppPolicy,
   oauthClient,
@@ -12,6 +12,7 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import type { PartnerAuthority } from './authority';
+import { lockAppForDeletion } from './locks';
 import type { PartnerAuthorityConfiguration } from './configuration';
 import { PARTNER_SCOPES } from './configuration';
 import type { PartnerRegisteredOrigins } from './registered-origins';
@@ -137,7 +138,11 @@ export function managedClientProblem(row: OAuthClientRow, developerId: string): 
   return null;
 }
 
-function toRecord(row: OAuthClientRow, policy: OAuthAppPolicyRow | null | undefined): PartnerAppRecord {
+function toRecord(
+  row: OAuthClientRow,
+  policy: OAuthAppPolicyRow | null | undefined,
+  activeConnections: number,
+): PartnerAppRecord {
   return {
     clientId: row.clientId,
     name: row.name ?? '',
@@ -153,7 +158,35 @@ function toRecord(row: OAuthClientRow, policy: OAuthAppPolicyRow | null | undefi
     suspensionReason: policy?.suspensionReason ?? null,
     maxActiveConnections: policy?.maxActiveConnections ?? PARTNER_LAUNCH_MAX_ACTIVE_CONNECTIONS,
     maxNewConnectionsPerDay: policy?.maxNewConnectionsPerDay ?? PARTNER_LAUNCH_MAX_NEW_CONNECTIONS_PER_DAY,
+    activeConnections,
   };
+}
+
+/**
+ * Live connections per app, counted as the caps count them: redeemed
+ * (`connected_at` set) and not ended. An approval nobody redeemed is not one.
+ */
+async function countActiveConnections(
+  database: PartnerDatabase,
+  clientIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (clientIds.length === 0) return new Map();
+  const rows = await database
+    .select({ clientId: oauthConnections.clientId, connections: count() })
+    .from(oauthConnections)
+    .where(
+      and(
+        inArray(oauthConnections.clientId, [...clientIds]),
+        isNotNull(oauthConnections.connectedAt),
+        isNull(oauthConnections.revokedAt),
+      ),
+    )
+    .groupBy(oauthConnections.clientId);
+  return new Map(rows.map((row) => [row.clientId, row.connections]));
+}
+
+async function activeConnectionsOf(database: PartnerDatabase, clientId: string): Promise<number> {
+  return (await countActiveConnections(database, [clientId])).get(clientId) ?? 0;
 }
 
 function isSuspended(row: OAuthClientRow, policy: OAuthAppPolicyRow | null | undefined): boolean {
@@ -228,7 +261,7 @@ async function inRegistrationTransaction<Result>(
     return await runInPartnerTransaction(database, (transaction) => work(transaction));
   } catch (error) {
     if (isPartnerDatabaseBusy(error)) {
-      throw new PartnerRegistrationError('busy', 'The server is busy. Try again shortly.');
+      throw new PartnerRegistrationError('busy', 'The server is busy. Try again shortly.', { cause: error });
     }
     throw providerRefusal(error) ?? error;
   }
@@ -275,7 +308,11 @@ export function createPartnerRegistration({
         .leftJoin(oauthAppPolicy, eq(oauthAppPolicy.clientId, oauthClient.clientId))
         .where(eq(oauthClient.userId, developerId))
         .orderBy(asc(oauthClient.createdAt), asc(oauthClient.clientId));
-      return rows.map(({ row, policy }) => toRecord(row, policy));
+      const active = await countActiveConnections(
+        database,
+        rows.map(({ row }) => row.clientId),
+      );
+      return rows.map(({ row, policy }) => toRecord(row, policy, active.get(row.clientId) ?? 0));
     },
 
     async createApp(database, developerId, rawInput) {
@@ -323,7 +360,7 @@ export function createPartnerRegistration({
             maxNewConnectionsPerDay: PARTNER_LAUNCH_MAX_NEW_CONNECTIONS_PER_DAY,
           })
           .returning();
-        return { app: toRecord(row, policy), clientSecret: registered.client_secret ?? null };
+        return { app: toRecord(row, policy, 0), clientSecret: registered.client_secret ?? null };
       });
       registeredOrigins.invalidate();
       return created;
@@ -356,7 +393,7 @@ export function createPartnerRegistration({
             .where(eq(oauthAppPolicy.clientId, clientId));
         }
         const current = await assertManagedClient(transaction, developerId, clientId, configuration.resource);
-        return toRecord(current.row, current.policy);
+        return toRecord(current.row, current.policy, await activeConnectionsOf(transaction, clientId));
       });
       registeredOrigins.invalidate();
       return updated;
@@ -376,7 +413,10 @@ export function createPartnerRegistration({
         if (typeof rotated.client_secret !== 'string' || rotated.client_secret.length === 0) {
           throw new Error('Secret rotation returned no secret.');
         }
-        return { app: toRecord(row, policy), clientSecret: rotated.client_secret };
+        return {
+          app: toRecord(row, policy, await activeConnectionsOf(transaction, clientId)),
+          clientSecret: rotated.client_secret,
+        };
       });
     },
 
@@ -388,33 +428,24 @@ export function createPartnerRegistration({
         if (isSuspended(found.row, found.policy)) {
           throw new PartnerRegistrationError('suspended', 'This app is suspended, so it cannot be deleted.');
         }
-        // Connection rows first: this waits for any issuer holding one, and no
-        // grant can then be added to them. The app row goes last, so no lock on
-        // it is ever held while waiting for a connection an issuer holds.
-        const connections = await transaction
-          .select({ id: oauthConnections.id })
-          .from(oauthConnections)
-          .where(eq(oauthConnections.clientId, clientId))
-          .for('update');
-        if (connections.length > 0) {
-          // Pending codes have no foreign key: find them through their grants.
-          const grants = await transaction
-            .select({ authorizationCodeId: oauthGrants.authorizationCodeId })
-            .from(oauthGrants)
-            .where(
-              inArray(
-                oauthGrants.connectionId,
-                connections.map((connection) => connection.id),
-              ),
-            );
-          if (grants.length > 0) {
-            await transaction.delete(oauthVerification).where(
-              inArray(
-                oauthVerification.identifier,
-                grants.map((grant) => grant.authorizationCodeId),
-              ),
-            );
-          }
+        // Every climber row, consent screen and connection the cascade reaches,
+        // in the partner lock order. Waits for any issuer holding one, and no
+        // grant can then be added to a locked connection. The app row goes last,
+        // so no lock on it is ever held while waiting for a connection an issuer holds.
+        await lockAppForDeletion(transaction, clientId);
+        // Pending codes have no foreign key: find them through their grants.
+        const grants = await transaction
+          .select({ authorizationCodeId: oauthGrants.authorizationCodeId })
+          .from(oauthGrants)
+          .innerJoin(oauthConnections, eq(oauthConnections.id, oauthGrants.connectionId))
+          .where(eq(oauthConnections.clientId, clientId));
+        if (grants.length > 0) {
+          await transaction.delete(oauthVerification).where(
+            inArray(
+              oauthVerification.identifier,
+              grants.map((grant) => grant.authorizationCodeId),
+            ),
+          );
         }
         // Cascades to tokens, consent, connections, grants, subjects, policy and resource links.
         await transaction
