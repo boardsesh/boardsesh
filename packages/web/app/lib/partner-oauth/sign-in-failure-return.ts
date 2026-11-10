@@ -20,9 +20,15 @@ import {
  *
  * The decision is made once, on the response that starts the provider round
  * trip (`POST /api/auth/signin/<provider>`) or ends it (`/api/auth/callback/
- * <provider>`), because only there is this flow's own callback URL known:
+ * <provider>`), because only there is this flow's own callback URL known.
  *
- * 1. a callback-url cookie the same response sets (a sign-in start), else
+ * At the start: a callback-url cookie the response sets, else the `callbackUrl`
+ * the request itself posted (read by `readSignInStartCallbackUrl` before NextAuth
+ * consumes the body). A start refused before NextAuth runs, such as a
+ * `backend-staging` 503, sets no cookie, and the base cookie is not this flow's.
+ *
+ * At the callback:
+ * 1. a callback-url cookie the same response sets, else
  * 2. the flow-scoped `<callback-url>.<scope>` cookie the response retires
  *    (`CURRENT_STORE_WEB_OAUTH_MODE=backend-staging`), else
  * 3. with no scoped cookie in the request at all, the base callback-url cookie,
@@ -96,11 +102,18 @@ function isRetired(cookie: { value?: string; maxAge?: number; expires?: Date }, 
   );
 }
 
+type FlowLeg = 'start' | 'end';
+
 /**
  * This flow's own callback URL, or null when it cannot be known for certain.
- * See the module comment for the order.
+ * See the module comment for the order on each leg.
  */
-function flowCallbackUrl(request: NextRequest, response: Response): string | null {
+function flowCallbackUrl(
+  request: NextRequest,
+  response: Response,
+  leg: FlowLeg,
+  startCallbackUrl: string | null,
+): string | null {
   const nowMs = Date.now();
   const written = response.headers
     .getSetCookie()
@@ -109,6 +122,9 @@ function flowCallbackUrl(request: NextRequest, response: Response): string | nul
 
   const set = written.find((cookie) => !isRetired(cookie, nowMs));
   if (set?.value) return set.value;
+  // A staged start also retires OLDER flows' cookies, so neither the retired
+  // cookies nor the base cookie say anything about this one.
+  if (leg === 'start') return startCallbackUrl;
 
   const retiredScoped = written.find((cookie) => callbackUrlCookie(cookie.name)?.scope && isRetired(cookie, nowMs));
   if (retiredScoped) return request.cookies.get(retiredScoped.name)?.value ?? null;
@@ -122,9 +138,51 @@ function flowCallbackUrl(request: NextRequest, response: Response): string | nul
   return null;
 }
 
-function isFlowBoundary(request: NextRequest): boolean {
+function flowLeg(request: NextRequest): FlowLeg | null {
   const { pathname } = request.nextUrl;
-  return (request.method === 'POST' && FLOW_START.test(pathname)) || FLOW_END.test(pathname);
+  if (request.method === 'POST' && FLOW_START.test(pathname)) return 'start';
+  return FLOW_END.test(pathname) ? 'end' : null;
+}
+
+/** Sign-in start bodies are a few hundred bytes; anything bigger is not one to read. */
+const MAX_START_BODY_BYTES = 16 * 1024;
+
+/**
+ * The `callbackUrl` a sign-in start posted (form or JSON), read from a clone
+ * before NextAuth consumes the body. Null for any other request, or a body that
+ * is too big or unreadable.
+ */
+export async function readSignInStartCallbackUrl(request: NextRequest): Promise<string | null> {
+  if (flowLeg(request) !== 'start' || !request.body) return null;
+  const declaredLength = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_START_BODY_BYTES) return null;
+  const type = request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
+  if (type !== 'application/x-www-form-urlencoded' && type !== 'application/json') return null;
+  try {
+    const reader = request.clone().body?.getReader();
+    if (!reader) return null;
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > MAX_START_BODY_BYTES) {
+        // A tee branch's cancel settles only once NextAuth's branch ends too, so never wait on it.
+        void reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(chunk.value);
+    }
+    const text = new TextDecoder().decode(Buffer.concat(chunks));
+    if (type === 'application/x-www-form-urlencoded') return new URLSearchParams(text).get('callbackUrl');
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { callbackUrl } = parsed as Record<string, unknown>;
+    return typeof callbackUrl === 'string' ? callbackUrl : null;
+  } catch {
+    return null;
+  }
 }
 
 /** An error destination NextAuth names, or null. */
@@ -159,14 +217,22 @@ async function jsonBody(response: Response): Promise<Record<string, unknown> | n
   }
 }
 
-/** The response, or the same answer pointed back at the partner sign-in page. */
-export async function withPartnerSignInFailureReturn(request: NextRequest, response: Response): Promise<Response> {
-  if (!isFlowBoundary(request)) return response;
+/**
+ * The response, or the same answer pointed back at the partner sign-in page.
+ * `startCallbackUrl` is what `readSignInStartCallbackUrl` read from this request.
+ */
+export async function withPartnerSignInFailureReturn(
+  request: NextRequest,
+  response: Response,
+  startCallbackUrl: string | null = null,
+): Promise<Response> {
+  const leg = flowLeg(request);
+  if (!leg) return response;
 
   if (response.status >= 300 && response.status < 400) {
     const destination = errorDestination(response.headers.get('Location'));
     if (!destination) return response;
-    const partnerPath = partnerReturnFor(destination, flowCallbackUrl(request, response));
+    const partnerPath = partnerReturnFor(destination, flowCallbackUrl(request, response, leg, startCallbackUrl));
     if (!partnerPath) return response;
     const headers = new Headers(response.headers);
     headers.set('Location', partnerPath);
@@ -178,7 +244,7 @@ export async function withPartnerSignInFailureReturn(request: NextRequest, respo
   const url = typeof body?.url === 'string' ? body.url : null;
   const destination = errorDestination(url);
   if (!body || !url || !destination) return response;
-  const partnerPath = partnerReturnFor(destination, flowCallbackUrl(request, response));
+  const partnerPath = partnerReturnFor(destination, flowCallbackUrl(request, response, leg, startCallbackUrl));
   if (!partnerPath) return response;
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');

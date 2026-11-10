@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
-import { partnerSignInReturnPath, withPartnerSignInFailureReturn } from '../sign-in-failure-return';
+import {
+  partnerSignInReturnPath,
+  readSignInStartCallbackUrl,
+  withPartnerSignInFailureReturn,
+} from '../sign-in-failure-return';
 
 const PARTNER_RETURN = '/oauth/sign-in?client_id=bsk_sequence&state=app-state&sig=signed&boardsesh_signed_in=1';
 /** A partner request from earlier in the browser session, kept by "Not you? Sign out". */
@@ -23,6 +27,22 @@ function request(path: string, cookies: Record<string, string> = {}, method = 'G
     .join('; ');
   return new NextRequest(`https://www.boardsesh.com${path}`, { method, headers: cookie ? { cookie } : {} });
 }
+
+/** A sign-in start as next-auth/react posts it: a form with `callbackUrl` and `json=true`. */
+function startRequest(cookies: Record<string, string>, callbackUrl: string): NextRequest {
+  const cookie = Object.entries(cookies)
+    .map(([name, value]) => `${name}=${encodeURIComponent(value)}`)
+    .join('; ');
+  return new NextRequest('https://www.boardsesh.com/api/auth/signin/google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(cookie ? { cookie } : {}) },
+    body: new URLSearchParams({ csrfToken: 'csrf', callbackUrl, json: 'true' }),
+  });
+}
+
+/** The backend-staging refusal before NextAuth runs: no cookie written. */
+const stagedStartRefused = () =>
+  Response.json({ url: 'https://www.boardsesh.com/auth/error?error=AuthBackendUnavailable' }, { status: 503 });
 
 const retire = (name: string) => `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
 const write = (name: string, value: string) => `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax`;
@@ -217,5 +237,74 @@ describe('withPartnerSignInFailureReturn, flows scoped by backend-staging', () =
       original,
     );
     expect(new URL(((await response.json()) as { url: string }).url).pathname).toBe('/oauth/sign-in');
+  });
+
+  // Re-review residual: a start refused with 503 before NextAuth runs writes no cookie.
+  it('judges a refused start by the callbackUrl it posted, not a stale base cookie', async () => {
+    const start = startRequest({ '__Secure-next-auth.callback-url': STALE_PARTNER }, '/auth/login');
+    const original = stagedStartRefused();
+    const response = await withPartnerSignInFailureReturn(start, original, await readSignInStartCallbackUrl(start));
+    expect(response).toBe(original);
+  });
+
+  it('sends a refused partner start back to the partner page it posted', async () => {
+    const start = startRequest({ '__Secure-next-auth.callback-url': '/gyms' }, PARTNER_RETURN);
+    const response = await withPartnerSignInFailureReturn(
+      start,
+      stagedStartRefused(),
+      await readSignInStartCallbackUrl(start),
+    );
+    expect(response.status).toBe(503);
+    const url = new URL(((await response.json()) as { url: string }).url);
+    expect(url.pathname).toBe('/oauth/sign-in');
+    expect(url.searchParams.get('error')).toBe('AuthBackendUnavailable');
+  });
+
+  it('never reads an older flow a start retires', async () => {
+    const start = startRequest({ [`next-auth.callback-url.${OTHER_SCOPE}`]: STALE_PARTNER }, '/gyms');
+    const original = Response.json(
+      { url: 'https://www.boardsesh.com/api/auth/error?error=OAuthSignin' },
+      { headers: { 'Set-Cookie': retire(`next-auth.callback-url.${OTHER_SCOPE}`) } },
+    );
+    const response = await withPartnerSignInFailureReturn(start, original, await readSignInStartCallbackUrl(start));
+    expect(response).toBe(original);
+  });
+});
+
+describe('readSignInStartCallbackUrl', () => {
+  it('reads a form or JSON start before NextAuth consumes the body, and leaves the body readable', async () => {
+    const form = startRequest({}, PARTNER_RETURN);
+    expect(await readSignInStartCallbackUrl(form)).toBe(PARTNER_RETURN);
+    expect(new URLSearchParams(await form.text()).get('callbackUrl')).toBe(PARTNER_RETURN);
+
+    const json = new NextRequest('https://www.boardsesh.com/es/api/auth/signin/apple', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callbackUrl: '/gyms' }),
+    });
+    expect(await readSignInStartCallbackUrl(json)).toBe('/gyms');
+  });
+
+  it('reads nothing from callbacks, other content types or oversized bodies', async () => {
+    const callback = new NextRequest('https://www.boardsesh.com/api/auth/callback/apple', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ callbackUrl: PARTNER_RETURN }),
+    });
+    expect(await readSignInStartCallbackUrl(callback)).toBeNull();
+
+    const text = new NextRequest('https://www.boardsesh.com/api/auth/signin/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: `callbackUrl=${PARTNER_RETURN}`,
+    });
+    expect(await readSignInStartCallbackUrl(text)).toBeNull();
+
+    const oversized = new NextRequest('https://www.boardsesh.com/api/auth/signin/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ callbackUrl: PARTNER_RETURN, padding: 'x'.repeat(20_000) }),
+    });
+    expect(await readSignInStartCallbackUrl(oversized)).toBeNull();
   });
 });
