@@ -817,18 +817,24 @@ served by `graphql/resolvers/oauth-clients/partner-registration.ts` on the
 ordinary GraphQL pool. Each checks, in this order: the mode (`off` answers
 `NOT_FOUND`, `hold` answers `SERVICE_UNAVAILABLE`, before anything else); a
 signed-in Boardsesh account (first-party credentials only: a partner token is
-opaque and never authenticates GraphQL); the rate limits; then
+opaque and never authenticates GraphQL); the developer's own rate limit;
 `PARTNER_OAUTH_DEVELOPER_ALLOWLIST`, comma-separated user ids, empty meaning
-nobody. Creating an app also needs `emailVerified`.
+nobody; then the per-address limit. Creating an app also needs `emailVerified`.
 
 **`open` still means the allowlist.** `emailVerified` was stamped without proof
 while verification was off (BA-02 D3), so the fast path keeps open registration
 closed until BA-02 ships or registration sends its own email proof. Until one of
 those lands, `open` registers the same allowlisted developers as `allowlist`.
 
-**Rate limits.** Charged only after the account is known, so an anonymous flood
-spends nobody's budget. Writes: 10 a minute per developer and 30 per address.
-Reads: 60 and 120.
+**Rate limits.** Writes: 10 a minute per developer and 30 per address. Reads:
+60 and 120. The developer's bucket is charged once the account is known, so only
+that account can spend it. The address bucket is charged only for an allowlisted
+developer, so throwaway accounts behind the same address cannot fill it and lock
+a listed developer out. It is keyed by `ConnectionContext.trustedClientIp`
+(`getTrustedClientIp`, the key the partner OAuth routes use): `cf-connecting-ip`
+counts only from a verified Cloudflare edge, otherwise the hop the private ingress
+appended, and an IPv6 client is its /64. GraphQL's older `clientIp` believes that
+header from anyone.
 
 **What registration fixes.** It uses the provider's managed registration
 (`adminCreateOAuthClient`) and writes every field but the developer's own:

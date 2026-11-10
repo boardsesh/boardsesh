@@ -190,6 +190,11 @@ export type ConnectionContext = {
   // separately from clientIp so a direct-origin caller cannot evade the
   // secondary rate-limit bucket by forging cf-connecting-ip (issue #4038).
   socketPeerIp?: string;
+  // A per-address limit key no caller can choose (getTrustedClientIp in
+  // packages/backend/src/utils/client-ip.ts): cf-connecting-ip only from a
+  // verified Cloudflare edge, otherwise the hop our private ingress appended or
+  // the socket peer; an IPv6 client is its /64. Unset on test contexts.
+  trustedClientIp?: string;
   // Cloudflare's country for an HTTP request, accepted only from a trusted
   // edge hop (resolveFlagCountry in packages/backend/src/utils/flag-country.ts);
   // 'XX' when unknown or untrusted, undefined on WebSocket and test contexts.

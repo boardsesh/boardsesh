@@ -67,17 +67,27 @@ function rateLimited(error: RateLimitError, operation: string): GraphQLError {
   });
 }
 
+function limitOperation(kind: 'read' | 'write'): string {
+  return kind === 'write' ? 'oauthClientWrite' : 'oauthClientRead';
+}
+
+/** Charged only once the caller is a signed-in account, and only that account can spend it. */
+async function chargeDeveloperLimit(ctx: ConnectionContext, kind: 'read' | 'write'): Promise<void> {
+  await applyRateLimit(ctx, kind === 'write' ? WRITES_PER_DEVELOPER : READS_PER_DEVELOPER, limitOperation(kind));
+}
+
 /**
- * Charged only once the caller is a signed-in account, so an anonymous flood
- * spends nobody's budget: one bucket per developer, one per address.
+ * Charged only for an allowlisted developer, so throwaway accounts behind the
+ * same address cannot fill it. Keyed by `trustedClientIp`, which believes
+ * `cf-connecting-ip` only from a verified Cloudflare edge and groups an IPv6
+ * client by its /64, so a direct-origin caller cannot choose the bucket.
  */
-async function chargeRegistrationLimits(ctx: ConnectionContext, kind: 'read' | 'write'): Promise<void> {
-  const operation = kind === 'write' ? 'oauthClientWrite' : 'oauthClientRead';
-  await applyRateLimit(ctx, kind === 'write' ? WRITES_PER_DEVELOPER : READS_PER_DEVELOPER, operation);
-  if (!ctx.clientIp || process.env.NODE_ENV === 'development') return;
+async function chargeAddressLimit(ctx: ConnectionContext, kind: 'read' | 'write'): Promise<void> {
+  const operation = limitOperation(kind);
+  if (!ctx.trustedClientIp || process.env.NODE_ENV === 'development') return;
   try {
     await checkRateLimitRedis(
-      `oauth-client-ip:${ctx.clientIp}`,
+      `oauth-client-ip:${ctx.trustedClientIp}`,
       operation,
       kind === 'write' ? WRITES_PER_ADDRESS : READS_PER_ADDRESS,
       WINDOW_MS,
@@ -106,8 +116,8 @@ function refusalError(error: PartnerRegistrationError): GraphQLError {
 
 /**
  * Every operation's way in. The order is the contract: the mode first, so an
- * off deployment does nothing at all; then the account; then the limits; then
- * the allowlist. `open` registers allowlisted developers only, like
+ * off deployment does nothing at all; then the account and its own limit; then
+ * the allowlist; then the address limit, which only listed developers spend. `open` registers allowlisted developers only, like
  * `allowlist`, until a developer's email has a real proof of ownership
  * (BA-02, or registration's own email check): `emailVerified` was stamped
  * without one while verification was off.
@@ -133,12 +143,13 @@ async function withRegistration<Result>(
   requireAuthenticated(ctx);
   const developerId = ctx.userId;
   if (!developerId) throw new Error('Authentication required to perform this operation');
-  await chargeRegistrationLimits(ctx, kind);
+  await chargeDeveloperLimit(ctx, kind);
   if (!developerAllowlist.has(developerId)) {
     throw new GraphQLError('Developer apps are invite-only for now.', {
       extensions: { code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' },
     });
   }
+  await chargeAddressLimit(ctx, kind);
 
   let runtime: PartnerRuntime | null;
   try {

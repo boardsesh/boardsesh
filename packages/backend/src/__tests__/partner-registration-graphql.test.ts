@@ -116,7 +116,12 @@ async function startRealServer(environment: Record<string, string>) {
 
   function graphql(
     operation: { query: string; variables?: Record<string, unknown> },
-    { bearer, clientIp = randomClientIp(), host }: { bearer?: string; clientIp?: string; host?: string } = {},
+    {
+      bearer,
+      clientIp = randomClientIp(),
+      host,
+      headers = {},
+    }: { bearer?: string; clientIp?: string; host?: string; headers?: Record<string, string> } = {},
   ): Promise<GraphQLReply> {
     const payload = JSON.stringify(operation);
     return new Promise((resolve, reject) => {
@@ -132,6 +137,7 @@ async function startRealServer(environment: Record<string, string>) {
             'Content-Length': Buffer.byteLength(payload),
             'X-Forwarded-For': clientIp,
             ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+            ...headers,
           },
         },
         (incoming) => {
@@ -248,13 +254,16 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
   let developerId: string;
   /** A second listed developer, whose write budget no other test spends. */
   let secondDeveloperId: string;
+  /** A third, for the address-limit tests, which each spend one write. */
+  let addressDeveloperId: string;
 
   beforeAll(async () => {
     developerId = await createDeveloper();
     secondDeveloperId = await createDeveloper();
+    addressDeveloperId = await createDeveloper();
     server = await startRealServer({
       PARTNER_OAUTH_MODE: 'allowlist',
-      PARTNER_OAUTH_DEVELOPER_ALLOWLIST: `someone-else,${developerId},${secondDeveloperId}`,
+      PARTNER_OAUTH_DEVELOPER_ALLOWLIST: `someone-else,${developerId},${secondDeveloperId},${addressDeveloperId}`,
       PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
     });
   }, TEST_DEADLINE_MS);
@@ -324,7 +333,7 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
   );
 
   it(
-    'refuses a signed-in account that is not on the allowlist, after charging it',
+    'refuses a signed-in account that is not on the allowlist, charging only its own bucket',
     async () => {
       await enoughWindowLeft();
       const outsiderId = await createDeveloper();
@@ -335,8 +344,35 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       );
       expect(errorOf(reply)?.extensions).toMatchObject({ code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' });
       expect(await limiterCount(outsiderId, 'oauthClientWrite')).toBe(1);
-      expect(await limiterCount(`oauth-client-ip:${clientIp}`, 'oauthClientWrite')).toBe(1);
+      expect(await limiterCount(`oauth-client-ip:${clientIp}`, 'oauthClientWrite')).toBeNull();
       expect(await db.$count(oauthClient, eq(oauthClient.userId, outsiderId))).toBe(0);
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'lets no number of throwaway accounts at one address lock a listed developer out',
+    async () => {
+      await enoughWindowLeft();
+      const sharedAddress = randomClientIp();
+      // Three accounts at their own limit of 10 a minute, one past it: more than the address's 30.
+      for (let account = 0; account < 3; account += 1) {
+        const bearer = await firstPartyToken(await createDeveloper());
+        for (let attempt = 0; attempt < 11; attempt += 1) {
+          const reply = await server.graphql(
+            { query: CREATE_MUTATION, variables: { input: APP_INPUT } },
+            { bearer, clientIp: sharedAddress },
+          );
+          expect(errorOf(reply)?.extensions?.code).toBe(attempt < 10 ? 'FORBIDDEN' : 'RATE_LIMITED');
+        }
+      }
+      expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientWrite')).toBeNull();
+      const listed = await server.graphql(
+        { query: CREATE_MUTATION, variables: { input: APP_INPUT } },
+        { bearer: await firstPartyToken(addressDeveloperId), clientIp: sharedAddress },
+      );
+      expect(listed.body.errors).toBeUndefined();
+      expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientWrite')).toBe(1);
     },
     TEST_DEADLINE_MS,
   );
@@ -361,13 +397,51 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       await enoughWindowLeft();
       const clientIp = randomClientIp();
       await seedLimiter(`oauth-client-ip:${clientIp}`, 'oauthClientWrite', 30);
-      const freshDeveloper = await createDeveloper();
+      const appsBefore = await db.$count(oauthClient, eq(oauthClient.userId, addressDeveloperId));
       const reply = await server.graphql(
         { query: CREATE_MUTATION, variables: { input: APP_INPUT } },
-        { bearer: await firstPartyToken(freshDeveloper), clientIp },
+        { bearer: await firstPartyToken(addressDeveloperId), clientIp },
       );
       expect(errorOf(reply)?.extensions).toMatchObject({ code: 'RATE_LIMITED', operation: 'oauthClientWrite' });
-      expect(await db.$count(oauthClient, eq(oauthClient.userId, freshDeveloper))).toBe(0);
+      expect(await db.$count(oauthClient, eq(oauthClient.userId, addressDeveloperId))).toBe(appsBefore);
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'keys the address limit on the trusted address, not a cf-connecting-ip from a peer that is no Cloudflare edge',
+    async () => {
+      await enoughWindowLeft();
+      // The test server's peer is loopback, which stands in for the private
+      // ingress: its last X-Forwarded-For hop is the address that counts.
+      const ingressAddress = randomClientIp();
+      const spoofedAddress = randomClientIp();
+      await seedLimiter(`oauth-client-ip:${ingressAddress}`, 'oauthClientWrite', 30);
+      const reply = await server.graphql(
+        { query: CREATE_MUTATION, variables: { input: APP_INPUT } },
+        {
+          bearer: await firstPartyToken(addressDeveloperId),
+          clientIp: ingressAddress,
+          headers: { 'CF-Connecting-IP': spoofedAddress },
+        },
+      );
+      expect(errorOf(reply)?.extensions).toMatchObject({ code: 'RATE_LIMITED', operation: 'oauthClientWrite' });
+      expect(await limiterCount(`oauth-client-ip:${spoofedAddress}`, 'oauthClientWrite')).toBeNull();
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'counts an IPv6 client as its /64',
+    async () => {
+      await enoughWindowLeft();
+      const prefix = `2001:db8:${Math.floor(Math.random() * 0xffff).toString(16)}:7`;
+      await seedLimiter(`oauth-client-ip:${prefix}::/64`, 'oauthClientWrite', 30);
+      const reply = await server.graphql(
+        { query: CREATE_MUTATION, variables: { input: APP_INPUT } },
+        { bearer: await firstPartyToken(addressDeveloperId), clientIp: `${prefix}::beef` },
+      );
+      expect(errorOf(reply)?.extensions).toMatchObject({ code: 'RATE_LIMITED', operation: 'oauthClientWrite' });
     },
     TEST_DEADLINE_MS,
   );
