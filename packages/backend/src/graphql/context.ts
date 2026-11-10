@@ -33,6 +33,8 @@ export type CreateContextOptions = {
   clientIp?: string;
   /** TCP-peer backstop for anonymous WebSocket rate limiting. */
   socketPeerIp?: string;
+  /** A per-address limit key no caller can choose; see utils/client-ip.ts getTrustedClientIp. */
+  trustedClientIp?: string;
   /** Parsed client identity from connectionParams; identification only. */
   clientIdentity?: ClientIdentity;
   /** Trimmed raw client identity string as sent, for logs. */
@@ -54,6 +56,7 @@ export function createContext({
   controllerOwnerUserId,
   clientIp,
   socketPeerIp,
+  trustedClientIp,
   clientIdentity,
   clientIdentityRaw,
 }: CreateContextOptions = {}): ConnectionContext {
@@ -71,6 +74,7 @@ export function createContext({
     controllerOwnerUserId,
     clientIp,
     socketPeerIp,
+    trustedClientIp,
     clientIdentity,
     clientIdentityRaw,
   };

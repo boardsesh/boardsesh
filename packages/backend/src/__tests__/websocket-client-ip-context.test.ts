@@ -22,6 +22,7 @@ const { createdContexts } = vi.hoisted(() => ({
     | 'connectionId'
     | 'clientIp'
     | 'socketPeerIp'
+    | 'trustedClientIp'
     | 'clientIdentity'
     | 'clientIdentityRaw'
     | 'userId'
@@ -175,6 +176,25 @@ describe('WebSocket connection context client IP', () => {
 
     expect(context.clientIp).toBe('203.0.113.7');
     expect(context.socketPeerIp).toBe('127.0.0.1');
+  });
+
+  it('puts a trusted limit key beside clientIp: no cf-connecting-ip from a non-edge peer, IPv6 as its /64', async () => {
+    const spoofed = await connectAndReadContext({
+      'cf-connecting-ip': '203.0.113.7',
+      'x-forwarded-for': '198.51.100.9, 198.51.100.20',
+    });
+    // Loopback stands in for the private ingress, whose appended hop counts.
+    // That hop is no Cloudflare edge, so its cf-connecting-ip is not believed.
+    expect(spoofed.clientIp).toBe('203.0.113.7');
+    expect(spoofed.trustedClientIp).toBe('198.51.100.20');
+    // Through a Cloudflare edge hop, the edge's header is the key.
+    const throughEdge = await connectAndReadContext({
+      'cf-connecting-ip': '203.0.113.7',
+      'x-forwarded-for': '172.68.1.1',
+    });
+    expect(throughEdge.trustedClientIp).toBe('203.0.113.7');
+    const ipv6 = await connectAndReadContext({ 'x-forwarded-for': '2001:db8:51:7::beef' });
+    expect(ipv6.trustedClientIp).toBe('2001:db8:51:7::/64');
   });
 
   it('keys on the last forwarded hop, ignoring an attacker-prefixed entry', async () => {
