@@ -65,10 +65,28 @@ async function limiterCount(identity: string, operation: string): Promise<number
   return Number(await redisClientManager.getClients().publisher.get(limiterKey(identity, operation)));
 }
 
-/** Limits use fixed one-minute windows, so a counting test must not straddle a rollover. */
-async function enoughWindowLeft(minimumMs = 20_000): Promise<void> {
-  const remainingMs = MINUTE_MS - (Date.now() % MINUTE_MS);
-  if (remainingMs < minimumMs) await new Promise((resolve) => setTimeout(resolve, remainingMs + 50));
+const currentLimitWindow = () => Math.floor(Date.now() / MINUTE_MS);
+
+/**
+ * Limits use fixed one-minute windows, and a counting test is only meaningful
+ * inside one: a rollover resets every count, which can fail a test or pass one
+ * falsely. Rather than sleep for a fresh window, run the body, and if a
+ * rollover happened while it ran, pass or fail, run it once more. A body takes
+ * a second or two and a window lasts sixty, so the second run fits. Every body
+ * makes its own client, address and seeds, so a second run starts clean.
+ */
+async function inOneLimitWindow(body: () => Promise<void>): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const startedIn = currentLimitWindow();
+    try {
+      await body();
+    } catch (error) {
+      if (currentLimitWindow() === startedIn) throw error;
+      continue;
+    }
+    if (currentLimitWindow() === startedIn) return;
+  }
+  throw new Error('The rate-limit window rolled over during both runs.');
 }
 
 function randomClientIp(): string {
@@ -860,87 +878,92 @@ describe('the public /v1 API', () => {
 
   describe('rate limits', () => {
     it('charges the connection and the app only once a token has passed', async () => {
-      await enoughWindowLeft();
-      const client = await environment.createClient();
-      const issued = await environment.issueTokens(client);
-      const connectionKey = `${client.clientId}:${client.owner.userId}`;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        expectInvalidToken(await getMe(`forged${randomUUID().replaceAll('-', '')}`));
-      }
-      expect(await limiterCount(connectionKey, 'api-connection')).toBe(0);
-      expect(await limiterCount(client.clientId, 'api-app')).toBe(0);
-      expect((await getMe(issued.access_token)).status).toBe(200);
-      expect(await limiterCount(connectionKey, 'api-connection')).toBe(1);
-      expect(await limiterCount(client.clientId, 'api-app')).toBe(1);
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const connectionKey = `${client.clientId}:${client.owner.userId}`;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          expectInvalidToken(await getMe(`forged${randomUUID().replaceAll('-', '')}`));
+        }
+        expect(await limiterCount(connectionKey, 'api-connection')).toBe(0);
+        expect(await limiterCount(client.clientId, 'api-app')).toBe(0);
+        expect((await getMe(issued.access_token)).status).toBe(200);
+        expect(await limiterCount(connectionKey, 'api-connection')).toBe(1);
+        expect(await limiterCount(client.clientId, 'api-app')).toBe(1);
+      });
     });
 
     it('refuses a connection over 120 a minute with 429 and Retry-After', async () => {
-      await enoughWindowLeft();
-      const client = await environment.createClient();
-      const issued = await environment.issueTokens(client);
-      await seedLimiter(`${client.clientId}:${client.owner.userId}`, 'api-connection', 120);
-      const limited = await getMe(issued.access_token);
-      expect(limited.status).toBe(429);
-      expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
-      expect(limited.headers['ratelimit-limit']).toBe('120');
-      expect(limited.headers['ratelimit-remaining']).toBe('0');
-      expect(limited.headers['cache-control']).toBe('no-store');
-      expect(ApiErrorResponseSchema.parse(JSON.parse(limited.body)).error).toBe('rate_limited');
-      // The disconnect a limited app sends is limited too, and changes nothing.
-      expect((await disconnect(issued.access_token)).status).toBe(429);
-      expect((await connectionOf(client)).revokedAt).toBeNull();
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        await seedLimiter(`${client.clientId}:${client.owner.userId}`, 'api-connection', 120);
+        const limited = await getMe(issued.access_token);
+        expect(limited.status).toBe(429);
+        expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+        expect(limited.headers['ratelimit-limit']).toBe('120');
+        expect(limited.headers['ratelimit-remaining']).toBe('0');
+        expect(limited.headers['cache-control']).toBe('no-store');
+        expect(ApiErrorResponseSchema.parse(JSON.parse(limited.body)).error).toBe('rate_limited');
+        // The disconnect a limited app sends is limited too, and changes nothing.
+        expect((await disconnect(issued.access_token)).status).toBe(429);
+        expect((await connectionOf(client)).revokedAt).toBeNull();
+      });
     });
 
     it('refuses an app over 6,000 a minute across its climbers', async () => {
-      await enoughWindowLeft();
-      const client = await environment.createClient();
-      const issued = await environment.issueTokens(client);
-      await seedLimiter(client.clientId, 'api-app', 6000);
-      const limited = await getMe(issued.access_token);
-      expect(limited.status).toBe(429);
-      expect(limited.headers['ratelimit-limit']).toBe('6000');
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        await seedLimiter(client.clientId, 'api-app', 6000);
+        const limited = await getMe(issued.access_token);
+        expect(limited.status).toBe(429);
+        expect(limited.headers['ratelimit-limit']).toBe('6000');
+      });
     });
 
     it('counts failed lookups per address, and answers 429 past 600 only after a lookup failed', async () => {
-      await enoughWindowLeft();
-      const clientIp = randomClientIp();
-      const client = await environment.createClient();
-      const issued = await environment.issueTokens(client);
-      expectInvalidToken(await getMe(`forged${randomUUID().replaceAll('-', '')}`, { clientIp }));
-      expect(await limiterCount(clientIp, 'api-invalid-token-ip')).toBe(1);
-      expect((await getMe(issued.access_token, { clientIp })).status).toBe(200);
-      expect(await limiterCount(clientIp, 'api-invalid-token-ip')).toBe(1);
-      // A token-less request costs no lookup and is not counted.
-      await apiHost.send('GET', ME_PATH, { clientIp });
-      expect(await limiterCount(clientIp, 'api-invalid-token-ip')).toBe(1);
+      await inOneLimitWindow(async () => {
+        const clientIp = randomClientIp();
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        expectInvalidToken(await getMe(`forged${randomUUID().replaceAll('-', '')}`, { clientIp }));
+        expect(await limiterCount(clientIp, 'api-invalid-token-ip')).toBe(1);
+        expect((await getMe(issued.access_token, { clientIp })).status).toBe(200);
+        expect(await limiterCount(clientIp, 'api-invalid-token-ip')).toBe(1);
+        // A token-less request costs no lookup and is not counted.
+        await apiHost.send('GET', ME_PATH, { clientIp });
+        expect(await limiterCount(clientIp, 'api-invalid-token-ip')).toBe(1);
 
-      await seedLimiter(clientIp, 'api-invalid-token-ip', 600);
-      const authenticate = vi.spyOn(runtime.api, 'authenticate');
-      try {
-        const limited = await getMe(`forged${randomUUID().replaceAll('-', '')}`, { clientIp });
-        expect(limited.status).toBe(429);
-        expect(limited.headers['ratelimit-limit']).toBe('600');
-        expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
-        expect(ApiErrorResponseSchema.parse(JSON.parse(limited.body)).error).toBe('rate_limited');
-        expect(authenticate).toHaveBeenCalledTimes(1);
-      } finally {
-        authenticate.mockRestore();
-      }
+        await seedLimiter(clientIp, 'api-invalid-token-ip', 600);
+        const authenticate = vi.spyOn(runtime.api, 'authenticate');
+        try {
+          const limited = await getMe(`forged${randomUUID().replaceAll('-', '')}`, { clientIp });
+          expect(limited.status).toBe(429);
+          expect(limited.headers['ratelimit-limit']).toBe('600');
+          expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+          expect(ApiErrorResponseSchema.parse(JSON.parse(limited.body)).error).toBe('rate_limited');
+          expect(authenticate).toHaveBeenCalledTimes(1);
+        } finally {
+          authenticate.mockRestore();
+        }
+      });
     });
 
     it("never refuses a valid token for a neighbour's failed lookups at the same address", async () => {
-      await enoughWindowLeft();
-      // One Cloudflare Worker address, carrier NAT or cloud NAT gateway: many partners, one bucket.
-      const sharedAddress = randomClientIp();
-      await seedLimiter(sharedAddress, 'api-invalid-token-ip', 5000);
-      const client = await environment.createClient();
-      const issued = await environment.issueTokens(client);
-      const answered = await getMe(issued.access_token, { clientIp: sharedAddress });
-      expect(answered.status).toBe(200);
-      // The neighbour's count is never read, and never published to this app.
-      expect(answered.headers['ratelimit-limit']).toBe('120');
-      expect((await disconnect(issued.access_token, { clientIp: sharedAddress })).status).toBe(204);
-      expect(await limiterCount(sharedAddress, 'api-invalid-token-ip')).toBe(5000);
+      await inOneLimitWindow(async () => {
+        // One Cloudflare Worker address, carrier NAT or cloud NAT gateway: many partners, one bucket.
+        const sharedAddress = randomClientIp();
+        await seedLimiter(sharedAddress, 'api-invalid-token-ip', 5000);
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const answered = await getMe(issued.access_token, { clientIp: sharedAddress });
+        expect(answered.status).toBe(200);
+        // The neighbour's count is never read, and never published to this app.
+        expect(answered.headers['ratelimit-limit']).toBe('120');
+        expect((await disconnect(issued.access_token, { clientIp: sharedAddress })).status).toBe(204);
+        expect(await limiterCount(sharedAddress, 'api-invalid-token-ip')).toBe(5000);
+      });
     });
   });
 
@@ -999,79 +1022,80 @@ describe('the public /v1 API', () => {
     it(
       "keeps a flooding address's junk in its own lane: others are served, and so is its valid token",
       async () => {
-        await enoughWindowLeft();
-        const floodingAddress = randomClientIp();
-        const otherAddress = randomClientIp();
-        const client = await environment.createClient();
-        const issued = await environment.issueTokens(client);
-        // Past the routing threshold (30), far below the 429 limit (600).
-        await seedLimiter(floodingAddress, 'api-invalid-token-ip', 30);
+        await inOneLimitWindow(async () => {
+          const floodingAddress = randomClientIp();
+          const otherAddress = randomClientIp();
+          const client = await environment.createClient();
+          const issued = await environment.issueTokens(client);
+          // Past the routing threshold (30), far below the 429 limit (600).
+          await seedLimiter(floodingAddress, 'api-invalid-token-ip', 30);
 
-        const realAuthenticate = runtime.api.authenticate.bind(runtime.api);
-        let releaseJunk: () => void = () => {};
-        const junkMayFinish = new Promise<void>((resolve) => {
-          releaseJunk = resolve;
-        });
-        let junkInFlight = 0;
-        const authenticate = vi.spyOn(runtime.api, 'authenticate').mockImplementation(async (token) => {
-          if (!token.startsWith('junk')) return realAuthenticate(token);
-          junkInFlight += 1;
+          const realAuthenticate = runtime.api.authenticate.bind(runtime.api);
+          let releaseJunk: () => void = () => {};
+          const junkMayFinish = new Promise<void>((resolve) => {
+            releaseJunk = resolve;
+          });
+          let junkInFlight = 0;
+          const authenticate = vi.spyOn(runtime.api, 'authenticate').mockImplementation(async (token) => {
+            if (!token.startsWith('junk')) return realAuthenticate(token);
+            junkInFlight += 1;
+            try {
+              // Junk holds its permit until the test lets it go: no timers decide the outcome.
+              await junkMayFinish;
+              return await realAuthenticate(token);
+            } finally {
+              junkInFlight -= 1;
+            }
+          });
+          const lanes: string[] = [];
+          const realAcquire = runtime.admission.acquire.bind(runtime.admission);
+          const acquire = vi.spyOn(runtime.admission, 'acquire').mockImplementation((lane) => {
+            lanes.push(lane);
+            return realAcquire(lane);
+          });
           try {
-            // Junk holds its permit until the test lets it go: no timers decide the outcome.
-            await junkMayFinish;
-            return await realAuthenticate(token);
+            const answeredJunk: number[] = [];
+            const junk = Array.from({ length: 8 }, () =>
+              getMe(`junk${randomUUID().replaceAll('-', '')}`, { clientIp: floodingAddress }).then((answer) => {
+                answeredJunk.push(answer.status);
+                return answer.status;
+              }),
+            );
+            // One running and four queued in the flagged lane; the other three are refused at once.
+            const deadline = Date.now() + 3000;
+            while (answeredJunk.length < 3 && Date.now() < deadline) {
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            expect(answeredJunk).toEqual([503, 503, 503]);
+            expect(junkInFlight).toBe(1);
+
+            // Another address is served while every junk lookup is still held.
+            const fromElsewhere = await getMe(issued.access_token, { clientIp: otherAddress });
+            expect(fromElsewhere.status).toBe(200);
+            expect(junkInFlight).toBe(1);
+            expect(answeredJunk).toHaveLength(3);
+            expect(lanes.filter((lane) => lane === 'api-flagged')).toHaveLength(8);
+
+            releaseJunk();
+            const junkStatuses = await Promise.all(junk);
+            // The held one fails its lookup; a queued one may also have passed its 1 s deadline.
+            expect(junkStatuses).toContain(401);
+            expect(junkStatuses.every((status) => status === 401 || status === 503)).toBe(true);
+
+            // The flooding address's own valid token is still served, in its lane, and never 429.
+            lanes.length = 0;
+            const fromFloodingAddress = await getMe(issued.access_token, { clientIp: floodingAddress });
+            expect(fromFloodingAddress.status).toBe(200);
+            expect(lanes).toEqual(['api-flagged']);
+            lanes.length = 0;
+            expect((await getMe(issued.access_token, { clientIp: otherAddress })).status).toBe(200);
+            expect(lanes).toEqual(['api']);
           } finally {
-            junkInFlight -= 1;
+            releaseJunk();
+            authenticate.mockRestore();
+            acquire.mockRestore();
           }
         });
-        const lanes: string[] = [];
-        const realAcquire = runtime.admission.acquire.bind(runtime.admission);
-        const acquire = vi.spyOn(runtime.admission, 'acquire').mockImplementation((lane) => {
-          lanes.push(lane);
-          return realAcquire(lane);
-        });
-        try {
-          const answeredJunk: number[] = [];
-          const junk = Array.from({ length: 8 }, () =>
-            getMe(`junk${randomUUID().replaceAll('-', '')}`, { clientIp: floodingAddress }).then((answer) => {
-              answeredJunk.push(answer.status);
-              return answer.status;
-            }),
-          );
-          // One running and four queued in the flagged lane; the other three are refused at once.
-          const deadline = Date.now() + 3000;
-          while (answeredJunk.length < 3 && Date.now() < deadline) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-          expect(answeredJunk).toEqual([503, 503, 503]);
-          expect(junkInFlight).toBe(1);
-
-          // Another address is served while every junk lookup is still held.
-          const fromElsewhere = await getMe(issued.access_token, { clientIp: otherAddress });
-          expect(fromElsewhere.status).toBe(200);
-          expect(junkInFlight).toBe(1);
-          expect(answeredJunk).toHaveLength(3);
-          expect(lanes.filter((lane) => lane === 'api-flagged')).toHaveLength(8);
-
-          releaseJunk();
-          const junkStatuses = await Promise.all(junk);
-          // The held one fails its lookup; a queued one may also have passed its 1 s deadline.
-          expect(junkStatuses).toContain(401);
-          expect(junkStatuses.every((status) => status === 401 || status === 503)).toBe(true);
-
-          // The flooding address's own valid token is still served, in its lane, and never 429.
-          lanes.length = 0;
-          const fromFloodingAddress = await getMe(issued.access_token, { clientIp: floodingAddress });
-          expect(fromFloodingAddress.status).toBe(200);
-          expect(lanes).toEqual(['api-flagged']);
-          lanes.length = 0;
-          expect((await getMe(issued.access_token, { clientIp: otherAddress })).status).toBe(200);
-          expect(lanes).toEqual(['api']);
-        } finally {
-          releaseJunk();
-          authenticate.mockRestore();
-          acquire.mockRestore();
-        }
       },
       TEST_DEADLINE_MS,
     );
