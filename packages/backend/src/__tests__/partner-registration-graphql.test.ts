@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { request } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -82,8 +82,14 @@ async function enoughWindowLeft(minimumMs = 15_000): Promise<void> {
   if (remainingMs < minimumMs) await new Promise((resolve) => setTimeout(resolve, remainingMs + 50));
 }
 
+// 254 random addresses let two tests draw the same one, and the address limit is
+// shared within a minute, so one test's seeded count refused another's request.
+// Each call gets its own address instead, from a run-specific start: a limiter
+// key outlives its run by up to two minutes. 198.51.0.0-198.51.99.255, 25,600 of them.
+let clientIpCounter = randomInt(0, 25_600);
 function randomClientIp(): string {
-  return `198.51.100.${Math.floor(Math.random() * 254) + 1}`;
+  clientIpCounter = (clientIpCounter + 1) % 25_600;
+  return `198.51.${clientIpCounter >> 8}.${clientIpCounter & 255}`;
 }
 
 /** A real first-party bearer token, the kind the app and the website send. */

@@ -645,12 +645,17 @@ and 95 with the daemon cap to 3.
 
 Against the 97 application slots, and an admission connection refused with
 `53300` is not retried. Before leaving mode `off`, do one of these: apply both
-the web cap to 4 and the daemon cap to 3 (drain 95), or set
+the web cap to 4 and the daemon cap to 3 (drain 95), or lower
 `LOGBOOK_SNAPSHOT_POOL_MAX` to 1 (drain 97 with only the web cap: then a cold
 build on a replica makes that replica's snapshot page reads wait, and answer
 `503` after 1 s), or lower `PARTNER_POOL_MAX` to 2 (another 4 off the drain, but
 the authorize, `/v1` and token lanes then share two connections), or raise
-`max_connections`.
+`max_connections`. The two pool sizes are code constants, not settings:
+`LOGBOOK_SNAPSHOT_POOL_MAX` in `packages/backend/src/auth/partner/logbook-access.ts`
+and `PARTNER_POOL_MAX` in `packages/backend/src/auth/partner/transaction.ts`, so
+either option is a source change and a deploy, not an operator step. The drain-97
+option uses every one of the 97 application slots and leaves no headroom, so
+prefer the drain-95 option or raising `max_connections`.
 
 The code-only budget uses the unchanged web setting of 10. The web cap to 4 is
 an operator step after this change deploys. The daemon cap column is a later

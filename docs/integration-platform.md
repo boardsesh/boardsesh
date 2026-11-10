@@ -758,9 +758,13 @@ a positive-result cache. The sole partner API resource identifier is
 `https://api.boardsesh.com/v1` (no trailing slash); it is distinct from the
 issuer. Register that resource and link every self-service client to it through
 supported provider APIs. Clients send it as `resource` at authorization, code
-exchange and refresh. A missing or different resource must never produce a usable
-API token: the pinned provider issues a token with no audience when `resource` is
-omitted, so `/v1/*` answers it `401 invalid_token`. Registration links alone are
+exchange and refresh. A missing or different resource at the authorization and
+the code exchange must never produce a usable API token: the pinned provider
+issues a token with no audience when neither step names it, so `/v1/*` answers it
+`401 invalid_token`, and naming it at either step is enough. A refresh inherits
+the grant's audience. One that leaves `resource` out gets tokens for the same
+audience (RFC 8707 section 2.2), which is standard and never wider; one that names
+any other resource is refused with `invalid_target`. Registration links alone are
 not assumed to supply a request default.
 
 How it is built (`auth/partner/bearer.ts`): the presented token is hashed with the
@@ -906,7 +910,8 @@ not mocks of library internals.
 Protocol coverage includes PKCE S256 for every client, exact redirects and
 allowed native loopback behavior, unknown-client errors, code expiry and
 single use, client-specific authentication methods, discovery/issuer
-consistency, opaque resource-bound tokens (including missing/wrong resource at every grant step),
+consistency, opaque resource-bound tokens (a missing resource at authorization and
+code exchange, a wrong one at every grant step, and a refresh keeping the grant's audience),
 scope ceilings, remembered-consent widening with newly
 issued tokens and unchanged old-token scopes, and refresh issuance
 only with `offline_access`. Prove refresh on day 30 and after day 90 of
@@ -919,7 +924,12 @@ disconnect, password reset and reconnect across instances. Assert one usable
 successor for one-time credentials, no token after security invalidation, and
 no resurrection of an old connection generation. A consumed-row update must
 fail on repeated consumption; merely returning zero affected rows is not a
-successful single-use guard.
+successful single-use guard. The launch suite races code redemption, refresh
+rotation and a refresh against Disconnect across two instances behind a barrier,
+and a refresh against a password reset. A reconnect is raced by the old
+generation's refresh token, which Disconnect deleted, so it is refused before
+any lock and needs no barrier. Repeated consumption, and rollback of a failed
+mint, are proven at the authority in `auth/partner/__tests__/partner-oauth-flow.test.ts`.
 
 Adversarial coverage includes consent CSRF, forged continuations, clickjacking
 (`frame-ancestors 'none'`), unsafe callback URLs, stale migrated sessions,
@@ -928,12 +938,40 @@ first-party/GraphQL/native/watch endpoints. Test immediate secret rotation,
 app suspension/deletion, account deletion, connection cleanup failure, and
 correct CORS/headers for expired-token and rate-limit errors. Ordinary
 first-party sign-out must not silently revoke an offline connection; explicit
-security revocation must.
+security revocation must. The launch suite covers each of these against the
+real server except three. The www consent page's own `frame-ancestors`: the
+API host's error page is checked there, and the consent page is tested with the
+page itself (`packages/web/app/oauth`, #6981 F14). Registering an unsafe
+callback URL: the suite only sends authorize to a redirect URI the app never
+registered, and the registration rules (fragments, `http://` off loopback,
+`boardsesh` hosts and schemes) are tested in
+`auth/partner/__tests__/partner-registration-rules.test.ts`. CORS on `429`: the
+route suites (`partner-auth-routes.test.ts`, `partner-v1-api.test.ts`) check it,
+since reaching a limit for real takes hundreds of requests.
 
 Independent adversarial agent reviews, by agents that did not write the code and
 working from the OAuth threat list, run before the first connection and again
 before milestone 2 opens registration. Failure of any launch gate blocks that
 deliverable; it does not authorize a fallback implementation.
+
+**The launch suite** (`packages/backend/src/__tests__/partner-launch-suite.test.ts`,
+#6981 F17) runs this list on the assembled stack: the real `startServer`, real
+Postgres and Redis, the www session cookie the installed NextAuth writes, and
+oauth4webapi, an OAuth client nobody here wrote, as the partner app. It walks
+registration, consent through the session bridge, the code exchange with PKCE,
+`/v1/me`, refresh rotation and reuse, Disconnect and reconnect, every row of the
+revocation table above, the retention sweep, suspend, secret rotation, app
+deletion and `revoke-user`, and each mode with the web's own mode in step and
+out of it. A second copy of the backend, loaded fresh in the same process with
+its own authority and pools, is the second instance. Time moves by rewriting
+rows, never by waiting, and races wait on what `pg_stat_activity` reports. It
+needs `REDIS_URL`, like the other partner route suites, and runs in about 30
+seconds in the `backend` project.
+
+It cannot prove: browser CORS in real Chromium and WebKit, the www consent and
+sign-in pages, consent on iOS Safari and Android Chrome, Cloudflare and Railway in
+front of the API host, and Sentry and PostHog redaction. The logbook routes have
+their own suites (L4), and Connected apps Disconnect is not built yet.
 
 ---
 

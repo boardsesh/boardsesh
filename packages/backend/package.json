@@ -99,6 +99,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
+    "oauth4webapi": "3.8.7",
     "postgres": "^3.4.9",
     "typescript": "~7.0.2",
     "vitest": "^4.1.10"
