@@ -49,6 +49,19 @@ function clipHeaderForLog(headerValue: string | string[] | undefined): string | 
   return (Array.isArray(headerValue) ? headerValue.join(', ') : headerValue)?.slice(0, MAX_LOGGED_HEADER_LENGTH);
 }
 
+/** What a logged GraphQL error keeps: a clipped message, its code and its path. */
+function clipGraphqlErrorForLog(error: GraphQLError): {
+  message: string;
+  code?: unknown;
+  path?: readonly (string | number)[];
+} {
+  return {
+    message: error.message.slice(0, MAX_LOGGED_HEADER_LENGTH),
+    code: error.extensions?.code,
+    path: error.path,
+  };
+}
+
 /** WebSocket extended with liveness tracking for ping/pong. */
 type AliveWebSocket = {
   isAlive: boolean;
@@ -546,7 +559,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           return [new GraphQLError('Apple Ads attribution requires HTTP')];
         }
         if (DEBUG) {
-          logger.info(`Subscription started: ${payload.operationName || 'anonymous'}`);
+          logger.info(
+            `Subscription started: ${payload.operationName?.slice(0, MAX_LOGGED_HEADER_LENGTH) || 'anonymous'}`,
+          );
         }
 
         // Validate query depth to prevent DoS via deeply nested subscriptions
@@ -577,7 +592,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         const safeErrors = errors.map((error) =>
           sanitizeBoardShareGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),
         );
-        logger.error('GraphQL error:', safeErrors);
+        logger.error('GraphQL error:', safeErrors.map(clipGraphqlErrorForLog));
         // Only report errors that wrap an internal exception. GraphQLError
         // instances without `originalError` are validation/parse/auth/depth
         // errors triggered by malformed client input — noisy, not actionable.
@@ -589,7 +604,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       },
       onComplete: (_ctx: ServerContext, _id: string, payload) => {
         if (DEBUG) {
-          logger.info(`Subscription completed: ${payload.operationName || 'anonymous'}`);
+          logger.info(
+            `Subscription completed: ${payload.operationName?.slice(0, MAX_LOGGED_HEADER_LENGTH) || 'anonymous'}`,
+          );
         }
       },
     },

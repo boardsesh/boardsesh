@@ -19,7 +19,7 @@ function hostnameFromHostHeader(hostHeader: string): string {
   return hostHeader
     .trim()
     .toLowerCase()
-    .replace(/^(?:.*@)?([a-z0-9.-]*).*$/, '$1')
+    .replace(/^(?:.*@(?=[a-z0-9.-]))?([a-z0-9.-]*).*$/, '$1')
     .replace(/\.+$/, '');
 }
 
