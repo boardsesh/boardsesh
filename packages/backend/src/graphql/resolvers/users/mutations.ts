@@ -37,7 +37,7 @@ import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { deleteClimbDependentRows, groupClimbUuidsByBoardType } from '../climbs/climb-cleanup';
 import { deleteAccountSprayWalls } from './delete-account-spray-walls';
 import { purgeDeletedSprayWallPhotos } from '../board/spray-wall-moderation';
-import { lockOwnedAppsForDeletion } from '../../../auth/partner/locks';
+import { lockOwnedAppsForDeletion, PARTNER_APP_LOCK_BUSY } from '../../../auth/partner/locks';
 import { retryAccountDeletion, withdrawDeletedAccountContent } from './delete-account-privacy';
 import { deleteAccountBoards } from './delete-account-boards';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview-tombstone';
@@ -322,114 +322,117 @@ export const userMutations = {
     let deletedWallIds: number[] = [];
     let previewBoardIds: number[] = [];
     try {
-      await retryAccountDeletion(async () => {
-        // Fail closed on stale authority before touching content, in a short
-        // transaction of its own, so the manifest is not held while content runs.
-        if (deletionCommand) await preflight(db, deletionCommand);
-        await db.transaction(async (tx) => {
-          // This guard must be serving before migration 0250 can create its
-          // archive. The migration's DDL takes ACCESS EXCLUSIVE on the live table;
-          // holding ROW EXCLUSIVE here makes one operation wait for the other.
-          // The archive lookup is a separate READ COMMITTED statement after the
-          // lock, so it sees an archive created by a migration that committed
-          // while this transaction waited. If the archive is still absent, this
-          // transaction keeps the lock until deletion commits and prevents the
-          // migration from archiving favorites for an account being removed.
-          await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
-          if (deletionCommand) await beginReservedAccountDeletion(tx);
-          else await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
-          const sprayWalls = await deleteAccountSprayWalls(tx, userId);
-          deletedWallIds = sprayWalls.wallIds;
-          let deletionSubject: ReservedDeletionSubject | undefined;
-          if (deletionCommand) {
-            deletionSubject = await lockReservedDeletionSubject(tx, deletionCommand);
-            if (!deletionSubject) {
-              // Already deleted and committed: report success and write nothing.
-              previewBoardIds = [];
-              return;
+      await retryAccountDeletion(
+        async () => {
+          // Fail closed on stale authority before touching content, in a short
+          // transaction of its own, so the manifest is not held while content runs.
+          if (deletionCommand) await preflight(db, deletionCommand);
+          await db.transaction(async (tx) => {
+            // This guard must be serving before migration 0250 can create its
+            // archive. The migration's DDL takes ACCESS EXCLUSIVE on the live table;
+            // holding ROW EXCLUSIVE here makes one operation wait for the other.
+            // The archive lookup is a separate READ COMMITTED statement after the
+            // lock, so it sees an archive created by a migration that committed
+            // while this transaction waited. If the archive is still absent, this
+            // transaction keeps the lock until deletion commits and prevents the
+            // migration from archiving favorites for an account being removed.
+            await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
+            if (deletionCommand) await beginReservedAccountDeletion(tx);
+            else await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
+            const sprayWalls = await deleteAccountSprayWalls(tx, userId);
+            deletedWallIds = sprayWalls.wallIds;
+            let deletionSubject: ReservedDeletionSubject | undefined;
+            if (deletionCommand) {
+              deletionSubject = await lockReservedDeletionSubject(tx, deletionCommand);
+              if (!deletionSubject) {
+                // Already deleted and committed: report success and write nothing.
+                previewBoardIds = [];
+                return;
+              }
             }
-          }
-          await withdrawDeletedAccountContent(tx, userId);
-          // Assigned, not accumulated, so a retried transaction cannot keep a stale list.
-          previewBoardIds = [...sprayWalls.previewBoardIds, ...(await deleteAccountBoards(tx, userId))];
-          await tx.execute(sql`LOCK TABLE public.user_favorites IN ROW EXCLUSIVE MODE`);
-          const favoriteArchive = await executeFirstRow<{ present: boolean }>(
-            tx,
-            sql`SELECT to_regclass('public.user_favorites_dedup_backup_0194') IS NOT NULL AS present`,
-          );
-          if (favoriteArchive?.present) {
-            // The archive intentionally has no users FK because it retains legacy
-            // angle variants for offline clients. A deleted account can no longer
-            // sync, so remove only its archived rows in this same transaction.
-            await tx.execute(sql`DELETE FROM public.user_favorites_dedup_backup_0194 WHERE user_id = ${userId}`);
-          }
+            await withdrawDeletedAccountContent(tx, userId);
+            // Assigned, not accumulated, so a retried transaction cannot keep a stale list.
+            previewBoardIds = [...sprayWalls.previewBoardIds, ...(await deleteAccountBoards(tx, userId))];
+            await tx.execute(sql`LOCK TABLE public.user_favorites IN ROW EXCLUSIVE MODE`);
+            const favoriteArchive = await executeFirstRow<{ present: boolean }>(
+              tx,
+              sql`SELECT to_regclass('public.user_favorites_dedup_backup_0194') IS NOT NULL AS present`,
+            );
+            if (favoriteArchive?.present) {
+              // The archive intentionally has no users FK because it retains legacy
+              // angle variants for offline clients. A deleted account can no longer
+              // sync, so remove only its archived rows in this same transaction.
+              await tx.execute(sql`DELETE FROM public.user_favorites_dedup_backup_0194 WHERE user_id = ${userId}`);
+            }
 
-          // Find this user's draft climbs first — the dependent-row cleanup below
-          // needs the (boardType, uuid) pairs, and it must run before the drafts
-          // themselves are deleted or the rows it targets would already be gone.
-          const draftClimbs = await tx
-            .select({ uuid: dbSchema.boardClimbs.uuid, boardType: dbSchema.boardClimbs.boardType })
-            .from(dbSchema.boardClimbs)
-            .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
+            // Find this user's draft climbs first — the dependent-row cleanup below
+            // needs the (boardType, uuid) pairs, and it must run before the drafts
+            // themselves are deleted or the rows it targets would already be gone.
+            const draftClimbs = await tx
+              .select({ uuid: dbSchema.boardClimbs.uuid, boardType: dbSchema.boardClimbs.boardType })
+              .from(dbSchema.boardClimbs)
+              .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
 
-          // board_climb_stats/_history/board_beta_links have no FK back to
-          // board_climbs (stats can legitimately arrive before their climb during
-          // upstream sync), so deleting a draft here without also clearing these
-          // strands an orphan row (issue #3943). Only the user's OWN drafts are
-          // touched — published climbs survive account deletion with userId set
-          // to null, and their stats must remain untouched.
-          const draftsByBoardType = groupClimbUuidsByBoardType(draftClimbs);
-          for (const [draftBoardType, uuids] of draftsByBoardType) {
-            await deleteClimbDependentRows(tx, draftBoardType, uuids);
-          }
+            // board_climb_stats/_history/board_beta_links have no FK back to
+            // board_climbs (stats can legitimately arrive before their climb during
+            // upstream sync), so deleting a draft here without also clearing these
+            // strands an orphan row (issue #3943). Only the user's OWN drafts are
+            // touched — published climbs survive account deletion with userId set
+            // to null, and their stats must remain untouched.
+            const draftsByBoardType = groupClimbUuidsByBoardType(draftClimbs);
+            for (const [draftBoardType, uuids] of draftsByBoardType) {
+              await deleteClimbDependentRows(tx, draftBoardType, uuids);
+            }
 
-          // Delete draft climbs created by this user
-          await tx
-            .delete(dbSchema.boardClimbs)
-            .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
-
-          // Optionally remove setter name from published climbs
-          if (input.removeSetterName) {
+            // Delete draft climbs created by this user
             await tx
-              .update(dbSchema.boardClimbs)
-              .set({ setterUsername: null })
-              .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
-          }
+              .delete(dbSchema.boardClimbs)
+              .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
 
-          // Erase the account's PostHog person once this deletion commits. The
-          // job rides this transaction (a savepoint, so a queue failure cannot
-          // abort the deletion); the PostHog call happens later, with retries.
-          // docs/analytics-consent.md, "Erasure".
-          await enqueuePosthogPersonDeletion(tx, { distinctId: userId, reason: 'account_deleted' });
+            // Optionally remove setter name from published climbs
+            if (input.removeSetterName) {
+              await tx
+                .update(dbSchema.boardClimbs)
+                .set({ setterUsername: null })
+                .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
+            }
 
-          // The users delete cascades into every partner app this account
-          // registered, and from each app into its climbers' connections, consent
-          // screens and tokens. Take those locks first, in the partner lock order,
-          // as app deletion does, so the cascade cannot cross a climber's consent
-          // answer, refresh or Disconnect. This account's own row is already
-          // locked FOR UPDATE (withdrawDeletedAccountContent).
-          await lockOwnedAppsForDeletion(tx as unknown as Parameters<typeof lockOwnedAppsForDeletion>[0], userId);
+            // Erase the account's PostHog person once this deletion commits. The
+            // job rides this transaction (a savepoint, so a queue failure cannot
+            // abort the deletion); the PostHog call happens later, with retries.
+            // docs/analytics-consent.md, "Erasure".
+            await enqueuePosthogPersonDeletion(tx, { distinctId: userId, reason: 'account_deleted' });
 
-          // Delete the user row — all related tables with onDelete: cascade
-          // will be cleaned up automatically by the database.
-          // boardClimbs.userId has onDelete: 'set null', so published climbs
-          // will have their userId set to null (preserved).
-          await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
+            // The users delete cascades into every partner app this account
+            // registered, and from each app into its climbers' connections, consent
+            // screens and tokens. Take those locks first, in the partner lock order,
+            // as app deletion does, so the cascade cannot cross a climber's consent
+            // answer, refresh or Disconnect. This account's own row is already
+            // locked FOR UPDATE (withdrawDeletedAccountContent).
+            await lockOwnedAppsForDeletion(tx as unknown as Parameters<typeof lockOwnedAppsForDeletion>[0], userId);
 
-          // logbook_changes has no users FK, so the cascade leaves it alone, and
-          // the cascaded tick deletes just wrote one row per tick naming this
-          // account. This must follow the users delete: run earlier, those rows
-          // would be written after it and survive. It stays ahead of the manifest
-          // below because a heavy climber's purge is a long statement too.
-          await tx.delete(dbSchema.logbookChanges).where(eq(dbSchema.logbookChanges.userId, userId));
+            // Delete the user row — all related tables with onDelete: cascade
+            // will be cleaned up automatically by the database.
+            // boardClimbs.userId has onDelete: 'set null', so published climbs
+            // will have their userId set to null (preserved).
+            await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
 
-          // After the cascade, the longest statement here, so the manifest
-          // every staged auth command queues on is held for bookkeeping only.
-          if (deletionCommand && deletionSubject) {
-            await recordReservedAccountDeletion(tx, deletionCommand, deletionSubject);
-          }
-        });
-      });
+            // logbook_changes has no users FK, so the cascade leaves it alone, and
+            // the cascaded tick deletes just wrote one row per tick naming this
+            // account. This must follow the users delete: run earlier, those rows
+            // would be written after it and survive. It stays ahead of the manifest
+            // below because a heavy climber's purge is a long statement too.
+            await tx.delete(dbSchema.logbookChanges).where(eq(dbSchema.logbookChanges.userId, userId));
+
+            // After the cascade, the longest statement here, so the manifest
+            // every staged auth command queues on is held for bookkeeping only.
+            if (deletionCommand && deletionSubject) {
+              await recordReservedAccountDeletion(tx, deletionCommand, deletionSubject);
+            }
+          });
+        },
+        { alsoRetry: PARTNER_APP_LOCK_BUSY },
+      );
     } catch (error) {
       if (!deletionCommand) throw error;
       logStagedDeletionFailure(stagedDeletionFailureCode(error));
