@@ -18,6 +18,7 @@ import { db } from './db/client';
 import { startPopularBoardConfigsRefresh } from './services/popular-board-configs';
 import { startClimbPopularityRefresh } from './services/climb-popularity-refresh';
 import { startPlaylistGradeSummaryRefresh } from './services/playlist-grade-summary-refresh';
+import { startPartnerOAuthSweep } from './services/partner-oauth-sweep';
 import { startPosthogPersonDeletion } from './services/analytics/posthog-person-deletion';
 
 async function main() {
@@ -58,6 +59,11 @@ async function main() {
   // removed through the app; only upstream grade drift and synced circuits wait.
   await startPlaylistGradeSummaryRefresh(jobQueue).catch((error: unknown) => {
     logger.error('[PlaylistGradeSummaries] Could not register the refresh job', { error });
+  });
+  // Not fatal: without the sweep, expired partner OAuth rows wait for the next
+  // replica that registers it. Nothing a request reads depends on it.
+  await startPartnerOAuthSweep(jobQueue).catch((error: unknown) => {
+    logger.error('[PartnerOAuthSweep] Could not register the sweep job', { error });
   });
   // Not fatal: a queued erasure waits up to 14 days for a worker
   // (`retentionSeconds` on the queue; a finished one is kept 7 days), and the
