@@ -471,7 +471,7 @@ describe('handleOgClimb', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('passes the layout id, frames and format straight through', async () => {
+    it('passes the layout id, frames, format and climb identity straight through', async () => {
       vi.mocked(renderSprayOgCard).mockResolvedValueOnce({
         kind: 'card',
         buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
@@ -484,6 +484,7 @@ describe('handleOgClimb', () => {
         layoutId: 90001,
         frames: 'p501r1p502r2',
         format: 'png',
+        card: { name: undefined, grade: undefined, setter: undefined, angle: undefined, fontFamily: 'Noto Sans' },
       });
     });
 

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOARD_IMAGE_DIMENSIONS, SUPPORTED_BOARDS } from '@boardsesh/board-config';
+import { BOARD_TYPE_LABELS, getProductSize } from '@boardsesh/board-constants';
 import { HOLD_STATE_MAP, getBoardStrokeWidthMultiplier } from '@boardsesh/board-constants/hold-states';
 import { getBackgroundRelPaths } from '../background';
 import { getBoardDetailsForBoard } from '../board-details';
@@ -158,6 +159,35 @@ describe('buildBoardRenderProjections', () => {
       expect(ogCard.outputWidth).toBeLessThanOrEqual(OG_IMAGE_WIDTH);
       expect(Math.round(rendered.config.board_height * ogCard.ogScale!)).toBeLessThanOrEqual(OG_IMAGE_HEIGHT);
     });
+
+    // The board line is catalogue data, not code: no file hash sees a renamed
+    // size, and a card from a binary that sends no identity params leads with it.
+    it('moves the version when the words a card prints for a board change', () => {
+      const kilterDigest = () => buildBoardRenderProjections().kilter.configDigest;
+      const baseline = kilterDigest();
+      const kilterSize = getProductSize('kilter', 10);
+      if (!kilterSize) throw new Error('no Kilter size 10');
+      const originalBrand = BOARD_TYPE_LABELS.kilter;
+      const originalSizeName = kilterSize.name;
+      try {
+        BOARD_TYPE_LABELS.kilter = 'Kilter Board';
+        const renamedBrand = kilterDigest();
+        BOARD_TYPE_LABELS.kilter = originalBrand;
+        kilterSize.name = `${originalSizeName} (renamed)`;
+        const renamedSize = kilterDigest();
+
+        expect(renamedBrand).not.toBe(baseline);
+        expect(renamedSize).not.toBe(baseline);
+        const fileHashes = { 'a.wasm': 'aa' };
+        expect(combineBoardRenderVersion({ fileHashes, boardHashes: { kilter: renamedSize } })).not.toBe(
+          combineBoardRenderVersion({ fileHashes, boardHashes: { kilter: baseline } }),
+        );
+      } finally {
+        BOARD_TYPE_LABELS.kilter = originalBrand;
+        kilterSize.name = originalSizeName;
+      }
+      expect(kilterDigest()).toBe(baseline);
+    }, 120_000);
 
     it('carries which board photos get composited (background.ts path logic)', () => {
       const boardDetails = kilterBoardDetails();

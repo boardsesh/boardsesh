@@ -469,7 +469,9 @@ describe('renderBoardImageBuffer with caches', () => {
     });
     const pixels = await sharp(result.buffer).ensureAlpha().raw().toBuffer();
     const glow = (315 * 1200 + 300) * 4;
-    expect(pixels[glow]).toBeGreaterThan(pixels[glow + 2] + 20);
+    // Under the share-card family's ground tint the bokeh is quieter, but its
+    // colour still has to come through.
+    expect(pixels[glow]).toBeGreaterThan(pixels[glow + 2] + 10);
     expect(readPixel(pixels, 620 * 1200 + 1190)).toEqual([0, 255, 0, 255]);
   });
 

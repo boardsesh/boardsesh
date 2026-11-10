@@ -85,6 +85,14 @@ export const OPAQUE_RENDER_INPUTS: readonly string[] = [
   'packages/shared/board-render/src/frosted-bokeh.ts',
   'packages/shared/board-render/src/og-card.ts',
   'packages/backend/src/services/spray-og-card.ts',
+  // The share-card family grid the climb card is drawn on: the scrim, the text
+  // stack, the hero fit, the wordmark and the grade-colour lift. Not
+  // `og-family-blocks.ts`: the avatar, pill, dots and bars live there because the
+  // climb card never draws them, so editing them must not turn over every URL.
+  'packages/shared/board-render/src/og-family.ts',
+  // The grade scale's colours behind the hero. The board line's words are not
+  // here: the projection records the line itself for every catalogue entry.
+  'packages/board-constants/src/grade-colors.ts',
 ];
 
 /**

@@ -1,8 +1,39 @@
 import sharp from 'sharp';
 import { FONT_GRADE_COLORS } from '@boardsesh/board-constants/grade-colors';
 import { createOgFrameBuffer } from './background';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
-import { OG_JPEG_OPTIONS } from './pipeline';
+import {
+  OG_CARD_ART_LEFT,
+  OG_CARD_ART_RIGHT,
+  OG_CARD_BOARD_BOX,
+  OG_CARD_COLUMN_LEFT,
+  OG_IMAGE_HEIGHT,
+  OG_IMAGE_WIDTH,
+  placeOgBoard,
+} from './headers';
+import type { OutputFormat } from './types';
+import {
+  AVATAR_GAP,
+  AVATAR_SIZE,
+  BARS_CLEARANCE,
+  BARS_MIN_COUNT,
+  BARS_TOP,
+  DOT_LABEL_GAP,
+  DOT_LABEL_PT,
+  DOT_LARGE_GAP,
+  DOT_LARGE_SIZE,
+  DOT_SMALL_GAP,
+  DOT_SMALL_SIZE,
+  DOTS_LARGE_UP_TO,
+  PILL_DOT_SIZE,
+  PILL_GAP,
+  PILL_HEIGHT,
+  PILL_PADDING_X,
+  renderAvatarImage,
+  renderBarsSvg,
+  renderDotsSvg,
+  renderMonogramDisc,
+  renderPillBackground,
+} from './og-family-blocks';
 import { escapePangoMarkup } from './validation';
 
 /**
@@ -11,10 +42,37 @@ import { escapePangoMarkup } from './validation';
  * card and survives a square crop at 110px. See docs/og-climb.md.
  *
  * The surface supplies an art slot and a stack of text; the ground, the scrim,
- * the column and the wordmark are fixed here. Deliberately NOT in
- * `OPAQUE_RENDER_INPUTS`: climb card URLs are `immutable` for a year and must not
- * move until the climb card itself joins this grid.
+ * the column and the wordmark are fixed here. The climb card draws through it
+ * too (`og-card.ts`), so this file is in `OPAQUE_RENDER_INPUTS`: an edit here
+ * moves `BOARD_RENDER_VERSION` and with it every climb card and `/render/board`
+ * URL. The blocks only other cards draw (avatar, pill, dots, bars) are drawn in
+ * `og-family-blocks.ts`, which is not hashed.
  */
+
+/**
+ * Share-card JPEG encode: mozjpeg at quality 85 with full chroma so hold rings
+ * stay crisp (~50–90KB at 1200×630).
+ */
+export const OG_JPEG_OPTIONS: sharp.JpegOptions = {
+  quality: 85,
+  chromaSubsampling: '4:4:4',
+  mozjpeg: true,
+};
+const OG_PNG_OPTIONS: sharp.PngOptions = { compressionLevel: 9, adaptiveFiltering: true };
+const OG_WEBP_OPTIONS: sharp.WebpOptions = { quality: 80 };
+
+/**
+ * Encode a finished card. JPEG is what every card is served as by default; PNG and
+ * WebP exist because `/og/climb` has always honoured `format`, and it still must.
+ */
+export async function encodeOgCard(
+  image: sharp.Sharp,
+  format: OutputFormat = 'jpeg',
+): Promise<{ buffer: Buffer; contentType: string }> {
+  if (format === 'png') return { buffer: await image.png(OG_PNG_OPTIONS).toBuffer(), contentType: 'image/png' };
+  if (format === 'webp') return { buffer: await image.webp(OG_WEBP_OPTIONS).toBuffer(), contentType: 'image/webp' };
+  return { buffer: await image.jpeg(OG_JPEG_OPTIONS).toBuffer(), contentType: 'image/jpeg' };
+}
 
 /** Canvas ground. Same colour the Aura veil washes toward on a dark field. */
 export const OG_FAMILY_GROUND = '#181225';
@@ -36,8 +94,8 @@ const COLUMN_RIGHT = OG_IMAGE_WIDTH - 24;
 export const OG_FAMILY_WORDMARK_RIGHT = 1160;
 export const OG_FAMILY_WORDMARK_TOP = 574;
 
-const BOARD_TOP_INSET = 14;
-const ART_HEIGHT = OG_IMAGE_HEIGHT - BOARD_TOP_INSET * 2;
+const BOARD_TOP_INSET = OG_CARD_BOARD_BOX.top;
+const ART_HEIGHT = OG_CARD_BOARD_BOX.height;
 
 /** The art slots. `none` draws no art and gives the text the width instead. */
 export type OgFamilySlot = 'full' | 'narrow' | 'none';
@@ -49,7 +107,7 @@ type SlotGeometry = {
 };
 
 const SLOTS: Record<OgFamilySlot, SlotGeometry> = {
-  full: { art: { left: 16, right: 560 }, columnLeft: 590 },
+  full: { art: { left: OG_CARD_ART_LEFT, right: OG_CARD_ART_RIGHT }, columnLeft: OG_CARD_COLUMN_LEFT },
   narrow: { art: { left: 0, right: 290 }, columnLeft: 322 },
   // No art: the text is centred across the whole crop rather than left-aligned on
   // an empty field, so `columnLeft` is the crop's own left edge.
@@ -118,9 +176,12 @@ export function placeOgFamilyBoard(
   const canvasTop = Math.max(0, BOARD_TOP_INSET + Math.round((ART_HEIGHT - boardHeight) / 2));
 
   if (slot === 'full') {
+    // The climb card's own placement, so a family board and a climb board sit in
+    // exactly the same spot.
+    const placed = placeOgBoard(boardWidth, boardHeight);
     return {
-      canvasLeft: Math.max(art.left, art.right - boardWidth),
-      canvasTop,
+      canvasLeft: placed.left,
+      canvasTop: placed.top,
       sourceLeft: boardWidth > slotWidth ? boardWidth - slotWidth : 0,
       sourceTop: 0,
       visibleWidth,
@@ -324,35 +385,6 @@ const MIN_HERO_PT = 20;
 const HERO_MAX_HEIGHT = 340;
 const WRAP_HERO_STEP_PT = 4;
 const TRUNCATION_ATTEMPTS = 6;
-const PILL_HEIGHT = 44;
-const PILL_PADDING_X = 18;
-const PILL_DOT_SIZE = 12;
-const PILL_GAP = 10;
-
-const AVATAR_SIZE = 80;
-const AVATAR_GAP = 18;
-const AVATAR_RING_WIDTH = 3;
-
-/** Chart bars live in the lower column, above the wordmark's row and clear of the text. */
-const BARS_TOP = 486;
-const BARS_BOTTOM = 556;
-const BARS_CLEARANCE = 16;
-const BARS_MIN_COUNT = 3;
-const BAR_MAX_WIDTH = 40;
-const BAR_GAP = 6;
-const BAR_ZERO_HEIGHT = 4;
-const BAR_ZERO_COLOR = '#2A2438';
-
-/** Under this many dots they can afford to be big; over it they run one line. */
-const DOTS_LARGE_UP_TO = 10;
-const DOT_LARGE_SIZE = 40;
-const DOT_LARGE_GAP = 10;
-const DOT_SMALL_SIZE = 26;
-const DOT_SMALL_GAP = 8;
-const DOT_RING_WIDTH = 5;
-const DOT_LABEL_PT = 20;
-const DOT_LABEL_GAP = 12;
-
 const ASIDE_LEFT = 930;
 const ASIDE_TOP = 72;
 const ASIDE_WIDTH = 230;
@@ -364,9 +396,7 @@ type TextLayer = { input: Buffer; left: number; top: number };
 type TextRaster = { buffer: Buffer; width: number; height: number };
 type TextAlign = 'left' | 'right' | 'centre';
 
-// Temporary copy of og-card.ts's renderText so this module can ship without
-// touching a file in OPAQUE_RENDER_INPUTS. Deleted when the climb card moves
-// onto this grid and the two text paths become one.
+/** The one Pango text path every share card draws through. */
 async function renderRaster(
   markup: string,
   options: { fontFamily?: string; width?: number; align?: TextAlign },
@@ -622,91 +652,7 @@ async function renderPill(pill: OgFamilyPill, fontFamily: string | undefined) {
     { fontFamily },
   );
   const width = PILL_PADDING_X * 2 + PILL_DOT_SIZE + PILL_GAP + text.width;
-  const background = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${PILL_HEIGHT}">` +
-      `<rect x="1" y="1" width="${width - 2}" height="${PILL_HEIGHT - 2}" rx="${PILL_HEIGHT / 2 - 1}" fill="${pill.color}" fill-opacity="0.14" stroke="${pill.color}" stroke-opacity="0.75" stroke-width="2"/>` +
-      `<circle cx="${PILL_PADDING_X + PILL_DOT_SIZE / 2}" cy="${PILL_HEIGHT / 2}" r="${PILL_DOT_SIZE / 2}" fill="${pill.color}"/>` +
-      `</svg>`,
-  );
-  return { background, text, width };
-}
-
-/** A circular image, ringed, as one layer. The caller has already decoded and sized `png`. */
-async function renderAvatarImage(png: Buffer): Promise<Buffer> {
-  const radius = AVATAR_SIZE / 2;
-  const circle = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius}" fill="#fff"/></svg>`,
-  );
-  const ring = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius - AVATAR_RING_WIDTH / 2}" fill="none" stroke="#fff" stroke-opacity="0.22" stroke-width="${AVATAR_RING_WIDTH}"/></svg>`,
-  );
-  const clipped = await sharp(png)
-    .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: 'cover' })
-    .ensureAlpha()
-    .composite([{ input: circle, blend: 'dest-in' }])
-    .png()
-    .toBuffer();
-  return sharp(clipped)
-    .composite([{ input: ring }])
-    .png()
-    .toBuffer();
-}
-
-function renderMonogramDisc(color: string): Buffer {
-  const radius = AVATAR_SIZE / 2;
-  return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius - AVATAR_RING_WIDTH / 2}" fill="${color}" fill-opacity="0.22" stroke="${color}" stroke-opacity="0.6" stroke-width="${AVATAR_RING_WIDTH}"/></svg>`,
-  );
-}
-
-/** The dots as one SVG, plus how many it drew: the rest are carried by the `+N` label. */
-function renderDotsSvg(
-  dots: OgFamilyDots['dots'],
-  count: number,
-  size: number,
-  gap: number,
-): { svg: Buffer; width: number; height: number } {
-  const step = size + gap;
-  const width = Math.max(size, count * step - gap);
-  const circles = dots
-    .slice(0, count)
-    .map((dot, index) => {
-      const cx = index * step + size / 2;
-      const cy = size / 2;
-      return dot.filled
-        ? `<circle cx="${cx}" cy="${cy}" r="${size / 2}" fill="${dot.color}"/>`
-        : `<circle cx="${cx}" cy="${cy}" r="${(size - DOT_RING_WIDTH) / 2}" fill="none" stroke="${dot.color}" stroke-width="${DOT_RING_WIDTH}"/>`;
-    })
-    .join('');
-  return {
-    svg: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${size}">${circles}</svg>`),
-    width,
-    height: size,
-  };
-}
-
-/**
- * Bars as one SVG, scaled to the card's tallest. Bars with no count keep a flat
- * tick, so the x-axis stays a continuous scale from easiest to hardest.
- */
-function renderBarsSvg(bars: readonly OgFamilyBar[], maxWidth: number): { svg: Buffer; width: number; height: number } {
-  const height = BARS_BOTTOM - BARS_TOP;
-  const tallest = Math.max(1, ...bars.map((bar) => bar.value));
-  const barWidth = Math.min(BAR_MAX_WIDTH, Math.floor((maxWidth - BAR_GAP * (bars.length - 1)) / bars.length));
-  const width = bars.length * barWidth + BAR_GAP * (bars.length - 1);
-  const rects = bars
-    .map((bar, index) => {
-      const barHeight =
-        bar.value > 0 ? Math.max(BAR_ZERO_HEIGHT, Math.round((bar.value / tallest) * height)) : BAR_ZERO_HEIGHT;
-      const color = bar.value > 0 ? bar.color : BAR_ZERO_COLOR;
-      return `<rect x="${index * (barWidth + BAR_GAP)}" y="${height - barHeight}" width="${barWidth}" height="${barHeight}" rx="2" fill="${color}"/>`;
-    })
-    .join('');
-  return {
-    svg: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${rects}</svg>`),
-    width,
-    height,
-  };
+  return { background: renderPillBackground(pill.color, width), text, width };
 }
 
 export type OgFamilyHeroRect = { left: number; top: number; width: number; height: number; pt: number };
@@ -1068,8 +1014,10 @@ export async function composeOgFamilyCard(params: {
   slot: OgFamilySlot;
   art: OgFamilyArtLayers | null;
   textLayers: readonly sharp.OverlayOptions[];
+  /** JPEG unless a caller's URL contract says otherwise (`/og/climb`'s `format`). */
+  format?: OutputFormat;
 }): Promise<{ buffer: Buffer; contentType: string }> {
-  const { background, slot, art, textLayers } = params;
+  const { background, slot, art, textLayers, format } = params;
 
   const layers: sharp.OverlayOptions[] = [{ input: buildOgFamilyScrim(slot) }];
   if (art) {
@@ -1099,5 +1047,5 @@ export async function composeOgFamilyCard(params: {
     raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 },
   }).composite(layers);
 
-  return { buffer: await composited.jpeg(OG_JPEG_OPTIONS).toBuffer(), contentType: 'image/jpeg' };
+  return encodeOgCard(composited, format);
 }

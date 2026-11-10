@@ -30,20 +30,36 @@ never call this endpoint.
 
 ### The climb-identity column
 
-The card is 1200x630: the board art right-aligned in a 736x602 box on the left,
-and the climb's identity in a 392px column on the right. Both halves matter for
-different consumers — a social unfurl shows the whole card, while a search engine
-crops it to a square from the centre and keeps only `x` in [285, 915]. Right-
-aligning the board is what puts a portrait board fully inside that crop;
-`og-geometry.test.ts` walks the catalogue and fails if a board ever renders
-smaller than the old full-width layout or spills into the column.
+The card is 1200x630 and is drawn on the share-card family's `full` slot (see
+"The share-card family" below), the same grid as the playlist, profile and setter
+cards: the board right-aligned in a 544x602 box at x 16-560, the climb's identity
+in a column from x 590, and the BOARDSESH wordmark with its right edge at x 1160.
+Both halves matter for different consumers — a social unfurl shows the whole
+card, while a search engine crops it to a square from the centre and keeps only
+`x` in [285, 915]. The grade is the hero, in its grade colour, and it always ends
+inside that crop: it is one line, shrunk to fit and never cut or wrapped, so
+`8C+/V16` and `7c+/V10` read whole at 110px. Under it come the climb name (bold,
+up to three lines, truncated past that), the setter, and the board line with the
+angle (`Kilter · 12 x 12 with kickboard · 40°`). `og-geometry.test.ts` walks the
+catalogue and fails if a board leaves the art slot or the widest grades leave the
+crop.
+
+Before PR 5 of the family work the board sat in a 736x602 box with a 392px column
+whose grade started at x 784, so `7a/V6` ran to about x 977 and the crop cut it.
+The move shrank wide boards (Tension 16 wide, Kilter 1477x1200) by up to 36% and
+pulled every board 200px left; the grade is what the crop keeps now.
 
 `n`, `g`, `s` and `angle` are all **optional**, so a URL built by an
-already-shipped mobile binary still renders — it just gets the board on its own.
-The board line under the name (`Kilter · Original · 12 x 12 Square`) is derived
-from `board_name`/`layout_id`/`size_id`, not taken as a param: those already
+already-shipped mobile binary still renders. Its card leads with the board's
+brand (`Kilter`) over the rest of the board line. With no grade the name leads
+instead. The board line (`Kilter · Original · 12 x 12 Square`) is derived from
+`board_name`/`layout_id`/`size_id`, not taken as a param: those already
 determine the board that gets drawn, so a caller-supplied label would be a
 second, forgeable source for the same fact.
+
+The grade's colour is the grade scale's own (`getGradeColor`), lifted by the
+family's `liftGradeColorForCard` until it clears contrast on `#181225`. V10 and up
+are near-black purples on the scale and used to vanish into the old card's field.
 
 ### Why a card's holds look bolder than the app's
 
@@ -59,7 +75,7 @@ Switching the card to the thumbnail mark style (`glow-fill`) looks like the
 obvious lever and is not: it measured +5.8% on Kilter and slightly negative on
 MoonBoard, because the problem at 110px is the marks' size, not their style.
 
-The card's Aura config is one of the terms in `BOARD_RENDER_VERSION`
+The emphasis survived the move to the family grid unchanged. The card's Aura config is one of the terms in `BOARD_RENDER_VERSION`
 (`wasm_config_aura_card`). Before that it was not, and the projection asserted
 that output width was "all the variants change in the config" — true until the
 emphasis existed. Without the probe, a change here would move no version and
@@ -75,7 +91,9 @@ entry and leave the old one at the edge.
    `pango_parse_markup` unconditionally — there is no plain-text mode — so an
    unescaped `&` throws `text: invalid markup in text` rather than rendering
    literally. A climb called "Rock & Roll" would be a 500. `escapePangoMarkup`
-   in `validation.ts` is the only safe way in.
+   in `validation.ts` is the only safe way in. Every share card draws text through
+   one function, `renderRaster` in `og-family.ts`; `og-card.ts` only decides what
+   the climb card says.
 2. **The card names its font family, and that is load-bearing.** On Alpine
    `fc-match sans` resolves to WenQuanYi Zen Hei — the CJK font — which renders
    Latin in its own weaker glyphs and does not honour `weight="700"`, so the
@@ -124,7 +142,20 @@ embedding the endpoint.
 builders, including spray-wall previews and share prewarming. It is a cache
 alias, not a rendering option; older unversioned URLs remain accepted. The version
 also hashes the shared bokeh engine and grain texture, the Sharp adapter, the
-text drawing and the spray compositor, so visual changes get new CDN URLs.
+text drawing (`og-card.ts` and the family grid `og-family.ts`), the grade colours
+and the spray compositor, so visual changes get new CDN URLs. The board line's
+words (`BOARD_TYPE_LABELS`, layout and size names) are catalogue data rather than
+code, so the projection records the line itself for every catalogue entry
+(`og_board_line`, from `og-board-line.ts`): renaming a size moves the version.
+
+The version is one string for every board and every image this backend draws, so
+anything hashed into it turns over every climb card and every `/render/board`
+thumbnail URL at once, even where the bytes did not change. That is why the
+blocks only the other family cards draw (avatar, monogram, JOIN pill, recap dots,
+profile bars) live in `og-family-blocks.ts`, which is not hashed; a test fails if
+the climb card ever asks for one of them. The stack layout that places those
+blocks is still in `og-family.ts`, because one function places every row the
+climb card draws as well.
 
 ### Reusable frosted backdrop
 
@@ -139,14 +170,15 @@ on the full 1200×630 field. The card uses the dark surface with 5% white frost
 and 3% still grain. Its OG-only preset scales blur/radii from a 225px reference
 and draws the blobs at 45% opacity, for broad colour behind the actual lit holds.
 The native control retains its original 8% frost, 6% grain and strength. Catalogue cards use
-the overlay's selected screen palette and effective frame, with a soft dark
-scrim under the details. Board photos, hold marks, framing and text sit above
-the bokeh. With no usable points, the field keeps its neutral frost and grain.
+the overlay's selected screen palette and effective frame. Board photos, hold
+marks, framing and text sit above the bokeh. With no usable points, the field
+keeps its neutral frost and grain.
 
-The details use a 240px transition into the protected text column. The grade is
-52pt and the climb name 32pt; supporting labels and the wordmark clear 4.5:1 even
-over crowded white bokeh. Only a subtle board hairline remains, without an outer
-canvas outline. Board placement and the centre-square crop remain unchanged.
+Over the bokeh goes the family scrim (`buildOgFamilyScrim('full')`): a 40% tint of
+`#181225` across the card, then a 240px ramp into a 92% column from x 590. The
+bokeh is quieter than it was under the old card's 90% column-only scrim; that is
+the family look, the same on every card. The grade is up to 96pt, the name 34pt;
+supporting labels and the wordmark clear 4.5:1 even over crowded white bokeh.
 
 An `aura` render here draws exactly what the app draws. The look's tuning —
 glow reach, the seam crossfade, the veil buckets, the fill alpha — lives in
@@ -181,9 +213,10 @@ in-app images at `/render/board` and the compatibility alias
    fallback preview config for every supported board is pre-warmed after boot.
    Warmups share the render cap but use a low-priority queue, so queued request
    work takes the next available slot between board warmups.
-3. The climb-specific frosted backdrop is drawn underneath that cached plane;
-   the hold overlay and text are composited above it and encoded — JPEG by default
-   (mozjpeg, quality 85, 4:4:4 chroma). Local frosted examples were 61–85KB.
+3. The climb-specific frosted backdrop and the family scrim are drawn underneath
+   that cached plane; the hold overlay and text are composited above it and
+   encoded — JPEG by default (mozjpeg, quality 85, 4:4:4 chroma). Alpine renders on
+   the family grid were 61–106KB.
 4. Final bytes land in the **byte cache** (LRU, 32MB by default), so repeat
    fetches (FB, Twitter, WhatsApp, Slack each fetch independently) are served
    from memory.
@@ -320,9 +353,9 @@ answers 500.
 **The drawing is sharp + SVG, not the WASM overlay.** The shared pipeline's image
 resolver is synchronous and reads the local filesystem, which a photograph
 fetched over HTTP can never satisfy, and its overlay draws a catalogue board's
-fixed geometry. So this path resizes the photo `fit: 'inside'` into the 1200×630
-frosted bokeh field, centres it, and composites one SVG mark
-per lit hold: the hold's traced silhouette as a polygon when
+fixed geometry. So this path resizes the photo `fit: 'inside'` the family's
+544x602 art slot, places it against the text column like a board, and composites
+one SVG mark per lit hold: the hold's traced silhouette as a polygon when
 `spray_wall_holds.outline` has one, a circle at its mapped radius when it does
 not — the same ring fallback the rest of the render path uses. Canonical
 coordinates reach photo pixels through `invert()` of the version's stored
@@ -334,14 +367,26 @@ Spray cards derive their frosted background from the same photo-mapped marks as
 the foreground overlay, after every public-visibility gate. A singular matrix
 still shows the photo, on neutral frost without coloured blobs.
 
+**On the family grid.** The photo is rounded and hairline-bordered like a place
+card's (`renderOgFamilyPhotoLayers`) and composed through `composeOgFamilyCard`,
+which honours `format`. The text column draws the URL's `n`, `g`, `s` and `angle`
+the way a catalogue climb card does, with the wall's own name and `Spray wall` as
+the board line. www does not send identity params for a wall's climb today, so its
+card leads with the wall's name. The name comes from the row the gates already
+passed and is built only after them, so a private wall's name never reaches a
+byte. Because it is drawn, it is in the in-process key with the climb text: a
+rename redraws the card. A Pango failure costs the words, not the card.
+
 ## The share-card family (`/og/playlist`, `/og/session`, `/og/profile`, `/og/setter`, `/og/place`)
 
 `packages/shared/board-render/src/og-family.ts` is the layout the other share
-cards render through, so a link pasted into a chat reads like the climb card. The
-surface supplies an art slot and a text stack; the ground (`#181225`), the frosted
-bokeh, the scrim, the column and the wordmark are fixed. It is deliberately not in
-`OPAQUE_RENDER_INPUTS`: climb card URLs stay byte-identical until the climb card
-moves onto this grid.
+cards render through, the climb card included. The surface supplies an art slot
+and a text stack; the ground (`#181225`), the frosted bokeh, the scrim, the column
+and the wordmark are fixed. Since the climb card moved onto it, `og-family.ts` is
+in `OPAQUE_RENDER_INPUTS`: an edit to it moves `BOARD_RENDER_VERSION` and every
+climb card URL with it. `og-family-blocks.ts` (avatar, pill, dots, bars) is not. The `full` slot's numbers live in `headers.ts`
+(`OG_CARD_BOARD_BOX`, `OG_CARD_COLUMN_LEFT`, `placeOgBoard`) so the browser's render
+worker can size a board without importing sharp.
 
 Slots are `full` (board in x 16-560, text column at x 590), `narrow` (a 290px slice
 around the lit holds, text at x 322, used by the join and recap cards so the hero can be huge)
@@ -352,7 +397,8 @@ fit and is never cut or wrapped; a name wraps and, only below its size floor,
 truncates. A left-aligned stack marks each line left-to-right, so a Hebrew or Arabic
 name stays on the column's edge. The wordmark's right edge is fixed at x 1160 on every
 slot. Family cards are JPEG only: a PNG option cost 397 KB per entry in the byte cache
-shared with climb renders. Grade colour comes from `FONT_GRADE_COLORS` with one shared lift
+shared with climb renders. The climb and spray cards are the exception, because
+`/og/climb` has always honoured `format`. Grade colour comes from `FONT_GRADE_COLORS` with one shared lift
 (`liftGradeColorForCard`) so V8 and up clear contrast on dark without changing hue.
 
 **Data.** Each card runs GraphQL documents in process with graphql-js `execute` on
@@ -558,3 +604,29 @@ the advertised URL is not fetched a second time. `extractOgImageUrl` follows onl
 `/og/climb` also grew a guard for later changes: a request whose `v` differs from the
 compiled `BOARD_RENDER_VERSION` answers the daily tier rather than `immutable`, so a
 render change cannot pin old bytes for a year. A URL with no `v` stays immutable.
+When the climb card moved onto the family grid the version moved with it, so every
+URL web and mobile build changed.
+
+What a version bump does and does not refresh:
+
+- **Refreshes:** every URL built after the deploy, because it carries the new `v`.
+  Pages re-render their `og:image` and the apps build share URLs from the constant,
+  so new shares and re-scraped pages get the new card.
+- **Does not refresh:** a URL already cached at Cloudflare under the old `v`. That
+  response went out `immutable` for a year, and the edge keeps serving the old card
+  for the rest of that year; nothing on our side can reach it without a purge token
+  we do not hold. The daily-tier guard only applies when an old-`v` URL misses the
+  edge and reaches the origin: it then gets the new drawing with a day of caching,
+  not a year.
+- **Does not refresh:** a preview a chat app stored itself. Discord, Slack and
+  iMessage keep their own copy of an unfurl keyed by the page URL, not the image.
+
+**Known limit:** `/render/board?variant=og` has no such guard. It answers whatever
+`v` it is sent with `immutable`, so an old `v` that reaches the origin would pin the
+new wordless card under the old URL for a year. No production page builds that URL
+today (www's fallback to it only runs when no backend origin is configured), so it
+is left as is.
+
+`/render/board` without `variant=og` does not touch any of this: before and after the
+move, plain, thumbnail, background, dimmed, dark and classic renders came out
+byte-identical. `variant=og` is the card without words and moved with it.

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
 import { escapePangoMarkup, MAX_CARD_NAME_CODEPOINTS, normalizeOgCardText, ogClimbQuerySchema } from '../validation';
-import { renderOgCardLayers } from '../og-card';
-import { OG_CARD_BOARD_BOX, placeOgBoard } from '../headers';
+import { buildOgClimbCardContent, ogCardGradeColor, renderOgCardLayers } from '../og-card';
+import { OG_CARD_BOARD_BOX, OG_CARD_COLUMN_LEFT, placeOgBoard } from '../headers';
+import { OG_FAMILY_GROUND, OG_FAMILY_WORDMARK_RIGHT, renderOgFamilyTextLayers } from '../og-family';
+import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
 
 const validQuery = {
   board_name: 'kilter',
@@ -147,16 +149,19 @@ describe('renderOgCardLayers', () => {
     expect(await renderOgCardLayers({})).toEqual([]);
   });
 
-  it('takes its direction from whichever line the card leads with', async () => {
-    // Deciding from the name alone left-anchored a card whose only words were
-    // an Arabic setter.
-    const ltr = await renderOgCardLayers({ grade: 'V7', setter: 'someone' });
-    const rtl = await renderOgCardLayers({ grade: 'V7', setter: 'تسلق' });
-
-    expect(ltr).not.toHaveLength(0);
-    expect(rtl).not.toHaveLength(0);
-    // The grade anchors to the opposite edge, so its left offset moves right.
-    expect(rtl[0].left).toBeGreaterThan(ltr[0].left);
+  it('keeps a right-to-left setter or name on the column edge, under the grade', async () => {
+    // One left-aligned stack: an Arabic or Hebrew line keeps its own letter order
+    // but starts where every other line starts, so the rows never split across
+    // two edges.
+    for (const content of [
+      { grade: 'V7', setter: 'تسلق' },
+      { grade: 'V7', name: 'מסלול לנגה נגה ואלומה' },
+    ]) {
+      const layers = await renderOgCardLayers(content);
+      expect(layers).not.toHaveLength(0);
+      for (const layer of layers.slice(0, -1)) expect(layer.left).toBeGreaterThanOrEqual(OG_CARD_COLUMN_LEFT);
+      expect(layers[0].left).toBe(OG_CARD_COLUMN_LEFT);
+    }
   });
 
   it('keeps a long board line inside the column', async () => {
@@ -198,12 +203,14 @@ describe('card geometry and direction', () => {
     expect(await renderOgCardLayers({ angle: 40 })).not.toHaveLength(0);
   });
 
-  it('anchors the wordmark to the same edge as the text', async () => {
-    const ltr = await renderOgCardLayers({ name: 'BING BANG BOSH', grade: 'V7' });
-    const rtl = await renderOgCardLayers({ name: 'تسلق الصخور', grade: 'V7' });
-
-    // The wordmark is always the last layer, and is never dropped.
-    expect(rtl.at(-1)?.left).toBeGreaterThan(ltr.at(-1)?.left ?? 0);
+  it('puts the wordmark in the family spot whatever direction the name runs', async () => {
+    for (const name of ['BING BANG BOSH', 'تسلق الصخور']) {
+      const layers = await renderOgCardLayers({ name, grade: 'V7' });
+      // The wordmark is always the last layer, and is never dropped.
+      const wordmark = layers.at(-1)!;
+      const { width } = await sharp(wordmark.input).metadata();
+      expect(wordmark.left + (width ?? 0)).toBe(OG_FAMILY_WORDMARK_RIGHT);
+    }
   });
 
   it('never places the board outside its box', () => {
@@ -214,5 +221,85 @@ describe('card geometry and direction', () => {
 
     expect(overshoot.left).toBeGreaterThanOrEqual(OG_CARD_BOARD_BOX.left);
     expect(overshoot.top).toBeGreaterThanOrEqual(OG_CARD_BOARD_BOX.top);
+  });
+});
+
+describe('what the climb card says', () => {
+  it('leads with the grade in its lifted grade colour, then name, setter and board line with the angle', () => {
+    const content = buildOgClimbCardContent({
+      name: 'Kiel training 1:4',
+      grade: '7a/V6',
+      setter: 'KilterStudio',
+      angle: 40,
+      boardLine: 'Kilter · 12 x 12 with kickboard',
+    });
+
+    expect(content?.slot).toBe('full');
+    expect(content?.hero.runs).toEqual([{ text: '7a/V6', color: ogCardGradeColor('7a/V6') }]);
+    expect(content?.hero.wrap).toBe(false);
+    expect(content?.rows.map((row) => row.runs.map((run) => run.text).join(''))).toEqual([
+      'Kiel training 1:4',
+      'KilterStudio',
+      'Kilter · 12 x 12 with kickboard · 40°',
+    ]);
+  });
+
+  it('never draws a block from og-family-blocks.ts, which the render version does not hash', () => {
+    // Avatar, pill, dots and bars are drawn in an unhashed file. If the climb card
+    // ever asks for one, an edit there would change climb card pixels under an
+    // unchanged URL: add og-family-blocks.ts to OPAQUE_RENDER_INPUTS first.
+    const everyField = {
+      name: 'n',
+      grade: '7a/V6',
+      setter: 's',
+      angle: 40,
+      boardLine: 'Kilter · Original',
+      fontFamily: 'Noto Sans',
+    };
+    for (const content of [everyField, { boardLine: 'Kilter · Original' }, { angle: 40 }, { setter: 's' }]) {
+      const family = buildOgClimbCardContent(content);
+      expect(family).not.toBeNull();
+      expect(family).not.toHaveProperty('identity');
+      expect(family).not.toHaveProperty('pill');
+      expect(family).not.toHaveProperty('dots');
+      expect(family).not.toHaveProperty('bars');
+    }
+  });
+
+  it('lifts every hard grade so it reads on the dark ground', () => {
+    // V10 and up are deep purples on the grade scale; on #181225 they vanished.
+    for (const grade of ['7c+/V10', '8a/V11', '8b+/V14', '8C+/V16']) {
+      expect(contrastRatio(ogCardGradeColor(grade), OG_FAMILY_GROUND), grade).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(ogCardGradeColor('not a grade')).toBe('#F8FAFC');
+  });
+
+  it('leads with the name when there is no grade', () => {
+    const content = buildOgClimbCardContent({ name: 'Ungraded', setter: 'someone', boardLine: 'Kilter · Original' });
+
+    expect(content?.hero.runs[0].text).toBe('Ungraded');
+    expect(content?.hero.wrap).toBe(true);
+  });
+
+  it('gives an already-shipped binary that sends no identity a card led by the board brand', () => {
+    const content = buildOgClimbCardContent({ boardLine: 'Kilter · Original · 12 x 12 Square' });
+
+    expect(content?.hero.runs[0].text).toBe('Kilter');
+    expect(content?.rows.map((row) => row.runs[0].text)).toEqual(['Original · 12 x 12 Square']);
+  });
+
+  it.each(['8C+/V16', '8c+/V16', '7c+/V10', '8B+/V14'])('keeps %s whole inside the search crop', async (grade) => {
+    const content = buildOgClimbCardContent({
+      grade,
+      name: 'A climb name that takes three lines of the column to say all of',
+      setter: 'someone',
+      angle: 40,
+      boardLine: 'Touchstone · Dungeon Trainer · Full Size Commercial',
+      fontFamily: 'Noto Sans',
+    });
+    const { hero } = await renderOgFamilyTextLayers(content!);
+
+    expect(hero.left).toBeGreaterThanOrEqual(285);
+    expect(hero.left + hero.width).toBeLessThanOrEqual(915);
   });
 });

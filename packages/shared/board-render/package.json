@@ -20,6 +20,11 @@
       "import": "./src/validation.ts",
       "default": "./src/validation.ts"
     },
+    "./og-board-line": {
+      "types": "./src/og-board-line.ts",
+      "import": "./src/og-board-line.ts",
+      "default": "./src/og-board-line.ts"
+    },
     "./og-card": {
       "types": "./src/og-card.ts",
       "import": "./src/og-card.ts",

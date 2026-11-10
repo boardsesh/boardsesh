@@ -10,7 +10,7 @@ import {
 } from '@boardsesh/board-render';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { applyCorsHeaders } from './cors';
-import { describeBoardConfig } from '../services/og-card-board-line';
+import { describeBoardConfig } from '@boardsesh/board-render/og-board-line';
 import { getPublicClientIp } from '../utils/client-ip';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
@@ -105,8 +105,8 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     glow_falloff: url.searchParams.get('glow_falloff') ?? undefined,
     glyphs: url.searchParams.get('glyphs') ?? undefined,
     field_color: url.searchParams.get('field_color') ?? undefined,
-    // Climb identity for the card's right-hand column. All optional: a URL from
-    // an already-shipped mobile binary renders the board on its own.
+    // Climb identity for the card's text column. All optional: a URL from
+    // an already-shipped mobile binary gets a card led by the board's brand.
     n: cardTextEnabled ? (rawName ?? undefined) : undefined,
     s: cardTextEnabled ? (rawSetter ?? undefined) : undefined,
     // Not gated by the kill switch: a grade is a closed vocabulary matched by
@@ -153,7 +153,14 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
   // availability check: the card is sharp + SVG over a fetched photograph, so a
   // renderer that failed to boot has nothing to do with it and must not 503 it.
   if (query.board_name === 'spray') {
-    await serveSprayOgCard(res, { layoutId: query.layout_id, frames: query.frames, format });
+    await serveSprayOgCard(res, {
+      layoutId: query.layout_id,
+      frames: query.frames,
+      format,
+      // The wall's own name comes from the database, after its gates; the board
+      // line is never taken from the caller.
+      card: { name: query.n, grade: query.g, setter: query.s, angle: query.angle, fontFamily: OG_CARD_FONT_FAMILY },
+    });
     return;
   }
 
@@ -182,7 +189,9 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
         angle: query.angle,
         // Derived here, not taken from the caller: the board and size are
         // already fully determined by the config params, so a `board_label`
-        // param would be a second, forgeable source for the same fact.
+        // param would be a second, forgeable source for the same fact. Its
+        // first part, the brand, leads a card from a binary that sends no
+        // identity params.
         boardLine: describeBoardConfig(query.board_name, query.layout_id, query.size_id),
         fontFamily: OG_CARD_FONT_FAMILY,
       },
@@ -271,10 +280,7 @@ function getSprayOgCardDeps(): SprayOgCardDeps {
  * the photograph and the holds under an unchanged `layout_id` + `frames`, so a
  * year-long immutable header would pin last year's wall at the edge forever.
  */
-async function serveSprayOgCard(
-  res: ServerResponse,
-  params: { layoutId: number; frames: string; format: OutputFormat },
-): Promise<void> {
+async function serveSprayOgCard(res: ServerResponse, params: Parameters<typeof renderSprayOgCard>[0]): Promise<void> {
   const totalT0 = performance.now();
   let result: Awaited<ReturnType<typeof renderSprayOgCard>>;
   try {

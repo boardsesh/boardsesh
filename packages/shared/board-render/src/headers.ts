@@ -26,72 +26,58 @@ const DAILY_STALE_TTL_SECONDS = 604_800;
 export type UnversionedCacheTier = 'short' | 'daily';
 
 /**
- * Build the cache + content headers for an OG image response. Three tiers:
- * versioned (a content hash in the URL) gets immutable one-year caching;
- * unversioned gets either the short redirect-grade TTL or the bounded daily one.
- * Emits the Vercel-CDN-Cache-Control variant too — harmless on other CDNs,
- * load-bearing on Vercel.
- */
-/**
- * Padding between the OG canvas edge and the board art, in canvas pixels.
+ * The share-card family's `full` art slot: the board on the left, the text column
+ * from `OG_CARD_COLUMN_LEFT`. Every card that draws a board uses it, the climb card
+ * included (docs/og-climb.md, "The climb-identity column").
  *
- * Lives here rather than beside the backdrop it pads because `render-config.ts`
- * needs it to compute the OG scale, and that module is imported by the browser's
- * render worker — `background.ts` reaches `@boardsesh/board-config` for MoonBoard's
- * layout art, which is a whole board catalogue to carry for two integers.
+ * Plain numbers here rather than in `og-family.ts` because `render-config.ts` needs
+ * the board box to compute the OG scale, and that module is in the browser's render
+ * worker, which must not pull in sharp.
  */
-export const OG_BOARD_PADDING_X = 24;
-export const OG_BOARD_PADDING_Y = 14;
+export const OG_CARD_ART_LEFT = 16;
+export const OG_CARD_ART_RIGHT = 560;
+/** Left edge of the text column. The hero runs from here to the search crop's right edge. */
+export const OG_CARD_COLUMN_LEFT = 590;
+/** Inset above and below the board. */
+export const OG_CARD_BOARD_TOP_INSET = 14;
 
 /**
- * Width of the climb-identity column on the right of the OG card, and the gap
- * between it and the board art.
- *
- * A fixed column is safe because every shipped board is height-bound at OG size:
- * the narrowest horizontal gutter in the whole catalogue is Tension 1461×1144 at
- * 518 px, the widest Kilter 1080×2498 at 924 px. `og-geometry.test.ts` walks the
- * catalogue and fails if a board ever arrives that the column would squeeze.
- */
-export const OG_CARD_TEXT_COLUMN_WIDTH = 392;
-export const OG_CARD_COLUMN_GAP = 24;
-
-/**
- * The box the board art is fitted into, right-aligned inside it.
- *
- * Right-aligned rather than centred because search engines crop a 1200×630 card
- * to a square from the centre, keeping x ∈ [285, 915]. Pushing the board towards
- * the text column puts a portrait board entirely inside that window — MoonBoard
- * and Kilter 1080×2498 both land at 100 % coverage, against 83 % and 64 %
- * centred.
+ * The box the board art is fitted into, right-aligned inside it so a portrait
+ * board reaches into a search engine's square centre crop (x 285-915).
  */
 export const OG_CARD_BOARD_BOX = {
-  left: OG_BOARD_PADDING_X,
-  top: OG_BOARD_PADDING_Y,
-  width: OG_IMAGE_WIDTH - OG_BOARD_PADDING_X * 2 - OG_CARD_TEXT_COLUMN_WIDTH - OG_CARD_COLUMN_GAP,
-  height: OG_IMAGE_HEIGHT - OG_BOARD_PADDING_Y * 2,
+  left: OG_CARD_ART_LEFT,
+  top: OG_CARD_BOARD_TOP_INSET,
+  width: OG_CARD_ART_RIGHT - OG_CARD_ART_LEFT,
+  height: OG_IMAGE_HEIGHT - OG_CARD_BOARD_TOP_INSET * 2,
 } as const;
 
 /**
- * Where a rendered board of this size sits on the OG canvas.
+ * Where a rendered board of this size sits on the OG canvas: right-aligned against
+ * the column, vertically centred.
  *
- * One definition, because two code paths place it: `composeOgBaseBuffer` for the
- * backend's `/og/climb`, and `renderBoardImageBuffer`'s `variant=og` branch for
- * the web fallback. A disagreement between them would show as the board and its
- * frame drifting apart.
+ * One definition, because three code paths place it: `composeOgBaseBuffer` for the
+ * backend's `/og/climb`, `renderBoardImageBuffer`'s `variant=og` branch, and the
+ * family's `full` slot. A disagreement would show as the board and its frame
+ * drifting apart.
  */
 export function placeOgBoard(boardWidth: number, boardHeight: number): { left: number; top: number } {
   // Clamped, because the scale that sizes the board and the subtraction that
   // places it round independently: a board a fraction wider than its box would
   // otherwise get a negative offset, which sharp clips without complaining.
   return {
-    left: Math.max(OG_CARD_BOARD_BOX.left, OG_CARD_BOARD_BOX.left + OG_CARD_BOARD_BOX.width - boardWidth),
-    top: Math.max(
-      OG_CARD_BOARD_BOX.top,
-      OG_CARD_BOARD_BOX.top + Math.round((OG_CARD_BOARD_BOX.height - boardHeight) / 2),
-    ),
+    left: Math.max(OG_CARD_ART_LEFT, OG_CARD_ART_RIGHT - boardWidth),
+    top: Math.max(0, OG_CARD_BOARD_TOP_INSET + Math.round((OG_CARD_BOARD_BOX.height - boardHeight) / 2)),
   };
 }
 
+/**
+ * Build the cache + content headers for an OG image response. Three tiers:
+ * versioned (a content hash in the URL) gets immutable one-year caching;
+ * unversioned gets either the short redirect-grade TTL or the bounded daily one.
+ * Emits the Vercel-CDN-Cache-Control variant too — harmless on other CDNs,
+ * load-bearing on Vercel.
+ */
 export function createOgImageHeaders({
   contentType,
   version,

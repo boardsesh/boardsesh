@@ -1,7 +1,17 @@
+import { createHash } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import sharp from 'sharp';
-import { BoundedLru, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, type OutputFormat } from '@boardsesh/board-render';
+import {
+  BoundedLru,
+  MAX_CARD_NAME_CODEPOINTS,
+  OG_CARD_BOARD_BOX,
+  normalizeOgCardText,
+  type OutputFormat,
+} from '@boardsesh/board-render';
 import { renderFrostedBokehBuffer } from '@boardsesh/board-render/frosted-bokeh';
+import { OG_CARD_BOARD_LINE_SEPARATOR } from '@boardsesh/board-render/og-board-line';
+import { renderOgCardLayers, type OgCardContent } from '@boardsesh/board-render/og-card';
+import { composeOgFamilyCard, renderOgFamilyPhotoLayers } from '@boardsesh/board-render/og-family';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants';
 import { IDENTITY_HOMOGRAPHY, invert, mapPoint, mapRadius, type Homography } from '@boardsesh/spray-wall-geometry';
 import { sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
@@ -44,9 +54,8 @@ const MARK_FILL_OPACITY = 0.22;
 const PHOTO_FETCH_TIMEOUT_MS = 8_000;
 const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
 
-const JPEG_OPTIONS: sharp.JpegOptions = { quality: 85, chromaSubsampling: '4:4:4', mozjpeg: true };
-const PNG_OPTIONS: sharp.PngOptions = { compressionLevel: 9, adaptiveFiltering: true };
-const WEBP_OPTIONS: sharp.WebpOptions = { quality: 80 };
+/** What a wall's card says it is under the climb, after the wall's own name. */
+const SPRAY_BOARD_LABEL = 'Spray wall';
 
 export type SprayOgWallRow = {
   wallId: number;
@@ -139,8 +148,30 @@ function cardCacheKey(params: {
   publicPhotoKey: string;
   frames: string;
   format: OutputFormat;
+  text: SprayCardText;
 }): string {
-  return [params.layoutId, params.currentVersionId, params.publicPhotoKey, params.format, params.frames].join('|');
+  // The words are hashed rather than joined in: a wall or climb name may contain
+  // the separator, and the wall's name is in here because a rename changes the card.
+  const textDigest = createHash('sha1').update(JSON.stringify(params.text)).digest('base64url').slice(0, 16);
+  return [
+    params.layoutId,
+    params.currentVersionId,
+    params.publicPhotoKey,
+    params.format,
+    params.frames,
+    textDigest,
+  ].join('|');
+}
+
+/** The climb identity a wall's card draws: the URL's own params plus the wall's name. */
+type SprayCardText = Required<Pick<OgCardContent, 'boardLine'>> & Omit<OgCardContent, 'boardLine'>;
+
+function sprayCardText(wallName: string, card: Omit<OgCardContent, 'boardLine'>): SprayCardText {
+  const drawableWallName = normalizeOgCardText(wallName, MAX_CARD_NAME_CODEPOINTS);
+  return {
+    ...card,
+    boardLine: [drawableWallName, SPRAY_BOARD_LABEL].filter(Boolean).join(OG_CARD_BOARD_LINE_SEPARATOR),
+  };
 }
 
 /** Test seam: the cache is process-lifetime, so a test that renders twice needs this. */
@@ -271,23 +302,20 @@ function formatPolygonPoints(points: readonly number[]): string {
   return pairs.join(' ');
 }
 
-function encodeCard(image: sharp.Sharp, format: OutputFormat): Promise<{ buffer: Buffer; contentType: string }> {
-  if (format === 'png') {
-    return image
-      .png(PNG_OPTIONS)
-      .toBuffer()
-      .then((buffer) => ({ buffer, contentType: 'image/png' }));
+/**
+ * The card's words, or none. A Pango failure costs the words, not the card, the
+ * same trade `/og/climb`'s catalogue path makes.
+ */
+async function renderSprayCardText(layoutId: number, text: SprayCardText): Promise<sharp.OverlayOptions[]> {
+  try {
+    return await renderOgCardLayers(text);
+  } catch (error) {
+    logger.warn('[spray-og] card text failed to render; serving the wall alone', {
+      layoutId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
   }
-  if (format === 'webp') {
-    return image
-      .webp(WEBP_OPTIONS)
-      .toBuffer()
-      .then((buffer) => ({ buffer, contentType: 'image/webp' }));
-  }
-  return image
-    .jpeg(JPEG_OPTIONS)
-    .toBuffer()
-    .then((buffer) => ({ buffer, contentType: 'image/jpeg' }));
 }
 
 /**
@@ -299,7 +327,13 @@ function encodeCard(image: sharp.Sharp, format: OutputFormat): Promise<{ buffer:
  * layout ids.
  */
 export async function renderSprayOgCard(
-  params: { layoutId: number; frames: string; format: OutputFormat },
+  params: {
+    layoutId: number;
+    frames: string;
+    format: OutputFormat;
+    /** The climb identity from the URL (`n`, `g`, `s`, `angle`), drawn in the family's text column. */
+    card?: Omit<OgCardContent, 'boardLine'>;
+  },
   deps: SprayOgCardDeps,
 ): Promise<SprayOgCardResult> {
   const { layoutId, frames, format } = params;
@@ -331,12 +365,16 @@ export async function renderSprayOgCard(
   const version = await deps.loadPublishedVersion(wall.wallId);
   if (!version) return { kind: 'not-found' };
 
+  // Built only after every gate: the wall's name is drawn, and a wall that is
+  // not public must never reach a byte of the card.
+  const text = sprayCardText(wall.wallName, params.card ?? {});
   const cacheKey = cardCacheKey({
     layoutId,
     currentVersionId: wall.currentVersionId,
     publicPhotoKey: wall.publicPhotoKey,
     frames,
     format,
+    text,
   });
   const cached = cardCache.get(cacheKey);
   if (cached) {
@@ -378,10 +416,10 @@ export async function renderSprayOgCard(
     const photoMs = performance.now() - photoT0;
 
     const composeT0 = performance.now();
-    // `fit: 'inside'` and a centred placement: a spray wall is photographed at
-    // whatever aspect ratio the climber's phone produced, and cropping to
-    // 1200x630 would cut the top or the bottom off the wall the card is supposed
-    // to show.
+    // `fit: 'inside'` the share-card family's art slot: a spray wall is
+    // photographed at whatever aspect ratio the climber's phone produced, and
+    // cropping it would cut the top or the bottom off the wall the card is
+    // supposed to show.
     //
     // One `sharp` instance for both the resize and the source dimensions. The
     // fallback below needs the photo's own width when the version row has none,
@@ -396,9 +434,10 @@ export async function renderSprayOgCard(
       const source = sharp(photoBytes);
       [sourceMetadata, placed] = await Promise.all([
         source.metadata(),
-        source.clone().resize({ width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, fit: 'inside' }).toBuffer({
-          resolveWithObject: true,
-        }),
+        source
+          .clone()
+          .resize({ width: OG_CARD_BOARD_BOX.width, height: OG_CARD_BOARD_BOX.height, fit: 'inside' })
+          .toBuffer({ resolveWithObject: true }),
       ]);
     } catch (error) {
       logger.warn('[spray-og] wall photo could not be decoded; answering not-found', {
@@ -410,8 +449,6 @@ export async function renderSprayOgCard(
 
     const placedWidth = placed.info.width;
     const placedHeight = placed.info.height;
-    const left = Math.round((OG_IMAGE_WIDTH - placedWidth) / 2);
-    const top = Math.round((OG_IMAGE_HEIGHT - placedHeight) / 2);
 
     // The version row is the source of truth: it records the dimensions of the
     // object as stored, after sharp baked the EXIF rotation in. The decoded
@@ -429,20 +466,29 @@ export async function renderSprayOgCard(
       photoToPlaced,
     });
 
-    const composites: sharp.OverlayOptions[] = [{ input: placed.data, left, top }];
+    // The climb is drawn into the photo first, then the photo takes the family's
+    // art slot: rounded, hairline-bordered, right against the text column.
+    const drawn = sharp(placed.data);
     if (marks.length > 0) {
       const overlaySvg = buildSprayOverlaySvg({ width: placedWidth, height: placedHeight, marks });
-      composites.push({ input: Buffer.from(overlaySvg), left, top });
+      drawn.composite([{ input: Buffer.from(overlaySvg), left: 0, top: 0 }]);
     }
+    const art = await renderOgFamilyPhotoLayers({
+      image: await drawn.png().toBuffer(),
+      width: placedWidth,
+      height: placedHeight,
+    });
     const background = await renderFrostedBokehBuffer({
       points: marks.map((mark) => ({ x: mark.centerX, y: mark.centerY, color: mark.color })),
       source: { w: placedWidth, h: placedHeight },
     });
-    const canvas = sharp(background, {
-      raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 },
-    }).composite(composites);
-
-    const { buffer, contentType } = await encodeCard(canvas, format);
+    const { buffer, contentType } = await composeOgFamilyCard({
+      background,
+      slot: 'full',
+      art,
+      textLayers: await renderSprayCardText(layoutId, text),
+      format,
+    });
     const composeMs = performance.now() - composeT0;
 
     cardCache.set(cacheKey, { buffer, contentType });

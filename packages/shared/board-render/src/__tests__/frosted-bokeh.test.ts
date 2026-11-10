@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
 import { getOgBokehInput, renderFrostedBokehBuffer } from '../frosted-bokeh';
 import { renderOgCardLayers } from '../og-card';
+import { buildOgFamilyScrim } from '../og-family';
 import type { WasmRenderConfig } from '../types';
 
 function renderConfig(frames: string): WasmRenderConfig {
@@ -55,14 +56,11 @@ describe('renderFrostedBokehBuffer', () => {
     expect(first[0]).toBeGreaterThan(14); // White frost over the near-black base.
   });
 
-  it('paints the supplied role colours and protects the details column', async () => {
-    const input = { points: [{ x: 50, y: 25, color: '#FF0000' }], source };
-    const open = await renderFrostedBokehBuffer(input);
-    const protectedCard = await renderFrostedBokehBuffer({ ...input, protectDetails: true });
+  it('paints the supplied role colours', async () => {
+    const open = await renderFrostedBokehBuffer({ points: [{ x: 50, y: 25, color: '#FF0000' }], source });
     const center = (315 * 1200 + 900) * 4;
     // Background colours remain distinct at the subdued OG opacity.
     expect(open[center]).toBeGreaterThan(open[center + 2] + 20);
-    expect(protectedCard[center]).toBeLessThan(open[center]);
   });
 
   it('keeps arbitrary colour strings out of SVG markup', async () => {
@@ -74,11 +72,16 @@ describe('renderFrostedBokehBuffer', () => {
   });
 
   it('keeps rendered supporting text readable over crowded white background lights', async () => {
-    const background = await renderFrostedBokehBuffer({
+    const bokeh = await renderFrostedBokehBuffer({
       source,
       points: Array.from({ length: 15 }, (_, index) => ({ x: 10 + (80 * index) / 14, y: 30, color: '#FFFFFF' })),
-      protectDetails: true,
     });
+    // The surface the words actually sit on: bokeh under the family scrim, as the
+    // climb card composes it.
+    const background = await sharp(bokeh, { raw: { width: 1200, height: 630, channels: 4 } })
+      .composite([{ input: buildOgFamilyScrim('full') }])
+      .raw()
+      .toBuffer();
     const layers = await renderOgCardLayers({
       name: 'Lightest Pair of Shorts',
       grade: '6b/V4',
@@ -86,7 +89,8 @@ describe('renderFrostedBokehBuffer', () => {
       boardLine: 'Kilter · 10x12',
       setter: 'KilterStudio',
     });
-    expect(layers).toHaveLength(6);
+    // Grade, name, setter, board line, wordmark.
+    expect(layers).toHaveLength(5);
     // The grade keeps its semantic data colour. Every other label, including
     // the setter and wordmark, must meet the normal-text AA threshold.
     for (const layer of layers.slice(1)) {

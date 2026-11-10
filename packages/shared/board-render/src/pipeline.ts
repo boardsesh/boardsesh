@@ -2,6 +2,7 @@ import sharp from 'sharp';
 import { createOgFrameBuffer, getBackgroundRelPaths, resolveArtPath, type BoardArtColorScheme } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, placeOgBoard } from './headers';
 import { renderFrostedBokehBuffer, type OgBokehInput } from './frosted-bokeh';
+import { buildOgFamilyScrim, OG_JPEG_OPTIONS } from './og-family';
 import type { BoundedLru } from './lru';
 import type { OutputFormat, RenderableBoardDetails } from './types';
 
@@ -29,16 +30,6 @@ const THUMBNAIL_JPEG_OPTIONS: sharp.JpegOptions = {
 
 const DEFAULT_JPEG_OPTIONS: sharp.JpegOptions = {
   quality: 90,
-  chromaSubsampling: '4:4:4',
-  mozjpeg: true,
-};
-
-/**
- * OG social-card JPEG encode: mozjpeg at quality 85 with full chroma so hold
- * rings stay crisp (~50–80KB at 1200×630).
- */
-export const OG_JPEG_OPTIONS: sharp.JpegOptions = {
-  quality: 85,
   chromaSubsampling: '4:4:4',
   mozjpeg: true,
 };
@@ -300,10 +291,9 @@ export async function renderBoardImageBuffer({
 
     const composeT0 = performance.now();
     const encoded = await encodeOgImage({
-      background: await renderFrostedBokehBuffer({
-        ...(ogBokeh ?? { points: [], source: { w: boardDetails.boardWidth, h: boardDetails.boardHeight } }),
-        protectDetails: true,
-      }),
+      background: await renderFrostedBokehBuffer(
+        ogBokeh ?? { points: [], source: { w: boardDetails.boardWidth, h: boardDetails.boardHeight } },
+      ),
       base: ogBase.base,
       overlay: { buffer: overlayBuffer, width, height, left: ogBase.left, top: ogBase.top },
       format,
@@ -422,13 +412,13 @@ export async function renderBoardImageBuffer({
 
   if (outputBuffer === null && isOgVariant && imageBuffer) {
     const ogPlacement = placeOgBoard(width, height);
-    const background = await renderFrostedBokehBuffer({
-      ...(ogBokeh ?? { points: [], source: { w: boardDetails.boardWidth, h: boardDetails.boardHeight } }),
-      protectDetails: true,
-    });
+    const background = await renderFrostedBokehBuffer(
+      ogBokeh ?? { points: [], source: { w: boardDetails.boardWidth, h: boardDetails.boardHeight } },
+    );
     const ogImage = sharp(background, {
       raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 },
     }).composite([
+      { input: buildOgFamilyScrim('full') },
       { input: createOgFrameBuffer({ ...ogPlacement, width, height }) },
       { input: imageBuffer, left: ogPlacement.left, top: ogPlacement.top, blend: 'over' },
       ...(cardLayers ?? []),
@@ -489,9 +479,9 @@ export async function composeOgBaseBuffer(params: {
   colorScheme?: BoardArtColorScheme;
 }): Promise<OgBaseResult> {
   const { boardDetails, boardWidth, boardHeight, resolveImagePath, colorScheme } = params;
-  // Right-aligned in the board box, vertically centred: the climb-identity
-  // column owns the right of the canvas, and pushing the art towards it is what
-  // keeps a portrait board inside a search engine's square centre crop.
+  // The share-card family's `full` slot: right-aligned against the text column,
+  // vertically centred, so a portrait board reaches into a search engine's
+  // square centre crop.
   const { left, top } = placeOgBoard(boardWidth, boardHeight);
 
   const bgRelPaths = getBackgroundRelPaths(boardDetails, false, colorScheme);
@@ -517,6 +507,9 @@ export async function composeOgBaseBuffer(params: {
 /**
  * Composite the climb overlay onto a cached OG base and encode. JPEG is the OG
  * default (mozjpeg, quality 85); PNG and WebP are honoured when requested.
+ *
+ * The layer order is the share-card family's (`composeOgFamilyCard`): bokeh, the
+ * family scrim, the framed board, its holds, then the text.
  */
 export async function encodeOgImage(params: {
   /** Raw RGBA frosted backdrop for this climb. */
@@ -531,6 +524,7 @@ export async function encodeOgImage(params: {
   const composited = sharp(background, {
     raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 },
   }).composite([
+    { input: buildOgFamilyScrim('full') },
     { input: base, raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 } },
     {
       input: overlay.buffer,

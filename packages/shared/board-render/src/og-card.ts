@@ -1,53 +1,40 @@
-import sharp from 'sharp';
 import { getGradeColor } from '@boardsesh/board-constants';
-import { escapePangoMarkup } from './validation';
-import { OG_CARD_BOARD_BOX, OG_CARD_COLUMN_GAP, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import { OG_CARD_BOARD_LINE_SEPARATOR } from './og-board-line';
+import {
+  OG_FAMILY_MUTED,
+  OG_FAMILY_WHITE,
+  liftGradeColorForCard,
+  renderOgFamilyTextLayers,
+  type OgFamilyCardContent,
+  type OgFamilyHero,
+  type OgFamilyRow,
+} from './og-family';
 
 /**
- * The climb-identity column drawn on the right of a `/og/climb` card.
+ * The climb's identity on a `/og/climb` card, laid out on the share-card family's
+ * `full` slot: the grade as the hero in its grade colour, then the climb name, the
+ * setter, and the board line with the wall angle. See docs/og-climb.md.
  *
- * Text is typeset by libvips' Pango backend (`sharp({ text })`) rather than by
- * SVG `<text>`: Pango does shaping, bidi and wrapping, and it keeps caller text
- * out of an XML document entirely — the string goes to a text layout engine, not
- * to a parser that also understands entities and external references.
- *
- * Every string that reaches Pango must be escaped first. libvips calls
- * `pango_parse_markup` unconditionally, so an unescaped `&` throws rather than
- * rendering literally; see `escapePangoMarkup`.
+ * This module only decides WHAT the card says; `og-family.ts` typesets it through
+ * Pango, which escapes every string for markup and measures every fit.
  */
-
-/** Left edge of the text column. */
-const COLUMN_LEFT = OG_CARD_BOARD_BOX.left + OG_CARD_BOARD_BOX.width + OG_CARD_COLUMN_GAP;
-// Mirrors the board's outer inset, so the column is the `OG_CARD_TEXT_COLUMN_WIDTH`
-// the board box was sized against rather than 16px narrower than it.
-const COLUMN_RIGHT = OG_IMAGE_WIDTH - OG_CARD_BOARD_BOX.left;
-const COLUMN_WIDTH = COLUMN_RIGHT - COLUMN_LEFT;
-
-/** Rows are laid out downward from here and must not pass `COLUMN_FLOOR`. */
-const COLUMN_TOP = 48;
-const COLUMN_FLOOR = 546;
-
-/** Baseline for the wordmark, which is never dropped. */
-const WORDMARK_TOP = 574;
 
 /**
- * Pango renders at this dpi throughout, so a point size maps to a predictable
- * pixel size. `dpi` and `height` are mutually exclusive in sharp, which is also
- * what stops us from accidentally asking libvips to auto-fit text to a box — a
- * long climb name would come back microscopic instead of wrapped.
+ * A grade is one line, shrunk to fit and never cut: `8C+/V16` has to sit whole
+ * inside the search crop. 96pt is the profile card's grade size, so a climb and a
+ * climber's hardest send read the same.
  */
-const DPI = 96;
+const GRADE_HERO_MAX_PT = 96;
+/** With no grade the name leads, wrapping; below this it truncates instead. */
+const NAME_HERO_MAX_PT = 64;
+const NAME_HERO_MIN_PT = 34;
+/** With no grade and no name the board's brand leads, like a place card's name. */
+const BOARD_HERO_MAX_PT = 72;
 
-const FALLBACK_TEXT_COLOR = '#F8FAFC';
-const NAME_COLOR = '#F1F5F9';
-const BOARD_LINE_COLOR = '#94A3B8';
-const SETTER_COLOR = BOARD_LINE_COLOR;
-const ANGLE_COLOR = BOARD_LINE_COLOR;
-const WORDMARK_COLOR = '#8791A3';
-
-/** Room for three lines of the climb name before it has to be truncated. */
-const MAX_NAME_HEIGHT = 168;
-const NAME_TRUNCATION_ATTEMPTS = 4;
+const NAME_PT = 34;
+const NAME_MAX_LINES = 3;
+const DETAIL_PT = 20;
+const BOARD_LINE_MAX_LINES = 2;
 
 export type OgCardContent = {
   /**
@@ -62,7 +49,11 @@ export type OgCardContent = {
   setter?: string;
   /** Board wall angle in degrees. */
   angle?: number;
-  /** e.g. `Kilter · Original 12×12`, derived server-side from the board config. */
+  /**
+   * e.g. `Kilter · Original · 12 x 12`, derived server-side from the board config.
+   * Parts are joined with `OG_CARD_BOARD_LINE_SEPARATOR`; the first one leads a
+   * card that has no grade and no name.
+   */
   boardLine?: string;
   /** Font family passed to Pango. Left to fontconfig's fallback chain when unset. */
   fontFamily?: string;
@@ -71,171 +62,93 @@ export type OgCardContent = {
 type TextLayer = { input: Buffer; left: number; top: number };
 
 /**
- * A string is treated as right-to-left when its first strong character is.
- *
- * Each row is its own raster, so bidi can never reorder an Arabic climb name
- * against the Latin chrome around it; this only decides which edge of the column
- * the row is anchored to.
+ * The grade's colour on the card's dark ground: the grade scale's own colour,
+ * lifted the same way every family card lifts it, so a V10 reads as purple rather
+ * than vanishing into the field.
  */
-function isRightToLeft(value: string): boolean {
-  return /^[^\p{L}]*[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}]/u.test(value);
+export function ogCardGradeColor(grade: string): string {
+  const color = getGradeColor(grade);
+  return color ? liftGradeColorForCard(color) : OG_FAMILY_WHITE;
 }
 
-async function renderText(
-  markup: string,
-  options: { fontFamily?: string; width?: number; align?: 'left' | 'right' },
-): Promise<{ buffer: Buffer; width: number; height: number }> {
-  const { data, info } = await sharp({
-    text: {
-      text: markup,
-      ...(options.fontFamily ? { font: options.fontFamily } : {}),
-      ...(options.width ? { width: options.width, wrap: 'word-char' as const } : {}),
-      ...(options.align ? { align: options.align } : {}),
-      rgba: true,
-      dpi: DPI,
-    },
-  })
-    .png()
-    .toBuffer({ resolveWithObject: true });
-
-  return { buffer: data, width: info.width, height: info.height };
-}
-
-function span(text: string, { size, weight, color }: { size: number; weight: number; color: string }): string {
-  return `<span size="${size}pt" weight="${weight}" foreground="${color}">${escapePangoMarkup(text)}</span>`;
+function detailRow(text: string, maxLines = 1): OgFamilyRow {
+  return { runs: [{ text, color: OG_FAMILY_MUTED }], sizePt: DETAIL_PT, weight: 500, maxLines };
 }
 
 /**
- * Fit the climb name into at most `MAX_NAME_HEIGHT`, shortening it if a long
- * name would push the rows below it off the card.
+ * What the card says, as family content, or null when there is nothing to say.
  *
- * Measure-then-retry rather than counting characters: the column is a
- * proportional font and the name may be in any script, so the only honest
- * measurement is the one Pango makes.
+ * The hero is the first of grade, name, board brand and angle that the card has.
+ * An already-shipped binary sends no identity params, so its card leads with the
+ * board brand from the board line the server derives.
  */
-async function renderName(
-  name: string,
-  fontFamily: string | undefined,
-  align: 'left' | 'right',
-): Promise<{ buffer: Buffer; width: number; height: number }> {
-  let candidate = name;
-
-  for (let attempt = 0; attempt < NAME_TRUNCATION_ATTEMPTS; attempt++) {
-    const rendered = await renderText(span(candidate, { size: 32, weight: 700, color: NAME_COLOR }), {
-      fontFamily,
-      width: COLUMN_WIDTH,
-      align,
-    });
-    if (rendered.height <= MAX_NAME_HEIGHT) return rendered;
-
-    const codePoints = Array.from(candidate.replace(/…$/u, ''));
-    const keep = Math.max(1, Math.floor(codePoints.length * 0.85));
-    candidate = `${codePoints.slice(0, keep).join('').trimEnd()}…`;
-  }
-
-  return renderText(span(candidate, { size: 32, weight: 700, color: NAME_COLOR }), {
-    fontFamily,
-    width: COLUMN_WIDTH,
-    align,
-  });
-}
-
-/**
- * Build the sharp composite layers for the identity column.
- *
- * Returns an empty array when there is nothing to say, so a card built by an
- * already-shipped client that sends no text params renders exactly as it would
- * have — the board, and no empty furniture.
- */
-export async function renderOgCardLayers(content: OgCardContent): Promise<TextLayer[]> {
+export function buildOgClimbCardContent(content: OgCardContent): OgFamilyCardContent | null {
   const name = content.name?.trim() ?? '';
   const grade = content.grade?.trim() ?? '';
   const setter = content.setter?.trim() ?? '';
   const boardLine = content.boardLine?.trim() ?? '';
-  // `angle` counts: a card carrying only a wall angle still has something to
-  // say, and the early return used to swallow it before the angle-only row
-  // below could draw it.
-  if (!name && !grade && !setter && !boardLine && content.angle === undefined) return [];
+  const angleLabel = content.angle === undefined ? '' : `${content.angle}°`;
+  if (!name && !grade && !setter && !boardLine && !angleLabel) return null;
 
-  const { fontFamily } = content;
-  // Whichever line the card actually leads with. Deciding from `name` alone
-  // left-anchored a card that had only a grade and an Arabic setter.
-  const rightToLeft = isRightToLeft(name || setter || boardLine);
-  const align = rightToLeft ? 'right' : 'left';
-  const anchor = (width: number) => (rightToLeft ? COLUMN_RIGHT - width : COLUMN_LEFT);
-
-  // Rows are stacked from zero, then the whole block is centred in the column's
-  // vertical budget. Laying out at a fixed top instead leaves a card with a
-  // short name looking like the bottom two-thirds failed to render.
-  const rows: { input: Buffer; left: number; offset: number }[] = [];
-  let cursor = 0;
+  const withAngle = (line: string) => [line, angleLabel].filter(Boolean).join(OG_CARD_BOARD_LINE_SEPARATOR);
+  const rows: OgFamilyRow[] = [];
+  let hero: OgFamilyHero;
 
   if (grade) {
-    const hero = await renderText(
-      span(grade, { size: 52, weight: 800, color: getGradeColor(grade) ?? FALLBACK_TEXT_COLOR }),
-      { fontFamily },
-    );
-    rows.push({ input: hero.buffer, left: anchor(hero.width), offset: cursor });
-
-    if (content.angle !== undefined) {
-      const chip = await renderText(span(`${content.angle}°`, { size: 18, weight: 600, color: ANGLE_COLOR }), {
-        fontFamily,
-      });
-      // Anchored to the opposite edge from the grade, and vertically centred on
-      // it, so the pair reads as one row whichever direction the name runs.
+    hero = {
+      runs: [{ text: grade, color: ogCardGradeColor(grade) }],
+      maxPt: GRADE_HERO_MAX_PT,
+      wrap: false,
+      tight: true,
+    };
+    if (name) {
       rows.push({
-        input: chip.buffer,
-        left: rightToLeft ? COLUMN_LEFT : COLUMN_RIGHT - chip.width,
-        offset: cursor + Math.max(0, Math.round((hero.height - chip.height) / 2)),
+        runs: [{ text: name, color: OG_FAMILY_WHITE }],
+        sizePt: NAME_PT,
+        weight: 700,
+        maxLines: NAME_MAX_LINES,
+        gapBelow: 12,
       });
     }
-
-    cursor += hero.height + 18;
-  } else if (content.angle !== undefined) {
-    // A climb with no recorded difficulty still has a wall angle, and the chip
-    // is only laid out beside the grade because that is where it looks right —
-    // not because it depends on one.
-    const chip = await renderText(span(`${content.angle}\u00B0`, { size: 18, weight: 600, color: ANGLE_COLOR }), {
-      fontFamily,
-    });
-    rows.push({ input: chip.buffer, left: anchor(chip.width), offset: cursor });
-    cursor += chip.height + 18;
+  } else if (name) {
+    hero = {
+      runs: [{ text: name, color: OG_FAMILY_WHITE }],
+      maxPt: NAME_HERO_MAX_PT,
+      minPt: NAME_HERO_MIN_PT,
+      wrap: true,
+    };
+  } else if (boardLine) {
+    const [brand, ...details] = boardLine.split(OG_CARD_BOARD_LINE_SEPARATOR);
+    hero = { runs: [{ text: brand, color: OG_FAMILY_WHITE }], maxPt: BOARD_HERO_MAX_PT, minPt: 40, wrap: true };
+    if (setter) rows.push(detailRow(setter));
+    const rest = withAngle(details.join(OG_CARD_BOARD_LINE_SEPARATOR));
+    if (rest) rows.push(detailRow(rest, BOARD_LINE_MAX_LINES));
+    return { slot: 'full', fontFamily: content.fontFamily, hero, rows };
+  } else if (angleLabel) {
+    hero = { runs: [{ text: angleLabel, color: OG_FAMILY_WHITE }], maxPt: GRADE_HERO_MAX_PT, wrap: false, tight: true };
+    if (setter) rows.push(detailRow(setter));
+    return { slot: 'full', fontFamily: content.fontFamily, hero, rows };
+  } else {
+    // Only a setter: the name of who set it leads, the way a setter card leads.
+    hero = { runs: [{ text: setter, color: OG_FAMILY_WHITE }], maxPt: NAME_HERO_MAX_PT, minPt: 34, wrap: true };
+    return { slot: 'full', fontFamily: content.fontFamily, hero, rows };
   }
 
-  if (name) {
-    const rendered = await renderName(name, fontFamily, align);
-    rows.push({ input: rendered.buffer, left: anchor(rendered.width), offset: cursor });
-    cursor += rendered.height + 16;
-  }
+  if (setter) rows.push(detailRow(setter));
+  const boardRow = withAngle(boardLine);
+  if (boardRow) rows.push(detailRow(boardRow, BOARD_LINE_MAX_LINES));
+  return { slot: 'full', fontFamily: content.fontFamily, hero, rows };
+}
 
-  // Bottom-up: a long name is allowed to push the supporting lines off rather
-  // than overlap them or the wordmark.
-  for (const [text, size, color, gap] of [
-    [boardLine, 18, BOARD_LINE_COLOR, 10],
-    [setter, 17, SETTER_COLOR, 0],
-  ] as const) {
-    if (!text) continue;
-    // Width-bounded like the name. A long board line — "Touchstone · Dungeon
-    // Trainer · Full Size" — otherwise runs past the column and is clipped at
-    // the canvas edge instead of wrapping.
-    const rendered = await renderText(span(text, { size, weight: 500, color }), {
-      fontFamily,
-      width: COLUMN_WIDTH,
-      align,
-    });
-    if (cursor + rendered.height > COLUMN_FLOOR - COLUMN_TOP) break;
-    rows.push({ input: rendered.buffer, left: anchor(rendered.width), offset: cursor });
-    cursor += rendered.height + gap;
-  }
-
-  const blockTop = Math.max(COLUMN_TOP, COLUMN_TOP + Math.round((COLUMN_FLOOR - COLUMN_TOP - cursor) / 2));
-  const layers: TextLayer[] = rows.map((row) => ({ input: row.input, left: row.left, top: blockTop + row.offset }));
-
-  const wordmark = await renderText(
-    `<span size="16pt" weight="700" letter_spacing="1800" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
-    { fontFamily },
-  );
-  layers.push({ input: wordmark.buffer, left: anchor(wordmark.width), top: WORDMARK_TOP });
-
-  return layers.filter((layer) => layer.top >= 0 && layer.top < OG_IMAGE_HEIGHT);
+/**
+ * Build the sharp composite layers for the card's text, on the family grid.
+ *
+ * Returns an empty array when there is nothing to say. A Pango failure rejects;
+ * the caller decides whether a card may go out without words.
+ */
+export async function renderOgCardLayers(content: OgCardContent): Promise<TextLayer[]> {
+  const familyContent = buildOgClimbCardContent(content);
+  if (!familyContent) return [];
+  const { layers } = await renderOgFamilyTextLayers(familyContent);
+  return layers;
 }
