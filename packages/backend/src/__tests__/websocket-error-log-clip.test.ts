@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import util from 'node:util';
 import { createServer, type Server } from 'node:http';
 import { WebSocket } from 'ws';
 import type { RawData, WebSocketServer } from 'ws';
@@ -93,5 +94,39 @@ describe('websocket subscription error logging', () => {
     const loggedBytes = JSON.stringify(graphqlErrorCalls[0]).length;
     console.info(`logged bytes for a ${FIELD_NAME_LENGTH}-char field name: ${loggedBytes}`);
     expect(loggedBytes).toBeLessThan(2000);
+  });
+
+  it('clips what graphql-ws prints for a syntax error and still closes with 4500', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fieldName = 'f'.repeat(FIELD_NAME_LENGTH);
+
+    const closeCode = await new Promise<number>((resolve, reject) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/graphql`, 'graphql-transport-ws');
+      socket.once('error', reject);
+      socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init' })));
+      socket.once('close', (code) => resolve(code));
+      socket.on('message', (raw) => {
+        const message = JSON.parse(decodeMessage(raw)) as { type: string };
+        if (message.type === 'connection_ack') {
+          // A stray name after the operation: a syntax error that echoes it and makes onSubscribe throw.
+          socket.send(
+            JSON.stringify({
+              id: '1',
+              type: 'subscribe',
+              payload: { query: `subscription { privacyChanged } ${fieldName}` },
+            }),
+          );
+        }
+      });
+    });
+
+    expect(closeCode).toBe(4500);
+    const printedBytes = consoleError.mock.calls.reduce(
+      (total, args) => total + args.map((arg) => util.inspect(arg, { depth: 5 })).join(' ').length,
+      0,
+    );
+    console.info(`console.error bytes for a ${FIELD_NAME_LENGTH}-char syntax error: ${printedBytes}`);
+    expect(consoleError).toHaveBeenCalled();
+    expect(printedBytes).toBeLessThan(5000);
   });
 });

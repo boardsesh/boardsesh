@@ -62,6 +62,19 @@ function clipGraphqlErrorForLog(error: GraphQLError): {
   };
 }
 
+/**
+ * A copy of a thrown GraphQL error that is safe for graphql-ws to print. The
+ * message is clipped and the source is dropped (its printed excerpt holds the
+ * whole line); locations are copied across so the error stays as useful.
+ */
+function clipThrownGraphqlError(error: GraphQLError): GraphQLError {
+  const clipped = new GraphQLError(error.message.slice(0, MAX_LOGGED_HEADER_LENGTH), {
+    extensions: error.extensions,
+  });
+  Object.defineProperty(clipped, 'locations', { value: error.locations, enumerable: true });
+  return clipped;
+}
+
 /** WebSocket extended with liveness tracking for ping/pong. */
 type AliveWebSocket = {
   isAlive: boolean;
@@ -575,7 +588,10 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             if (error instanceof GraphQLError && isBoardShareTokenDocument(payload.query)) {
               return [sanitizeBoardShareGraphqlError(error, payload.query)];
             }
-            throw error;
+            // graphql-ws prints a thrown error whole with console.error, and a
+            // syntax error echoes client text. Rethrow it clipped: the socket still
+            // closes with 4500, and the code, locations and extensions survive.
+            throw error instanceof GraphQLError ? clipThrownGraphqlError(error) : error;
           }
           const depthError = validateQueryDepth(document);
           if (depthError) {
