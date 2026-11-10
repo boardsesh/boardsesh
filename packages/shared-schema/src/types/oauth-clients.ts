@@ -1,0 +1,44 @@
+/** Wire shapes for the developer console's operations (docs/integration-platform.md "Self-service registration"). */
+export type OAuthClientApplicationType = 'WEB' | 'NATIVE';
+
+export type OAuthClientAuthMethod = 'NONE' | 'CLIENT_SECRET_BASIC' | 'CLIENT_SECRET_POST';
+
+export type OAuthClient = {
+  clientId: string;
+  name: string;
+  homepageUrl: string | null;
+  privacyPolicyUrl: string;
+  applicationType: OAuthClientApplicationType;
+  tokenEndpointAuthMethod: OAuthClientAuthMethod;
+  redirectUris: string[];
+  /** ISO 8601. */
+  createdAt: string;
+  /** ISO 8601, or null while the app is not suspended. */
+  suspendedAt: string | null;
+  suspensionReason: string | null;
+  maxActiveConnections: number;
+  maxNewConnectionsPerDay: number;
+};
+
+export type OAuthClientCredentials = {
+  client: OAuthClient;
+  /** Shown once. Null for a public app. */
+  clientSecret: string | null;
+};
+
+export type CreateOAuthClientInput = {
+  name: string;
+  homepageUrl?: string | null;
+  privacyPolicyUrl: string;
+  applicationType: OAuthClientApplicationType;
+  tokenEndpointAuthMethod: OAuthClientAuthMethod;
+  redirectUris: string[];
+};
+
+export type UpdateOAuthClientInput = {
+  clientId: string;
+  name?: string | null;
+  homepageUrl?: string | null;
+  privacyPolicyUrl?: string | null;
+  redirectUris?: string[] | null;
+};

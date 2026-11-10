@@ -23,6 +23,7 @@ import {
 } from './configuration';
 import { partnerFencePlugin } from './fence';
 import { createPartnerOriginDirectory, type PartnerRegisteredOrigins } from './registered-origins';
+import { createPartnerRegistration, partnerRegistrationActorPlugin, type PartnerRegistration } from './registration';
 import { PARTNER_DISABLED_PATHS } from './routes';
 import { partnerAdapterSchema, type PartnerDatabase } from './tables';
 import {
@@ -50,6 +51,8 @@ export interface PartnerAuthorityRuntime {
   configuration: PartnerAuthorityConfiguration;
   admission: PartnerAdmissionGate;
   registeredOrigins: PartnerRegisteredOrigins;
+  /** The developer console's backend, reached through the GraphQL entry point. */
+  registration: PartnerRegistration;
   handleRequest(request: Request, options?: PartnerRequestOptions): Promise<Response>;
   /** The published RFC 8414 document, built once. Reads no table. */
   discoveryResponse(logContext?: PartnerRequestOptions['logContext']): Promise<Response>;
@@ -182,7 +185,12 @@ export function createPartnerAuthority(
         transaction: false,
       }),
     ),
-    plugins: [oauthProvider(oauthOptions), ...plugins, partnerFencePlugin(oauthOptions)],
+    plugins: [
+      oauthProvider(oauthOptions),
+      partnerRegistrationActorPlugin(),
+      ...plugins,
+      partnerFencePlugin(oauthOptions),
+    ],
   };
   return betterAuth(authorityOptions);
 }
@@ -208,13 +216,15 @@ export async function createPartnerAuthorityRuntime(
   const tokenHasher = getOAuthProviderApi({} as GenericEndpointContext, oauthOptions);
   const hashRefreshToken = (refreshToken: string) => tokenHasher.hashToken(refreshToken, 'refresh_token');
   const publishedDiscovery = JSON.stringify(publishedPartnerMetadata(await authority.api.getOAuthServerConfig()));
+  const registeredOrigins = createPartnerOriginDirectory(database);
 
   return {
     authority,
     database,
     configuration,
     admission: createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS),
-    registeredOrigins: createPartnerOriginDirectory(database),
+    registeredOrigins,
+    registration: createPartnerRegistration({ authority, configuration, registeredOrigins }),
     handleRequest: (request, options) => handlePartnerRequest(database, request, authority.handler, options),
     discoveryResponse: (logContext) =>
       handlePartnerRequest(

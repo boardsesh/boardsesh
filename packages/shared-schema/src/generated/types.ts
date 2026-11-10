@@ -2185,6 +2185,19 @@ export type CreateGymKioskInput = {
   slug?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type CreateOAuthClientInput = {
+  applicationType: OAuthClientApplicationType;
+  /** https:// only. */
+  homepageUrl?: InputMaybe<Scalars['String']['input']>;
+  /** 3 to 50 characters. Names of Boardsesh, Aurora and board brands are refused. */
+  name: Scalars['String']['input'];
+  /** https:// only. */
+  privacyPolicyUrl: Scalars['String']['input'];
+  /** 1 to 10. */
+  redirectUris: Array<Scalars['String']['input']>;
+  tokenEndpointAuthMethod: OAuthClientAuthMethod;
+};
+
 /** Input for creating a playlist. */
 export type CreatePlaylistInput = {
   /** Board type */
@@ -4362,6 +4375,8 @@ export type Mutation = {
    * history. Requires authentication.
    */
   createIntegrationOAuthHandoff: Scalars['String']['output'];
+  /** Register an app. Returns its client ID and, for a confidential app, a secret shown once. */
+  createOAuthClient: OAuthClientCredentials;
   /** Create a new playlist. */
   createPlaylist: Playlist;
   /** Create a proposal for a climb grade/classic/benchmark change. */
@@ -4427,6 +4442,8 @@ export type Mutation = {
    * nothing to remove.
    */
   deleteHoldOutlineOverride: Scalars['Boolean']['output'];
+  /** Delete the signed-in developer's app and end every climber connection to it. False when there was no such app. */
+  deleteOAuthClient: Scalars['Boolean']['output'];
   /** Delete a playlist (owner only). */
   deletePlaylist: Scalars['Boolean']['output'];
   /** Delete an accepted proposal and revert its effects (admin/leader only). */
@@ -4813,6 +4830,8 @@ export type Mutation = {
   revokeResourceAccess: Scalars['Boolean']['output'];
   /** Revoke a community role from a user (admin only). */
   revokeRole: Scalars['Boolean']['output'];
+  /** Replace a confidential app's secret. The old secret stops working at once. */
+  rotateOAuthClientSecret: OAuthClientCredentials;
   /**
    * Save Aurora climbing credentials.
    * Validates with Aurora API before saving.
@@ -5008,6 +5027,8 @@ export type Mutation = {
    * and linked to this kiosk's gym.
    */
   updateGymKiosk: GymKiosk;
+  /** Edit the signed-in developer's app. */
+  updateOAuthClient: OAuthClient;
   /** Update playlist metadata. */
   updatePlaylist: Playlist;
   /** Update only lastAccessedAt for a playlist (does not update updatedAt). */
@@ -5168,6 +5189,11 @@ export type MutationCreateIntegrationOAuthHandoffArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationCreateOAuthClientArgs = {
+  input: CreateOAuthClientInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationCreatePlaylistArgs = {
   input: CreatePlaylistInput;
 };
@@ -5247,6 +5273,11 @@ export type MutationDeleteGymKioskArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteHoldOutlineOverrideArgs = {
   input: DeleteHoldOutlineOverrideInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteOAuthClientArgs = {
+  clientId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5663,6 +5694,11 @@ export type MutationRevokeRoleArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRotateOAuthClientSecretArgs = {
+  clientId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationSaveAuroraCredentialArgs = {
   input: SaveAuroraCredentialInput;
 };
@@ -5887,6 +5923,11 @@ export type MutationUpdateGymArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateGymKioskArgs = {
   input: UpdateGymKioskInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateOAuthClientArgs = {
+  input: UpdateOAuthClientInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6148,6 +6189,52 @@ export type NotificationType =
   | 'spray_wall_detection_completed'
   | 'vote_on_comment'
   | 'vote_on_tick';
+
+/** An app a developer registered for the Boardsesh API. Never carries its secret. */
+export type OAuthClient = {
+  __typename?: 'OAuthClient';
+  applicationType: OAuthClientApplicationType;
+  clientId: Scalars['ID']['output'];
+  /** ISO 8601. */
+  createdAt: Scalars['String']['output'];
+  homepageUrl?: Maybe<Scalars['String']['output']>;
+  /** Most climbers connected at once. */
+  maxActiveConnections: Scalars['Int']['output'];
+  /** Most new climber connections per day. */
+  maxNewConnectionsPerDay: Scalars['Int']['output'];
+  /** Shown on the consent screen. */
+  name: Scalars['String']['output'];
+  privacyPolicyUrl: Scalars['String']['output'];
+  /** Matched as exact strings, except the port of a loopback redirect. */
+  redirectUris: Array<Scalars['String']['output']>;
+  /** ISO 8601 when Boardsesh suspended the app, otherwise null. A suspended app gets no tokens. */
+  suspendedAt?: Maybe<Scalars['String']['output']>;
+  /** Why the app was suspended, written for the developer. */
+  suspensionReason?: Maybe<Scalars['String']['output']>;
+  tokenEndpointAuthMethod: OAuthClientAuthMethod;
+};
+
+/**
+ * Where an app's OAuth redirect lands. WEB apps use https:// redirect URIs only;
+ * NATIVE apps may also use http://127.0.0.1 or http://[::1] and private-use
+ * schemes such as com.example.app:/oauth/boardsesh. See docs/partner-api.md.
+ */
+export type OAuthClientApplicationType = 'NATIVE' | 'WEB';
+
+/**
+ * How an app authenticates at the token endpoint. NONE is a public app (no
+ * secret, PKCE protects the code); the other two are confidential apps that send
+ * a client secret by HTTP Basic or in the form body.
+ */
+export type OAuthClientAuthMethod = 'CLIENT_SECRET_BASIC' | 'CLIENT_SECRET_POST' | 'NONE';
+
+/** An app with a secret that is shown this once and can never be read again. */
+export type OAuthClientCredentials = {
+  __typename?: 'OAuthClientCredentials';
+  client: OAuthClient;
+  /** Null for a public app. */
+  clientSecret?: Maybe<Scalars['String']['output']>;
+};
 
 export type ObservedBoardSerialInput = {
   boardType: Scalars['String']['input'];
@@ -7355,6 +7442,11 @@ export type Query = {
    * Requires authentication.
    */
   myNewClimbSubscriptions: Array<NewClimbSubscription>;
+  /**
+   * The signed-in developer's apps. Developer apps answer NOT_FOUND while partner
+   * OAuth is off, and only allowlisted developers may use them.
+   */
+  myOAuthClients: Array<OAuthClient>;
   /**
    * Get the authenticated user's pinned playlists, ordered by most recently pinned.
    * Capped server-side (small grid surface). Requires authentication.
@@ -12057,6 +12149,15 @@ export type UpdateGymKioskInput = {
   slug?: InputMaybe<Scalars['String']['input']>;
 };
 
+/** Fields left out keep their value. A null homepageUrl removes it. The app type and auth method never change. */
+export type UpdateOAuthClientInput = {
+  clientId: Scalars['ID']['input'];
+  homepageUrl?: InputMaybe<Scalars['String']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  privacyPolicyUrl?: InputMaybe<Scalars['String']['input']>;
+  redirectUris?: InputMaybe<Array<Scalars['String']['input']>>;
+};
+
 /** Input for updating a playlist. */
 export type UpdatePlaylistInput = {
   /** New color */
@@ -12796,6 +12897,7 @@ export type ResolversTypes = ResolversObject<{
   CreateBoardInput: CreateBoardInput;
   CreateGymInput: CreateGymInput;
   CreateGymKioskInput: CreateGymKioskInput;
+  CreateOAuthClientInput: CreateOAuthClientInput;
   CreatePlaylistInput: CreatePlaylistInput;
   CreateProposalInput: CreateProposalInput;
   CreateSessionInput: CreateSessionInput;
@@ -12963,6 +13065,10 @@ export type ResolversTypes = ResolversObject<{
   NotificationConnection: ResolverTypeWrapper<NotificationConnection>;
   NotificationEvent: ResolverTypeWrapper<NotificationEvent>;
   NotificationType: NotificationType;
+  OAuthClient: ResolverTypeWrapper<OAuthClient>;
+  OAuthClientApplicationType: OAuthClientApplicationType;
+  OAuthClientAuthMethod: OAuthClientAuthMethod;
+  OAuthClientCredentials: ResolverTypeWrapper<OAuthClientCredentials>;
   ObservedBoardSerialInput: ObservedBoardSerialInput;
   ObservedBoardSerialMatch: ResolverTypeWrapper<ObservedBoardSerialMatch>;
   OrphanGym: ResolverTypeWrapper<OrphanGym>;
@@ -13217,6 +13323,7 @@ export type ResolversTypes = ResolversObject<{
   UpdateCommentInput: UpdateCommentInput;
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
+  UpdateOAuthClientInput: UpdateOAuthClientInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
   UpdatePrivacySettingsInput: UpdatePrivacySettingsInput;
   UpdateProfileInput: UpdateProfileInput;
@@ -13368,6 +13475,7 @@ export type ResolversParentTypes = ResolversObject<{
   CreateBoardInput: CreateBoardInput;
   CreateGymInput: CreateGymInput;
   CreateGymKioskInput: CreateGymKioskInput;
+  CreateOAuthClientInput: CreateOAuthClientInput;
   CreatePlaylistInput: CreatePlaylistInput;
   CreateProposalInput: CreateProposalInput;
   CreateSessionInput: CreateSessionInput;
@@ -13514,6 +13622,8 @@ export type ResolversParentTypes = ResolversObject<{
   NotificationActorsInput: NotificationActorsInput;
   NotificationConnection: NotificationConnection;
   NotificationEvent: NotificationEvent;
+  OAuthClient: OAuthClient;
+  OAuthClientCredentials: OAuthClientCredentials;
   ObservedBoardSerialInput: ObservedBoardSerialInput;
   ObservedBoardSerialMatch: ObservedBoardSerialMatch;
   OrphanGym: OrphanGym;
@@ -13729,6 +13839,7 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateCommentInput: UpdateCommentInput;
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
+  UpdateOAuthClientInput: UpdateOAuthClientInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
   UpdatePrivacySettingsInput: UpdatePrivacySettingsInput;
   UpdateProfileInput: UpdateProfileInput;
@@ -16096,6 +16207,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCreateIntegrationOAuthHandoffArgs, 'provider'>
   >;
+  createOAuthClient?: Resolver<
+    ResolversTypes['OAuthClientCredentials'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateOAuthClientArgs, 'input'>
+  >;
   createPlaylist?: Resolver<
     ResolversTypes['Playlist'],
     ParentType,
@@ -16191,6 +16308,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDeleteHoldOutlineOverrideArgs, 'input'>
+  >;
+  deleteOAuthClient?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDeleteOAuthClientArgs, 'clientId'>
   >;
   deletePlaylist?: Resolver<
     ResolversTypes['Boolean'],
@@ -16639,6 +16762,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRevokeRoleArgs, 'input'>
   >;
+  rotateOAuthClientSecret?: Resolver<
+    ResolversTypes['OAuthClientCredentials'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRotateOAuthClientSecretArgs, 'clientId'>
+  >;
   saveAuroraCredential?: Resolver<
     ResolversTypes['AuroraCredentialStatus'],
     ParentType,
@@ -16887,6 +17016,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUpdateGymKioskArgs, 'input'>
   >;
+  updateOAuthClient?: Resolver<
+    ResolversTypes['OAuthClient'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateOAuthClientArgs, 'input'>
+  >;
   updatePlaylist?: Resolver<
     ResolversTypes['Playlist'],
     ParentType,
@@ -17063,6 +17198,34 @@ export type NotificationEventResolvers<
   ParentType extends ResolversParentTypes['NotificationEvent'] = ResolversParentTypes['NotificationEvent'],
 > = ResolversObject<{
   notification?: Resolver<ResolversTypes['Notification'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type OAuthClientResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['OAuthClient'] = ResolversParentTypes['OAuthClient'],
+> = ResolversObject<{
+  applicationType?: Resolver<ResolversTypes['OAuthClientApplicationType'], ParentType, ContextType>;
+  clientId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  homepageUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  maxActiveConnections?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  maxNewConnectionsPerDay?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  privacyPolicyUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  redirectUris?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  suspendedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  suspensionReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  tokenEndpointAuthMethod?: Resolver<ResolversTypes['OAuthClientAuthMethod'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type OAuthClientCredentialsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['OAuthClientCredentials'] = ResolversParentTypes['OAuthClientCredentials'],
+> = ResolversObject<{
+  client?: Resolver<ResolversTypes['OAuthClient'], ParentType, ContextType>;
+  clientSecret?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17936,6 +18099,7 @@ export type QueryResolvers<
   myControllers?: Resolver<Array<ResolversTypes['ControllerInfo']>, ParentType, ContextType>;
   myGyms?: Resolver<ResolversTypes['GymConnection'], ParentType, ContextType, Partial<QueryMyGymsArgs>>;
   myNewClimbSubscriptions?: Resolver<Array<ResolversTypes['NewClimbSubscription']>, ParentType, ContextType>;
+  myOAuthClients?: Resolver<Array<ResolversTypes['OAuthClient']>, ParentType, ContextType>;
   myPinnedPlaylists?: Resolver<
     Array<ResolversTypes['Playlist']>,
     ParentType,
@@ -20401,6 +20565,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   Notification?: NotificationResolvers<ContextType>;
   NotificationConnection?: NotificationConnectionResolvers<ContextType>;
   NotificationEvent?: NotificationEventResolvers<ContextType>;
+  OAuthClient?: OAuthClientResolvers<ContextType>;
+  OAuthClientCredentials?: OAuthClientCredentialsResolvers<ContextType>;
   ObservedBoardSerialMatch?: ObservedBoardSerialMatchResolvers<ContextType>;
   OrphanGym?: OrphanGymResolvers<ContextType>;
   OrphanGymConnection?: OrphanGymConnectionResolvers<ContextType>;
