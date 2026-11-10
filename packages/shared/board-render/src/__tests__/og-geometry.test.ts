@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { MOONBOARD_GRADES } from '@boardsesh/board-config';
+import { BOULDER_GRADES, MOONBOARD_BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { getBoardDetailsForBoard } from '../board-details';
 import { OG_CARD_ART_LEFT, OG_CARD_ART_RIGHT, OG_CARD_BOARD_BOX, OG_IMAGE_HEIGHT, placeOgBoard } from '../headers';
@@ -66,24 +68,40 @@ describe('climb card geometry against the whole catalogue', () => {
     }
   });
 
-  it('keeps the widest grades whole inside the search crop, right of the art, on every config', async () => {
-    for (const board of measured) {
-      for (const grade of ['8C+/V16', '7c+/V10']) {
-        const content = buildOgClimbCardContent({
-          grade,
-          name: 'Twice the Spice is Half as Nice',
-          setter: 'connor.kainalu',
-          angle: 40,
-          boardLine: `${board.label} · Original Layout · Short & Narrow`,
-          fontFamily: 'Noto Sans',
-        });
-        const { hero } = await renderOgFamilyTextLayers(content!);
-        const label = `${board.label} ${grade}`;
+  /**
+   * Every grade label a card can be handed: the shared scale, MoonBoard's own
+   * conversion and Moon's labels, plus each in capitals, which run wider. The
+   * hero's room does not depend on the board, so this walks grades, not boards.
+   */
+  const distinctGradeLabels = [
+    ...new Set([
+      ...BOULDER_GRADES.map((grade) => grade.difficulty_name),
+      ...MOONBOARD_BOULDER_GRADES.map((grade) => grade.difficulty_name),
+      ...MOONBOARD_GRADES.map((grade) => grade.label),
+    ]),
+  ];
+  const realGradeLabels = distinctGradeLabels.flatMap((label) => [label, label.toUpperCase()]);
 
-        expect(hero.left, label).toBeGreaterThanOrEqual(OG_FAMILY_CROP_LEFT);
-        expect(hero.left, label).toBeGreaterThan(OG_CARD_ART_RIGHT);
-        expect(hero.left + hero.width, label).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
-      }
-    }
-  }, 60_000);
+  it('knows every real grade label', () => {
+    // 24 on the shared scale, 4a/V0 to 8c+/V16, plus MoonBoard's own 6a/V2.
+    expect(distinctGradeLabels).toHaveLength(25);
+    expect(distinctGradeLabels).toContain('8c+/V16');
+    expect(distinctGradeLabels).toContain('6a/V2');
+  });
+
+  it.each(realGradeLabels)('keeps %s whole inside the search crop, right of the art', async (grade) => {
+    const content = buildOgClimbCardContent({
+      grade,
+      name: 'Twice the Spice is Half as Nice',
+      setter: 'connor.kainalu',
+      angle: 40,
+      boardLine: 'Tension · Original Layout · Short & Narrow',
+      fontFamily: 'Noto Sans',
+    });
+    const { hero } = await renderOgFamilyTextLayers(content!);
+
+    expect(hero.left).toBeGreaterThanOrEqual(OG_FAMILY_CROP_LEFT);
+    expect(hero.left).toBeGreaterThan(OG_CARD_ART_RIGHT);
+    expect(hero.left + hero.width).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
+  });
 });

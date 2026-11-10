@@ -142,9 +142,20 @@ embedding the endpoint.
 builders, including spray-wall previews and share prewarming. It is a cache
 alias, not a rendering option; older unversioned URLs remain accepted. The version
 also hashes the shared bokeh engine and grain texture, the Sharp adapter, the
-text drawing (`og-card.ts` and the family grid `og-family.ts`), the board line
-(`og-card-board-line.ts`), the grade colours and the spray compositor, so visual
-changes get new CDN URLs.
+text drawing (`og-card.ts` and the family grid `og-family.ts`), the grade colours
+and the spray compositor, so visual changes get new CDN URLs. The board line's
+words (`BOARD_TYPE_LABELS`, layout and size names) are catalogue data rather than
+code, so the projection records the line itself for every catalogue entry
+(`og_board_line`, from `og-board-line.ts`): renaming a size moves the version.
+
+The version is one string for every board and every image this backend draws, so
+anything hashed into it turns over every climb card and every `/render/board`
+thumbnail URL at once, even where the bytes did not change. That is why the
+blocks only the other family cards draw (avatar, monogram, JOIN pill, recap dots,
+profile bars) live in `og-family-blocks.ts`, which is not hashed; a test fails if
+the climb card ever asks for one of them. The stack layout that places those
+blocks is still in `og-family.ts`, because one function places every row the
+climb card draws as well.
 
 ### Reusable frosted backdrop
 
@@ -373,7 +384,7 @@ cards render through, the climb card included. The surface supplies an art slot
 and a text stack; the ground (`#181225`), the frosted bokeh, the scrim, the column
 and the wordmark are fixed. Since the climb card moved onto it, `og-family.ts` is
 in `OPAQUE_RENDER_INPUTS`: an edit to it moves `BOARD_RENDER_VERSION` and every
-climb card URL with it. The `full` slot's numbers live in `headers.ts`
+climb card URL with it. `og-family-blocks.ts` (avatar, pill, dots, bars) is not. The `full` slot's numbers live in `headers.ts`
 (`OG_CARD_BOARD_BOX`, `OG_CARD_COLUMN_LEFT`, `placeOgBoard`) so the browser's render
 worker can size a board without importing sharp.
 
@@ -594,8 +605,27 @@ the advertised URL is not fetched a second time. `extractOgImageUrl` follows onl
 compiled `BOARD_RENDER_VERSION` answers the daily tier rather than `immutable`, so a
 render change cannot pin old bytes for a year. A URL with no `v` stays immutable.
 When the climb card moved onto the family grid the version moved with it, so every
-URL web and mobile build changed, and an old `v` still in a chat's cache answers the
-daily tier with the new drawing.
+URL web and mobile build changed.
+
+What a version bump does and does not refresh:
+
+- **Refreshes:** every URL built after the deploy, because it carries the new `v`.
+  Pages re-render their `og:image` and the apps build share URLs from the constant,
+  so new shares and re-scraped pages get the new card.
+- **Does not refresh:** a URL already cached at Cloudflare under the old `v`. That
+  response went out `immutable` for a year, and the edge keeps serving the old card
+  for the rest of that year; nothing on our side can reach it without a purge token
+  we do not hold. The daily-tier guard only applies when an old-`v` URL misses the
+  edge and reaches the origin: it then gets the new drawing with a day of caching,
+  not a year.
+- **Does not refresh:** a preview a chat app stored itself. Discord, Slack and
+  iMessage keep their own copy of an unfurl keyed by the page URL, not the image.
+
+**Known limit:** `/render/board?variant=og` has no such guard. It answers whatever
+`v` it is sent with `immutable`, so an old `v` that reaches the origin would pin the
+new wordless card under the old URL for a year. No production page builds that URL
+today (www's fallback to it only runs when no backend origin is configured), so it
+is left as is.
 
 `/render/board` without `variant=og` does not touch any of this: before and after the
 move, plain, thumbnail, background, dimmed, dark and classic renders came out

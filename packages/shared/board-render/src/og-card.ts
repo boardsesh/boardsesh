@@ -1,4 +1,5 @@
 import { getGradeColor } from '@boardsesh/board-constants';
+import { OG_CARD_BOARD_LINE_SEPARATOR } from './og-board-line';
 import {
   OG_FAMILY_MUTED,
   OG_FAMILY_WHITE,
@@ -17,9 +18,6 @@ import {
  * This module only decides WHAT the card says; `og-family.ts` typesets it through
  * Pango, which escapes every string for markup and measures every fit.
  */
-
-/** Joins the parts of a board line: `Kilter · Original · 12 x 12`. */
-export const OG_CARD_BOARD_LINE_SEPARATOR = ' · ';
 
 /**
  * A grade is one line, shrunk to fit and never cut: `8C+/V16` has to sit whole

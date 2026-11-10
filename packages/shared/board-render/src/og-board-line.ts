@@ -1,5 +1,7 @@
 import { BOARD_TYPE_LABELS, getLayoutName, getProductSize, type BoardName } from '@boardsesh/board-constants';
-import { OG_CARD_BOARD_LINE_SEPARATOR } from '@boardsesh/board-render/og-card';
+
+/** Joins the parts of a board line: `Kilter · Original · 12 x 12`. */
+export const OG_CARD_BOARD_LINE_SEPARATOR = ' · ';
 
 /**
  * The "which board is this" line under a climb name on an OG share card, e.g.
@@ -10,6 +12,11 @@ import { OG_CARD_BOARD_LINE_SEPARATOR } from '@boardsesh/board-render/og-card';
  * param of its own. Those params fully determine the board that gets drawn, so a
  * caller-supplied label would be a second source for the same fact — and the
  * only one of the two that a stranger could put words into.
+ *
+ * Its words come from catalogue data (`BOARD_TYPE_LABELS`, layout and size
+ * names), not from any hashed file, so `render-version-projection.ts` records this
+ * line for every catalogue entry: renaming a size moves `BOARD_RENDER_VERSION`.
+ * Pure, no sharp, so the projection can import it.
  */
 export function describeBoardConfig(boardName: string, layoutId: number, sizeId: number): string {
   const parts = [BOARD_TYPE_LABELS[boardName] ?? boardName];

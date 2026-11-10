@@ -9,7 +9,8 @@ import {
   type OutputFormat,
 } from '@boardsesh/board-render';
 import { renderFrostedBokehBuffer } from '@boardsesh/board-render/frosted-bokeh';
-import { OG_CARD_BOARD_LINE_SEPARATOR, renderOgCardLayers, type OgCardContent } from '@boardsesh/board-render/og-card';
+import { OG_CARD_BOARD_LINE_SEPARATOR } from '@boardsesh/board-render/og-board-line';
+import { renderOgCardLayers, type OgCardContent } from '@boardsesh/board-render/og-card';
 import { composeOgFamilyCard, renderOgFamilyPhotoLayers } from '@boardsesh/board-render/og-family';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants';
 import { IDENTITY_HOMOGRAPHY, invert, mapPoint, mapRadius, type Homography } from '@boardsesh/spray-wall-geometry';

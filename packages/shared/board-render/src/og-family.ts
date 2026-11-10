@@ -11,6 +11,29 @@ import {
   placeOgBoard,
 } from './headers';
 import type { OutputFormat } from './types';
+import {
+  AVATAR_GAP,
+  AVATAR_SIZE,
+  BARS_CLEARANCE,
+  BARS_MIN_COUNT,
+  BARS_TOP,
+  DOT_LABEL_GAP,
+  DOT_LABEL_PT,
+  DOT_LARGE_GAP,
+  DOT_LARGE_SIZE,
+  DOT_SMALL_GAP,
+  DOT_SMALL_SIZE,
+  DOTS_LARGE_UP_TO,
+  PILL_DOT_SIZE,
+  PILL_GAP,
+  PILL_HEIGHT,
+  PILL_PADDING_X,
+  renderAvatarImage,
+  renderBarsSvg,
+  renderDotsSvg,
+  renderMonogramDisc,
+  renderPillBackground,
+} from './og-family-blocks';
 import { escapePangoMarkup } from './validation';
 
 /**
@@ -21,7 +44,9 @@ import { escapePangoMarkup } from './validation';
  * The surface supplies an art slot and a stack of text; the ground, the scrim,
  * the column and the wordmark are fixed here. The climb card draws through it
  * too (`og-card.ts`), so this file is in `OPAQUE_RENDER_INPUTS`: an edit here
- * moves `BOARD_RENDER_VERSION` and with it every climb card URL.
+ * moves `BOARD_RENDER_VERSION` and with it every climb card and `/render/board`
+ * URL. The blocks only other cards draw (avatar, pill, dots, bars) are drawn in
+ * `og-family-blocks.ts`, which is not hashed.
  */
 
 /**
@@ -360,35 +385,6 @@ const MIN_HERO_PT = 20;
 const HERO_MAX_HEIGHT = 340;
 const WRAP_HERO_STEP_PT = 4;
 const TRUNCATION_ATTEMPTS = 6;
-const PILL_HEIGHT = 44;
-const PILL_PADDING_X = 18;
-const PILL_DOT_SIZE = 12;
-const PILL_GAP = 10;
-
-const AVATAR_SIZE = 80;
-const AVATAR_GAP = 18;
-const AVATAR_RING_WIDTH = 3;
-
-/** Chart bars live in the lower column, above the wordmark's row and clear of the text. */
-const BARS_TOP = 486;
-const BARS_BOTTOM = 556;
-const BARS_CLEARANCE = 16;
-const BARS_MIN_COUNT = 3;
-const BAR_MAX_WIDTH = 40;
-const BAR_GAP = 6;
-const BAR_ZERO_HEIGHT = 4;
-const BAR_ZERO_COLOR = '#2A2438';
-
-/** Under this many dots they can afford to be big; over it they run one line. */
-const DOTS_LARGE_UP_TO = 10;
-const DOT_LARGE_SIZE = 40;
-const DOT_LARGE_GAP = 10;
-const DOT_SMALL_SIZE = 26;
-const DOT_SMALL_GAP = 8;
-const DOT_RING_WIDTH = 5;
-const DOT_LABEL_PT = 20;
-const DOT_LABEL_GAP = 12;
-
 const ASIDE_LEFT = 930;
 const ASIDE_TOP = 72;
 const ASIDE_WIDTH = 230;
@@ -656,91 +652,7 @@ async function renderPill(pill: OgFamilyPill, fontFamily: string | undefined) {
     { fontFamily },
   );
   const width = PILL_PADDING_X * 2 + PILL_DOT_SIZE + PILL_GAP + text.width;
-  const background = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${PILL_HEIGHT}">` +
-      `<rect x="1" y="1" width="${width - 2}" height="${PILL_HEIGHT - 2}" rx="${PILL_HEIGHT / 2 - 1}" fill="${pill.color}" fill-opacity="0.14" stroke="${pill.color}" stroke-opacity="0.75" stroke-width="2"/>` +
-      `<circle cx="${PILL_PADDING_X + PILL_DOT_SIZE / 2}" cy="${PILL_HEIGHT / 2}" r="${PILL_DOT_SIZE / 2}" fill="${pill.color}"/>` +
-      `</svg>`,
-  );
-  return { background, text, width };
-}
-
-/** A circular image, ringed, as one layer. The caller has already decoded and sized `png`. */
-async function renderAvatarImage(png: Buffer): Promise<Buffer> {
-  const radius = AVATAR_SIZE / 2;
-  const circle = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius}" fill="#fff"/></svg>`,
-  );
-  const ring = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius - AVATAR_RING_WIDTH / 2}" fill="none" stroke="#fff" stroke-opacity="0.22" stroke-width="${AVATAR_RING_WIDTH}"/></svg>`,
-  );
-  const clipped = await sharp(png)
-    .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: 'cover' })
-    .ensureAlpha()
-    .composite([{ input: circle, blend: 'dest-in' }])
-    .png()
-    .toBuffer();
-  return sharp(clipped)
-    .composite([{ input: ring }])
-    .png()
-    .toBuffer();
-}
-
-function renderMonogramDisc(color: string): Buffer {
-  const radius = AVATAR_SIZE / 2;
-  return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius - AVATAR_RING_WIDTH / 2}" fill="${color}" fill-opacity="0.22" stroke="${color}" stroke-opacity="0.6" stroke-width="${AVATAR_RING_WIDTH}"/></svg>`,
-  );
-}
-
-/** The dots as one SVG, plus how many it drew: the rest are carried by the `+N` label. */
-function renderDotsSvg(
-  dots: OgFamilyDots['dots'],
-  count: number,
-  size: number,
-  gap: number,
-): { svg: Buffer; width: number; height: number } {
-  const step = size + gap;
-  const width = Math.max(size, count * step - gap);
-  const circles = dots
-    .slice(0, count)
-    .map((dot, index) => {
-      const cx = index * step + size / 2;
-      const cy = size / 2;
-      return dot.filled
-        ? `<circle cx="${cx}" cy="${cy}" r="${size / 2}" fill="${dot.color}"/>`
-        : `<circle cx="${cx}" cy="${cy}" r="${(size - DOT_RING_WIDTH) / 2}" fill="none" stroke="${dot.color}" stroke-width="${DOT_RING_WIDTH}"/>`;
-    })
-    .join('');
-  return {
-    svg: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${size}">${circles}</svg>`),
-    width,
-    height: size,
-  };
-}
-
-/**
- * Bars as one SVG, scaled to the card's tallest. Bars with no count keep a flat
- * tick, so the x-axis stays a continuous scale from easiest to hardest.
- */
-function renderBarsSvg(bars: readonly OgFamilyBar[], maxWidth: number): { svg: Buffer; width: number; height: number } {
-  const height = BARS_BOTTOM - BARS_TOP;
-  const tallest = Math.max(1, ...bars.map((bar) => bar.value));
-  const barWidth = Math.min(BAR_MAX_WIDTH, Math.floor((maxWidth - BAR_GAP * (bars.length - 1)) / bars.length));
-  const width = bars.length * barWidth + BAR_GAP * (bars.length - 1);
-  const rects = bars
-    .map((bar, index) => {
-      const barHeight =
-        bar.value > 0 ? Math.max(BAR_ZERO_HEIGHT, Math.round((bar.value / tallest) * height)) : BAR_ZERO_HEIGHT;
-      const color = bar.value > 0 ? bar.color : BAR_ZERO_COLOR;
-      return `<rect x="${index * (barWidth + BAR_GAP)}" y="${height - barHeight}" width="${barWidth}" height="${barHeight}" rx="2" fill="${color}"/>`;
-    })
-    .join('');
-  return {
-    svg: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${rects}</svg>`),
-    width,
-    height,
-  };
+  return { background: renderPillBackground(pill.color, width), text, width };
 }
 
 export type OgFamilyHeroRect = { left: number; top: number; width: number; height: number; pt: number };

@@ -10,7 +10,7 @@ import {
 } from '@boardsesh/board-render';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { applyCorsHeaders } from './cors';
-import { describeBoardConfig } from '../services/og-card-board-line';
+import { describeBoardConfig } from '@boardsesh/board-render/og-board-line';
 import { getPublicClientIp } from '../utils/client-ip';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';

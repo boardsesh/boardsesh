@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeBoardConfig } from '../services/og-card-board-line';
+import { describeBoardConfig } from '../og-board-line';
 
 /**
  * The line under a climb name on a share card. Derived from the config params

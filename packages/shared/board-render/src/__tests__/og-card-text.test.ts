@@ -244,6 +244,28 @@ describe('what the climb card says', () => {
     ]);
   });
 
+  it('never draws a block from og-family-blocks.ts, which the render version does not hash', () => {
+    // Avatar, pill, dots and bars are drawn in an unhashed file. If the climb card
+    // ever asks for one, an edit there would change climb card pixels under an
+    // unchanged URL: add og-family-blocks.ts to OPAQUE_RENDER_INPUTS first.
+    const everyField = {
+      name: 'n',
+      grade: '7a/V6',
+      setter: 's',
+      angle: 40,
+      boardLine: 'Kilter · Original',
+      fontFamily: 'Noto Sans',
+    };
+    for (const content of [everyField, { boardLine: 'Kilter · Original' }, { angle: 40 }, { setter: 's' }]) {
+      const family = buildOgClimbCardContent(content);
+      expect(family).not.toBeNull();
+      expect(family).not.toHaveProperty('identity');
+      expect(family).not.toHaveProperty('pill');
+      expect(family).not.toHaveProperty('dots');
+      expect(family).not.toHaveProperty('bars');
+    }
+  });
+
   it('lifts every hard grade so it reads on the dark ground', () => {
     // V10 and up are deep purples on the grade scale; on #181225 they vanished.
     for (const grade of ['7c+/V10', '8a/V11', '8b+/V14', '8C+/V16']) {

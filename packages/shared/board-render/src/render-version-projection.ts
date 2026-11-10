@@ -15,6 +15,7 @@ import {
 import { getBackgroundRelPaths } from './background';
 import { getBoardDetailsForBoard } from './board-details';
 import { OG_CARD_BOARD_BOX, OG_CARD_COLUMN_LEFT, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import { describeBoardConfig } from './og-board-line';
 import { buildRenderConfig } from './render-config';
 
 /**
@@ -131,6 +132,10 @@ function projectCatalogueEntry(entry: CatalogueEntry): Record<string, unknown> {
     layout_id: entry.layoutId,
     size_id: entry.sizeId,
     set_ids: entry.setIds,
+    // The words a climb card prints for this board (brand, layout and size
+    // names). They are catalogue data, not code, so no file hash sees them, and
+    // a card from a binary that sends no identity params leads with them.
+    og_board_line: describeBoardConfig(entry.boardName, entry.layoutId, entry.sizeId),
   };
 
   let boardDetails;
