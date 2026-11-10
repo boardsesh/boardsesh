@@ -1387,12 +1387,14 @@ describe('partner OAuth on, in the real server', () => {
         if (!rotated.ok) throw new Error('unreachable');
 
         await revoke(app, rotated.tokens.refresh_token);
-        expect(await refresh(app, rotated.tokens.refresh_token)).toMatchObject({ ok: false, error: 'invalid_grant' });
         // docs/partner-api.md: revoking a refresh token also ends the access tokens issued with it.
+        // Checked before anything else touches the family: a later replay of the refresh
+        // token closes the whole family anyway, which would hide a revoke that left them.
         expect(await callMe(app, rotated.tokens.access_token)).toEqual({
           status: 401,
           body: { challenge: 'invalid_token' },
         });
+        expect(await refresh(app, rotated.tokens.refresh_token)).toMatchObject({ ok: false, error: 'invalid_grant' });
         // Revoking a credential is not Disconnect: the connection is not ended.
         expect((await connectionRow(connection)).revokedAt).toBeNull();
       },

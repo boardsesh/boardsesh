@@ -939,11 +939,15 @@ app suspension/deletion, account deletion, connection cleanup failure, and
 correct CORS/headers for expired-token and rate-limit errors. Ordinary
 first-party sign-out must not silently revoke an offline connection; explicit
 security revocation must. The launch suite covers each of these against the
-real server except two: the www consent page's own `frame-ancestors` (the API
-host's error page is checked there; the consent page is tested with the page
-itself, `packages/web/app/oauth`, #6981 F14), and CORS on `429`, which the route suites
-(`partner-auth-routes.test.ts`, `partner-v1-api.test.ts`) check, since reaching a
-limit for real takes hundreds of requests.
+real server except three. The www consent page's own `frame-ancestors`: the
+API host's error page is checked there, and the consent page is tested with the
+page itself (`packages/web/app/oauth`, #6981 F14). Registering an unsafe
+callback URL: the suite only sends authorize to a redirect URI the app never
+registered, and the registration rules (fragments, `http://` off loopback,
+`boardsesh` hosts and schemes) are tested in
+`auth/partner/__tests__/partner-registration-rules.test.ts`. CORS on `429`: the
+route suites (`partner-auth-routes.test.ts`, `partner-v1-api.test.ts`) check it,
+since reaching a limit for real takes hundreds of requests.
 
 Independent adversarial agent reviews, by agents that did not write the code and
 working from the OAuth threat list, run before the first connection and again
