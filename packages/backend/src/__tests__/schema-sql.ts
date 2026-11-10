@@ -63,7 +63,7 @@ const logbookChangeTriggersSchema = readFileSync(
   'utf8',
 );
 const logbookSnapshotsSchema = readFileSync(
-  new URL('../../../db/drizzle/0298_logbook_snapshots.sql', import.meta.url),
+  new URL('../../../db/drizzle/0299_logbook_snapshots.sql', import.meta.url),
   'utf8',
 );
 const sharedSprayDraftsSchema = readFileSync(
