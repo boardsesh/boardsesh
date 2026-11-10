@@ -659,6 +659,76 @@ nothing. The link stays until it expires, and it can never match again, because 
 generation only rises, a reconnect keeps it, and the link is deleted with the
 climber or the app.
 
+### Retention sweep
+
+The provider deletes a row only when someone presents it, so expired partner
+rows would stay forever. The backend's `partner-oauth-sweep` pg-boss job
+(`packages/backend/src/services/partner-oauth-sweep.ts`, body in
+`auth/partner/retention.ts`) removes them hourly at :34 UTC, whatever
+`PARTNER_OAUTH_MODE` says: rows written while the mode was on still have to go
+after it is switched off. The queue is `exclusive`, so one run is queued or
+running across all replicas. Each row waits an hour past its expiry first, which
+covers clock skew between servers and a request that read the row just before it
+expired.
+
+| Step | What goes | Why it is safe |
+| --- | --- | --- |
+| Sessions | An expired `oauth_session` and every access token bound to it | Deleting the session alone would let `ON DELETE SET NULL` unbind those tokens, and an unbound token reads active until it expires. A session goes only when no token is bound to it any more; one a refresh token is bound to (offline grants detach at issuance, so none should be) is left alone |
+| Access tokens | Any access token past its expiry | Nothing accepts it and nothing points at it |
+| Rotated refresh tokens | A refresh token already rotated, once its `oauth_refresh_ancestors` row records the rotation and no access token issued with it is still live | The family guard reads the ancestor when the refresh row is gone, so replaying the token still closes its family |
+| Ended families | A grant whose connection fenced it off (revoked, or a newer generation), or whose code, refresh tokens and access tokens are all spent or expired, together with every token, ancestor and code carrying its code id; the grant goes last | Only a live code or a live refresh token can issue anything, so such a family cannot come back. Ancestry goes only when no unrotated refresh token of the family is left, so a refresh caught mid-rotation keeps it |
+| Codes | An authorization code past its expiry, a deleted account's included | The row holds the climber's id, their session id and the authorization query, and no grant reaches a deleted account's code |
+| Consent screens | An `oauth_consent_interactions` row past its expiry | A missing screen must be refused like a spent one, which the consent bridge does anyway because Disconnect and the password trigger delete them |
+
+Ancestry of a live family is never deleted, however old: expiry alone is never
+permission to forget it. A family that refreshes hourly therefore keeps one
+ancestor row per rotation for as long as it lives, about 8,800 a year, while its
+refresh and access tables stay at a few rows.
+
+How it stays out of a climber's way:
+
+- It takes no lock on `users` or `oauth_connections`. Each delete names its rows
+  through a `FOR UPDATE SKIP LOCKED` read in the same statement, so a row a refresh,
+  Disconnect, the password trigger or an account deletion holds is skipped until
+  the next run. A delete never reaches a row it has not locked: a refresh token goes
+  only when no access token points at it, and a session only when no token is bound
+  to it. It never waits for a row, so it can never be part of a deadlock.
+- Each batch is one transaction of at most six statements, with `lock_timeout`
+  100 ms and `statement_timeout` 250 ms. A live flow that wants a row a batch holds
+  waits for that batch only: at most 1.5 s, under the issuers' 2 s and the
+  trigger's 5 s, and a few milliseconds as measured. A lock timeout (a migration
+  holding a table) or a statement timeout ends that step for this run and logs a
+  warning naming it.
+- A run takes at most 200 rows per table per batch, 250 batches per step (50,000
+  rows) and 30 s.
+
+What it costs, measured on the local Postgres 15 test container after a restart,
+with 1,000 live connections, each 90 days into hourly rotation (2.16 million
+ancestor rows, 490 MB of partner tables):
+
+| Run | Time | Transactions | Slowest transaction |
+| --- | --- | --- | --- |
+| Empty tables | 8 ms | 6, read-only | 2 ms |
+| Nothing due | 37 ms | 6 | 9 ms |
+| A heavy hour: 1,000 rotations, 10 families ended with 2,160 ancestors each, 200 each of expired sessions, abandoned codes, deleted accounts' codes and consent screens | 1.4 s, 25,020 rows | 128 | 39 ms |
+
+The partner tables stay small because the sweep keeps them small. If it has been
+off for weeks they will not be: with 90 days of history left everywhere (2.16
+million rows in each token table) a run still deletes 50,000 expired access tokens
+in 1.2 to 4.5 s, but the rotated-refresh and family steps time out on reads over
+the whole token tables and report busy until the access tokens are gone, about 44
+hourly runs. Nothing waits on them meanwhile; rows only stay longer.
+
+Anything else that deletes an `oauth_session` row must delete the access tokens
+bound to it in the same transaction, for the same `SET NULL` reason. Anything that
+deletes a grant must delete its family's ancestry with it, or a replay of an old
+token takes the climber's row lock on every attempt.
+
+**Turn the job off:** `DELETE FROM pgboss.schedule WHERE name = 'partner-oauth-sweep';`.
+Every boot schedules it again, so to keep it off across restarts revert the
+registration in `packages/backend/src/index.ts`. Nothing a request reads depends
+on it; rows only wait longer.
+
 ### Test suite required before launch
 
 The OAuth launch gate is separate from the first-party migration gate.
