@@ -3,6 +3,8 @@ import {
   analyticsPathname,
   isAdminAnalyticsUrl,
   isEmbedAnalyticsUrl,
+  isPartnerOAuthAnalyticsUrl,
+  isProductAnalyticsFreeUrl,
   stripAnalyticsLocalePrefix,
 } from '../analytics-paths';
 
@@ -61,5 +63,30 @@ describe('isEmbedAnalyticsUrl', () => {
     expect(isEmbedAnalyticsUrl('/embedded')).toBe(false);
     expect(isEmbedAnalyticsUrl('/kiosk/some-gym')).toBe(false);
     expect(isEmbedAnalyticsUrl('/?next=/embed/board/abc')).toBe(false);
+  });
+});
+
+describe('isPartnerOAuthAnalyticsUrl', () => {
+  it('matches the partner sign-in and consent pages in every locale and case', () => {
+    expect(isPartnerOAuthAnalyticsUrl('/oauth/consent?client_id=bsk_app&sig=signed')).toBe(true);
+    expect(isPartnerOAuthAnalyticsUrl('https://www.boardsesh.com/de/oauth/sign-in?client_id=bsk_app')).toBe(true);
+    expect(isPartnerOAuthAnalyticsUrl('/OAuth/Consent')).toBe(true);
+    expect(isPartnerOAuthAnalyticsUrl('/oauth')).toBe(true);
+  });
+
+  it('does not match lookalikes, a query that names the page, or the NextAuth routes', () => {
+    expect(isPartnerOAuthAnalyticsUrl('/oauthentication')).toBe(false);
+    expect(isPartnerOAuthAnalyticsUrl('/auth/login?callbackUrl=/oauth/sign-in')).toBe(false);
+    expect(isPartnerOAuthAnalyticsUrl('/api/auth/callback/google')).toBe(false);
+  });
+});
+
+describe('isProductAnalyticsFreeUrl', () => {
+  it('covers embeds, the kiosk and the partner OAuth pages, and nothing else', () => {
+    expect(isProductAnalyticsFreeUrl('/embed/board/abc')).toBe(true);
+    expect(isProductAnalyticsFreeUrl('/kiosk/some-gym')).toBe(true);
+    expect(isProductAnalyticsFreeUrl('/es/oauth/consent')).toBe(true);
+    expect(isProductAnalyticsFreeUrl('/gyms')).toBe(false);
+    expect(isProductAnalyticsFreeUrl('/admin')).toBe(false);
   });
 });

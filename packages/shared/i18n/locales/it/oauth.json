@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "signIn": {
+      "title": "Accedi per collegare un'app",
+      "description": "Accedi a Boardsesh, poi scegli cosa può vedere un'app."
+    },
+    "consent": {
+      "title": "Collega un'app",
+      "description": "Scegli se un'app può collegarsi al tuo account Boardsesh."
+    }
+  },
+  "states": {
+    "invalidLink": {
+      "title": "Questo link non funziona",
+      "body": "Torna all'app da cui arrivi e collegala di nuovo."
+    },
+    "expired": {
+      "title": "Questo link è scaduto",
+      "body": "Un link per collegare un'app dura 10 minuti. Torna all'app e collegala di nuovo."
+    },
+    "unavailable": {
+      "title": "Al momento non è possibile collegare app",
+      "body": "Riprova più tardi. Il tuo account Boardsesh non cambia."
+    }
+  },
+  "signIn": {
+    "signedOut": {
+      "title": "Accedi per collegare un'app",
+      "body": "Un'app vuole collegarsi al tuo account Boardsesh. Prima accedi: vedrai a cosa può accedere prima che venga condiviso qualcosa."
+    },
+    "stale": {
+      "title": "Accedi di nuovo per continuare",
+      "body": "Per collegare un'app serve un accesso recente, quindi ti chiediamo di accedere ancora una volta. Il tuo account è a posto.",
+      "detail": "Lo chiediamo ogni 30 giorni e dopo un cambio di password."
+    },
+    "justSignedIn": {
+      "title": "Ci siamo quasi",
+      "body": "Se hai cambiato la password nell'ultimo minuto, aspetta un minuto e poi accedi di nuovo."
+    },
+    "signedInAs": "Accesso effettuato come {{account}}.",
+    "signOut": "Non sei tu? Esci",
+    "submit": "Accedi",
+    "errors": {
+      "invalidCredentials": "Email e password non corrispondono. Riprova.",
+      "unavailable": "L'accesso non funziona in questo momento. Riprova tra un minuto.",
+      "accountNotLinked": "Questo account appartiene a un altro accesso Boardsesh. Accedi con il metodo usato alla registrazione, oppure esci e riprova.",
+      "linkRefused": "Questo account non è ancora collegato al tuo accesso Boardsesh. Accedi con la password o con l'account che usi di solito.",
+      "generic": "L'accesso non è andato a buon fine. Riprova."
+    }
+  },
+  "consent": {
+    "loading": "Controllo di cosa chiede l'app",
+    "sending": "Invio della tua risposta",
+    "unnamedApp": "App senza nome",
+    "title": "Collegare {{app}} al tuo account Boardsesh?",
+    "titleReconnect": "Collegare di nuovo {{app}}?",
+    "signedInAs": "Accesso effettuato come {{account}}.",
+    "signOut": "Non sei tu? Esci",
+    "reconnect": "Hai già scollegato {{app}} in passato. Se scegli Consenti, si collega di nuovo.",
+    "canHeading": "{{app}} potrà",
+    "scopes": {
+      "profileRead": "Vedere il tuo nome visualizzato e la foto profilo",
+      "logbookRead": "Vedere ogni salita del tuo diario, su ogni pannello",
+      "logbookOnlyMe": "Comprese le salite che tieni su «Solo io»",
+      "offlineAccess": "Mantenere questo accesso finché non la scolleghi",
+      "other": "Altro accesso: {{scope}}"
+    },
+    "cannot": "Non può modificare nulla del tuo account e non vede mai la tua password.",
+    "notReviewed": "Boardsesh non ha verificato questa app. Collega solo app di cui ti fidi.",
+    "redirect": "Dopo la tua scelta torni su {{host}}.",
+    "links": {
+      "label": "Informazioni su {{app}}",
+      "homepage": "Sito web",
+      "privacy": "Informativa sulla privacy",
+      "terms": "Termini",
+      "newTab": "(si apre in una nuova scheda)"
+    },
+    "allow": "Consenti",
+    "deny": "Non consentire",
+    "disconnect": "Puoi scollegarla quando vuoi in Impostazioni › App collegate.",
+    "backToApp": "Torna a {{app}}",
+    "connected": {
+      "title": "Hai collegato {{app}}",
+      "body": "Ti riportiamo a {{app}}. Se non succede nulla, usa il pulsante qui sotto."
+    },
+    "declined": {
+      "title": "Non hai collegato {{app}}",
+      "body": "Non è stato condiviso nulla. Ti riportiamo a {{app}}."
+    },
+    "appFull": {
+      "title": "{{app}} non accetta nuovi collegamenti al momento",
+      "body": "Ha raggiunto il suo limite per ora, quindi non è stato condiviso nulla. Riprova più tardi."
+    },
+    "appNotReady": {
+      "title": "{{app}} non può ancora collegarsi",
+      "body": "Chi l'ha sviluppata non ha finito di configurarla, quindi non è stato condiviso nulla."
+    },
+    "appError": {
+      "title": "Collegamento di {{app}} non riuscito",
+      "body": "Non è stato condiviso nulla. Torna a {{app}} e riprova."
+    },
+    "appUnavailable": {
+      "title": "Questa app non può collegarsi",
+      "body": "Al momento non è disponibile su Boardsesh, quindi non è stato condiviso nulla."
+    },
+    "signInAgain": {
+      "title": "Accedi di nuovo per continuare",
+      "body": "Per collegare un'app serve un accesso recente. Il tuo account è a posto.",
+      "button": "Accedi"
+    },
+    "busy": {
+      "title": "Boardsesh è sovraccarico",
+      "body": "Non è stato condiviso nulla. Riprova tra un minuto."
+    },
+    "failed": {
+      "title": "Qualcosa non ha funzionato",
+      "body": "Non è stato condiviso nulla. Riprova, oppure torna all'app e collegala di nuovo."
+    },
+    "tryAgain": "Riprova"
+  }
+}

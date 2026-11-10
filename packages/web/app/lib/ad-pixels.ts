@@ -36,8 +36,12 @@ import { isProductionHost } from './production-hosts';
 
 const AD_MEASUREMENT_COPY_SINCE_MS = Date.parse(AD_MEASUREMENT_COPY_SINCE);
 
-/** Route trees that never load or fire a pixel, compared locale-stripped and lowercased. */
-const EXCLUDED_PATH_PREFIXES = ['/kiosk', '/embed', '/auth', '/admin'] as const;
+/**
+ * Route trees that never load or fire a pixel, compared locale-stripped and
+ * lowercased. `/oauth` is a partner app's sign-in and consent: its URLs carry
+ * the app's signed authorization request.
+ */
+const EXCLUDED_PATH_PREFIXES = ['/kiosk', '/embed', '/auth', '/admin', '/oauth'] as const;
 
 /** A Meta Pixel id is a plain number. Anything else is a misconfiguration and stays off. */
 export function parseMetaPixelId(raw: string | undefined | null): string | null {
@@ -66,7 +70,7 @@ export function isAdMeasurementPermitted(record: ConsentRecord | null, globalPri
   return Number.isFinite(decidedAtMs) && decidedAtMs >= AD_MEASUREMENT_COPY_SINCE_MS;
 }
 
-/** False for kiosk, embed, auth and admin pages, in every locale and letter case. */
+/** False for kiosk, embed, auth, admin and partner OAuth pages, in every locale and letter case. */
 export function isAdPixelPath(pathnameOrUrl: string): boolean {
   // Lowercase first: the locale strip is case-sensitive, and /DE/auth must not slip through.
   const pathname = stripAnalyticsLocalePrefix(analyticsPathname(pathnameOrUrl).toLowerCase());

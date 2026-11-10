@@ -690,6 +690,51 @@ An approval the caps refuse is not an error response: it answers `200` with
 `{ "redirect": true, "url": "<app redirect with error=temporarily_unavailable>" }`,
 like a denial.
 
+**The www pages** (`packages/web/app/oauth/`, logic in
+`packages/web/app/lib/partner-oauth/`). Both show an "isn't available" card while
+the web's own `PARTNER_OAUTH_MODE` is `off`, and an error card for a query that
+is not a signed one (no single `sig`, no `ba_param` list, no `client_id` or `exp`).
+They read the session cookie only to choose what to say; every decision stays with
+the backend, so the pages need no database or backend call to render.
+
+- `/oauth/sign-in` shows the password form and the Google, Apple and Facebook
+  buttons, with copy for three cases: signed out; signed in but too old to approve
+  an app (the switch-on day case, worded as "sign in again, your account is fine");
+  and signed in within the last 3 minutes yet still refused, which is the 60 s after
+  a password change. A finished sign-in comes back to the page with
+  `boardsesh_signed_in=1`, and only then does the page send the browser to
+  authorize, rebuilt from the signed parameters without the signing fields. Without
+  that marker it never forwards on its own, so a session the backend keeps refusing
+  shows the form instead of bouncing between hosts.
+- A failed social sign-in that started there comes back there with `?error=`,
+  because the iPhone app claims `/auth/login`. `sign-in-failure-return.ts` decides
+  once, on the response that starts the provider round trip (`POST
+  /api/auth/signin/<provider>`, redirect or JSON `url`) or ends it
+  (`/api/auth/callback/<provider>`), by that flow's own callback URL: a callback-url
+  cookie the same response sets; else, at a start, the `callbackUrl` the request
+  posted (a start refused before NextAuth runs sets no cookie); else, at a
+  callback, the `<callback-url>.<scope>` cookie a `backend-staging` flow retires,
+  or, only when no scoped cookie exists, the base cookie the legacy start wrote. The later hops (`/api/auth/error`,
+  `/api/auth/signin`) are never rewritten, because by then the base cookie may be a
+  stale one, such as the partner page kept from "Not you? Sign out". Only the
+  partner page's path is ever written, never an origin.
+- `/oauth/consent` calls both consent routes from the browser, with
+  `credentials: 'include'`, so the browser supplies the exact `Origin` and each
+  climber keeps their own rate-limit bucket. It posts only the signed parameters
+  (the `ba_param` list), as Better Auth's own client does.
+- Refusals map to plain states by `error` and status, as in the table above:
+  `login_required` is "sign in again" (back through `/oauth/sign-in` with the same
+  request), `link_spent` and Better Auth's own `invalid_signature` (a changed or
+  out-of-date link) are "expired", `app_suspended` is "this app can't connect", the
+  cap's `temporarily_unavailable` on the app's redirect is explained before the
+  climber goes back, and `429` or `5xx` offers a retry. The cross-site
+  `invalid_request` can't happen from the page itself and reads as a plain failure.
+- Both pages are chrome-less, `noindex`, and send `X-Frame-Options: DENY`,
+  `frame-ancestors 'none'`, `Referrer-Policy: no-referrer` and `no-store`. PostHog
+  and the ad pixels never load there (`isPartnerOAuthAnalyticsUrl`), and Sentry
+  drops the query of any `/oauth/sign-in` or `/oauth/consent` URL and any
+  `oauth_query` field (`@boardsesh/text-redaction`).
+
 ### Browser access
 
 CORS on the token/revoke endpoints and `/v1/*` is credential-free and separate

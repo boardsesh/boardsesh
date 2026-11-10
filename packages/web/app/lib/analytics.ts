@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/nextjs';
 import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
-import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from './analytics-paths';
+import { isAdminAnalyticsUrl, isProductAnalyticsFreeUrl } from './analytics-paths';
 import { searchCarriesBoardInvite } from './board-invite';
 import { redactShareCapabilities, scrubShareCapabilitiesFromEvent } from './share-capability';
 import { getWebConsentRecord, hasAnalyticsConsent, subscribeWebConsent } from './consent';
@@ -195,7 +195,7 @@ const shouldDebugAnalytics = process.env.NEXT_PUBLIC_ANALYTICS_DEBUG === '1';
 
 function getPosthog(): PostHog | null {
   if (typeof window === 'undefined') return null;
-  if (isEmbedAnalyticsUrl(window.location.pathname) || isKioskAnalyticsUrl(window.location.pathname)) return null;
+  if (isProductAnalyticsFreeUrl(window.location.pathname)) return null;
   // A home board's share link, or the sign-in page carrying it back: the SDK
   // stamps `location.href` on every event, and that URL holds a membership token.
   // `before_send` below scrubs the token from every event anyway; this stays as
@@ -361,8 +361,7 @@ function shouldSkipProductAnalytics(): boolean {
   return (
     !hasAnalyticsConsent() ||
     isCurrentAdminAnalyticsPage() ||
-    (typeof window !== 'undefined' &&
-      (isEmbedAnalyticsUrl(window.location.pathname) || isKioskAnalyticsUrl(window.location.pathname)))
+    (typeof window !== 'undefined' && isProductAnalyticsFreeUrl(window.location.pathname))
   );
 }
 const core = createAnalytics(getPosthog, { shouldSkip: shouldSkipProductAnalytics });

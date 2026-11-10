@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "signIn": {
+      "title": "Inicia sesión para conectar una app",
+      "description": "Inicia sesión en Boardsesh y elige qué puede ver una app."
+    },
+    "consent": {
+      "title": "Conectar una app",
+      "description": "Elige si una app puede conectarse a tu cuenta de Boardsesh."
+    }
+  },
+  "states": {
+    "invalidLink": {
+      "title": "Este enlace no funciona",
+      "body": "Vuelve a la app de la que vienes y conéctala de nuevo."
+    },
+    "expired": {
+      "title": "Este enlace ha caducado",
+      "body": "Un enlace para conectar una app dura 10 minutos. Vuelve a la app y conéctala de nuevo."
+    },
+    "unavailable": {
+      "title": "Ahora mismo no se pueden conectar apps",
+      "body": "Inténtalo más tarde. Tu cuenta de Boardsesh no se ve afectada."
+    }
+  },
+  "signIn": {
+    "signedOut": {
+      "title": "Inicia sesión para conectar una app",
+      "body": "Una app quiere conectarse a tu cuenta de Boardsesh. Inicia sesión primero y verás a qué puede acceder antes de compartir nada."
+    },
+    "stale": {
+      "title": "Vuelve a iniciar sesión para continuar",
+      "body": "Para conectar una app hace falta un inicio de sesión reciente, así que te pedimos que inicies sesión una vez más. Tu cuenta está bien.",
+      "detail": "Lo pedimos cada 30 días y después de cambiar la contraseña."
+    },
+    "justSignedIn": {
+      "title": "Ya casi está",
+      "body": "Si cambiaste tu contraseña hace menos de un minuto, espera un minuto y vuelve a iniciar sesión."
+    },
+    "signedInAs": "Sesión iniciada como {{account}}.",
+    "signOut": "¿No eres tú? Cierra sesión",
+    "submit": "Iniciar sesión",
+    "errors": {
+      "invalidCredentials": "El correo y la contraseña no coinciden. Inténtalo de nuevo.",
+      "unavailable": "El inicio de sesión no funciona ahora mismo. Inténtalo dentro de un minuto.",
+      "accountNotLinked": "Esa cuenta pertenece a otro inicio de sesión de Boardsesh. Inicia sesión como lo hiciste al registrarte, o cierra sesión y vuelve a intentarlo.",
+      "linkRefused": "Esa cuenta aún no está vinculada a tu inicio de sesión de Boardsesh. Inicia sesión con tu contraseña o con la cuenta que usas siempre.",
+      "generic": "El inicio de sesión no terminó. Inténtalo de nuevo."
+    }
+  },
+  "consent": {
+    "loading": "Comprobando qué pide la app",
+    "sending": "Enviando tu respuesta",
+    "unnamedApp": "App sin nombre",
+    "title": "¿Conectar {{app}} a tu cuenta de Boardsesh?",
+    "titleReconnect": "¿Volver a conectar {{app}}?",
+    "signedInAs": "Sesión iniciada como {{account}}.",
+    "signOut": "¿No eres tú? Cierra sesión",
+    "reconnect": "Ya desconectaste {{app}} antes. Si eliges Permitir, se vuelve a conectar.",
+    "canHeading": "{{app}} podrá",
+    "scopes": {
+      "profileRead": "Ver tu nombre y tu foto de perfil",
+      "logbookRead": "Ver todos los registros de tu logbook, en todos los plafones",
+      "logbookOnlyMe": "Incluidos los registros que tienes en «Solo yo»",
+      "offlineAccess": "Mantener este acceso hasta que la desconectes",
+      "other": "Otro acceso: {{scope}}"
+    },
+    "cannot": "No puede cambiar nada de tu cuenta y nunca ve tu contraseña.",
+    "notReviewed": "Boardsesh no ha revisado esta app. Conecta solo apps de confianza.",
+    "redirect": "Cuando elijas, volverás a {{host}}.",
+    "links": {
+      "label": "Sobre {{app}}",
+      "homepage": "Web",
+      "privacy": "Política de privacidad",
+      "terms": "Condiciones",
+      "newTab": "(se abre en una pestaña nueva)"
+    },
+    "allow": "Permitir",
+    "deny": "No permitir",
+    "disconnect": "Puedes desconectarla cuando quieras en Ajustes › Apps conectadas.",
+    "backToApp": "Volver a {{app}}",
+    "connected": {
+      "title": "Has conectado {{app}}",
+      "body": "Te llevamos de vuelta a {{app}}. Si no pasa nada, usa el botón de abajo."
+    },
+    "declined": {
+      "title": "No has conectado {{app}}",
+      "body": "No se ha compartido nada. Te llevamos de vuelta a {{app}}."
+    },
+    "appFull": {
+      "title": "{{app}} no admite conexiones nuevas ahora mismo",
+      "body": "Ha llegado a su límite por ahora, así que no se ha compartido nada. Inténtalo más tarde."
+    },
+    "appNotReady": {
+      "title": "{{app}} aún no puede conectarse",
+      "body": "Quien la desarrolla aún no ha terminado de configurarla, así que no se ha compartido nada."
+    },
+    "appError": {
+      "title": "{{app}} no se ha conectado",
+      "body": "No se ha compartido nada. Vuelve a {{app}} e inténtalo de nuevo."
+    },
+    "appUnavailable": {
+      "title": "Esta app no puede conectarse",
+      "body": "Ahora mismo no está disponible en Boardsesh, así que no se ha compartido nada."
+    },
+    "signInAgain": {
+      "title": "Vuelve a iniciar sesión para continuar",
+      "body": "Para conectar una app hace falta un inicio de sesión reciente. Tu cuenta está bien.",
+      "button": "Iniciar sesión"
+    },
+    "busy": {
+      "title": "Boardsesh está saturado",
+      "body": "No se ha compartido nada. Inténtalo dentro de un minuto."
+    },
+    "failed": {
+      "title": "Algo no ha funcionado",
+      "body": "No se ha compartido nada. Inténtalo de nuevo, o vuelve a la app y conéctala otra vez."
+    },
+    "tryAgain": "Reintentar"
+  }
+}

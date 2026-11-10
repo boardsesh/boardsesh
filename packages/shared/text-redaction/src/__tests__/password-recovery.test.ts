@@ -284,3 +284,49 @@ describe('password recovery telemetry capabilities', () => {
     expect(result).not.toContain('src');
   });
 });
+
+describe('partner OAuth sign-in and consent requests', () => {
+  const signature = 'k7Jq2mVxP0sRt4wYb9nC1dEfGhIjKlMnOpQrStUvWx8';
+  const state = 'app-state-8f3c2d1e';
+  const signedQuery = `response_type=code&client_id=bsk_app&state=${state}&code_challenge=E9Melhoa2Ow&exp=1700000600&sig=${signature}`;
+
+  it.each(['/oauth/consent', '/oauth/sign-in', '/de/oauth/consent/', 'https://www.boardsesh.com/es/oauth/sign-in'])(
+    'drops the whole signed request on %s',
+    (path) => {
+      const result = redactPasswordRecoveryUrls(`${path}?${signedQuery}`);
+      expect(result).toBe(`${path}?[redacted]`);
+    },
+  );
+
+  it('drops it when the sign-in page rides encoded in a callbackUrl', () => {
+    const result = redactPasswordRecoveryUrls(
+      `/auth/login?callbackUrl=${encodeURIComponent(`/oauth/sign-in?${signedQuery}&error=Callback`)}`,
+    );
+    expect(result).not.toContain(signature);
+    expect(result).not.toContain(state);
+  });
+
+  it('scrubs the request out of event URLs, breadcrumbs and a posted oauth_query body', () => {
+    const pageUrl = `https://www.boardsesh.com/oauth/consent?${signedQuery}`;
+    const scrubbed = scrubPasswordRecoveryEvent({
+      request: { url: pageUrl, query_string: signedQuery },
+      breadcrumbs: [{ category: 'navigation', data: { from: pageUrl, to: '/oauth/consent' } }],
+      extra: { body: { accept: true, oauth_query: signedQuery } },
+    });
+    const serialized = JSON.stringify(scrubbed);
+    expect(serialized).not.toContain(signature);
+    expect(serialized).not.toContain(state);
+    expect(scrubbed.request.query_string).toBe('[redacted]');
+    expect(scrubbed.extra.body.accept).toBe(true);
+  });
+
+  it('leaves lookalike paths alone', () => {
+    for (const original of [
+      '/oauthentication?sig=public',
+      '/oauth/consent-help?client_id=public',
+      '/api/auth/oauth2/token',
+    ]) {
+      expect(redactPasswordRecoveryUrls(original)).toBe(original);
+    }
+  });
+});
