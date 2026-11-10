@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { ApiErrorResponseSchema, MeResponseSchema } from '@boardsesh/public-api';
 import { createPartnerAdmissionGate } from '../auth/partner/admission';
-import { mintPartnerSubject } from '../auth/partner/api-access';
+import { mintPartnerSubject, PARTNER_LAST_USED_RESOLUTION_MS, partnerLastUseIsStale } from '../auth/partner/api-access';
 import { judgePartnerBearer, type PartnerBearerRefusal } from '../auth/partner/bearer';
 import {
   apiErrorBody,
@@ -239,6 +239,27 @@ describe('partner subjects', () => {
 
 type BearerRow = NonNullable<Parameters<typeof judgePartnerBearer>[0]>;
 
+describe("Connected apps' last-use throttle", () => {
+  const now = new Date('2026-11-10T12:00:00Z');
+  const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000);
+
+  it.each([
+    ['never stamped', null, true],
+    ['stamped just now', now, false],
+    ['stamped 59 minutes ago', minutesAgo(59), false],
+    ['stamped an hour ago', minutesAgo(60), true],
+    ['stamped a day ago', minutesAgo(24 * 60), true],
+    // A clock behind the database's: never a write per request.
+    ['stamped a minute in the future', minutesAgo(-1), false],
+  ])('writes when %s: %s', (_label, lastUsedAt, stale) => {
+    expect(partnerLastUseIsStale(lastUsedAt, now)).toBe(stale);
+  });
+
+  it('is one hour', () => {
+    expect(PARTNER_LAST_USED_RESOLUTION_MS).toBe(3_600_000);
+  });
+});
+
 describe('the bearer verdict', () => {
   const now = new Date('2026-11-10T12:00:00Z');
   const resource = 'https://api.boardsesh.test/v1';
@@ -258,6 +279,7 @@ describe('the bearer verdict', () => {
     connectionClientId: 'client-a',
     connectionGeneration: 2,
     connectionRevokedAt: null,
+    connectionLastUsedAt: null,
     clientDisabled: false,
   };
   const judge = (overrides: Partial<BearerRow> | undefined) =>
@@ -275,7 +297,10 @@ describe('the bearer verdict', () => {
       connectionGeneration: 2,
       scopes: ['profile:read'],
       accessTokenHash: 'hash',
+      connectionLastUsedAt: null,
     });
+    const lastUsedAt = new Date(now.getTime() - 5 * 60_000);
+    expect(judge({ connectionLastUsedAt: lastUsedAt }).principal?.connectionLastUsedAt).toBe(lastUsedAt);
     expect(judge({ clientDisabled: null }).principal).toBeDefined();
     expect(judge({ sessionId: 'session', sessionExpiresAt: new Date(now.getTime() + 1) }).principal).toBeDefined();
   });

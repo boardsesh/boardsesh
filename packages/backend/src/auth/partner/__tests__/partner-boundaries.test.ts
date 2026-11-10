@@ -35,6 +35,7 @@ const PARTNER_MODULES = [
   '../authority',
   '../bearer',
   '../configuration',
+  '../connected-apps',
   '../connection',
   '../family-guard',
   '../fence',
@@ -57,6 +58,7 @@ const PARTNER_MODULES = [
   '../../../handlers/public-api/logbook-cursor',
   '../../../handlers/public-api/outcome',
   '../../../handlers/public-api/router',
+  '../../../graphql/resolvers/connected-apps/connected-apps',
   '../../../graphql/resolvers/oauth-clients/partner-registration',
   '../../../services/logbook-tick-serializer',
 ];

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, isNull } from 'drizzle-orm';
-import { oauthAccessToken, oauthSubjects, userProfiles, users } from '@boardsesh/db/schema/auth';
+import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { oauthAccessToken, oauthConnections, oauthSubjects, userProfiles, users } from '@boardsesh/db/schema/auth';
+import { logger } from '../../utils/logger';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { findPartnerApiPrincipal, type PartnerApiPrincipal, type PartnerBearerResult } from './bearer';
 import { endPartnerConnection } from './connection';
@@ -21,12 +22,29 @@ export interface PartnerClimberRecord {
 
 export type PartnerApiDisconnectOutcome = 'disconnected' | 'already_disconnected' | 'token_invalid';
 
+/**
+ * How fine Connected apps' "last used" is. A connection's `last_used_at` is
+ * written at most once per this interval, so a busy app costs one small write
+ * an hour, not one per request.
+ */
+export const PARTNER_LAST_USED_RESOLUTION_MS = 60 * 60 * 1000;
+
+/** True when the stored last use is missing or at least an hour old, so this request should write it. */
+export function partnerLastUseIsStale(lastUsedAt: Date | null, now: Date): boolean {
+  return lastUsedAt === null || now.getTime() - lastUsedAt.getTime() >= PARTNER_LAST_USED_RESOLUTION_MS;
+}
+
 export interface PartnerApiAccess {
   /** Hashes the token the way the provider stores it, then checks it. */
   authenticate(accessToken: string): Promise<PartnerBearerResult>;
   /** Null when the climber is gone. */
   readClimber(principal: PartnerApiPrincipal): Promise<PartnerClimberRecord | null>;
   disconnect(principal: PartnerApiPrincipal): Promise<PartnerApiDisconnectOutcome>;
+  /**
+   * Stamps the connection's `last_used_at` after a token passed, at most once an
+   * hour. Never waits for a lock and never throws: true only when it wrote.
+   */
+  recordUse(principal: PartnerApiPrincipal): Promise<boolean>;
   /** A lock wait or statement timeout: answer 503 and let the app retry. */
   isDatabaseBusy(error: unknown): boolean;
 }
@@ -160,6 +178,67 @@ export function createPartnerApiAccess({
       });
     },
 
+    async recordUse(principal) {
+      if (!partnerLastUseIsStale(principal.connectionLastUsedAt, new Date())) return false;
+      try {
+        return await touchPartnerConnectionLastUsed(database, principal);
+      } catch (error) {
+        // A missed stamp only makes "last used" an hour staler; the request goes on.
+        logger.warn('Partner connection last use not recorded', {
+          clientId: principal.clientId,
+          errorName: error instanceof Error ? error.name : 'unknown',
+          postgresCode: getPostgresErrorCode(error),
+        });
+        return false;
+      }
+    },
+
     isDatabaseBusy: isPartnerDatabaseBusy,
   };
+}
+
+/**
+ * One UPDATE that names its row through `FOR NO KEY UPDATE SKIP LOCKED`, so it
+ * never waits: a connection a Disconnect, a refresh, a consent answer or the
+ * password trigger holds is skipped, and the next request an hour on tries
+ * again. The hour is checked again in SQL, so of two requests racing past the
+ * unlocked read only the first writes; the second finds the row locked or
+ * already fresh. It holds the row for that one statement only, and it never
+ * touches `users`, so it cannot join a partner lock cycle. A connection ended or
+ * reconnected since the token check is left alone.
+ */
+export async function touchPartnerConnectionLastUsed(
+  database: PartnerDatabase,
+  { connectionId, connectionGeneration }: Pick<PartnerApiPrincipal, 'connectionId' | 'connectionGeneration'>,
+): Promise<boolean> {
+  return runInPartnerTransaction(database, async (transaction) => {
+    const stamped = await transaction
+      .update(oauthConnections)
+      .set({ lastUsedAt: sql`now()` })
+      .where(
+        inArray(
+          oauthConnections.id,
+          transaction
+            .select({ id: oauthConnections.id })
+            .from(oauthConnections)
+            .where(
+              and(
+                eq(oauthConnections.id, connectionId),
+                eq(oauthConnections.generation, connectionGeneration),
+                isNull(oauthConnections.revokedAt),
+                or(
+                  isNull(oauthConnections.lastUsedAt),
+                  lt(
+                    oauthConnections.lastUsedAt,
+                    sql`now() - make_interval(secs => ${PARTNER_LAST_USED_RESOLUTION_MS / 1000})`,
+                  ),
+                ),
+              ),
+            )
+            .for('no key update', { skipLocked: true }),
+        ),
+      )
+      .returning({ id: oauthConnections.id });
+    return stamped.length > 0;
+  });
 }

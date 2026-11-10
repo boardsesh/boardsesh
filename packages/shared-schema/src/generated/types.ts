@@ -1964,6 +1964,43 @@ export type CommunityStats = {
   litLast30Days: Scalars['Int']['output'];
 };
 
+/** An app the signed-in climber connected to their account (docs/integration-platform.md, Connected apps). */
+export type ConnectedApp = {
+  __typename?: 'ConnectedApp';
+  /** ISO 8601. When the app first used its access, or first used it again after a reconnect. */
+  connectedAt: Scalars['String']['output'];
+  /** Pass to disconnectApp. */
+  connectionId: Scalars['ID']['output'];
+  /** ISO 8601. The app's latest call to the API, to within an hour. Null until it makes one. */
+  lastUsedAt?: Maybe<Scalars['String']['output']>;
+  /** The app's registered name. Null when it has none. */
+  name?: Maybe<Scalars['String']['output']>;
+  /**
+   * Who makes the app, as its developer registered it. Null until apps carry a
+   * publisher name, and never the developer account's own name.
+   */
+  publisherName?: Maybe<Scalars['String']['output']>;
+  /**
+   * What the climber allowed, as OAuth scope strings (profile:read, logbook:read,
+   * offline_access, or one added later). Clients word them in the climber's language.
+   */
+  scopes: Array<Scalars['String']['output']>;
+  /** True while Boardsesh has suspended the app. It reads nothing until it is restored. */
+  suspended: Scalars['Boolean']['output'];
+};
+
+export type ConnectedApps = {
+  __typename?: 'ConnectedApps';
+  /** Live connections, the most recently connected first. */
+  apps: Array<ConnectedApp>;
+  /**
+   * False while partner apps are switched off (PARTNER_OAUTH_MODE off): no app can
+   * connect, though connections made before still list here and can be disconnected.
+   * A hold is a short pause and counts as on.
+   */
+  partnerAppsEnabled: Scalars['Boolean']['output'];
+};
+
 /**
  * Whether this visitor is asked before analytics runs, from the Cloudflare
  * country of the request. See docs/analytics-consent.md.
@@ -4475,6 +4512,15 @@ export type Mutation = {
    */
   discardSprayWallVersion: Scalars['Boolean']['output'];
   /**
+   * End the signed-in climber's connection to an app, with the same effect as the
+   * app calling DELETE /v1/connection: every token and the remembered consent go,
+   * and connecting again needs a fresh approval. Works in every PARTNER_OAUTH_MODE,
+   * so a climber can always end a connection. True once the connection is ended,
+   * also when it already was. NOT_FOUND when the id is not one of the climber's
+   * connections.
+   */
+  disconnectApp: Scalars['Boolean']['output'];
+  /**
    * Unlink an external platform integration. Revokes the token on the
    * provider's side (best-effort) and deletes the stored credentials.
    * Requires authentication.
@@ -5310,6 +5356,11 @@ export type MutationDetachBoardFromGymArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDiscardSprayWallVersionArgs = {
   input: PublishSprayWallVersionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDisconnectAppArgs = {
+  connectionId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -7437,6 +7488,8 @@ export type Query = {
    * Requires authentication.
    */
   myBoards: UserBoardConnection;
+  /** The signed-in climber's connected apps, in every PARTNER_OAUTH_MODE. */
+  myConnectedApps: ConnectedApps;
   myControllers: Array<ControllerInfo>;
   /**
    * Get current user's gyms (owned + optionally followed).
@@ -12890,6 +12943,8 @@ export type ResolversTypes = ResolversObject<{
   CommunityRoleType: CommunityRoleType;
   CommunitySetting: ResolverTypeWrapper<CommunitySetting>;
   CommunityStats: ResolverTypeWrapper<CommunityStats>;
+  ConnectedApp: ResolverTypeWrapper<ConnectedApp>;
+  ConnectedApps: ResolverTypeWrapper<ConnectedApps>;
   ConsentRegion: ResolverTypeWrapper<ConsentRegion>;
   ControllerBoard: ResolverTypeWrapper<ControllerBoard>;
   ControllerEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ControllerEvent']>;
@@ -13468,6 +13523,8 @@ export type ResolversParentTypes = ResolversObject<{
   CommunityRoleAssignment: CommunityRoleAssignment;
   CommunitySetting: CommunitySetting;
   CommunityStats: CommunityStats;
+  ConnectedApp: ConnectedApp;
+  ConnectedApps: ConnectedApps;
   ConsentRegion: ConsentRegion;
   ControllerBoard: ControllerBoard;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
@@ -14953,6 +15010,29 @@ export type CommunityStatsResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ConnectedAppResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ConnectedApp'] = ResolversParentTypes['ConnectedApp'],
+> = ResolversObject<{
+  connectedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  connectionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  lastUsedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  publisherName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  scopes?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  suspended?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ConnectedAppsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ConnectedApps'] = ResolversParentTypes['ConnectedApps'],
+> = ResolversObject<{
+  apps?: Resolver<Array<ResolversTypes['ConnectedApp']>, ParentType, ContextType>;
+  partnerAppsEnabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ConsentRegionResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['ConsentRegion'] = ResolversParentTypes['ConsentRegion'],
@@ -16357,6 +16437,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDiscardSprayWallVersionArgs, 'input'>
+  >;
+  disconnectApp?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDisconnectAppArgs, 'connectionId'>
   >;
   disconnectIntegration?: Resolver<
     ResolversTypes['Boolean'],
@@ -18105,6 +18191,7 @@ export type QueryResolvers<
     RequireFields<QueryMyBoardSerialConfigsArgs, 'serialNumbers'>
   >;
   myBoards?: Resolver<ResolversTypes['UserBoardConnection'], ParentType, ContextType, Partial<QueryMyBoardsArgs>>;
+  myConnectedApps?: Resolver<ResolversTypes['ConnectedApps'], ParentType, ContextType>;
   myControllers?: Resolver<Array<ResolversTypes['ControllerInfo']>, ParentType, ContextType>;
   myGyms?: Resolver<ResolversTypes['GymConnection'], ParentType, ContextType, Partial<QueryMyGymsArgs>>;
   myNewClimbSubscriptions?: Resolver<Array<ResolversTypes['NewClimbSubscription']>, ParentType, ContextType>;
@@ -20478,6 +20565,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CommunityRoleAssignment?: CommunityRoleAssignmentResolvers<ContextType>;
   CommunitySetting?: CommunitySettingResolvers<ContextType>;
   CommunityStats?: CommunityStatsResolvers<ContextType>;
+  ConnectedApp?: ConnectedAppResolvers<ContextType>;
+  ConnectedApps?: ConnectedAppsResolvers<ContextType>;
   ConsentRegion?: ConsentRegionResolvers<ContextType>;
   ControllerBoard?: ControllerBoardResolvers<ContextType>;
   ControllerEvent?: ControllerEventResolvers<ContextType>;

@@ -100,6 +100,7 @@ import { qaQueries } from './qa/queries';
 import { integrationQueries } from './integrations/queries';
 import { integrationMutations } from './integrations/mutations';
 import { oauthClientMutations, oauthClientQueries } from './oauth-clients/partner-registration';
+import { connectedAppsMutations, connectedAppsQueries } from './connected-apps/connected-apps';
 import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
@@ -171,6 +172,7 @@ export const resolvers = {
     ...boardPresenceResolvers.Query,
     ...integrationQueries,
     ...oauthClientQueries,
+    ...connectedAppsQueries,
     ...syncQueries,
     ...feedbackQueries,
     ...qaQueries,
@@ -226,6 +228,7 @@ export const resolvers = {
     ...boardPresenceResolvers.Mutation,
     ...integrationMutations,
     ...oauthClientMutations,
+    ...connectedAppsMutations,
   },
 
   Subscription: {

@@ -175,6 +175,8 @@ export function createPublicApiHandler({
       authenticated(principal.clientId);
       await ledger.consume(`${principal.clientId}:${principal.userId}`, 'api-connection', API_PER_CONNECTION);
       await ledger.consume(principal.clientId, 'api-app', API_PER_APP);
+      // Connected apps' "last used": a write at most once an hour per connection.
+      await runtime.api.recordUse(principal);
       return await serveForPrincipal(req, route, runtime, principal, requestId, () => permit.release());
     } catch (error) {
       if (error instanceof PartnerRateLimited) throw error;
