@@ -1111,7 +1111,7 @@ commit.
 **Changing a suspended app.** Refused, delete included: the record stays for ops
 and still counts toward the developer's 10.
 
-**Deleting an app** (`lockAppForDeletion` in `auth/partner/registration.ts`) takes
+**Deleting an app** (`lockAppForDeletion` in `auth/partner/locks.ts`) takes
 every lock its cascade will need first, in the partner lock order rather than
 Postgres's cascade order: `users` FOR SHARE for every climber with a connection
 or an open consent screen for the app (in id order), then those consent screens
@@ -1123,10 +1123,15 @@ skip or wait for nothing this holds. A screen opened after the first pass and
 already held by a consent answer is the one wait that could still close a cycle,
 so the second pass over the screens is NOWAIT: the delete answers `busy` and the
 developer retries, instead of Postgres aborting the climber's answer with a 503.
-The launch suite races a delete against a consent answer, a refresh and a
-Disconnect; with the old order the consent answer was the deadlock victim.
-Account deletion of a developer still cascades into their apps in Postgres's own
-order; that path is not covered by this.
+The `users` FOR SHARE pass is what makes a password reset (whose trigger locks
+the climber's row first) wait for the delete instead of deadlocking with it.
+Deleting a developer's account cascades into their apps the same way, so
+`deleteAccount` calls `lockOwnedAppsForDeletion` (every app the account owns, in
+client id order) after it locks the account's own row and before the users
+delete, and `retryAccountDeletion` retries the NOWAIT refusal (55P03) as well as
+40P01. The launch suite races both deletions against a consent answer, a refresh
+and a Disconnect on the app; with the old order the consent answer was the
+deadlock victim.
 
 **The console** (F15) is `/developers/apps` on www, behind the server flag
 `developer-console` (`packages/web/app/flags.ts`, fails closed; a signed-out

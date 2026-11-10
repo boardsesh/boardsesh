@@ -37,6 +37,7 @@ import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { deleteClimbDependentRows, groupClimbUuidsByBoardType } from '../climbs/climb-cleanup';
 import { deleteAccountSprayWalls } from './delete-account-spray-walls';
 import { purgeDeletedSprayWallPhotos } from '../board/spray-wall-moderation';
+import { lockOwnedAppsForDeletion } from '../../../auth/partner/locks';
 import { retryAccountDeletion, withdrawDeletedAccountContent } from './delete-account-privacy';
 import { deleteAccountBoards } from './delete-account-boards';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview-tombstone';
@@ -400,6 +401,14 @@ export const userMutations = {
           // abort the deletion); the PostHog call happens later, with retries.
           // docs/analytics-consent.md, "Erasure".
           await enqueuePosthogPersonDeletion(tx, { distinctId: userId, reason: 'account_deleted' });
+
+          // The users delete cascades into every partner app this account
+          // registered, and from each app into its climbers' connections, consent
+          // screens and tokens. Take those locks first, in the partner lock order,
+          // as app deletion does, so the cascade cannot cross a climber's consent
+          // answer, refresh or Disconnect. This account's own row is already
+          // locked FOR UPDATE (withdrawDeletedAccountContent).
+          await lockOwnedAppsForDeletion(tx as unknown as Parameters<typeof lockOwnedAppsForDeletion>[0], userId);
 
           // Delete the user row — all related tables with onDelete: cascade
           // will be cleaned up automatically by the database.
