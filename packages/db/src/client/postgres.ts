@@ -146,26 +146,85 @@ function basePoolOptions() {
     connect_timeout: 30,
     prepare: false,
     onnotice: handlePostgresNotice,
-    ...statementTimeoutOption(),
+    ...startupParameterOptions(),
+  };
+}
+
+const IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE = 'DB_IDLE_IN_TRANSACTION_TIMEOUT_MS';
+
+/**
+ * A positive whole number of milliseconds from the environment, or nothing.
+ * Digits only: `parseInt('60s')` would read 60 ms and end nearly every
+ * transaction, so a value with a unit counts as unset instead.
+ */
+function readPositiveMilliseconds(name: string): number | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Session timeouts sent as startup parameters. Unitless values are milliseconds
+ * to PostgreSQL. Each is sent only when its variable holds a positive number.
+ *
+ * - `DB_STATEMENT_TIMEOUT_MS` → `statement_timeout`. Deliberately OFF by
+ *   default: PgBouncer in transaction-pooling mode rejects startup parameters
+ *   that are not in `ignore_startup_parameters`, and `statement_timeout` is not
+ *   allowed there by default — so turning this on against a pooled URL fails
+ *   *every* connection rather than bounding one query. Against a pooler, set it
+ *   on the role instead: `ALTER ROLE <app_role> SET statement_timeout = '8s'`.
+ * - `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` → `idle_in_transaction_session_timeout`.
+ *   Unset here, so scripts, workers and daemons keep the server default (off).
+ *   Request-serving processes set it through `applyRequestPoolDefaults()`. It
+ *   has the same PgBouncer hazard.
+ *
+ * See docs/db-connectivity.md.
+ */
+function startupParameterOptions(): {
+  connection?: { statement_timeout?: number; idle_in_transaction_session_timeout?: number };
+} {
+  const statementTimeout = readPositiveMilliseconds('DB_STATEMENT_TIMEOUT_MS');
+  const idleInTransactionTimeout = readPositiveMilliseconds(IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE);
+  if (statementTimeout === undefined && idleInTransactionTimeout === undefined) return {};
+  return {
+    connection: {
+      ...(statementTimeout === undefined ? {} : { statement_timeout: statementTimeout }),
+      ...(idleInTransactionTimeout === undefined
+        ? {}
+        : { idle_in_transaction_session_timeout: idleInTransactionTimeout }),
+    },
   };
 }
 
 /**
- * `DB_STATEMENT_TIMEOUT_MS` emits a `statement_timeout` startup parameter.
- * Deliberately OFF by default: PgBouncer in transaction-pooling mode rejects
- * startup parameters that are not in `ignore_startup_parameters`, and
- * `statement_timeout` is not allowed there by default — so turning this on
- * against a pooled URL fails *every* connection rather than bounding one query.
- * Against a pooler, set it on the role instead:
- * `ALTER ROLE <app_role> SET statement_timeout = '8s'`. See docs/db-connectivity.md.
+ * How long a request-serving process lets a session sit idle inside an open
+ * transaction before Postgres ends the session. The reasoning for 60 s is in
+ * docs/db-connectivity.md, "Idle transactions end after 60 s on request pools".
  */
-function statementTimeoutOption(): { connection?: { statement_timeout: number } } {
-  const raw = process.env.DB_STATEMENT_TIMEOUT_MS;
-  if (!raw) return {};
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return {};
-  // Unitless `statement_timeout` is milliseconds to PostgreSQL.
-  return { connection: { statement_timeout: parsed } };
+export const REQUEST_POOL_IDLE_IN_TRANSACTION_TIMEOUT_MS = 60_000;
+
+/**
+ * Marks this process as one that serves requests (the backend's HTTP/GraphQL
+ * server, the web server), so every pool it builds from here on sends
+ * `idle_in_transaction_session_timeout`. An explicit
+ * `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` wins; `0` turns it off.
+ *
+ * Call it before the first `createDb()`. The shared pools are built once per
+ * process, so one built earlier would keep running without the timeout; this
+ * throws instead of letting that pass silently. A pool built with the same
+ * setting (Next.js re-evaluating a module in dev) is fine.
+ */
+export function applyRequestPoolDefaults(): void {
+  process.env[IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE] ??= String(REQUEST_POOL_IDLE_IN_TRANSACTION_TIMEOUT_MS);
+  const expected = readPositiveMilliseconds(IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE);
+  for (const pool of [cache.client, cache.readClient]) {
+    if (pool && pool.options.connection.idle_in_transaction_session_timeout !== expected) {
+      throw new Error(
+        'applyRequestPoolDefaults(): a shared Postgres pool already exists with a different idle_in_transaction_session_timeout. Call it before anything that calls createDb(), and restart the process after changing DB_IDLE_IN_TRANSACTION_TIMEOUT_MS.',
+      );
+    }
+  }
 }
 
 const LOCAL_HOST_PATTERN = /@(localhost|127\.0\.0\.1|\[::1\]|postgres|postgres-test)(:|\/|$)/;

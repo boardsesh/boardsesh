@@ -2100,9 +2100,14 @@ Written into the public docs in these words:
   Test a client holding a cursor from before the rewind and assert `410`,
   including once transaction IDs overlap again.
 - The horizon is cluster-wide. A session left idle inside a write transaction
-  holds every feed back. Set `idle_in_transaction_session_timeout` on the
-  application roles, and alert when the oldest running write transaction is
-  more than 5 minutes old ([Observability](#observability)).
+  holds every feed back. The backend server and the web server end such a
+  session after 60 s: their pools send `idle_in_transaction_session_timeout` as
+  a startup parameter, so no `ALTER ROLE` is needed (see
+  [db-connectivity.md](./db-connectivity.md), "Idle transactions end after 60 s
+  on request pools", for which pools are covered and why 60 s). Workers, the
+  sync daemons and scripts are not covered, so still alert when the oldest
+  running write transaction is more than 5 minutes old
+  ([Observability](#observability)).
 - Reads run on the primary in milestone 1. Moving them to a hot standby means
   first proving the same horizon argument holds against a standby snapshot.
 
@@ -2668,7 +2673,7 @@ authorization server gets a Fable review.
 | Constrain `callbackUrl` on `/auth/login` with `safe-callback-url.ts` | A test proves `?callbackUrl=https://evil.example` lands on `/` |
 | `api.boardsesh.com` CNAME in `infra/cloudflare`, custom domain on the backend service | `curl https://api.boardsesh.com/health` answers |
 | Default-deny exemptions: `/v1/`, backend `/api/auth/oauth2/` and issuer metadata; `www` `/oauth/`, `/developers/`, `/auth/login` | Unit test in `crawler-policy`; a `HeadlessChrome` GET of consent and discovery is not refused |
-| `idle_in_transaction_session_timeout` on the application roles | Set and documented in `docs/db-connectivity.md` |
+| `idle_in_transaction_session_timeout` on the request pools | Sent as a startup parameter by the backend and web servers' pools (60 s; partner pool 10 s) and documented in `docs/db-connectivity.md` |
 
 ### Milestone 1: connect and sync (the MVP)
 
