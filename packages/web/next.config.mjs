@@ -520,6 +520,22 @@ const nextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex, follow' },
         ],
       })),
+      // A partner app's sign-in and consent (#6981). The query is the app's
+      // signed request, so it never leaves in a Referer, never sits in a cache,
+      // and the page never renders inside another site's frame, where a
+      // clickjacker could line Allow up under a click.
+      ...['/oauth/:path*', '/:locale/oauth/:path*'].map((source) => ({
+        source,
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Cache-Control', value: 'private, no-store, max-age=0, must-revalidate' },
+          { key: 'CDN-Cache-Control', value: 'no-store' },
+          { key: 'Vercel-CDN-Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex, follow' },
+        ],
+      })),
     ];
   },
   async rewrites() {

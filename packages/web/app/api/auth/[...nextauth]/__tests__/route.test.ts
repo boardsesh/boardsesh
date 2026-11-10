@@ -362,6 +362,63 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
   });
 
+  describe('a social sign-in started on the partner sign-in page', () => {
+    const partnerReturn =
+      'https://www.boardsesh.com/oauth/sign-in?client_id=bsk_sequence&state=app-state&sig=signed&boardsesh_signed_in=1';
+    const callbackCookie = `__Secure-next-auth.callback-url=${encodeURIComponent(partnerReturn)}`;
+
+    it('sends a failed Google callback back to that page, not to /auth/login', async () => {
+      nextAuthHandlerMock.mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'https://www.boardsesh.com/api/auth/error?error=OAuthAccountNotLinked' },
+        }),
+      );
+      const callbackRequest = new NextRequest(
+        'https://www.boardsesh.com/api/auth/callback/google?state=google-state&code=provider-code',
+        { headers: { Cookie: callbackCookie } },
+      );
+
+      const response = await GET(callbackRequest, routeContext(callbackRequest));
+      const location = response.headers.get('Location') ?? '';
+      expect(location.startsWith('/oauth/sign-in?')).toBe(true);
+      const query = new URLSearchParams(location.split('?')[1]);
+      expect(query.get('error')).toBe('OAuthAccountNotLinked');
+      expect(query.get('state')).toBe('app-state');
+      expect(query.has('boardsesh_signed_in')).toBe(false);
+    });
+
+    it('sends a failed Apple form-post callback back to that page as well', async () => {
+      nextAuthHandlerMock.mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'https://www.boardsesh.com/api/auth/error?error=Callback' },
+        }),
+      );
+      const callbackRequest = new NextRequest('https://www.boardsesh.com/api/auth/callback/apple', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: callbackCookie },
+        body: new URLSearchParams({ state: 'apple-state', code: 'provider-code' }),
+      });
+
+      const response = await POST(callbackRequest, routeContext(callbackRequest));
+      expect(response.headers.get('Location')).toMatch(/^\/oauth\/sign-in\?.*error=Callback/);
+    });
+
+    it('lets a successful callback continue to the page as NextAuth sends it', async () => {
+      nextAuthHandlerMock.mockResolvedValueOnce(
+        new Response(null, { status: 302, headers: { Location: partnerReturn } }),
+      );
+      const callbackRequest = new NextRequest(
+        'https://www.boardsesh.com/api/auth/callback/google?state=google-state&code=provider-code',
+        { headers: { Cookie: callbackCookie } },
+      );
+
+      const response = await GET(callbackRequest, routeContext(callbackRequest));
+      expect(response.headers.get('Location')).toBe(partnerReturn);
+    });
+  });
+
   it('returns a successful Google callback to the exact Expo login attempt', async () => {
     const returnUrl =
       'https://app.boardsesh.com/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-2';

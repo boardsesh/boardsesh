@@ -53,3 +53,24 @@ export function isKioskAnalyticsUrl(url: string, baseUrl = DEFAULT_ANALYTICS_BAS
   const pathname = stripAnalyticsLocalePrefix(analyticsPathname(url, baseUrl)).toLowerCase();
   return pathname === '/kiosk' || pathname.startsWith('/kiosk/');
 }
+
+/**
+ * /oauth/** — a partner app's sign-in and consent pages. Their URLs carry the
+ * app's signed authorization request, and the plan for partner OAuth (#6981,
+ * P13) keeps product analytics off them entirely: the SDK is never built
+ * there, so nothing (not a pageview, not `$current_url`) can carry the query.
+ */
+export function isPartnerOAuthAnalyticsUrl(url: string, baseUrl = DEFAULT_ANALYTICS_BASE_URL): boolean {
+  const pathname = stripAnalyticsLocalePrefix(analyticsPathname(url, baseUrl)).toLowerCase();
+  return pathname === '/oauth' || pathname.startsWith('/oauth/');
+}
+
+/**
+ * Pages where the PostHog SDK is never constructed and nothing is captured:
+ * embeds, kiosk (which has its own transport) and the partner OAuth pages.
+ */
+export function isProductAnalyticsFreeUrl(url: string, baseUrl = DEFAULT_ANALYTICS_BASE_URL): boolean {
+  return (
+    isEmbedAnalyticsUrl(url, baseUrl) || isKioskAnalyticsUrl(url, baseUrl) || isPartnerOAuthAnalyticsUrl(url, baseUrl)
+  );
+}

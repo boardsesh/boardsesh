@@ -32,6 +32,13 @@ describe('isChromeLessPath', () => {
     expect(isChromeLessPath('/posters')).toBe(false);
   });
 
+  it('matches the partner app sign-in and consent pages, whose site links would drop the request', () => {
+    expect(isChromeLessPath('/oauth/sign-in')).toBe(true);
+    expect(isChromeLessPath('/oauth/consent')).toBe(true);
+    expect(isChromeLessPath(stripLocalePrefix('/fr/oauth/consent', 'fr'))).toBe(true);
+    expect(isChromeLessPath('/oauthentication')).toBe(false);
+  });
+
   it('does not match lookalike prefixes', () => {
     expect(isChromeLessPath('/kiosks')).toBe(false);
     expect(isChromeLessPath('/embedded')).toBe(false);

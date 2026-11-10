@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import * as Sentry from '@sentry/nextjs';
 import { getAnalyticsAnonymousId, getAnalyticsDistinctId, identify, reset } from '@/app/lib/analytics';
-import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from '@/app/lib/analytics-paths';
+import { isAdminAnalyticsUrl, isProductAnalyticsFreeUrl } from '@/app/lib/analytics-paths';
 
 // A throw here would take down the root layout (see the try/catch below), so
 // the failure is swallowed — but swallowing it silently would hide a broken
@@ -74,8 +74,7 @@ export default function AnalyticsIdentity() {
     // visitors never saw a consent surface (see analytics-paths.ts). Identity
     // events are as much of a capture as a pageview. `pathname` is in the deps,
     // so navigating off either surface reconciles then.
-    if (pathname && (isAdminAnalyticsUrl(pathname) || isEmbedAnalyticsUrl(pathname) || isKioskAnalyticsUrl(pathname)))
-      return;
+    if (pathname && (isAdminAnalyticsUrl(pathname) || isProductAnalyticsFreeUrl(pathname))) return;
 
     try {
       // `null` means no PostHog client (server render, dev, preview, missing

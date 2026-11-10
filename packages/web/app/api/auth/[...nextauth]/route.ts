@@ -5,6 +5,7 @@ import { getToken } from 'next-auth/jwt';
 import { type NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
+import { withPartnerSignInFailureReturn } from '@/app/lib/partner-oauth/sign-in-failure-return';
 import {
   createPasswordCommandAuthRequest,
   limitPasswordLoginPerClient,
@@ -247,10 +248,12 @@ async function routeAuth(request: NextRequest, context: NextAuthRouteContext): P
   );
 }
 
+// A failed social sign-in that started on the partner sign-in page goes back
+// there, not to /auth/login, which the iPhone app claims.
 export async function GET(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  return routeAuth(request, context);
+  return withPartnerSignInFailureReturn(request, await routeAuth(request, context));
 }
 
 export async function POST(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  return routeAuth(request, context);
+  return withPartnerSignInFailureReturn(request, await routeAuth(request, context));
 }

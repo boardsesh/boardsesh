@@ -7,12 +7,7 @@ import { useConsent } from './consent/consent-provider';
 import { hasAnalyticsConsent } from '@/app/lib/consent';
 import { capturePosthog, pageview } from '@/app/lib/analytics';
 import { getSessionInboundCampaign } from '@/app/lib/inbound-campaign';
-import {
-  analyticsPathname,
-  isAdminAnalyticsUrl,
-  isEmbedAnalyticsUrl,
-  isKioskAnalyticsUrl,
-} from '@/app/lib/analytics-paths';
+import { analyticsPathname, isAdminAnalyticsUrl, isProductAnalyticsFreeUrl } from '@/app/lib/analytics-paths';
 
 // PostHog's Web Vitals dashboard widget surfaces LCP, CLS, FCP, INP and
 // expects a single batched `$web_vitals` event per page with metric-prefixed
@@ -43,15 +38,9 @@ function flushVitalsBuffer(buffer: VitalsBuffer): void {
   buffer.pageUrl = null;
 
   // No web-vitals off /admin, and none off /embed/** — embeds run inside
-  // third-party sites with no consent surface (see isEmbedAnalyticsUrl).
-  if (
-    !hasAnalyticsConsent() ||
-    !pageUrl ||
-    isAdminAnalyticsUrl(pageUrl) ||
-    isEmbedAnalyticsUrl(pageUrl) ||
-    isKioskAnalyticsUrl(pageUrl)
-  )
-    return;
+  // third-party sites with no consent surface (see isEmbedAnalyticsUrl) — or
+  // off the kiosk and partner OAuth pages (isProductAnalyticsFreeUrl).
+  if (!hasAnalyticsConsent() || !pageUrl || isAdminAnalyticsUrl(pageUrl) || isProductAnalyticsFreeUrl(pageUrl)) return;
 
   const props: Record<string, string | number | boolean | null> = {
     $current_url: analyticsPathname(pageUrl),
@@ -96,7 +85,7 @@ export default function AnalyticsClient() {
     // away, so skipping registration at mount disables web-vitals capture
     // there entirely (GDPR: no consent surface inside a third-party iframe —
     // see isEmbedAnalyticsUrl). The flush-time check above is the backstop.
-    if (isEmbedAnalyticsUrl(window.location.href) || isKioskAnalyticsUrl(window.location.href)) return;
+    if (isProductAnalyticsFreeUrl(window.location.href)) return;
     vitalsRegistered.current = true;
 
     const reportVital = (metric: Metric): void => {
@@ -130,8 +119,9 @@ export default function AnalyticsClient() {
     if (!pathname || !granted || !hasAnalyticsConsent()) return;
     if (isAdminAnalyticsUrl(pathname)) return;
     // No PostHog pageviews off /embed/** (third-party iframe, no consent
-    // surface — see isEmbedAnalyticsUrl). Kiosk keeps first-party telemetry.
-    if (isEmbedAnalyticsUrl(pathname) || isKioskAnalyticsUrl(pathname)) return;
+    // surface — see isEmbedAnalyticsUrl) or the partner OAuth pages. Kiosk
+    // keeps first-party telemetry on its own transport.
+    if (isProductAnalyticsFreeUrl(pathname)) return;
 
     // Flush metrics buffered against the previous URL before recording the new
     // pageview, so each `$web_vitals` event stays bound to the page it

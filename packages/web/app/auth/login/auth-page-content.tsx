@@ -8,7 +8,6 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
-import MuiLink from '@mui/material/Link';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import MuiDivider from '@mui/material/Divider';
@@ -31,8 +30,10 @@ import {
   validateLoginFields,
   validateRegisterFields,
   type LoginErrors,
+  type LoginValues,
   type RegisterErrors,
 } from '@/app/components/auth/validate-fields';
+import { PasswordSignInFields } from '@/app/components/auth/password-sign-in-fields';
 import { TabPanel } from '@/app/components/ui/tab-panel';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -40,7 +41,6 @@ import { track, setPersonProperties } from '@/app/lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { authMethodFromError, safeAuthError } from './auth-error-classification';
 import { safeCallbackUrl } from '../signout/safe-callback-url';
-import LocaleLink from '@/app/components/i18n/locale-link';
 
 export default function AuthPageContent() {
   const { t } = useTranslation('auth');
@@ -65,6 +65,12 @@ export default function AuthPageContent() {
   const [activeTab, setActiveTab] = useState('login');
 
   const verified = searchParams.get('verified');
+
+  const updateLoginField = (field: keyof LoginValues, value: string) => {
+    setLoginValues((prev) => ({ ...prev, [field]: value }));
+    if (loginErrors[field]) setLoginErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (loginServerError) setLoginServerError(null);
+  };
 
   // The page's only client-side navigation to `callbackUrl`. The social buttons
   // keep the raw value: they POST it to NextAuth, whose redirect callback checks
@@ -324,73 +330,7 @@ export default function AuthPageContent() {
                 error={loginServerError}
                 maxWidth={false}
               >
-                <FormSection>
-                  <FormField label={t('login.fields.email')} error={loginErrors.email}>
-                    {(field) => (
-                      <TextField
-                        id={field.id}
-                        type="email"
-                        autoComplete="username"
-                        placeholder={t('login.placeholders.email')}
-                        fullWidth
-                        value={loginValues.email}
-                        onChange={(e) => {
-                          setLoginValues((prev) => ({ ...prev, email: e.target.value }));
-                          if (loginErrors.email) setLoginErrors((prev) => ({ ...prev, email: undefined }));
-                          if (loginServerError) setLoginServerError(null);
-                        }}
-                        error={Boolean(field.error)}
-                        slotProps={{
-                          input: {
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <MailOutlined />
-                              </InputAdornment>
-                            ),
-                          },
-                          htmlInput: { autoCapitalize: 'none', 'aria-describedby': field.describedBy },
-                        }}
-                      />
-                    )}
-                  </FormField>
-
-                  <FormField
-                    label={t('login.fields.password')}
-                    error={loginErrors.password}
-                    labelAccessory={
-                      <MuiLink component={LocaleLink} href="/auth/forgot-password" variant="body2">
-                        {t('login.links.forgotPassword')}
-                      </MuiLink>
-                    }
-                  >
-                    {(field) => (
-                      <TextField
-                        id={field.id}
-                        type="password"
-                        autoComplete="current-password"
-                        placeholder={t('login.placeholders.password')}
-                        fullWidth
-                        value={loginValues.password}
-                        onChange={(e) => {
-                          setLoginValues((prev) => ({ ...prev, password: e.target.value }));
-                          if (loginErrors.password) setLoginErrors((prev) => ({ ...prev, password: undefined }));
-                          if (loginServerError) setLoginServerError(null);
-                        }}
-                        error={Boolean(field.error)}
-                        slotProps={{
-                          input: {
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <LockOutlined />
-                              </InputAdornment>
-                            ),
-                          },
-                          htmlInput: { 'aria-describedby': field.describedBy },
-                        }}
-                      />
-                    )}
-                  </FormField>
-                </FormSection>
+                <PasswordSignInFields values={loginValues} errors={loginErrors} onFieldChange={updateLoginField} />
 
                 <FormActions submitLabel={t('login.submit.signIn')} submitting={loginLoading} layout="stacked" />
               </FormShell>
