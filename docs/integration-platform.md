@@ -1192,8 +1192,10 @@ Chromium, on the real www pages and the real backend:
    earlier), then finds a tick the climber logs through GraphQL afterwards on
    `/v1/logbook/changes` and `/v1/logbook/ticks/{id}`.
 5. It refreshes, and the rotated pair works.
-6. The connection ends with `DELETE /v1/connection`; the app's next call gets
-   `401 invalid_token` and its refresh `invalid_grant`.
+6. The climber opens Connected apps on www `/settings`, opens the app (its scope
+   lines show), presses Disconnect and confirms, which sends the `disconnectApp`
+   mutation with their own session. The app's next call gets `401 invalid_token`
+   and its refresh `invalid_grant`.
 
 Run it with `vp run db:up` once, then `vp run test:e2e:partner-oauth`. A warm run
 takes about 15 seconds; the first one waits for `next dev` to compile the pages
@@ -1216,11 +1218,13 @@ are www's `/monitoring` and the backend's `/api/posthog`: the pages believe they
 are on production, and those two paths would forward the browser's Sentry and
 PostHog traffic to the real projects.
 
+The climber's browser declines the analytics prompt a signed-in account without
+an analytics choice sees once, as a climber would; the developer's and the
+climber's pages otherwise run untouched.
+
 What it does not prove:
 
-- Connected apps. The climber does not disconnect there yet, because that screen
-  (#7406) is not below this branch; once it is, step 6 switches to the climber's
-  Disconnect.
+- The app's own `DELETE /v1/connection`; the launch suite covers it.
 - A production build, Cloudflare and Railway, Safari and Android browsers, social
   sign-in, the developer console's screens, and a confidential client (the launch
   suite covers secrets).

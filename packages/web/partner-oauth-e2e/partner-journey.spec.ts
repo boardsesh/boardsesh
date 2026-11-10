@@ -33,8 +33,8 @@ import {
  *    from long before the connection), then sees a tick the climber logs
  *    afterwards on `/v1/logbook/changes` and `/v1/logbook/ticks/{id}`.
  * 5. The app refreshes; the rotated pair works.
- * 6. The connection ends, and the app's next call gets 401 and its refresh
- *    `invalid_grant`.
+ * 6. The climber disconnects the app in Connected apps on www settings, and
+ *    the app's next call gets 401 and its refresh `invalid_grant`.
  *
  * The app is oauth4webapi, an OAuth client nobody here wrote. Its server reaches
  * the edge over TLS with the edge's certificate; the climber's browser reaches
@@ -85,7 +85,15 @@ async function newVisitor(
       sameSite: 'Lax',
     },
   ]);
-  return { context, page: await context.newPage() };
+  const page = await context.newPage();
+  // A signed-in account with no analytics choice of its own is asked once, over
+  // whatever page is open. Decline it the way a climber would.
+  const consentPrompt = page.getByText('Help us improve Boardsesh?');
+  await page.addLocatorHandler(consentPrompt, async () => {
+    await page.getByRole('button', { name: 'No thanks', exact: true }).click();
+    await expect(consentPrompt).toBeHidden();
+  });
+  return { context, page };
 }
 
 /** The first-party token www hands its own pages for GraphQL (`useWsAuthToken`). */
@@ -399,13 +407,28 @@ test('an app registers, connects a climber on www, syncs the logbook, refreshes 
     expect((await callApi('/v1/me')).status).toBe(200);
 
     // -------------------------------------------------------------------
-    // 9. The connection ends; the app's next call is refused.
+    // 9. The climber disconnects in Connected apps on www; the app's next
+    //    call is refused.
     // -------------------------------------------------------------------
-    // TODO(#7406): once Connected apps is below this branch, the climber ends it
-    // there (`disconnectApp`, from their www session) instead of the app calling
-    // DELETE /v1/connection.
-    const disconnected = await callApi('/v1/connection', accessToken, 'DELETE');
-    expect(disconnected.status).toBe(204);
+    await climber.page.goto(`${WWW_ORIGIN}/settings`);
+    const connectedApps = climber.page.getByRole('region', { name: 'Connected apps' });
+    // The row the www settings page shows for this app; it opens the app's detail.
+    await connectedApps.getByRole('button', { name: new RegExp(APP_NAME) }).click();
+    const detail = climber.page.getByRole('dialog', { name: APP_NAME });
+    await expect(detail.getByText(`What ${APP_NAME} can see`)).toBeVisible();
+    await expect(detail.getByText('Sees every tick in your logbook, on every board')).toBeVisible();
+    await detail.getByRole('button', { name: `Disconnect ${APP_NAME}` }).click();
+    // Through the console's `disconnectApp` mutation, with the climber's own session.
+    const disconnectRequest = climber.page.waitForRequest(
+      (request) => request.url() === GRAPHQL_URL && (request.postData() ?? '').includes('disconnectApp'),
+    );
+    const confirm = climber.page.getByRole('dialog', { name: `Disconnect ${APP_NAME}?` });
+    await confirm.getByRole('button', { name: 'Disconnect', exact: true }).click();
+    const disconnectResponse = await (await disconnectRequest).response();
+    expect(disconnectResponse?.status()).toBe(200);
+    expect(await disconnectResponse?.json()).toEqual({ data: { disconnectApp: true } });
+    await expect(climber.page.getByText(`${APP_NAME} disconnected`)).toBeVisible();
+    await expect(connectedApps.getByRole('button', { name: new RegExp(APP_NAME) })).toHaveCount(0);
 
     const afterDisconnect = await callApi('/v1/me');
     expect(afterDisconnect.status).toBe(401);

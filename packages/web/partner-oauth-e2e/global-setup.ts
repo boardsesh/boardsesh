@@ -311,6 +311,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     for (const path of [
       '/oauth/consent',
       '/auth/login',
+      '/settings',
       '/api/auth/csrf',
       '/api/auth/session',
       '/api/internal/ws-auth',
