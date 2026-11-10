@@ -24,6 +24,8 @@ describe('isApiHost', () => {
     [`${API_HOSTNAME}#x`],
     [`u@${API_HOSTNAME}`],
     [`a@b@${API_HOSTNAME}`],
+    [`${API_HOSTNAME}@`],
+    [`${API_HOSTNAME}@@`],
     [`${API_HOSTNAME}\\`],
     [`${API_HOSTNAME}, x`],
     [`/${API_HOSTNAME}`],
@@ -63,7 +65,9 @@ describe('isApiHost', () => {
     ['ws.boardsesh.com'],
     ['www.boardsesh.com'],
     ['localhost:8080'],
+    ['boardsesh-backend.railway.internal:8080'],
     ['[::1]:8080'],
+    [`${API_HOSTNAME}.evil.com`],
     ['notapi.boardsesh.com'],
     [`${API_HOSTNAME}.evil.example`],
     [`evil.example/${API_HOSTNAME}`],
@@ -252,6 +256,18 @@ describe('the running server on the API host', () => {
   it('refuses a WebSocket upgrade that ws.boardsesh.com accepts', async () => {
     await expect(openWebSocket(API_HOSTNAME)).resolves.toBe(404);
     await expect(openWebSocket('ws.boardsesh.com')).resolves.toBe('open');
+  });
+
+  it.each([`${API_HOSTNAME}@`, `${API_HOSTNAME}@@`])(
+    'answers Host %j over HTTP without serving GraphQL',
+    async (host) => {
+      const { status } = await send('GET', '/graphql', host);
+      expect([400, 404]).toContain(status);
+    },
+  );
+
+  it.each([`${API_HOSTNAME}@`, `${API_HOSTNAME}@@`])('refuses a WebSocket upgrade with Host %j', async (host) => {
+    await expect(openWebSocket(host)).resolves.not.toBe('open');
   });
 
   it('keeps robots.txt on ws.boardsesh.com', async () => {

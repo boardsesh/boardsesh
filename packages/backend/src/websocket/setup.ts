@@ -49,6 +49,32 @@ function clipHeaderForLog(headerValue: string | string[] | undefined): string | 
   return (Array.isArray(headerValue) ? headerValue.join(', ') : headerValue)?.slice(0, MAX_LOGGED_HEADER_LENGTH);
 }
 
+/** What a logged GraphQL error keeps: a clipped message, its code and its path. */
+function clipGraphqlErrorForLog(error: GraphQLError): {
+  message: string;
+  code?: unknown;
+  path?: readonly (string | number)[];
+} {
+  return {
+    message: error.message.slice(0, MAX_LOGGED_HEADER_LENGTH),
+    code: error.extensions?.code,
+    path: error.path,
+  };
+}
+
+/**
+ * A copy of a thrown GraphQL error that is safe for graphql-ws to print. The
+ * message is clipped and the source is dropped (its printed excerpt holds the
+ * whole line); locations are copied across so the error stays as useful.
+ */
+function clipThrownGraphqlError(error: GraphQLError): GraphQLError {
+  const clipped = new GraphQLError(error.message.slice(0, MAX_LOGGED_HEADER_LENGTH), {
+    extensions: error.extensions,
+  });
+  Object.defineProperty(clipped, 'locations', { value: error.locations, enumerable: true });
+  return clipped;
+}
+
 /** WebSocket extended with liveness tracking for ping/pong. */
 type AliveWebSocket = {
   isAlive: boolean;
@@ -546,7 +572,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           return [new GraphQLError('Apple Ads attribution requires HTTP')];
         }
         if (DEBUG) {
-          logger.info(`Subscription started: ${payload.operationName || 'anonymous'}`);
+          logger.info(
+            `Subscription started: ${payload.operationName?.slice(0, MAX_LOGGED_HEADER_LENGTH) || 'anonymous'}`,
+          );
         }
 
         // Validate query depth to prevent DoS via deeply nested subscriptions
@@ -560,7 +588,10 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             if (error instanceof GraphQLError && isBoardShareTokenDocument(payload.query)) {
               return [sanitizeBoardShareGraphqlError(error, payload.query)];
             }
-            throw error;
+            // graphql-ws prints a thrown error whole with console.error, and a
+            // syntax error echoes client text. Rethrow it clipped: the socket still
+            // closes with 4500, and the code, locations and extensions survive.
+            throw error instanceof GraphQLError ? clipThrownGraphqlError(error) : error;
           }
           const depthError = validateQueryDepth(document);
           if (depthError) {
@@ -577,7 +608,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         const safeErrors = errors.map((error) =>
           sanitizeBoardShareGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),
         );
-        logger.error('GraphQL error:', safeErrors);
+        logger.error('GraphQL error:', safeErrors.map(clipGraphqlErrorForLog));
         // Only report errors that wrap an internal exception. GraphQLError
         // instances without `originalError` are validation/parse/auth/depth
         // errors triggered by malformed client input — noisy, not actionable.
@@ -589,7 +620,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       },
       onComplete: (_ctx: ServerContext, _id: string, payload) => {
         if (DEBUG) {
-          logger.info(`Subscription completed: ${payload.operationName || 'anonymous'}`);
+          logger.info(
+            `Subscription completed: ${payload.operationName?.slice(0, MAX_LOGGED_HEADER_LENGTH) || 'anonymous'}`,
+          );
         }
       },
     },
