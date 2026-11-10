@@ -9,7 +9,7 @@ import { createPrototypeAuthority, type PrototypeDatabase } from './authority';
 import { PROTOTYPE_CONFIGURATION } from './configuration';
 import { PrototypeResponseRollback, rejectPrototypeServerFailure } from './transaction-response';
 import { invalidatePrototypeLegacyRecovery } from './legacy-recovery-state';
-import { verifyPrototypeLegacyWebCookie } from './legacy-web-credentials';
+import { verifyLegacyWebCookie } from '../legacy-web-credentials';
 import { hasPrototypeLegacySourceDenial, recordPrototypeCanonicalSignout } from './legacy-source-state';
 import { invalidatePrototypeCanonicalVerification } from './verification-state';
 
@@ -94,7 +94,11 @@ export async function verifyLegacyNativeProof(
 
 async function verifiedRequestProof(request: Request | undefined): Promise<VerifiedLegacyProof | null> {
   if (!request) return null;
-  const webProof = await verifyPrototypeLegacyWebCookie(request.headers.get('cookie'), PROTOTYPE_LEGACY_WEB_SECRET);
+  const verifiedWebProof = await verifyLegacyWebCookie(request.headers.get('cookie'), PROTOTYPE_LEGACY_WEB_SECRET);
+  // The prototype's canonical sessions never take a web cookie's sign-in time:
+  // its BA-04 bridge proves freshness with its own cutoffs. Partner consent is
+  // the production reader that does (auth/partner/first-party-session.ts).
+  const webProof = verifiedWebProof && { ...verifiedWebProof, originalAuthenticatedAt: null };
   const authorization = request.headers.get('authorization');
   if (authorization === null) return webProof;
   if (!authorization.startsWith('Bearer ')) return null;

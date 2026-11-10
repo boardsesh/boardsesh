@@ -3,14 +3,14 @@ import { hkdf } from '@panva/hkdf';
 import { EncryptJWT, SignJWT, jwtDecrypt, type JWTPayload } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
-  PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS,
-  verifyPrototypeLegacyNextAuthJwe,
-  verifyPrototypeLegacyWebCookie,
+  LEGACY_WEB_CLOCK_TOLERANCE_SECONDS,
+  verifyLegacyNextAuthJwe,
+  verifyLegacyWebCookie,
 } from '../legacy-web-credentials';
 
 // Exercise the installed legacy encoder as a fixture producer only. Runtime
 // verification imports jose/HKDF, never the NextAuth framework or web modules.
-const webFixtureRequire = createRequire(new URL('../../../../../web/package.json', import.meta.url));
+const webFixtureRequire = createRequire(new URL('../../../../web/package.json', import.meta.url));
 const { encode: encodeInstalledNextAuth } = webFixtureRequire('next-auth/jwt') as {
   encode(
     this: void,
@@ -86,7 +86,7 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
     'verifies actual installed encoder bytes under %s without changing identity',
     async (cookieName) => {
       const credential = await installedSession({ email: 'private-fixture@example.test', name: 'Private fixture' });
-      const proof = await verifyPrototypeLegacyWebCookie(`${cookieName}=${credential}`, LEGACY_SECRET, NOW);
+      const proof = await verifyLegacyWebCookie(`${cookieName}=${credential}`, LEGACY_SECRET, NOW);
       expect(proof).toMatchObject({
         kind: 'nextauth-v4-jwe',
         userId: 'same-existing-user',
@@ -94,7 +94,7 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
         issuedAt: NOW,
         expiresAt: new Date(NOW.getTime() + MAX_SESSION_SECONDS * 1000),
         validUntil: new Date(NOW.getTime() + (MAX_SESSION_SECONDS + 60) * 1000),
-        clockToleranceSeconds: PROTOTYPE_LEGACY_WEB_CLOCK_TOLERANCE_SECONDS,
+        clockToleranceSeconds: LEGACY_WEB_CLOCK_TOLERANCE_SECONDS,
         originalAuthenticatedAt: null,
         requiresAccountCutoff: false,
         cookieNames: [cookieName],
@@ -113,7 +113,7 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
       const credential = await installedSession({
         profileDisplayName: 'A fixture long enough for more than ten tiny chunks',
       });
-      const proof = await verifyPrototypeLegacyWebCookie(chunkHeader(cookieName, credential), LEGACY_SECRET, NOW);
+      const proof = await verifyLegacyWebCookie(chunkHeader(cookieName, credential), LEGACY_SECRET, NOW);
       expect(proof?.userId).toBe('same-existing-user');
       expect(proof!.cookieNames.length).toBeGreaterThan(10);
       expect(proof?.cookieNames[0]).toBe(`${cookieName}.0`);
@@ -129,8 +129,8 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
       secret: LEGACY_SECRET,
     });
     const laterTime = new Date(NOW.getTime() + 3600_000);
-    const originalProof = await verifyPrototypeLegacyNextAuthJwe(first, LEGACY_SECRET, laterTime);
-    const renewedProof = await verifyPrototypeLegacyNextAuthJwe(renewed, LEGACY_SECRET, laterTime);
+    const originalProof = await verifyLegacyNextAuthJwe(first, LEGACY_SECRET, laterTime);
+    const renewedProof = await verifyLegacyNextAuthJwe(renewed, LEGACY_SECRET, laterTime);
     expect(renewed).not.toBe(first);
     expect(renewedProof?.credentialFingerprint).not.toBe(originalProof?.credentialFingerprint);
     expect(renewedProof?.lineageId).toBe(originalProof?.lineageId);
@@ -143,8 +143,8 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
   it('does not use the encoder-regenerated jti as a stable old-session identifier', async () => {
     const first = await installedSession({ authSessionId: undefined });
     const renewed = await installedSession({ authSessionId: undefined });
-    const originalProof = await verifyPrototypeLegacyNextAuthJwe(first, LEGACY_SECRET, NOW);
-    const renewedProof = await verifyPrototypeLegacyNextAuthJwe(renewed, LEGACY_SECRET, NOW);
+    const originalProof = await verifyLegacyNextAuthJwe(first, LEGACY_SECRET, NOW);
+    const renewedProof = await verifyLegacyNextAuthJwe(renewed, LEGACY_SECRET, NOW);
     expect(originalProof).toMatchObject({
       authSessionId: null,
       requiresAccountCutoff: true,
@@ -152,28 +152,54 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
     });
     expect(originalProof?.lineageId).toMatch(/^credential:[a-f0-9]{64}$/);
     expect(renewedProof?.lineageId).not.toBe(originalProof?.lineageId);
-    expect((await verifyPrototypeLegacyNextAuthJwe(first, LEGACY_SECRET, NOW))?.lineageId).toBe(
-      originalProof?.lineageId,
-    );
+    expect((await verifyLegacyNextAuthJwe(first, LEGACY_SECRET, NOW))?.lineageId).toBe(originalProof?.lineageId);
   });
 
-  it('never treats a supplied auth_time or attribution timestamp as general verified authentication age', async () => {
+  it('reads the sign-in time the web callback records, separately from the rolling iat', async () => {
+    const signedIn = NOW_SECONDS - 3600;
+    const credential = await installedSession({ auth_time: signedIn });
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toMatchObject({
+      issuedAt: NOW,
+      originalAuthenticatedAt: new Date(signedIn * 1000),
+    });
+  });
+
+  it('has no sign-in time for a cookie from before the claim, and never takes the attribution timestamp as one', async () => {
     const credential = await installedSession({
-      auth_time: NOW_SECONDS,
       nativeOAuthCreationProof: { signedInAt: NOW.getTime(), authSessionId: 'same-established-login' },
     });
-    expect(
-      (await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW))?.originalAuthenticatedAt,
-    ).toBeNull();
+    const proof = await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW);
+    expect(proof?.userId).toBe('same-existing-user');
+    expect(proof?.originalAuthenticatedAt).toBeNull();
+  });
+
+  it.each([
+    ['a fraction', NOW_SECONDS - 0.5],
+    ['a string', String(NOW_SECONDS)],
+    ['milliseconds', NOW.getTime()],
+    ['zero', 0],
+    ['negative', -60],
+    ['an object', { seconds: NOW_SECONDS }],
+    ['beyond the clock skew', NOW_SECONDS + 61],
+  ] satisfies [string, unknown][])('treats %s auth_time as unknown and keeps the session', async (_label, authTime) => {
+    const credential = await installedSession({ auth_time: authTime });
+    const proof = await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW);
+    expect(proof?.userId).toBe('same-existing-user');
+    expect(proof?.originalAuthenticatedAt).toBeNull();
+  });
+
+  it('treats a sign-in after the cookie it produced as unknown', async () => {
+    const credential = await encryptedFixture({ iat: NOW_SECONDS - 600, auth_time: NOW_SECONDS - 500 });
+    const proof = await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW);
+    expect(proof?.userId).toBe('same-existing-user');
+    expect(proof?.originalAuthenticatedAt).toBeNull();
   });
 
   it('does not retain a successful-token cache across expiry or verification-key changes', async () => {
     const credential = await installedSession({}, 60);
-    expect(await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).not.toBeNull();
-    expect(await verifyPrototypeLegacyNextAuthJwe(credential, 'wrong-legacy-verification-key', NOW)).toBeNull();
-    expect(
-      await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, new Date(NOW.getTime() + 120_000)),
-    ).toBeNull();
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).not.toBeNull();
+    expect(await verifyLegacyNextAuthJwe(credential, 'wrong-legacy-verification-key', NOW)).toBeNull();
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, new Date(NOW.getTime() + 120_000))).toBeNull();
   });
 
   it.each([1, 60])('accepts actual encoder output with %s seconds between issue/expiry clock reads', async (delay) => {
@@ -192,7 +218,7 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
     const { payload } = await jwtDecrypt(credential, encryptionKey, { currentDate: NOW });
     expect(payload.iat).toBe(NOW_SECONDS);
     expect(payload.exp! - payload.iat!).toBe(MAX_SESSION_SECONDS + delay);
-    expect(await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toMatchObject({
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toMatchObject({
       issuedAt: NOW,
       expiresAt: new Date(NOW.getTime() + (MAX_SESSION_SECONDS + delay) * 1000),
       validUntil: new Date(NOW.getTime() + (MAX_SESSION_SECONDS + delay + 60) * 1000),
@@ -204,14 +230,14 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
     const expiryClock = vi.spyOn(Date, 'now').mockReturnValue(NOW.getTime() + 61_000);
     const credential = await installedSession();
     expiryClock.mockRestore();
-    expect(await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toBeNull();
   });
 
   it('accepts actual legacy encoder output from a node ahead by the bounded 60-second allowance', async () => {
     const aheadTime = new Date(NOW.getTime() + 60_000);
     vi.setSystemTime(aheadTime);
     const credential = await installedSession();
-    expect(await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toMatchObject({
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toMatchObject({
       issuedAt: aheadTime,
       expiresAt: new Date(aheadTime.getTime() + MAX_SESSION_SECONDS * 1000),
       validUntil: new Date(aheadTime.getTime() + (MAX_SESSION_SECONDS + 60) * 1000),
@@ -223,14 +249,12 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
   it('retains the signed expiry separately when an actual token is accepted during backend expiry grace', async () => {
     vi.setSystemTime(new Date(NOW.getTime() - 90_000));
     const credential = await installedSession({}, 60);
-    expect(await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toMatchObject({
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toMatchObject({
       expiresAt: new Date(NOW.getTime() - 30_000),
       validUntil: new Date(NOW.getTime() + 30_000),
       originalAuthenticatedAt: null,
     });
-    expect(
-      await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, new Date(NOW.getTime() + 30_000)),
-    ).toBeNull();
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, new Date(NOW.getTime() + 30_000))).toBeNull();
   });
 
   it.each([
@@ -241,9 +265,7 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
   ] satisfies [string, Parameters<typeof encryptedFixture>[1]][])(
     'rejects %s instead of guessing a compatible key',
     async (_name, options) => {
-      expect(
-        await verifyPrototypeLegacyNextAuthJwe(await encryptedFixture({}, options), LEGACY_SECRET, NOW),
-      ).toBeNull();
+      expect(await verifyLegacyNextAuthJwe(await encryptedFixture({}, options), LEGACY_SECRET, NOW)).toBeNull();
     },
   );
 
@@ -268,7 +290,7 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
   ] satisfies [string, Record<string, unknown>][])(
     'rejects authenticated but unsupported %s claims',
     async (_name, claims) => {
-      expect(await verifyPrototypeLegacyNextAuthJwe(await encryptedFixture(claims), LEGACY_SECRET, NOW)).toBeNull();
+      expect(await verifyLegacyNextAuthJwe(await encryptedFixture(claims), LEGACY_SECRET, NOW)).toBeNull();
     },
   );
 
@@ -278,25 +300,25 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
       secret: LEGACY_SECRET,
       maxAge: 900,
     });
-    expect(await verifyPrototypeLegacyWebCookie(`${SECURE_COOKIE}=${pkceCookie}`, LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyWebCookie(`${SECURE_COOKIE}=${pkceCookie}`, LEGACY_SECRET, NOW)).toBeNull();
   });
 
   it('rejects tampered JWE bytes and a native JWS rather than widening the accepted token format', async () => {
     const credential = await installedSession();
     const parts = credential.split('.');
     parts[4] = `${parts[4][0] === 'A' ? 'B' : 'A'}${parts[4].slice(1)}`;
-    expect(await verifyPrototypeLegacyNextAuthJwe(parts.join('.'), LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyNextAuthJwe(parts.join('.'), LEGACY_SECRET, NOW)).toBeNull();
     const nativeToken = await new SignJWT({ sub: 'same-existing-user', iat: NOW_SECONDS, exp: NOW_SECONDS + 3600 })
       .setProtectedHeader({ alg: 'HS256' })
       .sign(new TextEncoder().encode(LEGACY_SECRET));
-    expect(await verifyPrototypeLegacyNextAuthJwe(nativeToken, LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyNextAuthJwe(nativeToken, LEGACY_SECRET, NOW)).toBeNull();
   });
 });
 
 describe('legacy web cookie ownership and bounded parsing', () => {
   it('accepts identical secure/plain credentials and duplicate identical host/domain cookie values', async () => {
     const credential = await installedSession();
-    const proof = await verifyPrototypeLegacyWebCookie(
+    const proof = await verifyLegacyWebCookie(
       `${SECURE_COOKIE}=${credential}; ${PLAIN_COOKIE}=${credential}; ${SECURE_COOKIE}=${credential}`,
       LEGACY_SECRET,
       NOW,
@@ -313,12 +335,12 @@ describe('legacy web cookie ownership and bounded parsing', () => {
       secret: LEGACY_SECRET,
     });
     const laterTime = new Date(NOW.getTime() + 60_000);
-    const forward = await verifyPrototypeLegacyWebCookie(
+    const forward = await verifyLegacyWebCookie(
       `${SECURE_COOKIE}=${first}; ${PLAIN_COOKIE}=${second}`,
       LEGACY_SECRET,
       laterTime,
     );
-    const reverse = await verifyPrototypeLegacyWebCookie(
+    const reverse = await verifyLegacyWebCookie(
       `${PLAIN_COOKIE}=${second}; ${SECURE_COOKIE}=${first}`,
       LEGACY_SECRET,
       laterTime,
@@ -328,6 +350,25 @@ describe('legacy web cookie ownership and bounded parsing', () => {
     expect(forward?.issuedAt).toEqual(NOW);
     expect(forward?.expiresAt).toEqual(new Date(NOW.getTime() + 3600_000));
     expect(forward?.originalAuthenticatedAt).toBeNull();
+  });
+
+  it('combines sign-in times conservatively: the earliest, and unknown if either copy lacks one', async () => {
+    const earlier = await installedSession({ auth_time: NOW_SECONDS - 7200 });
+    const later = await installedSession({ auth_time: NOW_SECONDS - 60 });
+    const unknown = await installedSession();
+    const both = await verifyLegacyWebCookie(
+      `${SECURE_COOKIE}=${later}; ${PLAIN_COOKIE}=${earlier}`,
+      LEGACY_SECRET,
+      NOW,
+    );
+    expect(both?.originalAuthenticatedAt).toEqual(new Date((NOW_SECONDS - 7200) * 1000));
+    const oneUnknown = await verifyLegacyWebCookie(
+      `${SECURE_COOKIE}=${later}; ${PLAIN_COOKIE}=${unknown}`,
+      LEGACY_SECRET,
+      NOW,
+    );
+    expect(oneUnknown?.userId).toBe('same-existing-user');
+    expect(oneUnknown?.originalAuthenticatedAt).toBeNull();
   });
 
   it.each([
@@ -343,7 +384,7 @@ describe('legacy web cookie ownership and bounded parsing', () => {
         `${SECURE_COOKIE}=${first}; ${PLAIN_COOKIE}=${second}`,
         `${PLAIN_COOKIE}=${second}; ${SECURE_COOKIE}=${first}`,
       ])
-        expect(await verifyPrototypeLegacyWebCookie(cookies, LEGACY_SECRET, NOW)).toBeNull();
+        expect(await verifyLegacyWebCookie(cookies, LEGACY_SECRET, NOW)).toBeNull();
     },
   );
 
@@ -351,7 +392,7 @@ describe('legacy web cookie ownership and bounded parsing', () => {
     const first = await installedSession({ authSessionId: undefined });
     const second = await installedSession({ authSessionId: undefined });
     expect(
-      await verifyPrototypeLegacyWebCookie(`${SECURE_COOKIE}=${first}; ${PLAIN_COOKIE}=${second}`, LEGACY_SECRET, NOW),
+      await verifyLegacyWebCookie(`${SECURE_COOKIE}=${first}; ${PLAIN_COOKIE}=${second}`, LEGACY_SECRET, NOW),
     ).toBeNull();
   });
 
@@ -374,17 +415,13 @@ describe('legacy web cookie ownership and bounded parsing', () => {
     ['empty value', (_credential: string) => `${SECURE_COOKIE}=`],
     ['excessive chunk index', (credential: string) => `${SECURE_COOKIE}.64=${credential}`],
   ] satisfies [string, (credential: string) => string][])('rejects %s', async (_name, cookies) => {
-    expect(await verifyPrototypeLegacyWebCookie(cookies(await installedSession()), LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyWebCookie(cookies(await installedSession()), LEGACY_SECRET, NOW)).toBeNull();
   });
 
   it('ignores cryptographically invalid alternate cookies while retaining exact names for cleanup', async () => {
     const credential = await installedSession();
     expect(
-      await verifyPrototypeLegacyWebCookie(
-        `${SECURE_COOKIE}=${credential}; ${PLAIN_COOKIE}=invalid`,
-        LEGACY_SECRET,
-        NOW,
-      ),
+      await verifyLegacyWebCookie(`${SECURE_COOKIE}=${credential}; ${PLAIN_COOKIE}=invalid`, LEGACY_SECRET, NOW),
     ).toMatchObject({ userId: 'same-existing-user', cookieNames: [SECURE_COOKIE, PLAIN_COOKIE] });
   });
 
@@ -393,7 +430,7 @@ describe('legacy web cookie ownership and bounded parsing', () => {
     vi.setSystemTime(new Date(NOW.getTime() - 120_000));
     const staleOtherAccount = await installedSession({ sub: 'expired-other-account' }, 30);
     expect(
-      await verifyPrototypeLegacyWebCookie(
+      await verifyLegacyWebCookie(
         `${SECURE_COOKIE}=${credential}; ${PLAIN_COOKIE}=${staleOtherAccount}`,
         LEGACY_SECRET,
         NOW,
@@ -405,27 +442,23 @@ describe('legacy web cookie ownership and bounded parsing', () => {
     const credential = await installedSession();
     expect(
       (
-        await verifyPrototypeLegacyWebCookie(
+        await verifyLegacyWebCookie(
           `theme=dark; ${SECURE_COOKIE}=${credential}; next-auth.callback-url=ignored`,
           LEGACY_SECRET,
           NOW,
         )
       )?.userId,
     ).toBe('same-existing-user');
-    expect(
-      await verifyPrototypeLegacyWebCookie(`${SECURE_COOKIE}-backup=${credential}`, LEGACY_SECRET, NOW),
-    ).toBeNull();
+    expect(await verifyLegacyWebCookie(`${SECURE_COOKIE}-backup=${credential}`, LEGACY_SECRET, NOW)).toBeNull();
   });
 
   it('bounds header/token sizes and handles absence or invalid server clock without throwing', async () => {
-    expect(await verifyPrototypeLegacyWebCookie(null, LEGACY_SECRET, NOW)).toBeNull();
-    expect(await verifyPrototypeLegacyWebCookie('', LEGACY_SECRET, NOW)).toBeNull();
-    expect(
-      await verifyPrototypeLegacyWebCookie(`${SECURE_COOKIE}=${'a'.repeat(128 * 1024)}`, LEGACY_SECRET, NOW),
-    ).toBeNull();
-    expect(await verifyPrototypeLegacyNextAuthJwe('a'.repeat(64 * 1024 + 1), LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyWebCookie(null, LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyWebCookie('', LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyWebCookie(`${SECURE_COOKIE}=${'a'.repeat(128 * 1024)}`, LEGACY_SECRET, NOW)).toBeNull();
+    expect(await verifyLegacyNextAuthJwe('a'.repeat(64 * 1024 + 1), LEGACY_SECRET, NOW)).toBeNull();
     const credential = await installedSession();
-    expect(await verifyPrototypeLegacyNextAuthJwe(credential, '', NOW)).toBeNull();
-    expect(await verifyPrototypeLegacyNextAuthJwe(credential, LEGACY_SECRET, new Date(Number.NaN))).toBeNull();
+    expect(await verifyLegacyNextAuthJwe(credential, '', NOW)).toBeNull();
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, new Date(Number.NaN))).toBeNull();
   });
 });

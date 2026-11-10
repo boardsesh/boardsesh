@@ -1,8 +1,10 @@
 # Legacy web credential proof
 
-This disposable proof supports [BA-01 #6976](https://github.com/boardsesh/boardsesh/issues/6976)
-and [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). It does not
-replace a production decoder or satisfy the authority cutover gate.
+This proof supports [BA-01 #6976](https://github.com/boardsesh/boardsesh/issues/6976)
+and [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). The verifier
+began in the prototype and moved to `packages/backend/src/auth/legacy-web-credentials.ts`
+when partner consent (#6981) started reading the www session with it. It does not
+satisfy the authority cutover gate.
 
 ## Cryptographic and identity boundary
 
@@ -14,9 +16,16 @@ Separate purpose, audience and issuer labels are rejected rather than guessed.
 
 Every accepted credential has a verified subject, integer issue/expiry claims
 and a signed lifetime bounded by the nominal 30 days plus the explicit encoder
-clock-read allowance below. Original authentication age remains
-unknown, including when the payload contains an unsolicited `auth_time` or
-attribution timestamp. The current web callback's explicit `authSessionId`
+clock-read allowance below. Since #6981 (F5) the web jwt callback writes
+`auth_time` on a completed sign-in, and never on a rotation or a native
+transfer, so the verifier now reports it as `originalAuthenticatedAt`. A
+missing claim, one that is not a whole positive number of seconds, one more than
+60 seconds ahead of the reader's clock, and one after the cookie's own `iat`
+(beyond the same skew) all read as unknown; the session itself stays valid.
+Where several copies of one login are accepted, the earliest sign-in counts, and
+none if any copy lacks one. The attribution timestamp is never read as a sign-in.
+Partner consent is the one production reader (`auth/partner/first-party-session.ts`);
+the prototype's canonical bridge still ignores it. The current web callback's explicit `authSessionId`
 identifies a stable login; NextAuth regenerates `jti` during rolling encoding,
 so an unpersisted `jti` cannot establish durable lineage. Credentials without
 explicit lineage require a conservative account cutoff in a later bridge.
@@ -73,7 +82,7 @@ clock reads at one second, 60 seconds and beyond the allowed boundary. The two c
 source/test files passed `vp check` with no lint or type findings.
 
 ```sh
-vp test run --config packages/backend/vite.auth-prototype.config.ts legacy-web-credentials.test.ts --reporter=agent
+vp test run --project backend packages/backend/src/auth/__tests__/legacy-web-credentials.test.ts --reporter=agent
 ```
 
 Independent review found the initial zero-skew and invalid-alternate policies
