@@ -29,6 +29,7 @@ import { API_HOSTNAME, rejectApiHostRequest } from '../handlers/api-host';
 import { createPublicApiHandler, type PublicApiHandlerOptions } from '../handlers/public-api/router';
 import { validateToken } from '../middleware/auth';
 import { redisClientManager } from '../redis/client';
+import { CLOUDFLARE_WORKER_EGRESS_ADDRESS } from '../utils/client-ip';
 import { logger } from '../utils/logger';
 import {
   createPartnerTestEnvironment,
@@ -1279,9 +1280,9 @@ describe('the public /v1 API', () => {
         release = resolve;
       });
       const realAcquire = runtime.admission.acquire.bind(runtime.admission);
-      const acquire = vi.spyOn(runtime.admission, 'acquire').mockImplementation((lane, group) => {
+      const acquire = vi.spyOn(runtime.admission, 'acquire').mockImplementation((lane, group, egress) => {
         acquisitions += 1;
-        return realAcquire(lane, group).then((permit) => {
+        return realAcquire(lane, group, egress).then((permit) => {
           admissions.push({ group, lane: permit?.lane ?? null });
           return permit;
         });
@@ -1432,6 +1433,128 @@ describe('the public /v1 API', () => {
       },
       TEST_DEADLINE_MS,
     );
+
+    it(
+      'serves an honest address while three flooding addresses each keep 8 junk lookups waiting',
+      async () => {
+        await inOneLimitWindow(async () => {
+          const floodingAddresses = [randomClientIp(), randomClientIp(), randomClientIp()];
+          const honestAddress = randomClientIp();
+          const client = await environment.createClient();
+          const issued = await environment.issueTokens(client);
+          const held = holdAdmissions(24, (token) => token.startsWith('junk'));
+          try {
+            const junk = floodingAddresses.flatMap((clientIp) =>
+              Array.from({ length: 8 }, () => getMe(`junk${randomUUID().replaceAll('-', '')}`, { clientIp })),
+            );
+            await held.allAsked();
+            // 24 for the shared lane's 18 places: before this change the honest
+            // address found the queue full and got 503 at once.
+            let honestAnswered = false;
+            const honest = getMe(issued.access_token, { clientIp: honestAddress }).then((answer) => {
+              honestAnswered = true;
+              return answer;
+            });
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(honestAnswered).toBe(false);
+            held.release();
+            expect((await honest).status).toBe(200);
+            expect(held.admissions.filter(({ group }) => group === honestAddress)).toEqual([
+              { group: honestAddress, lane: 'api' },
+            ]);
+            const junkStatuses = (await Promise.all(junk)).map((answer) => answer.status);
+            expect(junkStatuses.every((status) => status === 401 || status === 503)).toBe(true);
+          } finally {
+            held.restore();
+          }
+        });
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    describe('Cloudflare Workers', () => {
+      // Our private ingress saw a Cloudflare edge, which reported Cloudflare's one Worker egress address.
+      const CLOUDFLARE_EDGE_HOP = '173.245.48.5';
+      const WORKER_ADDRESS_KEY = '2a06:98c0:3600:0::/64';
+      const randomZone = () => `app-${randomUUID().slice(0, 8)}.example`;
+      const fromWorker = (zone: string): SendOptions => ({
+        clientIp: CLOUDFLARE_EDGE_HOP,
+        headers: { 'CF-Connecting-IP': CLOUDFLARE_WORKER_EGRESS_ADDRESS, 'CF-Worker': zone },
+      });
+      const junkToken = () => `junk${randomUUID().replaceAll('-', '')}`;
+
+      it(
+        'gives each Worker zone its own lane group, so one zone overflows and another does not',
+        async () => {
+          await inOneLimitWindow(async () => {
+            const busyZone = randomZone();
+            const quietZone = randomZone();
+            const client = await environment.createClient();
+            const issued = await environment.issueTokens(client);
+            const held = holdAdmissions(10);
+            try {
+              const busy = Array.from({ length: 9 }, () => getMe(issued.access_token, fromWorker(busyZone)));
+              const quiet = getMe(issued.access_token, fromWorker(quietZone));
+              await held.allAsked();
+              held.release();
+              const statuses = (await Promise.all([...busy, quiet])).map((answer) => answer.status);
+              expect(statuses).toEqual(Array(10).fill(200));
+              const busyLanes = held.admissions.filter(({ group }) => group === `cf-worker:${busyZone}`);
+              expect(busyLanes.filter(({ lane }) => lane === 'api')).toHaveLength(8);
+              expect(busyLanes.filter(({ lane }) => lane === 'api-overflow')).toHaveLength(1);
+              expect(held.admissions.filter(({ group }) => group === `cf-worker:${quietZone}`)).toEqual([
+                { group: `cf-worker:${quietZone}`, lane: 'api' },
+              ]);
+            } finally {
+              held.restore();
+            }
+          });
+        },
+        TEST_DEADLINE_MS,
+      );
+
+      it(
+        "counts failed lookups per zone, so one zone's junk never turns another zone's 401s into 429s",
+        async () => {
+          await inOneLimitWindow(async () => {
+            const junkZone = randomZone();
+            const honestZone = randomZone();
+            await seedLimiter(`cf-worker:${junkZone}`, 'api-invalid-token-ip', 600);
+            expect((await getMe(junkToken(), fromWorker(junkZone))).status).toBe(429);
+            const ceilingBefore = await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress');
+            expectInvalidToken(await getMe(junkToken(), fromWorker(honestZone)));
+            expect(await limiterCount(`cf-worker:${honestZone}`, 'api-invalid-token-ip')).toBe(1);
+            // Every zone together also counts on the Worker address, under its own name.
+            expect(await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress')).toBe(
+              ceilingBefore + 1,
+            );
+            expect(await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip')).toBe(0);
+          });
+        },
+        TEST_DEADLINE_MS,
+      );
+
+      it(
+        'holds every zone together to 6,000 failed lookups, which a forged zone cannot dodge, and never refuses a valid token',
+        async () => {
+          await inOneLimitWindow(async () => {
+            const client = await environment.createClient();
+            const issued = await environment.issueTokens(client);
+            const previous = await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress');
+            await seedLimiter(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress', 6000);
+            try {
+              const limited = await getMe(junkToken(), fromWorker(randomZone()));
+              expect(limited.status).toBe(429);
+              expect(limited.headers['ratelimit-limit']).toBe('6000');
+              expect((await getMe(issued.access_token, fromWorker(randomZone()))).status).toBe(200);
+            } finally {
+              await seedLimiter(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress', previous);
+            }
+          });
+        },
+        TEST_DEADLINE_MS,
+      );
+    });
 
     it('answers 401 when the climber is deleted between the profile read and the subject insert', async () => {
       const developer = await environment.createClimber();

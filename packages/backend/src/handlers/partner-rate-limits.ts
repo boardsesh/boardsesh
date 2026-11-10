@@ -5,6 +5,7 @@ import {
   peekRateLimitRedis,
   type RateLimitUsage,
 } from '../utils/redis-rate-limiter';
+import type { PartnerLimitIdentity } from '../utils/client-ip';
 
 /**
  * The rate limits shared by the partner OAuth routes and the `/v1` API. Every
@@ -89,5 +90,40 @@ export class RateLimitLedger {
       'ratelimit-remaining': String(tightest.remaining),
       'ratelimit-reset': String(tightest.resetSeconds),
     };
+  }
+}
+
+/**
+ * Each Cloudflare Worker zone gets every per-address limit to itself, and all
+ * zones together get this many times it, counted on the Worker egress address.
+ * The zone header is written by the Worker, so without a ceiling one Worker
+ * claiming many zones would multiply its budget without end. Ten lets ten
+ * busy Worker-hosted apps run at their full limit at once, and holds one that
+ * forges zones to ten times what a single address may send.
+ */
+export const WORKER_EGRESS_CEILING_FACTOR = 10;
+/** Names the ceiling buckets, which are never the Worker address's own header-less ones. */
+export const WORKER_EGRESS_LIMIT_SUFFIX = 'worker-egress';
+
+/**
+ * One per-address limit: the address's (or the Worker zone's) own bucket, then,
+ * for a Worker, the ceiling on every zone together. `bucket` builds the key
+ * from the identity, so a per-app limit stays per app in the ceiling too. The
+ * zone is charged first, so a zone over its own limit spends none of the ceiling.
+ */
+export async function consumePerAddress(
+  ledger: RateLimitLedger,
+  identity: PartnerLimitIdentity,
+  operation: string,
+  maxRequests: number,
+  bucket: (address: string) => string = (address) => address,
+): Promise<void> {
+  await ledger.consume(bucket(identity.key), operation, maxRequests);
+  if (identity.sharedEgress !== undefined) {
+    await ledger.consume(
+      bucket(identity.sharedEgress),
+      `${operation}-${WORKER_EGRESS_LIMIT_SUFFIX}`,
+      maxRequests * WORKER_EGRESS_CEILING_FACTOR,
+    );
   }
 }

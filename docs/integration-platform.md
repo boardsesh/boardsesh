@@ -487,8 +487,8 @@ Availability is protected before any transaction opens:
   second. Anything else gets `503` and `Retry-After` at once. `/v1` never holds the
   third permit, so an app's polling always leaves one for its refreshes. One address
   may hold at most 8 of the shared `/v1` lane's 18 places (2 running, 16 waiting);
-  past that its requests wait in an overflow lane with one of the two permits and 8
-  places (below).
+  past that its requests wait in an overflow lane with one of the two permits and 13
+  places, at most 8 of them its own (below).
 - Discovery and a signed-out authorize take no transaction.
 - Rate limits use the table under Operations and run first. Per-connection refresh
   and the app limits never reach a lock. The first replay of a spent code closes
@@ -543,13 +543,27 @@ For `/v1`, in this order:
    tokens can cause. The lane is chosen by how many requests an address has in
    flight, never by how many of them failed. An address may hold 8 places in the
    shared lane, running and waiting together. Its 9th and later requests wait in
-   the overflow lane instead: at most one of the two permits, 8 places, and served
-   only when the shared lane has nobody waiting. That is routing, not refusal. A
-   burst of 16 from one address fits (8 shared, then 1 running and 7 waiting in
-   overflow), so a partner polling many climbers at once is served, only slower.
-   A junk sender holds at most 8 of the shared lane's 18 places, so it can never
-   fill the lane everyone else uses. The count is per instance and lives in the
-   gate (`auth/partner/admission.ts`), so it costs no Redis call.
+   the overflow lane instead: at most one of the two permits, 13 places (1
+   running, 12 waiting), at most 8 per address, and served only when the shared
+   lane has nobody waiting. That is routing, not refusal. A burst of 16 from one
+   address fits (8 shared, then 8 in overflow), so a partner polling many
+   climbers at once is served, only slower. One junk sender holds at most 8 of
+   the shared lane's 18 places and 8 of overflow's 13, so it can never fill either
+   lane. The counts are per instance and live in the gate
+   (`auth/partner/admission.ts`), so they cost no Redis call.
+
+   A few senders at their share can still fill a lane between them: three at 8
+   are 24 for the shared lane's 18. So when a lane's queue is full, the newest
+   waiter of the address holding the most places gives its place up to the new
+   request, but only if that address holds more places than the newcomer would
+   after taking one, so after the swap it still holds at least as many and equals
+   never trade places back and forth. A shared waiter that
+   gives its place up moves to overflow if its address has room there, and is
+   refused (`503`) otherwise; an overflow waiter that gives its place up is
+   refused. Three flooding addresses therefore settle at 6 shared places each, and
+   an address with nothing in flight is always queued while any address holds 2
+   or more places with one of them waiting. Before this rule, three addresses each
+   holding 8 junk lookups made a fourth address's valid token answer `503`.
 
    This replaced routing on failures (30 failed lookups a minute sent an address
    to a one-permit lane with 4 places), which sidelined honest partners. One with
@@ -568,22 +582,33 @@ For `/v1`, in this order:
    places are also full. Partner mode is off, so there is no `/v1` traffic to size
    this against yet; if carrier groups overflow in practice, raise the share, not
    the grouping. What this
-   does not stop is a sender holding many /48s (one /32 is 65,536 of them): that
-   is the same "many addresses" class as the token endpoint's per-address limits,
-   for a Cloudflare rule.
+   does not stop is a sender holding many /48s (one /32 is 65,536 of them), each
+   keeping one request waiting: 18 such addresses fill the shared lane with no
+   address larger than a newcomer. That is the same "many addresses" class as
+   the token endpoint's per-address limits, for a Cloudflare rule.
 
-   Every partner hosted on Cloudflare Workers reaches us as the same
-   `CF-Connecting-IP` (`2a06:98c0:3600::103`), so until the lane uses the Worker
-   zone as the address, all of them share one address's 8 places and overflow
-   together. That is still served, only slower; the old rule refused them.
+   Cloudflare Workers count by zone, the same `getPartnerLimitIdentity` key as
+   the OAuth routes: each zone is its own address here, with its own 8 shared and
+   8 overflow places. The Worker writes the zone header, so every zone behind the
+   Worker address together also holds at most 12 of the shared lane's places and
+   8 of overflow's, and the give-up rule weighs a Worker request by that shared
+   count. Forged zones can fill the Worker share and slow every Worker-hosted
+   app, but never take the 6 shared and 5 overflow places left for everyone
+   else, and they are the first to give a place up to anyone else.
 3. A lookup that finds no usable token is charged to the address: 600 a minute, the
    sizing of the token endpoint's per-address refresh bound. Past that the address
    gets `429` instead of `401`. Only a failed lookup is ever refused for this count;
    a valid token never sees it, in a status or a `RateLimit-*` header, and it no
    longer changes which lane a request waits in. Many partners share one address
-   (every Cloudflare Worker reaches us as the same `CF-Connecting-IP`; carrier NAT,
-   cloud NAT gateways and shared hosting do the same), so refusing on the count
-   before a lookup would let one sender of junk lock all of them out.
+   (carrier NAT, cloud NAT gateways and shared hosting), so refusing on the count
+   before a lookup would let one sender of junk lock all of them out. A Worker is
+   counted by zone, so one zone's junk never turns another zone's expired-token
+   `401`s into `429`s. Every zone together also counts against 6,000 a minute on
+   the Worker address (`api-invalid-token-ip-worker-egress`, the OAuth routes'
+   10-times rule), so forged zones cannot multiply the budget without end. The
+   trade-off: a sender that fails 6,000 lookups a minute through Workers makes
+   every Worker-hosted app's failed lookups answer `429` for the rest of that
+   minute, while their valid tokens are still served.
 
 Measured on a laptop, two runs, with 48 concurrent junk loops from one address for
 2 s and a valid token sent every 20 ms from another address and from the flooding
@@ -2082,7 +2107,7 @@ What LEGAL.md implies:
 | API, per connection | 120 requests/min per (app, climber) | `<clientId>:<userId>` under `api-connection`, charged once the token has passed |
 | API, per app | 6,000 requests/min across all its climbers | `<clientId>` under `api-app`, charged once the token has passed |
 | API, failed token lookups | 600/min per client IP | `<ip>` under `api-invalid-token-ip`; charged, and refused with 429, only after a lookup fails, never before one |
-| API, in flight | 8 places in the shared `/v1` lane per address, per instance | IPv4 address or IPv6 /48, counted in the admission gate; the 9th waits in the overflow lane, never a refusal on its own |
+| API, in flight | 8 places in the shared `/v1` lane and 8 in overflow per address, per instance | IPv4 address, IPv6 /48 or Worker zone, counted in the admission gate; the 9th waits in the overflow lane. All Worker zones together: 12 shared, 8 overflow. A full queue takes a place from the address holding the most |
 | Page size | 200 | |
 | Snapshot creation | 2 per minute per connection, one active build | Only a real creation counts: a retry joins the snapshot that already exists. Incomplete snapshots never become a partial full download |
 | New connections | 200/day per app | Postgres count, not Redis, so it cannot fail open |

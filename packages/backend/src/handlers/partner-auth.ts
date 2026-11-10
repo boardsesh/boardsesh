@@ -16,9 +16,11 @@ import { isApiHost } from './api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders, type PartnerCorsPolicy } from './partner-cors';
 import {
   chargePartnerLimit,
+  consumePerAddress,
   PartnerRateLimited,
   partnerRateLimitedHeaders,
   RateLimitLedger,
+  WORKER_EGRESS_LIMIT_SUFFIX,
 } from './partner-rate-limits';
 
 type PartnerRuntime = NonNullable<Awaited<ReturnType<typeof loadPartnerAuthority>>>;
@@ -43,17 +45,6 @@ const REFRESH_PER_CONNECTION = 10;
 /** Not in the doc, which asks only for "an IP bound". One egress IP refreshing hourly at this rate serves 36,000 climbers. */
 const REFRESH_PER_APP_AND_IP = 600;
 const BODY_READS_PER_IP = 1200;
-/**
- * Each Cloudflare Worker zone gets every per-address limit to itself, and all
- * zones together get this many times it, counted on the Worker egress address.
- * The zone header is written by the Worker, so without a ceiling one Worker
- * claiming many zones would multiply its budget without end. Ten lets ten
- * busy Worker-hosted apps run at their full limit at once, and holds one that
- * forges zones to ten times what a single address may send.
- */
-const WORKER_EGRESS_CEILING_FACTOR = 10;
-/** Names the ceiling buckets, which are never the Worker address's own header-less ones. */
-const WORKER_EGRESS_LIMIT_SUFFIX = 'worker-egress';
 
 /** Only these reach Better Auth; anything else could change how it reads the request. */
 const FORWARDED_REQUEST_HEADERS = [
@@ -271,29 +262,6 @@ function createBodyReadSlots() {
       };
     },
   };
-}
-
-/**
- * One per-address limit: the address's (or the Worker zone's) own bucket, then,
- * for a Worker, the ceiling on every zone together. `bucket` builds the key
- * from the identity, so a per-app limit stays per app in the ceiling too. The
- * zone is charged first, so a zone over its own limit spends none of the ceiling.
- */
-async function consumePerAddress(
-  ledger: RateLimitLedger,
-  identity: PartnerLimitIdentity,
-  operation: string,
-  maxRequests: number,
-  bucket: (address: string) => string = (address) => address,
-): Promise<void> {
-  await ledger.consume(bucket(identity.key), operation, maxRequests);
-  if (identity.sharedEgress !== undefined) {
-    await ledger.consume(
-      bucket(identity.sharedEgress),
-      `${operation}-${WORKER_EGRESS_LIMIT_SUFFIX}`,
-      maxRequests * WORKER_EGRESS_CEILING_FACTOR,
-    );
-  }
 }
 
 function buildPartnerRequest(req: IncomingMessage, route: PartnerRoute, issuer: string, body: Buffer | null): Request {

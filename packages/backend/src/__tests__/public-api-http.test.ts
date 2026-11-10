@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { ApiErrorResponseSchema, MeResponseSchema } from '@boardsesh/public-api';
 import { createPartnerAdmissionGate } from '../auth/partner/admission';
+import { PARTNER_ADMISSION_LIMITS } from '../auth/partner/authority';
 import {
   createPartnerApiAccess,
   mintPartnerSubject,
@@ -368,10 +369,15 @@ describe('the admission gate', () => {
     apiPermits: 2,
     apiPerAddressLimit: 8,
     overflowApiPermits: 1,
-    overflowApiQueueLimit: 8,
+    overflowApiQueueLimit: 12,
+    overflowApiPerAddressLimit: 8,
+    apiPerEgressLimit: 12,
+    overflowApiPerEgressLimit: 8,
     queueLimitPerLane: 16,
     queueDeadlineMs: 1000,
   };
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+  const WORKER_EGRESS = '2a06:98c0:3600:0::/64';
   /** Enough permits that nothing waits, so each lane decision shows at once. */
   const roomyLimits = { ...limits, permits: 40, apiPermits: 40 };
 
@@ -421,12 +427,19 @@ describe('the admission gate', () => {
     const othersState = others.map(settledFlag);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(othersState.every((state) => !state.settled)).toBe(true);
-    // Now the shared lane is full: 2 running and 16 waiting.
-    expect(await gate.acquire('api', '198.51.100.3')).toBeNull();
+    // Now the shared lane is full: 2 running and 16 waiting. A group with
+    // nothing in flight still gets a place: the newest waiter of a group holding
+    // 8 gives its place up and waits in overflow instead.
+    const newcomer = releaseOnGrant(gate.acquire('api', '198.51.100.3'));
+    const newcomerState = settledFlag(newcomer);
+    await pause();
+    expect(newcomerState.settled).toBe(false);
     const firstTwo = await Promise.all(burst.slice(0, 2));
     for (const permit of firstTwo) permit?.release();
-    const granted = await Promise.all([...waitingBurst, ...others]);
+    const granted = await Promise.all([...waitingBurst, ...others, newcomer]);
     expect(granted.every((permit) => permit !== null)).toBe(true);
+    expect((await newcomer)?.lane).toBe('api');
+    expect((await others[7])?.lane).toBe('api-overflow');
   });
 
   it('gives a released shared place back to its group', async () => {
@@ -470,17 +483,17 @@ describe('the admission gate', () => {
     next?.release();
   });
 
-  it('gives overflow one permit and a queue of 8, then refuses at once', async () => {
+  it('gives overflow one permit and a queue of 12, then refuses at once', async () => {
     const gate = createPartnerAdmissionGate(limits);
     const running = await gate.acquire('api-overflow');
     expect(running).not.toBeNull();
-    const queued = Array.from({ length: 8 }, () => releaseOnGrant(gate.acquire('api-overflow')));
+    const queued = Array.from({ length: 12 }, () => releaseOnGrant(gate.acquire('api-overflow')));
     // Refused at once, not after the 1 s deadline.
-    const tenth = gate.acquire('api-overflow');
-    const tenthState = settledFlag(tenth);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(tenthState.settled).toBe(true);
-    expect(await tenth).toBeNull();
+    const fourteenth = gate.acquire('api-overflow');
+    const fourteenthState = settledFlag(fourteenth);
+    await pause();
+    expect(fourteenthState.settled).toBe(true);
+    expect(await fourteenth).toBeNull();
     // The shared /v1 lane still has its other permit.
     const shared = await gate.acquire('api', '198.51.100.1');
     expect(shared?.lane).toBe('api');
@@ -555,6 +568,151 @@ describe('the admission gate', () => {
     apiPermit?.release();
     tokenPermit?.release();
     held[2]?.release();
+  });
+
+  describe('when a few groups fill a lane between them', () => {
+    /** Three groups that each keep 8 requests waiting, with the first two running and held. */
+    function threeFloodingGroups(gate: ReturnType<typeof createPartnerAdmissionGate>) {
+      const groups = ['198.51.100.1', '198.51.100.2', '198.51.100.3'];
+      const requests = groups.flatMap((group) => Array.from({ length: 8 }, () => gate.acquire('api', group)));
+      return { held: requests.slice(0, 2), waiting: requests.slice(2).map(releaseOnGrant), requests };
+    }
+
+    it('keeps a place for a fourth group while three groups hold 8 each (production limits)', async () => {
+      const gate = createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS);
+      const flood = threeFloodingGroups(gate);
+      // 24 requests for 18 places. Each time the queue was full, the newest waiter
+      // of a larger group moved to overflow, until the three held 6 each; the
+      // third group's last two found no larger group and were refused.
+      const honest = releaseOnGrant(gate.acquire('api', '203.0.113.50'));
+      const honestState = settledFlag(honest);
+      await pause();
+      expect(honestState.settled).toBe(false);
+      await releaseAll(flood.held);
+      expect((await honest)?.lane).toBe('api');
+      const lanes = (await Promise.all(flood.waiting)).map((permit) => permit?.lane);
+      // Four moves while the flood arrived, and one for the honest group.
+      expect(lanes.filter((lane) => lane === 'api-overflow')).toHaveLength(5);
+      expect(lanes.filter((lane) => lane === undefined)).toHaveLength(2);
+    });
+
+    it('takes a place only from a group that would still hold more, so equal groups never trade', async () => {
+      const gate = createPartnerAdmissionGate(limits);
+      // 7, 6 and 5 places: the shared lane's 18, with nobody evicted on the way.
+      const requests = [
+        ...Array.from({ length: 7 }, () => gate.acquire('api', '198.51.100.1')),
+        ...Array.from({ length: 6 }, () => gate.acquire('api', '198.51.100.2')),
+        ...Array.from({ length: 5 }, () => gate.acquire('api', '198.51.100.3')),
+      ];
+      const waiting = requests.slice(2).map(releaseOnGrant);
+      // The group with 6 would hold 7, as many as the largest: refused, nobody moves.
+      expect(await gate.acquire('api', '198.51.100.2')).toBeNull();
+      // The group with 5 would hold 6, fewer than 7: the largest group's newest waiter moves.
+      const smaller = releaseOnGrant(gate.acquire('api', '198.51.100.3'));
+      await releaseAll(requests.slice(0, 2));
+      const lanes = (await Promise.all(waiting)).map((permit) => permit?.lane);
+      expect(lanes.filter((lane) => lane === 'api-overflow')).toHaveLength(1);
+      expect(lanes[4]).toBe('api-overflow');
+      expect((await smaller)?.lane).toBe('api');
+    });
+
+    it("refuses the waiter that gives its place up when its group's overflow places are full", async () => {
+      const gate = createPartnerAdmissionGate(limits);
+      // One group at both of its shares: 8 shared (2 running) and 8 overflow.
+      const flooder = Array.from({ length: 16 }, () => gate.acquire('api', '198.51.100.1'));
+      const others = [
+        ...Array.from({ length: 5 }, () => gate.acquire('api', '198.51.100.2')),
+        ...Array.from({ length: 5 }, () => gate.acquire('api', '198.51.100.3')),
+      ].map(releaseOnGrant);
+      const newestSharedOfFlooder = settledFlag(flooder[7]);
+      const honest = releaseOnGrant(gate.acquire('api', '203.0.113.50'));
+      await pause();
+      expect(newestSharedOfFlooder.settled).toBe(true);
+      expect(await flooder[7]).toBeNull();
+      const waitingFlooder = [...flooder.slice(2, 7), ...flooder.slice(8)].map(releaseOnGrant);
+      await releaseAll(flooder.slice(0, 2));
+      expect((await honest)?.lane).toBe('api');
+      expect((await Promise.all([...waitingFlooder, ...others])).every((permit) => permit !== null)).toBe(true);
+    });
+
+    it('gives a place up in a full overflow queue the same way', async () => {
+      // No shared share at all, so every request goes straight to overflow.
+      const gate = createPartnerAdmissionGate({ ...limits, apiPerAddressLimit: 0 });
+      const flooder = Array.from({ length: 8 }, () => gate.acquire('api', '198.51.100.1'));
+      // The group's ninth overflow place is refused at once.
+      expect(await gate.acquire('api', '198.51.100.1')).toBeNull();
+      const second = Array.from({ length: 5 }, () => gate.acquire('api', '198.51.100.2')).map(releaseOnGrant);
+      // 1 running and 12 waiting: full. A third group takes the flooder's newest place.
+      const newestOfFlooder = settledFlag(flooder[7]);
+      const third = releaseOnGrant(gate.acquire('api', '198.51.100.3'));
+      await pause();
+      expect(newestOfFlooder.settled).toBe(true);
+      expect(await flooder[7]).toBeNull();
+      const waitingFlooder = flooder.slice(1, 7).map(releaseOnGrant);
+      await releaseAll(flooder.slice(0, 1));
+      expect((await third)?.lane).toBe('api-overflow');
+      expect((await Promise.all([...waitingFlooder, ...second])).every((permit) => permit !== null)).toBe(true);
+    });
+
+    it('gives every place back after a move, so a group can use both of its shares again', async () => {
+      const gate = createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS);
+      const flood = threeFloodingGroups(gate);
+      const honest = releaseOnGrant(gate.acquire('api', '203.0.113.50'));
+      await releaseAll(flood.held);
+      await Promise.all([...flood.waiting, honest]);
+      // Everything drained: each flooding group holds nothing in either lane.
+      const roomy = Array.from({ length: 16 }, () => gate.acquire('api', '198.51.100.1'));
+      const roomyWaiting = roomy.slice(2).map(releaseOnGrant);
+      await pause();
+      await releaseAll(roomy.slice(0, 2));
+      const lanes = (await Promise.all(roomyWaiting)).map((permit) => permit?.lane);
+      expect(lanes.filter((lane) => lane === 'api')).toHaveLength(6);
+      expect(lanes.filter((lane) => lane === 'api-overflow')).toHaveLength(8);
+    });
+  });
+
+  describe('Cloudflare Worker zones', () => {
+    it('gives each zone its own share, and every zone together 12 shared places', async () => {
+      const gate = createPartnerAdmissionGate({ ...roomyLimits, overflowApiPermits: 40 });
+      const zones = Array.from({ length: 13 }, (_, index) =>
+        gate.acquire('api', `cf-worker:app-${index}.example`, WORKER_EGRESS),
+      );
+      const lanes = (await Promise.all(zones)).map((permit) => permit?.lane);
+      expect(lanes.slice(0, 12)).toEqual(Array(12).fill('api'));
+      expect(lanes[12]).toBe('api-overflow');
+      // Another group is not held to the Worker ceiling.
+      const neighbour = await gate.acquire('api', '203.0.113.7');
+      expect(neighbour?.lane).toBe('api');
+      // Every zone together holds at most 8 overflow places too.
+      const moreZones = await Promise.all(
+        Array.from({ length: 8 }, (_, index) => gate.acquire('api', `cf-worker:more-${index}.example`, WORKER_EGRESS)),
+      );
+      expect(moreZones.slice(0, 7).every((permit) => permit?.lane === 'api-overflow')).toBe(true);
+      expect(moreZones[7]).toBeNull();
+      await releaseAll([...zones, neighbour, ...moreZones]);
+    });
+
+    it('weighs a Worker request by every zone together, so forged zones give a place up first', async () => {
+      const gate = createPartnerAdmissionGate(limits);
+      // 12 zones at one place each, and 6 ordinary groups at one: the shared lane's 18.
+      const requests = [
+        ...Array.from({ length: 12 }, (_, index) =>
+          gate.acquire('api', `cf-worker:forged-${index}.example`, WORKER_EGRESS),
+        ),
+        ...Array.from({ length: 6 }, (_, index) => gate.acquire('api', `198.51.100.${index + 1}`)),
+      ];
+      const waiting = requests.slice(2).map(releaseOnGrant);
+      const honest = releaseOnGrant(gate.acquire('api', '203.0.113.50'));
+      const honestState = settledFlag(honest);
+      await pause();
+      expect(honestState.settled).toBe(false);
+      await releaseAll(requests.slice(0, 2));
+      expect((await honest)?.lane).toBe('api');
+      const lanes = (await Promise.all(waiting)).map((permit) => permit?.lane);
+      // The newest zone moved to overflow; every ordinary group kept its place.
+      expect(lanes[9]).toBe('api-overflow');
+      expect(lanes.slice(10)).toEqual(Array(6).fill('api'));
+    });
   });
 
   it('refuses /v1 work at once when its own queue is full, leaving the token queue alone', async () => {
